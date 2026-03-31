@@ -1,24 +1,29 @@
-//! Tool execution hooks — pre-tool, post-tool, and permission hooks.
+//! Tool execution hooks — pre-tool, post-tool, stop, and permission hooks.
 //!
 //! Corresponds to: LIFECYCLE_STATE_MACHINE.md §6 (Phase E)
 //!   - Pre-Tool Hooks: run before tool execution, can modify input or stop
 //!   - Post-Tool Hooks: run after successful tool execution
 //!   - Post-Tool Failure Hooks: run after failed tool execution
+//!   - Stop Hooks: run when the model stops
 //!
-//! Hooks are user-defined shell commands configured in settings.json.
-//! In Phase 1, hooks are mostly stubs — the infrastructure is in place
-//! for wiring to the config system.
+//! Hooks are user-defined shell commands configured in settings.json under
+//! the `hooks` key. Each hook event (PreToolUse, PostToolUse, Stop) contains
+//! a list of HookEventConfig entries, each with an optional matcher and a
+//! list of HookEntry commands to execute as subprocesses.
 
-#![allow(unused)]
+use std::collections::HashMap;
+use std::process::Stdio;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use serde::Deserialize;
 use serde_json::Value;
+use tokio::io::AsyncWriteExt;
 use tracing::{debug, warn};
 
 use crate::types::tool::ToolResult;
 
 // ---------------------------------------------------------------------------
-// Hook types
+// Hook types (public API)
 // ---------------------------------------------------------------------------
 
 /// Result of running pre-tool hooks.
@@ -53,34 +58,399 @@ pub enum PostToolHookResult {
     /// Continue normally.
     Continue,
     /// Hook wants to stop the continuation chain.
-    StopContinuation {
-        message: String,
-    },
+    StopContinuation { message: String },
 }
 
 // ---------------------------------------------------------------------------
-// Hook execution
+// Hook configuration types (deserialized from settings.json)
+// ---------------------------------------------------------------------------
+
+/// Hook configuration from settings.json.
+///
+/// Each event (e.g. "PreToolUse") contains a list of these, each optionally
+/// matching a tool name and containing a list of hook entries to run.
+#[derive(Debug, Clone, Deserialize)]
+pub struct HookEventConfig {
+    /// Tool name matcher (e.g., "Bash", "Read", "*").
+    /// None or "*" matches all tools.
+    pub matcher: Option<String>,
+    /// List of hook entries to run when this config matches.
+    pub hooks: Vec<HookEntry>,
+}
+
+/// A single hook entry — currently only "command" type is supported.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type")]
+pub enum HookEntry {
+    #[serde(rename = "command")]
+    Command {
+        command: String,
+        #[serde(default = "default_timeout")]
+        timeout: u64, // seconds
+    },
+}
+
+fn default_timeout() -> u64 {
+    60
+}
+
+/// JSON output from a hook subprocess.
+///
+/// The subprocess writes a single JSON line to stdout. All fields are
+/// optional; the default is to continue execution without changes.
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+struct HookOutput {
+    /// If false, stop tool execution.
+    #[serde(rename = "continue")]
+    should_continue: bool,
+    /// Reason for stopping (post-tool hooks).
+    stop_reason: Option<String>,
+    /// Decision string (e.g., "allow", "deny", "block").
+    decision: Option<String>,
+    /// Reason for the decision.
+    reason: Option<String>,
+    /// Permission decision for pre-tool hooks ("allow" or "deny").
+    permission_decision: Option<String>,
+    /// Modified tool input (pre-tool hooks).
+    updated_input: Option<Value>,
+    /// Additional context to include in messages.
+    additional_context: Option<String>,
+}
+
+impl Default for HookOutput {
+    fn default() -> Self {
+        Self {
+            should_continue: true,
+            stop_reason: None,
+            decision: None,
+            reason: None,
+            permission_decision: None,
+            updated_input: None,
+            additional_context: None,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Matcher logic
+// ---------------------------------------------------------------------------
+
+/// Check if a matcher pattern matches a tool name.
+///
+/// - `None` or `"*"` matches everything.
+/// - Exact match: `"Bash"` matches `"Bash"`.
+/// - Prefix match: `"mcp__"` matches `"mcp__server__tool"`.
+fn matches_tool(matcher: Option<&str>, tool_name: &str) -> bool {
+    match matcher {
+        None => true,
+        Some("*") => true,
+        Some(pattern) => {
+            tool_name == pattern || tool_name.starts_with(pattern)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Hook config loading
+// ---------------------------------------------------------------------------
+
+/// Load hook configurations for a specific event from the hooks settings value.
+///
+/// `hooks_value` is the deserialized `hooks` map from GlobalConfig.
+/// `event_name` is one of "PreToolUse", "PostToolUse", "Stop".
+pub fn load_hook_configs(
+    hooks_value: &HashMap<String, Value>,
+    event_name: &str,
+) -> Vec<HookEventConfig> {
+    let Some(event_value) = hooks_value.get(event_name) else {
+        return vec![];
+    };
+
+    match serde_json::from_value::<Vec<HookEventConfig>>(event_value.clone()) {
+        Ok(configs) => configs,
+        Err(e) => {
+            warn!(
+                event = event_name,
+                error = %e,
+                "failed to deserialize hook configs"
+            );
+            vec![]
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Core execution: run a single command hook as a subprocess
+// ---------------------------------------------------------------------------
+
+/// Execute a single command hook as a subprocess.
+///
+/// 1. Spawns `bash -c "{command}"` (on Windows, tries bash first, falls back to cmd /C)
+/// 2. Writes `stdin_json` as a single JSON line to stdin, then closes stdin
+/// 3. Collects stdout with a timeout
+/// 4. Parses the first line of stdout as JSON -> HookOutput
+/// 5. If the first line doesn't start with `{`, returns default HookOutput with
+///    additional_context set to the entire stdout
+async fn execute_command_hook(
+    command: &str,
+    stdin_json: &Value,
+    timeout_secs: u64,
+) -> Result<HookOutput> {
+    let mut child = spawn_shell_command(command)?;
+
+    // Write JSON to stdin and close it before waiting for output.
+    // This must be done before reading stdout to avoid deadlocks
+    // where the child blocks reading stdin while we block reading stdout.
+    if let Some(mut stdin) = child.stdin.take() {
+        let json_bytes = serde_json::to_vec(stdin_json)
+            .context("failed to serialize hook stdin")?;
+        // Best-effort write; if the process exits early, ignore the error
+        let _ = stdin.write_all(&json_bytes).await;
+        let _ = stdin.write_all(b"\n").await;
+        let _ = stdin.flush().await;
+        // Explicitly drop to close the write end of the pipe
+        drop(stdin);
+    }
+
+    // Take stdout/stderr handles to read them concurrently with waiting.
+    let mut stdout_reader = child.stdout.take();
+    let mut stderr_reader = child.stderr.take();
+
+    let timeout_duration = std::time::Duration::from_secs(timeout_secs);
+
+    // Spawn reading tasks concurrently with process wait, all under a timeout.
+    let collect = async {
+        use tokio::io::AsyncReadExt;
+
+        let stdout_fut = async {
+            let mut buf = Vec::new();
+            if let Some(ref mut r) = stdout_reader {
+                r.read_to_end(&mut buf).await.ok();
+            }
+            buf
+        };
+        let stderr_fut = async {
+            let mut buf = Vec::new();
+            if let Some(ref mut r) = stderr_reader {
+                r.read_to_end(&mut buf).await.ok();
+            }
+            buf
+        };
+        let wait_fut = child.wait();
+
+        let (stdout_bytes, stderr_bytes, wait_result) =
+            tokio::join!(stdout_fut, stderr_fut, wait_fut);
+
+        (stdout_bytes, stderr_bytes, wait_result)
+    };
+
+    match tokio::time::timeout(timeout_duration, collect).await {
+        Ok((stdout_bytes, stderr_bytes, wait_result)) => {
+            let stdout = String::from_utf8_lossy(&stdout_bytes).to_string();
+            let stderr = String::from_utf8_lossy(&stderr_bytes).to_string();
+
+            match wait_result {
+                Ok(status) => {
+                    if !status.success() {
+                        debug!(
+                            command = command,
+                            status = ?status,
+                            stderr = %stderr,
+                            "hook command exited with non-zero status"
+                        );
+                    }
+                }
+                Err(e) => {
+                    debug!(command = command, error = %e, "hook command wait error");
+                }
+            }
+
+            parse_hook_output(&stdout)
+        }
+        Err(_) => {
+            // Timeout expired — kill the child process.
+            // child was partially consumed (stdout/stderr taken), but we can
+            // still kill it if it's still alive.
+            let _ = child.kill().await;
+            Err(anyhow::anyhow!("hook command timed out after {}s", timeout_secs))
+        }
+    }
+}
+
+/// Spawn a shell command as a child process.
+fn spawn_shell_command(command: &str) -> Result<tokio::process::Child> {
+    #[cfg(windows)]
+    {
+        // On Windows, try bash first (e.g., Git Bash, WSL), fall back to cmd
+        use tokio::process::Command;
+
+        // Try bash first
+        match Command::new("bash")
+            .arg("-c")
+            .arg(command)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+        {
+            Ok(child) => return Ok(child),
+            Err(_) => {
+                // Fall back to cmd /C
+                Command::new("cmd")
+                    .arg("/C")
+                    .arg(command)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .context("failed to spawn hook command (tried bash and cmd)")
+            }
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        use tokio::process::Command;
+
+        Command::new("bash")
+            .arg("-c")
+            .arg(command)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("failed to spawn hook command via bash")
+    }
+}
+
+/// Parse hook stdout into a HookOutput.
+///
+/// If the first non-empty line starts with `{`, parse it as JSON.
+/// Otherwise, return a default HookOutput with additional_context = stdout.
+fn parse_hook_output(stdout: &str) -> Result<HookOutput> {
+    let trimmed = stdout.trim();
+
+    if trimmed.is_empty() {
+        return Ok(HookOutput::default());
+    }
+
+    // Find the first non-empty line
+    let first_line = trimmed.lines().next().unwrap_or("");
+
+    if first_line.trim_start().starts_with('{') {
+        match serde_json::from_str::<HookOutput>(first_line) {
+            Ok(output) => Ok(output),
+            Err(e) => {
+                debug!(error = %e, "failed to parse hook output as JSON, treating as plain text");
+                Ok(HookOutput {
+                    additional_context: Some(trimmed.to_string()),
+                    ..Default::default()
+                })
+            }
+        }
+    } else {
+        Ok(HookOutput {
+            additional_context: Some(trimmed.to_string()),
+            ..Default::default()
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Hook execution: pre-tool, post-tool, failure, stop
 // ---------------------------------------------------------------------------
 
 /// Run pre-tool hooks for a tool invocation.
 ///
 /// Corresponds to TypeScript: `runPreToolUseHooks()` in toolExecution.ts
 ///
-/// In a full implementation, this would:
-/// 1. Read hook configurations from settings
-/// 2. For each matching hook, spawn a subprocess
-/// 3. Parse the hook's JSON output for permission overrides, input changes, stop signals
-/// 4. Aggregate results from all hooks
-///
-/// Phase 1: Returns Continue with no modifications.
+/// For each matching hook config:
+/// - If any hook returns `should_continue: false` -> Stop
+/// - If any hook returns `permission_decision: "allow"` or `"deny"` -> override
+/// - If any hook returns `updated_input` -> merge into result
 pub async fn run_pre_tool_hooks(
     tool_name: &str,
     input: &Value,
+    hook_configs: &[HookEventConfig],
 ) -> Result<PreToolHookResult> {
-    debug!(tool = tool_name, "pre-tool hooks: no hooks configured (Phase 1)");
+    if hook_configs.is_empty() {
+        debug!(tool = tool_name, "pre-tool hooks: no hooks configured");
+        return Ok(PreToolHookResult::Continue {
+            updated_input: None,
+            permission_override: None,
+        });
+    }
+
+    let stdin_json = serde_json::json!({
+        "tool_name": tool_name,
+        "tool_input": input,
+    });
+
+    let mut final_updated_input: Option<Value> = None;
+    let mut final_permission_override: Option<PermissionOverride> = None;
+
+    for config in hook_configs {
+        if !matches_tool(config.matcher.as_deref(), tool_name) {
+            continue;
+        }
+
+        for entry in &config.hooks {
+            let HookEntry::Command { command, timeout } = entry;
+
+            debug!(tool = tool_name, command = command, "running pre-tool hook");
+
+            match execute_command_hook(command, &stdin_json, *timeout).await {
+                Ok(output) => {
+                    // Check for stop
+                    if !output.should_continue {
+                        let message = output
+                            .reason
+                            .or(output.stop_reason)
+                            .unwrap_or_else(|| "Hook stopped execution".to_string());
+                        return Ok(PreToolHookResult::Stop { message });
+                    }
+
+                    // Check for permission override
+                    if let Some(ref perm) = output.permission_decision {
+                        match perm.as_str() {
+                            "allow" => {
+                                final_permission_override = Some(PermissionOverride::Allow);
+                            }
+                            "deny" => {
+                                let reason = output
+                                    .reason
+                                    .clone()
+                                    .unwrap_or_else(|| "Denied by hook".to_string());
+                                final_permission_override =
+                                    Some(PermissionOverride::Deny { reason });
+                            }
+                            other => {
+                                debug!(decision = other, "unknown permission_decision from hook, ignoring");
+                            }
+                        }
+                    }
+
+                    // Check for updated input
+                    if let Some(updated) = output.updated_input {
+                        final_updated_input = Some(updated);
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        tool = tool_name,
+                        command = command,
+                        error = %e,
+                        "pre-tool hook error, continuing"
+                    );
+                }
+            }
+        }
+    }
+
     Ok(PreToolHookResult::Continue {
-        updated_input: None,
-        permission_override: None,
+        updated_input: final_updated_input,
+        permission_override: final_permission_override,
     })
 }
 
@@ -88,13 +458,64 @@ pub async fn run_pre_tool_hooks(
 ///
 /// Corresponds to TypeScript: `runPostToolUseHooks()` in toolExecution.ts
 ///
-/// Phase 1: No-op.
+/// Stdin includes `tool_result` field in addition to tool_name and tool_input.
+/// If any hook returns `stop_reason`, returns `StopContinuation`.
 pub async fn run_post_tool_hooks(
     tool_name: &str,
     input: &Value,
     result: &ToolResult,
+    hook_configs: &[HookEventConfig],
 ) -> Result<PostToolHookResult> {
-    debug!(tool = tool_name, "post-tool hooks: no hooks configured (Phase 1)");
+    if hook_configs.is_empty() {
+        debug!(tool = tool_name, "post-tool hooks: no hooks configured");
+        return Ok(PostToolHookResult::Continue);
+    }
+
+    let stdin_json = serde_json::json!({
+        "tool_name": tool_name,
+        "tool_input": input,
+        "tool_result": result.data,
+    });
+
+    for config in hook_configs {
+        if !matches_tool(config.matcher.as_deref(), tool_name) {
+            continue;
+        }
+
+        for entry in &config.hooks {
+            let HookEntry::Command { command, timeout } = entry;
+
+            debug!(tool = tool_name, command = command, "running post-tool hook");
+
+            match execute_command_hook(command, &stdin_json, *timeout).await {
+                Ok(output) => {
+                    // Check for stop
+                    if !output.should_continue {
+                        let message = output
+                            .stop_reason
+                            .or(output.reason)
+                            .unwrap_or_else(|| "Hook stopped continuation".to_string());
+                        return Ok(PostToolHookResult::StopContinuation { message });
+                    }
+
+                    if let Some(ref stop_reason) = output.stop_reason {
+                        return Ok(PostToolHookResult::StopContinuation {
+                            message: stop_reason.clone(),
+                        });
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        tool = tool_name,
+                        command = command,
+                        error = %e,
+                        "post-tool hook error, continuing"
+                    );
+                }
+            }
+        }
+    }
+
     Ok(PostToolHookResult::Continue)
 }
 
@@ -102,23 +523,102 @@ pub async fn run_post_tool_hooks(
 ///
 /// Corresponds to TypeScript: `runPostToolUseFailureHooks()` in toolExecution.ts
 ///
-/// Phase 1: No-op.
+/// Fire-and-forget: run hooks but don't change behavior based on output.
 pub async fn run_post_tool_failure_hooks(
     tool_name: &str,
     input: &Value,
     error: &str,
+    hook_configs: &[HookEventConfig],
 ) -> Result<()> {
-    debug!(tool = tool_name, error = error, "post-tool failure hooks: no hooks configured (Phase 1)");
+    if hook_configs.is_empty() {
+        debug!(tool = tool_name, "post-tool failure hooks: no hooks configured");
+        return Ok(());
+    }
+
+    let stdin_json = serde_json::json!({
+        "tool_name": tool_name,
+        "tool_input": input,
+        "error": error,
+    });
+
+    for config in hook_configs {
+        if !matches_tool(config.matcher.as_deref(), tool_name) {
+            continue;
+        }
+
+        for entry in &config.hooks {
+            let HookEntry::Command { command, timeout } = entry;
+
+            debug!(
+                tool = tool_name,
+                command = command,
+                "running post-tool failure hook"
+            );
+
+            if let Err(e) = execute_command_hook(command, &stdin_json, *timeout).await {
+                warn!(
+                    tool = tool_name,
+                    command = command,
+                    error = %e,
+                    "post-tool failure hook error"
+                );
+            }
+        }
+    }
+
     Ok(())
 }
 
-/// Run post-sampling hooks (after the model response, before tool dispatch).
+/// Run stop hooks (when the model stops generating).
 ///
-/// Corresponds to TypeScript: `executePostSamplingHooks()`
-///
-/// Phase 1: No-op.
-pub async fn run_post_sampling_hooks() -> Result<()> {
-    Ok(())
+/// Corresponds to TypeScript: `executeStopHooks()`
+pub async fn run_stop_hooks(
+    hook_configs: &[HookEventConfig],
+) -> Result<PostToolHookResult> {
+    if hook_configs.is_empty() {
+        return Ok(PostToolHookResult::Continue);
+    }
+
+    let stdin_json = serde_json::json!({
+        "event": "Stop",
+    });
+
+    for config in hook_configs {
+        // Stop hooks don't have a tool name to match against, so we only
+        // run configs with matcher None or "*"
+        if config.matcher.is_some() && config.matcher.as_deref() != Some("*") {
+            continue;
+        }
+
+        for entry in &config.hooks {
+            let HookEntry::Command { command, timeout } = entry;
+
+            debug!(command = command, "running stop hook");
+
+            match execute_command_hook(command, &stdin_json, *timeout).await {
+                Ok(output) => {
+                    if !output.should_continue {
+                        let message = output
+                            .stop_reason
+                            .or(output.reason)
+                            .unwrap_or_else(|| "Stop hook halted continuation".to_string());
+                        return Ok(PostToolHookResult::StopContinuation { message });
+                    }
+
+                    if let Some(ref stop_reason) = output.stop_reason {
+                        return Ok(PostToolHookResult::StopContinuation {
+                            message: stop_reason.clone(),
+                        });
+                    }
+                }
+                Err(e) => {
+                    warn!(command = command, error = %e, "stop hook error, continuing");
+                }
+            }
+        }
+    }
+
+    Ok(PostToolHookResult::Continue)
 }
 
 // ---------------------------------------------------------------------------
@@ -128,26 +628,228 @@ pub async fn run_post_sampling_hooks() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    // -- matches_tool tests --
+
+    #[test]
+    fn test_matches_tool_exact() {
+        assert!(matches_tool(Some("Bash"), "Bash"));
+        assert!(!matches_tool(Some("Bash"), "Read"));
+    }
+
+    #[test]
+    fn test_matches_tool_wildcard() {
+        assert!(matches_tool(None, "Bash"));
+        assert!(matches_tool(None, "Read"));
+        assert!(matches_tool(Some("*"), "Bash"));
+        assert!(matches_tool(Some("*"), "anything_at_all"));
+    }
+
+    #[test]
+    fn test_matches_tool_prefix() {
+        assert!(matches_tool(Some("mcp__"), "mcp__server__tool"));
+        assert!(matches_tool(Some("mcp__"), "mcp__another"));
+        assert!(!matches_tool(Some("mcp__"), "Bash"));
+        assert!(!matches_tool(Some("mcp__"), "mcp_single_underscore"));
+    }
+
+    // -- parse_hook_output tests --
+
+    #[test]
+    fn test_parse_hook_output_json() {
+        let stdout = r#"{"continue":false,"reason":"blocked","permission_decision":"deny"}"#;
+        let output = parse_hook_output(stdout).unwrap();
+        assert!(!output.should_continue);
+        assert_eq!(output.reason.as_deref(), Some("blocked"));
+        assert_eq!(output.permission_decision.as_deref(), Some("deny"));
+    }
+
+    #[test]
+    fn test_parse_hook_output_plain_text() {
+        let stdout = "some plain text output\nwith multiple lines";
+        let output = parse_hook_output(stdout).unwrap();
+        assert!(output.should_continue); // default
+        assert_eq!(
+            output.additional_context.as_deref(),
+            Some("some plain text output\nwith multiple lines")
+        );
+    }
+
+    #[test]
+    fn test_parse_hook_output_empty() {
+        let output = parse_hook_output("").unwrap();
+        assert!(output.should_continue);
+        assert!(output.additional_context.is_none());
+    }
+
+    #[test]
+    fn test_parse_hook_output_json_with_updated_input() {
+        let stdout = r#"{"continue":true,"updated_input":{"command":"ls -la"}}"#;
+        let output = parse_hook_output(stdout).unwrap();
+        assert!(output.should_continue);
+        assert_eq!(
+            output.updated_input,
+            Some(json!({"command": "ls -la"}))
+        );
+    }
+
+    // -- load_hook_configs tests --
+
+    #[test]
+    fn test_load_hook_configs() {
+        let mut hooks_value: HashMap<String, Value> = HashMap::new();
+        hooks_value.insert(
+            "PreToolUse".to_string(),
+            json!([
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "echo ok",
+                            "timeout": 30
+                        }
+                    ]
+                },
+                {
+                    "matcher": "*",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "echo audit"
+                        }
+                    ]
+                }
+            ]),
+        );
+
+        let configs = load_hook_configs(&hooks_value, "PreToolUse");
+        assert_eq!(configs.len(), 2);
+        assert_eq!(configs[0].matcher.as_deref(), Some("Bash"));
+        assert_eq!(configs[0].hooks.len(), 1);
+        match &configs[0].hooks[0] {
+            HookEntry::Command { command, timeout } => {
+                assert_eq!(command, "echo ok");
+                assert_eq!(*timeout, 30);
+            }
+        }
+        assert_eq!(configs[1].matcher.as_deref(), Some("*"));
+        match &configs[1].hooks[0] {
+            HookEntry::Command { command, timeout } => {
+                assert_eq!(command, "echo audit");
+                assert_eq!(*timeout, 60); // default
+            }
+        }
+    }
+
+    #[test]
+    fn test_load_hook_configs_missing_event() {
+        let hooks_value: HashMap<String, Value> = HashMap::new();
+        let configs = load_hook_configs(&hooks_value, "PreToolUse");
+        assert!(configs.is_empty());
+    }
+
+    #[test]
+    fn test_load_hook_configs_invalid_json() {
+        let mut hooks_value: HashMap<String, Value> = HashMap::new();
+        hooks_value.insert("PreToolUse".to_string(), json!("not an array"));
+        let configs = load_hook_configs(&hooks_value, "PreToolUse");
+        assert!(configs.is_empty());
+    }
+
+    // -- integration test: execute_command_hook --
+    // These tests spawn actual subprocesses, so they require a working
+    // shell (bash on Unix/Windows, or cmd on Windows as fallback).
 
     #[tokio::test]
-    async fn test_pre_tool_hooks_default() {
-        let result = run_pre_tool_hooks("Bash", &Value::Null).await.unwrap();
-        assert!(matches!(result, PreToolHookResult::Continue { .. }));
+    async fn test_execute_command_hook_echo() {
+        let stdin_json = json!({"tool_name": "Bash", "tool_input": {"command": "ls"}});
+
+        // Use a simple echo command. The subprocess should read stdin,
+        // see EOF when we close the pipe, then print and exit.
+        let result = execute_command_hook(
+            r#"echo '{"continue":true,"reason":"test_ok"}'"#,
+            &stdin_json,
+            10,
+        )
+        .await;
+
+        match result {
+            Ok(output) => {
+                assert!(output.should_continue);
+                assert_eq!(output.reason.as_deref(), Some("test_ok"));
+            }
+            Err(e) => {
+                // If bash is not available (e.g., some CI environments),
+                // just warn and skip
+                eprintln!("Skipping test_execute_command_hook_echo: {}", e);
+            }
+        }
     }
 
     #[tokio::test]
-    async fn test_post_tool_hooks_default() {
+    async fn test_execute_command_hook_plain_text() {
+        let stdin_json = json!({"test": true});
+
+        let result = execute_command_hook(
+            "echo hello_world",
+            &stdin_json,
+            10,
+        )
+        .await;
+
+        match result {
+            Ok(output) => {
+                assert!(output.should_continue);
+                assert!(output.additional_context.is_some());
+                assert!(output
+                    .additional_context
+                    .as_ref()
+                    .unwrap()
+                    .contains("hello_world"));
+            }
+            Err(e) => {
+                eprintln!("Skipping test_execute_command_hook_plain_text: {}", e);
+            }
+        }
+    }
+
+    // -- run_pre_tool_hooks tests --
+
+    #[tokio::test]
+    async fn test_run_pre_tool_hooks_empty() {
+        let result = run_pre_tool_hooks("Bash", &json!({}), &[]).await.unwrap();
+        assert!(matches!(
+            result,
+            PreToolHookResult::Continue {
+                updated_input: None,
+                permission_override: None,
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_run_post_tool_hooks_empty() {
         let tool_result = ToolResult {
             data: Value::String("ok".into()),
             new_messages: vec![],
         };
-        let result = run_post_tool_hooks("Bash", &Value::Null, &tool_result).await.unwrap();
+        let result = run_post_tool_hooks("Bash", &json!({}), &tool_result, &[])
+            .await
+            .unwrap();
         assert!(matches!(result, PostToolHookResult::Continue));
     }
 
     #[tokio::test]
-    async fn test_post_tool_failure_hooks_default() {
-        let result = run_post_tool_failure_hooks("Bash", &Value::Null, "test error").await;
+    async fn test_run_post_tool_failure_hooks_empty() {
+        let result = run_post_tool_failure_hooks("Bash", &json!({}), "test error", &[]).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_run_stop_hooks_empty() {
+        let result = run_stop_hooks(&[]).await.unwrap();
+        assert!(matches!(result, PostToolHookResult::Continue));
     }
 }

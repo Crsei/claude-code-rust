@@ -846,6 +846,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-bedrockruntime",
  "base64",
+ "bytes",
  "chrono",
  "clap",
  "crossterm",

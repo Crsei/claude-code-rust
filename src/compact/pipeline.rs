@@ -66,26 +66,39 @@ const DEFAULT_SNIP_MAX_TURNS: usize = 200;
 const REACTIVE_SNIP_MAX_TURNS: usize = 5;
 
 // ---------------------------------------------------------------------------
-// Main pipeline (synchronous — no API calls)
+// Main pipeline (async — includes tool result budget disk I/O)
 // ---------------------------------------------------------------------------
 
-/// Run the context management pipeline (steps 2-4 only; step 1 is async).
-///
-/// This is the synchronous portion of context management. Step 1
-/// (tool_result_budget) requires async I/O and is handled separately by
-/// the QueryDeps implementation.
+/// Run the full context management pipeline (steps 1-5).
 ///
 /// # Arguments
 /// * `messages` - Current conversation history
 /// * `tracking` - Auto-compact tracking state from previous iteration
 /// * `model` - Model name (for context window size lookup)
-pub fn run_context_pipeline(
+pub async fn run_context_pipeline(
     messages: Vec<Message>,
     tracking: Option<AutoCompactTracking>,
     model: &str,
 ) -> PipelineResult {
     let mut current = messages;
     let mut compacted = false;
+
+    // ── Step 1: Tool result budget (async — saves oversized results to disk) ──
+    let mut replacement_state = tool_result_budget::ContentReplacementState::default();
+    let budgeted = tool_result_budget::apply_tool_result_budget(
+        current,
+        &mut replacement_state,
+        100_000,
+    )
+    .await;
+    if !replacement_state.replacements.is_empty() {
+        compacted = true;
+        debug!(
+            replacements = replacement_state.replacements.len(),
+            "tool result budget: persisted oversized results"
+        );
+    }
+    current = budgeted;
 
     // ── Step 2: Snip compact ────────────────────────────────────────
     let snip_result = snip::snip_compact_if_needed(current, DEFAULT_SNIP_MAX_TURNS);
@@ -147,10 +160,11 @@ pub fn run_context_pipeline(
 /// Attempt reactive compaction after a prompt_too_long error.
 ///
 /// This is more aggressive than the normal pipeline — it aggressively
-/// snips to a very small number of turns and microcompacts.
+/// budgets tool results, snips to a very small number of turns, and
+/// microcompacts.
 ///
 /// Returns `None` if compaction is not possible (already small enough).
-pub fn try_reactive_compact(
+pub async fn try_reactive_compact(
     messages: Vec<Message>,
     model: &str,
 ) -> Option<ReactiveCompactResult> {
@@ -161,9 +175,25 @@ pub fn try_reactive_compact(
         return None; // Already within limits
     }
 
+    // First: budget oversized tool results
+    let mut replacement_state = tool_result_budget::ContentReplacementState::default();
+    let current = tool_result_budget::apply_tool_result_budget(
+        messages,
+        &mut replacement_state,
+        100_000,
+    )
+    .await;
+
+    if !replacement_state.replacements.is_empty() {
+        debug!(
+            replacements = replacement_state.replacements.len(),
+            "reactive compact: budgeted oversized tool results"
+        );
+    }
+
     // Aggressive strategy: snip to keep only the last few turns
-    let snip_result = snip::snip_compact_if_needed(messages, REACTIVE_SNIP_MAX_TURNS);
-    if snip_result.tokens_freed == 0 {
+    let snip_result = snip::snip_compact_if_needed(current, REACTIVE_SNIP_MAX_TURNS);
+    if snip_result.tokens_freed == 0 && replacement_state.replacements.is_empty() {
         // Snipping didn't help — try microcompact alone
         let micro = microcompact::microcompact_messages(snip_result.messages);
         if micro.tokens_freed == 0 {
@@ -242,28 +272,29 @@ mod tests {
         })
     }
 
-    #[test]
-    fn test_pipeline_no_changes_small_conversation() {
+    #[tokio::test]
+    async fn test_pipeline_no_changes_small_conversation() {
         let messages = vec![make_user("Hello"), make_assistant("Hi!")];
         let result = run_context_pipeline(
             messages,
             None,
             "claude-sonnet-4-20250514",
-        );
+        )
+        .await;
         assert_eq!(result.messages.len(), 2);
     }
 
-    #[test]
-    fn test_pipeline_returns_estimated_tokens() {
+    #[tokio::test]
+    async fn test_pipeline_returns_estimated_tokens() {
         let messages = vec![make_user("Hello"), make_assistant("Hi!")];
-        let result = run_context_pipeline(messages, None, "claude-sonnet-4-20250514");
+        let result = run_context_pipeline(messages, None, "claude-sonnet-4-20250514").await;
         assert!(result.estimated_tokens > 0);
     }
 
-    #[test]
-    fn test_reactive_compact_small_conversation_returns_none() {
+    #[tokio::test]
+    async fn test_reactive_compact_small_conversation_returns_none() {
         let messages = vec![make_user("Hello"), make_assistant("Hi!")];
-        let result = try_reactive_compact(messages, "claude-sonnet-4-20250514");
+        let result = try_reactive_compact(messages, "claude-sonnet-4-20250514").await;
         assert!(result.is_none());
     }
 }

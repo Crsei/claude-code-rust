@@ -343,11 +343,31 @@ impl QueryEngine {
                 task_budget: config.task_budget.clone(),
             };
 
+            // Create API client from environment if available
+            let api_client: Option<Arc<crate::api::client::ApiClient>> = {
+                if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
+                    let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
+                    let client_config = crate::api::client::ApiClientConfig {
+                        provider: crate::api::client::ApiProvider::Anthropic {
+                            api_key,
+                            base_url,
+                        },
+                        default_model: model_name.clone(),
+                        max_retries: 3,
+                        timeout_secs: 120,
+                    };
+                    Some(Arc::new(crate::api::client::ApiClient::new(client_config)))
+                } else {
+                    None
+                }
+            };
+
             // Create deps for the inner query loop
             let deps = Arc::new(QueryEngineDeps {
                 aborted: aborted_ref.clone(),
                 app_state: app_state_ref.clone(),
                 tools: tools_ref.clone(),
+                api_client,
             });
 
             // Run the query loop
@@ -881,36 +901,69 @@ impl QueryEngine {
 // ---------------------------------------------------------------------------
 
 /// Dependency injection bridge: provides the query loop with access to the
-/// engine's shared state (abort flag, app state, tools).
-///
-/// Most methods are Phase-1 stubs that will be wired to real implementations
-/// (API client, compaction service, etc.) in later phases.
+/// engine's shared state (abort flag, app state, tools) and, optionally, a
+/// real `ApiClient` for making Anthropic API calls.
 struct QueryEngineDeps {
     aborted: Arc<AtomicBool>,
     app_state: Arc<RwLock<AppState>>,
     tools: Arc<RwLock<Tools>>,
+    /// When `Some`, the deps will use this client for `call_model` /
+    /// `call_model_streaming`. When `None`, those methods bail with a
+    /// descriptive error.
+    api_client: Option<Arc<crate::api::client::ApiClient>>,
 }
 
 #[async_trait::async_trait]
 impl QueryDeps for QueryEngineDeps {
     async fn call_model(
         &self,
-        _params: ModelCallParams,
+        params: ModelCallParams,
     ) -> Result<ModelResponse> {
-        anyhow::bail!(
-            "call_model not yet implemented -- \
-             wire up a real API client or use a mock in tests"
-        )
+        let client = self.api_client.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "call_model: no API client configured -- \
+                 set ANTHROPIC_API_KEY or provide a mock in tests"
+            )
+        })?;
+
+        let request = build_messages_request(&params);
+        let stream = client.messages_stream(request).await?;
+        let mut stream = std::pin::pin!(stream);
+
+        let mut accumulator =
+            crate::api::streaming::StreamAccumulator::new();
+        let mut stream_events = Vec::new();
+
+        use futures::StreamExt;
+        while let Some(event_result) = stream.next().await {
+            let event = event_result?;
+            accumulator.process_event(&event);
+            stream_events.push(event);
+        }
+
+        let usage = accumulator.usage.clone();
+        let assistant_message = accumulator.build();
+
+        Ok(ModelResponse {
+            assistant_message,
+            stream_events,
+            usage,
+        })
     }
 
     async fn call_model_streaming(
         &self,
-        _params: ModelCallParams,
+        params: ModelCallParams,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
-        anyhow::bail!(
-            "call_model_streaming not yet implemented -- \
-             wire up a real API client or use a mock in tests"
-        )
+        let client = self.api_client.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "call_model_streaming: no API client configured -- \
+                 set ANTHROPIC_API_KEY or provide a mock in tests"
+            )
+        })?;
+
+        let request = build_messages_request(&params);
+        client.messages_stream(request).await
     }
 
     async fn microcompact(
@@ -1031,6 +1084,110 @@ impl QueryDeps for QueryEngineDeps {
 
     async fn refresh_tools(&self) -> Result<Tools> {
         Ok(self.tools.read().unwrap().clone())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helper: convert ModelCallParams into a MessagesRequest
+// ---------------------------------------------------------------------------
+
+/// Build a `MessagesRequest` from the generic `ModelCallParams`.
+///
+/// This translates the engine's internal representation into the wire format
+/// expected by `api::client::ApiClient`.
+fn build_messages_request(
+    params: &ModelCallParams,
+) -> crate::api::client::MessagesRequest {
+    use crate::types::message::{Message, MessageContent};
+
+    // Convert Message list to API JSON format
+    let api_messages: Vec<serde_json::Value> = params
+        .messages
+        .iter()
+        .filter_map(|msg| match msg {
+            Message::User(u) => {
+                let content = match &u.content {
+                    MessageContent::Text(t) => serde_json::json!(t),
+                    MessageContent::Blocks(blocks) => {
+                        serde_json::to_value(blocks).unwrap_or_default()
+                    }
+                };
+                Some(serde_json::json!({
+                    "role": "user",
+                    "content": content,
+                }))
+            }
+            Message::Assistant(a) => {
+                let content =
+                    serde_json::to_value(&a.content).unwrap_or_default();
+                Some(serde_json::json!({
+                    "role": "assistant",
+                    "content": content,
+                }))
+            }
+            // System, Progress, Attachment messages are not sent to the API
+            _ => None,
+        })
+        .collect();
+
+    // Convert system prompt parts into API format
+    let system = if params.system_prompt.is_empty() {
+        None
+    } else {
+        Some(
+            params
+                .system_prompt
+                .iter()
+                .map(|s| serde_json::json!({"type": "text", "text": s}))
+                .collect(),
+        )
+    };
+
+    // Convert tools to API JSON format.
+    // Each tool is rendered as {"name": ..., "input_schema": ...} which is
+    // the shape the Anthropic Messages API expects.
+    let tools: Option<Vec<serde_json::Value>> = if params.tools.is_empty() {
+        None
+    } else {
+        Some(
+            params
+                .tools
+                .iter()
+                .map(|t| {
+                    serde_json::json!({
+                        "name": t.name(),
+                        "description": "", // description is async; callers should pre-resolve
+                        "input_schema": t.input_json_schema(),
+                    })
+                })
+                .collect(),
+        )
+    };
+
+    // Build thinking config
+    let thinking = params.thinking_enabled.and_then(|enabled| {
+        if enabled {
+            Some(serde_json::json!({
+                "type": "enabled",
+                "budget_tokens": params.max_output_tokens.unwrap_or(16384)
+            }))
+        } else {
+            None
+        }
+    });
+
+    crate::api::client::MessagesRequest {
+        model: params
+            .model
+            .clone()
+            .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string()),
+        messages: api_messages,
+        system,
+        max_tokens: params.max_output_tokens.unwrap_or(16384),
+        tools,
+        stream: true,
+        thinking,
+        tool_choice: None,
     }
 }
 

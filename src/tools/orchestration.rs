@@ -138,7 +138,7 @@ async fn execute_tool_call(
 
     // ── Step 3: Pre-tool hooks ──────────────────────────────────────
     let (effective_input, permission_override) =
-        match hooks::run_pre_tool_hooks(&tool_name, &input).await {
+        match hooks::run_pre_tool_hooks(&tool_name, &input, &[]).await {
             Ok(hooks::PreToolHookResult::Continue {
                 updated_input,
                 permission_override,
@@ -215,13 +215,14 @@ async fn execute_tool_call(
     // ── Step 6: Post-tool hooks ─────────────────────────────────────
     match &call_result {
         Ok(result) => {
-            let _ = hooks::run_post_tool_hooks(&tool_name, &effective_input, result).await;
+            let _ = hooks::run_post_tool_hooks(&tool_name, &effective_input, result, &[]).await;
         }
         Err(e) => {
             let _ = hooks::run_post_tool_failure_hooks(
                 &tool_name,
                 &effective_input,
                 &e.to_string(),
+                &[],
             )
             .await;
         }

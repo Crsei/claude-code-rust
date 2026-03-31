@@ -56,7 +56,9 @@ pub struct ImageSource {
 /// API 使用量
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Usage {
+    #[serde(default)]
     pub input_tokens: u64,
+    #[serde(default)]
     pub output_tokens: u64,
     #[serde(default)]
     pub cache_read_input_tokens: u64,

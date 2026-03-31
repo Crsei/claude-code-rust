@@ -1,0 +1,48 @@
+//! /version command -- displays the current version.
+
+#![allow(unused)]
+
+use anyhow::Result;
+use async_trait::async_trait;
+
+use super::{CommandContext, CommandHandler, CommandResult};
+
+/// Handler for the `/version` slash command.
+pub struct VersionHandler;
+
+#[async_trait]
+impl CommandHandler for VersionHandler {
+    async fn execute(&self, _args: &str, _ctx: &mut CommandContext) -> Result<CommandResult> {
+        let version = env!("CARGO_PKG_VERSION");
+        Ok(CommandResult::Output(format!(
+            "claude-code-rs {}",
+            version,
+        )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use crate::types::app_state::AppState;
+
+    #[tokio::test]
+    async fn test_version_output() {
+        let handler = VersionHandler;
+        let mut ctx = CommandContext {
+            messages: Vec::new(),
+            cwd: PathBuf::from("."),
+            app_state: AppState::default(),
+        };
+
+        let result = handler.execute("", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(text.contains("claude-code-rs"));
+                assert!(text.contains(env!("CARGO_PKG_VERSION")));
+            }
+            _ => panic!("Expected Output result"),
+        }
+    }
+}

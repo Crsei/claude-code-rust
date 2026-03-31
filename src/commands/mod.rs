@@ -7,9 +7,19 @@
 
 pub mod clear;
 pub mod compact;
+pub mod context;
+pub mod cost;
+pub mod exit;
+pub mod files;
 pub mod help;
+pub mod hooks_cmd;
 pub mod config_cmd;
 pub mod diff;
+pub mod model;
+pub mod permissions_cmd;
+pub mod resume;
+pub mod session;
+pub mod version;
 
 use std::path::PathBuf;
 
@@ -60,6 +70,8 @@ pub enum CommandResult {
     Query(Vec<Message>),
     /// Clear the conversation history.
     Clear,
+    /// Exit the REPL with a goodbye message.
+    Exit(String),
     /// No visible output.
     None,
 }
@@ -100,6 +112,66 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "Show git diff of current changes".into(),
             handler: Box::new(diff::DiffHandler),
+        },
+        Command {
+            name: "exit".into(),
+            aliases: vec!["quit".into(), "q".into()],
+            description: "Exit the REPL".into(),
+            handler: Box::new(exit::ExitHandler),
+        },
+        Command {
+            name: "version".into(),
+            aliases: vec!["v".into()],
+            description: "Show the current version".into(),
+            handler: Box::new(version::VersionHandler),
+        },
+        Command {
+            name: "model".into(),
+            aliases: vec![],
+            description: "Show or switch the active model".into(),
+            handler: Box::new(model::ModelHandler),
+        },
+        Command {
+            name: "cost".into(),
+            aliases: vec!["usage".into()],
+            description: "Show token usage and cost for the current session".into(),
+            handler: Box::new(cost::CostHandler),
+        },
+        Command {
+            name: "session".into(),
+            aliases: vec![],
+            description: "Show current session info or list saved sessions".into(),
+            handler: Box::new(session::SessionHandler),
+        },
+        Command {
+            name: "resume".into(),
+            aliases: vec![],
+            description: "Resume a previous session".into(),
+            handler: Box::new(resume::ResumeHandler),
+        },
+        Command {
+            name: "files".into(),
+            aliases: vec![],
+            description: "List files referenced in the current conversation".into(),
+            handler: Box::new(files::FilesHandler),
+        },
+        Command {
+            name: "context".into(),
+            aliases: vec!["ctx".into()],
+            description: "Show context usage information".into(),
+            handler: Box::new(context::ContextHandler),
+        },
+        Command {
+            name: "permissions".into(),
+            aliases: vec!["perms".into()],
+            description: "View or modify tool permission settings".into(),
+            handler: Box::new(permissions_cmd::PermissionsHandler),
+        },
+        Command {
+            name: "hooks".into(),
+            aliases: vec![],
+            description: "View and manage tool execution hooks".into(),
+            handler: Box::new(hooks_cmd::HooksHandler),
         },
     ]
 }
@@ -153,13 +225,23 @@ mod tests {
     #[test]
     fn test_all_commands_registered() {
         let cmds = get_all_commands();
-        assert!(cmds.len() >= 5, "Expected at least 5 commands");
+        assert!(cmds.len() >= 15, "Expected at least 15 commands");
         let names: Vec<&str> = cmds.iter().map(|c| c.name.as_str()).collect();
         assert!(names.contains(&"help"));
         assert!(names.contains(&"clear"));
         assert!(names.contains(&"compact"));
         assert!(names.contains(&"config"));
         assert!(names.contains(&"diff"));
+        assert!(names.contains(&"exit"));
+        assert!(names.contains(&"version"));
+        assert!(names.contains(&"model"));
+        assert!(names.contains(&"cost"));
+        assert!(names.contains(&"session"));
+        assert!(names.contains(&"resume"));
+        assert!(names.contains(&"files"));
+        assert!(names.contains(&"context"));
+        assert!(names.contains(&"permissions"));
+        assert!(names.contains(&"hooks"));
     }
 
     #[test]
@@ -174,6 +256,12 @@ mod tests {
         assert!(find_command("h").is_some());
         assert!(find_command("?").is_some());
         assert!(find_command("settings").is_some());
+        assert!(find_command("quit").is_some());
+        assert!(find_command("q").is_some());
+        assert!(find_command("v").is_some());
+        assert!(find_command("usage").is_some());
+        assert!(find_command("ctx").is_some());
+        assert!(find_command("perms").is_some());
     }
 
     #[test]

@@ -3,3 +3,5 @@ pub mod tokens;
 pub mod abort;
 pub mod cwd;
 pub mod messages;
+pub mod bash;
+pub mod git;

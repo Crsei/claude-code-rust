@@ -27,7 +27,7 @@ use crate::types::tool::{
     Tool, ToolProgress, ToolResult, ToolUseContext, Tools, ValidationResult,
 };
 
-use super::hooks::{self, PermissionOverride, PostToolHookResult, PreToolHookResult};
+use super::hooks::{self, HookEventConfig, PermissionOverride, PostToolHookResult, PreToolHookResult};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -85,6 +85,7 @@ pub async fn run_tool_use(
     ctx: &ToolUseContext,
     parent_message: &AssistantMessage,
     on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
+    hook_configs: &[HookEventConfig],
 ) -> ToolExecutionResult {
     let started = Instant::now();
 
@@ -142,7 +143,7 @@ pub async fn run_tool_use(
     // ── Stage 4: Pre-tool hooks ─────────────────────────────────────
     let hook_start = Instant::now();
     let (effective_input, permission_override) =
-        match hooks::run_pre_tool_hooks(tool_name, &sanitized_input).await {
+        match hooks::run_pre_tool_hooks(tool_name, &sanitized_input, hook_configs).await {
             Ok(PreToolHookResult::Continue {
                 updated_input,
                 permission_override,
@@ -252,7 +253,7 @@ pub async fn run_tool_use(
 
     match &call_result {
         Ok(result) => {
-            match hooks::run_post_tool_hooks(tool_name, &effective_input, result).await {
+            match hooks::run_post_tool_hooks(tool_name, &effective_input, result, hook_configs).await {
                 Ok(PostToolHookResult::StopContinuation { message }) => {
                     hook_stopped_continuation = true;
                     debug!(
@@ -272,6 +273,7 @@ pub async fn run_tool_use(
                 tool_name,
                 &effective_input,
                 &e.to_string(),
+                hook_configs,
             )
             .await;
         }
@@ -422,6 +424,7 @@ impl StreamingToolExecutor {
                         ctx,
                         parent_message,
                         None,
+                        &[],
                     )
                     .await;
 
@@ -470,6 +473,7 @@ impl StreamingToolExecutor {
                     ctx,
                     parent_message,
                     None,
+                    &[],
                 )
                 .await;
 

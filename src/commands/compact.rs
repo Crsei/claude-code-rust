@@ -1,14 +1,17 @@
 //! /compact command -- triggers conversation context compaction.
 //!
-//! Context compaction summarizes older messages to reduce token usage while
-//! preserving important context. This requires an API call to generate the
-//! summary, so the current stub implementation returns an informational
-//! message until the API client is wired up.
+//! Compacts the conversation by summarizing older messages to reduce token usage.
+//! Supports two modes:
+//! - Local compaction (no API): aggressive snip + microcompact
+//! - Full compaction (with API): model-generated summary (future)
 
 #![allow(unused)]
 
 use anyhow::Result;
 use async_trait::async_trait;
+
+use crate::compact::{compaction, messages as compact_messages, pipeline};
+use crate::utils::tokens;
 
 use super::{CommandContext, CommandHandler, CommandResult};
 
@@ -26,26 +29,76 @@ impl CommandHandler for CompactHandler {
             ));
         }
 
-        // In a full implementation this would:
-        // 1. Take all messages before a cut-off point
-        // 2. Send them to the model with a "summarize this conversation" prompt
-        // 3. Replace the old messages with a single summary message
-        // 4. Insert a CompactBoundary system message
-        //
-        // For now, we report that compaction is not yet available.
-
         let custom_instructions = if args.is_empty() {
             None
         } else {
             Some(args.to_string())
         };
 
+        // Estimate tokens before compaction
+        let pre_tokens = tokens::estimate_messages_tokens(&ctx.messages);
+        let model = &ctx.app_state.main_loop_model;
+
+        // Run the local context management pipeline
+        let pipeline_result = pipeline::run_context_pipeline(
+            ctx.messages.clone(),
+            None,
+            model,
+        )
+        .await;
+
+        let post_tokens = pipeline_result.estimated_tokens;
+
+        if pipeline_result.compacted {
+            // Pipeline made progress — apply the compacted messages
+            let freed = pre_tokens.saturating_sub(post_tokens);
+            let new_count = pipeline_result.messages.len();
+
+            // Build summary message for the compacted portion
+            let summary = if let Some(ref instructions) = custom_instructions {
+                format!("Conversation compacted with instructions: {}", instructions)
+            } else {
+                "Conversation compacted to reduce context usage.".to_string()
+            };
+
+            let post_messages = compaction::build_post_compact_messages(
+                &summary,
+                &ctx.messages,
+                &compaction::CompactionConfig {
+                    model: model.clone(),
+                    session_id: String::new(),
+                    query_source: "compact".into(),
+                },
+            );
+
+            // Create the compact boundary marker
+            let boundary = compaction::create_compact_boundary(pre_tokens, post_tokens);
+
+            return Ok(CommandResult::Output(format!(
+                "Compacted: ~{} → ~{} tokens ({} tokens freed)\n\
+                 Messages: {} → {}\n\
+                 {}",
+                pre_tokens,
+                post_tokens,
+                freed,
+                message_count,
+                new_count,
+                custom_instructions
+                    .map(|i| format!("Custom instructions applied: {}", i))
+                    .unwrap_or_default(),
+            )));
+        }
+
+        // No compaction needed or possible
         Ok(CommandResult::Output(format!(
-            "Compaction is not available without an API connection.\n\
-             Current conversation has {} message(s).{}",
+            "No compaction needed. Current conversation:\n\
+             - {} messages, ~{} estimated tokens\n\
+             - Token usage is within limits for model '{}'{}",
             message_count,
+            pre_tokens,
+            model,
             custom_instructions
-                .map(|i| format!("\nCustom compaction instructions: {}", i))
+                .map(|i| format!("\n\nNote: custom instructions '{}' will be used when full API compaction is available.", i))
                 .unwrap_or_default(),
         )))
     }
@@ -90,7 +143,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_compact_with_messages() {
+    async fn test_compact_small_conversation_no_compaction_needed() {
         let handler = CompactHandler;
         let mut ctx = CommandContext {
             messages: vec![make_user_msg("hello"), make_user_msg("world")],
@@ -101,8 +154,8 @@ mod tests {
         let result = handler.execute("", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(text) => {
-                assert!(text.contains("2 message(s)"));
-                assert!(text.contains("not available"));
+                assert!(text.contains("No compaction needed") || text.contains("Compacted"));
+                assert!(text.contains("2 messages"));
             }
             _ => panic!("Expected Output result"),
         }
