@@ -1,6 +1,19 @@
 use super::message::{Message, SystemMessage, Usage};
 use super::tool::{ToolUseContext, Tools, QueryChainTracking};
 
+/// Thinking/extended-thinking configuration.
+///
+/// Controls whether the model produces `thinking` content blocks.
+#[derive(Debug, Clone)]
+pub enum ThinkingConfig {
+    /// Thinking is disabled entirely.
+    Disabled,
+    /// Adaptive: the model decides when to think.
+    Adaptive,
+    /// Thinking is enabled with an optional token budget.
+    Enabled { budget_tokens: Option<usize> },
+}
+
 /// 查询配置 — 每次 query() 调用时快照一次
 ///
 /// 对应 TypeScript: query/config.ts 的 QueryConfig
@@ -72,6 +85,7 @@ pub struct TaskBudget {
 /// QueryEngine 配置
 ///
 /// 对应 TypeScript: QueryEngine.ts 的 QueryEngineConfig
+#[derive(Clone)]
 pub struct QueryEngineConfig {
     pub cwd: String,
     pub tools: Tools,
@@ -84,4 +98,24 @@ pub struct QueryEngineConfig {
     pub task_budget: Option<TaskBudget>,
     pub verbose: bool,
     pub initial_messages: Option<Vec<Message>>,
+
+    // ── New fields (session lifecycle) ──────────────────────────────────
+
+    /// Registered slash commands (placeholder: names only).
+    pub commands: Vec<String>,
+
+    /// Thinking / extended-thinking configuration.
+    pub thinking_config: Option<ThinkingConfig>,
+
+    /// JSON schema for structured output mode.
+    pub json_schema: Option<serde_json::Value>,
+
+    /// Whether to replay user messages back to SDK consumers.
+    pub replay_user_messages: bool,
+
+    /// Whether to include partial (streaming) messages in SDK output.
+    pub include_partial_messages: bool,
+
+    /// Whether to persist the session to disk.
+    pub persist_session: bool,
 }

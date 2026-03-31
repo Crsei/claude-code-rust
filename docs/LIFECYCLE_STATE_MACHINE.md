@@ -193,6 +193,7 @@ async fn main() -> Result<()> {
 ## 4. Phase C: QueryEngine 会话管理器
 
 **源文件**: `src/QueryEngine.ts` (~1295 行)
+**详细文档**: [`QUERY_ENGINE_SESSION_LIFECYCLE.md`](QUERY_ENGINE_SESSION_LIFECYCLE.md) — 本节为概述；消息分发 (§2)、持久化管线 (§4)、预算检查 (§5)、Result 生成 (§6)、Rust 差距分析 (§7) 等细节见该文档。当两者描述有分歧时以 SESSION 文档为准。
 
 QueryEngine 是**会话级**状态容器。一个实例 = 一个对话 (多轮次)。
 

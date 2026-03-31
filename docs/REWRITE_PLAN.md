@@ -260,6 +260,7 @@ QueryDeps {
 
 ### Phase 1: 状态机骨架 (无网络依赖)
 **目标**: 实现 query loop 的控制流，使用 mock API
+**详细文档**: [`QUERY_ENGINE_SESSION_LIFECYCLE.md`](QUERY_ENGINE_SESSION_LIFECYCLE.md) — QueryEngine Session 完整生命周期、消息分发、持久化管线、预算检查、Result 生成、abort 控制、Rust 重构路线图
 
 - [x] **P1.1** `query/mod.rs` — query() async generator (用 async Stream)
 - [x] **P1.2** `query/state.rs` — State 转换逻辑
@@ -293,6 +294,7 @@ QueryDeps {
 
 ### Phase 4: 上下文管理 (无网络依赖)
 **目标**: 消息历史管理和压缩 (本地计算部分)
+**详细文档**: [`COMPACTION_RETRY_STATE_MACHINE.md`](COMPACTION_RETRY_STATE_MACHINE.md) — 6 层压缩架构、阈值体系、AutoCompact 电路断路器、PTL 重试、Microcompact 三路分支、Recovery 状态机、Rust 类型映射
 
 - [x] **P4.1** `compact/messages.rs` — normalizeMessagesForAPI
 - [x] **P4.2** `compact/microcompact.rs` — microcompactMessages
