@@ -3,6 +3,8 @@
 // Permission modes: Default (ask), Auto (auto-approve with classifier), Bypass (skip all), Plan (read-only)
 // Rule matching: allow/deny/ask rules grouped by source
 // Dangerous command detection: rm -rf, git push --force, etc.
+// Decision state machine: full flow from rules → hooks → mode
 
 pub mod rules;
 pub mod dangerous;
+pub mod decision;

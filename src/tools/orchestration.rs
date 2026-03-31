@@ -98,7 +98,18 @@ fn extract_tool_uses(message: &AssistantMessage) -> Vec<(String, String, Value)>
         .collect()
 }
 
-/// Execute a single tool call.
+/// Execute a single tool call through the full pipeline.
+///
+/// Corresponds to: LIFECYCLE_STATE_MACHINE.md §6.1
+///
+/// Pipeline:
+///   1. Tool lookup (already done by caller)
+///   2. Input validation (Zod schema + custom)
+///   3. Pre-tool hooks (can modify input or stop)
+///   4. Permission check (rules + hook overrides + mode)
+///   5. Tool call
+///   6. Post-tool hooks (success or failure)
+///   7. Result processing
 async fn execute_tool_call(
     tool: Arc<dyn Tool>,
     tool_use_id: String,
@@ -107,7 +118,9 @@ async fn execute_tool_call(
     ctx: &ToolUseContext,
     parent_message: &AssistantMessage,
 ) -> ToolCallResult {
-    // Validate input first
+    use super::hooks;
+
+    // ── Step 2: Input validation ────────────────────────────────────
     let validation = tool.validate_input(&input, ctx).await;
     match validation {
         crate::types::tool::ValidationResult::Error { message, .. } => {
@@ -123,43 +136,102 @@ async fn execute_tool_call(
         crate::types::tool::ValidationResult::Ok => {}
     }
 
-    // Check permissions
-    let perm_result = tool.check_permissions(&input, ctx).await;
-    let effective_input = match perm_result {
-        crate::types::tool::PermissionResult::Allow { updated_input } => updated_input,
-        crate::types::tool::PermissionResult::Deny { message } => {
-            return ToolCallResult {
-                tool_use_id,
-                tool_name,
-                result: Ok(ToolResult {
-                    data: serde_json::json!({ "error": format!("Permission denied: {}", message) }),
-                    new_messages: vec![],
-                }),
-            };
-        }
-        crate::types::tool::PermissionResult::Ask { message } => {
-            // In a full implementation, this would prompt the user.
-            // For now, deny with an explanation.
-            return ToolCallResult {
-                tool_use_id,
-                tool_name,
-                result: Ok(ToolResult {
-                    data: serde_json::json!({ "error": format!("Permission required: {}", message) }),
-                    new_messages: vec![],
-                }),
-            };
-        }
-    };
+    // ── Step 3: Pre-tool hooks ──────────────────────────────────────
+    let (effective_input, permission_override) =
+        match hooks::run_pre_tool_hooks(&tool_name, &input).await {
+            Ok(hooks::PreToolHookResult::Continue {
+                updated_input,
+                permission_override,
+            }) => (updated_input.unwrap_or(input), permission_override),
+            Ok(hooks::PreToolHookResult::Stop { message }) => {
+                return ToolCallResult {
+                    tool_use_id,
+                    tool_name,
+                    result: Ok(ToolResult {
+                        data: serde_json::json!({ "error": format!("Hook stopped: {}", message) }),
+                        new_messages: vec![],
+                    }),
+                };
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, tool = %tool_name, "pre-tool hook error");
+                (input, None)
+            }
+        };
 
-    // Execute the tool
-    let result = tool
-        .call(effective_input, ctx, parent_message, None)
+    // ── Step 4: Permission check ────────────────────────────────────
+    // Resolve hook permission override first
+    if let Some(override_decision) = permission_override {
+        match override_decision {
+            hooks::PermissionOverride::Deny { reason } => {
+                return ToolCallResult {
+                    tool_use_id,
+                    tool_name,
+                    result: Ok(ToolResult {
+                        data: serde_json::json!({ "error": format!("Permission denied by hook: {}", reason) }),
+                        new_messages: vec![],
+                    }),
+                };
+            }
+            hooks::PermissionOverride::Allow => {
+                // Hook explicitly allowed — skip normal permission check
+            }
+        }
+    } else {
+        // Normal permission check
+        let perm_result = tool.check_permissions(&effective_input, ctx).await;
+        match perm_result {
+            crate::types::tool::PermissionResult::Allow { .. } => {}
+            crate::types::tool::PermissionResult::Deny { message } => {
+                return ToolCallResult {
+                    tool_use_id,
+                    tool_name,
+                    result: Ok(ToolResult {
+                        data: serde_json::json!({ "error": format!("Permission denied: {}", message) }),
+                        new_messages: vec![],
+                    }),
+                };
+            }
+            crate::types::tool::PermissionResult::Ask { message } => {
+                // In a full implementation, this would prompt the user interactively.
+                // For now in non-interactive mode, deny with explanation.
+                return ToolCallResult {
+                    tool_use_id,
+                    tool_name,
+                    result: Ok(ToolResult {
+                        data: serde_json::json!({ "error": format!("Permission required: {}", message) }),
+                        new_messages: vec![],
+                    }),
+                };
+            }
+        }
+    }
+
+    // ── Step 5: Tool call ───────────────────────────────────────────
+    let call_result = tool
+        .call(effective_input.clone(), ctx, parent_message, None)
         .await;
 
+    // ── Step 6: Post-tool hooks ─────────────────────────────────────
+    match &call_result {
+        Ok(result) => {
+            let _ = hooks::run_post_tool_hooks(&tool_name, &effective_input, result).await;
+        }
+        Err(e) => {
+            let _ = hooks::run_post_tool_failure_hooks(
+                &tool_name,
+                &effective_input,
+                &e.to_string(),
+            )
+            .await;
+        }
+    }
+
+    // ── Step 7: Result processing ───────────────────────────────────
     ToolCallResult {
         tool_use_id,
         tool_name,
-        result,
+        result: call_result,
     }
 }
 

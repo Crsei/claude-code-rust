@@ -140,6 +140,8 @@ fn rule_matches(tool_name: &str, rule: &str) -> bool {
 /// characters. This is intentionally simple -- we only need to support the
 /// patterns used in Claude Code's permission rules (e.g. `"mcp__*"`,
 /// `"Bash(*)"`, `"*"`).
+///
+/// Also exposed as `glob_match_public` for use in the decision module.
 fn glob_match(text: &str, pattern: &str) -> bool {
     // Split pattern by `*` -- all literal segments must appear in order.
     let segments: Vec<&str> = pattern.split('*').collect();
@@ -176,6 +178,11 @@ fn glob_match(text: &str, pattern: &str) -> bool {
     }
 
     true
+}
+
+/// Public wrapper around `glob_match` for use in other permission modules.
+pub fn glob_match_public(text: &str, pattern: &str) -> bool {
+    glob_match(text, pattern)
 }
 
 // ---------------------------------------------------------------------------

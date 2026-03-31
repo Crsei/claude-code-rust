@@ -222,6 +222,15 @@ fn merge_maps(
     result
 }
 
+/// Load all config sources and merge them in one call.
+///
+/// Convenience function for the initialization path.
+pub fn load_and_merge(cwd: &str) -> Result<MergedConfig> {
+    let global = load_global_config()?;
+    let project = load_project_config(Path::new(cwd))?;
+    Ok(merge_configs(&global, &project))
+}
+
 /// Apply environment variable overrides to merged config.
 fn apply_env_overrides(merged: &mut MergedConfig) {
     if let Ok(model) = std::env::var("CLAUDE_MODEL") {
