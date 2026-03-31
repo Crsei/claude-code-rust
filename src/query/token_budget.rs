@@ -1,0 +1,64 @@
+use crate::types::state::{BudgetTracker, BudgetCompletionEvent, TokenBudgetDecision};
+
+const COMPLETION_THRESHOLD: f64 = 0.9;
+const DIMINISHING_THRESHOLD: u64 = 500;
+
+/// 检查 token 预算, 决定是否继续
+///
+/// 对应 TypeScript: query/tokenBudget.ts 的 checkTokenBudget
+pub fn check_token_budget(
+    tracker: &mut BudgetTracker,
+    agent_id: Option<&str>,
+    budget: Option<u64>,
+    global_turn_tokens: u64,
+) -> TokenBudgetDecision {
+    // 子代理或无预算 → 停止
+    if agent_id.is_some() || budget.is_none() || budget == Some(0) {
+        return TokenBudgetDecision::Stop {
+            completion_event: None,
+        };
+    }
+    let budget = budget.unwrap();
+
+    let turn_tokens = global_turn_tokens;
+    let pct = ((turn_tokens as f64 / budget as f64) * 100.0).round() as usize;
+    let delta_since_last = global_turn_tokens.saturating_sub(tracker.last_global_turn_tokens);
+
+    let is_diminishing = tracker.continuation_count >= 3
+        && delta_since_last < DIMINISHING_THRESHOLD
+        && tracker.last_delta_tokens < DIMINISHING_THRESHOLD;
+
+    if !is_diminishing && (turn_tokens as f64) < (budget as f64 * COMPLETION_THRESHOLD) {
+        tracker.continuation_count += 1;
+        tracker.last_delta_tokens = delta_since_last;
+        tracker.last_global_turn_tokens = global_turn_tokens;
+        return TokenBudgetDecision::Continue {
+            nudge_message: format!(
+                "Token budget at {}% ({}/{}) — continue working.",
+                pct, turn_tokens, budget
+            ),
+            continuation_count: tracker.continuation_count,
+            pct,
+            turn_tokens,
+            budget,
+        };
+    }
+
+    if is_diminishing || tracker.continuation_count > 0 {
+        let now = chrono::Utc::now().timestamp_millis();
+        return TokenBudgetDecision::Stop {
+            completion_event: Some(BudgetCompletionEvent {
+                continuation_count: tracker.continuation_count,
+                pct,
+                turn_tokens,
+                budget,
+                diminishing_returns: is_diminishing,
+                duration_ms: (now - tracker.started_at) as u64,
+            }),
+        };
+    }
+
+    TokenBudgetDecision::Stop {
+        completion_event: None,
+    }
+}

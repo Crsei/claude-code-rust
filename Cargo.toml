@@ -1,0 +1,178 @@
+[package]
+name = "claude-code-rs"
+version = "0.1.0"
+edition = "2021"
+description = "Claude Code CLI - Rust implementation"
+
+# ============================================================
+# Phase 0-1: 核心类型 + 状态机 (无网络依赖)
+# ============================================================
+
+[dependencies]
+# 异步运行时
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+async-trait = "0.1"
+async-stream = "0.3"
+tokio-stream = "0.1"
+
+# 序列化
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 错误处理
+anyhow = "1"
+thiserror = "2"
+
+# CLI 参数解析
+clap = { version = "4", features = ["derive"] }
+
+# UUID
+uuid = { version = "1", features = ["v4"] }
+
+# 时间处理
+chrono = "0.4"
+
+# LRU 缓存
+lru = "0.12"
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# ============================================================
+# Phase 2: 本地工具系统 (无网络依赖)
+# ============================================================
+
+# 文件搜索 & 路径
+glob = "0.3"
+ignore = "0.4"
+walkdir = "2"
+dirs = "6"
+
+# 正则表达式
+regex = "1"
+
+# Git 操作
+git2 = "0.19"
+
+# 文本 Diff
+similar = "2"
+
+# 进程管理
+shell-words = "1"
+
+# 文件锁
+fs4 = "0.12"
+
+# ============================================================
+# Phase 5: 终端 UI (无网络依赖)
+# ============================================================
+
+# 终端 UI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# 语法高亮
+syntect = "5"
+
+# 文本处理
+textwrap = "0.16"
+unicode-width = "0.2"
+strip-ansi-escapes = "0.2"
+
+# Markdown 渲染
+pulldown-cmark = "0.12"
+
+# 编码
+base64 = "0.22"
+url = "2"
+semver = "1"
+
+# ============================================================
+# Phase 9+: 网络功能 (低优先级, 可选依赖)
+# ============================================================
+
+[dependencies.reqwest]
+version = "0.12"
+features = ["json", "stream", "rustls-tls"]
+optional = true
+
+[dependencies.tokio-tungstenite]
+version = "0.26"
+features = ["rustls-tls-webpki-roots"]
+optional = true
+
+[dependencies.eventsource-stream]
+version = "0.2"
+optional = true
+
+[dependencies.keyring]
+version = "3"
+optional = true
+
+[dependencies.jsonwebtoken]
+version = "9"
+optional = true
+
+[dependencies.oauth2]
+version = "5"
+optional = true
+
+[dependencies.aws-config]
+version = "1"
+optional = true
+
+[dependencies.aws-sdk-bedrockruntime]
+version = "1"
+optional = true
+
+[dependencies.gcp_auth]
+version = "0.12"
+optional = true
+
+[dependencies.lsp-types]
+version = "0.97"
+optional = true
+
+[dependencies.tree-sitter]
+version = "0.24"
+optional = true
+
+[dependencies.image]
+version = "0.25"
+optional = true
+
+# ============================================================
+# Feature flags (对应 TypeScript 的 feature() gates)
+# ============================================================
+
+[features]
+default = []
+
+# 网络功能集合
+network = [
+    "dep:reqwest",
+    "dep:eventsource-stream",
+    "dep:tokio-tungstenite",
+]
+
+# API 提供商
+api-anthropic = ["network"]
+api-bedrock = ["network", "dep:aws-config", "dep:aws-sdk-bedrockruntime"]
+api-vertex = ["network", "dep:gcp_auth"]
+
+# 认证
+auth = ["dep:keyring", "dep:jsonwebtoken", "dep:oauth2"]
+
+# MCP 协议
+mcp = ["network"]
+
+# LSP 集成
+lsp = ["dep:lsp-types"]
+
+# Tree-sitter AST
+tree-sitter-ast = ["dep:tree-sitter"]
+
+# 全功能
+full = ["network", "api-anthropic", "api-bedrock", "api-vertex", "auth", "mcp", "lsp"]
