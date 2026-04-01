@@ -212,6 +212,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         .or(merged_config.model.clone())
         .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
 
+    #[allow(unused_variables)]
     let app_state = AppState {
         settings: SettingsJson {
             model: Some(model.clone()),

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -5,6 +6,7 @@ use anyhow::Result;
 use serde_json::Value;
 
 use super::app_state::AppState;
+#[allow(unused_imports)]
 use super::message::{AssistantMessage, Message, ContentBlock};
 
 /// 工具输入验证结果

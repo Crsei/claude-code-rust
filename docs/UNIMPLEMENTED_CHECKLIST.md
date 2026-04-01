@@ -11,7 +11,7 @@
   - "Unmapped" means present in `TOOLS_AND_COMMANDS.md` but not clearly covered by `REWRITE_PLAN.md`
   - "Deferred" means the plan explicitly says not to implement it for now
 
-## Commands: Implemented (57 total)
+## Commands: Implemented (74 total)
 
 - [x] `/help`, `/clear`, `/compact`, `/config`, `/diff`, `/exit`, `/version`
 - [x] `/model`, `/cost`, `/session`, `/resume`, `/files`, `/context`
@@ -25,28 +25,15 @@
 - [x] `/agents`, `/upgrade`, `/ide`, `/privacy-settings`
 - [x] `/security-review`, `/pr-comments`, `/commit-push-pr`
 - [x] `/brief`, `/proactive`, `/vim`
+- [x] `/voice`, `/advisor`, `/btw`, `/insights`, `/passes`, `/reload-plugins`
+- [x] `/statusline`, `/ultrareview`, `/ultraplan`, `/thinkback-play`
+- [x] `/install-github-app`, `/install-slack-app`
+- [x] `/workflows`, `/subscribe-pr`, `/peers`, `/buddy`, `/torch`
 
 ## Commands: Planned But Not Complete
 
-- [ ] `/voice`
-- [ ] `/advisor`
-- [ ] `/btw`
-- [ ] `/insights`
-- [ ] `/extra-usage`
-- [ ] `/passes`
-- [ ] `/reload-plugins`
-- [ ] `/statusline`
-- [ ] `/ultrareview`
-- [ ] `/ultraplan`
-- [ ] `/workflows`
-- [ ] `/subscribe-pr`
-- [ ] `/peers`
-- [ ] `/buddy`
-- [ ] `/torch`
-- [ ] `/thinkback-play`
-- [ ] `/install-github-app`
-- [ ] `/install-slack-app`
-- [ ] `/rate-limit-options`
+- [ ] `/extra-usage` — model-specific billing (deferred)
+- [ ] `/rate-limit-options` — model-specific rate limits (deferred)
 
 ## Commands: Internal Or Ant-Only (Not Implementing)
 

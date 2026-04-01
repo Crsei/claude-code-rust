@@ -313,6 +313,7 @@ impl Tool for EnterWorktreeTool {
 /// ExitWorktree — leave and optionally clean up a git worktree.
 pub struct ExitWorktreeTool;
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 struct ExitWorktreeInput {
     /// "keep" to leave worktree intact, "remove" to delete it.

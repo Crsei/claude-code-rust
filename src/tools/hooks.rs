@@ -159,6 +159,7 @@ fn matches_tool(matcher: Option<&str>, tool_name: &str) -> bool {
 ///
 /// `hooks_value` is the deserialized `hooks` map from GlobalConfig.
 /// `event_name` is one of "PreToolUse", "PostToolUse", "Stop".
+#[allow(dead_code)]
 pub fn load_hook_configs(
     hooks_value: &HashMap<String, Value>,
     event_name: &str,
@@ -572,6 +573,7 @@ pub async fn run_post_tool_failure_hooks(
 /// Run stop hooks (when the model stops generating).
 ///
 /// Corresponds to TypeScript: `executeStopHooks()`
+#[allow(dead_code)]
 pub async fn run_stop_hooks(
     hook_configs: &[HookEventConfig],
 ) -> Result<PostToolHookResult> {

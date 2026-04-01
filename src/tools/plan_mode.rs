@@ -13,6 +13,7 @@
 //!   2. Model explores (read-only tools only)
 //!   3. ExitPlanMode restores mode from `pre_plan_mode`
 
+#[allow(unused_imports)]
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -188,6 +189,7 @@ impl Tool for ExitPlanModeTool {
         ValidationResult::Ok
     }
 
+    #[allow(unused_variables)]
     async fn check_permissions(&self, input: &Value, _ctx: &ToolUseContext) -> PermissionResult {
         // Require user confirmation to exit plan mode
         PermissionResult::Ask {

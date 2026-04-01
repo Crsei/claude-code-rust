@@ -210,7 +210,9 @@ impl App {
                     return AppAction::Quit;
                 }
             }
-            (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
+            (KeyModifiers::CONTROL, KeyCode::Char('d'))
+                if self.prompt.is_active || !self.is_streaming =>
+            {
                 self.should_quit = true;
                 return AppAction::Quit;
             }

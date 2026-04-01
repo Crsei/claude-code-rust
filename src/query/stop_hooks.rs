@@ -20,11 +20,13 @@ pub enum StopHookResult {
     /// 允许停止 — 模型可以正常终止
     AllowStop,
     /// 阻止停止 — 需要继续对话 (注入消息)
+    #[allow(dead_code)]
     PreventStop {
         /// 要注入到对话中的续写消息内容
         continuation_message: String,
     },
     /// 阻塞错误 — hook 自身执行失败
+    #[allow(dead_code)]
     BlockingError {
         error: String,
     },
@@ -64,6 +66,7 @@ pub async fn run_stop_hooks(
 }
 
 /// 判断 assistant 消息是否包含工具调用
+#[allow(dead_code)]
 pub fn has_tool_use(assistant_message: &AssistantMessage) -> bool {
     assistant_message.content.iter().any(|block| {
         matches!(block, crate::types::message::ContentBlock::ToolUse { .. })

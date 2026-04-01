@@ -71,6 +71,29 @@ pub mod security_review;
 pub mod upgrade;
 pub mod vim_cmd;
 
+// Phase 14F — feature-gated stub commands
+pub mod buddy;
+pub mod peers;
+pub mod subscribe_pr;
+pub mod torch;
+pub mod workflows;
+
+// Phase 14G — seventh batch commands
+pub mod install_github_app;
+pub mod install_slack_app;
+pub mod statusline;
+pub mod thinkback_play;
+pub mod ultraplan;
+pub mod ultrareview;
+
+// Phase 14H — eighth batch commands
+pub mod advisor;
+pub mod btw;
+pub mod insights;
+pub mod passes;
+pub mod reload_plugins;
+pub mod voice;
+
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -479,6 +502,111 @@ pub fn get_all_commands() -> Vec<Command> {
             description: "Toggle vim keybinding mode".into(),
             handler: Box::new(vim_cmd::VimHandler),
         },
+        // --- Feature-gated stub commands ---
+        Command {
+            name: "workflows".into(),
+            aliases: vec!["wf".into()],
+            description: "Manage workflow scripts".into(),
+            handler: Box::new(workflows::WorkflowsHandler),
+        },
+        Command {
+            name: "subscribe-pr".into(),
+            aliases: vec!["sub-pr".into()],
+            description: "Subscribe to pull request updates".into(),
+            handler: Box::new(subscribe_pr::SubscribePrHandler),
+        },
+        Command {
+            name: "peers".into(),
+            aliases: vec![],
+            description: "Peer session management".into(),
+            handler: Box::new(peers::PeersHandler),
+        },
+        Command {
+            name: "buddy".into(),
+            aliases: vec![],
+            description: "AI buddy companion mode".into(),
+            handler: Box::new(buddy::BuddyHandler),
+        },
+        Command {
+            name: "torch".into(),
+            aliases: vec![],
+            description: "Hand off context to another session".into(),
+            handler: Box::new(torch::TorchHandler),
+        },
+        // --- Seventh batch commands ---
+        Command {
+            name: "statusline".into(),
+            aliases: vec![],
+            description: "Set up status line via subagent".into(),
+            handler: Box::new(statusline::StatuslineHandler),
+        },
+        Command {
+            name: "ultrareview".into(),
+            aliases: vec![],
+            description: "Remote bug finder (requires Claude Code on the web)".into(),
+            handler: Box::new(ultrareview::UltrareviewHandler),
+        },
+        Command {
+            name: "ultraplan".into(),
+            aliases: vec![],
+            description: "Remote multi-agent planning (requires Claude Code on the web)".into(),
+            handler: Box::new(ultraplan::UltraplanHandler),
+        },
+        Command {
+            name: "thinkback-play".into(),
+            aliases: vec![],
+            description: "Play thinkback animation".into(),
+            handler: Box::new(thinkback_play::ThinkbackPlayHandler),
+        },
+        Command {
+            name: "install-github-app".into(),
+            aliases: vec![],
+            description: "Set up GitHub Actions integration".into(),
+            handler: Box::new(install_github_app::InstallGithubAppHandler),
+        },
+        Command {
+            name: "install-slack-app".into(),
+            aliases: vec![],
+            description: "Install the Claude Slack app".into(),
+            handler: Box::new(install_slack_app::InstallSlackAppHandler),
+        },
+        // --- Eighth batch commands ---
+        Command {
+            name: "voice".into(),
+            aliases: vec![],
+            description: "Toggle voice mode".into(),
+            handler: Box::new(voice::VoiceHandler),
+        },
+        Command {
+            name: "advisor".into(),
+            aliases: vec![],
+            description: "Configure advisor model".into(),
+            handler: Box::new(advisor::AdvisorHandler),
+        },
+        Command {
+            name: "btw".into(),
+            aliases: vec![],
+            description: "Ask a quick side question".into(),
+            handler: Box::new(btw::BtwHandler),
+        },
+        Command {
+            name: "insights".into(),
+            aliases: vec![],
+            description: "Analyze the current session".into(),
+            handler: Box::new(insights::InsightsHandler),
+        },
+        Command {
+            name: "passes".into(),
+            aliases: vec!["referral".into()],
+            description: "Show referral program information".into(),
+            handler: Box::new(passes::PassesHandler),
+        },
+        Command {
+            name: "reload-plugins".into(),
+            aliases: vec![],
+            description: "Reload plugins from disk".into(),
+            handler: Box::new(reload_plugins::ReloadPluginsHandler),
+        },
     ]
 }
 
@@ -531,7 +659,7 @@ mod tests {
     #[test]
     fn test_all_commands_registered() {
         let cmds = get_all_commands();
-        assert!(cmds.len() >= 57, "Expected at least 57 commands");
+        assert!(cmds.len() >= 74, "Expected at least 74 commands");
         let names: Vec<&str> = cmds.iter().map(|c| c.name.as_str()).collect();
         assert!(names.contains(&"help"));
         assert!(names.contains(&"clear"));

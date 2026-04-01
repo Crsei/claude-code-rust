@@ -12,5 +12,7 @@ pub mod stop_hooks;
 pub mod loop_impl;
 
 // 重导出核心函数, 方便外部使用
+#[allow(unused_imports)]
 pub use loop_impl::query;
+#[allow(unused_imports)]
 pub use deps::QueryDeps;

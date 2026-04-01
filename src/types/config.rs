@@ -1,4 +1,7 @@
+#![allow(dead_code)]
+#[allow(unused_imports)]
 use super::message::{Message, SystemMessage, Usage};
+#[allow(unused_imports)]
 use super::tool::{ToolUseContext, Tools, QueryChainTracking};
 
 /// Thinking/extended-thinking configuration.
@@ -67,6 +70,7 @@ impl QuerySource {
             QuerySource::ReplMainThread => "repl_main_thread",
             QuerySource::Compact => "compact",
             QuerySource::SessionMemory => "session_memory",
+            #[allow(unused_variables)]
             QuerySource::Agent(id) => "agent:", // 简化
         }
     }
