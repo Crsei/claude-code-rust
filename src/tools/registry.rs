@@ -19,6 +19,9 @@ use super::tool_search::ToolSearchTool;
 use super::web_fetch::WebFetchTool;
 use super::web_search::WebSearchTool;
 use super::worktree::{EnterWorktreeTool, ExitWorktreeTool};
+use super::team_create::TeamCreateTool;
+use super::team_delete::TeamDeleteTool;
+use super::send_message::SendMessageTool;
 
 /// Get all base tool instances.
 ///
@@ -44,6 +47,10 @@ pub fn get_all_tools() -> Tools {
         Arc::new(WebFetchTool),
         Arc::new(WebSearchTool),
         Arc::new(LspTool),
+        // Agent Teams tools (feature-gated via is_enabled)
+        Arc::new(TeamCreateTool),
+        Arc::new(TeamDeleteTool),
+        Arc::new(SendMessageTool),
     ];
 
     // Filter to only enabled tools

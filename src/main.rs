@@ -33,6 +33,9 @@ mod skills;
 mod plugins;
 mod lsp_service;
 
+// Agent Teams (multi-agent swarm)
+mod teams;
+
 // Phase I: Shutdown and cleanup
 mod shutdown;
 
@@ -56,7 +59,7 @@ use crate::types::tool::{PermissionMode, ToolPermissionContext};
 
 /// Claude Code CLI — Rust implementation
 #[derive(Parser, Debug)]
-#[command(name = "claude", version, about = "Claude Code CLI")]
+#[command(name = "claude", version, about = "Claude Code CLI", disable_version_flag = true)]
 struct Cli {
     /// Print the version and exit (fast path)
     #[arg(short = 'V', long)]
@@ -229,6 +232,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         thinking_enabled: None,
         fast_mode: false,
         effort_value: None,
+        team_context: None,
     };
 
     // ── B.5: Init-only fast path ─────────────────────────────────────

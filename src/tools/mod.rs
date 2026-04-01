@@ -33,3 +33,8 @@ pub mod web_search;
 
 // Phase 12: LSP tool
 pub mod lsp;
+
+// Agent Teams tools
+pub mod team_create;
+pub mod team_delete;
+pub mod send_message;
