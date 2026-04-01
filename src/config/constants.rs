@@ -44,6 +44,46 @@ pub mod models {
     }
 }
 
+/// Get a marketing-friendly display name for a model ID.
+///
+/// Corresponds to TS: `getMarketingNameForModel(modelId)`
+pub fn marketing_name_for_model(model_id: &str) -> Option<&str> {
+    if model_id.contains("claude-opus-4-6") {
+        Some("Claude Opus 4.6 (1M context)")
+    } else if model_id.contains("claude-opus-4-5") {
+        Some("Claude Opus 4.5")
+    } else if model_id.contains("claude-opus-4") {
+        Some("Claude Opus 4")
+    } else if model_id.contains("claude-sonnet-4-6") {
+        Some("Claude Sonnet 4.6")
+    } else if model_id.contains("claude-sonnet-4-5") {
+        Some("Claude Sonnet 4.5")
+    } else if model_id.contains("claude-sonnet-4") {
+        Some("Claude Sonnet 4")
+    } else if model_id.contains("claude-haiku-4-5") {
+        Some("Claude Haiku 4.5")
+    } else {
+        None
+    }
+}
+
+/// Get the knowledge cutoff date string for a model.
+///
+/// Corresponds to TS: `getKnowledgeCutoff(modelId)`
+pub fn knowledge_cutoff(model_id: &str) -> Option<&'static str> {
+    if model_id.contains("claude-opus-4-6") || model_id.contains("claude-sonnet-4-6") {
+        Some("May 2025")
+    } else if model_id.contains("claude-opus-4-5") || model_id.contains("claude-sonnet-4-5") {
+        Some("April 2025")
+    } else if model_id.contains("claude-sonnet-4") || model_id.contains("claude-opus-4") {
+        Some("April 2025")
+    } else if model_id.contains("claude-haiku-4-5") {
+        Some("April 2025")
+    } else {
+        None
+    }
+}
+
 // =============================================================================
 // API version strings & beta headers
 // =============================================================================

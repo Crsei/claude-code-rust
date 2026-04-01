@@ -101,7 +101,11 @@ impl Tool for AskUserQuestionTool {
     }
 
     async fn prompt(&self) -> String {
-        "Use AskUserQuestion when you need clarification or input from the user.".to_string()
+        "Use AskUserQuestion when you need clarification or input from the user. Use this tool when:\n\
+- You need to ask a question to clarify the user's request\n\
+- You need the user to make a choice between options\n\
+- You need confirmation before proceeding with a potentially risky action\n\
+- You are genuinely stuck and need user guidance after investigation".to_string()
     }
 
     fn user_facing_name(&self, _input: Option<&Value>) -> String {

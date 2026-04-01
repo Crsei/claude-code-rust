@@ -245,9 +245,15 @@ impl Tool for AgentTool {
     }
 
     async fn prompt(&self) -> String {
-        "Use Agent to delegate complex, multi-step tasks to specialized subagents. \
-         Each agent runs autonomously with its own context."
-            .to_string()
+        "Launch a new agent to handle complex, multi-step tasks autonomously.\n\n\
+The Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\n\
+Usage notes:\n\
+- Always include a short description (3-5 words) summarizing what the agent will do\n\
+- Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses\n\
+- When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.\n\
+- Provide clear, detailed prompts so the agent can work autonomously and return exactly the information you need.\n\
+- The agent's outputs should generally be trusted\n\
+- Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent".to_string()
     }
 
     fn user_facing_name(&self, input: Option<&Value>) -> String {

@@ -181,7 +181,14 @@ impl Tool for ToolSearchTool {
     }
 
     async fn prompt(&self) -> String {
-        "Use ToolSearch to find available tools by keyword or name.".to_string()
+        "Fetches full schema definitions for deferred tools so they can be called.\n\n\
+Deferred tools appear by name in <system-reminder> messages. Until fetched, only the name is known — \
+there is no parameter schema, so the tool cannot be invoked. This tool takes a query, matches it \
+against the deferred tool list, and returns the matched tools' complete JSONSchema definitions.\n\n\
+Query forms:\n\
+- \"select:Read,Edit,Grep\" — fetch these exact tools by name\n\
+- \"notebook jupyter\" — keyword search, up to max_results best matches\n\
+- \"+slack send\" — require \"slack\" in the name, rank by remaining terms".to_string()
     }
 
     fn user_facing_name(&self, _input: Option<&Value>) -> String {

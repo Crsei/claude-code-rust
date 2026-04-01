@@ -289,9 +289,12 @@ impl Tool for NotebookEditTool {
     }
 
     async fn prompt(&self) -> String {
-        "Use NotebookEdit to modify Jupyter notebook (.ipynb) cells. \
-         Supports replace, insert, and delete operations."
-            .to_string()
+        "Edit Jupyter notebook (.ipynb) cells. Supports replacing cell content, inserting new cells, and deleting cells.\n\n\
+Usage:\n\
+- Use the Read tool to read the notebook first to understand its structure\n\
+- Cell numbering starts at 0\n\
+- When replacing a cell, provide the complete new content\n\
+- Supported cell types: code, markdown, raw".to_string()
     }
 
     fn user_facing_name(&self, _input: Option<&Value>) -> String {

@@ -13,10 +13,10 @@
 
 ## Rust 实现现状
 
-- **文件数**: 136 个 .rs 文件, 19 个顶级子目录
-- **代码行数**: ~36,300 行 (占 TS 的 ~40%)
-- **测试数**: 530 个测试，全部通过
-- **完成状态**: 核心状态机 + 本地工具 + 高级工具 (Agent/PlanMode/Worktree/Skill) + UI (keybindings/vim) + 会话持久化 (migrations/memdir) + API 客户端 + Hooks + MCP + Skills + Plugins + LSP
+- **文件数**: 137 个 .rs 文件, 19 个顶级子目录
+- **代码行数**: ~36,200 行 (占 TS 的 ~40%)
+- **测试数**: 572 个测试，全部通过
+- **完成状态**: 核心状态机 + 完整系统提示词 (7 静态段落 + 动态段落 + 缓存边界) + 工具 prompt 迁移 + 高级工具 + UI (keybindings/vim) + 会话持久化 (migrations/memdir) + API + Hooks + MCP + Skills + Plugins + LSP
 - **目录覆盖率**: 19/35 顶级目录已存在 (~54%)
 
 ---
@@ -41,6 +41,8 @@
 | [`TOOL_EXECUTION_STATE_MACHINE.md`](TOOL_EXECUTION_STATE_MACHINE.md) | tools/execution.rs, orchestration.rs, hooks.rs | ✅ 管线完整，hooks 完整实现 |
 | [`COMPACTION_RETRY_STATE_MACHINE.md`](COMPACTION_RETRY_STATE_MACHINE.md) | compact/pipeline.rs, compaction.rs | ✅ 决策 + 管线 + async pipeline 完整 |
 | [`STRUCTURE_DIFF.md`](STRUCTURE_DIFF.md) | 目录结构对比 | 📋 TS vs Rust 全量对比 |
+| [`AGENT_TEAMS_SPEC.md`](AGENT_TEAMS_SPEC.md) | teams/ (待实现) | 📋 多代理 Swarm 系统完整实现规格 |
+| [`MODULE_SIMPLIFICATION.md`](MODULE_SIMPLIFICATION.md) | 全模块对比 | 📋 TS vs Rust 各模块简化分析 (行数/文件数/缩减率) |
 
 ---
 
@@ -450,9 +452,9 @@ SendUserFile, PushNotification, SubscribePR
   Phase 13 远程/遥测      ░░░░░░░░░░   0% (接口保留, 暂不实现)
   Phase 14 目录对齐       ██████░░░░  60% (P14A: 8/10, P14B: 20/20+)
 
-  文件总数: 136 .rs 文件 (目标: ~200+)
-  代码行数: ~36,300 行 (占 TS 的 ~40%)
-  测试数量: 530 个 (全部通过)
+  文件总数: 137 .rs 文件 (目标: ~200+)
+  代码行数: ~36,200 行 (占 TS 的 ~40%)
+  测试数量: 572 个 (全部通过)
   目录覆盖: 19/35 TS 顶级目录 (54%)
   命令覆盖: 27/85+ (32%)
   工具覆盖: 18 工具 + MCP 动态工具 (含 PlanMode/Worktree/Skill/Agent)
