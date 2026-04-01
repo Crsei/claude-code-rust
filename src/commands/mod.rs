@@ -23,6 +23,18 @@ pub mod resume;
 pub mod session;
 pub mod version;
 
+// Phase 14B — second batch commands
+pub mod branch;
+pub mod commit;
+pub mod effort;
+pub mod export;
+pub mod fast;
+pub mod memory;
+pub mod plan;
+pub mod rename;
+pub mod review;
+pub mod stats;
+
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -187,6 +199,67 @@ pub fn get_all_commands() -> Vec<Command> {
             description: "Clear stored authentication credentials".into(),
             handler: Box::new(logout::LogoutHandler),
         },
+        // --- Second batch commands ---
+        Command {
+            name: "commit".into(),
+            aliases: vec![],
+            description: "Create a git commit from current changes".into(),
+            handler: Box::new(commit::CommitHandler),
+        },
+        Command {
+            name: "review".into(),
+            aliases: vec![],
+            description: "Request a code review of current changes".into(),
+            handler: Box::new(review::ReviewHandler),
+        },
+        Command {
+            name: "branch".into(),
+            aliases: vec!["br".into()],
+            description: "Show or switch git branches".into(),
+            handler: Box::new(branch::BranchHandler),
+        },
+        Command {
+            name: "export".into(),
+            aliases: vec![],
+            description: "Export conversation to a file".into(),
+            handler: Box::new(export::ExportHandler),
+        },
+        Command {
+            name: "rename".into(),
+            aliases: vec![],
+            description: "Rename the current session".into(),
+            handler: Box::new(rename::RenameHandler),
+        },
+        Command {
+            name: "stats".into(),
+            aliases: vec![],
+            description: "Show session usage statistics".into(),
+            handler: Box::new(stats::StatsHandler),
+        },
+        Command {
+            name: "effort".into(),
+            aliases: vec![],
+            description: "Set the thinking effort level (low/medium/high)".into(),
+            handler: Box::new(effort::EffortHandler),
+        },
+        Command {
+            name: "fast".into(),
+            aliases: vec![],
+            description: "Toggle fast mode on/off".into(),
+            handler: Box::new(fast::FastHandler),
+        },
+        Command {
+            name: "memory".into(),
+            aliases: vec!["mem".into()],
+            description: "View and manage CLAUDE.md project instructions".into(),
+            handler: Box::new(memory::MemoryHandler),
+        },
+        Command {
+            name: "plan".into(),
+            aliases: vec![],
+            description: "Toggle plan mode (read-only tools)".into(),
+            handler: Box::new(plan::PlanHandler),
+        },
     ]
 }
 
@@ -239,7 +312,7 @@ mod tests {
     #[test]
     fn test_all_commands_registered() {
         let cmds = get_all_commands();
-        assert!(cmds.len() >= 17, "Expected at least 17 commands");
+        assert!(cmds.len() >= 27, "Expected at least 27 commands");
         let names: Vec<&str> = cmds.iter().map(|c| c.name.as_str()).collect();
         assert!(names.contains(&"help"));
         assert!(names.contains(&"clear"));
@@ -276,6 +349,24 @@ mod tests {
         assert!(find_command("usage").is_some());
         assert!(find_command("ctx").is_some());
         assert!(find_command("perms").is_some());
+        assert!(find_command("br").is_some());
+        assert!(find_command("mem").is_some());
+    }
+
+    #[test]
+    fn test_second_batch_commands_registered() {
+        let cmds = get_all_commands();
+        let names: Vec<&str> = cmds.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"commit"));
+        assert!(names.contains(&"review"));
+        assert!(names.contains(&"branch"));
+        assert!(names.contains(&"export"));
+        assert!(names.contains(&"rename"));
+        assert!(names.contains(&"stats"));
+        assert!(names.contains(&"effort"));
+        assert!(names.contains(&"fast"));
+        assert!(names.contains(&"memory"));
+        assert!(names.contains(&"plan"));
     }
 
     #[test]

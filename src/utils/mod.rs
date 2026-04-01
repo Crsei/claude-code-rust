@@ -5,3 +5,4 @@ pub mod cwd;
 pub mod messages;
 pub mod bash;
 pub mod git;
+pub mod shell;

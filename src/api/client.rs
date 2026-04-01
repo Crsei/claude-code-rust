@@ -22,12 +22,14 @@ pub enum ApiProvider {
         api_key: String,
         base_url: Option<String>,
     },
-    /// AWS Bedrock
+    /// AWS Bedrock (interface only — not implemented)
+    #[allow(dead_code)]
     Bedrock {
         region: String,
         model_id: String,
     },
-    /// GCP Vertex AI
+    /// GCP Vertex AI (interface only — not implemented)
+    #[allow(dead_code)]
     Vertex {
         project_id: String,
         region: String,
@@ -84,31 +86,23 @@ impl ApiClient {
     }
 
     /// Build the messages endpoint URL based on provider.
+    ///
+    /// Only Anthropic Direct and Azure are active. Bedrock/Vertex are
+    /// interface-only and will panic if used at runtime.
     pub fn build_url(&self) -> String {
         match &self.config.provider {
             ApiProvider::Anthropic { base_url, .. } => {
                 let base = base_url
                     .as_deref()
                     .unwrap_or("https://api.anthropic.com");
-                // Strip trailing slash if present
                 let base = base.trim_end_matches('/');
                 format!("{}/v1/messages", base)
             }
-            ApiProvider::Bedrock {
-                region, model_id, ..
-            } => {
-                format!(
-                    "https://bedrock-runtime.{}.amazonaws.com/model/{}/invoke-with-response-stream",
-                    region, model_id
-                )
+            ApiProvider::Bedrock { .. } => {
+                unimplemented!("AWS Bedrock provider is not implemented")
             }
-            ApiProvider::Vertex {
-                project_id, region, ..
-            } => {
-                format!(
-                    "https://{}-aiplatform.googleapis.com/v1/projects/{}/locations/{}/publishers/anthropic/models/{}:streamRawPredict",
-                    region, project_id, region, self.config.default_model
-                )
+            ApiProvider::Vertex { .. } => {
+                unimplemented!("GCP Vertex AI provider is not implemented")
             }
             ApiProvider::Azure { endpoint, .. } => {
                 let endpoint = endpoint.trim_end_matches('/');
@@ -135,7 +129,7 @@ impl ApiClient {
             ),
         );
 
-        // Provider-specific auth headers
+        // Provider-specific auth headers (Anthropic + Azure only)
         match &self.config.provider {
             ApiProvider::Anthropic { api_key, .. } => {
                 if let Ok(val) = HeaderValue::from_str(api_key) {
@@ -147,8 +141,7 @@ impl ApiClient {
                     headers.insert("x-api-key", val);
                 }
             }
-            // Bedrock and Vertex use IAM / OAuth tokens; those would be
-            // injected via request signing middleware in a full implementation.
+            // Bedrock/Vertex: interface only, not implemented
             _ => {}
         }
 
@@ -173,6 +166,7 @@ impl ApiClient {
             ApiProvider::Azure { api_key, .. } => {
                 map.insert("x-api-key".to_string(), api_key.clone());
             }
+            // Bedrock/Vertex: interface only, not implemented
             _ => {}
         }
 
@@ -580,7 +574,8 @@ mod tests {
     }
 
     #[test]
-    fn test_build_url_bedrock() {
+    #[should_panic(expected = "AWS Bedrock provider is not implemented")]
+    fn test_build_url_bedrock_not_implemented() {
         let config = ApiClientConfig {
             provider: ApiProvider::Bedrock {
                 region: "us-east-1".to_string(),
@@ -591,13 +586,12 @@ mod tests {
             timeout_secs: 60,
         };
         let client = ApiClient::new(config);
-        let url = client.build_url();
-        assert!(url.contains("bedrock-runtime.us-east-1.amazonaws.com"));
-        assert!(url.contains("anthropic.claude-sonnet-4-20250514-v1:0"));
+        let _ = client.build_url(); // should panic
     }
 
     #[test]
-    fn test_build_url_vertex() {
+    #[should_panic(expected = "GCP Vertex AI provider is not implemented")]
+    fn test_build_url_vertex_not_implemented() {
         let config = ApiClientConfig {
             provider: ApiProvider::Vertex {
                 project_id: "my-project".to_string(),
@@ -608,10 +602,7 @@ mod tests {
             timeout_secs: 60,
         };
         let client = ApiClient::new(config);
-        let url = client.build_url();
-        assert!(url.contains("us-central1-aiplatform.googleapis.com"));
-        assert!(url.contains("my-project"));
-        assert!(url.contains("claude-sonnet-4-20250514"));
+        let _ = client.build_url(); // should panic
     }
 
     #[test]
@@ -664,6 +655,8 @@ mod tests {
 
     #[test]
     fn test_build_headers_bedrock_no_api_key() {
+        // Bedrock variant can still construct headers (common ones),
+        // but has no x-api-key since it uses IAM signing (not implemented).
         let config = ApiClientConfig {
             provider: ApiProvider::Bedrock {
                 region: "us-east-1".to_string(),
@@ -675,11 +668,8 @@ mod tests {
         };
         let client = ApiClient::new(config);
         let headers = client.build_headers_map();
-        // Bedrock uses IAM signing, no x-api-key header
         assert!(headers.get("x-api-key").is_none());
-        // But other headers should still be present
         assert_eq!(headers.get("content-type").unwrap(), "application/json");
-        assert_eq!(headers.get("anthropic-version").unwrap(), "2023-06-01");
     }
 
     // -----------------------------------------------------------------------

@@ -1,8 +1,7 @@
-#![allow(unused)]
-//! API provider implementations
+//! API provider abstractions
 //!
-//! Each provider transforms the generic MessagesRequest into
-//! provider-specific HTTP requests.
+//! Active: Anthropic Direct, Azure Foundry
+//! Interface only: AWS Bedrock, GCP Vertex AI (not implemented)
 
 /// Provider trait for abstracting API differences
 pub trait Provider: Send + Sync {
@@ -33,37 +32,74 @@ impl Provider for AnthropicProvider {
     fn model_id(&self, model: &str) -> String { model.to_string() }
 }
 
-// ── AWS Bedrock ──
+// ── AWS Bedrock (interface only) ──
 
+#[allow(dead_code)]
 pub struct BedrockProvider {
     pub region: String,
+    pub model_id: String,
 }
 
-impl Provider for BedrockProvider {
-    fn name(&self) -> &str { "bedrock" }
-    fn base_url(&self) -> String {
-        format!("https://bedrock-runtime.{}.amazonaws.com", self.region)
+#[allow(dead_code)]
+impl BedrockProvider {
+    pub fn new(region: &str, model_id: &str) -> Self {
+        Self {
+            region: region.to_string(),
+            model_id: model_id.to_string(),
+        }
     }
-    fn model_id(&self, model: &str) -> String {
-        // Bedrock uses ARN-style model IDs
-        format!("anthropic.{}", model)
+
+    /// Build Bedrock endpoint URL.
+    pub fn endpoint_url(&self) -> String {
+        format!(
+            "https://bedrock-runtime.{}.amazonaws.com/model/{}/invoke-with-response-stream",
+            self.region, self.model_id
+        )
+    }
+
+    /// Sign request with AWS SigV4 — not implemented.
+    pub async fn sign_request(&self, _body: &[u8]) -> anyhow::Result<std::collections::HashMap<String, String>> {
+        anyhow::bail!("AWS Bedrock SigV4 signing is not implemented")
+    }
+
+    /// Resolve AWS credentials from environment/config — not implemented.
+    pub async fn resolve_credentials(&self) -> anyhow::Result<()> {
+        anyhow::bail!("AWS Bedrock credential resolution is not implemented")
     }
 }
 
-// ── GCP Vertex AI ──
+// ── GCP Vertex AI (interface only) ──
 
+#[allow(dead_code)]
 pub struct VertexProvider {
     pub project_id: String,
     pub region: String,
 }
 
-impl Provider for VertexProvider {
-    fn name(&self) -> &str { "vertex" }
-    fn base_url(&self) -> String {
+#[allow(dead_code)]
+impl VertexProvider {
+    pub fn new(project_id: &str, region: &str) -> Self {
+        Self {
+            project_id: project_id.to_string(),
+            region: region.to_string(),
+        }
+    }
+
+    /// Build Vertex AI endpoint URL.
+    pub fn endpoint_url(&self, model: &str) -> String {
         format!(
-            "https://{}-aiplatform.googleapis.com/v1/projects/{}/locations/{}/publishers/anthropic/models",
-            self.region, self.project_id, self.region
+            "https://{}-aiplatform.googleapis.com/v1/projects/{}/locations/{}/publishers/anthropic/models/{}:streamRawPredict",
+            self.region, self.project_id, self.region, model
         )
     }
-    fn model_id(&self, model: &str) -> String { model.to_string() }
+
+    /// Obtain GCP OAuth access token — not implemented.
+    pub async fn get_access_token(&self) -> anyhow::Result<String> {
+        anyhow::bail!("GCP Vertex AI authentication is not implemented")
+    }
+
+    /// Build auth headers with bearer token — not implemented.
+    pub async fn auth_headers(&self) -> anyhow::Result<std::collections::HashMap<String, String>> {
+        anyhow::bail!("GCP Vertex AI auth headers are not implemented")
+    }
 }
