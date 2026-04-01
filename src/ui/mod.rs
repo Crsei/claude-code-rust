@@ -3,6 +3,8 @@ pub mod app;
 #[allow(dead_code)]
 pub mod diff;
 #[allow(dead_code)]
+pub mod keybindings;
+#[allow(dead_code)]
 pub mod markdown;
 #[allow(dead_code)]
 pub mod messages;
@@ -14,3 +16,5 @@ pub mod prompt_input;
 pub mod spinner;
 #[allow(dead_code)]
 pub mod theme;
+#[allow(dead_code)]
+pub mod vim;

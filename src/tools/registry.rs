@@ -13,10 +13,12 @@ use super::glob_tool::GlobTool;
 use super::grep::GrepTool;
 use super::lsp::LspTool;
 use super::notebook_edit::NotebookEditTool;
+use super::plan_mode::{EnterPlanModeTool, ExitPlanModeTool};
 use super::skill::SkillTool;
 use super::tool_search::ToolSearchTool;
 use super::web_fetch::WebFetchTool;
 use super::web_search::WebSearchTool;
+use super::worktree::{EnterWorktreeTool, ExitWorktreeTool};
 
 /// Get all base tool instances.
 ///
@@ -34,6 +36,10 @@ pub fn get_all_tools() -> Tools {
         Arc::new(AskUserQuestionTool),
         Arc::new(ToolSearchTool),
         Arc::new(AgentTool),
+        Arc::new(EnterPlanModeTool),
+        Arc::new(ExitPlanModeTool),
+        Arc::new(EnterWorktreeTool),
+        Arc::new(ExitWorktreeTool),
         Arc::new(SkillTool),
         Arc::new(WebFetchTool),
         Arc::new(WebSearchTool),

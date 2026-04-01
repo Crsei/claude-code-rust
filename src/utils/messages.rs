@@ -144,6 +144,130 @@ pub fn count_user_messages(messages: &[Message]) -> usize {
         .count()
 }
 
+// ---------------------------------------------------------------------------
+// Formatting & truncation utilities
+// ---------------------------------------------------------------------------
+
+/// Truncate text to a maximum length, adding an ellipsis if truncated.
+pub fn truncate_text(text: &str, max_len: usize) -> String {
+    if text.len() <= max_len {
+        return text.to_string();
+    }
+    if max_len <= 3 {
+        return "...".to_string();
+    }
+    let content_max = max_len - 3; // room for "..."
+    // Find the last char boundary that fits within content_max bytes
+    let mut boundary = content_max;
+    while boundary > 0 && !text.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    format!("{}...", &text[..boundary])
+}
+
+/// Format a message role as a display string.
+pub fn format_role(message: &Message) -> &'static str {
+    match message {
+        Message::User(u) => {
+            if u.is_meta { "system" } else { "user" }
+        }
+        Message::Assistant(_) => "assistant",
+        Message::System(_) => "system",
+        Message::Progress(_) => "progress",
+        Message::Attachment(_) => "attachment",
+    }
+}
+
+/// Summarize a message into a one-line preview.
+///
+/// Returns `(role, preview_text)` where preview_text is truncated.
+pub fn summarize_message(message: &Message, max_preview: usize) -> (String, String) {
+    let role = format_role(message).to_string();
+    let text = get_text_content(message);
+    let preview = truncate_text(&text.replace('\n', " "), max_preview);
+    (role, preview)
+}
+
+/// Count total tokens across all messages (rough estimate).
+pub fn estimate_total_tokens(messages: &[Message]) -> u64 {
+    messages.iter().map(|m| estimate_tokens(m)).sum()
+}
+
+/// Count tool use blocks across all messages.
+pub fn count_all_tool_calls(messages: &[Message]) -> usize {
+    messages
+        .iter()
+        .filter_map(|m| match m {
+            Message::Assistant(a) => Some(&a.content),
+            _ => None,
+        })
+        .flat_map(|content| content.iter())
+        .filter(|block| matches!(block, ContentBlock::ToolUse { .. }))
+        .count()
+}
+
+/// Extract all unique tool names used across messages.
+pub fn get_unique_tool_names(messages: &[Message]) -> Vec<String> {
+    let mut names: Vec<String> = messages
+        .iter()
+        .filter_map(|m| match m {
+            Message::Assistant(a) => Some(&a.content),
+            _ => None,
+        })
+        .flat_map(|content| content.iter())
+        .filter_map(|block| match block {
+            ContentBlock::ToolUse { name, .. } => Some(name.clone()),
+            _ => None,
+        })
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// Get the role of the last message.
+pub fn last_message_role(messages: &[Message]) -> Option<&'static str> {
+    messages.last().map(format_role)
+}
+
+/// Extract all text from all assistant messages, concatenated.
+pub fn get_all_assistant_text(messages: &[Message]) -> String {
+    messages
+        .iter()
+        .filter_map(|m| match m {
+            Message::Assistant(a) => Some(a),
+            _ => None,
+        })
+        .flat_map(|a| a.content.iter())
+        .filter_map(|b| match b {
+            ContentBlock::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Build a conversation summary: message counts, tool usage, token estimate.
+pub fn conversation_summary(messages: &[Message]) -> String {
+    let user_count = count_user_messages(messages);
+    let assistant_count = count_assistant_messages(messages);
+    let tool_count = count_all_tool_calls(messages);
+    let token_est = estimate_total_tokens(messages);
+    let tools = get_unique_tool_names(messages);
+
+    let mut lines = vec![
+        format!("Messages: {} user, {} assistant", user_count, assistant_count),
+        format!("Tool calls: {}", tool_count),
+        format!("Estimated tokens: {}", token_est),
+    ];
+
+    if !tools.is_empty() {
+        lines.push(format!("Tools used: {}", tools.join(", ")));
+    }
+
+    lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,5 +399,99 @@ mod tests {
     fn test_get_text_content_assistant() {
         let msg = make_assistant_text_only("response text");
         assert_eq!(get_text_content(&msg), "response text");
+    }
+
+    // ── New formatting & truncation tests ──────────────────────────
+
+    #[test]
+    fn test_truncate_text_short() {
+        assert_eq!(truncate_text("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_truncate_text_exact() {
+        assert_eq!(truncate_text("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_text_long() {
+        let result = truncate_text("hello world, this is a long text", 20);
+        assert!(result.ends_with("..."));
+        assert!(result.len() <= 20);
+        // Original text was 32 chars, truncated should be shorter
+        assert!(result.len() < 32);
+    }
+
+    #[test]
+    fn test_truncate_text_tiny_max() {
+        assert_eq!(truncate_text("hello", 3), "...");
+    }
+
+    #[test]
+    fn test_format_role() {
+        let msg = make_assistant_text_only("hi");
+        assert_eq!(format_role(&msg), "assistant");
+    }
+
+    #[test]
+    fn test_summarize_message() {
+        let msg = make_assistant_text_only("The quick brown fox jumps over the lazy dog");
+        let (role, preview) = summarize_message(&msg, 20);
+        assert_eq!(role, "assistant");
+        assert!(preview.len() <= 23); // 20 + "..."
+    }
+
+    #[test]
+    fn test_estimate_total_tokens() {
+        let messages = vec![
+            make_assistant_text_only("short"),
+            make_assistant_text_only("another message here"),
+        ];
+        let total = estimate_total_tokens(&messages);
+        assert!(total > 0);
+    }
+
+    #[test]
+    fn test_count_all_tool_calls() {
+        let messages = vec![
+            make_assistant_with_tool_use("bash"),
+            make_assistant_with_tool_use("grep"),
+            make_assistant_text_only("done"),
+        ];
+        assert_eq!(count_all_tool_calls(&messages), 2);
+    }
+
+    #[test]
+    fn test_get_unique_tool_names() {
+        let messages = vec![
+            make_assistant_with_tool_use("bash"),
+            make_assistant_with_tool_use("grep"),
+            make_assistant_with_tool_use("bash"),
+        ];
+        let names = get_unique_tool_names(&messages);
+        assert_eq!(names, vec!["bash", "grep"]);
+    }
+
+    #[test]
+    fn test_last_message_role() {
+        let messages = vec![
+            make_assistant_text_only("hi"),
+        ];
+        assert_eq!(last_message_role(&messages), Some("assistant"));
+        assert_eq!(last_message_role(&[]), None);
+    }
+
+    #[test]
+    fn test_conversation_summary() {
+        use crate::compact::messages::create_user_message;
+        let messages = vec![
+            create_user_message("hello", false),
+            make_assistant_with_tool_use("bash"),
+        ];
+        let summary = conversation_summary(&messages);
+        assert!(summary.contains("1 user"));
+        assert!(summary.contains("1 assistant"));
+        assert!(summary.contains("Tool calls: 1"));
+        assert!(summary.contains("bash"));
     }
 }
