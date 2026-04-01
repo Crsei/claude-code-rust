@@ -25,7 +25,7 @@ use super::types::*;
 
 /// Read a TeamFile from disk.
 ///
-/// Path: `~/.claude/teams/{team_name}/config.json`
+/// Path: `~/.cc-rust/teams/{team_name}/config.json`
 pub fn read_team_file(team_name: &str) -> Result<TeamFile> {
     let path = team_config_path(team_name);
     let content = fs::read_to_string(&path)
@@ -54,7 +54,7 @@ pub fn team_config_path(team_name: &str) -> PathBuf {
 /// Get the tasks directory for a team.
 pub fn team_tasks_dir(team_name: &str) -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".claude")
+    home.join(".cc-rust")
         .join(TASKS_DIR_NAME)
         .join(sanitize_team_name(team_name))
 }

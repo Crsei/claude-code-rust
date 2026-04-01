@@ -1,6 +1,6 @@
 # 已完成模块 — 大幅简化实现
 
-> 最后更新: 2026-04-01 (补全更新: FileEditTool/BashTool/FileReadTool/GrepTool/AgentTool)
+> 最后更新: 2026-04-02 (TUI 集成完成: ui/tui.rs 异步事件循环 + App 增强)
 > 此文档记录已标记 ✅ 但相比 TypeScript 原版有显著功能缩减的模块。
 > 完整实现见 [`COMPLETED_FULL.md`](COMPLETED_FULL.md)。
 > 详细简化率分析见 [`MODULE_SIMPLIFICATION.md`](MODULE_SIMPLIFICATION.md)。

@@ -3,7 +3,7 @@
 //! Corresponds to TypeScript: `utils/teammateMailbox.ts`
 //!
 //! Each teammate has an inbox file at:
-//!   `~/.claude/teams/{team_name}/inboxes/{agent_name}.json`
+//!   `~/.cc-rust/teams/{team_name}/inboxes/{agent_name}.json`
 //!
 //! Messages are stored as a JSON array of `TeammateMessage`.
 //! Write operations use file locking to prevent data loss from concurrent access.
@@ -28,17 +28,17 @@ use super::types::TeammateMessage;
 
 /// Get the base directory for a team's data.
 ///
-/// Returns: `~/.claude/teams/{team_name}`
+/// Returns: `~/.cc-rust/teams/{team_name}`
 pub fn team_dir(team_name: &str) -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".claude")
+    home.join(".cc-rust")
         .join(TEAMS_DIR_NAME)
         .join(sanitize_name(team_name))
 }
 
 /// Get the inbox file path for an agent.
 ///
-/// Returns: `~/.claude/teams/{team_name}/inboxes/{agent_name}.json`
+/// Returns: `~/.cc-rust/teams/{team_name}/inboxes/{agent_name}.json`
 pub fn inbox_path(agent_name: &str, team_name: &str) -> PathBuf {
     team_dir(team_name)
         .join(INBOXES_DIR_NAME)

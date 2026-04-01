@@ -431,6 +431,42 @@ impl App {
         self.scroll_offset = usize::MAX;
     }
 
+    /// Navigate to the previous item in input history.
+    fn history_up(&mut self) {
+        if self.history.is_empty() {
+            return;
+        }
+        if self.history_index.is_none() {
+            self.saved_input = self.prompt.input.clone();
+            self.history_index = Some(self.history.len() - 1);
+        } else if let Some(idx) = self.history_index {
+            if idx > 0 {
+                self.history_index = Some(idx - 1);
+            } else {
+                return;
+            }
+        }
+        if let Some(idx) = self.history_index {
+            self.prompt.input = self.history[idx].clone();
+            self.prompt.cursor_position = self.prompt.input.len();
+        }
+    }
+
+    /// Navigate to the next item in input history.
+    fn history_down(&mut self) {
+        if let Some(idx) = self.history_index {
+            if idx < self.history.len() - 1 {
+                self.history_index = Some(idx + 1);
+                self.prompt.input = self.history[idx + 1].clone();
+                self.prompt.cursor_position = self.prompt.input.len();
+            } else {
+                self.history_index = None;
+                self.prompt.input = self.saved_input.clone();
+                self.prompt.cursor_position = self.prompt.input.len();
+            }
+        }
+    }
+
     /// Render a thin status bar at the very bottom.
     fn render_status_bar(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
         if area.height == 0 {
@@ -443,8 +479,32 @@ impl App {
         } else {
             "ready"
         };
-        let status_text = format!(" {} messages | {} | Ctrl+C to {}", msg_count, mode,
-            if self.is_streaming { "abort" } else { "quit" });
+
+        // Build segments: model | messages | cost | mode | hint
+        let mut parts = Vec::new();
+        if !self.model_name.is_empty() {
+            // Show abbreviated model name
+            let short_model = self.model_name
+                .strip_prefix("claude-")
+                .unwrap_or(&self.model_name);
+            let short_model = short_model
+                .split('-')
+                .take(2)
+                .collect::<Vec<_>>()
+                .join("-");
+            parts.push(short_model);
+        }
+        parts.push(format!("{} msgs", msg_count));
+        if self.session_cost_usd > 0.0 {
+            parts.push(format!("${:.4}", self.session_cost_usd));
+        }
+        parts.push(mode.to_string());
+        parts.push(format!(
+            "Ctrl+C {}",
+            if self.is_streaming { "abort" } else { "quit" }
+        ));
+
+        let status_text = format!(" {}", parts.join(" | "));
 
         let line = Line::from(vec![Span::styled(status_text, self.theme.dim)]);
         buf.set_line(area.x, area.y, &line, area.width);

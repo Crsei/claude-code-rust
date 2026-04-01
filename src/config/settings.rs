@@ -2,8 +2,8 @@
 //!
 //! Loads configuration from multiple sources and merges them with a defined
 //! precedence order:
-//!   1. Global config (`~/.claude/settings.json`)       -- lowest priority
-//!   2. Project config (`.claude/settings.json` in CWD) -- higher priority
+//!   1. Global config (`~/.cc-rust/settings.json`)       -- lowest priority
+//!   2. Project config (`.cc-rust/settings.json` in CWD) -- higher priority
 //!   3. Environment variables                           -- highest priority
 //!
 //! The merged result drives `AppState::settings`.
@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 // Config types
 // ---------------------------------------------------------------------------
 
-/// Global (user-level) configuration loaded from `~/.claude/settings.json`.
+/// Global (user-level) configuration loaded from `~/.cc-rust/settings.json`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GlobalConfig {
@@ -45,7 +45,7 @@ pub struct GlobalConfig {
     pub extra: HashMap<String, serde_json::Value>,
 }
 
-/// Project-level configuration loaded from `.claude/settings.json` in the
+/// Project-level configuration loaded from `.cc-rust/settings.json` in the
 /// working directory (or an ancestor).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -87,13 +87,13 @@ pub struct MergedConfig {
 // Loading functions
 // ---------------------------------------------------------------------------
 
-/// Return the path to the global Claude settings directory (`~/.claude/`).
+/// Return the path to the global cc-rust settings directory (`~/.cc-rust/`).
 pub fn global_claude_dir() -> Result<PathBuf> {
     let home = dirs::home_dir().context("Could not determine home directory")?;
-    Ok(home.join(".claude"))
+    Ok(home.join(".cc-rust"))
 }
 
-/// Load the global configuration from `~/.claude/settings.json`.
+/// Load the global configuration from `~/.cc-rust/settings.json`.
 ///
 /// Returns `Ok(GlobalConfig::default())` if the file does not exist.
 pub fn load_global_config() -> Result<GlobalConfig> {
@@ -113,7 +113,7 @@ pub fn load_global_config() -> Result<GlobalConfig> {
     Ok(config)
 }
 
-/// Load the project configuration from `.claude/settings.json` relative to
+/// Load the project configuration from `.cc-rust/settings.json` relative to
 /// `cwd`, or any ancestor directory.
 ///
 /// Returns `Ok(ProjectConfig::default())` if no project config is found.
@@ -131,11 +131,11 @@ pub fn load_project_config(cwd: &Path) -> Result<ProjectConfig> {
     }
 }
 
-/// Search `cwd` and its ancestors for `.claude/settings.json`.
+/// Search `cwd` and its ancestors for `.cc-rust/settings.json`.
 fn find_project_config(cwd: &Path) -> Option<PathBuf> {
     let mut dir = cwd.to_path_buf();
     loop {
-        let candidate = dir.join(".claude").join("settings.json");
+        let candidate = dir.join(".cc-rust").join("settings.json");
         if candidate.exists() {
             return Some(candidate);
         }

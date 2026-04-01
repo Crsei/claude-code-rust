@@ -52,6 +52,7 @@ use crate::tools::registry;
 use crate::types::app_state::{AppState, SettingsJson};
 use crate::types::config::{QueryEngineConfig, QuerySource};
 use crate::types::tool::{PermissionMode, ToolPermissionContext};
+use crate::ui::tui;
 
 // ---------------------------------------------------------------------------
 // CLI argument definitions (Phase A)
@@ -266,7 +267,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     };
 
     // ── B.7: Create QueryEngine ──────────────────────────────────────
-    let engine = QueryEngine::new(engine_config);
+    let engine = Arc::new(QueryEngine::new(engine_config));
     info!(session = %engine.session_id, "QueryEngine created");
 
     // ── B.8: Handle session resume ───────────────────────────────────
@@ -305,98 +306,28 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         None
     };
 
-    // ── Enter REPL loop ──────────────────────────────────────────────
+    // ── Enter TUI ───────────────────────────────────────────────────
     // Register shutdown handler
     let shutdown_token = shutdown::register_shutdown_handler();
 
-    let result = run_repl_loop(&engine, initial_prompt, shutdown_token).await;
+    let tui_result = tui::run_tui(
+        engine.clone(),
+        initial_prompt,
+        &model,
+        shutdown_token,
+    )
+    .await;
 
     // ── Phase I: Shutdown and cleanup ────────────────────────────────
     shutdown::graceful_shutdown(&engine).await;
 
-    result
-}
-
-// ---------------------------------------------------------------------------
-// REPL loop
-// ---------------------------------------------------------------------------
-
-async fn run_repl_loop(
-    engine: &QueryEngine,
-    initial_prompt: Option<String>,
-    shutdown_token: tokio_util::sync::CancellationToken,
-) -> anyhow::Result<ExitCode> {
-    use futures::StreamExt;
-
-    let mut first_prompt = initial_prompt;
-
-    loop {
-        // Check if shutdown was requested
-        if shutdown_token.is_cancelled() {
-            info!("shutdown requested, exiting REPL");
-            break;
-        }
-
-        // Get user input
-        let prompt = if let Some(p) = first_prompt.take() {
-            p
-        } else {
-            // Read from stdin
-            match read_user_input() {
-                Some(input) => input,
-                None => {
-                    // EOF (Ctrl-D)
-                    info!("EOF received, exiting");
-                    break;
-                }
-            }
-        };
-
-        let trimmed = prompt.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        // Special REPL commands
-        if trimmed == "/quit" || trimmed == "/exit" {
-            break;
-        }
-
-        // Reset abort for new turn
-        engine.reset_abort();
-
-        // Submit to QueryEngine
-        let stream = engine.submit_message(trimmed, QuerySource::ReplMainThread);
-        let mut stream = std::pin::pin!(stream);
-
-        while let Some(msg) = stream.next().await {
-            // In a full UI, we'd render these messages.
-            // For now, print assistant text output.
-            match &msg {
-                crate::engine::sdk_types::SdkMessage::Assistant(assistant_msg) => {
-                    for block in &assistant_msg.message.content {
-                        if let crate::types::message::ContentBlock::Text { text } = block {
-                            println!("{}", text);
-                        }
-                    }
-                }
-                crate::engine::sdk_types::SdkMessage::Result(result) => {
-                    if result.is_error {
-                        eprintln!("Error: {}", result.result);
-                    }
-                    debug!(
-                        turns = result.num_turns,
-                        cost = result.total_cost_usd,
-                        duration_ms = result.duration_ms,
-                        "query completed"
-                    );
-                }
-                _ => {}
-            }
+    match tui_result {
+        Ok(()) => Ok(ExitCode::SUCCESS),
+        Err(e) => {
+            error!("TUI error: {:#}", e);
+            Ok(ExitCode::FAILURE)
         }
     }
-
-    Ok(ExitCode::SUCCESS)
 }
 
 // ---------------------------------------------------------------------------
@@ -462,16 +393,3 @@ fn resolve_permission_mode(
     }
 }
 
-/// Read a line of user input from stdin.
-fn read_user_input() -> Option<String> {
-    use std::io::Write;
-    print!("\n> ");
-    std::io::stdout().flush().ok();
-
-    let mut input = String::new();
-    match std::io::stdin().read_line(&mut input) {
-        Ok(0) => None, // EOF
-        Ok(_) => Some(input.trim_end().to_string()),
-        Err(_) => None,
-    }
-}

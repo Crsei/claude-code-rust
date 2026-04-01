@@ -1,8 +1,8 @@
 //! `/logout` command — clear stored authentication credentials.
 //!
 //! Removes:
-//! - API key from system keychain (if `auth` feature enabled)
-//! - OAuth tokens from disk (`~/.claude/credentials.json`)
+//! - API key from system keychain
+//! - OAuth tokens from disk (`~/.cc-rust/credentials.json`)
 
 use anyhow::Result;
 use async_trait::async_trait;

@@ -16,5 +16,6 @@ pub mod prompt_input;
 pub mod spinner;
 #[allow(dead_code)]
 pub mod theme;
+pub mod tui;
 #[allow(dead_code)]
 pub mod vim;

@@ -39,10 +39,10 @@ struct TranscriptEntry {
 // Path helpers
 // ---------------------------------------------------------------------------
 
-/// Return the directory for transcript files (`~/.claude/transcripts/`).
+/// Return the directory for transcript files (`~/.cc-rust/transcripts/`).
 fn get_transcript_dir() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".claude").join("transcripts")
+    home.join(".cc-rust").join("transcripts")
 }
 
 /// Return the transcript file path for a specific session.

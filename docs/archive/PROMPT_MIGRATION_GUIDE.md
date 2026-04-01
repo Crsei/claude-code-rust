@@ -403,9 +403,9 @@ TS 函数: getClaudeMdFiles(cwd, roots)
 
 加载顺序 (优先级递增):
 1. `/etc/claude-code/CLAUDE.md` — 管理员全局
-2. `~/.claude/CLAUDE.md` — 用户全局
-3. 从 git root 到 cwd 的每级 `CLAUDE.md` 和 `.claude/CLAUDE.md`
-4. `.claude/rules/*.md` — 项目规则文件
+2. `~/.cc-rust/CLAUDE.md` — 用户全局
+3. 从 git root 到 cwd 的每级 `CLAUDE.md` 和 `.cc-rust/CLAUDE.md`
+4. `.cc-rust/rules/*.md` — 项目规则文件
 5. `CLAUDE.local.md` — 本地私有 (.gitignore 友好)
 
 **@include 指令解析:**
@@ -424,7 +424,7 @@ TS 函数: loadMemoryPrompt()
 常量: MAX_ENTRYPOINT_LINES = 200, MAX_ENTRYPOINT_BYTES = 25_000
 ```
 
-读取 `~/.claude/memory/MEMORY.md`，截断后注入为动态段落。
+读取 `~/.cc-rust/memory/MEMORY.md`，截断后注入为动态段落。
 
 **Rust 对应:** `session/memdir.rs` 已有 CRUD，需要 `load_memory_prompt()` 函数 + 接入 `env_info` 段落。
 

@@ -41,7 +41,7 @@ impl std::fmt::Display for BackendType {
 
 /// Team configuration persisted on disk.
 ///
-/// File location: `~/.claude/teams/{sanitized_team_name}/config.json`
+/// File location: `~/.cc-rust/teams/{sanitized_team_name}/config.json`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TeamFile {
     pub name: String,

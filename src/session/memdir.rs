@@ -2,7 +2,7 @@
 //!
 //! Provides reading, writing, and listing of memory entries stored alongside
 //! session data. Memories are key-value pairs persisted as individual files
-//! under `~/.claude/memory/` (global) or `.claude/memory/` (project-local).
+//! under `~/.cc-rust/memory/` (global) or `.cc-rust/memory/` (project-local).
 //!
 //! Corresponds to TypeScript: memdir/ (8 files)
 
@@ -40,9 +40,9 @@ pub struct MemoryEntry {
 /// Scope of memory storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemoryScope {
-    /// Global memories: `~/.claude/memory/`
+    /// Global memories: `~/.cc-rust/memory/`
     Global,
-    /// Project-local memories: `.claude/memory/` relative to cwd
+    /// Project-local memories: `.cc-rust/memory/` relative to cwd
     Project,
 }
 
@@ -57,7 +57,7 @@ pub fn memory_dir(scope: MemoryScope, cwd: &Path) -> Result<PathBuf> {
             let global = settings::global_claude_dir()?;
             Ok(global.join("memory"))
         }
-        MemoryScope::Project => Ok(cwd.join(".claude").join("memory")),
+        MemoryScope::Project => Ok(cwd.join(".cc-rust").join("memory")),
     }
 }
 

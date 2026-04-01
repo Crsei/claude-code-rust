@@ -1,6 +1,6 @@
 //! Session storage -- persisting conversation state to disk.
 //!
-//! Sessions are stored as JSON files under `~/.claude/sessions/`.
+//! Sessions are stored as JSON files under `~/.cc-rust/sessions/`.
 //! Each session is identified by a UUID and contains the full message history
 //! along with metadata (creation time, working directory, etc.).
 
@@ -62,10 +62,10 @@ pub struct SerializableMessage {
 // Path helpers
 // ---------------------------------------------------------------------------
 
-/// Return the base directory for session storage (`~/.claude/sessions/`).
+/// Return the base directory for session storage (`~/.cc-rust/sessions/`).
 pub fn get_session_dir() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".claude").join("sessions")
+    home.join(".cc-rust").join("sessions")
 }
 
 /// Return the file path for a specific session.

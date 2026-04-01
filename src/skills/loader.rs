@@ -7,7 +7,7 @@
 //! - Frontmatter is YAML between `---` fences at the top of the file
 //! - The directory name is the canonical skill name
 //! - Single `.md` files in a skills directory are NOT loaded (must be in subdirs)
-//! - Legacy `.claude/commands/` directories use a different layout (command.md)
+//! - Legacy `.cc-rust/commands/` directories use a different layout (command.md)
 
 #![allow(unused)]
 
@@ -213,7 +213,7 @@ pub fn load_skills_from_dir(dir: &Path, source: SkillSource) -> Vec<SkillDefinit
     skills
 }
 
-/// Load legacy commands from `.claude/commands/` directory.
+/// Load legacy commands from `.cc-rust/commands/` directory.
 ///
 /// Legacy format: `commands/command-name.md` (single file, no subdirectory).
 pub fn load_legacy_commands(dir: &Path, source: SkillSource) -> Vec<SkillDefinition> {

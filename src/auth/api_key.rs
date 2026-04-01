@@ -5,8 +5,6 @@
 //! - System keychain storage
 //! - Environment variable (`ANTHROPIC_API_KEY`)
 
-#![allow(dead_code)]
-
 use anyhow::Result;
 
 /// Validate an API key format.
@@ -18,7 +16,7 @@ pub fn validate_api_key(key: &str) -> bool {
 
 /// Store API key to the system keychain.
 pub fn store_api_key(key: &str) -> Result<()> {
-    let entry = keyring::Entry::new("claude-code", "api-key")?;
+    let entry = keyring::Entry::new("cc-rust", "api-key")?;
     entry.set_password(key)?;
     Ok(())
 }
@@ -27,7 +25,7 @@ pub fn store_api_key(key: &str) -> Result<()> {
 ///
 /// Returns `Ok(None)` if no key is stored.
 pub fn load_api_key() -> Result<Option<String>> {
-    let entry = keyring::Entry::new("claude-code", "api-key")?;
+    let entry = keyring::Entry::new("cc-rust", "api-key")?;
     match entry.get_password() {
         Ok(key) => Ok(Some(key)),
         Err(keyring::Error::NoEntry) => Ok(None),
@@ -39,7 +37,7 @@ pub fn load_api_key() -> Result<Option<String>> {
 ///
 /// Used by the `/logout` command.
 pub fn remove_api_key() -> Result<()> {
-    let entry = keyring::Entry::new("claude-code", "api-key")?;
+    let entry = keyring::Entry::new("cc-rust", "api-key")?;
     match entry.delete_credential() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()), // already gone

@@ -41,7 +41,7 @@
 - [ ] `/theme`
 - [ ] `/think-back`
 - [ ] `/upgrade`
-- [ ] `/vim`
+- [x] `/vim` (ui/vim.rs 已实现: Normal/Insert/Visual 三模式, hjkl, d/y/c 操作符)
 - [ ] `/voice`
 
 ## Commands: Unmapped In Rewrite Plan
@@ -164,8 +164,9 @@
 - [ ] `analytics/mod.rs`: network telemetry sending
 - [ ] `remote/session.rs`: remote session implementation
 - [ ] `utils/messages.rs`: message formatting, truncation, counting
-- [ ] `ui/keybindings.rs`: keybinding registration and custom bindings
-- [ ] `ui/vim.rs`: Vim mode support
+- [x] `ui/keybindings.rs`: keybinding registration and custom bindings (425 行, 8 测试)
+- [x] `ui/vim.rs`: Vim mode support (847 行, 22 测试)
+- [x] `ui/tui.rs`: 全屏 TUI 集成 (异步事件循环 + QueryEngine 通道通信)
 - [ ] `session/migrations.rs`: session data migrations
 - [ ] `session/` memdir-backed memory read/write
 - [ ] `services/lsp/`: LSP service layer

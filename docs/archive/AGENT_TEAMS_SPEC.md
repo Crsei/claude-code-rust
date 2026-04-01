@@ -46,7 +46,7 @@ Team Lead (主 Claude 实例)
   │  后端 2: tmux (终端面板)                  │
   │  后端 3: iTerm2 (macOS 原生分割)          │
   │                                         │
-  │  通信: 文件 Mailbox (~/.claude/teams/)    │
+  │  通信: 文件 Mailbox (~/.cc-rust/teams/)    │
   │  权限: 通过 Mailbox 向 Lead 请求审批       │
   │  计划: 可选 Plan Mode 审批门控            │
   └─────────────────────────────────────────┘
@@ -67,7 +67,7 @@ Team Lead (主 Claude 实例)
 ### 2.1 TeamFile — 团队配置 (磁盘持久化)
 
 ```
-文件位置: ~/.claude/teams/{sanitized_team_name}/config.json
+文件位置: ~/.cc-rust/teams/{sanitized_team_name}/config.json
 ```
 
 ```rust
@@ -299,7 +299,7 @@ Coordinator 模式是一个独立于 Teams 的高级编排模式。
 5. 构建 TeamFile:
    - name, description, created_at, lead_agent_id, lead_session_id
    - members: [{ agent_id, name: "team-lead", ... }]
-6. 写入 ~/.claude/teams/{name}/config.json
+6. 写入 ~/.cc-rust/teams/{name}/config.json
 7. 注册 session 清理 (防止磁盘泄漏)
 8. 初始化任务目录: resetTaskList() + ensureTasksDir()
 9. 设置 leader team name → getTaskListId() 返回 team 命名空间
@@ -322,8 +322,8 @@ Coordinator 模式是一个独立于 Teams 的高级编排模式。
 3. cleanupTeamDirectories(team_name):
    - 读取 TeamFile 获取 worktree 路径
    - 销毁所有 worktree (git worktree remove --force, fallback rm -rf)
-   - 删除 team 目录 (~/.claude/teams/{name})
-   - 删除 tasks 目录 (~/.claude/tasks/{sanitized_name})
+   - 删除 team 目录 (~/.cc-rust/teams/{name})
+   - 删除 tasks 目录 (~/.cc-rust/tasks/{sanitized_name})
 4. 取消注册 session 清理
 5. 清除颜色分配
 6. 清除 leader team name
@@ -391,7 +391,7 @@ TS 使用 3 层优先级链:
 ### 7.1 文件格式
 
 ```
-位置: ~/.claude/teams/{team_name}/inboxes/{agent_name}.json
+位置: ~/.cc-rust/teams/{team_name}/inboxes/{agent_name}.json
 格式: JSON Array of TeammateMessage
 锁文件: {inbox_path}.lock
 ```

@@ -157,11 +157,55 @@ impl ApiClient {
 
     /// Auto-detect provider from environment variables and construct an `ApiClient`.
     ///
+    /// Checks all registered providers (Anthropic, OpenAI, Google, DeepSeek, etc.)
+    /// and returns the first one that has an API key set in the environment.
+    ///
     /// Returns `None` if no provider has an API key set.
     pub fn from_env() -> Option<Self> {
         let info = crate::api::providers::detect_provider()?;
         let api_key = std::env::var(info.env_key).ok()?;
         Some(Self::from_provider_info(info, &api_key))
+    }
+
+    /// Construct an `ApiClient` using the full auth resolution chain.
+    ///
+    /// Resolution order:
+    /// 1. Multi-provider environment variable detection (Anthropic, OpenAI, Google, etc.)
+    /// 2. `ANTHROPIC_AUTH_TOKEN` environment variable
+    /// 3. API key from system keychain
+    ///
+    /// Returns `None` if no authentication is available.
+    pub fn from_auth() -> Option<Self> {
+        // 1. Try multi-provider env detection
+        if let Some(client) = Self::from_env() {
+            return Some(client);
+        }
+
+        // 2. Fall back to auth::resolve_auth() (keychain, external token)
+        match crate::auth::resolve_auth() {
+            crate::auth::AuthMethod::ApiKey(api_key) => {
+                let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
+                Some(Self::new(ApiClientConfig {
+                    provider: ApiProvider::Anthropic { api_key, base_url },
+                    default_model: "claude-sonnet-4-20250514".to_string(),
+                    max_retries: 3,
+                    timeout_secs: 120,
+                }))
+            }
+            crate::auth::AuthMethod::ExternalToken(token) => {
+                let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
+                Some(Self::new(ApiClientConfig {
+                    provider: ApiProvider::Anthropic {
+                        api_key: token,
+                        base_url,
+                    },
+                    default_model: "claude-sonnet-4-20250514".to_string(),
+                    max_retries: 3,
+                    timeout_secs: 120,
+                }))
+            }
+            crate::auth::AuthMethod::None => None,
+        }
     }
 
     /// Build the required HTTP headers for Anthropic-format providers.
@@ -820,6 +864,63 @@ mod tests {
         let client = ApiClient::from_provider_info(info, "AIza-test");
         assert!(matches!(client.config().provider, ApiProvider::Google { .. }));
         assert_eq!(client.config().default_model, "gemini-2.0-flash");
+    }
+
+    // -----------------------------------------------------------------------
+    // from_env / from_auth
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_from_env_with_anthropic_key() {
+        // Temporarily set the env var for this test
+        let key = "sk-ant-api03-test-from-env-key";
+        std::env::set_var("ANTHROPIC_API_KEY", key);
+
+        let client = ApiClient::from_env();
+        assert!(client.is_some(), "from_env should return Some when ANTHROPIC_API_KEY is set");
+
+        let client = client.unwrap();
+        match &client.config().provider {
+            ApiProvider::Anthropic { api_key, .. } => {
+                assert_eq!(api_key, key);
+            }
+            other => panic!("expected Anthropic provider, got {:?}", other),
+        }
+
+        // Clean up
+        std::env::remove_var("ANTHROPIC_API_KEY");
+    }
+
+    #[test]
+    fn test_from_env_no_keys() {
+        // Save and clear all provider keys
+        let saved: Vec<_> = crate::api::providers::PROVIDERS
+            .iter()
+            .filter_map(|p| std::env::var(p.env_key).ok().map(|v| (p.env_key, v)))
+            .collect();
+        for p in crate::api::providers::PROVIDERS {
+            std::env::remove_var(p.env_key);
+        }
+
+        let client = ApiClient::from_env();
+        assert!(client.is_none(), "from_env should return None when no provider key is set");
+
+        // Restore
+        for (key, val) in saved {
+            std::env::set_var(key, val);
+        }
+    }
+
+    #[test]
+    fn test_from_auth_with_env() {
+        let key = "sk-ant-api03-test-from-auth-key";
+        std::env::set_var("ANTHROPIC_API_KEY", key);
+
+        let client = ApiClient::from_auth();
+        assert!(client.is_some(), "from_auth should find the env var");
+
+        // Clean up
+        std::env::remove_var("ANTHROPIC_API_KEY");
     }
 
     // -----------------------------------------------------------------------

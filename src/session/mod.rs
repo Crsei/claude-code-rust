@@ -1,6 +1,6 @@
 // Phase 6: Session persistence
 //
-// Session storage: save/load conversation state to ~/.claude/sessions/
+// Session storage: save/load conversation state to ~/.cc-rust/sessions/
 // Transcript recording: append-friendly write for audit trail
 // Session resume: find and restore the most recent session
 // Migrations: session data format versioning and migration

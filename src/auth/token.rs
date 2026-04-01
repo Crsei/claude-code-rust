@@ -8,11 +8,11 @@
 
 use anyhow::Result;
 
-/// Token storage file path: `~/.claude/credentials.json`
+/// Token storage file path: `~/.cc-rust/credentials.json`
 pub fn token_file_path() -> std::path::PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".claude")
+        .join(".cc-rust")
         .join("credentials.json")
 }
 

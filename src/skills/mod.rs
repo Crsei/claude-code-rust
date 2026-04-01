@@ -6,8 +6,8 @@
 //! extend the assistant's capabilities.  They can be:
 //!
 //! - **Bundled** — shipped with the binary, registered at startup
-//! - **User-defined** — loaded from `~/.claude/skills/`
-//! - **Project-defined** — loaded from `.claude/skills/` in project tree
+//! - **User-defined** — loaded from `~/.cc-rust/skills/`
+//! - **Project-defined** — loaded from `.cc-rust/skills/` in project tree
 //! - **Plugin-provided** — contributed by installed plugins
 //!
 //! Each skill has a name, description, optional frontmatter, and a markdown
@@ -219,9 +219,9 @@ pub fn init_skills(project_dir: Option<&std::path::Path>) {
     // 1. Register bundled skills
     bundled::register_bundled_skills();
 
-    // 2. Load user skills from ~/.claude/skills/
+    // 2. Load user skills from ~/.cc-rust/skills/
     if let Some(home) = dirs::home_dir() {
-        let user_skills_dir = home.join(".claude").join("skills");
+        let user_skills_dir = home.join(".cc-rust").join("skills");
         if user_skills_dir.is_dir() {
             let skills = loader::load_skills_from_dir(&user_skills_dir, SkillSource::User);
             for skill in skills {
@@ -230,9 +230,9 @@ pub fn init_skills(project_dir: Option<&std::path::Path>) {
         }
     }
 
-    // 3. Load project skills from .claude/skills/
+    // 3. Load project skills from .cc-rust/skills/
     if let Some(proj) = project_dir {
-        let project_skills_dir = proj.join(".claude").join("skills");
+        let project_skills_dir = proj.join(".cc-rust").join("skills");
         if project_skills_dir.is_dir() {
             let skills = loader::load_skills_from_dir(&project_skills_dir, SkillSource::Project);
             for skill in skills {
@@ -316,10 +316,10 @@ mod tests {
     #[test]
     fn test_expand_prompt_skill_dir() {
         let mut skill = make_skill("test");
-        skill.base_dir = Some(PathBuf::from("/home/user/.claude/skills/test"));
+        skill.base_dir = Some(PathBuf::from("/home/user/.cc-rust/skills/test"));
         skill.prompt_body = "Dir: ${CLAUDE_SKILL_DIR}".to_string();
         let result = skill.expand_prompt("", None);
-        assert_eq!(result, "Dir: /home/user/.claude/skills/test");
+        assert_eq!(result, "Dir: /home/user/.cc-rust/skills/test");
     }
 
     #[test]

@@ -8,16 +8,16 @@ use super::McpServerConfig;
 pub fn discover_mcp_servers(cwd: &Path) -> Result<Vec<McpServerConfig>> {
     let mut servers = Vec::new();
 
-    // Check global config: ~/.claude/settings.json
+    // Check global config: ~/.cc-rust/settings.json
     if let Some(home) = dirs::home_dir() {
-        let global_settings = home.join(".claude").join("settings.json");
+        let global_settings = home.join(".cc-rust").join("settings.json");
         if let Ok(configs) = load_mcp_from_settings(&global_settings) {
             servers.extend(configs);
         }
     }
 
-    // Check project config: .claude/settings.json
-    let project_settings = cwd.join(".claude").join("settings.json");
+    // Check project config: .cc-rust/settings.json
+    let project_settings = cwd.join(".cc-rust").join("settings.json");
     if let Ok(configs) = load_mcp_from_settings(&project_settings) {
         servers.extend(configs);
     }

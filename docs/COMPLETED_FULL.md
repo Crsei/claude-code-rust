@@ -1,6 +1,6 @@
 # 已完成模块 — 完整实现
 
-> 最后更新: 2026-04-01
+> 最后更新: 2026-04-02
 > 此文档记录与 TypeScript 原版功能对等或接近完整的已完成模块。
 > 大幅简化的模块见 [`COMPLETED_SIMPLIFIED.md`](COMPLETED_SIMPLIFIED.md)。
 > 剩余工作见 [`REWRITE_PLAN.md`](../REWRITE_PLAN.md)。
@@ -40,10 +40,10 @@
 | P1.8 | 系统提示 | `engine/system_prompt.rs` | 640 | 7 | 7 静态段落 + 动态段落 + 缓存边界 |
 | P1.9 | 结果判定 | `engine/result.rs` | 233 | 6 | isResultSuccessful + extractTextResult |
 | P1.10 | 提示段落 | `engine/prompt_sections.rs` | 210 | — | 段落组装 + 工具 prompt |
-| P1.11 | CLI 入口 | `main.rs` | 473 | 0 | clap CLI + 快速路径 + REPL + print mode |
+| P1.11 | CLI 入口 | `main.rs` | ~400 | 0 | clap CLI + 快速路径 + TUI 集成 + print mode |
 | P1.12 | 关闭清理 | `shutdown.rs` | 129 | 0 | SIGINT handler + abort + transcript flush |
 
-**小计: 12 个文件, 4,772 行, 34 测试**
+**小计: 12 个文件, ~4,700 行, 34 测试**
 
 ---
 
@@ -163,6 +163,26 @@ PlanMode、Worktree、Skill 完整实现真实逻辑。
 | P12.6 | 插件系统 | `plugins/` (3 文件) | 931 | — | — | manifest/loader/注册 |
 
 **小计: 8 个文件, 4,409 行**
+
+---
+
+## Phase 13: 终端 UI (完整 TUI)
+
+基于 ratatui + crossterm 的全屏终端界面，已与 QueryEngine 完整集成。
+
+| # | 模块 | 文件 | 行数 | 测试 | 说明 |
+|---|------|------|------|------|------|
+| P13.1 | TUI 集成 | `ui/tui.rs` | ~300 | 0 | 异步事件循环, tokio::spawn 引擎查询, mpsc 通道通信, 终端状态守卫 |
+| P13.2 | App 主框架 | `ui/app.rs` | ~470 | 0 | 消息历史, 输入状态, 权限对话框, 滚动, 输入历史, 状态栏, 费用跟踪 |
+| P13.3 | 消息渲染 | `ui/messages.rs` | 404 | 0 | User/Assistant/System/Progress/Attachment 5 种消息渲染 |
+| P13.4 | Markdown 渲染 | `ui/markdown.rs` | 259 | 0 | pulldown-cmark: 标题, 粗体, 斜体, 代码块, 列表, 链接, 引用, 分隔线 |
+| P13.5 | 输入框 | `ui/prompt_input.rs` | 250 | 0 | 光标, 水平滚动, UTF-8 安全, Ctrl 快捷键 |
+| P13.6 | 权限对话框 | `ui/permissions.rs` | 244 | 0 | 居中覆盖层, Allow/Deny/AlwaysAllow, 快捷键 Y/N/A |
+| P13.7 | 主题系统 | `ui/theme.rs` | 116 | 0 | 23 种预定义 RGB 样式 |
+| P13.8 | 旋转动画 | `ui/spinner.rs` | 95 | 0 | 10 帧 Braille 点阵动画 |
+| P13.9 | Diff 渲染 | `ui/diff.rs` | 96 | 0 | 增/删/上下文着色, similar crate |
+
+**小计: 9 个文件, ~2,234 行**
 
 ---
 

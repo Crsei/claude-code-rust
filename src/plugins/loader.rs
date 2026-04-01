@@ -28,7 +28,7 @@ struct InstalledPluginsFile {
     plugins: Vec<PluginEntry>,
 }
 
-/// Load installed plugins from `~/.claude/plugins/installed_plugins.json`.
+/// Load installed plugins from `~/.cc-rust/plugins/installed_plugins.json`.
 pub fn load_installed_plugins() -> Vec<PluginEntry> {
     let path = installed_plugins_path();
     if !path.is_file() {
@@ -49,7 +49,7 @@ pub fn load_installed_plugins() -> Vec<PluginEntry> {
     }
 }
 
-/// Save installed plugins to `~/.claude/plugins/installed_plugins.json`.
+/// Save installed plugins to `~/.cc-rust/plugins/installed_plugins.json`.
 pub fn save_installed_plugins(plugins: &[PluginEntry]) -> Result<()> {
     let path = installed_plugins_path();
     if let Some(parent) = path.parent() {

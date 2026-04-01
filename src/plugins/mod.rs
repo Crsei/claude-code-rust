@@ -4,11 +4,11 @@
 //!
 //! Plugins extend Claude Code with additional tools, skills, commands, and
 //! MCP servers. They are installed from marketplaces (git repos or NPM) and
-//! cached locally in `~/.claude/plugins/`.
+//! cached locally in `~/.cc-rust/plugins/`.
 //!
 //! Three-layer architecture:
 //! 1. **Intent** — settings files declare desired plugins/marketplaces
-//! 2. **Materialization** — `~/.claude/plugins/` contains cached files
+//! 2. **Materialization** — `~/.cc-rust/plugins/` contains cached files
 //! 3. **Active** — loaded into memory and available to the engine
 
 #![allow(unused)]
@@ -110,7 +110,7 @@ pub struct MarketplaceEntry {
 /// Expected cache directory layout:
 ///
 /// ```text
-/// ~/.claude/plugins/
+/// ~/.cc-rust/plugins/
 /// ├── cache/
 /// │   └── {marketplace}/{plugin}/{version}/
 /// │       └── plugin.json          ← manifest
@@ -124,7 +124,7 @@ pub struct MarketplaceEntry {
 pub fn plugins_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join(".claude")
+        .join(".cc-rust")
         .join("plugins")
 }
 
@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn test_paths() {
         let pd = plugins_dir();
-        assert!(pd.to_string_lossy().contains(".claude"));
+        assert!(pd.to_string_lossy().contains(".cc-rust"));
         assert!(cache_dir().to_string_lossy().contains("cache"));
         assert!(installed_plugins_path().to_string_lossy().contains("installed_plugins"));
     }

@@ -77,7 +77,7 @@ fn handle_show(ctx: &CommandContext) -> Result<CommandResult> {
     }
     lines.push(format!(
         "  Project dir:   {}",
-        ctx.cwd.join(".claude").join("settings.json").display()
+        ctx.cwd.join(".cc-rust").join("settings.json").display()
     ));
 
     Ok(CommandResult::Output(lines.join("\n")))

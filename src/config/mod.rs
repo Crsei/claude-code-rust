@@ -1,6 +1,6 @@
 // Phase 3: Configuration management
 //
-// Settings loading (local JSON, ~/.claude/settings.json, project .claude/settings.json)
+// Settings loading (local JSON, ~/.cc-rust/settings.json, project .cc-rust/settings.json)
 // CLAUDE.md discovery and injection
 // Environment variable overrides
 

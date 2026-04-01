@@ -343,45 +343,10 @@ impl QueryEngine {
                 task_budget: config.task_budget.clone(),
             };
 
-            // Create API client — try multi-provider env detection first,
-            // then fall back to auth::resolve_auth() for keychain support.
-            let api_client: Option<Arc<crate::api::client::ApiClient>> = {
-                if let Some(client) = crate::api::client::ApiClient::from_env() {
-                    // Matched a provider via environment variable (Anthropic, OpenAI, Google, etc.)
-                    Some(Arc::new(client))
-                } else {
-                    // No env var found — try keychain / external token via resolve_auth()
-                    match crate::auth::resolve_auth() {
-                        crate::auth::AuthMethod::ApiKey(api_key) => {
-                            let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
-                            let client_config = crate::api::client::ApiClientConfig {
-                                provider: crate::api::client::ApiProvider::Anthropic {
-                                    api_key,
-                                    base_url,
-                                },
-                                default_model: model_name.clone(),
-                                max_retries: 3,
-                                timeout_secs: 120,
-                            };
-                            Some(Arc::new(crate::api::client::ApiClient::new(client_config)))
-                        }
-                        crate::auth::AuthMethod::ExternalToken(token) => {
-                            let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
-                            let client_config = crate::api::client::ApiClientConfig {
-                                provider: crate::api::client::ApiProvider::Anthropic {
-                                    api_key: token,
-                                    base_url,
-                                },
-                                default_model: model_name.clone(),
-                                max_retries: 3,
-                                timeout_secs: 120,
-                            };
-                            Some(Arc::new(crate::api::client::ApiClient::new(client_config)))
-                        }
-                        crate::auth::AuthMethod::None => None,
-                    }
-                }
-            };
+            // Create API client via full auth resolution chain:
+            // env vars (multi-provider) → keychain → external token
+            let api_client: Option<Arc<crate::api::client::ApiClient>> =
+                crate::api::client::ApiClient::from_auth().map(Arc::new);
 
             // Create deps for the inner query loop
             let deps = Arc::new(QueryEngineDeps {

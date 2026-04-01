@@ -24,8 +24,8 @@
 //!
 //! Rule sources (priority descending):
 //!   1. policySettings (enterprise)
-//!   2. projectSettings (.claude/settings.json)
-//!   3. userSettings (~/.claude/settings.json)
+//!   2. projectSettings (.cc-rust/settings.json)
+//!   3. userSettings (~/.cc-rust/settings.json)
 //!   4. localSettings (repo-specific)
 //!   5. cliArg (command-line)
 //!   6. session (session-level grants)

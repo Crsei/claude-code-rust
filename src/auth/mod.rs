@@ -54,7 +54,7 @@ impl AuthMethod {
 /// Priority:
 /// 1. `ANTHROPIC_API_KEY` env var
 /// 2. `ANTHROPIC_AUTH_TOKEN` env var
-/// 3. API key from system keychain (if `auth` feature enabled)
+/// 3. API key from system keychain
 /// 4. `AuthMethod::None`
 pub fn resolve_auth() -> AuthMethod {
     // 1. ANTHROPIC_API_KEY

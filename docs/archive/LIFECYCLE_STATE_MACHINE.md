@@ -629,8 +629,8 @@ hasPermissionsToUseTool(tool, input, context)
 
 权限规则源 (优先级递减):
     1. policySettings (企业管理)
-    2. projectSettings (.claude/settings.json)
-    3. userSettings (~/.claude/settings.json)
+    2. projectSettings (.cc-rust/settings.json)
+    3. userSettings (~/.cc-rust/settings.json)
     4. localSettings (仓库特定)
     5. cliArg (命令行参数)
     6. session (会话内授权)
