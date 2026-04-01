@@ -8,7 +8,7 @@
 // Phase I: Shutdown and cleanup (graceful_shutdown)
 // ============================================================================
 
-// Phase 0-8: Local/offline modules
+// 核心模块
 mod types;
 mod query;
 mod engine;
@@ -21,14 +21,14 @@ mod session;
 mod commands;
 mod ui;
 
-// Phase 9-13: Network modules (low priority)
+// 网络 / API / 认证
 mod api;
 mod auth;
 mod mcp;
 mod analytics;
 mod remote;
 
-// Phase 12: Plugin/Skill/LSP systems
+// 插件 / 技能 / LSP
 mod skills;
 mod plugins;
 mod lsp_service;

@@ -4,9 +4,7 @@
 //!
 //! Uses the Brave Search API (https://api.search.brave.com/res/v1/web/search)
 //! to fetch web search results. Requires a `BRAVE_SEARCH_API_KEY` environment
-//! variable or the `network` feature flag.
-//!
-//! Falls back to a "not available" message when network is disabled.
+//! variable.
 
 #![allow(unused)]
 
@@ -199,7 +197,7 @@ impl Tool for WebSearchTool {
     }
 
     fn is_enabled(&self) -> bool {
-        cfg!(feature = "network")
+        true
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
@@ -257,88 +255,75 @@ impl Tool for WebSearchTool {
             })
             .unwrap_or_default();
 
-        #[cfg(feature = "network")]
-        {
-            let api_key = std::env::var(API_KEY_ENV).unwrap_or_default();
-            if api_key.is_empty() {
-                return Ok(ToolResult {
-                    data: json!({
-                        "error": format!(
-                            "WebSearch requires the {} environment variable to be set with a Brave Search API key.",
-                            API_KEY_ENV
-                        )
-                    }),
-                    new_messages: vec![],
-                });
-            }
-
-            let start = Instant::now();
-
-            let client = reqwest::Client::builder()
-                .timeout(SEARCH_TIMEOUT)
-                .build()
-                .context("Failed to build HTTP client")?;
-
-            let resp = client
-                .get(BRAVE_API_URL)
-                .header("Accept", "application/json")
-                .header("Accept-Encoding", "gzip")
-                .header("X-Subscription-Token", &api_key)
-                .query(&[
-                    ("q", query),
-                    ("count", &max_results.to_string()),
-                ])
-                .send()
-                .await
-                .context("Brave Search API request failed")?;
-
-            let status = resp.status().as_u16();
-            if status != 200 {
-                let body = resp.text().await.unwrap_or_default();
-                return Ok(ToolResult {
-                    data: json!({
-                        "error": format!("Brave Search API returned HTTP {}: {}", status, body),
-                        "query": query,
-                    }),
-                    new_messages: vec![],
-                });
-            }
-
-            let search_resp: BraveSearchResponse = resp
-                .json()
-                .await
-                .context("Failed to parse Brave Search response")?;
-
-            let raw_results = search_resp
-                .web
-                .map(|w| w.results)
-                .unwrap_or_default();
-
-            let results = filter_results(raw_results, &allowed_domains, &blocked_domains);
-            let duration_secs = start.elapsed().as_secs_f64();
-            let results_text = format_results_text(&results);
-
-            Ok(ToolResult {
+        let api_key = std::env::var(API_KEY_ENV).unwrap_or_default();
+        if api_key.is_empty() {
+            return Ok(ToolResult {
                 data: json!({
+                    "error": format!(
+                        "WebSearch requires the {} environment variable to be set with a Brave Search API key.",
+                        API_KEY_ENV
+                    )
+                }),
+                new_messages: vec![],
+            });
+        }
+
+        let start = Instant::now();
+
+        let client = reqwest::Client::builder()
+            .timeout(SEARCH_TIMEOUT)
+            .build()
+            .context("Failed to build HTTP client")?;
+
+        let resp = client
+            .get(BRAVE_API_URL)
+            .header("Accept", "application/json")
+            .header("Accept-Encoding", "gzip")
+            .header("X-Subscription-Token", &api_key)
+            .query(&[
+                ("q", query),
+                ("count", &max_results.to_string()),
+            ])
+            .send()
+            .await
+            .context("Brave Search API request failed")?;
+
+        let status = resp.status().as_u16();
+        if status != 200 {
+            let body = resp.text().await.unwrap_or_default();
+            return Ok(ToolResult {
+                data: json!({
+                    "error": format!("Brave Search API returned HTTP {}: {}", status, body),
                     "query": query,
-                    "resultCount": results.len(),
-                    "results": results,
-                    "formattedResults": results_text,
-                    "durationSeconds": (duration_secs * 100.0).round() / 100.0,
                 }),
                 new_messages: vec![],
-            })
+            });
         }
 
-        #[cfg(not(feature = "network"))]
-        {
-            Ok(ToolResult {
-                data: json!({
-                    "error": "WebSearch requires the 'network' feature to be enabled. Compile with --features network."
-                }),
-                new_messages: vec![],
-            })
-        }
+        let search_resp: BraveSearchResponse = resp
+            .json()
+            .await
+            .context("Failed to parse Brave Search response")?;
+
+        let raw_results = search_resp
+            .web
+            .map(|w| w.results)
+            .unwrap_or_default();
+
+        let results = filter_results(raw_results, &allowed_domains, &blocked_domains);
+        let duration_secs = start.elapsed().as_secs_f64();
+        let results_text = format_results_text(&results);
+
+        Ok(ToolResult {
+            data: json!({
+                "query": query,
+                "resultCount": results.len(),
+                "results": results,
+                "formattedResults": results_text,
+                "durationSeconds": (duration_secs * 100.0).round() / 100.0,
+            }),
+            new_messages: vec![],
+        })
     }
 
     async fn prompt(&self) -> String {

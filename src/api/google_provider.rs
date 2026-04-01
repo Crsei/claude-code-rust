@@ -151,7 +151,6 @@ fn build_gemini_request(request: &MessagesRequest) -> Value {
 // ---------------------------------------------------------------------------
 
 /// Send a streaming request to Google Gemini API.
-#[cfg(feature = "network")]
 pub(crate) async fn google_stream(
     http: &reqwest::Client,
     base_url: &str,
@@ -193,7 +192,6 @@ pub(crate) async fn google_stream(
 /// Emits Anthropic-style StreamEvent sequence:
 ///   MessageStart → ContentBlockStart → ContentBlockDelta* →
 ///   ContentBlockStop → MessageDelta → MessageStop
-#[cfg(feature = "network")]
 fn parse_gemini_sse_byte_stream<S>(
     byte_stream: S,
 ) -> impl Stream<Item = Result<StreamEvent>> + Send

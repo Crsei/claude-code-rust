@@ -2,7 +2,7 @@
 //!
 //! Supports:
 //! - Format validation (sk-ant-* prefix)
-//! - System keychain storage (requires `auth` feature)
+//! - System keychain storage
 //! - Environment variable (`ANTHROPIC_API_KEY`)
 
 #![allow(dead_code)]
@@ -17,37 +17,21 @@ pub fn validate_api_key(key: &str) -> bool {
 }
 
 /// Store API key to the system keychain.
-///
-/// Requires the `auth` Cargo feature for keyring support.
-pub fn store_api_key(_key: &str) -> Result<()> {
-    #[cfg(feature = "auth")]
-    {
-        let entry = keyring::Entry::new("claude-code", "api-key")?;
-        entry.set_password(_key)?;
-        Ok(())
-    }
-    #[cfg(not(feature = "auth"))]
-    {
-        anyhow::bail!("Keychain storage requires 'auth' feature")
-    }
+pub fn store_api_key(key: &str) -> Result<()> {
+    let entry = keyring::Entry::new("claude-code", "api-key")?;
+    entry.set_password(key)?;
+    Ok(())
 }
 
 /// Load API key from the system keychain.
 ///
-/// Returns `Ok(None)` if no key is stored or the `auth` feature is disabled.
+/// Returns `Ok(None)` if no key is stored.
 pub fn load_api_key() -> Result<Option<String>> {
-    #[cfg(feature = "auth")]
-    {
-        let entry = keyring::Entry::new("claude-code", "api-key")?;
-        match entry.get_password() {
-            Ok(key) => Ok(Some(key)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    }
-    #[cfg(not(feature = "auth"))]
-    {
-        Ok(None)
+    let entry = keyring::Entry::new("claude-code", "api-key")?;
+    match entry.get_password() {
+        Ok(key) => Ok(Some(key)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.into()),
     }
 }
 
@@ -55,18 +39,11 @@ pub fn load_api_key() -> Result<Option<String>> {
 ///
 /// Used by the `/logout` command.
 pub fn remove_api_key() -> Result<()> {
-    #[cfg(feature = "auth")]
-    {
-        let entry = keyring::Entry::new("claude-code", "api-key")?;
-        match entry.delete_credential() {
-            Ok(()) => Ok(()),
-            Err(keyring::Error::NoEntry) => Ok(()), // already gone
-            Err(e) => Err(e.into()),
-        }
-    }
-    #[cfg(not(feature = "auth"))]
-    {
-        Ok(()) // nothing to remove
+    let entry = keyring::Entry::new("claude-code", "api-key")?;
+    match entry.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()), // already gone
+        Err(e) => Err(e.into()),
     }
 }
 

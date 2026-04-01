@@ -8,6 +8,7 @@
 
 #![allow(unused)]
 
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
@@ -57,6 +58,486 @@ fn resolve_model_alias(alias: &str, fallback: &str) -> String {
         "opus" => "claude-opus-4-20250514".to_string(),
         "haiku" => "claude-haiku-4-5-20251001".to_string(),
         other => other.to_string(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Worktree isolation helpers (independent of the global worktree session)
+// ---------------------------------------------------------------------------
+
+/// Find the git root directory from a working directory.
+async fn find_git_root(cwd: &Path) -> Result<PathBuf> {
+    let output = tokio::process::Command::new("git")
+        .args([
+            "-C",
+            &cwd.to_string_lossy(),
+            "rev-parse",
+            "--show-toplevel",
+        ])
+        .output()
+        .await?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("Not a git repository (or git not found): {}", stderr.trim());
+    }
+
+    let root = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok(PathBuf::from(root))
+}
+
+/// Get the HEAD commit SHA at a given path.
+async fn get_head_sha(cwd: &Path) -> Option<String> {
+    let output = tokio::process::Command::new("git")
+        .args(["-C", &cwd.to_string_lossy(), "rev-parse", "HEAD"])
+        .output()
+        .await
+        .ok()?;
+
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        None
+    }
+}
+
+/// Count uncommitted changes and new commits in a worktree relative to a
+/// baseline commit.  Returns `(changed_files, new_commits)`.
+async fn count_worktree_changes(
+    worktree_path: &Path,
+    original_head: Option<&str>,
+) -> Option<(usize, usize)> {
+    let status = tokio::process::Command::new("git")
+        .args([
+            "-C",
+            &worktree_path.to_string_lossy(),
+            "status",
+            "--porcelain",
+        ])
+        .output()
+        .await
+        .ok()?;
+
+    if !status.status.success() {
+        return None;
+    }
+
+    let changed_files = String::from_utf8_lossy(&status.stdout)
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .count();
+
+    let Some(orig_head) = original_head else {
+        return Some((changed_files, 0));
+    };
+
+    let rev_list = tokio::process::Command::new("git")
+        .args([
+            "-C",
+            &worktree_path.to_string_lossy(),
+            "rev-list",
+            "--count",
+            &format!("{}..HEAD", orig_head),
+        ])
+        .output()
+        .await
+        .ok()?;
+
+    if !rev_list.status.success() {
+        return None;
+    }
+
+    let commits = String::from_utf8_lossy(&rev_list.stdout)
+        .trim()
+        .parse::<usize>()
+        .unwrap_or(0);
+
+    Some((changed_files, commits))
+}
+
+impl AgentTool {
+    /// Run the agent inside an isolated git worktree.
+    ///
+    /// Creates a temporary worktree + branch, points the child QueryEngine's
+    /// cwd at it, runs the agent, and then cleans up if no changes were made.
+    async fn run_in_worktree(
+        &self,
+        params: &AgentInput,
+        ctx: &ToolUseContext,
+        agent_id: &str,
+        agent_model: &str,
+        parent_model: &str,
+        current_depth: usize,
+    ) -> Result<ToolResult> {
+        let cwd = std::env::current_dir()?;
+
+        // ── 1. Find git root ─────────────────────────────────────────────
+        let git_root = match find_git_root(&cwd).await {
+            Ok(root) => root,
+            Err(e) => {
+                warn!(
+                    agent_id = %agent_id,
+                    error = %e,
+                    "worktree isolation failed — falling back to normal execution"
+                );
+                return self
+                    .run_agent_normal(params, ctx, agent_id, agent_model, parent_model, current_depth)
+                    .await
+                    .map(|mut r| {
+                        // Prepend a warning so the caller knows isolation was skipped
+                        if let Some(s) = r.data.as_str() {
+                            r.data = json!(format!(
+                                "[WARNING: worktree isolation skipped — {}]\n\n{}",
+                                e, s
+                            ));
+                        }
+                        r
+                    });
+            }
+        };
+
+        let original_head = get_head_sha(&git_root).await;
+
+        // ── 2. Create branch + worktree ──────────────────────────────────
+        let short_id = &Uuid::new_v4().to_string()[..8];
+        let branch_name = format!("agent-worktree-{}", short_id);
+        let worktree_path = std::env::temp_dir().join(format!("agent-worktree-{}", short_id));
+
+        info!(
+            agent_id = %agent_id,
+            worktree_path = %worktree_path.display(),
+            branch = %branch_name,
+            "creating agent worktree"
+        );
+
+        let wt_output = tokio::process::Command::new("git")
+            .args([
+                "-C",
+                &git_root.to_string_lossy(),
+                "worktree",
+                "add",
+                "-B",
+                &branch_name,
+                &worktree_path.to_string_lossy(),
+            ])
+            .output()
+            .await;
+
+        match wt_output {
+            Ok(ref o) if !o.status.success() => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                warn!(
+                    agent_id = %agent_id,
+                    error = %stderr,
+                    "worktree creation failed — falling back to normal execution"
+                );
+                return self
+                    .run_agent_normal(params, ctx, agent_id, agent_model, parent_model, current_depth)
+                    .await
+                    .map(|mut r| {
+                        if let Some(s) = r.data.as_str() {
+                            r.data = json!(format!(
+                                "[WARNING: worktree isolation skipped — git worktree add failed: {}]\n\n{}",
+                                stderr.trim(), s
+                            ));
+                        }
+                        r
+                    });
+            }
+            Err(e) => {
+                warn!(
+                    agent_id = %agent_id,
+                    error = %e,
+                    "worktree creation failed — falling back to normal execution"
+                );
+                return self
+                    .run_agent_normal(params, ctx, agent_id, agent_model, parent_model, current_depth)
+                    .await
+                    .map(|mut r| {
+                        if let Some(s) = r.data.as_str() {
+                            r.data = json!(format!(
+                                "[WARNING: worktree isolation skipped — {}]\n\n{}",
+                                e, s
+                            ));
+                        }
+                        r
+                    });
+            }
+            Ok(_) => {
+                debug!(
+                    agent_id = %agent_id,
+                    worktree_path = %worktree_path.display(),
+                    "worktree created successfully"
+                );
+            }
+        }
+
+        // ── 3. Run the agent with cwd = worktree ─────────────────────────
+        let child_tools = crate::tools::registry::get_all_tools();
+        let child_cwd = worktree_path.to_string_lossy().to_string();
+
+        let child_config = QueryEngineConfig {
+            cwd: child_cwd,
+            tools: child_tools,
+            custom_system_prompt: ctx.options.custom_system_prompt.clone(),
+            append_system_prompt: ctx.options.append_system_prompt.clone(),
+            user_specified_model: Some(agent_model.to_string()),
+            fallback_model: Some(parent_model.to_string()),
+            max_turns: Some(30),
+            max_budget_usd: ctx.options.max_budget_usd,
+            task_budget: None,
+            verbose: ctx.options.verbose,
+            initial_messages: None,
+            commands: vec![],
+            thinking_config: None,
+            json_schema: None,
+            replay_user_messages: false,
+            include_partial_messages: false,
+            persist_session: false,
+        };
+
+        let child_engine = QueryEngine::new(child_config);
+        let stream = child_engine
+            .submit_message(&params.prompt, QuerySource::Agent(agent_id.to_string()));
+
+        use crate::engine::sdk_types::SdkMessage;
+        use futures::StreamExt;
+
+        let mut stream = std::pin::pin!(stream);
+        let mut result_text = String::new();
+        let mut had_error = false;
+
+        while let Some(msg) = stream.next().await {
+            match msg {
+                SdkMessage::Assistant(ref assistant_msg) => {
+                    for block in &assistant_msg.message.content {
+                        if let crate::types::message::ContentBlock::Text { text } = block {
+                            if !result_text.is_empty() {
+                                result_text.push('\n');
+                            }
+                            result_text.push_str(text);
+                        }
+                    }
+                }
+                SdkMessage::Result(ref sdk_result) => {
+                    if sdk_result.is_error {
+                        had_error = true;
+                        if !sdk_result.result.is_empty() {
+                            result_text = sdk_result.result.clone();
+                        }
+                    } else if result_text.is_empty() && !sdk_result.result.is_empty() {
+                        result_text = sdk_result.result.clone();
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if result_text.is_empty() {
+            result_text = "(Agent completed with no text output)".to_string();
+        }
+
+        // ── 4. Check for changes ─────────────────────────────────────────
+        let changes = count_worktree_changes(
+            &worktree_path,
+            original_head.as_deref(),
+        )
+        .await;
+
+        let has_changes = match changes {
+            Some((files, commits)) => files > 0 || commits > 0,
+            None => true, // fail-closed: assume changes if we can't tell
+        };
+
+        if has_changes {
+            // Keep the worktree — include location info in result
+            let (files, commits) = changes.unwrap_or((0, 0));
+            info!(
+                agent_id = %agent_id,
+                worktree_path = %worktree_path.display(),
+                branch = %branch_name,
+                changed_files = files,
+                new_commits = commits,
+                "agent worktree has changes — keeping"
+            );
+
+            result_text.push_str(&format!(
+                "\n\n[Worktree isolation: changes detected ({} file(s), {} commit(s)). \
+                 Worktree kept at: {} on branch: {}]",
+                files,
+                commits,
+                worktree_path.display(),
+                branch_name,
+            ));
+        } else {
+            // No changes — clean up worktree + branch
+            info!(
+                agent_id = %agent_id,
+                worktree_path = %worktree_path.display(),
+                branch = %branch_name,
+                "agent worktree has no changes — cleaning up"
+            );
+
+            let remove_result = tokio::process::Command::new("git")
+                .args([
+                    "-C",
+                    &git_root.to_string_lossy(),
+                    "worktree",
+                    "remove",
+                    "--force",
+                    &worktree_path.to_string_lossy(),
+                ])
+                .output()
+                .await;
+
+            match remove_result {
+                Ok(o) if o.status.success() => {
+                    debug!(agent_id = %agent_id, "agent worktree directory removed");
+                }
+                Ok(o) => {
+                    let stderr = String::from_utf8_lossy(&o.stderr);
+                    warn!(agent_id = %agent_id, "worktree remove warning: {}", stderr);
+                }
+                Err(e) => {
+                    warn!(agent_id = %agent_id, "worktree remove failed: {}", e);
+                }
+            }
+
+            // Brief pause to let git release locks before branch delete
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+            let branch_result = tokio::process::Command::new("git")
+                .args([
+                    "-C",
+                    &git_root.to_string_lossy(),
+                    "branch",
+                    "-D",
+                    &branch_name,
+                ])
+                .output()
+                .await;
+
+            match branch_result {
+                Ok(o) if o.status.success() => {
+                    debug!(agent_id = %agent_id, "agent worktree branch deleted");
+                }
+                Ok(o) => {
+                    let stderr = String::from_utf8_lossy(&o.stderr);
+                    warn!(agent_id = %agent_id, "branch delete warning: {}", stderr);
+                }
+                Err(e) => {
+                    warn!(agent_id = %agent_id, "branch delete failed: {}", e);
+                }
+            }
+
+            result_text.push_str(
+                "\n\n[Worktree isolation: no changes detected — worktree cleaned up]",
+            );
+        }
+
+        debug!(
+            agent_id = %agent_id,
+            result_len = result_text.len(),
+            error = had_error,
+            "subagent (worktree) completed"
+        );
+
+        Ok(ToolResult {
+            data: json!(result_text),
+            new_messages: vec![],
+        })
+    }
+
+    /// Run the agent without worktree isolation (normal mode).
+    ///
+    /// This is the same logic as the original `call()` body, extracted so it
+    /// can be reused as a fallback when worktree creation fails.
+    async fn run_agent_normal(
+        &self,
+        params: &AgentInput,
+        ctx: &ToolUseContext,
+        agent_id: &str,
+        agent_model: &str,
+        parent_model: &str,
+        _current_depth: usize,
+    ) -> Result<ToolResult> {
+        let child_tools = crate::tools::registry::get_all_tools();
+        let child_cwd = std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| ".".to_string());
+
+        let child_config = QueryEngineConfig {
+            cwd: child_cwd,
+            tools: child_tools,
+            custom_system_prompt: ctx.options.custom_system_prompt.clone(),
+            append_system_prompt: ctx.options.append_system_prompt.clone(),
+            user_specified_model: Some(agent_model.to_string()),
+            fallback_model: Some(parent_model.to_string()),
+            max_turns: Some(30),
+            max_budget_usd: ctx.options.max_budget_usd,
+            task_budget: None,
+            verbose: ctx.options.verbose,
+            initial_messages: None,
+            commands: vec![],
+            thinking_config: None,
+            json_schema: None,
+            replay_user_messages: false,
+            include_partial_messages: false,
+            persist_session: false,
+        };
+
+        let child_engine = QueryEngine::new(child_config);
+        let stream = child_engine
+            .submit_message(&params.prompt, QuerySource::Agent(agent_id.to_string()));
+
+        use crate::engine::sdk_types::SdkMessage;
+        use futures::StreamExt;
+
+        let mut stream = std::pin::pin!(stream);
+        let mut result_text = String::new();
+        let mut had_error = false;
+
+        while let Some(msg) = stream.next().await {
+            match msg {
+                SdkMessage::Assistant(ref assistant_msg) => {
+                    for block in &assistant_msg.message.content {
+                        if let crate::types::message::ContentBlock::Text { text } = block {
+                            if !result_text.is_empty() {
+                                result_text.push('\n');
+                            }
+                            result_text.push_str(text);
+                        }
+                    }
+                }
+                SdkMessage::Result(ref sdk_result) => {
+                    if sdk_result.is_error {
+                        had_error = true;
+                        if !sdk_result.result.is_empty() {
+                            result_text = sdk_result.result.clone();
+                        }
+                    } else if result_text.is_empty() && !sdk_result.result.is_empty() {
+                        result_text = sdk_result.result.clone();
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if result_text.is_empty() {
+            result_text = "(Agent completed with no text output)".to_string();
+        }
+
+        debug!(
+            agent_id = %agent_id,
+            result_len = result_text.len(),
+            error = had_error,
+            "subagent completed"
+        );
+
+        Ok(ToolResult {
+            data: json!(result_text),
+            new_messages: vec![],
+        })
     }
 }
 
@@ -137,19 +618,29 @@ impl Tool for AgentTool {
 
         let description = params
             .description
-            .unwrap_or_else(|| "unnamed task".to_string());
+            .as_deref()
+            .unwrap_or("unnamed task");
         let subagent_type = params
             .subagent_type
-            .unwrap_or_else(|| "general-purpose".to_string());
+            .as_deref()
+            .unwrap_or("general-purpose");
 
         // Resolve model for the subagent
         let parent_model = ctx.options.main_loop_model.clone();
         let agent_model = params
             .model
-            .map(|m| resolve_model_alias(&m, &parent_model))
+            .as_deref()
+            .map(|m| resolve_model_alias(m, &parent_model))
             .unwrap_or_else(|| parent_model.clone());
 
         let agent_id = Uuid::new_v4().to_string();
+
+        // Determine isolation mode before logging (borrow params.isolation)
+        let use_worktree = params
+            .isolation
+            .as_deref()
+            .map(|s| s.eq_ignore_ascii_case("worktree"))
+            .unwrap_or(false);
 
         info!(
             agent_id = %agent_id,
@@ -157,91 +648,32 @@ impl Tool for AgentTool {
             subagent_type = %subagent_type,
             model = %agent_model,
             depth = current_depth + 1,
+            isolation = ?params.isolation,
             "spawning subagent"
         );
 
-        // Get tools and cwd for the subagent
-        let child_tools = crate::tools::registry::get_all_tools();
-        let child_cwd = std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| ".".to_string());
-
-        // Build a QueryEngineConfig for the child agent
-        let child_config = QueryEngineConfig {
-            cwd: child_cwd,
-            tools: child_tools,
-            custom_system_prompt: ctx.options.custom_system_prompt.clone(),
-            append_system_prompt: ctx.options.append_system_prompt.clone(),
-            user_specified_model: Some(agent_model.clone()),
-            fallback_model: Some(parent_model),
-            max_turns: Some(30), // subagents get a smaller turn budget
-            max_budget_usd: ctx.options.max_budget_usd,
-            task_budget: None,
-            verbose: ctx.options.verbose,
-            initial_messages: None,
-            commands: vec![],
-            thinking_config: None,
-            json_schema: None,
-            replay_user_messages: false,
-            include_partial_messages: false,
-            persist_session: false,
-        };
-
-        // Create and run the child QueryEngine
-        let child_engine = QueryEngine::new(child_config);
-        let stream = child_engine.submit_message(&params.prompt, QuerySource::Agent(agent_id.clone()));
-
-        // Collect the stream results
-        use crate::engine::sdk_types::SdkMessage;
-        use futures::StreamExt;
-
-        let mut stream = std::pin::pin!(stream);
-        let mut result_text = String::new();
-        let mut had_error = false;
-
-        while let Some(msg) = stream.next().await {
-            match msg {
-                SdkMessage::Assistant(ref assistant_msg) => {
-                    // Extract text from the inner message's content blocks
-                    for block in &assistant_msg.message.content {
-                        if let crate::types::message::ContentBlock::Text { text } = block {
-                            if !result_text.is_empty() {
-                                result_text.push('\n');
-                            }
-                            result_text.push_str(&text);
-                        }
-                    }
-                }
-                SdkMessage::Result(ref sdk_result) => {
-                    if sdk_result.is_error {
-                        had_error = true;
-                        if !sdk_result.result.is_empty() {
-                            result_text = sdk_result.result.clone();
-                        }
-                    } else if result_text.is_empty() && !sdk_result.result.is_empty() {
-                        result_text = sdk_result.result.clone();
-                    }
-                }
-                _ => {}
-            }
+        // Dispatch based on isolation mode
+        if use_worktree {
+            self.run_in_worktree(
+                &params,
+                ctx,
+                &agent_id,
+                &agent_model,
+                &parent_model,
+                current_depth,
+            )
+            .await
+        } else {
+            self.run_agent_normal(
+                &params,
+                ctx,
+                &agent_id,
+                &agent_model,
+                &parent_model,
+                current_depth,
+            )
+            .await
         }
-
-        if result_text.is_empty() {
-            result_text = "(Agent completed with no text output)".to_string();
-        }
-
-        debug!(
-            agent_id = %agent_id,
-            description = %description,
-            result_len = result_text.len(),
-            error = had_error,
-            "subagent completed"
-        );
-
-        Ok(ToolResult {
-            data: json!(result_text),
-            new_messages: vec![],
-        })
     }
 
     async fn prompt(&self) -> String {
@@ -324,5 +756,34 @@ mod tests {
     fn test_agent_concurrency_safe() {
         let tool = AgentTool;
         assert!(tool.is_concurrency_safe(&json!({})));
+    }
+
+    #[test]
+    fn test_agent_isolation_field() {
+        // No isolation field — should be None
+        let input: AgentInput = serde_json::from_value(json!({
+            "prompt": "do something",
+            "description": "test task"
+        }))
+        .unwrap();
+        assert!(input.isolation.is_none());
+
+        // Explicit worktree isolation
+        let input: AgentInput = serde_json::from_value(json!({
+            "prompt": "do something",
+            "description": "test task",
+            "isolation": "worktree"
+        }))
+        .unwrap();
+        assert_eq!(input.isolation.as_deref(), Some("worktree"));
+
+        // Null isolation — should be None
+        let input: AgentInput = serde_json::from_value(json!({
+            "prompt": "do something",
+            "description": "test task",
+            "isolation": null
+        }))
+        .unwrap();
+        assert!(input.isolation.is_none());
     }
 }

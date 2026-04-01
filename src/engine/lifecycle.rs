@@ -184,7 +184,7 @@ impl QueryEngine {
         &self,
         prompt: &str,
         query_source: QuerySource,
-    ) -> impl Stream<Item = SdkMessage> + '_ {
+    ) -> Pin<Box<dyn Stream<Item = SdkMessage> + Send>> {
         info!(
             prompt_len = prompt.len(),
             source = ?query_source,
@@ -208,7 +208,7 @@ impl QueryEngine {
         let discovered_skills_ref = self.discovered_skill_names.clone();
         let loaded_memory_ref = self.loaded_nested_memory_paths.clone();
 
-        async_stream::stream! {
+        let stream = async_stream::stream! {
             let started_at = Instant::now();
             let mut current_message_usage = Usage::default();
             let mut last_stop_reason: Option<String> = None;
@@ -343,22 +343,43 @@ impl QueryEngine {
                 task_budget: config.task_budget.clone(),
             };
 
-            // Create API client from environment if available
+            // Create API client — try multi-provider env detection first,
+            // then fall back to auth::resolve_auth() for keychain support.
             let api_client: Option<Arc<crate::api::client::ApiClient>> = {
-                if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
-                    let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
-                    let client_config = crate::api::client::ApiClientConfig {
-                        provider: crate::api::client::ApiProvider::Anthropic {
-                            api_key,
-                            base_url,
-                        },
-                        default_model: model_name.clone(),
-                        max_retries: 3,
-                        timeout_secs: 120,
-                    };
-                    Some(Arc::new(crate::api::client::ApiClient::new(client_config)))
+                if let Some(client) = crate::api::client::ApiClient::from_env() {
+                    // Matched a provider via environment variable (Anthropic, OpenAI, Google, etc.)
+                    Some(Arc::new(client))
                 } else {
-                    None
+                    // No env var found — try keychain / external token via resolve_auth()
+                    match crate::auth::resolve_auth() {
+                        crate::auth::AuthMethod::ApiKey(api_key) => {
+                            let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
+                            let client_config = crate::api::client::ApiClientConfig {
+                                provider: crate::api::client::ApiProvider::Anthropic {
+                                    api_key,
+                                    base_url,
+                                },
+                                default_model: model_name.clone(),
+                                max_retries: 3,
+                                timeout_secs: 120,
+                            };
+                            Some(Arc::new(crate::api::client::ApiClient::new(client_config)))
+                        }
+                        crate::auth::AuthMethod::ExternalToken(token) => {
+                            let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
+                            let client_config = crate::api::client::ApiClientConfig {
+                                provider: crate::api::client::ApiProvider::Anthropic {
+                                    api_key: token,
+                                    base_url,
+                                },
+                                default_model: model_name.clone(),
+                                max_retries: 3,
+                                timeout_secs: 120,
+                            };
+                            Some(Arc::new(crate::api::client::ApiClient::new(client_config)))
+                        }
+                        crate::auth::AuthMethod::None => None,
+                    }
                 }
             };
 
@@ -810,7 +831,8 @@ impl QueryEngine {
                 uuid: Uuid::new_v4(),
                 errors,
             });
-        }
+        };
+        Box::pin(stream)
     }
 
     // -- Abort control -------------------------------------------------------
@@ -921,8 +943,8 @@ impl QueryDeps for QueryEngineDeps {
     ) -> Result<ModelResponse> {
         let client = self.api_client.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
-                "call_model: no API client configured -- \
-                 set ANTHROPIC_API_KEY or provide a mock in tests"
+                "call_model: no API client configured — \
+                 set ANTHROPIC_API_KEY, use /login to store a key, or provide a mock in tests"
             )
         })?;
 
@@ -957,8 +979,8 @@ impl QueryDeps for QueryEngineDeps {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         let client = self.api_client.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
-                "call_model_streaming: no API client configured -- \
-                 set ANTHROPIC_API_KEY or provide a mock in tests"
+                "call_model_streaming: no API client configured — \
+                 set ANTHROPIC_API_KEY, use /login to store a key, or provide a mock in tests"
             )
         })?;
 

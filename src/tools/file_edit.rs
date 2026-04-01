@@ -3,6 +3,7 @@ use std::path::Path;
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use similar::TextDiff;
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{
@@ -41,6 +42,73 @@ impl FileEditTool {
             .unwrap_or(false);
         (file_path, old_string, new_string, replace_all)
     }
+
+    /// Find the best fuzzy match for `old_string` within `content` using
+    /// a sliding window of lines and `similar::TextDiff` for scoring.
+    ///
+    /// Returns `Some((matched_text, start_line, end_line, similarity_ratio))`
+    /// where lines are 1-indexed, or `None` if content is empty.
+    fn find_best_fuzzy_match(
+        content: &str,
+        old_string: &str,
+    ) -> Option<FuzzyMatch> {
+        let content_lines: Vec<&str> = content.lines().collect();
+        let needle_lines: Vec<&str> = old_string.lines().collect();
+
+        let needle_count = needle_lines.len();
+        if needle_count == 0 || content_lines.is_empty() {
+            return None;
+        }
+
+        let mut best_ratio: f32 = 0.0;
+        let mut best_start: usize = 0;
+        let mut best_end: usize = 0;
+
+        // Slide a window of `needle_count` lines across the file content
+        let max_start = if content_lines.len() >= needle_count {
+            content_lines.len() - needle_count + 1
+        } else {
+            // If the file has fewer lines than the needle, use one window
+            // covering the entire file
+            1
+        };
+
+        for start in 0..max_start {
+            let end = (start + needle_count).min(content_lines.len());
+            let window_text = content_lines[start..end].join("\n");
+            let needle_text = needle_lines.join("\n");
+
+            let diff = TextDiff::from_chars(&needle_text, &window_text);
+            let ratio = diff.ratio();
+
+            if ratio > best_ratio {
+                best_ratio = ratio;
+                best_start = start;
+                best_end = end;
+            }
+        }
+
+        if best_ratio <= 0.0 {
+            return None;
+        }
+
+        let matched_text = content_lines[best_start..best_end].join("\n");
+
+        Some(FuzzyMatch {
+            text: matched_text,
+            start_line: best_start + 1, // 1-indexed
+            end_line: best_end,         // 1-indexed inclusive
+            similarity: best_ratio,
+        })
+    }
+}
+
+/// Result of a fuzzy match search.
+struct FuzzyMatch {
+    text: String,
+    start_line: usize,
+    end_line: usize,
+    similarity: f32,
 }
 
 #[async_trait]
@@ -166,6 +234,22 @@ impl Tool for FileEditTool {
         let occurrence_count = content.matches(&old_string).count();
 
         if occurrence_count == 0 {
+            // Attempt fuzzy matching to provide a helpful suggestion
+            if let Some(fuzzy) = Self::find_best_fuzzy_match(&content, &old_string) {
+                if fuzzy.similarity > 0.6 {
+                    let pct = (fuzzy.similarity * 100.0).round() as u32;
+                    return Ok(ToolResult {
+                        data: json!({
+                            "error": format!(
+                                "old_string not found in {}. Did you mean:\n\n{}\n\n(lines {}-{}, {}% similar)",
+                                file_path, fuzzy.text, fuzzy.start_line, fuzzy.end_line, pct
+                            )
+                        }),
+                        new_messages: vec![],
+                    });
+                }
+            }
+
             return Ok(ToolResult {
                 data: json!({
                     "error": format!(
@@ -233,5 +317,70 @@ Usage:\n\
 
     fn user_facing_name(&self, _input: Option<&Value>) -> String {
         "Edit".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fuzzy_match_whitespace_diff() {
+        // The file has 4-space indentation, but old_string uses 2-space
+        let content = "fn main() {\n    let x = 1;\n    let y = 2;\n}\n";
+        let old_string = "  let x = 1;\n  let y = 2;";
+
+        let result = FileEditTool::find_best_fuzzy_match(content, old_string);
+        assert!(result.is_some(), "Should find a fuzzy match");
+
+        let m = result.unwrap();
+        assert!(
+            m.similarity > 0.6,
+            "Similarity should be > 0.6 for whitespace-only difference, got {}",
+            m.similarity
+        );
+        assert_eq!(m.start_line, 2);
+        assert_eq!(m.end_line, 3);
+        assert!(m.text.contains("let x = 1;"));
+        assert!(m.text.contains("let y = 2;"));
+    }
+
+    #[test]
+    fn test_fuzzy_match_no_close_match() {
+        let content = "fn main() {\n    println!(\"hello\");\n}\n";
+        let old_string = "struct Foo {\n    bar: i32,\n    baz: String,\n}";
+
+        let result = FileEditTool::find_best_fuzzy_match(content, old_string);
+        // Either None or similarity <= 0.6
+        match result {
+            None => {} // acceptable
+            Some(m) => {
+                assert!(
+                    m.similarity <= 0.6,
+                    "Similarity should be <= 0.6 for unrelated content, got {}",
+                    m.similarity
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_fuzzy_match_high_similarity() {
+        // One character difference: "count" vs "counr" (typo)
+        let content = "let count = 0;\ncount += 1;\nprintln!(\"{}\", count);\n";
+        let old_string = "let counr = 0;\ncounr += 1;\nprintln!(\"{}\", counr);";
+
+        let result = FileEditTool::find_best_fuzzy_match(content, old_string);
+        assert!(result.is_some(), "Should find a high-similarity match");
+
+        let m = result.unwrap();
+        assert!(
+            m.similarity > 0.8,
+            "Similarity should be > 0.8 for single-character typos, got {}",
+            m.similarity
+        );
+        assert_eq!(m.start_line, 1);
+        assert_eq!(m.end_line, 3);
+        assert!(m.text.contains("let count = 0;"));
     }
 }

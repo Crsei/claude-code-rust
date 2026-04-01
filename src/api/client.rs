@@ -78,19 +78,17 @@ pub struct ApiClientConfig {
     pub timeout_secs: u64,
 }
 
-/// The API client — uses reqwest under the hood when 'network' feature is enabled
+/// The API client — uses reqwest under the hood.
 pub struct ApiClient {
     config: ApiClientConfig,
-    #[cfg(feature = "network")]
     http: reqwest::Client,
 }
 
 impl ApiClient {
     pub fn new(config: ApiClientConfig) -> Self {
         Self {
-            #[cfg(feature = "network")]
             http: {
-                let mut builder = reqwest::Client::builder()
+                let builder = reqwest::Client::builder()
                     .timeout(std::time::Duration::from_secs(config.timeout_secs));
                 builder.build().unwrap_or_else(|_| reqwest::Client::new())
             },
@@ -167,7 +165,6 @@ impl ApiClient {
     }
 
     /// Build the required HTTP headers for Anthropic-format providers.
-    #[cfg(feature = "network")]
     pub fn build_headers(&self) -> reqwest::header::HeaderMap {
         use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 
@@ -228,30 +225,11 @@ impl ApiClient {
 
     /// Send a messages request and return the response as a stream of events.
     ///
-    /// When the network feature is not enabled, returns an error.
-    pub async fn messages_stream(
-        &self,
-        request: MessagesRequest,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
-        #[cfg(not(feature = "network"))]
-        {
-            anyhow::bail!("API client requires 'network' feature to be enabled")
-        }
-
-        #[cfg(feature = "network")]
-        {
-            self.messages_stream_impl(request).await
-        }
-    }
-
-    /// Internal streaming implementation — only compiled with `network` feature.
-    ///
     /// Routes to provider-specific implementations:
     /// - Anthropic/Azure → Anthropic SSE format
     /// - OpenAI-compat  → OpenAI chat/completions SSE format
     /// - Google         → Gemini streamGenerateContent SSE format
-    #[cfg(feature = "network")]
-    async fn messages_stream_impl(
+    pub async fn messages_stream(
         &self,
         request: MessagesRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
@@ -326,23 +304,9 @@ impl ApiClient {
     /// Internally uses the streaming endpoint and collects all events via
     /// `StreamAccumulator`.
     pub async fn messages(&self, request: MessagesRequest) -> Result<AssistantMessage> {
-        #[cfg(not(feature = "network"))]
-        {
-            anyhow::bail!("API client requires 'network' feature to be enabled")
-        }
-
-        #[cfg(feature = "network")]
-        {
-            self.messages_impl(request).await
-        }
-    }
-
-    /// Internal non-streaming implementation — only compiled with `network` feature.
-    #[cfg(feature = "network")]
-    async fn messages_impl(&self, request: MessagesRequest) -> Result<AssistantMessage> {
         use futures::StreamExt;
 
-        let stream = self.messages_stream_impl(request).await?;
+        let stream = self.messages_stream(request).await?;
         let mut stream = std::pin::pin!(stream);
 
         let mut accumulator = StreamAccumulator::new();
@@ -491,7 +455,6 @@ impl ApiClient {
 /// `event:` and `data:` fields. We buffer incoming bytes and split on
 /// line boundaries, accumulating `event` and `data` fields until a blank
 /// line triggers parsing.
-#[cfg(feature = "network")]
 fn parse_sse_byte_stream<S>(byte_stream: S) -> impl Stream<Item = Result<StreamEvent>> + Send
 where
     S: Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send + 'static,

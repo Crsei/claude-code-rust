@@ -1,5 +1,6 @@
 #![allow(unused)]
 use std::path::Path;
+use std::process::Command;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use ignore::WalkBuilder;
@@ -31,6 +32,109 @@ struct GrepInput {
     #[serde(rename = "-n")]
     line_numbers: Option<bool>,
     head_limit: Option<usize>,
+    multiline: Option<bool>,
+    offset: Option<usize>,
+}
+
+/// Attempt to run the search via the external `rg` (ripgrep) binary.
+///
+/// Returns `Some(output)` on success, `None` if `rg` is not found or
+/// the invocation fails for any reason.
+async fn try_ripgrep(params: &GrepInput, search_path: &str) -> Option<String> {
+    // Check if rg is available
+    if Command::new("rg").arg("--version").output().is_err() {
+        return None;
+    }
+
+    let output_mode = params.output_mode.as_deref().unwrap_or("files_with_matches");
+
+    let mut cmd = Command::new("rg");
+    cmd.arg("--no-heading");
+
+    // Pattern
+    cmd.arg("-e").arg(&params.pattern);
+
+    // Glob filter
+    if let Some(ref g) = params.glob {
+        cmd.arg("--glob").arg(g);
+    }
+
+    // File type
+    if let Some(ref ft) = params.file_type {
+        cmd.arg("--type").arg(ft);
+    }
+
+    // Case insensitive
+    if params.case_insensitive.unwrap_or(false) {
+        cmd.arg("-i");
+    }
+
+    // Multiline
+    if params.multiline.unwrap_or(false) {
+        cmd.arg("-U").arg("--multiline-dotall");
+    }
+
+    // Output mode
+    match output_mode {
+        "files_with_matches" => {
+            cmd.arg("-l");
+        }
+        "count" => {
+            cmd.arg("-c");
+        }
+        _ => {
+            // "content" mode
+            if params.line_numbers.unwrap_or(true) {
+                cmd.arg("-n");
+            }
+        }
+    }
+
+    // Context flags (only meaningful for content mode)
+    if output_mode == "content" || output_mode != "files_with_matches" && output_mode != "count" {
+        if let Some(c) = params.context {
+            cmd.arg("-C").arg(c.to_string());
+        } else {
+            if let Some(a) = params.after_context {
+                cmd.arg("-A").arg(a.to_string());
+            }
+            if let Some(b) = params.before_context {
+                cmd.arg("-B").arg(b.to_string());
+            }
+        }
+    }
+
+    // max-count: use head_limit as a rough upper bound on matches per file
+    // (rg --max-count is per-file, so this is an approximation; we do precise
+    // truncation after collecting output)
+    // We intentionally do NOT pass --max-count here because it is per-file
+    // and we need global limits applied in post-processing.
+
+    // Search path
+    cmd.arg(search_path);
+
+    let output = cmd.output().ok()?;
+
+    // rg returns exit code 1 when no matches are found — that is not an error
+    if !output.status.success() && output.status.code() != Some(1) {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    Some(stdout)
+}
+
+/// Apply offset (skip first N lines) and head_limit (keep at most N lines)
+/// to a newline-separated output string from ripgrep.
+fn apply_offset_and_limit(output: &str, offset: usize, head_limit: usize) -> String {
+    let lines: Vec<&str> = output.lines().collect();
+    let after_offset: Vec<&str> = lines.into_iter().skip(offset).collect();
+    let limited = if head_limit > 0 && after_offset.len() > head_limit {
+        &after_offset[..head_limit]
+    } else {
+        &after_offset[..]
+    };
+    limited.join("\n")
 }
 
 #[async_trait]
@@ -55,7 +159,9 @@ impl Tool for GrepTool {
                 "-B": { "type": "number", "description": "Lines before each match" },
                 "-i": { "type": "boolean", "description": "Case insensitive" },
                 "-n": { "type": "boolean", "description": "Show line numbers" },
-                "head_limit": { "type": "number", "description": "Limit output entries" }
+                "head_limit": { "type": "number", "description": "Limit output entries" },
+                "multiline": { "type": "boolean", "description": "Enable multiline mode where . matches newlines and patterns can span lines" },
+                "offset": { "type": "number", "description": "Skip first N entries before applying head_limit" }
             },
             "required": ["pattern"]
         })
@@ -72,9 +178,26 @@ impl Tool for GrepTool {
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
         let params: GrepInput = serde_json::from_value(input)?;
-        let search_path = params.path.unwrap_or_else(|| ".".to_string());
-        let output_mode = params.output_mode.as_deref().unwrap_or("files_with_matches");
+        let search_path = params.path.clone().unwrap_or_else(|| ".".to_string());
         let head_limit = params.head_limit.unwrap_or(250);
+        let offset = params.offset.unwrap_or(0);
+
+        // --- Try external ripgrep first ---
+        if let Some(rg_output) = try_ripgrep(&params, &search_path).await {
+            let output = apply_offset_and_limit(&rg_output, offset, head_limit);
+            let output = if output.is_empty() {
+                "No matches found.".to_string()
+            } else {
+                output
+            };
+            return Ok(ToolResult {
+                data: json!(output),
+                new_messages: vec![],
+            });
+        }
+
+        // --- Fallback: internal regex + ignore walker ---
+        let output_mode = params.output_mode.as_deref().unwrap_or("files_with_matches");
         let case_insensitive = params.case_insensitive.unwrap_or(false);
         let context_lines = params.context.or(params.after_context).unwrap_or(0);
 
@@ -155,11 +278,14 @@ impl Tool for GrepTool {
                     }
                 }
             }
+        }
 
-            if head_limit > 0 && results.len() >= head_limit {
-                results.truncate(head_limit);
-                break;
-            }
+        // Apply offset then head_limit
+        if offset > 0 {
+            results = results.into_iter().skip(offset).collect();
+        }
+        if head_limit > 0 && results.len() > head_limit {
+            results.truncate(head_limit);
         }
 
         let output = if results.is_empty() {
@@ -189,5 +315,57 @@ impl Tool for GrepTool {
     fn to_auto_classifier_input(&self, input: &Value) -> Value {
         let pattern = input.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
         json!(format!("grep {}", pattern))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_grep_input_multiline_field() {
+        let json_input = json!({
+            "pattern": "foo.*bar",
+            "multiline": true,
+            "offset": 5
+        });
+        let input: GrepInput = serde_json::from_value(json_input).unwrap();
+        assert_eq!(input.multiline, Some(true));
+        assert_eq!(input.offset, Some(5));
+    }
+
+    #[test]
+    fn test_grep_input_multiline_default() {
+        let json_input = json!({
+            "pattern": "hello"
+        });
+        let input: GrepInput = serde_json::from_value(json_input).unwrap();
+        assert_eq!(input.multiline, None);
+        assert_eq!(input.offset, None);
+    }
+
+    #[test]
+    fn test_grep_schema_has_multiline() {
+        let tool = GrepTool;
+        let schema = tool.input_json_schema();
+        let props = schema.get("properties").unwrap();
+        assert!(props.get("multiline").is_some(), "schema must include 'multiline' property");
+        assert!(props.get("offset").is_some(), "schema must include 'offset' property");
+
+        let ml = props.get("multiline").unwrap();
+        assert_eq!(ml.get("type").unwrap(), "boolean");
+
+        let off = props.get("offset").unwrap();
+        assert_eq!(off.get("type").unwrap(), "number");
+    }
+
+    #[test]
+    fn test_apply_offset_and_limit() {
+        let output = "line1\nline2\nline3\nline4\nline5";
+        assert_eq!(apply_offset_and_limit(output, 0, 250), "line1\nline2\nline3\nline4\nline5");
+        assert_eq!(apply_offset_and_limit(output, 2, 250), "line3\nline4\nline5");
+        assert_eq!(apply_offset_and_limit(output, 0, 3), "line1\nline2\nline3");
+        assert_eq!(apply_offset_and_limit(output, 1, 2), "line2\nline3");
+        assert_eq!(apply_offset_and_limit(output, 10, 250), "");
     }
 }

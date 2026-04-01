@@ -1,7 +1,7 @@
 # Claude Code Rust 重写计划
 
 > 最后更新: 2026-04-01
-> 已完成模块: [`COMPLETED_FULL.md`](COMPLETED_FULL.md) (完整实现) | [`COMPLETED_SIMPLIFIED.md`](COMPLETED_SIMPLIFIED.md) (大幅简化)
+> 已完成模块: [`COMPLETED_FULL.md`](archive/COMPLETED_FULL.md) (完整实现) | [`COMPLETED_SIMPLIFIED.md`](archive/COMPLETED_SIMPLIFIED.md) (大幅简化)
 
 ## 原始项目概况
 
@@ -14,8 +14,8 @@
 ## Rust 实现现状
 
 - **文件数**: 151 个 .rs 文件, 22 个顶级子目录
-- **代码行数**: ~40,162 行 (占 TS 的 ~18%)
-- **测试数**: 650 个测试，全部通过
+- **代码行数**: ~41,278 行 (占 TS 的 ~18%)
+- **测试数**: 668 个测试
 - **工具数**: 21 工具 + MCP 动态工具 (含 TeamCreate/TeamDelete/SendMessage)
 - **命令数**: 27 个斜杠命令
 - **目录覆盖率**: 22/35 顶级目录已存在 (~63%)
@@ -37,14 +37,14 @@
 
 | 文档 | 内容 |
 |------|------|
-| [`COMPLETED_FULL.md`](COMPLETED_FULL.md) | 已完成的完整实现模块 (Phase 0-14B) |
-| [`COMPLETED_SIMPLIFIED.md`](COMPLETED_SIMPLIFIED.md) | 已完成但大幅简化的模块 (缩减率/缺失功能) |
-| [`MODULE_SIMPLIFICATION.md`](MODULE_SIMPLIFICATION.md) | TS vs Rust 全模块简化率分析 |
-| [`LIFECYCLE_STATE_MACHINE.md`](LIFECYCLE_STATE_MACHINE.md) | 生命周期状态机 (Phase A-I) |
-| [`QUERY_ENGINE_SESSION_LIFECYCLE.md`](QUERY_ENGINE_SESSION_LIFECYCLE.md) | 查询引擎会话生命周期 |
-| [`TOOL_EXECUTION_STATE_MACHINE.md`](TOOL_EXECUTION_STATE_MACHINE.md) | 工具执行管线 |
-| [`COMPACTION_RETRY_STATE_MACHINE.md`](COMPACTION_RETRY_STATE_MACHINE.md) | 压缩重试状态机 |
-| [`STRUCTURE_DIFF.md`](STRUCTURE_DIFF.md) | TS vs Rust 目录结构对比 |
+| [`COMPLETED_FULL.md`](archive/COMPLETED_FULL.md) | 已完成的完整实现模块 (Phase 0-14B) |
+| [`COMPLETED_SIMPLIFIED.md`](archive/COMPLETED_SIMPLIFIED.md) | 已完成但大幅简化的模块 (缩减率/缺失功能) |
+| [`MODULE_SIMPLIFICATION.md`](archive/MODULE_SIMPLIFICATION.md) | TS vs Rust 全模块简化率分析 |
+| [`LIFECYCLE_STATE_MACHINE.md`](archive/LIFECYCLE_STATE_MACHINE.md) | 生命周期状态机 (Phase A-I) |
+| [`QUERY_ENGINE_SESSION_LIFECYCLE.md`](archive/QUERY_ENGINE_SESSION_LIFECYCLE.md) | 查询引擎会话生命周期 |
+| [`TOOL_EXECUTION_STATE_MACHINE.md`](archive/TOOL_EXECUTION_STATE_MACHINE.md) | 工具执行管线 |
+| [`COMPACTION_RETRY_STATE_MACHINE.md`](archive/COMPACTION_RETRY_STATE_MACHINE.md) | 压缩重试状态机 |
+| [`STRUCTURE_DIFF.md`](archive/STRUCTURE_DIFF.md) | TS vs Rust 目录结构对比 |
 | [`AGENT_TEAMS_SPEC.md`](AGENT_TEAMS_SPEC.md) | 多代理 Swarm 系统实现规格 |
 
 ---
@@ -183,17 +183,17 @@ SendUserFile, PushNotification, SubscribePR
 
 ### 简化模块优先补全
 
-> 详见 [`COMPLETED_SIMPLIFIED.md`](COMPLETED_SIMPLIFIED.md) 中的"优先补全建议"
+> 详见 [`COMPLETED_SIMPLIFIED.md`](archive/COMPLETED_SIMPLIFIED.md) 中的"优先补全建议"
 
-| 优先级 | 模块 | 缺失功能 | 影响 |
+| 优先级 | 模块 | 缺失功能 | 状态 |
 |--------|------|---------|------|
-| **高** | FileEditTool | fuzzy 匹配 | 模型常给不精确的 old_string |
-| **高** | BashTool | 输出截断策略 | 大输出消耗过多 token |
-| **高** | FileReadTool | PDF/图片支持 | 多模态能力依赖 |
-| **中** | GrepTool | ripgrep 调用 | 性能 |
-| **中** | AgentTool | worktree 隔离 | 安全并行执行 |
-| **中** | API 提供商 | Bedrock/Vertex | 多云支持 |
-| **低** | 认证 | OAuth 流程 | 仅 API Key 用户不受影响 |
+| ~~高~~ | ~~FileEditTool~~ | ~~fuzzy 匹配~~ | ✅ 已补全 (230→386 行) |
+| ~~高~~ | ~~BashTool~~ | ~~输出截断策略~~ | ✅ 已补全 (199→430 行) |
+| ~~高~~ | ~~FileReadTool~~ | ~~PDF/图片支持~~ | ✅ 已补全 (236→743 行) |
+| ~~中~~ | ~~GrepTool~~ | ~~ripgrep 调用~~ | ✅ 已补全 (185→371 行) |
+| ~~中~~ | ~~AgentTool~~ | ~~worktree 隔离~~ | ✅ 已补全 (322→789 行) |
+| **中** | API 提供商 | Bedrock/Vertex | 待做 |
+| **低** | 认证 | OAuth 流程 | 待做 |
 
 ---
 
@@ -211,12 +211,12 @@ SendUserFile, PushNotification, SubscribePR
   Phase 14D    服务补全      ░░░░░░░░░░   0%  (4 服务待做)
   Phase 14E    网络/远程      ░░░░░░░░░░   0%  (暂不实现)
 
-  文件总数: 143 .rs 文件
-  代码行数: ~35,965 行 (占 TS ~225K 的 16%)
-  测试数量: 572 个 (全部通过)
-  目录覆盖: 19/35 TS 顶级目录 (54%)
+  文件总数: 151 .rs 文件
+  代码行数: ~41,278 行 (占 TS ~225K 的 18%)
+  测试数量: 668 个 (667 通过, 1 个预存在的 test ordering 问题)
+  目录覆盖: 22/35 TS 顶级目录 (63%)
   命令覆盖: 27/85+ (32%)
-  工具覆盖: 18/40+ (45%)
+  工具覆盖: 21/40+ (53%)
 ```
 
 ---

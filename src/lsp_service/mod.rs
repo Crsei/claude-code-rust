@@ -2,9 +2,8 @@
 //!
 //! Corresponds to TypeScript: internal LSP server manager used by LSPTool.
 //!
-//! This module provides the interface for communicating with LSP servers.
-//! When the `lsp` feature is enabled, it uses `lsp-types` for proper protocol
-//! types. Without the feature, stub implementations are provided.
+//! This module provides the interface for communicating with LSP servers,
+//! using `lsp-types` for proper protocol types.
 //!
 //! LSP servers are managed per-language (determined by file extension).
 //! Each server is a subprocess communicating via stdin/stdout using JSON-RPC 2.0.
@@ -138,7 +137,7 @@ static SERVERS: LazyLock<Mutex<HashMap<String, ServerInstance>>> =
 // ---------------------------------------------------------------------------
 
 /// Go to definition at position.
-#[cfg(feature = "lsp")]
+
 pub async fn go_to_definition(
     uri: &str,
     line: u32,
@@ -155,7 +154,7 @@ pub async fn go_to_definition(
 }
 
 /// Go to implementation at position.
-#[cfg(feature = "lsp")]
+
 pub async fn go_to_implementation(
     uri: &str,
     line: u32,
@@ -165,7 +164,7 @@ pub async fn go_to_implementation(
 }
 
 /// Find references at position.
-#[cfg(feature = "lsp")]
+
 pub async fn find_references(
     uri: &str,
     line: u32,
@@ -175,25 +174,25 @@ pub async fn find_references(
 }
 
 /// Hover at position.
-#[cfg(feature = "lsp")]
+
 pub async fn hover(uri: &str, line: u32, character: u32) -> Result<HoverInfo> {
     bail!("LSP server connection not yet implemented")
 }
 
 /// List document symbols.
-#[cfg(feature = "lsp")]
+
 pub async fn document_symbols(uri: &str) -> Result<Vec<SymbolInfo>> {
     bail!("LSP server connection not yet implemented")
 }
 
 /// Search workspace symbols.
-#[cfg(feature = "lsp")]
+
 pub async fn workspace_symbols(query: &str) -> Result<Vec<SymbolInfo>> {
     bail!("LSP server connection not yet implemented")
 }
 
 /// Prepare call hierarchy.
-#[cfg(feature = "lsp")]
+
 pub async fn prepare_call_hierarchy(
     uri: &str,
     line: u32,
@@ -203,13 +202,13 @@ pub async fn prepare_call_hierarchy(
 }
 
 /// Get incoming calls.
-#[cfg(feature = "lsp")]
+
 pub async fn incoming_calls(item: &SymbolInfo) -> Result<Vec<SymbolInfo>> {
     bail!("LSP server connection not yet implemented")
 }
 
 /// Get outgoing calls.
-#[cfg(feature = "lsp")]
+
 pub async fn outgoing_calls(item: &SymbolInfo) -> Result<Vec<SymbolInfo>> {
     bail!("LSP server connection not yet implemented")
 }

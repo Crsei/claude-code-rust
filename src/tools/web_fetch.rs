@@ -268,7 +268,7 @@ impl Tool for WebFetchTool {
     }
 
     fn is_enabled(&self) -> bool {
-        cfg!(feature = "network")
+        true
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
@@ -319,95 +319,81 @@ impl Tool for WebFetchTool {
             });
         }
 
-        // --- feature-gated network fetch ---
-        #[cfg(feature = "network")]
-        {
-            let start = Instant::now();
+        let start = Instant::now();
 
-            let client = reqwest::Client::builder()
-                .timeout(FETCH_TIMEOUT)
-                .redirect(reqwest::redirect::Policy::limited(10))
-                .user_agent("ClaudeCode/0.1 (Rust)")
-                .build()
-                .context("Failed to build HTTP client")?;
+        let client = reqwest::Client::builder()
+            .timeout(FETCH_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::limited(10))
+            .user_agent("ClaudeCode/0.1 (Rust)")
+            .build()
+            .context("Failed to build HTTP client")?;
 
-            let resp = client
-                .get(&url)
-                .header("Accept", "text/html,application/xhtml+xml,text/plain,*/*")
-                .send()
-                .await
-                .with_context(|| format!("Failed to fetch {}", url))?;
+        let resp = client
+            .get(&url)
+            .header("Accept", "text/html,application/xhtml+xml,text/plain,*/*")
+            .send()
+            .await
+            .with_context(|| format!("Failed to fetch {}", url))?;
 
-            let status = resp.status().as_u16();
-            let content_type = resp
-                .headers()
-                .get("content-type")
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("")
-                .to_string();
+        let status = resp.status().as_u16();
+        let content_type = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
 
-            // Read body with size limit
-            let body_bytes = resp
-                .bytes()
-                .await
-                .context("Failed to read response body")?;
+        // Read body with size limit
+        let body_bytes = resp
+            .bytes()
+            .await
+            .context("Failed to read response body")?;
 
-            if body_bytes.len() > MAX_CONTENT_LENGTH {
-                return Ok(ToolResult {
-                    data: json!({
-                        "url": url,
-                        "status": status,
-                        "error": format!(
-                            "Response body too large ({} bytes, limit {})",
-                            body_bytes.len(),
-                            MAX_CONTENT_LENGTH
-                        ),
-                    }),
-                    new_messages: vec![],
-                });
-            }
-
-            let body = String::from_utf8_lossy(&body_bytes).to_string();
-
-            // Extract text from HTML or return raw
-            let text = if content_type.contains("text/html")
-                || content_type.contains("application/xhtml")
-            {
-                strip_html_tags(&body)
-            } else {
-                body
-            };
-
-            let text = truncate_text(&text, MAX_TEXT_LENGTH);
-            let duration_ms = start.elapsed().as_millis() as u64;
-
-            // Cache successful responses
-            if (200..400).contains(&status) {
-                cache_put(&url, &text, status);
-            }
-
-            Ok(ToolResult {
+        if body_bytes.len() > MAX_CONTENT_LENGTH {
+            return Ok(ToolResult {
                 data: json!({
                     "url": url,
                     "status": status,
-                    "content": text,
-                    "contentType": content_type,
-                    "bytes": body_bytes.len(),
-                    "durationMs": duration_ms,
+                    "error": format!(
+                        "Response body too large ({} bytes, limit {})",
+                        body_bytes.len(),
+                        MAX_CONTENT_LENGTH
+                    ),
                 }),
                 new_messages: vec![],
-            })
+            });
         }
 
-        #[cfg(not(feature = "network"))]
+        let body = String::from_utf8_lossy(&body_bytes).to_string();
+
+        // Extract text from HTML or return raw
+        let text = if content_type.contains("text/html")
+            || content_type.contains("application/xhtml")
         {
-            Ok(ToolResult {
-                data: json!({
-                    "error": "WebFetch requires the 'network' feature to be enabled. Compile with --features network."
-                }),
-                new_messages: vec![],
-            })
+            strip_html_tags(&body)
+        } else {
+            body
+        };
+
+        let text = truncate_text(&text, MAX_TEXT_LENGTH);
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        // Cache successful responses
+        if (200..400).contains(&status) {
+            cache_put(&url, &text, status);
         }
+
+        Ok(ToolResult {
+            data: json!({
+                "url": url,
+                "status": status,
+                "content": text,
+                "contentType": content_type,
+                "bytes": body_bytes.len(),
+                "durationMs": duration_ms,
+            }),
+            new_messages: vec![],
+        })
     }
 
     async fn prompt(&self) -> String {

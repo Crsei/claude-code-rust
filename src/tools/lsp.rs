@@ -12,7 +12,7 @@
 //! The tool converts 1-based editor coordinates to 0-based LSP protocol
 //! coordinates and formats results for the model.
 //!
-//! Requires the `lsp` feature flag (depends on `lsp-types` crate).
+//! Depends on the `lsp-types` crate.
 
 #![allow(unused)]
 
@@ -97,7 +97,7 @@ impl LspOperation {
 }
 
 // ---------------------------------------------------------------------------
-// LSP location types (minimal, feature-gated full types in lsp_service)
+// LSP location types
 // ---------------------------------------------------------------------------
 
 /// A location in a source file (simplified LSP Location).
@@ -229,7 +229,7 @@ impl Tool for LspTool {
     }
 
     fn is_enabled(&self) -> bool {
-        cfg!(feature = "lsp")
+        true
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
@@ -340,41 +340,28 @@ impl Tool for LspTool {
             }
         }
 
-        // ---- Feature-gated LSP execution ----
-        #[cfg(feature = "lsp")]
-        {
-            let result = execute_lsp_operation(
-                op,
-                &resolved,
-                line,
-                character,
-            )
-            .await;
+        // ---- LSP execution ----
+        let result = execute_lsp_operation(
+            op,
+            &resolved,
+            line,
+            character,
+        )
+        .await;
 
-            match result {
-                Ok(output) => Ok(ToolResult {
-                    data: output,
-                    new_messages: vec![],
-                }),
-                Err(e) => Ok(ToolResult {
-                    data: json!({
-                        "error": format!("LSP operation failed: {}", e),
-                        "operation": op_str,
-                        "filePath": resolved.display().to_string(),
-                    }),
-                    new_messages: vec![],
-                }),
-            }
-        }
-
-        #[cfg(not(feature = "lsp"))]
-        {
-            // Without lsp feature, provide basic fallback using grep/text analysis
-            let result = execute_fallback_operation(op, &resolved, line, character);
-            Ok(ToolResult {
-                data: result,
+        match result {
+            Ok(output) => Ok(ToolResult {
+                data: output,
                 new_messages: vec![],
-            })
+            }),
+            Err(e) => Ok(ToolResult {
+                data: json!({
+                    "error": format!("LSP operation failed: {}", e),
+                    "operation": op_str,
+                    "filePath": resolved.display().to_string(),
+                }),
+                new_messages: vec![],
+            }),
         }
     }
 
@@ -427,10 +414,9 @@ fn resolve_file_path(file_path: &str, ctx: &ToolUseContext) -> PathBuf {
 }
 
 // ---------------------------------------------------------------------------
-// Feature-gated LSP execution
+// LSP execution
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "lsp")]
 async fn execute_lsp_operation(
     op: LspOperation,
     file_path: &Path,
@@ -546,7 +532,6 @@ async fn execute_lsp_operation(
     }
 }
 
-#[cfg(feature = "lsp")]
 fn file_path_to_uri(path: &Path) -> String {
     // file:///path/to/file
     let abs = if path.is_absolute() {
@@ -559,151 +544,6 @@ fn file_path_to_uri(path: &Path) -> String {
     format!("file:///{}", abs.to_string_lossy().replace('\\', "/").trim_start_matches('/'))
 }
 
-// ---------------------------------------------------------------------------
-// Fallback (no LSP feature) — basic text-based analysis
-// ---------------------------------------------------------------------------
-
-#[cfg(not(feature = "lsp"))]
-fn execute_fallback_operation(
-    op: LspOperation,
-    file_path: &Path,
-    line: u32,
-    character: u32,
-) -> Value {
-    match op {
-        LspOperation::Hover => {
-            // Read the line and extract the word at the position
-            if let Ok(content) = std::fs::read_to_string(file_path) {
-                let lines: Vec<&str> = content.lines().collect();
-                let line_idx = line as usize;
-                if line_idx < lines.len() {
-                    let src_line = lines[line_idx];
-                    let char_idx = character as usize;
-                    // Extract word at position
-                    let word = extract_word_at(src_line, char_idx);
-                    return json!({
-                        "operation": "hover",
-                        "filePath": file_path.display().to_string(),
-                        "result": format!("Symbol: `{}`\n(Full LSP unavailable — compile with --features lsp for type info)", word),
-                        "line": line + 1,
-                        "character": character + 1,
-                    });
-                }
-            }
-            json!({
-                "operation": "hover",
-                "error": "Could not read file for hover fallback",
-            })
-        }
-        LspOperation::DocumentSymbol => {
-            // Simple regex-based symbol extraction
-            if let Ok(content) = std::fs::read_to_string(file_path) {
-                let symbols = extract_symbols_naive(&content);
-                json!({
-                    "operation": "documentSymbol",
-                    "filePath": file_path.display().to_string(),
-                    "result": symbols,
-                    "note": "Basic text extraction — compile with --features lsp for full analysis",
-                })
-            } else {
-                json!({
-                    "operation": "documentSymbol",
-                    "error": "Could not read file",
-                })
-            }
-        }
-        _ => {
-            json!({
-                "operation": op.method(),
-                "error": format!(
-                    "Operation '{}' requires the 'lsp' feature. Compile with --features lsp.",
-                    op.method()
-                ),
-            })
-        }
-    }
-}
-
-/// Extract the word at a given character position in a line.
-#[cfg(not(feature = "lsp"))]
-fn extract_word_at(line: &str, char_idx: usize) -> String {
-    let chars: Vec<char> = line.chars().collect();
-    if char_idx >= chars.len() {
-        return String::new();
-    }
-
-    let is_ident = |c: char| c.is_alphanumeric() || c == '_';
-
-    let mut start = char_idx;
-    while start > 0 && is_ident(chars[start - 1]) {
-        start -= 1;
-    }
-
-    let mut end = char_idx;
-    while end < chars.len() && is_ident(chars[end]) {
-        end += 1;
-    }
-
-    chars[start..end].iter().collect()
-}
-
-/// Naive symbol extraction using common patterns.
-#[cfg(not(feature = "lsp"))]
-fn extract_symbols_naive(content: &str) -> String {
-    let mut symbols = Vec::new();
-    let patterns = [
-        ("fn ", "function"),
-        ("struct ", "struct"),
-        ("enum ", "enum"),
-        ("trait ", "trait"),
-        ("impl ", "impl"),
-        ("type ", "type"),
-        ("const ", "const"),
-        ("static ", "static"),
-        ("mod ", "module"),
-        ("pub fn ", "function"),
-        ("pub struct ", "struct"),
-        ("pub enum ", "enum"),
-        ("pub trait ", "trait"),
-        ("pub type ", "type"),
-        ("pub const ", "const"),
-        ("pub mod ", "module"),
-        // Common patterns for other languages
-        ("class ", "class"),
-        ("function ", "function"),
-        ("def ", "function"),
-        ("interface ", "interface"),
-    ];
-
-    for (line_num, line) in content.lines().enumerate() {
-        let trimmed = line.trim();
-        for (pattern, kind) in &patterns {
-            if trimmed.starts_with(pattern) || trimmed.starts_with(&format!("pub(crate) {}", pattern)) {
-                let rest = if let Some(after) = trimmed.strip_prefix(pattern) {
-                    after
-                } else {
-                    continue;
-                };
-                // Extract identifier (until non-ident char)
-                let name: String = rest
-                    .chars()
-                    .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '<')
-                    .take_while(|c| *c != '<')
-                    .collect();
-                if !name.is_empty() {
-                    symbols.push(format!("  {} `{}` (line {})", kind, name, line_num + 1));
-                }
-                break;
-            }
-        }
-    }
-
-    if symbols.is_empty() {
-        "No symbols found.".to_string()
-    } else {
-        symbols.join("\n")
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -812,46 +652,6 @@ mod tests {
             range: None,
         };
         assert_eq!(format_hover(&hover), "No hover information available.");
-    }
-
-    #[cfg(not(feature = "lsp"))]
-    #[test]
-    fn test_extract_word_at() {
-        assert_eq!(extract_word_at("fn hello_world() {", 3), "hello_world");
-        assert_eq!(extract_word_at("let x = 42;", 4), "x");
-        assert_eq!(extract_word_at("", 0), "");
-    }
-
-    #[cfg(not(feature = "lsp"))]
-    #[test]
-    fn test_extract_symbols_naive() {
-        let code = r#"
-pub fn main() {
-    println!("hello");
-}
-
-struct Config {
-    verbose: bool,
-}
-
-impl Config {
-    fn new() -> Self {
-        Self { verbose: false }
-    }
-}
-
-pub enum Mode {
-    Fast,
-    Slow,
-}
-"#;
-        let result = extract_symbols_naive(code);
-        assert!(result.contains("function"));
-        assert!(result.contains("`main`"));
-        assert!(result.contains("struct"));
-        assert!(result.contains("`Config`"));
-        assert!(result.contains("enum"));
-        assert!(result.contains("`Mode`"));
     }
 
     #[tokio::test]

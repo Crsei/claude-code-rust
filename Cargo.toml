@@ -5,7 +5,7 @@ edition = "2021"
 description = "Claude Code CLI - Rust implementation"
 
 # ============================================================
-# Phase 0-1: 核心类型 + 状态机 (无网络依赖)
+# 核心类型 + 状态机
 # ============================================================
 
 [dependencies]
@@ -42,7 +42,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # ============================================================
-# Phase 2: 本地工具系统 (无网络依赖)
+# 本地工具系统
 # ============================================================
 
 # 文件搜索 & 路径
@@ -67,7 +67,7 @@ shell-words = "1"
 fs4 = "0.12"
 
 # ============================================================
-# Phase 5: 终端 UI (无网络依赖)
+# 终端 UI
 # ============================================================
 
 # 终端 UI
@@ -92,91 +92,29 @@ url = "2"
 semver = "1"
 
 # ============================================================
-# Phase 9+: 网络功能 (低优先级, 可选依赖)
+# Phase 9+: 网络 / API / 认证 / 高级功能
 # ============================================================
 
-[dependencies.reqwest]
-version = "0.12"
-features = ["json", "stream", "rustls-tls"]
-optional = true
-
-[dependencies.tokio-tungstenite]
-version = "0.26"
-features = ["rustls-tls-webpki-roots"]
-optional = true
-
-[dependencies.eventsource-stream]
-version = "0.2"
-optional = true
-
-[dependencies.keyring]
-version = "3"
-optional = true
-
-[dependencies.jsonwebtoken]
-version = "9"
-optional = true
-
-[dependencies.oauth2]
-version = "5"
-optional = true
-
-[dependencies.aws-config]
-version = "1"
-optional = true
-
-[dependencies.aws-sdk-bedrockruntime]
-version = "1"
-optional = true
-
-[dependencies.gcp_auth]
-version = "0.12"
-optional = true
-
-[dependencies.lsp-types]
-version = "0.97"
-optional = true
-
-[dependencies.tree-sitter]
-version = "0.24"
-optional = true
-
-[dependencies.image]
-version = "0.25"
-optional = true
-
-# ============================================================
-# Feature flags (对应 TypeScript 的 feature() gates)
-# ============================================================
-
-[features]
-default = []
-
-# 网络功能集合
-network = [
-    "dep:reqwest",
-    "dep:eventsource-stream",
-    "dep:tokio-tungstenite",
-]
-
-# API 提供商
-api-anthropic = ["network"]
-api-openai = ["network"]
-api-google = ["network"]
-api-bedrock = ["network", "dep:aws-config", "dep:aws-sdk-bedrockruntime"]
-api-vertex = ["network", "dep:gcp_auth"]
+# 网络
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+eventsource-stream = "0.2"
 
 # 认证
-auth = ["dep:keyring", "dep:jsonwebtoken", "dep:oauth2"]
+keyring = "3"
+jsonwebtoken = "9"
+oauth2 = "5"
 
-# MCP 协议
-mcp = ["network"]
+# AWS Bedrock
+aws-config = "1"
+aws-sdk-bedrockruntime = "1"
 
-# LSP 集成
-lsp = ["dep:lsp-types"]
+# GCP Vertex
+gcp_auth = "0.12"
 
-# Tree-sitter AST
-tree-sitter-ast = ["dep:tree-sitter"]
+# LSP
+lsp-types = "0.97"
 
-# 全功能
-full = ["network", "api-anthropic", "api-openai", "api-google", "api-bedrock", "api-vertex", "auth", "mcp", "lsp"]
+# AST / 图像
+tree-sitter = "0.24"
+image = "0.25"

@@ -11,6 +11,63 @@ use crate::types::tool::{
     ValidationResult,
 };
 
+/// Truncate output using head+tail strategy.
+/// Keeps first `head_lines` lines and last `tail_lines` lines,
+/// inserting a separator showing how many lines were omitted.
+/// Falls back to character-level truncation if needed.
+fn truncate_output(output: &str, max_chars: usize) -> String {
+    if output.len() <= max_chars {
+        return output.to_string();
+    }
+
+    let lines: Vec<&str> = output.lines().collect();
+    let total_lines = lines.len();
+
+    const DEFAULT_HEAD_LINES: usize = 200;
+    const TAIL_LINES: usize = 100;
+
+    // If there aren't enough lines for a meaningful head+tail split,
+    // fall back to char-level truncation directly.
+    if total_lines <= DEFAULT_HEAD_LINES + TAIL_LINES {
+        let mut result = output[..max_chars].to_string();
+        // Trim to the last newline to avoid cutting mid-line
+        if let Some(pos) = result.rfind('\n') {
+            result.truncate(pos);
+        }
+        result.push_str("\n... (output truncated)");
+        return result;
+    }
+
+    let tail_start = total_lines - TAIL_LINES;
+    let tail_part: String = lines[tail_start..].join("\n");
+
+    // Try with full head_lines first, then reduce proportionally
+    let mut head_lines = DEFAULT_HEAD_LINES;
+    loop {
+        if head_lines == 0 {
+            // Final fallback: pure char-level truncation
+            let mut result = output[..max_chars].to_string();
+            if let Some(pos) = result.rfind('\n') {
+                result.truncate(pos);
+            }
+            result.push_str("\n... (output truncated)");
+            return result;
+        }
+
+        let head_part: String = lines[..head_lines].join("\n");
+        let omitted = total_lines - head_lines - TAIL_LINES;
+        let separator = format!("\n\n... ({} lines omitted) ...\n\n", omitted);
+        let candidate = format!("{}{}{}", head_part, separator, tail_part);
+
+        if candidate.len() <= max_chars {
+            return candidate;
+        }
+
+        // Reduce head_lines by half each iteration
+        head_lines /= 2;
+    }
+}
+
 /// BashTool — Execute shell commands
 ///
 /// Corresponds to TypeScript: tools/BashTool
@@ -161,12 +218,9 @@ impl Tool for BashTool {
                     combined.push_str(&stderr);
                 }
 
-                // Truncate if too large
+                // Truncate if too large using head+tail strategy
                 let max_chars = self.max_result_size_chars();
-                if combined.len() > max_chars {
-                    combined.truncate(max_chars);
-                    combined.push_str("\n... (output truncated)");
-                }
+                combined = truncate_output(&combined, max_chars);
 
                 Ok(ToolResult {
                     data: json!({
@@ -298,5 +352,79 @@ Important:\n\
 
     fn user_facing_name(&self, _input: Option<&Value>) -> String {
         "Bash".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_short_output() {
+        let output = "Hello, world!\nLine 2\nLine 3\n";
+        let result = truncate_output(output, 1000);
+        assert_eq!(result, output);
+    }
+
+    #[test]
+    fn test_truncate_head_tail() {
+        // Generate 500 lines of output
+        let lines: Vec<String> = (1..=500).map(|i| format!("Line {}", i)).collect();
+        let output = lines.join("\n");
+        // Use a generous limit so head+tail fits but full output doesn't
+        let max_chars = output.len() / 2;
+        let result = truncate_output(&output, max_chars);
+
+        // Should contain the separator
+        assert!(
+            result.contains("lines omitted"),
+            "Expected separator with 'lines omitted' in truncated output"
+        );
+
+        // Should start with the first line
+        assert!(
+            result.starts_with("Line 1\n"),
+            "Expected output to start with 'Line 1'"
+        );
+
+        // Should end with the last line
+        assert!(
+            result.ends_with("Line 500"),
+            "Expected output to end with 'Line 500'"
+        );
+
+        // Should be within the limit
+        assert!(
+            result.len() <= max_chars,
+            "Truncated output ({}) exceeds max_chars ({})",
+            result.len(),
+            max_chars
+        );
+    }
+
+    #[test]
+    fn test_truncate_preserves_lines() {
+        // Generate 400 lines
+        let lines: Vec<String> = (1..=400).map(|i| format!("Line {:04}", i)).collect();
+        let output = lines.join("\n");
+        let max_chars = output.len() / 2;
+        let result = truncate_output(&output, max_chars);
+
+        // Every line in the result should be complete (not cut mid-line)
+        for line in result.lines() {
+            if line.contains("omitted") {
+                // This is the separator line, skip it
+                continue;
+            }
+            if line.is_empty() {
+                // Empty lines around the separator
+                continue;
+            }
+            assert!(
+                line.starts_with("Line "),
+                "Found a line that doesn't start with 'Line ': '{}'",
+                line
+            );
+        }
     }
 }

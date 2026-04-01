@@ -69,6 +69,16 @@ pub struct App {
     /// Width used when computing `cached_total_lines`. If the terminal is
     /// resized the cache is invalidated.
     cached_width: u16,
+    /// Model name for status bar display.
+    model_name: String,
+    /// Accumulated session cost in USD.
+    session_cost_usd: f64,
+    /// Input history for Up/Down arrow navigation.
+    history: Vec<String>,
+    /// Current position in the history (None = not browsing).
+    history_index: Option<usize>,
+    /// Saved input text when browsing history.
+    saved_input: String,
 }
 
 impl App {
@@ -85,6 +95,11 @@ impl App {
             theme: Theme::default(),
             cached_total_lines: None,
             cached_width: 0,
+            model_name: String::new(),
+            session_cost_usd: 0.0,
+            history: Vec::new(),
+            history_index: None,
+            saved_input: String::new(),
         }
     }
 
@@ -147,6 +162,30 @@ impl App {
         self.spinner_state.tick();
     }
 
+    /// Set the model name shown in the status bar.
+    pub fn set_model_name(&mut self, name: String) {
+        self.model_name = name;
+    }
+
+    /// Update the accumulated session cost (displayed in the status bar).
+    pub fn update_session_cost(&mut self, cost_usd: f64) {
+        self.session_cost_usd = cost_usd;
+    }
+
+    /// Set the spinner message text.
+    pub fn set_spinner_message(&mut self, msg: String) {
+        self.spinner_state.set_message(msg);
+    }
+
+    /// Push a submitted prompt into the input history.
+    pub fn push_history(&mut self, text: String) {
+        if self.history.last().map_or(true, |last| last != &text) {
+            self.history.push(text);
+        }
+        self.history_index = None;
+        self.saved_input.clear();
+    }
+
     // ── Event handling ──────────────────────────────────────────────
 
     /// Process a key event and return an [`AppAction`] describing what the
@@ -194,6 +233,16 @@ impl App {
             {
                 self.scroll_down(10);
                 return AppAction::ScrollDown;
+            }
+
+            // ── Input history ───────────────────────────────────────
+            (_, KeyCode::Up) if self.prompt.is_active && !self.is_streaming => {
+                self.history_up();
+                return AppAction::None;
+            }
+            (_, KeyCode::Down) if self.prompt.is_active && !self.is_streaming => {
+                self.history_down();
+                return AppAction::None;
             }
 
             // ── Mouse scroll (handled elsewhere) / default ─────────
