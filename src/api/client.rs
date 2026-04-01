@@ -11,16 +11,34 @@ use serde_json::Value;
 use crate::types::message::{AssistantMessage, Message, StreamEvent, Usage};
 
 // Re-export siblings for convenience within this module's tests.
+use crate::api::providers::{ProviderInfo, ProviderProtocol};
 use crate::api::retry::{categorize_api_error, retry_delay, ApiErrorCategory, RetryConfig};
 use crate::api::streaming::{parse_sse_event, StreamAccumulator};
 
-/// API provider enum
+/// API provider enum — determines wire protocol and auth method.
 #[derive(Debug, Clone)]
 pub enum ApiProvider {
-    /// Direct Anthropic API
+    /// Direct Anthropic API (native Messages API)
     Anthropic {
         api_key: String,
         base_url: Option<String>,
+    },
+    /// Azure Foundry (Anthropic-compatible)
+    Azure {
+        endpoint: String,
+        api_key: String,
+    },
+    /// OpenAI-compatible provider (OpenAI, DeepSeek, Groq, Qwen, etc.)
+    OpenAiCompat {
+        name: String,
+        api_key: String,
+        base_url: String,
+        default_model: String,
+    },
+    /// Google Gemini (streamGenerateContent API)
+    Google {
+        api_key: String,
+        base_url: String,
     },
     /// AWS Bedrock (interface only — not implemented)
     #[allow(dead_code)]
@@ -33,11 +51,6 @@ pub enum ApiProvider {
     Vertex {
         project_id: String,
         region: String,
-    },
-    /// Azure Foundry
-    Azure {
-        endpoint: String,
-        api_key: String,
     },
 }
 
@@ -87,8 +100,8 @@ impl ApiClient {
 
     /// Build the messages endpoint URL based on provider.
     ///
-    /// Only Anthropic Direct and Azure are active. Bedrock/Vertex are
-    /// interface-only and will panic if used at runtime.
+    /// Only used for Anthropic-format providers (Anthropic, Azure).
+    /// OpenAI-compat and Google providers build their URLs internally.
     pub fn build_url(&self) -> String {
         match &self.config.provider {
             ApiProvider::Anthropic { base_url, .. } => {
@@ -98,75 +111,115 @@ impl ApiClient {
                 let base = base.trim_end_matches('/');
                 format!("{}/v1/messages", base)
             }
+            ApiProvider::Azure { endpoint, .. } => {
+                let endpoint = endpoint.trim_end_matches('/');
+                format!("{}/v1/messages", endpoint)
+            }
+            ApiProvider::OpenAiCompat { base_url, .. } => {
+                let base = base_url.trim_end_matches('/');
+                format!("{}/chat/completions", base)
+            }
+            ApiProvider::Google { base_url, .. } => {
+                base_url.clone()
+            }
             ApiProvider::Bedrock { .. } => {
                 unimplemented!("AWS Bedrock provider is not implemented")
             }
             ApiProvider::Vertex { .. } => {
                 unimplemented!("GCP Vertex AI provider is not implemented")
             }
-            ApiProvider::Azure { endpoint, .. } => {
-                let endpoint = endpoint.trim_end_matches('/');
-                format!("{}/v1/messages", endpoint)
-            }
         }
     }
 
-    /// Build the required HTTP headers.
+    /// Construct an `ApiClient` from a `ProviderInfo` and API key.
+    pub fn from_provider_info(info: &ProviderInfo, api_key: &str) -> Self {
+        let provider = match info.protocol {
+            ProviderProtocol::Anthropic => ApiProvider::Anthropic {
+                api_key: api_key.to_string(),
+                base_url: Some(info.base_url.to_string()),
+            },
+            ProviderProtocol::OpenAiCompat => ApiProvider::OpenAiCompat {
+                name: info.name.to_string(),
+                api_key: api_key.to_string(),
+                base_url: info.base_url.to_string(),
+                default_model: info.default_model.to_string(),
+            },
+            ProviderProtocol::Google => ApiProvider::Google {
+                api_key: api_key.to_string(),
+                base_url: info.base_url.to_string(),
+            },
+        };
+        Self::new(ApiClientConfig {
+            provider,
+            default_model: info.default_model.to_string(),
+            max_retries: 3,
+            timeout_secs: 120,
+        })
+    }
+
+    /// Auto-detect provider from environment variables and construct an `ApiClient`.
+    ///
+    /// Returns `None` if no provider has an API key set.
+    pub fn from_env() -> Option<Self> {
+        let info = crate::api::providers::detect_provider()?;
+        let api_key = std::env::var(info.env_key).ok()?;
+        Some(Self::from_provider_info(info, &api_key))
+    }
+
+    /// Build the required HTTP headers for Anthropic-format providers.
     #[cfg(feature = "network")]
     pub fn build_headers(&self) -> reqwest::header::HeaderMap {
         use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        headers.insert(
-            "anthropic-version",
-            HeaderValue::from_static("2023-06-01"),
-        );
-        headers.insert(
-            "anthropic-beta",
-            HeaderValue::from_static(
-                "interleaved-thinking-2025-05-14,prompt-caching-2024-07-16",
-            ),
-        );
 
-        // Provider-specific auth headers (Anthropic + Azure only)
         match &self.config.provider {
-            ApiProvider::Anthropic { api_key, .. } => {
+            ApiProvider::Anthropic { api_key, .. } | ApiProvider::Azure { api_key, .. } => {
+                headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
+                headers.insert(
+                    "anthropic-beta",
+                    HeaderValue::from_static(
+                        "interleaved-thinking-2025-05-14,prompt-caching-2024-07-16",
+                    ),
+                );
                 if let Ok(val) = HeaderValue::from_str(api_key) {
                     headers.insert("x-api-key", val);
                 }
             }
-            ApiProvider::Azure { api_key, .. } => {
-                if let Ok(val) = HeaderValue::from_str(api_key) {
-                    headers.insert("x-api-key", val);
+            ApiProvider::OpenAiCompat { api_key, .. } => {
+                let bearer = format!("Bearer {}", api_key);
+                if let Ok(val) = HeaderValue::from_str(&bearer) {
+                    headers.insert("Authorization", val);
                 }
             }
-            // Bedrock/Vertex: interface only, not implemented
+            ApiProvider::Google { .. } => {
+                // Google uses API key in URL query param, no auth header needed
+            }
             _ => {}
         }
 
         headers
     }
 
-    /// For non-network builds, provide a header accessor that returns a simple map
-    /// so tests can still call build_headers_map().
+    /// Header accessor as a simple map (works without network feature, for tests).
     pub fn build_headers_map(&self) -> std::collections::HashMap<String, String> {
         let mut map = std::collections::HashMap::new();
         map.insert("content-type".to_string(), "application/json".to_string());
-        map.insert("anthropic-version".to_string(), "2023-06-01".to_string());
-        map.insert(
-            "anthropic-beta".to_string(),
-            "interleaved-thinking-2025-05-14,prompt-caching-2024-07-16".to_string(),
-        );
 
         match &self.config.provider {
-            ApiProvider::Anthropic { api_key, .. } => {
+            ApiProvider::Anthropic { api_key, .. } | ApiProvider::Azure { api_key, .. } => {
+                map.insert("anthropic-version".to_string(), "2023-06-01".to_string());
+                map.insert(
+                    "anthropic-beta".to_string(),
+                    "interleaved-thinking-2025-05-14,prompt-caching-2024-07-16".to_string(),
+                );
                 map.insert("x-api-key".to_string(), api_key.clone());
             }
-            ApiProvider::Azure { api_key, .. } => {
-                map.insert("x-api-key".to_string(), api_key.clone());
+            ApiProvider::OpenAiCompat { api_key, .. } => {
+                map.insert("Authorization".to_string(), format!("Bearer {}", api_key));
             }
-            // Bedrock/Vertex: interface only, not implemented
+            ApiProvider::Google { .. } => {}
             _ => {}
         }
 
@@ -192,6 +245,11 @@ impl ApiClient {
     }
 
     /// Internal streaming implementation — only compiled with `network` feature.
+    ///
+    /// Routes to provider-specific implementations:
+    /// - Anthropic/Azure → Anthropic SSE format
+    /// - OpenAI-compat  → OpenAI chat/completions SSE format
+    /// - Google         → Gemini streamGenerateContent SSE format
     #[cfg(feature = "network")]
     async fn messages_stream_impl(
         &self,
@@ -199,10 +257,33 @@ impl ApiClient {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         use futures::StreamExt;
 
+        // Route to provider-specific streaming implementation
+        match &self.config.provider {
+            ApiProvider::OpenAiCompat {
+                name,
+                api_key,
+                base_url,
+                ..
+            } => {
+                return crate::api::openai_compat::openai_compat_stream(
+                    &self.http, base_url, api_key, name, &request,
+                )
+                .await;
+            }
+            ApiProvider::Google { api_key, base_url } => {
+                return crate::api::google_provider::google_stream(
+                    &self.http, base_url, api_key, &request,
+                )
+                .await;
+            }
+            _ => {} // Fall through to Anthropic-format logic
+        }
+
+        // ── Anthropic / Azure native SSE format ──
+
         let url = self.build_url();
         let headers = self.build_headers();
 
-        // Ensure the request is marked as streaming
         let mut req_body = request;
         req_body.stream = true;
 
@@ -220,7 +301,6 @@ impl ApiClient {
 
         let status = response.status().as_u16();
 
-        // Non-2xx: read body for error categorization
         if !response.status().is_success() {
             let error_body = response
                 .text()
@@ -235,7 +315,6 @@ impl ApiClient {
             );
         }
 
-        // Convert the byte stream into an SSE event stream
         let byte_stream = response.bytes_stream();
         let sse_stream = parse_sse_byte_stream(byte_stream);
 
@@ -621,6 +700,42 @@ mod tests {
         assert_eq!(url, "https://my-azure-endpoint.com/v1/messages");
     }
 
+    #[test]
+    fn test_build_url_openai_compat() {
+        let config = ApiClientConfig {
+            provider: ApiProvider::OpenAiCompat {
+                name: "deepseek".to_string(),
+                api_key: "sk-test".to_string(),
+                base_url: "https://api.deepseek.com/v1".to_string(),
+                default_model: "deepseek-chat".to_string(),
+            },
+            default_model: "deepseek-chat".to_string(),
+            max_retries: 3,
+            timeout_secs: 60,
+        };
+        let client = ApiClient::new(config);
+        let url = client.build_url();
+        assert_eq!(url, "https://api.deepseek.com/v1/chat/completions");
+    }
+
+    #[test]
+    fn test_build_url_openai_compat_trailing_slash() {
+        let config = ApiClientConfig {
+            provider: ApiProvider::OpenAiCompat {
+                name: "openai".to_string(),
+                api_key: "sk-test".to_string(),
+                base_url: "https://api.openai.com/v1/".to_string(),
+                default_model: "gpt-4o".to_string(),
+            },
+            default_model: "gpt-4o".to_string(),
+            max_retries: 3,
+            timeout_secs: 60,
+        };
+        let client = ApiClient::new(config);
+        let url = client.build_url();
+        assert_eq!(url, "https://api.openai.com/v1/chat/completions");
+    }
+
     // -----------------------------------------------------------------------
     // Header building
     // -----------------------------------------------------------------------
@@ -654,9 +769,45 @@ mod tests {
     }
 
     #[test]
+    fn test_build_headers_openai_compat_bearer() {
+        let config = ApiClientConfig {
+            provider: ApiProvider::OpenAiCompat {
+                name: "openai".to_string(),
+                api_key: "sk-my-key".to_string(),
+                base_url: "https://api.openai.com/v1".to_string(),
+                default_model: "gpt-4o".to_string(),
+            },
+            default_model: "gpt-4o".to_string(),
+            max_retries: 1,
+            timeout_secs: 30,
+        };
+        let client = ApiClient::new(config);
+        let headers = client.build_headers_map();
+        assert_eq!(headers.get("Authorization").unwrap(), "Bearer sk-my-key");
+        assert!(headers.get("x-api-key").is_none());
+        assert!(headers.get("anthropic-version").is_none());
+    }
+
+    #[test]
+    fn test_build_headers_google_no_auth_header() {
+        let config = ApiClientConfig {
+            provider: ApiProvider::Google {
+                api_key: "AIza-test".to_string(),
+                base_url: "https://generativelanguage.googleapis.com/v1beta".to_string(),
+            },
+            default_model: "gemini-2.0-flash".to_string(),
+            max_retries: 1,
+            timeout_secs: 30,
+        };
+        let client = ApiClient::new(config);
+        let headers = client.build_headers_map();
+        assert_eq!(headers.get("content-type").unwrap(), "application/json");
+        assert!(headers.get("x-api-key").is_none());
+        assert!(headers.get("Authorization").is_none());
+    }
+
+    #[test]
     fn test_build_headers_bedrock_no_api_key() {
-        // Bedrock variant can still construct headers (common ones),
-        // but has no x-api-key since it uses IAM signing (not implemented).
         let config = ApiClientConfig {
             provider: ApiProvider::Bedrock {
                 region: "us-east-1".to_string(),
@@ -670,6 +821,42 @@ mod tests {
         let headers = client.build_headers_map();
         assert!(headers.get("x-api-key").is_none());
         assert_eq!(headers.get("content-type").unwrap(), "application/json");
+    }
+
+    // -----------------------------------------------------------------------
+    // from_provider_info
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_from_provider_info_anthropic() {
+        use crate::api::providers::get_provider;
+        let info = get_provider("anthropic").unwrap();
+        let client = ApiClient::from_provider_info(info, "sk-test");
+        assert!(matches!(client.config().provider, ApiProvider::Anthropic { .. }));
+        assert_eq!(client.config().default_model, "claude-sonnet-4-20250514");
+    }
+
+    #[test]
+    fn test_from_provider_info_deepseek() {
+        use crate::api::providers::get_provider;
+        let info = get_provider("deepseek").unwrap();
+        let client = ApiClient::from_provider_info(info, "sk-ds-key");
+        match &client.config().provider {
+            ApiProvider::OpenAiCompat { name, base_url, .. } => {
+                assert_eq!(name, "deepseek");
+                assert_eq!(base_url, "https://api.deepseek.com/v1");
+            }
+            _ => panic!("expected OpenAiCompat"),
+        }
+    }
+
+    #[test]
+    fn test_from_provider_info_google() {
+        use crate::api::providers::get_provider;
+        let info = get_provider("google").unwrap();
+        let client = ApiClient::from_provider_info(info, "AIza-test");
+        assert!(matches!(client.config().provider, ApiProvider::Google { .. }));
+        assert_eq!(client.config().default_model, "gemini-2.0-flash");
     }
 
     // -----------------------------------------------------------------------

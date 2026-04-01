@@ -161,6 +161,8 @@ network = [
 
 # API 提供商
 api-anthropic = ["network"]
+api-openai = ["network"]
+api-google = ["network"]
 api-bedrock = ["network", "dep:aws-config", "dep:aws-sdk-bedrockruntime"]
 api-vertex = ["network", "dep:gcp_auth"]
 
@@ -177,4 +179,4 @@ lsp = ["dep:lsp-types"]
 tree-sitter-ast = ["dep:tree-sitter"]
 
 # 全功能
-full = ["network", "api-anthropic", "api-bedrock", "api-vertex", "auth", "mcp", "lsp"]
+full = ["network", "api-anthropic", "api-openai", "api-google", "api-bedrock", "api-vertex", "auth", "mcp", "lsp"]
