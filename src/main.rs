@@ -28,6 +28,11 @@ mod mcp;
 mod analytics;
 mod remote;
 
+// Phase 12: Plugin/Skill/LSP systems
+mod skills;
+mod plugins;
+mod lsp_service;
+
 // Phase I: Shutdown and cleanup
 mod shutdown;
 

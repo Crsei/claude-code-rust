@@ -30,3 +30,6 @@ pub mod skill;
 // Phase 12: Network tools (low priority)
 pub mod web_fetch;
 pub mod web_search;
+
+// Phase 12: LSP tool
+pub mod lsp;
