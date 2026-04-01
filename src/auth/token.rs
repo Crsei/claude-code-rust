@@ -1,8 +1,14 @@
-#![allow(unused)]
-//! OAuth token management and refresh
+//! OAuth token persistence — interface only.
+//!
+//! These types and functions define the storage format for OAuth tokens.
+//! The actual OAuth flow is not implemented; see `auth::oauth_login()`.
+//! Kept for forward compatibility when OAuth is implemented.
+
+#![allow(dead_code)]
+
 use anyhow::Result;
 
-/// Token storage location
+/// Token storage file path: `~/.claude/credentials.json`
 pub fn token_file_path() -> std::path::PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -10,7 +16,7 @@ pub fn token_file_path() -> std::path::PathBuf {
         .join("credentials.json")
 }
 
-/// Stored token data
+/// Stored token data (OAuth).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StoredToken {
     pub access_token: String,
@@ -19,7 +25,7 @@ pub struct StoredToken {
     pub token_type: String,
 }
 
-/// Load stored token from disk
+/// Load stored OAuth token from disk.
 pub fn load_token() -> Result<Option<StoredToken>> {
     let path = token_file_path();
     if !path.exists() {
@@ -30,7 +36,7 @@ pub fn load_token() -> Result<Option<StoredToken>> {
     Ok(Some(token))
 }
 
-/// Save token to disk
+/// Save OAuth token to disk.
 pub fn save_token(token: &StoredToken) -> Result<()> {
     let path = token_file_path();
     if let Some(parent) = path.parent() {
@@ -41,11 +47,20 @@ pub fn save_token(token: &StoredToken) -> Result<()> {
     Ok(())
 }
 
-/// Check if a stored token has expired
+/// Remove stored OAuth token from disk.
+pub fn remove_token() -> Result<()> {
+    let path = token_file_path();
+    if path.exists() {
+        std::fs::remove_file(&path)?;
+    }
+    Ok(())
+}
+
+/// Check if a stored token has expired (with 5-minute buffer).
 pub fn is_token_expired(token: &StoredToken) -> bool {
     if let Some(expires_at) = token.expires_at {
         let now = chrono::Utc::now().timestamp();
-        now >= expires_at - 300 // 5 minute buffer
+        now >= expires_at - 300
     } else {
         false
     }

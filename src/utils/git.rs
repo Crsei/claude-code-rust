@@ -427,16 +427,15 @@ pub fn current_branch(path: &Path) -> Result<String> {
 /// there are no commits yet.
 pub fn head_sha(path: &Path) -> Result<String> {
     let repo = open_repo(path)?;
-    match repo.head() {
-        Ok(head) => {
-            let oid = head
-                .peel_to_commit()
-                .context("Failed to peel HEAD to commit")?
-                .id();
-            Ok(oid.to_string())
-        }
-        Err(_) => Ok(String::new()),
-    }
+    let head = match repo.head() {
+        Ok(h) => h,
+        Err(_) => return Ok(String::new()),
+    };
+    let oid = head
+        .peel_to_commit()
+        .context("Failed to peel HEAD to commit")?
+        .id();
+    Ok(oid.to_string())
 }
 
 /// List all local branches in the repository.
@@ -516,144 +515,173 @@ mod tests {
     use super::*;
     use std::fs;
 
-    /// Create a temporary git repo for testing.
-    fn setup_test_repo() -> (tempfile::TempDir, Repository) {
-        let dir = tempfile::tempdir().unwrap();
-        let repo = Repository::init(dir.path()).unwrap();
+    /// Create a unique temporary directory for testing (no tempfile crate needed).
+    fn make_temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir()
+            .join("claude_code_rs_tests")
+            .join(name)
+            .join(format!("{}", std::process::id()));
+        if dir.exists() {
+            let _ = fs::remove_dir_all(&dir);
+        }
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Create a temporary git repo for testing. Returns (dir_path, Repository).
+    fn setup_test_repo(test_name: &str) -> (PathBuf, Repository) {
+        let dir = make_temp_dir(test_name);
+        let repo = Repository::init(&dir).unwrap();
 
         // Create an initial commit so HEAD exists
-        let sig = git2::Signature::now("Test", "test@test.com").unwrap();
-        let tree_id = {
-            let mut index = repo.index().unwrap();
-            // Write a test file
-            let file_path = dir.path().join("README.md");
-            fs::write(&file_path, "# Test\n").unwrap();
-            index.add_path(Path::new("README.md")).unwrap();
-            index.write().unwrap();
-            index.write_tree().unwrap()
-        };
-        let tree = repo.find_tree(tree_id).unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])
-            .unwrap();
+        {
+            let sig = git2::Signature::now("Test", "test@test.com").unwrap();
+            let tree_id = {
+                let mut index = repo.index().unwrap();
+                let file_path = dir.join("README.md");
+                fs::write(&file_path, "# Test\n").unwrap();
+                index.add_path(Path::new("README.md")).unwrap();
+                index.write().unwrap();
+                index.write_tree().unwrap()
+            };
+            let tree = repo.find_tree(tree_id).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])
+                .unwrap();
+        }
 
         (dir, repo)
     }
 
+    /// Clean up a test directory.
+    fn cleanup(dir: &Path) {
+        let _ = fs::remove_dir_all(dir);
+    }
+
     #[test]
     fn test_is_git_repo() {
-        let (dir, _repo) = setup_test_repo();
-        assert!(is_git_repo(dir.path()));
+        let (dir, _repo) = setup_test_repo("is_git_repo");
+        assert!(is_git_repo(&dir));
+        cleanup(&dir);
     }
 
     #[test]
     fn test_not_git_repo() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(!is_git_repo(dir.path()));
+        let dir = make_temp_dir("not_git_repo");
+        assert!(!is_git_repo(&dir));
+        cleanup(&dir);
     }
 
     #[test]
     fn test_find_git_root() {
-        let (dir, _repo) = setup_test_repo();
-        let root = find_git_root(dir.path());
+        let (dir, _repo) = setup_test_repo("find_git_root");
+        let root = find_git_root(&dir);
         assert!(root.is_some());
-        assert_eq!(root.unwrap(), dir.path());
+        assert_eq!(root.unwrap(), dir);
+        cleanup(&dir);
     }
 
     #[test]
     fn test_current_branch() {
-        let (dir, _repo) = setup_test_repo();
-        let branch = current_branch(dir.path()).unwrap();
+        let (dir, _repo) = setup_test_repo("current_branch");
+        let branch = current_branch(&dir).unwrap();
         // Default branch for git init is either "main" or "master"
         assert!(!branch.is_empty());
+        cleanup(&dir);
     }
 
     #[test]
     fn test_head_sha() {
-        let (dir, _repo) = setup_test_repo();
-        let sha = head_sha(dir.path()).unwrap();
+        let (dir, _repo) = setup_test_repo("head_sha");
+        let sha = head_sha(&dir).unwrap();
         assert_eq!(sha.len(), 40);
         assert!(sha.chars().all(|c| c.is_ascii_hexdigit()));
+        cleanup(&dir);
     }
 
     #[test]
     fn test_get_status_clean() {
-        let (dir, _repo) = setup_test_repo();
-        let status = get_status(dir.path()).unwrap();
+        let (dir, _repo) = setup_test_repo("status_clean");
+        let status = get_status(&dir).unwrap();
         assert!(status.staged.is_empty());
         assert!(status.unstaged.is_empty());
         assert!(status.untracked.is_empty());
+        cleanup(&dir);
     }
 
     #[test]
     fn test_get_status_untracked() {
-        let (dir, _repo) = setup_test_repo();
-        fs::write(dir.path().join("new_file.txt"), "hello").unwrap();
-        let status = get_status(dir.path()).unwrap();
+        let (dir, _repo) = setup_test_repo("status_untracked");
+        fs::write(dir.join("new_file.txt"), "hello").unwrap();
+        let status = get_status(&dir).unwrap();
         assert_eq!(status.untracked.len(), 1);
         assert_eq!(status.untracked[0].path, "new_file.txt");
+        cleanup(&dir);
     }
 
     #[test]
     fn test_get_status_modified() {
-        let (dir, _repo) = setup_test_repo();
-        fs::write(dir.path().join("README.md"), "# Modified\n").unwrap();
-        let status = get_status(dir.path()).unwrap();
+        let (dir, _repo) = setup_test_repo("status_modified");
+        fs::write(dir.join("README.md"), "# Modified\n").unwrap();
+        let status = get_status(&dir).unwrap();
         assert_eq!(status.unstaged.len(), 1);
+        cleanup(&dir);
     }
 
     #[test]
     fn test_get_log() {
-        let (dir, _repo) = setup_test_repo();
-        let log = get_log(dir.path(), 10).unwrap();
+        let (dir, _repo) = setup_test_repo("get_log");
+        let log = get_log(&dir, 10).unwrap();
         assert_eq!(log.len(), 1);
         assert_eq!(log[0].summary, "Initial commit");
         assert_eq!(log[0].author_name, "Test");
+        cleanup(&dir);
     }
 
     #[test]
     fn test_diff_staged() {
-        let (dir, repo) = setup_test_repo();
+        let (dir, repo) = setup_test_repo("diff_staged");
 
-        // Create and stage a new file
-        let new_file = dir.path().join("staged.txt");
+        let new_file = dir.join("staged.txt");
         fs::write(&new_file, "staged content\n").unwrap();
         let mut index = repo.index().unwrap();
         index.add_path(Path::new("staged.txt")).unwrap();
         index.write().unwrap();
 
-        let diff = diff_staged(dir.path()).unwrap();
+        let diff = diff_staged(&dir).unwrap();
         assert_eq!(diff.len(), 1);
         assert_eq!(diff[0].path, "staged.txt");
         assert_eq!(diff[0].delta, DeltaKind::Added);
+        cleanup(&dir);
     }
 
     #[test]
     fn test_diff_unstaged() {
-        let (dir, _repo) = setup_test_repo();
+        let (dir, _repo) = setup_test_repo("diff_unstaged");
 
-        // Modify the tracked file without staging
-        fs::write(dir.path().join("README.md"), "# Changed\nNew line\n").unwrap();
+        fs::write(dir.join("README.md"), "# Changed\nNew line\n").unwrap();
 
-        let diff = diff_unstaged(dir.path()).unwrap();
+        let diff = diff_unstaged(&dir).unwrap();
         assert_eq!(diff.len(), 1);
         assert_eq!(diff[0].path, "README.md");
         assert_eq!(diff[0].delta, DeltaKind::Modified);
+        cleanup(&dir);
     }
 
     #[test]
     fn test_list_branches() {
-        let (dir, _repo) = setup_test_repo();
-        let branches = list_branches(dir.path()).unwrap();
+        let (dir, _repo) = setup_test_repo("list_branches");
+        let branches = list_branches(&dir).unwrap();
         assert!(!branches.is_empty());
-        // At least the default branch should exist
         assert!(branches.iter().any(|b| b.is_head));
+        cleanup(&dir);
     }
 
     #[test]
     fn test_default_branch_fallback() {
-        let (dir, _repo) = setup_test_repo();
-        let branch = default_branch(dir.path()).unwrap();
+        let (dir, _repo) = setup_test_repo("default_branch");
+        let branch = default_branch(&dir).unwrap();
         // Without remotes, should fall back to "main"
         assert_eq!(branch, "main");
+        cleanup(&dir);
     }
 }

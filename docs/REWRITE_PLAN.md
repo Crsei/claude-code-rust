@@ -13,10 +13,10 @@
 
 ## Rust 实现现状
 
-- **文件数**: 96 个 .rs 文件, 16 个顶级子目录
-- **代码行数**: ~16,461 行 (占 TS 的 ~18%)
-- **测试数**: 164 个测试，全部通过
-- **完成状态**: 核心状态机 + 本地工具 + UI + 会话持久化完整；API 客户端 / MCP 为脚手架
+- **文件数**: 111 个 .rs 文件, 16 个顶级子目录
+- **代码行数**: ~24,642 行 (占 TS 的 ~27%)
+- **测试数**: 337 个测试，全部通过
+- **完成状态**: 核心状态机 + 本地工具 + UI + 会话持久化 + API 客户端 + Hooks + MCP 客户端完整
 - **目录覆盖率**: 16/35 顶级目录已存在 (~46%)
 
 ---
@@ -38,8 +38,8 @@
 |------|---------|--------|
 | [`LIFECYCLE_STATE_MACHINE.md`](LIFECYCLE_STATE_MACHINE.md) | main.rs, shutdown.rs, engine/, query/ | ✅ Phase A-I 完整 |
 | [`QUERY_ENGINE_SESSION_LIFECYCLE.md`](QUERY_ENGINE_SESSION_LIFECYCLE.md) | engine/lifecycle.rs, sdk_types.rs | ✅ Phase A-E 完整 |
-| [`TOOL_EXECUTION_STATE_MACHINE.md`](TOOL_EXECUTION_STATE_MACHINE.md) | tools/execution.rs, orchestration.rs, hooks.rs | ✅ 管线完整，hooks 为脚手架 |
-| [`COMPACTION_RETRY_STATE_MACHINE.md`](COMPACTION_RETRY_STATE_MACHINE.md) | compact/pipeline.rs, compaction.rs | ✅ 决策 + 管线完整，full compact 需 API |
+| [`TOOL_EXECUTION_STATE_MACHINE.md`](TOOL_EXECUTION_STATE_MACHINE.md) | tools/execution.rs, orchestration.rs, hooks.rs | ✅ 管线完整，hooks 完整实现 |
+| [`COMPACTION_RETRY_STATE_MACHINE.md`](COMPACTION_RETRY_STATE_MACHINE.md) | compact/pipeline.rs, compaction.rs | ✅ 决策 + 管线 + async pipeline 完整 |
 | [`STRUCTURE_DIFF.md`](STRUCTURE_DIFF.md) | 目录结构对比 | 📋 TS vs Rust 全量对比 |
 
 ---
@@ -87,28 +87,28 @@ Rust 重组了 TS 的目录结构，主要变化:
 | P1.5 | QueryEngine | `engine/lifecycle.rs` | ✅ | 1237 | 8 | Phase A-E 完整分发 + QueryEngineDeps |
 | P1.6 | SDK 类型 | `engine/sdk_types.rs` | ✅ | 143 | 0 | SdkMessage 7 种变体 |
 | P1.7 | 输入处理 | `engine/input_processing.rs` | ✅ | 156 | 5 | 斜杠命令解析 + UserMessage 构建 |
-| P1.8 | 系统提示 | `engine/system_prompt.rs` | ✅ | 157 | 4 | 默认/自定义/追加提示词 + 工具描述 |
+| P1.8 | 系统提示 | `engine/system_prompt.rs` | ✅ | 220 | 7 | 默认/自定义/追加 + 工具描述 + CLAUDE.md 注入 |
 | P1.9 | 结果判定 | `engine/result.rs` | ✅ | 234 | 6 | isResultSuccessful + extractTextResult |
 | P1.10 | CLI 入口 | `main.rs` | ✅ | 468 | 0 | clap CLI + 快速路径 + REPL + print mode |
 | P1.11 | 关闭清理 | `shutdown.rs` | ✅ | 129 | 0 | SIGINT handler + abort + transcript flush |
 
-## Phase 2: 本地工具系统 — ✅ 核心完成
+## Phase 2: 本地工具系统 — ✅ 完成
 
 | # | 模块 | 文件 | 状态 | 行数 | 说明 |
 |---|------|------|------|------|------|
 | P2.1 | 工具注册 | `tools/registry.rs` | ✅ | 99 | get_all_tools + find_tool_by_name |
 | P2.2 | 并发编排 | `tools/orchestration.rs` | ✅ | 534 | partitionToolCalls + 并行/串行批次 |
 | P2.3 | 执行管线 | `tools/execution.rs` | ✅ | 604 | run_tool_use() 8 步管线 |
-| P2.4 | Hook 基础 | `tools/hooks.rs` | 🔧 | 153 | 类型定义完整，执行逻辑占位 |
+| P2.4 | Hook 基础 | `tools/hooks.rs` | ✅ | 855 | 完整子进程执行 + JSON 解析 + matcher |
 | P2.5 | Bash | `tools/bash.rs` | ✅ | 199 | 进程执行 + timeout + 输出捕获 |
 | P2.6 | FileRead | `tools/file_read.rs` | ✅ | 236 | 二进制检测 + 行号 + offset/limit |
 | P2.7 | FileWrite | `tools/file_write.rs` | ✅ | 157 | 路径验证 + 内容写入 |
 | P2.8 | FileEdit | `tools/file_edit.rs` | ✅ | 230 | 字符串替换 + replace_all |
 | P2.9 | Glob | `tools/glob_tool.rs` | ✅ | 199 | glob 匹配 + 修改时间排序 |
 | P2.10 | Grep | `tools/grep.rs` | ✅ | 185 | 正则搜索 + 上下文行 + 输出模式 |
-| P2.11 | NotebookEdit | `tools/notebook_edit.rs` | 🔧 | 97 | JSON 解析框架，处理不完整 |
-| P2.12 | AskUser | `tools/ask_user.rs` | 🔧 | 62 | 占位符返回，无真实 UI 集成 |
-| P2.13 | ToolSearch | `tools/tool_search.rs` | 🔧 | 73 | 占位符，搜索逻辑未实现 |
+| P2.11 | NotebookEdit | `tools/notebook_edit.rs` | ✅ | 310 | replace/insert/delete 操作 + 完整测试 |
+| P2.12 | AskUser | `tools/ask_user.rs` | ✅ | 155 | 真实 stdin 交互 + 非交互 fallback |
+| P2.13 | ToolSearch | `tools/tool_search.rs` | ✅ | 240 | select: 精确选择 + 关键字模糊搜索 |
 | P2.14 | Tasks | `tools/tasks.rs` | ✅ | 189 | 内存 HashMap CRUD |
 
 ## Phase 3: 权限与配置 — ✅ 完成
@@ -128,7 +128,7 @@ Rust 重组了 TS 的目录结构，主要变化:
 | P4.1 | 消息工具 | `compact/messages.rs` | ✅ | 306 | 4 | normalizeForAPI + 交替模式 |
 | P4.2 | 微压缩 | `compact/microcompact.rs` | ✅ | 261 | 2 | 阈值裁剪 + 最近 N 结果保护 |
 | P4.3 | 历史裁剪 | `compact/snip.rs` | ✅ | 217 | 2 | turn 识别 + 边界消息 |
-| P4.4 | 结果预算 | `compact/tool_result_budget.rs` | 🔧 | 224 | 2 | 磁盘持久化框架，async I/O 部分 |
+| P4.4 | 结果预算 | `compact/tool_result_budget.rs` | ✅ | 224 | 2 | 磁盘持久化 + async I/O + 预览生成 |
 | P4.5 | 管线编排 | `compact/pipeline.rs` | ✅ | 269 | 3 | snip → micro → autocompact 编排 |
 | P4.6 | 压缩决策 | `compact/auto_compact.rs` | ✅ | 52 | 3 | 80% 阈值判定 |
 | P4.7 | 全量压缩 | `compact/compaction.rs` | ✅ | 426 | 8 | 决策 + 跟踪 + prompt + boundary |
@@ -156,56 +156,63 @@ Rust 重组了 TS 的目录结构，主要变化:
 | P6.2 | 对话记录 | `session/transcript.rs` | ✅ | 188 | NDJSON append + sync |
 | P6.3 | 会话恢复 | `session/resume.rs` | ✅ | 54 | cwd 匹配 + 消息加载 |
 
-## Phase 7: 命令系统 — 🔧 部分完成
+## Phase 7: 命令系统 — ✅ 大部分完成
 
 | # | 模块 | 文件 | 状态 | 行数 | 测试 | 说明 |
 |---|------|------|------|------|------|------|
-| P7.1 | 注册表 | `commands/mod.rs` | ✅ | 187 | 6 | 别名 + 参数解析 |
-| P7.2 | /compact | `commands/compact.rs` | 🔧 | ~30 | 0 | 框架，需 API |
+| P7.1 | 注册表 | `commands/mod.rs` | ✅ | 187 | 6 | 别名 + 参数解析, 17 个命令 |
+| P7.2 | /compact | `commands/compact.rs` | ✅ | 182 | 3 | 本地管线 + token 统计 |
 | P7.3 | /clear | `commands/clear.rs` | ✅ | ~20 | 0 | 直接实现 |
 | P7.4 | /help | `commands/help.rs` | ✅ | ~30 | 0 | 列出所有命令 |
 | P7.5 | /config | `commands/config_cmd.rs` | 🔧 | ~30 | 0 | 框架 |
 | P7.6 | /diff | `commands/diff.rs` | ✅ | ~30 | 0 | git diff |
+| P7.7 | /login | `commands/login.rs` | ✅ | ~65 | 0 | 认证引导 + status 子命令 |
+| P7.8 | /logout | `commands/logout.rs` | ✅ | ~55 | 0 | 清除 keychain + disk tokens |
 
-## Phase 8: 高级本地工具 — 🔧 脚手架
+## Phase 8: 高级本地工具 — 🔧 部分完成
 
 | # | 模块 | 文件 | 状态 | 行数 | 说明 |
 |---|------|------|------|------|------|
-| P8.1 | Agent | `tools/agent.rs` | 🔧 | 87 | 框架，需子进程/子 QueryEngine |
+| P8.1 | Agent | `tools/agent.rs` | ✅ | 270 | 子 QueryEngine 派生 + 递归深度限制 |
 | P8.2 | PlanMode | `tools/plan_mode.rs` | 🔧 | 51 | 模式切换占位 |
 | P8.3 | Worktree | `tools/worktree.rs` | 🔧 | 75 | git worktree 框架 |
 | P8.4 | Skill | `tools/skill.rs` | 🔧 | 57 | 技能调用占位 |
 
 ---
 
-## Phase 9-13: 网络功能 — 🔧 脚手架 (低优先级)
+## Phase 9-13: 网络功能 — ✅ 核心完成 + 🔧 部分脚手架
 
-这些模块依赖网络。当前采用 **本地优先** 策略。
+API 客户端 + MCP 已完成。认证活跃路径已覆盖。网络工具/远程/遥测仍为脚手架。
 
-### Phase 9: API 客户端
+### Phase 9: API 客户端 — ✅ 完成
 
 | # | 模块 | 文件 | 状态 | 说明 |
 |---|------|------|------|------|
-| P9.1 | 客户端 | `api/client.rs` | 🔧 | HTTP 框架，call 方法未实现 |
+| P9.1 | 客户端 | `api/client.rs` | ✅ | SSE 字节流解析 + 重试 + 多提供商 |
 | P9.2 | 流解析 | `api/streaming.rs` | ✅ | SSE 解析 + StreamAccumulator |
 | P9.3 | 重试 | `api/retry.rs` | ✅ | 错误分类 + 指数退避 |
 | P9.4 | 提供商 | `api/providers.rs` | ✅ | Provider trait + 4 家抽象 |
 
 ### Phase 10: 认证
 
+> **重构决策 (2026-04-01):** OAuth 登录流程仅保留接口 (`#[allow(dead_code)]`)，不实现逻辑。
+> 活跃路径: API Key (`ANTHROPIC_API_KEY`) + External Token (`ANTHROPIC_AUTH_TOKEN`)。
+> `/login` 和 `/logout` 命令已实现，见 Phase 7。
+
 | # | 模块 | 文件 | 状态 | 说明 |
 |---|------|------|------|------|
-| P10.1 | 入口 | `auth/mod.rs` | ✅ | AuthMethod 解析 + env 检测 |
-| P10.2 | API Key | `auth/api_key.rs` | 🔧 | feature-gated 存储 |
-| P10.3 | Token | `auth/token.rs` | ✅ | 文件 I/O + 过期检查 |
+| P10.1 | 入口 | `auth/mod.rs` | ✅ | AuthMethod: ApiKey + ExternalToken + None; OAuth 接口保留 |
+| P10.2 | API Key | `auth/api_key.rs` | ✅ | validate + store + load + remove; feature-gated keyring |
+| P10.3 | Token | `auth/token.rs` | 📦 | OAuth token 持久化接口 (dead_code); load/save/remove/expire |
+| P10.4 | OAuth 流程 | `auth/mod.rs` | 📦 | oauth_login/refresh/logout 接口存根 (dead_code, bail!) |
 
 ### Phase 11: MCP 协议
 
 | # | 模块 | 文件 | 状态 | 说明 |
 |---|------|------|------|------|
-| P11.1 | 客户端 | `mcp/client.rs` | 🔧 | 5 个方法均 stub |
+| P11.1 | 客户端 | `mcp/client.rs` | ✅ | stdio 传输 + JSON-RPC 2.0 + McpManager |
 | P11.2 | 发现 | `mcp/discovery.rs` | ✅ | JSON 配置加载 |
-| P11.3 | 工具 | `mcp/tools.rs` | 🔧 | 代理 trait impl 但委托 stub |
+| P11.3 | 工具 | `mcp/tools.rs` | ✅ | McpToolWrapper 委托真实 McpClient |
 
 ### Phase 12: 网络工具
 
@@ -247,22 +254,22 @@ Rust 重组了 TS 的目录结构，主要变化:
 
 ### Phase 14B: 命令系统补全
 
-TS 有 85+ 命令，当前 Rust 仅 5 个。按使用频率分批实现。
+TS 有 85+ 命令，当前 Rust 已有 18 个。按使用频率分批实现。
 
-**第一批 — 高频核心命令 (无网络依赖)**
+**第一批 — 高频核心命令 ✅ 已完成**
 
-| # | 命令 | 对应 TS | 预估行数 | 说明 |
-|---|------|---------|---------|------|
-| P14B.1 | /exit | `commands/exit/` | ~20 | 退出 REPL |
-| P14B.2 | /version | `commands/version.ts` | ~20 | 版本号 |
-| P14B.3 | /model | `commands/model/` | ~60 | 切换模型 |
-| P14B.4 | /cost | `commands/cost/` | ~40 | 显示 token 用量 |
-| P14B.5 | /session | `commands/session/` | ~80 | 会话列表/切换 |
-| P14B.6 | /resume | `commands/resume/` | ~60 | 恢复会话 |
-| P14B.7 | /files | `commands/files/` | ~40 | 列出引用文件 |
-| P14B.8 | /context | `commands/context/` | ~80 | 上下文管理 |
-| P14B.9 | /permissions | `commands/permissions/` | ~60 | 权限查看/修改 |
-| P14B.10 | /hooks | `commands/hooks/` | ~60 | hook 管理 |
+| # | 命令 | 状态 | 说明 |
+|---|------|------|------|
+| P14B.1 | /exit | ✅ | 退出 REPL |
+| P14B.2 | /version | ✅ | 版本号 |
+| P14B.3 | /model | ✅ | 切换模型 |
+| P14B.4 | /cost | ✅ | 显示 token 用量 |
+| P14B.5 | /session | ✅ | 会话列表/切换 |
+| P14B.6 | /resume | ✅ | 恢复会话 |
+| P14B.7 | /files | ✅ | 列出引用文件 |
+| P14B.8 | /context | ✅ | 上下文管理 |
+| P14B.9 | /permissions | ✅ | 权限查看/修改 |
+| P14B.10 | /hooks | ✅ | hook 管理 |
 
 **第二批 — 中频功能命令**
 
@@ -284,11 +291,13 @@ TS 有 85+ 命令，当前 Rust 仅 5 个。按使用频率分批实现。
 ```
 /add-dir, /agents, /bridge, /chrome, /color, /copy, /desktop,
 /doctor, /feedback, /ide, /init, /install, /keybindings,
-/login, /logout, /mcp, /mobile, /plugin, /privacy-settings,
+/mcp, /mobile, /plugin, /privacy-settings,
 /release-notes, /remote-env, /remote-setup, /rewind,
 /sandbox-toggle, /skills, /status, /stickers, /tag, /tasks,
 /terminalSetup, /theme, /thinkback, /upgrade, /usage, /vim, /voice
 ```
+
+> **注**: `/login` 和 `/logout` 已在 Phase 7 实现 (P7.7, P7.8)。
 
 ### Phase 14C: 缺失工具补全
 
@@ -296,7 +305,7 @@ TS 有 85+ 命令，当前 Rust 仅 5 个。按使用频率分批实现。
 |---|------|---------|---------|--------|------|
 | P14C.1 | SendMessage | `SendMessageTool/` | ~80 | 高 | Agent 间通信 |
 | P14C.2 | LSP | `LSPTool/` | ~200 | 中 | 需 lsp feature |
-| P14C.3 | MCP | `MCPTool/` | ~100 | 中 | 需 mcp feature |
+| P14C.3 | MCP | `mcp/tools.rs` | ~180 | ✅ | McpToolWrapper 完整实现 |
 | P14C.4 | PowerShell | `PowerShellTool/` | ~100 | 中 | Windows 支持 |
 | P14C.5 | Sleep | `SleepTool/` | ~20 | 低 | 简单 |
 | P14C.6 | Brief | `BriefTool/` | ~30 | 低 | 输出简化 |
@@ -340,64 +349,65 @@ TS 有 85+ 命令，当前 Rust 仅 5 个。按使用频率分批实现。
 
   Phase 0  类型基础       ██████████ 100% (6/6)
   Phase 1  状态机骨架     ██████████ 100% (11/11)
-  Phase 2  本地工具       ███████░░░  70% (10/14 完整, 4 脚手架)
+  Phase 2  本地工具       ██████████ 100% (14/14 完整)
   Phase 3  权限与配置     ██████████ 100% (5/5)
-  Phase 4  上下文管理     █████████░  89% (8/9 完整, 1 脚手架)
+  Phase 4  上下文管理     ██████████ 100% (9/9 完整)
   Phase 5  终端 UI        ██████████ 100% (8/8)
   Phase 6  会话持久化     ██████████ 100% (3/3)
-  Phase 7  命令系统       ████████░░  67% (4/6 完整, 2 脚手架)
-  Phase 8  高级工具       ██░░░░░░░░   0% (0/4 完整, 4 脚手架)
-  Phase 9  API 客户端     ███████░░░  75% (3/4 完整, 1 脚手架)
-  Phase 10 认证           ██████░░░░  67% (2/3 完整, 1 脚手架)
-  Phase 11 MCP            ███░░░░░░░  33% (1/3 完整, 2 脚手架)
+  Phase 7  命令系统       █████████░  88% (7/8 完整, 1 脚手架)
+  Phase 8  高级工具       ████░░░░░░  25% (1/4 完整, 3 脚手架)
+  Phase 9  API 客户端     ██████████ 100% (4/4)
+  Phase 10 认证           ██████████ 100% (2/2 活跃 + 2 接口保留)
+  Phase 11 MCP            ██████████ 100% (3/3)
   Phase 12 网络工具       ░░░░░░░░░░   0% (0/2, 2 脚手架)
   Phase 13 远程/遥测      ░░░░░░░░░░   0% (0/2, 2 脚手架)
   Phase 14 目录对齐       ░░░░░░░░░░   0% (新增)
 
-  文件总数: 96 .rs 文件 (目标: ~200+)
-  代码行数: ~16,461 行 (目标: ~30,000+)
-  测试数量: 164 个 (全部通过)
+  文件总数: 111 .rs 文件 (目标: ~200+)
+  代码行数: ~24,642 行 (占 TS 的 ~27%)
+  测试数量: 337 个 (全部通过)
   目录覆盖: 16/35 TS 顶级目录 (46%)
-  命令覆盖: 5/85+ (6%)
-  工具覆盖: 20/42 (48%, 含脚手架)
+  命令覆盖: 18/85+ (21%)
+  工具覆盖: 10 核心 + MCP 动态工具 (24%)
 ```
 
 ---
 
 ## 下一步优先级 (P1 = 紧急, P4 = 可推迟)
 
-### P1 — 使系统端到端可用
+### P1 — 使系统端到端可用 ✅ 已完成
 
 > 详见 [`P1_EXECUTION_PLAN.md`](P1_EXECUTION_PLAN.md)
 
-| 任务 | 文件 | 预估 | 依赖 |
+| 任务 | 文件 | 状态 |
+|------|------|------|
+| API 客户端接入真实 Anthropic API | `api/client.rs` | ✅ 完成 |
+| Hooks 真实执行 (子进程 + JSON) | `tools/hooks.rs` | ✅ 完成 |
+| tool_result_budget 完成 async I/O | `compact/tool_result_budget.rs` | ✅ 完成 |
+| /compact 命令接 API 压缩 | `commands/compact.rs` | ✅ 完成 |
+
+### P2 — 功能完整性 + 脚手架提升 ✅ 已完成 (除 MCP)
+
+| 任务 | 文件 | 状态 | 依赖 |
 |------|------|------|------|
-| API 客户端接入真实 Anthropic API | `api/client.rs` | 250 行 | network feature |
-| Hooks 真实执行 (子进程 + JSON) | `tools/hooks.rs` | 350 行 | 无 |
-| tool_result_budget 完成 async I/O | `compact/tool_result_budget.rs` | 30 行 | 无 |
-| /compact 命令接 API 压缩 | `commands/compact.rs` | 120 行 | P9.1 |
+| Agent 工具 (子 QueryEngine 派生) | `tools/agent.rs` | ✅ 完成 | 无 |
+| AskUser 真实终端交互 | `tools/ask_user.rs` | ✅ 完成 | 无 |
+| ToolSearch 工具搜索 | `tools/tool_search.rs` | ✅ 完成 | 无 |
+| NotebookEdit 完整 ipynb | `tools/notebook_edit.rs` | ✅ 完成 | 无 |
+| CLAUDE.md 记忆注入到系统提示 | `engine/system_prompt.rs` | ✅ 完成 | 无 |
+| MCP 客户端实现 | `mcp/client.rs` | ✅ 完成 | stdio 传输 |
 
-### P2 — 功能完整性 + 脚手架提升
+### P3 — 目录结构对齐 (Phase 14A + 14B)
 
-| 任务 | 文件 | 预估 | 依赖 |
-|------|------|------|------|
-| Agent 工具 (子 QueryEngine 派生) | `tools/agent.rs` | 200 行 | 无 |
-| AskUser 真实终端交互 | `tools/ask_user.rs` | 80 行 | 无 |
-| ToolSearch 工具搜索 | `tools/tool_search.rs` | 50 行 | 无 |
-| NotebookEdit 完整 ipynb | `tools/notebook_edit.rs` | 100 行 | 无 |
-| CLAUDE.md 记忆注入到系统提示 | `engine/system_prompt.rs` | 100 行 | 无 |
-| MCP 客户端实现 | `mcp/client.rs` | 300 行 | network |
-
-### P3 — 目录结构对齐 (Phase 14A + 14B 第一批)
-
-| 任务 | 文件 | 预估 | 依赖 |
-|------|------|------|------|
-| 常量模块 | `config/constants.rs` | 200 行 | 无 |
-| utils/git 封装 | `utils/git.rs` | 200 行 | 无 |
-| utils/bash 解析 | `utils/bash/` | 300 行 | 无 |
-| utils/shell | `utils/shell.rs` | 100 行 | 无 |
-| 高频命令 10 个 | `commands/*.rs` | 600 行 | 无 |
-| 任务子系统 | `tasks/` | 400 行 | 无 |
+| 任务 | 文件 | 预估 | 状态 | 依赖 |
+|------|------|------|------|------|
+| 常量模块 | `config/constants.rs` | 200 行 | 待做 | 无 |
+| utils/bash 解析 | `utils/bash/` | 300 行 | 待做 | 无 |
+| utils/shell | `utils/shell.rs` | 100 行 | 待做 | 无 |
+| 高频命令 (P14B 第一批) | `commands/*.rs` | — | ✅ 完成 | 无 |
+| /login, /logout | `commands/login.rs`, `logout.rs` | ~120 行 | ✅ 完成 | 无 |
+| 中频命令 (P14B 第二批) | `commands/*.rs` | ~500 行 | 待做 | 无 |
+| 任务子系统 | `tasks/` | 400 行 | 待做 | 无 |
 
 ### P4 — 网络/远程/遥测 + 其余
 
@@ -405,7 +415,7 @@ TS 有 85+ 命令，当前 Rust 仅 5 个。按使用频率分批实现。
 |------|------|------|------|
 | AWS Bedrock 提供商 | `api/providers.rs` | 150 行 | aws-sdk |
 | GCP Vertex 提供商 | `api/providers.rs` | 150 行 | gcp_auth |
-| OAuth 认证流程 | `auth/` | 300 行 | oauth2 |
+| OAuth 认证流程 (填充接口) | `auth/mod.rs` | 300 行 | oauth2, 接口已定义 |
 | WebFetch / WebSearch | `tools/web_*.rs` | 200 行 | reqwest |
 | 远程会话 | `remote/` | 200 行 | websocket |
 | 遥测 | `analytics/` | 100 行 | 无 |

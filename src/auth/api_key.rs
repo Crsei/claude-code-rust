@@ -1,13 +1,24 @@
-#![allow(unused)]
-//! API key storage and validation
+//! API key validation and storage
+//!
+//! Supports:
+//! - Format validation (sk-ant-* prefix)
+//! - System keychain storage (requires `auth` feature)
+//! - Environment variable (`ANTHROPIC_API_KEY`)
+
+#![allow(dead_code)]
+
 use anyhow::Result;
 
-/// Validate an API key format
+/// Validate an API key format.
+///
+/// Valid keys start with `sk-ant-` and are longer than 20 characters.
 pub fn validate_api_key(key: &str) -> bool {
     key.starts_with("sk-ant-") && key.len() > 20
 }
 
-/// Store API key to the system keychain
+/// Store API key to the system keychain.
+///
+/// Requires the `auth` Cargo feature for keyring support.
 pub fn store_api_key(_key: &str) -> Result<()> {
     #[cfg(feature = "auth")]
     {
@@ -21,7 +32,9 @@ pub fn store_api_key(_key: &str) -> Result<()> {
     }
 }
 
-/// Load API key from the system keychain
+/// Load API key from the system keychain.
+///
+/// Returns `Ok(None)` if no key is stored or the `auth` feature is disabled.
 pub fn load_api_key() -> Result<Option<String>> {
     #[cfg(feature = "auth")]
     {
@@ -35,5 +48,46 @@ pub fn load_api_key() -> Result<Option<String>> {
     #[cfg(not(feature = "auth"))]
     {
         Ok(None)
+    }
+}
+
+/// Remove API key from the system keychain.
+///
+/// Used by the `/logout` command.
+pub fn remove_api_key() -> Result<()> {
+    #[cfg(feature = "auth")]
+    {
+        let entry = keyring::Entry::new("claude-code", "api-key")?;
+        match entry.delete_credential() {
+            Ok(()) => Ok(()),
+            Err(keyring::Error::NoEntry) => Ok(()), // already gone
+            Err(e) => Err(e.into()),
+        }
+    }
+    #[cfg(not(feature = "auth"))]
+    {
+        Ok(()) // nothing to remove
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_api_key() {
+        assert!(validate_api_key("sk-ant-api03-abcdefghijklmnop"));
+        assert!(validate_api_key("sk-ant-xxxxxxxxxxxxxxxxxxxx1"));
+    }
+
+    #[test]
+    fn test_invalid_api_key() {
+        assert!(!validate_api_key("sk-ant-short"));
+        assert!(!validate_api_key("wrong-prefix-abcdefghijklmnop"));
+        assert!(!validate_api_key(""));
     }
 }

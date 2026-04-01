@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::types::tool::{Tool, Tools};
 
+use super::agent::AgentTool;
 use super::ask_user::AskUserQuestionTool;
 use super::bash::BashTool;
 use super::file_edit::FileEditTool;
@@ -28,6 +29,7 @@ pub fn get_all_tools() -> Tools {
         Arc::new(NotebookEditTool),
         Arc::new(AskUserQuestionTool),
         Arc::new(ToolSearchTool),
+        Arc::new(AgentTool),
     ];
 
     // Filter to only enabled tools

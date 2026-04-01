@@ -15,6 +15,8 @@ pub mod help;
 pub mod hooks_cmd;
 pub mod config_cmd;
 pub mod diff;
+pub mod login;
+pub mod logout;
 pub mod model;
 pub mod permissions_cmd;
 pub mod resume;
@@ -173,6 +175,18 @@ pub fn get_all_commands() -> Vec<Command> {
             description: "View and manage tool execution hooks".into(),
             handler: Box::new(hooks_cmd::HooksHandler),
         },
+        Command {
+            name: "login".into(),
+            aliases: vec![],
+            description: "Authenticate with Anthropic (API key or auth token)".into(),
+            handler: Box::new(login::LoginHandler),
+        },
+        Command {
+            name: "logout".into(),
+            aliases: vec![],
+            description: "Clear stored authentication credentials".into(),
+            handler: Box::new(logout::LogoutHandler),
+        },
     ]
 }
 
@@ -225,7 +239,7 @@ mod tests {
     #[test]
     fn test_all_commands_registered() {
         let cmds = get_all_commands();
-        assert!(cmds.len() >= 15, "Expected at least 15 commands");
+        assert!(cmds.len() >= 17, "Expected at least 17 commands");
         let names: Vec<&str> = cmds.iter().map(|c| c.name.as_str()).collect();
         assert!(names.contains(&"help"));
         assert!(names.contains(&"clear"));

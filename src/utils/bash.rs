@@ -158,8 +158,16 @@ pub fn escape_for_single_quotes(s: &str) -> String {
 // =============================================================================
 
 /// Patterns that indicate commands containing heredoc syntax.
-static HEREDOC_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"<<-?\s*(?:(['"])\w+\1|\\?\w+)"#).expect("invalid heredoc regex")
+/// Note: Rust regex doesn't support backreferences, so we use separate
+/// patterns for single-quoted, double-quoted, and unquoted delimiters.
+static HEREDOC_SINGLE_QUOTED: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"<<-?\s*'\w+'").expect("invalid heredoc single-quoted regex")
+});
+static HEREDOC_DOUBLE_QUOTED: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"<<-?\s*"\w+""#).expect("invalid heredoc double-quoted regex")
+});
+static HEREDOC_UNQUOTED: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"<<-?\s*\\?\w+").expect("invalid heredoc unquoted regex")
 });
 
 /// Patterns for detecting unterminated/malformed quoting.
@@ -204,7 +212,9 @@ pub fn contains_heredoc(command: &str) -> bool {
     if bit_shift_digit.is_match(command) || arith_shift.is_match(command) {
         return false;
     }
-    HEREDOC_PATTERN.is_match(command)
+    HEREDOC_SINGLE_QUOTED.is_match(command)
+        || HEREDOC_DOUBLE_QUOTED.is_match(command)
+        || HEREDOC_UNQUOTED.is_match(command)
 }
 
 /// Check if a command contains multiline strings inside quotes.
@@ -220,10 +230,37 @@ pub fn contains_multiline_string(command: &str) -> bool {
 /// Returns `true` for patterns like `< file`, `</dev/null`, but NOT for
 /// `<<EOF` (heredoc) or `<(cmd)` (process substitution).
 pub fn has_stdin_redirect(command: &str) -> bool {
-    static STDIN_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?:^|[\s;&|])<(?![<(])\s*\S+").expect("invalid stdin redirect regex")
-    });
-    STDIN_RE.is_match(command)
+    // Rust regex doesn't support lookahead, so we find `<` preceded by
+    // whitespace/operator or at start, then manually check the next char
+    // isn't `<` (heredoc) or `(` (process substitution).
+    let chars: Vec<char> = command.chars().collect();
+    for (i, &ch) in chars.iter().enumerate() {
+        if ch != '<' {
+            continue;
+        }
+        // Must be preceded by start-of-string, whitespace, or operator
+        if i > 0 {
+            let prev = chars[i - 1];
+            if !matches!(prev, ' ' | '\t' | '\n' | ';' | '&' | '|') {
+                continue;
+            }
+        }
+        // Next char must NOT be < or (
+        if let Some(&next) = chars.get(i + 1) {
+            if next == '<' || next == '(' {
+                continue;
+            }
+        }
+        // Skip optional whitespace after <, then there must be a non-whitespace char
+        let mut j = i + 1;
+        while j < chars.len() && (chars[j] == ' ' || chars[j] == '\t') {
+            j += 1;
+        }
+        if j < chars.len() && !chars[j].is_whitespace() {
+            return true;
+        }
+    }
+    false
 }
 
 /// Determine if a stdin redirect (`< /dev/null`) should be added to a command.
@@ -246,10 +283,12 @@ pub fn should_add_stdin_redirect(command: &str) -> bool {
 /// our shell is always POSIX. On Git Bash, `2>nul` creates a literal
 /// file named `nul` which is problematic on Windows.
 pub fn rewrite_windows_null_redirect(command: &str) -> String {
+    // Rust regex doesn't support lookahead. We match the full pattern including
+    // the trailing boundary character and put it back, or handle end-of-string.
     static NUL_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(\d?&?>+\s*)[Nn][Uu][Ll](?=\s|$|[|&;)\n])").expect("invalid nul redirect regex")
+        Regex::new(r"(\d?&?>+\s*)[Nn][Uu][Ll]([\s|&;)\n]|$)").expect("invalid nul redirect regex")
     });
-    NUL_RE.replace_all(command, "${1}/dev/null").to_string()
+    NUL_RE.replace_all(command, "${1}/dev/null${2}").to_string()
 }
 
 /// Check if parsed tokens contain unbalanced brackets/braces/quotes
