@@ -8,3 +8,4 @@
 pub mod rules;
 pub mod dangerous;
 pub mod decision;
+pub mod path_validation;

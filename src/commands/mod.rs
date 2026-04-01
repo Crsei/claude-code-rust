@@ -35,6 +35,42 @@ pub mod rename;
 pub mod review;
 pub mod stats;
 
+// Phase 14C — third batch commands
+pub mod add_dir;
+pub mod color;
+pub mod copy;
+pub mod doctor;
+pub mod init;
+pub mod rewind;
+pub mod skills_cmd;
+pub mod status;
+pub mod tasks_cmd;
+pub mod theme;
+
+// Phase 14D — fourth batch commands
+pub mod feedback;
+pub mod force_snip;
+pub mod fork;
+pub mod keybindings_cmd;
+pub mod mcp_cmd;
+pub mod output_style;
+pub mod plugin_cmd;
+pub mod sandbox_cmd;
+pub mod tag;
+pub mod think_back;
+
+// Phase 14E — fifth batch commands
+pub mod agents;
+pub mod brief;
+pub mod commit_push_pr;
+pub mod ide;
+pub mod pr_comments;
+pub mod privacy_settings;
+pub mod proactive;
+pub mod security_review;
+pub mod upgrade;
+pub mod vim_cmd;
+
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -260,6 +296,189 @@ pub fn get_all_commands() -> Vec<Command> {
             description: "Toggle plan mode (read-only tools)".into(),
             handler: Box::new(plan::PlanHandler),
         },
+        // --- Third batch commands ---
+        Command {
+            name: "add-dir".into(),
+            aliases: vec!["add_dir".into()],
+            description: "Add a directory to the workspace".into(),
+            handler: Box::new(add_dir::AddDirHandler),
+        },
+        Command {
+            name: "init".into(),
+            aliases: vec![],
+            description: "Initialize project config (.cc-rust/settings.json)".into(),
+            handler: Box::new(init::InitHandler),
+        },
+        Command {
+            name: "copy".into(),
+            aliases: vec!["cp".into()],
+            description: "Copy the last assistant response to clipboard".into(),
+            handler: Box::new(copy::CopyHandler),
+        },
+        Command {
+            name: "doctor".into(),
+            aliases: vec!["diag".into()],
+            description: "Run diagnostics checks".into(),
+            handler: Box::new(doctor::DoctorHandler),
+        },
+        Command {
+            name: "tasks".into(),
+            aliases: vec![],
+            description: "List current tasks".into(),
+            handler: Box::new(tasks_cmd::TasksHandler),
+        },
+        Command {
+            name: "status".into(),
+            aliases: vec![],
+            description: "Show session status".into(),
+            handler: Box::new(status::StatusHandler),
+        },
+        Command {
+            name: "theme".into(),
+            aliases: vec![],
+            description: "Switch UI theme".into(),
+            handler: Box::new(theme::ThemeHandler),
+        },
+        Command {
+            name: "color".into(),
+            aliases: vec![],
+            description: "Toggle color mode".into(),
+            handler: Box::new(color::ColorHandler),
+        },
+        Command {
+            name: "rewind".into(),
+            aliases: vec!["undo".into()],
+            description: "Remove the last N message pairs".into(),
+            handler: Box::new(rewind::RewindHandler),
+        },
+        Command {
+            name: "skills".into(),
+            aliases: vec![],
+            description: "List available skills".into(),
+            handler: Box::new(skills_cmd::SkillsHandler),
+        },
+        // --- Fourth batch commands ---
+        Command {
+            name: "mcp".into(),
+            aliases: vec![],
+            description: "MCP server management".into(),
+            handler: Box::new(mcp_cmd::McpHandler),
+        },
+        Command {
+            name: "plugin".into(),
+            aliases: vec!["plugins".into()],
+            description: "Plugin management".into(),
+            handler: Box::new(plugin_cmd::PluginHandler),
+        },
+        Command {
+            name: "keybindings".into(),
+            aliases: vec!["keys".into()],
+            description: "Show current key bindings".into(),
+            handler: Box::new(keybindings_cmd::KeybindingsHandler),
+        },
+        Command {
+            name: "feedback".into(),
+            aliases: vec![],
+            description: "Show how to give feedback".into(),
+            handler: Box::new(feedback::FeedbackHandler),
+        },
+        Command {
+            name: "tag".into(),
+            aliases: vec![],
+            description: "Tag the current session with a label".into(),
+            handler: Box::new(tag::TagHandler),
+        },
+        Command {
+            name: "think-back".into(),
+            aliases: vec!["thinking".into()],
+            description: "Review model's thinking from the conversation".into(),
+            handler: Box::new(think_back::ThinkBackHandler),
+        },
+        Command {
+            name: "sandbox".into(),
+            aliases: vec![],
+            description: "Toggle sandbox mode".into(),
+            handler: Box::new(sandbox_cmd::SandboxHandler),
+        },
+        Command {
+            name: "force-snip".into(),
+            aliases: vec!["snip".into()],
+            description: "Force snip conversation history".into(),
+            handler: Box::new(force_snip::ForceSnipHandler),
+        },
+        Command {
+            name: "fork".into(),
+            aliases: vec![],
+            description: "Fork the current conversation into a new session".into(),
+            handler: Box::new(fork::ForkHandler),
+        },
+        Command {
+            name: "output-style".into(),
+            aliases: vec!["style".into()],
+            description: "Configure output formatting".into(),
+            handler: Box::new(output_style::OutputStyleHandler),
+        },
+        // --- Fifth batch commands ---
+        Command {
+            name: "agents".into(),
+            aliases: vec!["team".into()],
+            description: "List and manage agent teams".into(),
+            handler: Box::new(agents::AgentsHandler),
+        },
+        Command {
+            name: "upgrade".into(),
+            aliases: vec![],
+            description: "Check for upgrades".into(),
+            handler: Box::new(upgrade::UpgradeHandler),
+        },
+        Command {
+            name: "ide".into(),
+            aliases: vec![],
+            description: "IDE integration info".into(),
+            handler: Box::new(ide::IdeHandler),
+        },
+        Command {
+            name: "privacy-settings".into(),
+            aliases: vec!["privacy".into()],
+            description: "Show or toggle privacy and telemetry settings".into(),
+            handler: Box::new(privacy_settings::PrivacySettingsHandler),
+        },
+        Command {
+            name: "security-review".into(),
+            aliases: vec!["sec-review".into()],
+            description: "Request a security review of recent changes".into(),
+            handler: Box::new(security_review::SecurityReviewHandler),
+        },
+        Command {
+            name: "pr-comments".into(),
+            aliases: vec!["pr-review".into()],
+            description: "Review and respond to PR comments".into(),
+            handler: Box::new(pr_comments::PrCommentsHandler),
+        },
+        Command {
+            name: "commit-push-pr".into(),
+            aliases: vec!["cpp".into()],
+            description: "Commit, push, and create a pull request".into(),
+            handler: Box::new(commit_push_pr::CommitPushPrHandler),
+        },
+        Command {
+            name: "brief".into(),
+            aliases: vec![],
+            description: "Toggle brief output mode".into(),
+            handler: Box::new(brief::BriefHandler),
+        },
+        Command {
+            name: "proactive".into(),
+            aliases: vec![],
+            description: "Toggle proactive suggestions".into(),
+            handler: Box::new(proactive::ProactiveHandler),
+        },
+        Command {
+            name: "vim".into(),
+            aliases: vec![],
+            description: "Toggle vim keybinding mode".into(),
+            handler: Box::new(vim_cmd::VimHandler),
+        },
     ]
 }
 
@@ -312,7 +531,7 @@ mod tests {
     #[test]
     fn test_all_commands_registered() {
         let cmds = get_all_commands();
-        assert!(cmds.len() >= 27, "Expected at least 27 commands");
+        assert!(cmds.len() >= 57, "Expected at least 57 commands");
         let names: Vec<&str> = cmds.iter().map(|c| c.name.as_str()).collect();
         assert!(names.contains(&"help"));
         assert!(names.contains(&"clear"));

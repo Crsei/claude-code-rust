@@ -12,6 +12,7 @@
 //! - **Fork**: skill runs in a separate sub-agent context (not yet implemented;
 //!   falls back to inline).
 
+#[allow(unused_imports)]
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -20,6 +21,7 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::skills::{self, SkillContext, SkillDefinition};
+#[allow(unused_imports)]
 use crate::types::message::{AssistantMessage, ContentBlock, Message, MessageContent, UserMessage};
 use crate::types::tool::*;
 
@@ -36,6 +38,7 @@ struct SkillInput {
 }
 
 /// Build the prompt listing available skills for the system prompt.
+#[allow(dead_code)]
 fn build_skills_listing() -> String {
     let skills = skills::get_model_invocable_skills();
     if skills.is_empty() {
@@ -397,9 +400,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_existing_skill() {
-        skills::clear_skills();
+        // Register a unique skill name to avoid race conditions with other tests
+        let unique_name = format!("test-skill-{}", uuid::Uuid::new_v4());
         skills::register_skill(SkillDefinition {
-            name: "my-skill".to_string(),
+            name: unique_name.clone(),
             source: skills::SkillSource::Bundled,
             base_dir: None,
             frontmatter: skills::SkillFrontmatter {
@@ -442,13 +446,11 @@ mod tests {
             query_tracking: None,
         };
 
-        let result = tool.validate_input(&json!({"skill": "my-skill"}), &ctx).await;
+        let result = tool.validate_input(&json!({"skill": &unique_name}), &ctx).await;
         assert!(matches!(result, ValidationResult::Ok));
 
         // With leading /
-        let result = tool.validate_input(&json!({"skill": "/my-skill"}), &ctx).await;
+        let result = tool.validate_input(&json!({"skill": format!("/{}", unique_name)}), &ctx).await;
         assert!(matches!(result, ValidationResult::Ok));
-
-        skills::clear_skills();
     }
 }

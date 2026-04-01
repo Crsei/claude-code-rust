@@ -1,6 +1,6 @@
 # Claude Code Rust 重写计划
 
-> 最后更新: 2026-04-01
+> 最后更新: 2026-04-02
 > 已完成模块: [`COMPLETED_FULL.md`](archive/COMPLETED_FULL.md) (完整实现) | [`COMPLETED_SIMPLIFIED.md`](archive/COMPLETED_SIMPLIFIED.md) (大幅简化)
 
 ## 原始项目概况
@@ -13,11 +13,11 @@
 
 ## Rust 实现现状
 
-- **文件数**: 151 个 .rs 文件, 22 个顶级子目录
-- **代码行数**: ~41,278 行 (占 TS 的 ~18%)
-- **测试数**: 668 个测试
-- **工具数**: 21 工具 + MCP 动态工具 (含 TeamCreate/TeamDelete/SendMessage)
-- **命令数**: 27 个斜杠命令
+- **文件数**: 187 个 .rs 文件, 22 个顶级子目录
+- **代码行数**: ~46,886 行 (占 TS 的 ~21%)
+- **测试数**: 774 个测试
+- **工具数**: 30 工具 + MCP 动态工具
+- **命令数**: 57 个斜杠命令
 - **目录覆盖率**: 22/35 顶级目录已存在 (~63%)
 
 ---
@@ -69,6 +69,9 @@
 | Phase 13 | 远程/遥测 | 📦 接口保留 | COMPLETED_SIMPLIFIED.md |
 | Phase 14A | 本地补充 | ✅ 100% (10/10) | COMPLETED_FULL.md |
 | Phase 14B | 命令 batch 1+2 | ✅ 100% (20/20) | COMPLETED_FULL.md |
+| Phase 14B-3 | 命令 batch 3 | ✅ 100% (30/30) | 新增 20 commands + 改进 |
+| Phase 14C | 缺失工具补全 | ✅ 80% (9/12) | Task tools + TodoWrite + Snip + Sleep |
+| Phase 14D | 服务补全 | ✅ 50% (2/4) | path_validation + config validation |
 
 ---
 
@@ -192,8 +195,6 @@ SendUserFile, PushNotification, SubscribePR
 | ~~高~~ | ~~FileReadTool~~ | ~~PDF/图片支持~~ | ✅ 已补全 (236→743 行) |
 | ~~中~~ | ~~GrepTool~~ | ~~ripgrep 调用~~ | ✅ 已补全 (185→371 行) |
 | ~~中~~ | ~~AgentTool~~ | ~~worktree 隔离~~ | ✅ 已补全 (322→789 行) |
-| **中** | API 提供商 | Bedrock/Vertex | 待做 |
-| **低** | 认证 | OAuth 流程 | 待做 |
 
 ---
 
@@ -206,17 +207,17 @@ SendUserFile, PushNotification, SubscribePR
   Phase 9-11   API/认证/MCP  ██████████ 100%  (活跃路径完成)
   Phase 12     网络工具      ████████░░  80%  (LSP 服务待完善)
   Phase 13     远程/遥测     ░░░░░░░░░░   0%  (暂不实现)
-  Phase 14B-3  第三批命令    ░░░░░░░░░░   0%  (~50 命令待做)
-  Phase 14C    缺失工具      ░░░░░░░░░░   0%  (~17 工具待做)
-  Phase 14D    服务补全      ░░░░░░░░░░   0%  (4 服务待做)
+  Phase 14B-3  第三批命令    ████████░░  80%  (30/~37 命令已完成)
+  Phase 14C    缺失工具      ████████░░  80%  (9/12 非延迟工具已完成)
+  Phase 14D    服务补全      ████░░░░░░  50%  (path_validation + config validation)
   Phase 14E    网络/远程      ░░░░░░░░░░   0%  (暂不实现)
 
-  文件总数: 151 .rs 文件
-  代码行数: ~41,278 行 (占 TS ~225K 的 18%)
-  测试数量: 668 个 (667 通过, 1 个预存在的 test ordering 问题)
+  文件总数: 187 .rs 文件
+  代码行数: ~46,886 行 (占 TS ~225K 的 21%)
+  测试数量: 774 个 (偶尔 1-2 个 env/global 竞态)
   目录覆盖: 22/35 TS 顶级目录 (63%)
-  命令覆盖: 27/85+ (32%)
-  工具覆盖: 21/40+ (53%)
+  命令覆盖: 57/85+ (67%)
+  工具覆盖: 30/40+ (75%)
 ```
 
 ---
@@ -255,7 +256,7 @@ SendUserFile, PushNotification, SubscribePR
 ## 开发原则
 
 1. **本地优先**: core 状态机可完全离线运行
-2. **可测试**: 572 测试覆盖所有核心路径，QueryDeps trait 允许完整 mock
+2. **可测试**: 774 测试覆盖所有核心路径，QueryDeps trait 允许完整 mock
 3. **增量构建**: 每个 Phase 可独立编译和测试
 4. **Feature gates**: 网络功能通过 Cargo features 按需启用
 5. **Generator → Stream**: `async_stream::stream!` 宏实现 TypeScript 的 yield 语义

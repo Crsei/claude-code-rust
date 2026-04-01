@@ -1,4 +1,3 @@
-#![allow(unused)]
 use std::sync::Arc;
 
 use crate::types::tool::{Tool, Tools};
@@ -22,6 +21,10 @@ use super::worktree::{EnterWorktreeTool, ExitWorktreeTool};
 use super::team_create::TeamCreateTool;
 use super::team_delete::TeamDeleteTool;
 use super::send_message::SendMessageTool;
+use super::tasks::{TaskCreateTool, TaskGetTool, TaskUpdateTool, TaskListTool, TaskStopTool, TaskOutputTool};
+use super::todo_write::TodoWriteTool;
+use super::snip::SnipTool;
+use super::sleep::SleepTool;
 
 /// Get all base tool instances.
 ///
@@ -47,6 +50,17 @@ pub fn get_all_tools() -> Tools {
         Arc::new(WebFetchTool),
         Arc::new(WebSearchTool),
         Arc::new(LspTool),
+        // Task management tools
+        Arc::new(TaskCreateTool),
+        Arc::new(TaskGetTool),
+        Arc::new(TaskUpdateTool),
+        Arc::new(TaskListTool),
+        Arc::new(TaskStopTool),
+        Arc::new(TaskOutputTool),
+        // Additional tools
+        Arc::new(TodoWriteTool),
+        Arc::new(SnipTool),
+        Arc::new(SleepTool),
         // Agent Teams tools (feature-gated via is_enabled)
         Arc::new(TeamCreateTool),
         Arc::new(TeamDeleteTool),

@@ -34,6 +34,11 @@ pub mod web_search;
 // Phase 12: LSP tool
 pub mod lsp;
 
+// Phase 14C: Additional tools
+pub mod todo_write;
+pub mod snip;
+pub mod sleep;
+
 // Agent Teams tools
 pub mod team_create;
 pub mod team_delete;
