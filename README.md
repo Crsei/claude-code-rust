@@ -23,15 +23,22 @@ cargo build --release
 ./target/release/claude-code-rs
 ```
 
-### 认证
+### 配置 `.env`
 
-```bash
-# 设置 API Key (推荐)
-export ANTHROPIC_API_KEY="sk-ant-api03-..."
+在项目根目录创建 `.env` 文件（启动时自动加载）：
 
-# 或在 REPL 中登录
-> /login sk-ant-api03-...
+```env
+# API Provider — 设置任意一个即可
+OPENROUTER_API_KEY=sk-or-v1-...
+# 或
+ANTHROPIC_API_KEY=sk-ant-api03-...
+# 或其他提供商 (OPENAI_API_KEY, DEEPSEEK_API_KEY, ...)
+
+# 模型 (可选，不设则使用提供商默认模型)
+CLAUDE_MODEL=google/gemini-2.0-flash-001
 ```
+
+也可以用传统方式 `export` 或在 REPL 中 `/login`。
 
 ### 基本用法
 
@@ -45,8 +52,8 @@ claude-code-rs -p "解释这段代码"
 # 带初始提示启动
 claude-code-rs "帮我重构这个函数"
 
-# 指定模型
-claude-code-rs -m claude-opus-4-20250514
+# 指定模型 (覆盖 .env 中的 CLAUDE_MODEL)
+claude-code-rs -m anthropic/claude-opus-4
 ```
 
 ---
@@ -154,23 +161,64 @@ $ARGUMENTS 会被调用参数替换
 
 ## 配置
 
-### 文件位置
+### `.env` 文件 (推荐)
+
+项目根目录下的 `.env` 文件在启动时自动加载（基于 [dotenvy](https://crates.io/crates/dotenvy)）。
+
+```env
+# === 提供商 API Key (任选一个) ===
+OPENROUTER_API_KEY=sk-or-v1-...
+
+# === 模型 (可选) ===
+CLAUDE_MODEL=anthropic/claude-sonnet-4
+```
+
+### 模型优先级
+
+```
+CLI -m 参数 > CLAUDE_MODEL 环境变量/.env > settings.json > 提供商默认模型
+```
+
+### 支持的提供商
+
+程序自动检测已设置 API Key 的提供商（按检测顺序）：
+
+| 提供商 | 环境变量 | 默认模型 |
+|--------|---------|---------|
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o` |
+| Google | `GOOGLE_API_KEY` | `gemini-2.0-flash` |
+| Groq | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
+| **OpenRouter** | `OPENROUTER_API_KEY` | `anthropic/claude-sonnet-4` |
+| DeepSeek | `DEEPSEEK_API_KEY` | `deepseek-chat` |
+| 智谱 AI | `ZHIPU_API_KEY` | `glm-4-flash` |
+| 通义千问 | `DASHSCOPE_API_KEY` | `qwen-plus` |
+| 月之暗面 | `MOONSHOT_API_KEY` | `moonshot-v1-8k` |
+| 百川 | `BAICHUAN_API_KEY` | `Baichuan4-Air` |
+| MiniMax | `MINIMAX_API_KEY` | `MiniMax-Text-01` |
+| 零一万物 | `YI_API_KEY` | `yi-lightning` |
+| 硅基流动 | `SILICONFLOW_API_KEY` | `deepseek-ai/DeepSeek-V3` |
+| 阶跃星辰 | `STEPFUN_API_KEY` | `step-2-16k` |
+| 讯飞星火 | `SPARK_API_KEY` | `generalv3.5` |
+
+> 通过 OpenRouter 可使用所有提供商的模型，只需设一个 `OPENROUTER_API_KEY`，用 `CLAUDE_MODEL` 指定模型 ID（如 `openai/gpt-4o`、`google/gemini-2.0-flash-001`）。
+
+### 配置文件
 
 | 层级 | 路径 |
 |------|------|
+| `.env` | 项目根目录 `.env` (启动时自动加载) |
 | 全局 | `~/.cc-rust/settings.json` |
 | 项目 | `.cc-rust/settings.json` |
 
-优先级: 环境变量 > 项目配置 > 全局配置
-
-### 环境变量
+### 全部环境变量
 
 | 变量 | 说明 |
 |------|------|
-| `ANTHROPIC_API_KEY` | API 密钥 |
-| `ANTHROPIC_AUTH_TOKEN` | 外部认证 Token |
 | `CLAUDE_MODEL` | 覆盖默认模型 |
+| `CLAUDE_VERBOSE` | 详细模式 (`true`/`1`) |
 | `CLAUDE_PERMISSION_MODE` | 权限模式 (`default`/`auto`/`bypass`) |
+| `ANTHROPIC_AUTH_TOKEN` | 外部认证 Token |
 
 ---
 

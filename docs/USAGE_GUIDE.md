@@ -51,13 +51,25 @@ cargo test
 
 ## 快速开始
 
-### 1. 认证
+### 1. 配置 `.env` (推荐)
+
+在项目根目录创建 `.env` 文件，启动时自动加载：
+
+```env
+# 提供商 API Key (任选一个)
+OPENROUTER_API_KEY=sk-or-v1-...
+
+# 模型 (可选，不设则使用提供商默认模型)
+CLAUDE_MODEL=anthropic/claude-sonnet-4
+```
+
+也可以用传统 `export` 方式或在 REPL 中登录：
 
 ```bash
-# 设置 API Key (推荐)
+# 方式 2: export
 export ANTHROPIC_API_KEY="sk-ant-api03-..."
 
-# 或在 REPL 中登录
+# 方式 3: REPL 中登录
 > /login sk-ant-api03-...
 
 # 查看认证状态
@@ -367,21 +379,58 @@ Bash 工具内置 16 种危险模式检测，包括:
 
 ## 配置管理
 
-### 配置文件位置
+### `.env` 文件 (推荐)
+
+项目根目录下的 `.env` 文件在启动时自动加载（基于 [dotenvy](https://crates.io/crates/dotenvy)）：
+
+```env
+# === 提供商 API Key (任选一个) ===
+OPENROUTER_API_KEY=sk-or-v1-...
+# 或 ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, ...
+
+# === 模型 (可选) ===
+CLAUDE_MODEL=anthropic/claude-sonnet-4
+```
+
+### 模型优先级
+
+```
+CLI -m 参数 > CLAUDE_MODEL 环境变量/.env > settings.json model > 提供商默认模型
+```
+
+### 支持的提供商
+
+程序自动检测已设置 API Key 的提供商（按检测顺序）：
+
+| 提供商 | 环境变量 | 默认模型 |
+|--------|---------|---------|
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o` |
+| Google | `GOOGLE_API_KEY` | `gemini-2.0-flash` |
+| Groq | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
+| OpenRouter | `OPENROUTER_API_KEY` | `anthropic/claude-sonnet-4` |
+| DeepSeek | `DEEPSEEK_API_KEY` | `deepseek-chat` |
+| 智谱 AI | `ZHIPU_API_KEY` | `glm-4-flash` |
+| 通义千问 | `DASHSCOPE_API_KEY` | `qwen-plus` |
+| 月之暗面 | `MOONSHOT_API_KEY` | `moonshot-v1-8k` |
+| 百川 | `BAICHUAN_API_KEY` | `Baichuan4-Air` |
+| MiniMax | `MINIMAX_API_KEY` | `MiniMax-Text-01` |
+| 零一万物 | `YI_API_KEY` | `yi-lightning` |
+| 硅基流动 | `SILICONFLOW_API_KEY` | `deepseek-ai/DeepSeek-V3` |
+| 阶跃星辰 | `STEPFUN_API_KEY` | `step-2-16k` |
+| 讯飞星火 | `SPARK_API_KEY` | `generalv3.5` |
+
+> 通过 OpenRouter 可使用所有提供商的模型，只需一个 `OPENROUTER_API_KEY`，在 `CLAUDE_MODEL` 中指定模型 ID。
+
+### 配置文件
 
 | 层级 | 路径 | 说明 |
 |------|------|------|
+| `.env` | 项目根目录 | 启动时自动加载 |
 | 全局 | `~/.cc-rust/settings.json` | 用户级默认配置 |
 | 项目 | `.cc-rust/settings.json` | 项目级配置 (从 CWD 向上查找) |
-| 环境变量 | — | 最高优先级覆盖 |
 
-### 配置合并优先级
-
-```
-环境变量 > 项目配置 > 全局配置
-```
-
-### 配置文件格式
+### `settings.json` 格式
 
 ```json
 {
