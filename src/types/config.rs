@@ -122,4 +122,8 @@ pub struct QueryEngineConfig {
 
     /// Whether to persist the session to disk.
     pub persist_session: bool,
+
+    /// Resolved model name (from CLI > config/env > provider default).
+    /// Used to initialize AppState.main_loop_model.
+    pub resolved_model: Option<String>,
 }

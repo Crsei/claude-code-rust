@@ -267,6 +267,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         replay_user_messages: false,
         include_partial_messages: false,
         persist_session: true,
+        resolved_model: Some(model.clone()),
     };
 
     // ── B.7: Create QueryEngine ──────────────────────────────────────

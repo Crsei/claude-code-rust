@@ -152,6 +152,13 @@ impl QueryEngine {
         let initial_messages = config.initial_messages.clone().unwrap_or_default();
         let tools = config.tools.clone();
 
+        // Initialize AppState with resolved model from config
+        let mut app_state = AppState::default();
+        if let Some(ref model) = config.resolved_model {
+            app_state.main_loop_model = model.clone();
+            app_state.settings.model = Some(model.clone());
+        }
+
         Self {
             session_id: Uuid::new_v4().to_string(),
             config,
@@ -161,7 +168,7 @@ impl QueryEngine {
             usage: Arc::new(Mutex::new(UsageTracking::default())),
             permission_denials: Arc::new(Mutex::new(Vec::new())),
             total_turn_count: Arc::new(Mutex::new(0)),
-            app_state: Arc::new(RwLock::new(AppState::default())),
+            app_state: Arc::new(RwLock::new(app_state)),
             tools: Arc::new(RwLock::new(tools)),
             discovered_skill_names: Arc::new(Mutex::new(HashSet::new())),
             loaded_nested_memory_paths: Arc::new(Mutex::new(HashSet::new())),
@@ -913,9 +920,14 @@ impl QueryDeps for QueryEngineDeps {
             )
         })?;
 
-        // Fill in the provider's default model if none specified
+        // Fill model: AppState (user/config/env) > provider default
         if params.model.is_none() {
-            params.model = Some(client.config().default_model.clone());
+            let app_model = self.app_state.read().unwrap().main_loop_model.clone();
+            params.model = Some(if app_model.is_empty() {
+                client.config().default_model.clone()
+            } else {
+                app_model
+            });
         }
 
         let request = build_messages_request(&params);
@@ -954,9 +966,14 @@ impl QueryDeps for QueryEngineDeps {
             )
         })?;
 
-        // Fill in the provider's default model if none specified
+        // Fill model: AppState (user/config/env) > provider default
         if params.model.is_none() {
-            params.model = Some(client.config().default_model.clone());
+            let app_model = self.app_state.read().unwrap().main_loop_model.clone();
+            params.model = Some(if app_model.is_empty() {
+                client.config().default_model.clone()
+            } else {
+                app_model
+            });
         }
 
         let request = build_messages_request(&params);
@@ -1217,6 +1234,7 @@ mod tests {
             replay_user_messages: false,
             include_partial_messages: false,
             persist_session: false,
+            resolved_model: None,
         }
     }
 
