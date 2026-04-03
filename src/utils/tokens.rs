@@ -1,9 +1,22 @@
 #![allow(unused)]
 
-use crate::compact::auto_compact::get_context_window_size;
 use crate::types::message::{
     ContentBlock, Message, MessageContent, ToolResultContent,
 };
+
+/// Get the context window size for a given model.
+/// Returns token count for the model's context window.
+fn get_context_window_size(model: &str) -> u64 {
+    if model.contains("opus") {
+        200_000
+    } else if model.contains("sonnet") {
+        200_000
+    } else if model.contains("haiku") {
+        200_000
+    } else {
+        200_000 // default
+    }
+}
 
 /// Average characters per token for English text.
 /// This is a rough approximation; actual tokenization varies by model

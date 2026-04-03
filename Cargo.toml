@@ -2,7 +2,7 @@
 name = "claude-code-rs"
 version = "0.1.0"
 edition = "2021"
-description = "Claude Code CLI - Rust implementation"
+description = "Claude Code CLI - Rust implementation (lite)"
 
 # ============================================================
 # 核心类型 + 状态机
@@ -63,14 +63,10 @@ similar = "2"
 # 进程管理
 shell-words = "1"
 
-# 文件锁
-fs4 = "0.12"
-
 # ============================================================
 # 终端 UI
 # ============================================================
 
-# 终端 UI
 ratatui = "0.29"
 crossterm = "0.28"
 
@@ -92,29 +88,11 @@ url = "2"
 semver = "1"
 
 # ============================================================
-# Phase 9+: 网络 / API / 认证 / 高级功能
+# 网络 / API / 认证
 # ============================================================
 
-# 网络
+# HTTP 客户端
 reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
-tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
-eventsource-stream = "0.2"
 
 # 认证
 keyring = "3"
-jsonwebtoken = "9"
-oauth2 = "5"
-
-# AWS Bedrock
-aws-config = "1"
-aws-sdk-bedrockruntime = "1"
-
-# GCP Vertex
-gcp_auth = "0.12"
-
-# LSP
-lsp-types = "0.97"
-
-# AST / 图像
-tree-sitter = "0.24"
-image = "0.25"

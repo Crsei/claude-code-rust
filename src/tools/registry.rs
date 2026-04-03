@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use crate::types::tool::{Tool, Tools};
 
-use super::agent::AgentTool;
 use super::ask_user::AskUserQuestionTool;
 use super::bash::BashTool;
 use super::file_edit::FileEditTool;
@@ -10,21 +9,7 @@ use super::file_read::FileReadTool;
 use super::file_write::FileWriteTool;
 use super::glob_tool::GlobTool;
 use super::grep::GrepTool;
-use super::lsp::LspTool;
-use super::notebook_edit::NotebookEditTool;
-use super::plan_mode::{EnterPlanModeTool, ExitPlanModeTool};
 use super::skill::SkillTool;
-use super::tool_search::ToolSearchTool;
-use super::web_fetch::WebFetchTool;
-use super::web_search::WebSearchTool;
-use super::worktree::{EnterWorktreeTool, ExitWorktreeTool};
-use super::team_create::TeamCreateTool;
-use super::team_delete::TeamDeleteTool;
-use super::send_message::SendMessageTool;
-use super::tasks::{TaskCreateTool, TaskGetTool, TaskUpdateTool, TaskListTool, TaskStopTool, TaskOutputTool};
-use super::todo_write::TodoWriteTool;
-use super::snip::SnipTool;
-use super::sleep::SleepTool;
 
 /// Get all base tool instances.
 ///
@@ -38,33 +23,8 @@ pub fn get_all_tools() -> Tools {
         Arc::new(FileEditTool::new()),
         Arc::new(GlobTool::new()),
         Arc::new(GrepTool),
-        Arc::new(NotebookEditTool),
         Arc::new(AskUserQuestionTool),
-        Arc::new(ToolSearchTool),
-        Arc::new(AgentTool),
-        Arc::new(EnterPlanModeTool),
-        Arc::new(ExitPlanModeTool),
-        Arc::new(EnterWorktreeTool),
-        Arc::new(ExitWorktreeTool),
         Arc::new(SkillTool),
-        Arc::new(WebFetchTool),
-        Arc::new(WebSearchTool),
-        Arc::new(LspTool),
-        // Task management tools
-        Arc::new(TaskCreateTool),
-        Arc::new(TaskGetTool),
-        Arc::new(TaskUpdateTool),
-        Arc::new(TaskListTool),
-        Arc::new(TaskStopTool),
-        Arc::new(TaskOutputTool),
-        // Additional tools
-        Arc::new(TodoWriteTool),
-        Arc::new(SnipTool),
-        Arc::new(SleepTool),
-        // Agent Teams tools (feature-gated via is_enabled)
-        Arc::new(TeamCreateTool),
-        Arc::new(TeamDeleteTool),
-        Arc::new(SendMessageTool),
     ];
 
     // Filter to only enabled tools
@@ -72,15 +32,11 @@ pub fn get_all_tools() -> Tools {
 }
 
 /// Find a tool by name from a tool collection.
-///
-/// Corresponds to TypeScript pattern: `tools.find(t => t.name === name)`
 pub fn find_tool_by_name(tools: &Tools, name: &str) -> Option<Arc<dyn Tool>> {
     tools.iter().find(|t| t.name() == name).cloned()
 }
 
 /// Get tools filtered for the default preset (all enabled tools).
-///
-/// Corresponds to TypeScript: tools.ts `getToolsForDefaultPreset()`
 pub fn get_tools_for_default_preset() -> Tools {
     get_all_tools()
 }

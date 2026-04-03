@@ -5,14 +5,13 @@
 
 #![allow(unused)]
 
+// Essential commands
 pub mod clear;
-pub mod compact;
 pub mod context;
 pub mod cost;
 pub mod exit;
 pub mod files;
 pub mod help;
-pub mod hooks_cmd;
 pub mod config_cmd;
 pub mod diff;
 pub mod login;
@@ -23,76 +22,22 @@ pub mod resume;
 pub mod session;
 pub mod version;
 
-// Phase 14B — second batch commands
+// Git & workflow
 pub mod branch;
 pub mod commit;
+
+// Model control
 pub mod effort;
-pub mod export;
 pub mod fast;
+
+// Memory & skills
 pub mod memory;
-pub mod plan;
-pub mod rename;
-pub mod review;
-pub mod stats;
-
-// Phase 14C — third batch commands
-pub mod add_dir;
-pub mod color;
-pub mod copy;
-pub mod doctor;
-pub mod init;
-pub mod rewind;
 pub mod skills_cmd;
+
+// Session management
+pub mod copy;
+pub mod init;
 pub mod status;
-pub mod tasks_cmd;
-pub mod theme;
-
-// Phase 14D — fourth batch commands
-pub mod feedback;
-pub mod force_snip;
-pub mod fork;
-pub mod keybindings_cmd;
-pub mod mcp_cmd;
-pub mod output_style;
-pub mod plugin_cmd;
-pub mod sandbox_cmd;
-pub mod tag;
-pub mod think_back;
-
-// Phase 14E — fifth batch commands
-pub mod agents;
-pub mod brief;
-pub mod commit_push_pr;
-pub mod ide;
-pub mod pr_comments;
-pub mod privacy_settings;
-pub mod proactive;
-pub mod security_review;
-pub mod upgrade;
-pub mod vim_cmd;
-
-// Phase 14F — feature-gated stub commands
-pub mod buddy;
-pub mod peers;
-pub mod subscribe_pr;
-pub mod torch;
-pub mod workflows;
-
-// Phase 14G — seventh batch commands
-pub mod install_github_app;
-pub mod install_slack_app;
-pub mod statusline;
-pub mod thinkback_play;
-pub mod ultraplan;
-pub mod ultrareview;
-
-// Phase 14H — eighth batch commands
-pub mod advisor;
-pub mod btw;
-pub mod insights;
-pub mod passes;
-pub mod reload_plugins;
-pub mod voice;
 
 use std::path::PathBuf;
 
@@ -169,12 +114,6 @@ pub fn get_all_commands() -> Vec<Command> {
             handler: Box::new(clear::ClearHandler),
         },
         Command {
-            name: "compact".into(),
-            aliases: vec![],
-            description: "Compact conversation context to reduce token usage".into(),
-            handler: Box::new(compact::CompactHandler),
-        },
-        Command {
             name: "config".into(),
             aliases: vec!["settings".into()],
             description: "Show or modify configuration settings".into(),
@@ -241,12 +180,6 @@ pub fn get_all_commands() -> Vec<Command> {
             handler: Box::new(permissions_cmd::PermissionsHandler),
         },
         Command {
-            name: "hooks".into(),
-            aliases: vec![],
-            description: "View and manage tool execution hooks".into(),
-            handler: Box::new(hooks_cmd::HooksHandler),
-        },
-        Command {
             name: "login".into(),
             aliases: vec![],
             description: "Authenticate with Anthropic (API key or auth token)".into(),
@@ -258,7 +191,6 @@ pub fn get_all_commands() -> Vec<Command> {
             description: "Clear stored authentication credentials".into(),
             handler: Box::new(logout::LogoutHandler),
         },
-        // --- Second batch commands ---
         Command {
             name: "commit".into(),
             aliases: vec![],
@@ -266,34 +198,10 @@ pub fn get_all_commands() -> Vec<Command> {
             handler: Box::new(commit::CommitHandler),
         },
         Command {
-            name: "review".into(),
-            aliases: vec![],
-            description: "Request a code review of current changes".into(),
-            handler: Box::new(review::ReviewHandler),
-        },
-        Command {
             name: "branch".into(),
             aliases: vec!["br".into()],
             description: "Show or switch git branches".into(),
             handler: Box::new(branch::BranchHandler),
-        },
-        Command {
-            name: "export".into(),
-            aliases: vec![],
-            description: "Export conversation to a file".into(),
-            handler: Box::new(export::ExportHandler),
-        },
-        Command {
-            name: "rename".into(),
-            aliases: vec![],
-            description: "Rename the current session".into(),
-            handler: Box::new(rename::RenameHandler),
-        },
-        Command {
-            name: "stats".into(),
-            aliases: vec![],
-            description: "Show session usage statistics".into(),
-            handler: Box::new(stats::StatsHandler),
         },
         Command {
             name: "effort".into(),
@@ -314,17 +222,10 @@ pub fn get_all_commands() -> Vec<Command> {
             handler: Box::new(memory::MemoryHandler),
         },
         Command {
-            name: "plan".into(),
+            name: "skills".into(),
             aliases: vec![],
-            description: "Toggle plan mode (read-only tools)".into(),
-            handler: Box::new(plan::PlanHandler),
-        },
-        // --- Third batch commands ---
-        Command {
-            name: "add-dir".into(),
-            aliases: vec!["add_dir".into()],
-            description: "Add a directory to the workspace".into(),
-            handler: Box::new(add_dir::AddDirHandler),
+            description: "List available skills".into(),
+            handler: Box::new(skills_cmd::SkillsHandler),
         },
         Command {
             name: "init".into(),
@@ -339,285 +240,15 @@ pub fn get_all_commands() -> Vec<Command> {
             handler: Box::new(copy::CopyHandler),
         },
         Command {
-            name: "doctor".into(),
-            aliases: vec!["diag".into()],
-            description: "Run diagnostics checks".into(),
-            handler: Box::new(doctor::DoctorHandler),
-        },
-        Command {
-            name: "tasks".into(),
-            aliases: vec![],
-            description: "List current tasks".into(),
-            handler: Box::new(tasks_cmd::TasksHandler),
-        },
-        Command {
             name: "status".into(),
             aliases: vec![],
             description: "Show session status".into(),
             handler: Box::new(status::StatusHandler),
         },
-        Command {
-            name: "theme".into(),
-            aliases: vec![],
-            description: "Switch UI theme".into(),
-            handler: Box::new(theme::ThemeHandler),
-        },
-        Command {
-            name: "color".into(),
-            aliases: vec![],
-            description: "Toggle color mode".into(),
-            handler: Box::new(color::ColorHandler),
-        },
-        Command {
-            name: "rewind".into(),
-            aliases: vec!["undo".into()],
-            description: "Remove the last N message pairs".into(),
-            handler: Box::new(rewind::RewindHandler),
-        },
-        Command {
-            name: "skills".into(),
-            aliases: vec![],
-            description: "List available skills".into(),
-            handler: Box::new(skills_cmd::SkillsHandler),
-        },
-        // --- Fourth batch commands ---
-        Command {
-            name: "mcp".into(),
-            aliases: vec![],
-            description: "MCP server management".into(),
-            handler: Box::new(mcp_cmd::McpHandler),
-        },
-        Command {
-            name: "plugin".into(),
-            aliases: vec!["plugins".into()],
-            description: "Plugin management".into(),
-            handler: Box::new(plugin_cmd::PluginHandler),
-        },
-        Command {
-            name: "keybindings".into(),
-            aliases: vec!["keys".into()],
-            description: "Show current key bindings".into(),
-            handler: Box::new(keybindings_cmd::KeybindingsHandler),
-        },
-        Command {
-            name: "feedback".into(),
-            aliases: vec![],
-            description: "Show how to give feedback".into(),
-            handler: Box::new(feedback::FeedbackHandler),
-        },
-        Command {
-            name: "tag".into(),
-            aliases: vec![],
-            description: "Tag the current session with a label".into(),
-            handler: Box::new(tag::TagHandler),
-        },
-        Command {
-            name: "think-back".into(),
-            aliases: vec!["thinking".into()],
-            description: "Review model's thinking from the conversation".into(),
-            handler: Box::new(think_back::ThinkBackHandler),
-        },
-        Command {
-            name: "sandbox".into(),
-            aliases: vec![],
-            description: "Toggle sandbox mode".into(),
-            handler: Box::new(sandbox_cmd::SandboxHandler),
-        },
-        Command {
-            name: "force-snip".into(),
-            aliases: vec!["snip".into()],
-            description: "Force snip conversation history".into(),
-            handler: Box::new(force_snip::ForceSnipHandler),
-        },
-        Command {
-            name: "fork".into(),
-            aliases: vec![],
-            description: "Fork the current conversation into a new session".into(),
-            handler: Box::new(fork::ForkHandler),
-        },
-        Command {
-            name: "output-style".into(),
-            aliases: vec!["style".into()],
-            description: "Configure output formatting".into(),
-            handler: Box::new(output_style::OutputStyleHandler),
-        },
-        // --- Fifth batch commands ---
-        Command {
-            name: "agents".into(),
-            aliases: vec!["team".into()],
-            description: "List and manage agent teams".into(),
-            handler: Box::new(agents::AgentsHandler),
-        },
-        Command {
-            name: "upgrade".into(),
-            aliases: vec![],
-            description: "Check for upgrades".into(),
-            handler: Box::new(upgrade::UpgradeHandler),
-        },
-        Command {
-            name: "ide".into(),
-            aliases: vec![],
-            description: "IDE integration info".into(),
-            handler: Box::new(ide::IdeHandler),
-        },
-        Command {
-            name: "privacy-settings".into(),
-            aliases: vec!["privacy".into()],
-            description: "Show or toggle privacy and telemetry settings".into(),
-            handler: Box::new(privacy_settings::PrivacySettingsHandler),
-        },
-        Command {
-            name: "security-review".into(),
-            aliases: vec!["sec-review".into()],
-            description: "Request a security review of recent changes".into(),
-            handler: Box::new(security_review::SecurityReviewHandler),
-        },
-        Command {
-            name: "pr-comments".into(),
-            aliases: vec!["pr-review".into()],
-            description: "Review and respond to PR comments".into(),
-            handler: Box::new(pr_comments::PrCommentsHandler),
-        },
-        Command {
-            name: "commit-push-pr".into(),
-            aliases: vec!["cpp".into()],
-            description: "Commit, push, and create a pull request".into(),
-            handler: Box::new(commit_push_pr::CommitPushPrHandler),
-        },
-        Command {
-            name: "brief".into(),
-            aliases: vec![],
-            description: "Toggle brief output mode".into(),
-            handler: Box::new(brief::BriefHandler),
-        },
-        Command {
-            name: "proactive".into(),
-            aliases: vec![],
-            description: "Toggle proactive suggestions".into(),
-            handler: Box::new(proactive::ProactiveHandler),
-        },
-        Command {
-            name: "vim".into(),
-            aliases: vec![],
-            description: "Toggle vim keybinding mode".into(),
-            handler: Box::new(vim_cmd::VimHandler),
-        },
-        // --- Feature-gated stub commands ---
-        Command {
-            name: "workflows".into(),
-            aliases: vec!["wf".into()],
-            description: "Manage workflow scripts".into(),
-            handler: Box::new(workflows::WorkflowsHandler),
-        },
-        Command {
-            name: "subscribe-pr".into(),
-            aliases: vec!["sub-pr".into()],
-            description: "Subscribe to pull request updates".into(),
-            handler: Box::new(subscribe_pr::SubscribePrHandler),
-        },
-        Command {
-            name: "peers".into(),
-            aliases: vec![],
-            description: "Peer session management".into(),
-            handler: Box::new(peers::PeersHandler),
-        },
-        Command {
-            name: "buddy".into(),
-            aliases: vec![],
-            description: "AI buddy companion mode".into(),
-            handler: Box::new(buddy::BuddyHandler),
-        },
-        Command {
-            name: "torch".into(),
-            aliases: vec![],
-            description: "Hand off context to another session".into(),
-            handler: Box::new(torch::TorchHandler),
-        },
-        // --- Seventh batch commands ---
-        Command {
-            name: "statusline".into(),
-            aliases: vec![],
-            description: "Set up status line via subagent".into(),
-            handler: Box::new(statusline::StatuslineHandler),
-        },
-        Command {
-            name: "ultrareview".into(),
-            aliases: vec![],
-            description: "Remote bug finder (requires Claude Code on the web)".into(),
-            handler: Box::new(ultrareview::UltrareviewHandler),
-        },
-        Command {
-            name: "ultraplan".into(),
-            aliases: vec![],
-            description: "Remote multi-agent planning (requires Claude Code on the web)".into(),
-            handler: Box::new(ultraplan::UltraplanHandler),
-        },
-        Command {
-            name: "thinkback-play".into(),
-            aliases: vec![],
-            description: "Play thinkback animation".into(),
-            handler: Box::new(thinkback_play::ThinkbackPlayHandler),
-        },
-        Command {
-            name: "install-github-app".into(),
-            aliases: vec![],
-            description: "Set up GitHub Actions integration".into(),
-            handler: Box::new(install_github_app::InstallGithubAppHandler),
-        },
-        Command {
-            name: "install-slack-app".into(),
-            aliases: vec![],
-            description: "Install the Claude Slack app".into(),
-            handler: Box::new(install_slack_app::InstallSlackAppHandler),
-        },
-        // --- Eighth batch commands ---
-        Command {
-            name: "voice".into(),
-            aliases: vec![],
-            description: "Toggle voice mode".into(),
-            handler: Box::new(voice::VoiceHandler),
-        },
-        Command {
-            name: "advisor".into(),
-            aliases: vec![],
-            description: "Configure advisor model".into(),
-            handler: Box::new(advisor::AdvisorHandler),
-        },
-        Command {
-            name: "btw".into(),
-            aliases: vec![],
-            description: "Ask a quick side question".into(),
-            handler: Box::new(btw::BtwHandler),
-        },
-        Command {
-            name: "insights".into(),
-            aliases: vec![],
-            description: "Analyze the current session".into(),
-            handler: Box::new(insights::InsightsHandler),
-        },
-        Command {
-            name: "passes".into(),
-            aliases: vec!["referral".into()],
-            description: "Show referral program information".into(),
-            handler: Box::new(passes::PassesHandler),
-        },
-        Command {
-            name: "reload-plugins".into(),
-            aliases: vec![],
-            description: "Reload plugins from disk".into(),
-            handler: Box::new(reload_plugins::ReloadPluginsHandler),
-        },
     ]
 }
 
 /// Find a command by name or alias from user input.
-///
-/// The `input` should be the text after the leading `/`, e.g. `"help"` or
-/// `"config set model claude-opus"`. Returns a reference to the matching
-/// `Command` from the global registry, or `None`.
-///
-/// Note: This creates the command list on each call. In a real application
-/// you would cache the registry in a `LazyLock` or similar.
 pub fn find_command(input: &str) -> Option<usize> {
     let cmd_name = input.split_whitespace().next().unwrap_or("");
     let commands = get_all_commands();
@@ -628,9 +259,6 @@ pub fn find_command(input: &str) -> Option<usize> {
 }
 
 /// Parse user input into (command_index, args) if it starts with `/`.
-///
-/// Returns `None` if the input does not start with `/` or no matching command
-/// is found.
 pub fn parse_command_input(input: &str) -> Option<(usize, String)> {
     let trimmed = input.trim();
     if !trimmed.starts_with('/') {
@@ -648,10 +276,6 @@ pub fn parse_command_input(input: &str) -> Option<(usize, String)> {
     find_command(without_slash).map(|idx| (idx, args))
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -659,23 +283,17 @@ mod tests {
     #[test]
     fn test_all_commands_registered() {
         let cmds = get_all_commands();
-        assert!(cmds.len() >= 74, "Expected at least 74 commands");
+        assert!(cmds.len() >= 20, "Expected at least 20 commands");
         let names: Vec<&str> = cmds.iter().map(|c| c.name.as_str()).collect();
         assert!(names.contains(&"help"));
         assert!(names.contains(&"clear"));
-        assert!(names.contains(&"compact"));
         assert!(names.contains(&"config"));
         assert!(names.contains(&"diff"));
         assert!(names.contains(&"exit"));
         assert!(names.contains(&"version"));
         assert!(names.contains(&"model"));
         assert!(names.contains(&"cost"));
-        assert!(names.contains(&"session"));
-        assert!(names.contains(&"resume"));
-        assert!(names.contains(&"files"));
-        assert!(names.contains(&"context"));
-        assert!(names.contains(&"permissions"));
-        assert!(names.contains(&"hooks"));
+        assert!(names.contains(&"skills"));
     }
 
     #[test]
@@ -698,22 +316,6 @@ mod tests {
         assert!(find_command("perms").is_some());
         assert!(find_command("br").is_some());
         assert!(find_command("mem").is_some());
-    }
-
-    #[test]
-    fn test_second_batch_commands_registered() {
-        let cmds = get_all_commands();
-        let names: Vec<&str> = cmds.iter().map(|c| c.name.as_str()).collect();
-        assert!(names.contains(&"commit"));
-        assert!(names.contains(&"review"));
-        assert!(names.contains(&"branch"));
-        assert!(names.contains(&"export"));
-        assert!(names.contains(&"rename"));
-        assert!(names.contains(&"stats"));
-        assert!(names.contains(&"effort"));
-        assert!(names.contains(&"fast"));
-        assert!(names.contains(&"memory"));
-        assert!(names.contains(&"plan"));
     }
 
     #[test]

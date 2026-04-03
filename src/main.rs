@@ -15,7 +15,6 @@ mod engine;
 mod tools;
 mod permissions;
 mod config;
-mod compact;
 mod utils;
 mod session;
 mod commands;
@@ -24,17 +23,9 @@ mod ui;
 // 网络 / API / 认证
 mod api;
 mod auth;
-mod mcp;
-mod analytics;
-mod remote;
 
-// 插件 / 技能 / LSP
+// 技能系统
 mod skills;
-mod plugins;
-mod lsp_service;
-
-// Agent Teams (multi-agent swarm)
-mod teams;
 
 // Phase I: Shutdown and cleanup
 mod shutdown;
@@ -234,7 +225,6 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         thinking_enabled: None,
         fast_mode: false,
         effort_value: None,
-        team_context: None,
     };
 
     // ── B.5: Init-only fast path ─────────────────────────────────────

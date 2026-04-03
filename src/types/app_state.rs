@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use super::tool::{PermissionMode, ToolPermissionContext};
-use crate::teams::types::TeamContext;
 
 /// 应用全局状态 (简化版)
 ///
@@ -23,8 +22,6 @@ pub struct AppState {
     pub fast_mode: bool,
     /// effort 值
     pub effort_value: Option<String>,
-    /// Agent Teams context (when leading/participating in a team)
-    pub team_context: Option<TeamContext>,
 }
 
 /// 设置 JSON (简化版)
@@ -55,7 +52,6 @@ impl Default for AppState {
             thinking_enabled: None,
             fast_mode: false,
             effort_value: None,
-            team_context: None,
         }
     }
 }
