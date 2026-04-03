@@ -25,7 +25,7 @@ pub enum SdkMessage {
     Assistant(SdkAssistantMessage),
     /// User message replay (for SDK consumers to confirm receipt).
     UserReplay(SdkUserReplay),
-    /// Streaming event (produced when `include_partial_messages = true`).
+    /// Streaming event (real-time text deltas for TUI display).
     StreamEvent(SdkStreamEvent),
     /// Compact boundary (produced after context compaction).
     CompactBoundary(SdkCompactBoundary),

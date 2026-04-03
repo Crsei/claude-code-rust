@@ -27,10 +27,19 @@ use crate::engine::lifecycle::QueryEngine;
 use crate::engine::sdk_types::SdkMessage;
 use crate::types::config::QuerySource;
 use crate::types::message::{
-    InfoLevel, Message, MessageContent, SystemMessage, SystemSubtype, UserMessage,
+    AssistantMessage, ContentBlock, InfoLevel, Message, MessageContent, StreamEvent,
+    SystemMessage, SystemSubtype, UserMessage,
 };
 
 use super::app::{App, AppAction};
+
+/// Tracks the partial assistant message being streamed.
+struct StreamingState {
+    /// Accumulated text content from content_block_delta events.
+    text: String,
+    /// Whether we are inside a content block.
+    active: bool,
+}
 
 // ---------------------------------------------------------------------------
 // Engine event channel type
@@ -100,6 +109,7 @@ pub async fn run_tui(
 
     // ── Create channels ────────────────────────────────────────────
     let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<EngineEvent>();
+    let mut streaming_state = StreamingState { text: String::new(), active: false };
 
     // ── Spawn terminal event reader thread ─────────────────────────
     //
@@ -228,7 +238,7 @@ pub async fn run_tui(
             Some(engine_event) = engine_rx.recv() => {
                 match engine_event {
                     EngineEvent::Sdk(sdk_msg) => {
-                        handle_sdk_message(&mut app, sdk_msg);
+                        handle_sdk_message(&mut app, sdk_msg, &mut streaming_state);
                     }
                     EngineEvent::Done => {
                         app.set_streaming(false);
@@ -291,18 +301,52 @@ fn spawn_engine_query(
 // ---------------------------------------------------------------------------
 
 /// Handle an SDK message from the engine, updating the App state.
-fn handle_sdk_message(app: &mut App, msg: SdkMessage) {
+fn handle_sdk_message(app: &mut App, msg: SdkMessage, ss: &mut StreamingState) {
     match msg {
         SdkMessage::SystemInit(_init) => {
-            // System init info already shown in the welcome banner.
             debug!("TUI: received SystemInit");
         }
 
+        SdkMessage::StreamEvent(sdk_stream) => {
+            match sdk_stream.event {
+                StreamEvent::ContentBlockStart { .. } => {
+                    if !ss.active {
+                        // First content block — start a new streaming message
+                        ss.text.clear();
+                        ss.active = true;
+                        app.add_message(make_partial_assistant(""));
+                    }
+                }
+                StreamEvent::ContentBlockDelta { ref delta, .. } => {
+                    if let Some(t) = delta.get("text").and_then(|v| v.as_str()) {
+                        ss.text.push_str(t);
+                        app.replace_last_message(make_partial_assistant(&ss.text));
+                    }
+                }
+                StreamEvent::MessageStop => {
+                    // Stream complete; the full Assistant message follows.
+                    ss.active = false;
+                }
+                _ => {}
+            }
+        }
+
         SdkMessage::Assistant(assistant) => {
-            app.add_message(Message::Assistant(assistant.message));
+            // Replace the partial streaming message with the final one.
+            if ss.active || !ss.text.is_empty() {
+                app.replace_last_message(Message::Assistant(assistant.message));
+                ss.text.clear();
+                ss.active = false;
+            } else {
+                app.add_message(Message::Assistant(assistant.message));
+            }
         }
 
         SdkMessage::Result(result) => {
+            // Finalize any leftover streaming state
+            ss.text.clear();
+            ss.active = false;
+
             app.set_streaming(false);
             app.update_session_cost(result.total_cost_usd);
             if result.is_error {
@@ -341,9 +385,25 @@ fn handle_sdk_message(app: &mut App, msg: SdkMessage) {
             }));
         }
 
-        // UserReplay, StreamEvent, ToolUseSummary: not shown in REPL mode
         _ => {}
     }
+}
+
+/// Build a partial assistant message for streaming display.
+fn make_partial_assistant(text: &str) -> Message {
+    Message::Assistant(AssistantMessage {
+        uuid: uuid::Uuid::new_v4(),
+        timestamp: now_ts(),
+        role: "assistant".to_string(),
+        content: vec![ContentBlock::Text {
+            text: text.to_string(),
+        }],
+        usage: None,
+        stop_reason: None,
+        is_api_error_message: false,
+        api_error: None,
+        cost_usd: 0.0,
+    })
 }
 
 // ---------------------------------------------------------------------------

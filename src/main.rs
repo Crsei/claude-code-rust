@@ -265,7 +265,6 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         thinking_config: None,
         json_schema: None,
         replay_user_messages: false,
-        include_partial_messages: false,
         persist_session: true,
         resolved_model: Some(model.clone()),
     };

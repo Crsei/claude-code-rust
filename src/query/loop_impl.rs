@@ -148,14 +148,14 @@ pub fn query(
                 effort_value: deps.get_app_state().effort_value.clone(),
             };
 
-            let model_response = match deps.call_model(call_params).await {
-                Ok(resp) => resp,
+            // 使用流式调用, 实时产出 StreamEvent
+            let stream_result = deps.call_model_streaming(call_params).await;
+            let mut event_stream = match stream_result {
+                Ok(s) => s,
                 Err(e) => {
-                    // API 错误 — 检查是否是 prompt_too_long
                     let error_str = e.to_string();
 
                     if error_str.contains("prompt_too_long") || error_str.contains("prompt is too long") {
-                        // ── prompt_too_long 恢复路径 ──
                         let terminal = handle_prompt_too_long(
                             &deps,
                             &mut state,
@@ -184,12 +184,33 @@ pub fn query(
                 }
             };
 
-            // 转发流事件
-            for event in &model_response.stream_events {
-                yield QueryYield::Stream(event.clone());
+            // 逐事件消费流, 实时转发给上层, 同时累积构建完整消息
+            let mut accumulator = crate::api::streaming::StreamAccumulator::new();
+            let mut stream_error: Option<String> = None;
+
+            use futures::StreamExt;
+            while let Some(event_result) = event_stream.next().await {
+                match event_result {
+                    Ok(event) => {
+                        accumulator.process_event(&event);
+                        yield QueryYield::Stream(event);
+                    }
+                    Err(e) => {
+                        stream_error = Some(e.to_string());
+                        break;
+                    }
+                }
             }
 
-            let assistant_message = model_response.assistant_message.clone();
+            if let Some(err) = stream_error {
+                warn!(error = %err, "stream error during model call");
+                yield QueryYield::Message(Message::Assistant(
+                    make_error_message(&deps, &err),
+                ));
+                break;
+            }
+
+            let assistant_message = accumulator.build();
 
             // 累计 usage
             if let Some(ref usage) = assistant_message.usage {

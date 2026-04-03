@@ -117,9 +117,6 @@ pub struct QueryEngineConfig {
     /// Whether to replay user messages back to SDK consumers.
     pub replay_user_messages: bool,
 
-    /// Whether to include partial (streaming) messages in SDK output.
-    pub include_partial_messages: bool,
-
     /// Whether to persist the session to disk.
     pub persist_session: bool,
 

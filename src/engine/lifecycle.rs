@@ -370,7 +370,6 @@ impl QueryEngine {
             let mut inner_stream = std::pin::pin!(inner_stream);
 
             let api_started_at = Instant::now();
-            let include_partial_messages = query_source == QuerySource::Sdk;
             let replay_user_messages = query_source == QuerySource::Sdk;
 
             while let Some(item) = inner_stream.next().await {
@@ -663,14 +662,12 @@ impl QueryEngine {
                             _ => {}
                         }
 
-                        // Forward stream events if partial messages enabled
-                        if include_partial_messages {
-                            yield SdkMessage::StreamEvent(SdkStreamEvent {
-                                event: event.clone(),
-                                session_id: session_id.clone(),
-                                uuid: Uuid::new_v4(),
-                            });
-                        }
+                        // Always forward stream events for real-time TUI updates
+                        yield SdkMessage::StreamEvent(SdkStreamEvent {
+                            event: event.clone(),
+                            session_id: session_id.clone(),
+                            uuid: Uuid::new_v4(),
+                        });
                     }
 
                     // --------------------------------------------------------
@@ -1237,7 +1234,6 @@ mod tests {
             thinking_config: None,
             json_schema: None,
             replay_user_messages: false,
-            include_partial_messages: false,
             persist_session: false,
             resolved_model: None,
         }
