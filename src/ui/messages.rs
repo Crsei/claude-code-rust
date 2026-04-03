@@ -8,74 +8,64 @@ use crate::types::message::{
 
 use super::markdown::markdown_to_lines;
 use super::theme::Theme;
+use super::virtual_scroll::VirtualScroll;
 
-/// Render a scrollable list of messages into the given buffer area.
+/// Render only the visible messages into the given buffer area using virtual
+/// scrolling.
 ///
-/// `scroll` is the number of *rendered lines* to skip from the top. The
-/// caller should track this value and adjust it in response to scroll events.
+/// `vscroll` must have been updated via `ensure_up_to_date()` before calling.
+/// `scroll` is the number of rendered lines to skip from the top.
 pub fn render_messages(
     messages: &[Message],
     area: Rect,
     buf: &mut Buffer,
     theme: &Theme,
     scroll: usize,
+    vscroll: &VirtualScroll,
 ) {
-    if area.height == 0 || area.width == 0 {
+    if area.height == 0 || area.width == 0 || messages.is_empty() {
         return;
     }
 
-    // First, build all rendered lines for every message.
-    let all_lines = render_all_message_lines(messages, area.width as usize, theme);
+    let viewport_h = area.height as usize;
+    let (start, end) = vscroll.visible_range(scroll, viewport_h);
 
-    // Apply scroll offset and render visible lines.
-    let visible_lines = all_lines.iter().skip(scroll).take(area.height as usize);
+    // Where the first visible message starts in global line space.
+    let first_offset = vscroll.offset_of(start);
+    // How many lines to skip inside the first visible message.
+    let skip_in_first = scroll.saturating_sub(first_offset);
 
-    for (i, line) in visible_lines.enumerate() {
-        let y = area.y + i as u16;
-        if y >= area.y + area.height {
-            break;
-        }
-        buf.set_line(area.x, y, line, area.width);
-    }
-}
+    let mut y = 0usize; // current row in the viewport
 
-/// Compute the total number of rendered lines for the given messages.
-///
-/// Useful for the caller to know the scroll bounds.
-pub fn total_rendered_lines(
-    messages: &[Message],
-    width: usize,
-    theme: &Theme,
-) -> usize {
-    render_all_message_lines(messages, width, theme).len()
-}
+    for idx in start..end.min(messages.len()) {
+        let msg_lines = render_single_message(&messages[idx], theme);
 
-// ── Internal helpers ────────────────────────────────────────────────────
+        // Separator blank line (between messages, not after last)
+        let has_sep = idx < messages.len() - 1;
+        let total_for_msg = msg_lines.len() + if has_sep { 1 } else { 0 };
 
-/// Render every message into a flat list of `Line`s (including blank
-/// separator lines between messages).
-fn render_all_message_lines<'a>(
-    messages: &[Message],
-    #[allow(unused)] width: usize,
-    theme: &Theme,
-) -> Vec<Line<'a>> {
-    let mut lines: Vec<Line<'a>> = Vec::new();
+        let skip = if idx == start { skip_in_first } else { 0 };
 
-    for (idx, msg) in messages.iter().enumerate() {
-        let msg_lines = render_single_message(msg, theme);
-        lines.extend(msg_lines);
-
-        // Add a blank line between messages (but not after the last one).
-        if idx < messages.len() - 1 {
-            lines.push(Line::from(""));
+        for li in skip..total_for_msg {
+            if y >= viewport_h {
+                return;
+            }
+            let line = if li < msg_lines.len() {
+                &msg_lines[li]
+            } else {
+                // separator blank line
+                &Line::default()
+            };
+            buf.set_line(area.x, area.y + y as u16, line, area.width);
+            y += 1;
         }
     }
-
-    lines
 }
 
 /// Render a single message into one or more `Line`s.
-fn render_single_message<'a>(msg: &Message, theme: &Theme) -> Vec<Line<'a>> {
+///
+/// `pub(super)` so that `virtual_scroll` can call it for height measurement.
+pub(super) fn render_single_message<'a>(msg: &Message, theme: &Theme) -> Vec<Line<'a>> {
     match msg {
         Message::User(user_msg) => render_user_message(user_msg, theme),
         Message::Assistant(assistant_msg) => render_assistant_message(assistant_msg, theme),
@@ -345,7 +335,6 @@ fn render_progress_message<'a>(
     msg: &crate::types::message::ProgressMessage,
     theme: &Theme,
 ) -> Vec<Line<'a>> {
-    // Show a spinner-like indicator with the tool_use_id and any data summary.
     let data_summary = if msg.data.is_object() {
         msg.data
             .as_object()

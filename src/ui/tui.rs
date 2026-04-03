@@ -13,7 +13,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crossterm::event::{self, Event};
-use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{
+    self, BeginSynchronizedUpdate, EndSynchronizedUpdate, EnterAlternateScreen,
+    LeaveAlternateScreen,
+};
 use crossterm::{cursor, execute};
 use futures::StreamExt;
 use ratatui::backend::CrosstermBackend;
@@ -145,12 +148,17 @@ pub async fn run_tui(
     }
 
     // ── Main event loop ────────────────────────────────────────────
-    let mut tick_interval = tokio::time::interval(Duration::from_millis(80));
+    let mut tick_interval = tokio::time::interval(Duration::from_millis(16));
     tick_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
-        // Draw the UI
-        terminal.draw(|frame| app.render(frame))?;
+        // Draw the UI only when something changed (dirty flag).
+        if app.is_dirty() {
+            execute!(terminal.backend_mut(), BeginSynchronizedUpdate)?;
+            terminal.draw(|frame| app.render(frame))?;
+            execute!(terminal.backend_mut(), EndSynchronizedUpdate)?;
+            app.mark_clean();
+        }
 
         // Wait for the next event
         tokio::select! {
@@ -228,7 +236,7 @@ pub async fn run_tui(
                         }
                     }
                     Event::Resize(_, _) => {
-                        // ratatui handles resize automatically on next draw
+                        app.mark_dirty();
                     }
                     _ => {}
                 }

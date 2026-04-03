@@ -735,7 +735,33 @@ mod tests {
             &self,
             _params: ModelCallParams,
         ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
-            Ok(Box::pin(futures::stream::empty()))
+            let mut responses = self.responses.lock().unwrap();
+            if responses.is_empty() {
+                anyhow::bail!("no more mock responses");
+            }
+            let resp = responses.remove(0);
+            // Convert ModelResponse into a stream of events that
+            // StreamAccumulator can reconstruct.
+            let mut events = Vec::new();
+            events.push(StreamEvent::MessageStart {
+                usage: resp.usage.clone(),
+            });
+            for (i, block) in resp.assistant_message.content.iter().enumerate() {
+                events.push(StreamEvent::ContentBlockStart {
+                    index: i,
+                    content_block: block.clone(),
+                });
+                events.push(StreamEvent::ContentBlockStop { index: i });
+            }
+            events.push(StreamEvent::MessageDelta {
+                delta: crate::types::message::MessageDelta {
+                    stop_reason: resp.assistant_message.stop_reason.clone(),
+                },
+                usage: Some(resp.usage),
+            });
+            events.push(StreamEvent::MessageStop);
+            let stream = futures::stream::iter(events.into_iter().map(Ok));
+            Ok(Box::pin(stream))
         }
 
         async fn microcompact(&self, messages: Vec<Message>) -> Result<Vec<Message>> {

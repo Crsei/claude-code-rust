@@ -19,3 +19,4 @@ pub mod theme;
 pub mod tui;
 #[allow(dead_code)]
 pub mod vim;
+pub mod virtual_scroll;

@@ -1,88 +1,55 @@
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
-use crossterm::{execute, cursor};
-use ratatui::backend::CrosstermBackend;
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
-#[allow(unused_imports)]
-use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
-use ratatui::Terminal;
-use std::io;
-use std::time::{Duration, Instant};
 
 use crate::types::message::Message;
 
-use super::messages::{render_messages, total_rendered_lines};
+use super::messages::render_messages;
 use super::permissions::{PermissionChoice, PermissionDialog};
 use super::prompt_input::PromptInput;
 use super::spinner::SpinnerState;
 use super::theme::Theme;
+use super::virtual_scroll::VirtualScroll;
 
 /// Actions produced by the app in response to user input.
-///
-/// The caller (event loop owner) should inspect these to drive side effects
-/// such as sending a query to the API, aborting a stream, or quitting.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppAction {
-    /// No externally-visible action required.
     None,
-    /// The user submitted text input.
     Submit(String),
-    /// The user pressed Ctrl+C while a stream is active (abort current query).
     Abort,
-    /// The user wants to quit the application.
     Quit,
-    /// Scroll the message history up.
     ScrollUp,
-    /// Scroll the message history down.
     ScrollDown,
-    /// The user made a permission choice.
     PermissionResponse(PermissionChoice),
 }
 
 /// Main TUI application state.
-///
-/// Owns the message history, input state, spinner, optional permission dialog
-/// overlay, and rendering theme. The struct is designed to be driven by an
-/// external event loop that calls [`handle_key_event`] and [`render`].
 pub struct App {
-    /// Conversation message history.
     messages: Vec<Message>,
-    /// The text input widget.
     prompt: PromptInput,
-    /// Vertical scroll offset (in rendered lines) for the message area.
     scroll_offset: usize,
-    /// Whether an API stream is currently active.
     is_streaming: bool,
-    /// Animated spinner shown during streaming / tool execution.
     spinner_state: SpinnerState,
-    /// Optional permission dialog overlay.
     permission_dialog: Option<PermissionDialog>,
-    /// Flag: the application should exit.
     should_quit: bool,
-    /// The active color theme.
     theme: Theme,
-    /// Cached total line count of the rendered message history (invalidated
-    /// when messages change). `None` means the cache is stale.
-    cached_total_lines: Option<usize>,
-    /// Width used when computing `cached_total_lines`. If the terminal is
-    /// resized the cache is invalidated.
-    cached_width: u16,
-    /// Model name for status bar display.
     model_name: String,
-    /// Accumulated session cost in USD.
     session_cost_usd: f64,
-    /// Input history for Up/Down arrow navigation.
     history: Vec<String>,
-    /// Current position in the history (None = not browsing).
     history_index: Option<usize>,
-    /// Saved input text when browsing history.
     saved_input: String,
+
+    // ── Optimizations ──────────────────────────────────────────────
+    /// Virtual scroll: per-message height cache + prefix-sum offsets.
+    vscroll: VirtualScroll,
+    /// Dirty flag — when false, the TUI skips `terminal.draw()`.
+    dirty: bool,
+    /// Tick counter for throttling spinner frame advances.
+    tick_counter: u32,
 }
 
 impl App {
-    /// Create a new `App` with default settings.
     pub fn new() -> Self {
         Self {
             messages: Vec::new(),
@@ -93,98 +60,115 @@ impl App {
             permission_dialog: None,
             should_quit: false,
             theme: Theme::default(),
-            cached_total_lines: None,
-            cached_width: 0,
             model_name: String::new(),
             session_cost_usd: 0.0,
             history: Vec::new(),
             history_index: None,
             saved_input: String::new(),
+            vscroll: VirtualScroll::new(),
+            dirty: true,
+            tick_counter: 0,
         }
+    }
+
+    // ── Dirty flag ─────────────────────────────────────────────────
+
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    pub fn mark_clean(&mut self) {
+        self.dirty = false;
+    }
+
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
     }
 
     // ── Public API ──────────────────────────────────────────────────
 
-    /// Append a message to the conversation history and auto-scroll to the
-    /// bottom.
     pub fn add_message(&mut self, msg: Message) {
         self.messages.push(msg);
-        self.invalidate_line_cache();
-        // Auto-scroll to bottom when a new message arrives.
+        self.vscroll.invalidate_from(self.messages.len().saturating_sub(1));
         self.scroll_to_bottom_deferred();
+        self.dirty = true;
     }
 
-    /// Replace the last message (useful for streaming token-by-token updates).
     pub fn replace_last_message(&mut self, msg: Message) {
         if let Some(last) = self.messages.last_mut() {
             *last = msg;
         } else {
             self.messages.push(msg);
         }
-        self.invalidate_line_cache();
+        self.vscroll.invalidate_from(self.messages.len().saturating_sub(1));
         self.scroll_to_bottom_deferred();
+        self.dirty = true;
     }
 
-    /// Get the current messages.
     pub fn messages(&self) -> &[Message] {
         &self.messages
     }
 
-    /// Clear all messages from the conversation history.
     pub fn clear_messages(&mut self) {
         self.messages.clear();
         self.scroll_offset = 0;
-        self.invalidate_line_cache();
+        self.vscroll.invalidate_all();
+        self.dirty = true;
     }
 
-    /// Set the streaming flag and start / stop the spinner accordingly.
     pub fn set_streaming(&mut self, streaming: bool) {
-        self.is_streaming = streaming;
-        if streaming {
-            self.spinner_state.start(Some("Thinking...".to_string()));
-            self.prompt.is_active = false;
-        } else {
-            self.spinner_state.stop();
-            self.prompt.is_active = true;
+        if self.is_streaming != streaming {
+            self.is_streaming = streaming;
+            if streaming {
+                self.spinner_state.start(Some("Thinking...".to_string()));
+                self.prompt.is_active = false;
+            } else {
+                self.spinner_state.stop();
+                self.prompt.is_active = true;
+            }
+            self.dirty = true;
         }
     }
 
-    /// Show a permission dialog overlay.
     pub fn show_permission_dialog(&mut self, tool_name: &str, input: &str, message: &str) {
         self.permission_dialog = Some(PermissionDialog::new(tool_name, input, message));
+        self.dirty = true;
     }
 
-    /// Dismiss the permission dialog (if any).
     pub fn dismiss_permission_dialog(&mut self) {
         self.permission_dialog = None;
+        self.dirty = true;
     }
 
-    /// Whether the application should quit.
     pub fn should_quit(&self) -> bool {
         self.should_quit
     }
 
-    /// Tick the spinner animation (call on a regular timer, e.g. every 80ms).
+    /// Tick the spinner. Called at 16ms interval; spinner frame advances
+    /// every 5th tick (~80ms) to keep a pleasant animation speed.
     pub fn tick(&mut self) {
-        self.spinner_state.tick();
+        self.tick_counter = self.tick_counter.wrapping_add(1);
+        if self.spinner_state.active && self.tick_counter % 5 == 0 {
+            self.spinner_state.tick();
+            self.dirty = true;
+        }
     }
 
-    /// Set the model name shown in the status bar.
     pub fn set_model_name(&mut self, name: String) {
         self.model_name = name;
+        self.dirty = true;
     }
 
-    /// Update the accumulated session cost (displayed in the status bar).
     pub fn update_session_cost(&mut self, cost_usd: f64) {
         self.session_cost_usd = cost_usd;
+        self.dirty = true;
     }
 
-    /// Set the spinner message text.
     pub fn set_spinner_message(&mut self, msg: String) {
         self.spinner_state.set_message(msg);
+        self.dirty = true;
     }
 
-    /// Push a submitted prompt into the input history.
     pub fn push_history(&mut self, text: String) {
         if self.history.last().map_or(true, |last| last != &text) {
             self.history.push(text);
@@ -195,16 +179,14 @@ impl App {
 
     // ── Event handling ──────────────────────────────────────────────
 
-    /// Process a key event and return an [`AppAction`] describing what the
-    /// caller should do.
     pub fn handle_key_event(&mut self, key: KeyEvent) -> AppAction {
-        // On Windows, crossterm emits Press, Repeat, and Release events.
-        // Only handle Press to avoid duplicate input.
         if key.kind != KeyEventKind::Press {
             return AppAction::None;
         }
 
-        // If a permission dialog is open, route keys there first.
+        // Any key press is likely to cause a visual change.
+        self.dirty = true;
+
         if let Some(ref mut dialog) = self.permission_dialog {
             if let Some(choice) = dialog.handle_key(key) {
                 self.permission_dialog = None;
@@ -214,7 +196,6 @@ impl App {
         }
 
         match (key.modifiers, key.code) {
-            // ── Quit / Abort ────────────────────────────────────────
             (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
                 if self.is_streaming {
                     return AppAction::Abort;
@@ -230,7 +211,6 @@ impl App {
                 return AppAction::Quit;
             }
 
-            // ── Scrolling ───────────────────────────────────────────
             (_, KeyCode::PageUp) | (KeyModifiers::SHIFT, KeyCode::Up) => {
                 self.scroll_up(5);
                 return AppAction::ScrollUp;
@@ -250,7 +230,6 @@ impl App {
                 return AppAction::ScrollDown;
             }
 
-            // ── Input history ───────────────────────────────────────
             (_, KeyCode::Up) if self.prompt.is_active && !self.is_streaming => {
                 self.history_up();
                 return AppAction::None;
@@ -260,11 +239,9 @@ impl App {
                 return AppAction::None;
             }
 
-            // ── Mouse scroll (handled elsewhere) / default ─────────
             _ => {}
         }
 
-        // Route to the prompt input widget.
         if let Some(submitted) = self.prompt.handle_key(key) {
             return AppAction::Submit(submitted);
         }
@@ -274,41 +251,27 @@ impl App {
 
     // ── Rendering ───────────────────────────────────────────────────
 
-    /// Render the full application UI into the given frame.
-    ///
-    /// Layout:
-    /// ```text
-    /// ┌─────────────────────────┐
-    /// │   Message history       │  (most of the screen)
-    /// │   (scrollable)          │
-    /// ├─────────────────────────┤
-    /// │ > input prompt          │  (1–3 lines)
-    /// └─────────────────────────┘
-    /// ```
-    /// An optional permission dialog is rendered as a centered overlay.
     pub fn render(&mut self, frame: &mut Frame) {
         let size = frame.area();
         if size.width < 10 || size.height < 4 {
             return;
         }
 
-        // Determine the height for the input area (prompt + optional spinner).
         let input_height = if self.is_streaming { 2u16 } else { 1u16 };
-        let status_height = 1u16; // bottom status bar
+        let status_height = 1u16;
 
         let chunks = Layout::vertical([
-            Constraint::Min(1),                           // messages
-            Constraint::Length(input_height + status_height), // input + status
+            Constraint::Min(1),
+            Constraint::Length(input_height + status_height),
         ])
         .split(size);
 
         let message_area = chunks[0];
         let bottom_area = chunks[1];
 
-        // ── Messages ────────────────────────────────────────────────
-        self.ensure_line_cache(message_area.width);
-        let total = self.cached_total_lines.unwrap_or(0);
-        // Clamp scroll so we never scroll past the end.
+        // ── Messages (virtual scroll) ───────────────────────────────
+        self.vscroll.ensure_up_to_date(&self.messages, message_area.width, &self.theme);
+        let total = self.vscroll.total_lines();
         let max_scroll = total.saturating_sub(message_area.height as usize);
         if self.scroll_offset > max_scroll {
             self.scroll_offset = max_scroll;
@@ -320,13 +283,14 @@ impl App {
             frame.buffer_mut(),
             &self.theme,
             self.scroll_offset,
+            &self.vscroll,
         );
 
         // ── Bottom area: spinner + input + status ───────────────────
         let bottom_chunks = Layout::vertical([
-            Constraint::Length(if self.is_streaming { 1 } else { 0 }), // spinner
-            Constraint::Length(1),                                      // input
-            Constraint::Length(status_height),                          // status
+            Constraint::Length(if self.is_streaming { 1 } else { 0 }),
+            Constraint::Length(1),
+            Constraint::Length(status_height),
         ])
         .split(bottom_area);
 
@@ -338,80 +302,11 @@ impl App {
         self.prompt
             .render(bottom_chunks[1], frame.buffer_mut(), &self.theme);
 
-        // ── Status bar ──────────────────────────────────────────────
         self.render_status_bar(bottom_chunks[2], frame.buffer_mut());
 
-        // ── Permission dialog overlay ───────────────────────────────
         if let Some(ref dialog) = self.permission_dialog {
             dialog.render(size, frame.buffer_mut(), &self.theme);
         }
-    }
-
-    // ── Running the event loop ──────────────────────────────────────
-
-    /// Initialize the terminal, run the main event loop, and restore the
-    /// terminal on exit.
-    ///
-    /// `on_action` is called for every non-`None` action. Return `true` from
-    /// the callback to continue the loop, or `false` to quit.
-    ///
-    /// The spinner is ticked every ~80ms while waiting for events.
-    pub fn run<F>(mut self, mut on_action: F) -> io::Result<()>
-    where
-        F: FnMut(&mut Self, AppAction) -> bool,
-    {
-        // Setup terminal.
-        terminal::enable_raw_mode()?;
-        let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
-
-        let tick_rate = Duration::from_millis(80);
-        let mut last_tick = Instant::now();
-
-        loop {
-            // Draw.
-            terminal.draw(|frame| self.render(frame))?;
-
-            // Wait for an event or the tick timeout.
-            let timeout = tick_rate
-                .checked_sub(last_tick.elapsed())
-                .unwrap_or(Duration::ZERO);
-
-            if event::poll(timeout)? {
-                if let Event::Key(key) = event::read()? {
-                    let action = self.handle_key_event(key);
-                    if action != AppAction::None {
-                        let should_continue = on_action(&mut self, action.clone());
-                        if !should_continue || self.should_quit {
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // Tick the spinner on each iteration.
-            if last_tick.elapsed() >= tick_rate {
-                self.tick();
-                last_tick = Instant::now();
-            }
-
-            if self.should_quit {
-                break;
-            }
-        }
-
-        // Restore terminal.
-        terminal::disable_raw_mode()?;
-        execute!(
-            terminal.backend_mut(),
-            LeaveAlternateScreen,
-            cursor::Show
-        )?;
-        terminal.show_cursor()?;
-
-        Ok(())
     }
 
     // ── Private helpers ─────────────────────────────────────────────
@@ -422,31 +317,12 @@ impl App {
 
     fn scroll_down(&mut self, lines: usize) {
         self.scroll_offset = self.scroll_offset.saturating_add(lines);
-        // Clamping happens in render().
     }
 
-    /// Mark the line-count cache as stale.
-    fn invalidate_line_cache(&mut self) {
-        self.cached_total_lines = None;
-    }
-
-    /// Recompute the line cache if it is stale or the width changed.
-    fn ensure_line_cache(&mut self, width: u16) {
-        if self.cached_total_lines.is_none() || self.cached_width != width {
-            self.cached_total_lines =
-                Some(total_rendered_lines(&self.messages, width as usize, &self.theme));
-            self.cached_width = width;
-        }
-    }
-
-    /// Request an auto-scroll to the bottom. The actual clamping happens
-    /// during the next render pass (since we need the viewport height).
     fn scroll_to_bottom_deferred(&mut self) {
-        // Set to a very large value; render() will clamp.
         self.scroll_offset = usize::MAX;
     }
 
-    /// Navigate to the previous item in input history.
     fn history_up(&mut self) {
         if self.history.is_empty() {
             return;
@@ -467,7 +343,6 @@ impl App {
         }
     }
 
-    /// Navigate to the next item in input history.
     fn history_down(&mut self) {
         if let Some(idx) = self.history_index {
             if idx < self.history.len() - 1 {
@@ -482,31 +357,20 @@ impl App {
         }
     }
 
-    /// Render a thin status bar at the very bottom.
     fn render_status_bar(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
         if area.height == 0 {
             return;
         }
 
         let msg_count = self.messages.len();
-        let mode = if self.is_streaming {
-            "streaming"
-        } else {
-            "ready"
-        };
+        let mode = if self.is_streaming { "streaming" } else { "ready" };
 
-        // Build segments: model | messages | cost | mode | hint
         let mut parts = Vec::new();
         if !self.model_name.is_empty() {
-            // Show abbreviated model name
             let short_model = self.model_name
                 .strip_prefix("claude-")
                 .unwrap_or(&self.model_name);
-            let short_model = short_model
-                .split('-')
-                .take(2)
-                .collect::<Vec<_>>()
-                .join("-");
+            let short_model = short_model.split('-').take(2).collect::<Vec<_>>().join("-");
             parts.push(short_model);
         }
         parts.push(format!("{} msgs", msg_count));
@@ -520,7 +384,6 @@ impl App {
         ));
 
         let status_text = format!(" {}", parts.join(" | "));
-
         let line = Line::from(vec![Span::styled(status_text, self.theme.dim)]);
         buf.set_line(area.x, area.y, &line, area.width);
     }
