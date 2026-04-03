@@ -1,4 +1,4 @@
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{execute, cursor};
 use ratatui::backend::CrosstermBackend;
@@ -130,6 +130,13 @@ impl App {
         &self.messages
     }
 
+    /// Clear all messages from the conversation history.
+    pub fn clear_messages(&mut self) {
+        self.messages.clear();
+        self.scroll_offset = 0;
+        self.invalidate_line_cache();
+    }
+
     /// Set the streaming flag and start / stop the spinner accordingly.
     pub fn set_streaming(&mut self, streaming: bool) {
         self.is_streaming = streaming;
@@ -191,6 +198,12 @@ impl App {
     /// Process a key event and return an [`AppAction`] describing what the
     /// caller should do.
     pub fn handle_key_event(&mut self, key: KeyEvent) -> AppAction {
+        // On Windows, crossterm emits Press, Repeat, and Release events.
+        // Only handle Press to avoid duplicate input.
+        if key.kind != KeyEventKind::Press {
+            return AppAction::None;
+        }
+
         // If a permission dialog is open, route keys there first.
         if let Some(ref mut dialog) = self.permission_dialog {
             if let Some(choice) = dialog.handle_key(key) {

@@ -1,2 +1,19 @@
 /target
 /target2
+**/*.rs.bk
+*.pdb
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store

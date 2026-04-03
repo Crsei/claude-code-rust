@@ -873,6 +873,11 @@ impl QueryEngine {
         updater(&mut state);
     }
 
+    /// Get the working directory.
+    pub fn cwd(&self) -> &str {
+        &self.config.cwd
+    }
+
     /// Replace the tool registry.
     pub fn set_tools(&self, tools: Tools) {
         *self.tools.write().unwrap() = tools;

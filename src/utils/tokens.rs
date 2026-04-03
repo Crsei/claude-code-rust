@@ -125,6 +125,20 @@ pub fn is_over_token_limit(messages: &[Message], model: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::message::{Message, UserMessage, MessageContent};
+    use uuid::Uuid;
+
+    fn make_user_message(text: &str, is_meta: bool) -> Message {
+        Message::User(UserMessage {
+            uuid: Uuid::new_v4(),
+            timestamp: 0,
+            role: "user".to_string(),
+            content: MessageContent::Text(text.to_string()),
+            is_meta,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        })
+    }
 
     #[test]
     fn test_estimate_tokens_empty() {
@@ -146,11 +160,9 @@ mod tests {
 
     #[test]
     fn test_estimate_messages_tokens() {
-        use crate::compact::messages::create_user_message;
-
         let messages = vec![
-            create_user_message("hello world", false),
-            create_user_message("how are you?", false),
+            make_user_message("hello world", false),
+            make_user_message("how are you?", false),
         ];
 
         let tokens = estimate_messages_tokens(&messages);
@@ -167,17 +179,13 @@ mod tests {
         // A message with enough text to exceed 160k tokens:
         // 160001 tokens * 4 chars = 640004 chars
         let large_text = "a".repeat(640_004);
-        let messages = vec![
-            crate::compact::messages::create_user_message(&large_text, false),
-        ];
+        let messages = vec![make_user_message(&large_text, false)];
         assert!(is_over_token_limit(&messages, "claude-sonnet-4-20250514"));
     }
 
     #[test]
     fn test_not_over_token_limit() {
-        let messages = vec![
-            crate::compact::messages::create_user_message("hello", false),
-        ];
+        let messages = vec![make_user_message("hello", false)];
         assert!(!is_over_token_limit(&messages, "claude-sonnet-4-20250514"));
     }
 }

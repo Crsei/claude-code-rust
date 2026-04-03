@@ -271,9 +271,21 @@ pub fn conversation_summary(messages: &[Message]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::message::AssistantMessage;
+    use crate::types::message::{AssistantMessage, UserMessage, MessageContent};
     use chrono::Utc;
     use uuid::Uuid;
+
+    fn make_user_message(text: &str, is_meta: bool) -> Message {
+        Message::User(UserMessage {
+            uuid: Uuid::new_v4(),
+            timestamp: 0,
+            role: "user".to_string(),
+            content: MessageContent::Text(text.to_string()),
+            is_meta,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        })
+    }
 
     fn make_assistant_with_tool_use(tool_name: &str) -> Message {
         Message::Assistant(AssistantMessage {
@@ -377,12 +389,10 @@ mod tests {
 
     #[test]
     fn test_count_user_messages_excludes_meta() {
-        use crate::compact::messages::create_user_message;
-
         let messages = vec![
-            create_user_message("real input", false),
-            create_user_message("system injected", true),
-            create_user_message("another real", false),
+            make_user_message("real input", false),
+            make_user_message("system injected", true),
+            make_user_message("another real", false),
         ];
 
         assert_eq!(count_user_messages(&messages), 2);
@@ -390,8 +400,7 @@ mod tests {
 
     #[test]
     fn test_get_text_content_user() {
-        use crate::compact::messages::create_user_message;
-        let msg = create_user_message("hello world", false);
+        let msg = make_user_message("hello world", false);
         assert_eq!(get_text_content(&msg), "hello world");
     }
 
@@ -483,9 +492,8 @@ mod tests {
 
     #[test]
     fn test_conversation_summary() {
-        use crate::compact::messages::create_user_message;
         let messages = vec![
-            create_user_message("hello", false),
+            make_user_message("hello", false),
             make_assistant_with_tool_use("bash"),
         ];
         let summary = conversation_summary(&messages);

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::types::tool::{Tool, Tools};
+use crate::types::tool::Tools;
 
 use super::ask_user::AskUserQuestionTool;
 use super::bash::BashTool;
@@ -31,16 +31,6 @@ pub fn get_all_tools() -> Tools {
     tools.into_iter().filter(|t| t.is_enabled()).collect()
 }
 
-/// Find a tool by name from a tool collection.
-pub fn find_tool_by_name(tools: &Tools, name: &str) -> Option<Arc<dyn Tool>> {
-    tools.iter().find(|t| t.name() == name).cloned()
-}
-
-/// Get tools filtered for the default preset (all enabled tools).
-pub fn get_tools_for_default_preset() -> Tools {
-    get_all_tools()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -55,14 +45,14 @@ mod tests {
     fn test_find_tool_by_name() {
         let tools = get_all_tools();
 
-        let bash = find_tool_by_name(&tools, "Bash");
+        let bash = tools.iter().find(|t| t.name() == "Bash");
         assert!(bash.is_some(), "should find Bash tool");
         assert_eq!(bash.unwrap().name(), "Bash");
 
-        let read = find_tool_by_name(&tools, "Read");
+        let read = tools.iter().find(|t| t.name() == "Read");
         assert!(read.is_some(), "should find Read tool");
 
-        let nonexistent = find_tool_by_name(&tools, "NonExistentTool");
+        let nonexistent = tools.iter().find(|t| t.name() == "NonExistentTool");
         assert!(nonexistent.is_none(), "should not find nonexistent tool");
     }
 

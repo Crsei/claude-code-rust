@@ -95,7 +95,7 @@ mod tests {
             CommandResult::Output(text) => {
                 assert!(text.contains("/help"));
                 assert!(text.contains("/clear"));
-                assert!(text.contains("/compact"));
+                assert!(text.contains("/commit"));
                 assert!(text.contains("/config"));
                 assert!(text.contains("/diff"));
             }

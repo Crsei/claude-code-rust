@@ -22,6 +22,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
+use crate::commands::{self, CommandContext, CommandResult};
 use crate::engine::lifecycle::QueryEngine;
 use crate::engine::sdk_types::SdkMessage;
 use crate::types::config::QuerySource;
@@ -158,17 +159,43 @@ pub async fn run_tui(
                         let action = app.handle_key_event(key);
                         match action {
                             AppAction::Submit(text) => {
-                                // Add user message to display
                                 app.add_message(create_user_message(&text));
                                 app.push_history(text.clone());
-                                app.set_streaming(true);
-                                engine.reset_abort();
-                                // Start engine query in background
-                                spawn_engine_query(
-                                    engine.clone(),
-                                    text,
-                                    engine_tx.clone(),
-                                );
+
+                                // Try slash command first
+                                if let Some(action) = try_execute_command(
+                                    &text, &engine, &mut app
+                                ).await {
+                                    match action {
+                                        CmdAction::Handled => {}
+                                        CmdAction::Quit(msg) => {
+                                            add_system_info(&mut app, &msg);
+                                            break;
+                                        }
+                                        CmdAction::Query(msgs) => {
+                                            // Command wants to send messages to the model
+                                            for m in msgs {
+                                                app.add_message(m);
+                                            }
+                                            app.set_streaming(true);
+                                            engine.reset_abort();
+                                            spawn_engine_query(
+                                                engine.clone(),
+                                                text,
+                                                engine_tx.clone(),
+                                            );
+                                        }
+                                    }
+                                } else {
+                                    // Regular message — send to engine
+                                    app.set_streaming(true);
+                                    engine.reset_abort();
+                                    spawn_engine_query(
+                                        engine.clone(),
+                                        text,
+                                        engine_tx.clone(),
+                                    );
+                                }
                             }
                             AppAction::Abort => {
                                 engine.abort();
@@ -365,4 +392,92 @@ fn create_user_message(text: &str) -> Message {
 /// Current UTC timestamp in seconds.
 fn now_ts() -> i64 {
     chrono::Utc::now().timestamp()
+}
+
+// ---------------------------------------------------------------------------
+// Slash-command execution
+// ---------------------------------------------------------------------------
+
+/// Internal action returned after executing a slash command.
+enum CmdAction {
+    /// Command fully handled, output already added to app.
+    Handled,
+    /// Command requested exit.
+    Quit(String),
+    /// Command produced messages to send to the model.
+    Query(Vec<Message>),
+}
+
+/// Try to execute a slash command. Returns `None` if the input is not a command.
+async fn try_execute_command(
+    text: &str,
+    engine: &Arc<QueryEngine>,
+    app: &mut App,
+) -> Option<CmdAction> {
+    let trimmed = text.trim();
+    if !trimmed.starts_with('/') {
+        return None;
+    }
+
+    let (cmd_idx, args) = commands::parse_command_input(trimmed)?;
+    let all_commands = commands::get_all_commands();
+    let cmd = &all_commands[cmd_idx];
+
+    let mut ctx = CommandContext {
+        messages: engine.messages(),
+        cwd: std::path::PathBuf::from(engine.cwd()),
+        app_state: engine.app_state(),
+    };
+
+    match cmd.handler.execute(&args, &mut ctx).await {
+        Ok(result) => match result {
+            CommandResult::Output(text) => {
+                add_system_info(app, &text);
+                Some(CmdAction::Handled)
+            }
+            CommandResult::Clear => {
+                // Clear conversation in the engine and the app
+                app.clear_messages();
+                add_system_info(app, "Conversation cleared.");
+                Some(CmdAction::Handled)
+            }
+            CommandResult::Exit(msg) => {
+                Some(CmdAction::Quit(msg))
+            }
+            CommandResult::Query(msgs) => {
+                Some(CmdAction::Query(msgs))
+            }
+            CommandResult::None => {
+                Some(CmdAction::Handled)
+            }
+        },
+        Err(e) => {
+            add_system_error(app, &format!("Command error: {e}"));
+            Some(CmdAction::Handled)
+        }
+    }
+}
+
+/// Add an informational system message to the app.
+fn add_system_info(app: &mut App, text: &str) {
+    app.add_message(Message::System(SystemMessage {
+        uuid: uuid::Uuid::new_v4(),
+        timestamp: now_ts(),
+        subtype: SystemSubtype::Informational {
+            level: InfoLevel::Info,
+        },
+        content: text.to_string(),
+    }));
+}
+
+/// Add an error system message to the app.
+fn add_system_error(app: &mut App, text: &str) {
+    app.add_message(Message::System(SystemMessage {
+        uuid: uuid::Uuid::new_v4(),
+        timestamp: now_ts(),
+        subtype: SystemSubtype::Informational {
+            level: InfoLevel::Error,
+        },
+        content: text.to_string(),
+    }));
 }
