@@ -122,6 +122,9 @@ struct Cli {
 // ---------------------------------------------------------------------------
 
 fn main() -> ExitCode {
+    // Load .env file (silently ignore if not found)
+    let _ = dotenvy::dotenv();
+
     // Phase A: fast path — parse args first
     let cli = Cli::parse();
 
