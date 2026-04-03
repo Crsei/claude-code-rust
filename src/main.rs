@@ -149,7 +149,12 @@ fn main() -> ExitCode {
     // ── Fast path: --dump-system-prompt ─────────────────────────────────
     if cli.dump_system_prompt {
         let tools = registry::get_all_tools();
-        let model = cli.model.as_deref().unwrap_or("claude-sonnet-4-20250514");
+        let provider_default = crate::api::client::ApiClient::from_env()
+            .map(|c| c.config().default_model.clone());
+        let model_owned = cli.model.clone()
+            .or(provider_default)
+            .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+        let model = model_owned.as_str();
         let cwd = resolve_cwd(&cli);
         let (parts, _, _) = crate::engine::system_prompt::build_system_prompt(
             cli.system_prompt.as_deref(),
@@ -200,10 +205,14 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     info!(count = tools.len(), "tools registered");
 
     // ── B.4: Create AppState ─────────────────────────────────────────
+    // Resolve model: CLI arg > config > provider default > hardcoded fallback
+    let provider_default_model = crate::api::client::ApiClient::from_env()
+        .map(|c| c.config().default_model.clone());
     let model = cli
         .model
         .clone()
         .or(merged_config.model.clone())
+        .or(provider_default_model)
         .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
 
     #[allow(unused_variables)]

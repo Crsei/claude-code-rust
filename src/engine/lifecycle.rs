@@ -904,7 +904,7 @@ struct QueryEngineDeps {
 impl QueryDeps for QueryEngineDeps {
     async fn call_model(
         &self,
-        params: ModelCallParams,
+        mut params: ModelCallParams,
     ) -> Result<ModelResponse> {
         let client = self.api_client.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
@@ -912,6 +912,11 @@ impl QueryDeps for QueryEngineDeps {
                  set ANTHROPIC_API_KEY, use /login to store a key, or provide a mock in tests"
             )
         })?;
+
+        // Fill in the provider's default model if none specified
+        if params.model.is_none() {
+            params.model = Some(client.config().default_model.clone());
+        }
 
         let request = build_messages_request(&params);
         let stream = client.messages_stream(request).await?;
@@ -940,7 +945,7 @@ impl QueryDeps for QueryEngineDeps {
 
     async fn call_model_streaming(
         &self,
-        params: ModelCallParams,
+        mut params: ModelCallParams,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         let client = self.api_client.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
@@ -948,6 +953,11 @@ impl QueryDeps for QueryEngineDeps {
                  set ANTHROPIC_API_KEY, use /login to store a key, or provide a mock in tests"
             )
         })?;
+
+        // Fill in the provider's default model if none specified
+        if params.model.is_none() {
+            params.model = Some(client.config().default_model.clone());
+        }
 
         let request = build_messages_request(&params);
         client.messages_stream(request).await
