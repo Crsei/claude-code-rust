@@ -39,6 +39,10 @@ pub mod copy;
 pub mod init;
 pub mod status;
 
+// Extended info
+pub mod extra_usage;
+pub mod rate_limit;
+
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -244,6 +248,18 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "Show session status".into(),
             handler: Box::new(status::StatusHandler),
+        },
+        Command {
+            name: "extra-usage".into(),
+            aliases: vec!["eu".into()],
+            description: "Show extended token usage and cost analysis".into(),
+            handler: Box::new(extra_usage::ExtraUsageHandler),
+        },
+        Command {
+            name: "rate-limit-options".into(),
+            aliases: vec!["rlo".into(), "rate-limit".into()],
+            description: "Show rate limit information for the current model".into(),
+            handler: Box::new(rate_limit::RateLimitHandler),
         },
     ]
 }
