@@ -30,10 +30,10 @@
 - [x] `/install-github-app`, `/install-slack-app`
 - [x] `/workflows`, `/subscribe-pr`, `/peers`, `/buddy`, `/torch`
 
-## Commands: Planned But Not Complete
+## Commands: Recently Completed
 
-- [ ] `/extra-usage` — model-specific billing (deferred)
-- [ ] `/rate-limit-options` — model-specific rate limits (deferred)
+- [x] `/extra-usage` — extended token usage and cost analysis
+- [x] `/rate-limit-options` — model rate limit information and tips
 
 ## Commands: Internal Or Ant-Only (Not Implementing)
 
@@ -49,24 +49,28 @@
 - `/remote-control`, `/web-setup`, `/chrome`, `/desktop`, `/mobile`
 - `/remote-env`, `/release-notes`, `/stickers`, `/terminal-setup`, `/usage`
 
-## Tools: Implemented (30 total)
+## Tools: Implemented (13 in lite + 17 full-only)
 
-- [x] `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`
+### Lite version (current):
+- [x] `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `AskUser`, `Skill`
+- [x] `PowerShell`, `Config`, `REPL`, `StructuredOutput`, `SendUserMessage`
+
+### Full version only (not in lite):
 - [x] `NotebookEdit`, `AskUserQuestion`, `ToolSearch`
 - [x] `Agent`, `EnterPlanMode`, `ExitPlanMode`
 - [x] `EnterWorktree`, `ExitWorktree`
-- [x] `Skill`, `WebFetch`, `WebSearch`, `LSP`
+- [x] `WebFetch`, `WebSearch`, `LSP`
 - [x] `TaskCreate`, `TaskGet`, `TaskUpdate`, `TaskList`, `TaskStop`, `TaskOutput`
 - [x] `TodoWrite`, `Snip`, `Sleep`
 - [x] `TeamCreate`, `TeamDelete`, `SendMessage`
 
-## Tools: Planned But Not Complete
+## Tools: Recently Completed
 
-- [ ] `PowerShell` — Windows shell (medium priority)
-- [ ] `Config` — Runtime settings modification (low priority)
-- [ ] `REPL` — Embedded REPL (low priority)
-- [ ] `StructuredOutput` — Structured output format (low priority)
-- [ ] `SendUserMessage (Brief)` — Brief output (low priority)
+- [x] `PowerShell` — Windows shell (powershell.exe/pwsh)
+- [x] `Config` — Runtime settings get/set/list
+- [x] `REPL` — Execute code snippets in 10 languages
+- [x] `StructuredOutput` — JSON/CSV/table formatting
+- [x] `SendUserMessage` — Brief user notifications
 
 ## Tools: Explicitly Deferred (Network/Remote)
 
@@ -99,6 +103,10 @@
 - [x] `lsp_service/mod.rs`: LSP service configuration
 - [x] `permissions/path_validation.rs`: Path validation and traversal protection
 - [x] `config/validation.rs`: Settings validation framework
+- [x] `services/tool_use_summary.rs`: Tool usage summary generation
+- [x] `services/session_memory.rs`: Persistent session memory with search
+- [x] `services/prompt_suggestion.rs`: Heuristic prompt suggestions
+- [x] `services/lsp_lifecycle.rs`: LSP server process lifecycle management
 
 ### Planned But Not Complete
 

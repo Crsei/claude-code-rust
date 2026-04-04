@@ -32,9 +32,9 @@ src/
 ├── types/               核心类型
 ├── engine/              QueryEngine + 系统提示词
 ├── query/               异步流式查询循环
-├── tools/               8 个工具 (Bash, Read, Write, Edit, Glob, Grep, AskUser, Skill)
+├── tools/               13 个工具 (Bash, Read, Write, Edit, Glob, Grep, AskUser, Skill, PowerShell, Config, REPL, StructuredOutput, SendUserMessage)
 ├── skills/              技能系统 (内置 + 用户自定义)
-├── commands/            24 个斜杠命令
+├── commands/            26 个斜杠命令
 ├── api/                 API 客户端 (Anthropic, OpenAI, Google)
 ├── auth/                认证 (API Key + Keychain)
 ├── permissions/         权限系统
@@ -48,6 +48,10 @@ src/
 ### 已移除的模块 (完整版有)
 
 mcp, analytics, remote, plugins, lsp_service, teams, compact
+
+### 新增服务模块
+
+services/ — tool_use_summary, session_memory, prompt_suggestion, lsp_lifecycle
 
 ### Auth Flow
 
