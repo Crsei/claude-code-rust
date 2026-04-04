@@ -27,6 +27,9 @@ mod auth;
 // 技能系统
 mod skills;
 
+// 服务层
+mod services;
+
 // Phase I: Shutdown and cleanup
 mod shutdown;
 
@@ -122,7 +125,11 @@ struct Cli {
 // ---------------------------------------------------------------------------
 
 fn main() -> ExitCode {
-    // Load .env file (silently ignore if not found)
+    // Load .env: global (~/.cc-rust/.env) first, then CWD .env overrides
+    if let Some(home) = dirs::home_dir() {
+        let global_env = home.join(".cc-rust").join(".env");
+        let _ = dotenvy::from_path(&global_env);
+    }
     let _ = dotenvy::dotenv();
 
     // Phase A: fast path — parse args first
