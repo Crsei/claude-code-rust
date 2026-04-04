@@ -15,7 +15,7 @@ use crate::types::tool::{
 /// Keeps first `head_lines` lines and last `tail_lines` lines,
 /// inserting a separator showing how many lines were omitted.
 /// Falls back to character-level truncation if needed.
-fn truncate_output(output: &str, max_chars: usize) -> String {
+pub(crate) fn truncate_output(output: &str, max_chars: usize) -> String {
     if output.len() <= max_chars {
         return output.to_string();
     }

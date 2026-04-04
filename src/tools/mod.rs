@@ -17,3 +17,10 @@ pub mod registry;
 
 // Skills tool
 pub mod skill;
+
+// Phase 14C: Additional tools
+pub mod powershell;
+pub mod config_tool;
+pub mod repl;
+pub mod structured_output;
+pub mod send_user_message;

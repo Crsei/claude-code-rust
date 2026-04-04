@@ -4,12 +4,17 @@ use crate::types::tool::Tools;
 
 use super::ask_user::AskUserQuestionTool;
 use super::bash::BashTool;
+use super::config_tool::ConfigTool;
 use super::file_edit::FileEditTool;
 use super::file_read::FileReadTool;
 use super::file_write::FileWriteTool;
 use super::glob_tool::GlobTool;
 use super::grep::GrepTool;
+use super::powershell::PowerShellTool;
+use super::repl::ReplTool;
+use super::send_user_message::SendUserMessageTool;
 use super::skill::SkillTool;
+use super::structured_output::StructuredOutputTool;
 
 /// Get all base tool instances.
 ///
@@ -25,6 +30,11 @@ pub fn get_all_tools() -> Tools {
         Arc::new(GrepTool),
         Arc::new(AskUserQuestionTool),
         Arc::new(SkillTool),
+        Arc::new(PowerShellTool),
+        Arc::new(ConfigTool),
+        Arc::new(ReplTool),
+        Arc::new(StructuredOutputTool),
+        Arc::new(SendUserMessageTool),
     ];
 
     // Filter to only enabled tools
