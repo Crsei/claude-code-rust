@@ -63,7 +63,11 @@ fn flatten_content(content: Option<&Value>) -> String {
 }
 
 /// Convert a MessagesRequest (Anthropic format) to OpenAI chat completions body.
-fn build_openai_request(request: &MessagesRequest) -> Value {
+///
+/// `provider_name` is used to select the correct token-limit parameter:
+/// Azure OpenAI and OpenAI newer models require `max_completion_tokens`
+/// instead of the legacy `max_tokens`.
+fn build_openai_request(request: &MessagesRequest, provider_name: &str) -> Value {
     let mut oai_messages: Vec<Value> = Vec::new();
 
     // System prompt → system message
@@ -74,12 +78,131 @@ fn build_openai_request(request: &MessagesRequest) -> Value {
         }
     }
 
-    // User/assistant messages — flatten content blocks to plain text
+    // User/assistant messages — convert to OpenAI format.
+    // Handles: text messages, assistant tool_use blocks, user tool_result blocks.
     for msg in &request.messages {
         let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("user");
-        let content = flatten_content(msg.get("content"));
-        if !content.is_empty() {
-            oai_messages.push(json!({"role": role, "content": content}));
+        let content = msg.get("content");
+
+        if role == "assistant" {
+            // Check if assistant message contains tool_use blocks
+            if let Some(Value::Array(blocks)) = content {
+                let mut text_parts: Vec<String> = Vec::new();
+                let mut tool_calls_out: Vec<Value> = Vec::new();
+
+                for block in blocks {
+                    match block.get("type").and_then(|t| t.as_str()) {
+                        Some("text") => {
+                            if let Some(t) = block.get("text").and_then(|t| t.as_str()) {
+                                if !t.is_empty() {
+                                    text_parts.push(t.to_string());
+                                }
+                            }
+                        }
+                        Some("tool_use") => {
+                            let id = block.get("id").and_then(|i| i.as_str()).unwrap_or("");
+                            let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                            let empty_obj = json!({});
+                            let input = block.get("input").unwrap_or(&empty_obj);
+                            tool_calls_out.push(json!({
+                                "id": id,
+                                "type": "function",
+                                "function": {
+                                    "name": name,
+                                    "arguments": input.to_string(),
+                                }
+                            }));
+                        }
+                        _ => {}
+                    }
+                }
+
+                let content_val = if text_parts.is_empty() {
+                    Value::Null
+                } else {
+                    Value::String(text_parts.join("\n"))
+                };
+
+                if tool_calls_out.is_empty() {
+                    if !text_parts.is_empty() {
+                        oai_messages.push(json!({"role": "assistant", "content": content_val}));
+                    }
+                } else {
+                    let mut assistant_msg = json!({"role": "assistant"});
+                    if !text_parts.is_empty() {
+                        assistant_msg["content"] = content_val;
+                    }
+                    assistant_msg["tool_calls"] = json!(tool_calls_out);
+                    oai_messages.push(assistant_msg);
+                }
+            } else {
+                let text = flatten_content(content);
+                if !text.is_empty() {
+                    oai_messages.push(json!({"role": "assistant", "content": text}));
+                }
+            }
+        } else if role == "user" {
+            // Check for tool_result blocks → convert to OpenAI "tool" role messages
+            if let Some(Value::Array(blocks)) = content {
+                let mut text_parts: Vec<String> = Vec::new();
+                let mut tool_results: Vec<(String, String)> = Vec::new();
+
+                for block in blocks {
+                    match block.get("type").and_then(|t| t.as_str()) {
+                        Some("tool_result") => {
+                            let tool_use_id = block
+                                .get("tool_use_id")
+                                .and_then(|i| i.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let result_content = block
+                                .get("content")
+                                .map(|c| match c {
+                                    Value::String(s) => s.clone(),
+                                    Value::Array(arr) => arr
+                                        .iter()
+                                        .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                                        .collect::<Vec<_>>()
+                                        .join("\n"),
+                                    other => other.to_string(),
+                                })
+                                .unwrap_or_default();
+                            tool_results.push((tool_use_id, result_content));
+                        }
+                        Some("text") => {
+                            if let Some(t) = block.get("text").and_then(|t| t.as_str()) {
+                                if !t.is_empty() {
+                                    text_parts.push(t.to_string());
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Emit tool result messages first
+                for (tool_use_id, result) in tool_results {
+                    oai_messages.push(json!({
+                        "role": "tool",
+                        "tool_call_id": tool_use_id,
+                        "content": result,
+                    }));
+                }
+                // Then any text parts as a regular user message
+                if !text_parts.is_empty() {
+                    oai_messages.push(json!({"role": "user", "content": text_parts.join("\n")}));
+                }
+            } else {
+                let text = flatten_content(content);
+                if !text.is_empty() {
+                    oai_messages.push(json!({"role": "user", "content": text}));
+                }
+            }
+        } else {
+            let text = flatten_content(content);
+            if !text.is_empty() {
+                oai_messages.push(json!({"role": role, "content": text}));
+            }
         }
     }
 
@@ -90,7 +213,48 @@ fn build_openai_request(request: &MessagesRequest) -> Value {
     });
 
     if request.max_tokens > 0 {
-        body["max_tokens"] = json!(request.max_tokens);
+        // Azure OpenAI and OpenAI newer models (gpt-4o, o1, o3, gpt-5, etc.)
+        // require `max_completion_tokens`; legacy `max_tokens` is rejected.
+        let uses_new_param = provider_name == "azure"
+            || provider_name == "openai"
+            || request.model.starts_with("gpt-4o")
+            || request.model.starts_with("gpt-5")
+            || request.model.starts_with("o1")
+            || request.model.starts_with("o3")
+            || request.model.starts_with("o4");
+        let key = if uses_new_param { "max_completion_tokens" } else { "max_tokens" };
+        body[key] = json!(request.max_tokens);
+    }
+
+    // Convert Anthropic-format tools to OpenAI function-calling format.
+    // Anthropic: {"name": "X", "description": "...", "input_schema": {...}}
+    // OpenAI:    {"type": "function", "function": {"name": "X", "description": "...", "parameters": {...}}}
+    if let Some(tools) = &request.tools {
+        let oai_tools: Vec<Value> = tools
+            .iter()
+            .filter_map(|t| {
+                let name = t.get("name")?.as_str()?;
+                let description = t
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .unwrap_or("");
+                let parameters = t
+                    .get("input_schema")
+                    .cloned()
+                    .unwrap_or_else(|| json!({"type": "object", "properties": {}}));
+                Some(json!({
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": description,
+                        "parameters": parameters,
+                    }
+                }))
+            })
+            .collect();
+        if !oai_tools.is_empty() {
+            body["tools"] = json!(oai_tools);
+        }
     }
 
     body
@@ -110,12 +274,20 @@ pub(crate) async fn openai_compat_stream(
     request: &MessagesRequest,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-    let body = build_openai_request(request);
+    let body = build_openai_request(request, provider_name);
 
-    let response = http
+    let mut req_builder = http
         .post(&url)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .header("Content-Type", "application/json")
+        .header("Content-Type", "application/json");
+
+    // Azure OpenAI uses `api-key` header; others use `Authorization: Bearer`
+    if provider_name == "azure" {
+        req_builder = req_builder.header("api-key", api_key);
+    } else {
+        req_builder = req_builder.header("Authorization", format!("Bearer {}", api_key));
+    }
+
+    let response = req_builder
         .json(&body)
         .send()
         .await
@@ -163,6 +335,14 @@ where
         let mut buffer = String::new();
         let mut header_emitted = false;
 
+        // Track the next content_block index (text = 0, tool_calls start at 1+).
+        let mut block_index: usize = 0;
+        // Track whether we are inside a text content block.
+        let mut text_block_open = false;
+        // Track active tool calls: index → (id, name, accumulated arguments).
+        let mut tool_calls: std::collections::HashMap<u64, (String, String, String)> =
+            std::collections::HashMap::new();
+
         while let Some(chunk_result) = byte_stream.next().await {
             let chunk = chunk_result.context("error reading OpenAI response chunk")?;
             buffer.push_str(&String::from_utf8_lossy(&chunk));
@@ -184,8 +364,12 @@ where
 
                 // [DONE] marker
                 if data == "[DONE]" {
+                    // Close any open text block
+                    if text_block_open {
+                        yield StreamEvent::ContentBlockStop { index: block_index };
+                        text_block_open = false;
+                    }
                     if header_emitted {
-                        yield StreamEvent::ContentBlockStop { index: 0 };
                         yield StreamEvent::MessageDelta {
                             delta: MessageDelta { stop_reason: Some("end_turn".to_string()) },
                             usage: None,
@@ -204,40 +388,107 @@ where
                 if !header_emitted {
                     header_emitted = true;
                     yield StreamEvent::MessageStart { usage: Usage::default() };
-                    yield StreamEvent::ContentBlockStart {
-                        index: 0,
-                        content_block: ContentBlock::Text { text: String::new() },
-                    };
                 }
 
                 // Process choices array
                 if let Some(choices) = v.get("choices").and_then(|c| c.as_array()) {
                     for choice in choices {
-                        // Text delta
-                        if let Some(content) = choice
-                            .get("delta")
-                            .and_then(|d| d.get("content"))
-                            .and_then(|c| c.as_str())
-                        {
+                        let delta = match choice.get("delta") {
+                            Some(d) => d,
+                            None => continue,
+                        };
+
+                        // ── Text content delta ──────────────────────────
+                        if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
                             if !content.is_empty() {
+                                if !text_block_open {
+                                    yield StreamEvent::ContentBlockStart {
+                                        index: block_index,
+                                        content_block: ContentBlock::Text { text: String::new() },
+                                    };
+                                    text_block_open = true;
+                                }
                                 yield StreamEvent::ContentBlockDelta {
-                                    index: 0,
+                                    index: block_index,
                                     delta: json!({"type": "text_delta", "text": content}),
                                 };
                             }
                         }
 
-                        // Finish reason
+                        // ── Tool call deltas ────────────────────────────
+                        // OpenAI streams tool_calls as:
+                        //   delta.tool_calls: [{"index":0, "id":"call_xxx", "type":"function",
+                        //                       "function":{"name":"Read","arguments":""}}]
+                        // Subsequent chunks only have:
+                        //   delta.tool_calls: [{"index":0, "function":{"arguments":"{\"fi"}}]
+                        if let Some(tc_arr) = delta.get("tool_calls").and_then(|t| t.as_array()) {
+                            for tc in tc_arr {
+                                let tc_index = tc.get("index").and_then(|i| i.as_u64()).unwrap_or(0);
+
+                                // New tool call: has "id" and "function.name"
+                                if let Some(tc_id) = tc.get("id").and_then(|i| i.as_str()) {
+                                    let fn_name = tc
+                                        .get("function")
+                                        .and_then(|f| f.get("name"))
+                                        .and_then(|n| n.as_str())
+                                        .unwrap_or("unknown")
+                                        .to_string();
+                                    let initial_args = tc
+                                        .get("function")
+                                        .and_then(|f| f.get("arguments"))
+                                        .and_then(|a| a.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    tool_calls.insert(tc_index, (tc_id.to_string(), fn_name, initial_args));
+                                } else if let Some(entry) = tool_calls.get_mut(&tc_index) {
+                                    // Continuation: accumulate arguments
+                                    if let Some(args_chunk) = tc
+                                        .get("function")
+                                        .and_then(|f| f.get("arguments"))
+                                        .and_then(|a| a.as_str())
+                                    {
+                                        entry.2.push_str(args_chunk);
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── Finish reason ────────────────────────────────
                         if let Some(reason) = choice
                             .get("finish_reason")
                             .and_then(|r| r.as_str())
                         {
+                            // Close any open text block
+                            if text_block_open {
+                                yield StreamEvent::ContentBlockStop { index: block_index };
+                                block_index += 1;
+                                text_block_open = false;
+                            }
+
+                            // Emit accumulated tool_calls as Anthropic-style ToolUse blocks
+                            let mut sorted_tc: Vec<_> = tool_calls.drain().collect();
+                            sorted_tc.sort_by_key(|(idx, _)| *idx);
+                            for (_tc_idx, (tc_id, tc_name, tc_args)) in sorted_tc {
+                                let input: Value = serde_json::from_str(&tc_args)
+                                    .unwrap_or_else(|_| json!({}));
+                                yield StreamEvent::ContentBlockStart {
+                                    index: block_index,
+                                    content_block: ContentBlock::ToolUse {
+                                        id: tc_id,
+                                        name: tc_name,
+                                        input,
+                                    },
+                                };
+                                yield StreamEvent::ContentBlockStop { index: block_index };
+                                block_index += 1;
+                            }
+
                             let stop_reason = match reason {
                                 "stop" => "end_turn",
                                 "length" => "max_tokens",
+                                "tool_calls" => "tool_use",
                                 other => other,
                             };
-                            yield StreamEvent::ContentBlockStop { index: 0 };
                             yield StreamEvent::MessageDelta {
                                 delta: MessageDelta {
                                     stop_reason: Some(stop_reason.to_string()),
@@ -277,8 +528,10 @@ where
         }
 
         // Stream ended without [DONE] or finish_reason — still close properly
+        if text_block_open {
+            yield StreamEvent::ContentBlockStop { index: block_index };
+        }
         if header_emitted {
-            yield StreamEvent::ContentBlockStop { index: 0 };
             yield StreamEvent::MessageDelta {
                 delta: MessageDelta { stop_reason: Some("end_turn".to_string()) },
                 usage: None,
@@ -351,10 +604,12 @@ mod tests {
             thinking: None,
             tool_choice: None,
         };
-        let body = build_openai_request(&req);
+        let body = build_openai_request(&req, "openai");
         assert_eq!(body["model"], "gpt-4o");
         assert_eq!(body["stream"], true);
-        assert_eq!(body["max_tokens"], 1024);
+        // OpenAI/Azure use max_completion_tokens for newer models
+        assert_eq!(body["max_completion_tokens"], 1024);
+        assert!(body.get("max_tokens").is_none() || body["max_tokens"].is_null());
 
         let messages = body["messages"].as_array().unwrap();
         assert_eq!(messages.len(), 2);
@@ -376,10 +631,12 @@ mod tests {
             thinking: None,
             tool_choice: None,
         };
-        let body = build_openai_request(&req);
+        let body = build_openai_request(&req, "deepseek");
         let messages = body["messages"].as_array().unwrap();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0]["role"], "user");
+        // DeepSeek uses legacy max_tokens
+        assert_eq!(body["max_tokens"], 512);
     }
 
     #[test]
@@ -400,7 +657,7 @@ mod tests {
             thinking: None,
             tool_choice: None,
         };
-        let body = build_openai_request(&req);
+        let body = build_openai_request(&req, "openai");
         let messages = body["messages"].as_array().unwrap();
         assert_eq!(messages[0]["content"], "Hello\nWorld");
     }

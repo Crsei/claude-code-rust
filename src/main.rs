@@ -37,6 +37,7 @@ use std::collections::HashMap;
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use anyhow::Context;
 use clap::Parser;
 use tracing::{debug, error, info, warn};
 
@@ -125,10 +126,19 @@ struct Cli {
 // ---------------------------------------------------------------------------
 
 fn main() -> ExitCode {
-    // Load .env: global (~/.cc-rust/.env) first, then CWD .env overrides
+    // Load .env in priority order (later loads do NOT override earlier ones):
+    //   1. ~/.cc-rust/.env        (global user config)
+    //   2. <exe-dir>/.env         (portable — next to the binary)
+    //   3. <cwd>/.env             (project-local)
     if let Some(home) = dirs::home_dir() {
         let global_env = home.join(".cc-rust").join(".env");
         let _ = dotenvy::from_path(&global_env);
+    }
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let exe_env = exe_dir.join(".env");
+            let _ = dotenvy::from_path(&exe_env);
+        }
     }
     let _ = dotenvy::dotenv();
 
@@ -197,6 +207,19 @@ fn main() -> ExitCode {
 async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     let cwd = resolve_cwd(&cli);
 
+    // If -C / --cwd was given, switch the process working directory so that
+    // all tools (Bash, Glob, Grep, etc.) operate in the target workspace.
+    if cli.cwd.is_some() {
+        let target = std::path::Path::new(&cwd);
+        if target.is_dir() {
+            std::env::set_current_dir(target)
+                .with_context(|| format!("failed to set working directory to {}", cwd))?;
+            info!(cwd = %cwd, "working directory changed via --cwd");
+        } else {
+            anyhow::bail!("--cwd path does not exist or is not a directory: {}", cwd);
+        }
+    }
+
     // ── B.1: Load settings (parallel-ready) ──────────────────────────
     let merged_config = settings::load_and_merge(&cwd)?;
     debug!(?merged_config, "settings loaded");
@@ -213,8 +236,22 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // ── B.4: Create AppState ─────────────────────────────────────────
     // Resolve model: CLI arg > config > provider default > hardcoded fallback
-    let provider_default_model = crate::api::client::ApiClient::from_env()
+    let detected_client = crate::api::client::ApiClient::from_env();
+    let provider_default_model = detected_client
+        .as_ref()
         .map(|c| c.config().default_model.clone());
+
+    if detected_client.is_none() {
+        warn!("No API provider detected. Set an API key in .env, environment, or use /login.");
+        eprintln!(
+            "\x1b[33m⚠ No API provider detected.\x1b[0m\n  \
+             Set an API key via:\n  \
+             • .env file (ANTHROPIC_API_KEY, AZURE_API_KEY, OPENAI_API_KEY, ...)\n  \
+             • Environment variable\n  \
+             • /login command in the REPL"
+        );
+    }
+
     let model = cli
         .model
         .clone()

@@ -157,13 +157,39 @@ impl ApiClient {
 
     /// Auto-detect provider from environment variables and construct an `ApiClient`.
     ///
-    /// Checks all registered providers (Anthropic, OpenAI, Google, DeepSeek, etc.)
+    /// Checks all registered providers (Anthropic, Azure, OpenAI, Google, DeepSeek, etc.)
     /// and returns the first one that has an API key set in the environment.
+    ///
+    /// For Azure OpenAI, the base URL is read from `AZURE_BASE_URL` since it is
+    /// deployment-specific (e.g. `https://<resource>.openai.azure.com/openai/v1/`).
     ///
     /// Returns `None` if no provider has an API key set.
     pub fn from_env() -> Option<Self> {
         let info = crate::api::providers::detect_provider()?;
         let api_key = std::env::var(info.env_key).ok()?;
+
+        // Azure OpenAI: override the placeholder base_url with AZURE_BASE_URL
+        if info.name == "azure" {
+            let base_url = std::env::var("AZURE_BASE_URL")
+                .ok()
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| info.base_url.to_string());
+            let base_url = base_url.trim_end_matches('/').to_string();
+
+            let provider = ApiProvider::OpenAiCompat {
+                name: "azure".to_string(),
+                api_key,
+                base_url,
+                default_model: info.default_model.to_string(),
+            };
+            return Some(Self::new(ApiClientConfig {
+                provider,
+                default_model: info.default_model.to_string(),
+                max_retries: 3,
+                timeout_secs: 120,
+            }));
+        }
+
         Some(Self::from_provider_info(info, &api_key))
     }
 

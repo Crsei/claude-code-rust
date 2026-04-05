@@ -50,6 +50,16 @@ pub static PROVIDERS: &[ProviderInfo] = &[
         label: "Anthropic (Claude)",
         protocol: ProviderProtocol::Anthropic,
     },
+    // Azure OpenAI — base_url is a placeholder; the real endpoint is read
+    // from AZURE_BASE_URL at runtime (deployment-specific).
+    ProviderInfo {
+        name: "azure",
+        env_key: "AZURE_API_KEY",
+        base_url: "https://PLACEHOLDER.openai.azure.com/openai/v1",
+        default_model: "gpt-4o",
+        label: "Azure OpenAI",
+        protocol: ProviderProtocol::OpenAiCompat,
+    },
     ProviderInfo {
         name: "openai",
         env_key: "OPENAI_API_KEY",
@@ -267,7 +277,7 @@ mod tests {
 
     #[test]
     fn test_provider_count() {
-        assert_eq!(PROVIDERS.len(), 15);
+        assert_eq!(PROVIDERS.len(), 16);
     }
 
     #[test]
