@@ -11,3 +11,4 @@ pub mod transcript;
 pub mod resume;
 pub mod migrations;
 pub mod memdir;
+pub mod export;

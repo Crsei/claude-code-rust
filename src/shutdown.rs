@@ -81,7 +81,7 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
     // Step 3: Persist session (save current messages)
     let messages = engine.messages();
     if !messages.is_empty() {
-        let cwd = ""; // engine doesn't expose cwd directly; acceptable for shutdown
+        let cwd = engine.cwd();
         if let Err(e) = crate::session::storage::save_session(session_id, &messages, cwd) {
             warn!(error = %e, "failed to save session during shutdown");
         } else {

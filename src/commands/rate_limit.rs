@@ -188,6 +188,7 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("."),
             app_state: AppState::default(),
+            session_id: "test-session".to_string(),
         };
 
         let result = handler.execute("", &mut ctx).await.unwrap();
@@ -214,6 +215,7 @@ mod tests {
             ],
             cwd: PathBuf::from("."),
             app_state: AppState::default(),
+            session_id: "test-session".to_string(),
         };
 
         let result = handler.execute("", &mut ctx).await.unwrap();
@@ -236,6 +238,7 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("."),
             app_state,
+            session_id: "test-session".to_string(),
         };
 
         let result = handler.execute("", &mut ctx).await.unwrap();
@@ -258,6 +261,7 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("."),
             app_state,
+            session_id: "test-session".to_string(),
         };
 
         let result = handler.execute("", &mut ctx).await.unwrap();

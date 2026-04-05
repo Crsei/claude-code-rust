@@ -48,6 +48,7 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("."),
             app_state: AppState::default(),
+            session_id: "test-session".to_string(),
         }
     }
 

@@ -123,4 +123,8 @@ pub struct QueryEngineConfig {
     /// Resolved model name (from CLI > config/env > provider default).
     /// Used to initialize AppState.main_loop_model.
     pub resolved_model: Option<String>,
+
+    /// Automatically save session to disk after each assistant turn.
+    /// Default: true.
+    pub auto_save_session: bool,
 }

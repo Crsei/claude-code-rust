@@ -189,13 +189,23 @@ fn messages_to_serializable(messages: &[Message]) -> Vec<SerializableMessage> {
         .iter()
         .map(|msg| {
             let (msg_type, data) = match msg {
-                Message::User(u) => (
-                    "user".to_string(),
-                    serde_json::json!({
-                        "content": format!("{:?}", u.content),
-                        "is_meta": u.is_meta,
-                    }),
-                ),
+                Message::User(u) => {
+                    let content_value = match &u.content {
+                        crate::types::message::MessageContent::Text(t) => {
+                            serde_json::json!(t)
+                        }
+                        crate::types::message::MessageContent::Blocks(blocks) => {
+                            serde_json::json!(blocks)
+                        }
+                    };
+                    (
+                        "user".to_string(),
+                        serde_json::json!({
+                            "content": content_value,
+                            "is_meta": u.is_meta,
+                        }),
+                    )
+                }
                 Message::Assistant(a) => (
                     "assistant".to_string(),
                     serde_json::json!({
@@ -252,13 +262,29 @@ fn serializable_to_messages(msgs: &[SerializableMessage]) -> Vec<Message> {
                     uuid,
                     timestamp: sm.timestamp,
                     role: "user".into(),
-                    content: MessageContent::Text(
-                        sm.data
-                            .get("content")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                    ),
+                    content: match sm.data.get("content") {
+                        Some(serde_json::Value::String(s)) => MessageContent::Text(s.clone()),
+                        Some(serde_json::Value::Array(blocks)) => {
+                            match serde_json::from_value::<Vec<crate::types::message::ContentBlock>>(
+                                serde_json::Value::Array(blocks.clone()),
+                            ) {
+                                Ok(cb) => MessageContent::Blocks(cb),
+                                Err(_) => MessageContent::Text(
+                                    blocks.iter()
+                                        .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                                        .collect::<Vec<_>>()
+                                        .join("\n"),
+                                ),
+                            }
+                        }
+                        // Backwards compat: old Debug format like Text("hello")
+                        _ => MessageContent::Text(
+                            sm.data.get("content")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                        ),
+                    },
                     is_meta: sm
                         .data
                         .get("is_meta")
@@ -271,7 +297,9 @@ fn serializable_to_messages(msgs: &[SerializableMessage]) -> Vec<Message> {
                     uuid,
                     timestamp: sm.timestamp,
                     role: "assistant".into(),
-                    content: Vec::new(), // Would need full deserialization
+                    content: sm.data.get("content")
+                        .and_then(|v| serde_json::from_value::<Vec<crate::types::message::ContentBlock>>(v.clone()).ok())
+                        .unwrap_or_default(),
                     usage: None,
                     stop_reason: sm
                         .data

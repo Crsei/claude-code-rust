@@ -409,6 +409,16 @@ impl QueryEngine {
                             &session_id,
                             &[Message::Assistant(assistant_msg.clone())],
                         );
+
+                        // Auto-save session after each assistant turn
+                        if config.auto_save_session {
+                            let all_msgs = messages_ref.read().unwrap().clone();
+                            let _ = crate::session::storage::save_session(
+                                &session_id,
+                                &all_msgs,
+                                &config.cwd,
+                            );
+                        }
                     }
 
                     // --------------------------------------------------------
@@ -1236,6 +1246,7 @@ mod tests {
             replay_user_messages: false,
             persist_session: false,
             resolved_model: None,
+            auto_save_session: false,
         }
     }
 

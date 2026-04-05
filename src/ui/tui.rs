@@ -495,6 +495,7 @@ async fn try_execute_command(
         messages: engine.messages(),
         cwd: std::path::PathBuf::from(engine.cwd()),
         app_state: engine.app_state(),
+        session_id: engine.session_id.clone(),
     };
 
     match cmd.handler.execute(&args, &mut ctx).await {

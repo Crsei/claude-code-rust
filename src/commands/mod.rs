@@ -39,6 +39,9 @@ pub mod copy;
 pub mod init;
 pub mod status;
 
+// Export
+pub mod export;
+
 // Extended info
 pub mod extra_usage;
 pub mod rate_limit;
@@ -82,6 +85,8 @@ pub struct CommandContext {
     pub cwd: PathBuf,
     /// Application state snapshot.
     pub app_state: AppState,
+    /// Current session ID.
+    pub session_id: String,
 }
 
 /// Result of executing a command.
@@ -248,6 +253,12 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "Show session status".into(),
             handler: Box::new(status::StatusHandler),
+        },
+        Command {
+            name: "export".into(),
+            aliases: vec![],
+            description: "Export conversation to Markdown (.md)".into(),
+            handler: Box::new(export::ExportHandler),
         },
         Command {
             name: "extra-usage".into(),
