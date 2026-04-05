@@ -51,6 +51,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use async_trait::async_trait;
 
+use crate::bootstrap::SessionId;
 use crate::types::app_state::AppState;
 use crate::types::message::Message;
 
@@ -86,7 +87,7 @@ pub struct CommandContext {
     /// Application state snapshot.
     pub app_state: AppState,
     /// Current session ID.
-    pub session_id: String,
+    pub session_id: SessionId,
 }
 
 /// Result of executing a command.

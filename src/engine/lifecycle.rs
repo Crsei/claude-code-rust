@@ -27,6 +27,7 @@ use futures::Stream;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use crate::bootstrap::SessionId;
 use crate::engine::input_processing;
 use crate::engine::result;
 use crate::engine::sdk_types::*;
@@ -68,6 +69,8 @@ pub struct UsageTracking {
 
 impl UsageTracking {
     /// Accumulate a single API call's usage.
+    ///
+    /// Also syncs the cost to the global ProcessState for cross-module access.
     pub fn add_usage(&mut self, usage: &Usage, cost_usd: f64) {
         self.total_input_tokens += usage.input_tokens;
         self.total_output_tokens += usage.output_tokens;
@@ -75,6 +78,11 @@ impl UsageTracking {
         self.total_cache_creation_tokens += usage.cache_creation_input_tokens;
         self.total_cost_usd += cost_usd;
         self.api_call_count += 1;
+
+        // Sync to global ProcessState
+        if let Ok(mut state) = crate::bootstrap::PROCESS_STATE.write() {
+            state.total_cost_usd += cost_usd;
+        }
     }
 }
 
@@ -111,7 +119,7 @@ pub enum AbortReason {
 /// maintain cross-turn state and produce `SdkMessage` items for the caller.
 pub struct QueryEngine {
     /// Session identifier (UUID v4).
-    pub session_id: String,
+    pub session_id: SessionId,
     /// Immutable configuration snapshot.
     config: QueryEngineConfig,
 
@@ -160,7 +168,7 @@ impl QueryEngine {
         }
 
         Self {
-            session_id: Uuid::new_v4().to_string(),
+            session_id: SessionId::new(),
             config,
             mutable_messages: Arc::new(RwLock::new(initial_messages)),
             abort_reason: Arc::new(Mutex::new(None)),
@@ -250,7 +258,7 @@ impl QueryEngine {
             // A.4: Persist user message to transcript (fire-and-forget)
             if !processed.messages.is_empty() {
                 let _ = transcript::record_transcript(
-                    &session_id,
+                    session_id.as_str(),
                     &processed.messages,
                 );
             }
@@ -299,7 +307,7 @@ impl QueryEngine {
                     .collect(),
                 model: model_name.clone(),
                 permission_mode: format!("{:?}", perm_mode),
-                session_id: session_id.clone(),
+                session_id: session_id.to_string(),
                 uuid: Uuid::new_v4(),
             });
 
@@ -319,7 +327,7 @@ impl QueryEngine {
                     num_turns: 0,
                     result: local_text,
                     stop_reason: None,
-                    session_id: session_id.clone(),
+                    session_id: session_id.to_string(),
                     total_cost_usd: 0.0,
                     usage: UsageTracking::default(),
                     permission_denials: vec![],
@@ -400,13 +408,13 @@ impl QueryEngine {
                         // Yield SdkMessage::Assistant
                         yield SdkMessage::Assistant(SdkAssistantMessage {
                             message: assistant_msg.clone(),
-                            session_id: session_id.clone(),
+                            session_id: session_id.to_string(),
                             parent_tool_use_id: None,
                         });
 
                         // Fire-and-forget transcript
                         let _ = transcript::record_transcript(
-                            &session_id,
+                            session_id.as_str(),
                             &[Message::Assistant(assistant_msg.clone())],
                         );
 
@@ -414,7 +422,7 @@ impl QueryEngine {
                         if config.auto_save_session {
                             let all_msgs = messages_ref.read().unwrap().clone();
                             let _ = crate::session::storage::save_session(
-                                &session_id,
+                                session_id.as_str(),
                                 &all_msgs,
                                 &config.cwd,
                             );
@@ -444,7 +452,7 @@ impl QueryEngine {
                             };
                             yield SdkMessage::UserReplay(SdkUserReplay {
                                 content: content_text,
-                                session_id: session_id.clone(),
+                                session_id: session_id.to_string(),
                                 uuid: user_msg.uuid,
                                 timestamp: user_msg.timestamp,
                                 is_replay: true,
@@ -455,7 +463,7 @@ impl QueryEngine {
                         // Await transcript (blocking for user messages to
                         // preserve ordering guarantees)
                         let _ = transcript::record_transcript(
-                            &session_id,
+                            session_id.as_str(),
                             &[Message::User(user_msg.clone())],
                         );
                     }
@@ -472,7 +480,7 @@ impl QueryEngine {
 
                         // Fire-and-forget transcript
                         let _ = transcript::record_transcript(
-                            &session_id,
+                            session_id.as_str(),
                             &[Message::Progress(progress_msg.clone())],
                         );
                     }
@@ -498,7 +506,7 @@ impl QueryEngine {
 
                                 yield SdkMessage::CompactBoundary(
                                     SdkCompactBoundary {
-                                        session_id: session_id.clone(),
+                                        session_id: session_id.to_string(),
                                         uuid: system_msg.uuid,
                                         compact_metadata: compact_metadata
                                             .clone(),
@@ -528,7 +536,7 @@ impl QueryEngine {
                                     retry_delay_ms: *retry_in_ms,
                                     error_status: error.status,
                                     error: error.message.clone(),
-                                    session_id: session_id.clone(),
+                                    session_id: session_id.to_string(),
                                     uuid: system_msg.uuid,
                                 });
                             }
@@ -582,7 +590,7 @@ impl QueryEngine {
                                         max_turns
                                     ),
                                     stop_reason: last_stop_reason.clone(),
-                                    session_id: session_id.clone(),
+                                    session_id: session_id.to_string(),
                                     total_cost_usd: usage_snap.total_cost_usd,
                                     usage: usage_snap,
                                     permission_denials: denials_snap,
@@ -608,7 +616,7 @@ impl QueryEngine {
                                     yield SdkMessage::UserReplay(
                                         SdkUserReplay {
                                             content: cmd_prompt.clone(),
-                                            session_id: session_id.clone(),
+                                            session_id: session_id.to_string(),
                                             uuid: attachment_msg.uuid,
                                             timestamp: attachment_msg.timestamp,
                                             is_replay: false,
@@ -675,7 +683,7 @@ impl QueryEngine {
                         // Always forward stream events for real-time TUI updates
                         yield SdkMessage::StreamEvent(SdkStreamEvent {
                             event: event.clone(),
-                            session_id: session_id.clone(),
+                            session_id: session_id.to_string(),
                             uuid: Uuid::new_v4(),
                         });
                     }
@@ -703,7 +711,7 @@ impl QueryEngine {
                             preceding_tool_use_ids: summary_msg
                                 .preceding_tool_use_ids
                                 .clone(),
-                            session_id: session_id.clone(),
+                            session_id: session_id.to_string(),
                             uuid: summary_msg.uuid,
                         });
                     }
@@ -750,7 +758,7 @@ impl QueryEngine {
                                 current_cost, max_budget
                             ),
                             stop_reason: last_stop_reason.clone(),
-                            session_id: session_id.clone(),
+                            session_id: session_id.to_string(),
                             total_cost_usd: current_cost,
                             usage: usage_snap,
                             permission_denials: denials_snap,
@@ -794,6 +802,13 @@ impl QueryEngine {
                 errors.push(text_result.clone());
             }
 
+            // Record API duration in global ProcessState
+            let api_duration_ms = api_started_at.elapsed().as_millis() as u64;
+            crate::bootstrap::PROCESS_STATE
+                .read()
+                .ok()
+                .map(|s| s.api_duration.record(api_duration_ms));
+
             yield SdkMessage::Result(SdkResult {
                 subtype,
                 is_error: !is_success,
@@ -802,7 +817,7 @@ impl QueryEngine {
                 num_turns: turn_count_this_submit,
                 result: text_result,
                 stop_reason: last_stop_reason,
-                session_id: session_id.clone(),
+                session_id: session_id.to_string(),
                 total_cost_usd: usage_snap.total_cost_usd,
                 usage: usage_snap,
                 permission_denials: denials_snap,
@@ -1256,7 +1271,7 @@ mod tests {
         assert_eq!(engine.messages().len(), 0);
         assert_eq!(engine.total_turn_count(), 0);
         assert!(engine.usage().total_cost_usd == 0.0);
-        assert!(!engine.session_id.is_empty());
+        assert!(!engine.session_id.as_str().is_empty());
     }
 
     #[test]
@@ -1408,7 +1423,7 @@ mod tests {
         if let Some(msg) = stream.next().await {
             match msg {
                 SdkMessage::SystemInit(init) => {
-                    assert_eq!(init.session_id, engine.session_id);
+                    assert_eq!(init.session_id, engine.session_id.to_string());
                     assert!(!init.model.is_empty());
                 }
                 other => panic!("expected SystemInit, got {:?}", other),

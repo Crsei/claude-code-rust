@@ -71,7 +71,7 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
     }
 
     // Step 2: Flush transcript
-    let session_id = &engine.session_id;
+    let session_id = engine.session_id.as_str();
     if let Err(e) = transcript::flush_transcript(session_id) {
         warn!(error = %e, "failed to flush transcript during shutdown");
     } else {

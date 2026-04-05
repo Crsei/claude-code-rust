@@ -23,6 +23,7 @@ impl CommandHandler for ClearHandler {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
 
     #[tokio::test]
@@ -32,7 +33,7 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("."),
             app_state: AppState::default(),
-            session_id: "test-session".to_string(),
+            session_id: SessionId::from_string("test-session"),
         };
 
         let result = handler.execute("", &mut ctx).await.unwrap();

@@ -8,6 +8,9 @@
 // Phase I: Shutdown and cleanup (graceful_shutdown)
 // ============================================================================
 
+// 进程级全局单例层 (import DAG 叶节点)
+mod bootstrap;
+
 // 核心模块
 mod types;
 mod query;
@@ -317,6 +320,18 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     // ── B.7: Create QueryEngine ──────────────────────────────────────
     let engine = Arc::new(QueryEngine::new(engine_config));
     info!(session = %engine.session_id, "QueryEngine created");
+
+    // ── B.7.1: Initialize global ProcessState ────────────────────────
+    let cwd_path = std::path::PathBuf::from(&cwd);
+    let project_root = crate::utils::git::find_git_root(&cwd_path)
+        .unwrap_or_else(|| cwd_path.clone());
+    bootstrap::init_process_state(
+        cwd_path,
+        project_root,
+        engine.session_id.clone(),
+        !cli.print,
+        Some(model.clone()),
+    );
 
     // ── B.8: Handle session resume ───────────────────────────────────
     if cli.resume {

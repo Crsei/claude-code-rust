@@ -282,6 +282,12 @@ pub async fn run_tool_use(
     // ── Stage 8: Result assembly ────────────────────────────────────
     let duration_ms = started.elapsed().as_millis() as u64;
 
+    // Record tool duration in global ProcessState
+    crate::bootstrap::PROCESS_STATE
+        .read()
+        .ok()
+        .map(|s| s.tool_duration.record(duration_ms));
+
     match call_result {
         Ok(tool_result) => {
             let new_messages = tool_result.new_messages.clone();

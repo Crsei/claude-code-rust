@@ -108,7 +108,8 @@ pub async fn run_tui(
     // ── Create the App ─────────────────────────────────────────────
     let mut app = App::new();
     app.set_model_name(model_name.to_string());
-    add_welcome_message(&mut app, &engine.session_id, model_name);
+    app.set_session_id(engine.session_id.to_string());
+    app.set_cwd(engine.cwd().to_string());
 
     // ── Create channels ────────────────────────────────────────────
     let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<EngineEvent>();
@@ -417,32 +418,6 @@ fn make_partial_assistant(text: &str) -> Message {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/// Add the startup welcome message to the App.
-fn add_welcome_message(app: &mut App, session_id: &str, model_name: &str) {
-    let short_session = &session_id[..8.min(session_id.len())];
-    let welcome = format!(
-        concat!(
-            "Claude Code (Rust) v{}\n",
-            "Model: {}\n",
-            "Session: {}\n",
-            "\n",
-            "Type your message and press Enter to send.\n",
-            "Ctrl+C to abort, Ctrl+D to quit. Up/Down for history.",
-        ),
-        env!("CARGO_PKG_VERSION"),
-        model_name,
-        short_session,
-    );
-    app.add_message(Message::System(SystemMessage {
-        uuid: uuid::Uuid::new_v4(),
-        timestamp: now_ts(),
-        subtype: SystemSubtype::Informational {
-            level: InfoLevel::Info,
-        },
-        content: welcome,
-    }));
-}
 
 /// Create a user message from text.
 fn create_user_message(text: &str) -> Message {

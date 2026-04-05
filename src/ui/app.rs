@@ -11,6 +11,7 @@ use super::prompt_input::PromptInput;
 use super::spinner::SpinnerState;
 use super::theme::Theme;
 use super::virtual_scroll::VirtualScroll;
+use super::welcome;
 
 /// Actions produced by the app in response to user input.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,7 +36,11 @@ pub struct App {
     should_quit: bool,
     theme: Theme,
     model_name: String,
+    session_id: String,
+    cwd: String,
     session_cost_usd: f64,
+    /// Whether the welcome screen is currently shown.
+    show_welcome: bool,
     history: Vec<String>,
     history_index: Option<usize>,
     saved_input: String,
@@ -61,7 +66,10 @@ impl App {
             should_quit: false,
             theme: Theme::default(),
             model_name: String::new(),
+            session_id: String::new(),
+            cwd: String::new(),
             session_cost_usd: 0.0,
+            show_welcome: true,
             history: Vec::new(),
             history_index: None,
             saved_input: String::new(),
@@ -88,6 +96,12 @@ impl App {
     // ── Public API ──────────────────────────────────────────────────
 
     pub fn add_message(&mut self, msg: Message) {
+        // Dismiss welcome screen on first user or assistant message.
+        if self.show_welcome {
+            if matches!(msg, Message::User(_) | Message::Assistant(_)) {
+                self.show_welcome = false;
+            }
+        }
         self.messages.push(msg);
         self.vscroll.invalidate_from(self.messages.len().saturating_sub(1));
         self.scroll_to_bottom_deferred();
@@ -156,6 +170,16 @@ impl App {
 
     pub fn set_model_name(&mut self, name: String) {
         self.model_name = name;
+        self.dirty = true;
+    }
+
+    pub fn set_session_id(&mut self, id: String) {
+        self.session_id = id;
+        self.dirty = true;
+    }
+
+    pub fn set_cwd(&mut self, cwd: String) {
+        self.cwd = cwd;
         self.dirty = true;
     }
 
@@ -269,22 +293,34 @@ impl App {
         let message_area = chunks[0];
         let bottom_area = chunks[1];
 
-        // ── Messages (virtual scroll) ───────────────────────────────
-        self.vscroll.ensure_up_to_date(&self.messages, message_area.width, &self.theme);
-        let total = self.vscroll.total_lines();
-        let max_scroll = total.saturating_sub(message_area.height as usize);
-        if self.scroll_offset > max_scroll {
-            self.scroll_offset = max_scroll;
-        }
+        if self.show_welcome {
+            // ── Welcome screen ──────────────────────────────────────
+            welcome::render_welcome(
+                message_area,
+                frame.buffer_mut(),
+                env!("CARGO_PKG_VERSION"),
+                &self.model_name,
+                &self.session_id,
+                &self.cwd,
+            );
+        } else {
+            // ── Messages (virtual scroll) ───────────────────────────
+            self.vscroll.ensure_up_to_date(&self.messages, message_area.width, &self.theme);
+            let total = self.vscroll.total_lines();
+            let max_scroll = total.saturating_sub(message_area.height as usize);
+            if self.scroll_offset > max_scroll {
+                self.scroll_offset = max_scroll;
+            }
 
-        render_messages(
-            &self.messages,
-            message_area,
-            frame.buffer_mut(),
-            &self.theme,
-            self.scroll_offset,
-            &self.vscroll,
-        );
+            render_messages(
+                &self.messages,
+                message_area,
+                frame.buffer_mut(),
+                &self.theme,
+                self.scroll_offset,
+                &self.vscroll,
+            );
+        }
 
         // ── Bottom area: spinner + input + status ───────────────────
         let bottom_chunks = Layout::vertical([

@@ -87,6 +87,7 @@ impl CommandHandler for SkillsHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
     use std::path::PathBuf;
 
@@ -95,7 +96,7 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("/test"),
             app_state: AppState::default(),
-            session_id: "test-session".to_string(),
+            session_id: SessionId::from_string("test-session"),
         }
     }
 

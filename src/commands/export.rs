@@ -38,7 +38,7 @@ impl CommandHandler for ExportHandler {
 
 fn export_current(ctx: &CommandContext) -> Result<CommandResult> {
     let path = export::export_messages_markdown(
-        &ctx.session_id,
+        ctx.session_id.as_str(),
         &ctx.messages,
         &ctx.cwd.to_string_lossy(),
         None,
@@ -51,7 +51,7 @@ fn export_current(ctx: &CommandContext) -> Result<CommandResult> {
 
 fn export_current_to_path(ctx: &CommandContext, path: &std::path::Path) -> Result<CommandResult> {
     let path = export::export_messages_markdown(
-        &ctx.session_id,
+        ctx.session_id.as_str(),
         &ctx.messages,
         &ctx.cwd.to_string_lossy(),
         Some(path),

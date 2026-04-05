@@ -133,6 +133,7 @@ impl CommandHandler for ContextHandler {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
     use crate::types::message::{Message, UserMessage, MessageContent};
     use uuid::Uuid;
@@ -154,7 +155,7 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("."),
             app_state: AppState::default(),
-            session_id: "test-session".to_string(),
+            session_id: SessionId::from_string("test-session"),
         }
     }
 

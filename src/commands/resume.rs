@@ -104,6 +104,7 @@ fn resume_session_by_id(session_id: &str, ctx: &mut CommandContext) -> Result<Co
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
 
     fn test_ctx() -> CommandContext {
@@ -111,7 +112,7 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("/nonexistent/test/path"),
             app_state: AppState::default(),
-            session_id: "test-session".to_string(),
+            session_id: SessionId::from_string("test-session"),
         }
     }
 

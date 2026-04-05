@@ -20,3 +20,4 @@ pub mod tui;
 #[allow(dead_code)]
 pub mod vim;
 pub mod virtual_scroll;
+pub mod welcome;
