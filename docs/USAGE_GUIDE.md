@@ -11,7 +11,8 @@
 3. [命令行参数](#命令行参数)
 4. [运行模式](#运行模式)
 5. [TypeScript SDK](#typescript-sdk)
-6. [斜杠命令](#斜杠命令)
+6. [Python SDK](#python-sdk)
+7. [斜杠命令](#斜杠命令)
 7. [内置工具](#内置工具)
 8. [Skills 技能系统](#skills-技能系统)
 9. [权限系统](#权限系统)
@@ -223,6 +224,53 @@ for await (const event of events) {
 SDK 不直接调用 API，而是 spawn `claude-code-rs --output-format json` 子进程，通过 stdin/stdout JSONL 通信。与 OpenAI Codex TypeScript SDK 架构一致。
 
 完整文档: [`sdk/typescript/README.md`](../sdk/typescript/README.md)
+
+---
+
+## Python SDK
+
+提供类型安全的 Python 封装，通过子进程与 `claude-code-rs` 交互。与 TypeScript SDK 功能对等。
+
+### 前置要求
+
+- Python >= 3.10
+- `claude-code-rs` 二进制（已构建）
+- 零运行时依赖
+
+### 安装
+
+```bash
+# 开发安装
+pip install -e sdk/python/
+
+# 或免安装使用
+cd sdk/python/ && PYTHONPATH=src python your_script.py
+```
+
+### 快速使用
+
+```python
+from claude_code_rs import ClaudeCode, SessionOptions
+
+client = ClaudeCode()
+session = client.start_session(SessionOptions(permission_mode="auto"))
+
+# 非流式
+turn = session.run("列出文件")
+print(turn.final_response)
+
+# 流式
+streamed = session.run_streamed("分析代码")
+for event in streamed.events:
+    # 处理 SessionStartedEvent, StreamDeltaEvent, ItemCompletedEvent, TurnCompletedEvent 等事件
+    pass
+```
+
+### 架构
+
+与 TypeScript SDK 一致: spawn `claude-code-rs --output-format json` 子进程，通过 stdin/stdout JSONL 通信。
+
+完整文档: [`sdk/python/BUILD.md`](../sdk/python/BUILD.md)
 
 ---
 
