@@ -23,6 +23,9 @@ mod session;
 mod commands;
 mod ui;
 
+// 上下文压缩管道
+mod compact;
+
 // 网络 / API / 认证
 mod api;
 mod auth;

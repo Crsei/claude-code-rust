@@ -46,6 +46,9 @@ pub mod export;
 pub mod extra_usage;
 pub mod rate_limit;
 
+// Context management
+pub mod compact;
+
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -272,6 +275,12 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec!["rlo".into(), "rate-limit".into()],
             description: "Show rate limit information for the current model".into(),
             handler: Box::new(rate_limit::RateLimitHandler),
+        },
+        Command {
+            name: "compact".into(),
+            aliases: vec![],
+            description: "Compact conversation to reduce token usage".into(),
+            handler: Box::new(compact::CompactHandler),
         },
     ]
 }

@@ -34,7 +34,8 @@ src/
 ├── query/               异步流式查询循环
 ├── tools/               13 个工具 (Bash, Read, Write, Edit, Glob, Grep, AskUser, Skill, PowerShell, Config, REPL, StructuredOutput, SendUserMessage)
 ├── skills/              技能系统 (内置 + 用户自定义)
-├── commands/            26 个斜杠命令
+├── compact/             上下文压缩管道 (microcompact, snip, pipeline, tool_result_budget)
+├── commands/            27 个斜杠命令 (含 /compact)
 ├── api/                 API 客户端 (Anthropic, OpenAI, Google)
 ├── auth/                认证 (API Key + Keychain)
 ├── permissions/         权限系统
@@ -47,7 +48,7 @@ src/
 
 ### 已移除的模块 (完整版有)
 
-mcp, analytics, remote, plugins, lsp_service, teams, compact
+mcp, analytics, remote, plugins, lsp_service, teams
 
 ### 新增服务模块
 
