@@ -32,6 +32,12 @@ pub mod tasks;
 // Worktree tools (Phase 5 migration)
 pub mod worktree;
 
+// LSP tool (Phase 7 migration)
+pub mod lsp;
+
+// SendMessage tool (Phase 8 — Teams inter-agent messaging)
+pub mod send_message;
+
 // Phase 14C: Additional tools
 pub mod powershell;
 pub mod config_tool;

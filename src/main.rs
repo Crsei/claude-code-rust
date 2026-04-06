@@ -33,6 +33,18 @@ mod auth;
 // 技能系统
 mod skills;
 
+// 插件系统
+mod plugins;
+
+// MCP (Model Context Protocol) 服务器
+mod mcp;
+
+// LSP 协议服务层
+mod lsp_service;
+
+// 多 Agent Teams (feature-gated: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS)
+mod teams;
+
 // 服务层
 mod services;
 
@@ -237,8 +249,40 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     );
 
     // ── B.3: Register tools ──────────────────────────────────────────
-    let tools = registry::get_all_tools();
+    let mut tools = registry::get_all_tools();
     info!(count = tools.len(), "tools registered");
+
+    // ── B.3b: Initialize plugin system ──────────────────────────────
+    plugins::init_plugins();
+
+    // ── B.3c: Discover and connect MCP servers ──────────────────────
+    let _mcp_manager = {
+        use crate::mcp::client::McpManager;
+        use crate::mcp::discovery::discover_mcp_servers;
+        use crate::mcp::tools::mcp_tools_to_tools;
+
+        let cwd_path = std::path::Path::new(&cwd);
+        let server_configs = discover_mcp_servers(cwd_path).unwrap_or_default();
+        let mcp_manager = Arc::new(tokio::sync::Mutex::new(McpManager::new()));
+
+        if !server_configs.is_empty() {
+            info!(count = server_configs.len(), "MCP: connecting to configured servers");
+            let mut mgr = mcp_manager.lock().await;
+            if let Err(e) = mgr.connect_all(server_configs).await {
+                warn!(error = %e, "MCP: some servers failed to connect");
+            }
+
+            // Merge MCP tools with base tools
+            let mcp_tool_defs = mgr.all_tools();
+            if !mcp_tool_defs.is_empty() {
+                let mcp_tools = mcp_tools_to_tools(mcp_tool_defs, mcp_manager.clone());
+                info!(count = mcp_tools.len(), "MCP: discovered tools, merging with base tools");
+                tools.extend(mcp_tools);
+            }
+        }
+
+        mcp_manager
+    };
 
     // ── B.4: Create AppState ─────────────────────────────────────────
     // Resolve model: CLI arg > config > provider default > hardcoded fallback
@@ -287,6 +331,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         thinking_enabled: None,
         fast_mode: false,
         effort_value: None,
+        team_context: None,
     };
 
     // ── B.5: Init-only fast path ─────────────────────────────────────

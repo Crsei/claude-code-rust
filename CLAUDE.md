@@ -32,10 +32,10 @@ src/
 ├── types/               核心类型
 ├── engine/              QueryEngine + 系统提示词
 ├── query/               异步流式查询循环
-├── tools/               26 个工具 (Bash, Read, Write, Edit, Glob, Grep, AskUser, Agent, Skill, WebFetch, WebSearch, EnterPlanMode, ExitPlanMode, EnterWorktree, ExitWorktree, TaskCreate, TaskGet, TaskUpdate, TaskList, TaskStop, TaskOutput, PowerShell, Config, REPL, StructuredOutput, SendUserMessage)
+├── tools/               28 个工具 (Bash, Read, Write, Edit, Glob, Grep, AskUser, Agent, Skill, WebFetch, WebSearch, EnterPlanMode, ExitPlanMode, EnterWorktree, ExitWorktree, TaskCreate, TaskGet, TaskUpdate, TaskList, TaskStop, TaskOutput, PowerShell, Config, REPL, StructuredOutput, SendUserMessage, LSP, SendMessage)
 ├── skills/              技能系统 (内置 + 用户自定义)
 ├── compact/             上下文压缩管道 (microcompact, snip, pipeline, tool_result_budget)
-├── commands/            27 个斜杠命令 (含 /compact)
+├── commands/            28 个斜杠命令 (含 /compact, /mcp)
 ├── api/                 API 客户端 (Anthropic, OpenAI, Google)
 ├── auth/                认证 (API Key + Keychain)
 ├── permissions/         权限系统
@@ -48,7 +48,7 @@ src/
 
 ### 已移除的模块 (完整版有)
 
-mcp, analytics, remote, plugins, lsp_service, teams
+analytics, remote
 
 ### 新增服务模块
 

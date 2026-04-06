@@ -231,6 +231,46 @@ fn system_prompt_contains_exit_worktree_tool() {
 }
 
 // =========================================================================
+// 1c. Phase 6-8 migrated tools appear in system prompt
+// =========================================================================
+
+#[test]
+fn system_prompt_contains_lsp_tool() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## LSP"));
+}
+
+#[test]
+fn system_prompt_contains_lsp_schema() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("goToDefinition")
+                .and(predicate::str::contains("filePath"))
+                .and(predicate::str::contains("operation")),
+        );
+}
+
+// NOTE: SendMessage tool is feature-gated — only appears when
+// CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS is set. Default: hidden.
+#[test]
+fn system_prompt_omits_send_message_by_default() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## SendMessage").not());
+}
+
+// =========================================================================
 // 2. System prompt structure checks
 // =========================================================================
 

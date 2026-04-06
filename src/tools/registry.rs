@@ -21,6 +21,8 @@ use super::tasks::{TaskCreateTool, TaskGetTool, TaskListTool, TaskOutputTool, Ta
 use super::web_fetch::WebFetchTool;
 use super::web_search::WebSearchTool;
 use super::worktree::{EnterWorktreeTool, ExitWorktreeTool};
+use super::lsp::LspTool;
+use super::send_message::SendMessageTool;
 
 /// Get all base tool instances.
 ///
@@ -54,6 +56,8 @@ pub fn get_all_tools() -> Tools {
         Arc::new(TaskListTool),
         Arc::new(TaskStopTool),
         Arc::new(TaskOutputTool),
+        Arc::new(LspTool),
+        Arc::new(SendMessageTool),
     ];
 
     // Filter to only enabled tools
