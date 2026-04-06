@@ -32,7 +32,7 @@ src/
 ├── types/               核心类型
 ├── engine/              QueryEngine + 系统提示词
 ├── query/               异步流式查询循环
-├── tools/               16 个工具 (Bash, Read, Write, Edit, Glob, Grep, AskUser, Agent, Skill, WebFetch, WebSearch, PowerShell, Config, REPL, StructuredOutput, SendUserMessage)
+├── tools/               24 个工具 (Bash, Read, Write, Edit, Glob, Grep, AskUser, Agent, Skill, WebFetch, WebSearch, EnterPlanMode, ExitPlanMode, TaskCreate, TaskGet, TaskUpdate, TaskList, TaskStop, TaskOutput, PowerShell, Config, REPL, StructuredOutput, SendUserMessage)
 ├── skills/              技能系统 (内置 + 用户自定义)
 ├── compact/             上下文压缩管道 (microcompact, snip, pipeline, tool_result_budget)
 ├── commands/            27 个斜杠命令 (含 /compact)

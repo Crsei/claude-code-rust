@@ -2,7 +2,7 @@
 
 > 本文档基于 `master-feature` (5326c57) 与 `rust-lite` (44a5c6e) 的完整对比分析，指导将 master-feature 的高价值模块按优先级移植到 rust-lite。
 >
-> **最后更新**: 2026-04-07 | **当前进度**: Phase 3 已完成 | **功能覆盖**: ~67%
+> **最后更新**: 2026-04-07 | **当前进度**: Phase 4 已完成 | **功能覆盖**: ~72%
 
 ## 目录
 
@@ -72,9 +72,9 @@ master-feature (5326c57) ──── 冻结，无新 commit
 
 | 指标 | master-feature | rust-lite (初始) | rust-lite-migrate (当前) | 差距 |
 |------|---------------|-----------------|------------------------|------|
-| 源文件数 | 218 `.rs` | 132 `.rs` | 144 `.rs` (+12) | -74 |
-| 代码行数 | ~49,187 | ~33,800 | ~38,312 (+4,512) | -10,875 |
-| 工具数 | 28 | 15 | 18 (+3: Agent, WebFetch, WebSearch) | -10 |
+| 源文件数 | 218 `.rs` | 132 `.rs` | 146 `.rs` (+14) | -72 |
+| 代码行数 | ~49,187 | ~33,800 | ~39,388 (+5,588) | -9,799 |
+| 工具数 | 28 | 15 | 26 (+11) | -2 |
 | 命令数 | 47+ | 26 | 27 (+1 /compact) | -20 |
 | 依赖数 | 48 crate | 40 crate | 40 crate | -8 |
 | 模块目录数 | 21 | 16 | 17 (+compact) | -4 |
@@ -88,7 +88,7 @@ master-feature (5326c57) ──── 冻结，无新 commit
 | **1** | compact/ (上下文压缩) | ★★★★★ | 中 | 无 | ~1,561 | ✅ 完成 (`0e7d001`) |
 | **2** | Agent 工具 | ★★★★★ | 中 | 无 | ~789 | ✅ 完成 |
 | **3** | WebFetch + WebSearch | ★★★★☆ | 低 | 无 | ~1,053 | ✅ 完成 |
-| **4** | PlanMode + Tasks | ★★★★☆ | 中 | 无 | ~1,082 | ⬚ 待开始 |
+| **4** | PlanMode + Tasks | ★★★★☆ | 中 | 无 | ~1,082 | ✅ 完成 |
 | **5** | Worktree 工具 | ★★★☆☆ | 中 | 无 | ~725 | ⬚ 待开始 |
 | **6** | MCP 协议 | ★★★☆☆ | 高 | tokio-tungstenite, eventsource-stream | ~1,767 | ⬚ 待开始 |
 | **7** | LSP 集成 | ★★★☆☆ | 高 | lsp-types | ~969 | ⬚ 待开始 |
@@ -261,34 +261,45 @@ master-feature 的 `execute_tool()` 总是设置 `query_tracking: None`，导致
 
 ---
 
-## 8. Phase 4: Plan Mode 与 Task 工具
+## 8. Phase 4: Plan Mode 与 Task 工具 ✅ 完成
 
-### 源文件
+> **日期**: 2026-04-07 | **新增**: +1,062 行, 2 新文件
 
-| 文件 | 行数 | 来源 |
+### 实际移植结果
+
+| 文件 | 行数 | 功能 |
 |------|------|------|
-| `src/tools/plan_mode.rs` | 434 | master-feature |
-| `src/tools/tasks.rs` | 648 | master-feature |
+| `src/tools/plan_mode.rs` | 419 | EnterPlanMode / ExitPlanMode — 只读模式切换，权限状态保存/恢复 |
+| `src/tools/tasks.rs` | 643 | TaskStore (LazyLock 单例) + 6 个任务工具：Create/Get/Update/List/Stop/Output |
 
-### 功能说明
+### 核心能力
 
-- **EnterPlanMode / ExitPlanMode**：切换到只读模式，禁止写操作
-- **TaskCreate/Get/Update/List/Stop/Output**：任务管理系统，跟踪多步骤工作
+**Plan Mode**:
+- `EnterPlanMode`：保存当前 PermissionMode 到 `pre_plan_mode`，切换到 `Plan` 模式
+- `ExitPlanMode`：恢复 `pre_plan_mode`（支持 Default/Auto/Bypass 恢复），需用户确认
+- 禁止在 agent 上下文中进入 plan 模式
+- 防止重复进入 plan 模式
+- `permissions/decision.rs` 已有 Plan 模式下拒绝写工具的逻辑
 
-### 集成点
+**Task 系统**:
+- `TaskStore`：`Arc<Mutex<HashMap>>` 内存存储，LazyLock 全局单例
+- 完整生命周期：Pending → InProgress → Completed / Stopped
+- `append_output`：为 background agent 执行预留日志追加接口
 
-1. **tools/registry.rs**：注册 6 个工具（2 plan + 4~6 task）
-2. **types/tool.rs**：`PermissionMode::Plan` 已在 rust-lite 中定义
-3. **permissions/decision.rs**：Plan 模式下拒绝写工具（可能已实现）
+### 集成变更
 
-### 依赖
+| 文件 | 变更 |
+|------|------|
+| `src/tools/mod.rs` | +`pub mod plan_mode; pub mod tasks;` |
+| `src/tools/registry.rs` | 注册 8 个工具 (2 plan + 6 task) |
+| `CLAUDE.md` | 工具数 16→24 |
 
-- 无新 crate
+### 测试结果
 
-### 验证
-
-- [ ] Plan 模式下 Write/Edit/Bash 写命令被拒绝
-- [ ] Task 生命周期：create → in_progress → completed
+- [x] `cargo build` 通过（0 个新 warning）
+- [x] 8 个 PlanMode 测试全部通过（agent 阻止、重复进入阻止、roundtrip、模式恢复）
+- [x] 9 个 Task 测试全部通过（CRUD、生命周期、JSON 序列化）
+- [x] 0 个新依赖
 - [ ] Task 列表正确显示
 
 ---

@@ -13,9 +13,11 @@ use super::glob_tool::GlobTool;
 use super::grep::GrepTool;
 use super::powershell::PowerShellTool;
 use super::repl::ReplTool;
+use super::plan_mode::{EnterPlanModeTool, ExitPlanModeTool};
 use super::send_user_message::SendUserMessageTool;
 use super::skill::SkillTool;
 use super::structured_output::StructuredOutputTool;
+use super::tasks::{TaskCreateTool, TaskGetTool, TaskListTool, TaskOutputTool, TaskStopTool, TaskUpdateTool};
 use super::web_fetch::WebFetchTool;
 use super::web_search::WebSearchTool;
 
@@ -41,6 +43,14 @@ pub fn get_all_tools() -> Tools {
         Arc::new(SendUserMessageTool),
         Arc::new(WebFetchTool),
         Arc::new(WebSearchTool),
+        Arc::new(EnterPlanModeTool),
+        Arc::new(ExitPlanModeTool),
+        Arc::new(TaskCreateTool),
+        Arc::new(TaskGetTool),
+        Arc::new(TaskUpdateTool),
+        Arc::new(TaskListTool),
+        Arc::new(TaskStopTool),
+        Arc::new(TaskOutputTool),
     ];
 
     // Filter to only enabled tools

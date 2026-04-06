@@ -25,6 +25,10 @@ pub mod agent;
 pub mod web_fetch;
 pub mod web_search;
 
+// Plan mode + Task tools (Phase 4 migration)
+pub mod plan_mode;
+pub mod tasks;
+
 // Phase 14C: Additional tools
 pub mod powershell;
 pub mod config_tool;
