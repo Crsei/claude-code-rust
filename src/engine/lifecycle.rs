@@ -1011,22 +1011,188 @@ impl QueryDeps for QueryEngineDeps {
         &self,
         messages: Vec<Message>,
     ) -> Result<Vec<Message>> {
-        Ok(messages)
+        let result = crate::compact::microcompact::microcompact_messages(messages);
+        if result.tokens_freed > 0 {
+            tracing::debug!(
+                tokens_freed = result.tokens_freed,
+                "microcompact: trimmed old tool results"
+            );
+        }
+        Ok(result.messages)
     }
 
     async fn autocompact(
         &self,
-        _messages: Vec<Message>,
-        _tracking: Option<AutoCompactTracking>,
+        messages: Vec<Message>,
+        tracking: Option<AutoCompactTracking>,
     ) -> Result<Option<CompactionResult>> {
+        let model = {
+            let app = self.app_state.read().unwrap();
+            if app.main_loop_model.is_empty() {
+                self.api_client
+                    .as_ref()
+                    .map(|c| c.config().default_model.clone())
+                    .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string())
+            } else {
+                app.main_loop_model.clone()
+            }
+        };
+
+        // Run the local context pipeline (budget → snip → microcompact → auto-compact check)
+        let pipeline_result = crate::compact::pipeline::run_context_pipeline(
+            messages.clone(),
+            tracking.clone(),
+            &model,
+        )
+        .await;
+
+        // If auto-compact was triggered AND we have an API client, generate a model summary
+        if let Some(ref updated_tracking) = pipeline_result.tracking {
+            if updated_tracking.compacted {
+                // Try model-based summarization if API client is available
+                if let Some(ref client) = self.api_client {
+                    let summary_prompt = crate::compact::compaction::build_compaction_prompt();
+                    let pre_tokens = crate::utils::tokens::estimate_messages_tokens(&messages);
+
+                    // Build a summarization request
+                    let summary_messages = vec![
+                        Message::User(crate::types::message::UserMessage {
+                            uuid: Uuid::new_v4(),
+                            timestamp: chrono::Utc::now().timestamp_millis(),
+                            role: "user".into(),
+                            content: crate::types::message::MessageContent::Text(
+                                format_conversation_for_summary(&messages),
+                            ),
+                            is_meta: true,
+                            tool_use_result: None,
+                            source_tool_assistant_uuid: None,
+                        }),
+                    ];
+
+                    let summary_params = ModelCallParams {
+                        messages: summary_messages,
+                        system_prompt: vec![summary_prompt],
+                        tools: vec![],
+                        model: Some(model.clone()),
+                        max_output_tokens: Some(20_000),
+                        skip_cache_write: Some(true),
+                        thinking_enabled: None,
+                        effort_value: None,
+                    };
+
+                    match self.call_model(summary_params).await {
+                        Ok(response) => {
+                            // Extract summary text from assistant response
+                            let summary_text = response
+                                .assistant_message
+                                .content
+                                .iter()
+                                .filter_map(|b| match b {
+                                    crate::types::message::ContentBlock::Text { text } => {
+                                        Some(text.as_str())
+                                    }
+                                    _ => None,
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n");
+
+                            let config = crate::compact::compaction::CompactionConfig {
+                                model: model.clone(),
+                                session_id: String::new(),
+                                query_source: "compact".into(),
+                            };
+
+                            let post_messages = crate::compact::compaction::build_post_compact_messages(
+                                &summary_text,
+                                &messages,
+                                &config,
+                            );
+
+                            let post_tokens = crate::utils::tokens::estimate_messages_tokens(&post_messages);
+
+                            tracing::info!(
+                                pre_tokens = pre_tokens,
+                                post_tokens = post_tokens,
+                                "autocompact: model-based summary complete"
+                            );
+
+                            let new_tracking = crate::compact::compaction::tracking_on_success(
+                                tracking.as_ref(),
+                                &Uuid::new_v4().to_string(),
+                            );
+
+                            return Ok(Some(CompactionResult {
+                                messages: post_messages,
+                                tracking: new_tracking,
+                            }));
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "autocompact: model summary failed, using local pipeline");
+                            let new_tracking = crate::compact::compaction::tracking_on_failure(
+                                tracking.as_ref(),
+                            );
+                            // Fall through to local-only result
+                            return Ok(Some(CompactionResult {
+                                messages: pipeline_result.messages,
+                                tracking: new_tracking,
+                            }));
+                        }
+                    }
+                }
+
+                // No API client — return local pipeline result
+                return Ok(Some(CompactionResult {
+                    messages: pipeline_result.messages,
+                    tracking: updated_tracking.clone(),
+                }));
+            }
+        }
+
+        // Pipeline ran but auto-compact was not triggered — return local compacted messages
+        if pipeline_result.compacted {
+            return Ok(Some(CompactionResult {
+                messages: pipeline_result.messages,
+                tracking: tracking.unwrap_or(AutoCompactTracking {
+                    compacted: false,
+                    turn_counter: 0,
+                    turn_id: String::new(),
+                    consecutive_failures: 0,
+                }),
+            }));
+        }
+
         Ok(None)
     }
 
     async fn reactive_compact(
         &self,
-        _messages: Vec<Message>,
+        messages: Vec<Message>,
     ) -> Result<Option<CompactionResult>> {
-        Ok(None)
+        let model = {
+            let app = self.app_state.read().unwrap();
+            if app.main_loop_model.is_empty() {
+                self.api_client
+                    .as_ref()
+                    .map(|c| c.config().default_model.clone())
+                    .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string())
+            } else {
+                app.main_loop_model.clone()
+            }
+        };
+
+        match crate::compact::pipeline::try_reactive_compact(messages, &model).await {
+            Some(result) => {
+                tracing::info!(
+                    tokens_freed = result.tokens_freed,
+                    "reactive compact: freed tokens via emergency pipeline"
+                );
+                Ok(Some(CompactionResult {
+                    messages: result.messages,
+                    tracking: result.tracking,
+                }))
+            }
+            None => Ok(None),
+        }
     }
 
     async fn execute_tool(
@@ -1125,6 +1291,103 @@ impl QueryDeps for QueryEngineDeps {
 
     async fn refresh_tools(&self) -> Result<Tools> {
         Ok(self.tools.read().unwrap().clone())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helper: format conversation for compaction summary
+// ---------------------------------------------------------------------------
+
+/// Convert a conversation history into a text representation suitable for
+/// model-based summarization. Extracts user messages, assistant text, and
+/// tool use/result information.
+fn format_conversation_for_summary(messages: &[Message]) -> String {
+    let mut parts = Vec::new();
+
+    for msg in messages {
+        match msg {
+            Message::User(u) => {
+                let text = match &u.content {
+                    crate::types::message::MessageContent::Text(t) => t.clone(),
+                    crate::types::message::MessageContent::Blocks(blocks) => {
+                        blocks
+                            .iter()
+                            .filter_map(|b| match b {
+                                crate::types::message::ContentBlock::Text { text } => {
+                                    Some(text.clone())
+                                }
+                                crate::types::message::ContentBlock::ToolResult {
+                                    tool_use_id,
+                                    content,
+                                    is_error,
+                                } => {
+                                    let result_text = match content {
+                                        crate::types::message::ToolResultContent::Text(t) => {
+                                            if t.len() > 500 {
+                                                format!("{}...[truncated]", &t[..500])
+                                            } else {
+                                                t.clone()
+                                            }
+                                        }
+                                        crate::types::message::ToolResultContent::Blocks(_) => {
+                                            "[complex result]".to_string()
+                                        }
+                                    };
+                                    Some(format!(
+                                        "[Tool Result ({}{}): {}]",
+                                        tool_use_id,
+                                        if *is_error { ", ERROR" } else { "" },
+                                        result_text
+                                    ))
+                                }
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    }
+                };
+                if !text.is_empty() && !u.is_meta {
+                    parts.push(format!("User: {}", text));
+                }
+            }
+            Message::Assistant(a) => {
+                for block in &a.content {
+                    match block {
+                        crate::types::message::ContentBlock::Text { text } => {
+                            if text.len() > 1000 {
+                                parts.push(format!(
+                                    "Assistant: {}...[truncated]",
+                                    &text[..1000]
+                                ));
+                            } else {
+                                parts.push(format!("Assistant: {}", text));
+                            }
+                        }
+                        crate::types::message::ContentBlock::ToolUse { name, input, .. } => {
+                            let input_preview = {
+                                let s = input.to_string();
+                                if s.len() > 200 {
+                                    format!("{}...", &s[..200])
+                                } else {
+                                    s
+                                }
+                            };
+                            parts.push(format!("[Tool Use: {} ({})]", name, input_preview));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Cap total length to avoid exceeding context for the summarization call
+    let joined = parts.join("\n\n");
+    if joined.len() > 400_000 {
+        format!("{}...\n\n[conversation truncated for summarization]", &joined[..400_000])
+    } else {
+        joined
     }
 }
 

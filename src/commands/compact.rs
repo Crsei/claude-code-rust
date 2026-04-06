@@ -61,31 +61,35 @@ impl CommandHandler for CompactHandler {
                 "Conversation compacted to reduce context usage.".to_string()
             };
 
+            let config = compaction::CompactionConfig {
+                model: model.clone(),
+                session_id: String::new(),
+                query_source: "compact".into(),
+            };
+
             let post_messages = compaction::build_post_compact_messages(
                 &summary,
                 &ctx.messages,
-                &compaction::CompactionConfig {
-                    model: model.clone(),
-                    session_id: String::new(),
-                    query_source: "compact".into(),
-                },
+                &config,
             );
 
             // Create the compact boundary marker
             let boundary = compaction::create_compact_boundary(pre_tokens, post_tokens);
 
+            // Apply: replace conversation with compacted messages + boundary
+            let mut new_messages = pipeline_result.messages;
+            new_messages.push(boundary);
+            new_messages.extend(post_messages);
+            ctx.messages = new_messages;
+
             return Ok(CommandResult::Output(format!(
                 "Compacted: ~{} → ~{} tokens ({} tokens freed)\n\
-                 Messages: {} → {}\n\
-                 {}",
+                 Messages: {} → {}",
                 pre_tokens,
                 post_tokens,
                 freed,
                 message_count,
-                new_count,
-                custom_instructions
-                    .map(|i| format!("Custom instructions applied: {}", i))
-                    .unwrap_or_default(),
+                ctx.messages.len(),
             )));
         }
 
