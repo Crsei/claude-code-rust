@@ -41,6 +41,8 @@ use crate::types::state::{BudgetTracker, QueryLoopState, TokenBudgetDecision};
 use crate::types::transitions::{Continue, Terminal};
 use crate::types::message::QueryYield;
 
+use crate::services::tool_use_summary::{self, ToolInfo};
+
 use super::deps::{ModelCallParams, QueryDeps};
 use super::stop_hooks::{self, StopHookResult};
 use super::token_budget::check_token_budget;
@@ -231,11 +233,18 @@ pub fn query(
                 break;
             }
 
-            // 处理挂起的工具使用摘要 (如果有)
-            if let Some(ref _summary) = state.pending_tool_use_summary {
-                // Phase 1: 摘要功能暂不完整实现
-                // 在完整版本中, 这里会将摘要作为系统消息注入
-                state.pending_tool_use_summary = None;
+            // 处理挂起的工具使用摘要 — 作为系统消息注入, 帮助模型保持上下文
+            if let Some(summary) = state.pending_tool_use_summary.take() {
+                debug!(summary = %summary, "injecting tool use summary");
+                let sys_msg = Message::System(crate::types::message::SystemMessage {
+                    uuid: Uuid::parse_str(&deps.uuid()).unwrap_or_else(|_| Uuid::new_v4()),
+                    timestamp: chrono::Utc::now().timestamp_millis(),
+                    subtype: crate::types::message::SystemSubtype::Informational {
+                        level: crate::types::message::InfoLevel::Info,
+                    },
+                    content: format!("[tool summary] {}", summary),
+                });
+                state.messages.push(sys_msg);
             }
 
             // 产出助手消息
@@ -395,6 +404,31 @@ pub fn query(
                         yield QueryYield::Message(sub_msg.clone());
                         state.messages.push(sub_msg.clone());
                     }
+                }
+
+                // ── STEP 6b: 生成工具使用摘要 ──
+                let tool_infos: Vec<ToolInfo> = tool_results
+                    .iter()
+                    .map(|r| ToolInfo {
+                        name: r.tool_name.clone(),
+                        input_summary: r.result.data.to_string(),
+                        output_summary: if r.is_error {
+                            format!("Error: {}", r.result.data)
+                        } else {
+                            r.result.data.to_string()
+                        },
+                    })
+                    .collect();
+
+                let last_text = assistant_message.content.iter().find_map(|b| {
+                    if let ContentBlock::Text { text } = b { Some(text.as_str()) } else { None }
+                });
+
+                if let Some(summary) = tool_use_summary::generate_tool_use_summary(
+                    &tool_infos,
+                    last_text,
+                ) {
+                    state.pending_tool_use_summary = Some(summary);
                 }
 
                 // ── STEP 7: ATTACHMENTS — 注入文件变更等 ──

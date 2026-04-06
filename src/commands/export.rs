@@ -2,6 +2,7 @@
 //!
 //! Usage:
 //!   /export                  — export current session to ~/.cc-rust/exports/
+//!   /export list             — list all previously exported files
 //!   /export <path>           — export current session to a specific file
 //!   /export <session_id>     — export a saved session by ID
 
@@ -23,6 +24,11 @@ impl CommandHandler for ExportHandler {
         if args.is_empty() {
             // Export current session
             return export_current(ctx);
+        }
+
+        // /export list — show all previously exported files
+        if args == "list" {
+            return list_exported_files();
         }
 
         // Check if arg looks like a file path (contains / or \ or ends with .md)
@@ -60,6 +66,21 @@ fn export_current_to_path(ctx: &CommandContext, path: &std::path::Path) -> Resul
         "Session exported to: {}",
         path.display()
     )))
+}
+
+fn list_exported_files() -> Result<CommandResult> {
+    let files = export::list_exports()?;
+    if files.is_empty() {
+        return Ok(CommandResult::Output(
+            "No exports found. Use /export to export the current session.".into(),
+        ));
+    }
+    let mut out = format!("Exported sessions ({}):\n", files.len());
+    for f in &files {
+        let name = f.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+        out.push_str(&format!("  {}\n", name));
+    }
+    Ok(CommandResult::Output(out))
 }
 
 fn export_by_id(session_id: &str, ctx: &CommandContext) -> Result<CommandResult> {

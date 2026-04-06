@@ -120,48 +120,7 @@ fn render_session_markdown(session: &SessionFile) -> String {
     // Messages
     let mut total_cost = 0.0_f64;
     for msg in &session.messages {
-        match msg.msg_type.as_str() {
-            "user" => {
-                let text = extract_user_text_from_data(&msg.data);
-                if !text.is_empty() {
-                    let ts = format_timestamp_millis(msg.timestamp);
-                    md.push_str(&format!("## You\n\n"));
-                    md.push_str(&format!("<sub>{}</sub>\n\n", ts));
-                    md.push_str(&text);
-                    md.push_str("\n\n");
-                }
-            }
-            "assistant" => {
-                let ts = format_timestamp_millis(msg.timestamp);
-                md.push_str(&format!("## Assistant\n\n"));
-                md.push_str(&format!("<sub>{}</sub>\n\n", ts));
-
-                // Extract text and tool_use from content array
-                if let Some(content) = msg.data.get("content") {
-                    if let Some(blocks) = content.as_array() {
-                        for block in blocks {
-                            render_content_block_from_json(block, &mut md);
-                        }
-                    }
-                }
-
-                if let Some(cost) = msg.data.get("cost_usd").and_then(|v| v.as_f64()) {
-                    if cost > 0.0 {
-                        total_cost += cost;
-                        md.push_str(&format!("\n<sub>Cost: ${:.4}</sub>\n", cost));
-                    }
-                }
-                md.push_str("\n");
-            }
-            "system" => {
-                if let Some(content) = msg.data.get("content").and_then(|v| v.as_str()) {
-                    if !content.is_empty() {
-                        md.push_str(&format!("> **System**: {}\n\n", content));
-                    }
-                }
-            }
-            _ => {} // skip progress, attachment
-        }
+        total_cost += render_serialized_msg(msg, &mut md);
     }
 
     // Footer
@@ -182,7 +141,7 @@ fn render_messages_markdown(session_id: &str, messages: &[Message], cwd: &str) -
 
     md.push_str(&format!("# Session {}\n\n", &session_id[..std::cmp::min(8, session_id.len())]));
 
-    let now = Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+    let now = format_datetime(Utc::now());
     md.push_str(&format!("- **Exported**: {}\n", now));
     if !cwd.is_empty() {
         md.push_str(&format!("- **Working Directory**: `{}`\n", cwd));
@@ -247,6 +206,58 @@ fn render_messages_markdown(session_id: &str, messages: &[Message], cwd: &str) -
     }
 
     md
+}
+
+// ---------------------------------------------------------------------------
+// Serialized message rendering (from saved session JSON)
+// ---------------------------------------------------------------------------
+
+/// Render a single `SerializableMessage` into Markdown. Returns the cost (USD)
+/// of this message so the caller can accumulate it for the footer.
+fn render_serialized_msg(msg: &SerializableMessage, md: &mut String) -> f64 {
+    let mut cost = 0.0;
+    match msg.msg_type.as_str() {
+        "user" => {
+            let text = extract_user_text_from_data(&msg.data);
+            if !text.is_empty() {
+                let ts = format_timestamp_millis(msg.timestamp);
+                md.push_str("## You\n\n");
+                md.push_str(&format!("<sub>{}</sub>\n\n", ts));
+                md.push_str(&text);
+                md.push_str("\n\n");
+            }
+        }
+        "assistant" => {
+            let ts = format_timestamp_millis(msg.timestamp);
+            md.push_str("## Assistant\n\n");
+            md.push_str(&format!("<sub>{}</sub>\n\n", ts));
+
+            if let Some(content) = msg.data.get("content") {
+                if let Some(blocks) = content.as_array() {
+                    for block in blocks {
+                        render_content_block_from_json(block, md);
+                    }
+                }
+            }
+
+            if let Some(c) = msg.data.get("cost_usd").and_then(|v| v.as_f64()) {
+                if c > 0.0 {
+                    cost = c;
+                    md.push_str(&format!("\n<sub>Cost: ${:.4}</sub>\n", c));
+                }
+            }
+            md.push_str("\n");
+        }
+        "system" => {
+            if let Some(content) = msg.data.get("content").and_then(|v| v.as_str()) {
+                if !content.is_empty() {
+                    md.push_str(&format!("> **System**: {}\n\n", content));
+                }
+            }
+        }
+        _ => {} // skip progress, attachment
+    }
+    cost
 }
 
 // ---------------------------------------------------------------------------
@@ -367,10 +378,14 @@ fn extract_user_text_from_data(data: &serde_json::Value) -> String {
     }
 }
 
+fn format_datetime(dt: DateTime<Utc>) -> String {
+    dt.format("%Y-%m-%d %H:%M:%S UTC").to_string()
+}
+
 fn format_timestamp_secs(ts: i64) -> String {
     Utc.timestamp_opt(ts, 0)
         .single()
-        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+        .map(format_datetime)
         .unwrap_or_else(|| format!("{}", ts))
 }
 
@@ -378,7 +393,7 @@ fn format_timestamp_millis(ts: i64) -> String {
     let secs = ts / 1000;
     Utc.timestamp_opt(secs, 0)
         .single()
-        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+        .map(format_datetime)
         .unwrap_or_else(|| format!("{}", ts))
 }
 

@@ -33,6 +33,18 @@ pub enum SuggestionCategory {
     Action,
 }
 
+impl SuggestionCategory {
+    /// Short icon/prefix for UI display.
+    pub fn icon(&self) -> &str {
+        match self {
+            SuggestionCategory::FollowUp => ">",
+            SuggestionCategory::Alternative => "~",
+            SuggestionCategory::Clarification => "?",
+            SuggestionCategory::Action => "!",
+        }
+    }
+}
+
 /// Reason why prompt suggestions are suppressed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SuppressionReason {
@@ -291,5 +303,87 @@ mod tests {
         let mut svc = PromptSuggestionService::new(true);
         let result = svc.try_generate("hello world", &[]);
         assert!(result.is_none());
+    }
+
+    // -- Category icon tests --
+
+    #[test]
+    fn category_icons_are_distinct() {
+        let icons: Vec<&str> = vec![
+            SuggestionCategory::FollowUp.icon(),
+            SuggestionCategory::Alternative.icon(),
+            SuggestionCategory::Clarification.icon(),
+            SuggestionCategory::Action.icon(),
+        ];
+        let mut unique = icons.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(icons.len(), unique.len(), "all category icons should be distinct");
+    }
+
+    #[test]
+    fn category_icons_are_single_char() {
+        for cat in [
+            SuggestionCategory::FollowUp,
+            SuggestionCategory::Alternative,
+            SuggestionCategory::Clarification,
+            SuggestionCategory::Action,
+        ] {
+            assert_eq!(cat.icon().len(), 1, "{:?} icon should be 1 char", cat);
+        }
+    }
+
+    // -- Suggestion integration tests --
+
+    #[test]
+    fn error_keyword_triggers_alternative_suggestion() {
+        let mut svc = PromptSuggestionService::new(true);
+        let result = svc.try_generate("got an error compiling", &[]);
+        assert!(result.is_some());
+        let suggestions = result.unwrap();
+        assert!(suggestions.iter().any(|s| s.category == SuggestionCategory::Alternative));
+    }
+
+    #[test]
+    fn test_keyword_triggers_action_suggestion() {
+        let mut svc = PromptSuggestionService::new(true);
+        let result = svc.try_generate("let me check the test suite", &[]);
+        assert!(result.is_some());
+        let suggestions = result.unwrap();
+        assert!(suggestions.iter().any(|s| s.category == SuggestionCategory::Action));
+    }
+
+    #[test]
+    fn suggestions_sorted_by_confidence_descending() {
+        let mut svc = PromptSuggestionService::new(true);
+        let tools = vec!["Bash".to_string(), "Edit".to_string(), "Grep".to_string()];
+        let result = svc.try_generate("testing things", &tools).unwrap();
+        for pair in result.windows(2) {
+            assert!(
+                pair[0].confidence >= pair[1].confidence,
+                "suggestions should be sorted descending by confidence"
+            );
+        }
+    }
+
+    #[test]
+    fn multiple_tools_produce_clarification_at_end() {
+        let mut svc = PromptSuggestionService::new(true);
+        let tools = vec!["Bash".to_string()];
+        let result = svc.try_generate("doing work", &tools).unwrap();
+        // Clarification is always appended with low confidence, so should be last
+        assert_eq!(
+            result.last().unwrap().category,
+            SuggestionCategory::Clarification,
+            "clarification should be last (lowest confidence)"
+        );
+    }
+
+    #[test]
+    fn should_enable_reflects_constructor_flag() {
+        let enabled = PromptSuggestionService::new(true);
+        assert!(enabled.should_enable());
+        let disabled = PromptSuggestionService::new(false);
+        assert!(!disabled.should_enable());
     }
 }

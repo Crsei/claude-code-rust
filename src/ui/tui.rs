@@ -29,6 +29,7 @@ use crate::commands::{self, CommandContext, CommandResult};
 use crate::engine::lifecycle::QueryEngine;
 use crate::engine::sdk_types::SdkMessage;
 use crate::types::config::QuerySource;
+use crate::services::prompt_suggestion::PromptSuggestionService;
 use crate::types::message::{
     AssistantMessage, ContentBlock, InfoLevel, Message, MessageContent, StreamEvent,
     SystemMessage, SystemSubtype, UserMessage,
@@ -368,6 +369,10 @@ fn handle_sdk_message(app: &mut App, msg: SdkMessage, ss: &mut StreamingState) {
                     content: result.result,
                 }));
             }
+
+            // Generate next-prompt suggestions from last assistant turn
+            generate_suggestions(app);
+
             debug!(
                 turns = result.num_turns,
                 cost = format!("{:.4}", result.total_cost_usd),
@@ -430,6 +435,61 @@ fn create_user_message(text: &str) -> Message {
         tool_use_result: None,
         source_tool_assistant_uuid: None,
     })
+}
+
+/// Generate prompt suggestions from the last assistant message in the conversation.
+fn generate_suggestions(app: &mut super::app::App) {
+    let messages = app.messages();
+    let mut svc = PromptSuggestionService::new(true);
+
+    // Check suppression first (not enough messages, etc.)
+    if let Some(reason) = svc.get_suppression_reason(messages.len(), false) {
+        debug!("prompt suggestions suppressed: {:?}", reason);
+        return;
+    }
+
+    if !svc.should_enable() {
+        return;
+    }
+
+    // Find last assistant message
+    let last_assistant = messages.iter().rev().find_map(|msg| match msg {
+        Message::Assistant(a) => Some(a),
+        _ => None,
+    });
+    let Some(assistant) = last_assistant else {
+        return;
+    };
+
+    // Extract tool names and text summary
+    let tool_names: Vec<String> = assistant
+        .content
+        .iter()
+        .filter_map(|b| {
+            if let ContentBlock::ToolUse { name, .. } = b {
+                Some(name.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let summary: String = assistant
+        .content
+        .iter()
+        .filter_map(|b| {
+            if let ContentBlock::Text { text } = b {
+                Some(text.as_str())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if let Some(suggestions) = svc.try_generate(&summary, &tool_names) {
+        app.set_suggestions(suggestions);
+    }
 }
 
 /// Current UTC timestamp in seconds.
