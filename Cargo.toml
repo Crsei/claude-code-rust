@@ -29,7 +29,7 @@ thiserror = "2"
 clap = { version = "4", features = ["derive"] }
 
 # UUID
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 
 # 时间处理
 chrono = "0.4"

@@ -5,6 +5,7 @@
 
 #![allow(unused)]
 
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::engine::lifecycle::{PermissionDenial, UsageTracking};
@@ -17,7 +18,8 @@ use crate::types::message::{CompactMetadata, StreamEvent, Usage};
 /// SDK output message -- the type yielded by `QueryEngine::submit_message()`.
 ///
 /// Corresponds to TypeScript: SDKMessage (agentSdkTypes.ts)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum SdkMessage {
     /// System initialisation (tool list, model info).
     SystemInit(SystemInitMessage),
@@ -42,7 +44,7 @@ pub enum SdkMessage {
 // ---------------------------------------------------------------------------
 
 /// System initialisation payload.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SystemInitMessage {
     pub tools: Vec<String>,
     pub model: String,
@@ -52,7 +54,7 @@ pub struct SystemInitMessage {
 }
 
 /// Assistant message wrapper for SDK output.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SdkAssistantMessage {
     pub message: crate::types::message::AssistantMessage,
     pub session_id: String,
@@ -60,7 +62,7 @@ pub struct SdkAssistantMessage {
 }
 
 /// User message replay (echoed back to the SDK consumer).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SdkUserReplay {
     pub content: String,
     pub session_id: String,
@@ -71,7 +73,7 @@ pub struct SdkUserReplay {
 }
 
 /// Streaming event wrapper for SDK output.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SdkStreamEvent {
     pub event: StreamEvent,
     pub session_id: String,
@@ -79,7 +81,7 @@ pub struct SdkStreamEvent {
 }
 
 /// Compact boundary marker for SDK output.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SdkCompactBoundary {
     pub session_id: String,
     pub uuid: Uuid,
@@ -87,7 +89,7 @@ pub struct SdkCompactBoundary {
 }
 
 /// API retry notification for SDK output.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SdkApiRetry {
     pub attempt: u32,
     pub max_retries: u32,
@@ -99,7 +101,7 @@ pub struct SdkApiRetry {
 }
 
 /// Tool-use summary for SDK output.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SdkToolUseSummary {
     pub summary: String,
     pub preceding_tool_use_ids: Vec<String>,
@@ -113,7 +115,7 @@ pub struct SdkToolUseSummary {
 
 /// Final result -- every `submit_message` invocation terminates with exactly
 /// one `SdkResult`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SdkResult {
     pub subtype: ResultSubtype,
     pub is_error: bool,
@@ -132,7 +134,8 @@ pub struct SdkResult {
 }
 
 /// Subtype of the final SDK result.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ResultSubtype {
     Success,
     ErrorDuringExecution,

@@ -1,6 +1,6 @@
 # Claude Code Rust Lite — 使用指南
 
-> 版本: 0.1.0-lite | 最后更新: 2026-04-03
+> 版本: 0.1.0-lite | 最后更新: 2026-04-06
 
 ---
 
@@ -10,15 +10,16 @@
 2. [快速开始](#快速开始)
 3. [命令行参数](#命令行参数)
 4. [运行模式](#运行模式)
-5. [斜杠命令](#斜杠命令)
-6. [内置工具](#内置工具)
-7. [Skills 技能系统](#skills-技能系统)
-8. [权限系统](#权限系统)
-9. [配置管理](#配置管理)
-10. [会话管理](#会话管理)
-11. [CLAUDE.md 项目指令](#claudemd-项目指令)
-12. [键盘快捷键](#键盘快捷键)
-13. [故障排查](#故障排查)
+5. [TypeScript SDK](#typescript-sdk)
+6. [斜杠命令](#斜杠命令)
+7. [内置工具](#内置工具)
+8. [Skills 技能系统](#skills-技能系统)
+9. [权限系统](#权限系统)
+10. [配置管理](#配置管理)
+11. [会话管理](#会话管理)
+12. [CLAUDE.md 项目���令](#claudemd-项目指令)
+13. [键盘快捷键](#键盘快捷键)
+14. [故障排查](#故障排查)
 
 ---
 
@@ -160,6 +161,21 @@ claude-code-rs -p "列出所有 TODO"
 - 输出纯文本到 stdout
 - 返回 0 (成功) 或 1 (失败)
 
+### JSON 输出模式 (SDK 用)
+
+```bash
+# 通过参数���入 prompt
+claude-code-rs --output-format json -p "你好"
+
+# 通过 stdin 传入 prompt
+echo "你好" | claude-code-rs --output-format json -p
+```
+
+- 输出 JSONL (每行一个 JSON 对象) 到 stdout
+- 用于 TypeScript SDK 的进程通信协议
+- 每次调用以一个 `{"type": "result", ...}` 消息结束
+- 详见 [`sdk/typescript/README.md`](../sdk/typescript/README.md)
+
 ### 会话恢复模式
 
 ```bash
@@ -169,6 +185,44 @@ claude-code-rs --resume
 # 恢复指定会话
 claude-code-rs --continue 550e8400-e29b-41d4-a716-446655440000
 ```
+
+---
+
+## TypeScript SDK
+
+提供类型��全的 TypeScript 封装，通过子进程与 `claude-code-rs` 交互。
+
+### 安装与构建
+
+```bash
+cd sdk/typescript/
+npm install && npm run build
+```
+
+### 快速使用
+
+```typescript
+import { ClaudeCode } from "claude-code-rs-sdk";
+
+const client = new ClaudeCode();
+const session = client.startSession({ permissionMode: "auto" });
+
+// 非流式
+const turn = await session.run("列出文件");
+console.log(turn.finalResponse);
+
+// 流式
+const { events } = await session.runStreamed("分析代码");
+for await (const event of events) {
+  // 处理 session.started, stream.delta, item.completed, turn.completed 等事��
+}
+```
+
+### 架构
+
+SDK 不直接调用 API，而是 spawn `claude-code-rs --output-format json` 子进程，通过 stdin/stdout JSONL 通信。与 OpenAI Codex TypeScript SDK 架构一致。
+
+完整文档: [`sdk/typescript/README.md`](../sdk/typescript/README.md)
 
 ---
 

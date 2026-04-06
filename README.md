@@ -243,6 +243,23 @@ CLI -m 参数 > CLAUDE_MODEL 环境变量/.env > settings.json > 提供商默认
 
 ---
 
+## TypeScript SDK
+
+提供类型安全的 TypeScript 封装，通过子进程与 `claude-code-rs` 二进制交互 (JSONL 协议)。
+
+```typescript
+import { ClaudeCode } from "claude-code-rs-sdk";
+
+const client = new ClaudeCode();
+const session = client.startSession({ permissionMode: "auto" });
+const turn = await session.run("列出文件");
+console.log(turn.finalResponse);
+```
+
+详细文档: [`sdk/typescript/README.md`](sdk/typescript/README.md)
+
+---
+
 ## 项目结构
 
 ```
@@ -252,6 +269,8 @@ rust/
 ├── README.md            本文件
 ├── docs/                文档
 │   └── USAGE_GUIDE.md   详细使用指南
+├── sdk/                 SDK
+│   └── typescript/      TypeScript SDK (19 个源文件)
 └── src/                 源码 (109 个 .rs 文件, ~28k 行)
 ```
 

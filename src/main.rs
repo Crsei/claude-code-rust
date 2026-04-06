@@ -362,6 +362,19 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         return run_print_mode(&engine, &prompt).await;
     }
 
+    // ── B.9b: JSON output mode (for SDK consumers) ──────────────────
+    if cli.output_format.as_deref() == Some("json") {
+        let prompt = cli.prompt.join(" ");
+        if prompt.is_empty() {
+            // Read prompt from stdin (SDK pipes it)
+            use std::io::Read;
+            let mut buf = String::new();
+            std::io::stdin().read_to_string(&mut buf)?;
+            return run_json_mode(&engine, buf.trim()).await;
+        }
+        return run_json_mode(&engine, &prompt).await;
+    }
+
     // ── B.10: Check for inline prompt ────────────────────────────────
     let initial_prompt = if !cli.prompt.is_empty() {
         Some(cli.prompt.join(" "))
@@ -391,6 +404,32 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             Ok(ExitCode::FAILURE)
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// JSON output mode (for SDK consumers -- JSONL on stdout)
+// ---------------------------------------------------------------------------
+
+async fn run_json_mode(engine: &QueryEngine, prompt: &str) -> anyhow::Result<ExitCode> {
+    use futures::StreamExt;
+
+    let stream = engine.submit_message(prompt, QuerySource::Sdk);
+    let mut stream = std::pin::pin!(stream);
+    let mut exit_code = ExitCode::SUCCESS;
+
+    while let Some(msg) = stream.next().await {
+        let json = serde_json::to_string(&msg)
+            .context("failed to serialize SdkMessage to JSON")?;
+        println!("{}", json);
+
+        if let crate::engine::sdk_types::SdkMessage::Result(ref result) = msg {
+            if result.is_error {
+                exit_code = ExitCode::FAILURE;
+            }
+        }
+    }
+
+    Ok(exit_code)
 }
 
 // ---------------------------------------------------------------------------
