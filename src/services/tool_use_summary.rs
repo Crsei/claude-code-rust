@@ -62,7 +62,8 @@ pub fn generate_tool_use_summary(
         .iter()
         .map(|t| {
             let input = truncate_str(&t.input_summary, 100);
-            format!("{} to {} ({})", t.name, action_for_tool(&t.name), input)
+            let output = truncate_str(&t.output_summary, 60);
+            format!("{} to {} ({}) → {}", t.name, action_for_tool(&t.name), input, output)
         })
         .collect();
 
@@ -136,6 +137,48 @@ mod tests {
     }
 
     #[test]
+    fn output_summary_included_in_result() {
+        let tools = vec![ToolInfo {
+            name: "Bash".to_string(),
+            input_summary: "echo hello".to_string(),
+            output_summary: "hello".to_string(),
+        }];
+        let result = generate_tool_use_summary(&tools, None).unwrap();
+        // The output should appear after the "→" arrow
+        assert!(result.contains("→"), "summary should contain arrow: {}", result);
+        assert!(result.contains("hello"), "summary should contain output: {}", result);
+    }
+
+    #[test]
+    fn output_summary_long_gets_truncated() {
+        let tools = vec![ToolInfo {
+            name: "Read".to_string(),
+            input_summary: "main.rs".to_string(),
+            output_summary: "x".repeat(200),
+        }];
+        let result = generate_tool_use_summary(&tools, None).unwrap();
+        assert!(result.contains("..."), "long output should be truncated: {}", result);
+    }
+
+    #[test]
+    fn all_tool_names_have_actions() {
+        let tool_names = [
+            "Bash", "FileRead", "Read", "FileWrite", "Write",
+            "FileEdit", "Edit", "Grep", "Glob", "Agent", "Skill",
+            "AskUser", "WebSearch", "WebFetch",
+        ];
+        for name in tool_names {
+            let action = action_for_tool(name);
+            assert_ne!(action, "use a tool", "{} should have a specific action", name);
+        }
+    }
+
+    #[test]
+    fn unknown_tool_gets_generic_action() {
+        assert_eq!(action_for_tool("SomeUnknownTool"), "use a tool");
+    }
+
+    #[test]
     fn truncate_str_short_string_unchanged() {
         assert_eq!(truncate_str("hello", 10), "hello");
     }
@@ -147,5 +190,13 @@ mod tests {
         assert!(result.ends_with("..."));
         // 50 chars + "..." = 53
         assert_eq!(result.len(), 53);
+    }
+
+    #[test]
+    fn truncate_str_respects_char_boundaries() {
+        // "你好世界" — each char is 3 bytes in UTF-8
+        let s = "你好世界";
+        let result = truncate_str(s, 6); // 6 bytes = exactly 2 chars
+        assert_eq!(result, "你好...");
     }
 }

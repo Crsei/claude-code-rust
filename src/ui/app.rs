@@ -3,6 +3,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::Frame;
 
+use crate::services::prompt_suggestion::PromptSuggestion;
 use crate::types::message::Message;
 
 use super::messages::render_messages;
@@ -45,6 +46,10 @@ pub struct App {
     history_index: Option<usize>,
     saved_input: String,
 
+    // ── Prompt suggestions ───────────────────────────────────────────
+    /// Next-prompt suggestions shown after an assistant turn completes.
+    suggestions: Option<Vec<PromptSuggestion>>,
+
     // ── Optimizations ──────────────────────────────────────────────
     /// Virtual scroll: per-message height cache + prefix-sum offsets.
     vscroll: VirtualScroll,
@@ -70,6 +75,7 @@ impl App {
             cwd: String::new(),
             session_cost_usd: 0.0,
             show_welcome: true,
+            suggestions: None,
             history: Vec::new(),
             history_index: None,
             saved_input: String::new(),
@@ -136,6 +142,7 @@ impl App {
             if streaming {
                 self.spinner_state.start(Some("Thinking...".to_string()));
                 self.prompt.is_active = false;
+                self.suggestions = None; // clear stale suggestions
             } else {
                 self.spinner_state.stop();
                 self.prompt.is_active = true;
@@ -191,6 +198,22 @@ impl App {
     pub fn set_spinner_message(&mut self, msg: String) {
         self.spinner_state.set_message(msg);
         self.dirty = true;
+    }
+
+    pub fn set_suggestions(&mut self, suggestions: Vec<PromptSuggestion>) {
+        self.suggestions = Some(suggestions);
+        self.dirty = true;
+    }
+
+    pub fn clear_suggestions(&mut self) {
+        if self.suggestions.is_some() {
+            self.suggestions = None;
+            self.dirty = true;
+        }
+    }
+
+    pub fn suggestions(&self) -> Option<&[PromptSuggestion]> {
+        self.suggestions.as_deref()
     }
 
     pub fn push_history(&mut self, text: String) {
@@ -281,12 +304,20 @@ impl App {
             return;
         }
 
-        let input_height = if self.is_streaming { 2u16 } else { 1u16 };
+        let spinner_height = if self.is_streaming { 1u16 } else { 0 };
+        let suggestion_height = if !self.is_streaming && self.suggestions.is_some() { 1u16 } else { 0 };
+        let input_height = 1u16;
         let status_height = 1u16;
+        let bottom_height = spinner_height + suggestion_height + input_height + status_height;
+        let min_message_height = if self.show_welcome {
+            welcome::welcome_height()
+        } else {
+            1
+        };
 
         let chunks = Layout::vertical([
-            Constraint::Min(1),
-            Constraint::Length(input_height + status_height),
+            Constraint::Min(min_message_height),
+            Constraint::Length(bottom_height),
         ])
         .split(size);
 
@@ -322,9 +353,11 @@ impl App {
             );
         }
 
-        // ── Bottom area: spinner + input + status ───────────────────
+        // ── Bottom area: spinner + suggestions + input + status ──────
+        let has_suggestions = !self.is_streaming && self.suggestions.is_some();
         let bottom_chunks = Layout::vertical([
             Constraint::Length(if self.is_streaming { 1 } else { 0 }),
+            Constraint::Length(if has_suggestions { 1 } else { 0 }),
             Constraint::Length(1),
             Constraint::Length(status_height),
         ])
@@ -335,10 +368,14 @@ impl App {
                 .render(bottom_chunks[0], frame.buffer_mut(), &self.theme);
         }
 
-        self.prompt
-            .render(bottom_chunks[1], frame.buffer_mut(), &self.theme);
+        if has_suggestions {
+            self.render_suggestions(bottom_chunks[1], frame.buffer_mut());
+        }
 
-        self.render_status_bar(bottom_chunks[2], frame.buffer_mut());
+        self.prompt
+            .render(bottom_chunks[2], frame.buffer_mut(), &self.theme);
+
+        self.render_status_bar(bottom_chunks[3], frame.buffer_mut());
 
         if let Some(ref dialog) = self.permission_dialog {
             dialog.render(size, frame.buffer_mut(), &self.theme);
@@ -390,6 +427,26 @@ impl App {
                 self.prompt.input = self.saved_input.clone();
                 self.prompt.cursor_position = self.prompt.input.len();
             }
+        }
+    }
+
+    fn render_suggestions(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        if area.height == 0 {
+            return;
+        }
+        if let Some(suggestions) = &self.suggestions {
+            let hint: String = suggestions
+                .iter()
+                .take(3)
+                .enumerate()
+                .map(|(i, s)| format!("[{}{}] {}", s.category.icon(), i + 1, s.text))
+                .collect::<Vec<_>>()
+                .join("  ");
+            let line = Line::from(Span::styled(
+                hint,
+                ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+            ));
+            buf.set_line(area.x, area.y, &line, area.width);
         }
     }
 
