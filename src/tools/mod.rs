@@ -29,6 +29,9 @@ pub mod web_search;
 pub mod plan_mode;
 pub mod tasks;
 
+// Worktree tools (Phase 5 migration)
+pub mod worktree;
+
 // Phase 14C: Additional tools
 pub mod powershell;
 pub mod config_tool;

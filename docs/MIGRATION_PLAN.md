@@ -2,7 +2,7 @@
 
 > 本文档基于 `master-feature` (5326c57) 与 `rust-lite` (44a5c6e) 的完整对比分析，指导将 master-feature 的高价值模块按优先级移植到 rust-lite。
 >
-> **最后更新**: 2026-04-07 | **当前进度**: Phase 4 已完成 | **功能覆盖**: ~72%
+> **最后更新**: 2026-04-07 | **当前进度**: Phase 5 已完成 | **功能覆盖**: ~75%
 
 ## 目录
 
@@ -72,9 +72,9 @@ master-feature (5326c57) ──── 冻结，无新 commit
 
 | 指标 | master-feature | rust-lite (初始) | rust-lite-migrate (当前) | 差距 |
 |------|---------------|-----------------|------------------------|------|
-| 源文件数 | 218 `.rs` | 132 `.rs` | 146 `.rs` (+14) | -72 |
-| 代码行数 | ~49,187 | ~33,800 | ~39,388 (+5,588) | -9,799 |
-| 工具数 | 28 | 15 | 26 (+11) | -2 |
+| 源文件数 | 218 `.rs` | 132 `.rs` | 147 `.rs` (+15) | -71 |
+| 代码行数 | ~49,187 | ~33,800 | ~40,094 (+6,294) | -9,093 |
+| 工具数 | 28 | 15 | 28 (+13) | 0 |
 | 命令数 | 47+ | 26 | 27 (+1 /compact) | -20 |
 | 依赖数 | 48 crate | 40 crate | 40 crate | -8 |
 | 模块目录数 | 21 | 16 | 17 (+compact) | -4 |
@@ -89,7 +89,7 @@ master-feature (5326c57) ──── 冻结，无新 commit
 | **2** | Agent 工具 | ★★★★★ | 中 | 无 | ~789 | ✅ 完成 |
 | **3** | WebFetch + WebSearch | ★★★★☆ | 低 | 无 | ~1,053 | ✅ 完成 |
 | **4** | PlanMode + Tasks | ★★★★☆ | 中 | 无 | ~1,082 | ✅ 完成 |
-| **5** | Worktree 工具 | ★★★☆☆ | 中 | 无 | ~725 | ⬚ 待开始 |
+| **5** | Worktree 工具 | ★★★☆☆ | 中 | 无 | ~725 | ✅ 完成 |
 | **6** | MCP 协议 | ★★★☆☆ | 高 | tokio-tungstenite, eventsource-stream | ~1,767 | ⬚ 待开始 |
 | **7** | LSP 集成 | ★★★☆☆ | 高 | lsp-types | ~969 | ⬚ 待开始 |
 | **8** | Agent Teams | ★★☆☆☆ | 高 | 无 | ~2,014 | ⬚ 待开始 |
@@ -304,34 +304,38 @@ master-feature 的 `execute_tool()` 总是设置 `query_tracking: None`，导致
 
 ---
 
-## 9. Phase 5: Worktree 工具
+## 9. Phase 5: Worktree 工具 ✅ 完成
 
-### 源文件
+> **日期**: 2026-04-07 | **新增**: +700 行, 1 新文件
 
-| 文件 | 行数 | 来源 |
+### 实际移植结果
+
+| 文件 | 行数 | 功能 |
 |------|------|------|
-| `src/tools/worktree.rs` | 725 | master-feature |
+| `src/tools/worktree.rs` | 700 | EnterWorktree / ExitWorktree — git worktree 隔离 + 会话管理 |
 
-### 功能说明
+### 核心能力
 
-- **EnterWorktree**：创建临时 git worktree，隔离代码修改
-- **ExitWorktree**：退出 worktree，清理或保留更改
+- **EnterWorktree**：创建临时 git worktree（`git worktree add -B`），支持自定义 slug 命名
+- **ExitWorktree**：keep（保留分支+目录）或 remove（清理 worktree + 删除分支）
+- **WorktreeSession**：LazyLock 全局单例，防止嵌套
+- **安全机制**：
+  - 不可嵌套（validate_input 检查现有 session）
+  - Fail-closed：无法确定 git 状态时拒绝删除
+  - 变更检测：删除前检查 uncommitted files + new commits
+  - `discard_changes: true` 才能强制删除有未保存工作的 worktree
+  - Slug 路径安全验证（禁止 `..`、`/`、`\`，长度限制 64）
 
-### 集成点
+### 测试结果
 
-1. **tools/registry.rs**：注册 2 个工具
-2. **utils/git.rs**：可能需要扩展 worktree 相关 git 操作
-3. `git2` crate 已在 rust-lite 中
+- [x] `cargo build` 通过（0 个新 warning）
+- [x] 9 个单元测试全部通过（slug 验证、schema、session 生命周期、嵌套阻止、无效 action）
+- [x] 730 个测试全部通过，无回归
+- [x] 0 个新依赖
 
-### 依赖
+### 里程碑
 
-- 无新 crate（`git2` 已有）
-
-### 验证
-
-- [ ] 创建 worktree 成功
-- [ ] 在 worktree 中的修改不影响主工作目录
-- [ ] 退出时正确清理
+**工具数达到 28/28 — 与 master-feature 持平**（含不同工具组合）
 
 ---
 

@@ -20,6 +20,7 @@ use super::structured_output::StructuredOutputTool;
 use super::tasks::{TaskCreateTool, TaskGetTool, TaskListTool, TaskOutputTool, TaskStopTool, TaskUpdateTool};
 use super::web_fetch::WebFetchTool;
 use super::web_search::WebSearchTool;
+use super::worktree::{EnterWorktreeTool, ExitWorktreeTool};
 
 /// Get all base tool instances.
 ///
@@ -45,6 +46,8 @@ pub fn get_all_tools() -> Tools {
         Arc::new(WebSearchTool),
         Arc::new(EnterPlanModeTool),
         Arc::new(ExitPlanModeTool),
+        Arc::new(EnterWorktreeTool),
+        Arc::new(ExitWorktreeTool),
         Arc::new(TaskCreateTool),
         Arc::new(TaskGetTool),
         Arc::new(TaskUpdateTool),
