@@ -369,6 +369,7 @@ impl QueryEngine {
                 app_state: app_state_ref.clone(),
                 tools: tools_ref.clone(),
                 api_client,
+                agent_context: config.agent_context.clone(),
             });
 
             // Run the query loop
@@ -932,6 +933,9 @@ struct QueryEngineDeps {
     /// `call_model_streaming`. When `None`, those methods bail with a
     /// descriptive error.
     api_client: Option<Arc<crate::api::client::ApiClient>>,
+    /// Sub-agent context — propagated into `ToolUseContext` so that
+    /// nested Agent tool calls can enforce recursion depth limits.
+    agent_context: Option<crate::types::config::AgentContext>,
 }
 
 #[async_trait::async_trait]
@@ -1249,9 +1253,9 @@ impl QueryDeps for QueryEngineDeps {
                 )
             },
             messages: vec![],
-            agent_id: None,
-            agent_type: None,
-            query_tracking: None,
+            agent_id: self.agent_context.as_ref().map(|ac| ac.agent_id.clone()),
+            agent_type: self.agent_context.as_ref().map(|_| "subagent".to_string()),
+            query_tracking: self.agent_context.as_ref().map(|ac| ac.query_tracking.clone()),
         };
 
         match tool.call(request.input, &ctx, parent_message, None).await {
@@ -1525,6 +1529,7 @@ mod tests {
             persist_session: false,
             resolved_model: None,
             auto_save_session: false,
+            agent_context: None,
         }
     }
 

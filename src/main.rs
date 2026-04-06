@@ -318,6 +318,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         persist_session: true,
         resolved_model: Some(model.clone()),
         auto_save_session: true,
+        agent_context: None,
     };
 
     // ── B.7: Create QueryEngine ──────────────────────────────────────

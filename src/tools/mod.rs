@@ -18,6 +18,13 @@ pub mod registry;
 // Skills tool
 pub mod skill;
 
+// Agent tool (Phase 2 migration)
+pub mod agent;
+
+// Web tools (Phase 3 migration)
+pub mod web_fetch;
+pub mod web_search;
+
 // Phase 14C: Additional tools
 pub mod powershell;
 pub mod config_tool;

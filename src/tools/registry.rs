@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::types::tool::Tools;
 
+use super::agent::AgentTool;
 use super::ask_user::AskUserQuestionTool;
 use super::bash::BashTool;
 use super::config_tool::ConfigTool;
@@ -15,6 +16,8 @@ use super::repl::ReplTool;
 use super::send_user_message::SendUserMessageTool;
 use super::skill::SkillTool;
 use super::structured_output::StructuredOutputTool;
+use super::web_fetch::WebFetchTool;
+use super::web_search::WebSearchTool;
 
 /// Get all base tool instances.
 ///
@@ -29,12 +32,15 @@ pub fn get_all_tools() -> Tools {
         Arc::new(GlobTool::new()),
         Arc::new(GrepTool),
         Arc::new(AskUserQuestionTool),
+        Arc::new(AgentTool),
         Arc::new(SkillTool),
         Arc::new(PowerShellTool),
         Arc::new(ConfigTool),
         Arc::new(ReplTool),
         Arc::new(StructuredOutputTool),
         Arc::new(SendUserMessageTool),
+        Arc::new(WebFetchTool),
+        Arc::new(WebSearchTool),
     ];
 
     // Filter to only enabled tools

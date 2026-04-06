@@ -2,7 +2,7 @@
 
 > 本文档基于 `master-feature` (5326c57) 与 `rust-lite` (44a5c6e) 的完整对比分析，指导将 master-feature 的高价值模块按优先级移植到 rust-lite。
 >
-> **最后更新**: 2026-04-07 | **当前进度**: Phase 1 已完成 | **功能覆盖**: ~60%
+> **最后更新**: 2026-04-07 | **当前进度**: Phase 3 已完成 | **功能覆盖**: ~67%
 
 ## 目录
 
@@ -72,9 +72,9 @@ master-feature (5326c57) ──── 冻结，无新 commit
 
 | 指标 | master-feature | rust-lite (初始) | rust-lite-migrate (当前) | 差距 |
 |------|---------------|-----------------|------------------------|------|
-| 源文件数 | 218 `.rs` | 132 `.rs` | 143 `.rs` (+11) | -75 |
-| 代码行数 | ~49,187 | ~33,800 | ~36,718 (+2,918) | -12,469 |
-| 工具数 | 28 | 15 | 15 | -13 |
+| 源文件数 | 218 `.rs` | 132 `.rs` | 144 `.rs` (+12) | -74 |
+| 代码行数 | ~49,187 | ~33,800 | ~38,312 (+4,512) | -10,875 |
+| 工具数 | 28 | 15 | 18 (+3: Agent, WebFetch, WebSearch) | -10 |
 | 命令数 | 47+ | 26 | 27 (+1 /compact) | -20 |
 | 依赖数 | 48 crate | 40 crate | 40 crate | -8 |
 | 模块目录数 | 21 | 16 | 17 (+compact) | -4 |
@@ -86,8 +86,8 @@ master-feature (5326c57) ──── 冻结，无新 commit
 | Phase | 模块/功能 | 价值 | 复杂度 | 新依赖 | 预估行数 | 状态 |
 |-------|-----------|------|--------|--------|----------|------|
 | **1** | compact/ (上下文压缩) | ★★★★★ | 中 | 无 | ~1,561 | ✅ 完成 (`0e7d001`) |
-| **2** | Agent 工具 | ★★★★★ | 中 | 无 | ~789 | ⬚ 待开始 |
-| **3** | WebFetch + WebSearch | ★★★★☆ | 低 | 无 | ~1,053 | ⬚ 待开始 |
+| **2** | Agent 工具 | ★★★★★ | 中 | 无 | ~789 | ✅ 完成 |
+| **3** | WebFetch + WebSearch | ★★★★☆ | 低 | 无 | ~1,053 | ✅ 完成 |
 | **4** | PlanMode + Tasks | ★★★★☆ | 中 | 无 | ~1,082 | ⬚ 待开始 |
 | **5** | Worktree 工具 | ★★★☆☆ | 中 | 无 | ~725 | ⬚ 待开始 |
 | **6** | MCP 协议 | ★★★☆☆ | 高 | tokio-tungstenite, eventsource-stream | ~1,767 | ⬚ 待开始 |
@@ -150,90 +150,114 @@ master-feature (5326c57) ──── 冻结，无新 commit
 
 ---
 
-## 6. Phase 2: Agent 工具
+## 6. Phase 2: Agent 工具 ✅ 完成
 
-### 为什么重要
+> **日期**: 2026-04-07 | **新增**: +555 行, 1 新文件 + 5 文件修改
 
-子 Agent 是 Claude Code 的核心能力之一，允许派生独立 agent 处理子任务。没有 Agent 工具，rust-lite 无法处理复杂的多步骤任务。
+### 实际移植结果
 
-### 源文件
-
-| 文件 | 行数 | 来源 |
+| 文件 | 行数 | 功能 |
 |------|------|------|
-| `src/tools/agent.rs` | 789 | master-feature |
-| `src/tools/send_message.rs` | 436 | master-feature |
+| `src/tools/agent.rs` | 558 | Agent 工具完整实现（从 master-feature 789 行适配精简） |
 
-### 核心实现
+### 核心能力
 
-```rust
-// Agent 工具的核心结构
-pub struct AgentTool;
+- **子 QueryEngine 派生**：创建独立 engine 实例，隔离消息历史，max_turns=30
+- **Worktree 隔离**：完整实现 `isolation: "worktree"`，创建临时 git worktree → 运行 → 检测变更 → 自动清理
+- **模型别名解析**：`"sonnet"` / `"opus"` / `"haiku"` → 完整模型 ID
+- **递归深度限制**：`MAX_AGENT_DEPTH = 5`，通过 `QueryChainTracking.depth` 传播
+- **优雅降级**：worktree 创建失败时自动回退到普通模式并附加警告
+- **Background 执行**：stub（日志警告，同步运行），待 Phase 4 Task 基础设施后完善
 
-impl Tool for AgentTool {
-    fn name(&self) -> &str { "Agent" }
-    
-    // 核心能力：
-    // 1. 创建子 QueryEngine 实例
-    // 2. 隔离的消息历史
-    // 3. 工具子集（限制子 agent 权限）
-    // 4. 独立 token 预算
-    // 5. abort 信号传播
-    async fn call(&self, input: Value, ctx: &mut ToolUseContext) -> Result<ToolResult>;
-}
+### 集成变更
+
+| 文件 | 变更 |
+|------|------|
+| `src/types/config.rs` | +`AgentContext` 结构体 + `QueryEngineConfig.agent_context` 字段 |
+| `src/engine/lifecycle.rs` | `QueryEngineDeps` 加 `agent_context` 字段，`execute_tool()` 传播到 `ToolUseContext` |
+| `src/tools/mod.rs` | +`pub mod agent;` |
+| `src/tools/registry.rs` | 注册 `AgentTool` |
+| `src/main.rs` | `QueryEngineConfig` 构建加 `agent_context: None` |
+| `CLAUDE.md` | 工具数 13→14，工具列表加 Agent |
+
+### Bugfix: 深度传播修复
+
+master-feature 的 `execute_tool()` 总是设置 `query_tracking: None`，导致嵌套 sub-agent（depth ≥ 2）无法正确检查递归深度。本次移植通过 `AgentContext` 在 `QueryEngineConfig` 中传播 depth，修复了此 bug：
+
+```
+主 engine (depth 0) → execute_tool { query_tracking: None }
+  └─ AgentTool → 创建子 engine (depth 1)
+       └─ execute_tool { query_tracking: Some(depth=1) }  ← 修复
+            └─ AgentTool → depth=1 < 5, 可继续
+                 └─ ... 直到 depth=5 拒绝
 ```
 
-### 集成点
+### SendMessage 决策
 
-1. **tools/registry.rs**：注册 `AgentTool` 和 `SendMessageTool`
-2. **tools/mod.rs**：添加模块声明
-3. **engine/lifecycle.rs**：支持子 engine 创建
-4. **types/tool.rs**：确保 `ToolUseContext` 包含 `agent_id` 和 `query_tracking`（rust-lite 已有）
+`send_message.rs` (436 行) **不在此阶段移植** — 它完全依赖 `teams/` 模块 (Phase 8) 的 mailbox IPC 机制，独立移植无意义。
 
-### 依赖
+### 测试结果
 
-- 无新 crate 依赖
-- 需要 engine 支持嵌套实例化
+- [x] `cargo build` 通过（0 个新 warning）
+- [x] 8 个 Agent 单元测试全部通过（model alias、schema、name、concurrency、isolation、deserialization）
+- [x] 682 个测试全部通过，无回归
+- [x] 0 个新依赖
+- [x] `--dump-system-prompt` 包含完整 Agent 工具描述和 JSON schema
 
-### 验证
+### 待后续优化
 
-- [ ] `cargo build` 通过
-- [ ] Agent 工具可被模型调用
-- [ ] 子 agent 有独立消息历史
-- [ ] abort 信号正确传播到子 agent
+- Background 执行需要 Task 管理基础设施 (Phase 4)
+- SendMessage 需要 Teams 模块 (Phase 8)
+- Abort 信号从父 engine 传播到子 engine（当前子 engine 使用独立 aborted 标志）
 
 ---
 
-## 7. Phase 3: Web 工具
+## 7. Phase 3: Web 工具 ✅ 完成
 
-### 源文件
+> **日期**: 2026-04-07 | **新增**: +1,031 行, 2 新文件
 
-| 文件 | 行数 | 来源 |
+### 实际移植结果
+
+| 文件 | 行数 | 功能 |
 |------|------|------|
-| `src/tools/web_fetch.rs` | 539 | master-feature |
-| `src/tools/web_search.rs` | 514 | master-feature |
+| `src/tools/web_fetch.rs` | 531 | URL 内容获取：HTML→文本转换、LRU 缓存 (15min TTL, 64 entries)、HTTPS 升级、100KB 截断 |
+| `src/tools/web_search.rs` | 500 | Brave Search API 集成：域名过滤、结构化结果、动态日期提示 |
 
-### 功能说明
+### 核心能力
 
-- **WebFetch**：获取 URL 内容，支持 HTML 解析、文本提取、截断
-- **WebSearch**：网络搜索，返回结构化结果
+**WebFetch**:
+- HTTP GET + 60s 超时 + 10 次重定向跟随
+- HTML 标签剥离（含 script/style 块过滤）+ 实体解码
+- 内容截断至 100K 字符（首尾各 50K + 省略标记）
+- 响应缓存：LazyLock + Mutex HashMap, 15 分钟 TTL, LRU 淘汰
+- URL 规范化：http→https 升级、自动添加 scheme、长度限制 2000 字符
 
-### 集成点
+**WebSearch**:
+- Brave Search API (`BRAVE_SEARCH_API_KEY` 环境变量)
+- 域名白名单/黑名单过滤
+- 结构化结果 + Markdown 格式化文本
+- 动态月份/年份注入到系统提示
 
-1. **tools/registry.rs**：注册两个工具
-2. **tools/mod.rs**：添加模块声明
-3. **permissions/dangerous.rs**：添加 URL 安全规则（可选）
+### 集成变更
 
-### 依赖
+| 文件 | 变更 |
+|------|------|
+| `src/tools/mod.rs` | +`pub mod web_fetch; pub mod web_search;` |
+| `src/tools/registry.rs` | 注册 `WebFetchTool` 和 `WebSearchTool` |
+| `CLAUDE.md` | 工具数 14→16，工具列表加 WebFetch, WebSearch |
 
-- `reqwest` 已在 rust-lite 中（已有 json + stream + rustls-tls features）
-- 无新 crate
+### 适配改动（相对 master-feature）
 
-### 验证
+- 移除 `#![allow(unused)]`，清理未使用的 `BraveQuery` 结构体和 `query` 字段
+- 0 个新 crate 依赖（`reqwest`, `url`, `chrono` 均已在 rust-lite 中）
 
-- [ ] `cargo build` 通过
-- [ ] WebFetch 可获取公开 URL
-- [ ] WebSearch 返回结构化结果
-- [ ] 权限系统正确拦截敏感 URL
+### 测试结果
+
+- [x] `cargo build` 通过（0 个新 warning）
+- [x] 15 个 WebFetch 单元测试全部通过（HTML 剥离、实体解码、URL 规范化、缓存、截断）
+- [x] 9 个 WebSearch 单元测试全部通过（域名过滤、结果格式化、输入验证）
+- [x] 705 个测试全部通过，无回归
+- [x] 0 个新依赖
 
 ---
 

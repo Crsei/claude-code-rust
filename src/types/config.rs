@@ -127,4 +127,21 @@ pub struct QueryEngineConfig {
     /// Automatically save session to disk after each assistant turn.
     /// Default: true.
     pub auto_save_session: bool,
+
+    /// Sub-agent context — propagated from parent engine to child tools
+    /// so that nested agents can enforce recursion depth limits.
+    pub agent_context: Option<AgentContext>,
+}
+
+/// Context for sub-agent engines, propagated from parent QueryEngine.
+///
+/// When the Agent tool spawns a child engine, it sets this on the child's
+/// `QueryEngineConfig` so that `execute_tool()` can propagate the correct
+/// `agent_id` and `depth` into every `ToolUseContext`.
+#[derive(Debug, Clone)]
+pub struct AgentContext {
+    /// Unique ID of this agent instance.
+    pub agent_id: String,
+    /// Chain tracking for recursion depth enforcement.
+    pub query_tracking: QueryChainTracking,
 }
