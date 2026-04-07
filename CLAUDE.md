@@ -28,23 +28,38 @@ cargo build --release
 
 ```
 src/
-├── main.rs              入口 (Phase A/B/I lifecycle)
+├── main.rs              入口 (Phase A/B/I lifecycle, --headless flag)
 ├── types/               核心类型
 ├── engine/              QueryEngine + 系统提示词
 ├── query/               异步流式查询循环
-├── tools/               28 个工具 (Bash, Read, Write, Edit, Glob, Grep, AskUser, Agent, Skill, WebFetch, WebSearch, EnterPlanMode, ExitPlanMode, EnterWorktree, ExitWorktree, TaskCreate, TaskGet, TaskUpdate, TaskList, TaskStop, TaskOutput, PowerShell, Config, REPL, StructuredOutput, SendUserMessage, LSP, SendMessage)
+├── tools/               28 个工具
 ├── skills/              技能系统 (内置 + 用户自定义)
-├── compact/             上下文压缩管道 (microcompact, snip, pipeline, tool_result_budget)
-├── commands/            28 个斜杠命令 (含 /compact, /mcp)
+├── compact/             上下文压缩管道
+├── commands/            28 个斜杠命令
 ├── api/                 API 客户端 (Anthropic, OpenAI, Google)
 ├── auth/                认证 (API Key + Keychain)
 ├── permissions/         权限系统
 ├── config/              配置管理
 ├── session/             会话持久化
-├── ui/                  TUI (ratatui + crossterm)
+├── ipc/                 IPC 协议 + headless 模式 (JSONL over stdio)
+├── ui/                  TUI legacy (ratatui + crossterm)
 ├── utils/               工具函数
 └── shutdown.rs          优雅关闭
+
+ui/                      ink-terminal 前端 (React 19, bun)
+├── src/ipc/             IPC 客户端 + 协议类型 (与 Rust 端一致)
+├── src/store/           状态管理 (useReducer)
+├── src/vim/             Vim 模式状态机 (从 src/ui/vim.rs 迁移)
+├── src/components/      14 个 React 组件
+└── run.sh               启动脚本
 ```
+
+### IPC 架构 (新)
+
+ink-terminal 前端通过 `--headless` 模式与 Rust 后端通信:
+- Rust 端: `src/ipc/protocol.rs` (协议类型) + `src/ipc/headless.rs` (事件循环)
+- TS 端: `ui/src/ipc/client.ts` (spawn + JSONL) + `ui/src/ipc/protocol.ts`
+- 详见: `architecture/ink-terminal-frontend.md`
 
 ### 已移除的模块 (完整版有)
 

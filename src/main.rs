@@ -51,6 +51,9 @@ mod services;
 // Phase I: Shutdown and cleanup
 mod shutdown;
 
+// IPC headless mode
+mod ipc;
+
 use std::collections::HashMap;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -134,6 +137,10 @@ struct Cli {
     /// Init only: initialize and exit (fast path)
     #[arg(long = "init-only", hide = true)]
     init_only: bool,
+
+    /// Headless mode: run without TUI, communicate via JSON on stdin/stdout
+    #[arg(long, hide = true)]
+    headless: bool,
 
     /// Inline prompt (positional argument or via stdin in print mode)
     prompt: Vec<String>,
@@ -432,7 +439,13 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         None
     };
 
-    // ── Enter TUI ───────────────────────────────────────────────────
+    // ── B.10: Enter TUI or headless mode ────────────────────────────
+    if cli.headless {
+        return ipc::headless::run_headless(engine, model)
+            .await
+            .map(|()| ExitCode::SUCCESS);
+    }
+
     // Register shutdown handler
     let shutdown_token = shutdown::register_shutdown_handler();
 

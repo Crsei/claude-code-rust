@@ -14,10 +14,10 @@
 //! | 访问方式 | `PROCESS_STATE` 全局静态 | `Arc<RwLock<AppState>>` 实例传递 |
 //! | 内容 | 路径、session ID、计费、诊断 | settings、model、permission context |
 
-// bootstrap/ 处于分阶段迁移中 (见 architecture/bootstrap.md)。
-// Phase 1 (骨架) 和 Phase 2 (SessionId) 已完成；
-// Phase 3-5 (CWD 收编、计费统计、初始化适配) 尚未集成，
-// 因此 model/signal/diagnostics/timing 及 state 中部分字段暂未被外部消费。
+// Phase 1-5 迁移已全部完成 (见 architecture/bootstrap.md)。
+// SessionId、ProcessState init、CWD 收编、计费/耗时统计均已集成。
+// model/signal 类型尚未被外部模块直接消费；diagnostics/timing/state 的
+// 部分读取方法尚未被调用 (写入路径已集成)。保留 dead_code 允许。
 #[allow(dead_code)]
 pub mod diagnostics;
 #[allow(dead_code)]
@@ -32,7 +32,6 @@ pub mod state;
 pub mod timing;
 
 // 公开常用类型，方便其他模块 `use crate::bootstrap::*`
-// Phase 3-5 集成后这些 re-export 将被外部消费
 pub use ids::SessionId;
 #[allow(unused_imports)]
 pub use model::{ModelSetting, ModelStrings, ModelTier};

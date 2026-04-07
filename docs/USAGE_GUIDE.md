@@ -128,18 +128,42 @@ claude-code-rs "帮我重构这个函数"
 |------|------|
 | `--dump-system-prompt` | 打印完整系统提示词并退出 |
 | `--init-only` | 仅执行初始化然后退出 |
+| `--headless` | Headless 模式: 无 TUI，通过 stdin/stdout JSONL 与外部 UI 通信 |
 
 ---
 
 ## 运行模式
 
-### 交互式 TUI (默认)
+### ink-terminal UI (推荐)
+
+```bash
+cd ui
+./run.sh
+```
+
+基于 ink-terminal (React 19) 的新前端，通过 IPC 与 Rust 后端通信：
+
+- **60fps 渲染**，double-buffering + 同步更新
+- **流式 Markdown** — `<Markdown streaming>` 组件实时渲染
+- **虚拟列表** — 支持大量消息高效渲染
+- **Vim 模式** — `Ctrl+G` 切换，支持 Normal/Insert/Visual 模式
+- **权限弹窗** — 工具调用时自动弹出，支持 y/n/a 快捷键
+- **Flexbox 布局** — 自适应终端尺寸
+
+前端依赖: Bun/Node.js 20+, `bun install` 安装 ink-terminal。
+
+环境变量:
+- `CC_RUST_BINARY` — 指定 Rust 二进制路径 (不设则自动查找 target/ 下)
+
+架构详情: [`architecture/ink-terminal-frontend.md`](../architecture/ink-terminal-frontend.md)
+
+### 交互式 TUI (legacy)
 
 ```bash
 claude-code-rs
 ```
 
-启动后进入全屏终端界面 (基于 ratatui + crossterm)：
+原有 ratatui + crossterm 全屏终端界面：
 
 - 顶部显示欢迎信息 (版本、模型、会话 ID)
 - 消息区域可滚动浏览对话历史

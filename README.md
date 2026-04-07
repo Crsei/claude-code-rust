@@ -23,6 +23,27 @@ cargo build --release
 ./target/release/claude-code-rs
 ```
 
+### ink-terminal UI (新)
+
+项目新增了基于 [ink-terminal](https://github.com/anthropics/claude-code) 的 React 终端前端，采用 IPC 架构与 Rust 后端通信：
+
+```bash
+# 1. 编译 Rust 后端
+cargo build --release
+
+# 2. 安装前端依赖
+cd ui && bun install
+
+# 3. 启动 (自动检测 Rust 二进制)
+./run.sh
+
+# 或手动指定
+CC_RUST_BINARY=../target/release/claude-code-rs.exe bun run src/main.tsx
+```
+
+前端特性：60fps 渲染、流式 Markdown、虚拟列表、Vim 模式 (Ctrl+G 切换)、权限弹窗。
+架构详情见 [`architecture/ink-terminal-frontend.md`](architecture/ink-terminal-frontend.md)。
+
 ### 配置 `.env`
 
 在项目根目录创建 `.env` 文件（启动时自动加载）：
@@ -74,9 +95,19 @@ src/
 ├── permissions/         权限系统 (4 种模式 + 危险命令检测)
 ├── config/              配置管理 (全局 + 项目 + 环境变量)
 ├── session/             会话持久化与恢复
-├── ui/                  终端 TUI (ratatui + crossterm + Vim 模式)
+├── ipc/                 IPC 协议 + headless 模式 (新)
+├── ui/                  终端 TUI (ratatui + crossterm, legacy)
 ├── utils/               工具函数 (git, shell, token 估算等)
 └── shutdown.rs          优雅关闭
+
+ui/                      ink-terminal 前端 (新)
+├── src/
+│   ├── main.tsx         入口: spawn Rust --headless
+│   ├── ipc/             IPC 客户端 + 协议类型
+│   ├── store/           状态管理 (useReducer)
+│   ├── vim/             Vim 模式 (从 Rust 迁移)
+│   └── components/      14 个 React 组件
+└── run.sh               启动脚本
 ```
 
 ---
@@ -267,11 +298,19 @@ rust/
 ├── Cargo.toml           依赖配置
 ├── CLAUDE.md            Claude Code 项目指令
 ├── README.md            本文件
+├── architecture/        架构文档
+│   ├── bootstrap.md     进程启动层
+│   └── ink-terminal-frontend.md  前端架构 (新)
 ├── docs/                文档
 │   └── USAGE_GUIDE.md   详细使用指南
 ├── sdk/                 SDK
 │   └── typescript/      TypeScript SDK (19 个源文件)
-└── src/                 源码 (109 个 .rs 文件, ~28k 行)
+├── ui/                  ink-terminal 前端 (新, 25 个源文件)
+│   ├── src/components/  14 个 React 组件
+│   ├── src/vim/         Vim 模式状态机
+│   ├── src/ipc/         IPC 客户端
+│   └── run.sh           启动脚本
+└── src/                 Rust 源码 (112 个 .rs 文件)
 ```
 
 ---
