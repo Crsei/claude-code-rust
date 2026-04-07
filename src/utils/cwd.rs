@@ -17,7 +17,7 @@ static CWD: Mutex<Option<PathBuf>> = Mutex::new(None);
 /// Pass an absolute path for predictable behavior.
 pub fn set_cwd(path: &str) {
     let path_buf = PathBuf::from(path);
-    let mut guard = CWD.lock().unwrap();
+    let mut guard = CWD.lock().expect("CWD lock poisoned");
     *guard = Some(path_buf);
 }
 
@@ -26,7 +26,7 @@ pub fn set_cwd(path: &str) {
 /// Returns the directory set via `set_cwd()`, or falls back to the
 /// process's current working directory if no override has been set.
 pub fn get_cwd() -> PathBuf {
-    let guard = CWD.lock().unwrap();
+    let guard = CWD.lock().expect("CWD lock poisoned");
     match guard.as_ref() {
         Some(path) => path.clone(),
         None => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
@@ -35,7 +35,7 @@ pub fn get_cwd() -> PathBuf {
 
 /// Reset the working directory override, reverting to the process cwd.
 pub fn reset_cwd() {
-    let mut guard = CWD.lock().unwrap();
+    let mut guard = CWD.lock().expect("CWD lock poisoned");
     *guard = None;
 }
 

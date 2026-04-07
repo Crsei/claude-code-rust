@@ -201,15 +201,19 @@ pub fn has_unterminated_quotes(command: &str) -> bool {
     double_count % 2 != 0 || single_count % 2 != 0
 }
 
+/// Patterns to exclude bit-shift operators from heredoc detection.
+static BIT_SHIFT_DIGIT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\d\s*<<\s*\d").expect("invalid bit-shift digit regex"));
+static ARITH_SHIFT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\$\(\(.*<<.*\)\)").expect("invalid arithmetic shift regex"));
+
 /// Check if a command contains heredoc syntax (`<<EOF`, `<<'EOF'`, etc.).
 pub fn contains_heredoc(command: &str) -> bool {
     if !command.contains("<<") {
         return false;
     }
     // Exclude bit-shift operators like `1 << 2`, `[[ 1 << 2 ]]`, `$(( ... << ... ))`
-    let bit_shift_digit = Regex::new(r"\d\s*<<\s*\d").unwrap();
-    let arith_shift = Regex::new(r"\$\(\(.*<<.*\)\)").unwrap();
-    if bit_shift_digit.is_match(command) || arith_shift.is_match(command) {
+    if BIT_SHIFT_DIGIT.is_match(command) || ARITH_SHIFT.is_match(command) {
         return false;
     }
     HEREDOC_SINGLE_QUOTED.is_match(command)
@@ -217,12 +221,17 @@ pub fn contains_heredoc(command: &str) -> bool {
         || HEREDOC_UNQUOTED.is_match(command)
 }
 
+/// Patterns for detecting multiline strings inside quotes.
+static SINGLE_QUOTE_MULTILINE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"'(?:[^'\\]|\\.)*\n(?:[^'\\]|\\.)*'").expect("invalid single-quote multiline regex")
+});
+static DOUBLE_QUOTE_MULTILINE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#""(?:[^"\\]|\\.)*\n(?:[^"\\]|\\.)*""#).expect("invalid double-quote multiline regex")
+});
+
 /// Check if a command contains multiline strings inside quotes.
 pub fn contains_multiline_string(command: &str) -> bool {
-    // Check for actual newlines inside quoted strings
-    let single_quote_ml = Regex::new(r"'(?:[^'\\]|\\.)*\n(?:[^'\\]|\\.)*'").unwrap();
-    let double_quote_ml = Regex::new(r#""(?:[^"\\]|\\.)*\n(?:[^"\\]|\\.)*""#).unwrap();
-    single_quote_ml.is_match(command) || double_quote_ml.is_match(command)
+    SINGLE_QUOTE_MULTILINE.is_match(command) || DOUBLE_QUOTE_MULTILINE.is_match(command)
 }
 
 /// Detect if a command already has a stdin redirect (e.g. `< file`).

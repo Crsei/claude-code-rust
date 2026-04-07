@@ -375,7 +375,7 @@ impl Tool for ExitWorktreeTool {
             .unwrap_or(false);
 
         if action == "remove" && !discard {
-            let session = session.unwrap();
+            let session = session.expect("session guaranteed Some after is_none check");
             let changes = count_worktree_changes(
                 &session.worktree_path,
                 session.original_head_commit.as_deref(),

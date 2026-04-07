@@ -236,11 +236,11 @@ impl QueryEngine {
             // ================================================================
 
             // A.1: Clear turn-scoped state
-            discovered_skills_ref.lock().unwrap().clear();
+            discovered_skills_ref.lock().expect("discovered_skills lock poisoned").clear();
 
             // A.2: Process user input (delegate to input_processing module)
             let current_msgs_snapshot =
-                messages_ref.read().unwrap().clone();
+                messages_ref.read().expect("messages lock poisoned").clone();
             let processed = input_processing::process_user_input(
                 &prompt,
                 &current_msgs_snapshot,
@@ -249,7 +249,7 @@ impl QueryEngine {
 
             // A.3: Push processed messages into mutable_messages
             {
-                let mut msgs = messages_ref.write().unwrap();
+                let mut msgs = messages_ref.write().expect("messages lock poisoned");
                 for m in &processed.messages {
                     msgs.push(m.clone());
                 }
@@ -267,14 +267,14 @@ impl QueryEngine {
             // PHASE B: System Prompt Build
             // ================================================================
 
-            let tools_snapshot = tools_ref.read().unwrap().clone();
+            let tools_snapshot = tools_ref.read().expect("tools lock poisoned").clone();
             let model_name = config
                 .user_specified_model
                 .clone()
                 .unwrap_or_else(|| {
                     app_state_ref
                         .read()
-                        .unwrap()
+                        .expect("app_state lock poisoned")
                         .main_loop_model
                         .clone()
                 });
@@ -295,7 +295,7 @@ impl QueryEngine {
             // C.1: Yield SystemInit message
             let perm_mode = app_state_ref
                 .read()
-                .unwrap()
+                .expect("app_state lock poisoned")
                 .tool_permission_context
                 .mode
                 .clone();
@@ -343,7 +343,7 @@ impl QueryEngine {
             // ================================================================
 
             // Build QueryParams from accumulated state
-            let current_messages = messages_ref.read().unwrap().clone();
+            let current_messages = messages_ref.read().expect("messages lock poisoned").clone();
 
             let params = QueryParams {
                 messages: current_messages,
@@ -394,7 +394,7 @@ impl QueryEngine {
 
                         // Push to mutable_messages
                         {
-                            let mut msgs = messages_ref.write().unwrap();
+                            let mut msgs = messages_ref.write().expect("messages lock poisoned");
                             msgs.push(Message::Assistant(assistant_msg.clone()));
                         }
 
@@ -402,7 +402,7 @@ impl QueryEngine {
                         if let Some(ref msg_usage) = assistant_msg.usage {
                             usage_ref
                                 .lock()
-                                .unwrap()
+                                .expect("usage lock poisoned")
                                 .add_usage(msg_usage, assistant_msg.cost_usd);
                         }
 
@@ -421,7 +421,7 @@ impl QueryEngine {
 
                         // Auto-save session after each assistant turn
                         if config.auto_save_session {
-                            let all_msgs = messages_ref.read().unwrap().clone();
+                            let all_msgs = messages_ref.read().expect("messages lock poisoned").clone();
                             let _ = crate::session::storage::save_session(
                                 session_id.as_str(),
                                 &all_msgs,
@@ -435,11 +435,11 @@ impl QueryEngine {
                     // --------------------------------------------------------
                     QueryYield::Message(Message::User(ref user_msg)) => {
                         turn_count_this_submit += 1;
-                        *turn_count_ref.lock().unwrap() += 1;
+                        *turn_count_ref.lock().expect("turn_count lock poisoned") += 1;
 
                         // Push to mutable_messages
                         {
-                            let mut msgs = messages_ref.write().unwrap();
+                            let mut msgs = messages_ref.write().expect("messages lock poisoned");
                             msgs.push(Message::User(user_msg.clone()));
                         }
 
@@ -475,7 +475,7 @@ impl QueryEngine {
                     QueryYield::Message(Message::Progress(ref progress_msg)) => {
                         // Push to mutable_messages
                         {
-                            let mut msgs = messages_ref.write().unwrap();
+                            let mut msgs = messages_ref.write().expect("messages lock poisoned");
                             msgs.push(Message::Progress(progress_msg.clone()));
                         }
 
@@ -499,7 +499,7 @@ impl QueryEngine {
                                 // mutable_messages before the boundary to GC.
                                 // For now, record and yield the boundary.
                                 {
-                                    let mut msgs = messages_ref.write().unwrap();
+                                    let mut msgs = messages_ref.write().expect("messages lock poisoned");
                                     msgs.push(Message::System(
                                         system_msg.clone(),
                                     ));
@@ -523,7 +523,7 @@ impl QueryEngine {
                                 error,
                             } => {
                                 {
-                                    let mut msgs = messages_ref.write().unwrap();
+                                    let mut msgs = messages_ref.write().expect("messages lock poisoned");
                                     msgs.push(Message::System(
                                         system_msg.clone(),
                                     ));
@@ -544,7 +544,7 @@ impl QueryEngine {
 
                             // Other system messages: push silently (headless)
                             _ => {
-                                let mut msgs = messages_ref.write().unwrap();
+                                let mut msgs = messages_ref.write().expect("messages lock poisoned");
                                 msgs.push(Message::System(system_msg.clone()));
                                 // No yield -- system info/warning is silent
                             }
@@ -557,7 +557,7 @@ impl QueryEngine {
                     QueryYield::Message(Message::Attachment(ref attachment_msg)) => {
                         // Push to mutable_messages
                         {
-                            let mut msgs = messages_ref.write().unwrap();
+                            let mut msgs = messages_ref.write().expect("messages lock poisoned");
                             msgs.push(Message::Attachment(
                                 attachment_msg.clone(),
                             ));
@@ -570,9 +570,9 @@ impl QueryEngine {
                                 turn_count,
                             } => {
                                 let usage_snap =
-                                    usage_ref.lock().unwrap().clone();
+                                    usage_ref.lock().expect("usage lock poisoned").clone();
                                 let denials_snap =
-                                    permission_denials_ref.lock().unwrap().clone();
+                                    permission_denials_ref.lock().expect("permission_denials lock poisoned").clone();
 
                                 yield SdkMessage::Result(SdkResult {
                                     subtype: ResultSubtype::ErrorMaxTurns,
@@ -630,7 +630,7 @@ impl QueryEngine {
                             // Skill discovery: dedup tracking
                             Attachment::SkillDiscovery { skills } => {
                                 let mut set =
-                                    discovered_skills_ref.lock().unwrap();
+                                    discovered_skills_ref.lock().expect("discovered_skills lock poisoned");
                                 for skill in skills {
                                     set.insert(skill.clone());
                                 }
@@ -640,7 +640,7 @@ impl QueryEngine {
                             Attachment::NestedMemory { path, .. } => {
                                 loaded_memory_ref
                                     .lock()
-                                    .unwrap()
+                                    .expect("loaded_memory lock poisoned")
                                     .insert(path.clone());
                             }
 
@@ -723,7 +723,7 @@ impl QueryEngine {
                 // ============================================================
                 if let Some(max_budget) = config.max_budget_usd {
                     let current_cost =
-                        usage_ref.lock().unwrap().total_cost_usd;
+                        usage_ref.lock().expect("usage lock poisoned").total_cost_usd;
                     if current_cost >= max_budget {
                         info!(
                             spent = current_cost,
@@ -731,16 +731,16 @@ impl QueryEngine {
                             "max budget exceeded"
                         );
 
-                        *abort_reason_ref.lock().unwrap() =
+                        *abort_reason_ref.lock().expect("abort_reason lock poisoned") =
                             Some(AbortReason::MaxBudget {
                                 spent_usd: current_cost,
                                 limit_usd: max_budget,
                             });
 
                         let usage_snap =
-                            usage_ref.lock().unwrap().clone();
+                            usage_ref.lock().expect("usage lock poisoned").clone();
                         let denials_snap =
-                            permission_denials_ref.lock().unwrap().clone();
+                            permission_denials_ref.lock().expect("permission_denials lock poisoned").clone();
 
                         yield SdkMessage::Result(SdkResult {
                             subtype: ResultSubtype::ErrorMaxBudgetUsd,
@@ -776,7 +776,7 @@ impl QueryEngine {
             // PHASE E: Result Generation
             // ================================================================
 
-            let final_messages = messages_ref.read().unwrap().clone();
+            let final_messages = messages_ref.read().expect("messages lock poisoned").clone();
 
             // Find the terminal message and check success
             let terminal_msg =
@@ -788,9 +788,9 @@ impl QueryEngine {
             let (text_result, is_api_error) =
                 result::extract_text_result(&final_messages);
 
-            let usage_snap = usage_ref.lock().unwrap().clone();
+            let usage_snap = usage_ref.lock().expect("usage lock poisoned").clone();
             let denials_snap =
-                permission_denials_ref.lock().unwrap().clone();
+                permission_denials_ref.lock().expect("permission_denials lock poisoned").clone();
 
             let subtype = if is_success {
                 ResultSubtype::Success
@@ -836,13 +836,13 @@ impl QueryEngine {
     pub fn abort(&self) {
         info!("aborting query engine");
         self.aborted.store(true, Ordering::SeqCst);
-        *self.abort_reason.lock().unwrap() = Some(AbortReason::UserAbort);
+        *self.abort_reason.lock().expect("abort_reason lock poisoned") = Some(AbortReason::UserAbort);
     }
 
     /// Reset the abort flag before starting a new `submit_message` call.
     pub fn reset_abort(&self) {
         self.aborted.store(false, Ordering::SeqCst);
-        *self.abort_reason.lock().unwrap() = None;
+        *self.abort_reason.lock().expect("abort_reason lock poisoned") = None;
     }
 
     /// Check whether the engine has been aborted.
@@ -852,39 +852,39 @@ impl QueryEngine {
 
     /// Get the abort reason (if any).
     pub fn abort_reason(&self) -> Option<AbortReason> {
-        self.abort_reason.lock().unwrap().clone()
+        self.abort_reason.lock().expect("abort_reason lock poisoned").clone()
     }
 
     // -- Accessors -----------------------------------------------------------
 
     /// Get a snapshot of the current message history.
     pub fn messages(&self) -> Vec<Message> {
-        self.mutable_messages.read().unwrap().clone()
+        self.mutable_messages.read().expect("messages lock poisoned").clone()
     }
 
     /// Get a snapshot of usage tracking.
     pub fn usage(&self) -> UsageTracking {
-        self.usage.lock().unwrap().clone()
+        self.usage.lock().expect("usage lock poisoned").clone()
     }
 
     /// Get a snapshot of permission denials.
     pub fn permission_denials(&self) -> Vec<PermissionDenial> {
-        self.permission_denials.lock().unwrap().clone()
+        self.permission_denials.lock().expect("permission_denials lock poisoned").clone()
     }
 
     /// Record a permission denial.
     pub fn record_permission_denial(&self, denial: PermissionDenial) {
-        self.permission_denials.lock().unwrap().push(denial);
+        self.permission_denials.lock().expect("permission_denials lock poisoned").push(denial);
     }
 
     /// Get the total turn count (across all submit_message calls).
     pub fn total_turn_count(&self) -> usize {
-        *self.total_turn_count.lock().unwrap()
+        *self.total_turn_count.lock().expect("turn_count lock poisoned")
     }
 
     /// Get a snapshot of the application state.
     pub fn app_state(&self) -> AppState {
-        self.app_state.read().unwrap().clone()
+        self.app_state.read().expect("app_state lock poisoned").clone()
     }
 
     /// Update the application state with a closure.
@@ -892,7 +892,7 @@ impl QueryEngine {
     where
         F: FnOnce(&mut AppState),
     {
-        let mut state = self.app_state.write().unwrap();
+        let mut state = self.app_state.write().expect("app_state lock poisoned");
         updater(&mut state);
     }
 
@@ -903,17 +903,17 @@ impl QueryEngine {
 
     /// Replace the tool registry.
     pub fn set_tools(&self, tools: Tools) {
-        *self.tools.write().unwrap() = tools;
+        *self.tools.write().expect("tools lock poisoned") = tools;
     }
 
     /// Get discovered skill names from the current turn.
     pub fn discovered_skill_names(&self) -> HashSet<String> {
-        self.discovered_skill_names.lock().unwrap().clone()
+        self.discovered_skill_names.lock().expect("discovered_skills lock poisoned").clone()
     }
 
     /// Get loaded nested memory paths.
     pub fn loaded_nested_memory_paths(&self) -> HashSet<String> {
-        self.loaded_nested_memory_paths.lock().unwrap().clone()
+        self.loaded_nested_memory_paths.lock().expect("loaded_memory lock poisoned").clone()
     }
 }
 
@@ -953,7 +953,7 @@ impl QueryDeps for QueryEngineDeps {
 
         // Fill model: AppState (user/config/env) > provider default
         if params.model.is_none() {
-            let app_model = self.app_state.read().unwrap().main_loop_model.clone();
+            let app_model = self.app_state.read().expect("app_state lock poisoned").main_loop_model.clone();
             params.model = Some(if app_model.is_empty() {
                 client.config().default_model.clone()
             } else {
@@ -999,7 +999,7 @@ impl QueryDeps for QueryEngineDeps {
 
         // Fill model: AppState (user/config/env) > provider default
         if params.model.is_none() {
-            let app_model = self.app_state.read().unwrap().main_loop_model.clone();
+            let app_model = self.app_state.read().expect("app_state lock poisoned").main_loop_model.clone();
             params.model = Some(if app_model.is_empty() {
                 client.config().default_model.clone()
             } else {
@@ -1031,7 +1031,7 @@ impl QueryDeps for QueryEngineDeps {
         tracking: Option<AutoCompactTracking>,
     ) -> Result<Option<CompactionResult>> {
         let model = {
-            let app = self.app_state.read().unwrap();
+            let app = self.app_state.read().expect("app_state lock poisoned");
             if app.main_loop_model.is_empty() {
                 self.api_client
                     .as_ref()
@@ -1173,7 +1173,7 @@ impl QueryDeps for QueryEngineDeps {
         messages: Vec<Message>,
     ) -> Result<Option<CompactionResult>> {
         let model = {
-            let app = self.app_state.read().unwrap();
+            let app = self.app_state.read().expect("app_state lock poisoned");
             if app.main_loop_model.is_empty() {
                 self.api_client
                     .as_ref()
@@ -1219,10 +1219,10 @@ impl QueryDeps for QueryEngineDeps {
                 main_loop_model: self
                     .app_state
                     .read()
-                    .unwrap()
+                    .expect("app_state lock poisoned")
                     .main_loop_model
                     .clone(),
-                verbose: self.app_state.read().unwrap().verbose,
+                verbose: self.app_state.read().expect("app_state lock poisoned").verbose,
                 is_non_interactive_session: false,
                 custom_system_prompt: None,
                 append_system_prompt: None,
@@ -1238,7 +1238,7 @@ impl QueryDeps for QueryEngineDeps {
             read_file_state: crate::types::tool::FileStateCache::default(),
             get_app_state: {
                 let state = self.app_state.clone();
-                Arc::new(move || state.read().unwrap().clone())
+                Arc::new(move || state.read().expect("app_state lock poisoned").clone())
             },
             set_app_state: {
                 let state = self.app_state.clone();
@@ -1246,7 +1246,7 @@ impl QueryDeps for QueryEngineDeps {
                     move |updater: Box<
                         dyn FnOnce(AppState) -> AppState,
                     >| {
-                        let mut s = state.write().unwrap();
+                        let mut s = state.write().expect("app_state lock poisoned");
                         let old = s.clone();
                         *s = updater(old);
                     },
@@ -1278,7 +1278,7 @@ impl QueryDeps for QueryEngineDeps {
     }
 
     fn get_app_state(&self) -> AppState {
-        self.app_state.read().unwrap().clone()
+        self.app_state.read().expect("app_state lock poisoned").clone()
     }
 
     fn uuid(&self) -> String {
@@ -1290,11 +1290,11 @@ impl QueryDeps for QueryEngineDeps {
     }
 
     fn get_tools(&self) -> Tools {
-        self.tools.read().unwrap().clone()
+        self.tools.read().expect("tools lock poisoned").clone()
     }
 
     async fn refresh_tools(&self) -> Result<Tools> {
-        Ok(self.tools.read().unwrap().clone())
+        Ok(self.tools.read().expect("tools lock poisoned").clone())
     }
 }
 

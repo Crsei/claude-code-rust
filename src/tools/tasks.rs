@@ -84,16 +84,16 @@ impl TaskStore {
             created_at: now,
             updated_at: now,
         };
-        self.tasks.lock().unwrap().insert(id, entry.clone());
+        self.tasks.lock().expect("task store lock poisoned").insert(id, entry.clone());
         entry
     }
 
     pub fn get(&self, id: &str) -> Option<TaskEntry> {
-        self.tasks.lock().unwrap().get(id).cloned()
+        self.tasks.lock().expect("task store lock poisoned").get(id).cloned()
     }
 
     pub fn update_status(&self, id: &str, status: TaskStatus) -> Option<TaskEntry> {
-        let mut tasks = self.tasks.lock().unwrap();
+        let mut tasks = self.tasks.lock().expect("task store lock poisoned");
         if let Some(entry) = tasks.get_mut(id) {
             entry.status = status;
             entry.updated_at = chrono::Utc::now().timestamp();
@@ -106,7 +106,7 @@ impl TaskStore {
     /// Append output text to a task's log (used by background agent execution).
     #[allow(dead_code)] // Will be used when background agent execution is implemented
     pub fn append_output(&self, id: &str, output: &str) -> Option<TaskEntry> {
-        let mut tasks = self.tasks.lock().unwrap();
+        let mut tasks = self.tasks.lock().expect("task store lock poisoned");
         if let Some(entry) = tasks.get_mut(id) {
             if !entry.output.is_empty() {
                 entry.output.push('\n');
@@ -120,7 +120,7 @@ impl TaskStore {
     }
 
     pub fn list(&self) -> Vec<TaskEntry> {
-        let tasks = self.tasks.lock().unwrap();
+        let tasks = self.tasks.lock().expect("task store lock poisoned");
         let mut entries: Vec<TaskEntry> = tasks.values().cloned().collect();
         entries.sort_by_key(|e| e.created_at);
         entries

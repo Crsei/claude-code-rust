@@ -13,12 +13,14 @@ pub fn check_token_budget(
     global_turn_tokens: u64,
 ) -> TokenBudgetDecision {
     // 子代理或无预算 → 停止
-    if agent_id.is_some() || budget.is_none() || budget == Some(0) {
-        return TokenBudgetDecision::Stop {
-            completion_event: None,
-        };
-    }
-    let budget = budget.unwrap();
+    let budget = match budget {
+        Some(b) if b > 0 && agent_id.is_none() => b,
+        _ => {
+            return TokenBudgetDecision::Stop {
+                completion_event: None,
+            }
+        }
+    };
 
     let turn_tokens = global_turn_tokens;
     let pct = ((turn_tokens as f64 / budget as f64) * 100.0).round() as usize;

@@ -192,7 +192,7 @@ impl Tool for ConfigTool {
 
                 settings
                     .as_object_mut()
-                    .unwrap()
+                    .expect("settings guaranteed to be an object")
                     .insert(key.to_string(), parsed_value.clone());
                 Self::save_settings(&settings_path, &settings)?;
 

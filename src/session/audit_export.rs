@@ -288,11 +288,10 @@ fn build_audit_from_session_file(session: &SessionFile) -> AuditRecord {
         prev_chain = chain_hash;
     }
 
-    let final_chain = if entries.is_empty() {
-        ZERO_HASH.to_string()
-    } else {
-        entries.last().unwrap().chain_hash.clone()
-    };
+    let final_chain = entries
+        .last()
+        .map(|e| e.chain_hash.clone())
+        .unwrap_or_else(|| ZERO_HASH.to_string());
 
     // Resolve model from ProcessState
     let model = PROCESS_STATE
@@ -382,11 +381,10 @@ fn build_audit_from_messages(session_id: &str, messages: &[Message], cwd: &str) 
         prev_chain = chain_hash;
     }
 
-    let final_chain = if entries.is_empty() {
-        ZERO_HASH.to_string()
-    } else {
-        entries.last().unwrap().chain_hash.clone()
-    };
+    let final_chain = entries
+        .last()
+        .map(|e| e.chain_hash.clone())
+        .unwrap_or_else(|| ZERO_HASH.to_string());
 
     let model = PROCESS_STATE
         .read()

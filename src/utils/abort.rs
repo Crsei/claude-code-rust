@@ -55,7 +55,7 @@ impl AbortController {
     pub fn abort(&self, reason: &str) {
         // Set the reason (only if not already set)
         {
-            let mut guard = self.reason.lock().unwrap();
+            let mut guard = self.reason.lock().expect("abort reason lock poisoned");
             if guard.is_none() {
                 *guard = Some(reason.to_string());
             }
@@ -71,7 +71,7 @@ impl AbortController {
 
     /// Get the abort reason, if aborted.
     pub fn reason(&self) -> Option<String> {
-        self.reason.lock().unwrap().clone()
+        self.reason.lock().expect("abort reason lock poisoned").clone()
     }
 
     /// Subscribe to this controller's abort signal.
