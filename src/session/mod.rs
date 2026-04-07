@@ -12,3 +12,5 @@ pub mod resume;
 pub mod migrations;
 pub mod memdir;
 pub mod export;
+pub mod audit_export;
+pub mod session_export;
