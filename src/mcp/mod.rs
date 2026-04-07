@@ -10,6 +10,8 @@
 #![allow(unused)]
 
 pub mod client;
+pub mod transport;
+pub mod manager;
 pub mod discovery;
 pub mod tools;
 

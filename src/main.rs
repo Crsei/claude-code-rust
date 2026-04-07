@@ -264,7 +264,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // ── B.3c: Discover and connect MCP servers ──────────────────────
     let _mcp_manager = {
-        use crate::mcp::client::McpManager;
+        use crate::mcp::manager::McpManager;
         use crate::mcp::discovery::discover_mcp_servers;
         use crate::mcp::tools::mcp_tools_to_tools;
 

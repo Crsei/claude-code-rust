@@ -18,7 +18,7 @@ use tracing::{debug, warn};
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
 
-use super::client::McpManager;
+use super::manager::McpManager;
 use super::{McpToolDef, ToolCallContent};
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@
 pub mod deps;
 pub mod token_budget;
 pub mod stop_hooks;
+pub(crate) mod loop_helpers;
 pub mod loop_impl;
 
 // 重导出核心函数, 方便外部使用
