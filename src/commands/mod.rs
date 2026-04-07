@@ -41,6 +41,8 @@ pub mod status;
 
 // Export
 pub mod export;
+pub mod audit_export;
+pub mod session_export;
 
 // Extended info
 pub mod extra_usage;
@@ -266,6 +268,18 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "Export conversation to Markdown (.md)".into(),
             handler: Box::new(export::ExportHandler),
+        },
+        Command {
+            name: "audit-export".into(),
+            aliases: vec!["audit".into()],
+            description: "Export session as verifiable audit record (.audit.json)".into(),
+            handler: Box::new(audit_export::AuditExportHandler),
+        },
+        Command {
+            name: "session-export".into(),
+            aliases: vec!["sexport".into()],
+            description: "Export session as structured JSON data package (.session.json)".into(),
+            handler: Box::new(session_export::SessionExportHandler),
         },
         Command {
             name: "extra-usage".into(),
