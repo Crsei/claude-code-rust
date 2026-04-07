@@ -22,6 +22,8 @@ pub struct AppState {
     pub fast_mode: bool,
     /// effort 值
     pub effort_value: Option<String>,
+    /// Agent Teams 上下文 (feature-gated)
+    pub team_context: Option<crate::teams::types::TeamContext>,
 }
 
 /// 设置 JSON (简化版)
@@ -52,6 +54,7 @@ impl Default for AppState {
             thinking_enabled: None,
             fast_mode: false,
             effort_value: None,
+            team_context: None,
         }
     }
 }

@@ -27,7 +27,7 @@ fn strip_api_keys(cmd: &mut Command) -> &mut Command {
 }
 
 // =========================================================================
-// 1. Tool registration — all 13 tools appear in system prompt
+// 1. Tool registration — core tools appear in system prompt
 // =========================================================================
 
 /// The system prompt from --dump-system-prompt should mention each tool.
@@ -110,6 +110,164 @@ fn system_prompt_contains_skill_tool() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Skill"));
+}
+
+// =========================================================================
+// 1b. Phase 2-5 migrated tools appear in system prompt
+// =========================================================================
+
+#[test]
+fn system_prompt_contains_agent_tool() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## Agent"));
+}
+
+#[test]
+fn system_prompt_contains_agent_schema() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("subagent_type")
+                .and(predicate::str::contains("isolation"))
+                .and(predicate::str::contains("run_in_background")),
+        );
+}
+
+#[test]
+fn system_prompt_contains_webfetch_tool() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## WebFetch"));
+}
+
+#[test]
+fn system_prompt_contains_websearch_tool() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## WebSearch"));
+}
+
+#[test]
+fn system_prompt_contains_enter_plan_mode_tool() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## EnterPlanMode"));
+}
+
+#[test]
+fn system_prompt_contains_exit_plan_mode_tool() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## ExitPlanMode"));
+}
+
+#[test]
+fn system_prompt_contains_task_create_tool() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## TaskCreate"));
+}
+
+#[test]
+fn system_prompt_contains_task_update_tool() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## TaskUpdate"));
+}
+
+#[test]
+fn system_prompt_contains_task_list_tool() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## TaskList"));
+}
+
+#[test]
+fn system_prompt_contains_enter_worktree_tool() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## EnterWorktree"));
+}
+
+#[test]
+fn system_prompt_contains_exit_worktree_tool() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## ExitWorktree"));
+}
+
+// =========================================================================
+// 1c. Phase 6-8 migrated tools appear in system prompt
+// =========================================================================
+
+#[test]
+fn system_prompt_contains_lsp_tool() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## LSP"));
+}
+
+#[test]
+fn system_prompt_contains_lsp_schema() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("goToDefinition")
+                .and(predicate::str::contains("filePath"))
+                .and(predicate::str::contains("operation")),
+        );
+}
+
+// NOTE: SendMessage tool is feature-gated — only appears when
+// CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS is set. Default: hidden.
+#[test]
+fn system_prompt_omits_send_message_by_default() {
+    let mut cmd = cli();
+    strip_api_keys(&mut cmd);
+    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("## SendMessage").not());
 }
 
 // =========================================================================

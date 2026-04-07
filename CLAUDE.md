@@ -32,9 +32,10 @@ src/
 ├── types/               核心类型
 ├── engine/              QueryEngine + 系统提示词
 ├── query/               异步流式查询循环
-├── tools/               13 个工具 (Bash, Read, Write, Edit, Glob, Grep, AskUser, Skill, PowerShell, Config, REPL, StructuredOutput, SendUserMessage)
+├── tools/               28 个工具 (Bash, Read, Write, Edit, Glob, Grep, AskUser, Agent, Skill, WebFetch, WebSearch, EnterPlanMode, ExitPlanMode, EnterWorktree, ExitWorktree, TaskCreate, TaskGet, TaskUpdate, TaskList, TaskStop, TaskOutput, PowerShell, Config, REPL, StructuredOutput, SendUserMessage, LSP, SendMessage)
 ├── skills/              技能系统 (内置 + 用户自定义)
-├── commands/            26 个斜杠命令
+├── compact/             上下文压缩管道 (microcompact, snip, pipeline, tool_result_budget)
+├── commands/            28 个斜杠命令 (含 /compact, /mcp)
 ├── api/                 API 客户端 (Anthropic, OpenAI, Google)
 ├── auth/                认证 (API Key + Keychain)
 ├── permissions/         权限系统
@@ -47,7 +48,7 @@ src/
 
 ### 已移除的模块 (完整版有)
 
-mcp, analytics, remote, plugins, lsp_service, teams, compact
+analytics, remote
 
 ### 新增服务模块
 
@@ -60,3 +61,7 @@ ApiClient::from_auth()
   ├─ from_env(): 环境变量检测 (ANTHROPIC_API_KEY, OPENAI_API_KEY, ...)
   └─ auth::resolve_auth(): ANTHROPIC_AUTH_TOKEN → 系统 Keychain ("cc-rust")
 ```
+
+### 注意事项
+
+每次写完代码，编译过后查看有没有warning,解决warning(必须保证未使用的都在代码中起作用),然后构建相应的e2e test
