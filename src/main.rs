@@ -401,17 +401,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         info!(session = %session_id, "continuing session");
     }
 
-    // ── B.9: Print mode (non-interactive) ────────────────────────────
-    if cli.print {
-        let prompt = cli.prompt.join(" ");
-        if prompt.is_empty() {
-            error!("print mode requires a prompt argument");
-            return Ok(ExitCode::FAILURE);
-        }
-        return run_print_mode(&engine, &prompt).await;
-    }
-
-    // ── B.9b: JSON output mode (for SDK consumers) ──────────────────
+    // ── B.9: Non-interactive output modes ──────────────────────────────
+    // JSON output mode takes priority (SDK sends both -p and --output-format json)
     if cli.output_format.as_deref() == Some("json") {
         let prompt = cli.prompt.join(" ");
         if prompt.is_empty() {
@@ -422,6 +413,16 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             return run_json_mode(&engine, buf.trim()).await;
         }
         return run_json_mode(&engine, &prompt).await;
+    }
+
+    // Plain text print mode (-p without --output-format json)
+    if cli.print {
+        let prompt = cli.prompt.join(" ");
+        if prompt.is_empty() {
+            error!("print mode requires a prompt argument");
+            return Ok(ExitCode::FAILURE);
+        }
+        return run_print_mode(&engine, &prompt).await;
     }
 
     // ── B.10: Check for inline prompt ────────────────────────────────
