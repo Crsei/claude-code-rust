@@ -1,10 +1,27 @@
-import React, { useCallback, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Box, Text, type ClickEvent, useAnimationFrame, useApp, useInput } from 'ink-terminal'
 import { useBackend } from '../ipc/context.js'
 import { useAppDispatch, useAppState } from '../store/app-store.js'
 import { VimState } from '../vim/index.js'
 
-const FRAMES = ['\u280b', '\u2819', '\u2839', '\u2838', '\u283c', '\u2834', '\u2826', '\u2827', '\u2807', '\u280f']
+function formatWorkedDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`
+  }
+  return `${seconds}s`
+}
+
+function buildSeparatorWithLabel(label: string, width: number): string {
+  const safeWidth = Math.max(24, width)
+  const wrappedLabel = `<${label}>`
+  const rightTail = 3
+  const minLeft = 1
+  const leftLen = Math.max(minLeft, safeWidth - wrappedLabel.length - rightTail)
+  return `${'\u2500'.repeat(leftLen)}${wrappedLabel}${'\u2500'.repeat(rightTail)}`
+}
 
 interface InputPromptProps {
   isActive?: boolean
@@ -16,13 +33,29 @@ export function InputPrompt({ isActive = true, onActivate }: InputPromptProps) {
   const [cursorPos, setCursorPos] = useState(0)
   const [undoStack, setUndoStack] = useState<Array<{ text: string; cursor: number }>>([])
   const backend = useBackend()
-  const { isStreaming, isWaiting, streamingText, inputHistory, historyIndex, vimEnabled } = useAppState()
+  const { isStreaming, isWaiting, inputHistory, historyIndex, vimEnabled } = useAppState()
   const dispatch = useAppDispatch()
   const { exit } = useApp()
   const vimRef = useRef<VimState>(new VimState())
   const isBusy = isWaiting || isStreaming
-  const [spinnerRef, time] = useAnimationFrame(isBusy ? 80 : null)
+  const [tickRef, time] = useAnimationFrame(isBusy ? 250 : null)
+  const busyStartedAtRef = useRef<number | null>(null)
+  const [lastWorkedMs, setLastWorkedMs] = useState(0)
   const inputActive = isActive
+
+  useEffect(() => {
+    if (isBusy) {
+      if (busyStartedAtRef.current === null) {
+        busyStartedAtRef.current = time
+      }
+      return
+    }
+
+    if (busyStartedAtRef.current !== null) {
+      setLastWorkedMs(Math.max(0, time - busyStartedAtRef.current))
+      busyStartedAtRef.current = null
+    }
+  }, [isBusy, time])
 
   const vim = vimRef.current
   if (vimEnabled && !vim.enabled) {
@@ -265,45 +298,16 @@ export function InputPrompt({ isActive = true, onActivate }: InputPromptProps) {
   })
 
   const before = text.slice(0, cursorPos)
-  const cursorChar = cursorPos < text.length ? text[cursorPos] : '_'
+  const cursorChar = cursorPos < text.length ? text[cursorPos] : ' '
   const after = cursorPos < text.length ? text.slice(cursorPos + 1) : ''
-  const prompt = vim.enabled
-    ? (vim.mode === 'normal' ? '[N]' : vim.mode === 'visual' ? '[V]' : '[I]')
-    : '[>]'
-  const spinnerFrame = FRAMES[Math.floor(time / 80) % FRAMES.length]
-  const statusLabel = isStreaming && streamingText ? 'Reasoning...' : 'Thinking...'
-  const historyLabel = inputHistory.length === 0
-    ? 'History: empty'
-    : `History: ${historyIndex === -1 ? inputHistory.length : historyIndex + 1}/${inputHistory.length}`
-  const focusLabel = inputActive ? 'Input focus' : 'Click composer to focus input'
-  const borderColor = isBusy
-    ? 'ansi:cyanBright'
-    : inputActive
-      ? 'ansi:yellowBright'
-      : 'ansi:blackBright'
-
-  let body: React.ReactNode
-  if (isBusy) {
-    body = (
-      <Box ref={spinnerRef} flexDirection="row">
-        <Text color="ansi:cyan">{spinnerFrame} </Text>
-        <Text color="ansi:cyan">{statusLabel}</Text>
-        <Text dim> Ctrl+C to abort</Text>
-      </Box>
-    )
-  } else {
-    body = (
-      <Box flexDirection="row">
-        <Text bold color={inputActive ? 'ansi:yellowBright' : 'ansi:blackBright'}>
-          {prompt} 
-        </Text>
-        <Text>{before}</Text>
-        <Text inverse>{cursorChar}</Text>
-        <Text>{after}</Text>
-        {text.length === 0 && <Text dim> Type a message. Enter to send.</Text>}
-      </Box>
-    )
-  }
+  const workingType = isStreaming ? 'reasoning' : isWaiting ? 'thinking' : 'input'
+  const workedMs = isBusy && busyStartedAtRef.current !== null
+    ? Math.max(0, time - busyStartedAtRef.current)
+    : lastWorkedMs
+  const workedLabel = `\u273b Worked for ${formatWorkedDuration(workedMs)}`
+  const separatorWidth = Math.max(24, (process.stdout.columns ?? 80) - 2)
+  const topSeparator = buildSeparatorWithLabel(workingType, separatorWidth)
+  const bottomSeparator = '\u2500'.repeat(separatorWidth)
 
   return (
     <Box
@@ -312,14 +316,24 @@ export function InputPrompt({ isActive = true, onActivate }: InputPromptProps) {
         activateInput()
         event.stopImmediatePropagation()
       }}
+      ref={tickRef}
     >
-      <Box flexDirection="column" borderStyle="round" borderColor={borderColor as any} paddingX={1}>
-        {body}
-        {!isBusy && (
-          <Box>
-            <Text dim>{focusLabel} | {historyLabel} | wheel=history</Text>
-          </Box>
-        )}
+      <Box flexDirection="column">
+        <Text color="ansi:blackBright">{workedLabel}</Text>
+        <Text color="ansi:blackBright">{topSeparator}</Text>
+        <Box flexDirection="row">
+          <Text bold color={inputActive ? 'ansi:whiteBright' : 'ansi:blackBright'}>{'\u276f '}</Text>
+          {isBusy ? (
+            <Text dim>{text}</Text>
+          ) : (
+            <>
+              <Text>{before}</Text>
+              <Text inverse>{cursorChar}</Text>
+              <Text>{after}</Text>
+            </>
+          )}
+        </Box>
+        <Text color="ansi:blackBright">{bottomSeparator}</Text>
       </Box>
     </Box>
   )

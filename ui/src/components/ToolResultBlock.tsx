@@ -14,15 +14,15 @@ export function ToolResultBlock({ output, isError, toolUseId }: Props) {
   const displayText = truncated ? output.slice(0, maxLen) + '...' : output
 
   return (
-    <Box flexDirection="column" paddingX={1} marginBottom={1}>
+    <Box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
       <Box gap={1}>
         <Text color={isError ? 'ansi:red' : 'ansi:green'} bold>
           {isError ? '✗' : '✓'} Result
         </Text>
         <Text dim>({toolUseId.slice(0, 8)})</Text>
       </Box>
-      <Box paddingLeft={2}>
-        <Text color={isError ? 'ansi:red' : undefined} dim={!isError}>
+      <Box paddingLeft={2} width="100%">
+        <Text color={isError ? 'ansi:red' : undefined} dim={!isError} wrap="wrap">
           {displayText}
         </Text>
       </Box>

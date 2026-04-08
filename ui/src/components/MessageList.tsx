@@ -36,6 +36,7 @@ export function MessageList({ isActive = true, onActivate }: MessageListProps) {
   const resultRef = useRef<VirtualScrollResult | null>(null)
   const { messages, isStreaming, streamingText } = useAppState()
   const [scrollMetrics, setScrollMetrics] = useState<ScrollMetrics>(INITIAL_SCROLL_METRICS)
+  const [columns, setColumns] = useState(process.stdout.columns ?? 80)
 
   const items: Array<UIMessage | { id: string; role: 'streaming'; content: string; timestamp: number }> = [...messages]
 
@@ -48,8 +49,18 @@ export function MessageList({ isActive = true, onActivate }: MessageListProps) {
     })
   }
 
-  const columns = process.stdout.columns ?? 80
   const itemCount = items.length
+
+  useEffect(() => {
+    const handleResize = () => {
+      setColumns(process.stdout.columns ?? 80)
+    }
+    process.stdout.on('resize', handleResize)
+    return () => {
+      process.stdout.off?.('resize', handleResize)
+      process.stdout.removeListener?.('resize', handleResize)
+    }
+  }, [])
 
   const refreshScrollMetrics = useCallback(() => {
     const scroll = scrollRef.current
@@ -161,7 +172,7 @@ export function MessageList({ isActive = true, onActivate }: MessageListProps) {
         event.stopImmediatePropagation()
       }}
     >
-      <ScrollBox ref={scrollRef} stickyScroll flexGrow={1}>
+      <ScrollBox ref={scrollRef} stickyScroll flexGrow={1} width="100%">
         {items.length > 0 ? (
           <VirtualList
             items={items}
@@ -172,15 +183,19 @@ export function MessageList({ isActive = true, onActivate }: MessageListProps) {
             renderItem={(item) => {
               if (item.id === 'streaming-partial') {
                 return (
-                  <Box flexDirection="column" paddingX={1} marginBottom={1}>
+                  <Box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
                     <Text color="ansi:magenta" bold>Assistant</Text>
-                    <Box paddingLeft={2} flexDirection="column">
-                      <Text>{item.content}</Text>
+                    <Box paddingLeft={2} flexDirection="column" width="100%">
+                      <Text wrap="wrap">{item.content}</Text>
                     </Box>
                   </Box>
                 )
               }
-              return <MessageBubble msg={item as UIMessage} />
+              return (
+                <Box width="100%">
+                  <MessageBubble msg={item as UIMessage} />
+                </Box>
+              )
             }}
           />
         ) : null}

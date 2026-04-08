@@ -13,19 +13,19 @@ export function MessageBubble({ msg }: Props) {
   switch (msg.role) {
     case 'user':
       return (
-        <Box flexDirection="column" paddingX={1} marginBottom={1}>
+        <Box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
           <Text color="ansi:cyanBright" bold>You</Text>
-          <Box paddingLeft={2}>
-            <Text>{msg.content}</Text>
+          <Box paddingLeft={2} width="100%">
+            <Text wrap="wrap">{msg.content}</Text>
           </Box>
         </Box>
       )
 
     case 'assistant':
       return (
-        <Box flexDirection="column" paddingX={1} marginBottom={1}>
+        <Box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
           <Text color="ansi:magenta" bold>Assistant</Text>
-          <Box paddingLeft={2} flexDirection="column">
+          <Box paddingLeft={2} flexDirection="column" width="100%">
             <Markdown>{msg.content}</Markdown>
           </Box>
         </Box>
@@ -55,8 +55,8 @@ export function MessageBubble({ msg }: Props) {
         : 'ansi:white'
 
       return (
-        <Box flexDirection="column" paddingX={1} marginBottom={1}>
-          <Text color={levelColor as any} dim={msg.level !== 'error'}>
+        <Box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
+          <Text color={levelColor as any} dim={msg.level !== 'error'} wrap="wrap">
             {msg.level === 'error' ? '✗ ' : msg.level === 'warning' ? '⚠ ' : 'ℹ '}
             {msg.content}
           </Text>
@@ -66,8 +66,8 @@ export function MessageBubble({ msg }: Props) {
 
     default:
       return (
-        <Box paddingX={1}>
-          <Text dim>{msg.content}</Text>
+        <Box paddingX={1} width="100%">
+          <Text dim wrap="wrap">{msg.content}</Text>
         </Box>
       )
   }

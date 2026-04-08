@@ -15,19 +15,19 @@ export function ToolUseBlock({ name, input, id }: Props) {
   const isLong = inputStr.length > 200
 
   return (
-    <Box flexDirection="column" paddingX={1} marginBottom={1}>
+    <Box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
       <Box gap={1}>
         <Text color="ansi:yellow" bold>{'⚡'} {name}</Text>
         <Text dim>({id.slice(0, 8)})</Text>
       </Box>
-      <Box paddingLeft={2} flexDirection="column">
+      <Box paddingLeft={2} flexDirection="column" width="100%">
         {isLong && !expanded ? (
           <>
-            <Text dim>{inputStr.slice(0, 200)}...</Text>
+            <Text dim wrap="wrap">{inputStr.slice(0, 200)}...</Text>
             <Text dim italic>[{inputStr.length} chars, truncated]</Text>
           </>
         ) : (
-          <Text dim>{inputStr}</Text>
+          <Text dim wrap="wrap">{inputStr}</Text>
         )}
       </Box>
     </Box>
