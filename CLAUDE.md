@@ -37,7 +37,8 @@ rust/
 │   ├── main.rs              入口 (Phase A/B/I lifecycle, --headless flag)
 │   ├── types/               核心类型
 │   ├── engine/              QueryEngine + 系统提示词
-│   ├── query/               异步流式查询循环
+│   │   └── lifecycle/       QueryEngine 生命周期 (mod, types, submit_message, deps, helpers)
+│   ├── query/               异步流式查询循环 (loop_impl + loop_helpers)
 │   ├── tools/               28 个工具
 │   ├── skills/              技能系统 (内置 + 用户自定义)
 │   ├── compact/             上下文压缩管道

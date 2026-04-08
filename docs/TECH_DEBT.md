@@ -2,7 +2,7 @@
 
 > 审计日期: 2026-04-08 | 分支: rust-lite
 >
-> **修复记录**: 第一批安全性修复已完成 — 详见 [已修复](#已修复的问题)
+> **修复记录**: 第一批 (安全性) 和第二批 (可维护性) 已完成 — 详见 [已修复](#已修复的问题)
 
 ---
 
@@ -18,62 +18,23 @@
 
 ## CRITICAL — 必须优先修复
 
-### 1. `query/loop_impl.rs` — 1105 行巨型异步生成器
+### ~~1. `query/loop_impl.rs` — 1105 行巨型异步生成器~~ ✅ 已修复
 
-**文件**: `src/query/loop_impl.rs:64-479`
-
-`query()` 函数是一个用 `async_stream::stream!` 宏包裹的 **~1000 行单体函数**，包含:
-- 11 个处理阶段全部内联
-- 65+ 个 match/if 表达式
-- 5 层以上嵌套深度
-
-```
-stream! {
-    // STEP 1: 初始化 ...
-    // STEP 2: 流式调用 ...
-    //   match event_result {
-    //     Ok(event) => {
-    //       match event.type {
-    //         ... 4+ 层嵌套 ...
-    //       }
-    //     }
-    //   }
-    // STEP 3-8: 工具执行、压缩、恢复 ...
-    // ~1000 行后闭合
-}
-```
-
-**影响**: 无法单元测试单个阶段、无法局部理解、修改任何逻辑都可能影响全局流程。
-
-**建议**: 拆分为状态机模式，每个阶段独立函数:
-- `handle_streaming()` — 流式事件处理
-- `handle_tool_calls()` — 工具调用编排
-- `handle_compaction()` — 上下文压缩
-- `handle_prompt_recovery()` — prompt 过长恢复
-- `handle_max_tokens_recovery()` — 输出 token 上限恢复
+> **已拆分为 3 个文件**: `loop_impl.rs` (451行, 核心 stream 循环) + `loop_helpers.rs` (253行, 辅助函数) + `loop_tests.rs` (369行, 测试)
+>
+> 辅助函数 `handle_prompt_too_long()`, `handle_max_output_tokens()`, `execute_tool_calls()`, `make_abort_message()`, `make_error_message()`, `make_user_message()` 已提取到 `loop_helpers.rs`。
 
 ---
 
-### 2. `engine/lifecycle.rs` — 1703 行上帝文件
+### ~~2. `engine/lifecycle.rs` — 1703 行上帝文件~~ ✅ 已修复
 
-**文件**: `src/engine/lifecycle.rs:198+`
-
-`submit_message` 方法是一个 ~1100 行的 async stream 闭包，Phase A-E 全部内联:
-
-| Phase | 职责 | 估计行数 |
-|-------|------|----------|
-| A | 输入处理、消息快照 | ~150 |
-| B | 系统提示词构建 | ~200 |
-| C | 查询前准备 | ~100 |
-| D | 查询循环 + 流式分发 | ~400 |
-| E | 结果生成、用量统计 | ~250 |
-
-**单文件同时承担 7 种职责**: 会话生命周期、消息派发、用量追踪、权限记录、工具编排、流式处理、异步协调。
-
-**建议**: 拆分为:
-- `lifecycle_phases.rs` — Phase A-E 的独立实现
-- `usage_tracking.rs` — 用量追踪与成本计算
-- `query_engine_core.rs` — QueryEngine 核心结构与方法
+> **已拆分为 `engine/lifecycle/` 目录模块 (6 个文件)**:
+> - `mod.rs` (201行) — QueryEngine struct + 构造器 + pub 方法 + re-exports
+> - `submit_message.rs` (637行) — Phase A-E 主流式管道
+> - `deps.rs` (399行) — QueryEngineDeps struct + QueryDeps trait 实现
+> - `helpers.rs` (194行) — format_conversation_for_summary, build_messages_request
+> - `types.rs` (61行) — UsageTracking, PermissionDenial, AbortReason
+> - `tests.rs` (197行) — 所有测试
 
 ---
 
@@ -122,7 +83,7 @@ panic!("expected Anthropic provider, got {:?}", other);
 
 ### 5. QueryEngine 的 10 个 `Arc<Mutex/RwLock>` 字段
 
-**文件**: `src/engine/lifecycle.rs:120-153`
+**文件**: `src/engine/lifecycle/mod.rs:56-88`
 
 ```rust
 pub struct QueryEngine {
@@ -224,13 +185,13 @@ let is_retryable = err_msg.contains("RateLimit")
 
 ---
 
-### 9. `mcp/client.rs` — 1008 行混合 6 种职责
+### ~~9. `mcp/client.rs` — 1008 行混合 6 种职责~~ ✅ 已修复
 
-**文件**: `src/mcp/client.rs`
-
-单文件承担: 连接生命周期、stdio/SSE 传输、JSON-RPC 协议、工具列表获取、资源读取、请求分发。
-
-**建议**: 拆分为 `transport.rs`、`json_rpc.rs`、`mcp_tools.rs`。
+> **已拆分为 4 个文件**:
+> - `client.rs` (502行) — McpClient struct + 连接/初始化/断开 + 工具/资源操作 + JSON-RPC 消息
+> - `transport.rs` (142行) — reader_loop + dispatch_response (后台 I/O)
+> - `manager.rs` (127行) — McpManager (多服务器编排)
+> - `client_tests.rs` (234行) — 所有测试
 
 ---
 
@@ -358,16 +319,9 @@ if body.contains("prompt is too long") || body.contains("too many tokens") {
 
 ---
 
-### 19. 运行时正则编译
+### ~~19. 运行时正则编译~~ ✅ 已在第一批修复
 
-**文件**: `src/utils/bash.rs`
-
-4 处 `Regex::new(...).expect(...)`:
-```rust
-Regex::new(r"<<-?\s*'\w+'").expect("invalid heredoc single-quoted regex")
-```
-
-**建议**: 使用 `std::sync::LazyLock` 或 `once_cell::sync::Lazy` 编译为静态常量。
+> 4 处 `Regex::new().unwrap()` 已改为 `static LazyLock<Regex>`。
 
 ---
 
@@ -381,11 +335,11 @@ Regex::new(r"<<-?\s*'\w+'").expect("invalid heredoc single-quoted regex")
 
 ## 严重程度汇总
 
-| 等级 | 问题数 | 典型代表 |
-|------|--------|----------|
-| **CRITICAL** | 4 | 巨型函数 (loop_impl 1105行, lifecycle 1703行)、生产代码 panic 26+ 处 |
-| **HIGH** | 5 | Arc 泛滥 (10个独立锁)、全局状态、重试代码重复、提供商抽象不足 |
-| **MEDIUM** | 11 | allow(unused)、测试样板重复、模型别名重复、工具解析不一致 |
+| 等级 | 总问题数 | 已修复 | 剩余 | 典型代表 |
+|------|---------|--------|------|----------|
+| **CRITICAL** | 4 | 2 ✅ | 2 | ~~巨型函数~~、生产代码 panic 26+ 处 (测试中) |
+| **HIGH** | 5 | 1 ✅ | 4 | ~~mcp/client.rs~~、Arc 泛滥、全局状态、重试代码重复 |
+| **MEDIUM** | 11 | 1 ✅ | 10 | ~~运行时正则~~、allow(unused)、测试样板重复 |
 
 ---
 
@@ -412,13 +366,15 @@ Regex::new(r"<<-?\s*'\w+'").expect("invalid heredoc single-quoted regex")
 | `tools/config_tool.rs` 1 处 | `config_tool.rs` | `.as_object_mut().unwrap()` → `.expect("guaranteed object")` |
 | `tools/worktree.rs` 1 处 | `worktree.rs` | `session.unwrap()` → `.expect("guaranteed Some")` |
 
-### 第二批: 可维护性 (预计影响: 核心引擎)
+### ~~第二批: 可维护性~~ — 已修复
 
-| 任务 | 影响文件数 | 复杂度 |
-|------|-----------|--------|
-| 拆分 `query/loop_impl.rs` 为状态机 | 3-5 | 高 |
-| 拆分 `engine/lifecycle.rs` 为多模块 | 3-5 | 高 |
-| 拆分 `mcp/client.rs` | 3-4 | 中 |
+**已修复内容:**
+
+| 修复 | 原始行数 | 拆分后 | 最大单文件 |
+|------|---------|--------|-----------|
+| `engine/lifecycle.rs` → `lifecycle/` 目录模块 (6 文件) | 1703 | 1689 | 637 (submit_message.rs) |
+| `query/loop_impl.rs` → 核心 + helpers + tests (3 文件) | 1105 | 1073 | 451 (loop_impl.rs) |
+| `mcp/client.rs` → client + transport + manager + tests (4 文件) | 1008 | 1005 | 502 (client.rs) |
 
 ### 第三批: 架构改善 (预计影响: 引擎 + API)
 
@@ -436,4 +392,3 @@ Regex::new(r"<<-?\s*'\w+'").expect("invalid heredoc single-quoted regex")
 | 提取 `test_ctx()` 到共享模块 | ~13 | 低 |
 | 统一模型别名到查找表 | 3-4 | 低 |
 | 统一工具输入解析模式 | ~15 | 中 |
-| 正则改为 LazyLock 编译 | 1 | 低 |
