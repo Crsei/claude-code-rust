@@ -14,6 +14,9 @@
 //! | `input`      | Input prompt: typing, cursor, Ctrl keys, vim     |
 //! | `streaming`  | Streaming lifecycle, abort, multi-turn, tool use |
 //! | `resize`     | Terminal resize behavior                         |
+//! | `screenshot` | Terminal screenshots: HTML rendering + snapshots  |
+//! | `commands`   | Slash commands: /help, /version, /model, etc.    |
+//! | `multi_turn` | Multi-turn conversation depth tests              |
 //!
 //! ## Running
 //!
@@ -23,6 +26,8 @@
 //!
 //! # Single module
 //! cargo test --test pty_ui welcome
+//! cargo test --test pty_ui commands
+//! cargo test --test pty_ui multi_turn
 //!
 //! # With output
 //! cargo test --test pty_ui -- --nocapture
@@ -41,3 +46,5 @@ mod input;
 mod streaming;
 mod resize;
 mod screenshot;
+mod commands;
+mod multi_turn;
