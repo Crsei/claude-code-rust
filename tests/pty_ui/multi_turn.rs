@@ -70,10 +70,10 @@ fn clear_then_continue_input() {
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(300));
     session.send_ctrl_c();
-    let _output = session.finish(QUICK_TIMEOUT, "mt_clear_continue");
+    let output = session.finish(QUICK_TIMEOUT, "mt_clear_continue");
 
     assert!(ok, "should produce response after /clear");
-    assert!(_output.raw.len() > 0, "/clear then continue should not crash");
+    assert!(output.raw.len() > 0, "/clear then continue should not crash");
 }
 
 /// 快速连续输入多行后 slash 命令仍响应
