@@ -13,6 +13,7 @@ fn slash_help_shows_command_list() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
+    // /help output should list other commands
     session.send_line("/help");
     let found = session.wait_for_any(
         &["/help", "/exit", "/version", "/model"],
@@ -22,7 +23,7 @@ fn slash_help_shows_command_list() {
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(300));
     session.send_ctrl_c();
-    let output = session.finish(QUICK_TIMEOUT, "cmd_help");
+    let _output = session.finish(QUICK_TIMEOUT, "cmd_help");
 
     assert!(found.is_some(), "/help should list available commands");
 }
@@ -34,6 +35,7 @@ fn slash_version_shows_version() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
+    // Version output should contain the crate version or "claude-code-rs"
     session.send_line("/version");
     let found = session.wait_for_any(
         &["claude-code-rs", env!("CARGO_PKG_VERSION")],
@@ -43,7 +45,7 @@ fn slash_version_shows_version() {
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(300));
     session.send_ctrl_c();
-    let output = session.finish(QUICK_TIMEOUT, "cmd_version");
+    let _output = session.finish(QUICK_TIMEOUT, "cmd_version");
 
     assert!(found.is_some(), "/version should show version info");
 }
@@ -55,10 +57,12 @@ fn slash_exit_quits_gracefully() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
+    // /exit should cause the process to exit — finish should complete within timeout
     session.send_line("/exit");
 
     let output = session.finish(QUICK_TIMEOUT, "cmd_exit");
 
+    // No panic, process exited. Output may contain a goodbye message.
     assert!(output.raw.len() > 0, "should have captured some output before exit");
 }
 
@@ -69,6 +73,7 @@ fn slash_cost_shows_usage() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
+    // Cost/usage output should contain token-related text
     session.send_line("/cost");
     let found = session.wait_for_any(
         &["token", "cost", "usage", "0"],
@@ -78,7 +83,7 @@ fn slash_cost_shows_usage() {
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(300));
     session.send_ctrl_c();
-    let output = session.finish(QUICK_TIMEOUT, "cmd_cost");
+    let _output = session.finish(QUICK_TIMEOUT, "cmd_cost");
 
     assert!(found.is_some(), "/cost should show usage info");
 }
@@ -90,6 +95,7 @@ fn slash_model_shows_current_model() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
+    // Should show model name or "model" keyword
     session.send_line("/model");
     let found = session.wait_for_any(
         &["model", "claude", "sonnet", "opus", "haiku"],
@@ -99,7 +105,7 @@ fn slash_model_shows_current_model() {
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(300));
     session.send_ctrl_c();
-    let output = session.finish(QUICK_TIMEOUT, "cmd_model");
+    let _output = session.finish(QUICK_TIMEOUT, "cmd_model");
 
     assert!(found.is_some(), "/model should show model info");
 }
@@ -111,6 +117,7 @@ fn slash_status_shows_session_info() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
+    // Status should contain session-related info
     session.send_line("/status");
     let found = session.wait_for_any(
         &["model", "session", "message", "permission", "mode"],
@@ -120,7 +127,7 @@ fn slash_status_shows_session_info() {
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(300));
     session.send_ctrl_c();
-    let output = session.finish(QUICK_TIMEOUT, "cmd_status");
+    let _output = session.finish(QUICK_TIMEOUT, "cmd_status");
 
     assert!(found.is_some(), "/status should show session info");
 }
@@ -132,8 +139,9 @@ fn slash_unknown_command_shows_error() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
+    // Should show "unknown" or "not found" or echo the command back
     session.send_line("/nonexistent_xyz_42");
-    let found = session.wait_for_any(
+    let _found = session.wait_for_any(
         &["unknown", "not found", "nonexistent", "invalid"],
         QUICK_TIMEOUT,
     );
@@ -143,6 +151,7 @@ fn slash_unknown_command_shows_error() {
     session.send_ctrl_c();
     let output = session.finish(QUICK_TIMEOUT, "cmd_unknown");
 
+    // At minimum, no panic
     assert!(output.raw.len() > 0, "should not panic on unknown command");
 }
 
@@ -171,6 +180,7 @@ fn slash_model_with_arg_switches_model() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
+    // Try switching to sonnet alias
     session.send_line("/model sonnet");
     let found = session.wait_for_any(
         &["sonnet", "model", "switch", "changed"],
@@ -180,7 +190,7 @@ fn slash_model_with_arg_switches_model() {
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(300));
     session.send_ctrl_c();
-    let output = session.finish(QUICK_TIMEOUT, "cmd_model_switch");
+    let _output = session.finish(QUICK_TIMEOUT, "cmd_model_switch");
 
     assert!(found.is_some(), "/model sonnet should acknowledge model change");
 }
@@ -195,6 +205,7 @@ fn slash_clear_resets_conversation() {
     session.send_line("/clear");
     std::thread::sleep(Duration::from_secs(2));
 
+    // After clear, TUI should still be functional — type something to verify
     session.send_line("hello after clear");
     std::thread::sleep(Duration::from_secs(1));
 
@@ -222,7 +233,7 @@ fn slash_context_shows_info() {
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(300));
     session.send_ctrl_c();
-    let output = session.finish(QUICK_TIMEOUT, "cmd_context");
+    let _output = session.finish(QUICK_TIMEOUT, "cmd_context");
 
     assert!(found.is_some(), "/context should show context info");
 }
@@ -243,7 +254,7 @@ fn slash_skills_lists_skills() {
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(300));
     session.send_ctrl_c();
-    let output = session.finish(QUICK_TIMEOUT, "cmd_skills");
+    let _output = session.finish(QUICK_TIMEOUT, "cmd_skills");
 
     assert!(found.is_some(), "/skills should list or mention skills");
 }
@@ -269,5 +280,6 @@ fn multiple_commands_in_sequence() {
     session.send_ctrl_c();
     let output = session.finish(QUICK_TIMEOUT, "cmd_sequence");
 
+    // No panic after 5 consecutive commands
     assert!(output.raw.len() > 100, "multiple commands should produce substantial output");
 }
