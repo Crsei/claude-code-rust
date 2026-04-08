@@ -431,6 +431,7 @@ mod tests {
             agent_id: None,
             agent_type: None,
             query_tracking: None,
+            permission_callback: None,
         }
     }
 }

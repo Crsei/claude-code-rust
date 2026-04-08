@@ -190,11 +190,13 @@ impl QueryEngine {
                 crate::api::client::ApiClient::from_auth().map(Arc::new);
 
             // Create deps for the inner query loop
+            let permission_callback = state_ref.read().permission_callback.clone();
             let deps = Arc::new(QueryEngineDeps {
                 aborted: aborted_ref.clone(),
                 state: state_ref.clone(),
                 api_client,
                 agent_context: config.agent_context.clone(),
+                permission_callback,
             });
 
             // Run the query loop

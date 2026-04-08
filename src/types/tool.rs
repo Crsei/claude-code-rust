@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -8,6 +10,16 @@ use serde_json::Value;
 use super::app_state::AppState;
 #[allow(unused_imports)]
 use super::message::{AssistantMessage, ContentBlock, Message};
+
+/// Async callback for interactive permission requests.
+///
+/// Called with (tool_use_id, tool_name, description, options).
+/// Returns the user's decision: "allow", "deny", or "always_allow".
+pub type PermissionCallback = Arc<
+    dyn Fn(String, String, String, Vec<String>) -> Pin<Box<dyn Future<Output = String> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// 工具输入验证结果
 #[derive(Debug, Clone)]
@@ -106,6 +118,10 @@ pub struct ToolUseContext {
     pub agent_id: Option<String>,
     pub agent_type: Option<String>,
     pub query_tracking: Option<QueryChainTracking>,
+    /// Async callback for interactive permission prompts (headless/TUI mode).
+    /// When set and a tool requires `Ask` permission, this callback is invoked
+    /// instead of immediately denying. If `None`, `Ask` falls back to deny.
+    pub permission_callback: Option<PermissionCallback>,
 }
 
 /// 工具使用选项 (不可变配置)

@@ -66,6 +66,8 @@ pub(crate) struct QueryEngineState {
     pub(crate) discovered_skill_names: HashSet<String>,
     /// Nested memory paths already loaded (dedup).
     pub(crate) loaded_nested_memory_paths: HashSet<String>,
+    /// Async callback for interactive permission prompts (set by headless/TUI).
+    pub(crate) permission_callback: Option<crate::types::tool::PermissionCallback>,
 }
 
 // ---------------------------------------------------------------------------
@@ -119,10 +121,20 @@ impl QueryEngine {
                 tools,
                 discovered_skill_names: HashSet::new(),
                 loaded_nested_memory_paths: HashSet::new(),
+                permission_callback: None,
             })),
             aborted: Arc::new(AtomicBool::new(false)),
             has_handled_orphaned_permission: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    // -- Permission callback --------------------------------------------------
+
+    /// Set the async permission callback used by headless/TUI mode.
+    /// When a tool requires `Ask` permission, this callback is invoked
+    /// to prompt the user via IPC instead of immediately denying.
+    pub fn set_permission_callback(&self, cb: crate::types::tool::PermissionCallback) {
+        self.state.write().permission_callback = Some(cb);
     }
 
     // -- Abort control -------------------------------------------------------

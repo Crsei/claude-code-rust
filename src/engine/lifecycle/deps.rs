@@ -37,6 +37,9 @@ pub(crate) struct QueryEngineDeps {
     /// Sub-agent context -- propagated into `ToolUseContext` so that
     /// nested Agent tool calls can enforce recursion depth limits.
     pub(crate) agent_context: Option<crate::types::config::AgentContext>,
+    /// Async callback for interactive permission prompts.
+    /// Propagated into `ToolUseContext` for headless/TUI permission flow.
+    pub(crate) permission_callback: Option<crate::types::tool::PermissionCallback>,
 }
 
 #[async_trait::async_trait]
@@ -297,6 +300,8 @@ impl QueryDeps for QueryEngineDeps {
         parent_message: &crate::types::message::AssistantMessage,
         _on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolExecResult> {
+        use crate::types::tool::PermissionResult;
+
         let tool = tools
             .iter()
             .find(|t| t.name() == request.tool_name)
@@ -339,7 +344,67 @@ impl QueryDeps for QueryEngineDeps {
                 .agent_context
                 .as_ref()
                 .map(|ac| ac.query_tracking.clone()),
+            permission_callback: self.permission_callback.clone(),
         };
+
+        // ── Permission check ───────────────────────────────────────
+        let perm_result = tool.check_permissions(&request.input, &ctx).await;
+        match perm_result {
+            PermissionResult::Allow { .. } => { /* proceed */ }
+            PermissionResult::Deny { message } => {
+                return Ok(ToolExecResult {
+                    tool_use_id: request.tool_use_id,
+                    tool_name: request.tool_name,
+                    result: crate::types::tool::ToolResult {
+                        data: serde_json::json!(format!("Permission denied: {}", message)),
+                        new_messages: vec![],
+                    },
+                    is_error: true,
+                });
+            }
+            PermissionResult::Ask { message } => {
+                if let Some(ref callback) = ctx.permission_callback {
+                    let description = format!("{}: {}", request.tool_name, message);
+                    let options = vec![
+                        "Allow".to_string(),
+                        "Deny".to_string(),
+                        "Always Allow".to_string(),
+                    ];
+                    let decision = callback(
+                        request.tool_use_id.clone(),
+                        request.tool_name.clone(),
+                        description,
+                        options,
+                    )
+                    .await;
+
+                    match decision.to_lowercase().as_str() {
+                        "allow" | "always_allow" => { /* proceed */ }
+                        _ => {
+                            return Ok(ToolExecResult {
+                                tool_use_id: request.tool_use_id,
+                                tool_name: request.tool_name,
+                                result: crate::types::tool::ToolResult {
+                                    data: serde_json::json!("Permission denied by user."),
+                                    new_messages: vec![],
+                                },
+                                is_error: true,
+                            });
+                        }
+                    }
+                } else {
+                    return Ok(ToolExecResult {
+                        tool_use_id: request.tool_use_id,
+                        tool_name: request.tool_name,
+                        result: crate::types::tool::ToolResult {
+                            data: serde_json::json!(format!("Permission required: {}", message)),
+                            new_messages: vec![],
+                        },
+                        is_error: true,
+                    });
+                }
+            }
+        }
 
         match tool.call(request.input, &ctx, parent_message, None).await {
             Ok(result) => Ok(ToolExecResult {
