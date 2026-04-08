@@ -23,9 +23,10 @@ __pycache__/
 *.pyc
 *.pyo
 
-# E2E test logs
-logs/*.log
-logs/*.raw
+# E2E test logs (timestamped subdirectories)
+logs/**/*.log
+logs/**/*.logs
+logs/**/*.raw
 
 # macOS
 .DS_Store

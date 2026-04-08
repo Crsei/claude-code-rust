@@ -5,8 +5,10 @@
 //! terminal would render — including ANSI escape sequences, TUI layout, etc.
 //!
 //! All captured output is saved to `logs/` for post-mortem debugging:
-//! - `*.raw` — raw bytes including ANSI escape sequences
-//! - `*.log` — stripped plain text
+//! - `raw/*.raw` — raw bytes including ANSI escape sequences
+//! - `log/*.log` — stripped plain text
+//! - `aggregated/<test_name>.logs` — per-test combined logs
+//! - `aggregated/all.logs` — aggregated logs across all PTY tests in this run
 //!
 //! The reader thread auto-responds to `\x1b[6n` (Device Status Report) queries
 //! that crossterm sends on startup, preventing the process from blocking.
@@ -15,16 +17,89 @@
 //! Live: cargo test --test e2e_pty -- --ignored
 
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-/// Directory for test logs (relative to project root).
-fn logs_dir() -> PathBuf {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("logs");
-    std::fs::create_dir_all(&dir).expect("create logs dir");
-    dir
+/// Timestamped log directories for this test run.
+/// Format: `logs/YYYYMMDDHHMM/{raw,log}/` + `logs/aggregated/` — created once per process.
+struct LogDirs {
+    raw_dir: PathBuf,
+    log_dir: PathBuf,
+    aggregated_dir: PathBuf,
+}
+
+fn logs_dirs() -> &'static LogDirs {
+    static DIRS: OnceLock<LogDirs> = OnceLock::new();
+    DIRS.get_or_init(|| {
+        let now = chrono::Local::now();
+        let logs_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("logs");
+        let base = logs_root.join(now.format("%Y%m%d%H%M").to_string());
+        let raw_dir = base.join("raw");
+        let log_dir = base.join("log");
+        let aggregated_dir = logs_root.join("aggregated");
+
+        std::fs::create_dir_all(&raw_dir).expect("create raw logs dir");
+        std::fs::create_dir_all(&log_dir).expect("create plain logs dir");
+        std::fs::create_dir_all(&aggregated_dir).expect("create aggregated logs dir");
+
+        LogDirs {
+            raw_dir,
+            log_dir,
+            aggregated_dir,
+        }
+    })
+}
+
+fn aggregated_write_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn write_aggregated_logs(
+    dirs: &LogDirs,
+    test_name: &str,
+    raw_path: &PathBuf,
+    log_path: &PathBuf,
+    raw: &[u8],
+    plain: &[u8],
+) {
+    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let raw_text = String::from_utf8_lossy(raw);
+    let plain_text = String::from_utf8_lossy(plain);
+
+    let section = format!(
+        "\n=== {test_name} ===\n\
+timestamp: {timestamp}\n\
+raw_file: {raw_file}\n\
+log_file: {log_file}\n\
+----- RAW (utf8-lossy) -----\n\
+{raw_text}\n\
+----- LOG (plain text) -----\n\
+{plain_text}\n\
+=== end {test_name} ===\n",
+        raw_file = raw_path.display(),
+        log_file = log_path.display(),
+    );
+
+    let _guard = aggregated_write_lock()
+        .lock()
+        .expect("lock aggregated logs mutex");
+
+    let per_test_path = dirs.aggregated_dir.join(format!("{test_name}.logs"));
+    std::fs::write(&per_test_path, section.as_bytes()).expect("write per-test aggregated log");
+
+    let all_path = dirs.aggregated_dir.join("all.logs");
+    let mut all_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&all_path)
+        .expect("open aggregated all.logs");
+    all_file
+        .write_all(section.as_bytes())
+        .expect("append aggregated all.logs");
 }
 
 /// Path to the compiled binary.
@@ -181,11 +256,12 @@ impl PtySession {
         let raw = self.buffer.lock().unwrap().clone();
         let plain = strip_ansi_escapes::strip(&raw);
 
-        let logs = logs_dir();
-        let raw_path = logs.join(format!("{}.raw", test_name));
-        let log_path = logs.join(format!("{}.log", test_name));
+        let dirs = logs_dirs();
+        let raw_path = dirs.raw_dir.join(format!("{}.raw", test_name));
+        let log_path = dirs.log_dir.join(format!("{}.log", test_name));
         std::fs::write(&raw_path, &raw).expect("write raw log");
         std::fs::write(&log_path, &plain).expect("write plain log");
+        write_aggregated_logs(dirs, test_name, &raw_path, &log_path, &raw, &plain);
 
         eprintln!(
             "[pty] captured {} bytes raw, {} bytes plain → {}",
@@ -240,13 +316,13 @@ impl CapturedOutput {
 }
 
 // =========================================================================
-//  Offline tests (no API key needed)
+//  Tests
 // =========================================================================
 
 /// `--version` in a PTY should print version info and exit.
 #[test]
 fn pty_version_flag() {
-    let session = PtySession::spawn(&["-V"], 120, 40, true);
+    let session = PtySession::spawn(&["-V"], 120, 40, false);
     let output = session.finish(Duration::from_secs(10), "pty_version_flag");
 
     assert!(
@@ -259,13 +335,15 @@ fn pty_version_flag() {
 /// `--init-only` should exit cleanly and produce log files.
 #[test]
 fn pty_init_only() {
-    let session = PtySession::spawn(&["--init-only"], 120, 40, true);
+    let session = PtySession::spawn(&["--init-only"], 120, 40, false);
     let output = session.finish(Duration::from_secs(10), "pty_init_only");
 
     // Verify log files were created
-    let logs = logs_dir();
-    assert!(logs.join("pty_init_only.raw").exists());
-    assert!(logs.join("pty_init_only.log").exists());
+    let dirs = logs_dirs();
+    assert!(dirs.raw_dir.join("pty_init_only.raw").exists());
+    assert!(dirs.log_dir.join("pty_init_only.log").exists());
+    assert!(dirs.aggregated_dir.join("pty_init_only.logs").exists());
+    assert!(dirs.aggregated_dir.join("all.logs").exists());
 
     // Should not have panicked
     assert!(
@@ -282,7 +360,7 @@ fn pty_dump_system_prompt() {
         &["--dump-system-prompt", "-C", r"F:\temp"],
         200,
         50,
-        true,
+        false,
     );
     let output = session.finish(Duration::from_secs(10), "pty_dump_system_prompt");
 
@@ -295,10 +373,14 @@ fn pty_dump_system_prompt() {
 }
 
 /// The TUI should start and render something when launched without --headless.
-/// We strip API keys so it shows an error or prompt, then we quit.
 #[test]
 fn pty_tui_starts_and_captures_output() {
-    let session = PtySession::spawn(&["-C", r"F:\temp"], 120, 40, true);
+    let session = PtySession::spawn(
+        &["-C", r"F:\temp", "--permission-mode", "bypass"],
+        120,
+        40,
+        false,
+    );
 
     // Wait for TUI to render
     std::thread::sleep(Duration::from_secs(3));
@@ -326,13 +408,8 @@ fn pty_tui_starts_and_captures_output() {
     eprintln!("TUI output preview:\n{}", &text[..preview_end]);
 }
 
-// =========================================================================
-//  Live tests (require API key, IGNORED by default)
-// =========================================================================
-
 /// Launch TUI, send a simple prompt via PTY input, capture the full session.
 #[test]
-#[ignore]
 fn live_pty_simple_chat() {
     let session = PtySession::spawn(
         &["-C", r"F:\temp", "--permission-mode", "bypass"],
@@ -366,7 +443,6 @@ fn live_pty_simple_chat() {
 
 /// Launch in print mode (-p), capture full output to log.
 #[test]
-#[ignore]
 fn live_pty_print_mode() {
     let session = PtySession::spawn(
         &["-p", "Say exactly: PTY_PRINT_OK", "-C", r"F:\temp"],
