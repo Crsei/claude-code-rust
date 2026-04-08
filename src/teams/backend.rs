@@ -74,11 +74,7 @@ pub trait PaneBackend: TeammateExecutor {
     async fn is_running_inside(&self) -> bool;
 
     /// Create a new pane for a teammate.
-    async fn create_teammate_pane(
-        &self,
-        name: &str,
-        color: &str,
-    ) -> Result<CreatePaneResult>;
+    async fn create_teammate_pane(&self, name: &str, color: &str) -> Result<CreatePaneResult>;
 
     /// Send a shell command to a pane.
     async fn send_command_to_pane(&self, pane_id: &str, command: &str) -> Result<()>;
@@ -90,11 +86,7 @@ pub trait PaneBackend: TeammateExecutor {
     async fn set_pane_title(&self, pane_id: &str, name: &str, color: &str) -> Result<()>;
 
     /// Rebalance pane layout after adding/removing panes.
-    async fn rebalance_panes(
-        &self,
-        window_target: &str,
-        has_leader: bool,
-    ) -> Result<()>;
+    async fn rebalance_panes(&self, window_target: &str, has_leader: bool) -> Result<()>;
 
     /// Kill a specific pane.
     async fn kill_pane(&self, pane_id: &str) -> bool;

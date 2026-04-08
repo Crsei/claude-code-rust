@@ -121,8 +121,13 @@ pub async fn oauth_login(_config: &OAuthConfig) -> anyhow::Result<OAuthTokens> {
 
 /// OAuth token refresh — interface only, not implemented.
 #[allow(dead_code)]
-pub async fn oauth_refresh(_refresh_token: &str, _config: &OAuthConfig) -> anyhow::Result<OAuthTokens> {
-    anyhow::bail!("OAuth refresh is not implemented — use ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN")
+pub async fn oauth_refresh(
+    _refresh_token: &str,
+    _config: &OAuthConfig,
+) -> anyhow::Result<OAuthTokens> {
+    anyhow::bail!(
+        "OAuth refresh is not implemented — use ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN"
+    )
 }
 
 /// OAuth logout — interface only, not implemented.

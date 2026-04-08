@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use super::tool::{PermissionMode, ToolPermissionContext};
+use std::collections::HashMap;
 
 /// 应用全局状态 (简化版)
 ///

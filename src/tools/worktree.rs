@@ -15,8 +15,9 @@
 //! - Change detection: counts uncommitted files + new commits before removal
 //! - Requires explicit `discard_changes: true` to remove with unsaved work
 
+use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 
 use anyhow::{bail, Result};
 use async_trait::async_trait;
@@ -49,14 +50,12 @@ static CURRENT_SESSION: LazyLock<Mutex<Option<WorktreeSession>>> =
 
 /// Get the current worktree session (if any).
 pub fn get_current_worktree_session() -> Option<WorktreeSession> {
-    CURRENT_SESSION.lock().ok()?.clone()
+    CURRENT_SESSION.lock().clone()
 }
 
 /// Set the current worktree session.
 fn set_worktree_session(session: Option<WorktreeSession>) {
-    if let Ok(mut s) = CURRENT_SESSION.lock() {
-        *s = session;
-    }
+    *CURRENT_SESSION.lock() = session;
 }
 
 // ---------------------------------------------------------------------------
@@ -69,7 +68,12 @@ async fn count_worktree_changes(
     original_head: Option<&str>,
 ) -> Option<(usize, usize)> {
     let status = tokio::process::Command::new("git")
-        .args(["-C", &worktree_path.to_string_lossy(), "status", "--porcelain"])
+        .args([
+            "-C",
+            &worktree_path.to_string_lossy(),
+            "status",
+            "--porcelain",
+        ])
         .output()
         .await
         .ok()?;
@@ -129,12 +133,7 @@ async fn get_head_sha(cwd: &Path) -> Option<String> {
 /// Find the canonical git root from a path.
 async fn find_git_root(cwd: &Path) -> Option<PathBuf> {
     let output = tokio::process::Command::new("git")
-        .args([
-            "-C",
-            &cwd.to_string_lossy(),
-            "rev-parse",
-            "--show-toplevel",
-        ])
+        .args(["-C", &cwd.to_string_lossy(), "rev-parse", "--show-toplevel"])
         .output()
         .await
         .ok()?;
@@ -220,9 +219,9 @@ impl Tool for EnterWorktreeTool {
     ) -> Result<ToolResult> {
         let params: EnterWorktreeInput = serde_json::from_value(input)?;
 
-        let slug = params.name.unwrap_or_else(|| {
-            uuid::Uuid::new_v4().to_string()[..8].to_string()
-        });
+        let slug = params
+            .name
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()[..8].to_string());
         validate_slug(&slug)?;
 
         let cwd = std::env::current_dir()?;
@@ -356,10 +355,7 @@ impl Tool for ExitWorktreeTool {
             };
         }
 
-        let action = input
-            .get("action")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let action = input.get("action").and_then(|v| v.as_str()).unwrap_or("");
 
         if action != "keep" && action != "remove" {
             return ValidationResult::Error {
@@ -560,8 +556,9 @@ impl Tool for ExitWorktreeTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, RwLock};
     use crate::types::app_state::AppState;
+    use parking_lot::RwLock;
+    use std::sync::Arc;
 
     fn make_ctx() -> ToolUseContext {
         let state = Arc::new(RwLock::new(AppState::default()));
@@ -580,9 +577,9 @@ mod tests {
             },
             abort_signal: tokio::sync::watch::channel(false).1,
             read_file_state: FileStateCache::default(),
-            get_app_state: Arc::new(move || state_r.read().unwrap().clone()),
+            get_app_state: Arc::new(move || state_r.read().clone()),
             set_app_state: Arc::new(move |f: Box<dyn FnOnce(AppState) -> AppState>| {
-                let mut s = state_w.write().unwrap();
+                let mut s = state_w.write();
                 let old = s.clone();
                 *s = f(old);
             }),
@@ -639,7 +636,10 @@ mod tests {
         let tool = ExitWorktreeTool;
         let ctx = make_ctx();
         let result = tool.validate_input(&json!({"action": "keep"}), &ctx).await;
-        assert!(matches!(result, ValidationResult::Error { error_code: 1, .. }));
+        assert!(matches!(
+            result,
+            ValidationResult::Error { error_code: 1, .. }
+        ));
     }
 
     #[tokio::test]
@@ -656,7 +656,10 @@ mod tests {
         let result = tool
             .validate_input(&json!({"action": "invalid"}), &ctx)
             .await;
-        assert!(matches!(result, ValidationResult::Error { error_code: 3, .. }));
+        assert!(matches!(
+            result,
+            ValidationResult::Error { error_code: 3, .. }
+        ));
 
         set_worktree_session(None);
     }
@@ -693,7 +696,10 @@ mod tests {
         let tool = EnterWorktreeTool;
         let ctx = make_ctx();
         let result = tool.validate_input(&json!({}), &ctx).await;
-        assert!(matches!(result, ValidationResult::Error { error_code: 1, .. }));
+        assert!(matches!(
+            result,
+            ValidationResult::Error { error_code: 1, .. }
+        ));
 
         set_worktree_session(None);
     }

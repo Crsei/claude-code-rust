@@ -98,9 +98,9 @@ pub struct VimState {
 /// A pending operator waiting for a motion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PendingOp {
-    Delete,  // d
-    Yank,    // y
-    Change,  // c
+    Delete, // d
+    Yank,   // y
+    Change, // c
 }
 
 impl VimState {
@@ -148,12 +148,7 @@ impl VimState {
     /// Process a key event and return the action(s) to take.
     ///
     /// `input` is the current input text, `cursor` is the byte-offset cursor.
-    pub fn handle_key(
-        &mut self,
-        key: KeyEvent,
-        input: &str,
-        cursor: usize,
-    ) -> VimAction {
+    pub fn handle_key(&mut self, key: KeyEvent, input: &str, cursor: usize) -> VimAction {
         if !self.enabled {
             return VimAction::Passthrough(key);
         }
@@ -167,12 +162,7 @@ impl VimState {
 
     // ── Normal mode ────────────────────────────────────────────────
 
-    fn handle_normal(
-        &mut self,
-        key: KeyEvent,
-        input: &str,
-        cursor: usize,
-    ) -> VimAction {
+    fn handle_normal(&mut self, key: KeyEvent, input: &str, cursor: usize) -> VimAction {
         // Handle Ctrl combinations first
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             return VimAction::Passthrough(key);
@@ -182,9 +172,7 @@ impl VimState {
             // -- Digit prefix --
             KeyCode::Char(c @ '1'..='9') => {
                 let digit = (c as usize) - ('0' as usize);
-                self.repeat_count = Some(
-                    self.repeat_count.unwrap_or(0) * 10 + digit,
-                );
+                self.repeat_count = Some(self.repeat_count.unwrap_or(0) * 10 + digit);
                 VimAction::None
             }
             KeyCode::Char('0') if self.repeat_count.is_some() => {
@@ -241,12 +229,8 @@ impl VimState {
                 }
                 VimAction::MoveCursor(pos)
             }
-            KeyCode::Char('0') => {
-                VimAction::MoveCursor(0)
-            }
-            KeyCode::Char('$') => {
-                VimAction::MoveCursor(input.len())
-            }
+            KeyCode::Char('0') => VimAction::MoveCursor(0),
+            KeyCode::Char('$') => VimAction::MoveCursor(input.len()),
             KeyCode::Char('^') => {
                 // First non-whitespace
                 let pos = input
@@ -413,12 +397,7 @@ impl VimState {
 
     // ── Visual mode ────────────────────────────────────────────────
 
-    fn handle_visual(
-        &mut self,
-        key: KeyEvent,
-        input: &str,
-        cursor: usize,
-    ) -> VimAction {
+    fn handle_visual(&mut self, key: KeyEvent, input: &str, cursor: usize) -> VimAction {
         match key.code {
             KeyCode::Esc => {
                 self.mode = VimMode::Normal;
@@ -431,12 +410,8 @@ impl VimState {
             KeyCode::Char('l') | KeyCode::Right => {
                 VimAction::MoveCursor(next_char_pos(input, cursor))
             }
-            KeyCode::Char('w') => {
-                VimAction::MoveCursor(word_end_pos(input, cursor))
-            }
-            KeyCode::Char('b') => {
-                VimAction::MoveCursor(word_start_pos(input, cursor))
-            }
+            KeyCode::Char('w') => VimAction::MoveCursor(word_end_pos(input, cursor)),
+            KeyCode::Char('b') => VimAction::MoveCursor(word_start_pos(input, cursor)),
             KeyCode::Char('0') => VimAction::MoveCursor(0),
             KeyCode::Char('$') => VimAction::MoveCursor(input.len()),
 

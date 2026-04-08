@@ -46,7 +46,10 @@ mod tests {
     fn test_context_window_sizes() {
         assert_eq!(get_context_window_size("claude-opus-4-20250514"), 200_000);
         assert_eq!(get_context_window_size("claude-sonnet-4-20250514"), 200_000);
-        assert_eq!(get_context_window_size("claude-haiku-3-5-20241022"), 200_000);
+        assert_eq!(
+            get_context_window_size("claude-haiku-3-5-20241022"),
+            200_000
+        );
         assert_eq!(get_context_window_size("unknown-model"), 200_000);
     }
 }

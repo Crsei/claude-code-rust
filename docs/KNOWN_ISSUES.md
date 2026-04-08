@@ -29,3 +29,40 @@ Each issue includes a description, reproduction steps, and current status.
 ---
 
 *Add new issues below this line.*
+
+## 2. Composer lacked a frame and busy indicator could ghost in the footer
+
+**Status**: Fixed (2026-04-08)
+
+**Description**: The bottom composer was rendered as raw prompt text without a visible input frame. During the transition from busy state back to idle, the standalone `Thinking...` / `Reasoning...` indicator could remain as a stale line in the lower-left corner even after the assistant response had finished rendering.
+
+**Expected behavior**: The composer should always render inside a stable bordered container, and the busy indicator should be repainted inside that same container so footer state changes do not leave stale rows behind.
+
+**Fix**:
+1. Rebuilt the composer with an `ink-terminal` bordered `Box`
+2. Moved idle and busy rendering into the same composer component
+3. Cleared frontend streaming state more aggressively on `stream_end` and `error`
+
+**Related files**:
+- `ui/src/components/InputPrompt.tsx`
+- `ui/src/components/App.tsx`
+- `ui/src/store/app-store.tsx`
+
+## 3. Message area had no visible scroll affordance and was hard to navigate
+
+**Status**: Fixed (2026-04-08)
+
+**Description**: In long conversations, the message area could exceed the viewport but users had no clear in-app scroll affordance. They often had to zoom out (`Ctrl + -`) to view complete content.
+
+**Expected behavior**: The conversation should remain readable at normal zoom, with explicit scrolling controls and a visible state indicator.
+
+**Fix**:
+1. Added message list scrolling with mouse wheel.
+2. Added keyboard scrolling: `PageUp`, `PageDown`, `Ctrl+↑`, `Ctrl+↓`, `Ctrl+Home`, `Ctrl+End`.
+3. Added a footer hint in the message area showing scroll position and whether more content exists above/below.
+4. Routed wheel behavior by click focus: click message area => wheel scrolls conversation; click composer => wheel navigates input history.
+5. Rebuilt the composer UI using the `ink-terminal/examples/alternate-screen.tsx` style (explicit bordered input row + status row) to ensure the input box is always visible.
+6. Reduced long-response rendering pressure: removed scroll metric polling and switched streaming-phase rendering to plain text; final assistant message still renders via Markdown.
+
+**Related files**:
+- `ui/src/components/MessageList.tsx`

@@ -3,7 +3,6 @@
 /// 消息工具函数
 ///
 /// 对应 TypeScript 中散布在多处的消息处理辅助函数
-
 use crate::types::message::{ContentBlock, Message, MessageContent};
 
 /// 从消息中提取纯文本内容
@@ -157,7 +156,7 @@ pub fn truncate_text(text: &str, max_len: usize) -> String {
         return "...".to_string();
     }
     let content_max = max_len - 3; // room for "..."
-    // Find the last char boundary that fits within content_max bytes
+                                   // Find the last char boundary that fits within content_max bytes
     let mut boundary = content_max;
     while boundary > 0 && !text.is_char_boundary(boundary) {
         boundary -= 1;
@@ -169,7 +168,11 @@ pub fn truncate_text(text: &str, max_len: usize) -> String {
 pub fn format_role(message: &Message) -> &'static str {
     match message {
         Message::User(u) => {
-            if u.is_meta { "system" } else { "user" }
+            if u.is_meta {
+                "system"
+            } else {
+                "user"
+            }
         }
         Message::Assistant(_) => "assistant",
         Message::System(_) => "system",
@@ -256,7 +259,10 @@ pub fn conversation_summary(messages: &[Message]) -> String {
     let tools = get_unique_tool_names(messages);
 
     let mut lines = vec![
-        format!("Messages: {} user, {} assistant", user_count, assistant_count),
+        format!(
+            "Messages: {} user, {} assistant",
+            user_count, assistant_count
+        ),
         format!("Tool calls: {}", tool_count),
         format!("Estimated tokens: {}", token_est),
     ];
@@ -271,7 +277,7 @@ pub fn conversation_summary(messages: &[Message]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::message::{AssistantMessage, UserMessage, MessageContent};
+    use crate::types::message::{AssistantMessage, MessageContent, UserMessage};
     use chrono::Utc;
     use uuid::Uuid;
 
@@ -483,9 +489,7 @@ mod tests {
 
     #[test]
     fn test_last_message_role() {
-        let messages = vec![
-            make_assistant_text_only("hi"),
-        ];
+        let messages = vec![make_assistant_text_only("hi")];
         assert_eq!(last_message_role(&messages), Some("assistant"));
         assert_eq!(last_message_role(&[]), None);
     }

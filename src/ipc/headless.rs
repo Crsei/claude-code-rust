@@ -50,7 +50,10 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
         let msg: FrontendMessage = match serde_json::from_str(&line) {
             Ok(m) => m,
             Err(e) => {
-                warn!("headless: failed to parse FrontendMessage: {} — line: {}", e, line);
+                warn!(
+                    "headless: failed to parse FrontendMessage: {} — line: {}",
+                    e, line
+                );
                 let _ = send_to_frontend(&BackendMessage::Error {
                     message: format!("invalid FrontendMessage: {}", e),
                     recoverable: true,
@@ -71,8 +74,7 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
                 // Spawn a task to stream the response so we don't block the
                 // stdin reader (abort can arrive while streaming).
                 tokio::spawn(async move {
-                    let stream =
-                        engine_clone.submit_message(&text, QuerySource::ReplMainThread);
+                    let stream = engine_clone.submit_message(&text, QuerySource::ReplMainThread);
                     let mut stream = std::pin::pin!(stream);
 
                     while let Some(sdk_msg) = stream.next().await {
@@ -178,11 +180,9 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
 /// Map a [`StreamEvent`] to the appropriate [`BackendMessage`] and send it.
 fn handle_stream_event(event: &StreamEvent, message_id: &str) -> std::io::Result<()> {
     match event {
-        StreamEvent::MessageStart { .. } => {
-            send_to_frontend(&BackendMessage::StreamStart {
-                message_id: message_id.to_string(),
-            })
-        }
+        StreamEvent::MessageStart { .. } => send_to_frontend(&BackendMessage::StreamStart {
+            message_id: message_id.to_string(),
+        }),
         StreamEvent::ContentBlockStart { .. } => Ok(()),
         StreamEvent::ContentBlockDelta { ref delta, .. } => {
             if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {

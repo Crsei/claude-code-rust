@@ -13,42 +13,40 @@ pub(crate) fn format_conversation_for_summary(messages: &[Message]) -> String {
             Message::User(u) => {
                 let text = match &u.content {
                     crate::types::message::MessageContent::Text(t) => t.clone(),
-                    crate::types::message::MessageContent::Blocks(blocks) => {
-                        blocks
-                            .iter()
-                            .filter_map(|b| match b {
-                                crate::types::message::ContentBlock::Text { text } => {
-                                    Some(text.clone())
-                                }
-                                crate::types::message::ContentBlock::ToolResult {
+                    crate::types::message::MessageContent::Blocks(blocks) => blocks
+                        .iter()
+                        .filter_map(|b| match b {
+                            crate::types::message::ContentBlock::Text { text } => {
+                                Some(text.clone())
+                            }
+                            crate::types::message::ContentBlock::ToolResult {
+                                tool_use_id,
+                                content,
+                                is_error,
+                            } => {
+                                let result_text = match content {
+                                    crate::types::message::ToolResultContent::Text(t) => {
+                                        if t.len() > 500 {
+                                            format!("{}...[truncated]", &t[..500])
+                                        } else {
+                                            t.clone()
+                                        }
+                                    }
+                                    crate::types::message::ToolResultContent::Blocks(_) => {
+                                        "[complex result]".to_string()
+                                    }
+                                };
+                                Some(format!(
+                                    "[Tool Result ({}{}): {}]",
                                     tool_use_id,
-                                    content,
-                                    is_error,
-                                } => {
-                                    let result_text = match content {
-                                        crate::types::message::ToolResultContent::Text(t) => {
-                                            if t.len() > 500 {
-                                                format!("{}...[truncated]", &t[..500])
-                                            } else {
-                                                t.clone()
-                                            }
-                                        }
-                                        crate::types::message::ToolResultContent::Blocks(_) => {
-                                            "[complex result]".to_string()
-                                        }
-                                    };
-                                    Some(format!(
-                                        "[Tool Result ({}{}): {}]",
-                                        tool_use_id,
-                                        if *is_error { ", ERROR" } else { "" },
-                                        result_text
-                                    ))
-                                }
-                                _ => None,
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    }
+                                    if *is_error { ", ERROR" } else { "" },
+                                    result_text
+                                ))
+                            }
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n"),
                 };
                 if !text.is_empty() && !u.is_meta {
                     parts.push(format!("User: {}", text));
@@ -59,10 +57,7 @@ pub(crate) fn format_conversation_for_summary(messages: &[Message]) -> String {
                     match block {
                         crate::types::message::ContentBlock::Text { text } => {
                             if text.len() > 1000 {
-                                parts.push(format!(
-                                    "Assistant: {}...[truncated]",
-                                    &text[..1000]
-                                ));
+                                parts.push(format!("Assistant: {}...[truncated]", &text[..1000]));
                             } else {
                                 parts.push(format!("Assistant: {}", text));
                             }
@@ -89,7 +84,10 @@ pub(crate) fn format_conversation_for_summary(messages: &[Message]) -> String {
     // Cap total length to avoid exceeding context for the summarization call
     let joined = parts.join("\n\n");
     if joined.len() > 400_000 {
-        format!("{}...\n\n[conversation truncated for summarization]", &joined[..400_000])
+        format!(
+            "{}...\n\n[conversation truncated for summarization]",
+            &joined[..400_000]
+        )
     } else {
         joined
     }
@@ -122,8 +120,7 @@ pub(crate) fn build_messages_request(
                 }))
             }
             Message::Assistant(a) => {
-                let content =
-                    serde_json::to_value(&a.content).unwrap_or_default();
+                let content = serde_json::to_value(&a.content).unwrap_or_default();
                 Some(serde_json::json!({
                     "role": "assistant",
                     "content": content,

@@ -7,13 +7,13 @@
 // 使用 async_stream::stream! 宏
 
 pub mod deps;
-pub mod token_budget;
-pub mod stop_hooks;
 pub(crate) mod loop_helpers;
 pub mod loop_impl;
+pub mod stop_hooks;
+pub mod token_budget;
 
 // 重导出核心函数, 方便外部使用
 #[allow(unused_imports)]
-pub use loop_impl::query;
-#[allow(unused_imports)]
 pub use deps::QueryDeps;
+#[allow(unused_imports)]
+pub use loop_impl::query;

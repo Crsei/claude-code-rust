@@ -12,16 +12,16 @@
 mod bootstrap;
 
 // 核心模块
-mod types;
-mod query;
-mod engine;
-mod tools;
-mod permissions;
-mod config;
-mod utils;
-mod session;
 mod commands;
+mod config;
+mod engine;
+mod permissions;
+mod query;
+mod session;
+mod tools;
+mod types;
 mod ui;
+mod utils;
 
 // 上下文压缩管道
 mod compact;
@@ -76,7 +76,12 @@ use crate::ui::tui;
 
 /// Claude Code CLI — Rust implementation
 #[derive(Parser, Debug)]
-#[command(name = "claude", version, about = "Claude Code CLI", disable_version_flag = true)]
+#[command(
+    name = "claude",
+    version,
+    about = "Claude Code CLI",
+    disable_version_flag = true
+)]
 struct Cli {
     /// Print the version and exit (fast path)
     #[arg(short = 'V', long)]
@@ -191,9 +196,11 @@ fn main() -> ExitCode {
     // ── Fast path: --dump-system-prompt ─────────────────────────────────
     if cli.dump_system_prompt {
         let tools = registry::get_all_tools();
-        let provider_default = crate::api::client::ApiClient::from_env()
-            .map(|c| c.config().default_model.clone());
-        let model_owned = cli.model.clone()
+        let provider_default =
+            crate::api::client::ApiClient::from_env().map(|c| c.config().default_model.clone());
+        let model_owned = cli
+            .model
+            .clone()
             .or(provider_default)
             .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
         let model = model_owned.as_str();
@@ -264,8 +271,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // ── B.3c: Discover and connect MCP servers ──────────────────────
     let _mcp_manager = {
-        use crate::mcp::manager::McpManager;
         use crate::mcp::discovery::discover_mcp_servers;
+        use crate::mcp::manager::McpManager;
         use crate::mcp::tools::mcp_tools_to_tools;
 
         let cwd_path = std::path::Path::new(&cwd);
@@ -273,7 +280,10 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         let mcp_manager = Arc::new(tokio::sync::Mutex::new(McpManager::new()));
 
         if !server_configs.is_empty() {
-            info!(count = server_configs.len(), "MCP: connecting to configured servers");
+            info!(
+                count = server_configs.len(),
+                "MCP: connecting to configured servers"
+            );
             let mut mgr = mcp_manager.lock().await;
             if let Err(e) = mgr.connect_all(server_configs).await {
                 warn!(error = %e, "MCP: some servers failed to connect");
@@ -283,7 +293,10 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             let mcp_tool_defs = mgr.all_tools();
             if !mcp_tool_defs.is_empty() {
                 let mcp_tools = mcp_tools_to_tools(mcp_tool_defs, mcp_manager.clone());
-                info!(count = mcp_tools.len(), "MCP: discovered tools, merging with base tools");
+                info!(
+                    count = mcp_tools.len(),
+                    "MCP: discovered tools, merging with base tools"
+                );
                 tools.extend(mcp_tools);
             }
         }
@@ -379,8 +392,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // ── B.7.1: Initialize global ProcessState ────────────────────────
     let cwd_path = std::path::PathBuf::from(&cwd);
-    let project_root = crate::utils::git::find_git_root(&cwd_path)
-        .unwrap_or_else(|| cwd_path.clone());
+    let project_root =
+        crate::utils::git::find_git_root(&cwd_path).unwrap_or_else(|| cwd_path.clone());
     bootstrap::init_process_state(
         cwd_path,
         project_root,
@@ -449,13 +462,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     // Register shutdown handler
     let shutdown_token = shutdown::register_shutdown_handler();
 
-    let tui_result = tui::run_tui(
-        engine.clone(),
-        initial_prompt,
-        &model,
-        shutdown_token,
-    )
-    .await;
+    let tui_result = tui::run_tui(engine.clone(), initial_prompt, &model, shutdown_token).await;
 
     // ── Phase I: Shutdown and cleanup ────────────────────────────────
     shutdown::graceful_shutdown(&engine).await;
@@ -481,8 +488,7 @@ async fn run_json_mode(engine: &QueryEngine, prompt: &str) -> anyhow::Result<Exi
     let mut exit_code = ExitCode::SUCCESS;
 
     while let Some(msg) = stream.next().await {
-        let json = serde_json::to_string(&msg)
-            .context("failed to serialize SdkMessage to JSON")?;
+        let json = serde_json::to_string(&msg).context("failed to serialize SdkMessage to JSON")?;
         println!("{}", json);
 
         if let crate::engine::sdk_types::SdkMessage::Result(ref result) = msg {
@@ -535,20 +541,15 @@ async fn run_print_mode(engine: &QueryEngine, prompt: &str) -> anyhow::Result<Ex
 
 /// Resolve the working directory from CLI args or environment.
 fn resolve_cwd(cli: &Cli) -> String {
-    cli.cwd
-        .clone()
-        .unwrap_or_else(|| {
-            std::env::current_dir()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| ".".to_string())
-        })
+    cli.cwd.clone().unwrap_or_else(|| {
+        std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| ".".to_string())
+    })
 }
 
 /// Resolve the permission mode from CLI arg or config.
-fn resolve_permission_mode(
-    cli_mode: Option<&str>,
-    config_mode: Option<&str>,
-) -> PermissionMode {
+fn resolve_permission_mode(cli_mode: Option<&str>, config_mode: Option<&str>) -> PermissionMode {
     let mode_str = cli_mode.or(config_mode).unwrap_or("default");
     match mode_str.to_lowercase().as_str() {
         "auto" => PermissionMode::Auto,
@@ -557,4 +558,3 @@ fn resolve_permission_mode(
         _ => PermissionMode::Default,
     }
 }
-

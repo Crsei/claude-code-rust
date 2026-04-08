@@ -19,9 +19,7 @@ pub fn get_last_session(cwd: &Path) -> Result<Option<SessionInfo>> {
     let sessions = storage::list_sessions()?;
     let cwd_str = cwd.to_string_lossy();
 
-    let matching = sessions
-        .into_iter()
-        .find(|s| s.cwd == cwd_str.as_ref());
+    let matching = sessions.into_iter().find(|s| s.cwd == cwd_str.as_ref());
 
     Ok(matching)
 }

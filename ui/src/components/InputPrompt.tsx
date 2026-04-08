@@ -1,20 +1,29 @@
-import React, { useState, useCallback, useRef } from 'react'
-import { Box, Text, useInput, useApp } from 'ink-terminal'
+import React, { useCallback, useRef, useState } from 'react'
+import { Box, Text, type ClickEvent, useAnimationFrame, useApp, useInput } from 'ink-terminal'
 import { useBackend } from '../ipc/context.js'
-import { useAppState, useAppDispatch } from '../store/app-store.js'
+import { useAppDispatch, useAppState } from '../store/app-store.js'
 import { VimState } from '../vim/index.js'
 
-export function InputPrompt() {
+const FRAMES = ['\u280b', '\u2819', '\u2839', '\u2838', '\u283c', '\u2834', '\u2826', '\u2827', '\u2807', '\u280f']
+
+interface InputPromptProps {
+  isActive?: boolean
+  onActivate?: () => void
+}
+
+export function InputPrompt({ isActive = true, onActivate }: InputPromptProps) {
   const [text, setText] = useState('')
   const [cursorPos, setCursorPos] = useState(0)
   const [undoStack, setUndoStack] = useState<Array<{ text: string; cursor: number }>>([])
   const backend = useBackend()
-  const { isStreaming, inputHistory, historyIndex, vimEnabled } = useAppState()
+  const { isStreaming, isWaiting, streamingText, inputHistory, historyIndex, vimEnabled } = useAppState()
   const dispatch = useAppDispatch()
   const { exit } = useApp()
   const vimRef = useRef<VimState>(new VimState())
+  const isBusy = isWaiting || isStreaming
+  const [spinnerRef, time] = useAnimationFrame(isBusy ? 80 : null)
+  const inputActive = isActive
 
-  // Keep vim state in sync with app state
   const vim = vimRef.current
   if (vimEnabled && !vim.enabled) {
     vim.enable()
@@ -26,6 +35,19 @@ export function InputPrompt() {
   const saveUndo = useCallback(() => {
     setUndoStack(stack => [...stack.slice(-50), { text, cursor: cursorPos }])
   }, [text, cursorPos])
+
+  const activateInput = useCallback(() => {
+    onActivate?.()
+
+    // Clicking the composer while empty loads the latest prompt for quick recall.
+    if (!isBusy && text.length === 0 && historyIndex === -1 && inputHistory.length > 0) {
+      const idx = inputHistory.length - 1
+      const latest = inputHistory[idx] || ''
+      dispatch({ type: 'SET_HISTORY_INDEX', index: idx })
+      setText(latest)
+      setCursorPos(latest.length)
+    }
+  }, [dispatch, historyIndex, inputHistory, isBusy, onActivate, text.length])
 
   const submit = useCallback(() => {
     const trimmed = text.trim()
@@ -44,9 +66,36 @@ export function InputPrompt() {
     setText('')
     setCursorPos(0)
     setUndoStack([])
-  }, [text, backend, dispatch])
+  }, [backend, dispatch, text])
 
-  useInput((input, key) => {
+  const navigateHistoryUp = useCallback(() => {
+    if (inputHistory.length === 0) return false
+    const nextIdx = historyIndex === -1 ? inputHistory.length - 1 : Math.max(0, historyIndex - 1)
+    dispatch({ type: 'SET_HISTORY_INDEX', index: nextIdx })
+    const historyText = inputHistory[nextIdx] || ''
+    setText(historyText)
+    setCursorPos(historyText.length)
+    return true
+  }, [dispatch, historyIndex, inputHistory])
+
+  const navigateHistoryDown = useCallback(() => {
+    if (historyIndex === -1) return false
+    const nextIdx = historyIndex + 1
+    if (nextIdx >= inputHistory.length) {
+      dispatch({ type: 'SET_HISTORY_INDEX', index: -1 })
+      setText('')
+      setCursorPos(0)
+      return true
+    }
+
+    dispatch({ type: 'SET_HISTORY_INDEX', index: nextIdx })
+    const historyText = inputHistory[nextIdx] || ''
+    setText(historyText)
+    setCursorPos(historyText.length)
+    return true
+  }, [dispatch, historyIndex, inputHistory])
+
+  useInput((input, key, event) => {
     if (isStreaming && key.ctrl && input === 'c') {
       backend.send({ type: 'abort_query' })
       return
@@ -58,39 +107,48 @@ export function InputPrompt() {
       return
     }
 
-    // Toggle vim mode with Escape when not in vim, or Ctrl+G
     if (key.ctrl && input === 'g') {
       vim.toggle()
       dispatch({ type: 'TOGGLE_VIM' })
       return
     }
 
-    // If vim is enabled, route through the state machine
+    if (!inputActive || isBusy) {
+      return
+    }
+
+    if (key.wheelUp && !key.ctrl && !key.meta) {
+      if (navigateHistoryUp()) event.stopImmediatePropagation()
+      return
+    }
+
+    if (key.wheelDown && !key.ctrl && !key.meta) {
+      if (navigateHistoryDown()) event.stopImmediatePropagation()
+      return
+    }
+
     if (vim.enabled) {
       const action = vim.handleKey(input, key, text, cursorPos)
-      // Update the mode indicator in app state
       dispatch({ type: 'SET_VIM_MODE', mode: vim.indicator })
 
       switch (action.type) {
         case 'none':
           return
         case 'passthrough':
-          // Fall through to default input handling below
           break
         case 'submit':
           submit()
           return
         case 'switch_mode':
-          // Mode already updated on vim state; nothing else needed
           return
         case 'move_cursor':
           setCursorPos(action.pos)
           return
         case 'delete': {
           saveUndo()
-          const newText = text.slice(0, action.start) + text.slice(action.end)
-          setText(newText)
-          setCursorPos(Math.min(action.start, newText.length))
+          const next = text.slice(0, action.start) + text.slice(action.end)
+          setText(next)
+          setCursorPos(Math.min(action.start, next.length))
           return
         }
         case 'delete_line':
@@ -103,19 +161,18 @@ export function InputPrompt() {
           vim.register = text.slice(action.start, action.end)
           return
         case 'yank_line':
-          // register already set by vim state
           return
         case 'paste': {
           saveUndo()
-          const newText = text.slice(0, cursorPos) + action.text + text.slice(cursorPos)
-          setText(newText)
+          const next = text.slice(0, cursorPos) + action.text + text.slice(cursorPos)
+          setText(next)
           setCursorPos(cursorPos + action.text.length)
           return
         }
         case 'insert_char': {
           saveUndo()
-          const newText = text.slice(0, cursorPos) + action.char + text.slice(cursorPos)
-          setText(newText)
+          const next = text.slice(0, cursorPos) + action.char + text.slice(cursorPos)
+          setText(next)
           setCursorPos(cursorPos + action.char.length)
           return
         }
@@ -130,8 +187,6 @@ export function InputPrompt() {
         }
       }
     }
-
-    // --- Default input handling (also used for vim passthrough in insert mode) ---
 
     if (key.return) {
       submit()
@@ -163,109 +218,109 @@ export function InputPrompt() {
       return
     }
 
-    // Ctrl+A - beginning of line
     if (key.ctrl && input === 'a') {
       setCursorPos(0)
       return
     }
 
-    // Ctrl+E - end of line
     if (key.ctrl && input === 'e') {
       setCursorPos(text.length)
       return
     }
 
-    // Ctrl+U - clear line
     if (key.ctrl && input === 'u') {
       setText('')
       setCursorPos(0)
       return
     }
 
-    // Ctrl+K - kill to end of line
     if (key.ctrl && input === 'k') {
       setText(t => t.slice(0, cursorPos))
       return
     }
 
-    // Ctrl+W - delete word backwards
     if (key.ctrl && input === 'w') {
       const before = text.slice(0, cursorPos)
       const after = text.slice(cursorPos)
-      const newBefore = before.replace(/\S+\s*$/, '')
-      setText(newBefore + after)
-      setCursorPos(newBefore.length)
+      const nextBefore = before.replace(/\S+\s*$/, '')
+      setText(nextBefore + after)
+      setCursorPos(nextBefore.length)
       return
     }
 
-    // Up/Down - history navigation
-    if (key.upArrow && inputHistory.length > 0) {
-      const newIdx = historyIndex === -1 ? inputHistory.length - 1 : Math.max(0, historyIndex - 1)
-      dispatch({ type: 'SET_HISTORY_INDEX', index: newIdx })
-      const histText = inputHistory[newIdx] || ''
-      setText(histText)
-      setCursorPos(histText.length)
+    if (key.upArrow && !key.ctrl && !key.meta) {
+      navigateHistoryUp()
       return
     }
 
-    if (key.downArrow && historyIndex !== -1) {
-      const newIdx = historyIndex + 1
-      if (newIdx >= inputHistory.length) {
-        dispatch({ type: 'SET_HISTORY_INDEX', index: -1 })
-        setText('')
-        setCursorPos(0)
-      } else {
-        dispatch({ type: 'SET_HISTORY_INDEX', index: newIdx })
-        const histText = inputHistory[newIdx] || ''
-        setText(histText)
-        setCursorPos(histText.length)
-      }
+    if (key.downArrow && !key.ctrl && !key.meta) {
+      navigateHistoryDown()
       return
     }
 
-    // Regular character input
     if (input && !key.ctrl && !key.meta) {
       setText(t => t.slice(0, cursorPos) + input + t.slice(cursorPos))
       setCursorPos(p => p + input.length)
     }
   })
 
-  // Render the input with cursor
   const before = text.slice(0, cursorPos)
-  const cursorChar = cursorPos < text.length ? text[cursorPos] : ' '
-  const after = text.slice(cursorPos + 1)
+  const cursorChar = cursorPos < text.length ? text[cursorPos] : '_'
+  const after = cursorPos < text.length ? text.slice(cursorPos + 1) : ''
+  const prompt = vim.enabled
+    ? (vim.mode === 'normal' ? '[N]' : vim.mode === 'visual' ? '[V]' : '[I]')
+    : '[>]'
+  const spinnerFrame = FRAMES[Math.floor(time / 80) % FRAMES.length]
+  const statusLabel = isStreaming && streamingText ? 'Reasoning...' : 'Thinking...'
+  const historyLabel = inputHistory.length === 0
+    ? 'History: empty'
+    : `History: ${historyIndex === -1 ? inputHistory.length : historyIndex + 1}/${inputHistory.length}`
+  const focusLabel = inputActive ? 'Input focus' : 'Click composer to focus input'
+  const borderColor = isBusy
+    ? 'ansi:cyanBright'
+    : inputActive
+      ? 'ansi:yellowBright'
+      : 'ansi:blackBright'
 
-  // Prompt indicator changes based on vim mode
-  const promptChar = vim.enabled
-    ? (vim.mode === 'normal' ? '[N] > ' : vim.mode === 'visual' ? '[V] > ' : '[I] > ')
-    : '> '
-
-  // In visual mode, highlight the selection
-  if (vim.enabled && vim.mode === 'visual') {
-    const [selStart, selEnd] = cursorPos < vim.visualAnchor
-      ? [cursorPos, vim.visualAnchor]
-      : [vim.visualAnchor, cursorPos]
-
-    const beforeSel = text.slice(0, selStart)
-    const selected = text.slice(selStart, selEnd)
-    const afterSel = text.slice(selEnd)
-
-    return (
-      <Box paddingX={1}>
-        <Text color="ansi:cyanBright" bold>{promptChar}</Text>
-        <Text>{beforeSel}</Text>
-        <Text inverse>{selected}</Text>
-        <Text>{afterSel}</Text>
+  let body: React.ReactNode
+  if (isBusy) {
+    body = (
+      <Box ref={spinnerRef} flexDirection="row">
+        <Text color="ansi:cyan">{spinnerFrame} </Text>
+        <Text color="ansi:cyan">{statusLabel}</Text>
+        <Text dim> Ctrl+C to abort</Text>
+      </Box>
+    )
+  } else {
+    body = (
+      <Box flexDirection="row">
+        <Text bold color={inputActive ? 'ansi:yellowBright' : 'ansi:blackBright'}>
+          {prompt} 
+        </Text>
+        <Text>{before}</Text>
+        <Text inverse>{cursorChar}</Text>
+        <Text>{after}</Text>
+        {text.length === 0 && <Text dim> Type a message. Enter to send.</Text>}
       </Box>
     )
   }
 
   return (
-    <Box paddingX={1}>
-      <Text color="ansi:cyanBright" bold>{promptChar}</Text>
-      <Text>{before}</Text>
-      <Text inverse>{cursorChar}</Text>
-      <Text>{after}</Text>
+    <Box
+      paddingX={1}
+      onClick={(event: ClickEvent) => {
+        activateInput()
+        event.stopImmediatePropagation()
+      }}
+    >
+      <Box flexDirection="column" borderStyle="round" borderColor={borderColor as any} paddingX={1}>
+        {body}
+        {!isBusy && (
+          <Box>
+            <Text dim>{focusLabel} | {historyLabel} | wheel=history</Text>
+          </Box>
+        )}
+      </Box>
     </Box>
   )
 }

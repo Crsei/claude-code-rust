@@ -39,10 +39,7 @@ pub struct ValidationWarning {
 // ---------------------------------------------------------------------------
 
 /// Prefixes that are recognized as valid Anthropic model identifiers.
-const VALID_MODEL_PREFIXES: &[&str] = &[
-    "claude-",
-    "anthropic.",
-];
+const VALID_MODEL_PREFIXES: &[&str] = &["claude-", "anthropic."];
 
 /// Specific model names that are always valid (aliases, etc.).
 const VALID_MODEL_NAMES: &[&str] = &[
@@ -68,7 +65,7 @@ const THIRD_PARTY_PREFIXES: &[&str] = &[
     "mistral-",
     "codestral-",
     "command-",
-    "accounts/",  // Vertex AI paths
+    "accounts/", // Vertex AI paths
 ];
 
 // ---------------------------------------------------------------------------
@@ -218,7 +215,10 @@ mod tests {
     fn test_validate_settings_empty() {
         let settings = SettingsJson::default();
         let warnings = validate_settings(&settings);
-        assert!(warnings.is_empty(), "Default settings should have no warnings");
+        assert!(
+            warnings.is_empty(),
+            "Default settings should have no warnings"
+        );
     }
 
     #[test]

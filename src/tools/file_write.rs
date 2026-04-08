@@ -5,9 +5,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use crate::types::message::AssistantMessage;
-use crate::types::tool::{
-    Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult,
-};
+use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
 
 /// FileWriteTool — Write content to a file
 ///
@@ -74,11 +72,17 @@ impl Tool for FileWriteTool {
     }
 
     fn get_path(&self, input: &Value) -> Option<String> {
-        input.get("file_path").and_then(|v| v.as_str()).map(|s| s.to_string())
+        input
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
-        let file_path = input.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+        let file_path = input
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         if file_path.is_empty() {
             return ValidationResult::Error {
                 message: "file_path is required".to_string(),

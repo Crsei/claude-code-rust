@@ -20,7 +20,6 @@
 ///     7. ATTACHMENTS -- inject file changes, memory, skill discovery
 ///     8. CONTINUE -- refresh tools, check maxTurns, state = next
 ///   }
-
 use std::sync::Arc;
 
 use async_stream::stream;
@@ -29,21 +28,20 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::types::config::QueryParams;
+use crate::types::message::QueryYield;
 use crate::types::message::{
-    Attachment, AttachmentMessage, ContentBlock, Message, MessageContent,
-    RequestStartEvent, ToolResultContent, Usage, UserMessage,
+    Attachment, AttachmentMessage, ContentBlock, Message, MessageContent, RequestStartEvent,
+    ToolResultContent, Usage, UserMessage,
 };
 use crate::types::state::{BudgetTracker, QueryLoopState, TokenBudgetDecision};
 use crate::types::transitions::Continue;
-use crate::types::message::QueryYield;
 
 use crate::services::tool_use_summary::{self, ToolInfo};
 
 use super::deps::{ModelCallParams, QueryDeps};
 use super::loop_helpers::{
-    execute_tool_calls, handle_max_output_tokens, handle_prompt_too_long,
-    make_abort_message, make_error_message, make_user_message,
-    MaxTokensRecovery, PromptRecovery,
+    execute_tool_calls, handle_max_output_tokens, handle_prompt_too_long, make_abort_message,
+    make_error_message, make_user_message, MaxTokensRecovery, PromptRecovery,
 };
 use super::stop_hooks::{self, StopHookResult};
 use super::token_budget::check_token_budget;
@@ -52,10 +50,7 @@ use super::token_budget::check_token_budget;
 ///
 /// Takes query parameters and dependency injection, returns a Stream yielding `QueryYield`.
 /// The caller (QueryEngine) consumes this stream to drive UI updates and message collection.
-pub fn query(
-    params: QueryParams,
-    deps: Arc<dyn QueryDeps>,
-) -> impl Stream<Item = QueryYield> {
+pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item = QueryYield> {
     stream! {
         // ──────────────────────────────────────────────────────────
         // Initialization

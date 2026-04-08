@@ -4,7 +4,7 @@
 // CLAUDE.md discovery and injection
 // Environment variable overrides
 
-pub mod settings;
 pub mod claude_md;
 pub mod constants;
+pub mod settings;
 pub mod validation;

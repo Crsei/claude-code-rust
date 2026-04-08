@@ -1,4 +1,4 @@
-use crate::types::state::{BudgetTracker, BudgetCompletionEvent, TokenBudgetDecision};
+use crate::types::state::{BudgetCompletionEvent, BudgetTracker, TokenBudgetDecision};
 
 const COMPLETION_THRESHOLD: f64 = 0.9;
 const DIMINISHING_THRESHOLD: u64 = 500;

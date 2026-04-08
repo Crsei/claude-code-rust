@@ -53,9 +53,7 @@ impl CommandHandler for DiffHandler {
         };
 
         if diff_text.is_empty() {
-            return Ok(CommandResult::Output(
-                "No changes detected.".into(),
-            ));
+            return Ok(CommandResult::Output("No changes detected.".into()));
         }
 
         Ok(CommandResult::Output(diff_text))

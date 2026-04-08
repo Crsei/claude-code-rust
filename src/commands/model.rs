@@ -42,10 +42,7 @@ impl CommandHandler for ModelHandler {
         // No arguments: show the current model and available aliases.
         if target.is_empty() {
             let mut lines = Vec::new();
-            lines.push(format!(
-                "Current model: {}",
-                ctx.app_state.main_loop_model
-            ));
+            lines.push(format!("Current model: {}", ctx.app_state.main_loop_model));
             lines.push(String::new());
             lines.push("Available aliases:".into());
             for (alias, full) in MODEL_ALIASES {
@@ -70,9 +67,9 @@ impl CommandHandler for ModelHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
+    use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {
         CommandContext {

@@ -6,9 +6,7 @@ use serde_json::{json, Value};
 use similar::TextDiff;
 
 use crate::types::message::AssistantMessage;
-use crate::types::tool::{
-    Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult,
-};
+use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
 
 /// FileEditTool — Edit a file by replacing exact string matches
 ///
@@ -48,10 +46,7 @@ impl FileEditTool {
     ///
     /// Returns `Some((matched_text, start_line, end_line, similarity_ratio))`
     /// where lines are 1-indexed, or `None` if content is empty.
-    fn find_best_fuzzy_match(
-        content: &str,
-        old_string: &str,
-    ) -> Option<FuzzyMatch> {
+    fn find_best_fuzzy_match(content: &str, old_string: &str) -> Option<FuzzyMatch> {
         let content_lines: Vec<&str> = content.lines().collect();
         let needle_lines: Vec<&str> = old_string.lines().collect();
 
@@ -160,18 +155,27 @@ impl Tool for FileEditTool {
     }
 
     fn get_path(&self, input: &Value) -> Option<String> {
-        input.get("file_path").and_then(|v| v.as_str()).map(|s| s.to_string())
+        input
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
-        let file_path = input.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+        let file_path = input
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         if file_path.is_empty() {
             return ValidationResult::Error {
                 message: "file_path is required".to_string(),
                 error_code: 1,
             };
         }
-        let old_string = input.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
+        let old_string = input
+            .get("old_string")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         if old_string.is_empty() {
             return ValidationResult::Error {
                 message: "old_string is required and must not be empty".to_string(),

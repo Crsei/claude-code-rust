@@ -6,8 +6,7 @@ use anyhow::Result;
 use futures::StreamExt;
 
 use crate::query::deps::{
-    CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest,
-    ToolExecResult,
+    CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
 };
 use crate::types::app_state::AppState;
 use crate::types::config::QuerySource;
@@ -17,14 +16,14 @@ use crate::types::tool::{ToolProgress, Tools};
 
 /// Mock deps for testing.
 struct MockDeps {
-    responses: std::sync::Mutex<Vec<ModelResponse>>,
+    responses: parking_lot::Mutex<Vec<ModelResponse>>,
     aborted: std::sync::atomic::AtomicBool,
 }
 
 impl MockDeps {
     fn new(responses: Vec<ModelResponse>) -> Self {
         Self {
-            responses: std::sync::Mutex::new(responses),
+            responses: parking_lot::Mutex::new(responses),
             aborted: std::sync::atomic::AtomicBool::new(false),
         }
     }
@@ -33,7 +32,7 @@ impl MockDeps {
 #[async_trait::async_trait]
 impl QueryDeps for MockDeps {
     async fn call_model(&self, _params: ModelCallParams) -> Result<ModelResponse> {
-        let mut responses = self.responses.lock().unwrap();
+        let mut responses = self.responses.lock();
         if responses.is_empty() {
             anyhow::bail!("no more mock responses");
         }
@@ -44,7 +43,7 @@ impl QueryDeps for MockDeps {
         &self,
         _params: ModelCallParams,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
-        let mut responses = self.responses.lock().unwrap();
+        let mut responses = self.responses.lock();
         if responses.is_empty() {
             anyhow::bail!("no more mock responses");
         }
@@ -83,10 +82,7 @@ impl QueryDeps for MockDeps {
         Ok(None)
     }
 
-    async fn reactive_compact(
-        &self,
-        _messages: Vec<Message>,
-    ) -> Result<Option<CompactionResult>> {
+    async fn reactive_compact(&self, _messages: Vec<Message>) -> Result<Option<CompactionResult>> {
         Ok(None)
     }
 
@@ -187,12 +183,16 @@ async fn test_simple_text_response_terminates() {
     let stream = query(params, deps);
     let items: Vec<QueryYield> = stream.collect().await;
 
-    assert!(items.len() >= 2, "expected at least 2 items, got {}", items.len());
+    assert!(
+        items.len() >= 2,
+        "expected at least 2 items, got {}",
+        items.len()
+    );
     assert!(matches!(items[0], QueryYield::RequestStart(_)));
 
-    let has_assistant = items.iter().any(|item| {
-        matches!(item, QueryYield::Message(Message::Assistant(_)))
-    });
+    let has_assistant = items
+        .iter()
+        .any(|item| matches!(item, QueryYield::Message(Message::Assistant(_))));
     assert!(has_assistant, "expected an assistant message in output");
 }
 

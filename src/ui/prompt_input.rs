@@ -155,10 +155,7 @@ impl PromptInput {
             .nth(cursor_in_visible)
             .map(|c| c.to_string())
             .unwrap_or_else(|| " ".to_string());
-        let after_cursor: String = visible_text
-            .chars()
-            .skip(cursor_in_visible + 1)
-            .collect();
+        let after_cursor: String = visible_text.chars().skip(cursor_in_visible + 1).collect();
 
         let mut spans = vec![prompt_span];
 

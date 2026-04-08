@@ -115,7 +115,10 @@ pub fn extract_command_name(command: &str) -> Option<String> {
         // Skip environment variable assignments (VAR=value)
         if word.contains('=') && !word.starts_with('-') {
             let before_eq = word.split('=').next().unwrap_or("");
-            if before_eq.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            if before_eq
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
                 continue;
             }
         }
@@ -160,15 +163,12 @@ pub fn escape_for_single_quotes(s: &str) -> String {
 /// Patterns that indicate commands containing heredoc syntax.
 /// Note: Rust regex doesn't support backreferences, so we use separate
 /// patterns for single-quoted, double-quoted, and unquoted delimiters.
-static HEREDOC_SINGLE_QUOTED: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"<<-?\s*'\w+'").expect("invalid heredoc single-quoted regex")
-});
-static HEREDOC_DOUBLE_QUOTED: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"<<-?\s*"\w+""#).expect("invalid heredoc double-quoted regex")
-});
-static HEREDOC_UNQUOTED: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"<<-?\s*\\?\w+").expect("invalid heredoc unquoted regex")
-});
+static HEREDOC_SINGLE_QUOTED: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<<-?\s*'\w+'").expect("invalid heredoc single-quoted regex"));
+static HEREDOC_DOUBLE_QUOTED: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"<<-?\s*"\w+""#).expect("invalid heredoc double-quoted regex"));
+static HEREDOC_UNQUOTED: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<<-?\s*\\?\w+").expect("invalid heredoc unquoted regex"));
 
 /// Patterns for detecting unterminated/malformed quoting.
 ///
@@ -226,7 +226,8 @@ static SINGLE_QUOTE_MULTILINE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"'(?:[^'\\]|\\.)*\n(?:[^'\\]|\\.)*'").expect("invalid single-quote multiline regex")
 });
 static DOUBLE_QUOTE_MULTILINE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#""(?:[^"\\]|\\.)*\n(?:[^"\\]|\\.)*""#).expect("invalid double-quote multiline regex")
+    Regex::new(r#""(?:[^"\\]|\\.)*\n(?:[^"\\]|\\.)*""#)
+        .expect("invalid double-quote multiline regex")
 });
 
 /// Check if a command contains multiline strings inside quotes.
@@ -340,7 +341,11 @@ pub fn resolve_timeout(requested_ms: Option<u64>) -> Duration {
         Some(ms) if ms > 0 => {
             let requested = Duration::from_millis(ms);
             let max = max_timeout();
-            if requested > max { max } else { requested }
+            if requested > max {
+                max
+            } else {
+                requested
+            }
         }
         _ => default_timeout(),
     }
@@ -417,7 +422,10 @@ fn extract_single_command_prefix(command: &str) -> Option<String> {
     for (i, word) in words.iter().enumerate() {
         if word.contains('=') && !word.starts_with('-') {
             let before = word.split('=').next().unwrap_or("");
-            if before.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            if before
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
                 cmd_start = i + 1;
                 continue;
             }
@@ -433,9 +441,25 @@ fn extract_single_command_prefix(command: &str) -> Option<String> {
 
     // For known commands with subcommands, include the subcommand
     let cmds_with_subcommands = [
-        "git", "npm", "npx", "yarn", "pnpm", "cargo", "docker", "kubectl",
-        "pip", "pip3", "brew", "apt", "apt-get", "dnf", "yum", "pacman",
-        "systemctl", "go", "rustup",
+        "git",
+        "npm",
+        "npx",
+        "yarn",
+        "pnpm",
+        "cargo",
+        "docker",
+        "kubectl",
+        "pip",
+        "pip3",
+        "brew",
+        "apt",
+        "apt-get",
+        "dnf",
+        "yum",
+        "pacman",
+        "systemctl",
+        "go",
+        "rustup",
     ];
 
     let base = Path::new(cmd_name)
@@ -614,18 +638,12 @@ mod tests {
 
     #[test]
     fn test_rewrite_nul() {
-        assert_eq!(
-            rewrite_windows_null_redirect("ls 2>nul"),
-            "ls 2>/dev/null"
-        );
+        assert_eq!(rewrite_windows_null_redirect("ls 2>nul"), "ls 2>/dev/null");
     }
 
     #[test]
     fn test_rewrite_nul_uppercase() {
-        assert_eq!(
-            rewrite_windows_null_redirect("cmd >NUL"),
-            "cmd >/dev/null"
-        );
+        assert_eq!(rewrite_windows_null_redirect("cmd >NUL"), "cmd >/dev/null");
     }
 
     #[test]

@@ -36,9 +36,9 @@ impl CommandHandler for ExitHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
+    use std::path::PathBuf;
 
     #[tokio::test]
     async fn test_exit_returns_exit_result() {

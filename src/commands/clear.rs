@@ -22,9 +22,9 @@ impl CommandHandler for ClearHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
+    use std::path::PathBuf;
 
     #[tokio::test]
     async fn test_clear_returns_clear_result() {

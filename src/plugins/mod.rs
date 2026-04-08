@@ -13,12 +13,13 @@
 
 #![allow(unused)]
 
-pub mod manifest;
 pub mod loader;
+pub mod manifest;
 
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -32,13 +33,22 @@ use serde::{Deserialize, Serialize};
 pub enum PluginSource {
     /// NPM package.
     #[serde(rename = "npm")]
-    Npm { package: String, version: Option<String> },
+    Npm {
+        package: String,
+        version: Option<String>,
+    },
     /// GitHub repository.
     #[serde(rename = "github")]
-    GitHub { repo: String, ref_spec: Option<String> },
+    GitHub {
+        repo: String,
+        ref_spec: Option<String>,
+    },
     /// Generic git URL.
     #[serde(rename = "git")]
-    Git { url: String, ref_spec: Option<String> },
+    Git {
+        url: String,
+        ref_spec: Option<String>,
+    },
     /// Local filesystem path.
     #[serde(rename = "local")]
     Local { path: String },
@@ -153,22 +163,17 @@ static REGISTRY: LazyLock<Mutex<HashMap<String, PluginEntry>>> =
 
 /// Register a plugin in the in-memory registry.
 pub fn register_plugin(plugin: PluginEntry) {
-    if let Ok(mut reg) = REGISTRY.lock() {
-        reg.insert(plugin.id.clone(), plugin);
-    }
+    REGISTRY.lock().insert(plugin.id.clone(), plugin);
 }
 
 /// Get all registered plugins.
 pub fn get_all_plugins() -> Vec<PluginEntry> {
-    REGISTRY
-        .lock()
-        .map(|r| r.values().cloned().collect())
-        .unwrap_or_default()
+    REGISTRY.lock().values().cloned().collect()
 }
 
 /// Find a plugin by ID.
 pub fn find_plugin(id: &str) -> Option<PluginEntry> {
-    REGISTRY.lock().ok()?.get(id).cloned()
+    REGISTRY.lock().get(id).cloned()
 }
 
 /// Get only enabled (installed, not disabled) plugins.
@@ -181,14 +186,12 @@ pub fn get_enabled_plugins() -> Vec<PluginEntry> {
 
 /// Remove a plugin from the registry.
 pub fn unregister_plugin(id: &str) -> Option<PluginEntry> {
-    REGISTRY.lock().ok()?.remove(id)
+    REGISTRY.lock().remove(id)
 }
 
 /// Clear all plugins (for testing or refresh).
 pub fn clear_plugins() {
-    if let Ok(mut reg) = REGISTRY.lock() {
-        reg.clear();
-    }
+    REGISTRY.lock().clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +314,8 @@ mod tests {
         let pd = plugins_dir();
         assert!(pd.to_string_lossy().contains(".cc-rust"));
         assert!(cache_dir().to_string_lossy().contains("cache"));
-        assert!(installed_plugins_path().to_string_lossy().contains("installed_plugins"));
+        assert!(installed_plugins_path()
+            .to_string_lossy()
+            .contains("installed_plugins"));
     }
 }

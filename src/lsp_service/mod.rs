@@ -10,9 +10,10 @@
 
 #![allow(unused)]
 
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -73,7 +74,13 @@ pub fn default_server_configs() -> Vec<LspServerConfig> {
         },
         LspServerConfig {
             language_id: "c".into(),
-            extensions: vec!["c".into(), "h".into(), "cpp".into(), "hpp".into(), "cc".into()],
+            extensions: vec![
+                "c".into(),
+                "h".into(),
+                "cpp".into(),
+                "hpp".into(),
+                "cc".into(),
+            ],
             command: "clangd".into(),
             args: vec![],
             init_options: None,
@@ -138,11 +145,7 @@ static SERVERS: LazyLock<Mutex<HashMap<String, ServerInstance>>> =
 
 /// Go to definition at position.
 
-pub async fn go_to_definition(
-    uri: &str,
-    line: u32,
-    character: u32,
-) -> Result<Vec<SourceLocation>> {
+pub async fn go_to_definition(uri: &str, line: u32, character: u32) -> Result<Vec<SourceLocation>> {
     // TODO: Full LSP client implementation
     // This would:
     // 1. Find/start the appropriate language server
@@ -165,11 +168,7 @@ pub async fn go_to_implementation(
 
 /// Find references at position.
 
-pub async fn find_references(
-    uri: &str,
-    line: u32,
-    character: u32,
-) -> Result<Vec<SourceLocation>> {
+pub async fn find_references(uri: &str, line: u32, character: u32) -> Result<Vec<SourceLocation>> {
     bail!("LSP server connection not yet implemented")
 }
 

@@ -130,11 +130,16 @@ impl CommandHandler for ExtraUsageHandler {
         lines.push("Top 5 most expensive API calls:".into());
 
         let mut sorted: Vec<&MsgStats> = stats.iter().collect();
-        sorted.sort_by(|a, b| b.cost_usd.partial_cmp(&a.cost_usd).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.sort_by(|a, b| {
+            b.cost_usd
+                .partial_cmp(&a.cost_usd)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let top5: Vec<&&MsgStats> = sorted.iter().take(5).collect();
 
         for (rank, s) in top5.iter().enumerate() {
-            let total_tok = s.input_tokens + s.output_tokens + s.cache_read_tokens + s.cache_creation_tokens;
+            let total_tok =
+                s.input_tokens + s.output_tokens + s.cache_read_tokens + s.cache_creation_tokens;
             lines.push(format!(
                 "  {}. Call #{}: {} ({} tokens)",
                 rank + 1,
@@ -175,7 +180,8 @@ impl CommandHandler for ExtraUsageHandler {
         let est_output_cost = total_output as f64 * OUTPUT_PRICE;
         let est_cache_read_cost = total_cache_read as f64 * CACHE_READ_PRICE;
         let est_cache_write_cost = total_cache_create as f64 * CACHE_WRITE_PRICE;
-        let est_total = est_input_cost + est_output_cost + est_cache_read_cost + est_cache_write_cost;
+        let est_total =
+            est_input_cost + est_output_cost + est_cache_read_cost + est_cache_write_cost;
 
         lines.push(String::new());
         lines.push("Estimated cost breakdown by token type:".into());

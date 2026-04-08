@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use chrono::{DateTime, TimeZone, Utc};
 
-use crate::session::storage::{self, SessionFile, SerializableMessage};
+use crate::session::storage::{self, SerializableMessage, SessionFile};
 use crate::types::message::{ContentBlock, Message, MessageContent};
 
 // ---------------------------------------------------------------------------
@@ -22,10 +22,7 @@ use crate::types::message::{ContentBlock, Message, MessageContent};
 ///
 /// If `output_path` is None, writes to `~/.cc-rust/exports/<session_id>.md`.
 /// Returns the path of the written file.
-pub fn export_session_markdown(
-    session_id: &str,
-    output_path: Option<&Path>,
-) -> Result<PathBuf> {
+pub fn export_session_markdown(session_id: &str, output_path: Option<&Path>) -> Result<PathBuf> {
     let session_file = load_session_file_raw(session_id)?;
     let md = render_session_markdown(&session_file);
 
@@ -139,7 +136,10 @@ fn render_session_markdown(session: &SessionFile) -> String {
 fn render_messages_markdown(session_id: &str, messages: &[Message], cwd: &str) -> String {
     let mut md = String::new();
 
-    md.push_str(&format!("# Session {}\n\n", &session_id[..std::cmp::min(8, session_id.len())]));
+    md.push_str(&format!(
+        "# Session {}\n\n",
+        &session_id[..std::cmp::min(8, session_id.len())]
+    ));
 
     let now = format_datetime(Utc::now());
     md.push_str(&format!("- **Exported**: {}\n", now));
@@ -284,7 +284,11 @@ fn render_content_block(block: &ContentBlock, md: &mut String) {
             content,
             is_error,
         } => {
-            let label = if *is_error { "Tool Error" } else { "Tool Result" };
+            let label = if *is_error {
+                "Tool Error"
+            } else {
+                "Tool Result"
+            };
             md.push_str(&format!("**{}**:\n\n", label));
             let text = match content {
                 crate::types::message::ToolResultContent::Text(t) => t.clone(),
@@ -324,7 +328,10 @@ fn render_content_block_from_json(block: &serde_json::Value, md: &mut String) {
             }
         }
         Some("tool_use") => {
-            let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+            let name = block
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("unknown");
             md.push_str(&format!("**Tool**: `{}`\n\n", name));
             if let Some(input) = block.get("input") {
                 let input_str = serde_json::to_string_pretty(input).unwrap_or_default();
@@ -336,8 +343,15 @@ fn render_content_block_from_json(block: &serde_json::Value, md: &mut String) {
             }
         }
         Some("tool_result") => {
-            let is_error = block.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
-            let label = if is_error { "Tool Error" } else { "Tool Result" };
+            let is_error = block
+                .get("is_error")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let label = if is_error {
+                "Tool Error"
+            } else {
+                "Tool Result"
+            };
             md.push_str(&format!("**{}**:\n\n", label));
             if let Some(content) = block.get("content").and_then(|c| c.as_str()) {
                 md.push_str("```\n");
@@ -367,7 +381,9 @@ fn extract_user_text_from_data(data: &serde_json::Value) -> String {
             .iter()
             .filter_map(|b| {
                 if b.get("type").and_then(|t| t.as_str()) == Some("text") {
-                    b.get("text").and_then(|t| t.as_str()).map(|s| s.to_string())
+                    b.get("text")
+                        .and_then(|t| t.as_str())
+                        .map(|s| s.to_string())
                 } else {
                     None
                 }

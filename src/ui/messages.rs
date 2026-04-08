@@ -98,9 +98,7 @@ fn render_user_message<'a>(
     // First line includes the "You: " prefix.
     let content_lines: Vec<&str> = content_text.lines().collect();
     if content_lines.is_empty() {
-        lines.push(Line::from(vec![
-            Span::styled("You: ", theme.user_name),
-        ]));
+        lines.push(Line::from(vec![Span::styled("You: ", theme.user_name)]));
     } else {
         lines.push(Line::from(vec![
             Span::styled("You: ", theme.user_name),
@@ -206,10 +204,7 @@ fn render_assistant_message<'a>(
                 if total_lines > 5 {
                     lines.push(Line::from(vec![
                         Span::raw("                  "),
-                        Span::styled(
-                            format!("... {} more lines", total_lines - 5),
-                            theme.dim,
-                        ),
+                        Span::styled(format!("... {} more lines", total_lines - 5), theme.dim),
                     ]));
                 }
                 first_block = false;
@@ -304,10 +299,7 @@ fn render_system_message<'a>(
     };
 
     if matches!(&msg.subtype, SystemSubtype::CompactBoundary { .. }) {
-        lines.push(Line::from(vec![Span::styled(
-            prefix.to_string(),
-            style,
-        )]));
+        lines.push(Line::from(vec![Span::styled(prefix.to_string(), style)]));
     } else {
         let content_lines: Vec<&str> = msg.content.lines().collect();
         if content_lines.is_empty() {
@@ -318,10 +310,7 @@ fn render_system_message<'a>(
                 Span::styled(content_lines[0].to_string(), style),
             ]));
             for extra in &content_lines[1..] {
-                lines.push(Line::from(Span::styled(
-                    format!("  {}", extra),
-                    style,
-                )));
+                lines.push(Line::from(Span::styled(format!("  {}", extra), style)));
             }
         }
     }

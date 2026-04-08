@@ -28,11 +28,11 @@ use tracing::debug;
 use crate::commands::{self, CommandContext, CommandResult};
 use crate::engine::lifecycle::QueryEngine;
 use crate::engine::sdk_types::SdkMessage;
-use crate::types::config::QuerySource;
 use crate::services::prompt_suggestion::PromptSuggestionService;
+use crate::types::config::QuerySource;
 use crate::types::message::{
-    AssistantMessage, ContentBlock, InfoLevel, Message, MessageContent, StreamEvent,
-    SystemMessage, SystemSubtype, UserMessage,
+    AssistantMessage, ContentBlock, InfoLevel, Message, MessageContent, StreamEvent, SystemMessage,
+    SystemSubtype, UserMessage,
 };
 
 use super::app::{App, AppAction};
@@ -114,7 +114,10 @@ pub async fn run_tui(
 
     // ── Create channels ────────────────────────────────────────────
     let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<EngineEvent>();
-    let mut streaming_state = StreamingState { text: String::new(), active: false };
+    let mut streaming_state = StreamingState {
+        text: String::new(),
+        active: false,
+    };
 
     // ── Spawn terminal event reader thread ─────────────────────────
     //
@@ -271,11 +274,7 @@ pub async fn run_tui(
     // (TerminalGuard::drop also handles this, but explicit cleanup is
     // cleaner for the normal exit path.)
     terminal::disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        cursor::Show
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show)?;
     terminal.show_cursor()?;
 
     Ok(())
@@ -545,15 +544,9 @@ async fn try_execute_command(
                 add_system_info(app, "Conversation cleared.");
                 Some(CmdAction::Handled)
             }
-            CommandResult::Exit(msg) => {
-                Some(CmdAction::Quit(msg))
-            }
-            CommandResult::Query(msgs) => {
-                Some(CmdAction::Query(msgs))
-            }
-            CommandResult::None => {
-                Some(CmdAction::Handled)
-            }
+            CommandResult::Exit(msg) => Some(CmdAction::Quit(msg)),
+            CommandResult::Query(msgs) => Some(CmdAction::Query(msgs)),
+            CommandResult::None => Some(CmdAction::Handled),
         },
         Err(e) => {
             add_system_error(app, &format!("Command error: {e}"));

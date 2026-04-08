@@ -30,7 +30,6 @@ static DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(|| {
             r"rm\s+[^\n]*-[a-zA-Z]*r[a-zA-Z]*\s+/\*",
             "Recursive deletion of all files in root (rm -rf /*)",
         ),
-
         // --- Dangerous git operations ---
         (
             r"git\s+push\s+[^\n]*--force",
@@ -44,29 +43,22 @@ static DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(|| {
             r"git\s+reset\s+--hard",
             "Hard reset discards all uncommitted changes (git reset --hard)",
         ),
-
         // --- Low-level disk operations ---
-        (
-            r"\bdd\s+if=",
-            "Direct disk write can destroy data (dd)",
-        ),
+        (r"\bdd\s+if=", "Direct disk write can destroy data (dd)"),
         (
             r"\bmkfs\b",
             "Filesystem creation will destroy existing data (mkfs)",
         ),
-
         // --- Permission bombs ---
         (
             r"chmod\s+(-[a-zA-Z]*R[a-zA-Z]*\s+)?777\s+/",
             "Recursive chmod 777 on root makes system insecure",
         ),
-
         // --- Fork bomb ---
         (
             r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:",
             "Fork bomb will exhaust system resources",
         ),
-
         // --- Device destruction ---
         (
             r">\s*/dev/sd[a-z]",
@@ -76,7 +68,6 @@ static DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(|| {
             r">\s*/dev/nvme",
             "Writing to NVMe device will destroy filesystem",
         ),
-
         // --- Pipe-to-shell (remote code execution) ---
         (
             r"curl\s+[^\n]*\|\s*(?:ba)?sh",
@@ -94,7 +85,6 @@ static DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(|| {
             r"wget\s+[^\n]*\|\s*sudo\s+(?:ba)?sh",
             "Piping wget output to privileged shell is extremely dangerous",
         ),
-
         // --- Overwriting important system files ---
         (
             r">\s*/etc/passwd",
@@ -109,7 +99,9 @@ static DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(|| {
     patterns
         .into_iter()
         .filter_map(|(pat, reason)| {
-            Regex::new(pat).ok().map(|regex| DangerPattern { regex, reason })
+            Regex::new(pat)
+                .ok()
+                .map(|regex| DangerPattern { regex, reason })
         })
         .collect()
 });

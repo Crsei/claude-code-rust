@@ -3,9 +3,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::types::message::{
-    ContentBlock, Message, MessageContent, ToolResultContent,
-};
+use crate::types::message::{ContentBlock, Message, MessageContent, ToolResultContent};
 
 /// A record of a tool result that was replaced with a truncated preview.
 #[derive(Debug)]
@@ -64,11 +62,8 @@ pub async fn apply_tool_result_budget(
                                     let full_text = extract_tool_result_text(content);
                                     match save_to_disk(tool_use_id, &full_text).await {
                                         Ok(file_path) => {
-                                            let preview = make_preview(
-                                                &full_text,
-                                                content_len,
-                                                &file_path,
-                                            );
+                                            let preview =
+                                                make_preview(&full_text, content_len, &file_path);
 
                                             state.replacements.insert(
                                                 tool_use_id.clone(),
@@ -87,10 +82,8 @@ pub async fn apply_tool_result_budget(
                                                 "Failed to save large tool result to disk: {}",
                                                 e
                                             );
-                                            let truncated = truncate_in_place(
-                                                &full_text,
-                                                max_size_chars,
-                                            );
+                                            let truncated =
+                                                truncate_in_place(&full_text, max_size_chars);
                                             *content = ToolResultContent::Text(truncated);
                                         }
                                     }
@@ -141,7 +134,9 @@ fn extract_tool_result_text(content: &ToolResultContent) -> String {
 /// Save tool result content to a temporary file on disk.
 /// Returns the file path where the content was saved.
 async fn save_to_disk(tool_use_id: &str, content: &str) -> Result<String, std::io::Error> {
-    let dir = std::env::temp_dir().join("claude-code-rs").join("tool-results");
+    let dir = std::env::temp_dir()
+        .join("claude-code-rs")
+        .join("tool-results");
     tokio::fs::create_dir_all(&dir).await?;
 
     let file_name = format!("{}.txt", tool_use_id);
@@ -187,9 +182,7 @@ fn truncate_in_place(text: &str, max_size: usize) -> String {
     };
 
     let omitted = text.len().saturating_sub(head_len + tail_len);
-    format!(
-        "{head}\n\n[... {omitted} characters omitted (truncated in place) ...]\n\n{tail}"
-    )
+    format!("{head}\n\n[... {omitted} characters omitted (truncated in place) ...]\n\n{tail}")
 }
 
 #[cfg(test)]

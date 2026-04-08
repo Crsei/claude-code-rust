@@ -3,9 +3,7 @@
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::types::message::{
-    CompactMetadata, ContentBlock, Message, SystemMessage, SystemSubtype,
-};
+use crate::types::message::{CompactMetadata, ContentBlock, Message, SystemMessage, SystemSubtype};
 
 /// Result of history snipping.
 #[derive(Debug)]
@@ -137,9 +135,7 @@ fn estimate_message_chars(msg: &Message) -> usize {
                 blocks.iter().map(|b| content_block_chars(b)).sum()
             }
         },
-        Message::Assistant(a) => {
-            a.content.iter().map(|b| content_block_chars(b)).sum()
-        }
+        Message::Assistant(a) => a.content.iter().map(|b| content_block_chars(b)).sum(),
         Message::System(s) => s.content.len(),
         Message::Progress(p) => p.data.to_string().len(),
         Message::Attachment(_) => 100, // rough estimate
@@ -166,7 +162,7 @@ fn content_block_chars(block: &ContentBlock) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compact::messages::{create_user_message, create_tool_result_message};
+    use crate::compact::messages::{create_tool_result_message, create_user_message};
     use crate::types::message::AssistantMessage;
 
     fn make_assistant_text(text: &str) -> Message {

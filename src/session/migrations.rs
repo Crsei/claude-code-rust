@@ -107,8 +107,14 @@ pub fn migrate_to_current(mut data: Value) -> Result<(Value, Vec<String>)> {
             .find(|m| m.from_version == version)
             .with_context(|| format!("No migration found for version {}", version))?;
 
-        data = (migration.migrate)(data)
-            .with_context(|| format!("Migration v{} → v{} failed: {}", version, version + 1, migration.description))?;
+        data = (migration.migrate)(data).with_context(|| {
+            format!(
+                "Migration v{} → v{} failed: {}",
+                version,
+                version + 1,
+                migration.description
+            )
+        })?;
 
         log.push(format!(
             "v{} → v{}: {}",
@@ -145,10 +151,7 @@ fn migrate_v1_to_v2(mut data: Value) -> Result<Value> {
             .and_then(|v| v.as_str().map(String::from))
             .unwrap_or_default();
 
-        let created_at = obj
-            .get("created_at")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        let created_at = obj.get("created_at").and_then(|v| v.as_i64()).unwrap_or(0);
 
         let metadata = serde_json::json!({
             "cwd": cwd,
@@ -294,7 +297,9 @@ mod tests {
 
     #[test]
     fn test_needs_migration() {
-        assert!(needs_migration(&json!({ "session_id": "x", "messages": [] })));
+        assert!(needs_migration(
+            &json!({ "session_id": "x", "messages": [] })
+        ));
         assert!(!needs_migration(&json!({ "version": CURRENT_VERSION })));
     }
 }

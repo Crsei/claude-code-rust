@@ -81,7 +81,8 @@ fn enable_fast_mode(ctx: &mut CommandContext) -> Result<CommandResult> {
 
     ctx.app_state.fast_mode = true;
 
-    let mut msg = "Fast mode enabled. Output will be generated faster using the same model.".to_string();
+    let mut msg =
+        "Fast mode enabled. Output will be generated faster using the same model.".to_string();
     if switched_model {
         msg.push_str(&format!(
             "\nModel switched from '{}' to '{}' (fast mode requires Opus 4.6).",

@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use anyhow::Result;
 use tracing::{info, warn};
 
-use super::{McpResource, McpServerConfig, McpToolDef};
 use super::client::McpClient;
+use super::{McpResource, McpServerConfig, McpToolDef};
 
 /// Manages multiple MCP server connections.
 pub struct McpManager {

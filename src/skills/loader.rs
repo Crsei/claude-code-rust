@@ -64,10 +64,7 @@ pub fn parse_frontmatter(content: &str) -> (HashMap<String, String>, String) {
 }
 
 /// Parse frontmatter map into structured SkillFrontmatter.
-pub fn parse_skill_frontmatter(
-    fm: &HashMap<String, String>,
-    body: &str,
-) -> SkillFrontmatter {
+pub fn parse_skill_frontmatter(fm: &HashMap<String, String>, body: &str) -> SkillFrontmatter {
     let description = fm
         .get("description")
         .cloned()
@@ -242,7 +239,9 @@ pub fn load_legacy_commands(dir: &Path, source: SkillSource) -> Vec<SkillDefinit
         if path.is_file() {
             if let Some(ext) = path.extension() {
                 if ext == "md" {
-                    if let Some(skill) = load_skill_file(&path, &path.parent().unwrap_or(&path), &source) {
+                    if let Some(skill) =
+                        load_skill_file(&path, &path.parent().unwrap_or(&path), &source)
+                    {
                         skills.push(skill);
                     }
                 }
@@ -265,7 +264,11 @@ fn load_skill_file(
 
     // Derive name from directory or file stem
     let name = frontmatter.name.clone().unwrap_or_else(|| {
-        if file_path.file_name().map(|f| f == "SKILL.md" || f == "skill.md").unwrap_or(false) {
+        if file_path
+            .file_name()
+            .map(|f| f == "SKILL.md" || f == "skill.md")
+            .unwrap_or(false)
+        {
             // Use parent directory name
             skill_dir
                 .file_name()

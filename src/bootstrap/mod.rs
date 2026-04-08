@@ -37,6 +37,6 @@ pub use ids::SessionId;
 pub use model::{ModelSetting, ModelStrings, ModelTier};
 #[allow(unused_imports)]
 pub use signal::Signal;
-pub use state::{PROCESS_STATE, init as init_process_state};
+pub use state::{init as init_process_state, PROCESS_STATE};
 #[allow(unused_imports)]
 pub use timing::DurationTracker;

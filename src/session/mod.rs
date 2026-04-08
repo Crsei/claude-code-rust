@@ -6,11 +6,11 @@
 // Migrations: session data format versioning and migration
 // Memdir: CLAUDE.md-based memory system
 
+pub mod audit_export;
+pub mod export;
+pub mod memdir;
+pub mod migrations;
+pub mod resume;
+pub mod session_export;
 pub mod storage;
 pub mod transcript;
-pub mod resume;
-pub mod migrations;
-pub mod memdir;
-pub mod export;
-pub mod audit_export;
-pub mod session_export;

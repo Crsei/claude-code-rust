@@ -145,7 +145,11 @@ impl StructuredOutputTool {
                 .iter()
                 .enumerate()
                 .map(|(i, cell)| {
-                    let w = if i < widths.len() { widths[i] } else { cell.len() };
+                    let w = if i < widths.len() {
+                        widths[i]
+                    } else {
+                        cell.len()
+                    };
                     format!("{:<width$}", cell, width = w)
                 })
                 .collect::<Vec<_>>()
@@ -219,10 +223,7 @@ impl Tool for StructuredOutputTool {
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
-        let format = input
-            .get("format")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let format = input.get("format").and_then(|v| v.as_str()).unwrap_or("");
         if !matches!(format, "json" | "csv" | "table") {
             return ValidationResult::Error {
                 message: format!(

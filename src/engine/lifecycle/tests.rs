@@ -115,9 +115,9 @@ mod tests {
         assert!(engine.discovered_skill_names().is_empty());
 
         engine
+            .state
+            .write()
             .discovered_skill_names
-            .lock()
-            .unwrap()
             .insert("test_skill".to_string());
         assert_eq!(engine.discovered_skill_names().len(), 1);
     }
@@ -131,7 +131,7 @@ mod tests {
     #[test]
     fn test_set_tools() {
         let engine = QueryEngine::new(make_config());
-        assert_eq!(engine.tools.read().unwrap().len(), 0);
+        assert_eq!(engine.state.read().tools.len(), 0);
     }
 
     #[tokio::test]
@@ -177,8 +177,7 @@ mod tests {
         use futures::StreamExt;
 
         let engine = QueryEngine::new(make_config());
-        let stream =
-            engine.submit_message("hello", QuerySource::ReplMainThread);
+        let stream = engine.submit_message("hello", QuerySource::ReplMainThread);
         let mut stream = std::pin::pin!(stream);
 
         // The first item should always be SystemInit

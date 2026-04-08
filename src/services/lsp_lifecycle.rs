@@ -85,10 +85,7 @@ impl LspServerManager {
     /// Return the (command, args) for a known LSP server.
     pub fn get_server_config(language_id: &str) -> Option<(String, Vec<String>)> {
         match language_id {
-            "rust" => Some((
-                "rust-analyzer".to_string(),
-                vec![],
-            )),
+            "rust" => Some(("rust-analyzer".to_string(), vec![])),
             "python" => Some((
                 "pyright-langserver".to_string(),
                 vec!["--stdio".to_string()],
@@ -97,22 +94,10 @@ impl LspServerManager {
                 "typescript-language-server".to_string(),
                 vec!["--stdio".to_string()],
             )),
-            "go" => Some((
-                "gopls".to_string(),
-                vec!["serve".to_string()],
-            )),
-            "java" => Some((
-                "jdtls".to_string(),
-                vec![],
-            )),
-            "c" | "cpp" => Some((
-                "clangd".to_string(),
-                vec![],
-            )),
-            "ruby" => Some((
-                "solargraph".to_string(),
-                vec!["stdio".to_string()],
-            )),
+            "go" => Some(("gopls".to_string(), vec!["serve".to_string()])),
+            "java" => Some(("jdtls".to_string(), vec![])),
+            "c" | "cpp" => Some(("clangd".to_string(), vec![])),
+            "ruby" => Some(("solargraph".to_string(), vec!["stdio".to_string()])),
             _ => None,
         }
     }
@@ -134,7 +119,9 @@ impl LspServerManager {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .with_context(|| format!("Failed to start LSP server: {} {}", command, args.join(" ")))?;
+            .with_context(|| {
+                format!("Failed to start LSP server: {} {}", command, args.join(" "))
+            })?;
 
         let instance = LspServerInstance {
             language_id: language_id.to_string(),
@@ -211,15 +198,36 @@ mod tests {
     #[test]
     fn extension_mapping_basic() {
         let mgr = LspServerManager::new();
-        assert_eq!(mgr.get_language_for_file("main.rs"), Some("rust".to_string()));
-        assert_eq!(mgr.get_language_for_file("app.py"), Some("python".to_string()));
-        assert_eq!(mgr.get_language_for_file("index.js"), Some("javascript".to_string()));
-        assert_eq!(mgr.get_language_for_file("index.ts"), Some("typescript".to_string()));
+        assert_eq!(
+            mgr.get_language_for_file("main.rs"),
+            Some("rust".to_string())
+        );
+        assert_eq!(
+            mgr.get_language_for_file("app.py"),
+            Some("python".to_string())
+        );
+        assert_eq!(
+            mgr.get_language_for_file("index.js"),
+            Some("javascript".to_string())
+        );
+        assert_eq!(
+            mgr.get_language_for_file("index.ts"),
+            Some("typescript".to_string())
+        );
         assert_eq!(mgr.get_language_for_file("main.go"), Some("go".to_string()));
-        assert_eq!(mgr.get_language_for_file("Main.java"), Some("java".to_string()));
+        assert_eq!(
+            mgr.get_language_for_file("Main.java"),
+            Some("java".to_string())
+        );
         assert_eq!(mgr.get_language_for_file("util.c"), Some("c".to_string()));
-        assert_eq!(mgr.get_language_for_file("util.cpp"), Some("cpp".to_string()));
-        assert_eq!(mgr.get_language_for_file("app.rb"), Some("ruby".to_string()));
+        assert_eq!(
+            mgr.get_language_for_file("util.cpp"),
+            Some("cpp".to_string())
+        );
+        assert_eq!(
+            mgr.get_language_for_file("app.rb"),
+            Some("ruby".to_string())
+        );
     }
 
     #[test]
@@ -232,8 +240,14 @@ mod tests {
     #[test]
     fn extension_mapping_tsx_jsx() {
         let mgr = LspServerManager::new();
-        assert_eq!(mgr.get_language_for_file("App.tsx"), Some("typescript".to_string()));
-        assert_eq!(mgr.get_language_for_file("App.jsx"), Some("javascript".to_string()));
+        assert_eq!(
+            mgr.get_language_for_file("App.tsx"),
+            Some("typescript".to_string())
+        );
+        assert_eq!(
+            mgr.get_language_for_file("App.jsx"),
+            Some("javascript".to_string())
+        );
     }
 
     #[test]

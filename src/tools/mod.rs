@@ -3,16 +3,16 @@
 // Core tools: Bash, FileRead, FileWrite, FileEdit, Glob, Grep, AskUser
 // Skills: Skill tool for extensibility
 
-pub mod orchestration;
-pub mod hooks;
-pub mod execution;
+pub mod ask_user;
 pub mod bash;
+pub mod execution;
+pub mod file_edit;
 pub mod file_read;
 pub mod file_write;
-pub mod file_edit;
 pub mod glob_tool;
 pub mod grep;
-pub mod ask_user;
+pub mod hooks;
+pub mod orchestration;
 pub mod registry;
 
 // Skills tool
@@ -39,8 +39,8 @@ pub mod lsp;
 pub mod send_message;
 
 // Phase 14C: Additional tools
-pub mod powershell;
 pub mod config_tool;
+pub mod powershell;
 pub mod repl;
-pub mod structured_output;
 pub mod send_user_message;
+pub mod structured_output;

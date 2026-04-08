@@ -53,8 +53,7 @@ pub fn microcompact_messages(messages: Vec<Message>) -> MicrocompactResult {
     } else {
         0
     };
-    let recent_indices: std::collections::HashSet<usize> = tool_result_indices
-        [recent_start..]
+    let recent_indices: std::collections::HashSet<usize> = tool_result_indices[recent_start..]
         .iter()
         .copied()
         .collect();
@@ -133,8 +132,7 @@ fn compact_tool_result_message(msg: Message) -> (Message, u64) {
                         let new_len = summary.len();
                         *content = ToolResultContent::Text(summary);
                         // Rough token estimate: ~4 chars per token
-                        let chars_saved =
-                            original_len.saturating_sub(new_len);
+                        let chars_saved = original_len.saturating_sub(new_len);
                         freed += (chars_saved as u64) / 4;
                     }
                 }
@@ -187,7 +185,9 @@ fn make_tool_result_summary(content: &ToolResultContent, original_len: usize) ->
 
     format!(
         "{}\n\n[... {} characters omitted (microcompacted) ...]\n\n{}",
-        head, original_len - preview_len - tail_len, tail
+        head,
+        original_len - preview_len - tail_len,
+        tail
     )
 }
 

@@ -4,7 +4,6 @@ import { Markdown } from 'ink-terminal/markdown'
 import type { UIMessage } from '../store/app-store.js'
 import { ToolUseBlock } from './ToolUseBlock.js'
 import { ToolResultBlock } from './ToolResultBlock.js'
-import { ThinkingBlock } from './ThinkingBlock.js'
 
 interface Props {
   msg: UIMessage

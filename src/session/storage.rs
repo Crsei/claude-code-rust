@@ -109,8 +109,8 @@ pub fn save_session(session_id: &str, messages: &[Message], cwd: &str) -> Result
         messages: serializable_messages,
     };
 
-    let json = serde_json::to_string_pretty(&session_file)
-        .context("Failed to serialize session")?;
+    let json =
+        serde_json::to_string_pretty(&session_file).context("Failed to serialize session")?;
 
     std::fs::write(&path, json)
         .with_context(|| format!("Failed to write session file {}", path.display()))?;

@@ -190,12 +190,7 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// Process unread mailbox messages for this teammate.
-fn process_mailbox(
-    agent_name: &str,
-    team_name: &str,
-    agent_id: &str,
-    task_id: &str,
-) -> Result<()> {
+fn process_mailbox(agent_name: &str, team_name: &str, agent_id: &str, task_id: &str) -> Result<()> {
     let messages = mailbox::read_unread_messages(agent_name, team_name)?;
 
     for (idx, msg) in messages.iter().enumerate() {
@@ -259,11 +254,7 @@ fn handle_protocol_message(
             };
 
             // Write approval to leader's mailbox
-            mailbox::write_to_mailbox(
-                super::constants::TEAM_LEAD_NAME,
-                response,
-                team_name,
-            )?;
+            mailbox::write_to_mailbox(super::constants::TEAM_LEAD_NAME, response, team_name)?;
 
             // Mark task as stopped
             InProcessBackend::update_task_status(task_id, TaskStatus::Stopped);
@@ -327,11 +318,7 @@ fn send_idle_notification(
         summary: summary.map(|s| s.to_string()),
     };
 
-    mailbox::write_to_mailbox(
-        super::constants::TEAM_LEAD_NAME,
-        message,
-        team_name,
-    )
+    mailbox::write_to_mailbox(super::constants::TEAM_LEAD_NAME, message, team_name)
 }
 
 // ---------------------------------------------------------------------------

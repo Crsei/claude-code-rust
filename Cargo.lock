@@ -331,6 +331,7 @@ dependencies = [
  "ignore",
  "keyring",
  "lru",
+ "parking_lot",
  "predicates",
  "pulldown-cmark",
  "ratatui",

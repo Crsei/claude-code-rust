@@ -51,7 +51,7 @@ fn handle_help() -> Result<CommandResult> {
              }\n  \
            }\n\
          }"
-            .to_string(),
+        .to_string(),
     ))
 }
 
@@ -149,10 +149,9 @@ fn load_mcp_servers() -> std::collections::BTreeMap<String, serde_json::Value> {
     };
 
     match parsed.get("mcpServers") {
-        Some(serde_json::Value::Object(map)) => map
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect(),
+        Some(serde_json::Value::Object(map)) => {
+            map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        }
         _ => std::collections::BTreeMap::new(),
     }
 }

@@ -64,7 +64,10 @@ impl Tool for AskUserQuestionTool {
 
         // Non-interactive sessions cannot prompt the user
         if ctx.options.is_non_interactive_session {
-            debug!(question = question, "AskUser: non-interactive session, skipping prompt");
+            debug!(
+                question = question,
+                "AskUser: non-interactive session, skipping prompt"
+            );
             return Ok(ToolResult {
                 data: json!(
                     "Cannot ask user in non-interactive session. \
@@ -122,7 +125,10 @@ async fn read_user_line() -> String {
     tokio::task::spawn_blocking(|| {
         let mut line = String::new();
         match std::io::stdin().read_line(&mut line) {
-            Ok(_) => line.trim_end_matches('\n').trim_end_matches('\r').to_string(),
+            Ok(_) => line
+                .trim_end_matches('\n')
+                .trim_end_matches('\r')
+                .to_string(),
             Err(e) => {
                 debug!("AskUser: failed to read stdin: {}", e);
                 String::new()

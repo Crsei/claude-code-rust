@@ -6,9 +6,9 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::prelude::Widget;
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
-use ratatui::style::{Color, Modifier, Style};
 
 /// ASCII art logo — stylized "CC" monogram representing Claude Code.
 const LOGO: &str = r#"
@@ -59,7 +59,10 @@ pub fn render_welcome(
     if area.width < 20 || area.height < 8 {
         // Terminal too small — render a minimal one-liner.
         let line = Line::from(vec![
-            Span::styled("Claude Code ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Claude Code ",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(format!("v{}", version), Style::default().fg(MUTED)),
         ]);
         buf.set_line(area.x, area.y, &line, area.width);
@@ -68,7 +71,10 @@ pub fn render_welcome(
 
     // Outer border
     let title = Line::from(vec![
-        Span::styled(" Claude Code ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " Claude Code ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ),
         Span::styled("(Rust) ", Style::default().fg(ACCENT_DIM)),
         Span::styled(format!("v{} ", version), Style::default().fg(MUTED)),
     ]);
@@ -89,11 +95,8 @@ pub fn render_welcome(
     }
 
     // Two-column layout
-    let columns = Layout::horizontal([
-        Constraint::Percentage(45),
-        Constraint::Percentage(55),
-    ])
-    .split(inner);
+    let columns =
+        Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)]).split(inner);
 
     render_left_panel(columns[0], buf, version, model_name, session_id, cwd);
     render_right_panel(columns[1], buf);
@@ -129,9 +132,7 @@ fn render_left_panel(
     };
 
     // Shorten model name for display
-    let display_model = model_name
-        .strip_prefix("claude-")
-        .unwrap_or(model_name);
+    let display_model = model_name.strip_prefix("claude-").unwrap_or(model_name);
 
     // Truncate cwd if too long
     let max_cwd = (area.width as usize).saturating_sub(6);
@@ -143,7 +144,10 @@ fn render_left_panel(
 
     let info_lines = vec![
         Line::from(vec![
-            Span::styled("  cc-rust", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "  cc-rust",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(format!(" v{}", version), Style::default().fg(MUTED)),
         ]),
         Line::from(vec![
@@ -169,7 +173,7 @@ fn render_right_panel(area: Rect, buf: &mut Buffer) {
     let layout = Layout::vertical([
         Constraint::Length(6), // Tips
         Constraint::Length(1), // Divider
-        Constraint::Min(4),   // Keybindings
+        Constraint::Min(4),    // Keybindings
     ])
     .split(area);
 
@@ -214,19 +218,39 @@ fn render_right_panel(area: Rect, buf: &mut Buffer) {
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         )),
         Line::from(vec![
-            Span::styled("  Ctrl+C ", Style::default().fg(Color::Rgb(255, 200, 100)).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "  Ctrl+C ",
+                Style::default()
+                    .fg(Color::Rgb(255, 200, 100))
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("abort / quit", Style::default().fg(LIGHT)),
         ]),
         Line::from(vec![
-            Span::styled("  Ctrl+D ", Style::default().fg(Color::Rgb(255, 200, 100)).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "  Ctrl+D ",
+                Style::default()
+                    .fg(Color::Rgb(255, 200, 100))
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("quit", Style::default().fg(LIGHT)),
         ]),
         Line::from(vec![
-            Span::styled("  Up/Down ", Style::default().fg(Color::Rgb(255, 200, 100)).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "  Up/Down ",
+                Style::default()
+                    .fg(Color::Rgb(255, 200, 100))
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("input history", Style::default().fg(LIGHT)),
         ]),
         Line::from(vec![
-            Span::styled("  PgUp/PgDn ", Style::default().fg(Color::Rgb(255, 200, 100)).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "  PgUp/PgDn ",
+                Style::default()
+                    .fg(Color::Rgb(255, 200, 100))
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("scroll messages", Style::default().fg(LIGHT)),
         ]),
     ];
@@ -259,13 +283,7 @@ fn render_logo(area: Rect, buf: &mut Buffer) {
 }
 
 /// Compact single-column fallback for very small terminals.
-fn render_compact(
-    area: Rect,
-    buf: &mut Buffer,
-    version: &str,
-    model_name: &str,
-    session_id: &str,
-) {
+fn render_compact(area: Rect, buf: &mut Buffer, version: &str, model_name: &str, session_id: &str) {
     let short_session = if session_id.len() > 8 {
         &session_id[..8]
     } else {
@@ -274,7 +292,10 @@ fn render_compact(
 
     let lines = vec![
         Line::from(vec![
-            Span::styled("Claude Code ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Claude Code ",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(format!("(Rust) v{}", version), Style::default().fg(MUTED)),
         ]),
         Line::from(""),
@@ -312,7 +333,14 @@ mod tests {
     fn test_render_welcome_small_terminal() {
         let area = Rect::new(0, 0, 15, 5);
         let mut buf = Buffer::empty(area);
-        render_welcome(area, &mut buf, "0.1.0", "claude-sonnet-4", "abcd1234", "/tmp");
+        render_welcome(
+            area,
+            &mut buf,
+            "0.1.0",
+            "claude-sonnet-4",
+            "abcd1234",
+            "/tmp",
+        );
         // Should not panic, renders minimal one-liner.
     }
 
@@ -320,7 +348,14 @@ mod tests {
     fn test_render_welcome_normal() {
         let area = Rect::new(0, 0, 80, 24);
         let mut buf = Buffer::empty(area);
-        render_welcome(area, &mut buf, "0.1.0", "claude-sonnet-4", "abcdef1234567890", "/home/user/project");
+        render_welcome(
+            area,
+            &mut buf,
+            "0.1.0",
+            "claude-sonnet-4",
+            "abcdef1234567890",
+            "/home/user/project",
+        );
         // Should not panic. Verify logo area has content.
     }
 

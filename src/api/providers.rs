@@ -312,10 +312,26 @@ mod tests {
 
     #[test]
     fn test_all_chinese_providers_are_openai_compat() {
-        let chinese = ["deepseek", "zhipu", "qwen", "moonshot", "baichuan", "minimax", "yi", "siliconflow", "stepfun", "spark"];
+        let chinese = [
+            "deepseek",
+            "zhipu",
+            "qwen",
+            "moonshot",
+            "baichuan",
+            "minimax",
+            "yi",
+            "siliconflow",
+            "stepfun",
+            "spark",
+        ];
         for name in chinese {
             let p = get_provider(name).expect(name);
-            assert_eq!(p.protocol, ProviderProtocol::OpenAiCompat, "{} should be OpenAiCompat", name);
+            assert_eq!(
+                p.protocol,
+                ProviderProtocol::OpenAiCompat,
+                "{} should be OpenAiCompat",
+                name
+            );
         }
     }
 }

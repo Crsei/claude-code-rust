@@ -125,7 +125,7 @@ impl PermissionDialog {
         // Split inner area into: tool info, message, buttons.
         let chunks = Layout::vertical([
             Constraint::Length(2), // tool name + input
-            Constraint::Min(2),   // message
+            Constraint::Min(2),    // message
             Constraint::Length(2), // button row
         ])
         .split(inner);
@@ -169,9 +169,7 @@ impl PermissionDialog {
                     2 => "(a)",
                     _ => "",
                 };
-                let mut spans = vec![
-                    Span::styled(format!(" {} {} ", label, shortcut), style),
-                ];
+                let mut spans = vec![Span::styled(format!(" {} {} ", label, shortcut), style)];
                 if i < NUM_CHOICES - 1 {
                     spans.push(Span::raw("  "));
                 }

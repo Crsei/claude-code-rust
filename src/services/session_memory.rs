@@ -152,8 +152,8 @@ impl SessionMemoryService {
 
         let filename = format!("{}.json", entry.id);
         let path = self.config.memory_dir.join(&filename);
-        let json = serde_json::to_string_pretty(&entry)
-            .context("Failed to serialize memory entry")?;
+        let json =
+            serde_json::to_string_pretty(&entry).context("Failed to serialize memory entry")?;
         std::fs::write(&path, json)
             .with_context(|| format!("Failed to write memory entry: {}", path.display()))?;
 
@@ -187,7 +187,9 @@ impl SessionMemoryService {
             .iter()
             .filter(|e| {
                 e.content.to_lowercase().contains(&query_lower)
-                    || e.tags.iter().any(|t| t.to_lowercase().contains(&query_lower))
+                    || e.tags
+                        .iter()
+                        .any(|t| t.to_lowercase().contains(&query_lower))
             })
             .collect()
     }
@@ -248,8 +250,11 @@ mod tests {
         let tmp = std::env::temp_dir().join("cc_rust_test_session_mem_search");
         let mut svc = SessionMemoryService::new(test_config(&tmp));
         svc.entries.push(make_entry("1", "Rust is fast", &["lang"]));
-        svc.entries
-            .push(make_entry("2", "Python is flexible", &["lang", "scripting"]));
+        svc.entries.push(make_entry(
+            "2",
+            "Python is flexible",
+            &["lang", "scripting"],
+        ));
         svc.entries
             .push(make_entry("3", "Using cargo build", &["rust", "tooling"]));
 

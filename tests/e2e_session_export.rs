@@ -201,9 +201,7 @@ fn tool_timeline_reconstruction() {
     let msgs = messages.as_array().unwrap();
 
     // Verify we can parse tool_use from assistant messages
-    let assistant_msgs: Vec<_> = msgs.iter()
-        .filter(|m| m["type"] == "assistant")
-        .collect();
+    let assistant_msgs: Vec<_> = msgs.iter().filter(|m| m["type"] == "assistant").collect();
     assert_eq!(assistant_msgs.len(), 2);
 
     // Verify tool_use blocks exist
@@ -213,9 +211,11 @@ fn tool_timeline_reconstruction() {
     assert_eq!(first_assistant_content[0]["id"], "tu_bash_1");
 
     // Verify tool_result blocks match
-    let tool_result_msgs: Vec<_> = msgs.iter()
+    let tool_result_msgs: Vec<_> = msgs
+        .iter()
         .filter(|m| {
-            m["content"].as_array()
+            m["content"]
+                .as_array()
                 .map(|arr| arr.iter().any(|b| b["type"] == "tool_result"))
                 .unwrap_or(false)
         })
@@ -254,11 +254,14 @@ fn compact_boundary_extraction() {
     let msgs = messages.as_array().unwrap();
 
     // Find system messages with CompactBoundary
-    let boundaries: Vec<_> = msgs.iter()
+    let boundaries: Vec<_> = msgs
+        .iter()
         .filter(|m| {
-            m["type"] == "system" && m["content"].as_str()
-                .map(|s| s.contains("Compacted"))
-                .unwrap_or(false)
+            m["type"] == "system"
+                && m["content"]
+                    .as_str()
+                    .map(|s| s.contains("Compacted"))
+                    .unwrap_or(false)
         })
         .collect();
 
@@ -281,10 +284,13 @@ fn content_replacement_detection() {
 
     // Verify the regex pattern works
     let re = regex::Regex::new(
-        r"\[\.\.\.\s+(\d+)\s+characters omitted\.\s+Full output saved to:\s+(.+?)\s*\.\.\.\]"
-    ).unwrap();
+        r"\[\.\.\.\s+(\d+)\s+characters omitted\.\s+Full output saved to:\s+(.+?)\s*\.\.\.\]",
+    )
+    .unwrap();
 
-    let caps = re.captures(preview).expect("should match replacement marker");
+    let caps = re
+        .captures(preview)
+        .expect("should match replacement marker");
     let omitted: usize = caps.get(1).unwrap().as_str().parse().unwrap();
     let file_path = caps.get(2).unwrap().as_str();
 
@@ -307,20 +313,24 @@ fn content_replacement_detection() {
 #[test]
 fn microcompact_detection() {
     // The pattern from microcompact.rs: make_tool_result_summary()
-    let marker = "head of output\n\n[... 1500 characters omitted (microcompacted) ...]\n\ntail of output";
+    let marker =
+        "head of output\n\n[... 1500 characters omitted (microcompacted) ...]\n\ntail of output";
 
-    let re = regex::Regex::new(
-        r"\[\.\.\.\s+(\d+)\s+characters omitted \(microcompacted\)\s*\.\.\.\]"
-    ).unwrap();
+    let re =
+        regex::Regex::new(r"\[\.\.\.\s+(\d+)\s+characters omitted \(microcompacted\)\s*\.\.\.\]")
+            .unwrap();
 
-    let caps = re.captures(marker).expect("should match microcompact marker");
+    let caps = re
+        .captures(marker)
+        .expect("should match microcompact marker");
     let omitted: usize = caps.get(1).unwrap().as_str().parse().unwrap();
     assert_eq!(omitted, 1500);
 
     // The full-output-saved-to pattern should NOT match microcompact
     let budget_re = regex::Regex::new(
-        r"\[\.\.\.\s+(\d+)\s+characters omitted\.\s+Full output saved to:\s+(.+?)\s*\.\.\.\]"
-    ).unwrap();
+        r"\[\.\.\.\s+(\d+)\s+characters omitted\.\s+Full output saved to:\s+(.+?)\s*\.\.\.\]",
+    )
+    .unwrap();
     assert!(budget_re.captures(marker).is_none());
 
     // All three types detectable via generic contains check

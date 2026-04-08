@@ -118,10 +118,7 @@ const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000
 ///
 /// If `output_path` is `None`, writes to `~/.cc-rust/audits/<session_id>.audit.json`.
 /// Returns the path of the written file.
-pub fn export_audit_record(
-    session_id: &str,
-    output_path: Option<&Path>,
-) -> Result<PathBuf> {
+pub fn export_audit_record(session_id: &str, output_path: Option<&Path>) -> Result<PathBuf> {
     let session_file = load_session_file_raw(session_id)?;
     let record = build_audit_from_session_file(&session_file);
     write_audit_record(&record, session_id, output_path)
@@ -147,9 +144,7 @@ pub fn list_audits() -> Result<Vec<PathBuf>> {
     let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| {
-            p.to_string_lossy().ends_with(".audit.json")
-        })
+        .filter(|p| p.to_string_lossy().ends_with(".audit.json"))
         .collect();
     files.sort();
     Ok(files)
@@ -265,10 +260,20 @@ fn build_audit_from_session_file(session: &SessionFile) -> AuditRecord {
     for (seq, msg) in session.messages.iter().enumerate() {
         // Accumulate cost/tokens from assistant messages
         if msg.msg_type == "assistant" {
-            total_cost += msg.data.get("cost_usd").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            total_cost += msg
+                .data
+                .get("cost_usd")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
             if let Some(usage) = msg.data.get("usage") {
-                total_input += usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                total_output += usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                total_input += usage
+                    .get("input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                total_output += usage
+                    .get("output_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
             }
         }
 
@@ -296,8 +301,8 @@ fn build_audit_from_session_file(session: &SessionFile) -> AuditRecord {
     // Resolve model from ProcessState
     let model = PROCESS_STATE
         .read()
-        .ok()
-        .and_then(|ps| ps.effective_model().map(|s| s.to_string()));
+        .effective_model()
+        .map(|s| s.to_string());
 
     let session_started = if session.created_at > 0 {
         Some(format_ts_secs(session.created_at))
@@ -388,8 +393,8 @@ fn build_audit_from_messages(session_id: &str, messages: &[Message], cwd: &str) 
 
     let model = PROCESS_STATE
         .read()
-        .ok()
-        .and_then(|ps| ps.effective_model().map(|s| s.to_string()));
+        .effective_model()
+        .map(|s| s.to_string());
 
     AuditRecord {
         format_version: FORMAT_VERSION.to_string(),
@@ -516,8 +521,7 @@ fn write_audit_record(
         }
     };
 
-    let json = serde_json::to_string_pretty(record)
-        .context("Failed to serialize audit record")?;
+    let json = serde_json::to_string_pretty(record).context("Failed to serialize audit record")?;
 
     std::fs::write(&path, json)
         .with_context(|| format!("Failed to write audit file {}", path.display()))?;
@@ -681,9 +685,9 @@ mod tests {
                 uuid: "test-uuid".into(),
                 timestamp: "2026-01-01T00:00:00Z".into(),
                 msg_type: "user".into(),
-                hash: data_hash,       // hash of original
+                hash: data_hash, // hash of original
                 chain_hash: chain_hash.clone(),
-                data: tampered_data,   // but data was changed
+                data: tampered_data, // but data was changed
             }],
             integrity: IntegrityInfo {
                 algorithm: "sha256".into(),
@@ -728,16 +732,31 @@ mod tests {
             },
             entries: vec![
                 AuditEntry {
-                    sequence: 0, uuid: "u1".into(), timestamp: "t1".into(),
-                    msg_type: "user".into(), hash: h1, chain_hash: c1, data: d1,
+                    sequence: 0,
+                    uuid: "u1".into(),
+                    timestamp: "t1".into(),
+                    msg_type: "user".into(),
+                    hash: h1,
+                    chain_hash: c1,
+                    data: d1,
                 },
                 AuditEntry {
-                    sequence: 1, uuid: "u2".into(), timestamp: "t2".into(),
-                    msg_type: "assistant".into(), hash: h2, chain_hash: c2, data: d2,
+                    sequence: 1,
+                    uuid: "u2".into(),
+                    timestamp: "t2".into(),
+                    msg_type: "assistant".into(),
+                    hash: h2,
+                    chain_hash: c2,
+                    data: d2,
                 },
                 AuditEntry {
-                    sequence: 2, uuid: "u3".into(), timestamp: "t3".into(),
-                    msg_type: "user".into(), hash: h3, chain_hash: c3.clone(), data: d3,
+                    sequence: 2,
+                    uuid: "u3".into(),
+                    timestamp: "t3".into(),
+                    msg_type: "user".into(),
+                    hash: h3,
+                    chain_hash: c3.clone(),
+                    data: d3,
                 },
             ],
             integrity: IntegrityInfo {

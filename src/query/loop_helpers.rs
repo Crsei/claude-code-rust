@@ -7,9 +7,7 @@ use std::sync::Arc;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
-use crate::types::message::{
-    AssistantMessage, ContentBlock, Message, MessageContent, UserMessage,
-};
+use crate::types::message::{AssistantMessage, ContentBlock, Message, MessageContent, UserMessage};
 use crate::types::state::QueryLoopState;
 use crate::types::transitions::{Continue, Terminal};
 

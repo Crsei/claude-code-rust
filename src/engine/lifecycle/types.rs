@@ -32,9 +32,7 @@ impl UsageTracking {
         self.api_call_count += 1;
 
         // Sync to global ProcessState
-        if let Ok(mut state) = crate::bootstrap::PROCESS_STATE.write() {
-            state.total_cost_usd += cost_usd;
-        }
+        crate::bootstrap::PROCESS_STATE.write().total_cost_usd += cost_usd;
     }
 }
 

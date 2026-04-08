@@ -289,7 +289,8 @@ mod tests {
             args: vec!["-y".into(), "@mcp/server".into()],
             env: HashMap::new(),
         }];
-        m.dependencies.insert("other-plugin".into(), "^1.0.0".into());
+        m.dependencies
+            .insert("other-plugin".into(), "^1.0.0".into());
 
         let json = serde_json::to_string_pretty(&m).unwrap();
         let back: PluginManifest = serde_json::from_str(&json).unwrap();

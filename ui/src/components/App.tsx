@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { AlternateScreen, Box } from 'ink-terminal'
 import { useBackend } from '../ipc/context.js'
 import { useAppState, useAppDispatch } from '../store/app-store.js'
@@ -9,8 +9,9 @@ import { StatusBar } from './StatusBar.js'
 import { WelcomeScreen } from './WelcomeScreen.js'
 import { PermissionDialog } from './PermissionDialog.js'
 import { Suggestions } from './Suggestions.js'
-import { Spinner } from './Spinner.js'
 import type { BackendMessage } from '../ipc/protocol.js'
+
+type ActivePane = 'messages' | 'input'
 
 function extractTextFromContent(content: any): string {
   if (Array.isArray(content)) {
@@ -27,6 +28,8 @@ export function App() {
   const backend = useBackend()
   const state = useAppState()
   const dispatch = useAppDispatch()
+  const [activePane, setActivePane] = useState<ActivePane>('input')
+  const welcomePromptWidth = Math.min(84, Math.max(40, (process.stdout.columns ?? 80) - 8))
 
   useEffect(() => {
     const handler = (msg: BackendMessage) => {
@@ -98,6 +101,12 @@ export function App() {
   const isWelcome = state.messages.length === 0 && !state.isStreaming && !state.isWaiting
   const isBusy = state.isWaiting || state.isStreaming
 
+  useEffect(() => {
+    if (isWelcome) {
+      setActivePane('input')
+    }
+  }, [isWelcome])
+
   return (
     <AlternateScreen mouseTracking>
       <Box flexDirection="column" height="100%">
@@ -105,18 +114,23 @@ export function App() {
         {isWelcome ? (
           <Box flexGrow={1} flexDirection="column" alignItems="center" justifyContent="center">
             <WelcomeScreen />
-            <Box marginTop={1}>
-              <InputPrompt />
+            <Box marginTop={1} width={welcomePromptWidth}>
+              <InputPrompt isActive onActivate={() => setActivePane('input')} />
             </Box>
           </Box>
         ) : (
           <>
             <Box flexGrow={1}>
-              <MessageList />
+              <MessageList
+                isActive={activePane === 'messages'}
+                onActivate={() => setActivePane('messages')}
+              />
             </Box>
             {state.suggestions.length > 0 && !isBusy && <Suggestions />}
-            {isBusy && <Spinner label={state.isStreaming && state.streamingText ? 'Reasoning...' : 'Thinking...'} />}
-            {!isBusy && <InputPrompt />}
+            <InputPrompt
+              isActive={activePane === 'input'}
+              onActivate={() => setActivePane('input')}
+            />
           </>
         )}
         <StatusBar usage={state.usage} model={state.model} vimMode={state.vimEnabled ? state.vimMode : undefined} />

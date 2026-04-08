@@ -232,11 +232,7 @@ impl KeybindingRegistry {
 
         // Check specific context first
         if context != BindingContext::Global {
-            if let Some(action) = self
-                .bindings
-                .get(&context)
-                .and_then(|map| map.get(&key))
-            {
+            if let Some(action) = self.bindings.get(&context).and_then(|map| map.get(&key)) {
                 return Some(*action);
             }
         }

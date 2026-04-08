@@ -1,8 +1,8 @@
 #![allow(unused)]
 //! MCP server discovery — finds configured servers from settings
-use std::path::Path;
-use anyhow::Result;
 use super::McpServerConfig;
+use anyhow::Result;
+use std::path::Path;
 
 /// Discover MCP server configurations from settings files
 pub fn discover_mcp_servers(cwd: &Path) -> Result<Vec<McpServerConfig>> {
@@ -36,7 +36,8 @@ fn load_mcp_from_settings(path: &Path) -> Result<Vec<McpServerConfig>> {
     let mut configs = Vec::new();
     if let Some(mcp_servers) = settings.get("mcpServers").and_then(|v| v.as_object()) {
         for (name, config) in mcp_servers {
-            if let Ok(mut server_config) = serde_json::from_value::<McpServerConfig>(config.clone()) {
+            if let Ok(mut server_config) = serde_json::from_value::<McpServerConfig>(config.clone())
+            {
                 server_config.name = name.clone();
                 configs.push(server_config);
             }

@@ -109,7 +109,8 @@ impl App {
             }
         }
         self.messages.push(msg);
-        self.vscroll.invalidate_from(self.messages.len().saturating_sub(1));
+        self.vscroll
+            .invalidate_from(self.messages.len().saturating_sub(1));
         self.scroll_to_bottom_deferred();
         self.dirty = true;
     }
@@ -120,7 +121,8 @@ impl App {
         } else {
             self.messages.push(msg);
         }
-        self.vscroll.invalidate_from(self.messages.len().saturating_sub(1));
+        self.vscroll
+            .invalidate_from(self.messages.len().saturating_sub(1));
         self.scroll_to_bottom_deferred();
         self.dirty = true;
     }
@@ -305,7 +307,11 @@ impl App {
         }
 
         let spinner_height = if self.is_streaming { 1u16 } else { 0 };
-        let suggestion_height = if !self.is_streaming && self.suggestions.is_some() { 1u16 } else { 0 };
+        let suggestion_height = if !self.is_streaming && self.suggestions.is_some() {
+            1u16
+        } else {
+            0
+        };
         let input_height = 1u16;
         let status_height = 1u16;
         let bottom_height = spinner_height + suggestion_height + input_height + status_height;
@@ -336,7 +342,8 @@ impl App {
             );
         } else {
             // ── Messages (virtual scroll) ───────────────────────────
-            self.vscroll.ensure_up_to_date(&self.messages, message_area.width, &self.theme);
+            self.vscroll
+                .ensure_up_to_date(&self.messages, message_area.width, &self.theme);
             let total = self.vscroll.total_lines();
             let max_scroll = total.saturating_sub(message_area.height as usize);
             if self.scroll_offset > max_scroll {
@@ -456,11 +463,16 @@ impl App {
         }
 
         let msg_count = self.messages.len();
-        let mode = if self.is_streaming { "streaming" } else { "ready" };
+        let mode = if self.is_streaming {
+            "streaming"
+        } else {
+            "ready"
+        };
 
         let mut parts = Vec::new();
         if !self.model_name.is_empty() {
-            let short_model = self.model_name
+            let short_model = self
+                .model_name
                 .strip_prefix("claude-")
                 .unwrap_or(&self.model_name);
             let short_model = short_model.split('-').take(2).collect::<Vec<_>>().join("-");

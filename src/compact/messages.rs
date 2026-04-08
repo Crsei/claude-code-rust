@@ -4,8 +4,8 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::types::message::{
-    AssistantMessage, Attachment, ContentBlock, InfoLevel, Message, MessageContent,
-    SystemMessage, SystemSubtype, ToolResultContent, UserMessage,
+    AssistantMessage, Attachment, ContentBlock, InfoLevel, Message, MessageContent, SystemMessage,
+    SystemSubtype, ToolResultContent, UserMessage,
 };
 
 /// Normalize messages for the API by:
@@ -35,10 +35,7 @@ pub fn normalize_messages_for_api(messages: &[Message]) -> Vec<Message> {
                     }
                     // Nested memory becomes a user message with the memory content
                     Attachment::NestedMemory { path, content } => {
-                        let text = format!(
-                            "[Memory from {}]:\n{}",
-                            path, content
-                        );
+                        let text = format!("[Memory from {}]:\n{}", path, content);
                         let user_msg = create_user_message(&text, true);
                         result.push(user_msg);
                     }
@@ -146,11 +143,7 @@ pub fn create_user_message(content: &str, is_meta: bool) -> Message {
 }
 
 /// Create a user message with a tool result.
-pub fn create_tool_result_message(
-    tool_use_id: &str,
-    content: &str,
-    is_error: bool,
-) -> Message {
+pub fn create_tool_result_message(tool_use_id: &str, content: &str, is_error: bool) -> Message {
     Message::User(UserMessage {
         uuid: Uuid::new_v4(),
         timestamp: Utc::now().timestamp_millis(),
@@ -169,10 +162,7 @@ pub fn create_tool_result_message(
 /// Create an assistant API error message.
 /// These are synthetic assistant messages that represent API errors,
 /// allowing the conversation to continue with error context.
-pub fn create_assistant_api_error_message(
-    content: &str,
-    error_type: Option<&str>,
-) -> Message {
+pub fn create_assistant_api_error_message(content: &str, error_type: Option<&str>) -> Message {
     Message::Assistant(AssistantMessage {
         uuid: Uuid::new_v4(),
         timestamp: Utc::now().timestamp_millis(),
@@ -277,7 +267,9 @@ mod tests {
         ];
         let normalized = normalize_messages_for_api(&messages);
         // Progress messages should be filtered out
-        assert!(normalized.iter().all(|m| !matches!(m, Message::Progress(_))));
+        assert!(normalized
+            .iter()
+            .all(|m| !matches!(m, Message::Progress(_))));
     }
 
     #[test]

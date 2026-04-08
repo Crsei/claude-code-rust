@@ -75,9 +75,7 @@ fn show_paths(cwd: &std::path::Path) -> Result<CommandResult> {
     } else {
         let mut lines = vec!["CLAUDE.md files found:".to_string()];
         for path in &files {
-            let size = fs::metadata(path)
-                .map(|m| m.len())
-                .unwrap_or(0);
+            let size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
             lines.push(format!("  {} ({} bytes)", path.display(), size));
         }
         Ok(CommandResult::Output(lines.join("\n")))

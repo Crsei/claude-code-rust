@@ -80,9 +80,7 @@ fn markdown_to_lines_inner(text: &str, theme: &Theme) -> Vec<Line<'static>> {
                     pulldown_cmark::HeadingLevel::H1 => theme
                         .heading
                         .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-                    pulldown_cmark::HeadingLevel::H2 => theme
-                        .heading
-                        .add_modifier(Modifier::BOLD),
+                    pulldown_cmark::HeadingLevel::H2 => theme.heading.add_modifier(Modifier::BOLD),
                     _ => theme.bold,
                 };
                 style_stack.push(heading_style);
@@ -188,10 +186,7 @@ fn markdown_to_lines_inner(text: &str, theme: &Theme) -> Vec<Line<'static>> {
 
             // ── Inline code ─────────────────────────────────────────
             Event::Code(code) => {
-                current_spans.push(Span::styled(
-                    format!("`{}`", code),
-                    theme.code,
-                ));
+                current_spans.push(Span::styled(format!("`{}`", code), theme.code));
             }
 
             // ── Text ────────────────────────────────────────────────
@@ -203,10 +198,7 @@ fn markdown_to_lines_inner(text: &str, theme: &Theme) -> Vec<Line<'static>> {
                             flush_line(&mut current_spans, &mut lines);
                         }
                         if !line_text.is_empty() {
-                            current_spans.push(Span::styled(
-                                line_text.to_string(),
-                                style,
-                            ));
+                            current_spans.push(Span::styled(line_text.to_string(), style));
                         }
                     }
                 } else {
@@ -239,7 +231,10 @@ fn markdown_to_lines_inner(text: &str, theme: &Theme) -> Vec<Line<'static>> {
     flush_line(&mut current_spans, &mut lines);
 
     // Remove trailing blank lines.
-    while lines.last().map_or(false, |l| l.spans.is_empty() || line_is_empty(l)) {
+    while lines
+        .last()
+        .map_or(false, |l| l.spans.is_empty() || line_is_empty(l))
+    {
         lines.pop();
     }
 

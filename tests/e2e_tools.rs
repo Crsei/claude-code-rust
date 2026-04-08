@@ -281,7 +281,9 @@ fn system_prompt_contains_environment_section() {
     cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Environment").or(predicate::str::contains("environment")));
+        .stdout(
+            predicate::str::contains("Environment").or(predicate::str::contains("environment")),
+        );
 }
 
 #[test]
@@ -318,7 +320,10 @@ fn print_mode_bash_tool_no_crash_without_api() {
     cmd.args(["-p", "-C", WORKSPACE, "run ls in bash"])
         .env_remove("ANTHROPIC_AUTH_TOKEN")
         .assert()
-        .stdout(predicate::str::contains("no API client configured").or(predicate::str::contains("API error")));
+        .stdout(
+            predicate::str::contains("no API client configured")
+                .or(predicate::str::contains("API error")),
+        );
 }
 
 #[test]
@@ -328,7 +333,10 @@ fn print_mode_read_tool_no_crash_without_api() {
     cmd.args(["-p", "-C", WORKSPACE, "read the file test.txt"])
         .env_remove("ANTHROPIC_AUTH_TOKEN")
         .assert()
-        .stdout(predicate::str::contains("no API client configured").or(predicate::str::contains("API error")));
+        .stdout(
+            predicate::str::contains("no API client configured")
+                .or(predicate::str::contains("API error")),
+        );
 }
 
 // =========================================================================
@@ -356,13 +364,7 @@ fn dump_system_prompt_with_verbose_and_model() {
 fn init_only_with_cwd_and_permission_mode() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args([
-        "--init-only",
-        "-C",
-        WORKSPACE,
-        "--permission-mode",
-        "auto",
-    ])
-    .assert()
-    .success();
+    cmd.args(["--init-only", "-C", WORKSPACE, "--permission-mode", "auto"])
+        .assert()
+        .success();
 }

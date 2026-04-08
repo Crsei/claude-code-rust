@@ -11,9 +11,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use super::manifest::{load_manifest, PluginManifest};
-use super::{
-    cache_dir, installed_plugins_path, PluginEntry, PluginSource, PluginStatus,
-};
+use super::{cache_dir, installed_plugins_path, PluginEntry, PluginSource, PluginStatus};
 
 // ---------------------------------------------------------------------------
 // Installed plugins persistence (installed_plugins.json)
@@ -62,11 +60,10 @@ pub fn save_installed_plugins(plugins: &[PluginEntry]) -> Result<()> {
         plugins: plugins.to_vec(),
     };
 
-    let json = serde_json::to_string_pretty(&file)
-        .context("Failed to serialize installed plugins")?;
+    let json =
+        serde_json::to_string_pretty(&file).context("Failed to serialize installed plugins")?;
 
-    std::fs::write(&path, json)
-        .with_context(|| format!("Failed to write {}", path.display()))?;
+    std::fs::write(&path, json).with_context(|| format!("Failed to write {}", path.display()))?;
 
     Ok(())
 }
@@ -159,7 +156,11 @@ pub fn manifest_to_entry(
         cache_path: Some(cache_path.to_path_buf()),
         tools: manifest.tools.iter().map(|t| t.name.clone()).collect(),
         skills: manifest.skills.iter().map(|s| s.name.clone()).collect(),
-        mcp_servers: manifest.mcp_servers.iter().map(|m| m.name.clone()).collect(),
+        mcp_servers: manifest
+            .mcp_servers
+            .iter()
+            .map(|m| m.name.clone())
+            .collect(),
         installed_at: None,
         updated_at: None,
     }
@@ -195,7 +196,9 @@ mod tests {
             name: "Test Plugin".into(),
             version: "1.0.0".into(),
             description: "A test".into(),
-            source: PluginSource::Local { path: "/tmp".into() },
+            source: PluginSource::Local {
+                path: "/tmp".into(),
+            },
             status: PluginStatus::Installed,
             marketplace: Some("mp".into()),
             cache_path: None,

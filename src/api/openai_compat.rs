@@ -33,7 +33,10 @@ fn extract_system_text(system: &[Value]) -> String {
         .iter()
         .filter_map(|block| {
             if block.get("type").and_then(|t| t.as_str()) == Some("text") {
-                block.get("text").and_then(|t| t.as_str()).map(|s| s.to_string())
+                block
+                    .get("text")
+                    .and_then(|t| t.as_str())
+                    .map(|s| s.to_string())
             } else {
                 block.as_str().map(|s| s.to_string())
             }
@@ -52,8 +55,14 @@ fn flatten_content(content: Option<&Value>) -> String {
         Some(Value::Array(blocks)) => blocks
             .iter()
             .filter_map(|block| match block.get("type").and_then(|t| t.as_str()) {
-                Some("text") => block.get("text").and_then(|t| t.as_str()).map(|s| s.to_string()),
-                Some("tool_result") => block.get("content").and_then(|c| c.as_str()).map(|s| s.to_string()),
+                Some("text") => block
+                    .get("text")
+                    .and_then(|t| t.as_str())
+                    .map(|s| s.to_string()),
+                Some("tool_result") => block
+                    .get("content")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string()),
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -222,7 +231,11 @@ fn build_openai_request(request: &MessagesRequest, provider_name: &str) -> Value
             || request.model.starts_with("o1")
             || request.model.starts_with("o3")
             || request.model.starts_with("o4");
-        let key = if uses_new_param { "max_completion_tokens" } else { "max_tokens" };
+        let key = if uses_new_param {
+            "max_completion_tokens"
+        } else {
+            "max_tokens"
+        };
         body[key] = json!(request.max_tokens);
     }
 
@@ -234,10 +247,7 @@ fn build_openai_request(request: &MessagesRequest, provider_name: &str) -> Value
             .iter()
             .filter_map(|t| {
                 let name = t.get("name")?.as_str()?;
-                let description = t
-                    .get("description")
-                    .and_then(|d| d.as_str())
-                    .unwrap_or("");
+                let description = t.get("description").and_then(|d| d.as_str()).unwrap_or("");
                 let parameters = t
                     .get("input_schema")
                     .cloned()
@@ -276,9 +286,7 @@ pub(crate) async fn openai_compat_stream(
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
     let body = build_openai_request(request, provider_name);
 
-    let mut req_builder = http
-        .post(&url)
-        .header("Content-Type", "application/json");
+    let mut req_builder = http.post(&url).header("Content-Type", "application/json");
 
     // Azure OpenAI uses `api-key` header; others use `Authorization: Bearer`
     if provider_name == "azure" {
@@ -555,7 +563,10 @@ mod tests {
             json!({"type": "text", "text": "You are helpful."}),
             json!({"type": "text", "text": "Be concise."}),
         ];
-        assert_eq!(extract_system_text(&system), "You are helpful.\nBe concise.");
+        assert_eq!(
+            extract_system_text(&system),
+            "You are helpful.\nBe concise."
+        );
     }
 
     #[test]

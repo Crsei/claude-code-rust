@@ -9,7 +9,6 @@
 ///   - 报告阻塞错误 (终止并标记为 hook 问题)
 ///
 /// Phase 1 简化: 总是允许停止
-
 use anyhow::Result;
 
 use crate::types::message::{AssistantMessage, Message};
@@ -27,9 +26,7 @@ pub enum StopHookResult {
     },
     /// 阻塞错误 — hook 自身执行失败
     #[allow(dead_code)]
-    BlockingError {
-        error: String,
-    },
+    BlockingError { error: String },
 }
 
 /// 运行 stop hooks
@@ -68,9 +65,10 @@ pub async fn run_stop_hooks(
 /// 判断 assistant 消息是否包含工具调用
 #[allow(dead_code)]
 pub fn has_tool_use(assistant_message: &AssistantMessage) -> bool {
-    assistant_message.content.iter().any(|block| {
-        matches!(block, crate::types::message::ContentBlock::ToolUse { .. })
-    })
+    assistant_message
+        .content
+        .iter()
+        .any(|block| matches!(block, crate::types::message::ContentBlock::ToolUse { .. }))
 }
 
 /// 从 assistant 消息中提取所有工具调用
@@ -94,7 +92,9 @@ mod tests {
     use super::*;
     use uuid::Uuid;
 
-    fn make_assistant_message(content: Vec<crate::types::message::ContentBlock>) -> AssistantMessage {
+    fn make_assistant_message(
+        content: Vec<crate::types::message::ContentBlock>,
+    ) -> AssistantMessage {
         AssistantMessage {
             uuid: Uuid::new_v4(),
             timestamp: 0,

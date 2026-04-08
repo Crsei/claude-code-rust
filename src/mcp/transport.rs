@@ -49,7 +49,9 @@ pub(crate) async fn reader_loop(
                                         line = %line,
                                         "MCP: received malformed response"
                                     );
-                                } else if let Some(method) = val.get("method").and_then(|m| m.as_str()) {
+                                } else if let Some(method) =
+                                    val.get("method").and_then(|m| m.as_str())
+                                {
                                     debug!(
                                         server = %server_name,
                                         method = method,

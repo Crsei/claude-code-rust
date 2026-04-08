@@ -25,10 +25,7 @@ impl CommandHandler for InitHandler {
         }
 
         fs::create_dir_all(&config_dir)?;
-        fs::write(
-            &settings_file,
-            r#"{"model": null, "theme": null}"#,
-        )?;
+        fs::write(&settings_file, r#"{"model": null, "theme": null}"#)?;
 
         Ok(CommandResult::Output(format!(
             "Project initialized. Created {}",

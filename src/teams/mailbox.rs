@@ -40,9 +40,11 @@ pub fn team_dir(team_name: &str) -> PathBuf {
 ///
 /// Returns: `~/.cc-rust/teams/{team_name}/inboxes/{agent_name}.json`
 pub fn inbox_path(agent_name: &str, team_name: &str) -> PathBuf {
-    team_dir(team_name)
-        .join(INBOXES_DIR_NAME)
-        .join(format!("{}.{}", sanitize_name(agent_name), INBOX_EXTENSION))
+    team_dir(team_name).join(INBOXES_DIR_NAME).join(format!(
+        "{}.{}",
+        sanitize_name(agent_name),
+        INBOX_EXTENSION
+    ))
 }
 
 /// Get the lock file path for an inbox.
@@ -55,7 +57,13 @@ fn lock_path(inbox: &Path) -> PathBuf {
 /// Sanitize a name for use in file paths (replace problematic characters).
 fn sanitize_name(name: &str) -> String {
     name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -97,11 +105,7 @@ pub fn read_unread_messages(agent_name: &str, team_name: &str) -> Result<Vec<Tea
 /// Lock → read latest → append → write back.
 ///
 /// Corresponds to TS: `writeToMailbox(name, msg, team)`
-pub fn write_to_mailbox(
-    agent_name: &str,
-    message: TeammateMessage,
-    team_name: &str,
-) -> Result<()> {
+pub fn write_to_mailbox(agent_name: &str, message: TeammateMessage, team_name: &str) -> Result<()> {
     let path = inbox_path(agent_name, team_name);
 
     // Ensure directory exists
@@ -129,11 +133,7 @@ pub fn write_to_mailbox(
 /// Mark a specific message as read by index.
 ///
 /// Corresponds to TS: `markAsReadByIndex(name, team, idx)`
-pub fn mark_as_read_by_index(
-    agent_name: &str,
-    team_name: &str,
-    index: usize,
-) -> Result<()> {
+pub fn mark_as_read_by_index(agent_name: &str, team_name: &str, index: usize) -> Result<()> {
     let path = inbox_path(agent_name, team_name);
     if !path.exists() {
         return Ok(());
@@ -228,10 +228,7 @@ where
                     let _ = fs::remove_file(&lock);
                     continue;
                 }
-                debug!(
-                    attempt,
-                    delay_ms, "mailbox lock contention, backing off"
-                );
+                debug!(attempt, delay_ms, "mailbox lock contention, backing off");
                 thread::sleep(Duration::from_millis(delay_ms));
                 delay_ms = (delay_ms * 2).min(MAILBOX_LOCK_MAX_TIMEOUT_MS);
             }
@@ -241,7 +238,10 @@ where
 
     if !acquired {
         // Force-remove stale lock as last resort
-        warn!("force-removing mailbox lock after {} retries", MAILBOX_LOCK_RETRIES);
+        warn!(
+            "force-removing mailbox lock after {} retries",
+            MAILBOX_LOCK_RETRIES
+        );
         let _ = fs::remove_file(&lock);
         // Try once more
         fs::OpenOptions::new()
@@ -264,12 +264,7 @@ where
 fn is_stale_lock(lock: &Path) -> bool {
     fs::metadata(lock)
         .and_then(|m| m.modified())
-        .map(|modified| {
-            modified
-                .elapsed()
-                .map(|d| d.as_secs() > 5)
-                .unwrap_or(false)
-        })
+        .map(|modified| modified.elapsed().map(|d| d.as_secs() > 5).unwrap_or(false))
         .unwrap_or(true) // If we can't read metadata, treat as stale
 }
 

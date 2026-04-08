@@ -54,12 +54,7 @@ impl VirtualScroll {
 
     /// Ensure heights and offsets are up-to-date for all messages.
     /// Re-computes only the invalidated tail.
-    pub fn ensure_up_to_date(
-        &mut self,
-        messages: &[Message],
-        width: u16,
-        theme: &Theme,
-    ) {
+    pub fn ensure_up_to_date(&mut self, messages: &[Message], width: u16, theme: &Theme) {
         // Width changed → full invalidation
         if width != self.cached_width {
             self.invalidate_all();
@@ -111,11 +106,7 @@ impl VirtualScroll {
 
     /// Compute the visible message index range `[start, end)` for the given
     /// scroll offset and viewport height.
-    pub fn visible_range(
-        &self,
-        scroll_offset: usize,
-        viewport_height: usize,
-    ) -> (usize, usize) {
+    pub fn visible_range(&self, scroll_offset: usize, viewport_height: usize) -> (usize, usize) {
         let total_msgs = self.heights.len();
         if total_msgs == 0 {
             return (0, 0);

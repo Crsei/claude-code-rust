@@ -249,12 +249,7 @@ fn live_suggestions_no_crash_after_tool_use() {
 #[ignore]
 fn live_suggestions_no_crash_chat_only() {
     tool_cli()
-        .args([
-            "-p",
-            "-C",
-            WORKSPACE,
-            "Say exactly: CHAT_SUGGEST_OK",
-        ])
+        .args(["-p", "-C", WORKSPACE, "Say exactly: CHAT_SUGGEST_OK"])
         .assert()
         .success()
         .stdout(predicate::str::contains("CHAT_SUGGEST_OK"));

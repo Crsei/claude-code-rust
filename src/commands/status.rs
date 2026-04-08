@@ -32,19 +32,17 @@ impl CommandHandler for StatusHandler {
             "disabled"
         };
 
-        let effort = ctx
-            .app_state
-            .effort_value
-            .as_deref()
-            .unwrap_or("default");
+        let effort = ctx.app_state.effort_value.as_deref().unwrap_or("default");
 
         let permission_mode = format!("{:?}", ctx.app_state.tool_permission_context.mode);
 
         let mut lines = Vec::new();
         lines.push("Session Status".to_string());
         lines.push("─".repeat(30));
-        lines.push(format!("Messages:    {} total ({} user, {} assistant)",
-            message_count, user_count, assistant_count));
+        lines.push(format!(
+            "Messages:    {} total ({} user, {} assistant)",
+            message_count, user_count, assistant_count
+        ));
         lines.push(format!("Model:       {}", model));
         lines.push(format!("Fast mode:   {}", fast_mode));
         lines.push(format!("Effort:      {}", effort));

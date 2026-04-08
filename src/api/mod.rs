@@ -8,4 +8,5 @@ pub mod google_provider;
 pub mod openai_compat;
 pub mod providers;
 pub mod retry;
+pub mod stream_provider;
 pub mod streaming;

@@ -1,7 +1,7 @@
 #![allow(unused)]
 //! Retry logic with exponential backoff and model fallback
-use std::time::Duration;
 use anyhow::Result;
+use std::time::Duration;
 
 /// Retry configuration
 #[derive(Debug, Clone)]
@@ -43,12 +43,18 @@ pub enum ApiErrorCategory {
     /// Max output tokens — don't retry (handle differently)
     MaxOutputTokens,
     /// Unknown — don't retry
-    Unknown { status: Option<u16>, message: String },
+    Unknown {
+        status: Option<u16>,
+        message: String,
+    },
 }
 
 impl ApiErrorCategory {
     pub fn is_retryable(&self) -> bool {
-        matches!(self, Self::RateLimit { .. } | Self::Overloaded | Self::ServerError)
+        matches!(
+            self,
+            Self::RateLimit { .. } | Self::Overloaded | Self::ServerError
+        )
     }
 }
 
@@ -60,7 +66,9 @@ pub fn categorize_api_error(status: u16, body: &str) -> ApiErrorCategory {
             if body.contains("overloaded") {
                 ApiErrorCategory::Overloaded
             } else {
-                ApiErrorCategory::RateLimit { retry_after_ms: None }
+                ApiErrorCategory::RateLimit {
+                    retry_after_ms: None,
+                }
             }
         }
         500 | 502 | 503 => ApiErrorCategory::ServerError,
@@ -71,11 +79,16 @@ pub fn categorize_api_error(status: u16, body: &str) -> ApiErrorCategory {
             } else if body.contains("max_tokens") {
                 ApiErrorCategory::MaxOutputTokens
             } else {
-                ApiErrorCategory::InvalidRequest { message: body.to_string() }
+                ApiErrorCategory::InvalidRequest {
+                    message: body.to_string(),
+                }
             }
         }
         401 | 403 => ApiErrorCategory::AuthError,
-        _ => ApiErrorCategory::Unknown { status: Some(status), message: body.to_string() },
+        _ => ApiErrorCategory::Unknown {
+            status: Some(status),
+            message: body.to_string(),
+        },
     }
 }
 

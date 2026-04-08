@@ -157,10 +157,7 @@ pub fn merge_configs(global: &GlobalConfig, project: &ProjectConfig) -> MergedCo
     let mut merged = MergedConfig {
         model: project.model.clone().or_else(|| global.model.clone()),
         theme: project.theme.clone().or_else(|| global.theme.clone()),
-        verbose: project
-            .verbose
-            .or(global.verbose)
-            .unwrap_or(false),
+        verbose: project.verbose.or(global.verbose).unwrap_or(false),
         permission_mode: project
             .permission_mode
             .clone()
@@ -173,15 +170,9 @@ pub fn merge_configs(global: &GlobalConfig, project: &ProjectConfig) -> MergedCo
             .system_prompt
             .clone()
             .or_else(|| global.system_prompt.clone()),
-        hooks: merge_maps(
-            global.hooks.as_ref(),
-            project.hooks.as_ref(),
-        ),
+        hooks: merge_maps(global.hooks.as_ref(), project.hooks.as_ref()),
         api_key: global.api_key.clone(),
-        extra: merge_maps(
-            Some(&global.extra),
-            Some(&project.extra),
-        ),
+        extra: merge_maps(Some(&global.extra), Some(&project.extra)),
     };
 
     // Apply environment variable overrides.

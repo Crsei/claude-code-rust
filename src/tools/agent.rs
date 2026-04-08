@@ -63,12 +63,7 @@ fn resolve_model_alias(alias: &str, _fallback: &str) -> String {
 /// Find the git root directory from a working directory.
 async fn find_git_root(cwd: &Path) -> Result<PathBuf> {
     let output = tokio::process::Command::new("git")
-        .args([
-            "-C",
-            &cwd.to_string_lossy(),
-            "rev-parse",
-            "--show-toplevel",
-        ])
+        .args(["-C", &cwd.to_string_lossy(), "rev-parse", "--show-toplevel"])
         .output()
         .await?;
 
@@ -203,7 +198,9 @@ fn build_child_config(
 // ---------------------------------------------------------------------------
 
 async fn collect_stream_result(
-    stream: std::pin::Pin<Box<dyn futures::Stream<Item = crate::engine::sdk_types::SdkMessage> + Send>>,
+    stream: std::pin::Pin<
+        Box<dyn futures::Stream<Item = crate::engine::sdk_types::SdkMessage> + Send>,
+    >,
 ) -> (String, bool) {
     use crate::engine::sdk_types::SdkMessage;
     use futures::StreamExt;
@@ -275,7 +272,14 @@ impl AgentTool {
                     "worktree isolation failed — falling back to normal execution"
                 );
                 return self
-                    .run_agent_normal(params, ctx, agent_id, agent_model, parent_model, current_depth)
+                    .run_agent_normal(
+                        params,
+                        ctx,
+                        agent_id,
+                        agent_model,
+                        parent_model,
+                        current_depth,
+                    )
                     .await
                     .map(|mut r| {
                         if let Some(s) = r.data.as_str() {
@@ -294,8 +298,7 @@ impl AgentTool {
         // ── 2. Create branch + worktree ──────────────────────────────────
         let short_id = &Uuid::new_v4().to_string()[..8];
         let branch_name = format!("agent-worktree-{}", short_id);
-        let worktree_path =
-            std::env::temp_dir().join(format!("agent-worktree-{}", short_id));
+        let worktree_path = std::env::temp_dir().join(format!("agent-worktree-{}", short_id));
 
         info!(
             agent_id = %agent_id,
@@ -391,17 +394,13 @@ impl AgentTool {
         );
 
         let child_engine = QueryEngine::new(child_config);
-        let stream = child_engine
-            .submit_message(&params.prompt, QuerySource::Agent(agent_id.to_string()));
+        let stream =
+            child_engine.submit_message(&params.prompt, QuerySource::Agent(agent_id.to_string()));
 
         let (mut result_text, had_error) = collect_stream_result(stream).await;
 
         // ── 4. Check for changes ─────────────────────────────────────────
-        let changes = count_worktree_changes(
-            &worktree_path,
-            original_head.as_deref(),
-        )
-        .await;
+        let changes = count_worktree_changes(&worktree_path, original_head.as_deref()).await;
 
         let has_changes = match changes {
             Some((files, commits)) => files > 0 || commits > 0,
@@ -495,9 +494,8 @@ impl AgentTool {
                 }
             }
 
-            result_text.push_str(
-                "\n\n[Worktree isolation: no changes detected — worktree cleaned up]",
-            );
+            result_text
+                .push_str("\n\n[Worktree isolation: no changes detected — worktree cleaned up]");
         }
 
         debug!(
@@ -537,8 +535,8 @@ impl AgentTool {
         );
 
         let child_engine = QueryEngine::new(child_config);
-        let stream = child_engine
-            .submit_message(&params.prompt, QuerySource::Agent(agent_id.to_string()));
+        let stream =
+            child_engine.submit_message(&params.prompt, QuerySource::Agent(agent_id.to_string()));
 
         let (result_text, had_error) = collect_stream_result(stream).await;
 
@@ -620,11 +618,7 @@ impl Tool for AgentTool {
         let params: AgentInput = serde_json::from_value(input)?;
 
         // Check recursion depth
-        let current_depth = ctx
-            .query_tracking
-            .as_ref()
-            .map(|t| t.depth)
-            .unwrap_or(0);
+        let current_depth = ctx.query_tracking.as_ref().map(|t| t.depth).unwrap_or(0);
 
         if current_depth >= MAX_AGENT_DEPTH {
             bail!(
@@ -635,14 +629,8 @@ impl Tool for AgentTool {
             );
         }
 
-        let description = params
-            .description
-            .as_deref()
-            .unwrap_or("unnamed task");
-        let subagent_type = params
-            .subagent_type
-            .as_deref()
-            .unwrap_or("general-purpose");
+        let description = params.description.as_deref().unwrap_or("unnamed task");
+        let subagent_type = params.subagent_type.as_deref().unwrap_or("general-purpose");
 
         // Resolve model for the subagent
         let parent_model = ctx.options.main_loop_model.clone();

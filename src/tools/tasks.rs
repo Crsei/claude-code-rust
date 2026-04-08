@@ -8,9 +8,10 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use parking_lot::Mutex;
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
@@ -84,16 +85,16 @@ impl TaskStore {
             created_at: now,
             updated_at: now,
         };
-        self.tasks.lock().expect("task store lock poisoned").insert(id, entry.clone());
+        self.tasks.lock().insert(id, entry.clone());
         entry
     }
 
     pub fn get(&self, id: &str) -> Option<TaskEntry> {
-        self.tasks.lock().expect("task store lock poisoned").get(id).cloned()
+        self.tasks.lock().get(id).cloned()
     }
 
     pub fn update_status(&self, id: &str, status: TaskStatus) -> Option<TaskEntry> {
-        let mut tasks = self.tasks.lock().expect("task store lock poisoned");
+        let mut tasks = self.tasks.lock();
         if let Some(entry) = tasks.get_mut(id) {
             entry.status = status;
             entry.updated_at = chrono::Utc::now().timestamp();
@@ -106,7 +107,7 @@ impl TaskStore {
     /// Append output text to a task's log (used by background agent execution).
     #[allow(dead_code)] // Will be used when background agent execution is implemented
     pub fn append_output(&self, id: &str, output: &str) -> Option<TaskEntry> {
-        let mut tasks = self.tasks.lock().expect("task store lock poisoned");
+        let mut tasks = self.tasks.lock();
         if let Some(entry) = tasks.get_mut(id) {
             if !entry.output.is_empty() {
                 entry.output.push('\n');
@@ -120,7 +121,7 @@ impl TaskStore {
     }
 
     pub fn list(&self) -> Vec<TaskEntry> {
-        let tasks = self.tasks.lock().expect("task store lock poisoned");
+        let tasks = self.tasks.lock();
         let mut entries: Vec<TaskEntry> = tasks.values().cloned().collect();
         entries.sort_by_key(|e| e.created_at);
         entries
@@ -146,8 +147,7 @@ fn task_to_json(entry: &TaskEntry) -> Value {
 // Global task store (lazy singleton)
 // =============================================================================
 
-static GLOBAL_STORE: std::sync::LazyLock<TaskStore> =
-    std::sync::LazyLock::new(TaskStore::new);
+static GLOBAL_STORE: std::sync::LazyLock<TaskStore> = std::sync::LazyLock::new(TaskStore::new);
 
 fn store() -> &'static TaskStore {
     &GLOBAL_STORE
@@ -262,10 +262,7 @@ impl Tool for TaskGetTool {
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let id = input
-            .get("task_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
 
         match store().get(id) {
             Some(entry) => Ok(ToolResult {
@@ -325,10 +322,7 @@ impl Tool for TaskUpdateTool {
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let id = input
-            .get("task_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
         let status_str = input
             .get("status")
             .and_then(|v| v.as_str())
@@ -447,10 +441,7 @@ impl Tool for TaskStopTool {
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let id = input
-            .get("task_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
 
         match store().stop(id) {
             Some(entry) => Ok(ToolResult {
@@ -516,10 +507,7 @@ impl Tool for TaskOutputTool {
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let id = input
-            .get("task_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
 
         match store().get(id) {
             Some(entry) => Ok(ToolResult {
@@ -613,7 +601,9 @@ mod tests {
     fn test_task_store_not_found() {
         let store = TaskStore::new();
         assert!(store.get("nonexistent").is_none());
-        assert!(store.update_status("nonexistent", TaskStatus::Completed).is_none());
+        assert!(store
+            .update_status("nonexistent", TaskStatus::Completed)
+            .is_none());
         assert!(store.stop("nonexistent").is_none());
     }
 

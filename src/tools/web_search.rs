@@ -210,10 +210,7 @@ impl Tool for WebSearchTool {
         _parent: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let query = input
-            .get("query")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let query = input.get("query").and_then(|v| v.as_str()).unwrap_or("");
 
         let max_results = input
             .get("max_results")
@@ -266,10 +263,7 @@ impl Tool for WebSearchTool {
             .header("Accept", "application/json")
             .header("Accept-Encoding", "gzip")
             .header("X-Subscription-Token", &api_key)
-            .query(&[
-                ("q", query),
-                ("count", &max_results.to_string()),
-            ])
+            .query(&[("q", query), ("count", &max_results.to_string())])
             .send()
             .await
             .context("Brave Search API request failed")?;
@@ -291,10 +285,7 @@ impl Tool for WebSearchTool {
             .await
             .context("Failed to parse Brave Search response")?;
 
-        let raw_results = search_resp
-            .web
-            .map(|w| w.results)
-            .unwrap_or_default();
+        let raw_results = search_resp.web.map(|w| w.results).unwrap_or_default();
 
         let results = filter_results(raw_results, &allowed_domains, &blocked_domains);
         let duration_secs = start.elapsed().as_secs_f64();
@@ -353,9 +344,15 @@ mod tests {
 
     #[test]
     fn test_matches_domain() {
-        assert!(matches_domain("https://docs.rust-lang.org/std", "rust-lang.org"));
+        assert!(matches_domain(
+            "https://docs.rust-lang.org/std",
+            "rust-lang.org"
+        ));
         assert!(matches_domain("https://rust-lang.org/", "rust-lang.org"));
-        assert!(!matches_domain("https://evil-rust-lang.org/", "rust-lang.org"));
+        assert!(!matches_domain(
+            "https://evil-rust-lang.org/",
+            "rust-lang.org"
+        ));
         assert!(!matches_domain("https://example.com/", "rust-lang.org"));
     }
 
@@ -375,11 +372,7 @@ mod tests {
                 age: None,
             },
         ];
-        let filtered = filter_results(
-            results,
-            &["rust-lang.org".to_string()],
-            &[],
-        );
+        let filtered = filter_results(results, &["rust-lang.org".to_string()], &[]);
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].title, "Rust");
     }
@@ -474,8 +467,8 @@ mod tests {
     }
 
     fn make_test_ctx() -> ToolUseContext {
-        use std::sync::Arc;
         use crate::types::app_state::AppState;
+        use std::sync::Arc;
         let state = AppState::default();
         ToolUseContext {
             options: ToolUseOptions {

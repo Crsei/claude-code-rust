@@ -88,10 +88,7 @@ pub trait QueryDeps: Send + Sync {
     ///
     /// 在生产中委托给 api/client.rs
     /// 在测试中返回预设的消息序列
-    async fn call_model(
-        &self,
-        params: ModelCallParams,
-    ) -> Result<ModelResponse>;
+    async fn call_model(&self, params: ModelCallParams) -> Result<ModelResponse>;
 
     /// 调用模型 (流式, 返回 Stream 供实时中继)
     ///
@@ -103,10 +100,7 @@ pub trait QueryDeps: Send + Sync {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>>;
 
     /// 微压缩: 裁剪过大的工具结果
-    async fn microcompact(
-        &self,
-        messages: Vec<Message>,
-    ) -> Result<Vec<Message>>;
+    async fn microcompact(&self, messages: Vec<Message>) -> Result<Vec<Message>>;
 
     /// 自动压缩: 达到 token 阈值时压缩历史
     async fn autocompact(
@@ -116,10 +110,7 @@ pub trait QueryDeps: Send + Sync {
     ) -> Result<Option<CompactionResult>>;
 
     /// 响应式压缩: prompt_too_long 恢复时调用
-    async fn reactive_compact(
-        &self,
-        messages: Vec<Message>,
-    ) -> Result<Option<CompactionResult>>;
+    async fn reactive_compact(&self, messages: Vec<Message>) -> Result<Option<CompactionResult>>;
 
     /// 执行单个工具
     async fn execute_tool(

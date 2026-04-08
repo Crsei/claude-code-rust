@@ -81,16 +81,10 @@ impl CommandHandler for BranchHandler {
                                 stderr.trim()
                             )))
                         }
-                        Err(e) => Ok(CommandResult::Output(format!(
-                            "Failed to run git: {}",
-                            e
-                        ))),
+                        Err(e) => Ok(CommandResult::Output(format!("Failed to run git: {}", e))),
                     }
                 }
-                Err(e) => Ok(CommandResult::Output(format!(
-                    "Failed to run git: {}",
-                    e
-                ))),
+                Err(e) => Ok(CommandResult::Output(format!("Failed to run git: {}", e))),
             }
         }
     }

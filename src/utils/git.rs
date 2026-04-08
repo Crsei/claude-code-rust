@@ -10,9 +10,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use git2::{
-    BranchType, Delta, Diff, DiffOptions, Repository, StatusOptions, StatusShow,
-};
+use git2::{BranchType, Delta, Diff, DiffOptions, Repository, StatusOptions, StatusShow};
 
 // =============================================================================
 // Repository detection
@@ -120,13 +118,12 @@ pub fn get_status(path: &Path) -> Result<RepoStatus> {
             };
 
             // Also modified in worktree?
-            let final_kind = if status.intersects(
-                git2::Status::WT_MODIFIED | git2::Status::WT_DELETED,
-            ) {
-                FileStatusKind::StagedAndModified
-            } else {
-                kind
-            };
+            let final_kind =
+                if status.intersects(git2::Status::WT_MODIFIED | git2::Status::WT_DELETED) {
+                    FileStatusKind::StagedAndModified
+                } else {
+                    kind
+                };
 
             result.staged.push(FileStatus {
                 path: path_str.clone(),
@@ -226,10 +223,7 @@ impl From<Delta> for DeltaKind {
 /// Get the staged diff (index vs HEAD), similar to `git diff --cached`.
 pub fn diff_staged(path: &Path) -> Result<Vec<DiffEntry>> {
     let repo = open_repo(path)?;
-    let head_tree = repo
-        .head()
-        .ok()
-        .and_then(|h| h.peel_to_tree().ok());
+    let head_tree = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
 
     let diff = repo
         .diff_tree_to_index(head_tree.as_ref(), None, None)
@@ -294,7 +288,10 @@ fn collect_diff_entries(diff: &Diff) -> Result<Vec<DiffEntry>> {
             .to_string();
 
         let old_path = if delta.status() == Delta::Renamed {
-            old_file.path().and_then(|p| p.to_str()).map(|s| s.to_string())
+            old_file
+                .path()
+                .and_then(|p| p.to_str())
+                .map(|s| s.to_string())
         } else {
             None
         };
@@ -352,7 +349,9 @@ pub struct LogEntry {
 pub fn get_log(path: &Path, max_count: usize) -> Result<Vec<LogEntry>> {
     let repo = open_repo(path)?;
     let mut revwalk = repo.revwalk().context("Failed to create revwalk")?;
-    revwalk.push_head().context("Failed to push HEAD to revwalk")?;
+    revwalk
+        .push_head()
+        .context("Failed to push HEAD to revwalk")?;
     revwalk.set_sorting(git2::Sort::TIME)?;
 
     let mut entries = Vec::with_capacity(max_count);
@@ -413,10 +412,7 @@ pub fn current_branch(path: &Path) -> Result<String> {
     }
 
     let head = repo.head().context("Failed to read HEAD")?;
-    let name = head
-        .shorthand()
-        .unwrap_or("HEAD")
-        .to_string();
+    let name = head.shorthand().unwrap_or("HEAD").to_string();
 
     Ok(name)
 }
@@ -442,10 +438,7 @@ pub fn head_sha(path: &Path) -> Result<String> {
 pub fn list_branches(path: &Path) -> Result<Vec<BranchInfo>> {
     let repo = open_repo(path)?;
     let head_ref = repo.head().ok();
-    let head_name = head_ref
-        .as_ref()
-        .and_then(|h| h.shorthand())
-        .unwrap_or("");
+    let head_name = head_ref.as_ref().and_then(|h| h.shorthand()).unwrap_or("");
 
     let branches = repo
         .branches(Some(BranchType::Local))
@@ -454,12 +447,7 @@ pub fn list_branches(path: &Path) -> Result<Vec<BranchInfo>> {
     let mut result = Vec::new();
     for branch_result in branches {
         let (branch, _branch_type) = branch_result.context("Failed to read branch")?;
-        let name = branch
-            .name()
-            .ok()
-            .flatten()
-            .unwrap_or("")
-            .to_string();
+        let name = branch.name().ok().flatten().unwrap_or("").to_string();
 
         result.push(BranchInfo {
             is_head: name == head_name,

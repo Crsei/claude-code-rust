@@ -63,7 +63,13 @@ pub fn generate_tool_use_summary(
         .map(|t| {
             let input = truncate_str(&t.input_summary, 100);
             let output = truncate_str(&t.output_summary, 60);
-            format!("{} to {} ({}) → {}", t.name, action_for_tool(&t.name), input, output)
+            format!(
+                "{} to {} ({}) → {}",
+                t.name,
+                action_for_tool(&t.name),
+                input,
+                output
+            )
         })
         .collect();
 
@@ -131,8 +137,7 @@ mod tests {
             input_summary: "file: lib.rs".to_string(),
             output_summary: "contents".to_string(),
         }];
-        let result =
-            generate_tool_use_summary(&tools, Some("I found the bug in line 42")).unwrap();
+        let result = generate_tool_use_summary(&tools, Some("I found the bug in line 42")).unwrap();
         assert!(result.contains("I found the bug"));
     }
 
@@ -145,8 +150,16 @@ mod tests {
         }];
         let result = generate_tool_use_summary(&tools, None).unwrap();
         // The output should appear after the "→" arrow
-        assert!(result.contains("→"), "summary should contain arrow: {}", result);
-        assert!(result.contains("hello"), "summary should contain output: {}", result);
+        assert!(
+            result.contains("→"),
+            "summary should contain arrow: {}",
+            result
+        );
+        assert!(
+            result.contains("hello"),
+            "summary should contain output: {}",
+            result
+        );
     }
 
     #[test]
@@ -157,19 +170,38 @@ mod tests {
             output_summary: "x".repeat(200),
         }];
         let result = generate_tool_use_summary(&tools, None).unwrap();
-        assert!(result.contains("..."), "long output should be truncated: {}", result);
+        assert!(
+            result.contains("..."),
+            "long output should be truncated: {}",
+            result
+        );
     }
 
     #[test]
     fn all_tool_names_have_actions() {
         let tool_names = [
-            "Bash", "FileRead", "Read", "FileWrite", "Write",
-            "FileEdit", "Edit", "Grep", "Glob", "Agent", "Skill",
-            "AskUser", "WebSearch", "WebFetch",
+            "Bash",
+            "FileRead",
+            "Read",
+            "FileWrite",
+            "Write",
+            "FileEdit",
+            "Edit",
+            "Grep",
+            "Glob",
+            "Agent",
+            "Skill",
+            "AskUser",
+            "WebSearch",
+            "WebFetch",
         ];
         for name in tool_names {
             let action = action_for_tool(name);
-            assert_ne!(action, "use a tool", "{} should have a specific action", name);
+            assert_ne!(
+                action, "use a tool",
+                "{} should have a specific action",
+                name
+            );
         }
     }
 

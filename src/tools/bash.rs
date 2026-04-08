@@ -84,10 +84,7 @@ impl BashTool {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let timeout = input
-            .get("timeout")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(120);
+        let timeout = input.get("timeout").and_then(|v| v.as_u64()).unwrap_or(120);
         let description = input
             .get("description")
             .and_then(|v| v.as_str())
@@ -154,11 +151,7 @@ impl Tool for BashTool {
         ValidationResult::Ok
     }
 
-    async fn check_permissions(
-        &self,
-        input: &Value,
-        _ctx: &ToolUseContext,
-    ) -> PermissionResult {
+    async fn check_permissions(&self, input: &Value, _ctx: &ToolUseContext) -> PermissionResult {
         // In a full implementation, this would check dangerous command patterns,
         // permission mode, etc. For now, allow all.
         PermissionResult::Allow {

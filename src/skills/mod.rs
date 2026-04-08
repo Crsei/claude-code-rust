@@ -15,12 +15,13 @@
 
 #![allow(unused)]
 
-pub mod loader;
 pub mod bundled;
+pub mod loader;
 
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -113,16 +114,12 @@ impl SkillDefinition {
     /// Whether this skill is model-invocable (the model can call it).
     pub fn is_model_invocable(&self) -> bool {
         !self.frontmatter.disable_model_invocation
-            && (!self.frontmatter.description.is_empty()
-                || self.frontmatter.when_to_use.is_some())
+            && (!self.frontmatter.description.is_empty() || self.frontmatter.when_to_use.is_some())
     }
 
     /// Get the display name (frontmatter name or canonical name).
     pub fn display_name(&self) -> &str {
-        self.frontmatter
-            .name
-            .as_deref()
-            .unwrap_or(&self.name)
+        self.frontmatter.name.as_deref().unwrap_or(&self.name)
     }
 
     /// Expand the prompt body with argument substitution.
@@ -144,10 +141,9 @@ impl SkillDefinition {
         if !args.is_empty() {
             body = body.replace("$ARGUMENTS", args);
             // Named arguments: ${ARG_NAME}
-            let arg_parts: Vec<&str> = args.splitn(
-                self.frontmatter.argument_names.len().max(1),
-                ' ',
-            ).collect();
+            let arg_parts: Vec<&str> = args
+                .splitn(self.frontmatter.argument_names.len().max(1), ' ')
+                .collect();
             for (i, name) in self.frontmatter.argument_names.iter().enumerate() {
                 let val = arg_parts.get(i).copied().unwrap_or("");
                 body = body.replace(&format!("${{{}}}", name), val);
@@ -163,32 +159,25 @@ impl SkillDefinition {
 // ---------------------------------------------------------------------------
 
 /// Global skill registry — holds all loaded skills, keyed by name.
-static REGISTRY: LazyLock<Mutex<Vec<SkillDefinition>>> =
-    LazyLock::new(|| Mutex::new(Vec::new()));
+static REGISTRY: LazyLock<Mutex<Vec<SkillDefinition>>> = LazyLock::new(|| Mutex::new(Vec::new()));
 
 /// Register a skill in the global registry.
 pub fn register_skill(skill: SkillDefinition) {
-    if let Ok(mut reg) = REGISTRY.lock() {
-        // Deduplicate by name — first registration wins
-        if !reg.iter().any(|s| s.name == skill.name) {
-            reg.push(skill);
-        }
+    let mut reg = REGISTRY.lock();
+    // Deduplicate by name — first registration wins
+    if !reg.iter().any(|s| s.name == skill.name) {
+        reg.push(skill);
     }
 }
 
 /// Get all registered skills.
 pub fn get_all_skills() -> Vec<SkillDefinition> {
-    REGISTRY.lock().map(|r| r.clone()).unwrap_or_default()
+    REGISTRY.lock().clone()
 }
 
 /// Find a skill by name.
 pub fn find_skill(name: &str) -> Option<SkillDefinition> {
-    REGISTRY
-        .lock()
-        .ok()?
-        .iter()
-        .find(|s| s.name == name)
-        .cloned()
+    REGISTRY.lock().iter().find(|s| s.name == name).cloned()
 }
 
 /// Get user-invocable skills (for slash command listing).
@@ -209,9 +198,7 @@ pub fn get_model_invocable_skills() -> Vec<SkillDefinition> {
 
 /// Clear all skills (used when refreshing).
 pub fn clear_skills() {
-    if let Ok(mut reg) = REGISTRY.lock() {
-        reg.clear();
-    }
+    REGISTRY.lock().clear();
 }
 
 /// Initialize the skill system — loads bundled + directory skills.

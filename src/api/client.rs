@@ -12,7 +12,7 @@ use crate::types::message::{AssistantMessage, Message, StreamEvent, Usage};
 
 // Re-export siblings for convenience within this module's tests.
 use crate::api::providers::{ProviderInfo, ProviderProtocol};
-use crate::api::retry::{categorize_api_error, retry_delay, ApiErrorCategory, RetryConfig};
+use crate::api::retry::{categorize_api_error, ApiErrorCategory};
 use crate::api::streaming::{parse_sse_event, StreamAccumulator};
 
 /// API provider enum — determines wire protocol and auth method.
@@ -24,10 +24,7 @@ pub enum ApiProvider {
         base_url: Option<String>,
     },
     /// Azure Foundry (Anthropic-compatible)
-    Azure {
-        endpoint: String,
-        api_key: String,
-    },
+    Azure { endpoint: String, api_key: String },
     /// OpenAI-compatible provider (OpenAI, DeepSeek, Groq, Qwen, etc.)
     OpenAiCompat {
         name: String,
@@ -36,22 +33,13 @@ pub enum ApiProvider {
         default_model: String,
     },
     /// Google Gemini (streamGenerateContent API)
-    Google {
-        api_key: String,
-        base_url: String,
-    },
+    Google { api_key: String, base_url: String },
     /// AWS Bedrock (interface only — not implemented)
     #[allow(dead_code)]
-    Bedrock {
-        region: String,
-        model_id: String,
-    },
+    Bedrock { region: String, model_id: String },
     /// GCP Vertex AI (interface only — not implemented)
     #[allow(dead_code)]
-    Vertex {
-        project_id: String,
-        region: String,
-    },
+    Vertex { project_id: String, region: String },
 }
 
 /// Request body for the Messages API
@@ -82,16 +70,59 @@ pub struct ApiClientConfig {
 pub struct ApiClient {
     config: ApiClientConfig,
     http: reqwest::Client,
+    stream_provider: Box<dyn crate::api::stream_provider::StreamProvider>,
+}
+
+/// Build the appropriate `StreamProvider` from an `ApiProvider`.
+fn make_stream_provider(
+    provider: &ApiProvider,
+) -> Box<dyn crate::api::stream_provider::StreamProvider> {
+    use crate::api::stream_provider::*;
+    match provider {
+        ApiProvider::OpenAiCompat {
+            name,
+            api_key,
+            base_url,
+            ..
+        } => Box::new(OpenAiCompatStreamProvider {
+            name: name.clone(),
+            api_key: api_key.clone(),
+            base_url: base_url.clone(),
+        }),
+        ApiProvider::Google { api_key, base_url } => Box::new(GoogleStreamProvider {
+            api_key: api_key.clone(),
+            base_url: base_url.clone(),
+        }),
+        ApiProvider::Anthropic { api_key, base_url } => Box::new(AnthropicStreamProvider {
+            api_key: api_key.clone(),
+            base_url: base_url
+                .clone()
+                .unwrap_or_else(|| "https://api.anthropic.com".to_string()),
+        }),
+        ApiProvider::Azure { api_key, endpoint } => Box::new(AnthropicStreamProvider {
+            api_key: api_key.clone(),
+            base_url: endpoint.clone(),
+        }),
+        ApiProvider::Bedrock { .. } | ApiProvider::Vertex { .. } => {
+            // These are stubs — create an Anthropic provider that will fail on use
+            Box::new(AnthropicStreamProvider {
+                api_key: String::new(),
+                base_url: String::new(),
+            })
+        }
+    }
 }
 
 impl ApiClient {
     pub fn new(config: ApiClientConfig) -> Self {
+        let stream_provider = make_stream_provider(&config.provider);
         Self {
             http: {
                 let builder = reqwest::Client::builder()
                     .timeout(std::time::Duration::from_secs(config.timeout_secs));
                 builder.build().unwrap_or_else(|_| reqwest::Client::new())
             },
+            stream_provider,
             config,
         }
     }
@@ -103,9 +134,7 @@ impl ApiClient {
     pub fn build_url(&self) -> String {
         match &self.config.provider {
             ApiProvider::Anthropic { base_url, .. } => {
-                let base = base_url
-                    .as_deref()
-                    .unwrap_or("https://api.anthropic.com");
+                let base = base_url.as_deref().unwrap_or("https://api.anthropic.com");
                 let base = base.trim_end_matches('/');
                 format!("{}/v1/messages", base)
             }
@@ -117,9 +146,7 @@ impl ApiClient {
                 let base = base_url.trim_end_matches('/');
                 format!("{}/chat/completions", base)
             }
-            ApiProvider::Google { base_url, .. } => {
-                base_url.clone()
-            }
+            ApiProvider::Google { base_url, .. } => base_url.clone(),
             ApiProvider::Bedrock { .. } => {
                 unimplemented!("AWS Bedrock provider is not implemented")
             }
@@ -295,78 +322,13 @@ impl ApiClient {
 
     /// Send a messages request and return the response as a stream of events.
     ///
-    /// Routes to provider-specific implementations:
-    /// - Anthropic/Azure → Anthropic SSE format
-    /// - OpenAI-compat  → OpenAI chat/completions SSE format
-    /// - Google         → Gemini streamGenerateContent SSE format
+    /// Delegates to the provider-specific `StreamProvider` implementation
+    /// (Anthropic, OpenAI-compat, or Google Gemini).
     pub async fn messages_stream(
         &self,
         request: MessagesRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
-        use futures::StreamExt;
-
-        // Route to provider-specific streaming implementation
-        match &self.config.provider {
-            ApiProvider::OpenAiCompat {
-                name,
-                api_key,
-                base_url,
-                ..
-            } => {
-                return crate::api::openai_compat::openai_compat_stream(
-                    &self.http, base_url, api_key, name, &request,
-                )
-                .await;
-            }
-            ApiProvider::Google { api_key, base_url } => {
-                return crate::api::google_provider::google_stream(
-                    &self.http, base_url, api_key, &request,
-                )
-                .await;
-            }
-            _ => {} // Fall through to Anthropic-format logic
-        }
-
-        // ── Anthropic / Azure native SSE format ──
-
-        let url = self.build_url();
-        let headers = self.build_headers();
-
-        let mut req_body = request;
-        req_body.stream = true;
-
-        let body_json =
-            serde_json::to_string(&req_body).context("failed to serialize request body")?;
-
-        let response = self
-            .http
-            .post(&url)
-            .headers(headers)
-            .body(body_json)
-            .send()
-            .await
-            .context("failed to send HTTP request")?;
-
-        let status = response.status().as_u16();
-
-        if !response.status().is_success() {
-            let error_body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| String::from("(failed to read error body)"));
-            let category = categorize_api_error(status, &error_body);
-            anyhow::bail!(
-                "API error (HTTP {}): {:?} — {}",
-                status,
-                category,
-                error_body
-            );
-        }
-
-        let byte_stream = response.bytes_stream();
-        let sse_stream = parse_sse_byte_stream(byte_stream);
-
-        Ok(Box::pin(sse_stream))
+        self.stream_provider.stream(&self.http, &request).await
     }
 
     /// Send a non-streaming messages request.
@@ -402,102 +364,6 @@ impl ApiClient {
         Ok(accumulator.build())
     }
 
-    /// Send a streaming request with automatic retry on retryable errors.
-    ///
-    /// Retries with exponential backoff per `RetryConfig`. Returns the first
-    /// successful stream, or the last error after exhausting retries.
-    pub async fn messages_stream_with_retry(
-        &self,
-        request: MessagesRequest,
-        retry_config: &RetryConfig,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
-        let mut last_error: Option<anyhow::Error> = None;
-
-        for attempt in 0..=retry_config.max_retries {
-            match self.messages_stream(request.clone()).await {
-                Ok(stream) => return Ok(stream),
-                Err(e) => {
-                    let err_msg = e.to_string();
-                    tracing::warn!(
-                        attempt = attempt,
-                        max = retry_config.max_retries,
-                        error = %err_msg,
-                        "API request failed"
-                    );
-
-                    // Check if this error is retryable by looking for HTTP status
-                    // in the error message. This is a heuristic — the structured
-                    // error category is embedded in the bail! message.
-                    let is_retryable = err_msg.contains("RateLimit")
-                        || err_msg.contains("Overloaded")
-                        || err_msg.contains("ServerError")
-                        || err_msg.contains("HTTP 429")
-                        || err_msg.contains("HTTP 500")
-                        || err_msg.contains("HTTP 502")
-                        || err_msg.contains("HTTP 503")
-                        || err_msg.contains("HTTP 529");
-
-                    if !is_retryable || attempt >= retry_config.max_retries {
-                        return Err(e);
-                    }
-
-                    let delay = retry_delay(retry_config, attempt);
-                    tracing::info!(
-                        delay_ms = delay.as_millis() as u64,
-                        "retrying after delay"
-                    );
-                    tokio::time::sleep(delay).await;
-                    last_error = Some(e);
-                }
-            }
-        }
-
-        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("retry loop exhausted")))
-    }
-
-    /// Send a non-streaming request with automatic retry.
-    pub async fn messages_with_retry(
-        &self,
-        request: MessagesRequest,
-        retry_config: &RetryConfig,
-    ) -> Result<AssistantMessage> {
-        let mut last_error: Option<anyhow::Error> = None;
-
-        for attempt in 0..=retry_config.max_retries {
-            match self.messages(request.clone()).await {
-                Ok(msg) => return Ok(msg),
-                Err(e) => {
-                    let err_msg = e.to_string();
-                    tracing::warn!(
-                        attempt = attempt,
-                        max = retry_config.max_retries,
-                        error = %err_msg,
-                        "API request failed"
-                    );
-
-                    let is_retryable = err_msg.contains("RateLimit")
-                        || err_msg.contains("Overloaded")
-                        || err_msg.contains("ServerError")
-                        || err_msg.contains("HTTP 429")
-                        || err_msg.contains("HTTP 500")
-                        || err_msg.contains("HTTP 502")
-                        || err_msg.contains("HTTP 503")
-                        || err_msg.contains("HTTP 529");
-
-                    if !is_retryable || attempt >= retry_config.max_retries {
-                        return Err(e);
-                    }
-
-                    let delay = retry_delay(retry_config, attempt);
-                    tokio::time::sleep(delay).await;
-                    last_error = Some(e);
-                }
-            }
-        }
-
-        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("retry loop exhausted")))
-    }
-
     /// Get a reference to the config.
     pub fn config(&self) -> &ApiClientConfig {
         &self.config
@@ -525,7 +391,9 @@ impl ApiClient {
 /// `event:` and `data:` fields. We buffer incoming bytes and split on
 /// line boundaries, accumulating `event` and `data` fields until a blank
 /// line triggers parsing.
-fn parse_sse_byte_stream<S>(byte_stream: S) -> impl Stream<Item = Result<StreamEvent>> + Send
+pub(crate) fn parse_sse_byte_stream<S>(
+    byte_stream: S,
+) -> impl Stream<Item = Result<StreamEvent>> + Send
 where
     S: Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send + 'static,
 {
@@ -781,8 +649,14 @@ mod tests {
         assert_eq!(headers.get("content-type").unwrap(), "application/json");
         assert_eq!(headers.get("anthropic-version").unwrap(), "2023-06-01");
         assert_eq!(headers.get("x-api-key").unwrap(), "sk-test-key-123");
-        assert!(headers.get("anthropic-beta").unwrap().contains("interleaved-thinking"));
-        assert!(headers.get("anthropic-beta").unwrap().contains("prompt-caching"));
+        assert!(headers
+            .get("anthropic-beta")
+            .unwrap()
+            .contains("interleaved-thinking"));
+        assert!(headers
+            .get("anthropic-beta")
+            .unwrap()
+            .contains("prompt-caching"));
     }
 
     #[test]
@@ -865,7 +739,10 @@ mod tests {
         use crate::api::providers::get_provider;
         let info = get_provider("anthropic").unwrap();
         let client = ApiClient::from_provider_info(info, "sk-test");
-        assert!(matches!(client.config().provider, ApiProvider::Anthropic { .. }));
+        assert!(matches!(
+            client.config().provider,
+            ApiProvider::Anthropic { .. }
+        ));
         assert_eq!(client.config().default_model, "claude-sonnet-4-20250514");
     }
 
@@ -888,7 +765,10 @@ mod tests {
         use crate::api::providers::get_provider;
         let info = get_provider("google").unwrap();
         let client = ApiClient::from_provider_info(info, "AIza-test");
-        assert!(matches!(client.config().provider, ApiProvider::Google { .. }));
+        assert!(matches!(
+            client.config().provider,
+            ApiProvider::Google { .. }
+        ));
         assert_eq!(client.config().default_model, "gemini-2.0-flash");
     }
 
@@ -903,7 +783,10 @@ mod tests {
         std::env::set_var("ANTHROPIC_API_KEY", key);
 
         let client = ApiClient::from_env();
-        assert!(client.is_some(), "from_env should return Some when ANTHROPIC_API_KEY is set");
+        assert!(
+            client.is_some(),
+            "from_env should return Some when ANTHROPIC_API_KEY is set"
+        );
 
         let client = client.unwrap();
         match &client.config().provider {
@@ -929,7 +812,10 @@ mod tests {
         }
 
         let client = ApiClient::from_env();
-        assert!(client.is_none(), "from_env should return None when no provider key is set");
+        assert!(
+            client.is_none(),
+            "from_env should return None when no provider key is set"
+        );
 
         // Restore
         for (key, val) in saved {
@@ -1132,7 +1018,9 @@ data: {\"type\":\"message_stop\"}";
         let req = MessagesRequest {
             model: "claude-sonnet-4-20250514".to_string(),
             messages: vec![],
-            system: Some(vec![serde_json::json!({"type": "text", "text": "You are helpful."})]),
+            system: Some(vec![
+                serde_json::json!({"type": "text", "text": "You are helpful."}),
+            ]),
             max_tokens: 4096,
             tools: None,
             stream: true,

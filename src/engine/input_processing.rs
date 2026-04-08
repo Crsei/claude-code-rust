@@ -44,11 +44,7 @@ pub struct ProcessedInput {
 ///      in `messages`.
 /// 2. Otherwise, wrap the input in a plain `UserMessage` with
 ///    `should_query = true`.
-pub fn process_user_input(
-    input: &str,
-    messages: &[Message],
-    cwd: &str,
-) -> ProcessedInput {
+pub fn process_user_input(input: &str, messages: &[Message], cwd: &str) -> ProcessedInput {
     let trimmed = input.trim();
 
     // -- Slash-command path ---------------------------------------------------

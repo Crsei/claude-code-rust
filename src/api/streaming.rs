@@ -3,9 +3,7 @@
 use anyhow::Result;
 use serde_json::Value;
 
-use crate::types::message::{
-    AssistantMessage, ContentBlock, MessageDelta, StreamEvent, Usage,
-};
+use crate::types::message::{AssistantMessage, ContentBlock, MessageDelta, StreamEvent, Usage};
 
 /// Parse a single SSE line into a StreamEvent
 pub fn parse_sse_event(event_type: &str, data: &str) -> Result<Option<StreamEvent>> {
@@ -23,10 +21,12 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<Option<StreamEven
         }
         "content_block_start" => {
             let index = parsed.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            let block: ContentBlock = serde_json::from_value(
-                parsed.get("content_block").cloned().unwrap_or_default()
-            )?;
-            Ok(Some(StreamEvent::ContentBlockStart { index, content_block: block }))
+            let block: ContentBlock =
+                serde_json::from_value(parsed.get("content_block").cloned().unwrap_or_default())?;
+            Ok(Some(StreamEvent::ContentBlockStart {
+                index,
+                content_block: block,
+            }))
         }
         "content_block_delta" => {
             let index = parsed.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
@@ -38,10 +38,12 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<Option<StreamEven
             Ok(Some(StreamEvent::ContentBlockStop { index }))
         }
         "message_delta" => {
-            let delta: MessageDelta = serde_json::from_value(
-                parsed.get("delta").cloned().unwrap_or_default()
-            ).unwrap_or(MessageDelta { stop_reason: None });
-            let usage = parsed.get("usage").and_then(|u| serde_json::from_value(u.clone()).ok());
+            let delta: MessageDelta =
+                serde_json::from_value(parsed.get("delta").cloned().unwrap_or_default())
+                    .unwrap_or(MessageDelta { stop_reason: None });
+            let usage = parsed
+                .get("usage")
+                .and_then(|u| serde_json::from_value(u.clone()).ok());
             Ok(Some(StreamEvent::MessageDelta { delta, usage }))
         }
         "message_stop" => Ok(Some(StreamEvent::MessageStop)),
@@ -71,9 +73,14 @@ impl StreamAccumulator {
             StreamEvent::MessageStart { usage } => {
                 self.usage = usage.clone();
             }
-            StreamEvent::ContentBlockStart { index, content_block } => {
+            StreamEvent::ContentBlockStart {
+                index,
+                content_block,
+            } => {
                 while self.content_blocks.len() <= *index {
-                    self.content_blocks.push(ContentBlock::Text { text: String::new() });
+                    self.content_blocks.push(ContentBlock::Text {
+                        text: String::new(),
+                    });
                 }
                 self.content_blocks[*index] = content_block.clone();
             }

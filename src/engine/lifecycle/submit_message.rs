@@ -22,8 +22,7 @@ use crate::query::loop_impl;
 use crate::session::transcript;
 use crate::types::config::{QueryParams, QuerySource};
 use crate::types::message::{
-    Attachment, Message, MessageContent, QueryYield, StreamEvent,
-    SystemSubtype, Usage,
+    Attachment, Message, MessageContent, QueryYield, StreamEvent, SystemSubtype, Usage,
 };
 
 use super::deps::QueryEngineDeps;
@@ -53,16 +52,8 @@ impl QueryEngine {
         let config = self.config.clone();
         let prompt = prompt.to_string();
 
-        let messages_ref = self.mutable_messages.clone();
-        let abort_reason_ref = self.abort_reason.clone();
+        let state_ref = self.state.clone();
         let aborted_ref = self.aborted.clone();
-        let usage_ref = self.usage.clone();
-        let permission_denials_ref = self.permission_denials.clone();
-        let turn_count_ref = self.total_turn_count.clone();
-        let app_state_ref = self.app_state.clone();
-        let tools_ref = self.tools.clone();
-        let discovered_skills_ref = self.discovered_skill_names.clone();
-        let loaded_memory_ref = self.loaded_nested_memory_paths.clone();
 
         let stream = async_stream::stream! {
             let started_at = Instant::now();
@@ -77,11 +68,10 @@ impl QueryEngine {
             // ================================================================
 
             // A.1: Clear turn-scoped state
-            discovered_skills_ref.lock().expect("discovered_skills lock poisoned").clear();
+            state_ref.write().discovered_skill_names.clear();
 
             // A.2: Process user input (delegate to input_processing module)
-            let current_msgs_snapshot =
-                messages_ref.read().expect("messages lock poisoned").clone();
+            let current_msgs_snapshot = state_ref.read().messages.clone();
             let processed = input_processing::process_user_input(
                 &prompt,
                 &current_msgs_snapshot,
@@ -90,9 +80,9 @@ impl QueryEngine {
 
             // A.3: Push processed messages into mutable_messages
             {
-                let mut msgs = messages_ref.write().expect("messages lock poisoned");
+                let mut s = state_ref.write();
                 for m in &processed.messages {
-                    msgs.push(m.clone());
+                    s.messages.push(m.clone());
                 }
             }
 
@@ -108,17 +98,15 @@ impl QueryEngine {
             // PHASE B: System Prompt Build
             // ================================================================
 
-            let tools_snapshot = tools_ref.read().expect("tools lock poisoned").clone();
-            let model_name = config
-                .user_specified_model
-                .clone()
-                .unwrap_or_else(|| {
-                    app_state_ref
-                        .read()
-                        .expect("app_state lock poisoned")
-                        .main_loop_model
-                        .clone()
-                });
+            let (tools_snapshot, model_name) = {
+                let s = state_ref.read();
+                let tools = s.tools.clone();
+                let model = config
+                    .user_specified_model
+                    .clone()
+                    .unwrap_or_else(|| s.app_state.main_loop_model.clone());
+                (tools, model)
+            };
 
             let (system_prompt_parts, user_context, system_context) =
                 system_prompt::build_system_prompt(
@@ -134,9 +122,9 @@ impl QueryEngine {
             // ================================================================
 
             // C.1: Yield SystemInit message
-            let perm_mode = app_state_ref
+            let perm_mode = state_ref
                 .read()
-                .expect("app_state lock poisoned")
+                .app_state
                 .tool_permission_context
                 .mode
                 .clone();
@@ -182,7 +170,7 @@ impl QueryEngine {
             // PHASE D: Query Loop -- full message dispatch
             // ================================================================
 
-            let current_messages = messages_ref.read().expect("messages lock poisoned").clone();
+            let current_messages = state_ref.read().messages.clone();
 
             let params = QueryParams {
                 messages: current_messages,
@@ -204,8 +192,7 @@ impl QueryEngine {
             // Create deps for the inner query loop
             let deps = Arc::new(QueryEngineDeps {
                 aborted: aborted_ref.clone(),
-                app_state: app_state_ref.clone(),
-                tools: tools_ref.clone(),
+                state: state_ref.clone(),
                 api_client,
                 agent_context: config.agent_context.clone(),
             });
@@ -230,15 +217,11 @@ impl QueryEngine {
                         }
 
                         {
-                            let mut msgs = messages_ref.write().expect("messages lock poisoned");
-                            msgs.push(Message::Assistant(assistant_msg.clone()));
-                        }
-
-                        if let Some(ref msg_usage) = assistant_msg.usage {
-                            usage_ref
-                                .lock()
-                                .expect("usage lock poisoned")
-                                .add_usage(msg_usage, assistant_msg.cost_usd);
+                            let mut s = state_ref.write();
+                            s.messages.push(Message::Assistant(assistant_msg.clone()));
+                            if let Some(ref msg_usage) = assistant_msg.usage {
+                                s.usage.add_usage(msg_usage, assistant_msg.cost_usd);
+                            }
                         }
 
                         yield SdkMessage::Assistant(SdkAssistantMessage {
@@ -253,7 +236,7 @@ impl QueryEngine {
                         );
 
                         if config.auto_save_session {
-                            let all_msgs = messages_ref.read().expect("messages lock poisoned").clone();
+                            let all_msgs = state_ref.read().messages.clone();
                             let _ = crate::session::storage::save_session(
                                 session_id.as_str(),
                                 &all_msgs,
@@ -267,11 +250,11 @@ impl QueryEngine {
                     // --------------------------------------------------------
                     QueryYield::Message(Message::User(ref user_msg)) => {
                         turn_count_this_submit += 1;
-                        *turn_count_ref.lock().expect("turn_count lock poisoned") += 1;
 
                         {
-                            let mut msgs = messages_ref.write().expect("messages lock poisoned");
-                            msgs.push(Message::User(user_msg.clone()));
+                            let mut s = state_ref.write();
+                            s.total_turn_count += 1;
+                            s.messages.push(Message::User(user_msg.clone()));
                         }
 
                         if replay_user_messages {
@@ -301,10 +284,7 @@ impl QueryEngine {
                     // D.3: Progress message
                     // --------------------------------------------------------
                     QueryYield::Message(Message::Progress(ref progress_msg)) => {
-                        {
-                            let mut msgs = messages_ref.write().expect("messages lock poisoned");
-                            msgs.push(Message::Progress(progress_msg.clone()));
-                        }
+                        state_ref.write().messages.push(Message::Progress(progress_msg.clone()));
 
                         let _ = transcript::record_transcript(
                             session_id.as_str(),
@@ -320,12 +300,9 @@ impl QueryEngine {
                             SystemSubtype::CompactBoundary {
                                 compact_metadata,
                             } => {
-                                {
-                                    let mut msgs = messages_ref.write().expect("messages lock poisoned");
-                                    msgs.push(Message::System(
-                                        system_msg.clone(),
-                                    ));
-                                }
+                                state_ref.write().messages.push(Message::System(
+                                    system_msg.clone(),
+                                ));
 
                                 yield SdkMessage::CompactBoundary(
                                     SdkCompactBoundary {
@@ -343,12 +320,9 @@ impl QueryEngine {
                                 retry_in_ms,
                                 error,
                             } => {
-                                {
-                                    let mut msgs = messages_ref.write().expect("messages lock poisoned");
-                                    msgs.push(Message::System(
-                                        system_msg.clone(),
-                                    ));
-                                }
+                                state_ref.write().messages.push(Message::System(
+                                    system_msg.clone(),
+                                ));
 
                                 collected_errors.push(error.message.clone());
 
@@ -364,8 +338,7 @@ impl QueryEngine {
                             }
 
                             _ => {
-                                let mut msgs = messages_ref.write().expect("messages lock poisoned");
-                                msgs.push(Message::System(system_msg.clone()));
+                                state_ref.write().messages.push(Message::System(system_msg.clone()));
                             }
                         }
                     }
@@ -374,22 +347,19 @@ impl QueryEngine {
                     // D.5: Attachment message
                     // --------------------------------------------------------
                     QueryYield::Message(Message::Attachment(ref attachment_msg)) => {
-                        {
-                            let mut msgs = messages_ref.write().expect("messages lock poisoned");
-                            msgs.push(Message::Attachment(
-                                attachment_msg.clone(),
-                            ));
-                        }
+                        state_ref.write().messages.push(Message::Attachment(
+                            attachment_msg.clone(),
+                        ));
 
                         match &attachment_msg.attachment {
                             Attachment::MaxTurnsReached {
                                 max_turns,
                                 turn_count,
                             } => {
-                                let usage_snap =
-                                    usage_ref.lock().expect("usage lock poisoned").clone();
-                                let denials_snap =
-                                    permission_denials_ref.lock().expect("permission_denials lock poisoned").clone();
+                                let (usage_snap, denials_snap) = {
+                                    let s = state_ref.read();
+                                    (s.usage.clone(), s.permission_denials.clone())
+                                };
 
                                 yield SdkMessage::Result(SdkResult {
                                     subtype: ResultSubtype::ErrorMaxTurns,
@@ -444,17 +414,15 @@ impl QueryEngine {
                             }
 
                             Attachment::SkillDiscovery { skills } => {
-                                let mut set =
-                                    discovered_skills_ref.lock().expect("discovered_skills lock poisoned");
+                                let mut s = state_ref.write();
                                 for skill in skills {
-                                    set.insert(skill.clone());
+                                    s.discovered_skill_names.insert(skill.clone());
                                 }
                             }
 
                             Attachment::NestedMemory { path, .. } => {
-                                loaded_memory_ref
-                                    .lock()
-                                    .expect("loaded_memory lock poisoned")
+                                state_ref.write()
+                                    .loaded_nested_memory_paths
                                     .insert(path.clone());
                             }
 
@@ -528,8 +496,7 @@ impl QueryEngine {
                 // After EACH item: budget checks
                 // ============================================================
                 if let Some(max_budget) = config.max_budget_usd {
-                    let current_cost =
-                        usage_ref.lock().expect("usage lock poisoned").total_cost_usd;
+                    let current_cost = state_ref.read().usage.total_cost_usd;
                     if current_cost >= max_budget {
                         info!(
                             spent = current_cost,
@@ -537,16 +504,16 @@ impl QueryEngine {
                             "max budget exceeded"
                         );
 
-                        *abort_reason_ref.lock().expect("abort_reason lock poisoned") =
+                        state_ref.write().abort_reason =
                             Some(AbortReason::MaxBudget {
                                 spent_usd: current_cost,
                                 limit_usd: max_budget,
                             });
 
-                        let usage_snap =
-                            usage_ref.lock().expect("usage lock poisoned").clone();
-                        let denials_snap =
-                            permission_denials_ref.lock().expect("permission_denials lock poisoned").clone();
+                        let (usage_snap, denials_snap) = {
+                            let s = state_ref.read();
+                            (s.usage.clone(), s.permission_denials.clone())
+                        };
 
                         yield SdkMessage::Result(SdkResult {
                             subtype: ResultSubtype::ErrorMaxBudgetUsd,
@@ -582,7 +549,7 @@ impl QueryEngine {
             // PHASE E: Result Generation
             // ================================================================
 
-            let final_messages = messages_ref.read().expect("messages lock poisoned").clone();
+            let final_messages = state_ref.read().messages.clone();
 
             let terminal_msg =
                 result::find_terminal_message(&final_messages);
@@ -593,9 +560,10 @@ impl QueryEngine {
             let (text_result, is_api_error) =
                 result::extract_text_result(&final_messages);
 
-            let usage_snap = usage_ref.lock().expect("usage lock poisoned").clone();
-            let denials_snap =
-                permission_denials_ref.lock().expect("permission_denials lock poisoned").clone();
+            let (usage_snap, denials_snap) = {
+                let s = state_ref.read();
+                (s.usage.clone(), s.permission_denials.clone())
+            };
 
             let subtype = if is_success {
                 ResultSubtype::Success
@@ -612,8 +580,7 @@ impl QueryEngine {
             let api_duration_ms = api_started_at.elapsed().as_millis() as u64;
             crate::bootstrap::PROCESS_STATE
                 .read()
-                .ok()
-                .map(|s| s.api_duration.record(api_duration_ms));
+                .api_duration.record(api_duration_ms);
 
             yield SdkMessage::Result(SdkResult {
                 subtype,

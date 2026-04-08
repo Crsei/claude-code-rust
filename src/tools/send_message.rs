@@ -16,8 +16,8 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tracing::{debug, info, warn};
 
-use crate::teams::{constants, helpers, identity, mailbox, protocol};
 use crate::teams::types::TeammateMessage;
+use crate::teams::{constants, helpers, identity, mailbox, protocol};
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
 
@@ -129,7 +129,12 @@ impl Tool for SendMessageTool {
         // Plain text message routing
         if params.to == "*" {
             // Broadcast to all teammates
-            return handle_broadcast(sender_name, &params.message, params.summary.as_deref(), team_name);
+            return handle_broadcast(
+                sender_name,
+                &params.message,
+                params.summary.as_deref(),
+                team_name,
+            );
         }
 
         // Single recipient
@@ -150,10 +155,7 @@ impl Tool for SendMessageTool {
     }
 
     fn user_facing_name(&self, input: Option<&Value>) -> String {
-        if let Some(to) = input
-            .and_then(|v| v.get("to"))
-            .and_then(|v| v.as_str())
-        {
+        if let Some(to) = input.and_then(|v| v.get("to")).and_then(|v| v.as_str()) {
             format!("SendMessage(to: {})", to)
         } else {
             "SendMessage".to_string()
@@ -291,16 +293,14 @@ fn handle_protocol_message(
             })
         }
 
-        protocol::ProtocolMessage::ShutdownRejected { ref reason, .. } => {
-            Ok(ToolResult {
-                data: json!({
-                    "type": "shutdown_rejected",
-                    "to": to,
-                    "reason": reason,
-                }),
-                new_messages: vec![],
-            })
-        }
+        protocol::ProtocolMessage::ShutdownRejected { ref reason, .. } => Ok(ToolResult {
+            data: json!({
+                "type": "shutdown_rejected",
+                "to": to,
+                "reason": reason,
+            }),
+            new_messages: vec![],
+        }),
 
         protocol::ProtocolMessage::PlanApprovalResponse { .. } => {
             // Forward plan approval to teammate
@@ -409,8 +409,8 @@ mod tests {
     }
 
     fn create_test_context() -> ToolUseContext {
-        use std::sync::Arc;
         use crate::types::app_state::AppState;
+        use std::sync::Arc;
 
         let (_tx, rx) = tokio::sync::watch::channel(false);
         ToolUseContext {

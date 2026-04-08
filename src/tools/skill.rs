@@ -49,11 +49,7 @@ fn build_skills_listing() -> String {
     lines.push("Available skills:".to_string());
     for skill in &skills {
         let desc = &skill.frontmatter.description;
-        let when = skill
-            .frontmatter
-            .when_to_use
-            .as_deref()
-            .unwrap_or("");
+        let when = skill.frontmatter.when_to_use.as_deref().unwrap_or("");
         if !when.is_empty() {
             lines.push(format!("- {}: {} (use when: {})", skill.name, desc, when));
         } else {
@@ -252,10 +248,7 @@ impl Tool for SkillTool {
     }
 
     fn user_facing_name(&self, input: Option<&Value>) -> String {
-        if let Some(s) = input
-            .and_then(|v| v.get("skill"))
-            .and_then(|v| v.as_str())
-        {
+        if let Some(s) = input.and_then(|v| v.get("skill")).and_then(|v| v.as_str()) {
             format!("Skill({})", s)
         } else {
             "Skill".to_string()
@@ -352,7 +345,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_missing_skill_name() {
         let tool = SkillTool;
-        let state = std::sync::Arc::new(std::sync::RwLock::new(
+        let state = std::sync::Arc::new(parking_lot::RwLock::new(
             crate::types::app_state::AppState::default(),
         ));
         let state_r = state.clone();
@@ -370,10 +363,14 @@ mod tests {
             },
             abort_signal: tokio::sync::watch::channel(false).1,
             read_file_state: FileStateCache::default(),
-            get_app_state: std::sync::Arc::new(move || state_r.read().unwrap().clone()),
+            get_app_state: std::sync::Arc::new(move || state_r.read().clone()),
             set_app_state: std::sync::Arc::new(
-                move |f: Box<dyn FnOnce(crate::types::app_state::AppState) -> crate::types::app_state::AppState>| {
-                    let mut s = state_w.write().unwrap();
+                move |f: Box<
+                    dyn FnOnce(
+                        crate::types::app_state::AppState,
+                    ) -> crate::types::app_state::AppState,
+                >| {
+                    let mut s = state_w.write();
                     let old = s.clone();
                     *s = f(old);
                 },
@@ -386,16 +383,27 @@ mod tests {
 
         // Missing skill field entirely
         let result = tool.validate_input(&json!({}), &ctx).await;
-        assert!(matches!(result, ValidationResult::Error { error_code: 1, .. }));
+        assert!(matches!(
+            result,
+            ValidationResult::Error { error_code: 1, .. }
+        ));
 
         // Empty skill name
         let result = tool.validate_input(&json!({"skill": ""}), &ctx).await;
-        assert!(matches!(result, ValidationResult::Error { error_code: 2, .. }));
+        assert!(matches!(
+            result,
+            ValidationResult::Error { error_code: 2, .. }
+        ));
 
         // Non-existent skill
         skills::clear_skills();
-        let result = tool.validate_input(&json!({"skill": "nonexistent"}), &ctx).await;
-        assert!(matches!(result, ValidationResult::Error { error_code: 3, .. }));
+        let result = tool
+            .validate_input(&json!({"skill": "nonexistent"}), &ctx)
+            .await;
+        assert!(matches!(
+            result,
+            ValidationResult::Error { error_code: 3, .. }
+        ));
     }
 
     #[tokio::test]
@@ -414,7 +422,7 @@ mod tests {
         });
 
         let tool = SkillTool;
-        let state = std::sync::Arc::new(std::sync::RwLock::new(
+        let state = std::sync::Arc::new(parking_lot::RwLock::new(
             crate::types::app_state::AppState::default(),
         ));
         let state_r = state.clone();
@@ -432,10 +440,14 @@ mod tests {
             },
             abort_signal: tokio::sync::watch::channel(false).1,
             read_file_state: FileStateCache::default(),
-            get_app_state: std::sync::Arc::new(move || state_r.read().unwrap().clone()),
+            get_app_state: std::sync::Arc::new(move || state_r.read().clone()),
             set_app_state: std::sync::Arc::new(
-                move |f: Box<dyn FnOnce(crate::types::app_state::AppState) -> crate::types::app_state::AppState>| {
-                    let mut s = state_w.write().unwrap();
+                move |f: Box<
+                    dyn FnOnce(
+                        crate::types::app_state::AppState,
+                    ) -> crate::types::app_state::AppState,
+                >| {
+                    let mut s = state_w.write();
                     let old = s.clone();
                     *s = f(old);
                 },
@@ -446,11 +458,15 @@ mod tests {
             query_tracking: None,
         };
 
-        let result = tool.validate_input(&json!({"skill": &unique_name}), &ctx).await;
+        let result = tool
+            .validate_input(&json!({"skill": &unique_name}), &ctx)
+            .await;
         assert!(matches!(result, ValidationResult::Ok));
 
         // With leading /
-        let result = tool.validate_input(&json!({"skill": format!("/{}", unique_name)}), &ctx).await;
+        let result = tool
+            .validate_input(&json!({"skill": format!("/{}", unique_name)}), &ctx)
+            .await;
         assert!(matches!(result, ValidationResult::Ok));
     }
 }

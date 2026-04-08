@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::app_state::AppState;
 #[allow(unused_imports)]
-use super::message::{AssistantMessage, Message, ContentBlock};
+use super::message::{AssistantMessage, ContentBlock, Message};
 
 /// 工具输入验证结果
 #[derive(Debug, Clone)]
@@ -145,16 +145,24 @@ pub trait Tool: Send + Sync {
     fn input_json_schema(&self) -> Value;
 
     /// 是否启用
-    fn is_enabled(&self) -> bool { true }
+    fn is_enabled(&self) -> bool {
+        true
+    }
 
     /// 是否并发安全
-    fn is_concurrency_safe(&self, _input: &Value) -> bool { false }
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        false
+    }
 
     /// 是否只读
-    fn is_read_only(&self, _input: &Value) -> bool { false }
+    fn is_read_only(&self, _input: &Value) -> bool {
+        false
+    }
 
     /// 是否破坏性
-    fn is_destructive(&self, _input: &Value) -> bool { false }
+    fn is_destructive(&self, _input: &Value) -> bool {
+        false
+    }
 
     /// 输入验证
     async fn validate_input(&self, _input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
@@ -163,7 +171,9 @@ pub trait Tool: Send + Sync {
 
     /// 权限检查
     async fn check_permissions(&self, input: &Value, _ctx: &ToolUseContext) -> PermissionResult {
-        PermissionResult::Allow { updated_input: input.clone() }
+        PermissionResult::Allow {
+            updated_input: input.clone(),
+        }
     }
 
     /// 执行工具
@@ -184,16 +194,24 @@ pub trait Tool: Send + Sync {
     }
 
     /// 工具结果最大字符数 (超过则持久化到磁盘)
-    fn max_result_size_chars(&self) -> usize { 100_000 }
+    fn max_result_size_chars(&self) -> usize {
+        100_000
+    }
 
     /// 获取操作的文件路径 (如果适用)
-    fn get_path(&self, _input: &Value) -> Option<String> { None }
+    fn get_path(&self, _input: &Value) -> Option<String> {
+        None
+    }
 
     /// 中断行为: cancel (中断) 或 block (等待完成)
-    fn interrupt_behavior(&self) -> InterruptBehavior { InterruptBehavior::Block }
+    fn interrupt_behavior(&self) -> InterruptBehavior {
+        InterruptBehavior::Block
+    }
 
     /// 自动分类器输入 (安全相关)
-    fn to_auto_classifier_input(&self, _input: &Value) -> Value { Value::String(String::new()) }
+    fn to_auto_classifier_input(&self, _input: &Value) -> Value {
+        Value::String(String::new())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

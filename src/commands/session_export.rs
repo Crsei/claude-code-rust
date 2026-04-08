@@ -54,10 +54,7 @@ fn export_current(ctx: &CommandContext) -> Result<CommandResult> {
     )))
 }
 
-fn export_current_to_path(
-    ctx: &CommandContext,
-    path: &std::path::Path,
-) -> Result<CommandResult> {
+fn export_current_to_path(ctx: &CommandContext, path: &std::path::Path) -> Result<CommandResult> {
     let (path, _) = session_export::export_session(
         ctx.session_id.as_str(),
         &ctx.messages,
@@ -79,7 +76,10 @@ fn list_exports() -> Result<CommandResult> {
     }
     let mut out = format!("Session exports ({}):\n", files.len());
     for f in &files {
-        let name = f.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+        let name = f
+            .file_name()
+            .map(|n| n.to_string_lossy())
+            .unwrap_or_default();
         out.push_str(&format!("  {}\n", name));
     }
     Ok(CommandResult::Output(out))

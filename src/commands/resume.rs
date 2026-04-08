@@ -103,9 +103,9 @@ fn resume_session_by_id(session_id: &str, ctx: &mut CommandContext) -> Result<Co
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
+    use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {
         CommandContext {
@@ -137,7 +137,10 @@ mod tests {
     async fn test_resume_nonexistent_id() {
         let handler = ResumeHandler;
         let mut ctx = test_ctx();
-        let result = handler.execute("nonexistent-id-12345", &mut ctx).await.unwrap();
+        let result = handler
+            .execute("nonexistent-id-12345", &mut ctx)
+            .await
+            .unwrap();
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("not found"));

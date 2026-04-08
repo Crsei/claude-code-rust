@@ -123,10 +123,7 @@ pub fn is_path_in_directory(path: &Path, dir: &Path) -> bool {
 /// be used for directory traversal attacks.
 fn contains_traversal_attack(path: &str) -> bool {
     // Count the number of `..` segments
-    let traversal_count = path
-        .split(['/', '\\'])
-        .filter(|seg| *seg == "..")
-        .count();
+    let traversal_count = path.split(['/', '\\']).filter(|seg| *seg == "..").count();
 
     // More than 5 parent directory references is suspicious
     if traversal_count > 5 {
@@ -139,8 +136,8 @@ fn contains_traversal_attack(path: &str) -> bool {
         "\\..\\..\\..\\..",
         "/etc/passwd",
         "/etc/shadow",
-        "%00",          // null byte encoding
-        "%2e%2e",       // URL-encoded ..
+        "%00",    // null byte encoding
+        "%2e%2e", // URL-encoded ..
     ];
 
     for pattern in &suspicious_patterns {
@@ -184,7 +181,7 @@ fn normalize_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::tool::{PermissionMode, ToolPermissionContext, AdditionalWorkingDirectory};
+    use crate::types::tool::{AdditionalWorkingDirectory, PermissionMode, ToolPermissionContext};
     use std::collections::HashMap;
 
     fn default_ctx() -> ToolPermissionContext {

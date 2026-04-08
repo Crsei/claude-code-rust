@@ -9,9 +9,10 @@
 //!     AppState  = 会话级 UI/配置状态容器 (Arc<RwLock<AppState>>)
 //!     ProcessState = 进程级不可变身份 + 累计统计 (全局单例)
 
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{LazyLock, RwLock};
+use std::sync::LazyLock;
 
 use super::diagnostics::{ErrorLog, SlowOperationTracker};
 use super::ids::SessionId;
@@ -145,37 +146,22 @@ impl ProcessState {
 
 /// 获取当前会话 ID (clone)。
 pub fn session_id() -> SessionId {
-    PROCESS_STATE
-        .read()
-        .expect("PROCESS_STATE poisoned")
-        .session_id
-        .clone()
+    PROCESS_STATE.read().session_id.clone()
 }
 
 /// 获取 original_cwd (clone)。
 pub fn original_cwd() -> PathBuf {
-    PROCESS_STATE
-        .read()
-        .expect("PROCESS_STATE poisoned")
-        .original_cwd
-        .clone()
+    PROCESS_STATE.read().original_cwd.clone()
 }
 
 /// 获取 project_root (clone)。
 pub fn project_root() -> PathBuf {
-    PROCESS_STATE
-        .read()
-        .expect("PROCESS_STATE poisoned")
-        .project_root
-        .clone()
+    PROCESS_STATE.read().project_root.clone()
 }
 
 /// 获取当前总花费。
 pub fn total_cost_usd() -> f64 {
-    PROCESS_STATE
-        .read()
-        .expect("PROCESS_STATE poisoned")
-        .total_cost_usd
+    PROCESS_STATE.read().total_cost_usd
 }
 
 // ---------------------------------------------------------------------------
@@ -193,7 +179,7 @@ pub fn init(
     is_interactive: bool,
     initial_model: Option<String>,
 ) {
-    let mut state = PROCESS_STATE.write().expect("PROCESS_STATE poisoned");
+    let mut state = PROCESS_STATE.write();
     state.original_cwd = cwd;
     state.project_root = project_root;
     state.session_id = session_id;

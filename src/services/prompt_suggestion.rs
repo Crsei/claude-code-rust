@@ -322,7 +322,11 @@ mod tests {
         let mut unique = icons.clone();
         unique.sort();
         unique.dedup();
-        assert_eq!(icons.len(), unique.len(), "all category icons should be distinct");
+        assert_eq!(
+            icons.len(),
+            unique.len(),
+            "all category icons should be distinct"
+        );
     }
 
     #[test]
@@ -345,7 +349,9 @@ mod tests {
         let result = svc.try_generate("got an error compiling", &[]);
         assert!(result.is_some());
         let suggestions = result.unwrap();
-        assert!(suggestions.iter().any(|s| s.category == SuggestionCategory::Alternative));
+        assert!(suggestions
+            .iter()
+            .any(|s| s.category == SuggestionCategory::Alternative));
     }
 
     #[test]
@@ -354,7 +360,9 @@ mod tests {
         let result = svc.try_generate("let me check the test suite", &[]);
         assert!(result.is_some());
         let suggestions = result.unwrap();
-        assert!(suggestions.iter().any(|s| s.category == SuggestionCategory::Action));
+        assert!(suggestions
+            .iter()
+            .any(|s| s.category == SuggestionCategory::Action));
     }
 
     #[test]

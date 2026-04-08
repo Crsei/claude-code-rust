@@ -94,8 +94,14 @@ impl CommandHandler for CostHandler {
         lines.push("Session usage:".into());
         lines.push(String::new());
         lines.push(format!("  API calls:       {}", stats.api_calls));
-        lines.push(format!("  Input tokens:    {}", format_tokens(stats.input_tokens)));
-        lines.push(format!("  Output tokens:   {}", format_tokens(stats.output_tokens)));
+        lines.push(format!(
+            "  Input tokens:    {}",
+            format_tokens(stats.input_tokens)
+        ));
+        lines.push(format!(
+            "  Output tokens:   {}",
+            format_tokens(stats.output_tokens)
+        ));
 
         if stats.cache_read_tokens > 0 || stats.cache_creation_tokens > 0 {
             lines.push(format!(
@@ -108,8 +114,14 @@ impl CommandHandler for CostHandler {
             ));
         }
 
-        lines.push(format!("  Total tokens:    {}", format_tokens(total_tokens)));
-        lines.push(format!("  Estimated cost:  {}", format_cost(stats.total_cost_usd)));
+        lines.push(format!(
+            "  Total tokens:    {}",
+            format_tokens(total_tokens)
+        ));
+        lines.push(format!(
+            "  Estimated cost:  {}",
+            format_cost(stats.total_cost_usd)
+        ));
 
         Ok(CommandResult::Output(lines.join("\n")))
     }
@@ -118,10 +130,10 @@ impl CommandHandler for CostHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
     use crate::types::message::{AssistantMessage, Usage};
+    use std::path::PathBuf;
     use uuid::Uuid;
 
     fn make_assistant_msg(input_tokens: u64, output_tokens: u64, cost: f64) -> Message {

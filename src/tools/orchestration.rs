@@ -300,13 +300,11 @@ pub async fn run_tools(
     for batch in batches {
         if batch.is_concurrency_safe && batch.tool_use_ids.len() > 1 {
             // Run concurrent batch using JoinSet
-            let batch_results =
-                run_concurrent_batch(&batch, tools, ctx, assistant_message).await;
+            let batch_results = run_concurrent_batch(&batch, tools, ctx, assistant_message).await;
             all_results.extend(batch_results);
         } else {
             // Run serial batch (one tool at a time)
-            let batch_results =
-                run_serial_batch(&batch, tools, ctx, assistant_message).await;
+            let batch_results = run_serial_batch(&batch, tools, ctx, assistant_message).await;
             all_results.extend(batch_results);
         }
     }

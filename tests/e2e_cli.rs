@@ -89,7 +89,10 @@ fn cwd_flag_rejects_nonexistent_directory() {
         .assert()
         .failure()
         // Error may go to stdout (tracing ERROR macro) or stderr
-        .stdout(predicate::str::contains("does not exist").or(predicate::str::contains("not a directory")));
+        .stdout(
+            predicate::str::contains("does not exist")
+                .or(predicate::str::contains("not a directory")),
+        );
 }
 
 #[test]
@@ -132,7 +135,10 @@ fn print_mode_no_api_key_reports_error() {
         .env("DEEPSEEK_API_KEY", "")
         .env_remove("ANTHROPIC_AUTH_TOKEN")
         .assert()
-        .stdout(predicate::str::contains("no API client configured").or(predicate::str::contains("API error")));
+        .stdout(
+            predicate::str::contains("no API client configured")
+                .or(predicate::str::contains("API error")),
+        );
 }
 
 // =========================================================================
@@ -153,7 +159,13 @@ fn model_flag_accepted() {
 #[test]
 fn dump_system_prompt_with_model_override() {
     cli()
-        .args(["--dump-system-prompt", "-m", "custom-model-123", "-C", WORKSPACE])
+        .args([
+            "--dump-system-prompt",
+            "-m",
+            "custom-model-123",
+            "-C",
+            WORKSPACE,
+        ])
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
@@ -275,17 +287,12 @@ fn max_turns_flag_accepted() {
 
 #[test]
 fn unknown_flag_fails() {
-    cli()
-        .arg("--nonexistent-flag")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("unexpected argument").or(predicate::str::contains("error")));
+    cli().arg("--nonexistent-flag").assert().failure().stderr(
+        predicate::str::contains("unexpected argument").or(predicate::str::contains("error")),
+    );
 }
 
 #[test]
 fn max_turns_requires_value() {
-    cli()
-        .arg("--max-turns")
-        .assert()
-        .failure();
+    cli().arg("--max-turns").assert().failure();
 }

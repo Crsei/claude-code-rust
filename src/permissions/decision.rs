@@ -35,8 +35,8 @@
 use serde_json::Value;
 use tracing::{debug, warn};
 
-use crate::types::tool::{PermissionMode, ToolPermissionContext, ToolPermissionRulesBySource};
 use super::rules::{self, PermissionCheckResult};
+use crate::types::tool::{PermissionMode, ToolPermissionContext, ToolPermissionRulesBySource};
 
 // ---------------------------------------------------------------------------
 // Core types
@@ -120,16 +120,10 @@ impl DenialTracker {
 /// For other tools: no pattern matching.
 fn prepare_matcher(tool_name: &str, input: &Value) -> Option<String> {
     match tool_name {
-        "Bash" => input
-            .get("command")
-            .and_then(|v| v.as_str())
-            .map(|cmd| {
-                // Extract the first word (command prefix) for matching
-                cmd.split_whitespace()
-                    .next()
-                    .unwrap_or("")
-                    .to_string()
-            }),
+        "Bash" => input.get("command").and_then(|v| v.as_str()).map(|cmd| {
+            // Extract the first word (command prefix) for matching
+            cmd.split_whitespace().next().unwrap_or("").to_string()
+        }),
         "Read" | "Write" | "Edit" => input
             .get("file_path")
             .and_then(|v| v.as_str())
@@ -160,13 +154,11 @@ fn pattern_rule_matches(rule: &str, tool_name: &str, matcher: Option<&str>) -> b
 
             // prefix: matching
             if let Some(prefix_val) = pattern.strip_prefix("prefix:") {
-                return matcher
-                    .map_or(false, |m| m.starts_with(prefix_val));
+                return matcher.map_or(false, |m| m.starts_with(prefix_val));
             }
 
             // Glob-style matching
-            return matcher
-                .map_or(false, |m| rules::glob_match_public(m, pattern));
+            return matcher.map_or(false, |m| rules::glob_match_public(m, pattern));
         }
     }
 

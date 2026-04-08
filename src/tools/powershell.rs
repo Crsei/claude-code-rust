@@ -116,11 +116,7 @@ impl Tool for PowerShellTool {
         ValidationResult::Ok
     }
 
-    async fn check_permissions(
-        &self,
-        input: &Value,
-        _ctx: &ToolUseContext,
-    ) -> PermissionResult {
+    async fn check_permissions(&self, input: &Value, _ctx: &ToolUseContext) -> PermissionResult {
         PermissionResult::Allow {
             updated_input: input.clone(),
         }

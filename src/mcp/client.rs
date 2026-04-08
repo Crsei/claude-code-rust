@@ -27,8 +27,8 @@ use super::{
     CallToolResult, InitializeResult, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
     ListResourcesResult, ListToolsResult, McpConnectionState, McpResource, McpResourceContent,
     McpServerConfig, McpToolDef, ReadResourceResult, ServerCapabilities, ServerInfo,
-    ToolCallContent, CONNECT_TIMEOUT_SECS, PROTOCOL_VERSION, TOOL_CALL_TIMEOUT_SECS,
-    CLIENT_NAME, CLIENT_VERSION,
+    ToolCallContent, CLIENT_NAME, CLIENT_VERSION, CONNECT_TIMEOUT_SECS, PROTOCOL_VERSION,
+    TOOL_CALL_TIMEOUT_SECS,
 };
 
 use super::transport::reader_loop;
@@ -57,7 +57,6 @@ pub struct McpClient {
     pub instructions: Option<String>,
 
     // -- Internal state (stdio transport) ------------------------------------
-
     /// Stdin writer for the subprocess.
     stdin_writer: Option<Arc<Mutex<tokio::process::ChildStdin>>>,
     /// Handle to the background reader task.
@@ -202,8 +201,8 @@ impl McpClient {
             .await
             .context("MCP initialize handshake failed")?;
 
-        let init_result: InitializeResult = serde_json::from_value(response)
-            .context("failed to parse initialize response")?;
+        let init_result: InitializeResult =
+            serde_json::from_value(response).context("failed to parse initialize response")?;
 
         self.server_capabilities = init_result.capabilities;
         self.server_info = init_result.server_info.clone();
@@ -262,8 +261,8 @@ impl McpClient {
             .await
             .context("tools/list request failed")?;
 
-        let result: ListToolsResult = serde_json::from_value(response)
-            .context("failed to parse tools/list response")?;
+        let result: ListToolsResult =
+            serde_json::from_value(response).context("failed to parse tools/list response")?;
 
         let mut tools = result.tools;
         for tool in &mut tools {
@@ -281,11 +280,7 @@ impl McpClient {
     }
 
     /// Call a tool on the MCP server.
-    pub async fn call_tool(
-        &self,
-        tool_name: &str,
-        arguments: Value,
-    ) -> Result<CallToolResult> {
+    pub async fn call_tool(&self, tool_name: &str, arguments: Value) -> Result<CallToolResult> {
         if self.state != McpConnectionState::Connected {
             bail!("cannot call tool: not connected");
         }
@@ -339,8 +334,8 @@ impl McpClient {
             .await
             .context("resources/list request failed")?;
 
-        let result: ListResourcesResult = serde_json::from_value(response)
-            .context("failed to parse resources/list response")?;
+        let result: ListResourcesResult =
+            serde_json::from_value(response).context("failed to parse resources/list response")?;
 
         info!(
             server = %self.config.name,
@@ -391,8 +386,8 @@ impl McpClient {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
 
         let request = JsonRpcRequest::new(id, method, params);
-        let request_json = serde_json::to_string(&request)
-            .context("failed to serialize JSON-RPC request")?;
+        let request_json =
+            serde_json::to_string(&request).context("failed to serialize JSON-RPC request")?;
 
         debug!(
             server = %self.config.name,

@@ -1,320 +1,226 @@
-# Claude Code Rust — Lite
+# cc-rust（Rust Lite）简介
 
-精简版 Claude Code CLI 的 Rust 实现，保留最小可用核心 + Skills 系统，适合作为新项目的起点。
+cc-rust 是 Claude Code 的轻量级 Rust 后端实现，专注于提供高性能、可扩展的命令式对话引擎与工具系统，支撑 UI/CLI 等前端的交互需求。它与 TypeScript 版本的 Claude Code 相互独立，但在架构设计、API 思路上保持一致性，便于在不同语言栈中实现相同的能力。该项目以 "小而美、易扩展、易测试" 为目标，力求在资源受限环境下提供稳定、可预测的性能表现。
 
-基于完整版 (`master` 分支) 裁剪而来，从 ~49,000 行 / 204 文件精简至 **~28,000 行 / 109 文件**。
-
----
-
-## 快速开始
-
-### 前置要求
-
-- Rust 工具链 1.70+ (推荐 stable 最新版)
-- 系统依赖:
-  - Linux: `pkg-config`, `libssl-dev`, `cmake`
-  - macOS: Xcode Command Line Tools
-  - Windows: Visual Studio C++ Build Tools
-
-### 构建 & 运行
-
-```bash
-cargo build --release
-./target/release/claude-code-rs
-```
-
-### ink-terminal UI (新)
-
-项目新增了基于 [ink-terminal](https://github.com/anthropics/claude-code) 的 React 终端前端，采用 IPC 架构与 Rust 后端通信：
-
-```bash
-# 1. 编译 Rust 后端
-cargo build --release
-
-# 2. 安装前端依赖
-cd ui && bun install
-
-# 3. 启动 (自动检测 Rust 二进制)
-./run.sh
-
-# 或手动指定
-CC_RUST_BINARY=../target/release/claude-code-rs.exe bun run src/main.tsx
-```
-
-前端特性：60fps 渲染、流式 Markdown、虚拟列表、Vim 模式 (Ctrl+G 切换)、权限弹窗。
-架构详情见 [`architecture/ink-terminal-frontend.md`](architecture/ink-terminal-frontend.md)。
-
-### 配置 `.env`
-
-在项目根目录创建 `.env` 文件（启动时自动加载）：
-
-```env
-# API Provider — 设置任意一个即可
-OPENROUTER_API_KEY=sk-or-v1-...
-# 或
-ANTHROPIC_API_KEY=sk-ant-api03-...
-# 或其他提供商 (OPENAI_API_KEY, DEEPSEEK_API_KEY, ...)
-
-# 模型 (可选，不设则使用提供商默认模型)
-CLAUDE_MODEL=google/gemini-2.0-flash-001
-```
-
-也可以用传统方式 `export` 或在 REPL 中 `/login`。
-
-### 基本用法
-
-```bash
-# 交互式 REPL
-claude-code-rs
-
-# 单次查询
-claude-code-rs -p "解释这段代码"
-
-# 带初始提示启动
-claude-code-rs "帮我重构这个函数"
-
-# 指定模型 (覆盖 .env 中的 CLAUDE_MODEL)
-claude-code-rs -m anthropic/claude-opus-4
-```
+> 重要说明：本项目的目标是学习、研究与防御性用例，严格遵守相关安全与伦理规范。请勿用于未授权的破坏性操作或对外部系统的大规模攻击。本文档仅用于介绍实现和使用，并非攻击手段。
 
 ---
 
-## 架构概览
+## 设计目标与定位
 
-```
-src/
-├── main.rs              入口 (Phase A/B/I 生命周期)
-├── types/               核心类型 (消息、工具、状态、配置)
-├── engine/              QueryEngine 生命周期 + 系统提示词
-├── query/               异步流式查询循环 (async_stream)
-├── tools/               8 个内置工具 + 注册/执行/编排
-├── skills/              技能系统 (内置 + 用户自定义)
-├── commands/            24 个斜杠命令
-├── api/                 API 客户端 (Anthropic / OpenAI / Google)
-├── auth/                认证 (API Key + Keychain)
-├── permissions/         权限系统 (4 种模式 + 危险命令检测)
-├── config/              配置管理 (全局 + 项目 + 环境变量)
-├── session/             会话持久化与恢复
-├── ipc/                 IPC 协议 + headless 模式 (新)
-├── ui/                  终端 TUI (ratatui + crossterm, legacy)
-├── utils/               工具函数 (git, shell, token 估算等)
-└── shutdown.rs          优雅关闭
-
-ui/                      ink-terminal 前端 (新)
-├── src/
-│   ├── main.tsx         入口: spawn Rust --headless
-│   ├── ipc/             IPC 客户端 + 协议类型
-│   ├── store/           状态管理 (useReducer)
-│   ├── vim/             Vim 模式 (从 Rust 迁移)
-│   └── components/      14 个 React 组件
-└── run.sh               启动脚本
-```
+- 提供一个可扩展的后端核心，用于处理自然语言对话、推理流程与工具执行。
+- 支持插件化的工具系统，允许内置工具和自定义工具的无缝接入。
+- 实现高效的对话循环（QueryEngine + Generator 风格的流式处理），降低内存占用并提升吞吐。
+- 与前端 UI 及外部接口（CLI/Remote）通过清晰的 IPC 约束进行通信，保证解耦与容错。
+- 数据与配置分离，支持多种持久化策略与路径隔离，确保不同工作区的安全边界。
 
 ---
 
-## 内置工具 (8 个)
+## 架构总览
 
-| 工具 | 说明 |
-|------|------|
-| **Bash** | 执行 shell 命令，支持超时和输出截断 |
-| **Read** | 读取文件内容，支持 offset/limit 分页 |
-| **Write** | 写入/覆盖文件 |
-| **Edit** | 文件内精确字符串替换，支持 fuzzy 匹配 |
-| **Glob** | 文件名模式匹配 (`**/*.rs`) |
-| **Grep** | 正则内容搜索，支持上下文行和多种输出模式 |
-| **AskUser** | 向用户提问并等待回复 |
-| **Skill** | 调用技能系统 (内置 + 用户自定义) |
+cc-rust 的核心架构围绕一个流式的查询引擎和一个可扩展的工具系统展开。主要模块分布如下（位于 rust/ 目录下）：
 
----
+- engine：QueryEngine 与生命周期管理
+- query：异步流式查询循环、预算与调度逻辑
+- tools：工具实现与工具注册/发现机制
+- skills：技能系统（内置技能 + 用户自定义技能）
+- compact：上下文压缩管道，帮助记忆管理与長对话压缩
+- commands：斜杠命令实现与路由
+- api：多后端 API 客户端（Anthropic、OpenAI、Google 等的抽象封装）
+- auth：认证与授权相关逻辑
+- permissions：工具权限模型，支持默认、自动和豁免等模式
+- config：配置管理、环境变量与本地设置
+- session：会话持久化与历史管理
+- ipc/headless：与前端/UI 的进程间通信协议与头部模式实现
+- utils：辅助函数与通用工具
 
-## 斜杠命令 (24 个)
-
-| 命令 | 别名 | 说明 |
-|------|------|------|
-| `/help` | `/h`, `/?` | 列出所有命令 |
-| `/clear` | — | 清空对话历史 |
-| `/exit` | `/quit`, `/q` | 退出 |
-| `/version` | `/v` | 显示版本号 |
-| `/model` | — | 查看/切换模型 |
-| `/cost` | `/usage` | 查看 token 用量和费用 |
-| `/fast` | — | 切换快速模式 |
-| `/effort` | — | 设置 thinking 深度 |
-| `/config` | `/settings` | 查看/修改配置 |
-| `/permissions` | `/perms` | 查看/修改工具权限 |
-| `/login` | — | 认证 (API Key) |
-| `/logout` | — | 清除凭据 |
-| `/commit` | — | 创建 git commit |
-| `/diff` | — | 显示 git 变更 |
-| `/branch` | `/br` | 查看/切换分支 |
-| `/session` | — | 查看会话信息 |
-| `/resume` | — | 恢复之前的会话 |
-| `/context` | `/ctx` | 上下文使用信息 |
-| `/files` | — | 列出对话引用的文件 |
-| `/memory` | `/mem` | 管理 CLAUDE.md 指令 |
-| `/skills` | — | 列出可用技能 |
-| `/init` | — | 初始化项目配置 |
-| `/copy` | `/cp` | 复制最后回复到剪贴板 |
-| `/status` | — | 查看会话状态 |
+> 参考结构：rust/（包含 engine、query、tools、skills、compact、commands、api、auth、permissions、config、session、ipc、utils 等子模块）
 
 ---
 
-## Skills 系统
+## 关键数据流与生命周期（高层描述）
 
-技能是可复用的提示词模板，通过 Skill 工具调用。
+1) 输入入口
+- 来自前端 UI、CLI 或远程客户端的消息通过 IPC 层进入后端。消息格式遵循统一的 JSON 结构，包含会话上下文、指令和参数。
 
-### 内置技能
+2) 消息解析与路由
+- IPC 层将输入分发到 QueryEngine，QueryEngine 维护全局对话状态、预算、权限与上下文的元数据。
 
-随程序打包的技能，无需额外安装即可使用。
+3) QueryEngine 与 Generator 循环
+- QueryEngine 向 generator 风格的循环提交查询，持续产出中间结果与最终回复。该循环实现高效的 token 预算管理、记忆记录、策略选择与容错处理。
 
-### 用户自定义技能
+4) 工具执行与策略决策
+- 当对话需要外部能力时，工具系统会根据 ToolPermissionContext 进行权限检查，再由 Tool 实现执行具体任务（如文本处理、文件操作、网络请求等）。工具执行可并行化、具备阶段性回传能力，便于 UI 展现进度。
 
-在以下目录放置 `.md` 文件:
+5) 上下文管理与压缩
+- compact 管道对对话上下文进行压缩、剪裁与回溯点提取，确保长期对话在有限内存中保持可用性，同时尽量保留关键信息用于后续推理。
 
-```
-~/.cc-rust/skills/       # 全局技能
-.cc-rust/skills/         # 项目技能
-```
+6) 输出格式化与返回
+- 完整回复经过格式化阶段，支持多种输出格式（纯文本、JSON、表格等），并将结果通过 IPC 回传前端。
 
-格式:
-
-```markdown
----
-name: my-skill
-description: 一句话说明
----
-
-技能的提示词内容...
-
-$ARGUMENTS 会被调用参数替换
-```
+7) 会话持久化与恢复
+- session 模块提供会话级别的持久化能力，允许在重新启动后快速恢复历史与状态。
 
 ---
 
-## 配置
+## 模块详解
 
-### `.env` 文件 (推荐)
+- engine（引擎与生命周期）
+  - QueryEngine 负责统一的对话生命周期：消息接收、状态更新、工具协作、记忆与回退策略的协调。实现了 Phase A/B/I 风格的阶段化生命周期，确保启动、运行、关闭等阶段的可观测性。
+  - 主要入口在 engine/lifecycle/ 中，包含 submit_message、deps、helpers 等子模块。
 
-项目根目录下的 `.env` 文件在启动时自动加载（基于 [dotenvy](https://crates.io/crates/dotenvy)）。
+- query（流式查询）
+  - 异步流式循环实现，确保在大对话中也能边推理边输出结果，降低单次请求的峰值压力。
+  - 通过 token_budget、memory_budget、policy_engine 等机制实现对资源的有效分配。
 
-```env
-# === 提供商 API Key (任选一个) ===
-OPENROUTER_API_KEY=sk-or-v1-...
+- tools（工具系统）
+  - 提供 28+ 种基础工具（如尖端文本处理、文件读取/写入、正则匹配、网络请求等），并支持自定义插件扩展。
+  - Tool 是核心抽象，包含 ToolInputJSONSchema、call()、isEnabled()、权限等字段。
+  - 工具注册与发现托管在 tools.rs/ToolRegistry 中，方便前端对可用能力进行展示与选择。
 
-# === 模型 (可选) ===
-CLAUDE_MODEL=anthropic/claude-sonnet-4
-```
+- skills（技能系统）
+  - 内置技能集成（simplify、remember、updateConfig 等），并提供机制接入用户自定义技能。
+  - 技能与工具的协作，支持记忆、策略推断以及对复杂任务的分解。
 
-### 模型优先级
+- compact（上下文压缩）
+  - 将对话历史和上下文以高效的编码方式进行压缩，降低长期会话的内存占用，同时保持可用性以支撑后续推理。
 
-```
-CLI -m 参数 > CLAUDE_MODEL 环境变量/.env > settings.json > 提供商默认模型
-```
+- commands（斜杠命令）
+  - 实现了多条斜杠命令，用于调试、配置、状态查看及其他开发辅助功能。
 
-### 支持的提供商
+- api（API 客户端抽象）
+  - 封装对 Anthropic、OpenAI、Google 等多家服务提供商的调用，内部实现了重试、限流、错误处理与流式接口。
+  - 支持切换不同提供商以实现容错与性能优化。
 
-程序自动检测已设置 API Key 的提供商（按检测顺序）：
+- auth（认证）
+  - 提供 API Key/Token 的集中管理与解析，支持本地 Keychain 的加密存储及安全获取流程。
 
-| 提供商 | 环境变量 | 默认模型 |
-|--------|---------|---------|
-| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
-| OpenAI | `OPENAI_API_KEY` | `gpt-4o` |
-| Google | `GOOGLE_API_KEY` | `gemini-2.0-flash` |
-| Groq | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
-| **OpenRouter** | `OPENROUTER_API_KEY` | `anthropic/claude-sonnet-4` |
-| DeepSeek | `DEEPSEEK_API_KEY` | `deepseek-chat` |
-| 智谱 AI | `ZHIPU_API_KEY` | `glm-4-flash` |
-| 通义千问 | `DASHSCOPE_API_KEY` | `qwen-plus` |
-| 月之暗面 | `MOONSHOT_API_KEY` | `moonshot-v1-8k` |
-| 百川 | `BAICHUAN_API_KEY` | `Baichuan4-Air` |
-| MiniMax | `MINIMAX_API_KEY` | `MiniMax-Text-01` |
-| 零一万物 | `YI_API_KEY` | `yi-lightning` |
-| 硅基流动 | `SILICONFLOW_API_KEY` | `deepseek-ai/DeepSeek-V3` |
-| 阶跃星辰 | `STEPFUN_API_KEY` | `step-2-16k` |
-| 讯飞星火 | `SPARK_API_KEY` | `generalv3.5` |
+- permissions（权限模型）
+  - 针对工具与能力的使用设置三种模式：默认、自动、绕过。按工具粒度控制能力的访问，提升安全性。
 
-> 通过 OpenRouter 可使用所有提供商的模型，只需设一个 `OPENROUTER_API_KEY`，用 `CLAUDE_MODEL` 指定模型 ID（如 `openai/gpt-4o`、`google/gemini-2.0-flash-001`）。
+- config（配置管理）
+  - 集中管理本地设定、环境变量覆盖、MDM 与自定义配置信息。
+  - 提供清晰的加载、合并和验证流程，确保在不同环境下行为可预测。
 
-### 配置文件
+- session（会话持久化）
+  - 会话数据、对话历史与状态信息的持久化存储，方便跨-session 的上下文恢复。
 
-| 层级 | 路径 |
-|------|------|
-| `.env` | 项目根目录 `.env` (启动时自动加载) |
-| 全局 | `~/.cc-rust/settings.json` |
-| 项目 | `.cc-rust/settings.json` |
+- ipc/headless（IPC 协议与头部模式）
+  - 与 UI/前端的通信协议，定义了事件、消息格式和协作流程。headless 模式支持无界面部署，适合自动化测试与服务化场景。
 
-### 全部环境变量
-
-| 变量 | 说明 |
-|------|------|
-| `CLAUDE_MODEL` | 覆盖默认模型 |
-| `CLAUDE_VERBOSE` | 详细模式 (`true`/`1`) |
-| `CLAUDE_PERMISSION_MODE` | 权限模式 (`default`/`auto`/`bypass`) |
-| `ANTHROPIC_AUTH_TOKEN` | 外部认证 Token |
+- utils（工具函数）
+  - 提供日志、错误处理、辅助类型、序列化/反序列化等底层能力，支撑其他模块的稳定性。
 
 ---
 
-## 与完整版的差异
+## 构建与运行（本地开发指南）
 
-本分支从完整版 (`master`) 裁剪了以下模块:
+前提条件
+- Rust 工具链：请先安装 rustup，并确保 rustc、cargo 版本在稳定分支。
+- 对于 UI/前端部分：需要 Bun（包含 bun install 与 bun run）。UI 子项目位于 ui/ 目录。
+- Windows 路径隔离：本仓库强调路径隔离，遵循在不同工作区下的持久化目录。
 
-| 已移除 | 说明 |
-|--------|------|
-| MCP | Model Context Protocol 服务器集成 |
-| LSP | 代码导航 / Language Server Protocol |
-| Agent Teams | 多智能体协作系统 |
-| Plugins | 插件系统 |
-| Compact | 上下文压缩管线 |
-| Analytics | 遥测分析 |
-| Remote | 远程会话 |
-| 22 个工具 | Agent, WebFetch/Search, Tasks, PlanMode, Worktree 等 |
-| 50 个命令 | 高级 git, IDE 集成, 远程功能等 |
-| 8 个依赖 | aws-sdk, gcp_auth, lsp-types, tree-sitter, image 等 |
+构建步骤（后端）
+1) 进入 Rust 目录：
+   cd F:\AIclassmanager\cc\rust
+2) 构建发布版本：
+   cargo build --release
+3) 运行后端：
+   cargo run --release
+   注：在默认配置下，后端会监听与前端通信的 IPC 通道，请确保前端相应配置已就绪。
 
-如需这些功能，请切换到 `master` 分支。
+构建步骤（前端 UI）
+1) 进入 UI 目录：
+   cd F:\AIclassmanager\cc\rust\../ui
+2) 安装依赖与构建：
+   bun install
+   bun run dev
+3) 运行前端（开发模式）通常直接执行 run dev 脚本，默认会与后端进程进行对接，可通过环境变量指定后端地址。
 
----
+运行注意
+- 数据路径隔离：后端会在用户主目录创建以 cc-rust 名称开头的目录，例如 ~/.cc-rust/，用于日志、缓存、以及会话数据。
+- 配置优先级：环境变量 > 本地配置 > 代码中默认值。请确保在生产环境中对敏感信息进行妥善管理。
+- 日志级别：默认输出到控制台，生产环境建议配置为更高等级的日志收集策略。
 
-## TypeScript SDK
-
-提供类型安全的 TypeScript 封装，通过子进程与 `claude-code-rs` 二进制交互 (JSONL 协议)。
-
-```typescript
-import { ClaudeCode } from "claude-code-rs-sdk";
-
-const client = new ClaudeCode();
-const session = client.startSession({ permissionMode: "auto" });
-const turn = await session.run("列出文件");
-console.log(turn.finalResponse);
-```
-
-详细文档: [`sdk/typescript/README.md`](sdk/typescript/README.md)
+示例配置路径（示意）
+- 会话数据：~/.cc-rust/sessions/
+- 日志：~/.cc-rust/logs/
+- 记忆缓存：~/.cc-rust/cache/
 
 ---
 
-## 项目结构
+## 流式对话与安全注意
 
-```
-rust/
-├── Cargo.toml           依赖配置
-├── CLAUDE.md            Claude Code 项目指令
-├── README.md            本文件
-├── architecture/        架构文档
-│   ├── bootstrap.md     进程启动层
-│   └── ink-terminal-frontend.md  前端架构 (新)
-├── docs/                文档
-│   └── USAGE_GUIDE.md   详细使用指南
-├── sdk/                 SDK
-│   └── typescript/      TypeScript SDK (19 个源文件)
-├── ui/                  ink-terminal 前端 (新, 25 个源文件)
-│   ├── src/components/  14 个 React 组件
-│   ├── src/vim/         Vim 模式状态机
-│   ├── src/ipc/         IPC 客户端
-│   └── run.sh           启动脚本
-└── src/                 Rust 源码 (112 个 .rs 文件)
-```
+- cc-rust 采用流式查询循环，能够在推理过程中逐步输出中间结果，以提升交互体验与可观测性。若对话涉及对外部系统的操作，系统会进行权限检查与审计日志记录。
+- 为避免潜在的安全隐患，后端严格遵循工具权限模型，尽量将高风险操作进行最小化的授权，并提供撤销/回滚机制。
+- 与外部服务的交互请确保 API Key 与 Token 的安全存储，优先使用本地加密存储或受信任的 Keychain 服务。
 
 ---
 
-## License
+## 开发与扩展指南
 
-本项目是 Claude Code CLI 的学习/研究用途重写。
+如何添加一个新工具
+1) 在 rust/src/tools/ 下实现一个 Tool，遵循 Tool trait 的定义，包含 name、description、inputJSONSchema、call() 等成员。
+2) 将工具注册到工具注册中心（通常在 tools.rs 或 registry 模块中完成），确保 isEnabled() 返回正确的运行时开关。
+3) 测试新工具的输入输出，确保在权限模型下行为正确。
+
+如何新增技能
+1) 在 rust/src/skills/ 下实现一个 Skill，定义入口、参数、以及与工具的交互逻辑。
+2) 将技能注册到技能加载器，以便 query 引擎在对话中调用。
+
+如何扩展 API 提供商
+1) 在 rust/src/api/ 下实现对新服务提供商的封装，遵循现有 Client 设计模式。
+2) 集成到 config 中的 provider 切换逻辑，确保在运行时可选切换。
+
+测试策略
+- 单元测试：为核心组件（QueryEngine、Tool、Skill、Permissions 等）编写单元测试。
+- 集成测试：通过模拟前端输入，验证整个对话流的正确性与边界条件。
+- 性能测试：对流式输出、内存压缩和工具并发执行进行基准测试。
+
+代码风格与安全
+- 遵循 Rust 社区常用的代码风格，避免不安全代码的滥用。对外部输入进行严格校验，避免注入和越权操作。
+- 对所有可能涉及网络请求的工具，注意超时、重试与断路策略。
+
+---
+
+## 版本控制与贡献
+
+- 本项目遵循分支策略，特性开发在功能分支进行，完成后提交合并至主分支前要通过 PR 审核。
+- 提交前请确保本地通过 cargo test，确保变更不会破坏现有功能。
+- 贡献前请阅读 CLAUDE.md 的相关内容，遵循项目的代码风格与审阅流程。
+
+---
+
+## 常见问题（FAQ）
+
+Q1：如何在没有前端 UI 的情况下使用后端？
+A：运行 cargo run --release 即可。后端提供 IPC 通道，理论上可与任意前端实现对接；你可以实现一个简单的前端代理来发送 JSON 消息。
+
+Q2：如何查看历史对话与状态？
+A：通过 session 模块的持久化机制，历史会被写入本地存储。请查看 ~/.cc-rust/sessions/ 目录。
+
+Q3：遇到版本不兼容怎么办？
+A：首先拉取最新子模块与依赖，执行 cargo update；如问题仍存在，请在 Issue 中提供具体的 Cargo.lock 与错误日志。
+
+---
+
+## 附：关键文件与路径引用
+- rust/engine/lifecycle/：QueryEngine 的生命周期实现，核心入口与状态机定义，参见 rust/src/engine/lifecycle/mod.rs。
+- rust/query/：流式查询循环及辅助工具，参见 rust/src/query/mod.rs 与 rust/src/query/loop_impl.rs。
+- rust/tools/：工具系统及具体实现，参见 rust/src/tools/tooltip.rs（示例工具）与 rust/src/tools/mod.rs。
+- rust/skills/：技能系统实现，参见 rust/src/skills/mod.rs。
+- rust/compact/：上下文压缩管道，参见 rust/src/compact/mod.rs。
+- rust/commands/：斜杠命令实现，参见 rust/src/commands/mod.rs。
+- rust/api/：多提供商 API 客户端，参见 rust/src/api/client.rs 与 rust/src/api/provider.rs。
+- rust/auth/：认证实现，参见 rust/src/auth/mod.rs。
+- rust/permissions/：权限模型，参见 rust/src/permissions/mod.rs。
+- rust/config/：配置管理，参见 rust/src/config/mod.rs。
+- rust/session/：会话持久化，参见 rust/src/session/mod.rs。
+- rust/ipc/headless.rs：IPC 与前端通信头部模式实现，参见 rust/src/ipc/headless.rs。
+- rust/utils/：工具函数集，参见 rust/src/utils/*。
+
+> 注：文件和模块名称以实际实现为准，文中目录仅作示意性描述。
+
+---
+
+如果你需要，我可以把这份介绍扩展成“用户文档版 README”、“开发者手册版 API 文档”或生成一个可导航的文档站点草案（如 Markdown 转 HTML 的静态站点）以便在线浏览。也可以把内容拆分成多份文档，放在 docs/ 目录下，以便不同读者快速定位。

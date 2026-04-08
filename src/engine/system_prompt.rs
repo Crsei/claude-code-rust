@@ -150,13 +150,17 @@ fn using_tools_section(enabled_tools: &[&str]) -> String {
         "You can call multiple tools in a single response. If you intend to call multiple tools and there are no dependencies between them, make all independent tool calls in parallel. Maximize use of parallel tool calls where possible to increase efficiency. However, if some tool calls depend on previous calls to inform dependent values, do NOT call these tools in parallel and instead call them sequentially. For instance, if one operation must complete before another starts, run these operations sequentially instead.".into()
     );
 
-    let bullets: Vec<String> = items.iter().enumerate().map(|(i, item)| {
-        if item.starts_with("  - ") {
-            item.clone()
-        } else {
-            format!(" - {}", item)
-        }
-    }).collect();
+    let bullets: Vec<String> = items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            if item.starts_with("  - ") {
+                item.clone()
+            } else {
+                format!(" - {}", item)
+            }
+        })
+        .collect();
 
     format!("# Using your tools\n{}", bullets.join("\n"))
 }
@@ -274,7 +278,11 @@ pub fn build_system_prompt(
     tools: &[Arc<dyn Tool>],
     model: &str,
     cwd: &str,
-) -> (Vec<String>, HashMap<String, String>, HashMap<String, String>) {
+) -> (
+    Vec<String>,
+    HashMap<String, String>,
+    HashMap<String, String>,
+) {
     let mut parts: Vec<String> = Vec::new();
 
     if let Some(custom) = custom_prompt {
@@ -428,12 +436,20 @@ pub fn build_effective_system_prompt(
 
 /// Format items as a bullet list. Corresponds to TS: `prependBullets(items)`
 fn format_bullets(items: &[&str]) -> String {
-    items.iter().map(|item| format!(" - {}", item)).collect::<Vec<_>>().join("\n")
+    items
+        .iter()
+        .map(|item| format!(" - {}", item))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Format sub-items as indented bullets.
 fn format_sub_bullets(items: &[&str]) -> String {
-    items.iter().map(|item| format!("  - {}", item)).collect::<Vec<_>>().join("\n")
+    items
+        .iter()
+        .map(|item| format!("  - {}", item))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -491,7 +507,15 @@ mod tests {
 
     #[test]
     fn test_using_tools_section() {
-        let tools = using_tools_section(&["Bash", "Read", "Edit", "Write", "Glob", "Grep", "TaskCreate"]);
+        let tools = using_tools_section(&[
+            "Bash",
+            "Read",
+            "Edit",
+            "Write",
+            "Glob",
+            "Grep",
+            "TaskCreate",
+        ]);
         assert!(tools.starts_with("# Using your tools"));
         assert!(tools.contains("Read instead of cat"));
         assert!(tools.contains("Edit instead of sed"));
@@ -545,10 +569,15 @@ mod tests {
 
     #[test]
     fn test_default_prompt_has_all_sections() {
-        let (parts, ctx, _) = build_system_prompt(None, None, &[], "claude-sonnet-4-20250514", "/tmp");
+        let (parts, ctx, _) =
+            build_system_prompt(None, None, &[], "claude-sonnet-4-20250514", "/tmp");
 
         // Should have at least: intro, system, doing_tasks, actions, tools, tone, efficiency, boundary, env_info, summarize
-        assert!(parts.len() >= 9, "expected at least 9 parts, got {}", parts.len());
+        assert!(
+            parts.len() >= 9,
+            "expected at least 9 parts, got {}",
+            parts.len()
+        );
 
         let joined = parts.join("\n");
         assert!(joined.contains("interactive agent"), "missing intro");
@@ -566,7 +595,10 @@ mod tests {
     fn test_custom_prompt_replaces_default() {
         let (parts, _, _) = build_system_prompt(
             Some("You are a custom assistant."),
-            None, &[], "test", "/tmp",
+            None,
+            &[],
+            "test",
+            "/tmp",
         );
         assert_eq!(parts[0], "You are a custom assistant.");
         // Should NOT contain static sections
@@ -576,17 +608,19 @@ mod tests {
 
     #[test]
     fn test_append_prompt() {
-        let (parts, _, _) = build_system_prompt(
-            None, Some("Always be concise."), &[], "test", "/tmp",
-        );
+        let (parts, _, _) =
+            build_system_prompt(None, Some("Always be concise."), &[], "test", "/tmp");
         assert_eq!(parts.last().unwrap(), "Always be concise.");
     }
 
     #[test]
     fn test_build_effective_override() {
         let result = build_effective_system_prompt(
-            vec!["default".into()], None, None,
-            Some("override"), None,
+            vec!["default".into()],
+            None,
+            None,
+            Some("override"),
+            None,
         );
         assert_eq!(result, vec!["override"]);
     }
@@ -594,24 +628,30 @@ mod tests {
     #[test]
     fn test_build_effective_agent_replaces_default() {
         let result = build_effective_system_prompt(
-            vec!["default".into()], None, None,
-            None, Some("agent prompt"),
+            vec!["default".into()],
+            None,
+            None,
+            None,
+            Some("agent prompt"),
         );
         assert_eq!(result, vec!["agent prompt"]);
     }
 
     #[test]
     fn test_build_effective_custom_replaces_default() {
-        let result = build_effective_system_prompt(
-            vec!["default".into()], Some("custom"), None, None, None,
-        );
+        let result =
+            build_effective_system_prompt(vec!["default".into()], Some("custom"), None, None, None);
         assert_eq!(result, vec!["custom"]);
     }
 
     #[test]
     fn test_build_effective_append() {
         let result = build_effective_system_prompt(
-            vec!["default".into()], None, Some("appended"), None, None,
+            vec!["default".into()],
+            None,
+            Some("appended"),
+            None,
+            None,
         );
         assert_eq!(result, vec!["default", "appended"]);
     }

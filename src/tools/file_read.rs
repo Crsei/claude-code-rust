@@ -203,7 +203,7 @@ impl FileReadTool {
         }
 
         // Format with line numbers
-        let (formatted, total_lines) = Self::format_with_line_numbers(&text, 0, 2000);
+        let (formatted, total_lines) = Self::format_with_line_numbers(&text, 0, None);
 
         Ok(ToolResult {
             data: json!({
@@ -263,7 +263,7 @@ impl FileReadTool {
         }
 
         // Format with line numbers
-        let (formatted, total_lines) = Self::format_with_line_numbers(&result, 0, 2000);
+        let (formatted, total_lines) = Self::format_with_line_numbers(&result, 0, None);
 
         Ok(ToolResult {
             data: json!({
@@ -312,10 +312,7 @@ impl FileReadTool {
                     .get("ename")
                     .and_then(|v| v.as_str())
                     .unwrap_or("Error");
-                let evalue = output
-                    .get("evalue")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let evalue = output.get("evalue").and_then(|v| v.as_str()).unwrap_or("");
                 format!("{}: {}", ename, evalue)
             }
             _ => String::new(),
@@ -326,14 +323,17 @@ impl FileReadTool {
     fn format_with_line_numbers(
         content: &str,
         offset: usize,
-        limit: usize,
+        limit: Option<usize>,
     ) -> (String, usize) {
         let lines: Vec<&str> = content.lines().collect();
         let total_lines = lines.len();
 
         // offset is 1-based line number (0 means start from beginning)
         let start = if offset > 0 { offset - 1 } else { 0 };
-        let end = (start + limit).min(total_lines);
+        let end = match limit {
+            Some(limit) => start.saturating_add(limit).min(total_lines),
+            None => total_lines,
+        };
 
         if start >= total_lines {
             return (String::new(), total_lines);
@@ -397,11 +397,17 @@ impl Tool for FileReadTool {
     }
 
     fn get_path(&self, input: &Value) -> Option<String> {
-        input.get("file_path").and_then(|v| v.as_str()).map(|s| s.to_string())
+        input
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
-        let file_path = input.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+        let file_path = input
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         if file_path.is_empty() {
             return ValidationResult::Error {
                 message: "file_path is required".to_string(),
@@ -494,12 +500,10 @@ impl Tool for FileReadTool {
 
         let content = String::from_utf8_lossy(&bytes).to_string();
 
-        // Default limit is 2000 lines
-        let effective_limit = limit.unwrap_or(2000);
         let effective_offset = offset.unwrap_or(0);
 
         let (formatted, total_lines) =
-            Self::format_with_line_numbers(&content, effective_offset, effective_limit);
+            Self::format_with_line_numbers(&content, effective_offset, limit);
 
         if formatted.is_empty() && total_lines > 0 {
             return Ok(ToolResult {
@@ -546,7 +550,7 @@ impl Tool for FileReadTool {
 Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.\n\n\
 Usage:\n\
 - The file_path parameter must be an absolute path, not a relative path\n\
-- By default, it reads up to 2000 lines starting from the beginning of the file\n\
+- If limit is not provided, it reads from the starting offset to the end of the file\n\
 - When you already know which part of the file you need, only read that part. This can be important for larger files.\n\
 - Results are returned using cat -n format, with line numbers starting at 1\n\
 - This tool allows Claude Code to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as Claude Code is a multimodal LLM.\n\
@@ -598,7 +602,9 @@ mod tests {
     fn test_is_notebook_file() {
         assert!(FileReadTool::is_notebook_file(Path::new("notebook.ipynb")));
         assert!(FileReadTool::is_notebook_file(Path::new("notebook.IPYNB")));
-        assert!(FileReadTool::is_notebook_file(Path::new("/path/to/nb.ipynb")));
+        assert!(FileReadTool::is_notebook_file(Path::new(
+            "/path/to/nb.ipynb"
+        )));
         assert!(!FileReadTool::is_notebook_file(Path::new("file.txt")));
         assert!(!FileReadTool::is_notebook_file(Path::new("file.py")));
         assert!(!FileReadTool::is_notebook_file(Path::new("noext")));
@@ -613,6 +619,24 @@ mod tests {
         assert!(FileReadTool::parse_pages("abc").is_err());
         assert!(FileReadTool::parse_pages("5-3").is_err());
         assert!(FileReadTool::parse_pages("1-abc").is_err());
+    }
+
+    #[test]
+    fn test_format_with_line_numbers_without_limit_reads_to_end() {
+        let content = "line1\nline2\nline3\nline4";
+        let (formatted, total_lines) = FileReadTool::format_with_line_numbers(content, 0, None);
+
+        assert_eq!(total_lines, 4);
+        assert_eq!(formatted, "1\tline1\n2\tline2\n3\tline3\n4\tline4\n");
+    }
+
+    #[test]
+    fn test_format_with_line_numbers_with_limit_still_works() {
+        let content = "line1\nline2\nline3\nline4";
+        let (formatted, total_lines) = FileReadTool::format_with_line_numbers(content, 2, Some(2));
+
+        assert_eq!(total_lines, 4);
+        assert_eq!(formatted, "2\tline2\n3\tline3\n");
     }
 
     #[tokio::test]
@@ -677,8 +701,12 @@ mod tests {
         let file_path = dir.join("test_notebook_read.ipynb");
         {
             let mut f = std::fs::File::create(&file_path).unwrap();
-            f.write_all(serde_json::to_string_pretty(&notebook_json).unwrap().as_bytes())
-                .unwrap();
+            f.write_all(
+                serde_json::to_string_pretty(&notebook_json)
+                    .unwrap()
+                    .as_bytes(),
+            )
+            .unwrap();
         }
 
         let result = FileReadTool::read_notebook(file_path.to_str().unwrap())
@@ -712,7 +740,10 @@ mod tests {
     #[test]
     fn test_extract_notebook_text_string() {
         let val = Value::String("hello world".to_string());
-        assert_eq!(FileReadTool::extract_notebook_text(Some(&val)), "hello world");
+        assert_eq!(
+            FileReadTool::extract_notebook_text(Some(&val)),
+            "hello world"
+        );
     }
 
     #[test]

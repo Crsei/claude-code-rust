@@ -10,10 +10,10 @@
 #![allow(unused)]
 
 pub mod client;
-pub mod transport;
-pub mod manager;
 pub mod discovery;
+pub mod manager;
 pub mod tools;
+pub mod transport;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -354,7 +354,10 @@ mod tests {
         let config: McpServerConfig = serde_json::from_value(json).unwrap();
         assert_eq!(config.transport, "stdio");
         assert_eq!(config.command.unwrap(), "npx");
-        assert_eq!(config.args.unwrap(), vec!["-y", "@modelcontextprotocol/server-filesystem"]);
+        assert_eq!(
+            config.args.unwrap(),
+            vec!["-y", "@modelcontextprotocol/server-filesystem"]
+        );
     }
 
     #[test]

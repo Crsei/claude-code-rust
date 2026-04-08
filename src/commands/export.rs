@@ -77,7 +77,10 @@ fn list_exported_files() -> Result<CommandResult> {
     }
     let mut out = format!("Exported sessions ({}):\n", files.len());
     for f in &files {
-        let name = f.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+        let name = f
+            .file_name()
+            .map(|n| n.to_string_lossy())
+            .unwrap_or_default();
         out.push_str(&format!("  {}\n", name));
     }
     Ok(CommandResult::Output(out))

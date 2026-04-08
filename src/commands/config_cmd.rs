@@ -140,9 +140,9 @@ fn handle_reset(ctx: &mut CommandContext) -> Result<CommandResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
+    use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {
         CommandContext {
@@ -172,7 +172,10 @@ mod tests {
     async fn test_config_set_model() {
         let handler = ConfigHandler;
         let mut ctx = test_ctx();
-        let result = handler.execute("set model claude-opus", &mut ctx).await.unwrap();
+        let result = handler
+            .execute("set model claude-opus", &mut ctx)
+            .await
+            .unwrap();
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("claude-opus"));

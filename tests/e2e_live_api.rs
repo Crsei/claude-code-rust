@@ -62,7 +62,12 @@ fn cleanup(path: &Path) {
 #[ignore]
 fn t1_simple_question_returns_answer() {
     live_cli()
-        .args(["-p", "-C", WORKSPACE, "What is 2+2? Reply with just the number."])
+        .args([
+            "-p",
+            "-C",
+            WORKSPACE,
+            "What is 2+2? Reply with just the number.",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("4"));
@@ -94,8 +99,10 @@ fn t1_custom_system_prompt() {
     live_cli()
         .args([
             "-p",
-            "-C", WORKSPACE,
-            "--system-prompt", "You are a calculator. Only output numbers, nothing else.",
+            "-C",
+            WORKSPACE,
+            "--system-prompt",
+            "You are a calculator. Only output numbers, nothing else.",
             "What is 10 times 5?",
         ])
         .assert()
@@ -109,8 +116,10 @@ fn t1_append_system_prompt() {
     live_cli()
         .args([
             "-p",
-            "-C", WORKSPACE,
-            "--append-system-prompt", "Always end your response with the word ENDMARK.",
+            "-C",
+            WORKSPACE,
+            "--append-system-prompt",
+            "Always end your response with the word ENDMARK.",
             "Say hi.",
         ])
         .assert()
@@ -124,8 +133,10 @@ fn t1_max_turns_one() {
     live_cli()
         .args([
             "-p",
-            "-C", WORKSPACE,
-            "--max-turns", "1",
+            "-C",
+            WORKSPACE,
+            "--max-turns",
+            "1",
             "What is 2+3? Reply with just the number.",
         ])
         .assert()
@@ -171,8 +182,10 @@ fn t2_bash_echo() {
     tool_cli()
         .args([
             "-p",
-            "-C", WORKSPACE,
-            "--permission-mode", "bypass",
+            "-C",
+            WORKSPACE,
+            "--permission-mode",
+            "bypass",
             "Use the Bash tool to run: echo TOOL_WORKS_OK",
         ])
         .assert()
@@ -186,8 +199,10 @@ fn t2_bash_pwd_shows_workspace() {
     tool_cli()
         .args([
             "-p",
-            "-C", WORKSPACE,
-            "--permission-mode", "bypass",
+            "-C",
+            WORKSPACE,
+            "--permission-mode",
+            "bypass",
             "Use the Bash tool to run: pwd",
         ])
         .assert()
@@ -371,8 +386,10 @@ fn t2_multi_tool_write_read_edit() {
         tool_cli()
             .args([
                 "-p",
-                "-C", WORKSPACE,
-                "--permission-mode", "bypass",
+                "-C",
+                WORKSPACE,
+                "--permission-mode",
+                "bypass",
                 &format!(
                     "Do these steps in order using tools:\n\
                      1. Write the file {path} with content 'STEP1_DONE'\n\

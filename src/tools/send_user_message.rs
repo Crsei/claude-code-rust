@@ -51,10 +51,7 @@ impl Tool for SendUserMessageTool {
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
-        let message = input
-            .get("message")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let message = input.get("message").and_then(|v| v.as_str()).unwrap_or("");
         if message.is_empty() {
             return ValidationResult::Error {
                 message: "\"message\" must not be empty".to_string(),

@@ -249,10 +249,7 @@ impl Tool for LspTool {
             };
         };
 
-        let file_path = input
-            .get("filePath")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let file_path = input.get("filePath").and_then(|v| v.as_str()).unwrap_or("");
         if file_path.is_empty() {
             return ValidationResult::Error {
                 message: "filePath is required".to_string(),
@@ -291,13 +288,9 @@ impl Tool for LspTool {
             .get("operation")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let op = LspOperation::from_str(op_str)
-            .context("Invalid LSP operation")?;
+        let op = LspOperation::from_str(op_str).context("Invalid LSP operation")?;
 
-        let file_path = input
-            .get("filePath")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let file_path = input.get("filePath").and_then(|v| v.as_str()).unwrap_or("");
 
         // Convert 1-based editor coords to 0-based LSP coords
         let line = input
@@ -341,13 +334,7 @@ impl Tool for LspTool {
         }
 
         // ---- LSP execution ----
-        let result = execute_lsp_operation(
-            op,
-            &resolved,
-            line,
-            character,
-        )
-        .await;
+        let result = execute_lsp_operation(op, &resolved, line, character).await;
 
         match result {
             Ok(output) => Ok(ToolResult {
@@ -537,13 +524,15 @@ fn file_path_to_uri(path: &Path) -> String {
     let abs = if path.is_absolute() {
         path.to_path_buf()
     } else {
-        std::env::current_dir()
-            .unwrap_or_default()
-            .join(path)
+        std::env::current_dir().unwrap_or_default().join(path)
     };
-    format!("file:///{}", abs.to_string_lossy().replace('\\', "/").trim_start_matches('/'))
+    format!(
+        "file:///{}",
+        abs.to_string_lossy()
+            .replace('\\', "/")
+            .trim_start_matches('/')
+    )
 }
-
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -559,10 +548,7 @@ mod tests {
             LspOperation::from_str("goToDefinition"),
             Some(LspOperation::GoToDefinition)
         );
-        assert_eq!(
-            LspOperation::from_str("hover"),
-            Some(LspOperation::Hover)
-        );
+        assert_eq!(LspOperation::from_str("hover"), Some(LspOperation::Hover));
         assert_eq!(
             LspOperation::from_str("findReferences"),
             Some(LspOperation::FindReferences)
@@ -576,10 +562,7 @@ mod tests {
             LspOperation::GoToDefinition.method(),
             "textDocument/definition"
         );
-        assert_eq!(
-            LspOperation::WorkspaceSymbol.method(),
-            "workspace/symbol"
-        );
+        assert_eq!(LspOperation::WorkspaceSymbol.method(), "workspace/symbol");
     }
 
     #[test]

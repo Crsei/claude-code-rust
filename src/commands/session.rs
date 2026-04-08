@@ -47,7 +47,10 @@ fn handle_show(ctx: &CommandContext) -> Result<CommandResult> {
     lines.push(String::new());
     lines.push(format!("  Working directory: {}", cwd));
     lines.push(format!("  Messages:          {}", msg_count));
-    lines.push(format!("  Model:             {}", ctx.app_state.main_loop_model));
+    lines.push(format!(
+        "  Model:             {}",
+        ctx.app_state.main_loop_model
+    ));
 
     Ok(CommandResult::Output(lines.join("\n")))
 }
@@ -57,9 +60,7 @@ fn handle_list(ctx: &CommandContext) -> Result<CommandResult> {
     let sessions = storage::list_sessions()?;
 
     if sessions.is_empty() {
-        return Ok(CommandResult::Output(
-            "No saved sessions found.".into(),
-        ));
+        return Ok(CommandResult::Output("No saved sessions found.".into()));
     }
 
     let mut lines = Vec::new();
@@ -95,10 +96,7 @@ fn handle_list(ctx: &CommandContext) -> Result<CommandResult> {
     }
 
     if sessions.len() > 20 {
-        lines.push(format!(
-            "\n  ... and {} more sessions",
-            sessions.len() - 20
-        ));
+        lines.push(format!("\n  ... and {} more sessions", sessions.len() - 20));
     }
 
     lines.push(String::new());
@@ -110,9 +108,9 @@ fn handle_list(ctx: &CommandContext) -> Result<CommandResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
+    use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {
         CommandContext {

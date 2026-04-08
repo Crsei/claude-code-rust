@@ -11,18 +11,20 @@ use super::file_read::FileReadTool;
 use super::file_write::FileWriteTool;
 use super::glob_tool::GlobTool;
 use super::grep::GrepTool;
+use super::lsp::LspTool;
+use super::plan_mode::{EnterPlanModeTool, ExitPlanModeTool};
 use super::powershell::PowerShellTool;
 use super::repl::ReplTool;
-use super::plan_mode::{EnterPlanModeTool, ExitPlanModeTool};
+use super::send_message::SendMessageTool;
 use super::send_user_message::SendUserMessageTool;
 use super::skill::SkillTool;
 use super::structured_output::StructuredOutputTool;
-use super::tasks::{TaskCreateTool, TaskGetTool, TaskListTool, TaskOutputTool, TaskStopTool, TaskUpdateTool};
+use super::tasks::{
+    TaskCreateTool, TaskGetTool, TaskListTool, TaskOutputTool, TaskStopTool, TaskUpdateTool,
+};
 use super::web_fetch::WebFetchTool;
 use super::web_search::WebSearchTool;
 use super::worktree::{EnterWorktreeTool, ExitWorktreeTool};
-use super::lsp::LspTool;
-use super::send_message::SendMessageTool;
 
 /// Get all base tool instances.
 ///
@@ -104,7 +106,11 @@ mod tests {
         let tools = get_all_tools();
         for tool in &tools {
             let schema = tool.input_json_schema();
-            assert!(schema.is_object(), "tool {} schema should be an object", tool.name());
+            assert!(
+                schema.is_object(),
+                "tool {} schema should be an object",
+                tool.name()
+            );
             assert!(
                 schema.get("properties").is_some(),
                 "tool {} schema should have properties",

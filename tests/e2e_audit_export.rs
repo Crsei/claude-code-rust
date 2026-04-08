@@ -168,7 +168,10 @@ fn audit_record_roundtrip_and_verify() {
         assert_eq!(entry["chain_hash"].as_str().unwrap(), expected_chain);
         prev = expected_chain;
     }
-    assert_eq!(parsed["integrity"]["final_chain_hash"].as_str().unwrap(), prev);
+    assert_eq!(
+        parsed["integrity"]["final_chain_hash"].as_str().unwrap(),
+        prev
+    );
 }
 
 // =========================================================================
@@ -237,7 +240,10 @@ fn tamper_detection_catches_modified_entry() {
     let tampered_data = &record["entries"][0]["data"];
     let tampered_hash = sha256_json(tampered_data);
     let stored_hash = record["entries"][0]["hash"].as_str().unwrap();
-    assert_ne!(tampered_hash, stored_hash, "Hash should differ after tampering");
+    assert_ne!(
+        tampered_hash, stored_hash,
+        "Hash should differ after tampering"
+    );
 }
 
 /// Verify that inserting an extra entry breaks the chain.
@@ -292,7 +298,10 @@ fn tamper_detection_catches_inserted_entry() {
 
     // Manually verify: entry #2's chain_hash should be sha256(rogue_chain + h2)
     let expected_c2 = sha256_str(&format!("{}{}", rogue_chain, h2));
-    assert_ne!(c2, expected_c2, "Original chain_hash should not match after insertion");
+    assert_ne!(
+        c2, expected_c2,
+        "Original chain_hash should not match after insertion"
+    );
 }
 
 // =========================================================================

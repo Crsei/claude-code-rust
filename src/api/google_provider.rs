@@ -81,10 +81,14 @@ fn build_gemini_request(request: &MessagesRequest) -> Value {
             Some(Value::Array(blocks)) => blocks
                 .iter()
                 .filter_map(|b| match b.get("type").and_then(|t| t.as_str()) {
-                    Some("text") => b.get("text").and_then(|t| t.as_str()).map(|s| s.to_string()),
-                    Some("tool_result") => {
-                        b.get("content").and_then(|c| c.as_str()).map(|s| s.to_string())
-                    }
+                    Some("text") => b
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .map(|s| s.to_string()),
+                    Some("tool_result") => b
+                        .get("content")
+                        .and_then(|c| c.as_str())
+                        .map(|s| s.to_string()),
                     _ => None,
                 })
                 .collect::<Vec<_>>()
@@ -128,7 +132,10 @@ fn build_gemini_request(request: &MessagesRequest) -> Value {
             .iter()
             .filter_map(|block| {
                 if block.get("type").and_then(|t| t.as_str()) == Some("text") {
-                    block.get("text").and_then(|t| t.as_str()).map(|s| s.to_string())
+                    block
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .map(|s| s.to_string())
                 } else {
                     block.as_str().map(|s| s.to_string())
                 }
@@ -192,9 +199,7 @@ pub(crate) async fn google_stream(
 /// Emits Anthropic-style StreamEvent sequence:
 ///   MessageStart → ContentBlockStart → ContentBlockDelta* →
 ///   ContentBlockStop → MessageDelta → MessageStop
-fn parse_gemini_sse_byte_stream<S>(
-    byte_stream: S,
-) -> impl Stream<Item = Result<StreamEvent>> + Send
+fn parse_gemini_sse_byte_stream<S>(byte_stream: S) -> impl Stream<Item = Result<StreamEvent>> + Send
 where
     S: Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send + 'static,
 {

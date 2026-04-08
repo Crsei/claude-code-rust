@@ -35,10 +35,7 @@ impl CommandHandler for SkillsHandler {
                     "User invocable: {}",
                     skill.frontmatter.user_invocable
                 ));
-                lines.push(format!(
-                    "Model invocable: {}",
-                    skill.is_model_invocable()
-                ));
+                lines.push(format!("Model invocable: {}", skill.is_model_invocable()));
                 return Ok(CommandResult::Output(lines.join("\n")));
             } else {
                 return Ok(CommandResult::Output(format!(
@@ -108,9 +105,7 @@ mod tests {
         match result {
             CommandResult::Output(text) => {
                 // Either shows skills or the "no skills loaded" message
-                assert!(
-                    text.contains("Available Skills") || text.contains("No skills loaded")
-                );
+                assert!(text.contains("Available Skills") || text.contains("No skills loaded"));
             }
             _ => panic!("Expected Output"),
         }

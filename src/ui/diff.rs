@@ -48,8 +48,14 @@ pub fn render_diff(old: &str, new: &str, area: Rect, buf: &mut Buffer, theme: &T
 
     if !diff_lines.is_empty() {
         // Count additions and deletions for the header.
-        let additions = diff_lines.iter().filter(|l| l.tag == ChangeTag::Insert).count();
-        let deletions = diff_lines.iter().filter(|l| l.tag == ChangeTag::Delete).count();
+        let additions = diff_lines
+            .iter()
+            .filter(|l| l.tag == ChangeTag::Insert)
+            .count();
+        let deletions = diff_lines
+            .iter()
+            .filter(|l| l.tag == ChangeTag::Delete)
+            .count();
         let header = format!("--- diff: +{} -{} lines ---", additions, deletions);
         let header_line = Line::from(Span::styled(header, theme.diff_header));
         buf.set_line(area.x, area.y + y_offset, &header_line, area.width);

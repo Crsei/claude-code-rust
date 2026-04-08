@@ -40,12 +40,8 @@ impl CommandHandler for CompactHandler {
         let model = &ctx.app_state.main_loop_model;
 
         // Run the local context management pipeline
-        let pipeline_result = pipeline::run_context_pipeline(
-            ctx.messages.clone(),
-            None,
-            model,
-        )
-        .await;
+        let pipeline_result =
+            pipeline::run_context_pipeline(ctx.messages.clone(), None, model).await;
 
         let post_tokens = pipeline_result.estimated_tokens;
 
@@ -67,11 +63,8 @@ impl CommandHandler for CompactHandler {
                 query_source: "compact".into(),
             };
 
-            let post_messages = compaction::build_post_compact_messages(
-                &summary,
-                &ctx.messages,
-                &config,
-            );
+            let post_messages =
+                compaction::build_post_compact_messages(&summary, &ctx.messages, &config);
 
             // Create the compact boundary marker
             let boundary = compaction::create_compact_boundary(pre_tokens, post_tokens);
@@ -111,10 +104,10 @@ impl CommandHandler for CompactHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
-    use crate::types::message::{Message, UserMessage, MessageContent};
+    use crate::types::message::{Message, MessageContent, UserMessage};
+    use std::path::PathBuf;
     use uuid::Uuid;
 
     fn make_user_msg(text: &str) -> Message {
@@ -178,7 +171,10 @@ mod tests {
             session_id: SessionId::new(),
         };
 
-        let result = handler.execute("focus on code changes", &mut ctx).await.unwrap();
+        let result = handler
+            .execute("focus on code changes", &mut ctx)
+            .await
+            .unwrap();
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("focus on code changes"));

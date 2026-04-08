@@ -7,13 +7,13 @@
 
 // Essential commands
 pub mod clear;
+pub mod config_cmd;
 pub mod context;
 pub mod cost;
+pub mod diff;
 pub mod exit;
 pub mod files;
 pub mod help;
-pub mod config_cmd;
-pub mod diff;
 pub mod login;
 pub mod logout;
 pub mod model;
@@ -40,8 +40,8 @@ pub mod init;
 pub mod status;
 
 // Export
-pub mod export;
 pub mod audit_export;
+pub mod export;
 pub mod session_export;
 
 // Extended info

@@ -86,8 +86,7 @@ impl CommandHandler for CommitHandler {
             } else {
                 Ok(CommandResult::Output(format!(
                     "Commit failed:\n{}{}",
-                    stdout,
-                    stderr
+                    stdout, stderr
                 )))
             }
         }

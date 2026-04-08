@@ -49,8 +49,8 @@ impl ConfigTool {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("Failed to create directory {}", parent.display()))?;
         }
-        let pretty = serde_json::to_string_pretty(settings)
-            .context("Failed to serialize settings")?;
+        let pretty =
+            serde_json::to_string_pretty(settings).context("Failed to serialize settings")?;
         std::fs::write(path, pretty)
             .with_context(|| format!("Failed to write {}", path.display()))?;
         Ok(())
@@ -116,7 +116,12 @@ impl Tool for ConfigTool {
 
         match action {
             "get" => {
-                if input.get("key").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+                if input
+                    .get("key")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .is_empty()
+                {
                     return ValidationResult::Error {
                         message: "\"key\" is required for action \"get\"".to_string(),
                         error_code: 1,
@@ -124,7 +129,12 @@ impl Tool for ConfigTool {
                 }
             }
             "set" => {
-                if input.get("key").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+                if input
+                    .get("key")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .is_empty()
+                {
                     return ValidationResult::Error {
                         message: "\"key\" is required for action \"set\"".to_string(),
                         error_code: 1,

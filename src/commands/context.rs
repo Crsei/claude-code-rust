@@ -29,11 +29,7 @@ fn estimate_message_tokens(msg: &Message) -> u64 {
                 blocks.iter().map(|b| estimate_block_chars(b)).sum()
             }
         },
-        Message::Assistant(a) => a
-            .content
-            .iter()
-            .map(|b| estimate_block_chars(b))
-            .sum(),
+        Message::Assistant(a) => a.content.iter().map(|b| estimate_block_chars(b)).sum(),
         Message::System(s) => s.content.len(),
         Message::Progress(p) => p.data.to_string().len(),
         Message::Attachment(a) => {
@@ -132,10 +128,10 @@ impl CommandHandler for ContextHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
-    use crate::types::message::{Message, UserMessage, MessageContent};
+    use crate::types::message::{Message, MessageContent, UserMessage};
+    use std::path::PathBuf;
     use uuid::Uuid;
 
     fn make_user_msg(text: &str) -> Message {

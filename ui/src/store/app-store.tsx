@@ -120,7 +120,13 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, streamingText: state.streamingText + action.text }
 
     case 'STREAM_END':
-      return { ...state, isStreaming: false, isWaiting: false, streamingMessageId: null }
+      return {
+        ...state,
+        isStreaming: false,
+        isWaiting: false,
+        streamingText: '',
+        streamingMessageId: null,
+      }
 
     case 'ASSISTANT_MESSAGE': {
       // Replace streaming with final message
@@ -192,7 +198,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'ERROR':
       return {
         ...state,
+        isStreaming: false,
         isWaiting: false,
+        streamingText: '',
+        streamingMessageId: null,
         messages: [...state.messages, {
           id: `err-${Date.now()}`,
           role: 'system',

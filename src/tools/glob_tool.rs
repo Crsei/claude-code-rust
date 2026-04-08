@@ -5,9 +5,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use crate::types::message::AssistantMessage;
-use crate::types::tool::{
-    Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult,
-};
+use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
 
 /// GlobTool — Find files matching glob patterns
 ///
@@ -69,7 +67,10 @@ impl Tool for GlobTool {
     }
 
     fn get_path(&self, input: &Value) -> Option<String> {
-        input.get("path").and_then(|v| v.as_str()).map(|s| s.to_string())
+        input
+            .get("path")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {

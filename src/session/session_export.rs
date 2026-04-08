@@ -191,11 +191,7 @@ pub fn list_session_exports() -> Result<Vec<PathBuf>> {
 // ---------------------------------------------------------------------------
 
 /// Build the full SessionExport from in-memory messages.
-pub fn build_session_export(
-    session_id: &str,
-    messages: &[Message],
-    cwd: &str,
-) -> SessionExport {
+pub fn build_session_export(session_id: &str, messages: &[Message], cwd: &str) -> SessionExport {
     let session_meta = build_session_meta(session_id, messages, cwd);
     let transcript = build_transcript_data(messages);
     let tool_calls = reconstruct_tool_timeline(messages);
@@ -217,11 +213,7 @@ pub fn build_session_export(
 // Session metadata
 // ---------------------------------------------------------------------------
 
-fn build_session_meta(
-    session_id: &str,
-    messages: &[Message],
-    cwd: &str,
-) -> SessionMeta {
+fn build_session_meta(session_id: &str, messages: &[Message], cwd: &str) -> SessionMeta {
     let cwd_path = Path::new(cwd);
 
     let git_branch = crate::utils::git::current_branch(cwd_path).ok();
@@ -229,14 +221,21 @@ fn build_session_meta(
 
     let model = PROCESS_STATE
         .read()
-        .ok()
-        .and_then(|ps| ps.effective_model().map(|s| s.to_string()));
+        .effective_model()
+        .map(|s| s.to_string());
 
-    let project_path = PROCESS_STATE
-        .read()
-        .ok()
-        .map(|ps| ps.project_root.to_string_lossy().to_string())
-        .filter(|p| !p.is_empty());
+    let project_path = {
+        let p = PROCESS_STATE
+            .read()
+            .project_root
+            .to_string_lossy()
+            .to_string();
+        if p.is_empty() {
+            None
+        } else {
+            Some(p)
+        }
+    };
 
     let started_at = messages.first().map(|m| format_ts_millis(m.timestamp()));
     let ended_at = messages.last().map(|m| format_ts_millis(m.timestamp()));
@@ -468,14 +467,12 @@ pub fn detect_content_replacement(
 }
 
 /// Parse the replacement marker from text content.
-fn parse_replacement_marker(
-    tool_use_id: &str,
-    text: &str,
-) -> Option<ContentReplacementRecord> {
+fn parse_replacement_marker(tool_use_id: &str, text: &str) -> Option<ContentReplacementRecord> {
     // Match: [... N characters omitted. Full output saved to: <path> ...]
     let re = Regex::new(
-        r"\[\.\.\.\s+(\d+)\s+characters omitted\.\s+Full output saved to:\s+(.+?)\s*\.\.\.\]"
-    ).ok()?;
+        r"\[\.\.\.\s+(\d+)\s+characters omitted\.\s+Full output saved to:\s+(.+?)\s*\.\.\.\]",
+    )
+    .ok()?;
 
     let caps = re.captures(text)?;
     let omitted_chars: usize = caps.get(1)?.as_str().parse().ok()?;
@@ -513,13 +510,9 @@ fn detect_microcompact(
 }
 
 /// Parse the microcompact marker from text content.
-fn parse_microcompact_marker(
-    tool_use_id: &str,
-    text: &str,
-) -> Option<MicrocompactRecord> {
-    let re = Regex::new(
-        r"\[\.\.\.\s+(\d+)\s+characters omitted \(microcompacted\)\s*\.\.\.\]"
-    ).ok()?;
+fn parse_microcompact_marker(tool_use_id: &str, text: &str) -> Option<MicrocompactRecord> {
+    let re =
+        Regex::new(r"\[\.\.\.\s+(\d+)\s+characters omitted \(microcompacted\)\s*\.\.\.\]").ok()?;
 
     let caps = re.captures(text)?;
     let omitted_chars: usize = caps.get(1)?.as_str().parse().ok()?;
@@ -559,8 +552,8 @@ pub fn build_context_snapshot(messages: &[Message]) -> ContextSnapshot {
 
     let model = PROCESS_STATE
         .read()
-        .ok()
-        .and_then(|ps| ps.effective_model().map(|s| s.to_string()))
+        .effective_model()
+        .map(|s| s.to_string())
         .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
     let context_window = get_context_window_size(&model);
 
@@ -707,8 +700,8 @@ fn write_session_export(
         }
     };
 
-    let json = serde_json::to_string_pretty(export)
-        .context("Failed to serialize session export")?;
+    let json =
+        serde_json::to_string_pretty(export).context("Failed to serialize session export")?;
 
     std::fs::write(&path, json)
         .with_context(|| format!("Failed to write session export {}", path.display()))?;
@@ -765,9 +758,7 @@ mod tests {
             uuid: Uuid::new_v4(),
             timestamp: 1700000001000,
             role: "assistant".into(),
-            content: vec![ContentBlock::Text {
-                text: text.into(),
-            }],
+            content: vec![ContentBlock::Text { text: text.into() }],
             usage: Some(Usage {
                 input_tokens: 100,
                 output_tokens: 50,
@@ -896,8 +887,14 @@ mod tests {
         let compression = extract_compression_events(&messages);
         assert_eq!(compression.compact_boundaries.len(), 1);
         assert_eq!(compression.total_compactions, 1);
-        assert_eq!(compression.compact_boundaries[0].pre_compact_tokens, Some(150000));
-        assert_eq!(compression.compact_boundaries[0].post_compact_tokens, Some(50000));
+        assert_eq!(
+            compression.compact_boundaries[0].pre_compact_tokens,
+            Some(150000)
+        );
+        assert_eq!(
+            compression.compact_boundaries[0].post_compact_tokens,
+            Some(50000)
+        );
     }
 
     #[test]

@@ -14,20 +14,21 @@
 //!
 //! The stream returned by `submit_message` yields `SdkMessage` items.
 
-mod types;
 mod deps;
 mod helpers;
 mod submit_message;
 #[allow(clippy::module_inception)]
 mod tests;
+mod types;
 
 // Re-export public types so external callers keep using
 // `crate::engine::lifecycle::{QueryEngine, UsageTracking, ...}`
 pub use types::{AbortReason, PermissionDenial, UsageTracking};
 
+use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Arc;
 
 use tracing::info;
 
@@ -36,6 +37,36 @@ use crate::types::app_state::AppState;
 use crate::types::config::QueryEngineConfig;
 use crate::types::message::Message;
 use crate::types::tool::Tools;
+
+// ---------------------------------------------------------------------------
+// QueryEngineState — consolidated mutable session state
+// ---------------------------------------------------------------------------
+
+/// All mutable session state behind a single `Arc<RwLock<_>>`.
+///
+/// Previously each field was an independent `Arc<Mutex<T>>` or `Arc<RwLock<T>>`,
+/// requiring 10 individual clones in `submit_message`. Now there's one lock to
+/// rule them all — simpler to reason about and fewer clones.
+pub(crate) struct QueryEngineState {
+    /// Conversation message history.
+    pub(crate) messages: Vec<Message>,
+    /// Abort reason (if aborted).
+    pub(crate) abort_reason: Option<AbortReason>,
+    /// Accumulated usage across all API calls.
+    pub(crate) usage: UsageTracking,
+    /// History of permission denials.
+    pub(crate) permission_denials: Vec<PermissionDenial>,
+    /// Total turn count across all `submit_message` invocations.
+    pub(crate) total_turn_count: usize,
+    /// Application-wide state (shared with deps).
+    pub(crate) app_state: AppState,
+    /// Current tool registry (shared with deps).
+    pub(crate) tools: Tools,
+    /// Skills discovered during this session (dedup).
+    pub(crate) discovered_skill_names: HashSet<String>,
+    /// Nested memory paths already loaded (dedup).
+    pub(crate) loaded_nested_memory_paths: HashSet<String>,
+}
 
 // ---------------------------------------------------------------------------
 // QueryEngine
@@ -52,31 +83,10 @@ pub struct QueryEngine {
     /// Immutable configuration snapshot.
     pub(crate) config: QueryEngineConfig,
 
-    // -- Cross-turn persistent state (mutable via Arc wrappers) --------------
-
-    /// Conversation message history.
-    pub(crate) mutable_messages: Arc<RwLock<Vec<Message>>>,
-    /// Abort reason (if aborted).
-    pub(crate) abort_reason: Arc<Mutex<Option<AbortReason>>>,
-    /// Atomic abort flag (fast path for the query loop).
+    /// Consolidated mutable session state.
+    pub(crate) state: Arc<RwLock<QueryEngineState>>,
+    /// Atomic abort flag (fast path for the query loop — no lock needed).
     pub(crate) aborted: Arc<AtomicBool>,
-    /// Accumulated usage across all API calls.
-    pub(crate) usage: Arc<Mutex<UsageTracking>>,
-    /// History of permission denials.
-    pub(crate) permission_denials: Arc<Mutex<Vec<PermissionDenial>>>,
-    /// Total turn count across all `submit_message` invocations.
-    pub(crate) total_turn_count: Arc<Mutex<usize>>,
-    /// Application-wide state (shared with deps).
-    pub(crate) app_state: Arc<RwLock<AppState>>,
-    /// Current tool registry (shared with deps).
-    pub(crate) tools: Arc<RwLock<Tools>>,
-
-    // -- Session-level dedup / tracking --------------------------------------
-
-    /// Skills discovered during this session (dedup).
-    pub(crate) discovered_skill_names: Arc<Mutex<HashSet<String>>>,
-    /// Nested memory paths already loaded (dedup).
-    pub(crate) loaded_nested_memory_paths: Arc<Mutex<HashSet<String>>>,
     /// Whether we have handled the orphaned-permission edge case.
     pub(crate) has_handled_orphaned_permission: Arc<AtomicBool>,
 }
@@ -99,16 +109,18 @@ impl QueryEngine {
         Self {
             session_id: SessionId::new(),
             config,
-            mutable_messages: Arc::new(RwLock::new(initial_messages)),
-            abort_reason: Arc::new(Mutex::new(None)),
+            state: Arc::new(RwLock::new(QueryEngineState {
+                messages: initial_messages,
+                abort_reason: None,
+                usage: UsageTracking::default(),
+                permission_denials: Vec::new(),
+                total_turn_count: 0,
+                app_state,
+                tools,
+                discovered_skill_names: HashSet::new(),
+                loaded_nested_memory_paths: HashSet::new(),
+            })),
             aborted: Arc::new(AtomicBool::new(false)),
-            usage: Arc::new(Mutex::new(UsageTracking::default())),
-            permission_denials: Arc::new(Mutex::new(Vec::new())),
-            total_turn_count: Arc::new(Mutex::new(0)),
-            app_state: Arc::new(RwLock::new(app_state)),
-            tools: Arc::new(RwLock::new(tools)),
-            discovered_skill_names: Arc::new(Mutex::new(HashSet::new())),
-            loaded_nested_memory_paths: Arc::new(Mutex::new(HashSet::new())),
             has_handled_orphaned_permission: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -119,13 +131,13 @@ impl QueryEngine {
     pub fn abort(&self) {
         info!("aborting query engine");
         self.aborted.store(true, Ordering::SeqCst);
-        *self.abort_reason.lock().expect("abort_reason lock poisoned") = Some(AbortReason::UserAbort);
+        self.state.write().abort_reason = Some(AbortReason::UserAbort);
     }
 
     /// Reset the abort flag before starting a new `submit_message` call.
     pub fn reset_abort(&self) {
         self.aborted.store(false, Ordering::SeqCst);
-        *self.abort_reason.lock().expect("abort_reason lock poisoned") = None;
+        self.state.write().abort_reason = None;
     }
 
     /// Check whether the engine has been aborted.
@@ -135,39 +147,39 @@ impl QueryEngine {
 
     /// Get the abort reason (if any).
     pub fn abort_reason(&self) -> Option<AbortReason> {
-        self.abort_reason.lock().expect("abort_reason lock poisoned").clone()
+        self.state.read().abort_reason.clone()
     }
 
     // -- Accessors -----------------------------------------------------------
 
     /// Get a snapshot of the current message history.
     pub fn messages(&self) -> Vec<Message> {
-        self.mutable_messages.read().expect("messages lock poisoned").clone()
+        self.state.read().messages.clone()
     }
 
     /// Get a snapshot of usage tracking.
     pub fn usage(&self) -> UsageTracking {
-        self.usage.lock().expect("usage lock poisoned").clone()
+        self.state.read().usage.clone()
     }
 
     /// Get a snapshot of permission denials.
     pub fn permission_denials(&self) -> Vec<PermissionDenial> {
-        self.permission_denials.lock().expect("permission_denials lock poisoned").clone()
+        self.state.read().permission_denials.clone()
     }
 
     /// Record a permission denial.
     pub fn record_permission_denial(&self, denial: PermissionDenial) {
-        self.permission_denials.lock().expect("permission_denials lock poisoned").push(denial);
+        self.state.write().permission_denials.push(denial);
     }
 
     /// Get the total turn count (across all submit_message calls).
     pub fn total_turn_count(&self) -> usize {
-        *self.total_turn_count.lock().expect("turn_count lock poisoned")
+        self.state.read().total_turn_count
     }
 
     /// Get a snapshot of the application state.
     pub fn app_state(&self) -> AppState {
-        self.app_state.read().expect("app_state lock poisoned").clone()
+        self.state.read().app_state.clone()
     }
 
     /// Update the application state with a closure.
@@ -175,8 +187,7 @@ impl QueryEngine {
     where
         F: FnOnce(&mut AppState),
     {
-        let mut state = self.app_state.write().expect("app_state lock poisoned");
-        updater(&mut state);
+        updater(&mut self.state.write().app_state);
     }
 
     /// Get the working directory.
@@ -186,16 +197,16 @@ impl QueryEngine {
 
     /// Replace the tool registry.
     pub fn set_tools(&self, tools: Tools) {
-        *self.tools.write().expect("tools lock poisoned") = tools;
+        self.state.write().tools = tools;
     }
 
     /// Get discovered skill names from the current turn.
     pub fn discovered_skill_names(&self) -> HashSet<String> {
-        self.discovered_skill_names.lock().expect("discovered_skills lock poisoned").clone()
+        self.state.read().discovered_skill_names.clone()
     }
 
     /// Get loaded nested memory paths.
     pub fn loaded_nested_memory_paths(&self) -> HashSet<String> {
-        self.loaded_nested_memory_paths.lock().expect("loaded_memory lock poisoned").clone()
+        self.state.read().loaded_nested_memory_paths.clone()
     }
 }

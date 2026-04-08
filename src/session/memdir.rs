@@ -122,8 +122,7 @@ pub fn write_memory(
         updated_at: now,
     };
 
-    let json = serde_json::to_string_pretty(&entry)
-        .context("Failed to serialize memory entry")?;
+    let json = serde_json::to_string_pretty(&entry).context("Failed to serialize memory entry")?;
     std::fs::write(&file_path, json)
         .with_context(|| format!("Failed to write memory file: {}", file_path.display()))?;
 
@@ -193,11 +192,7 @@ pub fn list_memories(scope: MemoryScope, cwd: &Path) -> Result<Vec<MemoryEntry>>
 }
 
 /// Search memories by keyword across keys, values, and categories.
-pub fn search_memories(
-    query: &str,
-    scope: MemoryScope,
-    cwd: &Path,
-) -> Result<Vec<MemoryEntry>> {
+pub fn search_memories(query: &str, scope: MemoryScope, cwd: &Path) -> Result<Vec<MemoryEntry>> {
     let all = list_memories(scope, cwd)?;
     let query_lower = query.to_lowercase();
 
@@ -285,8 +280,8 @@ mod tests {
     fn test_write_and_read_memory() {
         let cwd = make_temp_dir();
 
-        let entry = write_memory("test-key", "test value", "test", MemoryScope::Project, &cwd)
-            .unwrap();
+        let entry =
+            write_memory("test-key", "test value", "test", MemoryScope::Project, &cwd).unwrap();
         assert_eq!(entry.key, "test-key");
         assert_eq!(entry.value, "test value");
         assert_eq!(entry.category, "test");
@@ -350,10 +345,30 @@ mod tests {
     fn test_search_memories() {
         let cwd = make_temp_dir();
 
-        write_memory("rust-setup", "cargo build", "dev", MemoryScope::Project, &cwd).unwrap();
-        write_memory("python-env", "virtualenv", "dev", MemoryScope::Project, &cwd).unwrap();
-        write_memory("meeting-notes", "discussed rust", "notes", MemoryScope::Project, &cwd)
-            .unwrap();
+        write_memory(
+            "rust-setup",
+            "cargo build",
+            "dev",
+            MemoryScope::Project,
+            &cwd,
+        )
+        .unwrap();
+        write_memory(
+            "python-env",
+            "virtualenv",
+            "dev",
+            MemoryScope::Project,
+            &cwd,
+        )
+        .unwrap();
+        write_memory(
+            "meeting-notes",
+            "discussed rust",
+            "notes",
+            MemoryScope::Project,
+            &cwd,
+        )
+        .unwrap();
 
         let results = search_memories("rust", MemoryScope::Project, &cwd).unwrap();
         assert_eq!(results.len(), 2); // rust-setup + meeting-notes

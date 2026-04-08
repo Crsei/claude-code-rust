@@ -79,16 +79,13 @@ impl Tool for McpToolWrapper {
 
         let manager = self.manager.lock().await;
 
-        let client = manager
-            .clients
-            .get(&self.server_name)
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "MCP server '{}' not connected (tool '{}')",
-                    self.server_name,
-                    self.def.name
-                )
-            })?;
+        let client = manager.clients.get(&self.server_name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "MCP server '{}' not connected (tool '{}')",
+                self.server_name,
+                self.def.name
+            )
+        })?;
 
         let result = client.call_tool(&self.def.name, input).await?;
 
@@ -138,15 +135,9 @@ fn format_tool_call_result(content: &[ToolCallContent], is_error: bool) -> Strin
             }
             ToolCallContent::Resource { resource } => {
                 if let Some(ref text) = resource.text {
-                    parts.push(format!(
-                        "[Resource: {}]\n{}",
-                        resource.uri, text
-                    ));
+                    parts.push(format!("[Resource: {}]\n{}", resource.uri, text));
                 } else if resource.blob.is_some() {
-                    parts.push(format!(
-                        "[Resource: {} (binary)]",
-                        resource.uri
-                    ));
+                    parts.push(format!("[Resource: {} (binary)]", resource.uri));
                 } else {
                     parts.push(format!("[Resource: {}]", resource.uri));
                 }
@@ -264,10 +255,7 @@ mod tests {
             manager,
         };
 
-        assert_eq!(
-            wrapper.user_facing_name(None),
-            "mcp__filesystem__read_file"
-        );
+        assert_eq!(wrapper.user_facing_name(None), "mcp__filesystem__read_file");
     }
 
     #[test]

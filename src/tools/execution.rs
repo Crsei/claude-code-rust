@@ -23,11 +23,11 @@ use tracing::{debug, info, warn};
 
 use crate::permissions::decision::{self, PermissionBehavior, PermissionDecision};
 use crate::types::message::{AssistantMessage, ContentBlock, Message, ToolResultContent};
-use crate::types::tool::{
-    Tool, ToolProgress, ToolResult, ToolUseContext, Tools, ValidationResult,
-};
+use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools, ValidationResult};
 
-use super::hooks::{self, HookEventConfig, PermissionOverride, PostToolHookResult, PreToolHookResult};
+use super::hooks::{
+    self, HookEventConfig, PermissionOverride, PostToolHookResult, PreToolHookResult,
+};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -99,7 +99,11 @@ pub async fn run_tool_use(
                 &format!(
                     "No tool named '{}' is available. Available tools: {}",
                     tool_name,
-                    tools.iter().map(|t| t.name()).collect::<Vec<_>>().join(", ")
+                    tools
+                        .iter()
+                        .map(|t| t.name())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
                 started,
             );
@@ -119,7 +123,10 @@ pub async fn run_tool_use(
     // ── Stage 3a: Input schema validation ───────────────────────────
     let validation = tool.validate_input(&input, ctx).await;
     match validation {
-        ValidationResult::Error { message, error_code } => {
+        ValidationResult::Error {
+            message,
+            error_code,
+        } => {
             return make_error_result(
                 tool_use_id,
                 tool_name,
@@ -212,10 +219,7 @@ pub async fn run_tool_use(
                     return make_error_result(
                         tool_use_id,
                         tool_name,
-                        &format!(
-                            "Permission required (non-interactive mode): {}",
-                            message
-                        ),
+                        &format!("Permission required (non-interactive mode): {}", message),
                         started,
                     );
                 }
@@ -243,9 +247,14 @@ pub async fn run_tool_use(
     }
 
     let call_result = tool
-        .call(effective_input.clone(), ctx, parent_message, on_progress.map(|f| {
-            Box::new(move |p: ToolProgress| f(p)) as Box<dyn Fn(ToolProgress) + Send + Sync>
-        }))
+        .call(
+            effective_input.clone(),
+            ctx,
+            parent_message,
+            on_progress.map(|f| {
+                Box::new(move |p: ToolProgress| f(p)) as Box<dyn Fn(ToolProgress) + Send + Sync>
+            }),
+        )
         .await;
 
     // ── Stage 7: Post-tool hooks ────────────────────────────────────
@@ -253,7 +262,9 @@ pub async fn run_tool_use(
 
     match &call_result {
         Ok(result) => {
-            match hooks::run_post_tool_hooks(tool_name, &effective_input, result, hook_configs).await {
+            match hooks::run_post_tool_hooks(tool_name, &effective_input, result, hook_configs)
+                .await
+            {
                 Ok(PostToolHookResult::StopContinuation { message }) => {
                     hook_stopped_continuation = true;
                     debug!(
@@ -285,8 +296,8 @@ pub async fn run_tool_use(
     // Record tool duration in global ProcessState
     crate::bootstrap::PROCESS_STATE
         .read()
-        .ok()
-        .map(|s| s.tool_duration.record(duration_ms));
+        .tool_duration
+        .record(duration_ms);
 
     match call_result {
         Ok(tool_result) => {

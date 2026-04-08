@@ -83,8 +83,7 @@ pub fn record_transcript(session_id: &str, messages: &[Message]) -> Result<()> {
             payload,
         };
 
-        let line = serde_json::to_string(&entry)
-            .context("Failed to serialize transcript entry")?;
+        let line = serde_json::to_string(&entry).context("Failed to serialize transcript entry")?;
 
         writeln!(file, "{}", line)
             .with_context(|| format!("Failed to write to transcript {}", path.display()))?;
@@ -150,10 +149,7 @@ fn message_to_payload(msg: &Message) -> (String, serde_json::Value) {
                 }),
             )
         }
-        Message::System(s) => (
-            "system".into(),
-            serde_json::json!({ "content": s.content }),
-        ),
+        Message::System(s) => ("system".into(), serde_json::json!({ "content": s.content })),
         Message::Progress(p) => (
             "progress".into(),
             serde_json::json!({ "tool_use_id": p.tool_use_id }),

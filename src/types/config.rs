@@ -2,7 +2,7 @@
 #[allow(unused_imports)]
 use super::message::{Message, SystemMessage, Usage};
 #[allow(unused_imports)]
-use super::tool::{ToolUseContext, Tools, QueryChainTracking};
+use super::tool::{QueryChainTracking, ToolUseContext, Tools};
 
 /// Thinking/extended-thinking configuration.
 ///
@@ -104,7 +104,6 @@ pub struct QueryEngineConfig {
     pub initial_messages: Option<Vec<Message>>,
 
     // ── New fields (session lifecycle) ──────────────────────────────────
-
     /// Registered slash commands (placeholder: names only).
     pub commands: Vec<String>,
 

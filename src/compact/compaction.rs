@@ -127,8 +127,7 @@ pub fn should_auto_compact(
     }
 
     // Token threshold check
-    let token_count = tokens::estimate_messages_tokens(messages)
-        .saturating_sub(snip_tokens_freed);
+    let token_count = tokens::estimate_messages_tokens(messages).saturating_sub(snip_tokens_freed);
 
     auto_compact::should_auto_compact(token_count, model)
 }
@@ -183,10 +182,7 @@ pub fn build_post_compact_messages(
 }
 
 /// Create a compact boundary system message.
-pub fn create_compact_boundary(
-    pre_compact_tokens: u64,
-    post_compact_tokens: u64,
-) -> Message {
+pub fn create_compact_boundary(pre_compact_tokens: u64, post_compact_tokens: u64) -> Message {
     Message::System(SystemMessage {
         uuid: Uuid::new_v4(),
         timestamp: chrono::Utc::now().timestamp_millis(),
@@ -221,9 +217,7 @@ pub fn tracking_on_success(
 }
 
 /// Update tracking state after a failed compaction.
-pub fn tracking_on_failure(
-    prev: Option<&AutoCompactTracking>,
-) -> AutoCompactTracking {
+pub fn tracking_on_failure(prev: Option<&AutoCompactTracking>) -> AutoCompactTracking {
     let failures = prev.map_or(1, |t| t.consecutive_failures + 1);
     AutoCompactTracking {
         compacted: false,
@@ -234,9 +228,7 @@ pub fn tracking_on_failure(
 }
 
 /// Increment the turn counter (called each iteration when not compacting).
-pub fn tracking_increment_turn(
-    tracking: &AutoCompactTracking,
-) -> AutoCompactTracking {
+pub fn tracking_increment_turn(tracking: &AutoCompactTracking) -> AutoCompactTracking {
     AutoCompactTracking {
         compacted: false,
         turn_counter: tracking.turn_counter + 1,
@@ -339,8 +331,20 @@ mod tests {
     #[test]
     fn test_should_auto_compact_recursion_guard() {
         let messages = vec![make_user("hello")];
-        assert!(!should_auto_compact(&messages, "claude-sonnet", "compact", None, 0));
-        assert!(!should_auto_compact(&messages, "claude-sonnet", "session_memory", None, 0));
+        assert!(!should_auto_compact(
+            &messages,
+            "claude-sonnet",
+            "compact",
+            None,
+            0
+        ));
+        assert!(!should_auto_compact(
+            &messages,
+            "claude-sonnet",
+            "session_memory",
+            None,
+            0
+        ));
     }
 
     #[test]
@@ -352,7 +356,13 @@ mod tests {
             turn_id: String::new(),
             consecutive_failures: 3,
         };
-        assert!(!should_auto_compact(&messages, "claude-sonnet", "repl", Some(&tracking), 0));
+        assert!(!should_auto_compact(
+            &messages,
+            "claude-sonnet",
+            "repl",
+            Some(&tracking),
+            0
+        ));
     }
 
     #[test]

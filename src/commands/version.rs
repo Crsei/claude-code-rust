@@ -14,19 +14,18 @@ pub struct VersionHandler;
 impl CommandHandler for VersionHandler {
     async fn execute(&self, _args: &str, _ctx: &mut CommandContext) -> Result<CommandResult> {
         let version = env!("CARGO_PKG_VERSION");
-        Ok(CommandResult::Output(format!(
-            "claude-code-rs {}",
-            version,
-        )))
+        Ok(CommandResult::Output(
+            format!("claude-code-rs {}", version,),
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
+    use std::path::PathBuf;
 
     #[tokio::test]
     async fn test_version_output() {

@@ -145,9 +145,7 @@ fn matches_tool(matcher: Option<&str>, tool_name: &str) -> bool {
     match matcher {
         None => true,
         Some("*") => true,
-        Some(pattern) => {
-            tool_name == pattern || tool_name.starts_with(pattern)
-        }
+        Some(pattern) => tool_name == pattern || tool_name.starts_with(pattern),
     }
 }
 
@@ -204,8 +202,8 @@ async fn execute_command_hook(
     // This must be done before reading stdout to avoid deadlocks
     // where the child blocks reading stdin while we block reading stdout.
     if let Some(mut stdin) = child.stdin.take() {
-        let json_bytes = serde_json::to_vec(stdin_json)
-            .context("failed to serialize hook stdin")?;
+        let json_bytes =
+            serde_json::to_vec(stdin_json).context("failed to serialize hook stdin")?;
         // Best-effort write; if the process exits early, ignore the error
         let _ = stdin.write_all(&json_bytes).await;
         let _ = stdin.write_all(b"\n").await;
@@ -274,7 +272,10 @@ async fn execute_command_hook(
             // child was partially consumed (stdout/stderr taken), but we can
             // still kill it if it's still alive.
             let _ = child.kill().await;
-            Err(anyhow::anyhow!("hook command timed out after {}s", timeout_secs))
+            Err(anyhow::anyhow!(
+                "hook command timed out after {}s",
+                timeout_secs
+            ))
         }
     }
 }
@@ -427,7 +428,10 @@ pub async fn run_pre_tool_hooks(
                                     Some(PermissionOverride::Deny { reason });
                             }
                             other => {
-                                debug!(decision = other, "unknown permission_decision from hook, ignoring");
+                                debug!(
+                                    decision = other,
+                                    "unknown permission_decision from hook, ignoring"
+                                );
                             }
                         }
                     }
@@ -486,7 +490,11 @@ pub async fn run_post_tool_hooks(
         for entry in &config.hooks {
             let HookEntry::Command { command, timeout } = entry;
 
-            debug!(tool = tool_name, command = command, "running post-tool hook");
+            debug!(
+                tool = tool_name,
+                command = command,
+                "running post-tool hook"
+            );
 
             match execute_command_hook(command, &stdin_json, *timeout).await {
                 Ok(output) => {
@@ -532,7 +540,10 @@ pub async fn run_post_tool_failure_hooks(
     hook_configs: &[HookEventConfig],
 ) -> Result<()> {
     if hook_configs.is_empty() {
-        debug!(tool = tool_name, "post-tool failure hooks: no hooks configured");
+        debug!(
+            tool = tool_name,
+            "post-tool failure hooks: no hooks configured"
+        );
         return Ok(());
     }
 
@@ -574,9 +585,7 @@ pub async fn run_post_tool_failure_hooks(
 ///
 /// Corresponds to TypeScript: `executeStopHooks()`
 #[allow(dead_code)]
-pub async fn run_stop_hooks(
-    hook_configs: &[HookEventConfig],
-) -> Result<PostToolHookResult> {
+pub async fn run_stop_hooks(hook_configs: &[HookEventConfig]) -> Result<PostToolHookResult> {
     if hook_configs.is_empty() {
         return Ok(PostToolHookResult::Continue);
     }
@@ -690,10 +699,7 @@ mod tests {
         let stdout = r#"{"continue":true,"updated_input":{"command":"ls -la"}}"#;
         let output = parse_hook_output(stdout).unwrap();
         assert!(output.should_continue);
-        assert_eq!(
-            output.updated_input,
-            Some(json!({"command": "ls -la"}))
-        );
+        assert_eq!(output.updated_input, Some(json!({"command": "ls -la"})));
     }
 
     // -- load_hook_configs tests --
@@ -794,12 +800,7 @@ mod tests {
     async fn test_execute_command_hook_plain_text() {
         let stdin_json = json!({"test": true});
 
-        let result = execute_command_hook(
-            "echo hello_world",
-            &stdin_json,
-            10,
-        )
-        .await;
+        let result = execute_command_hook("echo hello_world", &stdin_json, 10).await;
 
         match result {
             Ok(output) => {
