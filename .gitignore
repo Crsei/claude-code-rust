@@ -23,6 +23,10 @@ __pycache__/
 *.pyc
 *.pyo
 
+# E2E test logs
+logs/*.log
+logs/*.raw
+
 # macOS
 .DS_Store
 

@@ -29,6 +29,16 @@ git submodule update --init --recursive
 cd ui && bun install && bun run dev
 ```
 
+### 全局快捷启动
+
+在 PowerShell `$PROFILE` 中添加：
+
+```powershell
+function cc-rust { & "F:\AIclassmanager\cc\rust\ui\run.ps1" @args }
+```
+
+之后在任意目录输入 `cc-rust` 即可启动。
+
 ## Project Structure
 
 ```

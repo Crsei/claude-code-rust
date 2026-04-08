@@ -4,6 +4,11 @@
 #   .\run.ps1                                    # auto-detect binary
 #   $env:CC_RUST_BINARY=".\my-bin" ; .\run.ps1   # custom binary
 #
+# Global shortcut (run from any directory):
+#   Add to PowerShell $PROFILE:
+#     function cc-rust { & "F:\AIclassmanager\cc\rust\ui\run.ps1" @args }
+#   Then use: cc-rust
+#
 # Prerequisites:
 #   - cargo build --release (in parent directory)
 #   - bun install (in this directory)
