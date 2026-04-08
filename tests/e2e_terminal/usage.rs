@@ -2,7 +2,7 @@
 //!
 //! Verifies that usage_update messages contain valid, non-zero token counts.
 
-use crate::helpers::{collect_until, read_line_json, send_msg, spawn_headless, workspace, LIVE_TIMEOUT};
+use crate::helpers::{collect_until, read_line_json, send_msg, spawn_headless, LIVE_TIMEOUT};
 
 // =========================================================================
 //  Live: usage_update field validation

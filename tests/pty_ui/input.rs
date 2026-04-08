@@ -9,7 +9,7 @@ use std::time::Duration;
 /// (e.g. "hel lo w orl d"). We check for character fragments instead.
 #[test]
 fn typed_text_appears() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
     session.send_raw(b"hello world");
@@ -34,7 +34,7 @@ fn typed_text_appears() {
 /// Ctrl+D should exit the TUI cleanly.
 #[test]
 fn ctrl_d_exits() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
     session.send_ctrl_d();
@@ -51,7 +51,7 @@ fn ctrl_d_exits() {
 /// Ctrl+U should clear the current input line without crashing.
 #[test]
 fn ctrl_u_clears_line() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
     session.send_raw(b"some text to clear");
@@ -75,7 +75,7 @@ fn ctrl_u_clears_line() {
 /// Arrow keys should not crash or produce garbage when input is empty.
 #[test]
 fn arrow_keys_on_empty_input() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
     session.send_up();
@@ -102,7 +102,7 @@ fn arrow_keys_on_empty_input() {
 /// Backspace should delete characters without crashing.
 #[test]
 fn backspace_deletes() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
     session.send_raw(b"abc");
@@ -124,7 +124,7 @@ fn backspace_deletes() {
 /// Vim mode toggle (Ctrl+G) should not crash.
 #[test]
 fn vim_toggle() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
     session.send_ctrl_g();
@@ -151,7 +151,7 @@ fn vim_toggle() {
 /// Submitting an empty prompt should not crash.
 #[test]
 fn submit_empty_prompt() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
     session.send_raw(b"\r");
@@ -170,7 +170,7 @@ fn submit_empty_prompt() {
 /// for key fragments rather than the exact string.
 #[test]
 fn rapid_typing() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
     let long_text = "the quick brown fox jumps over the lazy dog";

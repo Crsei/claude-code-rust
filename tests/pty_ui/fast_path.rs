@@ -32,7 +32,7 @@ fn init_only() {
 #[test]
 fn dump_system_prompt() {
     let session = PtySession::spawn(
-        &["--dump-system-prompt", "-C", r"F:\temp"],
+        &["--dump-system-prompt", "-C", workspace()],
         200,
         50,
         false,
@@ -55,7 +55,7 @@ fn dump_custom_system_prompt() {
             "--system-prompt",
             "You are a PTY test bot.",
             "-C",
-            r"F:\temp",
+            workspace(),
         ],
         200,
         50,
@@ -74,7 +74,7 @@ fn dump_custom_system_prompt() {
 #[test]
 fn print_mode_no_api_key() {
     let session = PtySession::spawn(
-        &["-p", "hello", "-C", r"F:\temp"],
+        &["-p", "hello", "-C", workspace()],
         120,
         40,
         true, // strip keys — testing "no key" error path
@@ -93,7 +93,7 @@ fn print_mode_no_api_key() {
 #[test]
 fn print_mode_live() {
     let session = PtySession::spawn(
-        &["-p", "Say exactly: PTY_PRINT_OK", "-C", r"F:\temp"],
+        &["-p", "Say exactly: PTY_PRINT_OK", "-C", workspace()],
         120,
         40,
         false,

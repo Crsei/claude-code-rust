@@ -16,12 +16,19 @@
 //! Run:  cargo test --test e2e_pty
 //! Live: cargo test --test e2e_pty -- --ignored
 
+#[path = "test_workspace.rs"]
+mod test_workspace;
+
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
+
+fn workspace() -> &'static str {
+    test_workspace::workspace()
+}
 
 /// Timestamped log directories for this test run.
 /// Format: `logs/YYYYMMDDHHMM/{raw,log}/` + `logs/aggregated/` — created once per process.
@@ -102,9 +109,14 @@ log_file: {log_file}\n\
         .expect("append aggregated all.logs");
 }
 
-/// Path to the compiled binary.
+/// Resolve the binary path. Uses cargo_bin() under cargo test, falls back to PATH for Docker.
 fn binary_path() -> PathBuf {
-    assert_cmd::cargo::cargo_bin("claude-code-rs")
+    match std::panic::catch_unwind(|| assert_cmd::cargo::cargo_bin("claude-code-rs")) {
+        Ok(p) if p.exists() => p,
+        _ => which::which("claude-code-rs").unwrap_or_else(|_| {
+            panic!("claude-code-rs binary not found via cargo_bin or PATH")
+        }),
+    }
 }
 
 /// A PTY session that captures all terminal output while auto-responding
@@ -357,7 +369,7 @@ fn pty_init_only() {
 #[test]
 fn pty_dump_system_prompt() {
     let session = PtySession::spawn(
-        &["--dump-system-prompt", "-C", r"F:\temp"],
+        &["--dump-system-prompt", "-C", workspace()],
         200,
         50,
         false,
@@ -376,7 +388,7 @@ fn pty_dump_system_prompt() {
 #[test]
 fn pty_tui_starts_and_captures_output() {
     let session = PtySession::spawn(
-        &["-C", r"F:\temp", "--permission-mode", "bypass"],
+        &["-C", workspace(), "--permission-mode", "bypass"],
         120,
         40,
         false,
@@ -412,7 +424,7 @@ fn pty_tui_starts_and_captures_output() {
 #[test]
 fn live_pty_simple_chat() {
     let session = PtySession::spawn(
-        &["-C", r"F:\temp", "--permission-mode", "bypass"],
+        &["-C", workspace(), "--permission-mode", "bypass"],
         120,
         40,
         false,
@@ -445,7 +457,7 @@ fn live_pty_simple_chat() {
 #[test]
 fn live_pty_print_mode() {
     let session = PtySession::spawn(
-        &["-p", "Say exactly: PTY_PRINT_OK", "-C", r"F:\temp"],
+        &["-p", "Say exactly: PTY_PRINT_OK", "-C", workspace()],
         120,
         40,
         false,

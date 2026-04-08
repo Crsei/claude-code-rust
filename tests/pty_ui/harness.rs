@@ -12,6 +12,23 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+/// Cross-platform test workspace directory.
+/// Uses `E2E_WORKSPACE` env var if set, otherwise platform default.
+pub fn workspace() -> &'static str {
+    static WS: OnceLock<String> = OnceLock::new();
+    WS.get_or_init(|| {
+        let dir = std::env::var("E2E_WORKSPACE").unwrap_or_else(|_| {
+            if cfg!(windows) {
+                r"F:\temp".to_string()
+            } else {
+                "/tmp/cc-rust-test".to_string()
+            }
+        });
+        std::fs::create_dir_all(&dir).ok();
+        dir
+    })
+}
+
 /// Timestamped log directory — created once per test process.
 pub fn logs_dir() -> &'static PathBuf {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -25,9 +42,14 @@ pub fn logs_dir() -> &'static PathBuf {
     })
 }
 
-/// Path to the compiled binary.
+/// Resolve the binary path. Uses cargo_bin() under cargo test, falls back to PATH for Docker.
 pub fn binary_path() -> PathBuf {
-    assert_cmd::cargo::cargo_bin("claude-code-rs")
+    match std::panic::catch_unwind(|| assert_cmd::cargo::cargo_bin("claude-code-rs")) {
+        Ok(p) if p.exists() => p,
+        _ => which::which("claude-code-rs").unwrap_or_else(|_| {
+            panic!("claude-code-rs binary not found via cargo_bin or PATH")
+        }),
+    }
 }
 
 // ─── PtySession ──────────────────────────────────────────────────────
@@ -480,8 +502,12 @@ fn html_escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// Standard TUI args: `-C F:\temp`, permission bypass.
-pub const DEFAULT_ARGS: &[&str] = &["-C", r"F:\temp", "--permission-mode", "bypass"];
+/// Standard TUI args: `-C <workspace>`, permission bypass.
+pub fn default_args() -> &'static [&'static str] {
+    static ARGS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    ARGS.get_or_init(|| vec!["-C", workspace(), "--permission-mode", "bypass"])
+        .as_slice()
+}
 
 /// Timeout for quick tests (version, init-only, etc.).
 pub const QUICK_TIMEOUT: Duration = Duration::from_secs(10);

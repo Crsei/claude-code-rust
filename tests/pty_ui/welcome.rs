@@ -6,7 +6,7 @@ use std::time::Duration;
 /// The welcome screen should display the application header with version.
 #[test]
 fn shows_header_with_version() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
     session.send_ctrl_c();
@@ -25,7 +25,7 @@ fn shows_header_with_version() {
 /// The welcome screen should display the ASCII art logo.
 #[test]
 fn shows_ascii_logo() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
     session.send_ctrl_c();
@@ -45,7 +45,7 @@ fn shows_ascii_logo() {
 /// The welcome screen should display usage tips.
 #[test]
 fn shows_tips() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
     session.send_ctrl_c();
@@ -66,7 +66,7 @@ fn shows_tips() {
 /// The welcome screen at different terminal sizes should still render.
 #[test]
 fn renders_at_small_terminal() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 60, 20, false);
+    let session = PtySession::spawn(default_args(), 60, 20, false);
     std::thread::sleep(RENDER_WAIT);
 
     session.send_ctrl_c();
@@ -85,7 +85,7 @@ fn renders_at_small_terminal() {
 /// The welcome screen at a wide terminal should render without crash.
 #[test]
 fn renders_at_wide_terminal() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 200, 50, false);
+    let session = PtySession::spawn(default_args(), 200, 50, false);
     std::thread::sleep(RENDER_WAIT);
 
     session.send_ctrl_c();

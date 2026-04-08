@@ -67,3 +67,42 @@ Each issue includes a description, reproduction steps, and current status.
 
 **Related files**:
 - `ui/src/components/MessageList.tsx`
+
+## 4. Welcome screen Tips text truncated in narrow terminals (< 80 cols)
+
+**Status**: Open  
+**Discovered**: 2026-04-09 via PTY screenshot testing
+
+**Description**: At 60 columns, the Tips section text wraps mid-sentence with hard line breaks:
+- "Type a message and press Enter" wraps to "to send" on a new line
+- "Start with / for slash" wraps to "commands" on the next line  
+- "/model to switch models" disappears entirely (no space left)
+
+**Expected behavior**: Tips text should gracefully truncate or abbreviate when terminal width is insufficient, rather than creating orphaned word fragments. Alternatively, the two-column layout (ASCII logo + Tips) should collapse to single-column below a width threshold.
+
+**Reproduction**:
+1. `cargo test --test pty_ui screenshot_narrow -- --nocapture`
+2. Open generated `logs/YYYYMMDDHHMM/screenshot_narrow.html` in browser
+3. Observe Tips text wrapping and missing entries
+
+**Related files**:
+- `src/ui/welcome.rs` — welcome screen layout and text rendering
+
+## 5. ASCII art logo renders as fragmented blocks in narrow terminals
+
+**Status**: Open  
+**Discovered**: 2026-04-09 via PTY screenshot testing
+
+**Description**: The "CC" ASCII art logo (using Unicode block characters `██████╗`) renders as disconnected purple blocks at both 120-col and 60-col widths. The block elements `█` and box-drawing characters `╗╔║╚╝═` appear with visible gaps between them, making the logo look fragmented rather than forming clean solid letters.
+
+**Expected behavior**: The ASCII art should display as two recognizable "C" letters with connected block strokes, as originally designed.
+
+**Likely cause**: The TUI renders each cell independently. When box-drawing and block characters span multiple cells, some terminals or font configurations introduce sub-pixel gaps between adjacent cells. The ratatui renderer may also be inserting attribute-reset sequences between adjacent same-colored cells, which could cause visual fragmentation.
+
+**Reproduction**:
+1. `cargo test --test pty_ui screenshot_welcome -- --nocapture`
+2. Open generated `logs/YYYYMMDDHHMM/screenshot_welcome.html` in browser
+3. Observe the purple ASCII logo area — blocks are disconnected
+
+**Related files**:
+- `src/ui/welcome.rs` — ASCII art logo definition and rendering

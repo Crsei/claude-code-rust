@@ -20,7 +20,7 @@ use std::time::Duration;
 /// status bar, and the input prompt at the bottom.
 #[test]
 fn screenshot_welcome_screen() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
 
     // Wait for TUI to fully render
     std::thread::sleep(RENDER_WAIT);
@@ -48,7 +48,7 @@ fn screenshot_welcome_screen() {
 /// updated message count in status bar.
 #[test]
 fn screenshot_chat_response() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
     // Send a simple prompt
@@ -83,7 +83,7 @@ fn screenshot_chat_response() {
 /// Shows how the TUI adapts to constrained terminal dimensions.
 #[test]
 fn screenshot_narrow_terminal() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 60, 20, false);
+    let session = PtySession::spawn(default_args(), 60, 20, false);
     std::thread::sleep(RENDER_WAIT);
 
     session.send_ctrl_c();

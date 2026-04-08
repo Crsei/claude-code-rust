@@ -8,7 +8,7 @@ use std::time::Duration;
 /// Waits for "Claude:" prefix which only appears in model output, not user echo.
 #[test]
 fn simple_chat_renders_response() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
     session.send_line("Say exactly: STREAM_RENDER_OK");
@@ -38,7 +38,7 @@ fn simple_chat_renders_response() {
 /// We send a long prompt, wait for streaming to start, then abort.
 #[test]
 fn abort_during_streaming() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
     session.send_line("Write a 2000-word essay about computing history.");
@@ -70,7 +70,7 @@ fn abort_during_streaming() {
 /// Two consecutive prompts in one session produce separate responses.
 #[test]
 fn multi_turn_conversation() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
     // First turn — wait for "Claude:" prefix which only appears in model response.
@@ -98,7 +98,7 @@ fn multi_turn_conversation() {
 /// Waits for tool-specific markers that don't appear in user echo.
 #[test]
 fn tool_use_displayed() {
-    let session = PtySession::spawn(DEFAULT_ARGS, 120, 40, false);
+    let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
     session.send_line("Use the Bash tool to run: echo PTY_TOOL_VISIBLE");
@@ -126,7 +126,7 @@ fn tool_use_displayed() {
 #[test]
 fn submit_prompt_no_api_key_shows_error() {
     let session = PtySession::spawn(
-        &["-C", r"F:\temp"],
+        &["-C", workspace()],
         120,
         40,
         true, // strip keys — testing "no key" error path
