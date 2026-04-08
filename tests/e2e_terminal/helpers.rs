@@ -6,13 +6,47 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 use std::time::Duration;
+
+/// Cross-platform test workspace directory.
+/// Uses `E2E_WORKSPACE` env var if set, otherwise `F:\temp` on Windows
+/// and `/tmp/cc-rust-test` on Linux/macOS. Creates the dir if needed.
+pub fn workspace() -> &'static str {
+    static WS: OnceLock<String> = OnceLock::new();
+    WS.get_or_init(|| {
+        let dir = std::env::var("E2E_WORKSPACE").unwrap_or_else(|_| {
+            if cfg!(windows) {
+                r"F:\temp".to_string()
+            } else {
+                "/tmp/cc-rust-test".to_string()
+            }
+        });
+        std::fs::create_dir_all(&dir).ok();
+        dir
+    })
+}
 
 /// Timeout for reading a single line from the backend.
 pub const LINE_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Timeout for live API tests (longer due to network + model latency).
 pub const LIVE_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Resolve the binary path. Uses assert_cmd::cargo_bin() when running under
+/// cargo test (CARGO_BIN_EXE_* is set), falls back to PATH lookup for Docker.
+fn binary_path() -> std::path::PathBuf {
+    // assert_cmd checks CARGO_BIN_EXE_<name> first, then target/release/debug
+    match std::panic::catch_unwind(|| assert_cmd::cargo::cargo_bin("claude-code-rs")) {
+        Ok(p) if p.exists() => p,
+        _ => {
+            // Fallback: check PATH (works in Docker where binary is in /usr/local/bin)
+            which::which("claude-code-rs").unwrap_or_else(|_| {
+                panic!("claude-code-rs binary not found via cargo_bin or PATH")
+            })
+        }
+    }
+}
 
 /// Spawn the binary in --headless mode.
 /// Returns (child, stdin_writer, stdout_reader).
@@ -24,11 +58,7 @@ pub fn spawn_headless(
     std::process::ChildStdin,
     BufReader<std::process::ChildStdout>,
 ) {
-    let mut cmd = Command::new(
-        assert_cmd::cargo::cargo_bin("claude-code-rs")
-            .to_str()
-            .expect("binary path"),
-    );
+    let mut cmd = Command::new(binary_path());
     cmd.arg("--headless")
         .args(extra_args)
         .stdin(Stdio::piped())

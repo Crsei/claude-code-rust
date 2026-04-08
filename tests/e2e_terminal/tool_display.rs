@@ -6,9 +6,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use crate::helpers::{collect_until, read_line_json, send_msg, spawn_headless, LIVE_TIMEOUT};
-
-const WORKSPACE: &str = r"F:\temp";
+use crate::helpers::{collect_until, read_line_json, send_msg, spawn_headless, workspace, LIVE_TIMEOUT};
 
 fn cleanup(path: &Path) {
     let _ = std::fs::remove_file(path);
@@ -23,12 +21,12 @@ fn cleanup(path: &Path) {
 #[test]
 #[ignore]
 fn read_file_shows_tool_use_in_content() {
-    let test_file = Path::new(WORKSPACE).join("_e2e_ipc_read.txt");
+    let test_file = Path::new(workspace()).join("_e2e_ipc_read.txt");
     std::fs::write(&test_file, "CANARY_IPC_READ_42").expect("write test file");
 
     let result = std::panic::catch_unwind(|| {
         let (mut child, mut stdin, mut stdout) = spawn_headless(
-            &["-C", WORKSPACE, "--permission-mode", "bypass"],
+            &["-C", workspace(), "--permission-mode", "bypass"],
             false,
         );
 
@@ -117,12 +115,12 @@ fn read_file_shows_tool_use_in_content() {
 #[test]
 #[ignore]
 fn write_file_shows_tool_use_in_content() {
-    let test_file = Path::new(WORKSPACE).join("_e2e_ipc_write.txt");
+    let test_file = Path::new(workspace()).join("_e2e_ipc_write.txt");
     cleanup(&test_file);
 
     let result = std::panic::catch_unwind(|| {
         let (mut child, mut stdin, mut stdout) = spawn_headless(
-            &["-C", WORKSPACE, "--permission-mode", "bypass"],
+            &["-C", workspace(), "--permission-mode", "bypass"],
             false,
         );
 
@@ -177,7 +175,7 @@ fn write_file_shows_tool_use_in_content() {
 #[ignore]
 fn bash_tool_shows_command_in_input() {
     let (mut child, mut stdin, mut stdout) = spawn_headless(
-        &["-C", WORKSPACE, "--permission-mode", "bypass"],
+        &["-C", workspace(), "--permission-mode", "bypass"],
         false,
     );
 
@@ -240,7 +238,7 @@ fn bash_tool_shows_command_in_input() {
 #[test]
 #[ignore]
 fn large_file_read_shows_truncation() {
-    let test_file = Path::new(WORKSPACE).join("_e2e_ipc_large.txt");
+    let test_file = Path::new(workspace()).join("_e2e_ipc_large.txt");
 
     // Create a file > 100K chars
     let large_content = "X".repeat(150_000);
@@ -248,7 +246,7 @@ fn large_file_read_shows_truncation() {
 
     let result = std::panic::catch_unwind(|| {
         let (mut child, mut stdin, mut stdout) = spawn_headless(
-            &["-C", WORKSPACE, "--permission-mode", "bypass"],
+            &["-C", workspace(), "--permission-mode", "bypass"],
             false,
         );
 
@@ -301,12 +299,12 @@ fn large_file_read_shows_truncation() {
 #[test]
 #[ignore]
 fn small_file_read_no_truncation() {
-    let test_file = Path::new(WORKSPACE).join("_e2e_ipc_small.txt");
+    let test_file = Path::new(workspace()).join("_e2e_ipc_small.txt");
     std::fs::write(&test_file, "This is a small file.\nNo truncation needed.").expect("write");
 
     let result = std::panic::catch_unwind(|| {
         let (mut child, mut stdin, mut stdout) = spawn_headless(
-            &["-C", WORKSPACE, "--permission-mode", "bypass"],
+            &["-C", workspace(), "--permission-mode", "bypass"],
             false,
         );
 

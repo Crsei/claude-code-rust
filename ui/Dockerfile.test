@@ -1,0 +1,45 @@
+# ============================================================
+# ink-terminal UI test image
+#
+# Tests the TypeScript UI layer:
+#   Layer 1: Unit tests (store, reducer, protocol) — bun:test
+#   Layer 2: Integration tests (UI ↔ Rust backend via IPC) — bun:test + binary
+#   Layer 3: Render tests (node-pty + xterm-headless) — optional
+#
+# Usage:
+#   docker build -t cc-rust-ui-test -f ui/Dockerfile.test .
+#   docker run --rm cc-rust-ui-test                          # unit tests
+#   docker run --rm cc-rust-ui-test bun test --integration   # integration tests
+# ============================================================
+
+# ── Stage 1: Build Rust binary ───────────────────────────────
+FROM rust:latest AS rust-builder
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs && \
+    cargo build --release 2>/dev/null || true && rm -rf src
+
+COPY src/ src/
+RUN cargo build --release
+
+# ── Stage 2: UI test runner ──────────────────────────────────
+FROM oven/bun:latest
+
+WORKDIR /app/ui
+
+# Install dependencies
+COPY ui/package.json ui/bun.lock* ./
+COPY ui/ink-terminal/ ./ink-terminal/
+RUN bun install
+
+# Copy UI source
+COPY ui/src/ ./src/
+COPY ui/tsconfig.json ./tsconfig.json
+
+# Copy Rust binary for integration tests
+COPY --from=rust-builder /build/target/release/claude-code-rs /usr/local/bin/
+ENV CC_RUST_BINARY=/usr/local/bin/claude-code-rs
+
+# Default: run unit tests
+CMD ["bun", "test"]

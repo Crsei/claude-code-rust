@@ -25,7 +25,10 @@ use predicates::prelude::*;
 use std::path::Path;
 use std::time::Duration;
 
-const WORKSPACE: &str = r"F:\temp";
+#[path = "test_workspace.rs"]
+mod test_workspace;
+
+fn workspace() -> &'static str { test_workspace::workspace() }
 
 /// Timeout for simple chat tests (no tool use).
 const CHAT_TIMEOUT_SECS: u64 = 60;
@@ -65,7 +68,7 @@ fn t1_simple_question_returns_answer() {
         .args([
             "-p",
             "-C",
-            WORKSPACE,
+            workspace(),
             "What is 2+2? Reply with just the number.",
         ])
         .assert()
@@ -77,7 +80,7 @@ fn t1_simple_question_returns_answer() {
 #[ignore]
 fn t1_simple_chinese_question() {
     live_cli()
-        .args(["-p", "-C", WORKSPACE, "1+1等于几？只回复数字"])
+        .args(["-p", "-C", workspace(), "1+1等于几？只回复数字"])
         .assert()
         .success()
         .stdout(predicate::str::contains("2"));
@@ -87,7 +90,7 @@ fn t1_simple_chinese_question() {
 #[ignore]
 fn t1_say_exact_phrase() {
     live_cli()
-        .args(["-p", "-C", WORKSPACE, "Say exactly: HELLO_TEST_OK"])
+        .args(["-p", "-C", workspace(), "Say exactly: HELLO_TEST_OK"])
         .assert()
         .success()
         .stdout(predicate::str::contains("HELLO_TEST_OK"));
@@ -100,7 +103,7 @@ fn t1_custom_system_prompt() {
         .args([
             "-p",
             "-C",
-            WORKSPACE,
+            workspace(),
             "--system-prompt",
             "You are a calculator. Only output numbers, nothing else.",
             "What is 10 times 5?",
@@ -117,7 +120,7 @@ fn t1_append_system_prompt() {
         .args([
             "-p",
             "-C",
-            WORKSPACE,
+            workspace(),
             "--append-system-prompt",
             "Always end your response with the word ENDMARK.",
             "Say hi.",
@@ -134,7 +137,7 @@ fn t1_max_turns_one() {
         .args([
             "-p",
             "-C",
-            WORKSPACE,
+            workspace(),
             "--max-turns",
             "1",
             "What is 2+3? Reply with just the number.",
@@ -148,7 +151,7 @@ fn t1_max_turns_one() {
 #[ignore]
 fn t1_print_mode_clean_text() {
     let output = live_cli()
-        .args(["-p", "-C", WORKSPACE, "Say exactly: CLEAN_OUTPUT_TEST"])
+        .args(["-p", "-C", workspace(), "Say exactly: CLEAN_OUTPUT_TEST"])
         .output()
         .expect("failed to run");
 
@@ -166,7 +169,7 @@ fn t1_print_mode_clean_text() {
 #[ignore]
 fn t1_env_file_provides_working_credentials() {
     live_cli()
-        .args(["-p", "-C", WORKSPACE, "Reply with exactly: ENV_AUTH_OK"])
+        .args(["-p", "-C", workspace(), "Reply with exactly: ENV_AUTH_OK"])
         .assert()
         .success()
         .stdout(predicate::str::contains("ENV_AUTH_OK"));
@@ -183,7 +186,7 @@ fn t2_bash_echo() {
         .args([
             "-p",
             "-C",
-            WORKSPACE,
+            workspace(),
             "--permission-mode",
             "bypass",
             "Use the Bash tool to run: echo TOOL_WORKS_OK",
@@ -200,7 +203,7 @@ fn t2_bash_pwd_shows_workspace() {
         .args([
             "-p",
             "-C",
-            WORKSPACE,
+            workspace(),
             "--permission-mode",
             "bypass",
             "Use the Bash tool to run: pwd",
@@ -214,14 +217,14 @@ fn t2_bash_pwd_shows_workspace() {
 #[test]
 #[ignore]
 fn t2_read_file() {
-    let test_file = Path::new(WORKSPACE).join("_e2e_read_test.txt");
+    let test_file = Path::new(workspace()).join("_e2e_read_test.txt");
     std::fs::write(&test_file, "CANARY_READ_12345").expect("write test file");
 
     let result = std::panic::catch_unwind(|| {
         tool_cli()
             .args([
                 "-p",
-                "-C", WORKSPACE,
+                "-C", workspace(),
                 "--permission-mode", "bypass",
                 &format!(
                     "Use the Read tool to read the file at the absolute path {}. Show me the exact contents.",
@@ -242,14 +245,14 @@ fn t2_read_file() {
 #[test]
 #[ignore]
 fn t2_write_file() {
-    let test_file = Path::new(WORKSPACE).join("_e2e_write_test.txt");
+    let test_file = Path::new(workspace()).join("_e2e_write_test.txt");
     cleanup(&test_file);
 
     let result = std::panic::catch_unwind(|| {
         tool_cli()
             .args([
                 "-p",
-                "-C", WORKSPACE,
+                "-C", workspace(),
                 "--permission-mode", "bypass",
                 &format!(
                     "Use the Write tool to write the file at absolute path {} with exactly this content: WRITE_TEST_67890",
@@ -278,14 +281,14 @@ fn t2_write_file() {
 #[test]
 #[ignore]
 fn t2_edit_file() {
-    let test_file = Path::new(WORKSPACE).join("_e2e_edit_test.txt");
+    let test_file = Path::new(workspace()).join("_e2e_edit_test.txt");
     std::fs::write(&test_file, "Hello OLD_VALUE World").unwrap();
 
     let result = std::panic::catch_unwind(|| {
         tool_cli()
             .args([
                 "-p",
-                "-C", WORKSPACE,
+                "-C", workspace(),
                 "--permission-mode", "bypass",
                 &format!(
                     "First use Read to read {path}, then use Edit to replace 'OLD_VALUE' with 'NEW_VALUE' in {path}.",
@@ -312,7 +315,7 @@ fn t2_edit_file() {
 #[test]
 #[ignore]
 fn t2_glob_finds_files() {
-    let dir = Path::new(WORKSPACE);
+    let dir = Path::new(workspace());
     let file_a = dir.join("_e2e_glob_a.txt");
     let file_b = dir.join("_e2e_glob_b.txt");
     std::fs::write(&file_a, "a").unwrap();
@@ -322,11 +325,11 @@ fn t2_glob_finds_files() {
         tool_cli()
             .args([
                 "-p",
-                "-C", WORKSPACE,
+                "-C", workspace(),
                 "--permission-mode", "bypass",
                 &format!(
                     "Use the Glob tool with pattern '_e2e_glob_*.txt' and path '{}'. List the files found.",
-                    WORKSPACE
+                    workspace()
                 ),
             ])
             .assert()
@@ -347,7 +350,7 @@ fn t2_glob_finds_files() {
 #[test]
 #[ignore]
 fn t2_grep_searches_content() {
-    let test_file = Path::new(WORKSPACE).join("_e2e_grep_test.txt");
+    let test_file = Path::new(workspace()).join("_e2e_grep_test.txt");
     std::fs::write(
         &test_file,
         "line1: nothing here\nline2: NEEDLE_FOUND_42\nline3: also nothing\n",
@@ -358,7 +361,7 @@ fn t2_grep_searches_content() {
         tool_cli()
             .args([
                 "-p",
-                "-C", WORKSPACE,
+                "-C", workspace(),
                 "--permission-mode", "bypass",
                 &format!(
                     "Use the Grep tool to search for the pattern 'NEEDLE_FOUND' in the file at absolute path {}. Show me the matching line.",
@@ -379,7 +382,7 @@ fn t2_grep_searches_content() {
 #[test]
 #[ignore]
 fn t2_multi_tool_write_read_edit() {
-    let test_file = Path::new(WORKSPACE).join("_e2e_multi_test.txt");
+    let test_file = Path::new(workspace()).join("_e2e_multi_test.txt");
     cleanup(&test_file);
 
     let result = std::panic::catch_unwind(|| {
@@ -387,7 +390,7 @@ fn t2_multi_tool_write_read_edit() {
             .args([
                 "-p",
                 "-C",
-                WORKSPACE,
+                workspace(),
                 "--permission-mode",
                 "bypass",
                 &format!(
@@ -423,7 +426,7 @@ fn t2_read_nonexistent_file_graceful() {
     tool_cli()
         .args([
             "-p",
-            "-C", WORKSPACE,
+            "-C", workspace(),
             "--permission-mode", "bypass",
             r"Use the Read tool to read F:\temp\_this_file_does_not_exist_xyz.txt and tell me what error you get.",
         ])

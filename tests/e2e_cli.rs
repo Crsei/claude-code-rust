@@ -9,13 +9,16 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use std::path::Path;
 
+#[path = "test_workspace.rs"]
+mod test_workspace;
+
 /// Helper: build a Command pointing at the compiled binary.
 fn cli() -> Command {
     Command::cargo_bin("claude-code-rs").expect("binary not found")
 }
 
 /// Workspace root used for tests that need a real directory.
-const WORKSPACE: &str = r"F:\temp";
+fn workspace() -> &'static str { test_workspace::workspace() }
 
 // =========================================================================
 // 1. Fast paths (no API key needed, immediate exit)
@@ -53,7 +56,7 @@ fn init_only_exits_successfully() {
 #[test]
 fn dump_system_prompt_outputs_prompt_and_exits() {
     cli()
-        .args(["--dump-system-prompt", "-C", WORKSPACE])
+        .args(["--dump-system-prompt", "-C", workspace()])
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
@@ -68,10 +71,10 @@ fn dump_system_prompt_outputs_prompt_and_exits() {
 
 #[test]
 fn cwd_flag_accepts_valid_directory() {
-    assert!(Path::new(WORKSPACE).is_dir(), "F:\\temp must exist");
+    assert!(Path::new(workspace()).is_dir(), "F:\\temp must exist");
 
     cli()
-        .args(["-C", WORKSPACE, "--init-only"])
+        .args(["-C", workspace(), "--init-only"])
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
@@ -98,7 +101,7 @@ fn cwd_flag_rejects_nonexistent_directory() {
 #[test]
 fn cwd_short_flag_works() {
     cli()
-        .args(["-C", WORKSPACE, "--init-only"])
+        .args(["-C", workspace(), "--init-only"])
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
@@ -164,7 +167,7 @@ fn dump_system_prompt_with_model_override() {
             "-m",
             "custom-model-123",
             "-C",
-            WORKSPACE,
+            workspace(),
         ])
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
@@ -201,7 +204,7 @@ fn custom_system_prompt_in_dump() {
             "--system-prompt",
             "You are a test bot.",
             "-C",
-            WORKSPACE,
+            workspace(),
         ])
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
@@ -219,7 +222,7 @@ fn append_system_prompt_in_dump() {
             "--append-system-prompt",
             "EXTRA CONTEXT INJECTED",
             "-C",
-            WORKSPACE,
+            workspace(),
         ])
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")

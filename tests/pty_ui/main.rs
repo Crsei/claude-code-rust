@@ -30,8 +30,8 @@
 //!
 //! ## Log output
 //!
-//! Each test saves `.raw` (ANSI) and `.log` (plain) files to
-//! `logs/YYYYMMDDHHMM/`.
+//! Each test saves `.raw` (ANSI), `.log` (plain), and `.html` (terminal
+//! screenshot) files to `logs/YYYYMMDDHHMM/`.
 
 mod harness;
 
@@ -40,3 +40,4 @@ mod welcome;
 mod input;
 mod streaming;
 mod resize;
+mod screenshot;

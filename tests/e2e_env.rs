@@ -12,11 +12,14 @@ use assert_fs::prelude::*;
 use predicates::prelude::*;
 use std::path::Path;
 
+#[path = "test_workspace.rs"]
+mod test_workspace;
+
 fn cli() -> Command {
     Command::cargo_bin("claude-code-rs").expect("binary not found")
 }
 
-const WORKSPACE: &str = r"F:\temp";
+fn workspace() -> &'static str { test_workspace::workspace() }
 
 /// Strips all API keys so no provider is detected.
 fn strip_api_keys(cmd: &mut Command) -> &mut Command {
@@ -47,7 +50,7 @@ fn strip_api_keys(cmd: &mut Command) -> &mut Command {
 fn no_api_key_shows_warning_on_init() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--init-only", "-C", WORKSPACE])
+    cmd.args(["--init-only", "-C", workspace()])
         .assert()
         .success()
         .stderr(predicate::str::contains("No API provider detected"));
@@ -88,7 +91,7 @@ fn claude_model_env_var_overrides_default() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
     cmd.env("CLAUDE_MODEL", "my-custom-model-xyz")
-        .args(["--init-only", "-C", WORKSPACE])
+        .args(["--init-only", "-C", workspace()])
         .assert()
         .success();
 }
@@ -102,7 +105,7 @@ fn cli_model_flag_overrides_env_var() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
     cmd.env("CLAUDE_MODEL", "env-model")
-        .args(["-m", "cli-model", "--init-only", "-C", WORKSPACE])
+        .args(["-m", "cli-model", "--init-only", "-C", workspace()])
         .assert()
         .success();
 }
@@ -118,7 +121,7 @@ fn anthropic_key_env_detected_no_warning() {
         .env("ANTHROPIC_API_KEY", "sk-ant-test-dummy-key-not-real")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
-        .args(["--init-only", "-C", WORKSPACE])
+        .args(["--init-only", "-C", workspace()])
         .assert()
         .success()
         .stderr(predicate::str::contains("No API provider detected").not());
@@ -130,7 +133,7 @@ fn openai_key_env_detected_no_warning() {
         .env("ANTHROPIC_API_KEY", "")
         .env("OPENAI_API_KEY", "sk-test-dummy-openai")
         .env("AZURE_API_KEY", "")
-        .args(["--init-only", "-C", WORKSPACE])
+        .args(["--init-only", "-C", workspace()])
         .assert()
         .success()
         .stderr(predicate::str::contains("No API provider detected").not());
@@ -142,7 +145,7 @@ fn azure_key_env_detected_no_warning() {
         .env("ANTHROPIC_API_KEY", "")
         .env("OPENAI_API_KEY", "")
         .env("AZURE_API_KEY", "test-azure-key-dummy")
-        .args(["--init-only", "-C", WORKSPACE])
+        .args(["--init-only", "-C", workspace()])
         .assert()
         .success()
         .stderr(predicate::str::contains("No API provider detected").not());
@@ -185,7 +188,7 @@ fn permission_mode_env_var() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
     cmd.env("CLAUDE_PERMISSION_MODE", "auto")
-        .args(["--init-only", "-C", WORKSPACE])
+        .args(["--init-only", "-C", workspace()])
         .assert()
         .success();
 }
@@ -199,7 +202,7 @@ fn verbose_env_var() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
     cmd.env("CLAUDE_VERBOSE", "true")
-        .args(["--init-only", "-C", WORKSPACE])
+        .args(["--init-only", "-C", workspace()])
         .assert()
         .success();
 }
@@ -211,13 +214,13 @@ fn verbose_env_var() {
 #[test]
 fn workspace_f_temp_exists_and_usable() {
     assert!(
-        Path::new(WORKSPACE).is_dir(),
+        Path::new(workspace()).is_dir(),
         "F:\\temp must exist for workspace tests"
     );
 
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--init-only", "-C", WORKSPACE])
+    cmd.args(["--init-only", "-C", workspace()])
         .assert()
         .success();
 }

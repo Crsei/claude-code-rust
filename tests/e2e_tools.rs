@@ -10,11 +10,14 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 
+#[path = "test_workspace.rs"]
+mod test_workspace;
+
 fn cli() -> Command {
     Command::cargo_bin("claude-code-rs").expect("binary not found")
 }
 
-const WORKSPACE: &str = r"F:\temp";
+fn workspace() -> &'static str { test_workspace::workspace() }
 
 /// Strips all API keys so no provider is detected — tests run offline.
 fn strip_api_keys(cmd: &mut Command) -> &mut Command {
@@ -36,7 +39,7 @@ fn strip_api_keys(cmd: &mut Command) -> &mut Command {
 fn system_prompt_contains_bash_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("Bash"));
@@ -46,7 +49,7 @@ fn system_prompt_contains_bash_tool() {
 fn system_prompt_contains_read_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("Read"));
@@ -56,7 +59,7 @@ fn system_prompt_contains_read_tool() {
 fn system_prompt_contains_write_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("Write"));
@@ -66,7 +69,7 @@ fn system_prompt_contains_write_tool() {
 fn system_prompt_contains_edit_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("Edit"));
@@ -76,7 +79,7 @@ fn system_prompt_contains_edit_tool() {
 fn system_prompt_contains_glob_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("Glob"));
@@ -86,7 +89,7 @@ fn system_prompt_contains_glob_tool() {
 fn system_prompt_contains_grep_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("Grep"));
@@ -96,7 +99,7 @@ fn system_prompt_contains_grep_tool() {
 fn system_prompt_contains_askuser_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("AskUser"));
@@ -106,7 +109,7 @@ fn system_prompt_contains_askuser_tool() {
 fn system_prompt_contains_skill_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("Skill"));
@@ -120,7 +123,7 @@ fn system_prompt_contains_skill_tool() {
 fn system_prompt_contains_agent_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("## Agent"));
@@ -130,7 +133,7 @@ fn system_prompt_contains_agent_tool() {
 fn system_prompt_contains_agent_schema() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(
@@ -144,7 +147,7 @@ fn system_prompt_contains_agent_schema() {
 fn system_prompt_contains_webfetch_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("## WebFetch"));
@@ -154,7 +157,7 @@ fn system_prompt_contains_webfetch_tool() {
 fn system_prompt_contains_websearch_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("## WebSearch"));
@@ -164,7 +167,7 @@ fn system_prompt_contains_websearch_tool() {
 fn system_prompt_contains_enter_plan_mode_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("## EnterPlanMode"));
@@ -174,7 +177,7 @@ fn system_prompt_contains_enter_plan_mode_tool() {
 fn system_prompt_contains_exit_plan_mode_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("## ExitPlanMode"));
@@ -184,7 +187,7 @@ fn system_prompt_contains_exit_plan_mode_tool() {
 fn system_prompt_contains_task_create_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("## TaskCreate"));
@@ -194,7 +197,7 @@ fn system_prompt_contains_task_create_tool() {
 fn system_prompt_contains_task_update_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("## TaskUpdate"));
@@ -204,7 +207,7 @@ fn system_prompt_contains_task_update_tool() {
 fn system_prompt_contains_task_list_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("## TaskList"));
@@ -214,7 +217,7 @@ fn system_prompt_contains_task_list_tool() {
 fn system_prompt_contains_enter_worktree_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("## EnterWorktree"));
@@ -224,7 +227,7 @@ fn system_prompt_contains_enter_worktree_tool() {
 fn system_prompt_contains_exit_worktree_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("## ExitWorktree"));
@@ -238,7 +241,7 @@ fn system_prompt_contains_exit_worktree_tool() {
 fn system_prompt_contains_lsp_tool() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("## LSP"));
@@ -248,7 +251,7 @@ fn system_prompt_contains_lsp_tool() {
 fn system_prompt_contains_lsp_schema() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(
@@ -264,7 +267,7 @@ fn system_prompt_contains_lsp_schema() {
 fn system_prompt_omits_send_message_by_default() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("## SendMessage").not());
@@ -278,7 +281,7 @@ fn system_prompt_omits_send_message_by_default() {
 fn system_prompt_contains_environment_section() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(
@@ -290,7 +293,7 @@ fn system_prompt_contains_environment_section() {
 fn system_prompt_contains_cwd_path() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         // The system prompt should embed the working directory
@@ -301,7 +304,7 @@ fn system_prompt_contains_cwd_path() {
 fn system_prompt_mentions_permission_model() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("permission").or(predicate::str::contains("Permission")));
@@ -317,7 +320,7 @@ fn system_prompt_mentions_permission_model() {
 fn print_mode_bash_tool_no_crash_without_api() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["-p", "-C", WORKSPACE, "run ls in bash"])
+    cmd.args(["-p", "-C", workspace(), "run ls in bash"])
         .env_remove("ANTHROPIC_AUTH_TOKEN")
         .assert()
         .stdout(
@@ -330,7 +333,7 @@ fn print_mode_bash_tool_no_crash_without_api() {
 fn print_mode_read_tool_no_crash_without_api() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["-p", "-C", WORKSPACE, "read the file test.txt"])
+    cmd.args(["-p", "-C", workspace(), "read the file test.txt"])
         .env_remove("ANTHROPIC_AUTH_TOKEN")
         .assert()
         .stdout(
@@ -353,7 +356,7 @@ fn dump_system_prompt_with_verbose_and_model() {
         "-m",
         "test-model",
         "-C",
-        WORKSPACE,
+        workspace(),
     ])
     .assert()
     .success()
@@ -364,7 +367,7 @@ fn dump_system_prompt_with_verbose_and_model() {
 fn init_only_with_cwd_and_permission_mode() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--init-only", "-C", WORKSPACE, "--permission-mode", "auto"])
+    cmd.args(["--init-only", "-C", workspace(), "--permission-mode", "auto"])
         .assert()
         .success();
 }

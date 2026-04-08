@@ -5,12 +5,12 @@
 use std::io::Write;
 use std::time::Duration;
 
-use crate::helpers::{collect_until, read_line_json, send_msg, spawn_headless, LINE_TIMEOUT};
+use crate::helpers::{collect_until, read_line_json, send_msg, spawn_headless, workspace, LINE_TIMEOUT};
 
 /// The backend should emit a `ready` message immediately after starting.
 #[test]
 fn emits_ready_on_start() {
-    let (mut child, _stdin, mut stdout) = spawn_headless(&["-C", r"F:\temp"], true);
+    let (mut child, _stdin, mut stdout) = spawn_headless(&["-C", workspace()], true);
 
     let msg = read_line_json(&mut stdout, LINE_TIMEOUT);
 
@@ -30,7 +30,7 @@ fn emits_ready_on_start() {
 /// Sending `quit` should cause the process to exit cleanly.
 #[test]
 fn quit_exits_cleanly() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", r"F:\temp"], true);
+    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", workspace()], true);
 
     let ready = read_line_json(&mut stdout, LINE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -48,7 +48,7 @@ fn quit_exits_cleanly() {
 /// Invalid JSON on stdin should produce a recoverable error, not crash.
 #[test]
 fn invalid_json_returns_error() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", r"F:\temp"], true);
+    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", workspace()], true);
 
     let ready = read_line_json(&mut stdout, LINE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -80,7 +80,7 @@ fn invalid_json_returns_error() {
 /// Valid JSON but unknown type should produce an error.
 #[test]
 fn unknown_message_type_returns_error() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", r"F:\temp"], true);
+    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", workspace()], true);
 
     let ready = read_line_json(&mut stdout, LINE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -102,7 +102,7 @@ fn unknown_message_type_returns_error() {
 /// `resize` should be accepted silently (no error response).
 #[test]
 fn resize_accepted() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", r"F:\temp"], true);
+    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", workspace()], true);
 
     let ready = read_line_json(&mut stdout, LINE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -120,7 +120,7 @@ fn resize_accepted() {
 /// `slash_command` should return a system_info warning (not yet supported).
 #[test]
 fn slash_command_returns_warning() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", r"F:\temp"], true);
+    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", workspace()], true);
 
     let ready = read_line_json(&mut stdout, LINE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -154,7 +154,7 @@ fn slash_command_returns_warning() {
 /// `submit_prompt` with no API key should produce an error (not crash).
 #[test]
 fn submit_prompt_no_api_key_returns_error() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", r"F:\temp"], true);
+    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", workspace()], true);
 
     let ready = read_line_json(&mut stdout, LINE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -204,7 +204,7 @@ fn submit_prompt_no_api_key_returns_error() {
 /// Multiple messages in sequence should all be handled.
 #[test]
 fn multiple_messages_in_sequence() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", r"F:\temp"], true);
+    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", workspace()], true);
 
     let ready = read_line_json(&mut stdout, LINE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -235,15 +235,22 @@ fn multiple_messages_in_sequence() {
 /// `--headless` with `-C` sets the correct cwd in the ready message.
 #[test]
 fn cwd_in_ready_message() {
-    let (mut child, _stdin, mut stdout) = spawn_headless(&["-C", r"F:\temp"], true);
+    let (mut child, _stdin, mut stdout) = spawn_headless(&["-C", workspace()], true);
 
     let msg = read_line_json(&mut stdout, LINE_TIMEOUT);
     assert_eq!(msg["type"], "ready");
 
     let cwd = msg["cwd"].as_str().unwrap_or("");
+    // The workspace path varies by platform — just check it's not empty
+    // and contains part of the workspace() path
+    let ws_leaf = std::path::Path::new(workspace())
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy();
     assert!(
-        cwd.contains("temp"),
-        "cwd should contain 'temp', got: {}",
+        cwd.contains(ws_leaf.as_ref()),
+        "cwd should contain '{}', got: {}",
+        ws_leaf,
         cwd
     );
 
@@ -255,7 +262,7 @@ fn cwd_in_ready_message() {
 #[test]
 fn model_override_in_ready() {
     let (mut child, _stdin, mut stdout) =
-        spawn_headless(&["-C", r"F:\temp", "-m", "test-model-xyz"], true);
+        spawn_headless(&["-C", workspace(), "-m", "test-model-xyz"], true);
 
     let msg = read_line_json(&mut stdout, LINE_TIMEOUT);
     assert_eq!(msg["type"], "ready");
@@ -272,7 +279,7 @@ fn model_override_in_ready() {
 /// Closing stdin (simulating frontend crash) should cause backend to exit.
 #[test]
 fn stdin_close_causes_exit() {
-    let (mut child, stdin, mut stdout) = spawn_headless(&["-C", r"F:\temp"], true);
+    let (mut child, stdin, mut stdout) = spawn_headless(&["-C", workspace()], true);
 
     let ready = read_line_json(&mut stdout, LINE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -287,7 +294,7 @@ fn stdin_close_causes_exit() {
 /// `permission_response` without a pending request should be silently ignored.
 #[test]
 fn permission_response_no_pending() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", r"F:\temp"], true);
+    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", workspace()], true);
 
     let ready = read_line_json(&mut stdout, LINE_TIMEOUT);
     assert_eq!(ready["type"], "ready");

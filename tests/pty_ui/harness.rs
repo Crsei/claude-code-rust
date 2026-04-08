@@ -39,6 +39,8 @@ pub struct PtySession {
     slave: Option<Box<dyn portable_pty::SlavePty + Send>>,
     buffer: Arc<Mutex<Vec<u8>>>,
     reader_thread: Option<std::thread::JoinHandle<()>>,
+    cols: u16,
+    rows: u16,
 }
 
 impl PtySession {
@@ -124,6 +126,8 @@ impl PtySession {
             slave: Some(pair.slave),
             buffer,
             reader_thread: Some(reader_thread),
+            cols,
+            rows,
         }
     }
 
@@ -252,7 +256,19 @@ impl PtySession {
             log_path.display()
         );
 
-        CapturedOutput { raw, plain }
+        let output = CapturedOutput {
+            raw,
+            plain,
+            cols: self.cols,
+            rows: self.rows,
+        };
+
+        // Render terminal screenshot as HTML
+        let html_path = dir.join(format!("{test_name}.html"));
+        let html = output.render_html();
+        std::fs::write(&html_path, html.as_bytes()).expect("write html");
+
+        output
     }
 }
 
@@ -261,6 +277,8 @@ impl PtySession {
 pub struct CapturedOutput {
     pub raw: Vec<u8>,
     pub plain: Vec<u8>,
+    pub cols: u16,
+    pub rows: u16,
 }
 
 impl CapturedOutput {
@@ -283,6 +301,124 @@ impl CapturedOutput {
             .unwrap_or(text.len());
         eprintln!("[preview]\n{}", &text[..end]);
     }
+
+    /// Render raw ANSI output through a vt100 terminal emulator → HTML screenshot.
+    ///
+    /// TUI apps clear the screen on exit. We detect the cleanup sequence and
+    /// stop processing just before it to capture the last rendered frame.
+    ///
+    /// Supported cleanup patterns:
+    /// - Alternate screen off: `\x1b[?1049l`
+    /// - Direct clear: `\x1b[m\x1b[H\x1b[K` (reset + cursor home + erase line)
+    /// - Full erase: `\x1b[2J` (erase entire display)
+    pub fn render_html(&self) -> String {
+        let mut parser = vt100::Parser::new(self.rows, self.cols, 0);
+
+        // Try multiple cleanup markers, use whichever appears last
+        let markers: &[&[u8]] = &[
+            b"\x1b[?1049l",       // alternate screen off
+            b"\x1b[m\x1b[H\x1b[K", // reset + home + erase line (crossterm cleanup)
+            b"\x1b[2J",           // erase entire display
+        ];
+
+        let process_end = markers
+            .iter()
+            .filter_map(|m| find_last_subsequence(&self.raw, m))
+            .min()  // use the earliest cleanup marker
+            .unwrap_or(self.raw.len());
+
+        parser.process(&self.raw[..process_end]);
+        let screen = parser.screen();
+
+        let mut html = String::with_capacity(self.raw.len() * 3);
+        html.push_str(r#"<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Terminal Screenshot</title>
+<style>
+body {
+  background: #1e1e1e;
+  margin: 0;
+  padding: 16px;
+  display: flex;
+  justify-content: center;
+}
+.terminal {
+  background: #0c0c0c;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+}
+pre {
+  font-family: 'Cascadia Code', 'Cascadia Mono', 'Consolas', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.3;
+  margin: 0;
+  color: #cccccc;
+}
+.row { display: block; height: 1.3em; white-space: pre; }
+</style>
+</head>
+<body>
+<div class="terminal">
+<pre>
+"#);
+
+        for row in 0..self.rows {
+            html.push_str("<span class=\"row\">");
+            let mut col = 0u16;
+            while col < self.cols {
+                let cell = screen.cell(row, col).unwrap();
+                let ch = cell.contents();
+                let fg = color_to_css(cell.fgcolor());
+                let bg = color_to_css(cell.bgcolor());
+                let bold = cell.bold();
+                let underline = cell.underline();
+                let inverse = cell.inverse();
+
+                let (fg_css, bg_css) = if inverse {
+                    (bg.as_deref().unwrap_or("#0c0c0c"),
+                     fg.as_deref().unwrap_or("#cccccc"))
+                } else {
+                    (fg.as_deref().unwrap_or("#cccccc"),
+                     bg.as_deref().unwrap_or("#0c0c0c"))
+                };
+
+                let mut style = String::new();
+                if fg_css != "#cccccc" || inverse {
+                    style.push_str(&format!("color:{fg_css};"));
+                }
+                if bg_css != "#0c0c0c" || inverse {
+                    style.push_str(&format!("background:{bg_css};"));
+                }
+                if bold {
+                    style.push_str("font-weight:bold;");
+                }
+                if underline {
+                    style.push_str("text-decoration:underline;");
+                }
+
+                let display = if ch.is_empty() { " " } else { &ch };
+                let escaped = html_escape(display);
+
+                if style.is_empty() {
+                    html.push_str(&escaped);
+                } else {
+                    html.push_str(&format!("<span style=\"{style}\">{escaped}</span>"));
+                }
+
+                // Wide characters take 2 columns
+                let width = unicode_width::UnicodeWidthStr::width(ch.as_str());
+                col += if width > 1 { width as u16 } else { 1 };
+            }
+            html.push_str("</span>\n");
+        }
+
+        html.push_str("</pre>\n</div>\n</body>\n</html>");
+        html
+    }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -291,6 +427,57 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|w| w == needle)
+}
+
+/// Find the last occurrence of `needle` in `haystack`.
+fn find_last_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .rposition(|w| w == needle)
+}
+
+/// Map vt100::Color to CSS color string.
+fn color_to_css(color: vt100::Color) -> Option<String> {
+    match color {
+        vt100::Color::Default => None,
+        vt100::Color::Idx(i) => Some(idx_to_css(i)),
+        vt100::Color::Rgb(r, g, b) => Some(format!("#{r:02x}{g:02x}{b:02x}")),
+    }
+}
+
+/// Standard 256-color palette → CSS hex.
+fn idx_to_css(i: u8) -> String {
+    // Standard 16 colors (Windows Terminal defaults)
+    const PALETTE: [&str; 16] = [
+        "#0c0c0c", "#c50f1f", "#13a10e", "#c19c00",
+        "#0037da", "#881798", "#3a96dd", "#cccccc",
+        "#767676", "#e74856", "#16c60c", "#f9f1a5",
+        "#3b78ff", "#b4009e", "#61d6d6", "#f2f2f2",
+    ];
+    if (i as usize) < PALETTE.len() {
+        return PALETTE[i as usize].to_string();
+    }
+    if i >= 232 {
+        // Grayscale ramp: 232–255
+        let v = 8 + (i - 232) as u32 * 10;
+        let v = v.min(255) as u8;
+        return format!("#{v:02x}{v:02x}{v:02x}");
+    }
+    // 6×6×6 color cube: 16–231
+    let idx = (i - 16) as u32;
+    let r = idx / 36;
+    let g = (idx % 36) / 6;
+    let b = idx % 6;
+    let to_val = |c: u32| if c == 0 { 0u8 } else { (55 + c * 40) as u8 };
+    format!("#{:02x}{:02x}{:02x}", to_val(r), to_val(g), to_val(b))
+}
+
+/// Escape HTML special characters.
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 /// Standard TUI args: `-C F:\temp`, permission bypass.

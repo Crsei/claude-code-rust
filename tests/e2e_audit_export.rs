@@ -12,7 +12,10 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 
-const WORKSPACE: &str = r"F:\temp";
+#[path = "test_workspace.rs"]
+mod test_workspace;
+
+fn workspace() -> &'static str { test_workspace::workspace() }
 
 fn cli() -> Command {
     Command::cargo_bin("claude-code-rs").expect("binary not found")
@@ -36,7 +39,7 @@ fn strip_api_keys(cmd: &mut Command) -> &mut Command {
 fn init_succeeds_with_audit_export() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--init-only", "-C", WORKSPACE])
+    cmd.args(["--init-only", "-C", workspace()])
         .assert()
         .success();
 }
@@ -46,7 +49,7 @@ fn init_succeeds_with_audit_export() {
 fn system_prompt_unaffected_by_audit_export() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         .stdout(predicate::str::contains("Bash"))

@@ -63,6 +63,7 @@ Each issue includes a description, reproduction steps, and current status.
 4. Routed wheel behavior by click focus: click message area => wheel scrolls conversation; click composer => wheel navigates input history.
 5. Rebuilt the composer UI using the `ink-terminal/examples/alternate-screen.tsx` style (explicit bordered input row + status row) to ensure the input box is always visible.
 6. Reduced long-response rendering pressure: removed scroll metric polling and switched streaming-phase rendering to plain text; final assistant message still renders via Markdown.
+7. Enforced responsive wrapping for long single-line output by constraining message/tool blocks to `width: 100%`, enabling explicit text wrapping, and subscribing message virtualization to terminal `resize` updates.
 
 **Related files**:
 - `ui/src/components/MessageList.tsx`

@@ -13,6 +13,9 @@
 // Since compact is a mod inside the binary crate, we use integration-style
 // tests that construct the types directly.
 
+#[path = "test_workspace.rs"]
+mod test_workspace;
+
 /// Verify the /compact command is registered and appears in the system prompt.
 mod command_registration {
     use assert_cmd::Command;
@@ -47,7 +50,7 @@ mod command_registration {
     fn system_prompt_generated_successfully() {
         let mut cmd = cli();
         strip_api_keys(&mut cmd);
-        cmd.args(["--dump-system-prompt", "-C", r"F:\temp"])
+        cmd.args(["--dump-system-prompt", "-C", super::test_workspace::workspace()])
             .assert()
             .success()
             .stdout(predicate::str::is_empty().not());
@@ -97,7 +100,7 @@ mod compact_scenarios {
         strip_api_keys(&mut cmd);
         // This should fail gracefully (no API key), not panic
         let output = cmd
-            .args(["-p", "hello", "-C", r"F:\temp"])
+            .args(["-p", "hello", "-C", super::test_workspace::workspace()])
             .output()
             .expect("failed to run command");
 

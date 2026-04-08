@@ -5,11 +5,11 @@
 //! warning — these tests document the expected responses and serve as
 //! regression tests for when slash commands are implemented.
 
-use crate::helpers::{read_line_json, send_msg, spawn_headless, LINE_TIMEOUT};
+use crate::helpers::{read_line_json, send_msg, spawn_headless, workspace, LINE_TIMEOUT};
 
 /// Helper: send a slash command and return the response message.
 fn send_slash_and_get_response(raw: &str) -> serde_json::Value {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", r"F:\temp"], true);
+    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", workspace()], true);
 
     let ready = read_line_json(&mut stdout, LINE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -137,7 +137,7 @@ fn all_slash_commands_return_warning_level() {
 /// Multiple slash commands in sequence in one session should all work.
 #[test]
 fn multiple_slash_commands_in_session() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", r"F:\temp"], true);
+    let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", workspace()], true);
 
     let ready = read_line_json(&mut stdout, LINE_TIMEOUT);
     assert_eq!(ready["type"], "ready");

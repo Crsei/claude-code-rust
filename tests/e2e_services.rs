@@ -14,7 +14,10 @@ use predicates::prelude::*;
 use std::path::Path;
 use std::time::Duration;
 
-const WORKSPACE: &str = r"F:\temp";
+#[path = "test_workspace.rs"]
+mod test_workspace;
+
+fn workspace() -> &'static str { test_workspace::workspace() }
 const TOOL_TIMEOUT_SECS: u64 = 120;
 
 fn cli() -> Command {
@@ -51,7 +54,7 @@ fn cleanup(path: &Path) {
 fn init_succeeds_with_summary_integration() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--init-only", "-C", WORKSPACE])
+    cmd.args(["--init-only", "-C", workspace()])
         .assert()
         .success();
 }
@@ -61,7 +64,7 @@ fn init_succeeds_with_summary_integration() {
 fn system_prompt_unaffected_by_summary_integration() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--dump-system-prompt", "-C", WORKSPACE])
+    cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
         // Core tools still present
@@ -76,7 +79,7 @@ fn system_prompt_unaffected_by_summary_integration() {
 fn print_mode_graceful_without_api() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["-p", "-C", WORKSPACE, "hello"])
+    cmd.args(["-p", "-C", workspace(), "hello"])
         .env_remove("ANTHROPIC_AUTH_TOKEN")
         .assert()
         .stdout(
@@ -94,7 +97,7 @@ fn print_mode_graceful_without_api() {
 fn init_succeeds_with_suggestion_integration() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--init-only", "-C", WORKSPACE])
+    cmd.args(["--init-only", "-C", workspace()])
         .assert()
         .success();
 }
@@ -111,7 +114,7 @@ fn combined_flags_work_with_suggestions_field() {
         "-m",
         "test-model",
         "-C",
-        WORKSPACE,
+        workspace(),
     ])
     .assert()
     .success()
@@ -132,7 +135,7 @@ fn live_summary_single_bash_tool() {
         .args([
             "-p",
             "-C",
-            WORKSPACE,
+            workspace(),
             "--permission-mode",
             "bypass",
             "Use the Bash tool to run: echo SUMMARY_TEST_OK",
@@ -148,8 +151,8 @@ fn live_summary_single_bash_tool() {
 #[test]
 #[ignore]
 fn live_summary_multi_tool_no_corruption() {
-    let file_a = Path::new(WORKSPACE).join("_e2e_summary_a.txt");
-    let file_b = Path::new(WORKSPACE).join("_e2e_summary_b.txt");
+    let file_a = Path::new(workspace()).join("_e2e_summary_a.txt");
+    let file_b = Path::new(workspace()).join("_e2e_summary_b.txt");
     cleanup(&file_a);
     cleanup(&file_b);
 
@@ -158,7 +161,7 @@ fn live_summary_multi_tool_no_corruption() {
             .args([
                 "-p",
                 "-C",
-                WORKSPACE,
+                workspace(),
                 "--permission-mode",
                 "bypass",
                 &format!(
@@ -189,7 +192,7 @@ fn live_summary_multi_tool_no_corruption() {
 #[test]
 #[ignore]
 fn live_summary_injected_across_turns() {
-    let test_file = Path::new(WORKSPACE).join("_e2e_summary_turns.txt");
+    let test_file = Path::new(workspace()).join("_e2e_summary_turns.txt");
     cleanup(&test_file);
 
     let result = std::panic::catch_unwind(|| {
@@ -197,7 +200,7 @@ fn live_summary_injected_across_turns() {
             .args([
                 "-p",
                 "-C",
-                WORKSPACE,
+                workspace(),
                 "--permission-mode",
                 "bypass",
                 "--max-turns",
@@ -232,7 +235,7 @@ fn live_suggestions_no_crash_after_tool_use() {
         .args([
             "-p",
             "-C",
-            WORKSPACE,
+            workspace(),
             "--permission-mode",
             "bypass",
             "Use the Bash tool to run: echo SUGGESTION_TEST_OK",
@@ -249,7 +252,7 @@ fn live_suggestions_no_crash_after_tool_use() {
 #[ignore]
 fn live_suggestions_no_crash_chat_only() {
     tool_cli()
-        .args(["-p", "-C", WORKSPACE, "Say exactly: CHAT_SUGGEST_OK"])
+        .args(["-p", "-C", workspace(), "Say exactly: CHAT_SUGGEST_OK"])
         .assert()
         .success()
         .stdout(predicate::str::contains("CHAT_SUGGEST_OK"));

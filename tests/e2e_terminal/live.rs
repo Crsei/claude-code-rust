@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use crate::helpers::{collect_until, read_line_json, send_msg, spawn_headless, LIVE_TIMEOUT};
+use crate::helpers::{collect_until, read_line_json, send_msg, spawn_headless, workspace, LIVE_TIMEOUT};
 
 /// Submit a simple prompt and verify the full streaming lifecycle:
 /// stream_start → stream_delta+ → stream_end → assistant_message → usage_update
