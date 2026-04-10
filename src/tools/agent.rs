@@ -747,16 +747,12 @@ impl Tool for AgentTool {
             }
 
             // Build child config now (before move into spawn)
-            let child_cwd = if use_worktree {
+            if use_worktree {
                 warn!(agent_id = %agent_id, "background + worktree not yet combined — using normal cwd");
-                std::env::current_dir()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_else(|_| ".".to_string())
-            } else {
-                std::env::current_dir()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_else(|_| ".".to_string())
-            };
+            }
+            let child_cwd = std::env::current_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| ".".to_string());
 
             let child_config = build_child_config(
                 child_cwd, ctx, &agent_id, &agent_model, &parent_model, current_depth,

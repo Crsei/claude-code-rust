@@ -115,6 +115,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     },
                     content,
                 });
+                yield QueryYield::Message(sys_msg.clone());
                 state.messages.push(sys_msg);
             }
 

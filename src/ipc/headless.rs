@@ -193,9 +193,10 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
                     "headless: background agent completed"
                 );
 
-                // Truncate result for UI preview
+                // Truncate result for UI preview (char-boundary safe)
                 let result_preview = if completed.result_text.len() > 200 {
-                    format!("{}...", &completed.result_text[..200])
+                    let end = completed.result_text.floor_char_boundary(200);
+                    format!("{}...", &completed.result_text[..end])
                 } else {
                     completed.result_text.clone()
                 };
