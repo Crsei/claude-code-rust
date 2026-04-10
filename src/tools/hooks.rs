@@ -583,7 +583,6 @@ pub async fn run_post_tool_failure_hooks(
 /// Run stop hooks (when the model stops generating).
 ///
 /// Corresponds to TypeScript: `executeStopHooks()`
-#[allow(dead_code)]
 pub async fn run_stop_hooks(hook_configs: &[HookEventConfig]) -> Result<PostToolHookResult> {
     if hook_configs.is_empty() {
         return Ok(PostToolHookResult::Continue);
