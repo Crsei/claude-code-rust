@@ -122,6 +122,10 @@ pub struct ToolUseContext {
     /// When set and a tool requires `Ask` permission, this callback is invoked
     /// instead of immediately denying. If `None`, `Ask` falls back to deny.
     pub permission_callback: Option<PermissionCallback>,
+    /// Sender for background agent completion results.
+    /// When `Some`, the Agent tool can spawn background tasks.
+    /// When `None`, `run_in_background` falls back to synchronous execution.
+    pub bg_agent_tx: Option<crate::tools::background_agents::BgAgentSender>,
 }
 
 /// 工具使用选项 (不可变配置)

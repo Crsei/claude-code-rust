@@ -55,6 +55,7 @@ impl QueryEngine {
 
         let state_ref = self.state.clone();
         let aborted_ref = self.aborted.clone();
+        let pending_bg_results = self.pending_bg_results.clone();
 
         let stream = async_stream::stream! {
             let started_at = Instant::now();
@@ -252,12 +253,15 @@ impl QueryEngine {
 
             // Create deps for the inner query loop
             let permission_callback = state_ref.read().permission_callback.clone();
+            let bg_agent_tx = state_ref.read().bg_agent_tx.clone();
             let deps = Arc::new(QueryEngineDeps {
                 aborted: aborted_ref.clone(),
                 state: state_ref.clone(),
                 api_client,
                 agent_context: config.agent_context.clone(),
                 permission_callback,
+                bg_agent_tx,
+                pending_bg_results: pending_bg_results.clone(),
             });
 
             // Run the query loop

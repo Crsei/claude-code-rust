@@ -40,6 +40,10 @@ pub(crate) struct QueryEngineDeps {
     /// Async callback for interactive permission prompts.
     /// Propagated into `ToolUseContext` for headless/TUI permission flow.
     pub(crate) permission_callback: Option<crate::types::tool::PermissionCallback>,
+    /// Background agent sender — forwarded into ToolUseContext.
+    pub(crate) bg_agent_tx: Option<crate::tools::background_agents::BgAgentSender>,
+    /// Shared buffer of completed background agents.
+    pub(crate) pending_bg_results: crate::tools::background_agents::PendingBackgroundResults,
 }
 
 #[async_trait::async_trait]
@@ -347,6 +351,7 @@ impl QueryDeps for QueryEngineDeps {
                 .as_ref()
                 .map(|ac| ac.query_tracking.clone()),
             permission_callback: self.permission_callback.clone(),
+            bg_agent_tx: self.bg_agent_tx.clone(),
         };
 
         // ── Load hook configs from AppState ────────────────────────
@@ -644,5 +649,9 @@ impl QueryDeps for QueryEngineDeps {
 
     async fn refresh_tools(&self) -> Result<Tools> {
         Ok(self.state.read().tools.clone())
+    }
+
+    fn drain_background_results(&self) -> Vec<crate::tools::background_agents::CompletedBackgroundAgent> {
+        self.pending_bg_results.drain_all()
     }
 }

@@ -380,6 +380,7 @@ mod tests {
             agent_type: None,
             query_tracking: None,
             permission_callback: None,
+            bg_agent_tx: None,
         };
 
         // Missing skill field entirely
@@ -458,6 +459,7 @@ mod tests {
             agent_type: None,
             query_tracking: None,
             permission_callback: None,
+            bg_agent_tx: None,
         };
 
         let result = tool

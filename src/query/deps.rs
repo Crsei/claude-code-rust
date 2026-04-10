@@ -135,4 +135,10 @@ pub trait QueryDeps: Send + Sync {
 
     /// 刷新工具列表 (MCP 工具等可能动态变化)
     async fn refresh_tools(&self) -> Result<Tools>;
+
+    /// Drain completed background agent results (called at turn start).
+    /// Default: returns empty vec (no background agent support).
+    fn drain_background_results(&self) -> Vec<crate::tools::background_agents::CompletedBackgroundAgent> {
+        vec![]
+    }
 }

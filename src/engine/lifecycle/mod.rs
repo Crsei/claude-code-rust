@@ -68,6 +68,9 @@ pub(crate) struct QueryEngineState {
     pub(crate) loaded_nested_memory_paths: HashSet<String>,
     /// Async callback for interactive permission prompts (set by headless/TUI).
     pub(crate) permission_callback: Option<crate::types::tool::PermissionCallback>,
+    /// Sender for background agent completion channel.
+    /// Set by headless/TUI mode; cloned into ToolUseContext.
+    pub(crate) bg_agent_tx: Option<crate::tools::background_agents::BgAgentSender>,
 }
 
 // ---------------------------------------------------------------------------
@@ -91,6 +94,9 @@ pub struct QueryEngine {
     pub(crate) aborted: Arc<AtomicBool>,
     /// Whether we have handled the orphaned-permission edge case.
     pub(crate) has_handled_orphaned_permission: Arc<AtomicBool>,
+    /// Shared buffer of completed background agents.
+    /// Event loop pushes; query loop drains.
+    pub(crate) pending_bg_results: crate::tools::background_agents::PendingBackgroundResults,
 }
 
 impl QueryEngine {
@@ -122,9 +128,11 @@ impl QueryEngine {
                 discovered_skill_names: HashSet::new(),
                 loaded_nested_memory_paths: HashSet::new(),
                 permission_callback: None,
+                bg_agent_tx: None,
             })),
             aborted: Arc::new(AtomicBool::new(false)),
             has_handled_orphaned_permission: Arc::new(AtomicBool::new(false)),
+            pending_bg_results: crate::tools::background_agents::PendingBackgroundResults::new(),
         }
     }
 
@@ -135,6 +143,11 @@ impl QueryEngine {
     /// to prompt the user via IPC instead of immediately denying.
     pub fn set_permission_callback(&self, cb: crate::types::tool::PermissionCallback) {
         self.state.write().permission_callback = Some(cb);
+    }
+
+    /// Set the background agent sender (called by headless/TUI at startup).
+    pub fn set_bg_agent_tx(&self, tx: crate::tools::background_agents::BgAgentSender) {
+        self.state.write().bg_agent_tx = Some(tx);
     }
 
     // -- Abort control -------------------------------------------------------
