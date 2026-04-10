@@ -56,6 +56,12 @@ pub mod compact;
 // MCP server management
 pub mod mcp_cmd;
 
+// KAIROS / assistant commands
+pub mod assistant;
+pub mod brief;
+pub mod daemon_cmd;
+pub mod sleep_cmd;
+
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -318,6 +324,30 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec!["ma".into()],
             description: "Add a model with token pricing to .env".into(),
             handler: Box::new(model_add::ModelAddHandler),
+        },
+        Command {
+            name: "brief".into(),
+            aliases: vec![],
+            description: "Toggle Brief output mode (KAIROS)".into(),
+            handler: Box::new(brief::BriefHandler),
+        },
+        Command {
+            name: "sleep".into(),
+            aliases: vec![],
+            description: "Set proactive sleep duration".into(),
+            handler: Box::new(sleep_cmd::SleepCmdHandler),
+        },
+        Command {
+            name: "assistant".into(),
+            aliases: vec!["kairos".into()],
+            description: "View assistant mode status".into(),
+            handler: Box::new(assistant::AssistantHandler),
+        },
+        Command {
+            name: "daemon".into(),
+            aliases: vec![],
+            description: "View/control daemon process".into(),
+            handler: Box::new(daemon_cmd::DaemonCmdHandler),
         },
     ]
 }
