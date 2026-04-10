@@ -20,6 +20,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::tools::lsp::{HoverInfo, SourceLocation, SymbolInfo};
 
+pub mod transport;
+
 // ---------------------------------------------------------------------------
 // Server configuration
 // ---------------------------------------------------------------------------
