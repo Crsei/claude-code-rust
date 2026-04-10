@@ -23,36 +23,16 @@ impl CommandHandler for LogoutHandler {
             ));
         }
 
-        let mut cleared = Vec::new();
-
-        // Remove API key from keychain
-        if let Err(e) = auth::api_key::remove_api_key() {
-            tracing::warn!(error = %e, "failed to remove API key from keychain");
-        } else {
-            cleared.push("keychain API key");
+        // Clear all auth state: keychain + credentials.json
+        if let Err(e) = auth::oauth_logout() {
+            tracing::warn!(error = %e, "error during logout cleanup");
         }
 
-        // Remove OAuth tokens from disk
-        if let Err(e) = auth::token::remove_token() {
-            tracing::warn!(error = %e, "failed to remove OAuth tokens from disk");
-        } else {
-            cleared.push("stored OAuth tokens");
-        }
-
-        let msg = if cleared.is_empty() {
-            "Logged out. Note: environment variables (ANTHROPIC_API_KEY, \
-             ANTHROPIC_AUTH_TOKEN) are still set in your shell — \
-             unset them manually if needed."
-                .to_string()
-        } else {
-            format!(
-                "Logged out. Cleared: {}.\n\
-                 Note: environment variables (ANTHROPIC_API_KEY, \
-                 ANTHROPIC_AUTH_TOKEN) must be unset manually.",
-                cleared.join(", ")
-            )
-        };
-
-        Ok(CommandResult::Output(msg))
+        Ok(CommandResult::Output(
+            "Logged out successfully. Cleared keychain and stored OAuth tokens.\n\
+             Note: environment variables (ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN) \
+             must be unset manually."
+                .to_string(),
+        ))
     }
 }
