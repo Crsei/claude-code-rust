@@ -24,6 +24,10 @@ pub struct AppState {
     pub effort_value: Option<String>,
     /// Agent Teams 上下文 (feature-gated)
     pub team_context: Option<crate::teams::types::TeamContext>,
+    /// Hook configurations loaded from settings.json (merged config).
+    /// Read by `tools::hooks::load_hook_configs()` and the hook execution pipeline.
+    #[allow(dead_code)]
+    pub hooks: HashMap<String, serde_json::Value>,
 }
 
 /// 设置 JSON (简化版)
@@ -55,6 +59,7 @@ impl Default for AppState {
             fast_mode: false,
             effort_value: None,
             team_context: None,
+            hooks: HashMap::new(),
         }
     }
 }

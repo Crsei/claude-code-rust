@@ -329,7 +329,6 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         .or(provider_default_model)
         .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
 
-    #[allow(unused_variables)]
     let app_state = AppState {
         settings: SettingsJson {
             model: Some(model.clone()),
@@ -352,6 +351,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         fast_mode: false,
         effort_value: None,
         team_context: None,
+        hooks: merged_config.hooks.clone(),
     };
 
     // ── B.5: Init-only fast path ─────────────────────────────────────
@@ -389,6 +389,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     // ── B.7: Create QueryEngine ──────────────────────────────────────
     let engine = Arc::new(QueryEngine::new(engine_config));
     info!(session = %engine.session_id, "QueryEngine created");
+
+    // Apply the fully-resolved AppState (with hooks, permissions, etc.)
+    engine.update_app_state(|s| *s = app_state);
 
     // ── B.7.1: Initialize global ProcessState ────────────────────────
     let cwd_path = std::path::PathBuf::from(&cwd);
