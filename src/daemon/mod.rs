@@ -6,4 +6,5 @@ pub mod server;
 pub mod sse;
 pub mod state;
 pub mod tick;
+pub mod memory_log;
 pub mod webhook;

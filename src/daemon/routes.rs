@@ -161,6 +161,7 @@ async fn submit(
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     info!(message_id, text_len = text.len(), "submit received");
+    super::memory_log::append_log_entry(&format!("user submit: {}", &text));
 
     // Wake engine, set running flag, spawn async task.
     state.engine.wake_up();

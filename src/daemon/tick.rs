@@ -10,6 +10,7 @@ use tracing::{debug, info};
 
 use crate::types::config::QuerySource;
 
+use super::memory_log::append_log_entry;
 use super::state::{DaemonState, SseEvent, next_event_id};
 
 const DEFAULT_TICK_INTERVAL_MS: u64 = 30_000;
@@ -41,13 +42,20 @@ pub async fn tick_loop(state: DaemonState) {
 
         let now = Local::now();
         let focus = state.terminal_focus();
+        let today_log = super::memory_log::read_today_log();
         let tick_prompt = format!(
-            "<tick_tag>\nLocal time: {}\nTerminal focus: {}\n</tick_tag>",
+            "<tick_tag>\nLocal time: {}\nTerminal focus: {}\n</tick_tag>{}",
             now.format("%Y-%m-%d %H:%M:%S"),
             focus,
+            if today_log.is_empty() {
+                String::new()
+            } else {
+                format!("\n<daily_log>\n{}</daily_log>", today_log)
+            },
         );
 
         debug!("proactive tick firing at {}", now.format("%H:%M:%S"));
+        append_log_entry(&format!("proactive tick fired (focus={})", focus));
 
         // Notify frontend
         state.broadcast(SseEvent {
