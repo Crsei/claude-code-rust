@@ -54,6 +54,10 @@ mod shutdown;
 // IPC headless mode
 mod ipc;
 
+// KAIROS daemon
+#[allow(dead_code)] // Types consumed by upcoming HTTP server + tick loop modules.
+mod daemon;
+
 use std::collections::HashMap;
 use std::process::ExitCode;
 use std::sync::Arc;
