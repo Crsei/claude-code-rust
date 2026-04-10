@@ -81,6 +81,12 @@ pub struct ProcessState {
     /// 已调用的 skills — key: "agentId:skillName"。
     /// 跨 compaction 保留，确保 compaction 后仍能恢复 skill 发现状态。
     pub invoked_skills: HashMap<String, bool>,
+
+    // ── 终端尺寸 (headless 模式由前端推送) ───────────────────
+    /// 终端列数。Headless 模式由 `FrontendMessage::Resize` 更新。
+    pub terminal_cols: u16,
+    /// 终端行数。
+    pub terminal_rows: u16,
 }
 
 impl Default for ProcessState {
@@ -100,6 +106,8 @@ impl Default for ProcessState {
             error_log: ErrorLog::default(),
             slow_operations: SlowOperationTracker::default(),
             invoked_skills: HashMap::new(),
+            terminal_cols: 80,
+            terminal_rows: 24,
         }
     }
 }

@@ -70,6 +70,10 @@ pub struct SdkUserReplay {
     pub timestamp: i64,
     pub is_replay: bool,
     pub is_synthetic: bool,
+    /// Structured content blocks (tool results, etc.) — present when
+    /// the user message carries `MessageContent::Blocks`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_blocks: Option<Vec<crate::types::message::ContentBlock>>,
 }
 
 /// Streaming event wrapper for SDK output.

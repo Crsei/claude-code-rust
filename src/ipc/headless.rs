@@ -12,10 +12,12 @@ use tokio::io::AsyncBufReadExt;
 use tokio::sync::oneshot;
 use tracing::{debug, error, warn};
 
+use crate::commands::{self, CommandContext, CommandResult};
 use crate::engine::lifecycle::QueryEngine;
 use crate::engine::sdk_types::SdkMessage;
+use crate::services::prompt_suggestion::PromptSuggestionService;
 use crate::types::config::QuerySource;
-use crate::types::message::StreamEvent;
+use crate::types::message::{ContentBlock, Message, StreamEvent, ToolResultContent};
 
 use super::protocol::{send_to_frontend, BackendMessage, FrontendMessage};
 
@@ -64,7 +66,10 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
         engine.set_permission_callback(callback);
     }
 
-    // ── 2. Send Ready ───────────────────────────────────────────────
+    // ── 2. Prompt suggestion service ───────────────────────────────
+    let suggestion_svc = Arc::new(Mutex::new(PromptSuggestionService::new(true)));
+
+    // ── 3. Send Ready ──────────────────────────────────────────────
     let ready = BackendMessage::Ready {
         session_id: engine.session_id.to_string(),
         model,
@@ -72,7 +77,7 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
     };
     send_to_frontend(&ready)?;
 
-    // ── 3. Read stdin lines ─────────────────────────────────────────
+    // ── 4. Read stdin lines ────────────────────────────────────────
     let stdin = tokio::io::BufReader::new(tokio::io::stdin());
     let mut lines = stdin.lines();
 
@@ -112,15 +117,18 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
 
                 let engine_clone = engine.clone();
                 let message_id = id;
+                let svc = suggestion_svc.clone();
 
                 // Spawn a task to stream the response so we don't block the
                 // stdin reader (abort/permission responses can arrive while streaming).
                 tokio::spawn(async move {
-                    let stream = engine_clone.submit_message(&text, QuerySource::ReplMainThread);
+                    let stream =
+                        engine_clone.submit_message(&text, QuerySource::ReplMainThread);
                     let mut stream = std::pin::pin!(stream);
 
                     while let Some(sdk_msg) = stream.next().await {
-                        let send_result = handle_sdk_message(&sdk_msg, &message_id);
+                        let send_result =
+                            handle_sdk_message(&sdk_msg, &message_id, &engine_clone, &svc);
 
                         if let Err(e) = send_result {
                             error!("headless: failed to send to frontend: {}", e);
@@ -159,18 +167,15 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
             // ── SlashCommand ────────────────────────────────────────
             FrontendMessage::SlashCommand { raw } => {
                 debug!("headless: slash command: {}", raw);
-                let _ = send_to_frontend(&BackendMessage::SystemInfo {
-                    text: format!(
-                        "slash commands not yet supported in headless mode (got: {})",
-                        raw
-                    ),
-                    level: "warning".to_string(),
-                });
+                handle_slash_command(&raw, &engine).await;
             }
 
             // ── Resize ──────────────────────────────────────────────
             FrontendMessage::Resize { cols, rows } => {
                 debug!("headless: resize {}x{}", cols, rows);
+                let mut ps = crate::bootstrap::PROCESS_STATE.write();
+                ps.terminal_cols = cols;
+                ps.terminal_rows = rows;
             }
 
             // ── Quit ────────────────────────────────────────────────
@@ -185,13 +190,128 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
 }
 
 // ---------------------------------------------------------------------------
+// Slash command execution
+// ---------------------------------------------------------------------------
+
+/// Parse and execute a slash command, sending results as BackendMessages.
+async fn handle_slash_command(raw: &str, engine: &Arc<QueryEngine>) {
+    let trimmed = raw.trim();
+    if !trimmed.starts_with('/') {
+        let _ = send_to_frontend(&BackendMessage::Error {
+            message: format!("not a slash command: {}", trimmed),
+            recoverable: true,
+        });
+        return;
+    }
+
+    let Some((cmd_idx, args)) = commands::parse_command_input(trimmed) else {
+        let _ = send_to_frontend(&BackendMessage::Error {
+            message: format!("unknown command: {}", trimmed),
+            recoverable: true,
+        });
+        return;
+    };
+
+    let all_commands = commands::get_all_commands();
+    let cmd = &all_commands[cmd_idx];
+
+    let mut ctx = CommandContext {
+        messages: engine.messages(),
+        cwd: std::path::PathBuf::from(engine.cwd()),
+        app_state: engine.app_state(),
+        session_id: engine.session_id.clone(),
+    };
+
+    match cmd.handler.execute(&args, &mut ctx).await {
+        Ok(result) => match result {
+            CommandResult::Output(text) => {
+                let _ = send_to_frontend(&BackendMessage::SystemInfo {
+                    text,
+                    level: "info".to_string(),
+                });
+            }
+            CommandResult::Clear => {
+                // TODO: engine currently has no clear_messages() method;
+                // for now, notify the frontend that the conversation was cleared.
+                let _ = send_to_frontend(&BackendMessage::SystemInfo {
+                    text: "Conversation cleared.".to_string(),
+                    level: "info".to_string(),
+                });
+            }
+            CommandResult::Exit(msg) => {
+                let _ = send_to_frontend(&BackendMessage::SystemInfo {
+                    text: msg,
+                    level: "info".to_string(),
+                });
+                // The frontend should observe this and send Quit.
+            }
+            CommandResult::Query(msgs) => {
+                // The command produced messages that should be sent to the model.
+                // Spawn a query, similar to SubmitPrompt.
+                let engine_clone = engine.clone();
+                let message_id = uuid::Uuid::new_v4().to_string();
+
+                // Build a text representation for the query
+                let prompt_text: String = msgs
+                    .iter()
+                    .filter_map(|m| match m {
+                        Message::User(u) => Some(match &u.content {
+                            crate::types::message::MessageContent::Text(t) => t.clone(),
+                            crate::types::message::MessageContent::Blocks(_) => {
+                                "[content blocks]".to_string()
+                            }
+                        }),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                if !prompt_text.is_empty() {
+                    let svc = Arc::new(Mutex::new(PromptSuggestionService::new(true)));
+                    tokio::spawn(async move {
+                        engine_clone.reset_abort();
+                        let stream = engine_clone
+                            .submit_message(&prompt_text, QuerySource::ReplMainThread);
+                        let mut stream = std::pin::pin!(stream);
+
+                        while let Some(sdk_msg) = stream.next().await {
+                            if let Err(e) = handle_sdk_message(
+                                &sdk_msg,
+                                &message_id,
+                                &engine_clone,
+                                &svc,
+                            ) {
+                                error!("headless: command query send error: {}", e);
+                                break;
+                            }
+                        }
+                    });
+                }
+            }
+            CommandResult::None => {}
+        },
+        Err(e) => {
+            let _ = send_to_frontend(&BackendMessage::Error {
+                message: format!("command error: {}", e),
+                recoverable: true,
+            });
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // SdkMessage → BackendMessage mapping
 // ---------------------------------------------------------------------------
 
 /// Map a single [`SdkMessage`] to the appropriate [`BackendMessage`](s) and
 /// send them to the frontend. This is the central dispatch for the headless
 /// protocol — every `SdkMessage` variant is handled here.
-fn handle_sdk_message(sdk_msg: &SdkMessage, message_id: &str) -> std::io::Result<()> {
+fn handle_sdk_message(
+    sdk_msg: &SdkMessage,
+    message_id: &str,
+    engine: &Arc<QueryEngine>,
+    suggestion_svc: &Arc<Mutex<PromptSuggestionService>>,
+) -> std::io::Result<()> {
     match sdk_msg {
         // ── SystemInit ──────────────────────────────────────────
         SdkMessage::SystemInit(init) => {
@@ -215,7 +335,7 @@ fn handle_sdk_message(sdk_msg: &SdkMessage, message_id: &str) -> std::io::Result
             // First send individual ToolUse messages for each tool call
             // so the frontend can render them immediately.
             for block in &a.message.content {
-                if let crate::types::message::ContentBlock::ToolUse { id, name, input } = block {
+                if let ContentBlock::ToolUse { id, name, input } = block {
                     let _ = send_to_frontend(&BackendMessage::ToolUse {
                         id: id.clone(),
                         name: name.clone(),
@@ -236,11 +356,45 @@ fn handle_sdk_message(sdk_msg: &SdkMessage, message_id: &str) -> std::io::Result
 
         // ── UserReplay (includes tool results) ──────────────────
         SdkMessage::UserReplay(replay) => {
-            // Tool results flow through UserReplay in SDK mode.
-            // Forward as system_info so the frontend knows about them.
             if replay.is_synthetic {
                 debug!("headless: user replay (synthetic): {}", replay.content);
             }
+
+            // Extract and forward tool results from content blocks
+            if let Some(ref blocks) = replay.content_blocks {
+                for block in blocks {
+                    if let ContentBlock::ToolResult {
+                        tool_use_id,
+                        content,
+                        is_error,
+                    } = block
+                    {
+                        let output = match content {
+                            ToolResultContent::Text(t) => t.clone(),
+                            ToolResultContent::Blocks(inner) => {
+                                // Collect text from nested blocks
+                                inner
+                                    .iter()
+                                    .filter_map(|b| {
+                                        if let ContentBlock::Text { text } = b {
+                                            Some(text.as_str())
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            }
+                        };
+                        let _ = send_to_frontend(&BackendMessage::ToolResult {
+                            tool_use_id: tool_use_id.clone(),
+                            output,
+                            is_error: *is_error,
+                        });
+                    }
+                }
+            }
+
             Ok(())
         }
 
@@ -292,13 +446,16 @@ fn handle_sdk_message(sdk_msg: &SdkMessage, message_id: &str) -> std::io::Result
             let _ = send_to_frontend(&usage_msg);
 
             if r.is_error {
-                send_to_frontend(&BackendMessage::Error {
+                let _ = send_to_frontend(&BackendMessage::Error {
                     message: r.result.clone(),
                     recoverable: true,
-                })
-            } else {
-                Ok(())
+                });
             }
+
+            // Generate prompt suggestions after query completion
+            generate_and_send_suggestions(engine, suggestion_svc);
+
+            Ok(())
         }
     }
 }
@@ -326,6 +483,72 @@ fn handle_stream_event(event: &StreamEvent, message_id: &str) -> std::io::Result
         _ => {
             debug!("headless: ignoring stream event {:?}", event);
             Ok(())
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Prompt suggestions
+// ---------------------------------------------------------------------------
+
+/// Generate prompt suggestions from the last assistant message and send them.
+fn generate_and_send_suggestions(
+    engine: &Arc<QueryEngine>,
+    svc: &Arc<Mutex<PromptSuggestionService>>,
+) {
+    let messages = engine.messages();
+
+    let mut svc = svc.lock();
+
+    // Check suppression (too few messages, rate-limited, etc.)
+    if svc.get_suppression_reason(messages.len(), false).is_some() {
+        return;
+    }
+
+    // Find last assistant message
+    let last_assistant = messages.iter().rev().find_map(|msg| match msg {
+        Message::Assistant(a) => Some(a),
+        _ => None,
+    });
+    let Some(assistant) = last_assistant else {
+        return;
+    };
+
+    // Extract tool names and text summary
+    let tool_names: Vec<String> = assistant
+        .content
+        .iter()
+        .filter_map(|b| {
+            if let ContentBlock::ToolUse { name, .. } = b {
+                Some(name.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let summary: String = assistant
+        .content
+        .iter()
+        .filter_map(|b| {
+            if let ContentBlock::Text { text } = b {
+                Some(text.as_str())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if let Some(suggestions) = svc.try_generate(&summary, &tool_names) {
+        let items: Vec<String> = suggestions
+            .into_iter()
+            .take(3)
+            .map(|s| format!("{} {}", s.category.icon(), s.text))
+            .collect();
+
+        if !items.is_empty() {
+            let _ = send_to_frontend(&BackendMessage::Suggestions { items });
         }
     }
 }
