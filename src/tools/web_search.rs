@@ -1,10 +1,12 @@
-//! WebSearch tool — search the web via Brave Search API.
+//! WebSearch tool — search the web via Tavily or Brave Search API.
 //!
 //! Corresponds to TypeScript: tools/WebSearchTool/WebSearchTool.ts
 //!
-//! Uses the Brave Search API (https://api.search.brave.com/res/v1/web/search)
-//! to fetch web search results. Requires a `BRAVE_SEARCH_API_KEY` environment
-//! variable.
+//! Supports two providers (checked in order):
+//!   1. Tavily Search API  — `TAVILY_API_KEY` env var
+//!   2. Brave Search API   — `BRAVE_SEARCH_API_KEY` env var
+//!
+//! At least one API key must be set.
 
 use std::time::Instant;
 
@@ -20,11 +22,17 @@ use crate::types::tool::*;
 // Constants
 // ---------------------------------------------------------------------------
 
+/// Tavily Search API endpoint.
+const TAVILY_API_URL: &str = "https://api.tavily.com/search";
+
+/// Tavily API key environment variable.
+const TAVILY_API_KEY_ENV: &str = "TAVILY_API_KEY";
+
 /// Brave Search API endpoint.
 const BRAVE_API_URL: &str = "https://api.search.brave.com/res/v1/web/search";
 
-/// Environment variable for the API key.
-const API_KEY_ENV: &str = "BRAVE_SEARCH_API_KEY";
+/// Brave API key environment variable.
+const BRAVE_API_KEY_ENV: &str = "BRAVE_SEARCH_API_KEY";
 
 /// Maximum number of results to request.
 const DEFAULT_MAX_RESULTS: u32 = 5;
@@ -62,6 +70,135 @@ struct BraveWebResult {
     description: String,
     #[serde(default)]
     age: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Tavily Search response types
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct TavilySearchResponse {
+    #[serde(default)]
+    results: Vec<TavilySearchResult>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TavilySearchResult {
+    title: String,
+    url: String,
+    #[serde(default)]
+    content: String,
+    #[serde(default)]
+    published_date: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Search provider abstraction
+// ---------------------------------------------------------------------------
+
+/// Which search provider to use.
+enum SearchProvider {
+    Tavily(String),
+    Brave(String),
+}
+
+fn detect_provider() -> Option<SearchProvider> {
+    if let Ok(key) = std::env::var(TAVILY_API_KEY_ENV) {
+        if !key.is_empty() {
+            return Some(SearchProvider::Tavily(key));
+        }
+    }
+    if let Ok(key) = std::env::var(BRAVE_API_KEY_ENV) {
+        if !key.is_empty() {
+            return Some(SearchProvider::Brave(key));
+        }
+    }
+    None
+}
+
+/// Execute a Tavily search and return unified results.
+async fn search_tavily(
+    client: &reqwest::Client,
+    api_key: &str,
+    query: &str,
+    max_results: u32,
+) -> Result<Vec<SearchResultEntry>> {
+    let body = json!({
+        "api_key": api_key,
+        "query": query,
+        "max_results": max_results,
+        "search_depth": "basic",
+    });
+
+    let resp = client
+        .post(TAVILY_API_URL)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .context("Tavily Search API request failed")?;
+
+    let status = resp.status().as_u16();
+    if status != 200 {
+        let err_body = resp.text().await.unwrap_or_default();
+        anyhow::bail!("Tavily Search API returned HTTP {}: {}", status, err_body);
+    }
+
+    let tavily_resp: TavilySearchResponse = resp
+        .json()
+        .await
+        .context("Failed to parse Tavily Search response")?;
+
+    Ok(tavily_resp
+        .results
+        .into_iter()
+        .map(|r| SearchResultEntry {
+            title: r.title,
+            url: r.url,
+            description: r.content,
+            age: r.published_date,
+        })
+        .collect())
+}
+
+/// Execute a Brave search and return unified results.
+async fn search_brave(
+    client: &reqwest::Client,
+    api_key: &str,
+    query: &str,
+    max_results: u32,
+) -> Result<Vec<SearchResultEntry>> {
+    let resp = client
+        .get(BRAVE_API_URL)
+        .header("Accept", "application/json")
+        .header("Accept-Encoding", "gzip")
+        .header("X-Subscription-Token", api_key)
+        .query(&[("q", query), ("count", &max_results.to_string())])
+        .send()
+        .await
+        .context("Brave Search API request failed")?;
+
+    let status = resp.status().as_u16();
+    if status != 200 {
+        let err_body = resp.text().await.unwrap_or_default();
+        anyhow::bail!("Brave Search API returned HTTP {}: {}", status, err_body);
+    }
+
+    let search_resp: BraveSearchResponse = resp
+        .json()
+        .await
+        .context("Failed to parse Brave Search response")?;
+
+    let raw_results = search_resp.web.map(|w| w.results).unwrap_or_default();
+    Ok(raw_results
+        .into_iter()
+        .map(|r| SearchResultEntry {
+            title: r.title,
+            url: r.url,
+            description: r.description,
+            age: r.age,
+        })
+        .collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +267,26 @@ fn filter_results(
             url: r.url,
             description: r.description,
             age: r.age,
+        })
+        .collect()
+}
+
+/// Filter unified SearchResultEntry results by domain rules.
+fn filter_results_unified(
+    results: Vec<SearchResultEntry>,
+    allowed_domains: &[String],
+    blocked_domains: &[String],
+) -> Vec<SearchResultEntry> {
+    results
+        .into_iter()
+        .filter(|r| {
+            if !allowed_domains.is_empty() {
+                return allowed_domains.iter().any(|d| matches_domain(&r.url, d));
+            }
+            if !blocked_domains.is_empty() {
+                return !blocked_domains.iter().any(|d| matches_domain(&r.url, d));
+            }
+            true
         })
         .collect()
 }
@@ -238,18 +395,20 @@ impl Tool for WebSearchTool {
             })
             .unwrap_or_default();
 
-        let api_key = std::env::var(API_KEY_ENV).unwrap_or_default();
-        if api_key.is_empty() {
-            return Ok(ToolResult {
-                data: json!({
-                    "error": format!(
-                        "WebSearch requires the {} environment variable to be set with a Brave Search API key.",
-                        API_KEY_ENV
-                    )
-                }),
-                new_messages: vec![],
-            });
-        }
+        let provider = match detect_provider() {
+            Some(p) => p,
+            None => {
+                return Ok(ToolResult {
+                    data: json!({
+                        "error": format!(
+                            "WebSearch requires either {} or {} environment variable to be set.",
+                            TAVILY_API_KEY_ENV, BRAVE_API_KEY_ENV
+                        )
+                    }),
+                    new_messages: vec![],
+                });
+            }
+        };
 
         let start = Instant::now();
 
@@ -258,42 +417,45 @@ impl Tool for WebSearchTool {
             .build()
             .context("Failed to build HTTP client")?;
 
-        let resp = client
-            .get(BRAVE_API_URL)
-            .header("Accept", "application/json")
-            .header("Accept-Encoding", "gzip")
-            .header("X-Subscription-Token", &api_key)
-            .query(&[("q", query), ("count", &max_results.to_string())])
-            .send()
-            .await
-            .context("Brave Search API request failed")?;
+        let (provider_name, raw_results) = match &provider {
+            SearchProvider::Tavily(key) => {
+                match search_tavily(&client, key, query, max_results).await {
+                    Ok(results) => ("tavily", results),
+                    Err(e) => {
+                        return Ok(ToolResult {
+                            data: json!({
+                                "error": format!("Tavily Search failed: {}", e),
+                                "query": query,
+                            }),
+                            new_messages: vec![],
+                        });
+                    }
+                }
+            }
+            SearchProvider::Brave(key) => {
+                match search_brave(&client, key, query, max_results).await {
+                    Ok(results) => ("brave", results),
+                    Err(e) => {
+                        return Ok(ToolResult {
+                            data: json!({
+                                "error": format!("Brave Search failed: {}", e),
+                                "query": query,
+                            }),
+                            new_messages: vec![],
+                        });
+                    }
+                }
+            }
+        };
 
-        let status = resp.status().as_u16();
-        if status != 200 {
-            let body = resp.text().await.unwrap_or_default();
-            return Ok(ToolResult {
-                data: json!({
-                    "error": format!("Brave Search API returned HTTP {}: {}", status, body),
-                    "query": query,
-                }),
-                new_messages: vec![],
-            });
-        }
-
-        let search_resp: BraveSearchResponse = resp
-            .json()
-            .await
-            .context("Failed to parse Brave Search response")?;
-
-        let raw_results = search_resp.web.map(|w| w.results).unwrap_or_default();
-
-        let results = filter_results(raw_results, &allowed_domains, &blocked_domains);
+        let results = filter_results_unified(raw_results, &allowed_domains, &blocked_domains);
         let duration_secs = start.elapsed().as_secs_f64();
         let results_text = format_results_text(&results);
 
         Ok(ToolResult {
             data: json!({
                 "query": query,
+                "provider": provider_name,
                 "resultCount": results.len(),
                 "results": results,
                 "formattedResults": results_text,
@@ -306,8 +468,14 @@ impl Tool for WebSearchTool {
     async fn prompt(&self) -> String {
         let now = chrono::Utc::now();
         let month_year = now.format("%B %Y");
+        let provider = match detect_provider() {
+            Some(SearchProvider::Tavily(_)) => "Tavily",
+            Some(SearchProvider::Brave(_)) => "Brave",
+            None => "none (API key required)",
+        };
         format!(
             r#"Search the web for current information. The current date is {month_year}.
+Search provider: {provider}.
 
 When presenting search results, you MUST include a "Sources:" section at the end
 with markdown hyperlinks to the sources used.
@@ -463,6 +631,115 @@ mod tests {
         assert_eq!(
             tool.user_facing_name(Some(&input)),
             "WebSearch(\"how to write rust\")"
+        );
+    }
+
+    #[test]
+    fn test_detect_provider_tavily_first() {
+        let orig_tavily = std::env::var(TAVILY_API_KEY_ENV).ok();
+        let orig_brave = std::env::var(BRAVE_API_KEY_ENV).ok();
+
+        std::env::set_var(TAVILY_API_KEY_ENV, "tvly-test");
+        std::env::set_var(BRAVE_API_KEY_ENV, "brave-test");
+
+        let provider = detect_provider();
+        assert!(matches!(provider, Some(SearchProvider::Tavily(_))));
+
+        // Restore
+        match orig_tavily {
+            Some(v) => std::env::set_var(TAVILY_API_KEY_ENV, v),
+            None => std::env::remove_var(TAVILY_API_KEY_ENV),
+        }
+        match orig_brave {
+            Some(v) => std::env::set_var(BRAVE_API_KEY_ENV, v),
+            None => std::env::remove_var(BRAVE_API_KEY_ENV),
+        }
+    }
+
+    #[test]
+    fn test_detect_provider_brave_fallback() {
+        let orig_tavily = std::env::var(TAVILY_API_KEY_ENV).ok();
+        let orig_brave = std::env::var(BRAVE_API_KEY_ENV).ok();
+
+        std::env::remove_var(TAVILY_API_KEY_ENV);
+        std::env::set_var(BRAVE_API_KEY_ENV, "brave-test");
+
+        let provider = detect_provider();
+        assert!(matches!(provider, Some(SearchProvider::Brave(_))));
+
+        match orig_tavily {
+            Some(v) => std::env::set_var(TAVILY_API_KEY_ENV, v),
+            None => std::env::remove_var(TAVILY_API_KEY_ENV),
+        }
+        match orig_brave {
+            Some(v) => std::env::set_var(BRAVE_API_KEY_ENV, v),
+            None => std::env::remove_var(BRAVE_API_KEY_ENV),
+        }
+    }
+
+    #[test]
+    fn test_detect_provider_none() {
+        let orig_tavily = std::env::var(TAVILY_API_KEY_ENV).ok();
+        let orig_brave = std::env::var(BRAVE_API_KEY_ENV).ok();
+
+        std::env::remove_var(TAVILY_API_KEY_ENV);
+        std::env::remove_var(BRAVE_API_KEY_ENV);
+
+        let provider = detect_provider();
+        assert!(provider.is_none());
+
+        match orig_tavily {
+            Some(v) => std::env::set_var(TAVILY_API_KEY_ENV, v),
+            None => std::env::remove_var(TAVILY_API_KEY_ENV),
+        }
+        match orig_brave {
+            Some(v) => std::env::set_var(BRAVE_API_KEY_ENV, v),
+            None => std::env::remove_var(BRAVE_API_KEY_ENV),
+        }
+    }
+
+    #[test]
+    fn test_filter_results_unified_allowed() {
+        let results = vec![
+            SearchResultEntry {
+                title: "Rust".into(),
+                url: "https://rust-lang.org".into(),
+                description: "".into(),
+                age: None,
+            },
+            SearchResultEntry {
+                title: "Go".into(),
+                url: "https://go.dev".into(),
+                description: "".into(),
+                age: None,
+            },
+        ];
+        let filtered =
+            filter_results_unified(results, &["rust-lang.org".to_string()], &[]);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].title, "Rust");
+    }
+
+    #[test]
+    fn test_tavily_response_deserialization() {
+        let json_str = r#"{
+            "results": [
+                {
+                    "title": "Rust Programming",
+                    "url": "https://rust-lang.org",
+                    "content": "A systems programming language",
+                    "score": 0.95,
+                    "published_date": "2024-01-15"
+                }
+            ]
+        }"#;
+        let resp: TavilySearchResponse = serde_json::from_str(json_str).unwrap();
+        assert_eq!(resp.results.len(), 1);
+        assert_eq!(resp.results[0].title, "Rust Programming");
+        assert_eq!(resp.results[0].content, "A systems programming language");
+        assert_eq!(
+            resp.results[0].published_date.as_deref(),
+            Some("2024-01-15")
         );
     }
 
