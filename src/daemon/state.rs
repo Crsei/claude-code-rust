@@ -3,6 +3,8 @@
 //! Wraps the [`QueryEngine`] and provides SSE client management, event
 //! buffering for re-attach, and notification dispatch.
 
+#![allow(dead_code)]
+
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;

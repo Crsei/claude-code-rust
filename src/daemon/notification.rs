@@ -1,5 +1,7 @@
 //! Push notification system — Windows Toast + webhook callback.
 
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};

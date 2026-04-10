@@ -5,6 +5,8 @@
 //! - **Webhook routes** (`/webhook/*`) -- Phase-3 stubs for GitHub/Slack/generic
 //! - **Health** (`/health`) -- simple liveness probe
 
+#![allow(dead_code)]
+
 use std::sync::atomic::Ordering;
 
 use axum::extract::State;

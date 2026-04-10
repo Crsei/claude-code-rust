@@ -1,5 +1,7 @@
 //! Webhook signature verification and payload parsing.
 
+#![allow(dead_code)]
+
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
