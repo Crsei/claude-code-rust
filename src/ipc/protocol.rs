@@ -96,6 +96,15 @@ pub enum BackendMessage {
     Suggestions { items: Vec<String> },
     /// An error occurred.
     Error { message: String, recoverable: bool },
+    /// A background agent has completed execution.
+    BackgroundAgentComplete {
+        agent_id: String,
+        description: String,
+        /// Truncated preview of the result (for UI display).
+        result_preview: String,
+        had_error: bool,
+        duration_ms: u64,
+    },
 }
 
 // ---------------------------------------------------------------------------

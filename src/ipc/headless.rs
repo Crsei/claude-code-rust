@@ -66,6 +66,11 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
         engine.set_permission_callback(callback);
     }
 
+    // ── 1b. Background agent channel setup ────────────────────────
+    let (bg_tx, mut bg_rx) = tokio::sync::mpsc::unbounded_channel();
+    engine.set_bg_agent_tx(bg_tx);
+    let pending_bg = engine.pending_bg_results.clone();
+
     // ── 2. Prompt suggestion service ───────────────────────────────
     let suggestion_svc = Arc::new(Mutex::new(PromptSuggestionService::new(true)));
 
@@ -82,106 +87,130 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
     let mut lines = stdin.lines();
 
     loop {
-        let line = match lines.next_line().await {
-            Ok(Some(line)) => line,
-            Ok(None) => {
-                debug!("headless: stdin closed, exiting");
-                break;
-            }
-            Err(e) => {
-                error!("headless: error reading stdin: {}", e);
-                break;
-            }
-        };
+        tokio::select! {
+            // ── Branch 1: Frontend message (stdin) ──────────────
+            line = lines.next_line() => {
+                let line = match line {
+                    Ok(Some(line)) => line,
+                    Ok(None) => {
+                        debug!("headless: stdin closed, exiting");
+                        break;
+                    }
+                    Err(e) => {
+                        error!("headless: error reading stdin: {}", e);
+                        break;
+                    }
+                };
 
-        let msg: FrontendMessage = match serde_json::from_str(&line) {
-            Ok(m) => m,
-            Err(e) => {
-                warn!(
-                    "headless: failed to parse FrontendMessage: {} — line: {}",
-                    e, line
-                );
-                let _ = send_to_frontend(&BackendMessage::Error {
-                    message: format!("invalid FrontendMessage: {}", e),
-                    recoverable: true,
-                });
-                continue;
-            }
-        };
+                let msg: FrontendMessage = match serde_json::from_str(&line) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        warn!(
+                            "headless: failed to parse FrontendMessage: {} — line: {}",
+                            e, line
+                        );
+                        let _ = send_to_frontend(&BackendMessage::Error {
+                            message: format!("invalid FrontendMessage: {}", e),
+                            recoverable: true,
+                        });
+                        continue;
+                    }
+                };
 
-        match msg {
-            // ── SubmitPrompt ────────────────────────────────────────
-            FrontendMessage::SubmitPrompt { text, id } => {
-                debug!("headless: submit_prompt id={}", id);
-                engine.reset_abort();
+                match msg {
+                    FrontendMessage::SubmitPrompt { text, id } => {
+                        debug!("headless: submit_prompt id={}", id);
+                        engine.reset_abort();
 
-                let engine_clone = engine.clone();
-                let message_id = id;
-                let svc = suggestion_svc.clone();
+                        let engine_clone = engine.clone();
+                        let message_id = id;
+                        let svc = suggestion_svc.clone();
 
-                // Spawn a task to stream the response so we don't block the
-                // stdin reader (abort/permission responses can arrive while streaming).
-                tokio::spawn(async move {
-                    let stream =
-                        engine_clone.submit_message(&text, QuerySource::ReplMainThread);
-                    let mut stream = std::pin::pin!(stream);
+                        tokio::spawn(async move {
+                            let stream =
+                                engine_clone.submit_message(&text, QuerySource::ReplMainThread);
+                            let mut stream = std::pin::pin!(stream);
 
-                    while let Some(sdk_msg) = stream.next().await {
-                        let send_result =
-                            handle_sdk_message(&sdk_msg, &message_id, &engine_clone, &svc);
+                            while let Some(sdk_msg) = stream.next().await {
+                                let send_result =
+                                    handle_sdk_message(&sdk_msg, &message_id, &engine_clone, &svc);
+                                if let Err(e) = send_result {
+                                    error!("headless: failed to send to frontend: {}", e);
+                                    break;
+                                }
+                            }
+                        });
+                    }
 
-                        if let Err(e) = send_result {
-                            error!("headless: failed to send to frontend: {}", e);
-                            break;
+                    FrontendMessage::AbortQuery => {
+                        debug!("headless: abort requested");
+                        engine.abort();
+                    }
+
+                    FrontendMessage::PermissionResponse {
+                        tool_use_id,
+                        decision,
+                    } => {
+                        debug!(
+                            "headless: permission response tool_use_id={} decision={}",
+                            tool_use_id, decision
+                        );
+                        if let Some(tx) = pending_permissions.lock().remove(&tool_use_id) {
+                            let _ = tx.send(decision);
+                        } else {
+                            warn!(
+                                "headless: no pending permission for tool_use_id={}",
+                                tool_use_id
+                            );
                         }
                     }
-                });
-            }
 
-            // ── AbortQuery ──────────────────────────────────────────
-            FrontendMessage::AbortQuery => {
-                debug!("headless: abort requested");
-                engine.abort();
-            }
+                    FrontendMessage::SlashCommand { raw } => {
+                        debug!("headless: slash command: {}", raw);
+                        handle_slash_command(&raw, &engine).await;
+                    }
 
-            // ── PermissionResponse ──────────────────────────────────
-            FrontendMessage::PermissionResponse {
-                tool_use_id,
-                decision,
-            } => {
-                debug!(
-                    "headless: permission response tool_use_id={} decision={}",
-                    tool_use_id, decision
-                );
-                // Forward to the waiting permission callback
-                if let Some(tx) = pending_permissions.lock().remove(&tool_use_id) {
-                    let _ = tx.send(decision);
-                } else {
-                    warn!(
-                        "headless: no pending permission for tool_use_id={}",
-                        tool_use_id
-                    );
+                    FrontendMessage::Resize { cols, rows } => {
+                        debug!("headless: resize {}x{}", cols, rows);
+                        let mut ps = crate::bootstrap::PROCESS_STATE.write();
+                        ps.terminal_cols = cols;
+                        ps.terminal_rows = rows;
+                    }
+
+                    FrontendMessage::Quit => {
+                        debug!("headless: quit requested");
+                        break;
+                    }
                 }
             }
 
-            // ── SlashCommand ────────────────────────────────────────
-            FrontendMessage::SlashCommand { raw } => {
-                debug!("headless: slash command: {}", raw);
-                handle_slash_command(&raw, &engine).await;
-            }
+            // ── Branch 2: Background agent completed ────────────
+            Some(completed) = bg_rx.recv() => {
+                debug!(
+                    agent_id = %completed.agent_id,
+                    description = %completed.description,
+                    had_error = completed.had_error,
+                    "headless: background agent completed"
+                );
 
-            // ── Resize ──────────────────────────────────────────────
-            FrontendMessage::Resize { cols, rows } => {
-                debug!("headless: resize {}x{}", cols, rows);
-                let mut ps = crate::bootstrap::PROCESS_STATE.write();
-                ps.terminal_cols = cols;
-                ps.terminal_rows = rows;
-            }
+                // Truncate result for UI preview
+                let result_preview = if completed.result_text.len() > 200 {
+                    format!("{}...", &completed.result_text[..200])
+                } else {
+                    completed.result_text.clone()
+                };
 
-            // ── Quit ────────────────────────────────────────────────
-            FrontendMessage::Quit => {
-                debug!("headless: quit requested");
-                break;
+                // Notify frontend immediately
+                let _ = send_to_frontend(&BackendMessage::BackgroundAgentComplete {
+                    agent_id: completed.agent_id.clone(),
+                    description: completed.description.clone(),
+                    result_preview,
+                    had_error: completed.had_error,
+                    duration_ms: completed.duration.as_millis() as u64,
+                });
+
+                // Push to shared buffer for query loop injection
+                pending_bg.push(completed);
             }
         }
     }
