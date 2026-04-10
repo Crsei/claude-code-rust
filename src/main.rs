@@ -55,7 +55,6 @@ mod shutdown;
 mod ipc;
 
 // KAIROS daemon
-#[allow(dead_code)] // Types consumed by upcoming HTTP server + tick loop modules.
 mod daemon;
 
 use std::collections::HashMap;
@@ -150,6 +149,14 @@ struct Cli {
     /// Headless mode: run without TUI, communicate via JSON on stdin/stdout
     #[arg(long, hide = true)]
     headless: bool,
+
+    /// Run as a background daemon with HTTP server (KAIROS mode).
+    #[arg(long, hide = true)]
+    daemon: bool,
+
+    /// Daemon HTTP port (default: 19836).
+    #[arg(long, default_value = "19836")]
+    port: u16,
 
     /// Inline prompt (positional argument or via stdin in print mode)
     prompt: Vec<String>,
@@ -500,6 +507,45 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     } else {
         None
     };
+
+    // ── Daemon mode ──
+    if cli.daemon {
+        use crate::config::features::{self, Feature};
+        if !features::enabled(Feature::Kairos) {
+            eprintln!("error: --daemon requires FEATURE_KAIROS=1");
+            return Ok(ExitCode::FAILURE);
+        }
+
+        // Set KAIROS state
+        engine.update_app_state(|app| {
+            app.kairos_active = true;
+            app.is_assistant_mode = true;
+            app.autonomous_tick_ms = Some(30_000);
+        });
+
+        let daemon_state = daemon::state::DaemonState::new(
+            engine.clone(),
+            Arc::new(features::FLAGS.clone()),
+            cli.port,
+        );
+
+        let http_state = daemon_state.clone();
+        let tick_state = daemon_state.clone();
+        let tick_enabled = features::enabled(Feature::Proactive);
+
+        return tokio::select! {
+            result = daemon::server::serve_http(http_state, cli.port) => {
+                result.map(|()| ExitCode::SUCCESS).map_err(|e| e.into())
+            }
+            _ = daemon::tick::tick_loop(tick_state), if tick_enabled => {
+                Ok(ExitCode::SUCCESS)
+            }
+            _ = tokio::signal::ctrl_c() => {
+                tracing::info!("daemon shutting down");
+                Ok(ExitCode::SUCCESS)
+            }
+        };
+    }
 
     // ── B.10: Enter TUI or headless mode ────────────────────────────
     if cli.headless {
