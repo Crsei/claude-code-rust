@@ -61,6 +61,9 @@ pub enum QuerySource {
     Compact,
     SessionMemory,
     Agent(String),
+    ProactiveTick,
+    WebhookEvent,
+    ChannelNotification,
 }
 
 impl QuerySource {
@@ -72,11 +75,21 @@ impl QuerySource {
             QuerySource::SessionMemory => "session_memory",
             #[allow(unused_variables)]
             QuerySource::Agent(id) => "agent:", // 简化
+            QuerySource::ProactiveTick => "proactive_tick",
+            QuerySource::WebhookEvent => "webhook_event",
+            QuerySource::ChannelNotification => "channel_notification",
         }
     }
 
     pub fn starts_with_agent(&self) -> bool {
         matches!(self, QuerySource::Agent(_))
+    }
+
+    pub fn is_autonomous(&self) -> bool {
+        matches!(
+            self,
+            QuerySource::ProactiveTick | QuerySource::WebhookEvent | QuerySource::ChannelNotification
+        )
     }
 }
 
