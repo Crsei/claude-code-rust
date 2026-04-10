@@ -77,8 +77,8 @@ fn multi_turn_conversation() {
     session.send_line("Say exactly: FIRST_TURN_OK");
     let found_first = session.wait_for_text("Claude:", API_TIMEOUT);
 
-    // Wait for model to fully finish and TUI to return to input mode.
-    std::thread::sleep(Duration::from_secs(5));
+    // Wait for model to fully finish — status bar shows "ready" when idle.
+    session.wait_status("ready", Duration::from_secs(15));
 
     // Second turn
     session.send_line("Say exactly: SECOND_TURN_OK");

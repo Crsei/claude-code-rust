@@ -9,17 +9,19 @@ fn shows_header_with_version() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
+    // Use current_screen() to check what the terminal actually renders right now,
+    // as opposed to accumulated text which may contain stale frames.
+    let screen = session.current_screen();
+    assert!(
+        screen.contains("Claude Code") || screen.contains("cc-rust"),
+        "current screen should show app name in header, got:\n{}",
+        screen
+    );
+
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(500));
     session.send_ctrl_c();
-
-    let output = session.finish(QUICK_TIMEOUT, "welcome_header");
-
-    assert!(
-        output.contains("Claude Code") || output.contains("cc-rust"),
-        "should show app name in header, got:\n{}",
-        output.text()
-    );
+    let _output = session.finish(QUICK_TIMEOUT, "welcome_header");
 }
 
 /// The welcome screen should display the ASCII art logo.
@@ -48,19 +50,19 @@ fn shows_tips() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
+    // Check the actual rendered screen for tips content
+    let screen = session.current_screen();
+    let has_tips = screen.contains("Tips")
+        || screen.contains("Enter")
+        || screen.contains("Ctrl")
+        || screen.contains("Type a message");
+
+    assert!(has_tips, "current screen should show usage tips, got:\n{}", screen);
+
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(500));
     session.send_ctrl_c();
-
-    let output = session.finish(QUICK_TIMEOUT, "welcome_tips");
-    let text = output.text();
-
-    let has_tips = text.contains("Tips")
-        || text.contains("Enter")
-        || text.contains("Ctrl")
-        || text.contains("Type a message");
-
-    assert!(has_tips, "should show usage tips, got:\n{}", text);
+    let _output = session.finish(QUICK_TIMEOUT, "welcome_tips");
 }
 
 /// The welcome screen at different terminal sizes should still render.
