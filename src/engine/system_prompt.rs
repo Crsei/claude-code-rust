@@ -200,10 +200,6 @@ fn env_info_section(model: &str, cwd: &str) -> String {
 
     let shell = if cfg!(windows) { "bash" } else { "bash" };
 
-    let os_version = std::env::consts::OS;
-
-    let date = chrono::Local::now().format("%Y-%m-%d").to_string();
-
     let model_desc = format!(
         "You are powered by the model {}. The exact model ID is {}.",
         crate::config::constants::marketing_name_for_model(model).unwrap_or(model),
