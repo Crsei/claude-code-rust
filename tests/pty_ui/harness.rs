@@ -200,10 +200,85 @@ impl PtySession {
     // ── Output inspection ───────────────────────────────────────────
 
     /// Get current captured output as plain text (ANSI stripped), non-blocking.
+    ///
+    /// NOTE: This returns ALL accumulated text from all frames overlaid.
+    /// For the current screen state, use `current_screen()` instead.
     pub fn current_text(&self) -> String {
         let buf = self.buffer.lock().unwrap().clone();
         let plain = strip_ansi_escapes::strip(&buf);
         String::from_utf8_lossy(&plain).into_owned()
+    }
+
+    /// Get the current terminal screen content via vt100 emulation.
+    ///
+    /// Unlike `current_text()` which returns accumulated text from all frames,
+    /// this returns the actual current screen state — what you'd see on the
+    /// terminal right now. Useful for reading the status bar or checking
+    /// the current UI state precisely.
+    pub fn current_screen(&self) -> String {
+        let buf = self.buffer.lock().unwrap().clone();
+        let mut parser = vt100::Parser::new(self.rows, self.cols, 0);
+        parser.process(&buf);
+        parser.screen().contents()
+    }
+
+    /// Read a specific row from the current terminal screen (0-indexed).
+    pub fn screen_row(&self, row: u16) -> String {
+        let buf = self.buffer.lock().unwrap().clone();
+        let mut parser = vt100::Parser::new(self.rows, self.cols, 0);
+        parser.process(&buf);
+        let screen = parser.screen();
+        let mut line = String::new();
+        for col in 0..self.cols {
+            let cell = screen.cell(row, col).unwrap();
+            let ch = cell.contents();
+            if ch.is_empty() {
+                line.push(' ');
+            } else {
+                line.push_str(&ch);
+            }
+        }
+        line.trim_end().to_string()
+    }
+
+    /// Read the status bar (last row) from the current terminal screen.
+    pub fn status_bar(&self) -> String {
+        self.screen_row(self.rows - 1)
+    }
+
+    /// Wait until the status bar contains `needle`.
+    pub fn wait_status(&self, needle: &str, timeout: Duration) -> bool {
+        let start = Instant::now();
+        loop {
+            if start.elapsed() > timeout {
+                return false;
+            }
+            if self.status_bar().contains(needle) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    }
+
+    /// Wait for the model to finish: status bar transitions to "ready"
+    /// with a message count > `min_msgs`.
+    pub fn wait_response_done(&self, min_msgs: usize, timeout: Duration) -> bool {
+        let start = Instant::now();
+        loop {
+            if start.elapsed() > timeout {
+                return false;
+            }
+            let bar = self.status_bar();
+            if bar.contains("ready") {
+                // Parse msg count from "N msgs"
+                if let Some(count) = parse_msg_count(&bar) {
+                    if count > min_msgs {
+                        return true;
+                    }
+                }
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
     }
 
     /// Wait until captured output contains `needle` (ANSI stripped).
@@ -235,6 +310,39 @@ impl PtySession {
             }
             std::thread::sleep(Duration::from_millis(100));
         }
+    }
+
+    // ── Mid-session snapshot ──────────────────────────────────────────
+
+    /// Take a snapshot of the current terminal state without ending the session.
+    /// Saves `.raw`, `.log`, and `.html` files and returns the plain text.
+    pub fn snapshot(&self, label: &str) -> String {
+        let raw = self.buffer.lock().unwrap().clone();
+        let plain = strip_ansi_escapes::strip(&raw);
+
+        let dir = logs_dir();
+        let raw_path = dir.join(format!("{label}.raw"));
+        let log_path = dir.join(format!("{label}.log"));
+        std::fs::write(&raw_path, &raw).expect("write raw");
+        std::fs::write(&log_path, &plain).expect("write log");
+
+        let output = CapturedOutput {
+            raw,
+            plain: plain.clone(),
+            cols: self.cols,
+            rows: self.rows,
+        };
+        let html_path = dir.join(format!("{label}.html"));
+        let html = output.render_html();
+        std::fs::write(&html_path, html.as_bytes()).expect("write html");
+
+        eprintln!(
+            "[snapshot] {label}: {} bytes → {}",
+            output.raw.len(),
+            html_path.display()
+        );
+
+        String::from_utf8_lossy(&plain).into_owned()
     }
 
     // ── Finish & save ───────────────────────────────────────────────
@@ -326,30 +434,51 @@ impl CapturedOutput {
 
     /// Render raw ANSI output through a vt100 terminal emulator → HTML screenshot.
     ///
-    /// TUI apps clear the screen on exit. We detect the cleanup sequence and
-    /// stop processing just before it to capture the last rendered frame.
-    ///
-    /// Supported cleanup patterns:
-    /// - Alternate screen off: `\x1b[?1049l`
-    /// - Direct clear: `\x1b[m\x1b[H\x1b[K` (reset + cursor home + erase line)
-    /// - Full erase: `\x1b[2J` (erase entire display)
+    /// Strategy: process ALL data first. If the screen has content, use it
+    /// (this handles mid-session snapshots correctly). If the screen is blank
+    /// (exit cleanup cleared it), fall back to cleanup marker detection.
     pub fn render_html(&self) -> String {
+        // First pass: process everything
         let mut parser = vt100::Parser::new(self.rows, self.cols, 0);
+        parser.process(&self.raw);
 
-        // Try multiple cleanup markers, use whichever appears last
-        let markers: &[&[u8]] = &[
-            b"\x1b[?1049l",       // alternate screen off
-            b"\x1b[m\x1b[H\x1b[K", // reset + home + erase line (crossterm cleanup)
-            b"\x1b[2J",           // erase entire display
-        ];
+        if parser.screen().contents().trim().is_empty() {
+            // Screen is blank — exit cleanup cleared it. Re-parse, stopping
+            // before the cleanup. We search for the cursor-home sequence
+            // `\x1b[H` that is followed by line clears, working backwards.
+            let markers: &[&[u8]] = &[
+                b"\x1b[?1049l",         // alternate screen off
+                b"\x1b[2J",             // erase entire display
+            ];
 
-        let process_end = markers
-            .iter()
-            .filter_map(|m| find_last_subsequence(&self.raw, m))
-            .min()  // use the earliest cleanup marker
-            .unwrap_or(self.raw.len());
+            // Find the last \x1b[H that leads into a blank screen
+            let mut best_end = self.raw.len();
 
-        parser.process(&self.raw[..process_end]);
+            // Check dedicated markers first
+            for m in markers {
+                if let Some(pos) = find_last_subsequence(&self.raw, m) {
+                    best_end = best_end.min(pos);
+                }
+            }
+
+            // Check for \x1b[H followed by \x1b[K (cursor home + erase line cleanup)
+            // Walk backwards through all \x1b[H positions, try each as a cutoff
+            let home_seq = b"\x1b[H";
+            let mut search_end = self.raw.len();
+            while let Some(pos) = find_last_subsequence(&self.raw[..search_end], home_seq) {
+                let mut test_parser = vt100::Parser::new(self.rows, self.cols, 0);
+                test_parser.process(&self.raw[..pos]);
+                if !test_parser.screen().contents().trim().is_empty() {
+                    best_end = best_end.min(pos);
+                    break;
+                }
+                search_end = pos;
+            }
+
+            parser = vt100::Parser::new(self.rows, self.cols, 0);
+            parser.process(&self.raw[..best_end]);
+        }
+
         let screen = parser.screen();
 
         let mut html = String::with_capacity(self.raw.len() * 3);
@@ -444,6 +573,20 @@ pre {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
+
+/// Parse "N msgs" from a status bar string, returning N.
+fn parse_msg_count(status: &str) -> Option<usize> {
+    // Matches patterns like "2 msgs", "10 msgs"
+    for word in status.split_whitespace() {
+        if let Ok(n) = word.parse::<usize>() {
+            // Check if next token is "msgs" (approximate — just check the word after the number)
+            if status.contains(&format!("{n} msgs")) || status.contains(&format!("{n} msg")) {
+                return Some(n);
+            }
+        }
+    }
+    None
+}
 
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack

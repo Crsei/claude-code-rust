@@ -27,7 +27,8 @@ __pycache__/
 logs/**/*.log
 logs/**/*.logs
 logs/**/*.raw
-
+logs/**/*.html
+logs/**/*.png
 # macOS
 .DS_Store
 
