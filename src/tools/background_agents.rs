@@ -50,3 +50,57 @@ impl PendingBackgroundResults {
         std::mem::take(&mut *guard)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_completed(id: &str, desc: &str) -> CompletedBackgroundAgent {
+        CompletedBackgroundAgent {
+            agent_id: id.to_string(),
+            description: desc.to_string(),
+            result_text: format!("Result from {}", desc),
+            had_error: false,
+            duration: Duration::from_secs(1),
+        }
+    }
+
+    #[test]
+    fn test_pending_results_push_and_drain() {
+        let pending = PendingBackgroundResults::new();
+        assert!(pending.drain_all().is_empty());
+
+        pending.push(make_completed("a1", "task one"));
+        pending.push(make_completed("a2", "task two"));
+
+        let drained = pending.drain_all();
+        assert_eq!(drained.len(), 2);
+        assert_eq!(drained[0].agent_id, "a1");
+        assert_eq!(drained[1].agent_id, "a2");
+
+        // Second drain is empty
+        assert!(pending.drain_all().is_empty());
+    }
+
+    #[test]
+    fn test_pending_results_clone_shares_state() {
+        let pending1 = PendingBackgroundResults::new();
+        let pending2 = pending1.clone();
+
+        pending1.push(make_completed("a1", "task"));
+        let drained = pending2.drain_all();
+        assert_eq!(drained.len(), 1);
+        assert_eq!(drained[0].agent_id, "a1");
+    }
+
+    #[test]
+    fn test_channel_send_recv() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        tx.send(make_completed("bg1", "background task")).unwrap();
+
+        let received = rx.try_recv().unwrap();
+        assert_eq!(received.agent_id, "bg1");
+        assert_eq!(received.description, "background task");
+        assert!(!received.had_error);
+    }
+}

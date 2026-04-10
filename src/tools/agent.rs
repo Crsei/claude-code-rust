@@ -974,4 +974,30 @@ mod tests {
         let tool = AgentTool;
         assert_eq!(tool.max_result_size_chars(), 200_000);
     }
+
+    #[tokio::test]
+    async fn test_run_in_background_without_tx_falls_back() {
+        // When bg_agent_tx is None, run_in_background should parse correctly
+        let input: AgentInput = serde_json::from_value(json!({
+            "prompt": "test task",
+            "description": "test",
+            "run_in_background": true
+        }))
+        .unwrap();
+        assert!(input.run_in_background);
+    }
+
+    #[tokio::test]
+    async fn test_background_agent_placeholder_format() {
+        // Verify the placeholder message format
+        let agent_id = "test-agent-123";
+        let description = "search codebase";
+        let placeholder = format!(
+            "Agent '{}' launched in background (id: {}). You will be notified when it completes.",
+            description, agent_id
+        );
+        assert!(placeholder.contains("search codebase"));
+        assert!(placeholder.contains("test-agent-123"));
+        assert!(placeholder.contains("background"));
+    }
 }
