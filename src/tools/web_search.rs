@@ -52,16 +52,12 @@ const SEARCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 // ---------------------------------------------------------------------------
 
 /// Environment variable for configuring cache TTL.
-// TODO(task-2): remove allow(dead_code) once wired into call()
-#[allow(dead_code)]
 const CACHE_TTL_ENV: &str = "CC_RUST_SEARCH_CACHE_TTL";
 
 /// Default cache TTL in seconds (5 minutes).
-#[allow(dead_code)]
 const DEFAULT_CACHE_TTL_SECS: u64 = 300;
 
 /// Read the cache TTL from environment, falling back to default.
-#[allow(dead_code)]
 fn cache_ttl_secs() -> u64 {
     std::env::var(CACHE_TTL_ENV)
         .ok()
@@ -69,7 +65,6 @@ fn cache_ttl_secs() -> u64 {
         .unwrap_or(DEFAULT_CACHE_TTL_SECS)
 }
 
-#[allow(dead_code)]
 struct CacheEntry {
     results: Vec<SearchResultEntry>,
     inserted_at: Instant,
@@ -79,12 +74,10 @@ struct CacheEntry {
 ///
 /// Keyed by `"{query}|{max_results}|{provider}"`. Stores raw results
 /// before domain filtering so different domain filters share cache.
-#[allow(dead_code)]
 struct SearchCache {
     entries: parking_lot::Mutex<HashMap<String, CacheEntry>>,
 }
 
-#[allow(dead_code)]
 impl SearchCache {
     fn new() -> Self {
         Self {
@@ -120,9 +113,13 @@ impl SearchCache {
 }
 
 /// Global search cache instance.
-#[allow(dead_code)]
 static SEARCH_CACHE: std::sync::LazyLock<SearchCache> =
     std::sync::LazyLock::new(SearchCache::new);
+
+/// Build the cache key from query parameters.
+fn build_cache_key(query: &str, max_results: u32, provider_name: &str) -> String {
+    format!("{}|{}|{}", query, max_results, provider_name)
+}
 
 // ---------------------------------------------------------------------------
 // Brave Search response types
@@ -324,32 +321,6 @@ fn matches_domain(url: &str, domain: &str) -> bool {
     false
 }
 
-#[allow(dead_code)]
-fn filter_results(
-    results: Vec<BraveWebResult>,
-    allowed_domains: &[String],
-    blocked_domains: &[String],
-) -> Vec<SearchResultEntry> {
-    results
-        .into_iter()
-        .filter(|r| {
-            if !allowed_domains.is_empty() {
-                return allowed_domains.iter().any(|d| matches_domain(&r.url, d));
-            }
-            if !blocked_domains.is_empty() {
-                return !blocked_domains.iter().any(|d| matches_domain(&r.url, d));
-            }
-            true
-        })
-        .map(|r| SearchResultEntry {
-            title: r.title,
-            url: r.url,
-            description: r.description,
-            age: r.age,
-        })
-        .collect()
-}
-
 /// Filter unified SearchResultEntry results by domain rules.
 fn filter_results_unified(
     results: Vec<SearchResultEntry>,
@@ -375,6 +346,26 @@ fn filter_results_unified(
 // ---------------------------------------------------------------------------
 
 pub struct WebSearchTool;
+
+impl WebSearchTool {
+    /// Fetch raw results from the search provider.
+    async fn fetch_results(
+        &self,
+        provider: &SearchProvider,
+        query: &str,
+        max_results: u32,
+    ) -> Result<Vec<SearchResultEntry>> {
+        let client = reqwest::Client::builder()
+            .timeout(SEARCH_TIMEOUT)
+            .build()
+            .context("Failed to build HTTP client")?;
+
+        match provider {
+            SearchProvider::Tavily(key) => search_tavily(&client, key, query, max_results).await,
+            SearchProvider::Brave(key) => search_brave(&client, key, query, max_results).await,
+        }
+    }
+}
 
 #[async_trait]
 impl Tool for WebSearchTool {
@@ -491,19 +482,28 @@ impl Tool for WebSearchTool {
 
         let start = Instant::now();
 
-        let client = reqwest::Client::builder()
-            .timeout(SEARCH_TIMEOUT)
-            .build()
-            .context("Failed to build HTTP client")?;
+        let provider_name = match &provider {
+            SearchProvider::Tavily(_) => "tavily",
+            SearchProvider::Brave(_) => "brave",
+        };
 
-        let (provider_name, raw_results) = match &provider {
-            SearchProvider::Tavily(key) => {
-                match search_tavily(&client, key, query, max_results).await {
-                    Ok(results) => ("tavily", results),
+        let ttl = cache_ttl_secs();
+        let cache_key = build_cache_key(query, max_results, provider_name);
+
+        // Check cache first, fetch on miss
+        let raw_results = if ttl > 0 {
+            if let Some(cached) = SEARCH_CACHE.get(&cache_key, ttl) {
+                cached
+            } else {
+                match self.fetch_results(&provider, query, max_results).await {
+                    Ok(results) => {
+                        SEARCH_CACHE.put(&cache_key, results.clone());
+                        results
+                    }
                     Err(e) => {
                         return Ok(ToolResult {
                             data: json!({
-                                "error": format!("Tavily Search failed: {}", e),
+                                "error": format!("{} search failed: {}", provider_name, e),
                                 "query": query,
                             }),
                             new_messages: vec![],
@@ -511,18 +511,18 @@ impl Tool for WebSearchTool {
                     }
                 }
             }
-            SearchProvider::Brave(key) => {
-                match search_brave(&client, key, query, max_results).await {
-                    Ok(results) => ("brave", results),
-                    Err(e) => {
-                        return Ok(ToolResult {
-                            data: json!({
-                                "error": format!("Brave Search failed: {}", e),
-                                "query": query,
-                            }),
-                            new_messages: vec![],
-                        });
-                    }
+        } else {
+            // TTL=0 disables cache
+            match self.fetch_results(&provider, query, max_results).await {
+                Ok(results) => results,
+                Err(e) => {
+                    return Ok(ToolResult {
+                        data: json!({
+                            "error": format!("{} search failed: {}", provider_name, e),
+                            "query": query,
+                        }),
+                        new_messages: vec![],
+                    });
                 }
             }
         };
@@ -601,48 +601,6 @@ mod tests {
             "rust-lang.org"
         ));
         assert!(!matches_domain("https://example.com/", "rust-lang.org"));
-    }
-
-    #[test]
-    fn test_filter_results_allowed() {
-        let results = vec![
-            BraveWebResult {
-                title: "Rust".into(),
-                url: "https://rust-lang.org".into(),
-                description: "".into(),
-                age: None,
-            },
-            BraveWebResult {
-                title: "Go".into(),
-                url: "https://go.dev".into(),
-                description: "".into(),
-                age: None,
-            },
-        ];
-        let filtered = filter_results(results, &["rust-lang.org".to_string()], &[]);
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].title, "Rust");
-    }
-
-    #[test]
-    fn test_filter_results_blocked() {
-        let results = vec![
-            BraveWebResult {
-                title: "A".into(),
-                url: "https://spam.com/page".into(),
-                description: "".into(),
-                age: None,
-            },
-            BraveWebResult {
-                title: "B".into(),
-                url: "https://good.com/page".into(),
-                description: "".into(),
-                age: None,
-            },
-        ];
-        let filtered = filter_results(results, &[], &["spam.com".to_string()]);
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].title, "B");
     }
 
     #[test]
@@ -906,6 +864,19 @@ mod tests {
         assert_eq!(cache.get("q1|5|tavily", 300).unwrap()[0].title, "A");
         assert_eq!(cache.get("q2|5|tavily", 300).unwrap()[0].title, "B");
         assert!(cache.get("q3|5|tavily", 300).is_none());
+    }
+
+    #[test]
+    fn test_build_cache_key() {
+        let k1 = build_cache_key("rust", 5, "tavily");
+        let k2 = build_cache_key("rust", 10, "tavily");
+        let k3 = build_cache_key("rust", 5, "brave");
+        let k4 = build_cache_key("go", 5, "tavily");
+
+        assert_ne!(k1, k2, "different max_results should differ");
+        assert_ne!(k1, k3, "different provider should differ");
+        assert_ne!(k1, k4, "different query should differ");
+        assert_eq!(k1, build_cache_key("rust", 5, "tavily"), "same inputs same key");
     }
 
     #[test]
