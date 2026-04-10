@@ -5,7 +5,9 @@
 //! Pipeline stages:
 //!   1. Tool lookup (by name, then by alias fallback)
 //!   2. Abort check
-//!   3. Input validation (schema + semantic)
+//!   3a. Input validation (schema + semantic)
+//!   3b. Input sanitization
+//!   3c. Security validation (plan mode gate, dangerous cmd, path boundary)
 //!   4. Pre-tool hooks (can modify input, override permission, stop)
 //!   5. Permission check (hook override → rule engine → mode)
 //!   6. Tool execution (call with progress callback)
@@ -22,8 +24,12 @@ use serde_json::Value;
 use tracing::{debug, info, warn};
 
 use crate::permissions::decision::{self, PermissionBehavior, PermissionDecision};
+use crate::permissions::dangerous;
+use crate::permissions::path_validation;
 use crate::types::message::{AssistantMessage, ContentBlock, Message, ToolResultContent};
-use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools, ValidationResult};
+use crate::types::tool::{
+    PermissionMode, Tool, ToolProgress, ToolResult, ToolUseContext, Tools, ValidationResult,
+};
 
 use super::hooks::{
     self, HookEventConfig, PermissionOverride, PostToolHookResult, PreToolHookResult,
@@ -145,6 +151,13 @@ pub async fn run_tool_use(
     let mut sanitized_input = input.clone();
     if let Some(obj) = sanitized_input.as_object_mut() {
         obj.remove("_simulatedSedEdit");
+    }
+
+    // ── Stage 3c: Security validation ──────────────────────────────
+    if let Some(err_result) =
+        security_validate(tool_use_id, tool_name, &sanitized_input, tool.as_ref(), ctx, started)
+    {
+        return err_result;
     }
 
     // ── Stage 4: Pre-tool hooks ─────────────────────────────────────
@@ -534,6 +547,115 @@ impl StreamingToolExecutor {
 }
 
 // ---------------------------------------------------------------------------
+// Stage 3c: Security validation
+// ---------------------------------------------------------------------------
+
+/// Centralized security checks run before hooks and permission evaluation.
+///
+/// Returns `Some(ToolExecutionResult)` if the tool call should be **rejected**,
+/// or `None` if validation passed and the pipeline should continue.
+///
+/// Checks performed (in order):
+///   3c.1  Plan-mode gate — non-read-only tools are blocked in Plan mode
+///   3c.2  Dangerous command detection — Bash/PowerShell commands screened
+///   3c.3  Path boundary enforcement — Write/Edit paths must be within allowed dirs
+///
+/// All checks are skipped when the permission mode is `Bypass`.
+fn security_validate(
+    tool_use_id: &str,
+    tool_name: &str,
+    input: &Value,
+    tool: &dyn Tool,
+    ctx: &ToolUseContext,
+    started: Instant,
+) -> Option<ToolExecutionResult> {
+    let app_state = (ctx.get_app_state)();
+    let mode = &app_state.tool_permission_context.mode;
+
+    // Bypass mode skips all security validation
+    if *mode == PermissionMode::Bypass {
+        return None;
+    }
+
+    // ── 3c.1: Plan mode gate ───────────────────────────────────────
+    if *mode == PermissionMode::Plan && !tool.is_read_only(input) {
+        return Some(make_error_result(
+            tool_use_id,
+            tool_name,
+            &format!(
+                "Tool '{}' is not available in Plan mode (read-only exploration only)",
+                tool_name
+            ),
+            started,
+        ));
+    }
+
+    // ── 3c.2: Dangerous command check (Bash / PowerShell) ──────────
+    if tool_name == "Bash" || tool_name == "PowerShell" {
+        if let Some(command) = input.get("command").and_then(|v| v.as_str()) {
+            if let Some(reason) = dangerous::is_dangerous_command(command) {
+                return Some(make_error_result(
+                    tool_use_id,
+                    tool_name,
+                    &format!("Dangerous command blocked: {}", reason),
+                    started,
+                ));
+            }
+        }
+    }
+
+    // ── 3c.3: Path boundary check (Write / Edit) ──────────────────
+    const FILE_TOOL_NAMES: &[&str] = &["Write", "Edit", "FileWrite", "FileEdit"];
+    if FILE_TOOL_NAMES.contains(&tool_name) {
+        if let Some(file_path_str) = input.get("file_path").and_then(|v| v.as_str()) {
+            // Step 1: validate path structure (traversal attacks, null bytes, etc.)
+            let canonical = match path_validation::validate_file_path(file_path_str) {
+                Ok(p) => p,
+                Err(e) => {
+                    return Some(make_error_result(
+                        tool_use_id,
+                        tool_name,
+                        &format!("Invalid file path: {}", e),
+                        started,
+                    ));
+                }
+            };
+
+            // Step 2: check the path is within allowed directories
+            let cwd = crate::bootstrap::PROCESS_STATE
+                .read()
+                .original_cwd
+                .clone();
+            let perm_ctx = &app_state.tool_permission_context;
+
+            if !path_validation::is_path_within_allowed_directories(&canonical, &cwd, perm_ctx) {
+                return Some(make_error_result(
+                    tool_use_id,
+                    tool_name,
+                    &format!(
+                        "Path '{}' is outside the allowed working directories. \
+                         Allowed: {}{}",
+                        file_path_str,
+                        cwd.display(),
+                        if perm_ctx.additional_working_directories.is_empty() {
+                            String::new()
+                        } else {
+                            format!(
+                                " (and {} additional directories)",
+                                perm_ctx.additional_working_directories.len()
+                            )
+                        }
+                    ),
+                    started,
+                ));
+            }
+        }
+    }
+
+    None // all checks passed
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -596,6 +718,80 @@ fn enforce_result_size(data: Value, max_chars: usize) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::app_state::AppState;
+    use crate::types::tool::{
+        FileStateCache, PermissionMode, PermissionResult, ToolPermissionContext, ToolUseOptions,
+    };
+    use std::collections::HashMap;
+
+    // -- Helper: minimal ToolUseContext for security_validate tests ----------
+
+    fn make_ctx_with_mode(mode: PermissionMode) -> ToolUseContext {
+        let mut app = AppState::default();
+        app.tool_permission_context.mode = mode;
+
+        let (_tx, rx) = tokio::sync::watch::channel(false);
+        ToolUseContext {
+            options: ToolUseOptions {
+                debug: false,
+                main_loop_model: "test".into(),
+                verbose: false,
+                is_non_interactive_session: false,
+                custom_system_prompt: None,
+                append_system_prompt: None,
+                max_budget_usd: None,
+            },
+            abort_signal: rx,
+            read_file_state: FileStateCache {
+                entries: HashMap::new(),
+            },
+            get_app_state: Arc::new(move || app.clone()),
+            set_app_state: Arc::new(|_| {}),
+            messages: vec![],
+            agent_id: None,
+            agent_type: None,
+            query_tracking: None,
+            permission_callback: None,
+        }
+    }
+
+    // -- Stub tools for testing is_read_only behavior -----------------------
+
+    struct ReadOnlyStub;
+    #[async_trait::async_trait]
+    impl Tool for ReadOnlyStub {
+        fn name(&self) -> &str { "Grep" }
+        async fn description(&self, _: &Value) -> String { String::new() }
+        fn input_json_schema(&self) -> Value { Value::Null }
+        fn is_read_only(&self, _: &Value) -> bool { true }
+        async fn call(
+            &self, _: Value, _: &ToolUseContext,
+            _: &crate::types::message::AssistantMessage,
+            _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
+        ) -> anyhow::Result<ToolResult> {
+            Ok(ToolResult { data: Value::Null, new_messages: vec![] })
+        }
+        async fn prompt(&self) -> String { String::new() }
+    }
+
+    struct WritableStub;
+    #[async_trait::async_trait]
+    impl Tool for WritableStub {
+        fn name(&self) -> &str { "Bash" }
+        async fn description(&self, _: &Value) -> String { String::new() }
+        fn input_json_schema(&self) -> Value { Value::Null }
+        fn is_read_only(&self, _: &Value) -> bool { false }
+        async fn call(
+            &self, _: Value, _: &ToolUseContext,
+            _: &crate::types::message::AssistantMessage,
+            _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
+        ) -> anyhow::Result<ToolResult> {
+            Ok(ToolResult { data: Value::Null, new_messages: vec![] })
+        }
+        async fn prompt(&self) -> String { String::new() }
+    }
+
+    // -- Existing tests -----------------------------------------------------
 
     #[test]
     fn test_find_tool_missing() {
@@ -633,5 +829,130 @@ mod tests {
     fn test_tracked_tool_state_transitions() {
         assert_ne!(TrackedToolState::Queued, TrackedToolState::Executing);
         assert_ne!(TrackedToolState::Executing, TrackedToolState::Completed);
+    }
+
+    // -- Stage 3c: security_validate tests ----------------------------------
+
+    #[test]
+    fn test_plan_mode_blocks_write_tools() {
+        let ctx = make_ctx_with_mode(PermissionMode::Plan);
+        let tool = WritableStub;
+        let input = serde_json::json!({"command": "ls"});
+        let now = Instant::now();
+
+        let result = security_validate("id1", "Bash", &input, &tool, &ctx, now);
+        assert!(result.is_some(), "Plan mode should block non-read-only tool");
+        let err = result.unwrap();
+        assert!(err.is_error);
+        assert!(
+            err.result.data.as_str().unwrap().contains("Plan mode"),
+            "Error message should mention Plan mode"
+        );
+    }
+
+    #[test]
+    fn test_plan_mode_allows_read_tools() {
+        let ctx = make_ctx_with_mode(PermissionMode::Plan);
+        let tool = ReadOnlyStub;
+        let input = serde_json::json!({"pattern": "foo"});
+        let now = Instant::now();
+
+        let result = security_validate("id2", "Grep", &input, &tool, &ctx, now);
+        assert!(result.is_none(), "Plan mode should allow read-only tool");
+    }
+
+    #[test]
+    fn test_dangerous_command_blocked() {
+        let ctx = make_ctx_with_mode(PermissionMode::Default);
+        let tool = WritableStub;
+        let input = serde_json::json!({"command": "rm -rf /"});
+        let now = Instant::now();
+
+        let result = security_validate("id3", "Bash", &input, &tool, &ctx, now);
+        assert!(result.is_some(), "Dangerous command should be blocked");
+        let err = result.unwrap();
+        assert!(err.result.data.as_str().unwrap().contains("Dangerous command blocked"));
+    }
+
+    #[test]
+    fn test_safe_command_allowed() {
+        let ctx = make_ctx_with_mode(PermissionMode::Default);
+        let tool = WritableStub;
+        let input = serde_json::json!({"command": "ls -la"});
+        let now = Instant::now();
+
+        let result = security_validate("id4", "Bash", &input, &tool, &ctx, now);
+        assert!(result.is_none(), "Safe command should be allowed");
+    }
+
+    #[test]
+    fn test_path_traversal_blocked() {
+        let ctx = make_ctx_with_mode(PermissionMode::Default);
+        let tool = WritableStub; // is_read_only = false, but tool_name matters for path check
+        let input = serde_json::json!({"file_path": "/../../../../../etc/passwd"});
+        let now = Instant::now();
+
+        let result = security_validate("id5", "Write", &input, &tool, &ctx, now);
+        assert!(result.is_some(), "Path traversal should be blocked");
+        let err = result.unwrap();
+        assert!(err.result.data.as_str().unwrap().contains("Invalid file path"));
+    }
+
+    #[test]
+    fn test_path_outside_cwd_blocked() {
+        // Initialize ProcessState with a known cwd so the boundary check works
+        {
+            let mut ps = crate::bootstrap::PROCESS_STATE.write();
+            ps.original_cwd = std::path::PathBuf::from(std::env::current_dir().unwrap());
+        }
+
+        let ctx = make_ctx_with_mode(PermissionMode::Default);
+        let tool = WritableStub;
+        // Use an absolute path that is definitely outside the cwd
+        let outside_path = if cfg!(windows) {
+            "C:\\Windows\\System32\\evil.txt"
+        } else {
+            "/tmp/evil.txt"
+        };
+        let input = serde_json::json!({"file_path": outside_path});
+        let now = Instant::now();
+
+        let result = security_validate("id6", "Write", &input, &tool, &ctx, now);
+        assert!(
+            result.is_some(),
+            "Path outside cwd should be blocked, path={}",
+            outside_path
+        );
+        let err = result.unwrap();
+        assert!(err.result.data.as_str().unwrap().contains("outside the allowed"));
+    }
+
+    #[test]
+    fn test_bypass_mode_skips_all() {
+        let ctx = make_ctx_with_mode(PermissionMode::Bypass);
+        let tool = WritableStub;
+
+        // Dangerous command — would normally be blocked
+        let input = serde_json::json!({"command": "rm -rf /"});
+        let now = Instant::now();
+        let result = security_validate("id7", "Bash", &input, &tool, &ctx, now);
+        assert!(result.is_none(), "Bypass mode should skip all security checks");
+
+        // Path traversal — would normally be blocked
+        let input2 = serde_json::json!({"file_path": "/../../../../../etc/passwd"});
+        let result2 = security_validate("id8", "Write", &input2, &tool, &ctx, now);
+        assert!(result2.is_none(), "Bypass mode should skip path check too");
+    }
+
+    #[test]
+    fn test_powershell_dangerous_command_blocked() {
+        let ctx = make_ctx_with_mode(PermissionMode::Default);
+        let tool = WritableStub;
+        let input = serde_json::json!({"command": "rm -rf /"});
+        let now = Instant::now();
+
+        // PowerShell should also be checked
+        let result = security_validate("id9", "PowerShell", &input, &tool, &ctx, now);
+        assert!(result.is_some(), "PowerShell dangerous command should be blocked");
     }
 }
