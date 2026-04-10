@@ -3,8 +3,6 @@
 //! Identifies shell commands that could cause irreversible damage to the system.
 //! Returns a human-readable reason string when a dangerous pattern is detected.
 
-#![allow(unused)]
-
 use regex::Regex;
 use std::sync::LazyLock;
 

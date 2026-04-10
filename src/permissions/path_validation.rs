@@ -1,4 +1,3 @@
-#![allow(dead_code)] // Public API — will be used by tool execution pipeline
 //! Path validation for the permission system.
 //!
 //! Validates that file paths are within allowed directories before
