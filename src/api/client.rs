@@ -257,6 +257,18 @@ impl ApiClient {
                     timeout_secs: 120,
                 }))
             }
+            crate::auth::AuthMethod::OAuthToken { access_token, .. } => {
+                let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
+                Some(Self::new(ApiClientConfig {
+                    provider: ApiProvider::Anthropic {
+                        api_key: access_token,
+                        base_url,
+                    },
+                    default_model: "claude-sonnet-4-20250514".to_string(),
+                    max_retries: 3,
+                    timeout_secs: 120,
+                }))
+            }
             crate::auth::AuthMethod::None => None,
         }
     }

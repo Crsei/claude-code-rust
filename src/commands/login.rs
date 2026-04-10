@@ -37,6 +37,9 @@ impl CommandHandler for LoginHandler {
                 auth::AuthMethod::ExternalToken(_) => {
                     "已认证: 外部 Token (ANTHROPIC_AUTH_TOKEN)".to_string()
                 }
+                auth::AuthMethod::OAuthToken { method, .. } => {
+                    format!("已认证: OAuth Token ({})", method)
+                }
                 auth::AuthMethod::None => "未认证".to_string(),
             };
             return Ok(CommandResult::Output(status));
@@ -84,6 +87,9 @@ impl CommandHandler for LoginHandler {
             let method = match &current_auth {
                 auth::AuthMethod::ApiKey(key) => format!("API Key ({})", mask_key(key)),
                 auth::AuthMethod::ExternalToken(_) => "External Auth Token".to_string(),
+                auth::AuthMethod::OAuthToken { method, .. } => {
+                    format!("OAuth Token ({})", method)
+                }
                 auth::AuthMethod::None => unreachable!(),
             };
             return Ok(CommandResult::Output(format!(

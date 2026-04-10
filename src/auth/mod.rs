@@ -1,10 +1,9 @@
 //! Authentication system
 //!
-//! Supports two active auth methods:
+//! Supports three active auth methods:
 //! - API Key: via `ANTHROPIC_API_KEY` env var or system keychain
 //! - External Auth Token: via `ANTHROPIC_AUTH_TOKEN` env var
-//!
-//! OAuth login flow is defined as interface only (not implemented).
+//! - OAuth Token: from `~/.cc-rust/credentials.json` (Claude.ai or Console)
 
 pub mod api_key;
 pub mod oauth;
@@ -21,11 +20,16 @@ pub enum AuthMethod {
     ApiKey(String),
     /// External auth token (`ANTHROPIC_AUTH_TOKEN`)
     ExternalToken(String),
+    /// OAuth access token (Claude.ai or Console)
+    OAuthToken {
+        access_token: String,
+        /// "claude_ai" or "console"
+        method: String,
+    },
     /// No authentication configured
     None,
 }
 
-#[allow(dead_code)]
 impl AuthMethod {
     pub fn is_authenticated(&self) -> bool {
         !matches!(self, Self::None)
@@ -41,6 +45,7 @@ impl AuthMethod {
     pub fn bearer_token(&self) -> Option<&str> {
         match self {
             Self::ExternalToken(token) => Some(token),
+            Self::OAuthToken { access_token, .. } => Some(access_token),
             _ => None,
         }
     }
@@ -50,13 +55,14 @@ impl AuthMethod {
 // Resolve auth from environment
 // ---------------------------------------------------------------------------
 
-/// Resolve authentication from environment variables and keychain.
+/// Resolve authentication from environment variables, OAuth tokens, and keychain.
 ///
 /// Priority:
 /// 1. `ANTHROPIC_API_KEY` env var
 /// 2. `ANTHROPIC_AUTH_TOKEN` env var
-/// 3. API key from system keychain
-/// 4. `AuthMethod::None`
+/// 3. OAuth token from `~/.cc-rust/credentials.json` (if not expired)
+/// 4. API key from system keychain
+/// 5. `AuthMethod::None`
 pub fn resolve_auth() -> AuthMethod {
     // 1. ANTHROPIC_API_KEY
     if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
@@ -72,7 +78,25 @@ pub fn resolve_auth() -> AuthMethod {
         }
     }
 
-    // 3. Keychain
+    // 3. OAuth token from disk
+    if let Ok(Some(stored)) = token::load_token() {
+        if !token::is_token_expired(&stored) {
+            let method = stored.oauth_method.clone().unwrap_or_default();
+            // Console mode: API key should be in keychain (created at login)
+            // Claude.ai mode: use Bearer token directly
+            if method == "console" {
+                // Fall through to keychain check below
+            } else {
+                return AuthMethod::OAuthToken {
+                    access_token: stored.access_token,
+                    method,
+                };
+            }
+        }
+        // Note: expired tokens are handled by try_refresh_if_needed() at startup
+    }
+
+    // 4. Keychain
     if let Ok(Some(key)) = api_key::load_api_key() {
         if api_key::validate_api_key(&key) {
             return AuthMethod::ApiKey(key);
@@ -83,61 +107,14 @@ pub fn resolve_auth() -> AuthMethod {
 }
 
 // ---------------------------------------------------------------------------
-// OAuth login interface (not implemented)
+// OAuth convenience functions
 // ---------------------------------------------------------------------------
 
-/// OAuth login configuration — interface only.
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct OAuthConfig {
-    pub client_id: String,
-    pub auth_url: String,
-    pub token_url: String,
-    pub scopes: Vec<String>,
-    pub redirect_uri: String,
-}
-
-/// OAuth token pair — interface only.
-#[allow(dead_code)]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct OAuthTokens {
-    pub access_token: String,
-    pub refresh_token: Option<String>,
-    pub expires_at: Option<i64>,
-    pub token_type: String,
-}
-
-/// OAuth login flow — interface only, not implemented.
-///
-/// When implemented, this would:
-/// 1. Generate PKCE code_verifier / code_challenge
-/// 2. Open browser to authorization URL
-/// 3. Listen on localhost for OAuth callback
-/// 4. Exchange authorization code for tokens
-/// 5. Store tokens via `token::save_token()`
-#[allow(dead_code)]
-pub async fn oauth_login(_config: &OAuthConfig) -> anyhow::Result<OAuthTokens> {
-    anyhow::bail!("OAuth login is not implemented — use ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN")
-}
-
-/// OAuth token refresh — interface only, not implemented.
-#[allow(dead_code)]
-pub async fn oauth_refresh(
-    _refresh_token: &str,
-    _config: &OAuthConfig,
-) -> anyhow::Result<OAuthTokens> {
-    anyhow::bail!(
-        "OAuth refresh is not implemented — use ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN"
-    )
-}
-
-/// OAuth logout — interface only, not implemented.
-///
-/// When implemented, this would clear stored OAuth tokens from
-/// keychain and disk.
-#[allow(dead_code)]
-pub async fn oauth_logout() -> anyhow::Result<()> {
-    anyhow::bail!("OAuth logout is not implemented")
+/// Clear all OAuth state (tokens + keychain API key).
+pub fn oauth_logout() -> anyhow::Result<()> {
+    token::remove_token()?;
+    let _ = api_key::remove_api_key();
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -170,5 +147,16 @@ mod tests {
         assert!(!auth.is_authenticated());
         assert_eq!(auth.api_key(), None);
         assert_eq!(auth.bearer_token(), None);
+    }
+
+    #[test]
+    fn test_auth_method_oauth_token() {
+        let auth = AuthMethod::OAuthToken {
+            access_token: "oauth-test-token".into(),
+            method: "claude_ai".into(),
+        };
+        assert!(auth.is_authenticated());
+        assert_eq!(auth.api_key(), None);
+        assert_eq!(auth.bearer_token(), Some("oauth-test-token"));
     }
 }
