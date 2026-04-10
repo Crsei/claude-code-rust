@@ -29,6 +29,7 @@ pub mod commit;
 // Model control
 pub mod effort;
 pub mod fast;
+pub mod model_add;
 
 // Memory & skills
 pub mod memory;
@@ -304,6 +305,12 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "MCP server management (list, status)".into(),
             handler: Box::new(mcp_cmd::McpHandler),
+        },
+        Command {
+            name: "model-add".into(),
+            aliases: vec!["ma".into()],
+            description: "Add a model with token pricing to .env".into(),
+            handler: Box::new(model_add::ModelAddHandler),
         },
     ]
 }

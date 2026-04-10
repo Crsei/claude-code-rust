@@ -193,6 +193,81 @@ fn usage_update_cumulative_across_turns() {
     assert!(status.success());
 }
 
+/// After a chat response, usage_update.cost_usd should be > 0 when pricing is configured.
+/// This validates the full pipeline: API → StreamAccumulator → pricing → IPC → cost_usd.
+#[test]
+#[ignore]
+fn usage_update_cost_usd_positive() {
+    let (mut child, mut stdin, mut stdout) = spawn_headless(
+        &["-C", r"F:\temp", "--permission-mode", "bypass"],
+        false,
+    );
+
+    let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
+    assert_eq!(ready["type"], "ready");
+
+    send_msg(
+        &mut stdin,
+        &serde_json::json!({
+            "type": "submit_prompt",
+            "text": "Say exactly: COST_TEST_OK",
+            "id": "cost-001"
+        }),
+    );
+
+    let messages = collect_until(
+        &mut stdout,
+        |msg| msg["type"] == "usage_update",
+        LIVE_TIMEOUT,
+    );
+
+    let usage = messages
+        .iter()
+        .find(|m| m["type"] == "usage_update")
+        .expect("should have a usage_update message");
+
+    let cost_usd = usage["cost_usd"]
+        .as_f64()
+        .expect("cost_usd should be a number");
+    let input_tokens = usage["input_tokens"]
+        .as_u64()
+        .expect("input_tokens should be a number");
+    let output_tokens = usage["output_tokens"]
+        .as_u64()
+        .expect("output_tokens should be a number");
+
+    assert!(
+        input_tokens > 0,
+        "input_tokens should be > 0, got: {}",
+        input_tokens
+    );
+    assert!(
+        output_tokens > 0,
+        "output_tokens should be > 0, got: {}",
+        output_tokens
+    );
+    // With pricing configured (MODEL_INPUT_PRICE/MODEL_OUTPUT_PRICE in .env or
+    // built-in pricing table), cost_usd must be positive.
+    assert!(
+        cost_usd > 0.0,
+        "cost_usd should be > 0.0 when pricing is configured, got: {}. \
+         Ensure MODEL_INPUT_PRICE/MODEL_OUTPUT_PRICE are set in .env \
+         or the model has built-in pricing.",
+        cost_usd
+    );
+
+    // Sanity: cost should be reasonable (< $1 for a tiny prompt)
+    assert!(
+        cost_usd < 1.0,
+        "cost_usd seems unreasonably high for a tiny prompt: {}",
+        cost_usd
+    );
+
+    send_msg(&mut stdin, &serde_json::json!({"type": "quit"}));
+    let status = child.wait().expect("wait");
+    assert!(status.success());
+}
+
 /// usage_update should include all three fields: input_tokens, output_tokens, cost_usd.
 #[test]
 #[ignore]

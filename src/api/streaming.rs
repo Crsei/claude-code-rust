@@ -96,14 +96,23 @@ impl StreamAccumulator {
             StreamEvent::MessageDelta { delta, usage } => {
                 self.stop_reason = delta.stop_reason.clone();
                 if let Some(u) = usage {
-                    self.usage.output_tokens = u.output_tokens;
+                    // OpenAI-compatible providers report both input and output
+                    // tokens in the final chunk; Anthropic only sends output here.
+                    if u.input_tokens > 0 {
+                        self.usage.input_tokens = u.input_tokens;
+                    }
+                    if u.output_tokens > 0 {
+                        self.usage.output_tokens = u.output_tokens;
+                    }
                 }
             }
             _ => {}
         }
     }
 
-    pub fn build(self) -> AssistantMessage {
+    /// Build the final AssistantMessage with cost calculated from model pricing.
+    pub fn build(self, model: &str) -> AssistantMessage {
+        let cost_usd = crate::api::pricing::calculate_cost(model, &self.usage);
         AssistantMessage {
             uuid: uuid::Uuid::new_v4(),
             timestamp: chrono::Utc::now().timestamp(),
@@ -113,7 +122,7 @@ impl StreamAccumulator {
             stop_reason: self.stop_reason,
             is_api_error_message: false,
             api_error: None,
-            cost_usd: 0.0,
+            cost_usd,
         }
     }
 }

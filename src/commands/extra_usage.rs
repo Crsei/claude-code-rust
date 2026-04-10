@@ -23,13 +23,7 @@ struct MsgStats {
     cost_usd: f64,
 }
 
-// Rough pricing constants (USD per token) -- approximate for Claude 3.5 Sonnet tier.
-// These are only used to estimate the *breakdown* by token type; the actual total
-// cost comes from the already-recorded `cost_usd` field on each message.
-const INPUT_PRICE: f64 = 3.0 / 1_000_000.0; // $3 per 1M input tokens
-const OUTPUT_PRICE: f64 = 15.0 / 1_000_000.0; // $15 per 1M output tokens
-const CACHE_READ_PRICE: f64 = 0.30 / 1_000_000.0; // $0.30 per 1M cache-read tokens
-const CACHE_WRITE_PRICE: f64 = 3.75 / 1_000_000.0; // $3.75 per 1M cache-write tokens
+use crate::api::pricing;
 
 /// Format a token count with thousands separators.
 fn fmt_tok(n: u64) -> String {
@@ -176,10 +170,12 @@ impl CommandHandler for ExtraUsageHandler {
         lines.push(format!("  Total API calls:     {}", stats.len()));
 
         // --- Section 4: Estimated cost breakdown by token type ---
-        let est_input_cost = total_input as f64 * INPUT_PRICE;
-        let est_output_cost = total_output as f64 * OUTPUT_PRICE;
-        let est_cache_read_cost = total_cache_read as f64 * CACHE_READ_PRICE;
-        let est_cache_write_cost = total_cache_create as f64 * CACHE_WRITE_PRICE;
+        let model = &ctx.app_state.main_loop_model;
+        let p = pricing::get_pricing(model);
+        let est_input_cost = total_input as f64 * p.input_per_1m / 1_000_000.0;
+        let est_output_cost = total_output as f64 * p.output_per_1m / 1_000_000.0;
+        let est_cache_read_cost = total_cache_read as f64 * p.input_per_1m * 0.1 / 1_000_000.0;
+        let est_cache_write_cost = total_cache_create as f64 * p.input_per_1m * 1.25 / 1_000_000.0;
         let est_total =
             est_input_cost + est_output_cost + est_cache_read_cost + est_cache_write_cost;
 

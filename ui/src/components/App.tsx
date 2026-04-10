@@ -119,19 +119,18 @@ export function App() {
             </Box>
           </Box>
         ) : (
-          <>
-            <Box flexGrow={1}>
-              <MessageList
-                isActive={activePane === 'messages'}
-                onActivate={() => setActivePane('messages')}
+          <Box flexGrow={1}>
+            <MessageList
+              isActive={activePane === 'messages'}
+              onActivate={() => setActivePane('messages')}
+            >
+              {state.suggestions.length > 0 && !isBusy && <Suggestions />}
+              <InputPrompt
+                isActive={activePane === 'input'}
+                onActivate={() => setActivePane('input')}
               />
-            </Box>
-            {state.suggestions.length > 0 && !isBusy && <Suggestions />}
-            <InputPrompt
-              isActive={activePane === 'input'}
-              onActivate={() => setActivePane('input')}
-            />
-          </>
+            </MessageList>
+          </Box>
         )}
         <StatusBar usage={state.usage} model={state.model} vimMode={state.vimEnabled ? state.vimMode : undefined} />
         {state.permissionRequest && <PermissionDialog request={state.permissionRequest} />}

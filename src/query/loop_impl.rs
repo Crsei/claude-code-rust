@@ -193,7 +193,8 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 break;
             }
 
-            let assistant_message = accumulator.build();
+            let effective_model = deps.get_app_state().main_loop_model;
+            let assistant_message = accumulator.build(&effective_model);
 
             // Accumulate usage
             if let Some(ref usage) = assistant_message.usage {

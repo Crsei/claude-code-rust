@@ -219,6 +219,7 @@ fn build_openai_request(request: &MessagesRequest, provider_name: &str) -> Value
         "model": request.model,
         "messages": oai_messages,
         "stream": true,
+        "stream_options": { "include_usage": true },
     });
 
     if request.max_tokens > 0 {
@@ -503,14 +504,15 @@ where
                                 },
                                 usage: None,
                             };
-                            yield StreamEvent::MessageStop;
-                            return;
+                            // Don't return yet — the usage-only chunk follows
+                            // before [DONE] and we need to process it.
                         }
                     }
                 }
 
-                // Usage info (some providers include this in streamed chunks)
-                if let Some(usage) = v.get("usage") {
+                // Usage info — Azure/OpenAI send a final chunk with usage after finish_reason.
+                // The chunk has `"usage": null` for content chunks, and a real object for the last.
+                if let Some(usage) = v.get("usage").filter(|u| !u.is_null()) {
                     let input = usage
                         .get("prompt_tokens")
                         .or_else(|| usage.get("input_tokens"))

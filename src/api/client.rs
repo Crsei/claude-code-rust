@@ -338,6 +338,7 @@ impl ApiClient {
     pub async fn messages(&self, request: MessagesRequest) -> Result<AssistantMessage> {
         use futures::StreamExt;
 
+        let model = request.model.clone();
         let stream = self.messages_stream(request).await?;
         let mut stream = std::pin::pin!(stream);
 
@@ -361,7 +362,7 @@ impl ApiClient {
             }
         }
 
-        Ok(accumulator.build())
+        Ok(accumulator.build(&model))
     }
 
     /// Get a reference to the config.
@@ -954,7 +955,7 @@ data: {\"type\":\"message_stop\"}\n\
             acc.process_event(event);
         }
 
-        let msg = acc.build();
+        let msg = acc.build("claude-sonnet-4-20250514");
         assert_eq!(msg.role, "assistant");
         assert_eq!(msg.content.len(), 1);
         assert_eq!(msg.stop_reason.as_deref(), Some("end_turn"));

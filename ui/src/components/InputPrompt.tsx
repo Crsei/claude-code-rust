@@ -4,6 +4,25 @@ import { useBackend } from '../ipc/context.js'
 import { useAppDispatch, useAppState } from '../store/app-store.js'
 import { VimState } from '../vim/index.js'
 
+/** Minimum chars in a single input event to detect as paste */
+const PASTE_DETECT_CHARS = 100
+/** Minimum text length to show compact paste display */
+const PASTE_COMPACT_CHARS = 200
+
+export function isPasteInput(inputLength: number): boolean {
+  return inputLength >= PASTE_DETECT_CHARS
+}
+
+export function formatPasteSize(text: string): string {
+  const bytes = Buffer.byteLength(text, 'utf8')
+  const kb = bytes / 1024
+  if (kb < 10) {
+    const rounded = Number(kb.toFixed(1))
+    return `pasted text ${rounded}kb`
+  }
+  return `pasted text ${Math.round(kb)}kb`
+}
+
 function formatWorkedDuration(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000))
   const minutes = Math.floor(totalSeconds / 60)
@@ -32,6 +51,7 @@ export function InputPrompt({ isActive = true, onActivate }: InputPromptProps) {
   const [text, setText] = useState('')
   const [cursorPos, setCursorPos] = useState(0)
   const [undoStack, setUndoStack] = useState<Array<{ text: string; cursor: number }>>([])
+  const [isPasted, setIsPasted] = useState(false)
   const backend = useBackend()
   const { isStreaming, isWaiting, inputHistory, historyIndex, vimEnabled } = useAppState()
   const dispatch = useAppDispatch()
@@ -99,6 +119,7 @@ export function InputPrompt({ isActive = true, onActivate }: InputPromptProps) {
     setText('')
     setCursorPos(0)
     setUndoStack([])
+    setIsPasted(false)
   }, [backend, dispatch, text])
 
   const navigateHistoryUp = useCallback(() => {
@@ -264,6 +285,7 @@ export function InputPrompt({ isActive = true, onActivate }: InputPromptProps) {
     if (key.ctrl && input === 'u') {
       setText('')
       setCursorPos(0)
+      setIsPasted(false)
       return
     }
 
@@ -292,11 +314,15 @@ export function InputPrompt({ isActive = true, onActivate }: InputPromptProps) {
     }
 
     if (input && !key.ctrl && !key.meta) {
+      if (isPasteInput(input.length)) {
+        setIsPasted(true)
+      }
       setText(t => t.slice(0, cursorPos) + input + t.slice(cursorPos))
       setCursorPos(p => p + input.length)
     }
   })
 
+  const showPasteCompact = isPasted && text.length >= PASTE_COMPACT_CHARS
   const before = text.slice(0, cursorPos)
   const cursorChar = cursorPos < text.length ? text[cursorPos] : ' '
   const after = cursorPos < text.length ? text.slice(cursorPos + 1) : ''
@@ -324,7 +350,9 @@ export function InputPrompt({ isActive = true, onActivate }: InputPromptProps) {
         <Box flexDirection="row">
           <Text bold color={inputActive ? 'ansi:whiteBright' : 'ansi:blackBright'}>{'\u276f '}</Text>
           {isBusy ? (
-            <Text dim>{text}</Text>
+            <Text dim>{showPasteCompact ? formatPasteSize(text) : text}</Text>
+          ) : showPasteCompact ? (
+            <Text color="ansi:yellowBright">{formatPasteSize(text)}</Text>
           ) : (
             <>
               <Text>{before}</Text>

@@ -29,9 +29,10 @@ const INITIAL_SCROLL_METRICS: ScrollMetrics = {
 interface MessageListProps {
   isActive?: boolean
   onActivate?: () => void
+  children?: React.ReactNode
 }
 
-export function MessageList({ isActive = true, onActivate }: MessageListProps) {
+export function MessageList({ isActive = true, onActivate, children }: MessageListProps) {
   const scrollRef = useRef<ScrollBoxHandle>(null)
   const resultRef = useRef<VirtualScrollResult | null>(null)
   const { messages, isStreaming, streamingText } = useAppState()
@@ -199,6 +200,7 @@ export function MessageList({ isActive = true, onActivate }: MessageListProps) {
             }}
           />
         ) : null}
+        {children}
       </ScrollBox>
       {hasOverflow && (
         <Box paddingX={1}>
