@@ -5,6 +5,7 @@ use crate::types::tool::Tools;
 use super::agent::AgentTool;
 use super::ask_user::AskUserQuestionTool;
 use super::bash::BashTool;
+use super::brief::BriefTool;
 use super::config_tool::ConfigTool;
 use super::file_edit::FileEditTool;
 use super::file_read::FileReadTool;
@@ -17,6 +18,7 @@ use super::powershell::PowerShellTool;
 use super::repl::ReplTool;
 use super::send_message::SendMessageTool;
 use super::send_user_message::SendUserMessageTool;
+use super::sleep::SleepTool;
 use super::skill::SkillTool;
 use super::structured_output::StructuredOutputTool;
 use super::tasks::{
@@ -60,6 +62,8 @@ pub fn get_all_tools() -> Tools {
         Arc::new(TaskOutputTool),
         Arc::new(LspTool),
         Arc::new(SendMessageTool),
+        Arc::new(SleepTool),
+        Arc::new(BriefTool),
     ];
 
     // Filter to only enabled tools

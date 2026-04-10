@@ -46,4 +46,8 @@ pub mod config_tool;
 pub mod powershell;
 pub mod repl;
 pub mod send_user_message;
+pub mod sleep;
 pub mod structured_output;
+
+// Kairos Brief mode
+pub mod brief;
