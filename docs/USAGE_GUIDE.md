@@ -138,6 +138,8 @@ claude-code-rs "帮我重构这个函数"
 | `--dump-system-prompt` | 打印完整系统提示词并退出 |
 | `--init-only` | 仅执行初始化然后退出 |
 | `--headless` | Headless 模式: 无 TUI，通过 stdin/stdout JSONL 与外部 UI 通信 |
+| `--daemon` | Daemon 模式: 启动 KAIROS 常驻助手 HTTP 服务 (需要 `FEATURE_KAIROS=1`) |
+| `--port <PORT>` | Daemon HTTP 端口 (默认: 19836) |
 
 ---
 
@@ -209,6 +211,95 @@ echo "你好" | claude-code-rs --output-format json -p
 - 用于 TypeScript SDK 的进程通信协议
 - 每次调用以一个 `{"type": "result", ...}` 消息结束
 - 详见 [`sdk/typescript/README.md`](../sdk/typescript/README.md)
+
+### KAIROS 常驻助手模式 (Daemon)
+
+KAIROS 模式将 cc-rust 变为常驻后台助手，支持自主执行、外部消息接入和推送通知。
+
+#### 启动 Daemon
+
+```bash
+# 最小启用 (常驻助手 + Brief 结构化输出)
+FEATURE_KAIROS=1 FEATURE_KAIROS_BRIEF=1 cc-rust --daemon
+
+# 全功能启用
+FEATURE_KAIROS=1 \
+FEATURE_KAIROS_BRIEF=1 \
+FEATURE_KAIROS_CHANNELS=1 \
+FEATURE_KAIROS_PUSH_NOTIFICATION=1 \
+FEATURE_KAIROS_GITHUB_WEBHOOKS=1 \
+FEATURE_PROACTIVE=1 \
+cc-rust --daemon
+
+# 指定端口
+cc-rust --daemon --port 19837
+```
+
+#### Feature Flag 说明
+
+| 环境变量 | 说明 | 依赖 |
+|----------|------|------|
+| `FEATURE_KAIROS` | 主开关，启用 daemon 模式 | — |
+| `FEATURE_KAIROS_BRIEF` | BriefTool 结构化输出 | 需要 KAIROS |
+| `FEATURE_KAIROS_CHANNELS` | 外部 MCP Channel 消息接入 | 需要 KAIROS |
+| `FEATURE_KAIROS_PUSH_NOTIFICATION` | 推送通知 (Windows Toast + Webhook) | 需要 KAIROS |
+| `FEATURE_KAIROS_GITHUB_WEBHOOKS` | GitHub Webhook 事件 | 需要 KAIROS |
+| `FEATURE_PROACTIVE` | 自主 tick 循环 (30s 间隔) | 独立，KAIROS 隐含启用 |
+
+依赖规则: 子功能未设置父功能时自动禁用并输出 warn 日志。
+
+#### HTTP API 端点
+
+Daemon 在 `127.0.0.1:19836` 提供以下端点:
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/health` | GET | 健康检查 |
+| `/api/submit` | POST | 提交用户消息 `{text, id}` |
+| `/api/abort` | POST | 中止当前查询 |
+| `/api/status` | GET | Daemon 状态 (kairos/proactive/sleeping/clients) |
+| `/api/events` | GET | SSE 事件流 (支持 `client_id` + `last_event_id` 断线重连) |
+| `/api/attach` | POST | 前端连接 `{client_id, last_seen_event}` |
+| `/api/detach` | POST | 前端断开 |
+| `/api/command` | POST | 执行斜杠命令 `{raw}` |
+| `/api/permission` | POST | 权限响应 `{tool_use_id, decision}` |
+| `/webhook/github` | POST | GitHub Webhook (HMAC-SHA256 验证) |
+| `/webhook/slack` | POST | Slack Webhook (签名验证) |
+| `/webhook/generic` | POST | 通用 Webhook |
+
+#### Proactive Tick 机制
+
+启用 `FEATURE_PROACTIVE` 后，daemon 每 30 秒触发一次 tick:
+- 检查 `is_query_running` 和 `is_sleeping`，跳过繁忙/休眠状态
+- 向 QueryEngine 提交 `<tick_tag>` 消息 (含本地时间 + 终端焦点状态)
+- 模型根据系统提示决定: 执行任务 / 询问用户 / 调用 Sleep 休眠
+- 首次 tick 问候并询问任务；后续 tick 寻找有用工作
+- `terminal_focus: false` (无前端连接) 时高度自主
+
+#### 推送通知配置
+
+在 `settings.json` 中配置:
+
+```json
+{
+  "notifications": {
+    "windows_toast": { "enabled": true, "only_when_detached": true },
+    "webhook": {
+      "enabled": true,
+      "url": "https://api.day.app/YOUR_KEY",
+      "headers": {},
+      "events": ["task_complete", "agent_done", "error"]
+    }
+  }
+}
+```
+
+支持: Bark (iOS)、Pushover、钉钉 Robot、企业微信、任意 POST URL。
+
+#### 每日日志
+
+KAIROS 模式下自动在 `~/.cc-rust/logs/YYYY/MM/YYYY-MM-DD.md` 追加日志。
+使用 `/dream` 命令可将近期日志蒸馏为结构化记忆。
 
 ### 会话恢复模式
 
@@ -375,6 +466,18 @@ for event in streamed.events:
 | `/skills` | — | 列出可用技能 |
 | `/memory` | `/mem` | 查看和管理 CLAUDE.md 项目指令 |
 
+### KAIROS 模式 (需要对应 FEATURE_* 环境变量)
+
+| 命令 | 别名 | 说明 | 依赖 Feature |
+|------|------|------|-------------|
+| `/brief` | — | 切换 Brief 输出模式 (on/off/status) | `KAIROS_BRIEF` |
+| `/sleep` | — | 设置 proactive 休眠时长 (秒) | `PROACTIVE` |
+| `/assistant` | `/kairos` | 查看助手模式状态 | `KAIROS` |
+| `/daemon` | — | 查看/控制 daemon 进程 (status/stop) | `KAIROS` |
+| `/notify` | — | 推送通知配置 (status/test/on/off) | `KAIROS_PUSH_NOTIFICATION` |
+| `/channels` | — | 查看已连接的外部 Channel | `KAIROS_CHANNELS` |
+| `/dream` | — | 将每日日志蒸馏为结构化记忆 | `KAIROS` |
+
 ---
 
 ## 内置工具
@@ -407,6 +510,13 @@ for event in streamed.events:
 | 工具 | 说明 |
 |------|------|
 | **AskUser** | 向用户提问并等待回复 |
+
+### KAIROS 工具 (Feature Gate 控制)
+
+| 工具 | 说明 | 依赖 Feature |
+|------|------|-------------|
+| **Brief** | 向用户发送结构化消息 (markdown + 附件 + status)。Brief 模式下是唯一的用户输出通道 | `KAIROS_BRIEF` |
+| **Sleep** | 设置 proactive tick 休眠 (1-3600 秒)。不阻塞线程，仅标记休眠状态 | `PROACTIVE` 或 `KAIROS` |
 
 ### 技能
 

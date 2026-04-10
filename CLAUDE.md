@@ -44,21 +44,22 @@ function cc-rust { & "F:\AIclassmanager\cc\rust\ui\run.ps1" @args }
 ```
 rust/
 ├── src/                     Rust 后端
-│   ├── main.rs              入口 (Phase A/B/I lifecycle, --headless flag)
+│   ├── main.rs              入口 (Phase A/B/I lifecycle, --headless/--daemon flag)
 │   ├── types/               核心类型
 │   ├── engine/              QueryEngine + 系统提示词
 │   │   └── lifecycle/       QueryEngine 生命周期 (mod, types, submit_message, deps, helpers)
 │   ├── query/               异步流式查询循环 (loop_impl + loop_helpers)
-│   ├── tools/               28 个工具 + background_agents (后台代理类型)
+│   ├── tools/               30 个工具 + background_agents (后台代理类型)
 │   ├── skills/              技能系统 (内置 + 用户自定义)
 │   ├── compact/             上下文压缩管道
-│   ├── commands/            29 个斜杠命令 (含 login-code)
+│   ├── commands/            36 个斜杠命令
 │   ├── api/                 API 客户端 (Anthropic, OpenAI, Google)
 │   ├── auth/                认证 (API Key + Keychain + OAuth PKCE)
 │   │   └── oauth/           OAuth 子模块 (pkce, config, client)
 │   ├── permissions/         权限系统
-│   ├── config/              配置管理
+│   ├── config/              配置管理 + Feature Gate (features.rs)
 │   ├── session/             会话持久化
+│   ├── daemon/              KAIROS daemon (HTTP server + tick loop + channels + notifications)
 │   ├── lsp_service/         LSP 服务 (JSON-RPC 传输 + 客户端 + 类型转换, 9 操作全实现)
 │   ├── ipc/                 IPC 协议 + headless 模式 (JSONL over stdio)
 │   ├── ui/                  TUI legacy (ratatui + crossterm)
@@ -101,11 +102,49 @@ git add ui/ink-terminal && git commit -m "chore: bump ink-terminal"
 
 ### IPC 架构
 
-ink-terminal 前端通过 `--headless` 模式与 Rust 后端通信:
+两种前后端通信模式:
+
+**Headless 模式** (`--headless`): JSONL over stdio
 - Rust 端: `src/ipc/protocol.rs` (协议类型) + `src/ipc/headless.rs` (事件循环, `tokio::select!` 多路复用)
 - TS 端: `ui/src/ipc/client.ts` (spawn + JSONL) + `ui/src/ipc/protocol.ts`
-- headless 事件循环通过 `tokio::select!` 同时等待 stdin (用户输入) 和 mpsc channel (后台代理完成通知)
 - 详见: `architecture/ink-terminal-frontend.md`
+
+**Daemon 模式** (`--daemon`, KAIROS): HTTP/SSE over localhost
+- Rust 端: `src/daemon/server.rs` (axum HTTP) + `src/daemon/sse.rs` (SSE 事件流) + `src/daemon/routes.rs` (12 个端点)
+- TS 端: `ui/src/ipc/daemon-client.ts` (fetch + EventSource)
+- 前端可随时 attach/detach，daemon 持续运行
+
+### KAIROS — 常驻助手模式
+
+通过 `FEATURE_*` 环境变量启用，`--daemon` 启动 daemon 进程:
+
+```
+src/daemon/
+├── mod.rs              入口
+├── state.rs            DaemonState (共享状态, SSE 客户端管理, 事件缓冲)
+├── server.rs           axum HTTP server (127.0.0.1:19836)
+├── routes.rs           12 个 REST 端点 (submit, abort, attach, detach, webhook...)
+├── sse.rs              SSE 事件流 (断线重连, Last-Event-ID)
+├── tick.rs             Proactive tick 循环 (30s 间隔, 自主执行)
+├── channels.rs         ChannelManager (MCP + Webhook 消息路由, allowlist)
+├── webhook.rs          Webhook 签名验证 (GitHub HMAC-SHA256, Slack)
+├── notification.rs     推送通知 (Windows Toast + Webhook 回调)
+└── memory_log.rs       每日日志 (~/.cc-rust/logs/YYYY/MM/YYYY-MM-DD.md)
+```
+
+Feature Gate 系统: `src/config/features.rs`
+- `FEATURE_KAIROS` — 主开关
+- `FEATURE_KAIROS_BRIEF` — BriefTool 结构化输出
+- `FEATURE_KAIROS_CHANNELS` — 外部 MCP Channel 消息
+- `FEATURE_KAIROS_PUSH_NOTIFICATION` — 推送通知
+- `FEATURE_KAIROS_GITHUB_WEBHOOKS` — GitHub Webhook
+- `FEATURE_PROACTIVE` — 自主 tick 循环 (可独立启用，KAIROS 隐含启用)
+
+新增工具: `Sleep` (tick 休眠控制), `Brief` (结构化输出)
+新增命令: `/brief`, `/sleep`, `/assistant`, `/daemon`, `/notify`, `/channels`, `/dream`
+MCP Channel: `src/mcp/channel.rs` (capabilities 检测 + 通知解析)
+
+设计文档: `docs/superpowers/specs/2026-04-11-kairos-design.md`
 
 ### 已移除的模块 (完整版有)
 
