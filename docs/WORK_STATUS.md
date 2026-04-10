@@ -41,9 +41,9 @@
 
 | 工具 | 文件 | 状态 |
 |------|------|------|
-| Agent 后台模式 | `src/tools/agent.rs:652-658` | **Stub** — `run_in_background` 仅 log 后同步运行 |
+| Agent 后台模式 | `src/tools/agent.rs` | ✅ — `run_in_background` 通过 tokio::spawn + mpsc 异步执行 |
 
-其余 27 个工具均已完整实现。
+其余 29 个工具均已完整实现 (含 BriefTool, SleepTool)。
 
 ### 1.5 权限系统
 
@@ -89,7 +89,7 @@
 |---|------|------|
 | P1-1 | Git 上下文注入 system prompt | ✅ |
 | P1-2 | `--ephemeral` 临时会话 | ❌ |
-| P1-3 | Web 搜索缓存层 | ❌ |
+| P1-3 | Web 搜索缓存层 | ✅ |
 | P1-4 | LSP 9/9 方法实现 | ✅ |
 
 ### P2 — 生态扩展
@@ -161,10 +161,11 @@
 > 详细清单见 `COMPLETED_FULL.md` 和 `COMPLETED_SIMPLIFIED.md`。
 
 - **斜杠命令**: 75/75 (含 `/login-code`, `/extra-usage`, `/rate-limit-options`)
-- **工具**: 28 个 (Bash, Read, Write, Edit, Grep, Glob, Agent, Skill, LSP, Tasks, Web, PowerShell...)
+- **工具**: 30 个 (Bash, Read, Write, Edit, Grep, Glob, Agent, Skill, LSP, Tasks, Web, PowerShell, Brief, Sleep...)
 - **API 提供商**: 4/6 (Anthropic, OpenAI, Google, Azure)
 - **认证**: API Key + Keychain + OAuth PKCE (Claude.ai Bearer / Console API Key)
-- **核心模块**: engine, query, compact, session, permissions, config, ipc, skills, plugins, mcp, lsp_service, ui
+- **核心模块**: engine, query, compact, session, permissions, config, ipc, skills, plugins, mcp, lsp_service, daemon, ui
+- **新增功能**: Git 上下文注入 system prompt, Web 搜索 TTL 缓存, Agent 后台执行, Feature Gate 系统
 - **前端组件**: 14/14 (App, Header, MessageList, InputPrompt, MessageBubble, ToolUse/Result, PermissionDialog, Suggestions, WelcomeScreen, StatusBar, Spinner, ThinkingBlock, DiffView)
 
 ---
@@ -175,7 +176,7 @@
   API 提供商    ████████████░░░░  4/6 (67%)
   认证          ████████████████  4/4 (100%) ✅
   Teams 系统    ████████████░░░░  8/11 模块 (73%) — feature-gated
-  工具          ████████████████  27/28 (96%)
+  工具          ████████████████  30/30 (100%) ✅
   权限          ████████████░░░░  2/3 phases (67%)
   斜杠命令      ████████████████  75/75 (100%)
   IPC           ████████████████  ~98%

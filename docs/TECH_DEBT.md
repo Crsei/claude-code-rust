@@ -376,13 +376,13 @@ if body.contains("prompt is too long") || body.contains("too many tokens") {
 | `query/loop_impl.rs` → 核心 + helpers + tests (3 文件) | 1105 | 1073 | 451 (loop_impl.rs) |
 | `mcp/client.rs` → client + transport + manager + tests (4 文件) | 1008 | 1005 | 502 (client.rs) |
 
-### 第三批: 架构改善 (预计影响: 引擎 + API)
+### ~~第三批: 架构改善~~ — 大部分已修复
 
-| 任务 | 影响文件数 | 复杂度 |
-|------|-----------|--------|
-| 合并 QueryEngine 的 10 个 Arc 字段 | 2-3 | 中 |
-| 提取重试逻辑到 `RetryPolicy` | 2 | 中 |
-| 重构 API 提供商为 trait 抽象 | 4-5 | 中 |
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| ~~合并 QueryEngine 的 10 个 Arc 字段~~ | ✅ | 已合并为 `QueryEngineState` struct (lifecycle/mod.rs) |
+| 提取重试逻辑到 `RetryPolicy` | — | `retry.rs` 已有 `RetryConfig` + `categorize_api_error`，不再重复 |
+| ~~重构 API 提供商为 trait 抽象~~ | ✅ | 已有 `trait StreamProvider` (stream_provider.rs) |
 
 ### 第四批: 代码卫生 (预计影响: 全局)
 
