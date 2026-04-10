@@ -352,6 +352,11 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         effort_value: None,
         team_context: None,
         hooks: merged_config.hooks.clone(),
+        kairos_active: false,
+        is_brief_only: false,
+        is_assistant_mode: false,
+        autonomous_tick_ms: None,
+        terminal_focus: true,
     };
 
     // ── B.5: Init-only fast path ─────────────────────────────────────

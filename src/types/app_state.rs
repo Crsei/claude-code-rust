@@ -27,6 +27,16 @@ pub struct AppState {
     /// Hook configurations loaded from settings.json (merged config).
     /// Read by `tools::hooks::load_hook_configs()` and the hook execution pipeline.
     pub hooks: HashMap<String, serde_json::Value>,
+    /// Whether KAIROS daemon mode is running
+    pub kairos_active: bool,
+    /// Whether output is routed through BriefTool only
+    pub is_brief_only: bool,
+    /// Perpetual session mode
+    pub is_assistant_mode: bool,
+    /// Proactive tick interval (None = disabled)
+    pub autonomous_tick_ms: Option<u64>,
+    /// Whether user is looking at terminal (affects autonomy level)
+    pub terminal_focus: bool,
 }
 
 /// 设置 JSON (简化版)
@@ -59,6 +69,11 @@ impl Default for AppState {
             effort_value: None,
             team_context: None,
             hooks: HashMap::new(),
+            kairos_active: false,
+            is_brief_only: false,
+            is_assistant_mode: false,
+            autonomous_tick_ms: None,
+            terminal_focus: true,
         }
     }
 }
