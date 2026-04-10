@@ -71,8 +71,17 @@ CLAUDE_MODEL=anthropic/claude-sonnet-4
 # 方式 2: export
 export ANTHROPIC_API_KEY="sk-ant-api03-..."
 
-# 方式 3: REPL 中登录
+# 方式 3: REPL 中直接输入 API Key
 > /login sk-ant-api03-...
+
+# 方式 4: OAuth 登录 (Claude.ai Pro/Max 订阅用户)
+> /login 2
+# → 打印授权 URL → 浏览器中授权 → 复制 code
+> /login-code eyJhb...
+
+# 方式 5: OAuth 登录 (Console API 计费用户)
+> /login 3
+# → 同上流程，登录后自动创建 API Key 存入 Keychain
 
 # 查看认证状态
 > /login status
@@ -332,8 +341,13 @@ for event in streamed.events:
 
 | 命令 | 说明 |
 |------|------|
-| `/login` | 认证引导 (API Key / Auth Token) |
-| `/logout` | 清除存储的认证凭据 |
+| `/login` | 认证引导 — 选择登录方式 (API Key / Claude.ai OAuth / Console OAuth) |
+| `/login 1` | 直接输入 API Key |
+| `/login 2` | Claude.ai OAuth 登录 (Pro/Max 订阅用户，Bearer Token 模式) |
+| `/login 3` | Console OAuth 登录 (API 计费用户，自动创建 API Key) |
+| `/login-code <code>` | 完成 OAuth 登录 — 粘贴授权后获得的 code |
+| `/login status` | 查看当前认证状态 |
+| `/logout` | 清除所有认证凭据 (Keychain + OAuth tokens) |
 
 ### Git
 

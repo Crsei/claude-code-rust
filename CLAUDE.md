@@ -52,9 +52,10 @@ rust/
 │   ├── tools/               28 个工具 + background_agents (后台代理类型)
 │   ├── skills/              技能系统 (内置 + 用户自定义)
 │   ├── compact/             上下文压缩管道
-│   ├── commands/            28 个斜杠命令
+│   ├── commands/            29 个斜杠命令 (含 login-code)
 │   ├── api/                 API 客户端 (Anthropic, OpenAI, Google)
-│   ├── auth/                认证 (API Key + Keychain)
+│   ├── auth/                认证 (API Key + Keychain + OAuth PKCE)
+│   │   └── oauth/           OAuth 子模块 (pkce, config, client)
 │   ├── permissions/         权限系统
 │   ├── config/              配置管理
 │   ├── session/             会话持久化
@@ -119,8 +120,19 @@ services/ — tool_use_summary, session_memory, prompt_suggestion, lsp_lifecycle
 ```
 ApiClient::from_auth()
   ├─ from_env(): 环境变量检测 (ANTHROPIC_API_KEY, OPENAI_API_KEY, ...)
-  └─ auth::resolve_auth(): ANTHROPIC_AUTH_TOKEN → 系统 Keychain ("cc-rust")
+  └─ auth::resolve_auth():
+       1. ANTHROPIC_API_KEY env → ApiKey
+       2. ANTHROPIC_AUTH_TOKEN env → ExternalToken
+       3. ~/.cc-rust/credentials.json → OAuthToken (自动刷新过期 token)
+       4. 系统 Keychain ("cc-rust") → ApiKey
+       5. None
 ```
+
+OAuth 登录流程 (`/login 2|3` + `/login-code`):
+- PKCE: `src/auth/oauth/pkce.rs` (code_verifier + code_challenge + state)
+- 端点: `src/auth/oauth/config.rs` (platform.claude.com OAuth endpoints)
+- HTTP: `src/auth/oauth/client.rs` (token exchange + refresh + create_api_key)
+- 状态: `src/commands/login_code.rs` (PENDING_OAUTH static, 两步流程)
 
 ### 注意事项
 
