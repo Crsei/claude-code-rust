@@ -445,9 +445,9 @@ mod tests {
     fn test_uri_roundtrip_unix() {
         let original = "/tmp/test/file.rs";
         let uri = file_path_to_uri(original).unwrap();
-        let back = uri_to_file_path(&uri);
+        let _back = uri_to_file_path(&uri);
         #[cfg(not(windows))]
-        assert_eq!(back, original);
+        assert_eq!(_back, original);
     }
 
     // -- Location conversion -----------------------------------------------

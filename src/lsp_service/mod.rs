@@ -98,6 +98,7 @@ pub fn default_server_configs() -> Vec<LspServerConfig> {
 }
 
 /// Get the language ID for a file extension.
+#[allow(dead_code)] // Public API — used in tests, will be used by future callers.
 pub fn language_for_extension(ext: &str) -> Option<String> {
     for config in default_server_configs() {
         if config.extensions.contains(&ext.to_string()) {
@@ -121,6 +122,7 @@ pub fn config_for_file(path: &Path) -> Option<LspServerConfig> {
 
 /// Connection state for an LSP server.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)] // Tested + will be used for server lifecycle tracking.
 pub enum ServerState {
     NotStarted,
     Starting,

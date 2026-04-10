@@ -26,8 +26,8 @@ pub struct LspClient {
     next_id: u64,
     /// The language this server handles (e.g. "rust", "python").
     pub language_id: String,
-    root_uri: String,
-    initialized: bool,
+    _root_uri: String,
+    _initialized: bool,
     open_files: HashSet<String>,
 }
 
@@ -134,8 +134,8 @@ impl LspClient {
             child,
             next_id: 1, // 0 was used for initialize
             language_id: config.language_id.clone(),
-            root_uri,
-            initialized: true,
+            _root_uri: root_uri,
+            _initialized: true,
             open_files: HashSet::new(),
         })
     }
@@ -261,6 +261,7 @@ impl LspClient {
 
     /// Gracefully shut down the server: send `shutdown` request, then `exit`
     /// notification. If the server does not respond within 5 seconds, kill it.
+    #[allow(dead_code)] // Lifecycle method — will be called by shutdown hooks.
     pub async fn shutdown(mut self) -> Result<()> {
         debug!(language = %self.language_id, "shutting down LSP server");
 
