@@ -21,6 +21,9 @@ pub mod skill;
 // Agent tool (Phase 2 migration)
 pub mod agent;
 
+// Background agent types (used by Agent tool + query loop + event loop)
+pub mod background_agents;
+
 // Web tools (Phase 3 migration)
 pub mod web_fetch;
 pub mod web_search;
