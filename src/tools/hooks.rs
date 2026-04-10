@@ -681,6 +681,31 @@ pub async fn run_event_hooks(
 }
 
 // ---------------------------------------------------------------------------
+// Convenience wrappers for non-tool lifecycle hooks
+// ---------------------------------------------------------------------------
+
+/// Fire a notification hook (convenience wrapper).
+///
+/// Sends `{ "title": ..., "body": ... }` to all hooks registered under the
+/// `"Notification"` event key.  Fire-and-forget: errors are logged internally.
+#[allow(dead_code)] // Called when notification dispatch points are wired
+pub async fn fire_notification_hook(
+    title: &str,
+    body: &str,
+    hooks_map: &std::collections::HashMap<String, serde_json::Value>,
+) {
+    let configs = load_hook_configs(hooks_map, "Notification");
+    if configs.is_empty() {
+        return;
+    }
+    let payload = serde_json::json!({
+        "title": title,
+        "body": body,
+    });
+    let _ = run_event_hooks("Notification", &payload, &configs).await;
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 

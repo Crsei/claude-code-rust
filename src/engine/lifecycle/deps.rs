@@ -391,6 +391,17 @@ impl QueryDeps for QueryEngineDeps {
         if let Some(override_decision) = permission_override {
             match override_decision {
                 PermissionOverride::Deny { reason } => {
+                    // Fire PermissionDenied hook
+                    let deny_configs = hooks::load_hook_configs(&hooks_map, "PermissionDenied");
+                    if !deny_configs.is_empty() {
+                        let payload = serde_json::json!({
+                            "tool_name": request.tool_name,
+                            "tool_input": request.input,
+                            "reason": format!("Permission denied by hook: {}", reason),
+                        });
+                        let _ = hooks::run_event_hooks("PermissionDenied", &payload, &deny_configs).await;
+                    }
+
                     return Ok(ToolExecResult {
                         tool_use_id: request.tool_use_id,
                         tool_name: request.tool_name,
@@ -417,6 +428,17 @@ impl QueryDeps for QueryEngineDeps {
             match perm_result {
                 PermissionResult::Allow { .. } => { /* proceed */ }
                 PermissionResult::Deny { message } => {
+                    // Fire PermissionDenied hook
+                    let deny_configs = hooks::load_hook_configs(&hooks_map, "PermissionDenied");
+                    if !deny_configs.is_empty() {
+                        let payload = serde_json::json!({
+                            "tool_name": request.tool_name,
+                            "tool_input": request.input,
+                            "reason": format!("Permission denied: {}", message),
+                        });
+                        let _ = hooks::run_event_hooks("PermissionDenied", &payload, &deny_configs).await;
+                    }
+
                     return Ok(ToolExecResult {
                         tool_use_id: request.tool_use_id,
                         tool_name: request.tool_name,
@@ -428,6 +450,56 @@ impl QueryDeps for QueryEngineDeps {
                     });
                 }
                 PermissionResult::Ask { message } => {
+                    // Fire PermissionRequest hook before interactive prompt
+                    let mut hook_allowed = false;
+                    let perm_req_configs = hooks::load_hook_configs(&hooks_map, "PermissionRequest");
+                    if !perm_req_configs.is_empty() {
+                        let payload = serde_json::json!({
+                            "tool_name": request.tool_name,
+                            "tool_input": request.input,
+                            "message": message,
+                        });
+                        if let Ok(output) = hooks::run_event_hooks("PermissionRequest", &payload, &perm_req_configs).await {
+                            // If hook provides a permission decision, use it
+                            if let Some(ref decision) = output.permission_decision {
+                                match decision.as_str() {
+                                    "allow" => {
+                                        // Skip the interactive prompt, proceed to execution
+                                        tracing::debug!(
+                                            tool = %request.tool_name,
+                                            "PermissionRequest hook allowed tool execution"
+                                        );
+                                        hook_allowed = true;
+                                    }
+                                    "deny" => {
+                                        // Fire PermissionDenied hook
+                                        let deny_configs = hooks::load_hook_configs(&hooks_map, "PermissionDenied");
+                                        if !deny_configs.is_empty() {
+                                            let deny_payload = serde_json::json!({
+                                                "tool_name": request.tool_name,
+                                                "tool_input": request.input,
+                                                "reason": "Permission denied by PermissionRequest hook",
+                                            });
+                                            let _ = hooks::run_event_hooks("PermissionDenied", &deny_payload, &deny_configs).await;
+                                        }
+
+                                        return Ok(ToolExecResult {
+                                            tool_use_id: request.tool_use_id,
+                                            tool_name: request.tool_name,
+                                            result: crate::types::tool::ToolResult {
+                                                data: serde_json::json!("Permission denied by hook"),
+                                                new_messages: vec![],
+                                            },
+                                            is_error: true,
+                                        });
+                                    }
+                                    _ => {} // unknown decision, continue with normal prompt
+                                }
+                            }
+                        }
+                    }
+
+                    if !hook_allowed {
                     if let Some(ref callback) = ctx.permission_callback {
                         let description = format!("{}: {}", request.tool_name, message);
                         let options = vec![
@@ -446,6 +518,17 @@ impl QueryDeps for QueryEngineDeps {
                         match decision.to_lowercase().as_str() {
                             "allow" | "always_allow" => { /* proceed */ }
                             _ => {
+                                // Fire PermissionDenied hook (user chose deny)
+                                let deny_configs = hooks::load_hook_configs(&hooks_map, "PermissionDenied");
+                                if !deny_configs.is_empty() {
+                                    let payload = serde_json::json!({
+                                        "tool_name": request.tool_name,
+                                        "tool_input": request.input,
+                                        "reason": "Permission denied by user",
+                                    });
+                                    let _ = hooks::run_event_hooks("PermissionDenied", &payload, &deny_configs).await;
+                                }
+
                                 return Ok(ToolExecResult {
                                     tool_use_id: request.tool_use_id,
                                     tool_name: request.tool_name,
@@ -458,6 +541,17 @@ impl QueryDeps for QueryEngineDeps {
                             }
                         }
                     } else {
+                        // Fire PermissionDenied hook (no callback available)
+                        let deny_configs = hooks::load_hook_configs(&hooks_map, "PermissionDenied");
+                        if !deny_configs.is_empty() {
+                            let payload = serde_json::json!({
+                                "tool_name": request.tool_name,
+                                "tool_input": request.input,
+                                "reason": format!("Permission required (no callback): {}", message),
+                            });
+                            let _ = hooks::run_event_hooks("PermissionDenied", &payload, &deny_configs).await;
+                        }
+
                         return Ok(ToolExecResult {
                             tool_use_id: request.tool_use_id,
                             tool_name: request.tool_name,
@@ -471,6 +565,7 @@ impl QueryDeps for QueryEngineDeps {
                             is_error: true,
                         });
                     }
+                    } // if !hook_allowed
                 }
             }
         }
