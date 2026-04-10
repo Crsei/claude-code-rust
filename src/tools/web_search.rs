@@ -57,6 +57,9 @@ const CACHE_TTL_ENV: &str = "CC_RUST_SEARCH_CACHE_TTL";
 /// Default cache TTL in seconds (5 minutes).
 const DEFAULT_CACHE_TTL_SECS: u64 = 300;
 
+/// Maximum number of cached search results.
+const MAX_CACHE_ENTRIES: usize = 128;
+
 /// Read the cache TTL from environment, falling back to default.
 fn cache_ttl_secs() -> u64 {
     std::env::var(CACHE_TTL_ENV)
@@ -102,6 +105,16 @@ impl SearchCache {
     /// Store results in the cache.
     fn put(&self, key: &str, results: Vec<SearchResultEntry>) {
         let mut map = self.entries.lock();
+        // Evict oldest entry if at capacity
+        if map.len() >= MAX_CACHE_ENTRIES && !map.contains_key(key) {
+            if let Some(oldest_key) = map
+                .iter()
+                .min_by_key(|(_, e)| e.inserted_at)
+                .map(|(k, _)| k.clone())
+            {
+                map.remove(&oldest_key);
+            }
+        }
         map.insert(
             key.to_string(),
             CacheEntry {
@@ -877,6 +890,39 @@ mod tests {
         assert_ne!(k1, k3, "different provider should differ");
         assert_ne!(k1, k4, "different query should differ");
         assert_eq!(k1, build_cache_key("rust", 5, "tavily"), "same inputs same key");
+    }
+
+    #[test]
+    fn test_search_cache_evicts_oldest_at_capacity() {
+        let cache = SearchCache::new();
+
+        // Fill to MAX_CACHE_ENTRIES
+        for i in 0..MAX_CACHE_ENTRIES {
+            cache.put(
+                &format!("query{}|5|tavily", i),
+                vec![SearchResultEntry {
+                    title: format!("Result {}", i),
+                    url: format!("https://example.com/{}", i),
+                    description: "".into(),
+                    age: None,
+                }],
+            );
+        }
+
+        // First entry should still exist
+        assert!(cache.get("query0|5|tavily", 300).is_some());
+
+        // Add one more — should evict the oldest (query0)
+        cache.put("overflow|5|tavily", vec![SearchResultEntry {
+            title: "Overflow".into(),
+            url: "https://overflow.com".into(),
+            description: "".into(),
+            age: None,
+        }]);
+
+        // query0 should be evicted, overflow should exist
+        assert!(cache.get("query0|5|tavily", 300).is_none(), "oldest should be evicted");
+        assert!(cache.get("overflow|5|tavily", 300).is_some(), "new entry should exist");
     }
 
     #[test]
