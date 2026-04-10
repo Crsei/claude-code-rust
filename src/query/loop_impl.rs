@@ -84,6 +84,41 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             }
 
             // ──────────────────────────────────────────────────────
+            // STEP 1b: Inject completed background agent results
+            // ──────────────────────────────────────────────────────
+
+            let completed_agents = deps.drain_background_results();
+            for agent in &completed_agents {
+                let content = if agent.had_error {
+                    format!(
+                        "[Background agent '{}' (id: {}) failed after {:.1}s]\n\n{}",
+                        agent.description,
+                        agent.agent_id,
+                        agent.duration.as_secs_f64(),
+                        agent.result_text,
+                    )
+                } else {
+                    format!(
+                        "[Background agent '{}' (id: {}) completed in {:.1}s]\n\n{}",
+                        agent.description,
+                        agent.agent_id,
+                        agent.duration.as_secs_f64(),
+                        agent.result_text,
+                    )
+                };
+
+                let sys_msg = Message::System(crate::types::message::SystemMessage {
+                    uuid: Uuid::new_v4(),
+                    timestamp: chrono::Utc::now().timestamp_millis(),
+                    subtype: crate::types::message::SystemSubtype::Informational {
+                        level: crate::types::message::InfoLevel::Info,
+                    },
+                    content,
+                });
+                state.messages.push(sys_msg);
+            }
+
+            // ──────────────────────────────────────────────────────
             // STEP 2: CONTEXT -- microcompact + autocompact
             // ──────────────────────────────────────────────────────
 

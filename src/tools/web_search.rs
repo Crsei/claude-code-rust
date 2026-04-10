@@ -246,6 +246,7 @@ fn matches_domain(url: &str, domain: &str) -> bool {
     false
 }
 
+#[allow(dead_code)]
 fn filter_results(
     results: Vec<BraveWebResult>,
     allowed_domains: &[String],

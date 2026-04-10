@@ -20,6 +20,7 @@ pub struct CompletedBackgroundAgent {
 pub type BgAgentSender = tokio::sync::mpsc::UnboundedSender<CompletedBackgroundAgent>;
 
 /// Receiver half — owned by the event loop (headless/TUI).
+#[allow(dead_code)]
 pub type BgAgentReceiver = tokio::sync::mpsc::UnboundedReceiver<CompletedBackgroundAgent>;
 
 /// Shared buffer of completed agents waiting to be injected into the query loop.
@@ -38,6 +39,7 @@ impl PendingBackgroundResults {
     }
 
     /// Push a completed agent result (called by event loop).
+    #[allow(dead_code)]
     pub fn push(&self, agent: CompletedBackgroundAgent) {
         self.inner.lock().push(agent);
     }
