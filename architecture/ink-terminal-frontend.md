@@ -89,6 +89,7 @@ cc-rust 采用 **IPC 分层架构**，将 UI 与核心逻辑完全解耦：
 | `usage_update` | `input_tokens`, `output_tokens`, `cost_usd` | Token 用量 |
 | `suggestions` | `items` | 提示建议 |
 | `error` | `message`, `recoverable` | 错误 |
+| `background_agent_complete` | `agent_id`, `description`, `result_preview`, `had_error`, `duration_ms` | 后台代理完成通知 |
 
 ### SdkMessage → BackendMessage 映射
 

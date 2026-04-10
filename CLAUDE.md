@@ -49,7 +49,7 @@ rust/
 │   ├── engine/              QueryEngine + 系统提示词
 │   │   └── lifecycle/       QueryEngine 生命周期 (mod, types, submit_message, deps, helpers)
 │   ├── query/               异步流式查询循环 (loop_impl + loop_helpers)
-│   ├── tools/               28 个工具
+│   ├── tools/               28 个工具 + background_agents (后台代理类型)
 │   ├── skills/              技能系统 (内置 + 用户自定义)
 │   ├── compact/             上下文压缩管道
 │   ├── commands/            28 个斜杠命令
@@ -101,8 +101,9 @@ git add ui/ink-terminal && git commit -m "chore: bump ink-terminal"
 ### IPC 架构
 
 ink-terminal 前端通过 `--headless` 模式与 Rust 后端通信:
-- Rust 端: `src/ipc/protocol.rs` (协议类型) + `src/ipc/headless.rs` (事件循环)
+- Rust 端: `src/ipc/protocol.rs` (协议类型) + `src/ipc/headless.rs` (事件循环, `tokio::select!` 多路复用)
 - TS 端: `ui/src/ipc/client.ts` (spawn + JSONL) + `ui/src/ipc/protocol.ts`
+- headless 事件循环通过 `tokio::select!` 同时等待 stdin (用户输入) 和 mpsc channel (后台代理完成通知)
 - 详见: `architecture/ink-terminal-frontend.md`
 
 ### 已移除的模块 (完整版有)

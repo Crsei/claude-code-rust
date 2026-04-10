@@ -106,3 +106,46 @@ Each issue includes a description, reproduction steps, and current status.
 
 **Related files**:
 - `src/ui/welcome.rs` — ASCII art logo definition and rendering
+
+## 6. Background agent + worktree isolation 未组合
+
+**Status**: Open (设计限制)
+**Discovered**: 2026-04-10
+
+**Description**: Agent 工具的 `run_in_background: true` 和 `isolation: "worktree"` 参数无法同时生效。当两者都指定时，worktree 隔离被忽略，后台代理使用当前工作目录运行，并输出一条 warning 日志。
+
+**原因**: Worktree 创建需要异步 git 操作 (`git worktree add`)，而后台代理需要在 `tokio::spawn` 之前构建好 child config（需要确定 cwd）。在 spawn 闭包内执行异步 worktree 创建会增加错误处理复杂度，且 worktree 清理逻辑（检测变更、删除分支）需要在 spawn 内完成。
+
+**后续计划**: 将 worktree 创建移入 spawn 闭包内部，复用现有 `run_in_worktree` 逻辑。
+
+**Related files**:
+- `src/tools/agent.rs` — `call()` 方法的 background spawn 路径
+
+## 7. Background agent 子引擎无 permission_callback
+
+**Status**: Open (设计限制)
+**Discovered**: 2026-04-10
+
+**Description**: 通过 `run_in_background: true` 启动的后台代理创建的子 `QueryEngine` 没有设置 `permission_callback`。在 default 权限模式下，子代理执行需要 `Ask` 权限的工具（如 Bash、FileWrite）时会被直接拒绝，而不是提示用户确认。
+
+**影响**: 后台代理在 `auto` 或 `bypass` 权限模式下正常工作；在 `default` 模式下，只有不需要权限确认的只读工具（Glob、Grep、FileRead）可以正常执行。
+
+**后续计划**: 将父引擎的 `permission_callback` 传递给子引擎。需要考虑并发权限请求的 UI 展示问题（多个后台代理同时请求权限）。
+
+**Related files**:
+- `src/tools/agent.rs` — background spawn 路径中的 `QueryEngine::new(child_config)`
+- `src/engine/lifecycle/mod.rs` — `set_permission_callback()`
+
+## 8. Background agent 无取消机制
+
+**Status**: Open (设计限制)
+**Discovered**: 2026-04-10
+
+**Description**: 后台代理通过 `tokio::spawn` 启动后，`JoinHandle` 未被保存。用户中断父查询 (`Ctrl+C`) 或退出应用时，后台代理会继续运行直到完成（或 tokio runtime 关闭）。对于长时间运行的后台代理，这可能导致资源浪费。
+
+**后续计划**: 在 `PendingBackgroundResults` 或新的 `BackgroundAgentManager` 中保存 `JoinHandle`，在 `graceful_shutdown` 或用户 abort 时调用 `handle.abort()`。同时需要将父引擎的 `abort_signal` 传递给子引擎。
+
+**Related files**:
+- `src/tools/agent.rs` — `tokio::spawn` 调用
+- `src/tools/background_agents.rs` — `PendingBackgroundResults`
+- `src/shutdown.rs` — `graceful_shutdown()`
