@@ -552,6 +552,55 @@ impl AgentTool {
             new_messages: vec![],
         })
     }
+
+    /// Consolidated dispatch: fires SubagentStart hook, runs the agent (worktree
+    /// or normal), fires SubagentStop hook.  Used by both the synchronous path
+    /// and as a fallback when `bg_agent_tx` is unavailable.
+    async fn run_agent_dispatch(
+        &self,
+        use_worktree: bool,
+        params: &AgentInput,
+        ctx: &ToolUseContext,
+        agent_id: &str,
+        agent_model: &str,
+        parent_model: &str,
+        current_depth: usize,
+        description: &str,
+        start_configs: &[crate::tools::hooks::HookEventConfig],
+        stop_configs: &[crate::tools::hooks::HookEventConfig],
+    ) -> Result<ToolResult> {
+        // Fire SubagentStart hook
+        if !start_configs.is_empty() {
+            let payload = json!({
+                "agent_id": agent_id,
+                "prompt": &params.prompt,
+                "description": description,
+                "subagent_type": params.subagent_type.as_deref().unwrap_or("general-purpose"),
+                "model": agent_model,
+                "depth": current_depth + 1,
+            });
+            let _ = crate::tools::hooks::run_event_hooks("SubagentStart", &payload, start_configs).await;
+        }
+
+        let result = if use_worktree {
+            self.run_in_worktree(params, ctx, agent_id, agent_model, parent_model, current_depth).await
+        } else {
+            self.run_agent_normal(params, ctx, agent_id, agent_model, parent_model, current_depth).await
+        };
+
+        // Fire SubagentStop hook
+        if !stop_configs.is_empty() {
+            let is_error = result.as_ref().is_err();
+            let payload = json!({
+                "agent_id": agent_id,
+                "description": description,
+                "is_error": is_error,
+            });
+            let _ = crate::tools::hooks::run_event_hooks("SubagentStop", &payload, stop_configs).await;
+        }
+
+        result
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -649,14 +698,6 @@ impl Tool for AgentTool {
             .map(|s| s.eq_ignore_ascii_case("worktree"))
             .unwrap_or(false);
 
-        // Background mode is stubbed — run synchronously with a warning
-        if params.run_in_background {
-            warn!(
-                agent_id = %agent_id,
-                "run_in_background requested but not yet implemented — running synchronously"
-            );
-        }
-
         info!(
             agent_id = %agent_id,
             description = %description,
@@ -667,10 +708,31 @@ impl Tool for AgentTool {
             "spawning subagent"
         );
 
-        // Fire SubagentStart hook
-        {
+        // Load hook configs once (used by both background and synchronous paths)
+        let start_configs = {
             let app_state = (ctx.get_app_state)();
-            let start_configs = crate::tools::hooks::load_hook_configs(&app_state.hooks, "SubagentStart");
+            crate::tools::hooks::load_hook_configs(&app_state.hooks, "SubagentStart")
+        };
+        let stop_configs = {
+            let app_state = (ctx.get_app_state)();
+            crate::tools::hooks::load_hook_configs(&app_state.hooks, "SubagentStop")
+        };
+
+        // ── Background path ─────────────────────────────────────────────
+        if params.run_in_background {
+            let Some(bg_tx) = ctx.bg_agent_tx.clone() else {
+                warn!(
+                    agent_id = %agent_id,
+                    "run_in_background requested but no bg_agent_tx — running synchronously"
+                );
+                // Fall through to synchronous dispatch below
+                return self.run_agent_dispatch(
+                    use_worktree, &params, ctx, &agent_id, &agent_model,
+                    &parent_model, current_depth, description, &start_configs, &stop_configs,
+                ).await;
+            };
+
+            // Fire SubagentStart hook before spawn
             if !start_configs.is_empty() {
                 let payload = json!({
                     "agent_id": &agent_id,
@@ -679,50 +741,79 @@ impl Tool for AgentTool {
                     "subagent_type": subagent_type,
                     "model": &agent_model,
                     "depth": current_depth + 1,
+                    "background": true,
                 });
                 let _ = crate::tools::hooks::run_event_hooks("SubagentStart", &payload, &start_configs).await;
             }
-        }
 
-        // Dispatch based on isolation mode
-        let result = if use_worktree {
-            self.run_in_worktree(
-                &params,
-                ctx,
-                &agent_id,
-                &agent_model,
-                &parent_model,
-                current_depth,
-            )
-            .await
-        } else {
-            self.run_agent_normal(
-                &params,
-                ctx,
-                &agent_id,
-                &agent_model,
-                &parent_model,
-                current_depth,
-            )
-            .await
-        };
+            // Build child config now (before move into spawn)
+            let child_cwd = if use_worktree {
+                warn!(agent_id = %agent_id, "background + worktree not yet combined — using normal cwd");
+                std::env::current_dir()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| ".".to_string())
+            } else {
+                std::env::current_dir()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| ".".to_string())
+            };
 
-        // Fire SubagentStop hook
-        {
-            let app_state = (ctx.get_app_state)();
-            let stop_configs = crate::tools::hooks::load_hook_configs(&app_state.hooks, "SubagentStop");
-            if !stop_configs.is_empty() {
-                let is_error = result.as_ref().is_err();
-                let payload = json!({
-                    "agent_id": &agent_id,
-                    "description": description,
-                    "is_error": is_error,
+            let child_config = build_child_config(
+                child_cwd, ctx, &agent_id, &agent_model, &parent_model, current_depth,
+            );
+
+            // Capture owned values for the spawned task
+            let spawn_agent_id = agent_id.clone();
+            let spawn_description = description.to_string();
+            let spawn_prompt = params.prompt.clone();
+            let spawn_stop_configs = stop_configs.clone();
+
+            tokio::spawn(async move {
+                let started = std::time::Instant::now();
+
+                let child_engine = QueryEngine::new(child_config);
+                let stream = child_engine.submit_message(
+                    &spawn_prompt,
+                    QuerySource::Agent(spawn_agent_id.clone()),
+                );
+                let (result_text, had_error) = collect_stream_result(stream).await;
+
+                // Fire SubagentStop hook
+                if !spawn_stop_configs.is_empty() {
+                    let payload = json!({
+                        "agent_id": &spawn_agent_id,
+                        "description": &spawn_description,
+                        "is_error": had_error,
+                        "background": true,
+                    });
+                    let _ = crate::tools::hooks::run_event_hooks(
+                        "SubagentStop", &payload, &spawn_stop_configs,
+                    ).await;
+                }
+
+                let _ = bg_tx.send(crate::tools::background_agents::CompletedBackgroundAgent {
+                    agent_id: spawn_agent_id,
+                    description: spawn_description,
+                    result_text,
+                    had_error,
+                    duration: started.elapsed(),
                 });
-                let _ = crate::tools::hooks::run_event_hooks("SubagentStop", &payload, &stop_configs).await;
-            }
+            });
+
+            return Ok(ToolResult {
+                data: json!(format!(
+                    "Agent '{}' launched in background (id: {}). You will be notified when it completes.",
+                    description, agent_id
+                )),
+                new_messages: vec![],
+            });
         }
 
-        result
+        // ── Synchronous path ────────────────────────────────────────────
+        self.run_agent_dispatch(
+            use_worktree, &params, ctx, &agent_id, &agent_model, &parent_model,
+            current_depth, description, &start_configs, &stop_configs,
+        ).await
     }
 
     async fn prompt(&self) -> String {
