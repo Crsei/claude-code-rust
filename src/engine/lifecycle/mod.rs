@@ -71,6 +71,10 @@ pub(crate) struct QueryEngineState {
     /// Sender for background agent completion channel.
     /// Set by headless/TUI mode; cloned into ToolUseContext.
     pub(crate) bg_agent_tx: Option<crate::tools::background_agents::BgAgentSender>,
+    /// If set, the engine is "sleeping" until this instant.
+    /// The proactive tick loop skips ticks while `Instant::now() < sleep_until`.
+    /// Cleared by `wake_up()` on user messages or external events.
+    pub(crate) sleep_until: Option<std::time::Instant>,
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +133,7 @@ impl QueryEngine {
                 loaded_nested_memory_paths: HashSet::new(),
                 permission_callback: None,
                 bg_agent_tx: None,
+                sleep_until: None,
             })),
             aborted: Arc::new(AtomicBool::new(false)),
             has_handled_orphaned_permission: Arc::new(AtomicBool::new(false)),
@@ -148,6 +153,28 @@ impl QueryEngine {
     /// Set the background agent sender (called by headless/TUI at startup).
     pub fn set_bg_agent_tx(&self, tx: crate::tools::background_agents::BgAgentSender) {
         self.state.write().bg_agent_tx = Some(tx);
+    }
+
+    // -- Sleep control -------------------------------------------------------
+
+    /// Put the engine to sleep until the given instant.
+    /// The proactive tick loop will skip ticks while `is_sleeping()` returns true.
+    pub fn set_sleep_until(&self, until: std::time::Instant) {
+        let mut state = self.state.write();
+        state.sleep_until = Some(until);
+    }
+
+    /// Check whether the engine is currently sleeping.
+    pub fn is_sleeping(&self) -> bool {
+        let state = self.state.read();
+        state.sleep_until.map_or(false, |t| std::time::Instant::now() < t)
+    }
+
+    /// Wake the engine up, clearing any pending sleep.
+    /// Called on user messages, webhooks, or other external events.
+    pub fn wake_up(&self) {
+        let mut state = self.state.write();
+        state.sleep_until = None;
     }
 
     // -- Abort control -------------------------------------------------------
