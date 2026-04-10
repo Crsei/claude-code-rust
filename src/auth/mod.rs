@@ -78,22 +78,17 @@ pub fn resolve_auth() -> AuthMethod {
         }
     }
 
-    // 3. OAuth token from disk
-    if let Ok(Some(stored)) = token::load_token() {
-        if !token::is_token_expired(&stored) {
-            let method = stored.oauth_method.clone().unwrap_or_default();
-            // Console mode: API key should be in keychain (created at login)
-            // Claude.ai mode: use Bearer token directly
-            if method == "console" {
-                // Fall through to keychain check below
-            } else {
-                return AuthMethod::OAuthToken {
-                    access_token: stored.access_token,
-                    method,
-                };
-            }
+    // 3. OAuth token from disk (with auto-refresh if expired)
+    if let Ok(Some((access_token, method))) = try_resolve_oauth() {
+        if method == "console" {
+            // Console mode: API key is in keychain (created at login).
+            // Fall through to keychain check below.
+        } else {
+            return AuthMethod::OAuthToken {
+                access_token,
+                method,
+            };
         }
-        // Note: expired tokens are handled by try_refresh_if_needed() at startup
     }
 
     // 4. Keychain
@@ -107,8 +102,106 @@ pub fn resolve_auth() -> AuthMethod {
 }
 
 // ---------------------------------------------------------------------------
-// OAuth convenience functions
+// OAuth helpers
 // ---------------------------------------------------------------------------
+
+/// Try to load OAuth token, auto-refreshing if expired.
+///
+/// Returns `Ok(Some((access_token, method)))` or `Ok(None)`.
+fn try_resolve_oauth() -> anyhow::Result<Option<(String, String)>> {
+    let stored = match token::load_token()? {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+
+    let method = stored.oauth_method.clone().unwrap_or_default();
+
+    if !token::is_token_expired(&stored) {
+        return Ok(Some((stored.access_token, method)));
+    }
+
+    // Token expired — try synchronous refresh via a blocking runtime.
+    // If we're already inside a tokio runtime, spawn a blocking task;
+    // otherwise create a temporary one.
+    let refresh_tok = match &stored.refresh_token {
+        Some(t) => t.clone(),
+        None => {
+            let _ = token::remove_token();
+            return Ok(None);
+        }
+    };
+
+    let scopes: Vec<String> = stored.scopes.clone();
+    match try_refresh_sync(&refresh_tok, &scopes, &stored) {
+        Ok(result) => Ok(result),
+        Err(e) => {
+            tracing::warn!(error = %e, "OAuth auto-refresh failed, clearing credentials");
+            let _ = token::remove_token();
+            Ok(None)
+        }
+    }
+}
+
+/// Synchronous wrapper for token refresh (called from `resolve_auth()`).
+fn try_refresh_sync(
+    refresh_tok: &str,
+    scopes: &[String],
+    stored: &token::StoredToken,
+) -> anyhow::Result<Option<(String, String)>> {
+    let scope_strs: Vec<&str> = scopes.iter().map(|s| s.as_str()).collect();
+    let scopes_ref: &[&str] = if scope_strs.is_empty() {
+        oauth::config::CLAUDE_AI_SCOPES
+    } else {
+        &scope_strs
+    };
+
+    // Use tokio Handle if available, otherwise skip refresh
+    let handle = match tokio::runtime::Handle::try_current() {
+        Ok(h) => h,
+        Err(_) => return Ok(None), // No async runtime — can't refresh
+    };
+
+    let refresh_tok = refresh_tok.to_string();
+    let scopes_owned: Vec<String> = scopes_ref.iter().map(|s| s.to_string()).collect();
+    let stored_clone = stored.clone();
+
+    let result = std::thread::spawn(move || {
+        handle.block_on(async {
+            let scope_strs: Vec<&str> = scopes_owned.iter().map(|s| s.as_str()).collect();
+            match oauth::client::refresh_token(&refresh_tok, &scope_strs).await {
+                Ok(resp) => {
+                    let expires_at = chrono::Utc::now().timestamp() + resp.expires_in as i64;
+                    let new_scopes: Vec<String> = resp
+                        .scope
+                        .split_whitespace()
+                        .map(|s| s.to_string())
+                        .collect();
+
+                    let updated = token::StoredToken {
+                        access_token: resp.access_token.clone(),
+                        refresh_token: resp.refresh_token.or(Some(refresh_tok)),
+                        expires_at: Some(expires_at),
+                        token_type: "bearer".into(),
+                        scopes: if new_scopes.is_empty() {
+                            stored_clone.scopes
+                        } else {
+                            new_scopes
+                        },
+                        oauth_method: stored_clone.oauth_method,
+                    };
+                    let method = updated.oauth_method.clone().unwrap_or_default();
+                    let _ = token::save_token(&updated);
+                    Ok(Some((resp.access_token, method)))
+                }
+                Err(e) => Err(e),
+            }
+        })
+    })
+    .join()
+    .map_err(|_| anyhow::anyhow!("OAuth refresh thread panicked"))??;
+
+    Ok(result)
+}
 
 /// Clear all OAuth state (tokens + keychain API key).
 pub fn oauth_logout() -> anyhow::Result<()> {

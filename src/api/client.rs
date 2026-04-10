@@ -234,43 +234,19 @@ impl ApiClient {
             return Some(client);
         }
 
-        // 2. Fall back to auth::resolve_auth() (keychain, external token)
-        match crate::auth::resolve_auth() {
-            crate::auth::AuthMethod::ApiKey(api_key) => {
-                let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
-                Some(Self::new(ApiClientConfig {
-                    provider: ApiProvider::Anthropic { api_key, base_url },
-                    default_model: "claude-sonnet-4-20250514".to_string(),
-                    max_retries: 3,
-                    timeout_secs: 120,
-                }))
-            }
-            crate::auth::AuthMethod::ExternalToken(token) => {
-                let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
-                Some(Self::new(ApiClientConfig {
-                    provider: ApiProvider::Anthropic {
-                        api_key: token,
-                        base_url,
-                    },
-                    default_model: "claude-sonnet-4-20250514".to_string(),
-                    max_retries: 3,
-                    timeout_secs: 120,
-                }))
-            }
-            crate::auth::AuthMethod::OAuthToken { access_token, .. } => {
-                let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
-                Some(Self::new(ApiClientConfig {
-                    provider: ApiProvider::Anthropic {
-                        api_key: access_token,
-                        base_url,
-                    },
-                    default_model: "claude-sonnet-4-20250514".to_string(),
-                    max_retries: 3,
-                    timeout_secs: 120,
-                }))
-            }
-            crate::auth::AuthMethod::None => None,
-        }
+        // 2. Fall back to auth::resolve_auth() (keychain, external token, OAuth)
+        let auth = crate::auth::resolve_auth();
+        let api_key = auth
+            .api_key()
+            .or_else(|| auth.bearer_token())
+            .map(|s| s.to_string())?;
+        let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
+        Some(Self::new(ApiClientConfig {
+            provider: ApiProvider::Anthropic { api_key, base_url },
+            default_model: "claude-sonnet-4-20250514".to_string(),
+            max_retries: 3,
+            timeout_secs: 120,
+        }))
     }
 
     /// Build the required HTTP headers for Anthropic-format providers.

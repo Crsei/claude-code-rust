@@ -13,15 +13,6 @@ pub struct OAuthTokenResponse {
     pub expires_in: u64,
     #[serde(default)]
     pub scope: String,
-    #[serde(default)]
-    pub account: Option<OAuthAccount>,
-}
-
-/// Account info embedded in token response.
-#[derive(Debug, Deserialize)]
-pub struct OAuthAccount {
-    pub uuid: Option<String>,
-    pub email_address: Option<String>,
 }
 
 /// Response from the create_api_key endpoint.

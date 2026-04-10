@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use super::login_code;
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::auth;
-use crate::auth::oauth::config::OAuthMethod;
+use crate::auth::oauth::OAuthMethod;
 
 pub struct LoginHandler;
 
