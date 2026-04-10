@@ -105,6 +105,25 @@ pub enum BackendMessage {
         had_error: bool,
         duration_ms: u64,
     },
+
+    /// Brief mode message from the model (via BriefTool).
+    BriefMessage {
+        message: String,
+        status: String,
+        attachments: Vec<String>,
+    },
+
+    /// Autonomous action started (proactive tick).
+    AutonomousStart {
+        source: String,
+        time: String,
+    },
+
+    /// Push notification sent.
+    NotificationSent {
+        title: String,
+        level: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
