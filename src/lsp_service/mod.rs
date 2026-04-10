@@ -8,17 +8,14 @@
 //! LSP servers are managed per-language (determined by file extension).
 //! Each server is a subprocess communicating via stdin/stdout using JSON-RPC 2.0.
 
-#![allow(unused)]
-
 pub mod client;
 pub mod conversions;
 
-use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::tools::lsp::{HoverInfo, SourceLocation, SymbolInfo};
@@ -132,89 +129,240 @@ pub enum ServerState {
     Error(String),
 }
 
-/// Tracked LSP server instance.
-#[derive(Debug)]
-struct ServerInstance {
-    config: LspServerConfig,
-    state: ServerState,
-    request_id: u64,
-}
-
-/// Global server manager.
-static SERVERS: LazyLock<Mutex<HashMap<String, ServerInstance>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+/// Global LSP client instances, keyed by language_id.
+/// Uses tokio::sync::Mutex because LspClient methods are async.
+static LSP_CLIENTS: LazyLock<tokio::sync::Mutex<HashMap<String, client::LspClient>>> =
+    LazyLock::new(|| tokio::sync::Mutex::new(HashMap::new()));
 
 // ---------------------------------------------------------------------------
-// Public API (feature-gated implementations)
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/// Get or start an LSP client for the file at the given URI.
+/// Returns the language_id key to look up the client.
+async fn get_or_start_client(
+    uri: &str,
+    clients: &mut HashMap<String, client::LspClient>,
+) -> Result<String> {
+    // Extract file path from URI
+    let path = uri
+        .strip_prefix("file:///")
+        .or_else(|| uri.strip_prefix("file://"))
+        .unwrap_or(uri);
+    let file_path = Path::new(path);
+    let config = config_for_file(file_path)
+        .with_context(|| format!("No LSP server configured for: {}", path))?;
+
+    let lang = config.language_id.clone();
+
+    // Check if existing client is alive
+    if let Some(existing) = clients.get_mut(&lang) {
+        if existing.is_alive() {
+            return Ok(lang);
+        }
+        tracing::warn!(language = %lang, "LSP server died, will restart");
+        clients.remove(&lang);
+    }
+
+    // Start new client
+    let root_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let new_client = client::LspClient::start(&config, &root_path).await?;
+    clients.insert(lang.clone(), new_client);
+    Ok(lang)
+}
+
+/// Reconstruct a `CallHierarchyItem` JSON from a [`SymbolInfo`] for call
+/// hierarchy requests (incoming/outgoing calls).
+///
+/// The SymbolInfo's 1-based positions are converted back to 0-based LSP
+/// positions.  `SymbolKind::FUNCTION` is used as the default kind because
+/// we don't store the original numeric kind value.
+fn symbol_info_to_call_hierarchy_json(item: &SymbolInfo) -> Result<serde_json::Value> {
+    let uri = conversions::file_path_to_uri(&item.location.file_path)?;
+
+    // Convert 1-based back to 0-based
+    let start_line = item.location.line.saturating_sub(1);
+    let start_char = item.location.character.saturating_sub(1);
+    let end_line = item.location.end_line.unwrap_or(item.location.line).saturating_sub(1);
+    let end_char = item.location.end_character.unwrap_or(item.location.character).saturating_sub(1);
+
+    // SymbolKind::FUNCTION = 12 in LSP specification
+    let kind_value = serde_json::to_value(lsp_types::SymbolKind::FUNCTION)
+        .unwrap_or(serde_json::Value::Number(12.into()));
+
+    Ok(serde_json::json!({
+        "name": item.name,
+        "kind": kind_value,
+        "uri": uri.as_str(),
+        "range": {
+            "start": { "line": start_line, "character": start_char },
+            "end": { "line": end_line, "character": end_char }
+        },
+        "selectionRange": {
+            "start": { "line": start_line, "character": start_char },
+            "end": { "line": end_line, "character": end_char }
+        }
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Public API
 // ---------------------------------------------------------------------------
 
 /// Go to definition at position.
-
 pub async fn go_to_definition(uri: &str, line: u32, character: u32) -> Result<Vec<SourceLocation>> {
-    // TODO: Full LSP client implementation
-    // This would:
-    // 1. Find/start the appropriate language server
-    // 2. Send textDocument/didOpen if needed
-    // 3. Send textDocument/definition request
-    // 4. Parse Location[] or LocationLink[] response
-    // 5. Convert to SourceLocation
-    bail!("LSP server connection not yet implemented — compile with full LSP client support")
+    let mut clients = LSP_CLIENTS.lock().await;
+    let lang = get_or_start_client(uri, &mut clients).await?;
+    let client = clients.get_mut(&lang).unwrap();
+    client.ensure_file_open(uri).await?;
+
+    let params = serde_json::json!({
+        "textDocument": { "uri": uri },
+        "position": { "line": line, "character": character }
+    });
+    let response = client.request("textDocument/definition", params).await?;
+    conversions::parse_location_response(response)
 }
 
 /// Go to implementation at position.
-
 pub async fn go_to_implementation(
     uri: &str,
     line: u32,
     character: u32,
 ) -> Result<Vec<SourceLocation>> {
-    bail!("LSP server connection not yet implemented")
+    let mut clients = LSP_CLIENTS.lock().await;
+    let lang = get_or_start_client(uri, &mut clients).await?;
+    let client = clients.get_mut(&lang).unwrap();
+    client.ensure_file_open(uri).await?;
+
+    let params = serde_json::json!({
+        "textDocument": { "uri": uri },
+        "position": { "line": line, "character": character }
+    });
+    let response = client.request("textDocument/implementation", params).await?;
+    conversions::parse_location_response(response)
 }
 
 /// Find references at position.
-
 pub async fn find_references(uri: &str, line: u32, character: u32) -> Result<Vec<SourceLocation>> {
-    bail!("LSP server connection not yet implemented")
+    let mut clients = LSP_CLIENTS.lock().await;
+    let lang = get_or_start_client(uri, &mut clients).await?;
+    let client = clients.get_mut(&lang).unwrap();
+    client.ensure_file_open(uri).await?;
+
+    let params = serde_json::json!({
+        "textDocument": { "uri": uri },
+        "position": { "line": line, "character": character },
+        "context": { "includeDeclaration": true }
+    });
+    let response = client.request("textDocument/references", params).await?;
+    conversions::parse_location_response(response)
 }
 
 /// Hover at position.
-
 pub async fn hover(uri: &str, line: u32, character: u32) -> Result<HoverInfo> {
-    bail!("LSP server connection not yet implemented")
+    let mut clients = LSP_CLIENTS.lock().await;
+    let lang = get_or_start_client(uri, &mut clients).await?;
+    let client = clients.get_mut(&lang).unwrap();
+    client.ensure_file_open(uri).await?;
+
+    let params = serde_json::json!({
+        "textDocument": { "uri": uri },
+        "position": { "line": line, "character": character }
+    });
+    let response = client.request("textDocument/hover", params).await?;
+    conversions::parse_hover_response(response)
 }
 
 /// List document symbols.
-
 pub async fn document_symbols(uri: &str) -> Result<Vec<SymbolInfo>> {
-    bail!("LSP server connection not yet implemented")
+    let mut clients = LSP_CLIENTS.lock().await;
+    let lang = get_or_start_client(uri, &mut clients).await?;
+    let client = clients.get_mut(&lang).unwrap();
+    client.ensure_file_open(uri).await?;
+
+    let params = serde_json::json!({
+        "textDocument": { "uri": uri }
+    });
+    let response = client.request("textDocument/documentSymbol", params).await?;
+    conversions::parse_document_symbols_response(response)
 }
 
 /// Search workspace symbols.
-
 pub async fn workspace_symbols(query: &str) -> Result<Vec<SymbolInfo>> {
-    bail!("LSP server connection not yet implemented")
+    let mut clients = LSP_CLIENTS.lock().await;
+
+    // Use any running client — workspace/symbol is not file-specific.
+    let lang = {
+        let mut found = None;
+        for (lang, c) in clients.iter_mut() {
+            if c.is_alive() {
+                found = Some(lang.clone());
+                break;
+            }
+        }
+        found
+    };
+
+    let lang = lang.ok_or_else(|| anyhow::anyhow!("No LSP server running"))?;
+    let client = clients.get_mut(&lang).unwrap();
+
+    let params = serde_json::json!({
+        "query": query
+    });
+    let response = client.request("workspace/symbol", params).await?;
+    conversions::parse_workspace_symbols_response(response)
 }
 
 /// Prepare call hierarchy.
-
 pub async fn prepare_call_hierarchy(
     uri: &str,
     line: u32,
     character: u32,
 ) -> Result<Vec<SymbolInfo>> {
-    bail!("LSP server connection not yet implemented")
+    let mut clients = LSP_CLIENTS.lock().await;
+    let lang = get_or_start_client(uri, &mut clients).await?;
+    let client = clients.get_mut(&lang).unwrap();
+    client.ensure_file_open(uri).await?;
+
+    let params = serde_json::json!({
+        "textDocument": { "uri": uri },
+        "position": { "line": line, "character": character }
+    });
+    let response = client.request("textDocument/prepareCallHierarchy", params).await?;
+    conversions::parse_call_hierarchy_items(response)
 }
 
 /// Get incoming calls.
-
 pub async fn incoming_calls(item: &SymbolInfo) -> Result<Vec<SymbolInfo>> {
-    bail!("LSP server connection not yet implemented")
+    let uri_str = conversions::file_path_to_uri(&item.location.file_path)?
+        .as_str()
+        .to_string();
+
+    let mut clients = LSP_CLIENTS.lock().await;
+    let lang = get_or_start_client(&uri_str, &mut clients).await?;
+    let client = clients.get_mut(&lang).unwrap();
+
+    let call_item = symbol_info_to_call_hierarchy_json(item)?;
+    let params = serde_json::json!({ "item": call_item });
+    let response = client.request("callHierarchy/incomingCalls", params).await?;
+    conversions::parse_incoming_calls(response)
 }
 
 /// Get outgoing calls.
-
 pub async fn outgoing_calls(item: &SymbolInfo) -> Result<Vec<SymbolInfo>> {
-    bail!("LSP server connection not yet implemented")
+    let uri_str = conversions::file_path_to_uri(&item.location.file_path)?
+        .as_str()
+        .to_string();
+
+    let mut clients = LSP_CLIENTS.lock().await;
+    let lang = get_or_start_client(&uri_str, &mut clients).await?;
+    let client = clients.get_mut(&lang).unwrap();
+
+    let call_item = symbol_info_to_call_hierarchy_json(item)?;
+    let params = serde_json::json!({ "item": call_item });
+    let response = client.request("callHierarchy/outgoingCalls", params).await?;
+    conversions::parse_outgoing_calls(response)
 }
 
 // ---------------------------------------------------------------------------
