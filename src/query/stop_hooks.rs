@@ -2,15 +2,13 @@
 ///
 /// 对应 TypeScript: query.ts 中 stop hooks 逻辑段
 ///
-/// 在完整版本中, stop hooks 由用户在 settings.json 中配置,
 /// 在模型无工具调用的最终回复后执行, 可以:
 ///   - 允许停止 (正常终止)
 ///   - 阻止停止 (注入继续消息, 触发新轮次)
 ///   - 报告阻塞错误 (终止并标记为 hook 问题)
-///
-/// Phase 1 简化: 总是允许停止
 use anyhow::Result;
 
+use crate::tools::hooks::HookEventConfig;
 use crate::types::message::{AssistantMessage, Message};
 
 /// Stop hook 检查结果
@@ -19,13 +17,11 @@ pub enum StopHookResult {
     /// 允许停止 — 模型可以正常终止
     AllowStop,
     /// 阻止停止 — 需要继续对话 (注入消息)
-    #[allow(dead_code)]
     PreventStop {
         /// 要注入到对话中的续写消息内容
         continuation_message: String,
     },
     /// 阻塞错误 — hook 自身执行失败
-    #[allow(dead_code)]
     BlockingError { error: String },
 }
 
@@ -38,28 +34,34 @@ pub enum StopHookResult {
 /// * `assistant_message` - 模型的最终回复
 /// * `messages` - 完整对话历史
 /// * `stop_hook_active` - 上一轮 stop hook 是否已激活 (防止无限循环)
+/// * `hook_configs` - 从 settings.json 加载的 Stop 事件 hook 配置
 ///
 /// # Returns
 /// * `StopHookResult` - 决定是否允许终止
-#[allow(unused_variables)]
 pub async fn run_stop_hooks(
-    assistant_message: &AssistantMessage,
-    messages: &[Message],
+    _assistant_message: &AssistantMessage,
+    _messages: &[Message],
     stop_hook_active: Option<bool>,
+    hook_configs: &[HookEventConfig],
 ) -> Result<StopHookResult> {
-    // Phase 1 简化: 无 stop hooks 配置, 总是允许停止
-    //
-    // 在完整实现中, 这里会:
-    // 1. 从 settings 读取 stop hook 配置
-    // 2. 对每个 hook 执行命令 (通过子进程)
-    // 3. 解析 hook 输出 (JSON, 包含 decision + message)
-    // 4. 如果任何 hook 返回 "prevent", 返回 PreventStop
-    // 5. 如果 stop_hook_active == Some(true), 限制最多一次 prevent (防止循环)
-    //
-    // 重要: 如果 stop_hook_active 已为 true, 表示上一轮已经因 stop hook
-    // 继续过一次. 此时若 hook 再次返回 prevent, 应忽略以避免无限循环.
+    // Prevent infinite loops: if stop hook already fired once, allow stop
+    if stop_hook_active == Some(true) {
+        return Ok(StopHookResult::AllowStop);
+    }
 
-    Ok(StopHookResult::AllowStop)
+    use crate::tools::hooks::{self, PostToolHookResult};
+
+    match hooks::run_stop_hooks(hook_configs).await {
+        Ok(PostToolHookResult::Continue) => Ok(StopHookResult::AllowStop),
+        Ok(PostToolHookResult::StopContinuation { message }) => {
+            Ok(StopHookResult::PreventStop {
+                continuation_message: message,
+            })
+        }
+        Err(e) => Ok(StopHookResult::BlockingError {
+            error: e.to_string(),
+        }),
+    }
 }
 
 /// 判断 assistant 消息是否包含工具调用
@@ -160,7 +162,7 @@ mod tests {
     #[tokio::test]
     async fn test_stop_hooks_allow_by_default() {
         let msg = make_assistant_message(vec![]);
-        let result = run_stop_hooks(&msg, &[], None).await.unwrap();
+        let result = run_stop_hooks(&msg, &[], None, &[]).await.unwrap();
         assert!(matches!(result, StopHookResult::AllowStop));
     }
 }

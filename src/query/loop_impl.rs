@@ -261,10 +261,14 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 }
 
                 // 5b. stop hooks
+                let hooks_map = deps.get_app_state().hooks;
+                let stop_configs = crate::tools::hooks::load_hook_configs(&hooks_map, "Stop");
+
                 let stop_result = stop_hooks::run_stop_hooks(
                     &assistant_message,
                     &state.messages,
                     state.stop_hook_active,
+                    &stop_configs,
                 )
                 .await;
 

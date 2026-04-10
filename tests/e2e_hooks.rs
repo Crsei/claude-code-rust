@@ -298,36 +298,33 @@ fn verified_hooks_config_flows_to_runtime() {
     );
 }
 
-/// BUG: query/stop_hooks.rs is a placeholder — always returns AllowStop.
+/// FIXED: query/stop_hooks.rs now delegates to tools::hooks::run_stop_hooks.
 ///
-/// The query loop calls run_stop_hooks from query/stop_hooks.rs, but that
-/// function ignores all configuration and always returns AllowStop.
-/// Meanwhile, a fully working run_stop_hooks exists in tools/hooks.rs
-/// but is never called from the query loop.
+/// The query loop calls run_stop_hooks from query/stop_hooks.rs, which
+/// accepts hook_configs and delegates to the real hooks::run_stop_hooks()
+/// in tools/hooks.rs. The call site in loop_impl.rs loads configs via
+/// load_hook_configs(&hooks_map, "Stop").
 #[test]
 fn bug_query_stop_hooks_is_placeholder() {
     let source = fs::read_to_string("src/query/stop_hooks.rs")
         .expect("should read stop_hooks.rs");
 
-    // The placeholder directly returns Ok(StopHookResult::AllowStop)
-    // without reading any configuration
+    // stop_hooks.rs should accept HookEventConfig and delegate to hooks::run_stop_hooks
     assert!(
-        source.contains("Ok(StopHookResult::AllowStop)"),
-        "stop_hooks.rs should contain the hardcoded AllowStop return"
+        source.contains("HookEventConfig"),
+        "stop_hooks.rs should reference HookEventConfig type"
+    );
+    assert!(
+        source.contains("hooks::run_stop_hooks"),
+        "stop_hooks.rs should delegate to hooks::run_stop_hooks"
     );
 
-    // It should NOT contain any config loading or subprocess execution
-    let has_config_load = source.contains("load_hook_configs");
-    let has_subprocess = source.contains("Command::new") || source.contains("spawn");
-
+    // The call site in loop_impl.rs should load configs from AppState
+    let loop_source = fs::read_to_string("src/query/loop_impl.rs")
+        .expect("should read loop_impl.rs");
     assert!(
-        !has_config_load && !has_subprocess,
-        "BUG EXPOSED: query/stop_hooks.rs is a placeholder.\n\
-         - load_hook_configs: {}\n\
-         - subprocess execution: {}\n\
-         It never reads hook configuration or runs hook commands.",
-        has_config_load,
-        has_subprocess,
+        loop_source.contains("load_hook_configs") && loop_source.contains("\"Stop\""),
+        "loop_impl.rs should load Stop hook configs via load_hook_configs"
     );
 }
 
