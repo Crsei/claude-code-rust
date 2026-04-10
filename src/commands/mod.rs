@@ -59,7 +59,10 @@ pub mod mcp_cmd;
 // KAIROS / assistant commands
 pub mod assistant;
 pub mod brief;
+pub mod channels;
 pub mod daemon_cmd;
+pub mod dream;
+pub mod notify;
 pub mod sleep_cmd;
 
 use std::path::PathBuf;
@@ -348,6 +351,24 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "View/control daemon process".into(),
             handler: Box::new(daemon_cmd::DaemonCmdHandler),
+        },
+        Command {
+            name: "notify".into(),
+            aliases: vec![],
+            description: "Push notification settings".into(),
+            handler: Box::new(notify::NotifyHandler),
+        },
+        Command {
+            name: "channels".into(),
+            aliases: vec![],
+            description: "View connected channels".into(),
+            handler: Box::new(channels::ChannelsHandler),
+        },
+        Command {
+            name: "dream".into(),
+            aliases: vec![],
+            description: "Distill daily logs into memory".into(),
+            handler: Box::new(dream::DreamHandler),
         },
     ]
 }
