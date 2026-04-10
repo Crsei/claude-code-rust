@@ -7,6 +7,7 @@
 //! OAuth login flow is defined as interface only (not implemented).
 
 pub mod api_key;
+pub mod oauth;
 pub mod token;
 
 // ---------------------------------------------------------------------------
