@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use futures::Stream;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::engine::input_processing;
@@ -20,6 +20,7 @@ use crate::engine::sdk_types::*;
 use crate::engine::system_prompt;
 use crate::query::loop_impl;
 use crate::session::transcript;
+use crate::tools::hooks;
 use crate::types::config::{QueryParams, QuerySource};
 use crate::types::message::{
     Attachment, Message, MessageContent, QueryYield, StreamEvent, SystemSubtype, Usage,
@@ -62,6 +63,49 @@ impl QueryEngine {
             let mut structured_output: Option<serde_json::Value> = None;
             let mut turn_count_this_submit: usize = 0;
             let mut collected_errors: Vec<String> = Vec::new();
+
+            // ================================================================
+            // PHASE A-pre: Fire UserPromptSubmit hook
+            // ================================================================
+            {
+                let hooks_map = state_ref.read().app_state.hooks.clone();
+                let configs = hooks::load_hook_configs(&hooks_map, "UserPromptSubmit");
+                if !configs.is_empty() {
+                    let payload = serde_json::json!({
+                        "prompt": &prompt,
+                    });
+                    match hooks::run_event_hooks("UserPromptSubmit", &payload, &configs).await {
+                        Ok(output) => {
+                            if !output.should_continue {
+                                info!("UserPromptSubmit hook blocked prompt");
+                                let reason = output.reason
+                                    .or(output.stop_reason)
+                                    .unwrap_or_else(|| "Blocked by UserPromptSubmit hook".to_string());
+                                yield SdkMessage::Result(SdkResult {
+                                    subtype: ResultSubtype::Success,
+                                    is_error: false,
+                                    duration_ms: started_at.elapsed().as_millis() as u64,
+                                    duration_api_ms: 0,
+                                    num_turns: 0,
+                                    result: reason,
+                                    stop_reason: None,
+                                    session_id: session_id.to_string(),
+                                    total_cost_usd: 0.0,
+                                    usage: UsageTracking::default(),
+                                    permission_denials: vec![],
+                                    structured_output: None,
+                                    uuid: Uuid::new_v4(),
+                                    errors: vec![],
+                                });
+                                return;
+                            }
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "UserPromptSubmit hook error, continuing");
+                        }
+                    }
+                }
+            }
 
             // ================================================================
             // PHASE A: Input Processing
@@ -260,11 +304,12 @@ impl QueryEngine {
                         }
 
                         if replay_user_messages {
-                            let content_text = match &user_msg.content {
-                                MessageContent::Text(t) => t.clone(),
-                                MessageContent::Blocks(blocks) => {
-                                    format!("[{} content blocks]", blocks.len())
-                                }
+                            let (content_text, content_blocks) = match &user_msg.content {
+                                MessageContent::Text(t) => (t.clone(), None),
+                                MessageContent::Blocks(blocks) => (
+                                    format!("[{} content blocks]", blocks.len()),
+                                    Some(blocks.clone()),
+                                ),
                             };
                             yield SdkMessage::UserReplay(SdkUserReplay {
                                 content: content_text,
@@ -273,6 +318,7 @@ impl QueryEngine {
                                 timestamp: user_msg.timestamp,
                                 is_replay: true,
                                 is_synthetic: user_msg.is_meta,
+                                content_blocks,
                             });
                         }
 
@@ -410,6 +456,7 @@ impl QueryEngine {
                                             timestamp: attachment_msg.timestamp,
                                             is_replay: false,
                                             is_synthetic: true,
+                                            content_blocks: None,
                                         },
                                     );
                                 }
