@@ -137,8 +137,14 @@ async fn execute_tool_call(
     }
 
     // ── Step 3: Pre-tool hooks ──────────────────────────────────────
+    // Load hook configs from AppState via the context closure
+    let app_state = (ctx.get_app_state)();
+    let pre_configs = hooks::load_hook_configs(&app_state.hooks, "PreToolUse");
+    let post_configs = hooks::load_hook_configs(&app_state.hooks, "PostToolUse");
+    let failure_configs = hooks::load_hook_configs(&app_state.hooks, "PostToolUseFailure");
+
     let (effective_input, permission_override) =
-        match hooks::run_pre_tool_hooks(&tool_name, &input, &[]).await {
+        match hooks::run_pre_tool_hooks(&tool_name, &input, &pre_configs).await {
             Ok(hooks::PreToolHookResult::Continue {
                 updated_input,
                 permission_override,
@@ -215,14 +221,14 @@ async fn execute_tool_call(
     // ── Step 6: Post-tool hooks ─────────────────────────────────────
     match &call_result {
         Ok(result) => {
-            let _ = hooks::run_post_tool_hooks(&tool_name, &effective_input, result, &[]).await;
+            let _ = hooks::run_post_tool_hooks(&tool_name, &effective_input, result, &post_configs).await;
         }
         Err(e) => {
             let _ = hooks::run_post_tool_failure_hooks(
                 &tool_name,
                 &effective_input,
                 &e.to_string(),
-                &[],
+                &failure_configs,
             )
             .await;
         }

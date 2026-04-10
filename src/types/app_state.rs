@@ -26,7 +26,6 @@ pub struct AppState {
     pub team_context: Option<crate::teams::types::TeamContext>,
     /// Hook configurations loaded from settings.json (merged config).
     /// Read by `tools::hooks::load_hook_configs()` and the hook execution pipeline.
-    #[allow(dead_code)]
     pub hooks: HashMap<String, serde_json::Value>,
 }
 

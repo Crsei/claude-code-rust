@@ -377,6 +377,8 @@ pub struct StreamingToolExecutor {
     tracked: Vec<TrackedTool>,
     /// Whether any Bash tool has errored (triggers sibling abort).
     has_bash_error: bool,
+    /// Hook configurations to pass into each `run_tool_use()` call.
+    hook_configs: Vec<HookEventConfig>,
 }
 
 impl StreamingToolExecutor {
@@ -384,6 +386,16 @@ impl StreamingToolExecutor {
         Self {
             tracked: Vec::new(),
             has_bash_error: false,
+            hook_configs: Vec::new(),
+        }
+    }
+
+    /// Create with hook configurations loaded from AppState.
+    pub fn with_hook_configs(hook_configs: Vec<HookEventConfig>) -> Self {
+        Self {
+            tracked: Vec::new(),
+            has_bash_error: false,
+            hook_configs,
         }
     }
 
@@ -441,7 +453,7 @@ impl StreamingToolExecutor {
                         ctx,
                         parent_message,
                         None,
-                        &[],
+                        &self.hook_configs,
                     )
                     .await;
 
@@ -490,7 +502,7 @@ impl StreamingToolExecutor {
                     ctx,
                     parent_message,
                     None,
-                    &[],
+                    &self.hook_configs,
                 )
                 .await;
 

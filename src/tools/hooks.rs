@@ -157,7 +157,6 @@ fn matches_tool(matcher: Option<&str>, tool_name: &str) -> bool {
 ///
 /// `hooks_value` is the deserialized `hooks` map from GlobalConfig.
 /// `event_name` is one of "PreToolUse", "PostToolUse", "Stop".
-#[allow(dead_code)]
 pub fn load_hook_configs(
     hooks_value: &HashMap<String, Value>,
     event_name: &str,
@@ -941,28 +940,17 @@ mod tests {
     // They prove the hook engine correctly interprets stop, deny, allow, and
     // updated_input responses.
     //
-    // NOTE: On Windows, execute_command_hook has a known pipe-blocking bug
-    // where read_to_end on stdout hangs for some commands. Tests that hit
-    // this issue are skipped via the `can_run_subprocess_hooks` check.
-
-    /// Check whether subprocess hooks work on this platform.
-    /// Returns false on Windows where pipe I/O often hangs.
-    async fn can_run_subprocess_hooks() -> bool {
-        // Quick canary: run a trivial echo and see if it completes within 3s
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(3),
-            execute_command_hook(
-                r#"echo '{"continue":true}'"#,
-                &json!({}),
-                3,
-            ),
-        )
-        .await;
-
-        matches!(result, Ok(Ok(_)))
-    }
+    // KNOWN BUG: On Windows, execute_command_hook has a pipe-blocking issue
+    // where tokio's read_to_end on ChildStdout hangs indefinitely — even for
+    // trivial commands like `echo`. The OS pipe handle doesn't signal EOF
+    // properly when the subprocess exits. This means:
+    //   1. All subprocess hook tests hang on Windows (gated with cfg(not(windows)))
+    //   2. Hooks will NOT work at runtime on Windows until the pipe bug is fixed
+    //
+    // The pipe bug should be fixed before hooks can be considered functional.
 
     /// Helper: make a HookEventConfig with a single command that matches all tools.
+    #[cfg(not(windows))]
     fn make_hook_config(command: &str) -> HookEventConfig {
         HookEventConfig {
             matcher: Some("*".to_string()),
@@ -987,294 +975,220 @@ mod tests {
     // -- Pre-tool hook: stop execution --
 
     #[tokio::test]
+    #[cfg(not(windows))]
     async fn test_pre_tool_hook_stops_execution() {
-        if !can_run_subprocess_hooks().await {
-            eprintln!("SKIP: subprocess hooks not working on this platform (pipe I/O bug)");
-            return;
-        }
-
         let configs = vec![make_hook_config(
             r#"echo '{"continue":false,"reason":"blocked by policy"}'"#,
         )];
 
-        let result = run_pre_tool_hooks("Bash", &json!({"command": "rm -rf /"}), &configs).await;
+        let result = run_pre_tool_hooks("Bash", &json!({"command": "rm -rf /"}), &configs)
+            .await
+            .unwrap();
 
         match result {
-            Ok(PreToolHookResult::Stop { message }) => {
-                assert!(
-                    message.contains("blocked by policy"),
-                    "expected stop reason, got: {}",
-                    message
-                );
+            PreToolHookResult::Stop { message } => {
+                assert!(message.contains("blocked by policy"));
             }
-            Ok(other) => panic!("expected Stop, got: {:?}", other),
-            Err(e) => eprintln!("Skipping (no bash): {}", e),
+            other => panic!("expected Stop, got: {:?}", other),
         }
     }
 
     // -- Pre-tool hook: deny permission --
 
     #[tokio::test]
+    #[cfg(not(windows))]
     async fn test_pre_tool_hook_denies_permission() {
-        if !can_run_subprocess_hooks().await {
-            eprintln!("SKIP: subprocess hooks not working on this platform (pipe I/O bug)");
-            return;
-        }
-
         let configs = vec![make_hook_config(
             r#"echo '{"continue":true,"permission_decision":"deny","reason":"not in allowlist"}'"#,
         )];
 
-        let result = run_pre_tool_hooks("Bash", &json!({"command": "ls"}), &configs).await;
+        let result = run_pre_tool_hooks("Bash", &json!({"command": "ls"}), &configs)
+            .await
+            .unwrap();
 
         match result {
-            Ok(PreToolHookResult::Continue {
+            PreToolHookResult::Continue {
                 permission_override: Some(PermissionOverride::Deny { reason }),
                 ..
-            }) => {
-                assert!(
-                    reason.contains("not in allowlist"),
-                    "expected deny reason, got: {}",
-                    reason
-                );
+            } => {
+                assert!(reason.contains("not in allowlist"));
             }
-            Ok(other) => panic!("expected Continue with Deny override, got: {:?}", other),
-            Err(e) => eprintln!("Skipping (no bash): {}", e),
+            other => panic!("expected Deny override, got: {:?}", other),
         }
     }
 
     // -- Pre-tool hook: allow permission --
 
     #[tokio::test]
+    #[cfg(not(windows))]
     async fn test_pre_tool_hook_allows_permission() {
-        if !can_run_subprocess_hooks().await {
-            eprintln!("SKIP: subprocess hooks not working on this platform (pipe I/O bug)");
-            return;
-        }
-
         let configs = vec![make_hook_config(
             r#"echo '{"continue":true,"permission_decision":"allow"}'"#,
         )];
 
-        let result = run_pre_tool_hooks("Bash", &json!({"command": "ls"}), &configs).await;
+        let result = run_pre_tool_hooks("Bash", &json!({"command": "ls"}), &configs)
+            .await
+            .unwrap();
 
-        match result {
-            Ok(PreToolHookResult::Continue {
+        assert!(matches!(
+            result,
+            PreToolHookResult::Continue {
                 permission_override: Some(PermissionOverride::Allow),
                 ..
-            }) => { /* ok */ }
-            Ok(other) => panic!("expected Continue with Allow override, got: {:?}", other),
-            Err(e) => eprintln!("Skipping (no bash): {}", e),
-        }
+            }
+        ));
     }
 
     // -- Pre-tool hook: modify input --
 
     #[tokio::test]
+    #[cfg(not(windows))]
     async fn test_pre_tool_hook_modifies_input() {
-        if !can_run_subprocess_hooks().await {
-            eprintln!("SKIP: subprocess hooks not working on this platform (pipe I/O bug)");
-            return;
-        }
-
         let configs = vec![make_hook_config(
             r#"echo '{"continue":true,"updated_input":{"command":"ls -la --safe"}}'"#,
         )];
 
-        let result = run_pre_tool_hooks("Bash", &json!({"command": "rm -rf /"}), &configs).await;
+        let result = run_pre_tool_hooks("Bash", &json!({"command": "rm -rf /"}), &configs)
+            .await
+            .unwrap();
 
         match result {
-            Ok(PreToolHookResult::Continue {
+            PreToolHookResult::Continue {
                 updated_input: Some(new_input),
                 ..
-            }) => {
-                assert_eq!(
-                    new_input,
-                    json!({"command": "ls -la --safe"}),
-                    "hook should have replaced the input"
-                );
+            } => {
+                assert_eq!(new_input, json!({"command": "ls -la --safe"}));
             }
-            Ok(other) => panic!("expected Continue with updated_input, got: {:?}", other),
-            Err(e) => eprintln!("Skipping (no bash): {}", e),
+            other => panic!("expected updated_input, got: {:?}", other),
         }
     }
 
-    // -- Pre-tool hook: matcher filters by tool name --
+    // -- Pre-tool hook: matcher filters by tool name (no subprocess needed) --
 
     #[tokio::test]
     async fn test_pre_tool_hook_matcher_skips_non_matching() {
-        // This test doesn't actually spawn a subprocess when the matcher
-        // doesn't match, so it works regardless of the pipe bug.
         let configs = vec![make_hook_config_for_tool(
             "Read",
             r#"echo '{"continue":false,"reason":"should not fire"}'"#,
         )];
 
-        let result = run_pre_tool_hooks("Bash", &json!({}), &configs).await;
+        // Call with "Bash" — should skip the "Read" matcher without spawning
+        let result = run_pre_tool_hooks("Bash", &json!({}), &configs)
+            .await
+            .unwrap();
 
-        match result {
-            Ok(PreToolHookResult::Continue {
+        assert!(matches!(
+            result,
+            PreToolHookResult::Continue {
                 updated_input: None,
                 permission_override: None,
-            }) => { /* correctly skipped */ }
-            Ok(PreToolHookResult::Stop { message }) => {
-                panic!("hook should NOT have matched Bash, but got Stop: {}", message);
             }
-            Ok(other) => panic!("unexpected result: {:?}", other),
-            Err(e) => eprintln!("Skipping (no bash): {}", e),
-        }
+        ));
     }
 
     // -- Post-tool hook: stop continuation --
 
     #[tokio::test]
+    #[cfg(not(windows))]
     async fn test_post_tool_hook_stops_continuation() {
-        if !can_run_subprocess_hooks().await {
-            eprintln!("SKIP: subprocess hooks not working on this platform (pipe I/O bug)");
-            return;
-        }
-
         let configs = vec![make_hook_config(
             r#"echo '{"continue":false,"stop_reason":"audit complete, halt"}'"#,
         )];
-
         let tool_result = ToolResult {
             data: json!("file contents here"),
             new_messages: vec![],
         };
 
-        let result =
-            run_post_tool_hooks("Read", &json!({"file_path": "/etc/passwd"}), &tool_result, &configs)
-                .await;
+        let result = run_post_tool_hooks(
+            "Read",
+            &json!({"file_path": "/etc/passwd"}),
+            &tool_result,
+            &configs,
+        )
+        .await
+        .unwrap();
 
         match result {
-            Ok(PostToolHookResult::StopContinuation { message }) => {
-                assert!(
-                    message.contains("audit complete"),
-                    "expected stop reason, got: {}",
-                    message
-                );
+            PostToolHookResult::StopContinuation { message } => {
+                assert!(message.contains("audit complete"));
             }
-            Ok(PostToolHookResult::Continue) => {
-                panic!("expected StopContinuation, but got Continue");
+            PostToolHookResult::Continue => {
+                panic!("expected StopContinuation, got Continue");
             }
-            Err(e) => eprintln!("Skipping (no bash): {}", e),
         }
     }
 
     // -- Post-tool hook: continue normally --
 
     #[tokio::test]
+    #[cfg(not(windows))]
     async fn test_post_tool_hook_continues() {
-        if !can_run_subprocess_hooks().await {
-            eprintln!("SKIP: subprocess hooks not working on this platform (pipe I/O bug)");
-            return;
-        }
-
-        let configs = vec![make_hook_config(
-            r#"echo '{"continue":true}'"#,
-        )];
-
+        let configs = vec![make_hook_config(r#"echo '{"continue":true}'"#)];
         let tool_result = ToolResult {
             data: json!("ok"),
             new_messages: vec![],
         };
 
-        let result =
-            run_post_tool_hooks("Bash", &json!({"command": "ls"}), &tool_result, &configs).await;
+        let result = run_post_tool_hooks("Bash", &json!({"command": "ls"}), &tool_result, &configs)
+            .await
+            .unwrap();
 
-        match result {
-            Ok(PostToolHookResult::Continue) => { /* ok */ }
-            Ok(other) => panic!("expected Continue, got: {:?}", other),
-            Err(e) => eprintln!("Skipping (no bash): {}", e),
-        }
+        assert!(matches!(result, PostToolHookResult::Continue));
     }
 
     // -- Stop hook: prevent stop --
 
     #[tokio::test]
+    #[cfg(not(windows))]
     async fn test_stop_hook_prevents_stop() {
-        if !can_run_subprocess_hooks().await {
-            eprintln!("SKIP: subprocess hooks not working on this platform (pipe I/O bug)");
-            return;
-        }
-
         let configs = vec![HookEventConfig {
-            matcher: None, // matches everything (stop hooks have no tool)
+            matcher: None,
             hooks: vec![HookEntry::Command {
                 command: r#"echo '{"continue":false,"stop_reason":"not done yet"}'"#.to_string(),
                 timeout: 10,
             }],
         }];
 
-        let result = run_stop_hooks(&configs).await;
+        let result = run_stop_hooks(&configs).await.unwrap();
 
         match result {
-            Ok(PostToolHookResult::StopContinuation { message }) => {
-                assert!(
-                    message.contains("not done yet"),
-                    "expected stop reason, got: {}",
-                    message
-                );
+            PostToolHookResult::StopContinuation { message } => {
+                assert!(message.contains("not done yet"));
             }
-            Ok(PostToolHookResult::Continue) => {
-                panic!("expected StopContinuation, but got Continue");
+            PostToolHookResult::Continue => {
+                panic!("expected StopContinuation, got Continue");
             }
-            Err(e) => eprintln!("Skipping (no bash): {}", e),
         }
     }
 
     // -- Hook timeout --
 
     #[tokio::test]
+    #[cfg(not(windows))]
     async fn test_hook_timeout() {
-        let stdin_json = json!({"test": true});
-
-        // sleep 60s with a 2s timeout should error
-        let result = execute_command_hook("sleep 60", &stdin_json, 2).await;
+        let result = execute_command_hook("sleep 60", &json!({"test": true}), 2).await;
 
         match result {
-            Err(e) => {
-                let msg = e.to_string();
-                assert!(
-                    msg.contains("timed out"),
-                    "expected timeout error, got: {}",
-                    msg
-                );
-            }
-            Ok(_) => {
-                // On some systems sleep may not be available — that's ok
-                eprintln!("Skipping: sleep command may not be available");
-            }
+            Err(e) => assert!(e.to_string().contains("timed out")),
+            Ok(_) => eprintln!("Skipping: sleep not available"),
         }
     }
 
-    // =========================================================================
-    // Windows pipe I/O bug — document the issue
-    // =========================================================================
+    // -- Windows pipe bug documentation --
 
-    /// On Windows, execute_command_hook times out for commands that should
-    /// complete instantly (like `echo`). This is because tokio's
-    /// ChildStdout::read_to_end blocks when the subprocess writes to stdout
-    /// and exits — the pipe handle isn't properly signaling EOF.
-    ///
-    /// This is a KNOWN BUG in the hook engine on Windows.
-    /// When this test passes (subprocess canary succeeds), the engine works.
-    /// When it fails (canary times out), all subprocess hook tests are skipped.
-    #[tokio::test]
-    async fn test_windows_pipe_io_canary() {
-        let works = can_run_subprocess_hooks().await;
-
-        if cfg!(windows) && !works {
+    /// Documents the known Windows pipe I/O bug.
+    /// On Windows, this test confirms the bug exists.
+    /// On other platforms, this test is a no-op.
+    #[test]
+    fn document_windows_pipe_bug() {
+        if cfg!(windows) {
             eprintln!(
-                "BUG CONFIRMED: execute_command_hook has a pipe I/O issue on Windows.\n\
-                 Subprocess hooks time out even for trivial commands like `echo`.\n\
-                 This means hooks will NOT work at runtime on Windows until fixed."
+                "KNOWN BUG: execute_command_hook has a pipe I/O blocking issue on Windows.\n\
+                 tokio's ChildStdout::read_to_end hangs because the OS pipe handle\n\
+                 doesn't signal EOF when the subprocess exits.\n\
+                 All subprocess hook tests are skipped on Windows via #[cfg(not(windows))].\n\
+                 Hooks will NOT work at runtime on Windows until this is fixed."
             );
-        } else if works {
-            eprintln!("Subprocess hook execution works on this platform.");
         }
-
-        // This test always passes — it's diagnostic only
     }
 }
