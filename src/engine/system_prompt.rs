@@ -405,6 +405,52 @@ pub fn build_system_prompt(
                 || mcp_instructions_section(),
                 "MCP servers connect/disconnect between turns",
             ),
+            cached_section("brief_mode", || {
+                use crate::config::features::{self, Feature};
+                if !features::enabled(Feature::KairosBrief) {
+                    return None;
+                }
+                Some("# Brief Mode\n\n\
+                    All user-facing communication MUST go through the Brief tool.\n\
+                    Do not produce plain text output intended for the user outside of this tool.\n\
+                    Plain text you emit will be treated as internal reasoning and may be hidden.\n\n\
+                    Use Brief for:\n\
+                    - Status updates and progress reports\n\
+                    - Questions that need user input\n\
+                    - Final results and summaries\n\
+                    - Proactive notifications (set status: \"proactive\")\n".to_string())
+            }),
+            cached_section("proactive_mode", || {
+                use crate::config::features::{self, Feature};
+                if !features::enabled(Feature::Proactive) {
+                    return None;
+                }
+                Some("# Proactive Mode\n\n\
+                    You receive periodic <tick_tag> messages containing the user's local time\n\
+                    and terminal focus state.\n\n\
+                    ## Rules\n\
+                    - First tick: Greet briefly, ask what to work on. Do NOT explore unprompted.\n\
+                    - Subsequent ticks: Look for useful work — investigate, verify, check, commit.\n\
+                    - No useful work: Call Sleep tool. Do NOT emit \"still waiting\" text.\n\
+                    - Don't spam the user. If you already asked a question, wait for their reply.\n\
+                    - Bias toward action: read files, search code, make changes, commit.\n\n\
+                    ## Terminal Focus\n\
+                    - `focus: false` (user away) → Highly autonomous, execute pending tasks\n\
+                    - `focus: true` (user watching) → More collaborative, ask before large changes\n\n\
+                    ## Output\n\
+                    All user-facing output MUST go through the Brief tool.\n".to_string())
+            }),
+            cached_section("external_channels", || {
+                use crate::config::features::{self, Feature};
+                if !features::enabled(Feature::KairosChannels) {
+                    return None;
+                }
+                Some("# External Channels\n\n\
+                    You may receive messages from external channels wrapped in <channel> tags.\n\
+                    These are real messages from external services (Slack, GitHub, etc.).\n\
+                    Respond to channel messages via Brief tool with appropriate context.\n\
+                    Do NOT fabricate channel messages or pretend to have received one.\n".to_string())
+            }),
         ];
 
         let resolved = prompt_sections::resolve_sections(&dynamic_sections);
