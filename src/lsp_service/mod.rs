@@ -10,6 +10,8 @@
 
 #![allow(unused)]
 
+pub mod conversions;
+
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
