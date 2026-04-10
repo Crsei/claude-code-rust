@@ -210,13 +210,30 @@ mod tests {
 
     #[test]
     fn calculate_cost_unknown_model_is_zero() {
+        // Remove env override so unknown model truly returns 0
+        let orig_input = std::env::var("MODEL_INPUT_PRICE").ok();
+        let orig_output = std::env::var("MODEL_OUTPUT_PRICE").ok();
+        std::env::remove_var("MODEL_INPUT_PRICE");
+        std::env::remove_var("MODEL_OUTPUT_PRICE");
+
         let usage = Usage {
             input_tokens: 1000,
             output_tokens: 500,
             cache_read_input_tokens: 0,
             cache_creation_input_tokens: 0,
         };
-        assert_eq!(calculate_cost("unknown-model", &usage), 0.0);
+        let cost = calculate_cost("unknown-model", &usage);
+
+        // Restore
+        match orig_input {
+            Some(v) => std::env::set_var("MODEL_INPUT_PRICE", v),
+            None => std::env::remove_var("MODEL_INPUT_PRICE"),
+        }
+        match orig_output {
+            Some(v) => std::env::set_var("MODEL_OUTPUT_PRICE", v),
+            None => std::env::remove_var("MODEL_OUTPUT_PRICE"),
+        }
+        assert_eq!(cost, 0.0);
     }
 
     #[test]
