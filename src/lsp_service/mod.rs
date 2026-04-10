@@ -10,6 +10,7 @@
 
 #![allow(unused)]
 
+pub mod client;
 pub mod conversions;
 
 use parking_lot::Mutex;
