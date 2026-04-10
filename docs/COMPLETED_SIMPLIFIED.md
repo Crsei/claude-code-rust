@@ -242,19 +242,22 @@
 
 | | TypeScript | Rust |
 |---|---|---|
-| 行数 | 2,005 (6 文件) | 877 + 293 (2 文件) |
-| 文件 | — | `tools/lsp.rs` + `lsp_service/mod.rs` |
+| 行数 | 2,005 (6 文件) | 877 + 1,200 (5 文件) |
+| 文件 | — | `tools/lsp.rs` + `lsp_service/{mod,transport,client,conversions}.rs` |
 
 **Rust 保留：**
-- 9 种 LSP 操作
-- 回退文本分析 (无 LSP 时)
-- LSP 服务器配置/状态
+- 9 种 LSP 操作（全部实现，通过 JSON-RPC over stdio 与语言服务器通信）
+- JSON-RPC 传输层（Content-Length 帧协议）
+- LSP 客户端生命周期管理（初始化握手、请求路由、文件同步）
+- `lsp-types` 0.97 协议类型 → 内部类型转换
+- 6 种语言服务器支持（rust-analyzer, typescript-language-server, pylsp, gopls, clangd, jdtls）
+- 按需懒启动 + 崩溃自动重启
 
 **TS 独有（未移植）：**
-- 真实 LSP 服务器生命周期管理
-- 多语言 LSP 服务器自动检测
-- 增量文档同步
+- 增量文档同步 (didChange)
+- 被动诊断反馈 (publishDiagnostics)
 - 补全建议
+- 插件集成 LSP 配置
 
 ---
 
@@ -347,7 +350,7 @@
 |---|---|---|---|
 | 遥测 | `analytics/mod.rs` | 54 | 本地日志接口，无网络发送 |
 | 远程会话 | `remote/session.rs` | 27 | 接口存根 (`bail!`) |
-| LSP 服务 | `lsp_service/mod.rs` | 293 | 配置/状态框架，API 占位 |
+| LSP 服务 | `lsp_service/{mod,transport,client,conversions}.rs` | ~1,200 | **完整实现** — JSON-RPC 传输 + 9 操作 + 6 语言服务器 |
 
 ---
 

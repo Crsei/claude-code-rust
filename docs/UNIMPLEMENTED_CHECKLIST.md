@@ -100,7 +100,7 @@
 - [x] `skills/loader.rs`: Skill discovery and loading
 - [x] `skills/bundled.rs`: 5 bundled skills
 - [x] `plugins/loader.rs`: Plugin loading
-- [x] `lsp_service/mod.rs`: LSP service configuration
+- [x] `lsp_service/`: LSP service — JSON-RPC transport + 9 operations fully implemented (transport.rs, client.rs, conversions.rs, mod.rs)
 - [x] `permissions/path_validation.rs`: Path validation and traversal protection
 - [x] `config/validation.rs`: Settings validation framework
 - [x] `services/tool_use_summary.rs`: Tool usage summary generation

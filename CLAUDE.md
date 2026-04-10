@@ -58,6 +58,7 @@ rust/
 │   ├── permissions/         权限系统
 │   ├── config/              配置管理
 │   ├── session/             会话持久化
+│   ├── lsp_service/         LSP 服务 (JSON-RPC 传输 + 客户端 + 类型转换, 9 操作全实现)
 │   ├── ipc/                 IPC 协议 + headless 模式 (JSONL over stdio)
 │   ├── ui/                  TUI legacy (ratatui + crossterm)
 │   ├── utils/               工具函数
