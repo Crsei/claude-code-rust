@@ -15,6 +15,7 @@ pub mod exit;
 pub mod files;
 pub mod help;
 pub mod login;
+pub mod login_code;
 pub mod logout;
 pub mod model;
 pub mod permissions_cmd;
@@ -203,6 +204,12 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "Authenticate with Anthropic (API key or auth token)".into(),
             handler: Box::new(login::LoginHandler),
+        },
+        Command {
+            name: "login-code".into(),
+            aliases: vec![],
+            description: "Complete OAuth login with authorization code".into(),
+            handler: Box::new(login_code::LoginCodeHandler),
         },
         Command {
             name: "logout".into(),

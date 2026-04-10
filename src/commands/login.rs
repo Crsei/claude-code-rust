@@ -1,15 +1,18 @@
 //! `/login` command — authenticate with an LLM provider.
 //!
 //! Usage:
-//!   /login status           — show current auth status
-//!   /login sk-ant-api03-... — store API key to system keychain
-//!   /login                  — show guidance on how to authenticate
+//!   /login              — interactive login (choose method)
+//!   /login status       — show current auth status
+//!   /login sk-ant-...   — store API key directly
+//!   /login 1|2|3        — select login method
 
 use anyhow::Result;
 use async_trait::async_trait;
 
+use super::login_code;
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::auth;
+use crate::auth::oauth::config::OAuthMethod;
 
 pub struct LoginHandler;
 
@@ -18,104 +21,84 @@ impl CommandHandler for LoginHandler {
     async fn execute(&self, args: &str, _ctx: &mut CommandContext) -> Result<CommandResult> {
         let args = args.trim();
 
-        // ── /login status ──────────────────────────────────────────
         if args == "status" {
-            let current_auth = auth::resolve_auth();
-            let status = match &current_auth {
-                auth::AuthMethod::ApiKey(key) => {
-                    let masked = mask_key(key);
-                    let source = if std::env::var("ANTHROPIC_API_KEY")
-                        .map(|v| !v.is_empty())
-                        .unwrap_or(false)
-                    {
-                        "环境变量 ANTHROPIC_API_KEY"
-                    } else {
-                        "系统 Keychain"
-                    };
-                    format!("已认证: API Key {} (来源: {})", masked, source)
-                }
-                auth::AuthMethod::ExternalToken(_) => {
-                    "已认证: 外部 Token (ANTHROPIC_AUTH_TOKEN)".to_string()
-                }
-                auth::AuthMethod::OAuthToken { method, .. } => {
-                    format!("已认证: OAuth Token ({})", method)
-                }
-                auth::AuthMethod::None => "未认证".to_string(),
-            };
-            return Ok(CommandResult::Output(status));
+            return Ok(CommandResult::Output(auth_status_text()));
         }
 
-        // ── /login <api-key> ───────────────────────────────────────
-        if !args.is_empty() {
-            // Treat the argument as an API key
-            if auth::api_key::validate_api_key(args) {
-                // Store to keychain
-                match auth::api_key::store_api_key(args) {
-                    Ok(()) => {
-                        let masked = mask_key(args);
-                        return Ok(CommandResult::Output(format!(
-                            "API Key {} 已存储到系统 Keychain。\n\
-                             下次启动时将自动从 Keychain 读取认证信息。",
-                            masked
-                        )));
-                    }
-                    Err(e) => {
-                        return Ok(CommandResult::Output(format!(
-                            "存储 API Key 到 Keychain 失败: {}\n\n\
-                             可改用环境变量:\n  \
-                             export ANTHROPIC_API_KEY=\"{}\"",
-                            e,
-                            mask_key(args)
-                        )));
-                    }
-                }
-            } else {
-                return Ok(CommandResult::Output(
-                    "无效的 API Key 格式。\n\
-                     Anthropic API Key 以 \"sk-ant-\" 开头且长度大于 20 字符。\n\n\
-                     用法:\n  \
-                     /login sk-ant-api03-...\n  \
-                     /login status"
-                        .to_string(),
-                ));
-            }
+        if args.starts_with("sk-ant-") {
+            return Ok(CommandResult::Output(store_api_key(args)));
         }
 
-        // ── /login (无参数) ────────────────────────────────────────
-        let current_auth = auth::resolve_auth();
-        if current_auth.is_authenticated() {
-            let method = match &current_auth {
-                auth::AuthMethod::ApiKey(key) => format!("API Key ({})", mask_key(key)),
-                auth::AuthMethod::ExternalToken(_) => "External Auth Token".to_string(),
-                auth::AuthMethod::OAuthToken { method, .. } => {
-                    format!("OAuth Token ({})", method)
-                }
-                auth::AuthMethod::None => unreachable!(),
-            };
-            return Ok(CommandResult::Output(format!(
-                "当前已认证: {}\n\
-                 使用 /logout 退出后可重新登录，或 /login status 查看详情。",
-                method
-            )));
+        if args.is_empty() {
+            return Ok(CommandResult::Output(login_menu()));
         }
 
-        Ok(CommandResult::Output(
-            "认证方式:\n\n\
-             1. 直接提供 API Key (存入系统 Keychain):\n   \
-                /login sk-ant-api03-...\n\n\
-             2. 设置环境变量 (推荐，支持多提供商):\n   \
-                export ANTHROPIC_API_KEY=\"sk-ant-...\"\n   \
-                export OPENAI_API_KEY=\"sk-...\"\n   \
-                export GOOGLE_API_KEY=\"AIza...\"\n\n\
-             3. 设置外部 Auth Token:\n   \
-                export ANTHROPIC_AUTH_TOKEN=\"your-token\"\n\n\
-             查看当前状态: /login status"
-                .to_string(),
-        ))
+        match args {
+            "1" => Ok(CommandResult::Output(
+                "Paste your API key:\n  /login sk-ant-api03-...".to_string(),
+            )),
+            "2" => Ok(CommandResult::Output(login_code::start_pending(
+                OAuthMethod::ClaudeAi,
+            ))),
+            "3" => Ok(CommandResult::Output(login_code::start_pending(
+                OAuthMethod::Console,
+            ))),
+            _ => Ok(CommandResult::Output(format!(
+                "Unknown option: \"{}\"\n\n{}",
+                args,
+                login_menu()
+            ))),
+        }
     }
 }
 
-/// Mask an API key for display: show prefix and last 4 chars.
+fn login_menu() -> String {
+    "Select login method:\n\
+     \n  [1] API Key (paste manually)\
+     \n  [2] Claude.ai OAuth (Pro/Max subscription)\
+     \n  [3] Console OAuth (API billing)\
+     \n\nType /login 1, /login 2, or /login 3"
+        .to_string()
+}
+
+fn auth_status_text() -> String {
+    let current = auth::resolve_auth();
+    match &current {
+        auth::AuthMethod::ApiKey(key) => {
+            let source = if std::env::var("ANTHROPIC_API_KEY")
+                .map(|v| !v.is_empty())
+                .unwrap_or(false)
+            {
+                "env ANTHROPIC_API_KEY"
+            } else {
+                "system keychain"
+            };
+            format!(
+                "Authenticated: API Key {} (source: {})",
+                mask_key(key),
+                source
+            )
+        }
+        auth::AuthMethod::ExternalToken(_) => {
+            "Authenticated: External Token (ANTHROPIC_AUTH_TOKEN)".to_string()
+        }
+        auth::AuthMethod::OAuthToken { method, .. } => {
+            format!("Authenticated: OAuth ({})", method)
+        }
+        auth::AuthMethod::None => "Not authenticated".to_string(),
+    }
+}
+
+fn store_api_key(key: &str) -> String {
+    if !auth::api_key::validate_api_key(key) {
+        return "Invalid API key format. Keys start with \"sk-ant-\" and are >20 chars.".into();
+    }
+    match auth::api_key::store_api_key(key) {
+        Ok(()) => format!("API Key {} stored to keychain.", mask_key(key)),
+        Err(e) => format!("Failed to store API key: {}", e),
+    }
+}
+
 fn mask_key(key: &str) -> String {
     if key.len() > 12 {
         format!("{}...{}", &key[..7], &key[key.len() - 4..])
