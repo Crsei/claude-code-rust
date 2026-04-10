@@ -201,7 +201,7 @@ impl Tool for FileEditTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _parent_message: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
@@ -289,6 +289,21 @@ impl Tool for FileEditTool {
         match tokio::fs::write(&file_path, &new_content).await {
             Ok(()) => {
                 let replacements = if replace_all { occurrence_count } else { 1 };
+
+                // Fire FileChanged hook
+                {
+                    let app_state = (ctx.get_app_state)();
+                    let configs = crate::tools::hooks::load_hook_configs(&app_state.hooks, "FileChanged");
+                    if !configs.is_empty() {
+                        let payload = json!({
+                            "file_path": &file_path,
+                            "operation": "edit",
+                            "replacements": replacements,
+                        });
+                        let _ = crate::tools::hooks::run_event_hooks("FileChanged", &payload, &configs).await;
+                    }
+                }
+
                 Ok(ToolResult {
                     data: json!({
                         "output": format!(

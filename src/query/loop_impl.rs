@@ -95,12 +95,43 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 }
             };
 
+            let message_count_before = messages.len();
+
+            // Fire PreCompact hook before autocompact
+            {
+                let hooks_map = deps.get_app_state().hooks;
+                let compact_pre_configs = crate::tools::hooks::load_hook_configs(&hooks_map, "PreCompact");
+                if !compact_pre_configs.is_empty() {
+                    let payload = serde_json::json!({
+                        "message_count": message_count_before,
+                    });
+                    let _ = crate::tools::hooks::run_event_hooks("PreCompact", &payload, &compact_pre_configs).await;
+                }
+            }
+
             let (messages, auto_compact_tracking) = match deps
                 .autocompact(messages.clone(), state.auto_compact_tracking.clone())
                 .await
             {
                 Ok(Some(result)) => {
                     debug!("autocompact produced compacted messages");
+
+                    // Fire PostCompact hook after successful compaction
+                    {
+                        let hooks_map = deps.get_app_state().hooks;
+                        let compact_post_configs = crate::tools::hooks::load_hook_configs(&hooks_map, "PostCompact");
+                        if !compact_post_configs.is_empty() {
+                            let message_count_after = result.messages.len();
+                            let messages_freed = message_count_before.saturating_sub(message_count_after);
+                            let payload = serde_json::json!({
+                                "message_count_before": message_count_before,
+                                "message_count_after": message_count_after,
+                                "messages_freed": messages_freed,
+                            });
+                            let _ = crate::tools::hooks::run_event_hooks("PostCompact", &payload, &compact_post_configs).await;
+                        }
+                    }
+
                     (result.messages, Some(result.tracking))
                 }
                 Ok(None) => (messages, state.auto_compact_tracking.clone()),
@@ -287,6 +318,14 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     }
                     Ok(StopHookResult::BlockingError { error }) => {
                         warn!(error = %error, "stop hook blocking error");
+
+                        // Fire StopFailure hook
+                        let sf_configs = crate::tools::hooks::load_hook_configs(&hooks_map, "StopFailure");
+                        if !sf_configs.is_empty() {
+                            let payload = serde_json::json!({ "error": error });
+                            let _ = crate::tools::hooks::run_event_hooks("StopFailure", &payload, &sf_configs).await;
+                        }
+
                         break;
                     }
                     Ok(StopHookResult::AllowStop) => {}

@@ -101,7 +101,7 @@ impl Tool for FileWriteTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _parent_message: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
@@ -133,6 +133,22 @@ impl Tool for FileWriteTool {
             Ok(()) => {
                 let line_count = content.lines().count();
                 let byte_count = content.len();
+
+                // Fire FileChanged hook
+                {
+                    let app_state = (ctx.get_app_state)();
+                    let configs = crate::tools::hooks::load_hook_configs(&app_state.hooks, "FileChanged");
+                    if !configs.is_empty() {
+                        let payload = json!({
+                            "file_path": &file_path,
+                            "operation": "write",
+                            "byte_count": byte_count,
+                            "line_count": line_count,
+                        });
+                        let _ = crate::tools::hooks::run_event_hooks("FileChanged", &payload, &configs).await;
+                    }
+                }
+
                 Ok(ToolResult {
                     data: json!({
                         "output": format!(

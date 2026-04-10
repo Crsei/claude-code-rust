@@ -189,7 +189,7 @@ impl Tool for TaskCreateTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
@@ -203,6 +203,20 @@ impl Tool for TaskCreateTool {
             .unwrap_or("");
 
         let entry = store().create(subject, description);
+
+        // Fire TaskCreated hook
+        {
+            let app_state = (ctx.get_app_state)();
+            let configs = crate::tools::hooks::load_hook_configs(&app_state.hooks, "TaskCreated");
+            if !configs.is_empty() {
+                let payload = json!({
+                    "task_id": &entry.id,
+                    "subject": &entry.subject,
+                    "description": &entry.description,
+                });
+                let _ = crate::tools::hooks::run_event_hooks("TaskCreated", &payload, &configs).await;
+            }
+        }
 
         Ok(ToolResult {
             data: json!({
@@ -318,7 +332,7 @@ impl Tool for TaskUpdateTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
@@ -331,13 +345,29 @@ impl Tool for TaskUpdateTool {
         let status = TaskStatus::from_str(status_str).unwrap_or(TaskStatus::InProgress);
 
         match store().update_status(id, status) {
-            Some(entry) => Ok(ToolResult {
-                data: json!({
-                    "task": task_to_json(&entry),
-                    "message": format!("Task '{}' updated to {}", entry.subject, status.as_str())
-                }),
-                new_messages: vec![],
-            }),
+            Some(entry) => {
+                // Fire TaskCompleted hook when status changes to completed
+                if status == TaskStatus::Completed {
+                    let app_state = (ctx.get_app_state)();
+                    let configs = crate::tools::hooks::load_hook_configs(&app_state.hooks, "TaskCompleted");
+                    if !configs.is_empty() {
+                        let payload = json!({
+                            "task_id": &entry.id,
+                            "subject": &entry.subject,
+                            "status": status.as_str(),
+                        });
+                        let _ = crate::tools::hooks::run_event_hooks("TaskCompleted", &payload, &configs).await;
+                    }
+                }
+
+                Ok(ToolResult {
+                    data: json!({
+                        "task": task_to_json(&entry),
+                        "message": format!("Task '{}' updated to {}", entry.subject, status.as_str())
+                    }),
+                    new_messages: vec![],
+                })
+            }
             None => Ok(ToolResult {
                 data: json!({ "error": format!("Task not found: {}", id) }),
                 new_messages: vec![],

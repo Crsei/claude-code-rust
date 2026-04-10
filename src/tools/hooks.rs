@@ -642,7 +642,6 @@ pub async fn run_stop_hooks(hook_configs: &[HookEventConfig]) -> Result<PostTool
 ///
 /// Non-tool events only match configs with `None` or `"*"` matcher (tool-specific
 /// matchers like `"Bash"` are skipped).
-#[allow(dead_code)] // Called by lifecycle hooks (Tasks 5-10)
 pub async fn run_event_hooks(
     event_name: &str,
     payload: &Value,

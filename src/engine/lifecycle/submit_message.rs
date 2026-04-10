@@ -161,6 +161,23 @@ impl QueryEngine {
                     &config.cwd,
                 );
 
+            // Fire InstructionsLoaded hook if CLAUDE.md context was injected
+            {
+                let content_length: usize = system_prompt_parts.iter().map(|p| p.len()).sum();
+                if content_length > 0 {
+                    let hooks_map = state_ref.read().app_state.hooks.clone();
+                    let configs = hooks::load_hook_configs(&hooks_map, "InstructionsLoaded");
+                    if !configs.is_empty() {
+                        let payload = serde_json::json!({
+                            "source": "system_prompt",
+                            "content_length": content_length,
+                            "cwd": &config.cwd,
+                        });
+                        let _ = hooks::run_event_hooks("InstructionsLoaded", &payload, &configs).await;
+                    }
+                }
+            }
+
             // ================================================================
             // PHASE C: Pre-Query Setup
             // ================================================================

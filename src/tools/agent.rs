@@ -667,8 +667,25 @@ impl Tool for AgentTool {
             "spawning subagent"
         );
 
+        // Fire SubagentStart hook
+        {
+            let app_state = (ctx.get_app_state)();
+            let start_configs = crate::tools::hooks::load_hook_configs(&app_state.hooks, "SubagentStart");
+            if !start_configs.is_empty() {
+                let payload = json!({
+                    "agent_id": &agent_id,
+                    "prompt": &params.prompt,
+                    "description": description,
+                    "subagent_type": subagent_type,
+                    "model": &agent_model,
+                    "depth": current_depth + 1,
+                });
+                let _ = crate::tools::hooks::run_event_hooks("SubagentStart", &payload, &start_configs).await;
+            }
+        }
+
         // Dispatch based on isolation mode
-        if use_worktree {
+        let result = if use_worktree {
             self.run_in_worktree(
                 &params,
                 ctx,
@@ -688,7 +705,24 @@ impl Tool for AgentTool {
                 current_depth,
             )
             .await
+        };
+
+        // Fire SubagentStop hook
+        {
+            let app_state = (ctx.get_app_state)();
+            let stop_configs = crate::tools::hooks::load_hook_configs(&app_state.hooks, "SubagentStop");
+            if !stop_configs.is_empty() {
+                let is_error = result.as_ref().is_err();
+                let payload = json!({
+                    "agent_id": &agent_id,
+                    "description": description,
+                    "is_error": is_error,
+                });
+                let _ = crate::tools::hooks::run_event_hooks("SubagentStop", &payload, &stop_configs).await;
+            }
         }
+
+        result
     }
 
     async fn prompt(&self) -> String {
