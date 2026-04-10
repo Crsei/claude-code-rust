@@ -360,7 +360,48 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
 
-    // ── B.6: Build QueryEngineConfig ─────────────────────────────────
+    // ── B.6: Handle session resume (before engine creation) ─────────
+    let resume_messages: Option<Vec<crate::types::message::Message>> = if cli.resume {
+        match session::resume::get_last_session(std::path::Path::new(&cwd)) {
+            Ok(Some(info)) => {
+                info!(session = %info.session_id, "resuming last session");
+                match session::resume::resume_session(&info.session_id) {
+                    Ok(msgs) => {
+                        info!(count = msgs.len(), "loaded messages from previous session");
+                        Some(msgs)
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "failed to load session messages");
+                        None
+                    }
+                }
+            }
+            Ok(None) => {
+                warn!("no session to resume");
+                None
+            }
+            Err(e) => {
+                warn!(error = %e, "failed to find session to resume");
+                None
+            }
+        }
+    } else if let Some(ref session_id) = cli.continue_session {
+        info!(session = %session_id, "continuing session");
+        match session::resume::resume_session(session_id) {
+            Ok(msgs) => {
+                info!(count = msgs.len(), "loaded messages for --continue");
+                Some(msgs)
+            }
+            Err(e) => {
+                warn!(error = %e, "failed to load session {}", session_id);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // ── B.7: Build QueryEngineConfig ─────────────────────────────────
     let engine_config = QueryEngineConfig {
         cwd: cwd.clone(),
         tools: tools.clone(),
@@ -372,7 +413,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         max_budget_usd: cli.max_budget,
         task_budget: None,
         verbose: cli.verbose,
-        initial_messages: None,
+        initial_messages: resume_messages,
         commands: commands::get_all_commands()
             .iter()
             .map(|c| c.name.clone())
@@ -386,14 +427,29 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         agent_context: None,
     };
 
-    // ── B.7: Create QueryEngine ──────────────────────────────────────
+    // ── B.8: Create QueryEngine ──────────────────────────────────────
     let engine = Arc::new(QueryEngine::new(engine_config));
     info!(session = %engine.session_id, "QueryEngine created");
 
     // Apply the fully-resolved AppState (with hooks, permissions, etc.)
     engine.update_app_state(|s| *s = app_state);
 
-    // ── B.7.1: Initialize global ProcessState ────────────────────────
+    // ── B.8a: Fire SessionStart hook (fire-and-forget) ──────────────
+    {
+        let start_configs =
+            crate::tools::hooks::load_hook_configs(&merged_config.hooks, "SessionStart");
+        if !start_configs.is_empty() {
+            let payload = serde_json::json!({
+                "session_id": engine.session_id.as_str(),
+                "cwd": std::env::current_dir().unwrap_or_default().to_string_lossy(),
+            });
+            let _ =
+                crate::tools::hooks::run_event_hooks("SessionStart", &payload, &start_configs)
+                    .await;
+        }
+    }
+
+    // ── B.8.1: Initialize global ProcessState ────────────────────────
     let cwd_path = std::path::PathBuf::from(&cwd);
     let project_root =
         crate::utils::git::find_git_root(&cwd_path).unwrap_or_else(|| cwd_path.clone());
@@ -404,25 +460,6 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         !cli.print,
         Some(model.clone()),
     );
-
-    // ── B.8: Handle session resume ───────────────────────────────────
-    if cli.resume {
-        match session::resume::get_last_session(std::path::Path::new(&cwd)) {
-            Ok(Some(info)) => {
-                info!(session = %info.session_id, "resuming last session");
-                // Session resume would restore messages into the engine
-            }
-            Ok(None) => {
-                warn!("no session to resume");
-            }
-            Err(e) => {
-                warn!(error = %e, "failed to find session to resume");
-            }
-        }
-    }
-    if let Some(ref session_id) = cli.continue_session {
-        info!(session = %session_id, "continuing session");
-    }
 
     // ── B.9: Non-interactive output modes ──────────────────────────────
     // JSON output mode takes priority (SDK sends both -p and --output-format json)

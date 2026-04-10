@@ -64,6 +64,20 @@ pub fn register_shutdown_handler() -> CancellationToken {
 pub async fn graceful_shutdown(engine: &QueryEngine) {
     debug!("graceful_shutdown: starting");
 
+    // Step 0: Fire SessionEnd hook (best-effort, fire-and-forget)
+    {
+        let hooks_map = engine.app_state().hooks;
+        let end_configs = crate::tools::hooks::load_hook_configs(&hooks_map, "SessionEnd");
+        if !end_configs.is_empty() {
+            let payload = serde_json::json!({
+                "session_id": engine.session_id.as_str(),
+                "exit_reason": "normal",
+            });
+            let _ =
+                crate::tools::hooks::run_event_hooks("SessionEnd", &payload, &end_configs).await;
+        }
+    }
+
     // Step 1: Abort any running query
     if !engine.is_aborted() {
         engine.abort();
