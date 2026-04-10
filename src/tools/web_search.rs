@@ -8,6 +8,7 @@
 //!
 //! At least one API key must be set.
 
+use std::collections::HashMap;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
@@ -45,6 +46,83 @@ const MAX_QUERY_LENGTH: usize = 400;
 
 /// Request timeout.
 const SEARCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+// ---------------------------------------------------------------------------
+// Search cache
+// ---------------------------------------------------------------------------
+
+/// Environment variable for configuring cache TTL.
+// TODO(task-2): remove allow(dead_code) once wired into call()
+#[allow(dead_code)]
+const CACHE_TTL_ENV: &str = "CC_RUST_SEARCH_CACHE_TTL";
+
+/// Default cache TTL in seconds (5 minutes).
+#[allow(dead_code)]
+const DEFAULT_CACHE_TTL_SECS: u64 = 300;
+
+/// Read the cache TTL from environment, falling back to default.
+#[allow(dead_code)]
+fn cache_ttl_secs() -> u64 {
+    std::env::var(CACHE_TTL_ENV)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_CACHE_TTL_SECS)
+}
+
+#[allow(dead_code)]
+struct CacheEntry {
+    results: Vec<SearchResultEntry>,
+    inserted_at: Instant,
+}
+
+/// In-memory TTL cache for search results.
+///
+/// Keyed by `"{query}|{max_results}|{provider}"`. Stores raw results
+/// before domain filtering so different domain filters share cache.
+#[allow(dead_code)]
+struct SearchCache {
+    entries: parking_lot::Mutex<HashMap<String, CacheEntry>>,
+}
+
+#[allow(dead_code)]
+impl SearchCache {
+    fn new() -> Self {
+        Self {
+            entries: parking_lot::Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Look up cached results. Returns `None` if missing or expired.
+    /// Lazily removes expired entry on miss.
+    fn get(&self, key: &str, ttl_secs: u64) -> Option<Vec<SearchResultEntry>> {
+        let mut map = self.entries.lock();
+        if let Some(entry) = map.get(key) {
+            if entry.inserted_at.elapsed().as_secs() < ttl_secs {
+                return Some(entry.results.clone());
+            }
+            // Expired — remove lazily
+            map.remove(key);
+        }
+        None
+    }
+
+    /// Store results in the cache.
+    fn put(&self, key: &str, results: Vec<SearchResultEntry>) {
+        let mut map = self.entries.lock();
+        map.insert(
+            key.to_string(),
+            CacheEntry {
+                results,
+                inserted_at: Instant::now(),
+            },
+        );
+    }
+}
+
+/// Global search cache instance.
+#[allow(dead_code)]
+static SEARCH_CACHE: std::sync::LazyLock<SearchCache> =
+    std::sync::LazyLock::new(SearchCache::new);
 
 // ---------------------------------------------------------------------------
 // Brave Search response types
@@ -205,7 +283,7 @@ async fn search_brave(
 // Result formatting
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct SearchResultEntry {
     title: String,
     url: String,
@@ -768,6 +846,92 @@ mod tests {
             query_tracking: None,
             permission_callback: None,
             bg_agent_tx: None,
+        }
+    }
+
+    #[test]
+    fn test_search_cache_miss_then_hit() {
+        let cache = SearchCache::new();
+        let key = "rust programming|5|tavily";
+
+        assert!(cache.get(key, 300).is_none(), "should miss on empty cache");
+
+        let entries = vec![SearchResultEntry {
+            title: "Rust".into(),
+            url: "https://rust-lang.org".into(),
+            description: "Systems lang".into(),
+            age: None,
+        }];
+        cache.put(key, entries.clone());
+
+        let hit = cache.get(key, 300);
+        assert!(hit.is_some(), "should hit after put");
+        assert_eq!(hit.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_search_cache_expired() {
+        let cache = SearchCache::new();
+        let key = "old query|5|brave";
+
+        let entries = vec![SearchResultEntry {
+            title: "Old".into(),
+            url: "https://old.com".into(),
+            description: "".into(),
+            age: None,
+        }];
+        cache.put(key, entries);
+
+        // TTL of 0 means immediately expired
+        assert!(cache.get(key, 0).is_none(), "should miss with 0 TTL");
+    }
+
+    #[test]
+    fn test_search_cache_different_keys() {
+        let cache = SearchCache::new();
+
+        cache.put("q1|5|tavily", vec![SearchResultEntry {
+            title: "A".into(),
+            url: "https://a.com".into(),
+            description: "".into(),
+            age: None,
+        }]);
+        cache.put("q2|5|tavily", vec![SearchResultEntry {
+            title: "B".into(),
+            url: "https://b.com".into(),
+            description: "".into(),
+            age: None,
+        }]);
+
+        assert_eq!(cache.get("q1|5|tavily", 300).unwrap()[0].title, "A");
+        assert_eq!(cache.get("q2|5|tavily", 300).unwrap()[0].title, "B");
+        assert!(cache.get("q3|5|tavily", 300).is_none());
+    }
+
+    #[test]
+    fn test_cache_ttl_from_env() {
+        let orig = std::env::var(CACHE_TTL_ENV).ok();
+
+        // Default
+        std::env::remove_var(CACHE_TTL_ENV);
+        assert_eq!(cache_ttl_secs(), DEFAULT_CACHE_TTL_SECS);
+
+        // Custom
+        std::env::set_var(CACHE_TTL_ENV, "120");
+        assert_eq!(cache_ttl_secs(), 120);
+
+        // Invalid falls back to default
+        std::env::set_var(CACHE_TTL_ENV, "not_a_number");
+        assert_eq!(cache_ttl_secs(), DEFAULT_CACHE_TTL_SECS);
+
+        // Zero is valid (disables cache)
+        std::env::set_var(CACHE_TTL_ENV, "0");
+        assert_eq!(cache_ttl_secs(), 0);
+
+        // Restore
+        match orig {
+            Some(v) => std::env::set_var(CACHE_TTL_ENV, v),
+            None => std::env::remove_var(CACHE_TTL_ENV),
         }
     }
 }
