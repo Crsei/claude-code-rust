@@ -4,12 +4,16 @@ import { handleGet, handlePut } from "./routes";
 import { mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { createSyncState, pull } from "./sync";
+import { startWatcher, flushPendingPush } from "./watcher";
 
 // --- CLI args parsing ---
-function parseArgs(): { port: number; secret: string } {
+function parseArgs(): { port: number; secret: string; repo: string; teamMemPath: string } {
   const args = process.argv.slice(2);
   let port = 19837;
   let secret = "";
+  let repo = "";
+  let teamMemPath = "";
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--port" && args[i + 1]) {
       port = parseInt(args[i + 1], 10);
@@ -17,16 +21,22 @@ function parseArgs(): { port: number; secret: string } {
     } else if (args[i] === "--secret" && args[i + 1]) {
       secret = args[i + 1];
       i++;
+    } else if (args[i] === "--repo" && args[i + 1]) {
+      repo = args[i + 1];
+      i++;
+    } else if (args[i] === "--team-mem-path" && args[i + 1]) {
+      teamMemPath = args[i + 1];
+      i++;
     }
   }
   if (!secret) {
     console.error("error: --secret is required");
     process.exit(1);
   }
-  return { port, secret };
+  return { port, secret, repo, teamMemPath };
 }
 
-const { port, secret } = parseArgs();
+const { port, secret, repo, teamMemPath } = parseArgs();
 
 // --- Database init ---
 const dataDir = join(homedir(), ".cc-rust");
@@ -35,7 +45,7 @@ mkdirSync(dataDir, { recursive: true });
 const dbPath = join(dataDir, "team-memory.db");
 db.init(dbPath);
 
-// --- Graceful shutdown ---
+// --- Graceful shutdown (default, may be replaced by sync block) ---
 process.on("SIGTERM", () => {
   console.log("team-memory-server: shutting down");
   db.close();
@@ -75,3 +85,31 @@ const server = Bun.serve({
 });
 
 console.log(`team-memory-server listening on http://127.0.0.1:${server.port}`);
+
+if (repo && teamMemPath) {
+  mkdirSync(teamMemPath, { recursive: true });
+  const syncState = createSyncState(repo, teamMemPath);
+
+  try { pull(syncState); } catch (err) {
+    console.error("team-memory-sync: initial pull failed:", err);
+  }
+
+  startWatcher(syncState);
+
+  process.removeAllListeners("SIGTERM");
+  process.removeAllListeners("SIGINT");
+  process.on("SIGTERM", () => {
+    flushPendingPush(syncState);
+    db.close();
+    process.exit(0);
+  });
+  process.on("SIGINT", () => {
+    flushPendingPush(syncState);
+    db.close();
+    process.exit(0);
+  });
+
+  console.log(`team-memory-sync: active for ${repo} at ${teamMemPath}`);
+} else {
+  console.log("team-memory-sync: disabled (no --repo or --team-mem-path)");
+}
