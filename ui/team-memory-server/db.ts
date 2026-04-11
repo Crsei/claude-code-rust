@@ -64,7 +64,7 @@ export function hasEntry(repo: string, key: string): boolean {
   return row !== null;
 }
 
-function sha256(content: string): string {
+export function sha256(content: string): string {
   return `sha256:${createHash("sha256").update(content, "utf-8").digest("hex")}`;
 }
 
