@@ -1,6 +1,7 @@
 import React from 'react'
-import { Box, Text } from '../compat/ink-compat.js'
+import { c } from '../theme.js'
 import { useAppState } from '../store/app-store.js'
+import { Spinner } from './Spinner.js'
 
 const LOGO = `
    ___  ___        ___  _   _  ___ _____
@@ -11,29 +12,31 @@ const LOGO = `
 
 export function WelcomeScreen() {
   const { model, cwd, sessionId } = useAppState()
+  const connected = !!model
 
   return (
-    <Box flexDirection="column" alignItems="center">
-      <Text color="ansi:magenta" bold>{LOGO}</Text>
-      <Box flexDirection="column" gap={0} paddingX={2}>
-        <Text>
-          <Text dim>Model: </Text>
-          <Text bold>{model || 'connecting...'}</Text>
-        </Text>
-        <Text>
-          <Text dim>  cwd: </Text>
-          <Text>{cwd || '...'}</Text>
-        </Text>
-        {sessionId && (
-          <Text>
-            <Text dim>  Session: </Text>
-            <Text dim>{sessionId.slice(0, 8)}</Text>
-          </Text>
-        )}
-      </Box>
-      <Box marginTop={1}>
-        <Text dim italic>Type a message to get started. Ctrl+D to quit.</Text>
-      </Box>
-    </Box>
+    <box flexDirection="column" alignItems="center">
+      <text><strong><span fg={c.accent}>{LOGO}</span></strong></text>
+      {connected ? (
+        <box flexDirection="column" gap={0} paddingX={2}>
+          <text>
+            <span fg={c.dim}>Model: </span>
+            <strong>{model}</strong>
+          </text>
+          <text>
+            <span fg={c.dim}>  cwd: </span>
+            {cwd}
+          </text>
+          {sessionId && (
+            <text>
+              <span fg={c.dim}>  Session: </span>
+              <span fg={c.dim}>{sessionId.slice(0, 8)}</span>
+            </text>
+          )}
+        </box>
+      ) : (
+        <Spinner label="Connecting to backend..." />
+      )}
+    </box>
   )
 }

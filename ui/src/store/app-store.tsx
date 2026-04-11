@@ -71,6 +71,7 @@ export const initialState: AppState = {
 export type AppAction =
   | { type: 'READY'; model: string; sessionId: string; cwd: string }
   | { type: 'ADD_USER_MESSAGE'; id: string; text: string }
+  | { type: 'ADD_COMMAND_MESSAGE'; id: string; text: string }
   | { type: 'STREAM_START'; messageId: string }
   | { type: 'STREAM_DELTA'; text: string }
   | { type: 'STREAM_END' }
@@ -99,6 +100,18 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         isWaiting: true,
+        messages: [...state.messages, {
+          id: action.id,
+          role: 'user',
+          content: action.text,
+          timestamp: Date.now(),
+        }],
+      }
+
+    case 'ADD_COMMAND_MESSAGE':
+      return {
+        ...state,
+        // Slash commands don't go through stream cycle, so don't set isWaiting
         messages: [...state.messages, {
           id: action.id,
           role: 'user',

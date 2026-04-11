@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Box, Text } from '../compat/ink-compat.js'
+import { c } from '../theme.js'
 
 interface Props {
   name: string
@@ -10,26 +10,25 @@ interface Props {
 export function ToolUseBlock({ name, input, id }: Props) {
   const [expanded, setExpanded] = useState(false)
 
-  // Format input for display
   const inputStr = typeof input === 'string' ? input : JSON.stringify(input, null, 2)
   const isLong = inputStr.length > 200
 
   return (
-    <Box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
-      <Box gap={1}>
-        <Text color="ansi:yellow" bold>{'⚡'} {name}</Text>
-        <Text dim>({id.slice(0, 8)})</Text>
-      </Box>
-      <Box paddingLeft={2} flexDirection="column" width="100%">
+    <box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
+      <box gap={1}>
+        <text><strong><span fg={c.warning}>{'⚡'} {name}</span></strong></text>
+        <text fg={c.dim}>({id.slice(0, 8)})</text>
+      </box>
+      <box paddingLeft={2} flexDirection="column" width="100%">
         {isLong && !expanded ? (
           <>
-            <Text dim wrap="wrap">{inputStr.slice(0, 200)}...</Text>
-            <Text dim italic>[{inputStr.length} chars, truncated]</Text>
+            <text fg={c.dim}>{inputStr.slice(0, 200)}...</text>
+            <text><em><span fg={c.dim}>[{inputStr.length} chars, truncated]</span></em></text>
           </>
         ) : (
-          <Text dim wrap="wrap">{inputStr}</Text>
+          <text fg={c.dim}>{inputStr}</text>
         )}
-      </Box>
-    </Box>
+      </box>
+    </box>
   )
 }

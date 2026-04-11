@@ -1,5 +1,5 @@
 import React from 'react'
-import { Box, Text, Markdown } from '../compat/ink-compat.js'
+import { c } from '../theme.js'
 import type { UIMessage } from '../store/app-store.js'
 import { ToolUseBlock } from './ToolUseBlock.js'
 import { ToolResultBlock } from './ToolResultBlock.js'
@@ -12,22 +12,22 @@ export function MessageBubble({ msg }: Props) {
   switch (msg.role) {
     case 'user':
       return (
-        <Box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
-          <Text color="ansi:cyanBright" bold>You</Text>
-          <Box paddingLeft={2} width="100%">
-            <Text wrap="wrap">{msg.content}</Text>
-          </Box>
-        </Box>
+        <box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
+          <text><strong><span fg={c.user}>You</span></strong></text>
+          <box paddingLeft={2} width="100%">
+            <text selectable>{msg.content}</text>
+          </box>
+        </box>
       )
 
     case 'assistant':
       return (
-        <Box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
-          <Text color="ansi:magenta" bold>Assistant</Text>
-          <Box paddingLeft={2} flexDirection="column" width="100%">
-            <Markdown>{msg.content}</Markdown>
-          </Box>
-        </Box>
+        <box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
+          <text><strong><span fg={c.accent}>Assistant</span></strong></text>
+          <box paddingLeft={2} flexDirection="column" width="100%">
+            <markdown content={msg.content} />
+          </box>
+        </box>
       )
 
     case 'tool_use':
@@ -49,25 +49,23 @@ export function MessageBubble({ msg }: Props) {
       )
 
     case 'system': {
-      const levelColor = msg.level === 'error' ? 'ansi:red'
-        : msg.level === 'warning' ? 'ansi:yellow'
-        : 'ansi:white'
+      const levelColor = msg.level === 'error' ? c.error
+        : msg.level === 'warning' ? c.warning
+        : c.text
+      const prefix = msg.level === 'error' ? '✗ ' : msg.level === 'warning' ? '⚠ ' : 'ℹ '
 
       return (
-        <Box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
-          <Text color={levelColor as any} dim={msg.level !== 'error'} wrap="wrap">
-            {msg.level === 'error' ? '✗ ' : msg.level === 'warning' ? '⚠ ' : 'ℹ '}
-            {msg.content}
-          </Text>
-        </Box>
+        <box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
+          <text fg={levelColor}>{prefix}{msg.content}</text>
+        </box>
       )
     }
 
     default:
       return (
-        <Box paddingX={1} width="100%">
-          <Text dim wrap="wrap">{msg.content}</Text>
-        </Box>
+        <box paddingX={1} width="100%">
+          <text fg={c.dim}>{msg.content}</text>
+        </box>
       )
   }
 }

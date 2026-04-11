@@ -1,5 +1,5 @@
 import React from 'react'
-import { Box, Text } from '../compat/ink-compat.js'
+import { c } from '../theme.js'
 import { useAppState } from '../store/app-store.js'
 
 export function Suggestions() {
@@ -8,14 +8,13 @@ export function Suggestions() {
   if (suggestions.length === 0) return null
 
   return (
-    <Box flexDirection="column" paddingX={1} paddingY={0}>
-      <Text dim italic>Suggestions:</Text>
+    <box flexDirection="column" paddingX={1} paddingY={0}>
+      <text><em><span fg={c.dim}>Suggestions:</span></em></text>
       {suggestions.map((s, i) => (
-        <Box key={i} paddingLeft={2}>
-          <Text dim color="ansi:cyan">{i + 1}. </Text>
-          <Text dim>{s}</Text>
-        </Box>
+        <box key={i} paddingLeft={2}>
+          <text><span fg={c.info}>{i + 1}. </span><span fg={c.dim}>{s}</span></text>
+        </box>
       ))}
-    </Box>
+    </box>
   )
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { AlternateScreen, Box } from '../compat/ink-compat.js'
+import { useTerminalDimensions } from '@opentui/react'
 import { useBackend } from '../ipc/context.js'
 import { useAppState, useAppDispatch } from '../store/app-store.js'
 import { Header } from './Header.js'
@@ -29,7 +29,8 @@ export function App() {
   const state = useAppState()
   const dispatch = useAppDispatch()
   const [activePane, setActivePane] = useState<ActivePane>('input')
-  const welcomePromptWidth = Math.min(84, Math.max(40, (process.stdout.columns ?? 80) - 8))
+  const { width: termWidth } = useTerminalDimensions()
+  const welcomePromptWidth = Math.min(84, Math.max(40, termWidth - 8))
 
   useEffect(() => {
     const handler = (msg: BackendMessage) => {
@@ -108,33 +109,34 @@ export function App() {
   }, [isWelcome])
 
   return (
-    <AlternateScreen mouseTracking>
-      <Box flexDirection="column" height="100%">
-        <Header model={state.model} sessionId={state.sessionId} />
-        {isWelcome ? (
-          <Box flexGrow={1} flexDirection="column" alignItems="center" justifyContent="center">
-            <WelcomeScreen />
-            <Box marginTop={1} width={welcomePromptWidth}>
-              <InputPrompt isActive onActivate={() => setActivePane('input')} />
-            </Box>
-          </Box>
-        ) : (
-          <Box flexGrow={1}>
-            <MessageList
-              isActive={activePane === 'messages'}
-              onActivate={() => setActivePane('messages')}
-            >
-              {state.suggestions.length > 0 && !isBusy && <Suggestions />}
-              <InputPrompt
-                isActive={activePane === 'input'}
-                onActivate={() => setActivePane('input')}
-              />
-            </MessageList>
-          </Box>
-        )}
-        <StatusBar usage={state.usage} model={state.model} vimMode={state.vimEnabled ? state.vimMode : undefined} />
-        {state.permissionRequest && <PermissionDialog request={state.permissionRequest} />}
-      </Box>
-    </AlternateScreen>
+    <box flexDirection="column" height="100%">
+      <Header model={state.model} sessionId={state.sessionId} />
+      {isWelcome ? (
+        <box flexGrow={1} flexDirection="column" alignItems="center" justifyContent="center">
+          <WelcomeScreen />
+          <box marginTop={1} width={welcomePromptWidth} border borderStyle="rounded" borderColor="#45475A" paddingX={1}>
+            <InputPrompt isActive onActivate={() => setActivePane('input')} />
+          </box>
+          <box marginTop={1}>
+            <text fg="#45475A"><em>Ctrl+D to quit</em></text>
+          </box>
+        </box>
+      ) : (
+        <box flexGrow={1}>
+          <MessageList
+            isActive={activePane === 'messages'}
+            onActivate={() => setActivePane('messages')}
+          >
+            {state.suggestions.length > 0 && !isBusy && <Suggestions />}
+            <InputPrompt
+              isActive={activePane === 'input'}
+              onActivate={() => setActivePane('input')}
+            />
+          </MessageList>
+        </box>
+      )}
+      <StatusBar usage={state.usage} model={state.model} vimMode={state.vimEnabled ? state.vimMode : undefined} />
+      {state.permissionRequest && <PermissionDialog request={state.permissionRequest} />}
+    </box>
   )
 }

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Box, Text } from '../compat/ink-compat.js'
+import { c } from '../theme.js'
 
 interface Props {
   output: string
@@ -8,29 +8,28 @@ interface Props {
 }
 
 export function ToolResultBlock({ output, isError, toolUseId }: Props) {
-  // Truncate very long outputs
   const maxLen = 2000
   const truncated = output.length > maxLen
   const displayText = truncated ? output.slice(0, maxLen) + '...' : output
 
   return (
-    <Box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
-      <Box gap={1}>
-        <Text color={isError ? 'ansi:red' : 'ansi:green'} bold>
-          {isError ? '✗' : '✓'} Result
-        </Text>
-        <Text dim>({toolUseId.slice(0, 8)})</Text>
-      </Box>
-      <Box paddingLeft={2} width="100%">
-        <Text color={isError ? 'ansi:red' : undefined} dim={!isError} wrap="wrap">
-          {displayText}
-        </Text>
-      </Box>
+    <box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
+      <box gap={1}>
+        <text>
+          <strong><span fg={isError ? c.error : c.success}>
+            {isError ? '✗' : '✓'} Result
+          </span></strong>
+        </text>
+        <text fg={c.dim}>({toolUseId.slice(0, 8)})</text>
+      </box>
+      <box paddingLeft={2} width="100%">
+        <text selectable fg={isError ? c.error : undefined}>{displayText}</text>
+      </box>
       {truncated && (
-        <Box paddingLeft={2}>
-          <Text dim italic>[{output.length} chars total, truncated]</Text>
-        </Box>
+        <box paddingLeft={2}>
+          <text><em><span fg={c.dim}>[{output.length} chars total, truncated]</span></em></text>
+        </box>
       )}
-    </Box>
+    </box>
   )
 }
