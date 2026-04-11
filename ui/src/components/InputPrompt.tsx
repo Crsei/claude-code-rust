@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Box, Text, type ClickEvent, useAnimationFrame, useApp, useInput } from 'ink-terminal'
+import { Box, Text, type ClickEvent, useAnimationFrame, useApp, useInput } from '../compat/ink-compat.js'
 import { useBackend } from '../ipc/context.js'
 import { useAppDispatch, useAppState } from '../store/app-store.js'
 import { VimState } from '../vim/index.js'

@@ -8,8 +8,8 @@ import {
   type ScrollBoxHandle,
   type VirtualScrollResult,
   useInput,
-} from 'ink-terminal'
-import { Markdown } from 'ink-terminal/markdown'
+  Markdown,
+} from '../compat/ink-compat.js'
 import { useAppState } from '../store/app-store.js'
 import { MessageBubble } from './MessageBubble.js'
 import type { UIMessage } from '../store/app-store.js'

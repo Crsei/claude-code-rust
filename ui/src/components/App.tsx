@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { AlternateScreen, Box } from 'ink-terminal'
+import { AlternateScreen, Box } from '../compat/ink-compat.js'
 import { useBackend } from '../ipc/context.js'
 import { useAppState, useAppDispatch } from '../store/app-store.js'
 import { Header } from './Header.js'

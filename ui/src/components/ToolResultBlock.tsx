@@ -1,5 +1,5 @@
 import React from 'react'
-import { Box, Text } from 'ink-terminal'
+import { Box, Text } from '../compat/ink-compat.js'
 
 interface Props {
   output: string

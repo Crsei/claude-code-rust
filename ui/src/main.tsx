@@ -1,4 +1,5 @@
-import { render } from 'ink-terminal'
+import { createCliRenderer } from '@opentui/core'
+import { createRoot } from '@opentui/react'
 import React from 'react'
 import { RustBackend } from './ipc/client.js'
 import { BackendProvider } from './ipc/context.js'
@@ -21,7 +22,14 @@ const extraArgs = process.argv.slice(2)
 
 const backend = new RustBackend(binaryPath, extraArgs)
 
-const instance = await render(
+// Initialize OpenTUI renderer
+const renderer = await createCliRenderer({
+  exitOnCtrlC: false, // We handle Ctrl+C ourselves via useInput
+  useMouse: true,
+})
+
+const root = createRoot(renderer)
+root.render(
   <BackendProvider backend={backend}>
     <AppStateProvider>
       <App />
@@ -31,6 +39,6 @@ const instance = await render(
 
 // Clean up on exit
 backend.on('exit', async () => {
-  instance.unmount()
+  renderer.destroy()
   process.exit(0)
 })

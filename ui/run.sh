@@ -1,5 +1,5 @@
 #!/bin/bash
-# Launch cc-rust with ink-terminal UI
+# Launch cc-rust with OpenTUI frontend
 #
 # Usage:
 #   ./run.sh                  # use default binary path

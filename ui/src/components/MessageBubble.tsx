@@ -1,6 +1,5 @@
 import React from 'react'
-import { Box, Text } from 'ink-terminal'
-import { Markdown } from 'ink-terminal/markdown'
+import { Box, Text, Markdown } from '../compat/ink-compat.js'
 import type { UIMessage } from '../store/app-store.js'
 import { ToolUseBlock } from './ToolUseBlock.js'
 import { ToolResultBlock } from './ToolResultBlock.js'

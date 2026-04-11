@@ -1,5 +1,5 @@
 import React from 'react'
-import { Box, Text } from 'ink-terminal'
+import { Box, Text } from '../compat/ink-compat.js'
 
 export function Header({ model, sessionId }: { model: string; sessionId: string }) {
   return (

@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Box, Text, useInput } from 'ink-terminal'
+import { Box, Text, useInput } from '../compat/ink-compat.js'
 import { useBackend } from '../ipc/context.js'
 import { useAppDispatch } from '../store/app-store.js'
 import type { PermissionRequest } from '../store/app-store.js'

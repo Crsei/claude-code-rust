@@ -3,15 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "workspaces": [
-    "ink-terminal"
-  ],
   "scripts": {
     "dev": "bun run src/main.tsx",
     "build": "bun build src/main.tsx --target=bun --outdir=dist"
   },
   "dependencies": {
-    "ink-terminal": "workspace:*",
+    "@opentui/core": "^0.1.97",
+    "@opentui/react": "^0.1.97",
     "react": "^19.0.0"
   },
   "devDependencies": {

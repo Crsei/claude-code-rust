@@ -1,5 +1,5 @@
 import React from 'react'
-import { Box, Text, Spacer } from 'ink-terminal'
+import { Box, Text, Spacer } from '../compat/ink-compat.js'
 import type { Usage } from '../store/app-store.js'
 import { formatCost, formatTokens } from '../utils.js'
 

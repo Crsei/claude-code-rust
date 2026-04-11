@@ -1,4 +1,4 @@
-# Launch cc-rust with ink-terminal UI
+# Launch cc-rust with OpenTUI frontend
 #
 # Usage:
 #   .\run.ps1                                    # auto-detect binary
