@@ -495,6 +495,55 @@ pub fn is_shallow(path: &Path) -> Result<bool> {
 }
 
 // =============================================================================
+// Remote URL helpers
+// =============================================================================
+
+/// Get the URL of the `origin` remote for the repository at `path`.
+pub fn get_remote_url(path: &Path) -> Result<String> {
+    let repo = open_repo(path)?;
+    let remote = repo
+        .find_remote("origin")
+        .map_err(|e| anyhow::anyhow!("no origin remote: {}", e))?;
+    remote
+        .url()
+        .map(|u| u.to_string())
+        .ok_or_else(|| anyhow::anyhow!("origin remote has no URL"))
+}
+
+/// Parse a GitHub remote URL into `owner/repo` format.
+///
+/// Supports:
+/// - HTTPS: `https://github.com/owner/repo.git`
+/// - SSH: `git@github.com:owner/repo.git`
+pub fn parse_github_repo(url: &str) -> Option<String> {
+    let url = url.trim();
+
+    // SSH: git@github.com:owner/repo.git
+    if let Some(rest) = url.strip_prefix("git@github.com:") {
+        let repo = rest.strip_suffix(".git").unwrap_or(rest);
+        if repo.contains('/') {
+            return Some(repo.to_string());
+        }
+    }
+
+    // HTTPS: https://github.com/owner/repo.git
+    if let Some(rest) = url
+        .strip_prefix("https://github.com/")
+        .or_else(|| url.strip_prefix("http://github.com/"))
+    {
+        let repo = rest.strip_suffix(".git").unwrap_or(rest);
+        if repo.contains('/') {
+            let parts: Vec<&str> = repo.splitn(3, '/').collect();
+            if parts.len() >= 2 {
+                return Some(format!("{}/{}", parts[0], parts[1]));
+            }
+        }
+    }
+
+    None
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
@@ -671,5 +720,47 @@ mod tests {
         // Without remotes, should fall back to "main"
         assert_eq!(branch, "main");
         cleanup(&dir);
+    }
+
+    #[test]
+    fn parse_github_repo_https() {
+        assert_eq!(
+            parse_github_repo("https://github.com/owner/repo.git"),
+            Some("owner/repo".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_github_repo_https_no_git_suffix() {
+        assert_eq!(
+            parse_github_repo("https://github.com/owner/repo"),
+            Some("owner/repo".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_github_repo_ssh() {
+        assert_eq!(
+            parse_github_repo("git@github.com:owner/repo.git"),
+            Some("owner/repo".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_github_repo_ssh_no_suffix() {
+        assert_eq!(
+            parse_github_repo("git@github.com:owner/repo"),
+            Some("owner/repo".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_github_repo_non_github() {
+        assert_eq!(parse_github_repo("https://gitlab.com/owner/repo.git"), None);
+    }
+
+    #[test]
+    fn parse_github_repo_invalid() {
+        assert_eq!(parse_github_repo("not-a-url"), None);
     }
 }
