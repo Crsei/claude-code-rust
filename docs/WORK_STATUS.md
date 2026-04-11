@@ -91,6 +91,7 @@
 | P1-2 | `--ephemeral` 临时会话 | ❌ |
 | P1-3 | Web 搜索缓存层 | ✅ |
 | P1-4 | LSP 9/9 方法实现 | ✅ |
+| P1-5 | Team Memory 团队共享记忆 | ✅ (服务端最小实现, 客户端同步待做) |
 
 ### P2 — 生态扩展
 
@@ -165,7 +166,7 @@
 - **API 提供商**: 4/6 (Anthropic, OpenAI, Google, Azure)
 - **认证**: API Key + Keychain + OAuth PKCE (Claude.ai Bearer / Console API Key)
 - **核心模块**: engine, query, compact, session, permissions, config, ipc, skills, plugins, mcp, lsp_service, daemon, ui
-- **新增功能**: Git 上下文注入 system prompt, Web 搜索 TTL 缓存, Agent 后台执行, Feature Gate 系统
+- **新增功能**: Git 上下文注入 system prompt, Web 搜索 TTL 缓存, Agent 后台执行, Feature Gate 系统, Team Memory (Rust 代理 + TS/SQLite 服务)
 - **前端组件**: 14/14 (App, Header, MessageList, InputPrompt, MessageBubble, ToolUse/Result, PermissionDialog, Suggestions, WelcomeScreen, StatusBar, Spinner, ThinkingBlock, DiffView)
 
 ---
