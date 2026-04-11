@@ -1,7 +1,5 @@
 //! Team Memory proxy: spawns a Bun TS subprocess and forwards HTTP requests.
 
-#![allow(dead_code)]
-
 use std::process::Stdio;
 use std::time::Duration;
 

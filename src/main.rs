@@ -523,11 +523,29 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             app.autonomous_tick_ms = Some(30_000);
         });
 
-        let daemon_state = daemon::state::DaemonState::new(
+        let mut daemon_state = daemon::state::DaemonState::new(
             engine.clone(),
             Arc::new(features::FLAGS.clone()),
             cli.port,
         );
+
+        // Spawn team-memory-server if feature is enabled.
+        let _team_memory_child = if features::enabled(Feature::TeamMemory) {
+            match daemon::team_memory_proxy::spawn_team_memory_server(cli.port).await {
+                Ok((child, tm_port, tm_secret)) => {
+                    daemon_state.team_memory_port = Some(tm_port);
+                    daemon_state.team_memory_secret = Some(tm_secret);
+                    info!(port = tm_port, "team-memory-server started");
+                    Some(child)
+                }
+                Err(e) => {
+                    warn!(error = %e, "failed to start team-memory-server, feature disabled");
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         let http_state = daemon_state.clone();
         let tick_state = daemon_state.clone();

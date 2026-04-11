@@ -21,6 +21,7 @@ use crate::engine::sdk_types::SdkMessage;
 use crate::types::config::QuerySource;
 
 use super::state::{DaemonState, SseEvent};
+use super::team_memory_proxy;
 
 // ---------------------------------------------------------------------------
 // Request / Response types
@@ -280,6 +281,19 @@ async fn webhook_slack() -> Json<Value> {
 
 async fn webhook_generic() -> Json<Value> {
     Json(json!({ "status": "received", "source": "generic" }))
+}
+
+// ---------------------------------------------------------------------------
+// Team memory proxy route
+// ---------------------------------------------------------------------------
+
+/// Returns a [`Router`] containing the team memory proxy route.
+pub fn team_memory_routes() -> Router<DaemonState> {
+    Router::new().route(
+        "/api/claude_code/team_memory",
+        get(team_memory_proxy::proxy_team_memory)
+            .put(team_memory_proxy::proxy_team_memory),
+    )
 }
 
 // ---------------------------------------------------------------------------

@@ -19,6 +19,7 @@ pub async fn serve_http(state: DaemonState, port: u16) -> anyhow::Result<()> {
     let app = Router::new()
         .merge(routes::api_routes())
         .merge(routes::webhook_routes())
+        .merge(routes::team_memory_routes())
         .route("/health", axum::routing::get(routes::health))
         .route("/events", axum::routing::get(sse::sse_handler))
         .layer(CorsLayer::permissive())
