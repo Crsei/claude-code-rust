@@ -85,6 +85,9 @@ pub struct DaemonState {
     pub notification_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<Notification>>>>,
     pub event_buffer: Arc<Mutex<VecDeque<SseEvent>>>,
     pub port: u16,
+    // Team memory proxy (populated when Feature::TeamMemory is enabled)
+    pub team_memory_port: Option<u16>,
+    pub team_memory_secret: Option<String>,
 }
 
 impl DaemonState {
@@ -100,6 +103,8 @@ impl DaemonState {
             notification_rx: Arc::new(Mutex::new(Some(notification_rx))),
             event_buffer: Arc::new(Mutex::new(VecDeque::with_capacity(MAX_EVENT_BUFFER))),
             port,
+            team_memory_port: None,
+            team_memory_secret: None,
         }
     }
 
