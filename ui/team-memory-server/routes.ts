@@ -49,12 +49,6 @@ export async function handlePut(url: URL, req: Request): Promise<Response> {
     return Response.json({ error: "missing repo parameter" }, { status: 400 });
   }
 
-  // Body size check
-  const contentLength = parseInt(req.headers.get("content-length") ?? "0", 10);
-  if (contentLength > MAX_PUT_BODY) {
-    return Response.json({ error: "body too large" }, { status: 413 });
-  }
-
   // ETag check
   const ifMatch = req.headers.get("if-match");
   const meta = db.getRepoMeta(repo);
@@ -72,7 +66,17 @@ export async function handlePut(url: URL, req: Request): Promise<Response> {
     );
   }
 
-  const body = (await req.json()) as { entries: Record<string, string> };
+  // Read and validate body
+  let body: { entries: Record<string, string> };
+  try {
+    const raw = await req.text();
+    if (new TextEncoder().encode(raw).byteLength > MAX_PUT_BODY) {
+      return Response.json({ error: "body too large" }, { status: 413 });
+    }
+    body = JSON.parse(raw);
+  } catch {
+    return Response.json({ error: "invalid JSON body" }, { status: 400 });
+  }
   if (!body.entries || typeof body.entries !== "object") {
     return Response.json({ error: "invalid body: entries required" }, { status: 400 });
   }

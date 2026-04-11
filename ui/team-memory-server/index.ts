@@ -1,6 +1,7 @@
 // ui/team-memory-server/index.ts
 import * as db from "./db";
 import { handleGet, handlePut } from "./routes";
+import { mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
@@ -29,8 +30,6 @@ const { port, secret } = parseArgs();
 
 // --- Database init ---
 const dataDir = join(homedir(), ".cc-rust");
-// Ensure directory exists
-const { mkdirSync } = await import("fs");
 mkdirSync(dataDir, { recursive: true });
 
 const dbPath = join(dataDir, "team-memory.db");
