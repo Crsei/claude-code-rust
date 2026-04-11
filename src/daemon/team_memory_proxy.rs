@@ -28,9 +28,31 @@ const HEALTH_CHECK_INTERVAL_MS: u64 = 100;
 /// Returns `(child, port, secret)` on success.
 pub async fn spawn_team_memory_server(
     base_port: u16,
+    cwd: &std::path::Path,
 ) -> anyhow::Result<(Child, u16, String)> {
     let port = base_port + 1;
     let secret = uuid::Uuid::new_v4().to_string();
+
+    // Resolve GitHub repo from git remote.
+    let repo = crate::utils::git::get_remote_url(cwd)
+        .ok()
+        .and_then(|url| crate::utils::git::parse_github_repo(&url));
+
+    // Compute team memory path: ~/.cc-rust/projects/<sanitized>/memory/team/
+    let team_mem_path = {
+        let sanitized: String = cwd
+            .to_string_lossy()
+            .chars()
+            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .collect();
+        dirs::home_dir()
+            .unwrap_or_default()
+            .join(".cc-rust")
+            .join("projects")
+            .join(&sanitized)
+            .join("memory")
+            .join("team")
+    };
 
     // Resolve the script path relative to the binary location.
     let exe_dir = std::env::current_exe()?
@@ -52,16 +74,26 @@ pub async fn spawn_team_memory_server(
     info!(
         port,
         script = %script_path.display(),
+        repo = repo.as_deref().unwrap_or("none"),
+        team_mem_path = %team_mem_path.display(),
         "spawning team-memory-server"
     );
 
-    let child = Command::new("bun")
-        .arg("run")
+    let mut cmd = Command::new("bun");
+    cmd.arg("run")
         .arg(&script_path)
         .arg("--port")
         .arg(port.to_string())
         .arg("--secret")
-        .arg(&secret)
+        .arg(&secret);
+
+    if let Some(ref repo_str) = repo {
+        cmd.arg("--repo").arg(repo_str);
+    }
+    cmd.arg("--team-mem-path")
+        .arg(team_mem_path.to_string_lossy().as_ref());
+
+    let child = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)

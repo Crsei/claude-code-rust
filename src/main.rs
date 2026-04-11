@@ -531,7 +531,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
         // Spawn team-memory-server if feature is enabled.
         let _team_memory_child = if features::enabled(Feature::TeamMemory) {
-            match daemon::team_memory_proxy::spawn_team_memory_server(cli.port).await {
+            match daemon::team_memory_proxy::spawn_team_memory_server(cli.port, std::path::Path::new(&cwd)).await {
                 Ok((child, tm_port, tm_secret)) => {
                     daemon_state.team_memory_port = Some(tm_port);
                     daemon_state.team_memory_secret = Some(tm_secret);
