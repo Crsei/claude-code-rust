@@ -26,6 +26,7 @@ pub enum Feature {
     KairosPushNotification,
     KairosGithubWebhooks,
     Proactive,
+    TeamMemory,
 }
 
 // ---------------------------------------------------------------------------
@@ -41,6 +42,7 @@ pub struct FeatureFlags {
     pub kairos_push_notification: bool,
     pub kairos_github_webhooks: bool,
     pub proactive: bool,
+    pub team_memory: bool,
 }
 
 impl FeatureFlags {
@@ -65,6 +67,7 @@ impl FeatureFlags {
         };
 
         let kairos = read("FEATURE_KAIROS");
+        let team_memory = read("FEATURE_TEAMMEM");
         let mut kairos_brief = read("FEATURE_KAIROS_BRIEF");
         let mut kairos_channels = read("FEATURE_KAIROS_CHANNELS");
         let mut kairos_push_notification = read("FEATURE_KAIROS_PUSH_NOTIFICATION");
@@ -116,6 +119,7 @@ impl FeatureFlags {
             kairos_push_notification,
             kairos_github_webhooks,
             proactive,
+            team_memory,
         }
     }
 
@@ -128,6 +132,7 @@ impl FeatureFlags {
             Feature::KairosPushNotification => self.kairos_push_notification,
             Feature::KairosGithubWebhooks => self.kairos_github_webhooks,
             Feature::Proactive => self.proactive,
+            Feature::TeamMemory => self.team_memory,
         }
     }
 }
@@ -266,5 +271,18 @@ mod tests {
         ]);
         assert!(f.kairos);
         assert!(f.kairos_brief);
+    }
+
+    #[test]
+    fn team_memory_standalone() {
+        let f = flags(&[("FEATURE_TEAMMEM", "1")]);
+        assert!(f.team_memory);
+        assert!(!f.kairos, "team_memory should not imply kairos");
+    }
+
+    #[test]
+    fn team_memory_default_off() {
+        let f = flags(&[]);
+        assert!(!f.team_memory);
     }
 }
