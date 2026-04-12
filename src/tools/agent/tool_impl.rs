@@ -256,3 +256,247 @@ and return exactly the information you need.\n\
         200_000
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // -----------------------------------------------------------------------
+    // MAX_AGENT_DEPTH constant
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_max_agent_depth_value() {
+        assert_eq!(MAX_AGENT_DEPTH, 5);
+    }
+
+    // -----------------------------------------------------------------------
+    // use_worktree flag — isolation field case-insensitivity
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_use_worktree_lowercase() {
+        let input: AgentInput = serde_json::from_value(json!({
+            "prompt": "task",
+            "isolation": "worktree"
+        }))
+        .unwrap();
+        let use_worktree = input
+            .isolation
+            .as_deref()
+            .map(|s| s.eq_ignore_ascii_case("worktree"))
+            .unwrap_or(false);
+        assert!(use_worktree);
+    }
+
+    #[test]
+    fn test_use_worktree_uppercase() {
+        let input: AgentInput = serde_json::from_value(json!({
+            "prompt": "task",
+            "isolation": "WORKTREE"
+        }))
+        .unwrap();
+        let use_worktree = input
+            .isolation
+            .as_deref()
+            .map(|s| s.eq_ignore_ascii_case("worktree"))
+            .unwrap_or(false);
+        assert!(use_worktree);
+    }
+
+    #[test]
+    fn test_use_worktree_mixed_case() {
+        let input: AgentInput = serde_json::from_value(json!({
+            "prompt": "task",
+            "isolation": "WorkTree"
+        }))
+        .unwrap();
+        let use_worktree = input
+            .isolation
+            .as_deref()
+            .map(|s| s.eq_ignore_ascii_case("worktree"))
+            .unwrap_or(false);
+        assert!(use_worktree);
+    }
+
+    #[test]
+    fn test_use_worktree_none_when_no_isolation() {
+        let input: AgentInput = serde_json::from_value(json!({
+            "prompt": "task"
+        }))
+        .unwrap();
+        let use_worktree = input
+            .isolation
+            .as_deref()
+            .map(|s| s.eq_ignore_ascii_case("worktree"))
+            .unwrap_or(false);
+        assert!(!use_worktree);
+    }
+
+    #[test]
+    fn test_use_worktree_false_for_unknown_mode() {
+        let input: AgentInput = serde_json::from_value(json!({
+            "prompt": "task",
+            "isolation": "sandbox"
+        }))
+        .unwrap();
+        let use_worktree = input
+            .isolation
+            .as_deref()
+            .map(|s| s.eq_ignore_ascii_case("worktree"))
+            .unwrap_or(false);
+        assert!(!use_worktree);
+    }
+
+    // -----------------------------------------------------------------------
+    // description / subagent_type defaults used in call()
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_description_default_fallback() {
+        let input: AgentInput = serde_json::from_value(json!({
+            "prompt": "do something"
+        }))
+        .unwrap();
+        let description = input.description.as_deref().unwrap_or("unnamed task");
+        assert_eq!(description, "unnamed task");
+    }
+
+    #[test]
+    fn test_description_provided() {
+        let input: AgentInput = serde_json::from_value(json!({
+            "prompt": "do something",
+            "description": "search codebase"
+        }))
+        .unwrap();
+        let description = input.description.as_deref().unwrap_or("unnamed task");
+        assert_eq!(description, "search codebase");
+    }
+
+    #[test]
+    fn test_subagent_type_default_fallback() {
+        let input: AgentInput = serde_json::from_value(json!({
+            "prompt": "do something"
+        }))
+        .unwrap();
+        let subagent_type = input
+            .subagent_type
+            .as_deref()
+            .unwrap_or("general-purpose");
+        assert_eq!(subagent_type, "general-purpose");
+    }
+
+    #[test]
+    fn test_subagent_type_provided() {
+        let input: AgentInput = serde_json::from_value(json!({
+            "prompt": "explore",
+            "subagent_type": "Explore"
+        }))
+        .unwrap();
+        let subagent_type = input
+            .subagent_type
+            .as_deref()
+            .unwrap_or("general-purpose");
+        assert_eq!(subagent_type, "Explore");
+    }
+
+    // -----------------------------------------------------------------------
+    // Tool trait flags — is_read_only and is_destructive (defaults)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_agent_tool_not_read_only() {
+        let tool = AgentTool;
+        assert!(!tool.is_read_only(&json!({})));
+    }
+
+    #[test]
+    fn test_agent_tool_not_destructive() {
+        let tool = AgentTool;
+        assert!(!tool.is_destructive(&json!({})));
+    }
+
+    // -----------------------------------------------------------------------
+    // prompt() content — sanity check key phrases
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_prompt_contains_key_guidance() {
+        let tool = AgentTool;
+        let prompt = tool.prompt().await;
+        assert!(prompt.contains("description"));
+        assert!(prompt.contains("concurrently"));
+        assert!(prompt.contains("autonomously"));
+    }
+
+    // -----------------------------------------------------------------------
+    // schema — required fields
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_schema_required_fields() {
+        let tool = AgentTool;
+        let schema = tool.input_json_schema();
+        let required = schema["required"].as_array().unwrap();
+        let required_names: Vec<&str> = required.iter().map(|v| v.as_str().unwrap()).collect();
+        assert!(required_names.contains(&"prompt"));
+        assert!(required_names.contains(&"description"));
+    }
+
+    #[test]
+    fn test_schema_model_enum() {
+        let tool = AgentTool;
+        let schema = tool.input_json_schema();
+        let model_enum = schema["properties"]["model"]["enum"].as_array().unwrap();
+        let variants: Vec<&str> = model_enum
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert!(variants.contains(&"sonnet"));
+        assert!(variants.contains(&"opus"));
+        assert!(variants.contains(&"haiku"));
+    }
+
+    #[test]
+    fn test_schema_isolation_enum() {
+        let tool = AgentTool;
+        let schema = tool.input_json_schema();
+        let isolation_enum = schema["properties"]["isolation"]["enum"]
+            .as_array()
+            .unwrap();
+        let variants: Vec<&str> = isolation_enum
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert!(variants.contains(&"worktree"));
+    }
+
+    #[test]
+    fn test_schema_run_in_background_default_false() {
+        let tool = AgentTool;
+        let schema = tool.input_json_schema();
+        let default_val = &schema["properties"]["run_in_background"]["default"];
+        assert_eq!(default_val, &serde_json::Value::Bool(false));
+    }
+
+    // -----------------------------------------------------------------------
+    // user_facing_name — edge cases
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_user_facing_name_empty_string_description() {
+        let tool = AgentTool;
+        // Empty string is still a string — shows Agent()
+        let input = json!({"description": ""});
+        assert_eq!(tool.user_facing_name(Some(&input)), "Agent()");
+    }
+
+    #[test]
+    fn test_user_facing_name_non_string_description_falls_back() {
+        let tool = AgentTool;
+        // description is a number, not a string — falls back to "Agent"
+        let input = json!({"description": 42});
+        assert_eq!(tool.user_facing_name(Some(&input)), "Agent");
+    }
+}

@@ -150,3 +150,105 @@ impl CommandHandler for LoginCodeHandler {
         ))
     }
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bootstrap::SessionId;
+    use crate::types::app_state::AppState;
+    use std::path::PathBuf;
+
+    fn test_ctx() -> CommandContext {
+        CommandContext {
+            messages: Vec::new(),
+            cwd: PathBuf::from("/test"),
+            app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
+        }
+    }
+
+    // ---- start_pending() pure helpers ----
+
+    #[test]
+    fn test_start_pending_claude_ai_contains_url() {
+        // Clear any pre-existing state first
+        let _ = PENDING_OAUTH.lock().take();
+        let msg = start_pending(config::OAuthMethod::ClaudeAi);
+        assert!(
+            msg.contains("Claude.ai"),
+            "should mention Claude.ai, got: {}",
+            msg
+        );
+        assert!(
+            msg.contains("https://"),
+            "should contain an auth URL, got: {}",
+            msg
+        );
+        assert!(
+            msg.contains("/login-code"),
+            "should instruct user to use /login-code, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_start_pending_console_contains_url() {
+        let _ = PENDING_OAUTH.lock().take();
+        let msg = start_pending(config::OAuthMethod::Console);
+        assert!(msg.contains("Console"), "should mention Console, got: {}", msg);
+        assert!(msg.contains("https://"));
+    }
+
+    #[test]
+    fn test_start_pending_stores_state() {
+        let _ = PENDING_OAUTH.lock().take();
+        start_pending(config::OAuthMethod::ClaudeAi);
+        let pending = PENDING_OAUTH.lock().take();
+        assert!(
+            pending.is_some(),
+            "start_pending should store pending OAuth state"
+        );
+    }
+
+    // ---- LoginCodeHandler error paths (no network required) ----
+
+    #[tokio::test]
+    async fn test_login_code_empty_args_shows_usage() {
+        let handler = LoginCodeHandler;
+        let mut ctx = test_ctx();
+        let result = handler.execute("", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(
+                    text.contains("Usage"),
+                    "expected usage hint, got: {}",
+                    text
+                );
+            }
+            _ => panic!("Expected Output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_login_code_no_pending_flow() {
+        // Ensure no pending state
+        let _ = PENDING_OAUTH.lock().take();
+        let handler = LoginCodeHandler;
+        let mut ctx = test_ctx();
+        let result = handler.execute("some-fake-code", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(
+                    text.contains("No pending OAuth flow"),
+                    "expected no-pending message, got: {}",
+                    text
+                );
+            }
+            _ => panic!("Expected Output"),
+        }
+    }
+}

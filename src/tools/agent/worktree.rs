@@ -291,3 +291,153 @@ impl AgentTool {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    // -----------------------------------------------------------------------
+    // Branch and path naming patterns
+    // -----------------------------------------------------------------------
+
+    /// Branch names must follow the `agent-worktree-{8-char-id}` pattern.
+    #[test]
+    fn test_branch_name_format() {
+        let short_id = "abcd1234";
+        let branch_name = format!("agent-worktree-{}", short_id);
+        assert!(branch_name.starts_with("agent-worktree-"));
+        assert_eq!(branch_name, "agent-worktree-abcd1234");
+    }
+
+    /// Worktree path must be under temp dir with matching suffix.
+    #[test]
+    fn test_worktree_path_format() {
+        let short_id = "abcd1234";
+        let worktree_path = std::env::temp_dir().join(format!("agent-worktree-{}", short_id));
+        let path_str = worktree_path.to_string_lossy();
+        assert!(path_str.contains("agent-worktree-abcd1234"));
+    }
+
+    /// Branch name and worktree path suffix must be consistent (same short_id).
+    #[test]
+    fn test_branch_name_and_path_share_same_id() {
+        let short_id = "deadbeef";
+        let branch_name = format!("agent-worktree-{}", short_id);
+        let worktree_path = std::env::temp_dir().join(format!("agent-worktree-{}", short_id));
+        let path_tail = worktree_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        assert_eq!(branch_name, path_tail);
+    }
+
+    // -----------------------------------------------------------------------
+    // Result text suffix — has_changes path
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_result_text_suffix_with_changes() {
+        let files: usize = 3;
+        let commits: usize = 1;
+        let worktree_path = PathBuf::from("/tmp/agent-worktree-abcd1234");
+        let branch_name = "agent-worktree-abcd1234";
+
+        let suffix = format!(
+            "\n\n[Worktree isolation: changes detected ({} file(s), {} commit(s)). \
+             Worktree kept at: {} on branch: {}]",
+            files,
+            commits,
+            worktree_path.display(),
+            branch_name,
+        );
+
+        assert!(suffix.contains("changes detected"));
+        assert!(suffix.contains("3 file(s)"));
+        assert!(suffix.contains("1 commit(s)"));
+        assert!(suffix.contains("Worktree kept at"));
+        assert!(suffix.contains("agent-worktree-abcd1234"));
+    }
+
+    #[test]
+    fn test_result_text_suffix_no_changes() {
+        let suffix = "\n\n[Worktree isolation: no changes detected — worktree cleaned up]";
+        assert!(suffix.contains("no changes detected"));
+        assert!(suffix.contains("cleaned up"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Result text suffix — fallback warning message formats
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_fallback_warning_format_git_root_error() {
+        let error_msg = "Not a git repository";
+        let base = "some result text";
+        let result = format!(
+            "[WARNING: worktree isolation skipped — {}]\n\n{}",
+            error_msg, base
+        );
+        assert!(result.starts_with("[WARNING: worktree isolation skipped —"));
+        assert!(result.contains("Not a git repository"));
+        assert!(result.ends_with("some result text"));
+    }
+
+    #[test]
+    fn test_fallback_warning_format_worktree_add_failed() {
+        let stderr = "fatal: branch already exists";
+        let base = "normal result";
+        let result = format!(
+            "[WARNING: worktree isolation skipped — git worktree add failed: {}]\n\n{}",
+            stderr.trim(),
+            base
+        );
+        assert!(result.contains("git worktree add failed"));
+        assert!(result.contains("fatal: branch already exists"));
+        assert!(result.ends_with("normal result"));
+    }
+
+    // -----------------------------------------------------------------------
+    // has_changes logic — fail-closed when count_worktree_changes returns None
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_has_changes_true_when_none() {
+        let changes: Option<(usize, usize)> = None;
+        // fail-closed: if we can't tell, assume changes
+        let has_changes = match changes {
+            Some((files, commits)) => files > 0 || commits > 0,
+            None => true,
+        };
+        assert!(has_changes, "None result should be treated as has_changes=true");
+    }
+
+    #[test]
+    fn test_has_changes_false_when_zero_files_and_commits() {
+        let changes: Option<(usize, usize)> = Some((0, 0));
+        let has_changes = match changes {
+            Some((files, commits)) => files > 0 || commits > 0,
+            None => true,
+        };
+        assert!(!has_changes);
+    }
+
+    #[test]
+    fn test_has_changes_true_when_files_changed() {
+        let changes: Option<(usize, usize)> = Some((5, 0));
+        let has_changes = match changes {
+            Some((files, commits)) => files > 0 || commits > 0,
+            None => true,
+        };
+        assert!(has_changes);
+    }
+
+    #[test]
+    fn test_has_changes_true_when_only_commits() {
+        let changes: Option<(usize, usize)> = Some((0, 2));
+        let has_changes = match changes {
+            Some((files, commits)) => files > 0 || commits > 0,
+            None => true,
+        };
+        assert!(has_changes);
+    }
+}

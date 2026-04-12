@@ -81,3 +81,83 @@ fn show_paths(cwd: &std::path::Path) -> Result<CommandResult> {
         Ok(CommandResult::Output(lines.join("\n")))
     }
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bootstrap::SessionId;
+    use crate::types::app_state::AppState;
+    use std::path::PathBuf;
+
+    fn test_ctx(cwd: PathBuf) -> CommandContext {
+        CommandContext {
+            messages: Vec::new(),
+            cwd,
+            app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_memory_show_nonexistent_dir_returns_output() {
+        let handler = MemoryHandler;
+        let mut ctx = test_ctx(PathBuf::from("/nonexistent/fake/path"));
+        let result = handler.execute("show", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                // Either "No CLAUDE.md found" or actual content — both are valid
+                assert!(!text.is_empty());
+            }
+            _ => panic!("Expected Output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_memory_empty_args_defaults_to_show() {
+        let handler = MemoryHandler;
+        let mut ctx = test_ctx(PathBuf::from("/nonexistent/fake/path"));
+        // empty args should behave same as "show"
+        let result_empty = handler.execute("", &mut ctx).await.unwrap();
+        let result_show = handler.execute("show", &mut ctx).await.unwrap();
+        match (result_empty, result_show) {
+            (CommandResult::Output(a), CommandResult::Output(b)) => {
+                assert_eq!(a, b, "empty args should equal 'show'");
+            }
+            _ => panic!("Expected Output for both"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_memory_path_nonexistent_dir() {
+        let handler = MemoryHandler;
+        let mut ctx = test_ctx(PathBuf::from("/nonexistent/fake/path"));
+        let result = handler.execute("path", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(!text.is_empty());
+            }
+            _ => panic!("Expected Output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_memory_unknown_subcommand_shows_usage() {
+        let handler = MemoryHandler;
+        let mut ctx = test_ctx(PathBuf::from("/nonexistent/fake/path"));
+        let result = handler.execute("unknown-subcmd", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(
+                    text.contains("Usage"),
+                    "expected usage info, got: {}",
+                    text
+                );
+            }
+            _ => panic!("Expected Output"),
+        }
+    }
+}

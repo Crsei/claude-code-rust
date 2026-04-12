@@ -145,3 +145,151 @@ fn format_export_summary(export: &session_export::SessionExport) -> String {
     }
     lines.join("\n")
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bootstrap::SessionId;
+    use crate::session::session_export::{
+        CompressionData, ContextSnapshot, SessionExport, SessionMeta, TranscriptData,
+    };
+    use crate::types::app_state::AppState;
+    use std::path::PathBuf;
+
+    fn test_ctx() -> CommandContext {
+        CommandContext {
+            messages: Vec::new(),
+            cwd: PathBuf::from("/test"),
+            app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
+        }
+    }
+
+    /// Build a minimal `SessionExport` for testing `format_export_summary`.
+    fn minimal_export(
+        msg_count: usize,
+        user: usize,
+        asst: usize,
+        sys: usize,
+        tool_count: usize,
+        compactions: usize,
+        tokens: u64,
+        window: u64,
+        cost: f64,
+    ) -> SessionExport {
+        SessionExport {
+            schema_version: 1,
+            exported_at: "2026-01-01T00:00:00Z".into(),
+            session: SessionMeta {
+                session_id: "test".into(),
+                project_path: None,
+                git_branch: None,
+                git_head_sha: None,
+                model: None,
+                started_at: None,
+                ended_at: None,
+            },
+            transcript: TranscriptData {
+                messages: vec![],
+                message_count: msg_count,
+                user_message_count: user,
+                assistant_message_count: asst,
+                system_message_count: sys,
+            },
+            tool_calls: vec![],
+            compression: CompressionData {
+                compact_boundaries: vec![],
+                content_replacements: vec![],
+                microcompact_replacements: vec![],
+                total_compactions: compactions,
+            },
+            context: ContextSnapshot {
+                estimated_total_tokens: tokens,
+                context_window_size: window,
+                utilization_pct: if window > 0 {
+                    tokens as f64 / window as f64 * 100.0
+                } else {
+                    0.0
+                },
+                total_cost_usd: cost,
+                total_input_tokens: 0,
+                total_output_tokens: 0,
+                cache_read_tokens: 0,
+                api_call_count: 0,
+                tool_use_count: tool_count,
+                unique_tools_used: vec![],
+            },
+        }
+    }
+
+    #[test]
+    fn test_format_export_summary_basic() {
+        let export = minimal_export(5, 2, 2, 1, 3, 0, 1000, 200_000, 0.0);
+        let summary = format_export_summary(&export);
+        assert!(summary.contains("Messages: 5"));
+        assert!(summary.contains("User: 2"));
+        assert!(summary.contains("Assistant: 2"));
+        assert!(summary.contains("System: 1"));
+        assert!(summary.contains("Tool calls: 0")); // tool_calls vec is empty
+        assert!(summary.contains("Compactions: 0"));
+        assert!(summary.contains("Tokens: ~1000"));
+    }
+
+    #[test]
+    fn test_format_export_summary_includes_cost_when_nonzero() {
+        let export = minimal_export(1, 1, 0, 0, 0, 0, 500, 200_000, 0.0123);
+        let summary = format_export_summary(&export);
+        assert!(summary.contains("Cost: $0.0123"));
+    }
+
+    #[test]
+    fn test_format_export_summary_no_cost_line_when_zero() {
+        let export = minimal_export(1, 1, 0, 0, 0, 0, 500, 200_000, 0.0);
+        let summary = format_export_summary(&export);
+        assert!(!summary.contains("Cost:"));
+    }
+
+    #[test]
+    fn test_format_export_summary_token_percentage() {
+        // 10_000 tokens out of 200_000 = 5.0%
+        let mut export = minimal_export(1, 1, 0, 0, 0, 0, 10_000, 200_000, 0.0);
+        export.context.utilization_pct = 5.0;
+        let summary = format_export_summary(&export);
+        assert!(summary.contains("5.0%"), "summary: {}", summary);
+    }
+
+    #[tokio::test]
+    async fn test_session_export_list_returns_output() {
+        let handler = SessionExportHandler;
+        let mut ctx = test_ctx();
+        let result = handler.execute("list", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(_) => {}
+            _ => panic!("Expected Output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_session_export_nonexistent_session_id() {
+        let handler = SessionExportHandler;
+        let mut ctx = test_ctx();
+        let result = handler
+            .execute("00000000-nonexistent-session-9999999", &mut ctx)
+            .await
+            .unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(
+                    text.contains("No session found"),
+                    "expected not-found message, got: {}",
+                    text
+                );
+            }
+            _ => panic!("Expected Output"),
+        }
+    }
+}

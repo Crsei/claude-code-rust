@@ -294,3 +294,71 @@ pub async fn run_tool_use(
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+//
+// `run_tool_use` is a full orchestration function — it requires a live
+// ToolUseContext (abort_signal, AppState, permissions) and spawns async I/O.
+// It cannot be unit-tested without an integration harness.
+//
+// The pipeline stages are covered by:
+//   - `super::security` tests (stages 3c.1–3c.3)
+//   - `super::tests` (make_error_result, find_tool, enforce_result_size,
+//                     StreamingToolExecutor, security_validate paths)
+//   - `coordinator::tests` (batch-grouping and flag assignment)
+//
+// The test below is a compile-check: it verifies that the public API surface
+// of this module (types and functions used by the pipeline) can be imported
+// and referenced without errors.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::{make_error_result, ToolExecutionResult};
+    use std::time::Instant;
+
+    /// Verify that `make_error_result` (the shared early-exit helper used by
+    /// every pipeline stage) produces a correctly structured error result.
+    /// This is the only pure, side-effect-free code the pipeline module calls
+    /// that is not already covered in `super::tests`.
+    #[test]
+    fn make_error_result_sets_is_error_true() {
+        let started = Instant::now();
+        let result = make_error_result("tool-use-1", "Bash", "something went wrong", started);
+        assert!(result.is_error);
+        assert_eq!(result.tool_use_id, "tool-use-1");
+        assert_eq!(result.tool_name, "Bash");
+        assert_eq!(
+            result.result.data.as_str().unwrap(),
+            "something went wrong"
+        );
+        assert!(result.new_messages.is_empty());
+        assert!(!result.hook_stopped_continuation);
+    }
+
+    #[test]
+    fn make_error_result_duration_ms_is_non_negative() {
+        let started = Instant::now();
+        let result = make_error_result("id", "Read", "err", started);
+        // duration_ms is a u64 — always non-negative; just confirm the field exists
+        let _ = result.duration_ms;
+    }
+
+    #[test]
+    fn make_error_result_empty_message() {
+        let started = Instant::now();
+        let result = make_error_result("id", "Tool", "", started);
+        assert!(result.is_error);
+        assert_eq!(result.result.data.as_str().unwrap(), "");
+    }
+
+    /// Compile-check: `run_tool_use` is in scope and the module compiles correctly.
+    #[test]
+    fn pipeline_run_tool_use_is_accessible() {
+        // Referencing the async fn without calling it confirms it is in scope.
+        // We use size_of_val on a ZST to avoid an invalid cast.
+        let _ = std::mem::size_of_val(&run_tool_use);
+    }
+}

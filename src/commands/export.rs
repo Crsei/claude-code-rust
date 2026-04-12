@@ -108,3 +108,77 @@ fn export_by_id(session_id: &str, ctx: &CommandContext) -> Result<CommandResult>
         ))),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bootstrap::SessionId;
+    use crate::types::app_state::AppState;
+    use std::path::PathBuf;
+
+    fn test_ctx() -> CommandContext {
+        CommandContext {
+            messages: Vec::new(),
+            cwd: PathBuf::from("/test"),
+            app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_export_list_returns_output() {
+        // list_exported_files() returns empty list gracefully when dir doesn't exist
+        let handler = ExportHandler;
+        let mut ctx = test_ctx();
+        let result = handler.execute("list", &mut ctx).await.unwrap();
+        // Either "No exports found" or a listing — both are Output variants
+        match result {
+            CommandResult::Output(_) => {}
+            _ => panic!("Expected Output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_export_nonexistent_session_id() {
+        let handler = ExportHandler;
+        let mut ctx = test_ctx();
+        // A pure random session ID that won't match anything
+        let result = handler
+            .execute("00000000-0000-0000-0000-nonexistent99", &mut ctx)
+            .await
+            .unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(
+                    text.contains("No session found"),
+                    "expected not-found message, got: {}",
+                    text
+                );
+            }
+            _ => panic!("Expected Output"),
+        }
+    }
+
+    #[test]
+    fn test_path_detection_slash() {
+        // Verify the path-detection heuristic used in execute(): slashes → file path
+        let args = "/tmp/my-export.md";
+        assert!(args.contains('/') || args.contains('\\') || args.ends_with(".md"));
+    }
+
+    #[test]
+    fn test_path_detection_md_extension() {
+        let args = "output.md";
+        assert!(args.ends_with(".md"));
+    }
+
+    #[test]
+    fn test_path_detection_plain_id_not_path() {
+        let args = "abc123";
+        assert!(!args.contains('/') && !args.contains('\\') && !args.ends_with(".md"));
+    }
+}

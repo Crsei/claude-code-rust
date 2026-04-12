@@ -202,3 +202,100 @@ impl Tool for GlobTool {
         "Glob".to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_name() {
+        assert_eq!(GlobTool::new().name(), "Glob");
+    }
+
+    #[test]
+    fn test_parse_input_full() {
+        let input = json!({"pattern": "**/*.rs", "path": "/src"});
+        let (pattern, path) = GlobTool::parse_input(&input);
+        assert_eq!(pattern, "**/*.rs");
+        assert_eq!(path, Some("/src".to_string()));
+    }
+
+    #[test]
+    fn test_parse_input_pattern_only() {
+        let input = json!({"pattern": "*.txt"});
+        let (pattern, path) = GlobTool::parse_input(&input);
+        assert_eq!(pattern, "*.txt");
+        assert!(path.is_none());
+    }
+
+    #[test]
+    fn test_parse_input_empty() {
+        let input = json!({});
+        let (pattern, path) = GlobTool::parse_input(&input);
+        assert_eq!(pattern, "");
+        assert!(path.is_none());
+    }
+
+    #[test]
+    fn test_is_read_only_and_concurrent() {
+        let tool = GlobTool::new();
+        assert!(tool.is_read_only(&json!({})));
+        assert!(tool.is_concurrency_safe(&json!({})));
+    }
+
+    #[test]
+    fn test_schema_requires_pattern() {
+        let schema = GlobTool::new().input_json_schema();
+        let required = schema.get("required").unwrap().as_array().unwrap();
+        assert!(required.contains(&json!("pattern")));
+    }
+
+    #[test]
+    fn test_get_path() {
+        let tool = GlobTool::new();
+        assert_eq!(
+            tool.get_path(&json!({"path": "/src"})),
+            Some("/src".to_string())
+        );
+        assert_eq!(tool.get_path(&json!({})), None);
+    }
+
+    #[tokio::test]
+    async fn test_glob_finds_files() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "").unwrap();
+        std::fs::write(dir.path().join("b.rs"), "").unwrap();
+        std::fs::write(dir.path().join("c.txt"), "").unwrap();
+
+        let pattern = format!("{}/*.rs", dir.path().to_string_lossy().replace('\\', "/"));
+        let matches = tokio::task::spawn_blocking(move || {
+            let mut results = Vec::new();
+            for entry in glob::glob(&pattern).unwrap() {
+                results.push(entry.unwrap().to_string_lossy().to_string());
+            }
+            results
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(matches.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_glob_no_matches() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let pattern = format!("{}/*.xyz", dir.path().to_string_lossy().replace('\\', "/"));
+        let matches = tokio::task::spawn_blocking(move || {
+            let mut results = Vec::new();
+            for entry in glob::glob(&pattern).unwrap() {
+                results.push(entry.unwrap());
+            }
+            results
+        })
+        .await
+        .unwrap();
+
+        assert!(matches.is_empty());
+    }
+}

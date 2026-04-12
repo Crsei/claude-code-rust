@@ -245,3 +245,52 @@ fn test_powershell_dangerous_command_blocked() {
     let result = security_validate("id9", "PowerShell", &input, &tool, &ctx, now);
     assert!(result.is_some(), "PowerShell dangerous command should be blocked");
 }
+
+// -- make_error_result tests (shared helper in mod.rs) --------------------
+
+#[test]
+fn test_make_error_result_fields() {
+    let started = Instant::now();
+    let result = make_error_result("use-id-42", "MyTool", "fatal error occurred", started);
+    assert!(result.is_error);
+    assert_eq!(result.tool_use_id, "use-id-42");
+    assert_eq!(result.tool_name, "MyTool");
+    assert_eq!(result.result.data.as_str().unwrap(), "fatal error occurred");
+    assert!(result.new_messages.is_empty());
+    assert!(result.result.new_messages.is_empty());
+    assert!(!result.hook_stopped_continuation);
+}
+
+#[test]
+fn test_make_error_result_duration_is_u64() {
+    let started = Instant::now();
+    let result = make_error_result("id", "T", "msg", started);
+    // duration_ms should be a small number (test runs in < 1s)
+    assert!(result.duration_ms < 5_000, "duration_ms should be reasonable: {}", result.duration_ms);
+}
+
+#[test]
+fn test_make_error_result_empty_strings() {
+    let started = Instant::now();
+    let result = make_error_result("", "", "", started);
+    assert!(result.is_error);
+    assert_eq!(result.tool_use_id, "");
+    assert_eq!(result.tool_name, "");
+    assert_eq!(result.result.data.as_str().unwrap(), "");
+}
+
+#[test]
+fn test_make_error_result_data_is_string_variant() {
+    let started = Instant::now();
+    let result = make_error_result("id", "Tool", "some message", started);
+    // data must be a JSON string (not object/array/null)
+    assert!(result.result.data.is_string());
+}
+
+#[test]
+fn test_make_error_result_hook_stopped_continuation_always_false() {
+    let started = Instant::now();
+    let result = make_error_result("id", "Tool", "msg", started);
+    assert!(!result.hook_stopped_continuation,
+        "early-exit errors never stop continuation via hooks");
+}

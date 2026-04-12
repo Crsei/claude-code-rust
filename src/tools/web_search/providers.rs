@@ -106,3 +106,75 @@ pub(super) async fn search_brave(
         })
         .collect())
 }
+
+// ---------------------------------------------------------------------------
+// Inline unit tests (logic that lives in this file)
+// The broader web_search integration tests are in tests.rs.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------------
+    // Brave response deserialization
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn brave_response_full_deserialization() {
+        let json_str = r#"{
+            "web": {
+                "results": [
+                    {
+                        "title": "Brave test",
+                        "url": "https://brave.com",
+                        "description": "A privacy-respecting search engine",
+                        "age": "1 week ago"
+                    }
+                ]
+            }
+        }"#;
+        let resp: BraveSearchResponse = serde_json::from_str(json_str).unwrap();
+        let web = resp.web.expect("web field should be present");
+        assert_eq!(web.results.len(), 1);
+        assert_eq!(web.results[0].title, "Brave test");
+        assert_eq!(web.results[0].url, "https://brave.com");
+        assert_eq!(web.results[0].description, "A privacy-respecting search engine");
+        assert_eq!(web.results[0].age.as_deref(), Some("1 week ago"));
+    }
+
+    #[test]
+    fn brave_response_missing_web_field_defaults_to_none() {
+        let json_str = r#"{}"#;
+        let resp: BraveSearchResponse = serde_json::from_str(json_str).unwrap();
+        assert!(resp.web.is_none(), "missing web field should deserialize as None");
+    }
+
+    #[test]
+    fn brave_response_empty_results_list() {
+        let json_str = r#"{"web": {"results": []}}"#;
+        let resp: BraveSearchResponse = serde_json::from_str(json_str).unwrap();
+        let web = resp.web.unwrap();
+        assert!(web.results.is_empty());
+    }
+
+    #[test]
+    fn brave_result_optional_fields_default_correctly() {
+        // description and age are both optional / default
+        let json_str = r#"{
+            "web": {
+                "results": [
+                    {
+                        "title": "No extras",
+                        "url": "https://example.org"
+                    }
+                ]
+            }
+        }"#;
+        let resp: BraveSearchResponse = serde_json::from_str(json_str).unwrap();
+        let result = &resp.web.unwrap().results[0];
+        assert_eq!(result.description, "", "description should default to empty string");
+        assert!(result.age.is_none(), "age should default to None");
+    }
+
+}

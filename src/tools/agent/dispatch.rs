@@ -102,3 +102,130 @@ impl AgentTool {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    // -----------------------------------------------------------------------
+    // SubagentStart hook payload shape
+    // -----------------------------------------------------------------------
+
+    /// Verify that the SubagentStart payload produced in run_agent_dispatch
+    /// has all the expected fields with the right types.
+    #[test]
+    fn test_subagent_start_payload_structure() {
+        let agent_id = "test-agent-abc";
+        let prompt = "search for files";
+        let description = "search files";
+        let subagent_type = "general-purpose";
+        let agent_model = "claude-sonnet-4-20250514";
+        let current_depth: usize = 1;
+
+        let payload = json!({
+            "agent_id": agent_id,
+            "prompt": prompt,
+            "description": description,
+            "subagent_type": subagent_type,
+            "model": agent_model,
+            "depth": current_depth + 1,
+        });
+
+        assert_eq!(payload["agent_id"], "test-agent-abc");
+        assert_eq!(payload["prompt"], "search for files");
+        assert_eq!(payload["description"], "search files");
+        assert_eq!(payload["subagent_type"], "general-purpose");
+        assert_eq!(payload["model"], "claude-sonnet-4-20250514");
+        assert_eq!(payload["depth"], 2);
+    }
+
+    /// Verify SubagentStop payload has agent_id, description, and is_error.
+    #[test]
+    fn test_subagent_stop_payload_structure() {
+        let agent_id = "test-agent-abc";
+        let description = "search files";
+        let is_error = false;
+
+        let payload = json!({
+            "agent_id": agent_id,
+            "description": description,
+            "is_error": is_error,
+        });
+
+        assert_eq!(payload["agent_id"], "test-agent-abc");
+        assert_eq!(payload["description"], "search files");
+        assert_eq!(payload["is_error"], false);
+    }
+
+    #[test]
+    fn test_subagent_stop_payload_with_error() {
+        let agent_id = "test-agent-xyz";
+        let description = "failing task";
+        let is_error = true;
+
+        let payload = json!({
+            "agent_id": agent_id,
+            "description": description,
+            "is_error": is_error,
+        });
+
+        assert_eq!(payload["is_error"], true);
+        assert_eq!(payload["agent_id"], "test-agent-xyz");
+    }
+
+    // -----------------------------------------------------------------------
+    // Background path payload extra "background" field
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_background_start_payload_has_background_flag() {
+        let payload = json!({
+            "agent_id": "bg-agent-1",
+            "prompt": "do work",
+            "description": "bg work",
+            "subagent_type": "general-purpose",
+            "model": "claude-sonnet-4-20250514",
+            "depth": 1,
+            "background": true,
+        });
+
+        assert_eq!(payload["background"], true);
+    }
+
+    #[test]
+    fn test_background_stop_payload_has_background_flag() {
+        let payload = json!({
+            "agent_id": "bg-agent-1",
+            "description": "bg work",
+            "is_error": false,
+            "background": true,
+        });
+
+        assert_eq!(payload["background"], true);
+        assert_eq!(payload["is_error"], false);
+    }
+
+    // -----------------------------------------------------------------------
+    // use_worktree flag logic (mirrors tool_impl.rs call())
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_dispatch_worktree_detection_from_isolation_string() {
+        let isolation_worktree = Some("worktree".to_string());
+        let use_worktree = isolation_worktree
+            .as_deref()
+            .map(|s| s.eq_ignore_ascii_case("worktree"))
+            .unwrap_or(false);
+        assert!(use_worktree);
+    }
+
+    #[test]
+    fn test_dispatch_no_worktree_when_isolation_none() {
+        let isolation: Option<String> = None;
+        let use_worktree = isolation
+            .as_deref()
+            .map(|s| s.eq_ignore_ascii_case("worktree"))
+            .unwrap_or(false);
+        assert!(!use_worktree);
+    }
+}

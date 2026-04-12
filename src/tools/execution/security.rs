@@ -147,3 +147,96 @@ pub(super) fn enforce_result_size(data: Value, max_chars: usize) -> Value {
         _ => data,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_enforce_result_size_non_string() {
+        let data = json!({"key": "value"});
+        let result = enforce_result_size(data.clone(), 10);
+        assert_eq!(result, data);
+    }
+
+    #[test]
+    fn test_enforce_result_size_short_string() {
+        let data = json!("short text");
+        let result = enforce_result_size(data.clone(), 1000);
+        assert_eq!(result, data);
+    }
+
+    #[test]
+    fn test_enforce_result_size_long_string() {
+        let long = "x".repeat(10_000);
+        let data = json!(long);
+        let result = enforce_result_size(data, 1000);
+        let s = result.as_str().unwrap();
+        assert!(s.contains("characters omitted"));
+        assert!(s.len() < 10_000);
+    }
+
+    #[test]
+    fn test_enforce_result_size_exact_boundary() {
+        let exact = "a".repeat(1000);
+        let data = json!(exact);
+        let result = enforce_result_size(data.clone(), 1000);
+        // Exactly at limit should NOT be truncated (the condition is >)
+        assert_eq!(result.as_str().unwrap().len(), 1000);
+    }
+
+    #[test]
+    fn test_enforce_result_size_null() {
+        let data = json!(null);
+        let result = enforce_result_size(data.clone(), 100);
+        assert_eq!(result, data);
+    }
+
+    #[test]
+    fn test_enforce_result_size_array() {
+        let data = json!([1, 2, 3]);
+        let result = enforce_result_size(data.clone(), 5);
+        assert_eq!(result, data);
+    }
+
+    #[test]
+    fn test_enforce_result_size_truncation_structure() {
+        // Verify head/tail sizes match the documented formula:
+        // head = max_chars / 2, tail = max_chars / 4
+        let max = 1000usize;
+        let long = "y".repeat(max * 3);
+        let data = json!(long);
+        let result = enforce_result_size(data, max);
+        let s = result.as_str().unwrap();
+
+        // head portion: max/2 = 500 'y's
+        let head_part: String = s.chars().take(max / 2).collect();
+        assert_eq!(head_part, "y".repeat(max / 2));
+
+        // tail portion after the omission marker: max/4 = 250 'y's
+        let tail_part: String = s.chars().rev().take(max / 4).collect::<String>()
+            .chars().rev().collect();
+        assert_eq!(tail_part, "y".repeat(max / 4));
+
+        // omission message present
+        assert!(s.contains(&format!(
+            "{} characters omitted",
+            long.len() - max / 2 - max / 4
+        )));
+    }
+
+    #[test]
+    fn test_enforce_result_size_number() {
+        let data = json!(42);
+        let result = enforce_result_size(data.clone(), 1);
+        assert_eq!(result, data);
+    }
+
+    #[test]
+    fn test_enforce_result_size_bool() {
+        let data = json!(true);
+        let result = enforce_result_size(data.clone(), 1);
+        assert_eq!(result, data);
+    }
+}

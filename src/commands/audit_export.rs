@@ -130,3 +130,85 @@ fn export_by_id(session_id: &str) -> Result<CommandResult> {
         ))),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bootstrap::SessionId;
+    use crate::types::app_state::AppState;
+    use std::path::PathBuf;
+
+    fn test_ctx() -> CommandContext {
+        CommandContext {
+            messages: Vec::new(),
+            cwd: PathBuf::from("/test"),
+            app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_audit_list_returns_output() {
+        let handler = AuditExportHandler;
+        let mut ctx = test_ctx();
+        let result = handler.execute("list", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(_) => {}
+            _ => panic!("Expected Output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_audit_verify_missing_path_shows_usage() {
+        let handler = AuditExportHandler;
+        let mut ctx = test_ctx();
+        // "verify" with no path should return usage hint
+        let result = handler.execute("verify", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(
+                    text.contains("Usage"),
+                    "expected usage hint, got: {}",
+                    text
+                );
+            }
+            _ => panic!("Expected Output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_audit_nonexistent_session_id() {
+        let handler = AuditExportHandler;
+        let mut ctx = test_ctx();
+        let result = handler
+            .execute("00000000-0000-nonexistent-session-id99", &mut ctx)
+            .await
+            .unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(
+                    text.contains("No session found"),
+                    "expected not-found message, got: {}",
+                    text
+                );
+            }
+            _ => panic!("Expected Output"),
+        }
+    }
+
+    #[test]
+    fn test_path_detection_json_extension() {
+        let args = "output.json";
+        assert!(args.ends_with(".json"));
+    }
+
+    #[test]
+    fn test_path_detection_plain_id_not_path() {
+        let args = "abc123deadbeef";
+        assert!(!args.contains('/') && !args.contains('\\') && !args.ends_with(".json"));
+    }
+}

@@ -89,3 +89,54 @@ impl CommandHandler for BranchHandler {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bootstrap::SessionId;
+    use crate::types::app_state::AppState;
+    use std::path::PathBuf;
+
+    fn test_ctx(cwd: PathBuf) -> CommandContext {
+        CommandContext {
+            messages: Vec::new(),
+            cwd,
+            app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_branch_not_in_git_repo_list() {
+        let handler = BranchHandler;
+        let mut ctx = test_ctx(PathBuf::from("/nonexistent/fake/path"));
+        let result = handler.execute("", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(
+                    text.contains("not in a git repository"),
+                    "expected error message, got: {}",
+                    text
+                );
+            }
+            _ => panic!("Expected Output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_branch_not_in_git_repo_with_name() {
+        let handler = BranchHandler;
+        let mut ctx = test_ctx(PathBuf::from("/nonexistent/fake/path"));
+        let result = handler.execute("feature/my-branch", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(text.contains("not in a git repository"));
+            }
+            _ => panic!("Expected Output"),
+        }
+    }
+}

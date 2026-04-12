@@ -181,3 +181,85 @@ Usage:\n\
         "Write".to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_name() {
+        assert_eq!(FileWriteTool::new().name(), "Write");
+    }
+
+    #[test]
+    fn test_schema_has_required_fields() {
+        let schema = FileWriteTool::new().input_json_schema();
+        let props = schema.get("properties").unwrap();
+        assert!(props.get("file_path").is_some());
+        assert!(props.get("content").is_some());
+        let required = schema.get("required").unwrap().as_array().unwrap();
+        assert!(required.contains(&json!("file_path")));
+        assert!(required.contains(&json!("content")));
+    }
+
+    #[test]
+    fn test_parse_input_full() {
+        let input = json!({"file_path": "/tmp/test.txt", "content": "hello"});
+        let (path, content) = FileWriteTool::parse_input(&input);
+        assert_eq!(path, "/tmp/test.txt");
+        assert_eq!(content, "hello");
+    }
+
+    #[test]
+    fn test_parse_input_missing() {
+        let input = json!({});
+        let (path, content) = FileWriteTool::parse_input(&input);
+        assert_eq!(path, "");
+        assert_eq!(content, "");
+    }
+
+    #[test]
+    fn test_is_destructive() {
+        let tool = FileWriteTool::new();
+        assert!(tool.is_destructive(&json!({})));
+        assert!(!tool.is_read_only(&json!({})));
+        assert!(!tool.is_concurrency_safe(&json!({})));
+    }
+
+    #[test]
+    fn test_get_path() {
+        let tool = FileWriteTool::new();
+        assert_eq!(
+            tool.get_path(&json!({"file_path": "/a/b.rs"})),
+            Some("/a/b.rs".to_string())
+        );
+        assert_eq!(tool.get_path(&json!({})), None);
+    }
+
+    #[tokio::test]
+    async fn test_write_and_read_back() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("output.txt");
+        let content = "line1\nline2\nline3";
+
+        // Test the actual write via tokio::fs (same as what call() uses)
+        tokio::fs::write(&file_path, content).await.unwrap();
+        let read_back = tokio::fs::read_to_string(&file_path).await.unwrap();
+        assert_eq!(read_back, content);
+        assert_eq!(content.lines().count(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_write_creates_parent_dirs() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let nested = dir.path().join("a").join("b").join("c").join("test.txt");
+
+        // Simulate what call() does
+        if let Some(parent) = nested.parent() {
+            tokio::fs::create_dir_all(parent).await.unwrap();
+        }
+        tokio::fs::write(&nested, "hello").await.unwrap();
+        assert!(nested.exists());
+    }
+}

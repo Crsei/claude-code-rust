@@ -106,3 +106,33 @@ fn mask_key(key: &str) -> String {
         "sk-ant-****".to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mask_key_long() {
+        let key = "sk-ant-api03-abcdefghijklmnop";
+        let masked = mask_key(key);
+        assert!(masked.starts_with("sk-ant-"));
+        assert!(masked.contains("..."));
+        assert!(masked.ends_with(&key[key.len() - 4..]));
+    }
+
+    #[test]
+    fn test_mask_key_short() {
+        let masked = mask_key("short");
+        assert_eq!(masked, "sk-ant-****");
+    }
+
+    #[test]
+    fn test_login_menu_contains_options() {
+        let menu = login_menu();
+        assert!(menu.contains("[1]"));
+        assert!(menu.contains("[2]"));
+        assert!(menu.contains("[3]"));
+        assert!(menu.contains("API Key"));
+        assert!(menu.contains("OAuth"));
+    }
+}

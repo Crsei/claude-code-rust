@@ -255,3 +255,219 @@ Sources:
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Inline unit tests (logic that lives in this file)
+// The broader web_search integration tests are in tests.rs.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // -----------------------------------------------------------------------
+    // user_facing_name
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn user_facing_name_short_query_unchanged() {
+        let tool = WebSearchTool;
+        let input = json!({"query": "rust"});
+        assert_eq!(tool.user_facing_name(Some(&input)), "WebSearch(\"rust\")");
+    }
+
+    #[test]
+    fn user_facing_name_truncates_at_30_chars() {
+        let tool = WebSearchTool;
+        // 31-character query — should be truncated to exactly 30 chars
+        let query = "a".repeat(31);
+        let input = json!({"query": query});
+        let name = tool.user_facing_name(Some(&input));
+        // Expected: WebSearch("<30 'a' chars>")
+        let expected = format!("WebSearch(\"{}\")", "a".repeat(30));
+        assert_eq!(name, expected);
+    }
+
+    #[test]
+    fn user_facing_name_exactly_30_chars_not_truncated() {
+        let tool = WebSearchTool;
+        let query = "b".repeat(30);
+        let input = json!({"query": query});
+        let name = tool.user_facing_name(Some(&input));
+        let expected = format!("WebSearch(\"{}\")", "b".repeat(30));
+        assert_eq!(name, expected);
+    }
+
+    #[test]
+    fn user_facing_name_no_input_returns_bare_name() {
+        let tool = WebSearchTool;
+        assert_eq!(tool.user_facing_name(None), "WebSearch");
+    }
+
+    #[test]
+    fn user_facing_name_input_without_query_field() {
+        let tool = WebSearchTool;
+        let input = json!({"max_results": 5});
+        assert_eq!(tool.user_facing_name(Some(&input)), "WebSearch");
+    }
+
+    // -----------------------------------------------------------------------
+    // input_json_schema
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn schema_required_contains_query() {
+        let tool = WebSearchTool;
+        let schema = tool.input_json_schema();
+        let required = schema["required"].as_array().expect("required should be array");
+        let names: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
+        assert!(names.contains(&"query"), "schema required should include 'query'");
+    }
+
+    #[test]
+    fn schema_has_blocked_domains_property() {
+        let tool = WebSearchTool;
+        let schema = tool.input_json_schema();
+        assert!(
+            schema["properties"]["blocked_domains"].is_object(),
+            "schema should have blocked_domains property"
+        );
+    }
+
+    #[test]
+    fn schema_max_results_has_default() {
+        let tool = WebSearchTool;
+        let schema = tool.input_json_schema();
+        let default_val = schema["properties"]["max_results"]["default"]
+            .as_u64()
+            .expect("max_results should have numeric default");
+        assert_eq!(default_val, DEFAULT_MAX_RESULTS as u64);
+    }
+
+    #[test]
+    fn schema_type_is_object() {
+        let tool = WebSearchTool;
+        let schema = tool.input_json_schema();
+        assert_eq!(schema["type"].as_str().unwrap_or(""), "object");
+    }
+
+    // -----------------------------------------------------------------------
+    // validate_input boundary conditions
+    // -----------------------------------------------------------------------
+
+    fn make_test_ctx() -> crate::types::tool::ToolUseContext {
+        use crate::types::app_state::AppState;
+        use crate::types::tool::{FileStateCache, ToolUseOptions};
+        use std::sync::Arc;
+        let state = AppState::default();
+        crate::types::tool::ToolUseContext {
+            options: ToolUseOptions {
+                debug: false,
+                main_loop_model: "test".into(),
+                verbose: false,
+                is_non_interactive_session: true,
+                custom_system_prompt: None,
+                append_system_prompt: None,
+                max_budget_usd: None,
+            },
+            abort_signal: tokio::sync::watch::channel(false).1,
+            read_file_state: FileStateCache::default(),
+            get_app_state: Arc::new(move || state.clone()),
+            set_app_state: Arc::new(|_| {}),
+            messages: vec![],
+            agent_id: None,
+            agent_type: None,
+            query_tracking: None,
+            permission_callback: None,
+            bg_agent_tx: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn validate_input_empty_query_is_error() {
+        let tool = WebSearchTool;
+        let ctx = make_test_ctx();
+        let result = tool.validate_input(&json!({"query": ""}), &ctx).await;
+        assert!(
+            matches!(result, ValidationResult::Error { .. }),
+            "empty query should fail"
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_input_one_char_query_is_error() {
+        let tool = WebSearchTool;
+        let ctx = make_test_ctx();
+        let result = tool.validate_input(&json!({"query": "x"}), &ctx).await;
+        assert!(
+            matches!(result, ValidationResult::Error { .. }),
+            "single-char query should fail"
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_input_two_char_query_is_ok() {
+        let tool = WebSearchTool;
+        let ctx = make_test_ctx();
+        // Minimum valid length is exactly 2
+        let result = tool.validate_input(&json!({"query": "ab"}), &ctx).await;
+        assert!(
+            matches!(result, ValidationResult::Ok),
+            "2-char query should pass"
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_input_max_length_query_is_ok() {
+        let tool = WebSearchTool;
+        let ctx = make_test_ctx();
+        let query = "q".repeat(MAX_QUERY_LENGTH);
+        let result = tool.validate_input(&json!({"query": query}), &ctx).await;
+        assert!(
+            matches!(result, ValidationResult::Ok),
+            "query at MAX_QUERY_LENGTH chars should pass"
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_input_over_max_length_is_error() {
+        let tool = WebSearchTool;
+        let ctx = make_test_ctx();
+        let query = "q".repeat(MAX_QUERY_LENGTH + 1);
+        let result = tool.validate_input(&json!({"query": query}), &ctx).await;
+        assert!(
+            matches!(result, ValidationResult::Error { .. }),
+            "query over MAX_QUERY_LENGTH should fail"
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_input_missing_query_field_is_error() {
+        let tool = WebSearchTool;
+        let ctx = make_test_ctx();
+        // No "query" field — defaults to "" which is < 2 chars
+        let result = tool.validate_input(&json!({}), &ctx).await;
+        assert!(
+            matches!(result, ValidationResult::Error { .. }),
+            "missing query should fail"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Flags
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tool_is_read_only_and_concurrency_safe() {
+        let tool = WebSearchTool;
+        assert!(tool.is_read_only(&json!({})));
+        assert!(tool.is_concurrency_safe(&json!({})));
+    }
+
+    #[test]
+    fn tool_name_is_web_search() {
+        let tool = WebSearchTool;
+        assert_eq!(tool.name(), "WebSearch");
+    }
+}
