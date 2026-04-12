@@ -252,7 +252,17 @@ async fn handle_slash_command(raw: &str, engine: &Arc<QueryEngine>) {
         session_id: engine.session_id.clone(),
     };
 
-    match cmd.handler.execute(&args, &mut ctx).await {
+    let cmd_result = cmd.handler.execute(&args, &mut ctx).await;
+
+    // Sync any state mutations (e.g. /add-dir) back to the engine
+    if cmd_result.is_ok() {
+        engine.update_app_state(|s| {
+            s.tool_permission_context.additional_working_directories =
+                ctx.app_state.tool_permission_context.additional_working_directories.clone();
+        });
+    }
+
+    match cmd_result {
         Ok(result) => match result {
             CommandResult::Output(text) => {
                 let _ = send_to_frontend(&BackendMessage::SystemInfo {
@@ -484,6 +494,9 @@ fn handle_sdk_message(
 
             // Generate prompt suggestions after query completion
             generate_and_send_suggestions(engine, suggestion_svc);
+
+            // Try to extract session memory insights
+            engine.try_extract_session_memory();
 
             Ok(())
         }

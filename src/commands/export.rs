@@ -6,8 +6,6 @@
 //!   /export <path>           — export current session to a specific file
 //!   /export <session_id>     — export a saved session by ID
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -86,7 +84,7 @@ fn list_exported_files() -> Result<CommandResult> {
     Ok(CommandResult::Output(out))
 }
 
-fn export_by_id(session_id: &str, ctx: &CommandContext) -> Result<CommandResult> {
+fn export_by_id(session_id: &str, _ctx: &CommandContext) -> Result<CommandResult> {
     // Try exact match first, then prefix match
     let sessions = crate::session::storage::list_sessions()?;
     let matched = sessions

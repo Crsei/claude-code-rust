@@ -2,9 +2,7 @@
 //!
 //! Corresponds to TypeScript: queryHelpers.ts (`isResultSuccessful`, etc.)
 
-#![allow(unused)]
-
-use crate::types::message::{AssistantMessage, ContentBlock, Message, MessageContent};
+use crate::types::message::{ContentBlock, Message, MessageContent};
 
 // ---------------------------------------------------------------------------
 // is_result_successful

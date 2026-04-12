@@ -9,8 +9,6 @@
 //! A global singleton [`FLAGS`] is lazily initialised from real env vars.
 //! Use [`enabled`] for quick queries from anywhere in the crate.
 
-#![allow(dead_code)]
-
 use std::sync::LazyLock;
 
 // ---------------------------------------------------------------------------
@@ -24,6 +22,7 @@ pub enum Feature {
     KairosBrief,
     KairosChannels,
     KairosPushNotification,
+    #[allow(dead_code)]
     KairosGithubWebhooks,
     Proactive,
     TeamMemory,

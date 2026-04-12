@@ -14,11 +14,9 @@
 //!
 //! Depends on the `lsp-types` crate.
 
-#![allow(unused)]
-
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -61,6 +59,7 @@ impl LspOperation {
     }
 
     /// Get the LSP method name for this operation.
+    #[allow(dead_code)]
     pub fn method(&self) -> &'static str {
         match self {
             Self::GoToDefinition => "textDocument/definition",

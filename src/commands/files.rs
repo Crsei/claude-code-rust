@@ -4,8 +4,6 @@
 //! FileEdit, Grep, Glob, etc.) and displays them relative to the working
 //! directory.
 
-#![allow(unused)]
-
 use std::collections::BTreeSet;
 use std::path::Path;
 

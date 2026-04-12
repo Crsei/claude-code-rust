@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 pub mod input_processing;
 pub mod lifecycle;
 pub mod prompt_sections;

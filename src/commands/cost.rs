@@ -3,8 +3,6 @@
 //! Aggregates usage data from all assistant messages in the conversation
 //! to display total input/output tokens and estimated cost.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 

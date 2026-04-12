@@ -3,8 +3,6 @@
 //! Commands are invoked by typing `/command_name [args]` in the user prompt.
 //! Each command implements `CommandHandler` and is registered in `get_all_commands()`.
 
-#![allow(unused)]
-
 // Essential commands
 pub mod clear;
 pub mod config_cmd;
@@ -40,6 +38,9 @@ pub mod skills_cmd;
 pub mod copy;
 pub mod init;
 pub mod status;
+
+// Workspace
+pub mod add_dir;
 
 // Export
 pub mod audit_export;
@@ -120,6 +121,7 @@ pub enum CommandResult {
     /// Exit the REPL with a goodbye message.
     Exit(String),
     /// No visible output.
+    #[allow(dead_code)]
     None,
 }
 
@@ -369,6 +371,12 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "Distill daily logs into memory".into(),
             handler: Box::new(dream::DreamHandler),
+        },
+        Command {
+            name: "add-dir".into(),
+            aliases: vec![],
+            description: "Add a new working directory".into(),
+            handler: Box::new(add_dir::AddDirHandler),
         },
     ]
 }

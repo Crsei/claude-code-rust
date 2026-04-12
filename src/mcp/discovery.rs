@@ -1,4 +1,3 @@
-#![allow(unused)]
 //! MCP server discovery — finds configured servers from settings
 use super::McpServerConfig;
 use anyhow::Result;

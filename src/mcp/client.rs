@@ -10,8 +10,6 @@
 //!   3. `McpClient::list_tools()` / `call_tool()` / `list_resources()` / `read_resource()`
 //!   4. `McpClient::disconnect()` -- graceful shutdown
 
-#![allow(unused)]
-
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -24,8 +22,8 @@ use tokio::sync::{oneshot, Mutex};
 use tracing::{debug, info, warn};
 
 use super::{
-    CallToolResult, InitializeResult, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
-    ListResourcesResult, ListToolsResult, McpConnectionState, McpResource, McpResourceContent,
+    CallToolResult, InitializeResult, JsonRpcNotification, JsonRpcRequest,
+    ListResourcesResult, ListToolsResult, McpConnectionState, McpResource,
     McpServerConfig, McpToolDef, ReadResourceResult, ServerCapabilities, ServerInfo,
     ToolCallContent, CLIENT_NAME, CLIENT_VERSION, CONNECT_TIMEOUT_SECS, PROTOCOL_VERSION,
     TOOL_CALL_TIMEOUT_SECS,
@@ -348,6 +346,7 @@ impl McpClient {
     }
 
     /// Read a resource from the MCP server.
+    #[allow(dead_code)]
     pub async fn read_resource(&self, uri: &str) -> Result<ReadResourceResult> {
         if self.state != McpConnectionState::Connected {
             bail!("cannot read resource: not connected");

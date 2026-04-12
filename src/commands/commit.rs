@@ -3,8 +3,6 @@
 //! Stages all changes, generates a commit message summary, and commits.
 //! Optionally accepts a custom message via arguments.
 
-#![allow(unused)]
-
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 

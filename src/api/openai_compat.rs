@@ -1,4 +1,3 @@
-#![allow(unused)]
 //! OpenAI-compatible provider — handles all providers using the
 //! OpenAI chat/completions API format.
 //!
@@ -347,7 +346,7 @@ where
         // Track the next content_block index (text = 0, tool_calls start at 1+).
         let mut block_index: usize = 0;
         // Track whether we are inside a text content block.
-        let mut text_block_open = false;
+        let mut _text_block_open = false;
         // Track active tool calls: index → (id, name, accumulated arguments).
         let mut tool_calls: std::collections::HashMap<u64, (String, String, String)> =
             std::collections::HashMap::new();
@@ -374,9 +373,9 @@ where
                 // [DONE] marker
                 if data == "[DONE]" {
                     // Close any open text block
-                    if text_block_open {
+                    if _text_block_open {
                         yield StreamEvent::ContentBlockStop { index: block_index };
-                        text_block_open = false;
+                        _text_block_open = false;
                     }
                     if header_emitted {
                         yield StreamEvent::MessageDelta {
@@ -410,12 +409,12 @@ where
                         // ── Text content delta ──────────────────────────
                         if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
                             if !content.is_empty() {
-                                if !text_block_open {
+                                if !_text_block_open {
                                     yield StreamEvent::ContentBlockStart {
                                         index: block_index,
                                         content_block: ContentBlock::Text { text: String::new() },
                                     };
-                                    text_block_open = true;
+                                    _text_block_open = true;
                                 }
                                 yield StreamEvent::ContentBlockDelta {
                                     index: block_index,
@@ -468,10 +467,10 @@ where
                             .and_then(|r| r.as_str())
                         {
                             // Close any open text block
-                            if text_block_open {
+                            if _text_block_open {
                                 yield StreamEvent::ContentBlockStop { index: block_index };
                                 block_index += 1;
-                                text_block_open = false;
+                                _text_block_open = false;
                             }
 
                             // Emit accumulated tool_calls as Anthropic-style ToolUse blocks
@@ -538,7 +537,7 @@ where
         }
 
         // Stream ended without [DONE] or finish_reason — still close properly
-        if text_block_open {
+        if _text_block_open {
             yield StreamEvent::ContentBlockStop { index: block_index };
         }
         if header_emitted {

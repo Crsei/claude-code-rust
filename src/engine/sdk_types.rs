@@ -3,13 +3,11 @@
 //!
 //! Corresponds to TypeScript: SDKMessage (agentSdkTypes.ts)
 
-#![allow(unused)]
-
 use serde::Serialize;
 use uuid::Uuid;
 
 use crate::engine::lifecycle::{PermissionDenial, UsageTracking};
-use crate::types::message::{CompactMetadata, StreamEvent, Usage};
+use crate::types::message::{CompactMetadata, StreamEvent};
 
 // ---------------------------------------------------------------------------
 // Top-level SDK message enum
@@ -145,5 +143,6 @@ pub enum ResultSubtype {
     ErrorDuringExecution,
     ErrorMaxTurns,
     ErrorMaxBudgetUsd,
+    #[allow(dead_code)]
     ErrorMaxStructuredOutputRetries,
 }

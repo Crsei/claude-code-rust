@@ -101,6 +101,7 @@ impl McpManager {
     }
 
     /// Get all resources from all connected servers.
+    #[allow(dead_code)]
     pub fn all_resources(&self) -> Vec<McpResource> {
         self.clients
             .values()
@@ -109,6 +110,7 @@ impl McpManager {
     }
 
     /// Find the client that owns a tool by name.
+    #[allow(dead_code)]
     pub fn find_client_for_tool(&self, tool_name: &str) -> Option<&McpClient> {
         self.clients
             .values()
@@ -116,6 +118,7 @@ impl McpManager {
     }
 
     /// Disconnect from all servers.
+    #[allow(dead_code)]
     pub async fn disconnect_all(&mut self) {
         let names: Vec<String> = self.clients.keys().cloned().collect();
         for name in names {

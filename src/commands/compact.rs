@@ -5,12 +5,10 @@
 //! - Local compaction (no API): aggressive snip + microcompact
 //! - Full compaction (with API): model-generated summary (future)
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::compact::{compaction, messages as compact_messages, pipeline};
+use crate::compact::{compaction, pipeline};
 use crate::utils::tokens;
 
 use super::{CommandContext, CommandHandler, CommandResult};
@@ -48,7 +46,7 @@ impl CommandHandler for CompactHandler {
         if pipeline_result.compacted {
             // Pipeline made progress — apply the compacted messages
             let freed = pre_tokens.saturating_sub(post_tokens);
-            let new_count = pipeline_result.messages.len();
+            let _new_count = pipeline_result.messages.len();
 
             // Build summary message for the compacted portion
             let summary = if let Some(ref instructions) = custom_instructions {

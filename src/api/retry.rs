@@ -1,9 +1,8 @@
-#![allow(unused)]
 //! Retry logic with exponential backoff and model fallback
-use anyhow::Result;
 use std::time::Duration;
 
 /// Retry configuration
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
     pub max_retries: usize,
@@ -29,12 +28,14 @@ impl Default for RetryConfig {
 #[derive(Debug, Clone)]
 pub enum ApiErrorCategory {
     /// Rate limited — retry with backoff
+    #[allow(dead_code)]
     RateLimit { retry_after_ms: Option<u64> },
     /// Server overloaded — retry with backoff, maybe fallback
     Overloaded,
     /// Server error — retry
     ServerError,
     /// Invalid request — don't retry
+    #[allow(dead_code)]
     InvalidRequest { message: String },
     /// Auth error — don't retry
     AuthError,
@@ -43,6 +44,7 @@ pub enum ApiErrorCategory {
     /// Max output tokens — don't retry (handle differently)
     MaxOutputTokens,
     /// Unknown — don't retry
+    #[allow(dead_code)]
     Unknown {
         status: Option<u16>,
         message: String,
@@ -50,6 +52,7 @@ pub enum ApiErrorCategory {
 }
 
 impl ApiErrorCategory {
+    #[allow(dead_code)]
     pub fn is_retryable(&self) -> bool {
         matches!(
             self,
@@ -93,6 +96,7 @@ pub fn categorize_api_error(status: u16, body: &str) -> ApiErrorCategory {
 }
 
 /// Calculate delay for a retry attempt
+#[allow(dead_code)]
 pub fn retry_delay(config: &RetryConfig, attempt: usize) -> Duration {
     let delay = config.initial_delay_ms as f64 * config.backoff_multiplier.powi(attempt as i32);
     let delay = delay.min(config.max_delay_ms as f64) as u64;
@@ -101,6 +105,7 @@ pub fn retry_delay(config: &RetryConfig, attempt: usize) -> Duration {
     Duration::from_millis((delay as i64 + jitter).max(0) as u64)
 }
 
+#[allow(dead_code)]
 fn rand_fraction() -> f64 {
     // Simple pseudo-random for jitter — not crypto-secure
     use std::time::SystemTime;

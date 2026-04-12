@@ -5,15 +5,13 @@
 //! holds a reference to the manager so it can find the right client at
 //! call time.
 
-#![allow(unused)]
-
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;

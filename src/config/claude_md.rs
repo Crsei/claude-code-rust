@@ -4,8 +4,6 @@
 //! loads their contents, and assembles them into a single context string that
 //! is injected into the system prompt.
 
-#![allow(unused)]
-
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};

@@ -6,8 +6,6 @@
 //! provides a simplified local estimate since full token counting requires
 //! an API connection.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -32,7 +30,7 @@ fn estimate_message_tokens(msg: &Message) -> u64 {
         Message::Assistant(a) => a.content.iter().map(|b| estimate_block_chars(b)).sum(),
         Message::System(s) => s.content.len(),
         Message::Progress(p) => p.data.to_string().len(),
-        Message::Attachment(a) => {
+        Message::Attachment(_a) => {
             // Rough estimate for attachment metadata.
             50
         }

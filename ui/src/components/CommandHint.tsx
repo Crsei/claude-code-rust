@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import { c } from '../theme.js'
-import { KIND_LABELS, type CommandDef } from '../commands.js'
+import { KIND_COLORS, type CommandDef } from '../commands.js'
 
 const MAX_VISIBLE = 10
 
@@ -56,11 +56,11 @@ export function CommandHint({ matches, selectedIndex, partial, subOptions, subSe
   const list = matches.map((cmd, i) => {
     const selected = i === selectedIndex
     const hl = highlightMatch(cmd.name, partial)
-    const badge = KIND_LABELS[cmd.kind]
+    const color = KIND_COLORS[cmd.kind]
 
     return (
       <box key={cmd.name} id={`cmd-${i}`} flexDirection="row" gap={1}>
-        <text fg={badge.color}>{badge.label}</text>
+        <text fg={color}>●</text>
         <text fg={selected ? c.accent : c.info} bg={selected ? '#1a1a2e' : undefined}>
           {selected ? '▸' : ' '}
           <strong>/{hl.before}<span fg={c.textBright}>{hl.match}</span>{hl.after}</strong>

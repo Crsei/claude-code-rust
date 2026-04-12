@@ -1,11 +1,9 @@
-#![allow(unused)]
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use ignore::WalkBuilder;
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::path::Path;
 use std::process::Command;
 
 use crate::types::message::AssistantMessage;
@@ -211,7 +209,7 @@ impl Tool for GrepTool {
             .as_deref()
             .unwrap_or("files_with_matches");
         let case_insensitive = params.case_insensitive.unwrap_or(false);
-        let context_lines = params.context.or(params.after_context).unwrap_or(0);
+        let _context_lines = params.context.or(params.after_context).unwrap_or(0);
 
         let pattern_str = if case_insensitive {
             format!("(?i){}", params.pattern)
@@ -236,8 +234,8 @@ impl Tool for GrepTool {
         }
 
         let mut results: Vec<String> = Vec::new();
-        let mut file_count = 0;
-        let mut match_count = 0;
+        let mut _file_count = 0;
+        let mut _match_count = 0;
 
         for entry in walker.build().flatten() {
             if !entry.file_type().map_or(false, |ft| ft.is_file()) {
@@ -263,12 +261,12 @@ impl Tool for GrepTool {
             for (i, line) in lines.iter().enumerate() {
                 if re.is_match(line) {
                     file_matches.push((i + 1, *line));
-                    match_count += 1;
+                    _match_count += 1;
                 }
             }
 
             if !file_matches.is_empty() {
-                file_count += 1;
+                _file_count += 1;
                 let path_str = path.display().to_string();
 
                 match output_mode {

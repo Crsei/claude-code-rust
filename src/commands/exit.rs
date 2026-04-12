@@ -2,8 +2,6 @@
 //!
 //! Displays a random goodbye message and signals the REPL loop to terminate.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 

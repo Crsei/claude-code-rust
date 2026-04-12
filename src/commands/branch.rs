@@ -3,8 +3,6 @@
 //! Without arguments: lists all local branches with current branch marked.
 //! With arguments: creates or switches to a branch.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -61,7 +59,7 @@ impl CommandHandler for BranchHandler {
                         args, display
                     )))
                 }
-                Ok(out) => {
+                Ok(_out) => {
                     // Branch doesn't exist — try creating it
                     let create = std::process::Command::new("git")
                         .args(["checkout", "-b", args])

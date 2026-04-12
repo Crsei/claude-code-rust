@@ -1,4 +1,3 @@
-#![allow(unused)]
 //! Multi-provider registry and auto-detection.
 //!
 //! Supports 15+ LLM providers: Anthropic, OpenAI, Google Gemini,
@@ -32,6 +31,7 @@ pub struct ProviderInfo {
     /// Default model to use when none is specified
     pub default_model: &'static str,
     /// Human-readable label (bilingual for Chinese providers)
+    #[allow(dead_code)]
     pub label: &'static str,
     /// Wire protocol (determines request/response format)
     pub protocol: ProviderProtocol,
@@ -185,12 +185,14 @@ pub fn detect_provider() -> Option<&'static ProviderInfo> {
 }
 
 /// Look up a provider by name (case-insensitive).
+#[allow(dead_code)]
 pub fn get_provider(name: &str) -> Option<&'static ProviderInfo> {
     let name_lower = name.to_lowercase();
     PROVIDERS.iter().find(|p| p.name == name_lower)
 }
 
 /// List all providers that currently have API keys set in the environment.
+#[allow(dead_code)]
 pub fn available_providers() -> Vec<&'static ProviderInfo> {
     PROVIDERS
         .iter()

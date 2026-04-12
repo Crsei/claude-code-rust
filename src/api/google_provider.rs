@@ -1,4 +1,3 @@
-#![allow(unused)]
 //! Google Gemini provider — streamGenerateContent API.
 //!
 //! Auth: `GOOGLE_API_KEY` passed as `?key=` query parameter.

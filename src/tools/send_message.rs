@@ -8,13 +8,11 @@
 //! - Structured shutdown request/response
 //! - Plan approval response
 
-#![allow(unused)]
-
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::teams::types::TeammateMessage;
 use crate::teams::{constants, helpers, identity, mailbox, protocol};
@@ -250,7 +248,7 @@ fn handle_protocol_message(
     to: &str,
     sender: &str,
     team_name: &str,
-    team_ctx: &crate::teams::types::TeamContext,
+    _team_ctx: &crate::teams::types::TeamContext,
 ) -> Result<ToolResult> {
     let proto = match protocol::try_parse_protocol_message(raw_message) {
         Some(p) => p,
@@ -276,7 +274,7 @@ fn handle_protocol_message(
             })
         }
 
-        protocol::ProtocolMessage::ShutdownApproved { ref request_id, .. } => {
+        protocol::ProtocolMessage::ShutdownApproved { .. } => {
             // Shutdown approval — mark teammate as stopped and inactive
             let agent_id = identity::format_agent_id(to, team_name);
 

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// query() 的 I/O 依赖 — 可在测试中 mock
 ///
 /// 对应 TypeScript: query/deps.ts 的 QueryDeps
@@ -22,8 +21,10 @@ pub struct ModelResponse {
     /// 助手消息 (包含文本和工具调用块)
     pub assistant_message: AssistantMessage,
     /// 流事件 (用于透传给调用方)
+    #[allow(dead_code)]
     pub stream_events: Vec<StreamEvent>,
     /// 总用量
+    #[allow(dead_code)]
     pub usage: Usage,
 }
 

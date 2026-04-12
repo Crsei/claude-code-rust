@@ -68,6 +68,7 @@ export const COMMANDS: CommandDef[] = [
   { name: 'login-code',       aliases: [],                      description: 'Complete OAuth login with code',   kind: 'input', argHint: '<code>' },
   { name: 'model-add',        aliases: ['ma'],                  description: 'Add a model with pricing to .env', kind: 'input', argHint: '<name> <input_price> <output_price>' },
   { name: 'sleep',            aliases: [],                      description: 'Set proactive sleep duration',     kind: 'input', argHint: '<duration>' },
+  { name: 'add-dir',          aliases: [],                      description: 'Add a new working directory',      kind: 'input', argHint: '<path>' },
 ]
 
 /** Match commands against a partial input (without leading /) */
@@ -104,11 +105,11 @@ export function findCommand(name: string): CommandDef | undefined {
   return COMMANDS.find(c => c.name === q || c.aliases.includes(q))
 }
 
-/** Kind labels for display */
-export const KIND_LABELS: Record<CommandKind, { label: string; color: string }> = {
-  display: { label: '👁', color: '#89B4FA' },
-  action:  { label: '⚡', color: '#F9E2AF' },
-  toggle:  { label: '⇄', color: '#A6E3A1' },
-  select:  { label: '☰', color: '#CBA6F7' },
-  input:   { label: '✎', color: '#F38BA8' },
+/** Kind colors for display */
+export const KIND_COLORS: Record<CommandKind, string> = {
+  display: '#89B4FA',
+  action:  '#F9E2AF',
+  toggle:  '#A6E3A1',
+  select:  '#CBA6F7',
+  input:   '#F38BA8',
 }

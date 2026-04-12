@@ -35,7 +35,7 @@ impl Default for SessionMemoryConfig {
         let home = home_dir();
         SessionMemoryConfig {
             enabled: true,
-            memory_dir: home.join(".cc-rust").join("memory"),
+            memory_dir: home.join(".cc-rust").join("session-insights"),
             max_entries: 50,
             min_messages_before_extract: 5,
         }

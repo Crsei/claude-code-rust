@@ -1,4 +1,3 @@
-#![allow(unused)]
 //! API Client — multi-provider LLM integration.
 //!
 //! Supports: Anthropic (native), OpenAI-compatible (15+ providers), Google Gemini.

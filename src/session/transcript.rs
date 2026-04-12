@@ -5,8 +5,6 @@
 //! whole file), the transcript log appends newline-delimited JSON entries
 //! so that partial conversations are preserved even on crash.
 
-#![allow(unused)]
-
 use std::io::Write;
 use std::path::PathBuf;
 

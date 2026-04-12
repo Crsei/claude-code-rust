@@ -7,8 +7,6 @@
 //! The TypeScript version shows a remote session QR code via React.
 //! In the Rust CLI we show a text listing of saved sessions instead.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -56,7 +54,7 @@ fn handle_show(ctx: &CommandContext) -> Result<CommandResult> {
 }
 
 /// List saved sessions from disk.
-fn handle_list(ctx: &CommandContext) -> Result<CommandResult> {
+fn handle_list(_ctx: &CommandContext) -> Result<CommandResult> {
     let sessions = storage::list_sessions()?;
 
     if sessions.is_empty() {

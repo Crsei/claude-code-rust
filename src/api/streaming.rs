@@ -1,4 +1,3 @@
-#![allow(unused)]
 //! SSE (Server-Sent Events) stream parser for the Anthropic Messages API
 use anyhow::Result;
 use serde_json::Value;

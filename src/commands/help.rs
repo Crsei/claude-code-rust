@@ -1,7 +1,5 @@
 //! /help command -- displays available commands and their descriptions.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 

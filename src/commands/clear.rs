@@ -1,7 +1,5 @@
 //! /clear command -- clears the conversation history.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 

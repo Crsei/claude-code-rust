@@ -1,7 +1,5 @@
 //! PKCE (Proof Key for Code Exchange) utilities for OAuth 2.0.
 
-#![allow(dead_code)] // Functions will be used by oauth/mod.rs in subsequent tasks
-
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rand::RngCore;
 use sha2::{Digest, Sha256};

@@ -33,6 +33,7 @@ use std::sync::Arc;
 use tracing::info;
 
 use crate::bootstrap::SessionId;
+use crate::services::session_memory::{SessionMemoryConfig, SessionMemoryService};
 use crate::types::app_state::AppState;
 use crate::types::config::QueryEngineConfig;
 use crate::types::message::Message;
@@ -75,6 +76,8 @@ pub(crate) struct QueryEngineState {
     /// The proactive tick loop skips ticks while `Instant::now() < sleep_until`.
     /// Cleared by `wake_up()` on user messages or external events.
     pub(crate) sleep_until: Option<std::time::Instant>,
+    /// Session memory service for extracting and persisting conversation insights.
+    pub(crate) session_memory: SessionMemoryService,
 }
 
 // ---------------------------------------------------------------------------
@@ -97,6 +100,7 @@ pub struct QueryEngine {
     /// Atomic abort flag (fast path for the query loop — no lock needed).
     pub(crate) aborted: Arc<AtomicBool>,
     /// Whether we have handled the orphaned-permission edge case.
+    #[allow(dead_code)]
     pub(crate) has_handled_orphaned_permission: Arc<AtomicBool>,
     /// Shared buffer of completed background agents.
     /// Event loop pushes; query loop drains.
@@ -118,6 +122,12 @@ impl QueryEngine {
             app_state.settings.model = Some(model.clone());
         }
 
+        // Initialize session memory service and load existing entries
+        let mut session_memory = SessionMemoryService::new(SessionMemoryConfig::default());
+        if let Err(e) = session_memory.load_from_disk() {
+            tracing::warn!(error = %e, "failed to load session memory from disk");
+        }
+
         Self {
             session_id: SessionId::new(),
             config,
@@ -134,6 +144,7 @@ impl QueryEngine {
                 permission_callback: None,
                 bg_agent_tx: None,
                 sleep_until: None,
+                session_memory,
             })),
             aborted: Arc::new(AtomicBool::new(false)),
             has_handled_orphaned_permission: Arc::new(AtomicBool::new(false)),
@@ -159,6 +170,7 @@ impl QueryEngine {
 
     /// Put the engine to sleep until the given instant.
     /// The proactive tick loop will skip ticks while `is_sleeping()` returns true.
+    #[allow(dead_code)]
     pub fn set_sleep_until(&self, until: std::time::Instant) {
         let mut state = self.state.write();
         state.sleep_until = Some(until);
@@ -198,6 +210,7 @@ impl QueryEngine {
     }
 
     /// Get the abort reason (if any).
+    #[allow(dead_code)]
     pub fn abort_reason(&self) -> Option<AbortReason> {
         self.state.read().abort_reason.clone()
     }
@@ -215,16 +228,19 @@ impl QueryEngine {
     }
 
     /// Get a snapshot of permission denials.
+    #[allow(dead_code)]
     pub fn permission_denials(&self) -> Vec<PermissionDenial> {
         self.state.read().permission_denials.clone()
     }
 
     /// Record a permission denial.
+    #[allow(dead_code)]
     pub fn record_permission_denial(&self, denial: PermissionDenial) {
         self.state.write().permission_denials.push(denial);
     }
 
     /// Get the total turn count (across all submit_message calls).
+    #[allow(dead_code)]
     pub fn total_turn_count(&self) -> usize {
         self.state.read().total_turn_count
     }
@@ -248,17 +264,76 @@ impl QueryEngine {
     }
 
     /// Replace the tool registry.
+    #[allow(dead_code)]
     pub fn set_tools(&self, tools: Tools) {
         self.state.write().tools = tools;
     }
 
     /// Get discovered skill names from the current turn.
+    #[allow(dead_code)]
     pub fn discovered_skill_names(&self) -> HashSet<String> {
         self.state.read().discovered_skill_names.clone()
     }
 
     /// Get loaded nested memory paths.
+    #[allow(dead_code)]
     pub fn loaded_nested_memory_paths(&self) -> HashSet<String> {
         self.state.read().loaded_nested_memory_paths.clone()
+    }
+
+    /// Check if session memory extraction should be triggered, and if so,
+    /// extract a simple insight from the last assistant turn.
+    pub fn try_extract_session_memory(&self) {
+        let mut state = self.state.write();
+        let msg_count = state.messages.len();
+        if !state.session_memory.should_extract(msg_count) {
+            return;
+        }
+
+        // Find the last assistant message content for extraction
+        let last_assistant = state
+            .messages
+            .iter()
+            .rev()
+            .find_map(|m| match m {
+                Message::Assistant(a) => {
+                    let text: String = a
+                        .content
+                        .iter()
+                        .filter_map(|b| match b {
+                            crate::types::message::ContentBlock::Text { text } => {
+                                Some(text.as_str())
+                            }
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if text.is_empty() { None } else { Some(text) }
+                }
+                _ => None,
+            });
+
+        let Some(content) = last_assistant else {
+            return;
+        };
+
+        // Truncate to a reasonable insight length
+        let insight = if content.len() > 500 {
+            format!("{}...", &content[..500])
+        } else {
+            content
+        };
+
+        let entry = crate::services::session_memory::MemoryEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now().timestamp(),
+            session_id: self.session_id.to_string(),
+            content: insight,
+            tags: vec!["auto-extract".to_string()],
+        };
+
+        if let Err(e) = state.session_memory.save_entry(entry) {
+            tracing::warn!(error = %e, "failed to save session memory entry");
+        }
     }
 }

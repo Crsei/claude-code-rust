@@ -6,8 +6,6 @@
 //! Cached sections compute once and persist until `/clear` or `/compact`.
 //! Uncached (DANGEROUS) sections recompute every turn and break prompt cache.
 
-#![allow(unused)]
-
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::LazyLock;

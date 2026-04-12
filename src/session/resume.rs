@@ -3,8 +3,6 @@
 //! Provides helpers to locate the last session for a given working directory
 //! and to reload its message history so the conversation can continue.
 
-#![allow(unused)]
-
 use std::path::Path;
 
 use anyhow::Result;

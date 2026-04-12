@@ -1,11 +1,9 @@
 //! SSE stream parsing for API responses.
 
-use std::pin::Pin;
-
 use anyhow::{Context, Result};
 use futures::Stream;
 
-use crate::api::streaming::{parse_sse_event, StreamAccumulator};
+use crate::api::streaming::parse_sse_event;
 use crate::types::message::StreamEvent;
 
 // ---------------------------------------------------------------------------
@@ -88,6 +86,7 @@ where
 
 /// Parse SSE-formatted text (for testing without network). Returns all events
 /// found in the text.
+#[allow(dead_code)]
 pub fn parse_sse_text(text: &str) -> Result<Vec<StreamEvent>> {
     let mut events = Vec::new();
     let mut current_event_type = String::new();

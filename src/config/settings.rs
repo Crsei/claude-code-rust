@@ -8,8 +8,6 @@
 //!
 //! The merged result drives `AppState::settings`.
 
-#![allow(unused)]
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -76,10 +74,13 @@ pub struct MergedConfig {
     pub theme: Option<String>,
     pub verbose: bool,
     pub permission_mode: Option<String>,
+    #[allow(dead_code)]
     pub allowed_tools: Vec<String>,
+    #[allow(dead_code)]
     pub system_prompt: Option<String>,
     pub hooks: HashMap<String, serde_json::Value>,
     pub api_key: Option<String>,
+    #[allow(dead_code)]
     pub extra: HashMap<String, serde_json::Value>,
 }
 

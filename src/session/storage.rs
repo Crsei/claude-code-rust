@@ -4,9 +4,7 @@
 //! Each session is identified by a UUID and contains the full message history
 //! along with metadata (creation time, working directory, etc.).
 
-#![allow(unused)]
-
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use chrono::Utc;

@@ -5,9 +5,6 @@
 //! - "set"  : modifies a setting (writes back to the project config file)
 //! - "list" : returns all current settings
 
-#![allow(unused)]
-
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};

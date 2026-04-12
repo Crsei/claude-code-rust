@@ -7,8 +7,6 @@
 //! The TypeScript version uses an interactive React-based log selector.
 //! In the Rust CLI we accept a session ID argument directly.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 

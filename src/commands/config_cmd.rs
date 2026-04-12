@@ -5,8 +5,6 @@
 //! - `/config set <key> <value>` -- set a configuration value
 //! - `/config reset`        -- reset to defaults
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 

@@ -1,26 +1,24 @@
-#![allow(unused)]
 //! API client — creates provider-specific HTTP clients and drives the
 //! Anthropic Messages API (streaming + non-streaming).
 use std::pin::Pin;
-use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use futures::Stream;
 use serde_json::Value;
 
-use crate::types::message::{AssistantMessage, Message, StreamEvent, Usage};
+use crate::types::message::{AssistantMessage, StreamEvent};
 
 // Re-export siblings for convenience within this module's tests.
 use crate::api::providers::{ProviderInfo, ProviderProtocol};
-use crate::api::retry::{categorize_api_error, ApiErrorCategory};
-use crate::api::streaming::{parse_sse_event, StreamAccumulator};
+use crate::api::streaming::StreamAccumulator;
 
 mod stream;
 #[cfg(test)]
 mod tests;
 
 pub(crate) use stream::parse_sse_byte_stream;
-pub use stream::parse_sse_text;
+#[cfg(test)]
+use stream::parse_sse_text;
 
 /// API provider enum — determines wire protocol and auth method.
 #[derive(Debug, Clone)]
@@ -31,12 +29,14 @@ pub enum ApiProvider {
         base_url: Option<String>,
     },
     /// Azure Foundry (Anthropic-compatible)
+    #[allow(dead_code)]
     Azure { endpoint: String, api_key: String },
     /// OpenAI-compatible provider (OpenAI, DeepSeek, Groq, Qwen, etc.)
     OpenAiCompat {
         name: String,
         api_key: String,
         base_url: String,
+        #[allow(dead_code)]
         default_model: String,
     },
     /// Google Gemini (streamGenerateContent API)
@@ -69,6 +69,7 @@ pub struct MessagesRequest {
 pub struct ApiClientConfig {
     pub provider: ApiProvider,
     pub default_model: String,
+    #[allow(dead_code)]
     pub max_retries: usize,
     pub timeout_secs: u64,
 }
@@ -138,6 +139,7 @@ impl ApiClient {
     ///
     /// Only used for Anthropic-format providers (Anthropic, Azure).
     /// OpenAI-compat and Google providers build their URLs internally.
+    #[allow(dead_code)]
     pub fn build_url(&self) -> String {
         match &self.config.provider {
             ApiProvider::Anthropic { base_url, .. } => {
@@ -257,6 +259,7 @@ impl ApiClient {
     }
 
     /// Build the required HTTP headers for Anthropic-format providers.
+    #[allow(dead_code)]
     pub fn build_headers(&self) -> reqwest::header::HeaderMap {
         use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 
@@ -292,6 +295,7 @@ impl ApiClient {
     }
 
     /// Header accessor as a simple map (works without network feature, for tests).
+    #[allow(dead_code)]
     pub fn build_headers_map(&self) -> std::collections::HashMap<String, String> {
         let mut map = std::collections::HashMap::new();
         map.insert("content-type".to_string(), "application/json".to_string());
@@ -330,6 +334,7 @@ impl ApiClient {
     ///
     /// Internally uses the streaming endpoint and collects all events via
     /// `StreamAccumulator`.
+    #[allow(dead_code)]
     pub async fn messages(&self, request: MessagesRequest) -> Result<AssistantMessage> {
         use futures::StreamExt;
 

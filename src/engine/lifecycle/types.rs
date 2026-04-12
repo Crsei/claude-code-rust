@@ -51,9 +51,12 @@ pub enum AbortReason {
     /// User pressed Ctrl-C or called abort().
     UserAbort,
     /// Max budget exceeded.
+    #[allow(dead_code)]
     MaxBudget { spent_usd: f64, limit_usd: f64 },
     /// Max turns exceeded.
+    #[allow(dead_code)]
     MaxTurns { turns: usize, limit: usize },
     /// Unrecoverable API error.
+    #[allow(dead_code)]
     ApiError { message: String },
 }

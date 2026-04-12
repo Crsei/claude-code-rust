@@ -7,8 +7,6 @@
 //! In the TypeScript version this opens an interactive model picker (React).
 //! In the Rust CLI we accept the model name directly as an argument.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 

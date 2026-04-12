@@ -10,8 +10,6 @@
 //! The TypeScript version opens a React-based PermissionRuleList component.
 //! In the Rust CLI we display a text listing and accept subcommands.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 
