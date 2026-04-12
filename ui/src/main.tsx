@@ -11,8 +11,8 @@ import { fileURLToPath } from 'url'
 // Resolve the Rust binary path
 // Default: look for it relative to this script, or use env var
 const rustBinaryDefault = process.platform === 'win32'
-  ? 'cc-rust.exe'
-  : 'cc-rust'
+  ? 'claude-code-rs.exe'
+  : 'claude-code-rs'
 
 const binaryPath = process.env.CC_RUST_BINARY
   || resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'target', 'release', rustBinaryDefault)

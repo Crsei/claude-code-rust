@@ -7,6 +7,7 @@ use tracing::debug;
 use crate::engine::lifecycle::QueryEngine;
 use crate::types::config::QuerySource;
 use crate::types::tool::*;
+use crate::utils::bash::validate_working_directory;
 
 use super::{build_child_config, collect_stream_result, AgentInput, AgentTool};
 
@@ -24,6 +25,9 @@ impl AgentTool {
         let child_cwd = std::env::current_dir()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| ".".to_string());
+
+        // Validate that the working directory is usable before spawning subagent
+        validate_working_directory(&child_cwd)?;
 
         let child_config = build_child_config(
             child_cwd,

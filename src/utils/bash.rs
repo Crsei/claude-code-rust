@@ -6,8 +6,6 @@
 //!
 //! Reference: TypeScript `src/utils/bash/` directory.
 
-#![allow(unused)]
-
 use std::path::Path;
 use std::time::Duration;
 
@@ -130,30 +128,6 @@ pub fn extract_command_name(command: &str) -> Option<String> {
         return Some(name.to_string());
     }
     None
-}
-
-// =============================================================================
-// Shell escaping
-// =============================================================================
-
-/// Quote/escape a list of arguments for safe shell use.
-///
-/// Each argument is individually quoted so it is treated as a single
-/// shell word, preventing injection.
-pub fn quote_args(args: &[&str]) -> String {
-    shell_words::join(args)
-}
-
-/// Quote a single shell argument.
-pub fn quote_arg(arg: &str) -> String {
-    shell_words::join(&[arg])
-}
-
-/// Escape a command string for use inside single quotes.
-///
-/// Replaces each `'` with `'\''` (end quote, escaped quote, start quote).
-pub fn escape_for_single_quotes(s: &str) -> String {
-    s.replace('\'', "'\"'\"'")
 }
 
 // =============================================================================
@@ -560,21 +534,6 @@ mod tests {
             extract_command_name("/usr/bin/python3 script.py"),
             Some("python3".into()),
         );
-    }
-
-    // --- quote_args ---
-
-    #[test]
-    fn test_quote_args_simple() {
-        let quoted = quote_args(&["echo", "hello world"]);
-        assert_eq!(quoted, "echo 'hello world'");
-    }
-
-    #[test]
-    fn test_quote_arg_with_special_chars() {
-        let quoted = quote_arg("it's a test");
-        assert!(quoted.contains("it"));
-        assert!(quoted.contains("test"));
     }
 
     // --- unterminated quotes ---

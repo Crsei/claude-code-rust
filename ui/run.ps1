@@ -14,12 +14,11 @@
 #   - bun install (in this directory)
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $ScriptDir
 
 if (-not $env:CC_RUST_BINARY) {
     $candidates = @(
-        "..\target\release\claude-code-rs.exe",
-        "..\target\debug\claude-code-rs.exe"
+        (Join-Path $ScriptDir "..\target\release\claude-code-rs.exe"),
+        (Join-Path $ScriptDir "..\target\debug\claude-code-rs.exe")
     )
     foreach ($c in $candidates) {
         if (Test-Path $c) {
@@ -34,4 +33,5 @@ if (-not $env:CC_RUST_BINARY) {
 }
 
 Write-Host "Using binary: $env:CC_RUST_BINARY" -ForegroundColor Cyan
-bun run src/main.tsx @args
+$entryPoint = Join-Path $ScriptDir "src\main.tsx"
+bun run $entryPoint @args

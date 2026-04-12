@@ -4,8 +4,6 @@
 //! On Windows, uses `powershell.exe -NoProfile -NonInteractive -Command`.
 //! On non-Windows, uses `pwsh -NoProfile -NonInteractive -Command`.
 
-use std::time::Duration;
-
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -15,6 +13,8 @@ use crate::types::tool::{
     InterruptBehavior, PermissionResult, Tool, ToolProgress, ToolResult, ToolUseContext,
     ValidationResult,
 };
+use crate::utils::bash::resolve_timeout;
+use crate::utils::shell::build_shell_env;
 
 use super::bash::truncate_output;
 
@@ -144,12 +144,16 @@ impl Tool for PowerShellTool {
             .arg("-NonInteractive")
             .arg("-Command")
             .arg(&command);
+
+        // Inject shell environment (TERM, LANG, GIT_PAGER=cat, CLAUDE_CODE=1, etc.)
+        for (k, v) in build_shell_env() {
+            cmd.env(&k, &v);
+        }
+
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
 
-        // Cap timeout at 600_000 ms (10 min)
-        let capped_ms = timeout_ms.min(600_000);
-        let timeout_duration = Duration::from_millis(capped_ms);
+        let timeout_duration = resolve_timeout(Some(timeout_ms));
 
         let result = tokio::time::timeout(timeout_duration, cmd.output()).await;
 
@@ -188,7 +192,7 @@ impl Tool for PowerShellTool {
                 new_messages: vec![],
             }),
             Err(_) => Ok(ToolResult {
-                data: json!({ "error": format!("PowerShell command timed out after {}ms", capped_ms) }),
+                data: json!({ "error": format!("PowerShell command timed out after {}ms", timeout_duration.as_millis()) }),
                 new_messages: vec![],
             }),
         }

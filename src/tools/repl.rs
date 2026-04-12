@@ -4,7 +4,6 @@
 //! and executes it with a timeout.
 
 use std::collections::HashMap;
-use std::time::Duration;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -15,6 +14,7 @@ use crate::types::message::AssistantMessage;
 use crate::types::tool::{
     InterruptBehavior, Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult,
 };
+use crate::utils::bash::resolve_timeout;
 
 use super::bash::truncate_output;
 
@@ -181,8 +181,7 @@ impl Tool for ReplTool {
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
 
-        let capped_ms = timeout_ms.min(600_000);
-        let timeout_duration = Duration::from_millis(capped_ms);
+        let timeout_duration = resolve_timeout(Some(timeout_ms));
 
         let result = tokio::time::timeout(timeout_duration, cmd.output()).await;
 
@@ -222,7 +221,7 @@ impl Tool for ReplTool {
                 new_messages: vec![],
             }),
             Err(_) => Ok(ToolResult {
-                data: json!({ "error": format!("Execution timed out after {}ms", capped_ms) }),
+                data: json!({ "error": format!("Execution timed out after {}ms", timeout_duration.as_millis()) }),
                 new_messages: vec![],
             }),
         }

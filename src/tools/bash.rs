@@ -1,15 +1,20 @@
-use std::time::Duration;
-
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::process::Command;
 
+use crate::permissions::dangerous::is_dangerous_command;
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{
     InterruptBehavior, PermissionResult, Tool, ToolProgress, ToolResult, ToolUseContext,
     ValidationResult,
 };
+use crate::utils::bash::{
+    extract_command_name, extract_command_prefixes, has_malformed_tokens, has_unterminated_quotes,
+    is_command_parseable, parse_command, resolve_timeout, rewrite_windows_null_redirect,
+    should_add_stdin_redirect, split_compound_command,
+};
+use crate::utils::shell::{build_shell_env, detect_default_shell};
 
 /// Truncate output using head+tail strategy.
 /// Keeps first `head_lines` lines and last `tail_lines` lines,
@@ -78,18 +83,18 @@ impl BashTool {
         BashTool
     }
 
-    fn parse_input(input: &Value) -> (String, u64, Option<String>) {
+    fn parse_input(input: &Value) -> (String, Option<u64>, Option<String>) {
         let command = input
             .get("command")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let timeout = input.get("timeout").and_then(|v| v.as_u64()).unwrap_or(120);
+        let timeout_ms = input.get("timeout").and_then(|v| v.as_u64());
         let description = input
             .get("description")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        (command, timeout, description)
+        (command, timeout_ms, description)
     }
 }
 
@@ -142,18 +147,70 @@ impl Tool for BashTool {
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
         let command = input.get("command").and_then(|v| v.as_str()).unwrap_or("");
-        if command.is_empty() {
+        if !is_command_parseable(command) {
             return ValidationResult::Error {
-                message: "Command must not be empty".to_string(),
+                message: if command.is_empty() {
+                    "Command must not be empty".to_string()
+                } else {
+                    "Command exceeds maximum parseable length".to_string()
+                },
                 error_code: 1,
             };
+        }
+        if has_unterminated_quotes(command) {
+            return ValidationResult::Error {
+                message: "Command has unterminated quotes".to_string(),
+                error_code: 1,
+            };
+        }
+        // Check each parsed token for unbalanced brackets/braces
+        if let Ok(tokens) = parse_command(command) {
+            for token in &tokens {
+                if has_malformed_tokens(token) {
+                    return ValidationResult::Error {
+                        message: format!(
+                            "Command contains malformed token with unbalanced brackets: {}",
+                            token
+                        ),
+                        error_code: 1,
+                    };
+                }
+            }
         }
         ValidationResult::Ok
     }
 
-    async fn check_permissions(&self, input: &Value, _ctx: &ToolUseContext) -> PermissionResult {
-        // In a full implementation, this would check dangerous command patterns,
-        // permission mode, etc. For now, allow all.
+    async fn check_permissions(&self, input: &Value, ctx: &ToolUseContext) -> PermissionResult {
+        let command = input.get("command").and_then(|v| v.as_str()).unwrap_or("");
+
+        // Check each sub-command in a compound command for dangerous patterns
+        for subcmd in split_compound_command(command) {
+            if let Some(reason) = is_dangerous_command(&subcmd) {
+                return PermissionResult::Ask {
+                    message: format!("Dangerous command detected: {}", reason),
+                };
+            }
+        }
+
+        // Check per-command prefix deny rules from permission context.
+        // Rules like "Bash(prefix:rm)" block commands starting with "rm".
+        let app_state = (ctx.get_app_state)();
+        let prefixes = extract_command_prefixes(command);
+        for deny_rules in app_state.tool_permission_context.always_deny_rules.values() {
+            for rule in deny_rules {
+                if let Some(prefix_pat) = rule
+                    .strip_prefix("Bash(prefix:")
+                    .and_then(|s| s.strip_suffix(')'))
+                {
+                    if prefixes.iter().any(|p| p.starts_with(prefix_pat)) {
+                        return PermissionResult::Deny {
+                            message: format!("Denied by rule: {}", rule),
+                        };
+                    }
+                }
+            }
+        }
+
         PermissionResult::Allow {
             updated_input: input.clone(),
         }
@@ -166,7 +223,7 @@ impl Tool for BashTool {
         _parent_message: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let (command, timeout_secs, _description) = Self::parse_input(&input);
+        let (command, timeout_ms, _description) = Self::parse_input(&input);
 
         if command.is_empty() {
             return Ok(ToolResult {
@@ -175,22 +232,37 @@ impl Tool for BashTool {
             });
         }
 
-        // Use sh on Unix, cmd on Windows (but we use bash syntax per project convention)
-        let mut cmd = if cfg!(target_os = "windows") {
-            let mut c = Command::new("bash");
-            c.arg("-c").arg(&command);
-            c
+        // Detect the best available shell for the current platform
+        let shell = detect_default_shell();
+
+        // Rewrite Windows CMD-style `>nul` to POSIX `/dev/null` for POSIX shells
+        let mut command = if shell.kind.is_posix() {
+            rewrite_windows_null_redirect(&command)
         } else {
-            let mut c = Command::new("sh");
-            c.arg("-c").arg(&command);
-            c
+            command
         };
+
+        // Add stdin redirect (< /dev/null) to prevent interactive hangs,
+        // unless the command uses heredoc or already has a stdin redirect
+        if shell.needs_stdin_redirect && should_add_stdin_redirect(&command) {
+            command = format!("{} < /dev/null", command);
+        }
+        let mut cmd = Command::new(&shell.path);
+        for arg in &shell.exec_args {
+            cmd.arg(arg);
+        }
+        cmd.arg(&command);
+
+        // Inject shell environment (TERM, LANG, GIT_PAGER=cat, CLAUDE_CODE=1, etc.)
+        for (k, v) in build_shell_env() {
+            cmd.env(&k, &v);
+        }
 
         // Capture stdout and stderr
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
 
-        let timeout_duration = Duration::from_secs(timeout_secs);
+        let timeout_duration = resolve_timeout(timeout_ms);
 
         let result = tokio::time::timeout(timeout_duration, cmd.output()).await;
 
@@ -230,7 +302,7 @@ impl Tool for BashTool {
                 new_messages: vec![],
             }),
             Err(_) => Ok(ToolResult {
-                data: json!({ "error": format!("Command timed out after {}s", timeout_secs) }),
+                data: json!({ "error": format!("Command timed out after {}ms", timeout_duration.as_millis()) }),
                 new_messages: vec![],
             }),
         }
@@ -343,8 +415,16 @@ Important:\n\
 - View comments on a Github PR: gh api repos/foo/bar/pulls/123/comments".to_string()
     }
 
-    fn user_facing_name(&self, _input: Option<&Value>) -> String {
-        "Bash".to_string()
+    fn user_facing_name(&self, input: Option<&Value>) -> String {
+        if let Some(name) = input
+            .and_then(|v| v.get("command"))
+            .and_then(|v| v.as_str())
+            .and_then(|cmd| extract_command_name(cmd))
+        {
+            format!("Bash({})", name)
+        } else {
+            "Bash".to_string()
+        }
     }
 }
 

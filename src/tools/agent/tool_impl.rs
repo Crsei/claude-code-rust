@@ -10,6 +10,7 @@ use crate::engine::lifecycle::QueryEngine;
 use crate::types::config::QuerySource;
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
+use crate::utils::bash::validate_working_directory;
 
 use super::{
     build_child_config, collect_stream_result, resolve_model_alias, AgentInput, AgentTool,
@@ -162,6 +163,9 @@ impl Tool for AgentTool {
             let child_cwd = std::env::current_dir()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| ".".to_string());
+
+            // Validate working directory before spawning background agent
+            validate_working_directory(&child_cwd)?;
 
             let child_config = build_child_config(
                 child_cwd, ctx, &agent_id, &agent_model, &parent_model, current_depth,

@@ -110,7 +110,7 @@ export function App() {
 
   return (
     <box flexDirection="column" height="100%">
-      <Header model={state.model} sessionId={state.sessionId} />
+      {!isWelcome && <Header model={state.model} sessionId={state.sessionId} />}
       {isWelcome ? (
         <box flexGrow={1} flexDirection="column" alignItems="center" justifyContent="center">
           <WelcomeScreen />
@@ -135,7 +135,7 @@ export function App() {
           </MessageList>
         </box>
       )}
-      <StatusBar usage={state.usage} model={state.model} vimMode={state.vimEnabled ? state.vimMode : undefined} />
+      {!isWelcome && <StatusBar usage={state.usage} model={state.model} vimMode={state.vimEnabled ? state.vimMode : undefined} />}
       {state.permissionRequest && <PermissionDialog request={state.permissionRequest} />}
     </box>
   )

@@ -23,6 +23,11 @@ export class RustBackend extends EventEmitter {
       }
     })
 
+    this.proc.on('error', (err: Error) => {
+      console.error(`[RustBackend] Failed to spawn: ${err.message}`)
+      this.emit('exit', 1)
+    })
+
     this.proc.on('exit', (code: number | null) => {
       this.emit('exit', code ?? 1)
     })

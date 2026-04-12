@@ -6,6 +6,8 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
+use crate::utils::bash::{contains_multiline_string, has_unterminated_quotes};
+
 /// A single danger pattern: compiled regex + human-readable reason.
 struct DangerPattern {
     regex: Regex,
@@ -119,6 +121,18 @@ static DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(|| {
 /// ```
 pub fn is_dangerous_command(command: &str) -> Option<String> {
     let trimmed = command.trim();
+
+    // Defense-in-depth: flag commands with unterminated quotes as potentially
+    // obfuscated to bypass pattern matching
+    if has_unterminated_quotes(trimmed) {
+        return Some("Command has unterminated quotes — may be attempting to bypass safety checks".to_string());
+    }
+
+    // Flag commands with multiline strings hidden inside quotes, as they can
+    // conceal dangerous operations from single-line regex patterns
+    if contains_multiline_string(trimmed) {
+        return Some("Command contains multiline strings inside quotes — may hide dangerous operations".to_string());
+    }
 
     for pattern in DANGER_PATTERNS.iter() {
         if pattern.regex.is_match(trimmed) {
