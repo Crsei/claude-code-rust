@@ -149,3 +149,44 @@ Each issue includes a description, reproduction steps, and current status.
 - `src/tools/agent.rs` — `tokio::spawn` 调用
 - `src/tools/background_agents.rs` — `PendingBackgroundResults`
 - `src/shutdown.rs` — `graceful_shutdown()`
+## 9. Tool-call display and shortcut discoverability were too weak
+
+**Status**: Fixed (2026-04-13)
+
+**Description**: The frontend rendered `tool_use` and `tool_result` as unrelated top-level blocks, so replayed conversations lost the original activity structure and busy sessions became hard to scan. Shortcut hints were also scattered across components, which made transcript mode and redraw or browse controls hard to discover.
+
+**Expected behavior**: Tool calls should render as a paired activity timeline, read/search bursts should collapse in prompt view, transcript mode should expose expanded activity summaries without dumping raw output, and shortcut labels should come from one shared registry.
+
+**Fix**:
+1. Preserved raw `content_blocks` in `conversation_replaced` so replayed history can rebuild tool activity timelines.
+2. Split frontend state into raw messages plus derived render items, then grouped `Read` / `Glob` / `Grep` calls in prompt view while keeping transcript view expanded and read-only.
+3. Replaced separate tool use/result blocks with unified `ToolActivity` and `ToolGroup` renderers.
+4. Centralized fixed keyboard bindings for transcript toggle, redraw, Vim toggle, scrolling, and command-completion hints.
+
+**Related files**:
+- `src/ipc/protocol.rs`
+- `src/ipc/headless.rs`
+- `ui/src/ipc/protocol.ts`
+- `ui/src/store/message-model.ts`
+- `ui/src/store/app-store.tsx`
+- `ui/src/components/App.tsx`
+- `ui/src/components/MessageList.tsx`
+- `ui/src/components/InputPrompt.tsx`
+
+## 10. Busy prompt could not queue follow-up steering messages
+
+**Status**: Fixed (2026-04-14)
+
+**Description**: While Claude was mid-response or still executing a task, the prompt allowed drafting text but blocked `Enter`, so users could not queue a second follow-up message the way `claude-code-bun` supports "steering while it works".
+
+**Expected behavior**: When the current turn is busy, submitting a normal prompt should enqueue it client-side and automatically send it after the current turn finishes, without forcing an interrupt.
+
+**Fix**:
+1. Added a frontend FIFO queue for follow-up prompt submissions.
+2. Changed busy `Enter` handling so normal prompts are queued instead of dropped.
+3. Added queued-preview rendering in the composer and a queued-count hint in the input title.
+
+**Related files**:
+- `ui/src/store/app-store.tsx`
+- `ui/src/components/App.tsx`
+- `ui/src/components/InputPrompt.tsx`

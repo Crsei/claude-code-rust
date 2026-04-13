@@ -17,9 +17,11 @@ use crate::engine::lifecycle::QueryEngine;
 use crate::engine::sdk_types::SdkMessage;
 use crate::services::prompt_suggestion::PromptSuggestionService;
 use crate::types::config::QuerySource;
-use crate::types::message::{ContentBlock, Message, StreamEvent, ToolResultContent};
+use crate::types::message::{
+    ContentBlock, Message, MessageContent, StreamEvent, ToolResultContent,
+};
 
-use super::protocol::{send_to_frontend, BackendMessage, FrontendMessage};
+use super::protocol::{send_to_frontend, BackendMessage, ConversationMessage, FrontendMessage};
 
 /// Pending permission requests awaiting a response from the frontend.
 type PendingPermissions = Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>;
@@ -223,6 +225,111 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
 // Slash command execution
 // ---------------------------------------------------------------------------
 
+fn conversation_changed(before: &[Message], after: &[Message]) -> bool {
+    before.len() != after.len()
+        || before
+            .iter()
+            .zip(after.iter())
+            .any(|(lhs, rhs)| lhs.uuid() != rhs.uuid())
+}
+
+fn flatten_blocks(blocks: &[ContentBlock]) -> (String, Option<String>) {
+    let mut text_parts = Vec::new();
+    let mut thinking_parts = Vec::new();
+
+    for block in blocks {
+        match block {
+            ContentBlock::Text { text } => text_parts.push(text.clone()),
+            ContentBlock::Thinking { thinking, .. } => thinking_parts.push(thinking.clone()),
+            _ => {}
+        }
+    }
+
+    let text = text_parts.join("\n");
+    let thinking = if thinking_parts.is_empty() {
+        None
+    } else {
+        Some(thinking_parts.join("\n"))
+    };
+
+    (text, thinking)
+}
+
+fn to_conversation_message(message: &Message) -> Option<ConversationMessage> {
+    match message {
+        Message::User(user) => {
+            let content = match &user.content {
+                MessageContent::Text(text) => text.clone(),
+                MessageContent::Blocks(blocks) => flatten_blocks(blocks).0,
+            };
+
+            Some(ConversationMessage {
+                id: user.uuid.to_string(),
+                role: "user".to_string(),
+                content,
+                timestamp: user.timestamp,
+                content_blocks: match &user.content {
+                    MessageContent::Blocks(blocks) => Some(blocks.clone()),
+                    MessageContent::Text(_) => None,
+                },
+                cost_usd: None,
+                thinking: None,
+                level: None,
+            })
+        }
+        Message::Assistant(assistant) => {
+            let (content, thinking) = flatten_blocks(&assistant.content);
+            Some(ConversationMessage {
+                id: assistant.uuid.to_string(),
+                role: "assistant".to_string(),
+                content,
+                timestamp: assistant.timestamp,
+                content_blocks: Some(assistant.content.clone()),
+                cost_usd: Some(assistant.cost_usd),
+                thinking,
+                level: None,
+            })
+        }
+        Message::System(system) => {
+            let level = match &system.subtype {
+                crate::types::message::SystemSubtype::Informational { level } => Some(
+                    match level {
+                        crate::types::message::InfoLevel::Info => "info",
+                        crate::types::message::InfoLevel::Warning => "warning",
+                        crate::types::message::InfoLevel::Error => "error",
+                    }
+                    .to_string(),
+                ),
+                crate::types::message::SystemSubtype::Warning => Some("warning".to_string()),
+                crate::types::message::SystemSubtype::ApiError { .. } => Some("error".to_string()),
+                _ => Some("info".to_string()),
+            };
+
+            Some(ConversationMessage {
+                id: system.uuid.to_string(),
+                role: "system".to_string(),
+                content: system.content.clone(),
+                timestamp: system.timestamp,
+                content_blocks: None,
+                cost_usd: None,
+                thinking: None,
+                level,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn send_conversation_replaced(messages: &[Message]) {
+    let visible_messages: Vec<_> = messages
+        .iter()
+        .filter_map(to_conversation_message)
+        .collect();
+    let _ = send_to_frontend(&BackendMessage::ConversationReplaced {
+        messages: visible_messages,
+    });
+}
+
 /// Parse and execute a slash command, sending results as BackendMessages.
 async fn handle_slash_command(raw: &str, engine: &Arc<QueryEngine>) {
     let trimmed = raw.trim();
@@ -244,9 +351,10 @@ async fn handle_slash_command(raw: &str, engine: &Arc<QueryEngine>) {
 
     let all_commands = commands::get_all_commands();
     let cmd = &all_commands[cmd_idx];
+    let original_messages = engine.messages();
 
     let mut ctx = CommandContext {
-        messages: engine.messages(),
+        messages: original_messages.clone(),
         cwd: std::path::PathBuf::from(engine.cwd()),
         app_state: engine.app_state(),
         session_id: engine.session_id.clone(),
@@ -257,22 +365,29 @@ async fn handle_slash_command(raw: &str, engine: &Arc<QueryEngine>) {
     // Sync any state mutations (e.g. /add-dir) back to the engine
     if cmd_result.is_ok() {
         engine.update_app_state(|s| {
-            s.tool_permission_context.additional_working_directories =
-                ctx.app_state.tool_permission_context.additional_working_directories.clone();
+            s.tool_permission_context.additional_working_directories = ctx
+                .app_state
+                .tool_permission_context
+                .additional_working_directories
+                .clone();
         });
     }
 
     match cmd_result {
         Ok(result) => match result {
             CommandResult::Output(text) => {
+                if conversation_changed(&original_messages, &ctx.messages) {
+                    engine.replace_messages(ctx.messages.clone());
+                    send_conversation_replaced(&ctx.messages);
+                }
                 let _ = send_to_frontend(&BackendMessage::SystemInfo {
                     text,
                     level: "info".to_string(),
                 });
             }
             CommandResult::Clear => {
-                // TODO: engine currently has no clear_messages() method;
-                // for now, notify the frontend that the conversation was cleared.
+                engine.clear_messages();
+                send_conversation_replaced(&[]);
                 let _ = send_to_frontend(&BackendMessage::SystemInfo {
                     text: "Conversation cleared.".to_string(),
                     level: "info".to_string(),
@@ -286,6 +401,10 @@ async fn handle_slash_command(raw: &str, engine: &Arc<QueryEngine>) {
                 // The frontend should observe this and send Quit.
             }
             CommandResult::Query(msgs) => {
+                if conversation_changed(&original_messages, &ctx.messages) {
+                    engine.replace_messages(ctx.messages.clone());
+                    send_conversation_replaced(&ctx.messages);
+                }
                 // The command produced messages that should be sent to the model.
                 // Spawn a query, similar to SubmitPrompt.
                 let engine_clone = engine.clone();
@@ -310,17 +429,14 @@ async fn handle_slash_command(raw: &str, engine: &Arc<QueryEngine>) {
                     let svc = Arc::new(Mutex::new(PromptSuggestionService::new(true)));
                     tokio::spawn(async move {
                         engine_clone.reset_abort();
-                        let stream = engine_clone
-                            .submit_message(&prompt_text, QuerySource::ReplMainThread);
+                        let stream =
+                            engine_clone.submit_message(&prompt_text, QuerySource::ReplMainThread);
                         let mut stream = std::pin::pin!(stream);
 
                         while let Some(sdk_msg) = stream.next().await {
-                            if let Err(e) = handle_sdk_message(
-                                &sdk_msg,
-                                &message_id,
-                                &engine_clone,
-                                &svc,
-                            ) {
+                            if let Err(e) =
+                                handle_sdk_message(&sdk_msg, &message_id, &engine_clone, &svc)
+                            {
                                 error!("headless: command query send error: {}", e);
                                 break;
                             }
@@ -328,7 +444,12 @@ async fn handle_slash_command(raw: &str, engine: &Arc<QueryEngine>) {
                     });
                 }
             }
-            CommandResult::None => {}
+            CommandResult::None => {
+                if conversation_changed(&original_messages, &ctx.messages) {
+                    engine.replace_messages(ctx.messages.clone());
+                    send_conversation_replaced(&ctx.messages);
+                }
+            }
         },
         Err(e) => {
             let _ = send_to_frontend(&BackendMessage::Error {
@@ -354,18 +475,16 @@ fn handle_sdk_message(
 ) -> std::io::Result<()> {
     match sdk_msg {
         // ── SystemInit ──────────────────────────────────────────
-        SdkMessage::SystemInit(init) => {
-            send_to_frontend(&BackendMessage::SystemInfo {
-                text: format!(
-                    "Session {} initialized — model: {}, permission: {}, {} tools",
-                    init.session_id,
-                    init.model,
-                    init.permission_mode,
-                    init.tools.len()
-                ),
-                level: "info".to_string(),
-            })
-        }
+        SdkMessage::SystemInit(init) => send_to_frontend(&BackendMessage::SystemInfo {
+            text: format!(
+                "Permission: {}, {} tools, {} skills, {} MCPs",
+                init.permission_mode,
+                init.tools.len(),
+                init.skills_count,
+                init.mcps_count,
+            ),
+            level: "info".to_string(),
+        }),
 
         // ── StreamEvent ─────────────────────────────────────────
         SdkMessage::StreamEvent(evt) => handle_stream_event(&evt.event, message_id),
@@ -464,12 +583,10 @@ fn handle_sdk_message(
         }),
 
         // ── ToolUseSummary ──────────────────────────────────────
-        SdkMessage::ToolUseSummary(summary) => {
-            send_to_frontend(&BackendMessage::SystemInfo {
-                text: summary.summary.clone(),
-                level: "info".to_string(),
-            })
-        }
+        SdkMessage::ToolUseSummary(summary) => send_to_frontend(&BackendMessage::SystemInfo {
+            text: summary.summary.clone(),
+            level: "info".to_string(),
+        }),
 
         // ── Result ──────────────────────────────────────────────
         SdkMessage::Result(r) => {
@@ -515,6 +632,11 @@ fn handle_stream_event(event: &StreamEvent, message_id: &str) -> std::io::Result
                 send_to_frontend(&BackendMessage::StreamDelta {
                     message_id: message_id.to_string(),
                     text: text.to_string(),
+                })
+            } else if let Some(thinking) = delta.get("thinking").and_then(|v| v.as_str()) {
+                send_to_frontend(&BackendMessage::ThinkingDelta {
+                    message_id: message_id.to_string(),
+                    thinking: thinking.to_string(),
                 })
             } else {
                 Ok(())

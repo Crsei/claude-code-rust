@@ -1,21 +1,7 @@
 import React, { createContext, useContext, useReducer, type Dispatch } from 'react'
-
-// --- Types ---
-
-export interface UIMessage {
-  id: string
-  role: 'user' | 'assistant' | 'system' | 'tool_use' | 'tool_result'
-  content: string
-  timestamp: number
-  // For assistant messages
-  costUsd?: number
-  // For tool messages
-  toolName?: string
-  toolInput?: any
-  isError?: boolean
-  // For system messages
-  level?: string
-}
+import type { FrontendContentBlock } from '../ipc/protocol.js'
+import type { ViewMode } from '../keybindings.js'
+import type { RawMessage } from './message-model.js'
 
 export interface Usage {
   inputTokens: number
@@ -30,9 +16,27 @@ export interface PermissionRequest {
   options: string[]
 }
 
+export interface BackgroundAgent {
+  agentId: string
+  description: string
+  startedAt: number
+  completedAt?: number
+  resultPreview?: string
+  hadError?: boolean
+  durationMs?: number
+}
+
+export interface QueuedSubmission {
+  id: string
+  kind: 'prompt'
+  text: string
+  queuedAt: number
+}
+
 export interface AppState {
-  messages: UIMessage[]
+  messages: RawMessage[]
   streamingText: string
+  streamingThinking: string
   streamingMessageId: string | null
   isStreaming: boolean
   isWaiting: boolean
@@ -46,11 +50,15 @@ export interface AppState {
   historyIndex: number
   vimEnabled: boolean
   vimMode: string
+  backgroundAgents: BackgroundAgent[]
+  queuedSubmissions: QueuedSubmission[]
+  viewMode: ViewMode
 }
 
 export const initialState: AppState = {
   messages: [],
   streamingText: '',
+  streamingThinking: '',
   streamingMessageId: null,
   isStreaming: false,
   isWaiting: false,
@@ -64,18 +72,28 @@ export const initialState: AppState = {
   historyIndex: -1,
   vimEnabled: false,
   vimMode: 'NORMAL',
+  backgroundAgents: [],
+  queuedSubmissions: [],
+  viewMode: 'prompt',
 }
-
-// --- Actions ---
 
 export type AppAction =
   | { type: 'READY'; model: string; sessionId: string; cwd: string }
+  | { type: 'REPLACE_MESSAGES'; messages: RawMessage[] }
   | { type: 'ADD_USER_MESSAGE'; id: string; text: string }
   | { type: 'ADD_COMMAND_MESSAGE'; id: string; text: string }
   | { type: 'STREAM_START'; messageId: string }
   | { type: 'STREAM_DELTA'; text: string }
+  | { type: 'THINKING_DELTA'; thinking: string }
   | { type: 'STREAM_END' }
-  | { type: 'ASSISTANT_MESSAGE'; id: string; content: string; costUsd: number }
+  | {
+      type: 'ASSISTANT_MESSAGE'
+      id: string
+      content: string
+      contentBlocks?: FrontendContentBlock[]
+      costUsd: number
+      thinking?: string
+    }
   | { type: 'TOOL_USE'; id: string; name: string; input: any }
   | { type: 'TOOL_RESULT'; toolUseId: string; output: string; isError: boolean }
   | { type: 'PERMISSION_REQUEST'; request: PermissionRequest }
@@ -84,17 +102,39 @@ export type AppAction =
   | { type: 'USAGE_UPDATE'; usage: Usage }
   | { type: 'SUGGESTIONS'; items: string[] }
   | { type: 'ERROR'; message: string }
+  | { type: 'BG_AGENT_STARTED'; agentId: string; description: string }
+  | {
+      type: 'BG_AGENT_COMPLETE'
+      agentId: string
+      description: string
+      resultPreview: string
+      hadError: boolean
+      durationMs: number
+    }
   | { type: 'PUSH_HISTORY'; text: string }
   | { type: 'SET_HISTORY_INDEX'; index: number }
   | { type: 'SET_VIM_MODE'; mode: string }
   | { type: 'TOGGLE_VIM' }
-
-// --- Reducer ---
+  | { type: 'QUEUE_SUBMISSION'; submission: QueuedSubmission }
+  | { type: 'DEQUEUE_SUBMISSION' }
+  | { type: 'SET_VIEW_MODE'; viewMode: ViewMode }
+  | { type: 'TOGGLE_VIEW_MODE' }
 
 export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'READY':
       return { ...state, model: action.model, sessionId: action.sessionId, cwd: action.cwd }
+
+    case 'REPLACE_MESSAGES':
+      return {
+        ...state,
+        isStreaming: false,
+        isWaiting: false,
+        streamingText: '',
+        streamingThinking: '',
+        streamingMessageId: null,
+        messages: action.messages,
+      }
 
     case 'ADD_USER_MESSAGE':
       return {
@@ -111,7 +151,6 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'ADD_COMMAND_MESSAGE':
       return {
         ...state,
-        // Slash commands don't go through stream cycle, so don't set isWaiting
         messages: [...state.messages, {
           id: action.id,
           role: 'user',
@@ -126,11 +165,15 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         isStreaming: true,
         isWaiting: false,
         streamingText: '',
+        streamingThinking: '',
         streamingMessageId: action.messageId,
       }
 
     case 'STREAM_DELTA':
       return { ...state, streamingText: state.streamingText + action.text }
+
+    case 'THINKING_DELTA':
+      return { ...state, streamingThinking: state.streamingThinking + action.thinking }
 
     case 'STREAM_END':
       return {
@@ -138,26 +181,28 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         isStreaming: false,
         isWaiting: false,
         streamingText: '',
+        streamingThinking: '',
         streamingMessageId: null,
       }
 
-    case 'ASSISTANT_MESSAGE': {
-      // Replace streaming with final message
+    case 'ASSISTANT_MESSAGE':
       return {
         ...state,
         isStreaming: false,
         isWaiting: false,
         streamingText: '',
+        streamingThinking: '',
         streamingMessageId: null,
         messages: [...state.messages, {
           id: action.id,
           role: 'assistant',
           content: action.content,
           timestamp: Date.now(),
+          contentBlocks: action.contentBlocks,
           costUsd: action.costUsd,
+          thinking: action.thinking,
         }],
       }
-    }
 
     case 'TOOL_USE':
       return {
@@ -169,6 +214,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           timestamp: Date.now(),
           toolName: action.name,
           toolInput: action.input,
+          toolUseId: action.id,
         }],
       }
 
@@ -176,10 +222,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         messages: [...state.messages, {
-          id: `result-${action.toolUseId}`,
+          id: `result-${action.toolUseId}-${Date.now()}`,
           role: 'tool_result',
           content: action.output,
           timestamp: Date.now(),
+          toolUseId: action.toolUseId,
           isError: action.isError,
         }],
       }
@@ -214,6 +261,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         isStreaming: false,
         isWaiting: false,
         streamingText: '',
+        streamingThinking: '',
         streamingMessageId: null,
         messages: [...state.messages, {
           id: `err-${Date.now()}`,
@@ -223,6 +271,51 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           level: 'error',
         }],
       }
+
+    case 'BG_AGENT_STARTED': {
+      const agent: BackgroundAgent = {
+        agentId: action.agentId,
+        description: action.description,
+        startedAt: Date.now(),
+      }
+      return {
+        ...state,
+        backgroundAgents: [...state.backgroundAgents, agent],
+        messages: [...state.messages, {
+          id: `bg-start-${action.agentId}`,
+          role: 'system',
+          content: `Background agent started: ${action.description}`,
+          timestamp: Date.now(),
+          level: 'info',
+        }],
+      }
+    }
+
+    case 'BG_AGENT_COMPLETE': {
+      const durationSec = (action.durationMs / 1000).toFixed(1)
+      const statusLabel = action.hadError ? 'FAILED' : 'DONE'
+      return {
+        ...state,
+        backgroundAgents: state.backgroundAgents.map(agent =>
+          agent.agentId === action.agentId
+            ? {
+                ...agent,
+                completedAt: Date.now(),
+                resultPreview: action.resultPreview,
+                hadError: action.hadError,
+                durationMs: action.durationMs,
+              }
+            : agent,
+        ),
+        messages: [...state.messages, {
+          id: `bg-done-${action.agentId}`,
+          role: 'system',
+          content: `${statusLabel} background agent "${action.description}" completed in ${durationSec}s\n\n${action.resultPreview}`,
+          timestamp: Date.now(),
+          level: action.hadError ? 'error' : 'info',
+        }],
+      }
+    }
 
     case 'PUSH_HISTORY':
       return {
@@ -238,14 +331,37 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, vimMode: action.mode }
 
     case 'TOGGLE_VIM':
-      return { ...state, vimEnabled: !state.vimEnabled, vimMode: state.vimEnabled ? '' : 'NORMAL' }
+      return {
+        ...state,
+        vimEnabled: !state.vimEnabled,
+        vimMode: state.vimEnabled ? '' : 'NORMAL',
+      }
+
+    case 'QUEUE_SUBMISSION':
+      return {
+        ...state,
+        queuedSubmissions: [...state.queuedSubmissions, action.submission],
+      }
+
+    case 'DEQUEUE_SUBMISSION':
+      return {
+        ...state,
+        queuedSubmissions: state.queuedSubmissions.slice(1),
+      }
+
+    case 'SET_VIEW_MODE':
+      return { ...state, viewMode: action.viewMode }
+
+    case 'TOGGLE_VIEW_MODE':
+      return {
+        ...state,
+        viewMode: state.viewMode === 'prompt' ? 'transcript' : 'prompt',
+      }
 
     default:
       return state
   }
 }
-
-// --- Context ---
 
 const StateContext = createContext<AppState>(initialState)
 const DispatchContext = createContext<Dispatch<AppAction>>(() => {})

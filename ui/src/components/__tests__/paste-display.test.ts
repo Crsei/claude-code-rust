@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { isPasteInput, formatPasteSize } from '../InputPrompt.js'
+import {
+  formatPasteSize,
+  isPasteInput,
+  promptPlaceholder,
+  summarizeQueuedSubmissions,
+} from '../InputPrompt.js'
 
 describe('isPasteInput', () => {
   test('single char is not paste', () => {
@@ -21,39 +26,64 @@ describe('isPasteInput', () => {
 
 describe('formatPasteSize', () => {
   test('small text shows fractional kb', () => {
-    const text = 'a'.repeat(100) // 100 bytes
+    const text = 'a'.repeat(100)
     expect(formatPasteSize(text)).toBe('pasted text 0.1kb')
   })
 
   test('sub-1kb text shows one decimal', () => {
-    const text = 'a'.repeat(512) // 512 bytes = 0.5kb
+    const text = 'a'.repeat(512)
     expect(formatPasteSize(text)).toBe('pasted text 0.5kb')
   })
 
   test('1kb text', () => {
-    const text = 'a'.repeat(1024) // 1024 bytes = 1kb
+    const text = 'a'.repeat(1024)
     expect(formatPasteSize(text)).toBe('pasted text 1kb')
   })
 
   test('several kb text shows one decimal', () => {
-    const text = 'a'.repeat(2560) // 2560 bytes = 2.5kb
+    const text = 'a'.repeat(2560)
     expect(formatPasteSize(text)).toBe('pasted text 2.5kb')
   })
 
   test('10kb+ rounds to integer', () => {
-    const text = 'a'.repeat(10240) // 10240 bytes = 10kb
+    const text = 'a'.repeat(10240)
     expect(formatPasteSize(text)).toBe('pasted text 10kb')
   })
 
   test('large text rounds to integer', () => {
-    const text = 'a'.repeat(51200) // 50kb
+    const text = 'a'.repeat(51200)
     expect(formatPasteSize(text)).toBe('pasted text 50kb')
   })
 
   test('multibyte unicode counted correctly', () => {
-    // Chinese chars are 3 bytes each in UTF-8
-    const text = '\u4f60'.repeat(341) // 341 * 3 = 1023 bytes ≈ 1kb
-    const result = formatPasteSize(text)
-    expect(result).toBe('pasted text 1kb')
+    const text = '\u4f60'.repeat(341)
+    expect(formatPasteSize(text)).toBe('pasted text 1kb')
+  })
+})
+
+describe('promptPlaceholder', () => {
+  test('shows drafting hint while busy', () => {
+    expect(promptPlaceholder(true)).toContain('draft the next message')
+  })
+
+  test('shows normal composer hint when idle', () => {
+    expect(promptPlaceholder(false)).toContain('Type a message')
+  })
+})
+
+describe('summarizeQueuedSubmissions', () => {
+  test('joins a short queue into a single preview line', () => {
+    expect(summarizeQueuedSubmissions([
+      { text: 'first follow-up' },
+      { text: 'second follow-up' },
+    ])).toContain('first follow-up')
+  })
+
+  test('shows overflow count for long queues', () => {
+    expect(summarizeQueuedSubmissions([
+      { text: 'one' },
+      { text: 'two' },
+      { text: 'three' },
+    ])).toContain('+1 more')
   })
 })

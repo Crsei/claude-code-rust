@@ -8,6 +8,24 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::types::message::ContentBlock;
+
+#[derive(Serialize, Debug, Clone)]
+pub struct ConversationMessage {
+    pub id: String,
+    pub role: String,
+    pub content: String,
+    pub timestamp: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_blocks: Option<Vec<ContentBlock>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub level: Option<String>,
+}
+
 // ---------------------------------------------------------------------------
 // Frontend → Backend (deserialized from stdin)
 // ---------------------------------------------------------------------------
@@ -53,6 +71,11 @@ pub enum BackendMessage {
     StreamStart { message_id: String },
     /// Streaming text delta for an in-progress content block.
     StreamDelta { message_id: String, text: String },
+    /// Streaming thinking delta for an in-progress thinking block.
+    ThinkingDelta {
+        message_id: String,
+        thinking: String,
+    },
     /// Streaming for a content block has finished.
     StreamEnd { message_id: String },
     /// Final assistant message (content is the serialized Vec<ContentBlock>).
@@ -86,6 +109,8 @@ pub enum BackendMessage {
         /// One of "info", "warning", "error".
         level: String,
     },
+    /// Replace the full visible conversation history in the frontend.
+    ConversationReplaced { messages: Vec<ConversationMessage> },
     /// Token usage update.
     UsageUpdate {
         input_tokens: u64,
@@ -114,16 +139,10 @@ pub enum BackendMessage {
     },
 
     /// Autonomous action started (proactive tick).
-    AutonomousStart {
-        source: String,
-        time: String,
-    },
+    AutonomousStart { source: String, time: String },
 
     /// Push notification sent.
-    NotificationSent {
-        title: String,
-        level: String,
-    },
+    NotificationSent { title: String, level: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -138,4 +157,60 @@ pub fn send_to_frontend(msg: &BackendMessage) -> std::io::Result<()> {
     let mut stdout = std::io::stdout().lock();
     writeln!(stdout, "{}", json)?;
     stdout.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ConversationMessage;
+    use crate::types::message::ContentBlock;
+
+    #[test]
+    fn conversation_message_serializes_content_blocks_when_present() {
+        let message = ConversationMessage {
+            id: "assistant-1".to_string(),
+            role: "assistant".to_string(),
+            content: "summary".to_string(),
+            timestamp: 1,
+            content_blocks: Some(vec![
+                ContentBlock::ToolUse {
+                    id: "tool-1".to_string(),
+                    name: "Read".to_string(),
+                    input: serde_json::json!({ "file_path": "/tmp/a.ts" }),
+                },
+                ContentBlock::Text {
+                    text: "summary".to_string(),
+                },
+            ]),
+            cost_usd: Some(0.01),
+            thinking: None,
+            level: None,
+        };
+
+        let value = serde_json::to_value(&message).expect("serialize conversation message");
+        let blocks = value
+            .get("content_blocks")
+            .and_then(|v| v.as_array())
+            .expect("content_blocks array");
+
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0]["type"], "tool_use");
+        assert_eq!(blocks[1]["type"], "text");
+    }
+
+    #[test]
+    fn conversation_message_omits_content_blocks_when_absent() {
+        let message = ConversationMessage {
+            id: "system-1".to_string(),
+            role: "system".to_string(),
+            content: "info".to_string(),
+            timestamp: 1,
+            content_blocks: None,
+            cost_usd: None,
+            thinking: None,
+            level: Some("info".to_string()),
+        };
+
+        let value = serde_json::to_value(&message).expect("serialize conversation message");
+        assert!(value.get("content_blocks").is_none());
+    }
 }

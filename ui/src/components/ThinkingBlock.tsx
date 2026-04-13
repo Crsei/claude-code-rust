@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React from 'react'
 import { c } from '../theme.js'
 
 interface Props {
@@ -6,19 +6,21 @@ interface Props {
 }
 
 export function ThinkingBlock({ content }: Props) {
-  const [expanded, setExpanded] = useState(false)
-
-  const preview = content.length > 100 ? content.slice(0, 100) + '...' : content
+  const preview = content.length > 100 ? `${content.slice(0, 100)}...` : content
 
   return (
     <box flexDirection="column" paddingX={1} marginBottom={1}>
       <text>
-        <em><span fg={c.dim}>
-          {'💭'} Thinking {expanded ? '▼' : '▶'} {!expanded && `(${content.length} chars)`}
-        </span></em>
+        <em>
+          <span fg={c.dim}>[thinking] {content.length} chars</span>
+        </em>
       </text>
       <box paddingLeft={2}>
-        <text><em><span fg={c.dim}>{expanded ? content : preview}</span></em></text>
+        <text>
+          <em>
+            <span fg={c.dim}>{preview}</span>
+          </em>
+        </text>
       </box>
     </box>
   )
