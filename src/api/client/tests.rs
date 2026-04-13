@@ -374,7 +374,7 @@ data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":
     match &events[0] {
         StreamEvent::ContentBlockStart {
             index,
-            content_block,
+            content_block: _content_block,
         } => {
             assert_eq!(*index, 0);
         }

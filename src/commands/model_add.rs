@@ -168,20 +168,13 @@ mod tests {
 
     /// Save and restore env vars to avoid contaminating parallel tests.
     struct EnvGuard {
-        keys: Vec<&'static str>,
         saved: Vec<(&'static str, Option<String>)>,
     }
 
     impl EnvGuard {
         fn new(keys: &[&'static str]) -> Self {
-            let saved = keys
-                .iter()
-                .map(|&k| (k, std::env::var(k).ok()))
-                .collect();
-            Self {
-                keys: keys.to_vec(),
-                saved,
-            }
+            let saved = keys.iter().map(|&k| (k, std::env::var(k).ok())).collect();
+            Self { saved }
         }
     }
 
@@ -292,7 +285,10 @@ mod tests {
 
         let handler = ModelAddHandler;
         let mut ctx = test_ctx(tmp.path().to_path_buf());
-        handler.execute("new-model 1.0 2.0", &mut ctx).await.unwrap();
+        handler
+            .execute("new-model 1.0 2.0", &mut ctx)
+            .await
+            .unwrap();
 
         let env_content = std::fs::read_to_string(tmp.path().join(".env")).unwrap();
         assert!(env_content.contains("AZURE_API_KEY=secret123"));

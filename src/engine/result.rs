@@ -110,7 +110,7 @@ pub fn find_terminal_message(messages: &[Message]) -> Option<&Message> {
 mod tests {
     use super::*;
     use crate::types::message::{
-        AssistantMessage, ContentBlock, MessageContent, ToolResultContent, Usage, UserMessage,
+        AssistantMessage, ContentBlock, MessageContent, ToolResultContent, UserMessage,
     };
     use uuid::Uuid;
 

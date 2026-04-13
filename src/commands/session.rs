@@ -1,8 +1,9 @@
 //! /session command -- list and show session information.
 //!
 //! Subcommands:
-//! - `/session`          -- show the current session info
-//! - `/session list`     -- list saved sessions
+//! - `/session`              -- show current session info + recent workspace sessions
+//! - `/session list`         -- list saved sessions for the current workspace
+//! - `/session list all`     -- list saved sessions across all workspaces
 //!
 //! The TypeScript version shows a remote session QR code via React.
 //! In the Rust CLI we show a text listing of saved sessions instead.
@@ -21,51 +22,37 @@ impl CommandHandler for SessionHandler {
     async fn execute(&self, args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
         let parts: Vec<&str> = args.split_whitespace().collect();
 
-        match parts.first().copied() {
-            Some("list") | Some("ls") => handle_list(ctx),
-            None => handle_show(ctx),
-            Some(sub) => Ok(CommandResult::Output(format!(
+        match parts.as_slice() {
+            [] => handle_show(ctx),
+            ["list"] | ["ls"] => handle_list(ctx, false),
+            ["list", "all"] | ["ls", "all"] => handle_list(ctx, true),
+            [sub, ..] => Ok(CommandResult::Output(format!(
                 "Unknown session subcommand: '{}'\n\
                  Usage:\n  \
-                   /session          -- show current session info\n  \
-                   /session list     -- list saved sessions",
+                   /session              -- show current session + recent workspace history\n  \
+                   /session list         -- list saved sessions for this workspace\n  \
+                   /session list all     -- list saved sessions from all workspaces",
                 sub
             ))),
         }
     }
 }
 
-/// Show information about the current session.
-fn handle_show(ctx: &CommandContext) -> Result<CommandResult> {
-    let msg_count = ctx.messages.len();
-    let cwd = ctx.cwd.display();
+fn format_session_table(
+    sessions: &[storage::SessionInfo],
+    limit: usize,
+    title: &str,
+    current_session_id: Option<&str>,
+) -> Vec<String> {
+    let visible: Vec<_> = sessions
+        .iter()
+        .filter(|session| current_session_id != Some(session.session_id.as_str()))
+        .take(limit)
+        .collect();
 
     let mut lines = Vec::new();
-    lines.push("Current session:".into());
+    lines.push(format!("{} ({}):", title, visible.len()));
     lines.push(String::new());
-    lines.push(format!("  Working directory: {}", cwd));
-    lines.push(format!("  Messages:          {}", msg_count));
-    lines.push(format!(
-        "  Model:             {}",
-        ctx.app_state.main_loop_model
-    ));
-
-    Ok(CommandResult::Output(lines.join("\n")))
-}
-
-/// List saved sessions from disk.
-fn handle_list(_ctx: &CommandContext) -> Result<CommandResult> {
-    let sessions = storage::list_sessions()?;
-
-    if sessions.is_empty() {
-        return Ok(CommandResult::Output("No saved sessions found.".into()));
-    }
-
-    let mut lines = Vec::new();
-    lines.push(format!("Saved sessions ({}):", sessions.len()));
-    lines.push(String::new());
-
-    // Header
     lines.push(format!(
         "  {:<38} {:>6}  {:<20}  {}",
         "Session ID", "Msgs", "Last Modified", "Directory"
@@ -75,12 +62,11 @@ fn handle_list(_ctx: &CommandContext) -> Result<CommandResult> {
         "----------", "----", "-------------", "---------"
     ));
 
-    for session in sessions.iter().take(20) {
+    for session in visible {
         let ts = chrono::DateTime::from_timestamp(session.last_modified, 0)
             .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
             .unwrap_or_else(|| "unknown".into());
 
-        // Truncate long directory paths.
         let dir = if session.cwd.len() > 40 {
             format!("...{}", &session.cwd[session.cwd.len() - 37..])
         } else {
@@ -92,6 +78,80 @@ fn handle_list(_ctx: &CommandContext) -> Result<CommandResult> {
             session.session_id, session.message_count, ts, dir
         ));
     }
+
+    lines
+}
+
+/// Show information about the current session.
+fn handle_show(ctx: &CommandContext) -> Result<CommandResult> {
+    let msg_count = ctx.messages.len();
+    let cwd = ctx.cwd.display();
+    let previous_sessions: Vec<_> = storage::list_workspace_sessions(&ctx.cwd)?
+        .into_iter()
+        .filter(|session| session.session_id != ctx.session_id.as_str())
+        .collect();
+
+    let mut lines = Vec::new();
+    lines.push("Current session:".into());
+    lines.push(String::new());
+    lines.push(format!("  Session ID:        {}", ctx.session_id));
+    lines.push(format!("  Working directory: {}", cwd));
+    lines.push(format!("  Messages:          {}", msg_count));
+    lines.push(format!(
+        "  Model:             {}",
+        ctx.app_state.main_loop_model
+    ));
+
+    lines.push(String::new());
+
+    if previous_sessions.is_empty() {
+        lines.push("No previous sessions found for this workspace.".into());
+        lines.push("Use /session list all to inspect sessions from other workspaces.".into());
+    } else {
+        lines.extend(format_session_table(
+            &previous_sessions,
+            10,
+            "Recent workspace sessions",
+            None,
+        ));
+
+        if previous_sessions.len() > 10 {
+            lines.push(format!(
+                "\n  ... and {} more workspace sessions",
+                previous_sessions.len() - 10
+            ));
+        }
+
+        lines.push(String::new());
+        lines.push("Use /resume <session_id> to load one of these sessions.".into());
+    }
+
+    Ok(CommandResult::Output(lines.join("\n")))
+}
+
+/// List saved sessions from disk.
+fn handle_list(ctx: &CommandContext, include_all: bool) -> Result<CommandResult> {
+    let sessions = if include_all {
+        storage::list_sessions()?
+    } else {
+        storage::list_workspace_sessions(&ctx.cwd)?
+    };
+
+    if sessions.is_empty() {
+        let text = if include_all {
+            "No saved sessions found.".into()
+        } else {
+            "No saved sessions found for this workspace.\nUse /session list all to inspect other workspaces.".into()
+        };
+        return Ok(CommandResult::Output(text));
+    }
+
+    let title = if include_all {
+        "Saved sessions (all workspaces)"
+    } else {
+        "Saved sessions (current workspace)"
+    };
+    let mut lines = format_session_table(&sessions, 20, title, None);
 
     if sessions.len() > 20 {
         lines.push(format!("\n  ... and {} more sessions", sessions.len() - 20));
@@ -127,6 +187,7 @@ mod tests {
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("Current session"));
+                assert!(text.contains("Session ID"));
                 assert!(text.contains("Working directory"));
                 assert!(text.contains("Messages"));
             }

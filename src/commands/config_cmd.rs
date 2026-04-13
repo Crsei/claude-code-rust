@@ -187,7 +187,7 @@ mod tests {
     async fn test_config_set_verbose() {
         let handler = ConfigHandler;
         let mut ctx = test_ctx();
-        let result = handler.execute("set verbose true", &mut ctx).await.unwrap();
+        let _result = handler.execute("set verbose true", &mut ctx).await.unwrap();
         assert!(ctx.app_state.verbose);
     }
 

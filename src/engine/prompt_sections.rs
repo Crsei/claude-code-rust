@@ -134,7 +134,6 @@ mod tests {
     #[test]
     fn test_cached_section_memoizes() {
         clear_cache();
-        let counter = AtomicUsize::new(0);
         // We can't easily test memoization with the current API since
         // resolve_sections takes &[PromptSection] and sections aren't Clone.
         // Just verify basic functionality.

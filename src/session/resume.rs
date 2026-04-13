@@ -10,16 +10,11 @@ use anyhow::Result;
 use super::storage::{self, SessionInfo};
 use crate::types::message::Message;
 
-/// Find the most recently modified session whose working directory matches `cwd`.
+/// Find the most recently modified session in the same workspace/repository as `cwd`.
 ///
 /// Returns `None` if no matching session exists.
 pub fn get_last_session(cwd: &Path) -> Result<Option<SessionInfo>> {
-    let sessions = storage::list_sessions()?;
-    let cwd_str = cwd.to_string_lossy();
-
-    let matching = sessions.into_iter().find(|s| s.cwd == cwd_str.as_ref());
-
-    Ok(matching)
+    Ok(storage::list_workspace_sessions(cwd)?.into_iter().next())
 }
 
 /// Resume a session by loading its messages from disk.

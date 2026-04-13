@@ -510,6 +510,21 @@ enum CmdAction {
     Query(Vec<Message>),
 }
 
+fn conversation_changed(before: &[Message], after: &[Message]) -> bool {
+    before.len() != after.len()
+        || before
+            .iter()
+            .zip(after.iter())
+            .any(|(lhs, rhs)| lhs.uuid() != rhs.uuid())
+}
+
+fn replace_app_messages(app: &mut App, messages: &[Message]) {
+    app.clear_messages();
+    for message in messages {
+        app.add_message(message.clone());
+    }
+}
+
 /// Try to execute a slash command. Returns `None` if the input is not a command.
 async fn try_execute_command(
     text: &str,
@@ -524,9 +539,10 @@ async fn try_execute_command(
     let (cmd_idx, args) = commands::parse_command_input(trimmed)?;
     let all_commands = commands::get_all_commands();
     let cmd = &all_commands[cmd_idx];
+    let original_messages = engine.messages();
 
     let mut ctx = CommandContext {
-        messages: engine.messages(),
+        messages: original_messages.clone(),
         cwd: std::path::PathBuf::from(engine.cwd()),
         app_state: engine.app_state(),
         session_id: engine.session_id.clone(),
@@ -535,18 +551,35 @@ async fn try_execute_command(
     match cmd.handler.execute(&args, &mut ctx).await {
         Ok(result) => match result {
             CommandResult::Output(text) => {
+                if conversation_changed(&original_messages, &ctx.messages) {
+                    engine.replace_messages(ctx.messages.clone());
+                    replace_app_messages(app, &ctx.messages);
+                }
                 add_system_info(app, &text);
                 Some(CmdAction::Handled)
             }
             CommandResult::Clear => {
                 // Clear conversation in the engine and the app
+                engine.clear_messages();
                 app.clear_messages();
                 add_system_info(app, "Conversation cleared.");
                 Some(CmdAction::Handled)
             }
             CommandResult::Exit(msg) => Some(CmdAction::Quit(msg)),
-            CommandResult::Query(msgs) => Some(CmdAction::Query(msgs)),
-            CommandResult::None => Some(CmdAction::Handled),
+            CommandResult::Query(msgs) => {
+                if conversation_changed(&original_messages, &ctx.messages) {
+                    engine.replace_messages(ctx.messages.clone());
+                    replace_app_messages(app, &ctx.messages);
+                }
+                Some(CmdAction::Query(msgs))
+            }
+            CommandResult::None => {
+                if conversation_changed(&original_messages, &ctx.messages) {
+                    engine.replace_messages(ctx.messages.clone());
+                    replace_app_messages(app, &ctx.messages);
+                }
+                Some(CmdAction::Handled)
+            }
         },
         Err(e) => {
             add_system_error(app, &format!("Command error: {e}"));

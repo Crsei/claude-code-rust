@@ -179,7 +179,9 @@ impl QueryEngine {
     /// Check whether the engine is currently sleeping.
     pub fn is_sleeping(&self) -> bool {
         let state = self.state.read();
-        state.sleep_until.map_or(false, |t| std::time::Instant::now() < t)
+        state
+            .sleep_until
+            .map_or(false, |t| std::time::Instant::now() < t)
     }
 
     /// Wake the engine up, clearing any pending sleep.
@@ -220,6 +222,16 @@ impl QueryEngine {
     /// Get a snapshot of the current message history.
     pub fn messages(&self) -> Vec<Message> {
         self.state.read().messages.clone()
+    }
+
+    /// Replace the full conversation history.
+    pub fn replace_messages(&self, messages: Vec<Message>) {
+        self.state.write().messages = messages;
+    }
+
+    /// Clear the current conversation history.
+    pub fn clear_messages(&self) {
+        self.state.write().messages.clear();
     }
 
     /// Get a snapshot of usage tracking.
@@ -291,27 +303,25 @@ impl QueryEngine {
         }
 
         // Find the last assistant message content for extraction
-        let last_assistant = state
-            .messages
-            .iter()
-            .rev()
-            .find_map(|m| match m {
-                Message::Assistant(a) => {
-                    let text: String = a
-                        .content
-                        .iter()
-                        .filter_map(|b| match b {
-                            crate::types::message::ContentBlock::Text { text } => {
-                                Some(text.as_str())
-                            }
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    if text.is_empty() { None } else { Some(text) }
+        let last_assistant = state.messages.iter().rev().find_map(|m| match m {
+            Message::Assistant(a) => {
+                let text: String = a
+                    .content
+                    .iter()
+                    .filter_map(|b| match b {
+                        crate::types::message::ContentBlock::Text { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if text.is_empty() {
+                    None
+                } else {
+                    Some(text)
                 }
-                _ => None,
-            });
+            }
+            _ => None,
+        });
 
         let Some(content) = last_assistant else {
             return;
