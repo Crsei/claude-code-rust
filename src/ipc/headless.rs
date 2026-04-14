@@ -112,7 +112,10 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
     // ── 1c. Subsystem event bus setup ────────────────────────────
     let event_bus = super::subsystem_events::SubsystemEventBus::new();
     let mut event_rx = event_bus.subscribe();
-    // Event bus kept alive; senders injected into subsystems in Tasks 6-8.
+    crate::lsp_service::set_event_sender(event_bus.sender());
+    crate::mcp::set_event_sender(event_bus.sender());
+    crate::plugins::set_event_sender(event_bus.sender());
+    crate::skills::set_event_sender(event_bus.sender());
 
     // ── 2. Prompt suggestion service ───────────────────────────────
     let suggestion_svc = Arc::new(Mutex::new(PromptSuggestionService::new(true)));
