@@ -67,6 +67,29 @@ pub enum FrontendMessage {
     Resize { cols: u16, rows: u16 },
     /// User wants to exit.
     Quit,
+
+    /// LSP lifecycle command.
+    LspCommand {
+        command: super::subsystem_events::LspCommand,
+    },
+
+    /// MCP lifecycle command.
+    McpCommand {
+        command: super::subsystem_events::McpCommand,
+    },
+
+    /// Plugin lifecycle command.
+    PluginCommand {
+        command: super::subsystem_events::PluginCommand,
+    },
+
+    /// Skill management command.
+    SkillCommand {
+        command: super::subsystem_events::SkillCommand,
+    },
+
+    /// Query all subsystem statuses.
+    QuerySubsystemStatus,
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +188,31 @@ pub enum BackendMessage {
 
     /// Push notification sent.
     NotificationSent { title: String, level: String },
+
+    /// LSP subsystem event.
+    LspEvent {
+        event: super::subsystem_events::LspEvent,
+    },
+
+    /// MCP subsystem event.
+    McpEvent {
+        event: super::subsystem_events::McpEvent,
+    },
+
+    /// Plugin subsystem event.
+    PluginEvent {
+        event: super::subsystem_events::PluginEvent,
+    },
+
+    /// Skill subsystem event.
+    SkillEvent {
+        event: super::subsystem_events::SkillEvent,
+    },
+
+    /// Aggregated subsystem status snapshot.
+    SubsystemStatus {
+        status: super::subsystem_types::SubsystemStatusSnapshot,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -217,6 +265,56 @@ mod tests {
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0]["type"], "tool_use");
         assert_eq!(blocks[1]["type"], "text");
+    }
+
+    #[test]
+    fn backend_lsp_event_serializes() {
+        use super::BackendMessage;
+        use crate::ipc::subsystem_events::LspEvent;
+        let msg = BackendMessage::LspEvent {
+            event: LspEvent::ServerStateChanged {
+                language_id: "rust".to_string(),
+                state: "running".to_string(),
+                error: None,
+            },
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "lsp_event");
+        assert_eq!(json["event"]["kind"], "server_state_changed");
+    }
+
+    #[test]
+    fn backend_subsystem_status_serializes() {
+        use super::BackendMessage;
+        use crate::ipc::subsystem_types::SubsystemStatusSnapshot;
+        let msg = BackendMessage::SubsystemStatus {
+            status: SubsystemStatusSnapshot {
+                lsp: vec![],
+                mcp: vec![],
+                plugins: vec![],
+                skills: vec![],
+                timestamp: 100,
+            },
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "subsystem_status");
+        assert_eq!(json["status"]["timestamp"], 100);
+    }
+
+    #[test]
+    fn frontend_lsp_command_deserializes() {
+        use super::FrontendMessage;
+        let json = r#"{"type":"lsp_command","command":{"kind":"start_server","language_id":"rust"}}"#;
+        let msg: FrontendMessage = serde_json::from_str(json).unwrap();
+        assert!(matches!(msg, FrontendMessage::LspCommand { .. }));
+    }
+
+    #[test]
+    fn frontend_query_subsystem_status_deserializes() {
+        use super::FrontendMessage;
+        let json = r#"{"type":"query_subsystem_status"}"#;
+        let msg: FrontendMessage = serde_json::from_str(json).unwrap();
+        assert!(matches!(msg, FrontendMessage::QuerySubsystemStatus));
     }
 
     #[test]
