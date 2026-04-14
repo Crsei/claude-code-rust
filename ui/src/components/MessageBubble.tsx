@@ -16,13 +16,17 @@ export function MessageBubble({ item, viewMode }: Props) {
     case 'user_text':
       return (
         <box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
-          <text>
-            <strong>
-              <span fg={c.user}>You</span>
-            </strong>
-          </text>
-          <box paddingLeft={2} width="100%">
-            <text selectable>{item.content}</text>
+          <box
+            flexDirection="column"
+            width="100%"
+            border={['left']}
+            borderColor={c.userBubbleBorder}
+            backgroundColor={c.userBubbleBg}
+            paddingLeft={1}
+            paddingRight={1}
+            selectable
+          >
+            <markdown content={item.content} />
           </box>
         </box>
       )
@@ -31,12 +35,7 @@ export function MessageBubble({ item, viewMode }: Props) {
       return (
         <box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
           {item.thinking && <ThinkingBlock content={item.thinking} />}
-          <text>
-            <strong>
-              <span fg={c.accent}>Assistant</span>
-            </strong>
-          </text>
-          <box paddingLeft={2} flexDirection="column" width="100%" selectable>
+          <box paddingLeft={1} flexDirection="column" width="100%" selectable>
             <markdown content={item.content} />
           </box>
         </box>
@@ -93,12 +92,7 @@ export function MessageBubble({ item, viewMode }: Props) {
       return (
         <box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
           {item.thinking && <ThinkingBlock content={item.thinking} />}
-          <text>
-            <strong>
-              <span fg={c.accent}>Assistant</span>
-            </strong>
-          </text>
-          <box paddingLeft={2} flexDirection="column" width="100%" selectable>
+          <box paddingLeft={1} flexDirection="column" width="100%" selectable>
             {item.content ? <markdown content={item.content} streaming /> : <text fg={c.dim}>...</text>}
           </box>
         </box>

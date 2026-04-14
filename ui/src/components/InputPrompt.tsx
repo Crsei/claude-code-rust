@@ -102,6 +102,8 @@ export function InputPrompt({
   const dispatch = useAppDispatch()
   const renderer = useRenderer()
   const vimRef = useRef<VimState>(new VimState())
+  const textRef = useRef('')
+  textRef.current = text
   const cursorRef = useRef(0)
   cursorRef.current = cursorPos
 
@@ -153,8 +155,11 @@ export function InputPrompt({
   }
 
   const saveUndo = useCallback(() => {
-    setUndoStack(stack => [...stack.slice(-50), { text, cursor: cursorPos }])
-  }, [cursorPos, text])
+    setUndoStack(stack => [...stack.slice(-50), {
+      text: textRef.current,
+      cursor: cursorRef.current,
+    }])
+  }, [])
 
   const focusInput = useCallback(() => {
     if (isReadOnly || viewMode !== 'prompt') {
@@ -179,10 +184,11 @@ export function InputPrompt({
     }
 
     saveUndo()
-    const next = insertAtCursor(text, cursorPos, value)
+    const next = insertAtCursor(textRef.current, cursorRef.current, value)
+    textRef.current = next.text
+    cursorRef.current = next.cursorPos
     setText(next.text)
     setCursorPos(next.cursorPos)
-    cursorRef.current = next.cursorPos
     if (options?.pasted || isPasteInput(value.length)) {
       setIsPasted(true)
     }
@@ -191,7 +197,7 @@ export function InputPrompt({
       setSubIndex(0)
     }
     return true
-  }, [cursorPos, focusInput, saveUndo, subMode, text])
+  }, [focusInput, saveUndo, subMode])
 
   const activateInput = useCallback(() => {
     if (isReadOnly || viewMode !== 'prompt') {

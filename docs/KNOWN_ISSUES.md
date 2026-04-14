@@ -229,3 +229,38 @@ Each issue includes a description, reproduction steps, and current status.
 - `ui/src/components/InputPrompt.tsx`
 - `ui/src/components/input-prompt-utils.ts`
 - `ui/src/components/__tests__/paste-display.test.ts`
+
+## 13. IME multi-character input only kept the last committed character
+
+**Status**: Fixed (2026-04-14)
+
+**Description**: After the composer gained multi-character plain-text insertion, the new insertion path read `text` and `cursorPos` from the render closure instead of the live refs. When an IME committed multiple characters in one burst, each insert reused stale state and overwrote the previous insert, so only the last character remained visible.
+
+**Expected behavior**: CJK input methods should preserve the full committed text, even when the terminal delivers multiple committed characters in one event burst.
+
+**Fix**:
+1. Switched composer insertion and undo capture to use the live `textRef` / `cursorRef` values.
+2. Updated the multi-character insertion path so burst inserts accumulate correctly before the next React render commits.
+
+**Related files**:
+- `ui/src/components/InputPrompt.tsx`
+
+## 14. Conversation rows lacked visual separation and file references blended into code
+
+**Status**: Fixed (2026-04-14)
+
+**Description**: User and assistant messages were rendered with nearly the same visual weight, while redundant `You` / `Assistant` labels consumed vertical space without adding much signal. File paths and code snippets also shared the same plain-text treatment, which made transcript scanning slower.
+
+**Expected behavior**: User messages should be visually separated with a darker row treatment, speaker labels should be removed, and file references should use a distinct highlight color from inline code and fenced code blocks.
+
+**Fix**:
+1. Removed the `You` / `Assistant` message labels from chat bubbles.
+2. Rendered user messages inside a darker, left-accented container.
+3. Updated markdown token formatting so file paths use a cyan highlight while inline code and code blocks use amber styling.
+4. Added a markdown formatter regression test covering file-path, inline-code, and fenced-code coloring.
+
+**Related files**:
+- `ui/src/components/MessageBubble.tsx`
+- `ui/src/theme.ts`
+- `ui/ink-terminal/src/markdown/format-token.ts`
+- `ui/ink-terminal/src/markdown/__tests__/format-token.test.ts`

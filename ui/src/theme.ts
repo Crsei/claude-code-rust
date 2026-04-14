@@ -3,6 +3,8 @@ export const c = {
   accent:      '#CC00CC',  // magenta
   accentBright:'#FF55FF',  // magentaBright
   user:        '#55FFFF',  // cyanBright
+  userBubbleBg:'#08131A',
+  userBubbleBorder:'#16798A',
   success:     '#4EC940',  // green
   successBright:'#55FF55', // greenBright
   error:       '#CC0000',  // red
