@@ -35,7 +35,7 @@ pub struct LspDiagnostic {
     pub code: Option<String>,
 }
 
-/// Character range within a document, expressed as zero-based line/character offsets.
+/// Character range within a document, expressed as 1-based line/character offsets.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DiagnosticRange {
     pub start_line: u32,
@@ -133,7 +133,7 @@ pub struct PluginInfo {
     pub name: String,
     /// Semantic version string.
     pub version: String,
-    /// Current status, e.g. "active", "disabled", "error".
+    /// Current status: "not_installed"|"installed"|"disabled"|"error".
     pub status: String,
     /// Names of tools contributed by this plugin.
     pub contributed_tools: Vec<String>,
@@ -155,7 +155,7 @@ pub struct PluginInfo {
 pub struct SkillInfo {
     /// Skill name (used in `/skill` invocations).
     pub name: String,
-    /// Where the skill was loaded from, e.g. "builtin", "project", "user".
+    /// Where the skill was loaded from: "bundled"|"user"|"project"|"plugin"|"mcp".
     pub source: String,
     /// Human-readable description of what the skill does.
     pub description: String,
@@ -303,7 +303,7 @@ mod tests {
             id: "com.example.git-helper".to_string(),
             name: "Git Helper".to_string(),
             version: "0.2.1".to_string(),
-            status: "active".to_string(),
+            status: "installed".to_string(),
             contributed_tools: vec!["git_status".to_string(), "git_diff".to_string()],
             contributed_skills: vec!["commit".to_string()],
             contributed_mcp_servers: vec![],
@@ -326,7 +326,7 @@ mod tests {
     fn skill_info_roundtrip() {
         let skill = SkillInfo {
             name: "simplify".to_string(),
-            source: "builtin".to_string(),
+            source: "bundled".to_string(),
             description: "Review changed code for quality".to_string(),
             user_invocable: true,
             model_invocable: false,
@@ -336,7 +336,7 @@ mod tests {
         let parsed: SkillInfo = serde_json::from_str(&json).expect("deserialize SkillInfo");
 
         assert_eq!(parsed.name, "simplify");
-        assert_eq!(parsed.source, "builtin");
+        assert_eq!(parsed.source, "bundled");
         assert!(parsed.user_invocable);
         assert!(!parsed.model_invocable);
     }
@@ -368,7 +368,7 @@ mod tests {
                 id: "test-plugin".to_string(),
                 name: "Test".to_string(),
                 version: "0.1.0".to_string(),
-                status: "active".to_string(),
+                status: "installed".to_string(),
                 contributed_tools: vec!["tool_a".to_string()],
                 contributed_skills: vec![],
                 contributed_mcp_servers: vec![],
@@ -376,7 +376,7 @@ mod tests {
             }],
             skills: vec![SkillInfo {
                 name: "loop".to_string(),
-                source: "builtin".to_string(),
+                source: "bundled".to_string(),
                 description: "Run on interval".to_string(),
                 user_invocable: true,
                 model_invocable: true,
