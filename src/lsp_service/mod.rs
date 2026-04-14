@@ -136,6 +136,28 @@ pub enum ServerState {
 static LSP_CLIENTS: LazyLock<tokio::sync::Mutex<HashMap<String, client::LspClient>>> =
     LazyLock::new(|| tokio::sync::Mutex::new(HashMap::new()));
 
+/// Event sender for subsystem events (injected by headless event loop).
+static EVENT_TX: LazyLock<
+    parking_lot::Mutex<
+        Option<tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>>,
+    >,
+> = LazyLock::new(|| parking_lot::Mutex::new(None));
+
+/// Inject the event sender from the headless event loop.
+#[allow(dead_code)] // Called by headless event loop wiring (Task 12).
+pub fn set_event_sender(
+    tx: tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>,
+) {
+    *EVENT_TX.lock() = Some(tx);
+}
+
+/// Emit a subsystem event (no-op if no sender is set).
+pub(crate) fn emit_event(event: crate::ipc::subsystem_events::SubsystemEvent) {
+    if let Some(tx) = EVENT_TX.lock().as_ref() {
+        let _ = tx.send(event);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -164,12 +186,26 @@ async fn get_or_start_client(
         }
         tracing::warn!(language = %lang, "LSP server died, will restart");
         clients.remove(&lang);
+        emit_event(crate::ipc::subsystem_events::SubsystemEvent::Lsp(
+            crate::ipc::subsystem_events::LspEvent::ServerStateChanged {
+                language_id: lang.clone(),
+                state: "stopped".to_string(),
+                error: Some("server process died".to_string()),
+            },
+        ));
     }
 
     // Start new client
     let root_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let new_client = client::LspClient::start(&config, &root_path).await?;
     clients.insert(lang.clone(), new_client);
+    emit_event(crate::ipc::subsystem_events::SubsystemEvent::Lsp(
+        crate::ipc::subsystem_events::LspEvent::ServerStateChanged {
+            language_id: lang.clone(),
+            state: "running".to_string(),
+            error: None,
+        },
+    ));
     Ok(lang)
 }
 

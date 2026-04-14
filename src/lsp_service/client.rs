@@ -171,10 +171,21 @@ impl LspClient {
             let msg_id = match msg.get("id") {
                 Some(v) => v,
                 None => {
-                    debug!(
-                        method = msg.get("method").and_then(|m| m.as_str()).unwrap_or("?"),
-                        "skipping server notification while waiting for response"
-                    );
+                    let method_str =
+                        msg.get("method").and_then(|m| m.as_str()).unwrap_or("?");
+                    match method_str {
+                        "textDocument/publishDiagnostics" => {
+                            if let Some(params) = msg.get("params") {
+                                let event = parse_diagnostics_notification(params);
+                                crate::lsp_service::emit_event(
+                                    crate::ipc::subsystem_events::SubsystemEvent::Lsp(event),
+                                );
+                            }
+                        }
+                        _ => {
+                            debug!(method = method_str, "skipping server notification");
+                        }
+                    }
                     continue;
                 }
             };
@@ -390,6 +401,50 @@ fn detect_language(path: &str) -> Option<String> {
     Some(lang.to_string())
 }
 
+/// Parse a `textDocument/publishDiagnostics` notification into an LspEvent.
+fn parse_diagnostics_notification(
+    params: &serde_json::Value,
+) -> crate::ipc::subsystem_events::LspEvent {
+    use crate::ipc::subsystem_types::{DiagnosticRange, LspDiagnostic};
+
+    let uri = params["uri"].as_str().unwrap_or_default().to_string();
+    let diagnostics = params["diagnostics"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|val| {
+                    let range = val.get("range")?;
+                    Some(LspDiagnostic {
+                        range: DiagnosticRange {
+                            start_line: range["start"]["line"].as_u64()? as u32 + 1,
+                            start_character: range["start"]["character"].as_u64()? as u32 + 1,
+                            end_line: range["end"]["line"].as_u64()? as u32 + 1,
+                            end_character: range["end"]["character"].as_u64()? as u32 + 1,
+                        },
+                        severity: match val["severity"].as_u64() {
+                            Some(1) => "error",
+                            Some(2) => "warning",
+                            Some(3) => "info",
+                            Some(4) => "hint",
+                            _ => "unknown",
+                        }
+                        .to_string(),
+                        message: val["message"].as_str()?.to_string(),
+                        source: val["source"].as_str().map(|s| s.to_string()),
+                        code: val.get("code").and_then(|c| {
+                            c.as_str()
+                                .map(|s| s.to_string())
+                                .or_else(|| c.as_u64().map(|n| n.to_string()))
+                        }),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    crate::ipc::subsystem_events::LspEvent::DiagnosticsPublished { uri, diagnostics }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -550,5 +605,52 @@ mod tests {
         assert_eq!(back, "C:\\dev\\project\\src\\main.rs");
         #[cfg(not(windows))]
         assert_eq!(back, "/C:/dev/project/src/main.rs");
+    }
+
+    // -- parse_diagnostics_notification ---------------------------------------
+
+    #[test]
+    fn parse_diagnostics_notification_parses_valid_params() {
+        let params = serde_json::json!({
+            "uri": "file:///src/main.rs",
+            "diagnostics": [{
+                "range": {
+                    "start": {"line": 10, "character": 4},
+                    "end": {"line": 10, "character": 12}
+                },
+                "severity": 1,
+                "message": "unused variable",
+                "source": "rust-analyzer",
+                "code": "E0599"
+            }]
+        });
+        let event = parse_diagnostics_notification(&params);
+        match event {
+            crate::ipc::subsystem_events::LspEvent::DiagnosticsPublished { uri, diagnostics } => {
+                assert_eq!(uri, "file:///src/main.rs");
+                assert_eq!(diagnostics.len(), 1);
+                assert_eq!(diagnostics[0].severity, "error");
+                assert_eq!(diagnostics[0].range.start_line, 11); // 0-based -> 1-based
+                assert_eq!(diagnostics[0].code.as_deref(), Some("E0599"));
+            }
+            _ => panic!("expected DiagnosticsPublished"),
+        }
+    }
+
+    #[test]
+    fn parse_diagnostics_notification_handles_empty() {
+        let params = serde_json::json!({
+            "uri": "file:///empty.rs",
+            "diagnostics": []
+        });
+        let event = parse_diagnostics_notification(&params);
+        match event {
+            crate::ipc::subsystem_events::LspEvent::DiagnosticsPublished {
+                diagnostics, ..
+            } => {
+                assert!(diagnostics.is_empty());
+            }
+            _ => panic!("expected DiagnosticsPublished"),
+        }
     }
 }
