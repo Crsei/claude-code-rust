@@ -51,3 +51,6 @@ pub mod structured_output;
 
 // Kairos Brief mode
 pub mod brief;
+
+// SystemStatus tool (Agent subsystem observability)
+pub mod system_status;

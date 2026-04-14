@@ -21,6 +21,7 @@ use super::send_user_message::SendUserMessageTool;
 use super::skill::SkillTool;
 use super::sleep::SleepTool;
 use super::structured_output::StructuredOutputTool;
+use super::system_status::SystemStatusTool;
 use super::tasks::{
     TaskCreateTool, TaskGetTool, TaskListTool, TaskOutputTool, TaskStopTool, TaskUpdateTool,
 };
@@ -64,6 +65,7 @@ pub fn get_all_tools() -> Tools {
         Arc::new(SendMessageTool),
         Arc::new(SleepTool),
         Arc::new(BriefTool),
+        Arc::new(SystemStatusTool),
     ];
 
     // Filter to only enabled tools
