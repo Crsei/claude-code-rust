@@ -190,3 +190,42 @@ Each issue includes a description, reproduction steps, and current status.
 - `ui/src/store/app-store.tsx`
 - `ui/src/components/App.tsx`
 - `ui/src/components/InputPrompt.tsx`
+
+## 11. Prompt-mode tool groups hid the actual commands and felt too opaque
+
+**Status**: Fixed (2026-04-14)
+
+**Description**: Prompt mode collapsed contiguous `Read` / `Glob` / `Grep` activity into a single `[GROUP] Glob 5, Read 10` line plus one latest path. That made it hard to see what the agent was currently reading or searching, and long tool bursts gave no obvious hint that `Ctrl+O` could reveal a fuller per-tool breakdown in transcript mode.
+
+**Expected behavior**: Prompt mode should keep grouped tool bursts compact, but still preview the actual commands or paths being used, truncate long previews, and show an explicit expand hint. Transcript mode should then expose each tool call with its full input detail instead of the shortened prompt summary.
+
+**Fix**:
+1. Replaced the opaque `[GROUP]` label with human-readable summaries like `Read 3 files, Glob 1 pattern`.
+2. Added per-group preview lines showing the most recent tool commands or paths, with truncation and `+N more tool uses` folding.
+3. Added an inline `Ctrl+O` expand hint on grouped activity blocks.
+4. Switched transcript-mode tool activity input rendering to use full tool input details rather than the compact summary string.
+
+**Related files**:
+- `ui/src/store/message-model.ts`
+- `ui/src/store/message-model.test.ts`
+- `ui/src/components/ToolGroup.tsx`
+- `ui/src/components/ToolActivity.tsx`
+
+## 12. Composer stopped accepting pasted text
+
+**Status**: Fixed (2026-04-14)
+
+**Description**: The prompt composer only handled keyboard events and treated input as single-character text. After bracketed paste mode was enabled in the terminal layer, pasted content arrived as a dedicated paste event or as multi-character text chunks, so the composer silently dropped it instead of inserting it.
+
+**Expected behavior**: Pasting into the composer should insert the full pasted text at the current cursor position, preserve multi-line content, and still keep the compact pasted-size rendering for large payloads.
+
+**Fix**:
+1. Subscribed `InputPrompt` to the renderer's internal paste event stream.
+2. Inserted pasted bytes directly into the composer at the current cursor position.
+3. Taught keyboard text extraction to accept plain multi-character text chunks, not just single characters.
+4. Moved paste-related helper logic into a pure utility module and added regression tests for plain-text detection and cursor insertion.
+
+**Related files**:
+- `ui/src/components/InputPrompt.tsx`
+- `ui/src/components/input-prompt-utils.ts`
+- `ui/src/components/__tests__/paste-display.test.ts`

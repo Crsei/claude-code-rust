@@ -54,7 +54,7 @@ export function ToolActivity({ item, viewMode }: Props) {
         </box>
         <box paddingLeft={2} flexDirection="column" width="100%">
           <text fg={c.dim}>Input</text>
-          <text selectable>{item.inputSummary || '(no input summary)'}</text>
+          <text selectable>{item.inputDetail || item.inputSummary || '(no input summary)'}</text>
           <text fg={c.dim}>Result</text>
           <text selectable fg={item.isError ? c.error : c.text}>
             {item.outputSummary || '(waiting for result)'}

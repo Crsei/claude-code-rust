@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useKeyboard, useRenderer } from '@opentui/react'
-import type { KeyEvent } from '@opentui/core'
+import type { KeyEvent, PasteEvent } from '@opentui/core'
 import {
   matchesShortcut,
   shortcutLabel,
@@ -11,37 +11,18 @@ import { c } from '../theme.js'
 import { useBackend } from '../ipc/context.js'
 import { useAppDispatch, useAppState } from '../store/app-store.js'
 import { matchCommands, type CommandDef } from '../commands.js'
-import { truncate } from '../utils.js'
 import { VimState } from '../vim/index.js'
 import { CommandHint } from './CommandHint.js'
+import {
+  formatPasteSize,
+  insertAtCursor,
+  isPasteInput,
+  isPlainTextInput,
+  promptPlaceholder,
+  summarizeQueuedSubmissions,
+} from './input-prompt-utils.js'
 
-const PASTE_DETECT_CHARS = 100
 const PASTE_COMPACT_CHARS = 200
-
-export function isPasteInput(inputLength: number): boolean {
-  return inputLength >= PASTE_DETECT_CHARS
-}
-
-export function formatPasteSize(text: string): string {
-  const bytes = Buffer.byteLength(text, 'utf8')
-  const kb = bytes / 1024
-  return kb < 10 ? `pasted text ${Number(kb.toFixed(1))}kb` : `pasted text ${Math.round(kb)}kb`
-}
-
-export function promptPlaceholder(isBusy: boolean): string {
-  return isBusy ? ' Working... draft the next message' : ' Type a message or /command...'
-}
-
-export function summarizeQueuedSubmissions(
-  items: Array<{ text: string }>,
-  maxVisible = 2,
-): string {
-  const visible = items.slice(0, maxVisible).map(item => truncate(item.text.replace(/\s+/g, ' ').trim(), 36))
-  if (items.length <= maxVisible) {
-    return visible.join(' | ')
-  }
-  return `${visible.join(' | ')} | +${items.length - maxVisible} more`
-}
 
 function formatWorkedDuration(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000))
@@ -53,6 +34,7 @@ function formatWorkedDuration(ms: number): string {
 function extractInput(event: KeyEvent): string {
   const seq = event.sequence ?? ''
   if (seq.length === 1 && seq.charCodeAt(0) >= 32) return seq
+  if (!event.ctrl && !event.meta && isPlainTextInput(seq)) return seq
   if (event.ctrl && (event.name?.length ?? 0) === 1) return event.name ?? ''
   if ((event.name?.length ?? 0) === 1 && !event.ctrl && !event.meta) return event.name ?? ''
   return ''
@@ -174,6 +156,14 @@ export function InputPrompt({
     setUndoStack(stack => [...stack.slice(-50), { text, cursor: cursorPos }])
   }, [cursorPos, text])
 
+  const focusInput = useCallback(() => {
+    if (isReadOnly || viewMode !== 'prompt') {
+      return false
+    }
+    onActivate?.()
+    return true
+  }, [isReadOnly, onActivate, viewMode])
+
   const resetComposer = useCallback(() => {
     setText('')
     setCursorPos(0)
@@ -182,6 +172,26 @@ export function InputPrompt({
     setSubMode(null)
     setSubIndex(0)
   }, [])
+
+  const insertText = useCallback((value: string, options?: { pasted?: boolean }) => {
+    if (!value || !focusInput()) {
+      return false
+    }
+
+    saveUndo()
+    const next = insertAtCursor(text, cursorPos, value)
+    setText(next.text)
+    setCursorPos(next.cursorPos)
+    cursorRef.current = next.cursorPos
+    if (options?.pasted || isPasteInput(value.length)) {
+      setIsPasted(true)
+    }
+    if (subMode) {
+      setSubMode(null)
+      setSubIndex(0)
+    }
+    return true
+  }, [cursorPos, focusInput, saveUndo, subMode, text])
 
   const activateInput = useCallback(() => {
     if (isReadOnly || viewMode !== 'prompt') {
@@ -207,6 +217,27 @@ export function InputPrompt({
     text.length,
     viewMode,
   ])
+
+  useEffect(() => {
+    const handlePaste = (event: PasteEvent) => {
+      if (viewMode !== 'prompt' || isReadOnly) {
+        return
+      }
+
+      const value = new TextDecoder().decode(event.bytes)
+      if (!value) {
+        return
+      }
+
+      event.preventDefault()
+      insertText(value, { pasted: true })
+    }
+
+    renderer._internalKeyInput.onInternal('paste', handlePaste)
+    return () => {
+      renderer._internalKeyInput.offInternal('paste', handlePaste)
+    }
+  }, [insertText, isReadOnly, renderer, viewMode])
 
   const sendCommand = useCallback((raw: string) => {
     if (isBusyRef.current) {
@@ -577,13 +608,7 @@ export function InputPrompt({
     }
 
     if (input && !key.ctrl && !key.meta) {
-      if (isPasteInput(input.length)) {
-        setIsPasted(true)
-      }
-      const pos = cursorRef.current
-      setText(current => current.slice(0, pos) + input + current.slice(pos))
-      cursorRef.current = pos + input.length
-      setCursorPos(pos + input.length)
+      insertText(input)
     }
   })
 

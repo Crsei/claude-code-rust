@@ -95,8 +95,12 @@ describe('buildRenderItems', () => {
       toolResult('tool-1', 'A', 2),
       toolUse('tool-2', 'Glob', { path: '/tmp', pattern: '*.ts' }, 3),
       toolResult('tool-2', 'B', 4),
-      toolUse('tool-3', 'Bash', { command: 'pwd' }, 5),
-      toolResult('tool-3', 'C', 6),
+      toolUse('tool-4', 'Read', { file_path: '/tmp/very/long/path/that/should/still/be/visible/in/transcript/view.ts' }, 5),
+      toolResult('tool-4', 'D', 6),
+      toolUse('tool-5', 'Read', { file_path: '/tmp/final.ts' }, 7),
+      toolResult('tool-5', 'E', 8),
+      toolUse('tool-3', 'Bash', { command: 'pwd' }, 9),
+      toolResult('tool-3', 'C', 10),
     ], {
       viewMode: 'prompt',
       isBusy: false,
@@ -105,11 +109,18 @@ describe('buildRenderItems', () => {
     expect(promptItems[0]?.type).toBe('tool_group')
     expect(promptItems[1]?.type).toBe('tool_activity')
     if (promptItems[0]?.type === 'tool_group') {
-      expect(promptItems[0].activities).toHaveLength(2)
+      expect(promptItems[0].title).toBe('Read 3 files, Glob 1 pattern')
+      expect(promptItems[0].activities).toHaveLength(4)
+      expect(promptItems[0].previewLines).toEqual([
+        'Glob("*.ts" in /tmp)',
+        'Read(/tmp/very/long/path/that/should/still/be/visible/in/transcript/view.ts)',
+        'Read(/tmp/final.ts)',
+      ])
+      expect(promptItems[0].hiddenCount).toBe(1)
     }
 
     const transcriptItems = buildRenderItems([
-      toolUse('tool-1', 'Read', { file_path: '/tmp/a.ts' }, 1),
+      toolUse('tool-1', 'Read', { file_path: '/tmp/very/long/path/that/should/still/be/visible/in/transcript/view.ts' }, 1),
       toolResult('tool-1', 'A', 2),
       toolUse('tool-2', 'Glob', { path: '/tmp', pattern: '*.ts' }, 3),
       toolResult('tool-2', 'B', 4),
@@ -119,5 +130,9 @@ describe('buildRenderItems', () => {
     })
 
     expect(transcriptItems.every(item => item.type !== 'tool_group')).toBe(true)
+    const transcriptActivity = transcriptItems.find(item => item.type === 'tool_activity')
+    if (transcriptActivity?.type === 'tool_activity') {
+      expect(transcriptActivity.inputDetail).toBe('/tmp/very/long/path/that/should/still/be/visible/in/transcript/view.ts')
+    }
   })
 })

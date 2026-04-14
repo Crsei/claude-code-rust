@@ -63,6 +63,7 @@ export interface ToolActivityRenderItem {
   toolUseId: string
   name: string
   input: any
+  inputDetail: string
   inputSummary: string
   output?: string
   outputSummary?: string
@@ -75,11 +76,12 @@ export interface ToolActivityRenderItem {
 export interface ToolGroupRenderItem {
   type: 'tool_group'
   id: string
-  label: string
+  title: string
   status: ToolActivityStatus
   timestamp: number
   activities: ToolActivityRenderItem[]
-  latestSummary?: string
+  previewLines: string[]
+  hiddenCount: number
 }
 
 export interface OrphanToolResultRenderItem {
@@ -111,6 +113,7 @@ export type RenderItem =
   | StreamingRenderItem
 
 const GROUPABLE_TOOL_NAMES = new Set(['Read', 'Glob', 'Grep'])
+const MAX_GROUP_PREVIEW_LINES = 3
 
 export function conversationToRawMessage(message: ConversationMessage): RawMessage {
   return {
@@ -197,17 +200,20 @@ export function buildRenderItems(
       if (current?.type === 'tool_activity') {
         current.name = current.name || name
         current.input = current.input ?? input
+        current.inputDetail = current.inputDetail || describeToolInput(input)
         current.inputSummary = current.inputSummary || summarizeToolInput(input)
       }
       return
     }
 
+    const inputDetail = describeToolInput(input)
     const activity: ToolActivityRenderItem = {
       type: 'tool_activity',
       id: `tool:${toolUseId}`,
       toolUseId,
       name: name || 'Unknown Tool',
       input,
+      inputDetail,
       inputSummary: summarizeToolInput(input),
       status: 'pending',
       isError: false,
@@ -437,19 +443,39 @@ function buildToolGroup(activities: ToolActivityRenderItem[]): ToolGroupRenderIt
     counts.set(activity.name, (counts.get(activity.name) ?? 0) + 1)
   }
 
-  const label = [...counts.entries()]
-    .map(([name, count]) => `${name} ${count}`)
+  const title = [...counts.entries()]
+    .map(([name, count]) => `${name} ${count} ${groupCountLabel(name, count)}`)
     .join(', ')
+  const previewActivities = activities.slice(-MAX_GROUP_PREVIEW_LINES)
 
   return {
     type: 'tool_group',
     id: `tool-group:${activities[0]!.toolUseId}:${activities.length}`,
-    label,
+    title,
     status: mergeStatuses(activities.map(activity => activity.status)),
     timestamp: activities[0]!.timestamp,
     activities,
-    latestSummary: activities[activities.length - 1]?.inputSummary,
+    previewLines: previewActivities.map(formatToolGroupPreviewLine),
+    hiddenCount: Math.max(0, activities.length - previewActivities.length),
   }
+}
+
+function groupCountLabel(name: string, count: number): string {
+  switch (name) {
+    case 'Read':
+      return count === 1 ? 'file' : 'files'
+    case 'Glob':
+      return count === 1 ? 'pattern' : 'patterns'
+    case 'Grep':
+      return count === 1 ? 'search' : 'searches'
+    default:
+      return count === 1 ? 'call' : 'calls'
+  }
+}
+
+function formatToolGroupPreviewLine(activity: ToolActivityRenderItem): string {
+  const detail = activity.inputDetail || activity.inputSummary || '(no input summary)'
+  return compactLine(`${activity.name}(${detail})`, 100)
 }
 
 function mergeStatuses(statuses: ToolActivityStatus[]): ToolActivityStatus {
@@ -468,41 +494,45 @@ function mergeStatuses(statuses: ToolActivityStatus[]): ToolActivityStatus {
   return 'success'
 }
 
-function summarizeToolInput(input: any): string {
+function describeToolInput(input: any): string {
   if (typeof input === 'string') {
-    return compactLine(input)
+    return normalizeInline(input)
   }
   if (!input || typeof input !== 'object') {
-    return compactLine(String(input ?? ''))
+    return normalizeInline(String(input ?? ''))
   }
 
   if (typeof input.command === 'string' && input.command.trim()) {
-    return compactLine(input.command)
+    return normalizeInline(input.command)
   }
   if (typeof input.file_path === 'string' && input.file_path.trim()) {
-    return compactLine(input.file_path)
+    return normalizeInline(input.file_path)
   }
   if (typeof input.url === 'string' && input.url.trim()) {
-    return compactLine(input.url)
+    return normalizeInline(input.url)
   }
   if (typeof input.pattern === 'string' && input.pattern.trim()) {
     const path = typeof input.path === 'string' && input.path.trim()
       ? ` in ${input.path}`
       : ''
-    return compactLine(`"${input.pattern}"${path}`)
+    return normalizeInline(`"${input.pattern}"${path}`)
   }
   if (typeof input.path === 'string' && input.path.trim()) {
-    return compactLine(input.path)
+    return normalizeInline(input.path)
   }
   if (typeof input.prompt === 'string' && input.prompt.trim()) {
-    return compactLine(input.prompt)
+    return normalizeInline(input.prompt)
   }
 
   try {
-    return compactLine(JSON.stringify(input))
+    return normalizeInline(JSON.stringify(input))
   } catch {
     return '(structured input)'
   }
+}
+
+function summarizeToolInput(input: any): string {
+  return compactLine(describeToolInput(input))
 }
 
 function summarizeToolOutput(output: string): string {
@@ -574,7 +604,10 @@ function toolResultContentToString(content: ToolResultContent): string {
     .join('\n')
 }
 
-function compactLine(value: string): string {
-  const compact = value.replace(/\s+/g, ' ').trim()
-  return truncate(compact, 120)
+function normalizeInline(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+function compactLine(value: string, maxLength = 120): string {
+  return truncate(normalizeInline(value), maxLength)
 }

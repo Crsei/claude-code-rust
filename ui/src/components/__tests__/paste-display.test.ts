@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import {
   formatPasteSize,
+  insertAtCursor,
   isPasteInput,
+  isPlainTextInput,
   promptPlaceholder,
   summarizeQueuedSubmissions,
-} from '../InputPrompt.js'
+} from '../input-prompt-utils.js'
 
 describe('isPasteInput', () => {
   test('single char is not paste', () => {
@@ -21,6 +23,34 @@ describe('isPasteInput', () => {
     expect(isPasteInput(100)).toBe(true)
     expect(isPasteInput(200)).toBe(true)
     expect(isPasteInput(5000)).toBe(true)
+  })
+})
+
+describe('isPlainTextInput', () => {
+  test('accepts multi-character plain text', () => {
+    expect(isPlainTextInput('hello world')).toBe(true)
+    expect(isPlainTextInput('line 1\nline 2')).toBe(true)
+  })
+
+  test('rejects escape sequences and control bytes', () => {
+    expect(isPlainTextInput('\u001b[A')).toBe(false)
+    expect(isPlainTextInput('\u0003')).toBe(false)
+  })
+})
+
+describe('insertAtCursor', () => {
+  test('inserts text at the current cursor position', () => {
+    expect(insertAtCursor('helo', 2, 'l')).toEqual({
+      text: 'hello',
+      cursorPos: 3,
+    })
+  })
+
+  test('inserts pasted text with newlines', () => {
+    expect(insertAtCursor('start end', 6, 'middle\n')).toEqual({
+      text: 'start middle\nend',
+      cursorPos: 13,
+    })
   })
 })
 
