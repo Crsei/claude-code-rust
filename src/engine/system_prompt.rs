@@ -452,6 +452,9 @@ pub fn build_system_prompt(
                         .to_string(),
                 )
             }),
+            cached_section("subsystem_status", || {
+                build_subsystem_status_reminder()
+            }),
         ];
 
         let resolved = prompt_sections::resolve_sections(&dynamic_sections);
@@ -588,6 +591,38 @@ fn format_sub_bullets(items: &[&str]) -> String {
         .map(|item| format!("  - {}", item))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Subsystem status reminder
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Build a system-reminder with active subsystem counts.
+///
+/// Returns `None` when no subsystems are active beyond defaults.
+fn build_subsystem_status_reminder() -> Option<String> {
+    let lsp_configs = crate::lsp_service::default_server_configs().len();
+    let mcp_count = crate::mcp::discovery::discover_mcp_servers(
+        &std::env::current_dir().unwrap_or_default(),
+    )
+    .map(|v| v.len())
+    .unwrap_or(0);
+    let plugin_count = crate::plugins::get_enabled_plugins().len();
+    let skill_count = crate::skills::get_all_skills().len();
+
+    if mcp_count + plugin_count + skill_count == 0 {
+        return None;
+    }
+
+    Some(format!(
+        "# Active Subsystems\n\
+         - LSP: {} language(s) configured\n\
+         - MCP: {} server(s) configured\n\
+         - Plugins: {} enabled\n\
+         - Skills: {} loaded\n\
+         Use the SystemStatus tool for detailed information.\n",
+        lsp_configs, mcp_count, plugin_count, skill_count
+    ))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
