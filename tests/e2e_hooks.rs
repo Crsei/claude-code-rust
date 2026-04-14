@@ -65,7 +65,9 @@ fn global_config_hooks_field_deserializes() {
     assert!(hooks.contains_key("Stop"), "missing Stop");
 
     // Verify PreToolUse structure
-    let pre_tool = hooks["PreToolUse"].as_array().expect("PreToolUse should be array");
+    let pre_tool = hooks["PreToolUse"]
+        .as_array()
+        .expect("PreToolUse should be array");
     assert_eq!(pre_tool.len(), 1);
     assert_eq!(pre_tool[0]["matcher"], "Bash");
     assert_eq!(pre_tool[0]["hooks"][0]["command"], "echo audit");
@@ -95,7 +97,11 @@ fn project_settings_json_with_hooks_roundtrips() {
     // Write to temp file and read back
     let tmpdir = TempDir::new().unwrap();
     let settings_path = tmpdir.path().join("settings.json");
-    fs::write(&settings_path, serde_json::to_string_pretty(&settings).unwrap()).unwrap();
+    fs::write(
+        &settings_path,
+        serde_json::to_string_pretty(&settings).unwrap(),
+    )
+    .unwrap();
 
     let content = fs::read_to_string(&settings_path).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&content).expect("should parse back");
@@ -162,8 +168,14 @@ fn merge_hooks_combines_global_and_project() {
         merged.insert(k.clone(), v.clone());
     }
 
-    assert!(merged.contains_key("PreToolUse"), "should keep global PreToolUse");
-    assert!(merged.contains_key("PostToolUse"), "should add project PostToolUse");
+    assert!(
+        merged.contains_key("PreToolUse"),
+        "should keep global PreToolUse"
+    );
+    assert!(
+        merged.contains_key("PostToolUse"),
+        "should add project PostToolUse"
+    );
 }
 
 /// When both global and project define the same hook event, project should win.
@@ -189,7 +201,10 @@ fn merge_hooks_project_overrides_global_same_event() {
 
     let pre = merged["PreToolUse"].as_array().unwrap();
     assert_eq!(pre.len(), 1);
-    assert_eq!(pre[0]["matcher"], "Bash", "project config should override global");
+    assert_eq!(
+        pre[0]["matcher"], "Bash",
+        "project config should override global"
+    );
 }
 
 // =========================================================================
@@ -202,8 +217,8 @@ fn merge_hooks_project_overrides_global_same_event() {
 /// and passes them to run_pre/post/failure hook calls instead of empty &[].
 #[test]
 fn fixed_orchestration_loads_hook_configs() {
-    let source = fs::read_to_string("src/tools/orchestration.rs")
-        .expect("should read orchestration.rs");
+    let source =
+        fs::read_to_string("src/tools/orchestration.rs").expect("should read orchestration.rs");
 
     let hook_calls: Vec<&str> = source
         .lines()
@@ -214,7 +229,10 @@ fn fixed_orchestration_loads_hook_configs() {
         })
         .collect();
 
-    assert!(!hook_calls.is_empty(), "orchestration.rs should contain hook calls");
+    assert!(
+        !hook_calls.is_empty(),
+        "orchestration.rs should contain hook calls"
+    );
 
     let any_use_empty = hook_calls.iter().any(|line| line.contains("&[]"));
     assert!(
@@ -241,8 +259,7 @@ fn fixed_orchestration_loads_hook_configs() {
 /// runs pre-tool, post-tool, and post-failure hooks.
 #[test]
 fn fixed_deps_execute_tool_runs_hooks() {
-    let source = fs::read_to_string("src/engine/lifecycle/deps.rs")
-        .expect("should read deps.rs");
+    let source = fs::read_to_string("src/engine/lifecycle/deps.rs").expect("should read deps.rs");
 
     let has_pre_hooks = source.contains("run_pre_tool_hooks");
     let has_post_hooks = source.contains("run_post_tool_hooks");
@@ -250,10 +267,7 @@ fn fixed_deps_execute_tool_runs_hooks() {
     let has_hook_import = source.contains("tools::hooks");
     let has_load_configs = source.contains("load_hook_configs");
 
-    assert!(
-        has_hook_import,
-        "deps.rs should import the hooks module"
-    );
+    assert!(has_hook_import, "deps.rs should import the hooks module");
     assert!(
         has_load_configs,
         "deps.rs should call load_hook_configs to read hook configs from AppState"
@@ -306,8 +320,7 @@ fn verified_hooks_config_flows_to_runtime() {
 /// load_hook_configs(&hooks_map, "Stop").
 #[test]
 fn bug_query_stop_hooks_is_placeholder() {
-    let source = fs::read_to_string("src/query/stop_hooks.rs")
-        .expect("should read stop_hooks.rs");
+    let source = fs::read_to_string("src/query/stop_hooks.rs").expect("should read stop_hooks.rs");
 
     // stop_hooks.rs should accept HookEventConfig and delegate to hooks::run_stop_hooks
     assert!(
@@ -320,8 +333,8 @@ fn bug_query_stop_hooks_is_placeholder() {
     );
 
     // The call site in loop_impl.rs should load configs from AppState
-    let loop_source = fs::read_to_string("src/query/loop_impl.rs")
-        .expect("should read loop_impl.rs");
+    let loop_source =
+        fs::read_to_string("src/query/loop_impl.rs").expect("should read loop_impl.rs");
     assert!(
         loop_source.contains("load_hook_configs") && loop_source.contains("\"Stop\""),
         "loop_impl.rs should load Stop hook configs via load_hook_configs"
@@ -337,10 +350,10 @@ fn bug_query_stop_hooks_is_placeholder() {
 /// The two paths serve different callers but both support hooks.
 #[test]
 fn both_execution_paths_have_hook_wiring() {
-    let execution_source = fs::read_to_string("src/tools/execution.rs")
-        .expect("should read execution.rs");
-    let deps_source = fs::read_to_string("src/engine/lifecycle/deps.rs")
-        .expect("should read deps.rs");
+    let execution_source =
+        fs::read_to_string("src/tools/execution.rs").expect("should read execution.rs");
+    let deps_source =
+        fs::read_to_string("src/engine/lifecycle/deps.rs").expect("should read deps.rs");
 
     // execution.rs correctly accepts hook_configs
     assert!(
@@ -380,11 +393,26 @@ fn both_execution_paths_have_hook_wiring() {
 #[test]
 fn hooks_wiring_diagnostic_summary() {
     let status = vec![
-        ("orchestration.rs", "FIXED — loads hook configs from AppState via get_app_state()"),
-        ("deps.rs", "FIXED — loads hook configs from AppState.hooks, runs pre/post/failure hooks"),
-        ("AppState.hooks", "FIXED — consumed by deps.rs and orchestration.rs at runtime"),
-        ("execution.rs", "FIXED — StreamingToolExecutor stores and forwards hook_configs"),
-        ("query/stop_hooks.rs", "PENDING (Task 4) — placeholder that always returns AllowStop"),
+        (
+            "orchestration.rs",
+            "FIXED — loads hook configs from AppState via get_app_state()",
+        ),
+        (
+            "deps.rs",
+            "FIXED — loads hook configs from AppState.hooks, runs pre/post/failure hooks",
+        ),
+        (
+            "AppState.hooks",
+            "FIXED — consumed by deps.rs and orchestration.rs at runtime",
+        ),
+        (
+            "execution.rs",
+            "FIXED — StreamingToolExecutor stores and forwards hook_configs",
+        ),
+        (
+            "query/stop_hooks.rs",
+            "PENDING (Task 4) — placeholder that always returns AllowStop",
+        ),
     ];
 
     eprintln!("\n╔══════════════════════════════════════════════════════════════╗");
@@ -395,4 +423,3 @@ fn hooks_wiring_diagnostic_summary() {
     }
     eprintln!("╚══════════════════════════════════════════════════════════════╝\n");
 }
-

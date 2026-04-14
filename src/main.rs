@@ -55,9 +55,6 @@ mod shutdown;
 // IPC headless mode
 mod ipc;
 
-// Computer Use
-mod computer_use;
-
 // KAIROS daemon
 mod daemon;
 mod dashboard;

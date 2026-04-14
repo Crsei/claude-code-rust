@@ -113,9 +113,8 @@ log_file: {log_file}\n\
 fn binary_path() -> PathBuf {
     match std::panic::catch_unwind(|| assert_cmd::cargo::cargo_bin("claude-code-rs")) {
         Ok(p) if p.exists() => p,
-        _ => which::which("claude-code-rs").unwrap_or_else(|_| {
-            panic!("claude-code-rs binary not found via cargo_bin or PATH")
-        }),
+        _ => which::which("claude-code-rs")
+            .unwrap_or_else(|_| panic!("claude-code-rs binary not found via cargo_bin or PATH")),
     }
 }
 
@@ -163,10 +162,8 @@ impl PtySession {
         // Keep slave alive — dropping it prematurely on Windows ConPTY
         // can cause output to be lost before the reader drains it.
 
-        let writer: Box<dyn Write + Send> =
-            pair.master.take_writer().expect("take pty writer");
-        let shared_writer: Arc<Mutex<Box<dyn Write + Send>>> =
-            Arc::new(Mutex::new(writer));
+        let writer: Box<dyn Write + Send> = pair.master.take_writer().expect("take pty writer");
+        let shared_writer: Arc<Mutex<Box<dyn Write + Send>>> = Arc::new(Mutex::new(writer));
         let writer_for_reader = Arc::clone(&shared_writer);
 
         let mut reader = pair.master.try_clone_reader().expect("clone pty reader");
@@ -368,12 +365,7 @@ fn pty_init_only() {
 /// `--dump-system-prompt` captures the full system prompt in the log.
 #[test]
 fn pty_dump_system_prompt() {
-    let session = PtySession::spawn(
-        &["--dump-system-prompt", "-C", workspace()],
-        200,
-        50,
-        false,
-    );
+    let session = PtySession::spawn(&["--dump-system-prompt", "-C", workspace()], 200, 50, false);
     let output = session.finish(Duration::from_secs(10), "pty_dump_system_prompt");
 
     assert!(

@@ -66,10 +66,7 @@ fn ctrl_u_clears_line() {
     session.send_ctrl_c();
     let output = session.finish(QUICK_TIMEOUT, "input_ctrl_u");
 
-    assert!(
-        !output.contains("panicked"),
-        "Ctrl+U should not crash"
-    );
+    assert!(!output.contains("panicked"), "Ctrl+U should not crash");
 }
 
 /// Arrow keys should not crash or produce garbage when input is empty.
@@ -130,11 +127,11 @@ fn vim_toggle() {
     session.send_ctrl_g();
     std::thread::sleep(Duration::from_millis(500));
 
-    session.send_raw(b"i");  // Enter insert mode
+    session.send_raw(b"i"); // Enter insert mode
     std::thread::sleep(Duration::from_millis(200));
     session.send_raw(b"vim test");
     std::thread::sleep(Duration::from_millis(200));
-    session.send_escape();   // Back to normal mode
+    session.send_escape(); // Back to normal mode
     std::thread::sleep(Duration::from_millis(200));
 
     session.send_ctrl_g();
@@ -162,7 +159,10 @@ fn submit_empty_prompt() {
     session.send_ctrl_c();
     let output = session.finish(QUICK_TIMEOUT, "input_empty_submit");
 
-    assert!(!output.contains("panicked"), "empty submit should not crash");
+    assert!(
+        !output.contains("panicked"),
+        "empty submit should not crash"
+    );
 }
 
 /// Rapid typing should not lose characters or crash.

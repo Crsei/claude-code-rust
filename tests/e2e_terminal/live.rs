@@ -11,10 +11,8 @@ use crate::helpers::{collect_until, read_line_json, send_msg, spawn_headless, LI
 #[test]
 #[ignore]
 fn simple_chat() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(
-        &["-C", r"F:\temp", "--permission-mode", "bypass"],
-        false,
-    );
+    let (mut child, mut stdin, mut stdout) =
+        spawn_headless(&["-C", r"F:\temp", "--permission-mode", "bypass"], false);
 
     let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -34,10 +32,7 @@ fn simple_chat() {
         LIVE_TIMEOUT,
     );
 
-    let types: Vec<&str> = messages
-        .iter()
-        .filter_map(|m| m["type"].as_str())
-        .collect();
+    let types: Vec<&str> = messages.iter().filter_map(|m| m["type"].as_str()).collect();
 
     assert!(
         types.contains(&"stream_start"),
@@ -76,10 +71,8 @@ fn simple_chat() {
 #[test]
 #[ignore]
 fn tool_use_bash() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(
-        &["-C", r"F:\temp", "--permission-mode", "bypass"],
-        false,
-    );
+    let (mut child, mut stdin, mut stdout) =
+        spawn_headless(&["-C", r"F:\temp", "--permission-mode", "bypass"], false);
 
     let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -99,10 +92,7 @@ fn tool_use_bash() {
         LIVE_TIMEOUT,
     );
 
-    let types: Vec<&str> = messages
-        .iter()
-        .filter_map(|m| m["type"].as_str())
-        .collect();
+    let types: Vec<&str> = messages.iter().filter_map(|m| m["type"].as_str()).collect();
 
     assert!(
         types.contains(&"tool_use") || types.contains(&"assistant_message"),
@@ -134,10 +124,8 @@ fn tool_use_bash() {
 #[test]
 #[ignore]
 fn two_prompts() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(
-        &["-C", r"F:\temp", "--permission-mode", "bypass"],
-        false,
-    );
+    let (mut child, mut stdin, mut stdout) =
+        spawn_headless(&["-C", r"F:\temp", "--permission-mode", "bypass"], false);
 
     let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -205,10 +193,8 @@ fn two_prompts() {
 #[test]
 #[ignore]
 fn abort_during_stream() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(
-        &["-C", r"F:\temp", "--permission-mode", "bypass"],
-        false,
-    );
+    let (mut child, mut stdin, mut stdout) =
+        spawn_headless(&["-C", r"F:\temp", "--permission-mode", "bypass"], false);
 
     let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
     assert_eq!(ready["type"], "ready");

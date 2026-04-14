@@ -15,10 +15,7 @@ fn slash_help_shows_command_list() {
 
     // /help output should list other commands
     session.send_line("/help");
-    let found = session.wait_for_any(
-        &["/help", "/exit", "/version", "/model"],
-        QUICK_TIMEOUT,
-    );
+    let found = session.wait_for_any(&["/help", "/exit", "/version", "/model"], QUICK_TIMEOUT);
 
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(300));
@@ -63,7 +60,10 @@ fn slash_exit_quits_gracefully() {
     let output = session.finish(QUICK_TIMEOUT, "cmd_exit");
 
     // No panic, process exited. Output may contain a goodbye message.
-    assert!(output.raw.len() > 0, "should have captured some output before exit");
+    assert!(
+        output.raw.len() > 0,
+        "should have captured some output before exit"
+    );
 }
 
 /// /cost 显示 token 用量（初始为零）
@@ -75,10 +75,7 @@ fn slash_cost_shows_usage() {
 
     // Cost/usage output should contain token-related text
     session.send_line("/cost");
-    let found = session.wait_for_any(
-        &["token", "cost", "usage", "0"],
-        QUICK_TIMEOUT,
-    );
+    let found = session.wait_for_any(&["token", "cost", "usage", "0"], QUICK_TIMEOUT);
 
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(300));
@@ -182,17 +179,17 @@ fn slash_model_with_arg_switches_model() {
 
     // Try switching to sonnet alias
     session.send_line("/model sonnet");
-    let found = session.wait_for_any(
-        &["sonnet", "model", "switch", "changed"],
-        QUICK_TIMEOUT,
-    );
+    let found = session.wait_for_any(&["sonnet", "model", "switch", "changed"], QUICK_TIMEOUT);
 
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(300));
     session.send_ctrl_c();
     let _output = session.finish(QUICK_TIMEOUT, "cmd_model_switch");
 
-    assert!(found.is_some(), "/model sonnet should acknowledge model change");
+    assert!(
+        found.is_some(),
+        "/model sonnet should acknowledge model change"
+    );
 }
 
 /// /clear 清除对话历史，不崩溃
@@ -225,10 +222,7 @@ fn slash_context_shows_info() {
     std::thread::sleep(RENDER_WAIT);
 
     session.send_line("/context");
-    let found = session.wait_for_any(
-        &["context", "token", "model", "message"],
-        QUICK_TIMEOUT,
-    );
+    let found = session.wait_for_any(&["context", "token", "model", "message"], QUICK_TIMEOUT);
 
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(300));
@@ -281,5 +275,8 @@ fn multiple_commands_in_sequence() {
     let output = session.finish(QUICK_TIMEOUT, "cmd_sequence");
 
     // No panic after 5 consecutive commands
-    assert!(output.raw.len() > 100, "multiple commands should produce substantial output");
+    assert!(
+        output.raw.len() > 100,
+        "multiple commands should produce substantial output"
+    );
 }

@@ -5,6 +5,8 @@ import type { FrontendMessage, BackendMessage } from './protocol.js'
 
 export class RustBackend extends EventEmitter {
   private proc: ChildProcess
+  private earlyMessages: BackendMessage[] = []
+  private hasListener = false
 
   constructor(binaryPath: string, extraArgs: string[] = []) {
     super()
@@ -17,7 +19,12 @@ export class RustBackend extends EventEmitter {
     rl.on('line', (line: string) => {
       try {
         const msg: BackendMessage = JSON.parse(line)
-        this.emit('message', msg)
+        if (this.hasListener) {
+          this.emit('message', msg)
+        } else {
+          // Buffer messages that arrive before any listener is attached
+          this.earlyMessages.push(msg)
+        }
       } catch (e) {
         // ignore non-JSON lines (e.g. tracing output)
       }
@@ -31,6 +38,19 @@ export class RustBackend extends EventEmitter {
     this.proc.on('exit', (code: number | null) => {
       this.emit('exit', code ?? 1)
     })
+  }
+
+  on(event: string, listener: (...args: any[]) => void): this {
+    super.on(event, listener)
+    // Replay buffered messages when first 'message' listener attaches
+    if (event === 'message' && !this.hasListener) {
+      this.hasListener = true
+      for (const msg of this.earlyMessages) {
+        this.emit('message', msg)
+      }
+      this.earlyMessages = []
+    }
+    return this
   }
 
   send(msg: FrontendMessage): void {

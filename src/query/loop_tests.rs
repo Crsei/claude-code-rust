@@ -631,3 +631,303 @@ async fn test_image_tool_result_flows_as_blocks() {
         .count();
     assert_eq!(request_starts, 2, "expected 2 API turns");
 }
+
+// ---------------------------------------------------------------------------
+// Computer Use end-to-end smoke test
+// ---------------------------------------------------------------------------
+
+/// MockDeps that dispatches tool results by tool name:
+/// - screenshot → image content
+/// - left_click / type_text → text confirmation
+struct CuMockDeps {
+    responses: parking_lot::Mutex<Vec<ModelResponse>>,
+    aborted: std::sync::atomic::AtomicBool,
+}
+
+impl CuMockDeps {
+    fn new(responses: Vec<ModelResponse>) -> Self {
+        Self {
+            responses: parking_lot::Mutex::new(responses),
+            aborted: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl QueryDeps for CuMockDeps {
+    async fn call_model(&self, _params: ModelCallParams) -> Result<ModelResponse> {
+        let mut responses = self.responses.lock();
+        if responses.is_empty() {
+            anyhow::bail!("no more mock responses");
+        }
+        Ok(responses.remove(0))
+    }
+
+    async fn call_model_streaming(
+        &self,
+        _params: ModelCallParams,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+        let mut responses = self.responses.lock();
+        if responses.is_empty() {
+            anyhow::bail!("no more mock responses");
+        }
+        let resp = responses.remove(0);
+        let mut events = Vec::new();
+        events.push(StreamEvent::MessageStart {
+            usage: resp.usage.clone(),
+        });
+        for (i, block) in resp.assistant_message.content.iter().enumerate() {
+            events.push(StreamEvent::ContentBlockStart {
+                index: i,
+                content_block: block.clone(),
+            });
+            events.push(StreamEvent::ContentBlockStop { index: i });
+        }
+        events.push(StreamEvent::MessageDelta {
+            delta: crate::types::message::MessageDelta {
+                stop_reason: resp.assistant_message.stop_reason.clone(),
+            },
+            usage: Some(resp.usage),
+        });
+        events.push(StreamEvent::MessageStop);
+        let stream = futures::stream::iter(events.into_iter().map(Ok));
+        Ok(Box::pin(stream))
+    }
+
+    async fn microcompact(&self, messages: Vec<Message>) -> Result<Vec<Message>> {
+        Ok(messages)
+    }
+
+    async fn autocompact(
+        &self,
+        _messages: Vec<Message>,
+        _tracking: Option<AutoCompactTracking>,
+    ) -> Result<Option<CompactionResult>> {
+        Ok(None)
+    }
+
+    async fn reactive_compact(&self, _messages: Vec<Message>) -> Result<Option<CompactionResult>> {
+        Ok(None)
+    }
+
+    async fn execute_tool(
+        &self,
+        request: ToolExecRequest,
+        _tools: &Tools,
+        _parent: &AssistantMessage,
+        _on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
+    ) -> Result<ToolExecResult> {
+        // Dispatch by tool name to simulate different CU tools
+        let result = if request.tool_name.contains("screenshot") {
+            crate::types::tool::ToolResult {
+                data: serde_json::json!("[Image: image/png]"),
+                model_content: Some(ToolResultContent::Blocks(vec![
+                    ContentBlock::Image {
+                        source: ImageSource {
+                            source_type: "base64".to_string(),
+                            media_type: "image/png".to_string(),
+                            data: "iVBORw0KGgoAAAANSUhEUg==".to_string(),
+                        },
+                    },
+                ])),
+                display_preview: Some("[Screenshot: 1920x1080]".to_string()),
+                new_messages: vec![],
+            }
+        } else {
+            // click, type_text, key, scroll → text confirmation
+            crate::types::tool::ToolResult {
+                data: serde_json::json!(format!("Action '{}' executed successfully", request.tool_name)),
+                new_messages: vec![],
+                ..Default::default()
+            }
+        };
+
+        Ok(ToolExecResult {
+            tool_use_id: request.tool_use_id,
+            tool_name: request.tool_name,
+            result,
+            is_error: false,
+        })
+    }
+
+    fn get_app_state(&self) -> AppState {
+        AppState::default()
+    }
+
+    fn uuid(&self) -> String {
+        uuid::Uuid::new_v4().to_string()
+    }
+
+    fn is_aborted(&self) -> bool {
+        self.aborted.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn get_tools(&self) -> Tools {
+        vec![]
+    }
+
+    async fn refresh_tools(&self) -> Result<Tools> {
+        Ok(vec![])
+    }
+}
+
+/// Full Computer Use smoke test:
+///   Turn 1: model calls screenshot → receives image
+///   Turn 2: model calls left_click → receives text confirmation
+///   Turn 3: model responds with final text
+#[tokio::test]
+async fn test_computer_use_screenshot_click_round_trip() {
+    // Turn 1: model takes a screenshot
+    let screenshot_response = ModelResponse {
+        assistant_message: AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: chrono::Utc::now().timestamp_millis(),
+            role: "assistant".to_string(),
+            content: vec![
+                ContentBlock::Text {
+                    text: "Let me take a screenshot to see the desktop.".to_string(),
+                },
+                ContentBlock::ToolUse {
+                    id: "tu_screenshot".to_string(),
+                    name: "mcp__computer-use__screenshot".to_string(),
+                    input: serde_json::json!({}),
+                },
+            ],
+            usage: Some(Usage::default()),
+            stop_reason: Some("tool_use".to_string()),
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.001,
+        },
+        stream_events: vec![],
+        usage: Usage::default(),
+    };
+
+    // Turn 2: model sees image, decides to click
+    let click_response = ModelResponse {
+        assistant_message: AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: chrono::Utc::now().timestamp_millis(),
+            role: "assistant".to_string(),
+            content: vec![
+                ContentBlock::Text {
+                    text: "I can see a button at (500, 300). Clicking it.".to_string(),
+                },
+                ContentBlock::ToolUse {
+                    id: "tu_click".to_string(),
+                    name: "mcp__computer-use__left_click".to_string(),
+                    input: serde_json::json!({"x": 500, "y": 300}),
+                },
+            ],
+            usage: Some(Usage::default()),
+            stop_reason: Some("tool_use".to_string()),
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.001,
+        },
+        stream_events: vec![],
+        usage: Usage::default(),
+    };
+
+    // Turn 3: model confirms result
+    let final_response = make_text_response("I clicked the button successfully.");
+
+    let deps = Arc::new(CuMockDeps::new(vec![
+        screenshot_response,
+        click_response,
+        final_response,
+    ]));
+
+    let params = QueryParams {
+        messages: vec![Message::User(UserMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "user".to_string(),
+            content: MessageContent::Text("Click the button on screen".to_string()),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        })],
+        system_prompt: vec![],
+        user_context: Default::default(),
+        system_context: Default::default(),
+        fallback_model: None,
+        query_source: QuerySource::ReplMainThread,
+        max_output_tokens_override: None,
+        max_turns: None,
+        skip_cache_write: None,
+        task_budget: None,
+    };
+
+    let stream = query(params, deps);
+    let items: Vec<QueryYield> = stream.collect().await;
+
+    // Verify 3 API turns (screenshot, click, final)
+    let request_starts = items
+        .iter()
+        .filter(|i| matches!(i, QueryYield::RequestStart(_)))
+        .count();
+    assert_eq!(request_starts, 3, "expected 3 API turns");
+
+    // Verify 3 assistant messages
+    let assistant_msgs: Vec<_> = items
+        .iter()
+        .filter_map(|item| {
+            if let QueryYield::Message(Message::Assistant(msg)) = item {
+                Some(msg)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(assistant_msgs.len(), 3, "expected 3 assistant messages");
+
+    // Verify tool result messages
+    let tool_result_msgs: Vec<_> = items
+        .iter()
+        .filter_map(|item| {
+            if let QueryYield::Message(Message::User(msg)) = item {
+                if msg.is_meta && msg.source_tool_assistant_uuid.is_some() {
+                    return Some(msg);
+                }
+            }
+            None
+        })
+        .collect();
+    assert_eq!(tool_result_msgs.len(), 2, "expected 2 tool result messages");
+
+    // First tool result (screenshot) should have Blocks content with Image
+    match &tool_result_msgs[0].content {
+        MessageContent::Blocks(blocks) => match &blocks[0] {
+            ContentBlock::ToolResult { content, .. } => {
+                assert!(
+                    matches!(content, ToolResultContent::Blocks(_)),
+                    "screenshot result should be Blocks (image), got Text"
+                );
+            }
+            other => panic!("expected ToolResult, got {:?}", other),
+        },
+        _ => panic!("expected Blocks content"),
+    }
+
+    // Second tool result (click) should have Text content
+    match &tool_result_msgs[1].content {
+        MessageContent::Blocks(blocks) => match &blocks[0] {
+            ContentBlock::ToolResult { content, .. } => {
+                assert!(
+                    matches!(content, ToolResultContent::Text(_)),
+                    "click result should be Text"
+                );
+            }
+            other => panic!("expected ToolResult, got {:?}", other),
+        },
+        _ => panic!("expected Blocks content"),
+    }
+
+    // Final message should be text
+    let final_msg = assistant_msgs.last().unwrap();
+    assert!(
+        final_msg.content.iter().any(|b| matches!(b, ContentBlock::Text { text } if text.contains("clicked"))),
+        "final message should mention clicking"
+    );
+}

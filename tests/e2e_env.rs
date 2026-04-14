@@ -19,7 +19,9 @@ fn cli() -> Command {
     Command::cargo_bin("claude-code-rs").expect("binary not found")
 }
 
-fn workspace() -> &'static str { test_workspace::workspace() }
+fn workspace() -> &'static str {
+    test_workspace::workspace()
+}
 
 /// Strips all API keys so no provider is detected.
 fn strip_api_keys(cmd: &mut Command) -> &mut Command {

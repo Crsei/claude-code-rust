@@ -523,6 +523,9 @@ function describeToolInput(input: any): string {
   if (typeof input.prompt === 'string' && input.prompt.trim()) {
     return normalizeInline(input.prompt)
   }
+  if (typeof input.question === 'string' && input.question.trim()) {
+    return normalizeInline(input.question)
+  }
 
   try {
     return normalizeInline(JSON.stringify(input))

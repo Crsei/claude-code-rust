@@ -57,7 +57,11 @@ fn shows_tips() {
         || screen.contains("Ctrl")
         || screen.contains("Type a message");
 
-    assert!(has_tips, "current screen should show usage tips, got:\n{}", screen);
+    assert!(
+        has_tips,
+        "current screen should show usage tips, got:\n{}",
+        screen
+    );
 
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(500));

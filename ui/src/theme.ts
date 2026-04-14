@@ -5,6 +5,8 @@ export const c = {
   user:        '#55FFFF',  // cyanBright
   userBubbleBg:'#08131A',
   userBubbleBorder:'#16798A',
+  toolQuestionBg:'#171200',
+  toolQuestionBorder:'#8A6B16',
   success:     '#4EC940',  // green
   successBright:'#55FF55', // greenBright
   error:       '#CC0000',  // red

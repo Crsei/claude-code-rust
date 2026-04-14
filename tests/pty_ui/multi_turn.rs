@@ -73,7 +73,10 @@ fn clear_then_continue_input() {
     let output = session.finish(QUICK_TIMEOUT, "mt_clear_continue");
 
     assert!(ok, "should produce response after /clear");
-    assert!(output.raw.len() > 0, "/clear then continue should not crash");
+    assert!(
+        output.raw.len() > 0,
+        "/clear then continue should not crash"
+    );
 }
 
 /// 快速连续输入多行后 slash 命令仍响应
@@ -101,7 +104,10 @@ fn rapid_multi_line_input() {
     session.send_ctrl_c();
     let _output = session.finish(QUICK_TIMEOUT, "mt_rapid_input");
 
-    assert!(found.is_some(), "TUI should still respond to /version after rapid input");
+    assert!(
+        found.is_some(),
+        "TUI should still respond to /version after rapid input"
+    );
 }
 
 // ── Advanced interaction tests ─────────────────────────────────────────
@@ -220,7 +226,10 @@ fn abort_and_resume_new_turn() {
     session.send_ctrl_c();
     let _output = session.finish(QUICK_TIMEOUT, "mt_abort_final");
 
-    assert!(ok, "should recover and produce response after aborting previous turn");
+    assert!(
+        ok,
+        "should recover and produce response after aborting previous turn"
+    );
 }
 
 /// 5 轮连续对话，验证状态栏 msg count 递增
@@ -230,13 +239,7 @@ fn status_bar_tracks_message_count() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
-    let prompts = [
-        "Say OK1",
-        "Say OK2",
-        "Say OK3",
-        "Say OK4",
-        "Say OK5",
-    ];
+    let prompts = ["Say OK1", "Say OK2", "Say OK3", "Say OK4", "Say OK5"];
 
     let mut last_count = 0usize;
     let mut counts: Vec<usize> = Vec::new();
@@ -271,12 +274,17 @@ fn status_bar_tracks_message_count() {
     let _output = session.finish(QUICK_TIMEOUT, "mt_status_final");
 
     // Verify msg count is monotonically increasing
-    assert!(counts.len() >= 3, "at least 3 turns should complete, got {}", counts.len());
+    assert!(
+        counts.len() >= 3,
+        "at least 3 turns should complete, got {}",
+        counts.len()
+    );
     for window in counts.windows(2) {
         assert!(
             window[1] > window[0],
             "msg count should increase: {} -> {}",
-            window[0], window[1]
+            window[0],
+            window[1]
         );
     }
 }
@@ -354,7 +362,11 @@ fn tool_write_creates_file() {
     let _output = session.finish(QUICK_TIMEOUT, "mt_tool_write_final");
 
     // Verify on disk
-    assert!(test_file.exists(), "Write tool should create file at {}", test_file.display());
+    assert!(
+        test_file.exists(),
+        "Write tool should create file at {}",
+        test_file.display()
+    );
     let content = std::fs::read_to_string(&test_file).unwrap_or_default();
     assert!(
         content.contains("WRITE_TOOL_TEST_2026"),

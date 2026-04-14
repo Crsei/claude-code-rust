@@ -18,7 +18,9 @@ fn cli() -> Command {
 }
 
 /// Workspace root used for tests that need a real directory.
-fn workspace() -> &'static str { test_workspace::workspace() }
+fn workspace() -> &'static str {
+    test_workspace::workspace()
+}
 
 // =========================================================================
 // 1. Fast paths (no API key needed, immediate exit)

@@ -105,10 +105,7 @@ fn tool_use_displayed() {
 
     // Wait for tool execution markers — these only appear in model output:
     // "⚡ Bash" (tool use block), "PTY_TOOL_VISIBLE" (tool result), "Claude:" (response)
-    let found = session.wait_for_any(
-        &["Claude:", "PTY_TOOL_VISIBLE"],
-        API_TIMEOUT,
-    );
+    let found = session.wait_for_any(&["Claude:", "PTY_TOOL_VISIBLE"], API_TIMEOUT);
 
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(500));

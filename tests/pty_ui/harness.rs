@@ -46,9 +46,8 @@ pub fn logs_dir() -> &'static PathBuf {
 pub fn binary_path() -> PathBuf {
     match std::panic::catch_unwind(|| assert_cmd::cargo::cargo_bin("claude-code-rs")) {
         Ok(p) if p.exists() => p,
-        _ => which::which("claude-code-rs").unwrap_or_else(|_| {
-            panic!("claude-code-rs binary not found via cargo_bin or PATH")
-        }),
+        _ => which::which("claude-code-rs")
+            .unwrap_or_else(|_| panic!("claude-code-rs binary not found via cargo_bin or PATH")),
     }
 }
 
@@ -97,15 +96,12 @@ impl PtySession {
 
         let child = pair.slave.spawn_command(cmd).expect("spawn in pty");
 
-        let writer: Box<dyn Write + Send> =
-            pair.master.take_writer().expect("take writer");
-        let shared_writer: Arc<Mutex<Box<dyn Write + Send>>> =
-            Arc::new(Mutex::new(writer));
+        let writer: Box<dyn Write + Send> = pair.master.take_writer().expect("take writer");
+        let shared_writer: Arc<Mutex<Box<dyn Write + Send>>> = Arc::new(Mutex::new(writer));
         let writer_for_reader = Arc::clone(&shared_writer);
 
         let mut reader = pair.master.try_clone_reader().expect("clone reader");
-        let buffer: Arc<Mutex<Vec<u8>>> =
-            Arc::new(Mutex::new(Vec::with_capacity(64 * 1024)));
+        let buffer: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::with_capacity(64 * 1024)));
         let buf_clone = Arc::clone(&buffer);
 
         let reader_thread = std::thread::spawn(move || {
@@ -447,8 +443,8 @@ impl CapturedOutput {
             // before the cleanup. We search for the cursor-home sequence
             // `\x1b[H` that is followed by line clears, working backwards.
             let markers: &[&[u8]] = &[
-                b"\x1b[?1049l",         // alternate screen off
-                b"\x1b[2J",             // erase entire display
+                b"\x1b[?1049l", // alternate screen off
+                b"\x1b[2J",     // erase entire display
             ];
 
             // Find the last \x1b[H that leads into a blank screen
@@ -482,7 +478,8 @@ impl CapturedOutput {
         let screen = parser.screen();
 
         let mut html = String::with_capacity(self.raw.len() * 3);
-        html.push_str(r#"<!DOCTYPE html>
+        html.push_str(
+            r#"<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -515,7 +512,8 @@ pre {
 <body>
 <div class="terminal">
 <pre>
-"#);
+"#,
+        );
 
         for row in 0..self.rows {
             html.push_str("<span class=\"row\">");
@@ -530,11 +528,15 @@ pre {
                 let inverse = cell.inverse();
 
                 let (fg_css, bg_css) = if inverse {
-                    (bg.as_deref().unwrap_or("#0c0c0c"),
-                     fg.as_deref().unwrap_or("#cccccc"))
+                    (
+                        bg.as_deref().unwrap_or("#0c0c0c"),
+                        fg.as_deref().unwrap_or("#cccccc"),
+                    )
                 } else {
-                    (fg.as_deref().unwrap_or("#cccccc"),
-                     bg.as_deref().unwrap_or("#0c0c0c"))
+                    (
+                        fg.as_deref().unwrap_or("#cccccc"),
+                        bg.as_deref().unwrap_or("#0c0c0c"),
+                    )
                 };
 
                 let mut style = String::new();
@@ -589,16 +591,12 @@ fn parse_msg_count(status: &str) -> Option<usize> {
 }
 
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|w| w == needle)
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 /// Find the last occurrence of `needle` in `haystack`.
 fn find_last_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .rposition(|w| w == needle)
+    haystack.windows(needle.len()).rposition(|w| w == needle)
 }
 
 /// Map vt100::Color to CSS color string.
@@ -614,10 +612,8 @@ fn color_to_css(color: vt100::Color) -> Option<String> {
 fn idx_to_css(i: u8) -> String {
     // Standard 16 colors (Windows Terminal defaults)
     const PALETTE: [&str; 16] = [
-        "#0c0c0c", "#c50f1f", "#13a10e", "#c19c00",
-        "#0037da", "#881798", "#3a96dd", "#cccccc",
-        "#767676", "#e74856", "#16c60c", "#f9f1a5",
-        "#3b78ff", "#b4009e", "#61d6d6", "#f2f2f2",
+        "#0c0c0c", "#c50f1f", "#13a10e", "#c19c00", "#0037da", "#881798", "#3a96dd", "#cccccc",
+        "#767676", "#e74856", "#16c60c", "#f9f1a5", "#3b78ff", "#b4009e", "#61d6d6", "#f2f2f2",
     ];
     if (i as usize) < PALETTE.len() {
         return PALETTE[i as usize].to_string();

@@ -69,6 +69,8 @@ pub(crate) struct QueryEngineState {
     pub(crate) loaded_nested_memory_paths: HashSet<String>,
     /// Async callback for interactive permission prompts (set by headless/TUI).
     pub(crate) permission_callback: Option<crate::types::tool::PermissionCallback>,
+    /// Async callback for AskUserQuestion prompts (set by headless/TUI).
+    pub(crate) ask_user_callback: Option<crate::types::tool::AskUserCallback>,
     /// Sender for background agent completion channel.
     /// Set by headless/TUI mode; cloned into ToolUseContext.
     pub(crate) bg_agent_tx: Option<crate::tools::background_agents::BgAgentSender>,
@@ -142,6 +144,7 @@ impl QueryEngine {
                 discovered_skill_names: HashSet::new(),
                 loaded_nested_memory_paths: HashSet::new(),
                 permission_callback: None,
+                ask_user_callback: None,
                 bg_agent_tx: None,
                 sleep_until: None,
                 session_memory,
@@ -159,6 +162,11 @@ impl QueryEngine {
     /// to prompt the user via IPC instead of immediately denying.
     pub fn set_permission_callback(&self, cb: crate::types::tool::PermissionCallback) {
         self.state.write().permission_callback = Some(cb);
+    }
+
+    /// Set the async AskUserQuestion callback used by headless/TUI mode.
+    pub fn set_ask_user_callback(&self, cb: crate::types::tool::AskUserCallback) {
+        self.state.write().ask_user_callback = Some(cb);
     }
 
     /// Set the background agent sender (called by headless/TUI at startup).

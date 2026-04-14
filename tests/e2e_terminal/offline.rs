@@ -5,7 +5,9 @@
 use std::io::Write;
 use std::time::Duration;
 
-use crate::helpers::{collect_until, read_line_json, send_msg, spawn_headless, workspace, LINE_TIMEOUT};
+use crate::helpers::{
+    collect_until, read_line_json, send_msg, spawn_headless, workspace, LINE_TIMEOUT,
+};
 
 /// The backend should emit a `ready` message immediately after starting.
 #[test]
@@ -19,7 +21,10 @@ fn emits_ready_on_start() {
         "first message should be 'ready': {:?}",
         msg
     );
-    assert!(msg["session_id"].is_string(), "ready should have session_id");
+    assert!(
+        msg["session_id"].is_string(),
+        "ready should have session_id"
+    );
     assert!(msg["model"].is_string(), "ready should have model");
     assert!(msg["cwd"].is_string(), "ready should have cwd");
 
@@ -171,16 +176,14 @@ fn submit_prompt_no_api_key_returns_error() {
     let messages = collect_until(
         &mut stdout,
         |msg| {
-            msg["type"] == "error"
-                || msg["type"] == "stream_end"
-                || msg["type"] == "usage_update"
+            msg["type"] == "error" || msg["type"] == "stream_end" || msg["type"] == "usage_update"
         },
         Duration::from_secs(30),
     );
 
-    let has_error = messages.iter().any(|m| {
-        m["type"] == "error" || (m["type"] == "system_info" && m["level"] == "error")
-    });
+    let has_error = messages
+        .iter()
+        .any(|m| m["type"] == "error" || (m["type"] == "system_info" && m["level"] == "error"));
     let has_result_error = messages.iter().any(|m| {
         m["type"] == "error"
             && m["message"]

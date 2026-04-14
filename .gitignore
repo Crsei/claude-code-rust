@@ -29,6 +29,7 @@ logs/**/*.logs
 logs/**/*.raw
 logs/**/*.html
 logs/**/*.png
+.logs/
 # macOS
 .DS_Store
 

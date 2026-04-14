@@ -135,4 +135,24 @@ describe('buildRenderItems', () => {
       expect(transcriptActivity.inputDetail).toBe('/tmp/very/long/path/that/should/still/be/visible/in/transcript/view.ts')
     }
   })
+
+  test('formats AskUserQuestion input as plain question text instead of json', () => {
+    const question = 'Subagent call failed (Azure: DeploymentNotFound). Do you want A) implement Gomoku in the main agent, or B) fix or switch the deployment first and then retry the subagent?'
+    const items = buildRenderItems([
+      toolUse('tool-q', 'AskUserQuestion', { question }, 1),
+    ], {
+      viewMode: 'transcript',
+      isBusy: true,
+    })
+
+    expect(items).toHaveLength(1)
+    expect(items[0]?.type).toBe('tool_activity')
+    if (items[0]?.type === 'tool_activity') {
+      expect(items[0].name).toBe('AskUserQuestion')
+      expect(items[0].inputDetail).toBe(question)
+      expect(items[0].inputSummary).toContain('DeploymentNotFound')
+      expect(items[0].inputDetail).not.toContain('{"question"')
+      expect(items[0].inputSummary).not.toContain('{"question"')
+    }
+  })
 })

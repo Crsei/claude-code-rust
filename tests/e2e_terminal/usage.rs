@@ -12,10 +12,8 @@ use crate::helpers::{collect_until, read_line_json, send_msg, spawn_headless, LI
 #[test]
 #[ignore]
 fn usage_update_has_nonzero_tokens() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(
-        &["-C", r"F:\temp", "--permission-mode", "bypass"],
-        false,
-    );
+    let (mut child, mut stdin, mut stdout) =
+        spawn_headless(&["-C", r"F:\temp", "--permission-mode", "bypass"], false);
 
     let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -76,10 +74,8 @@ fn usage_update_has_nonzero_tokens() {
 #[test]
 #[ignore]
 fn usage_update_tool_use_has_higher_tokens() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(
-        &["-C", r"F:\temp", "--permission-mode", "bypass"],
-        false,
-    );
+    let (mut child, mut stdin, mut stdout) =
+        spawn_headless(&["-C", r"F:\temp", "--permission-mode", "bypass"], false);
 
     let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -130,10 +126,8 @@ fn usage_update_tool_use_has_higher_tokens() {
 #[test]
 #[ignore]
 fn usage_update_cumulative_across_turns() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(
-        &["-C", r"F:\temp", "--permission-mode", "bypass"],
-        false,
-    );
+    let (mut child, mut stdin, mut stdout) =
+        spawn_headless(&["-C", r"F:\temp", "--permission-mode", "bypass"], false);
 
     let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -198,10 +192,8 @@ fn usage_update_cumulative_across_turns() {
 #[test]
 #[ignore]
 fn usage_update_cost_usd_positive() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(
-        &["-C", r"F:\temp", "--permission-mode", "bypass"],
-        false,
-    );
+    let (mut child, mut stdin, mut stdout) =
+        spawn_headless(&["-C", r"F:\temp", "--permission-mode", "bypass"], false);
 
     let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -272,10 +264,8 @@ fn usage_update_cost_usd_positive() {
 #[test]
 #[ignore]
 fn usage_update_schema_complete() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(
-        &["-C", r"F:\temp", "--permission-mode", "bypass"],
-        false,
-    );
+    let (mut child, mut stdin, mut stdout) =
+        spawn_headless(&["-C", r"F:\temp", "--permission-mode", "bypass"], false);
 
     let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
     assert_eq!(ready["type"], "ready");

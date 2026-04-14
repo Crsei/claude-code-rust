@@ -21,6 +21,12 @@ pub type PermissionCallback = Arc<
         + Sync,
 >;
 
+/// Async callback for interactive "ask the user" tool requests.
+///
+/// Called with the plain-text question and resolves to the user's answer.
+pub type AskUserCallback =
+    Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = String> + Send>> + Send + Sync>;
+
 /// 工具输入验证结果
 #[derive(Debug, Clone)]
 pub enum ValidationResult {
@@ -169,6 +175,9 @@ pub struct ToolUseContext {
     /// When set and a tool requires `Ask` permission, this callback is invoked
     /// instead of immediately denying. If `None`, `Ask` falls back to deny.
     pub permission_callback: Option<PermissionCallback>,
+    /// Async callback for interactive AskUserQuestion prompts (headless/TUI mode).
+    /// When set, AskUserQuestion routes through the frontend instead of reading stdin.
+    pub ask_user_callback: Option<AskUserCallback>,
     /// Sender for background agent completion results.
     /// When `Some`, the Agent tool can spawn background tasks.
     /// When `None`, `run_in_background` falls back to synchronous execution.

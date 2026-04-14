@@ -6,7 +6,9 @@
 use std::path::Path;
 use std::time::Duration;
 
-use crate::helpers::{collect_until, read_line_json, send_msg, spawn_headless, workspace, LIVE_TIMEOUT};
+use crate::helpers::{
+    collect_until, read_line_json, send_msg, spawn_headless, workspace, LIVE_TIMEOUT,
+};
 
 fn cleanup(path: &Path) {
     let _ = std::fs::remove_file(path);
@@ -25,10 +27,8 @@ fn read_file_shows_tool_use_in_content() {
     std::fs::write(&test_file, "CANARY_IPC_READ_42").expect("write test file");
 
     let result = std::panic::catch_unwind(|| {
-        let (mut child, mut stdin, mut stdout) = spawn_headless(
-            &["-C", workspace(), "--permission-mode", "bypass"],
-            false,
-        );
+        let (mut child, mut stdin, mut stdout) =
+            spawn_headless(&["-C", workspace(), "--permission-mode", "bypass"], false);
 
         let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
         assert_eq!(ready["type"], "ready");
@@ -60,7 +60,10 @@ fn read_file_shows_tool_use_in_content() {
         assert!(
             !assistant_msgs.is_empty(),
             "should have at least one assistant_message, got types: {:?}",
-            messages.iter().map(|m| m["type"].as_str()).collect::<Vec<_>>()
+            messages
+                .iter()
+                .map(|m| m["type"].as_str())
+                .collect::<Vec<_>>()
         );
 
         // The content array should contain a tool_use block
@@ -119,10 +122,8 @@ fn write_file_shows_tool_use_in_content() {
     cleanup(&test_file);
 
     let result = std::panic::catch_unwind(|| {
-        let (mut child, mut stdin, mut stdout) = spawn_headless(
-            &["-C", workspace(), "--permission-mode", "bypass"],
-            false,
-        );
+        let (mut child, mut stdin, mut stdout) =
+            spawn_headless(&["-C", workspace(), "--permission-mode", "bypass"], false);
 
         let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
         assert_eq!(ready["type"], "ready");
@@ -155,7 +156,10 @@ fn write_file_shows_tool_use_in_content() {
         assert!(
             has_write_tool,
             "should have Write tool_use in content, types: {:?}",
-            messages.iter().map(|m| m["type"].as_str()).collect::<Vec<_>>()
+            messages
+                .iter()
+                .map(|m| m["type"].as_str())
+                .collect::<Vec<_>>()
         );
 
         send_msg(&mut stdin, &serde_json::json!({"type": "quit"}));
@@ -174,10 +178,8 @@ fn write_file_shows_tool_use_in_content() {
 #[test]
 #[ignore]
 fn bash_tool_shows_command_in_input() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(
-        &["-C", workspace(), "--permission-mode", "bypass"],
-        false,
-    );
+    let (mut child, mut stdin, mut stdout) =
+        spawn_headless(&["-C", workspace(), "--permission-mode", "bypass"], false);
 
     let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -209,7 +211,10 @@ fn bash_tool_shows_command_in_input() {
     assert!(
         !tool_uses.is_empty(),
         "should have Bash tool_use blocks, messages: {:?}",
-        messages.iter().map(|m| m["type"].as_str()).collect::<Vec<_>>()
+        messages
+            .iter()
+            .map(|m| m["type"].as_str())
+            .collect::<Vec<_>>()
     );
 
     // The input should contain the command
@@ -245,10 +250,8 @@ fn large_file_read_shows_truncation() {
     std::fs::write(&test_file, &large_content).expect("write large file");
 
     let result = std::panic::catch_unwind(|| {
-        let (mut child, mut stdin, mut stdout) = spawn_headless(
-            &["-C", workspace(), "--permission-mode", "bypass"],
-            false,
-        );
+        let (mut child, mut stdin, mut stdout) =
+            spawn_headless(&["-C", workspace(), "--permission-mode", "bypass"], false);
 
         let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
         assert_eq!(ready["type"], "ready");
@@ -303,10 +306,8 @@ fn small_file_read_no_truncation() {
     std::fs::write(&test_file, "This is a small file.\nNo truncation needed.").expect("write");
 
     let result = std::panic::catch_unwind(|| {
-        let (mut child, mut stdin, mut stdout) = spawn_headless(
-            &["-C", workspace(), "--permission-mode", "bypass"],
-            false,
-        );
+        let (mut child, mut stdin, mut stdout) =
+            spawn_headless(&["-C", workspace(), "--permission-mode", "bypass"], false);
 
         let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
         assert_eq!(ready["type"], "ready");

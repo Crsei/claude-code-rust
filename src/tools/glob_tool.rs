@@ -26,6 +26,7 @@ impl GlobTool {
         let path = input
             .get("path")
             .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
         (pattern, path)
     }
@@ -70,6 +71,7 @@ impl Tool for GlobTool {
         input
             .get("path")
             .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
     }
 
@@ -239,6 +241,20 @@ mod tests {
         let (pattern, path) = GlobTool::parse_input(&input);
         assert_eq!(pattern, "");
         assert!(path.is_none());
+    }
+
+    #[test]
+    fn test_parse_input_empty_path_treated_as_none() {
+        let input = json!({"pattern": "*.rs", "path": ""});
+        let (pattern, path) = GlobTool::parse_input(&input);
+        assert_eq!(pattern, "*.rs");
+        assert!(path.is_none(), "empty string path should be treated as None");
+    }
+
+    #[test]
+    fn test_get_path_empty_string_treated_as_none() {
+        let tool = GlobTool::new();
+        assert_eq!(tool.get_path(&json!({"path": ""})), None);
     }
 
     #[test]

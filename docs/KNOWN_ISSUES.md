@@ -264,3 +264,43 @@ Each issue includes a description, reproduction steps, and current status.
 - `ui/src/theme.ts`
 - `ui/ink-terminal/src/markdown/format-token.ts`
 - `ui/ink-terminal/src/markdown/__tests__/format-token.test.ts`
+
+## 15. Headless AskUserQuestion left an orphaned tool call and broke the next model request
+
+**Status**: Fixed (2026-04-14)
+
+**Description**: In `--headless` mode, `AskUserQuestion` still tried to read directly from backend stdin. The frontend's next `submit_prompt` therefore started a brand-new query instead of satisfying the pending tool call, leaving an assistant `tool_calls` message without a matching `tool` reply. Azure/OpenAI then rejected the next request with `400 Bad Request` complaining about the missing `tool_call_id`.
+
+**Expected behavior**: When the model asks a question in headless mode, the frontend's next submitted text should be routed back as the answer to that pending `AskUserQuestion` tool call, not treated as a new top-level prompt.
+
+**Fix**:
+1. Added an AskUser callback path to `ToolUseContext`.
+2. Changed `AskUserQuestion` to prefer the callback over raw stdin reads.
+3. Added a headless pending-question bridge so the next `submit_prompt` answers the waiting tool call.
+4. Added regression tests for callback-based AskUser handling and pending-question routing.
+
+**Related files**:
+- `src/types/tool.rs`
+- `src/tools/ask_user.rs`
+- `src/ipc/headless.rs`
+- `src/engine/lifecycle/mod.rs`
+- `src/engine/lifecycle/deps.rs`
+
+## 16. AskUserQuestion tool activity rendered raw JSON instead of the actual question
+
+**Status**: Fixed (2026-04-14)
+
+**Description**: The frontend tool activity view treated `AskUserQuestion` input like any other structured object and fell back to `JSON.stringify`. That left prompt and transcript rows showing raw payloads such as `{"question":"..."}` instead of the actual question text, and the question itself did not stand out visually from ordinary tool arguments.
+
+**Expected behavior**: `AskUserQuestion` should display the question text directly, without JSON framing, and the question should be highlighted so it reads like an in-conversation prompt instead of a low-level tool payload.
+
+**Fix**:
+1. Taught the tool-input summarizer to extract `question` fields before falling back to JSON.
+2. Rendered `AskUserQuestion` content inside a highlighted callout in both prompt and transcript views.
+3. Added a regression test to keep `AskUserQuestion` summaries from regressing back to raw JSON.
+
+**Related files**:
+- `ui/src/store/message-model.ts`
+- `ui/src/store/message-model.test.ts`
+- `ui/src/components/ToolActivity.tsx`
+- `ui/src/theme.ts`

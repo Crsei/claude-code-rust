@@ -351,6 +351,7 @@ impl QueryDeps for QueryEngineDeps {
                 .as_ref()
                 .map(|ac| ac.query_tracking.clone()),
             permission_callback: self.permission_callback.clone(),
+            ask_user_callback: self.state.read().ask_user_callback.clone(),
             bg_agent_tx: self.bg_agent_tx.clone(),
         };
 

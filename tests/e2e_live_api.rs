@@ -28,7 +28,9 @@ use std::time::Duration;
 #[path = "test_workspace.rs"]
 mod test_workspace;
 
-fn workspace() -> &'static str { test_workspace::workspace() }
+fn workspace() -> &'static str {
+    test_workspace::workspace()
+}
 
 /// Timeout for simple chat tests (no tool use).
 const CHAT_TIMEOUT_SECS: u64 = 60;

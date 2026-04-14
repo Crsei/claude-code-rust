@@ -40,11 +40,11 @@
 
 mod harness;
 
+mod commands;
 mod fast_path;
-mod welcome;
 mod input;
-mod streaming;
+mod multi_turn;
 mod resize;
 mod screenshot;
-mod commands;
-mod multi_turn;
+mod streaming;
+mod welcome;

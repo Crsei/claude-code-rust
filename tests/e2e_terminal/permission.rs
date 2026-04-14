@@ -3,7 +3,9 @@
 //! Verifies that the default permission mode is NOT bypass,
 //! and that permission enforcement works correctly in headless mode.
 
-use crate::helpers::{collect_until, read_line_json, send_msg, spawn_headless, workspace, LINE_TIMEOUT, LIVE_TIMEOUT};
+use crate::helpers::{
+    collect_until, read_line_json, send_msg, spawn_headless, workspace, LINE_TIMEOUT, LIVE_TIMEOUT,
+};
 
 // =========================================================================
 //  Offline: permission mode defaults
@@ -62,10 +64,8 @@ fn default_mode_denies_tool_in_headless() {
 #[test]
 #[ignore]
 fn bypass_mode_allows_tool() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(
-        &["-C", r"F:\temp", "--permission-mode", "bypass"],
-        false,
-    );
+    let (mut child, mut stdin, mut stdout) =
+        spawn_headless(&["-C", r"F:\temp", "--permission-mode", "bypass"], false);
 
     let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -119,10 +119,8 @@ fn bypass_mode_allows_tool() {
 #[test]
 #[ignore]
 fn auto_mode_allows_tool() {
-    let (mut child, mut stdin, mut stdout) = spawn_headless(
-        &["-C", r"F:\temp", "--permission-mode", "auto"],
-        false,
-    );
+    let (mut child, mut stdin, mut stdout) =
+        spawn_headless(&["-C", r"F:\temp", "--permission-mode", "auto"], false);
 
     let ready = read_line_json(&mut stdout, LIVE_TIMEOUT);
     assert_eq!(ready["type"], "ready");
@@ -160,10 +158,8 @@ fn auto_mode_allows_tool() {
 #[test]
 fn permission_mode_flags_accepted_headless() {
     for mode in &["default", "auto", "bypass"] {
-        let (mut child, mut stdin, mut stdout) = spawn_headless(
-            &["-C", workspace(), "--permission-mode", mode],
-            true,
-        );
+        let (mut child, mut stdin, mut stdout) =
+            spawn_headless(&["-C", workspace(), "--permission-mode", mode], true);
         let ready = read_line_json(&mut stdout, LINE_TIMEOUT);
         assert_eq!(
             ready["type"], "ready",
@@ -173,6 +169,10 @@ fn permission_mode_flags_accepted_headless() {
 
         send_msg(&mut stdin, &serde_json::json!({"type": "quit"}));
         let status = child.wait().expect("wait");
-        assert!(status.success(), "should exit cleanly with --permission-mode {}", mode);
+        assert!(
+            status.success(),
+            "should exit cleanly with --permission-mode {}",
+            mode
+        );
     }
 }

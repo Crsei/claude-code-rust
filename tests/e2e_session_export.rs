@@ -16,7 +16,9 @@ use predicates::prelude::*;
 #[path = "test_workspace.rs"]
 mod test_workspace;
 
-fn workspace() -> &'static str { test_workspace::workspace() }
+fn workspace() -> &'static str {
+    test_workspace::workspace()
+}
 
 fn cli() -> Command {
     Command::cargo_bin("claude-code-rs").expect("binary not found")

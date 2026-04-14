@@ -71,11 +71,20 @@ fn screenshot_multi_turn_conversation() {
 
     // Pure knowledge questions — no tool triggers (avoid file/project references)
     let turns: &[(&str, &str)] = &[
-        ("What are the three primary colors? Answer in one short sentence.", "colors"),
-        ("Now list 5 programming languages sorted by age, oldest first. Keep it brief.", "languages"),
+        (
+            "What are the three primary colors? Answer in one short sentence.",
+            "colors",
+        ),
+        (
+            "Now list 5 programming languages sorted by age, oldest first. Keep it brief.",
+            "languages",
+        ),
         ("Write a haiku about coding.", "haiku"),
         ("What is the capital of France? One word answer.", "capital"),
-        ("Summarize our conversation so far in one sentence.", "summary"),
+        (
+            "Summarize our conversation so far in one sentence.",
+            "summary",
+        ),
     ];
 
     let mut completed = 0;
@@ -109,7 +118,10 @@ fn screenshot_multi_turn_conversation() {
             eprintln!("[multi-turn] Turn {turn}: done (now {last_msg_count} msgs)");
         } else {
             session.snapshot(&format!("mt_{turn}_{label}_timeout"));
-            eprintln!("[multi-turn] Turn {turn}: TIMEOUT (status bar: '{}')", session.status_bar());
+            eprintln!(
+                "[multi-turn] Turn {turn}: TIMEOUT (status bar: '{}')",
+                session.status_bar()
+            );
         }
     }
 

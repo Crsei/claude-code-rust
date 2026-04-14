@@ -50,10 +50,14 @@ mod command_registration {
     fn system_prompt_generated_successfully() {
         let mut cmd = cli();
         strip_api_keys(&mut cmd);
-        cmd.args(["--dump-system-prompt", "-C", super::test_workspace::workspace()])
-            .assert()
-            .success()
-            .stdout(predicate::str::is_empty().not());
+        cmd.args([
+            "--dump-system-prompt",
+            "-C",
+            super::test_workspace::workspace(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty().not());
     }
 }
 

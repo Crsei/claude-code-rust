@@ -17,7 +17,9 @@ fn cli() -> Command {
     Command::cargo_bin("claude-code-rs").expect("binary not found")
 }
 
-fn workspace() -> &'static str { test_workspace::workspace() }
+fn workspace() -> &'static str {
+    test_workspace::workspace()
+}
 
 /// Strips all API keys so no provider is detected — tests run offline.
 fn strip_api_keys(cmd: &mut Command) -> &mut Command {
@@ -367,7 +369,13 @@ fn dump_system_prompt_with_verbose_and_model() {
 fn init_only_with_cwd_and_permission_mode() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
-    cmd.args(["--init-only", "-C", workspace(), "--permission-mode", "auto"])
-        .assert()
-        .success();
+    cmd.args([
+        "--init-only",
+        "-C",
+        workspace(),
+        "--permission-mode",
+        "auto",
+    ])
+    .assert()
+    .success();
 }

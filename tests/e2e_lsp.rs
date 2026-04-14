@@ -14,10 +14,12 @@ use std::fs;
 
 #[test]
 fn lsp_service_stubs_replaced() {
-    let source = fs::read_to_string("src/lsp_service/mod.rs")
-        .expect("should read lsp_service/mod.rs");
+    let source =
+        fs::read_to_string("src/lsp_service/mod.rs").expect("should read lsp_service/mod.rs");
 
-    let stub_count = source.matches("LSP server connection not yet implemented").count();
+    let stub_count = source
+        .matches("LSP server connection not yet implemented")
+        .count();
     assert_eq!(
         stub_count, 0,
         "Found {} remaining stub bail!() messages in lsp_service/mod.rs",
@@ -27,8 +29,8 @@ fn lsp_service_stubs_replaced() {
 
 #[test]
 fn transport_module_exists() {
-    let source = fs::read_to_string("src/lsp_service/transport.rs")
-        .expect("should read transport.rs");
+    let source =
+        fs::read_to_string("src/lsp_service/transport.rs").expect("should read transport.rs");
     assert!(source.contains("pub struct JsonRpcTransport"));
     assert!(source.contains("Content-Length"));
     assert!(source.contains("async fn send"));
@@ -37,8 +39,8 @@ fn transport_module_exists() {
 
 #[test]
 fn conversions_module_exists() {
-    let source = fs::read_to_string("src/lsp_service/conversions.rs")
-        .expect("should read conversions.rs");
+    let source =
+        fs::read_to_string("src/lsp_service/conversions.rs").expect("should read conversions.rs");
     assert!(source.contains("parse_location_response"));
     assert!(source.contains("parse_hover_response"));
     assert!(source.contains("parse_document_symbols_response"));
@@ -50,8 +52,7 @@ fn conversions_module_exists() {
 
 #[test]
 fn client_module_exists() {
-    let source = fs::read_to_string("src/lsp_service/client.rs")
-        .expect("should read client.rs");
+    let source = fs::read_to_string("src/lsp_service/client.rs").expect("should read client.rs");
     assert!(source.contains("pub struct LspClient"));
     assert!(source.contains("async fn start"));
     assert!(
@@ -64,8 +65,7 @@ fn client_module_exists() {
 
 #[test]
 fn mod_rs_has_global_client_manager() {
-    let source = fs::read_to_string("src/lsp_service/mod.rs")
-        .expect("should read mod.rs");
+    let source = fs::read_to_string("src/lsp_service/mod.rs").expect("should read mod.rs");
     assert!(
         source.contains("LSP_CLIENTS"),
         "mod.rs should have global LSP_CLIENTS"
@@ -82,8 +82,7 @@ fn mod_rs_has_global_client_manager() {
 
 #[test]
 fn all_nine_operations_use_client() {
-    let source = fs::read_to_string("src/lsp_service/mod.rs")
-        .expect("should read mod.rs");
+    let source = fs::read_to_string("src/lsp_service/mod.rs").expect("should read mod.rs");
 
     let operations = [
         "go_to_definition",

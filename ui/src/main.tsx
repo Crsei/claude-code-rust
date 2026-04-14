@@ -28,6 +28,15 @@ const renderer = await createCliRenderer({
   useMouse: true,
 })
 
+// Copy-on-select: when a mouse selection finishes, copy text to clipboard
+renderer.on('selection', (selection: any) => {
+  if (!selection || selection.isDragging) return
+  const text = selection.getSelectedText()
+  if (text) {
+    renderer.copyToClipboardOSC52(text)
+  }
+})
+
 const root = createRoot(renderer)
 root.render(
   <BackendProvider backend={backend}>

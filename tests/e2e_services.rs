@@ -17,7 +17,9 @@ use std::time::Duration;
 #[path = "test_workspace.rs"]
 mod test_workspace;
 
-fn workspace() -> &'static str { test_workspace::workspace() }
+fn workspace() -> &'static str {
+    test_workspace::workspace()
+}
 const TOOL_TIMEOUT_SECS: u64 = 120;
 
 fn cli() -> Command {

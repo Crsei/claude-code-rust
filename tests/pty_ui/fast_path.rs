@@ -31,12 +31,7 @@ fn init_only() {
 /// `--dump-system-prompt` outputs the full system prompt.
 #[test]
 fn dump_system_prompt() {
-    let session = PtySession::spawn(
-        &["--dump-system-prompt", "-C", workspace()],
-        200,
-        50,
-        false,
-    );
+    let session = PtySession::spawn(&["--dump-system-prompt", "-C", workspace()], 200, 50, false);
     let output = session.finish(QUICK_TIMEOUT, "fp_dump_prompt");
 
     assert!(
