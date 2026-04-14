@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex;
 use tracing::debug;
 
-use crate::types::message::AssistantMessage;
+use crate::types::message::{AssistantMessage, ContentBlock, ImageSource, ToolResultContent};
 use crate::types::tool::*;
 
 use super::manager::McpManager;
@@ -87,19 +87,33 @@ impl Tool for McpToolWrapper {
 
         let result = client.call_tool(&self.def.name, input).await?;
 
-        // Convert MCP content blocks to a tool result
-        let output = format_tool_call_result(&result.content, result.is_error);
+        // Build display-only text (for UI/logs — images become "[Image: mime]")
+        let display_text = format_tool_call_result(&result.content, result.is_error);
 
         if result.is_error {
             Ok(ToolResult {
-                data: json!(format!("MCP tool error: {}", output)),
+                data: json!(format!("MCP tool error: {}", display_text)),
                 new_messages: vec![],
+                ..Default::default()
             })
         } else {
-            Ok(ToolResult {
-                data: json!(output),
-                new_messages: vec![],
-            })
+            // Check if content contains any non-text blocks (images, resources with blobs)
+            let has_multimodal = result.content.iter().any(|b| matches!(b, ToolCallContent::Image { .. }));
+
+            if has_multimodal {
+                let model_blocks = convert_mcp_to_content_blocks(&result.content);
+                Ok(ToolResult::with_content(
+                    json!(display_text),
+                    ToolResultContent::Blocks(model_blocks),
+                    display_text,
+                ))
+            } else {
+                Ok(ToolResult {
+                    data: json!(display_text),
+                    new_messages: vec![],
+                    ..Default::default()
+                })
+            }
         }
     }
 
@@ -118,6 +132,61 @@ impl Tool for McpToolWrapper {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Convert MCP tool call content blocks to Anthropic API ContentBlocks.
+///
+/// Text blocks become `ContentBlock::Text`, image blocks become `ContentBlock::Image`
+/// with base64 source. Resource blocks with text become `ContentBlock::Text`.
+fn convert_mcp_to_content_blocks(content: &[ToolCallContent]) -> Vec<ContentBlock> {
+    let mut blocks = Vec::new();
+
+    for item in content {
+        match item {
+            ToolCallContent::Text { text } => {
+                blocks.push(ContentBlock::Text { text: text.clone() });
+            }
+            ToolCallContent::Image { data, mime_type } => {
+                blocks.push(ContentBlock::Image {
+                    source: ImageSource {
+                        source_type: "base64".to_string(),
+                        media_type: mime_type.clone(),
+                        data: data.clone(),
+                    },
+                });
+            }
+            ToolCallContent::Resource { resource } => {
+                // Resources with text content become text blocks
+                if let Some(ref text) = resource.text {
+                    blocks.push(ContentBlock::Text {
+                        text: format!("[Resource: {}]\n{}", resource.uri, text),
+                    });
+                } else if let Some(ref blob) = resource.blob {
+                    // Binary resources with a recognized image MIME type become image blocks
+                    let mime = resource.mime_type.as_deref().unwrap_or("application/octet-stream");
+                    if mime.starts_with("image/") {
+                        blocks.push(ContentBlock::Image {
+                            source: ImageSource {
+                                source_type: "base64".to_string(),
+                                media_type: mime.to_string(),
+                                data: blob.clone(),
+                            },
+                        });
+                    } else {
+                        blocks.push(ContentBlock::Text {
+                            text: format!("[Resource: {} (binary)]", resource.uri),
+                        });
+                    }
+                } else {
+                    blocks.push(ContentBlock::Text {
+                        text: format!("[Resource: {}]", resource.uri),
+                    });
+                }
+            }
+        }
+    }
+
+    blocks
+}
 
 /// Format MCP tool call content blocks into a single string.
 fn format_tool_call_result(content: &[ToolCallContent], is_error: bool) -> String {
@@ -278,5 +347,61 @@ mod tests {
         assert_eq!(tools.len(), 2);
         assert_eq!(tools[0].name(), "tool_a");
         assert_eq!(tools[1].name(), "tool_b");
+    }
+
+    #[test]
+    fn test_convert_mcp_image_to_content_block() {
+        let content = vec![ToolCallContent::Image {
+            data: "iVBORw0KGgo=".to_string(),
+            mime_type: "image/png".to_string(),
+        }];
+        let blocks = convert_mcp_to_content_blocks(&content);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Image { source } => {
+                assert_eq!(source.source_type, "base64");
+                assert_eq!(source.media_type, "image/png");
+                assert_eq!(source.data, "iVBORw0KGgo=");
+            }
+            other => panic!("expected Image block, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_convert_mcp_mixed_text_and_image() {
+        let content = vec![
+            ToolCallContent::Text {
+                text: "Screenshot taken".to_string(),
+            },
+            ToolCallContent::Image {
+                data: "base64png".to_string(),
+                mime_type: "image/png".to_string(),
+            },
+        ];
+        let blocks = convert_mcp_to_content_blocks(&content);
+        assert_eq!(blocks.len(), 2);
+        assert!(matches!(&blocks[0], ContentBlock::Text { text } if text == "Screenshot taken"));
+        assert!(matches!(&blocks[1], ContentBlock::Image { .. }));
+    }
+
+    #[test]
+    fn test_convert_mcp_resource_blob_image() {
+        let content = vec![ToolCallContent::Resource {
+            resource: super::super::McpResourceContent {
+                uri: "screenshot://latest".to_string(),
+                mime_type: Some("image/jpeg".to_string()),
+                text: None,
+                blob: Some("base64jpeg".to_string()),
+            },
+        }];
+        let blocks = convert_mcp_to_content_blocks(&content);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Image { source } => {
+                assert_eq!(source.media_type, "image/jpeg");
+                assert_eq!(source.data, "base64jpeg");
+            }
+            other => panic!("expected Image block, got {:?}", other),
+        }
     }
 }

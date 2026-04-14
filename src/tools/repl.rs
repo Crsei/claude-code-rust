@@ -151,6 +151,7 @@ impl Tool for ReplTool {
                 return Ok(ToolResult {
                     data: json!({ "error": format!("Unsupported language: {}", language) }),
                     new_messages: vec![],
+                    ..Default::default()
                 });
             }
         };
@@ -164,6 +165,7 @@ impl Tool for ReplTool {
             return Ok(ToolResult {
                 data: json!({ "error": format!("Failed to write temp file: {}", e) }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -214,15 +216,18 @@ impl Tool for ReplTool {
                         "output": combined,
                     }),
                     new_messages: vec![],
+                    ..Default::default()
                 })
             }
             Ok(Err(e)) => Ok(ToolResult {
                 data: json!({ "error": format!("Failed to execute {}: {}", interpreter, e) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
             Err(_) => Ok(ToolResult {
                 data: json!({ "error": format!("Execution timed out after {}ms", timeout_duration.as_millis()) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }

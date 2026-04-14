@@ -130,6 +130,7 @@ async fn execute_tool_call(
                 result: Ok(ToolResult {
                     data: serde_json::json!({ "error": message }),
                     new_messages: vec![],
+                    ..Default::default()
                 }),
             };
         }
@@ -156,6 +157,7 @@ async fn execute_tool_call(
                     result: Ok(ToolResult {
                         data: serde_json::json!({ "error": format!("Hook stopped: {}", message) }),
                         new_messages: vec![],
+                        ..Default::default()
                     }),
                 };
             }
@@ -176,6 +178,7 @@ async fn execute_tool_call(
                     result: Ok(ToolResult {
                         data: serde_json::json!({ "error": format!("Permission denied by hook: {}", reason) }),
                         new_messages: vec![],
+                        ..Default::default()
                     }),
                 };
             }
@@ -195,6 +198,7 @@ async fn execute_tool_call(
                     result: Ok(ToolResult {
                         data: serde_json::json!({ "error": format!("Permission denied: {}", message) }),
                         new_messages: vec![],
+                        ..Default::default()
                     }),
                 };
             }
@@ -207,6 +211,7 @@ async fn execute_tool_call(
                     result: Ok(ToolResult {
                         data: serde_json::json!({ "error": format!("Permission required: {}", message) }),
                         new_messages: vec![],
+                        ..Default::default()
                     }),
                 };
             }
@@ -364,6 +369,7 @@ async fn run_concurrent_batch(
                 result: Ok(ToolResult {
                     data: serde_json::json!({ "error": format!("Tool not found: {}", tool_name) }),
                     new_messages: vec![],
+                    ..Default::default()
                 }),
             },
         };
@@ -408,6 +414,7 @@ async fn run_serial_batch(
                 result: Ok(ToolResult {
                     data: serde_json::json!({ "error": format!("Tool not found: {}", tool_name) }),
                     new_messages: vec![],
+                    ..Default::default()
                 }),
             },
         };

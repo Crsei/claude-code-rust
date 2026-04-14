@@ -312,6 +312,7 @@ impl Tool for LspTool {
                     "operation": op_str,
                 }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -328,6 +329,7 @@ impl Tool for LspTool {
                         "operation": op_str,
                     }),
                     new_messages: vec![],
+                    ..Default::default()
                 });
             }
         }
@@ -339,6 +341,7 @@ impl Tool for LspTool {
             Ok(output) => Ok(ToolResult {
                 data: output,
                 new_messages: vec![],
+                ..Default::default()
             }),
             Err(e) => Ok(ToolResult {
                 data: json!({
@@ -347,6 +350,7 @@ impl Tool for LspTool {
                     "filePath": resolved.display().to_string(),
                 }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }

@@ -107,6 +107,7 @@ impl Tool for EnterPlanModeTool {
         Ok(ToolResult {
             data: json!({ "message": instructions }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 
@@ -217,6 +218,7 @@ impl Tool for ExitPlanModeTool {
         Ok(ToolResult {
             data: result,
             new_messages: vec![],
+            ..Default::default()
         })
     }
 

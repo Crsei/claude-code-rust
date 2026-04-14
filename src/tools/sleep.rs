@@ -100,6 +100,7 @@ impl Tool for SleepTool {
                 "reason": reason,
             }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 

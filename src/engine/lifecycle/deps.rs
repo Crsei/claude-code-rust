@@ -382,6 +382,7 @@ impl QueryDeps for QueryEngineDeps {
                     result: crate::types::tool::ToolResult {
                         data: serde_json::json!(format!("Pre-tool hook stopped: {}", message)),
                         new_messages: vec![],
+                        ..Default::default()
                     },
                     is_error: true,
                 });
@@ -416,6 +417,7 @@ impl QueryDeps for QueryEngineDeps {
                                 reason
                             )),
                             new_messages: vec![],
+                            ..Default::default()
                         },
                         is_error: true,
                     });
@@ -450,6 +452,7 @@ impl QueryDeps for QueryEngineDeps {
                         result: crate::types::tool::ToolResult {
                             data: serde_json::json!(format!("Permission denied: {}", message)),
                             new_messages: vec![],
+                            ..Default::default()
                         },
                         is_error: true,
                     });
@@ -494,6 +497,7 @@ impl QueryDeps for QueryEngineDeps {
                                             result: crate::types::tool::ToolResult {
                                                 data: serde_json::json!("Permission denied by hook"),
                                                 new_messages: vec![],
+                                                ..Default::default()
                                             },
                                             is_error: true,
                                         });
@@ -540,6 +544,7 @@ impl QueryDeps for QueryEngineDeps {
                                     result: crate::types::tool::ToolResult {
                                         data: serde_json::json!("Permission denied by user."),
                                         new_messages: vec![],
+                                        ..Default::default()
                                     },
                                     is_error: true,
                                 });
@@ -566,6 +571,7 @@ impl QueryDeps for QueryEngineDeps {
                                     message
                                 )),
                                 new_messages: vec![],
+                                ..Default::default()
                             },
                             is_error: true,
                         });
@@ -624,6 +630,7 @@ impl QueryDeps for QueryEngineDeps {
                     result: crate::types::tool::ToolResult {
                         data: serde_json::json!(format!("Error: {}", e)),
                         new_messages: vec![],
+                        ..Default::default()
                     },
                     is_error: true,
                 })

@@ -224,6 +224,7 @@ impl Tool for TaskCreateTool {
                 "message": format!("Created task: {}", entry.subject)
             }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 
@@ -282,10 +283,12 @@ impl Tool for TaskGetTool {
             Some(entry) => Ok(ToolResult {
                 data: json!({ "task": task_to_json(&entry) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
             None => Ok(ToolResult {
                 data: json!({ "error": format!("Task not found: {}", id) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }
@@ -366,11 +369,13 @@ impl Tool for TaskUpdateTool {
                         "message": format!("Task '{}' updated to {}", entry.subject, status.as_str())
                     }),
                     new_messages: vec![],
+                    ..Default::default()
                 })
             }
             None => Ok(ToolResult {
                 data: json!({ "error": format!("Task not found: {}", id) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }
@@ -427,6 +432,7 @@ impl Tool for TaskListTool {
                 "count": tasks.len()
             }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 
@@ -480,10 +486,12 @@ impl Tool for TaskStopTool {
                     "message": format!("Task '{}' stopped", entry.subject)
                 }),
                 new_messages: vec![],
+                ..Default::default()
             }),
             None => Ok(ToolResult {
                 data: json!({ "error": format!("Task not found: {}", id) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }
@@ -551,10 +559,12 @@ impl Tool for TaskOutputTool {
                     }
                 }),
                 new_messages: vec![],
+                ..Default::default()
             }),
             None => Ok(ToolResult {
                 data: json!({ "error": format!("Task not found: {}", id) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }

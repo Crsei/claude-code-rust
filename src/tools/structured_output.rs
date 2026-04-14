@@ -269,10 +269,12 @@ impl Tool for StructuredOutputTool {
                     "output": formatted,
                 }),
                 new_messages: vec![],
+                ..Default::default()
             }),
             Err(e) => Ok(ToolResult {
                 data: json!({ "error": e }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }

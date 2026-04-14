@@ -85,6 +85,7 @@ fn make_error_result(
         result: ToolResult {
             data: Value::String(message.to_string()),
             new_messages: vec![],
+            ..Default::default()
         },
         is_error: true,
         new_messages: vec![],

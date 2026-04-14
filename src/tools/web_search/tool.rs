@@ -151,6 +151,7 @@ impl Tool for WebSearchTool {
                         )
                     }),
                     new_messages: vec![],
+                    ..Default::default()
                 });
             }
         };
@@ -182,6 +183,7 @@ impl Tool for WebSearchTool {
                                 "query": query,
                             }),
                             new_messages: vec![],
+                            ..Default::default()
                         });
                     }
                 }
@@ -197,6 +199,7 @@ impl Tool for WebSearchTool {
                             "query": query,
                         }),
                         new_messages: vec![],
+                        ..Default::default()
                     });
                 }
             }
@@ -216,6 +219,7 @@ impl Tool for WebSearchTool {
                 "durationSeconds": (duration_secs * 100.0).round() / 100.0,
             }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 

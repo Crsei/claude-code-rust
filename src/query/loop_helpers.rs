@@ -162,6 +162,7 @@ pub(crate) async fn execute_tool_calls(
                             result: crate::types::tool::ToolResult {
                                 data: serde_json::json!(format!("Internal error: {}", e)),
                                 new_messages: vec![],
+                                ..Default::default()
                             },
                             is_error: true,
                         });
@@ -189,6 +190,7 @@ pub(crate) async fn execute_tool_calls(
                             result: crate::types::tool::ToolResult {
                                 data: serde_json::json!(format!("Internal error: {}", e)),
                                 new_messages: vec![],
+                                ..Default::default()
                             },
                             is_error: true,
                         });

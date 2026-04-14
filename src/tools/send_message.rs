@@ -103,6 +103,7 @@ impl Tool for SendMessageTool {
                 return Ok(ToolResult {
                     data: json!({"error": "No active team. Create a team first."}),
                     new_messages: vec![],
+                    ..Default::default()
                 });
             }
         };
@@ -194,6 +195,7 @@ fn handle_single_message(
             "from": sender,
         }),
         new_messages: vec![],
+        ..Default::default()
     })
 }
 
@@ -239,6 +241,7 @@ fn handle_broadcast(
             "from": sender,
         }),
         new_messages: vec![],
+        ..Default::default()
     })
 }
 
@@ -271,6 +274,7 @@ fn handle_protocol_message(
             Ok(ToolResult {
                 data: json!({"sent": true, "type": "shutdown_request", "to": to}),
                 new_messages: vec![],
+                ..Default::default()
             })
         }
 
@@ -288,6 +292,7 @@ fn handle_protocol_message(
                     "to": to,
                 }),
                 new_messages: vec![],
+                ..Default::default()
             })
         }
 
@@ -298,6 +303,7 @@ fn handle_protocol_message(
                 "reason": reason,
             }),
             new_messages: vec![],
+            ..Default::default()
         }),
 
         protocol::ProtocolMessage::PlanApprovalResponse { .. } => {
@@ -315,6 +321,7 @@ fn handle_protocol_message(
             Ok(ToolResult {
                 data: json!({"sent": true, "type": "plan_approval_response", "to": to}),
                 new_messages: vec![],
+                ..Default::default()
             })
         }
 
@@ -333,6 +340,7 @@ fn handle_protocol_message(
             Ok(ToolResult {
                 data: json!({"sent": true, "to": to}),
                 new_messages: vec![],
+                ..Default::default()
             })
         }
     }

@@ -97,6 +97,7 @@ impl Tool for GlobTool {
             return Ok(ToolResult {
                 data: json!({ "error": "pattern is required" }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -110,6 +111,7 @@ impl Tool for GlobTool {
             return Ok(ToolResult {
                 data: json!({ "error": format!("Directory not found: {}", base_dir.display()) }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -181,11 +183,13 @@ impl Tool for GlobTool {
                         "count": count,
                     }),
                     new_messages: vec![],
+                    ..Default::default()
                 })
             }
             Err(e) => Ok(ToolResult {
                 data: json!({ "error": e }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }

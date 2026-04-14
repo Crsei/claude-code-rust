@@ -211,6 +211,7 @@ impl Tool for FileEditTool {
             return Ok(ToolResult {
                 data: json!({ "error": "file_path and old_string are required" }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -220,6 +221,7 @@ impl Tool for FileEditTool {
             return Ok(ToolResult {
                 data: json!({ "error": format!("File not found: {}", file_path) }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -230,6 +232,7 @@ impl Tool for FileEditTool {
                 return Ok(ToolResult {
                     data: json!({ "error": format!("Failed to read file: {}", e) }),
                     new_messages: vec![],
+                    ..Default::default()
                 });
             }
         };
@@ -250,6 +253,7 @@ impl Tool for FileEditTool {
                             )
                         }),
                         new_messages: vec![],
+                        ..Default::default()
                     });
                 }
             }
@@ -262,6 +266,7 @@ impl Tool for FileEditTool {
                     )
                 }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -274,6 +279,7 @@ impl Tool for FileEditTool {
                     )
                 }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -314,11 +320,13 @@ impl Tool for FileEditTool {
                         "replacements": replacements,
                     }),
                     new_messages: vec![],
+                    ..Default::default()
                 })
             }
             Err(e) => Ok(ToolResult {
                 data: json!({ "error": format!("Failed to write file: {}", e) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }

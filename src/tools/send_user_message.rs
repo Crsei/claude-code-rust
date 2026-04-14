@@ -99,6 +99,7 @@ impl Tool for SendUserMessageTool {
                 "level": level,
             }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 

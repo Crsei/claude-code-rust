@@ -111,6 +111,7 @@ impl Tool for FileWriteTool {
             return Ok(ToolResult {
                 data: json!({ "error": "file_path is required" }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -123,6 +124,7 @@ impl Tool for FileWriteTool {
                     return Ok(ToolResult {
                         data: json!({ "error": format!("Failed to create directories: {}", e) }),
                         new_messages: vec![],
+                        ..Default::default()
                     });
                 }
             }
@@ -158,11 +160,13 @@ impl Tool for FileWriteTool {
                         "path": file_path,
                     }),
                     new_messages: vec![],
+                    ..Default::default()
                 })
             }
             Err(e) => Ok(ToolResult {
                 data: json!({ "error": format!("Failed to write file: {}", e) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }

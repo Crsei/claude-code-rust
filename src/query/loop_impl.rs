@@ -424,15 +424,24 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
 
                 // Convert tool results to user messages
                 for exec_result in &tool_results {
-                    let tool_result_content = if exec_result.is_error {
-                        format!("Error: {}", exec_result.result.data)
+                    // Use structured model_content when available (e.g. images from MCP),
+                    // otherwise fall back to text-only content.
+                    let (tr_content, display_text) = if exec_result.is_error {
+                        let text = format!("Error: {}", exec_result.result.data);
+                        (ToolResultContent::Text(text.clone()), text)
+                    } else if let Some(ref model_content) = exec_result.result.model_content {
+                        let preview = exec_result.result.display_preview
+                            .clone()
+                            .unwrap_or_else(|| exec_result.result.data.to_string());
+                        (model_content.clone(), preview)
                     } else {
-                        exec_result.result.data.to_string()
+                        let text = exec_result.result.data.to_string();
+                        (ToolResultContent::Text(text.clone()), text)
                     };
 
                     let tool_result_block = ContentBlock::ToolResult {
                         tool_use_id: exec_result.tool_use_id.clone(),
-                        content: ToolResultContent::Text(tool_result_content.clone()),
+                        content: tr_content,
                         is_error: exec_result.is_error,
                     };
 
@@ -442,7 +451,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                         role: "user".to_string(),
                         content: MessageContent::Blocks(vec![tool_result_block]),
                         is_meta: true,
-                        tool_use_result: Some(tool_result_content),
+                        tool_use_result: Some(display_text),
                         source_tool_assistant_uuid: Some(assistant_message.uuid),
                     };
 

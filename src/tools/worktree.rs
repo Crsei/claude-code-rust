@@ -281,6 +281,7 @@ impl Tool for EnterWorktreeTool {
                 ),
             }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 
@@ -454,6 +455,7 @@ impl Tool for ExitWorktreeTool {
                         ),
                     }),
                     new_messages: vec![],
+                    ..Default::default()
                 })
             }
             "remove" => {
@@ -533,6 +535,7 @@ impl Tool for ExitWorktreeTool {
                 Ok(ToolResult {
                     data: result,
                     new_messages: vec![],
+                    ..Default::default()
                 })
             }
             other => bail!("Unknown action: {}. Use 'keep' or 'remove'.", other),

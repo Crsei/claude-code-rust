@@ -72,6 +72,7 @@ impl Tool for AskUserQuestionTool {
                      Proceed with your best judgment."
                 ),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -98,6 +99,7 @@ impl Tool for AskUserQuestionTool {
         Ok(ToolResult {
             data: json!(response),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 

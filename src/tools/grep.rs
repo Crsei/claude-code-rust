@@ -200,6 +200,7 @@ impl Tool for GrepTool {
             return Ok(ToolResult {
                 data: json!(output),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -307,6 +308,7 @@ impl Tool for GrepTool {
         Ok(ToolResult {
             data: json!(output),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 

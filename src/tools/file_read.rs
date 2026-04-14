@@ -107,6 +107,7 @@ impl FileReadTool {
                     "file_path": file_path,
                 }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -123,6 +124,7 @@ impl FileReadTool {
                 "file_path": file_path,
             }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 
@@ -177,6 +179,7 @@ impl FileReadTool {
                             "error": "PDF reading requires pdftotext. Install poppler-utils or provide a text version."
                         }),
                         new_messages: vec![],
+                        ..Default::default()
                     });
                 }
                 return Err(anyhow::anyhow!("Failed to run pdftotext: {}", e));
@@ -188,6 +191,7 @@ impl FileReadTool {
             return Ok(ToolResult {
                 data: json!({ "error": format!("pdftotext failed: {}", stderr) }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -199,6 +203,7 @@ impl FileReadTool {
                     "file_path": file_path,
                 }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -212,6 +217,7 @@ impl FileReadTool {
                 "file_path": file_path,
             }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 
@@ -272,6 +278,7 @@ impl FileReadTool {
                 "file_path": file_path,
             }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 
@@ -430,6 +437,7 @@ impl Tool for FileReadTool {
             return Ok(ToolResult {
                 data: json!({ "error": "file_path is required" }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -439,6 +447,7 @@ impl Tool for FileReadTool {
             return Ok(ToolResult {
                 data: json!({ "error": format!("File not found: {}", file_path) }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -446,6 +455,7 @@ impl Tool for FileReadTool {
             return Ok(ToolResult {
                 data: json!({ "error": format!("Path is a directory, not a file: {}. Use ls via Bash tool to list directory contents.", file_path) }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -456,6 +466,7 @@ impl Tool for FileReadTool {
                 Err(e) => Ok(ToolResult {
                     data: json!({ "error": format!("Failed to read image: {}", e) }),
                     new_messages: vec![],
+                    ..Default::default()
                 }),
             };
         }
@@ -466,6 +477,7 @@ impl Tool for FileReadTool {
                 Err(e) => Ok(ToolResult {
                     data: json!({ "error": format!("Failed to read PDF: {}", e) }),
                     new_messages: vec![],
+                    ..Default::default()
                 }),
             };
         }
@@ -476,6 +488,7 @@ impl Tool for FileReadTool {
                 Err(e) => Ok(ToolResult {
                     data: json!({ "error": format!("Failed to read notebook: {}", e) }),
                     new_messages: vec![],
+                    ..Default::default()
                 }),
             };
         }
@@ -487,6 +500,7 @@ impl Tool for FileReadTool {
                 return Ok(ToolResult {
                     data: json!({ "error": format!("Failed to read file: {}", e) }),
                     new_messages: vec![],
+                    ..Default::default()
                 });
             }
         };
@@ -495,6 +509,7 @@ impl Tool for FileReadTool {
             return Ok(ToolResult {
                 data: json!({ "error": "File appears to be binary. Cannot display binary file contents." }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -512,6 +527,7 @@ impl Tool for FileReadTool {
                     "total_lines": total_lines,
                 }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -522,6 +538,7 @@ impl Tool for FileReadTool {
                     "total_lines": 0,
                 }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -542,6 +559,7 @@ impl Tool for FileReadTool {
                 "total_lines": total_lines,
             }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 

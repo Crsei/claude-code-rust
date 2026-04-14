@@ -285,6 +285,7 @@ mod tests {
         let tool_result = ToolResult {
             data: Value::String("ok".into()),
             new_messages: vec![],
+            ..Default::default()
         };
         let result = run_post_tool_hooks("Bash", &json!({}), &tool_result, &[])
             .await
@@ -343,6 +344,7 @@ mod tests {
         let tool_result = ToolResult {
             data: json!("file contents here"),
             new_messages: vec![],
+            ..Default::default()
         };
 
         let result = run_post_tool_hooks(
@@ -371,6 +373,7 @@ mod tests {
         let tool_result = ToolResult {
             data: json!("ok"),
             new_messages: vec![],
+            ..Default::default()
         };
 
         let result = run_post_tool_hooks("Bash", &json!({"command": "ls"}), &tool_result, &configs)

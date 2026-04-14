@@ -135,6 +135,7 @@ impl Tool for PowerShellTool {
             return Ok(ToolResult {
                 data: json!({ "error": "Command must not be empty" }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -185,15 +186,18 @@ impl Tool for PowerShellTool {
                         "output": combined,
                     }),
                     new_messages: vec![],
+                    ..Default::default()
                 })
             }
             Ok(Err(e)) => Ok(ToolResult {
                 data: json!({ "error": format!("Failed to execute PowerShell command: {}", e) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
             Err(_) => Ok(ToolResult {
                 data: json!({ "error": format!("PowerShell command timed out after {}ms", timeout_duration.as_millis()) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }

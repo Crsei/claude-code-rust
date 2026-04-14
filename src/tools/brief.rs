@@ -123,6 +123,7 @@ impl Tool for BriefTool {
                 "attachments": attachments,
             }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 

@@ -59,7 +59,7 @@ impl Tool for ReadOnlyStub {
         _: &crate::types::message::AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> anyhow::Result<ToolResult> {
-        Ok(ToolResult { data: Value::Null, new_messages: vec![] })
+        Ok(ToolResult { data: Value::Null, new_messages: vec![], ..Default::default() })
     }
     async fn prompt(&self) -> String { String::new() }
 }
@@ -76,7 +76,7 @@ impl Tool for WritableStub {
         _: &crate::types::message::AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> anyhow::Result<ToolResult> {
-        Ok(ToolResult { data: Value::Null, new_messages: vec![] })
+        Ok(ToolResult { data: Value::Null, new_messages: vec![], ..Default::default() })
     }
     async fn prompt(&self) -> String { String::new() }
 }

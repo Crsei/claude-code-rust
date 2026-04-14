@@ -229,6 +229,7 @@ impl Tool for BashTool {
             return Ok(ToolResult {
                 data: json!({ "error": "Command must not be empty" }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -295,15 +296,18 @@ impl Tool for BashTool {
                         "output": combined,
                     }),
                     new_messages: vec![],
+                    ..Default::default()
                 })
             }
             Ok(Err(e)) => Ok(ToolResult {
                 data: json!({ "error": format!("Failed to execute command: {}", e) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
             Err(_) => Ok(ToolResult {
                 data: json!({ "error": format!("Command timed out after {}ms", timeout_duration.as_millis()) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }

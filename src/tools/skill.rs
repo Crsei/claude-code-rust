@@ -203,6 +203,7 @@ impl Tool for SkillTool {
                 Ok(ToolResult {
                     data: result_data,
                     new_messages: vec![skill_message],
+                    ..Default::default()
                 })
             }
             SkillContext::Fork => {
@@ -227,6 +228,7 @@ impl Tool for SkillTool {
                         ),
                     }),
                     new_messages: vec![skill_message],
+                    ..Default::default()
                 })
             }
         }

@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::app_state::AppState;
 #[allow(unused_imports)]
-use super::message::{AssistantMessage, ContentBlock, Message};
+use super::message::{AssistantMessage, ContentBlock, Message, ToolResultContent};
 
 /// Async callback for interactive permission requests.
 ///
@@ -40,12 +40,31 @@ pub enum PermissionResult {
 }
 
 /// 工具执行结果
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ToolResult {
-    /// 工具输出数据
+    /// 工具输出数据 (legacy: 仅用于兼容和日志)
     pub data: Value,
+    /// 结构化内容块, 用于回传给模型 (支持图片等多模态内容)
+    ///
+    /// 当 `Some`, query loop 使用此字段构建 `ToolResultContent::Blocks(...)`;
+    /// 当 `None`, 退化为 `ToolResultContent::Text(data.to_string())`.
+    pub model_content: Option<ToolResultContent>,
+    /// 人类可读的预览文本 (用于 UI/日志, 不含图片二进制数据)
+    pub display_preview: Option<String>,
     /// 额外产生的消息 (如子代理对话)
     pub new_messages: Vec<Message>,
+}
+
+impl ToolResult {
+    /// Create a tool result with structured multimodal content for the model.
+    pub fn with_content(data: Value, model_content: ToolResultContent, display_preview: String) -> Self {
+        Self {
+            data,
+            model_content: Some(model_content),
+            display_preview: Some(display_preview),
+            new_messages: vec![],
+        }
+    }
 }
 
 /// 工具执行进度回调的数据

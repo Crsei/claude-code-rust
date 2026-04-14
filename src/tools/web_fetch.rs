@@ -295,6 +295,7 @@ impl Tool for WebFetchTool {
                     "cached": true,
                 }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -337,6 +338,7 @@ impl Tool for WebFetchTool {
                     ),
                 }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -368,6 +370,7 @@ impl Tool for WebFetchTool {
                 "durationMs": duration_ms,
             }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 

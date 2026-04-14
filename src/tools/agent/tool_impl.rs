@@ -293,6 +293,7 @@ impl Tool for AgentTool {
                     description, agent_id
                 )),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 

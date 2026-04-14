@@ -265,6 +265,7 @@ pub async fn run_tool_use(
                 result: ToolResult {
                     data,
                     new_messages: vec![],
+                    ..Default::default()
                 },
                 is_error: false,
                 new_messages,
@@ -285,6 +286,7 @@ pub async fn run_tool_use(
                 result: ToolResult {
                     data: Value::String(format!("Error: {}", e)),
                     new_messages: vec![],
+                    ..Default::default()
                 },
                 is_error: true,
                 new_messages: vec![],

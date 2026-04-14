@@ -181,6 +181,7 @@ impl Tool for ConfigTool {
                 Ok(ToolResult {
                     data: json!({ "key": key, "value": val }),
                     new_messages: vec![],
+                    ..Default::default()
                 })
             }
             "set" => {
@@ -211,6 +212,7 @@ impl Tool for ConfigTool {
                         "value": parsed_value,
                     }),
                     new_messages: vec![],
+                    ..Default::default()
                 })
             }
             "list" => {
@@ -222,11 +224,13 @@ impl Tool for ConfigTool {
                         "path": settings_path.display().to_string(),
                     }),
                     new_messages: vec![],
+                    ..Default::default()
                 })
             }
             _ => Ok(ToolResult {
                 data: json!({ "error": format!("Unknown action: {}", action) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }

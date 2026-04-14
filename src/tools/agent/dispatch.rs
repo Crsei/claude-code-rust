@@ -73,6 +73,7 @@ impl AgentTool {
         Ok(ToolResult {
             data: json!(result_text),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 

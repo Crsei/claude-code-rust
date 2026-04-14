@@ -477,11 +477,9 @@ fn handle_sdk_message(
         // ── SystemInit ──────────────────────────────────────────
         SdkMessage::SystemInit(init) => send_to_frontend(&BackendMessage::SystemInfo {
             text: format!(
-                "Permission: {}, {} tools, {} skills, {} MCPs",
+                "Permission: {}, {} tools",
                 init.permission_mode,
                 init.tools.len(),
-                init.skills_count,
-                init.mcps_count,
             ),
             level: "info".to_string(),
         }),
