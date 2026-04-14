@@ -226,7 +226,8 @@ async fn execute_tool_call(
     // ── Step 6: Post-tool hooks ─────────────────────────────────────
     match &call_result {
         Ok(result) => {
-            let _ = hooks::run_post_tool_hooks(&tool_name, &effective_input, result, &post_configs).await;
+            let _ = hooks::run_post_tool_hooks(&tool_name, &effective_input, result, &post_configs)
+                .await;
         }
         Err(e) => {
             let _ = hooks::run_post_tool_failure_hooks(

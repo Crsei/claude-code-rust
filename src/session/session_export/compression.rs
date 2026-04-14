@@ -8,12 +8,12 @@ use crate::types::message::{
     ContentBlock, Message, MessageContent, SystemSubtype, ToolResultContent,
 };
 
+use super::builders::tool_result_content_to_json;
+use super::format_ts_millis;
 use super::{
     CompactBoundaryRecord, CompressionData, ContentReplacementRecord, MicrocompactRecord,
     ToolCallRecord,
 };
-use super::format_ts_millis;
-use super::builders::tool_result_content_to_json;
 
 // ---------------------------------------------------------------------------
 // Tool timeline reconstruction

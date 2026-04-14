@@ -4,7 +4,7 @@
 //!   /login              — interactive login (choose method)
 //!   /login status       — show current auth status
 //!   /login sk-ant-...   — store API key directly
-//!   /login 1|2|3        — select login method
+//!   /login 1|2|3|4      — select login method
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -43,6 +43,9 @@ impl CommandHandler for LoginHandler {
             "3" => Ok(CommandResult::Output(login_code::start_pending(
                 OAuthMethod::Console,
             ))),
+            "4" | "codex" => Ok(CommandResult::Output(login_code::start_pending(
+                OAuthMethod::OpenAiCodex,
+            ))),
             _ => Ok(CommandResult::Output(format!(
                 "Unknown option: \"{}\"\n\n{}",
                 args,
@@ -57,11 +60,16 @@ fn login_menu() -> String {
      \n  [1] API Key (paste manually)\
      \n  [2] Claude.ai OAuth (Pro/Max subscription)\
      \n  [3] Console OAuth (API billing)\
-     \n\nType /login 1, /login 2, or /login 3"
+     \n  [4] OpenAI Codex OAuth (ChatGPT subscription)\
+     \n\nType /login 1, /login 2, /login 3, or /login 4"
         .to_string()
 }
 
 fn auth_status_text() -> String {
+    if let Some(codex_status) = codex_auth_status_text() {
+        return codex_status;
+    }
+
     let current = auth::resolve_auth();
     match &current {
         auth::AuthMethod::ApiKey(key) => {
@@ -86,6 +94,27 @@ fn auth_status_text() -> String {
             format!("Authenticated: OAuth ({})", method)
         }
         auth::AuthMethod::None => "Not authenticated".to_string(),
+    }
+}
+
+fn codex_auth_status_text() -> Option<String> {
+    if std::env::var("OPENAI_CODEX_AUTH_TOKEN")
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false)
+    {
+        return Some("Authenticated: OpenAI Codex OAuth (env OPENAI_CODEX_AUTH_TOKEN)".to_string());
+    }
+
+    let stored = auth::token::load_token().ok().flatten()?;
+    let method = stored.oauth_method.as_deref().unwrap_or_default();
+    if !method.eq_ignore_ascii_case("openai_codex") {
+        return None;
+    }
+
+    if auth::token::is_token_expired(&stored) {
+        Some("OpenAI Codex OAuth token is expired. Run /login 4 to refresh.".to_string())
+    } else {
+        Some("Authenticated: OpenAI Codex OAuth (stored credentials)".to_string())
     }
 }
 
@@ -132,6 +161,7 @@ mod tests {
         assert!(menu.contains("[1]"));
         assert!(menu.contains("[2]"));
         assert!(menu.contains("[3]"));
+        assert!(menu.contains("[4]"));
         assert!(menu.contains("API Key"));
         assert!(menu.contains("OAuth"));
     }

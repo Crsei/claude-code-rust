@@ -61,7 +61,10 @@ impl Tool for AskUserQuestionTool {
             .unwrap_or("(no question provided)");
 
         if let Some(callback) = &ctx.ask_user_callback {
-            debug!(question = question, "AskUser: routing question through callback");
+            debug!(
+                question = question,
+                "AskUser: routing question through callback"
+            );
             let answer = callback(question.to_string()).await;
             debug!(
                 question = question,

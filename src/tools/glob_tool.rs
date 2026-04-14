@@ -248,7 +248,10 @@ mod tests {
         let input = json!({"pattern": "*.rs", "path": ""});
         let (pattern, path) = GlobTool::parse_input(&input);
         assert_eq!(pattern, "*.rs");
-        assert!(path.is_none(), "empty string path should be treated as None");
+        assert!(
+            path.is_none(),
+            "empty string path should be treated as None"
+        );
     }
 
     #[test]

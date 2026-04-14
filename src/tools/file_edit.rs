@@ -299,14 +299,17 @@ impl Tool for FileEditTool {
                 // Fire FileChanged hook
                 {
                     let app_state = (ctx.get_app_state)();
-                    let configs = crate::tools::hooks::load_hook_configs(&app_state.hooks, "FileChanged");
+                    let configs =
+                        crate::tools::hooks::load_hook_configs(&app_state.hooks, "FileChanged");
                     if !configs.is_empty() {
                         let payload = json!({
                             "file_path": &file_path,
                             "operation": "edit",
                             "replacements": replacements,
                         });
-                        let _ = crate::tools::hooks::run_event_hooks("FileChanged", &payload, &configs).await;
+                        let _ =
+                            crate::tools::hooks::run_event_hooks("FileChanged", &payload, &configs)
+                                .await;
                     }
                 }
 

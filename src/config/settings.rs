@@ -234,8 +234,7 @@ fn apply_env_overrides(merged: &mut MergedConfig) {
     if let Ok(model) = std::env::var("CLAUDE_MODEL") {
         merged.model = Some(model);
     }
-    if let Ok(backend) = std::env::var("CC_BACKEND").or_else(|_| std::env::var("CLAUDE_BACKEND"))
-    {
+    if let Ok(backend) = std::env::var("CC_BACKEND").or_else(|_| std::env::var("CLAUDE_BACKEND")) {
         merged.backend = Some(backend);
     }
     if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {

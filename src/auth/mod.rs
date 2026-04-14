@@ -3,11 +3,13 @@
 //! Supports three active auth methods:
 //! - API Key: via `ANTHROPIC_API_KEY` env var or system keychain
 //! - External Auth Token: via `ANTHROPIC_AUTH_TOKEN` env var
-//! - OAuth Token: from `~/.cc-rust/credentials.json` (Claude.ai or Console)
+//! - OAuth Token: from `~/.cc-rust/credentials.json` (Claude.ai / Console / OpenAI Codex)
 
 pub mod api_key;
 pub mod oauth;
 pub mod token;
+
+const OPENAI_CODEX_AUTH_TOKEN_ENV: &str = "OPENAI_CODEX_AUTH_TOKEN";
 
 // ---------------------------------------------------------------------------
 // Auth method enum
@@ -23,7 +25,7 @@ pub enum AuthMethod {
     /// OAuth access token (Claude.ai or Console)
     OAuthToken {
         access_token: String,
-        /// "claude_ai" or "console"
+        /// "claude_ai", "console", or "openai_codex"
         method: String,
     },
     /// No authentication configured
@@ -80,8 +82,9 @@ pub fn resolve_auth() -> AuthMethod {
 
     // 3. OAuth token from disk (with auto-refresh if expired)
     if let Ok(Some((access_token, method))) = try_resolve_oauth() {
-        if method == "console" {
+        if method == "console" || method == "openai_codex" {
             // Console mode: API key is in keychain (created at login).
+            // OpenAI Codex mode: handled by resolve_codex_auth_token().
             // Fall through to keychain check below.
         } else {
             return AuthMethod::OAuthToken {
@@ -99,6 +102,51 @@ pub fn resolve_auth() -> AuthMethod {
     }
 
     AuthMethod::None
+}
+
+/// Resolve OpenAI Codex auth token.
+///
+/// Priority:
+/// 1. `OPENAI_CODEX_AUTH_TOKEN` environment variable
+/// 2. OAuth token from `~/.cc-rust/credentials.json` when method is `openai_codex`
+pub fn resolve_codex_auth_token() -> Option<String> {
+    if let Ok(token) = std::env::var(OPENAI_CODEX_AUTH_TOKEN_ENV) {
+        let trimmed = token.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    let stored = token::load_token().ok().flatten()?;
+    let method = stored.oauth_method.clone().unwrap_or_default();
+    if !method.eq_ignore_ascii_case("openai_codex") {
+        return None;
+    }
+
+    if !token::is_token_expired(&stored) {
+        return Some(stored.access_token);
+    }
+
+    let refresh_tok = match &stored.refresh_token {
+        Some(t) if !t.trim().is_empty() => t.clone(),
+        _ => {
+            let _ = token::remove_token();
+            return None;
+        }
+    };
+
+    let scopes: Vec<String> = stored.scopes.clone();
+    match try_refresh_sync(&refresh_tok, &scopes, &stored) {
+        Ok(Some((access_token, refreshed_method))) if refreshed_method == "openai_codex" => {
+            Some(access_token)
+        }
+        Ok(Some(_)) | Ok(None) => None,
+        Err(e) => {
+            tracing::warn!(error = %e, "OpenAI Codex OAuth auto-refresh failed");
+            let _ = token::remove_token();
+            None
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -148,9 +196,15 @@ fn try_refresh_sync(
     scopes: &[String],
     stored: &token::StoredToken,
 ) -> anyhow::Result<Option<(String, String)>> {
+    let oauth_method = stored
+        .oauth_method
+        .as_deref()
+        .and_then(oauth::config::method_from_storage_name)
+        .unwrap_or(oauth::config::OAuthMethod::ClaudeAi);
+
     let scope_strs: Vec<&str> = scopes.iter().map(|s| s.as_str()).collect();
     let scopes_ref: &[&str] = if scope_strs.is_empty() {
-        oauth::config::CLAUDE_AI_SCOPES
+        oauth::config::scopes_for(oauth_method)
     } else {
         &scope_strs
     };
@@ -168,7 +222,7 @@ fn try_refresh_sync(
     let result = std::thread::spawn(move || {
         handle.block_on(async {
             let scope_strs: Vec<&str> = scopes_owned.iter().map(|s| s.as_str()).collect();
-            match oauth::client::refresh_token(&refresh_tok, &scope_strs).await {
+            match oauth::client::refresh_token(oauth_method, &refresh_tok, &scope_strs).await {
                 Ok(resp) => {
                     let expires_at = chrono::Utc::now().timestamp() + resp.expires_in as i64;
                     let new_scopes: Vec<String> = resp

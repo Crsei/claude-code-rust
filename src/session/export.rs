@@ -12,7 +12,6 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use tracing::{debug, info};
 
-
 use crate::session::storage::{self, SerializableMessage, SessionFile};
 use crate::types::message::{ContentBlock, Message, MessageContent};
 

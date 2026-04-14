@@ -94,9 +94,14 @@ pub async fn run_tool_use(
     }
 
     // ── Stage 3c: Security validation ──────────────────────────────
-    if let Some(err_result) =
-        security_validate(tool_use_id, tool_name, &sanitized_input, tool.as_ref(), ctx, started)
-    {
+    if let Some(err_result) = security_validate(
+        tool_use_id,
+        tool_name,
+        &sanitized_input,
+        tool.as_ref(),
+        ctx,
+        started,
+    ) {
         return err_result;
     }
 
@@ -255,7 +260,11 @@ pub async fn run_tool_use(
 
     match call_result {
         Ok(tool_result) => {
-            debug!(tool = tool_name, duration_ms = duration_ms, "tool call succeeded");
+            debug!(
+                tool = tool_name,
+                duration_ms = duration_ms,
+                "tool call succeeded"
+            );
             let new_messages = tool_result.new_messages.clone();
 
             // Enforce result size limit
@@ -319,8 +328,8 @@ pub async fn run_tool_use(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::{make_error_result, ToolExecutionResult};
+    use super::*;
     use std::time::Instant;
 
     /// Verify that `make_error_result` (the shared early-exit helper used by
@@ -334,10 +343,7 @@ mod tests {
         assert!(result.is_error);
         assert_eq!(result.tool_use_id, "tool-use-1");
         assert_eq!(result.tool_name, "Bash");
-        assert_eq!(
-            result.result.data.as_str().unwrap(),
-            "something went wrong"
-        );
+        assert_eq!(result.result.data.as_str().unwrap(), "something went wrong");
         assert!(result.new_messages.is_empty());
         assert!(!result.hook_stopped_continuation);
     }

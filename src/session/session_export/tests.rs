@@ -1,7 +1,7 @@
-use super::*;
 use super::builders;
 use super::compression;
 use super::compression::detect_microcompact;
+use super::*;
 use crate::types::message::*;
 use uuid::Uuid;
 

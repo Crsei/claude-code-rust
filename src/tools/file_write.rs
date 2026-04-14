@@ -139,7 +139,8 @@ impl Tool for FileWriteTool {
                 // Fire FileChanged hook
                 {
                     let app_state = (ctx.get_app_state)();
-                    let configs = crate::tools::hooks::load_hook_configs(&app_state.hooks, "FileChanged");
+                    let configs =
+                        crate::tools::hooks::load_hook_configs(&app_state.hooks, "FileChanged");
                     if !configs.is_empty() {
                         let payload = json!({
                             "file_path": &file_path,
@@ -147,7 +148,9 @@ impl Tool for FileWriteTool {
                             "byte_count": byte_count,
                             "line_count": line_count,
                         });
-                        let _ = crate::tools::hooks::run_event_hooks("FileChanged", &payload, &configs).await;
+                        let _ =
+                            crate::tools::hooks::run_event_hooks("FileChanged", &payload, &configs)
+                                .await;
                     }
                 }
 

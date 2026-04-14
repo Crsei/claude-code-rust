@@ -18,8 +18,8 @@ use super::powershell::PowerShellTool;
 use super::repl::ReplTool;
 use super::send_message::SendMessageTool;
 use super::send_user_message::SendUserMessageTool;
-use super::sleep::SleepTool;
 use super::skill::SkillTool;
+use super::sleep::SleepTool;
 use super::structured_output::StructuredOutputTool;
 use super::tasks::{
     TaskCreateTool, TaskGetTool, TaskListTool, TaskOutputTool, TaskStopTool, TaskUpdateTool,

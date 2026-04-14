@@ -128,8 +128,7 @@ impl SearchCache {
 }
 
 /// Global search cache instance.
-static SEARCH_CACHE: std::sync::LazyLock<SearchCache> =
-    std::sync::LazyLock::new(SearchCache::new);
+static SEARCH_CACHE: std::sync::LazyLock<SearchCache> = std::sync::LazyLock::new(SearchCache::new);
 
 /// Build the cache key from query parameters.
 fn build_cache_key(query: &str, max_results: u32, provider_name: &str) -> String {

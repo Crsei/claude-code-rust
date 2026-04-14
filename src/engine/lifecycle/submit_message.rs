@@ -8,25 +8,23 @@
 
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use futures::Stream;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use crate::engine::codex_exec;
 use crate::engine::input_processing;
 use crate::engine::result;
 use crate::engine::sdk_types::*;
 use crate::engine::system_prompt;
-use crate::engine::{codex_exec, codex_exec::CodexExecItem};
 use crate::query::loop_impl;
 use crate::session::transcript;
 use crate::tools::hooks;
-use crate::types::config::{QueryEngineConfig, QueryParams, QuerySource};
+use crate::types::config::{QueryParams, QuerySource};
 use crate::types::message::{
-    AssistantMessage, Attachment, ContentBlock, Message, MessageContent, QueryYield, StreamEvent,
-    SystemSubtype, ToolResultContent, Usage, UserMessage,
+    Attachment, Message, MessageContent, QueryYield, StreamEvent, SystemSubtype,
 };
 
 use super::deps::QueryEngineDeps;
@@ -151,7 +149,6 @@ impl QueryEngine {
                 let backend = s.app_state.main_loop_backend.clone();
                 (tools, model, backend)
             };
-            let use_codex_backend = codex_exec::is_codex_backend(&backend_name);
 
             // ================================================================
             // PHASE C: Pre-Query Setup
@@ -166,14 +163,10 @@ impl QueryEngine {
                 .clone();
 
             yield SdkMessage::SystemInit(SystemInitMessage {
-                tools: if use_codex_backend {
-                    vec!["codex_exec".to_string()]
-                } else {
-                    tools_snapshot
-                        .iter()
-                        .map(|t| t.name().to_string())
-                        .collect()
-                },
+                tools: tools_snapshot
+                    .iter()
+                    .map(|t| t.name().to_string())
+                    .collect(),
                 model: model_name.clone(),
                 permission_mode: format!("{:?}", perm_mode),
                 session_id: session_id.to_string(),
@@ -203,215 +196,6 @@ impl QueryEngine {
                     uuid: Uuid::new_v4(),
                     errors: vec![],
                 });
-                return;
-            }
-
-            if use_codex_backend {
-                let replay_user_messages = query_source == QuerySource::Sdk;
-                let codex_prompt = codex_exec::build_codex_prompt(
-                    &state_ref.read().messages.clone(),
-                    config.custom_system_prompt.as_deref(),
-                    config.append_system_prompt.as_deref(),
-                );
-                let request = codex_exec::CodexExecRequest {
-                    prompt: codex_prompt,
-                    model: model_name.clone(),
-                    cwd: config.cwd.clone(),
-                    permission_mode: perm_mode.clone(),
-                };
-
-                let api_started_at = Instant::now();
-                let mut last_assistant_text = String::new();
-                let mut codex_usage = Usage::default();
-                let mut codex_process = match codex_exec::spawn_codex_exec(request).await {
-                    Ok(process) => process,
-                    Err(e) => {
-                        let error_text = format!("Failed to start Codex backend: {}", e);
-                        collected_errors.push(error_text.clone());
-                        yield finalize_submit_result(
-                            &state_ref,
-                            &session_id,
-                            &config,
-                            started_at,
-                            api_started_at,
-                            0,
-                            error_text,
-                            None,
-                            structured_output.clone(),
-                            true,
-                            collected_errors.clone(),
-                        );
-                        return;
-                    }
-                };
-
-                let mut emitted_tool_ids = std::collections::HashSet::new();
-                let mut was_aborted = false;
-                turn_count_this_submit = 1;
-
-                loop {
-                    tokio::select! {
-                        event_result = codex_process.next_event() => {
-                            match event_result {
-                                Ok(Some(event)) => {
-                                    match event {
-                                        codex_exec::CodexExecEvent::ThreadStarted { thread_id } => {
-                                            debug!(thread_id = %thread_id, "codex thread started");
-                                        }
-                                        codex_exec::CodexExecEvent::TurnStarted => {
-                                            debug!("codex turn started");
-                                        }
-                                        codex_exec::CodexExecEvent::ItemStarted(item) => {
-                                            if let CodexExecItem::CommandExecution { id, command, .. } = item {
-                                                if emitted_tool_ids.insert(id.clone()) {
-                                                    let assistant_msg = make_tool_use_assistant_message(&id, "CommandExecution", serde_json::json!({ "command": command }));
-                                                    push_assistant_message(&state_ref, &session_id, &config, assistant_msg.clone());
-                                                    yield SdkMessage::Assistant(SdkAssistantMessage {
-                                                        message: assistant_msg,
-                                                        session_id: session_id.to_string(),
-                                                        parent_tool_use_id: None,
-                                                    });
-                                                }
-                                            }
-                                        }
-                                        codex_exec::CodexExecEvent::ItemCompleted(item) => {
-                                            match item {
-                                                CodexExecItem::AgentMessage { text, .. } => {
-                                                    if !text.trim().is_empty() {
-                                                        last_assistant_text = text.clone();
-                                                        let assistant_msg = make_text_assistant_message(text);
-                                                        push_assistant_message(&state_ref, &session_id, &config, assistant_msg.clone());
-                                                        yield SdkMessage::Assistant(SdkAssistantMessage {
-                                                            message: assistant_msg,
-                                                            session_id: session_id.to_string(),
-                                                            parent_tool_use_id: None,
-                                                        });
-                                                    }
-                                                }
-                                                CodexExecItem::CommandExecution {
-                                                    id,
-                                                    command,
-                                                    aggregated_output,
-                                                    exit_code,
-                                                    ..
-                                                } => {
-                                                    if emitted_tool_ids.insert(id.clone()) {
-                                                        let assistant_msg = make_tool_use_assistant_message(&id, "CommandExecution", serde_json::json!({ "command": command }));
-                                                        push_assistant_message(&state_ref, &session_id, &config, assistant_msg.clone());
-                                                        yield SdkMessage::Assistant(SdkAssistantMessage {
-                                                            message: assistant_msg,
-                                                            session_id: session_id.to_string(),
-                                                            parent_tool_use_id: None,
-                                                        });
-                                                    }
-
-                                                    let is_error = exit_code.unwrap_or(0) != 0;
-                                                    let cleaned_output = codex_exec::sanitize_command_output(&aggregated_output);
-                                                    let user_msg = make_tool_result_user_message(
-                                                        &id,
-                                                        cleaned_output.clone(),
-                                                        is_error,
-                                                    );
-                                                    push_user_message(&state_ref, &session_id, &config, user_msg.clone());
-                                                    yield SdkMessage::UserReplay(SdkUserReplay {
-                                                        content: cleaned_output,
-                                                        session_id: session_id.to_string(),
-                                                        uuid: user_msg.uuid,
-                                                        timestamp: user_msg.timestamp,
-                                                        is_replay: replay_user_messages,
-                                                        is_synthetic: true,
-                                                        content_blocks: match &user_msg.content {
-                                                            MessageContent::Blocks(blocks) => Some(blocks.clone()),
-                                                            MessageContent::Text(_) => None,
-                                                        },
-                                                    });
-                                                }
-                                                CodexExecItem::Other { .. } => {}
-                                            }
-                                        }
-                                        codex_exec::CodexExecEvent::TurnCompleted { usage } => {
-                                            codex_usage.input_tokens = usage.input_tokens;
-                                            codex_usage.cache_read_input_tokens = usage.cached_input_tokens;
-                                            codex_usage.output_tokens = usage.output_tokens;
-                                            last_stop_reason = Some("end_turn".to_string());
-                                        }
-                                    }
-                                }
-                                Ok(None) => break,
-                                Err(e) => {
-                                    collected_errors.push(format!("Codex backend stream error: {}", e));
-                                    break;
-                                }
-                            }
-                        }
-                        _ = tokio::time::sleep(Duration::from_millis(100)) => {
-                            if aborted_ref.load(Ordering::SeqCst) {
-                                was_aborted = true;
-                                let _ = codex_process.kill().await;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                let completion = match codex_process.wait().await {
-                    Ok(completion) => completion,
-                    Err(e) => {
-                        let error_text = format!("Failed to wait for Codex backend: {}", e);
-                        collected_errors.push(error_text.clone());
-                        yield finalize_submit_result(
-                            &state_ref,
-                            &session_id,
-                            &config,
-                            started_at,
-                            api_started_at,
-                            turn_count_this_submit,
-                            error_text,
-                            last_stop_reason.clone(),
-                            structured_output.clone(),
-                            true,
-                            collected_errors.clone(),
-                        );
-                        return;
-                    }
-                };
-
-                if codex_usage.input_tokens > 0
-                    || codex_usage.output_tokens > 0
-                    || codex_usage.cache_read_input_tokens > 0
-                {
-                    state_ref.write().usage.add_usage(&codex_usage, 0.0);
-                }
-
-                let result_text = if was_aborted {
-                    "Aborted by user.".to_string()
-                } else if !last_assistant_text.trim().is_empty() {
-                    last_assistant_text
-                } else if let Some(last_error) = collected_errors.last() {
-                    last_error.clone()
-                } else {
-                    "Codex backend completed without a final assistant message.".to_string()
-                };
-
-                let is_error = was_aborted || !completion.status.success();
-                if is_error && !completion.stderr.trim().is_empty() {
-                    collected_errors.push(completion.stderr.trim().to_string());
-                } else if !completion.stderr.trim().is_empty() {
-                    debug!("codex backend emitted stderr noise during a successful run");
-                }
-                yield finalize_submit_result(
-                    &state_ref,
-                    &session_id,
-                    &config,
-                    started_at,
-                    api_started_at,
-                    turn_count_this_submit,
-                    result_text,
-                    last_stop_reason.clone(),
-                    structured_output.clone(),
-                    is_error,
-                    collected_errors.clone(),
-                );
                 return;
             }
 
@@ -464,9 +248,40 @@ impl QueryEngine {
                 task_budget: config.task_budget.clone(),
             };
 
-            // Create API client via full auth resolution chain
+            // Create API client for the selected backend.
             let api_client: Option<Arc<crate::api::client::ApiClient>> =
-                crate::api::client::ApiClient::from_auth().map(Arc::new);
+                crate::api::client::ApiClient::from_backend(Some(&backend_name)).map(Arc::new);
+            if api_client.is_none() {
+                let result = if codex_exec::is_codex_backend(&backend_name) {
+                    format!(
+                        "Codex backend requires {}. Optionally set {} and {}.",
+                        crate::api::client::OPENAI_CODEX_TOKEN_ENV,
+                        crate::api::client::OPENAI_CODEX_BASE_URL_ENV,
+                        crate::api::client::OPENAI_CODEX_MODEL_ENV
+                    )
+                } else {
+                    "No API provider configured. Set an API key in environment or use /login."
+                        .to_string()
+                };
+
+                yield SdkMessage::Result(SdkResult {
+                    subtype: ResultSubtype::ErrorDuringExecution,
+                    is_error: true,
+                    duration_ms: started_at.elapsed().as_millis() as u64,
+                    duration_api_ms: 0,
+                    num_turns: 0,
+                    result: result.clone(),
+                    stop_reason: Some("api_error".to_string()),
+                    session_id: session_id.to_string(),
+                    total_cost_usd: 0.0,
+                    usage: UsageTracking::default(),
+                    permission_denials: vec![],
+                    structured_output: structured_output.clone(),
+                    uuid: Uuid::new_v4(),
+                    errors: vec![result],
+                });
+                return;
+            }
 
             // Create deps for the inner query loop
             let permission_callback = state_ref.read().permission_callback.clone();
@@ -883,150 +698,5 @@ impl QueryEngine {
             });
         };
         Box::pin(stream)
-    }
-}
-
-fn finalize_submit_result(
-    state_ref: &Arc<parking_lot::RwLock<super::QueryEngineState>>,
-    session_id: &crate::bootstrap::SessionId,
-    config: &QueryEngineConfig,
-    started_at: Instant,
-    api_started_at: Instant,
-    num_turns: usize,
-    result: String,
-    stop_reason: Option<String>,
-    structured_output: Option<serde_json::Value>,
-    is_error: bool,
-    errors: Vec<String>,
-) -> SdkMessage {
-    let (usage_snap, denials_snap) = {
-        let s = state_ref.read();
-        (s.usage.clone(), s.permission_denials.clone())
-    };
-
-    if config.auto_save_session {
-        let all_msgs = state_ref.read().messages.clone();
-        let _ = crate::session::storage::save_session(session_id.as_str(), &all_msgs, &config.cwd);
-    }
-
-    let api_duration_ms = api_started_at.elapsed().as_millis() as u64;
-    crate::bootstrap::PROCESS_STATE
-        .read()
-        .api_duration
-        .record(api_duration_ms);
-
-    SdkMessage::Result(SdkResult {
-        subtype: if is_error {
-            ResultSubtype::ErrorDuringExecution
-        } else {
-            ResultSubtype::Success
-        },
-        is_error,
-        duration_ms: started_at.elapsed().as_millis() as u64,
-        duration_api_ms: api_duration_ms,
-        num_turns,
-        result,
-        stop_reason,
-        session_id: session_id.to_string(),
-        total_cost_usd: usage_snap.total_cost_usd,
-        usage: usage_snap,
-        permission_denials: denials_snap,
-        structured_output,
-        uuid: Uuid::new_v4(),
-        errors,
-    })
-}
-
-fn make_tool_use_assistant_message(
-    tool_use_id: &str,
-    name: &str,
-    input: serde_json::Value,
-) -> AssistantMessage {
-    AssistantMessage {
-        uuid: Uuid::new_v4(),
-        timestamp: chrono::Utc::now().timestamp_millis(),
-        role: "assistant".to_string(),
-        content: vec![ContentBlock::ToolUse {
-            id: tool_use_id.to_string(),
-            name: name.to_string(),
-            input,
-        }],
-        usage: None,
-        stop_reason: None,
-        is_api_error_message: false,
-        api_error: None,
-        cost_usd: 0.0,
-    }
-}
-
-fn make_text_assistant_message(text: String) -> AssistantMessage {
-    AssistantMessage {
-        uuid: Uuid::new_v4(),
-        timestamp: chrono::Utc::now().timestamp_millis(),
-        role: "assistant".to_string(),
-        content: vec![ContentBlock::Text { text }],
-        usage: None,
-        stop_reason: Some("end_turn".to_string()),
-        is_api_error_message: false,
-        api_error: None,
-        cost_usd: 0.0,
-    }
-}
-
-fn make_tool_result_user_message(tool_use_id: &str, output: String, is_error: bool) -> UserMessage {
-    UserMessage {
-        uuid: Uuid::new_v4(),
-        timestamp: chrono::Utc::now().timestamp_millis(),
-        role: "user".to_string(),
-        content: MessageContent::Blocks(vec![ContentBlock::ToolResult {
-            tool_use_id: tool_use_id.to_string(),
-            content: ToolResultContent::Text(output),
-            is_error,
-        }]),
-        is_meta: true,
-        tool_use_result: Some(tool_use_id.to_string()),
-        source_tool_assistant_uuid: None,
-    }
-}
-
-fn push_assistant_message(
-    state_ref: &Arc<parking_lot::RwLock<super::QueryEngineState>>,
-    session_id: &crate::bootstrap::SessionId,
-    config: &QueryEngineConfig,
-    assistant_msg: AssistantMessage,
-) {
-    {
-        let mut s = state_ref.write();
-        s.messages.push(Message::Assistant(assistant_msg.clone()));
-        if let Some(ref msg_usage) = assistant_msg.usage {
-            s.usage.add_usage(msg_usage, assistant_msg.cost_usd);
-        }
-    }
-
-    let _ = transcript::record_transcript(session_id.as_str(), &[Message::Assistant(assistant_msg)]);
-
-    if config.auto_save_session {
-        let all_msgs = state_ref.read().messages.clone();
-        let _ = crate::session::storage::save_session(session_id.as_str(), &all_msgs, &config.cwd);
-    }
-}
-
-fn push_user_message(
-    state_ref: &Arc<parking_lot::RwLock<super::QueryEngineState>>,
-    session_id: &crate::bootstrap::SessionId,
-    config: &QueryEngineConfig,
-    user_msg: UserMessage,
-) {
-    {
-        let mut s = state_ref.write();
-        s.total_turn_count += 1;
-        s.messages.push(Message::User(user_msg.clone()));
-    }
-
-    let _ = transcript::record_transcript(session_id.as_str(), &[Message::User(user_msg)]);
-
-    if config.auto_save_session {
-        let all_msgs = state_ref.read().messages.clone();
-        let _ = crate::session::storage::save_session(session_id.as_str(), &all_msgs, &config.cwd);
     }
 }

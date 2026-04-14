@@ -139,7 +139,9 @@ pub trait QueryDeps: Send + Sync {
 
     /// Drain completed background agent results (called at turn start).
     /// Default: returns empty vec (no background agent support).
-    fn drain_background_results(&self) -> Vec<crate::tools::background_agents::CompletedBackgroundAgent> {
+    fn drain_background_results(
+        &self,
+    ) -> Vec<crate::tools::background_agents::CompletedBackgroundAgent> {
         vec![]
     }
 }

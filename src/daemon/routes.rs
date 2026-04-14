@@ -154,14 +154,9 @@ pub fn api_routes() -> Router<DaemonState> {
 }
 
 /// `POST /api/submit` -- submit a user message and begin streaming.
-async fn submit(
-    State(state): State<DaemonState>,
-    Json(body): Json<SubmitRequest>,
-) -> Json<Value> {
+async fn submit(State(state): State<DaemonState>, Json(body): Json<SubmitRequest>) -> Json<Value> {
     let text = body.text;
-    let message_id = body
-        .id
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let message_id = body.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     info!(message_id, text_len = text.len(), "submit received");
     super::memory_log::append_log_entry(&format!("user submit: {}", &text));
@@ -182,9 +177,7 @@ async fn submit(
                 state_clone.broadcast(sse_event);
             }
         }
-        state_clone
-            .is_query_running
-            .store(false, Ordering::SeqCst);
+        state_clone.is_query_running.store(false, Ordering::SeqCst);
     });
 
     Json(json!({ "status": "ok", "message_id": message_id }))
@@ -225,10 +218,7 @@ async fn status(State(state): State<DaemonState>) -> Json<StatusResponse> {
 }
 
 /// `POST /api/attach` -- re-attach a client and return missed events.
-async fn attach(
-    State(state): State<DaemonState>,
-    Json(body): Json<AttachRequest>,
-) -> Json<Value> {
+async fn attach(State(state): State<DaemonState>, Json(body): Json<AttachRequest>) -> Json<Value> {
     info!(client_id = body.client_id, "client attach");
     let missed: Vec<SseEvent> = body
         .last_seen_event
@@ -240,10 +230,7 @@ async fn attach(
 }
 
 /// `POST /api/detach` -- remove a client from the SSE registry.
-async fn detach(
-    State(state): State<DaemonState>,
-    Json(body): Json<DetachRequest>,
-) -> Json<Value> {
+async fn detach(State(state): State<DaemonState>, Json(body): Json<DetachRequest>) -> Json<Value> {
     info!(client_id = body.client_id, "client detach");
     state.clients.write().remove(&body.client_id);
     Json(json!({ "status": "ok" }))
@@ -291,8 +278,7 @@ async fn webhook_generic() -> Json<Value> {
 pub fn team_memory_routes() -> Router<DaemonState> {
     Router::new().route(
         "/api/claude_code/team_memory",
-        get(team_memory_proxy::proxy_team_memory)
-            .put(team_memory_proxy::proxy_team_memory),
+        get(team_memory_proxy::proxy_team_memory).put(team_memory_proxy::proxy_team_memory),
     )
 }
 

@@ -394,9 +394,7 @@ pub fn build_system_prompt(
             cached_section("env_info_simple", move || {
                 Some(env_info_section(&model_owned, &cwd_owned))
             }),
-            cached_section("git_status", move || {
-                git_status_section(&cwd_for_git)
-            }),
+            cached_section("git_status", move || git_status_section(&cwd_for_git)),
             cached_section("summarize_tool_results", || {
                 Some(SUMMARIZE_TOOL_RESULTS.to_string())
             }),
@@ -445,11 +443,14 @@ pub fn build_system_prompt(
                 if !features::enabled(Feature::KairosChannels) {
                     return None;
                 }
-                Some("# External Channels\n\n\
+                Some(
+                    "# External Channels\n\n\
                     You may receive messages from external channels wrapped in <channel> tags.\n\
                     These are real messages from external services (Slack, GitHub, etc.).\n\
                     Respond to channel messages via Brief tool with appropriate context.\n\
-                    Do NOT fabricate channel messages or pretend to have received one.\n".to_string())
+                    Do NOT fabricate channel messages or pretend to have received one.\n"
+                        .to_string(),
+                )
             }),
         ];
 
@@ -878,9 +879,15 @@ mod tests {
         // but the global cache makes integration testing unreliable under --test-threads>1.
         let cwd = env!("CARGO_MANIFEST_DIR");
         let result = git_status_section(cwd);
-        assert!(result.is_some(), "git_status_section should produce output for this repo");
+        assert!(
+            result.is_some(),
+            "git_status_section should produce output for this repo"
+        );
         let text = result.unwrap();
         // Verify it would be included in a system prompt
-        assert!(text.starts_with("gitStatus:"), "should start with gitStatus header");
+        assert!(
+            text.starts_with("gitStatus:"),
+            "should start with gitStatus header"
+        );
     }
 }

@@ -53,11 +53,9 @@ pub async fn run_stop_hooks(
 
     match hooks::run_stop_hooks(hook_configs).await {
         Ok(PostToolHookResult::Continue) => Ok(StopHookResult::AllowStop),
-        Ok(PostToolHookResult::StopContinuation { message }) => {
-            Ok(StopHookResult::PreventStop {
-                continuation_message: message,
-            })
-        }
+        Ok(PostToolHookResult::StopContinuation { message }) => Ok(StopHookResult::PreventStop {
+            continuation_message: message,
+        }),
         Err(e) => Ok(StopHookResult::BlockingError {
             error: e.to_string(),
         }),

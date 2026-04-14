@@ -185,7 +185,11 @@ impl Tool for GrepTool {
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
         let params: GrepInput = serde_json::from_value(input)?;
-        let search_path = params.path.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| ".".to_string());
+        let search_path = params
+            .path
+            .clone()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| ".".to_string());
         let head_limit = params.head_limit.unwrap_or(250);
         let offset = params.offset.unwrap_or(0);
 
@@ -384,7 +388,10 @@ mod tests {
             "path": ""
         });
         let input: GrepInput = serde_json::from_value(json_input).unwrap();
-        let search_path = input.path.filter(|s| !s.is_empty()).unwrap_or_else(|| ".".to_string());
+        let search_path = input
+            .path
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| ".".to_string());
         assert_eq!(search_path, ".", "empty path should fall back to cwd");
     }
 

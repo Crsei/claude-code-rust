@@ -265,8 +265,8 @@ pub fn parse_document_symbols_response(value: Value) -> Result<Vec<SymbolInfo>> 
         return Ok(vec![]);
     }
 
-    let resp: lsp_types::DocumentSymbolResponse = serde_json::from_value(value)
-        .context("Failed to parse document symbols response")?;
+    let resp: lsp_types::DocumentSymbolResponse =
+        serde_json::from_value(value).context("Failed to parse document symbols response")?;
 
     Ok(match resp {
         lsp_types::DocumentSymbolResponse::Nested(symbols) => {

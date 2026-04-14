@@ -11,9 +11,9 @@ use crate::types::tool::*;
 
 use super::providers::{detect_provider, search_brave, search_tavily};
 use super::{
-    build_cache_key, cache_ttl_secs, filter_results_unified, format_results_text,
-    SearchProvider, SearchResultEntry, BRAVE_API_KEY_ENV, DEFAULT_MAX_RESULTS,
-    MAX_QUERY_LENGTH, MAX_RESULTS_CAP, SEARCH_CACHE, SEARCH_TIMEOUT, TAVILY_API_KEY_ENV,
+    build_cache_key, cache_ttl_secs, filter_results_unified, format_results_text, SearchProvider,
+    SearchResultEntry, BRAVE_API_KEY_ENV, DEFAULT_MAX_RESULTS, MAX_QUERY_LENGTH, MAX_RESULTS_CAP,
+    SEARCH_CACHE, SEARCH_TIMEOUT, TAVILY_API_KEY_ENV,
 };
 
 // ---------------------------------------------------------------------------
@@ -324,9 +324,14 @@ mod tests {
     fn schema_required_contains_query() {
         let tool = WebSearchTool;
         let schema = tool.input_json_schema();
-        let required = schema["required"].as_array().expect("required should be array");
+        let required = schema["required"]
+            .as_array()
+            .expect("required should be array");
         let names: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
-        assert!(names.contains(&"query"), "schema required should include 'query'");
+        assert!(
+            names.contains(&"query"),
+            "schema required should include 'query'"
+        );
     }
 
     #[test]

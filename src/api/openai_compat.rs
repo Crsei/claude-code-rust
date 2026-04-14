@@ -17,7 +17,7 @@ use anyhow::{Context, Result};
 use futures::Stream;
 use serde_json::{json, Value};
 
-use crate::api::client::MessagesRequest;
+use crate::api::client::{build_openai_compat_url, MessagesRequest, OPENAI_CODEX_PROVIDER_NAME};
 use crate::types::message::{ContentBlock, MessageDelta, StreamEvent, Usage};
 
 // ---------------------------------------------------------------------------
@@ -76,6 +76,7 @@ fn flatten_content(content: Option<&Value>) -> String {
 /// Azure OpenAI and OpenAI newer models require `max_completion_tokens`
 /// instead of the legacy `max_tokens`.
 fn build_openai_request(request: &MessagesRequest, provider_name: &str) -> Value {
+    let is_codex_provider = provider_name.eq_ignore_ascii_case(OPENAI_CODEX_PROVIDER_NAME);
     let mut oai_messages: Vec<Value> = Vec::new();
 
     // System prompt → system message
@@ -218,14 +219,16 @@ fn build_openai_request(request: &MessagesRequest, provider_name: &str) -> Value
         "model": request.model,
         "messages": oai_messages,
         "stream": true,
-        "stream_options": { "include_usage": true },
     });
+    if !is_codex_provider {
+        body["stream_options"] = json!({ "include_usage": true });
+    }
 
-    if request.max_tokens > 0 {
+    if request.max_tokens > 0 && !is_codex_provider {
         // Azure OpenAI and OpenAI newer models (gpt-4o, o1, o3, gpt-5, etc.)
         // require `max_completion_tokens`; legacy `max_tokens` is rejected.
-        let uses_new_param = provider_name == "azure"
-            || provider_name == "openai"
+        let uses_new_param = provider_name.eq_ignore_ascii_case("azure")
+            || provider_name.eq_ignore_ascii_case("openai")
             || request.model.starts_with("gpt-4o")
             || request.model.starts_with("gpt-5")
             || request.model.starts_with("o1")
@@ -283,13 +286,13 @@ pub(crate) async fn openai_compat_stream(
     provider_name: &str,
     request: &MessagesRequest,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
-    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let url = build_openai_compat_url(base_url, provider_name);
     let body = build_openai_request(request, provider_name);
 
     let mut req_builder = http.post(&url).header("Content-Type", "application/json");
 
     // Azure OpenAI uses `api-key` header; others use `Authorization: Bearer`
-    if provider_name == "azure" {
+    if provider_name.eq_ignore_ascii_case("azure") {
         req_builder = req_builder.header("api-key", api_key);
     } else {
         req_builder = req_builder.header("Authorization", format!("Bearer {}", api_key));
@@ -629,6 +632,26 @@ mod tests {
         assert_eq!(messages[0]["content"], "Be helpful.");
         assert_eq!(messages[1]["role"], "user");
         assert_eq!(messages[1]["content"], "Hello");
+    }
+
+    #[test]
+    fn test_build_openai_request_codex_compatible_shape() {
+        let req = MessagesRequest {
+            model: "gpt-5.4".to_string(),
+            messages: vec![json!({"role": "user", "content": "Hello"})],
+            system: None,
+            max_tokens: 4096,
+            tools: None,
+            stream: true,
+            thinking: None,
+            tool_choice: None,
+        };
+        let body = build_openai_request(&req, OPENAI_CODEX_PROVIDER_NAME);
+        assert_eq!(body["model"], "gpt-5.4");
+        assert_eq!(body["stream"], true);
+        assert!(body.get("stream_options").is_none());
+        assert!(body.get("max_tokens").is_none());
+        assert!(body.get("max_completion_tokens").is_none());
     }
 
     #[test]

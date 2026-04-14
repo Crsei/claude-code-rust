@@ -214,7 +214,8 @@ impl Tool for TaskCreateTool {
                     "subject": &entry.subject,
                     "description": &entry.description,
                 });
-                let _ = crate::tools::hooks::run_event_hooks("TaskCreated", &payload, &configs).await;
+                let _ =
+                    crate::tools::hooks::run_event_hooks("TaskCreated", &payload, &configs).await;
             }
         }
 
@@ -352,14 +353,20 @@ impl Tool for TaskUpdateTool {
                 // Fire TaskCompleted hook when status changes to completed
                 if status == TaskStatus::Completed {
                     let app_state = (ctx.get_app_state)();
-                    let configs = crate::tools::hooks::load_hook_configs(&app_state.hooks, "TaskCompleted");
+                    let configs =
+                        crate::tools::hooks::load_hook_configs(&app_state.hooks, "TaskCompleted");
                     if !configs.is_empty() {
                         let payload = json!({
                             "task_id": &entry.id,
                             "subject": &entry.subject,
                             "status": status.as_str(),
                         });
-                        let _ = crate::tools::hooks::run_event_hooks("TaskCompleted", &payload, &configs).await;
+                        let _ = crate::tools::hooks::run_event_hooks(
+                            "TaskCompleted",
+                            &payload,
+                            &configs,
+                        )
+                        .await;
                     }
                 }
 

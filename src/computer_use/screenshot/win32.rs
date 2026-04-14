@@ -46,14 +46,8 @@ Write-Output ([Convert]::ToBase64String($bytes))
         .next()
         .ok_or_else(|| anyhow::anyhow!("No dimensions in screenshot output"))?;
     let mut dims = dims_line.split_whitespace();
-    let width: u32 = dims
-        .next()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1920);
-    let height: u32 = dims
-        .next()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1080);
+    let width: u32 = dims.next().and_then(|s| s.parse().ok()).unwrap_or(1920);
+    let height: u32 = dims.next().and_then(|s| s.parse().ok()).unwrap_or(1080);
 
     let base64_png = lines
         .next()

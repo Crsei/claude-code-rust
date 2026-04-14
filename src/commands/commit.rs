@@ -132,7 +132,10 @@ mod tests {
     async fn test_commit_not_in_git_repo_with_message() {
         let handler = CommitHandler;
         let mut ctx = test_ctx(PathBuf::from("/nonexistent/fake/path"));
-        let result = handler.execute("my commit message", &mut ctx).await.unwrap();
+        let result = handler
+            .execute("my commit message", &mut ctx)
+            .await
+            .unwrap();
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("not in a git repository"));

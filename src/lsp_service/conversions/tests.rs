@@ -282,10 +282,7 @@ fn test_symbol_kind_str_all_variants() {
     assert_eq!(symbol_kind_str(lsp_types::SymbolKind::PACKAGE), "Package");
     assert_eq!(symbol_kind_str(lsp_types::SymbolKind::CLASS), "Class");
     assert_eq!(symbol_kind_str(lsp_types::SymbolKind::METHOD), "Method");
-    assert_eq!(
-        symbol_kind_str(lsp_types::SymbolKind::PROPERTY),
-        "Property"
-    );
+    assert_eq!(symbol_kind_str(lsp_types::SymbolKind::PROPERTY), "Property");
     assert_eq!(symbol_kind_str(lsp_types::SymbolKind::FIELD), "Field");
     assert_eq!(
         symbol_kind_str(lsp_types::SymbolKind::CONSTRUCTOR),
@@ -296,18 +293,9 @@ fn test_symbol_kind_str_all_variants() {
         symbol_kind_str(lsp_types::SymbolKind::INTERFACE),
         "Interface"
     );
-    assert_eq!(
-        symbol_kind_str(lsp_types::SymbolKind::FUNCTION),
-        "Function"
-    );
-    assert_eq!(
-        symbol_kind_str(lsp_types::SymbolKind::VARIABLE),
-        "Variable"
-    );
-    assert_eq!(
-        symbol_kind_str(lsp_types::SymbolKind::CONSTANT),
-        "Constant"
-    );
+    assert_eq!(symbol_kind_str(lsp_types::SymbolKind::FUNCTION), "Function");
+    assert_eq!(symbol_kind_str(lsp_types::SymbolKind::VARIABLE), "Variable");
+    assert_eq!(symbol_kind_str(lsp_types::SymbolKind::CONSTANT), "Constant");
     assert_eq!(symbol_kind_str(lsp_types::SymbolKind::STRING), "String");
     assert_eq!(symbol_kind_str(lsp_types::SymbolKind::NUMBER), "Number");
     assert_eq!(symbol_kind_str(lsp_types::SymbolKind::BOOLEAN), "Boolean");
@@ -321,10 +309,7 @@ fn test_symbol_kind_str_all_variants() {
     );
     assert_eq!(symbol_kind_str(lsp_types::SymbolKind::STRUCT), "Struct");
     assert_eq!(symbol_kind_str(lsp_types::SymbolKind::EVENT), "Event");
-    assert_eq!(
-        symbol_kind_str(lsp_types::SymbolKind::OPERATOR),
-        "Operator"
-    );
+    assert_eq!(symbol_kind_str(lsp_types::SymbolKind::OPERATOR), "Operator");
     assert_eq!(
         symbol_kind_str(lsp_types::SymbolKind::TYPE_PARAMETER),
         "TypeParameter"

@@ -114,3 +114,6 @@ ApiClient::from_auth()
 
 - 每次写完代码，编译过后查看有没有 warning，解决 warning（必须保证未使用的都在代码中起作用），然后构建相应的 e2e test
 - UI 已知问题记录在 `docs/KNOWN_ISSUES.md`，用户反馈的问题追加到该文件
+
+
+查看rust\docs\codex-agent.md中构建的方式，重构codex使用的方式

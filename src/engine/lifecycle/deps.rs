@@ -52,7 +52,8 @@ impl QueryDeps for QueryEngineDeps {
         let client = self.api_client.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
                 "call_model: no API client configured -- \
-                 set ANTHROPIC_API_KEY, use /login to store a key, or provide a mock in tests"
+                 set a provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENAI_CODEX_AUTH_TOKEN), \
+                 use /login for Anthropic, or provide a mock in tests"
             )
         })?;
 
@@ -98,7 +99,8 @@ impl QueryDeps for QueryEngineDeps {
         let client = self.api_client.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
                 "call_model_streaming: no API client configured -- \
-                 set ANTHROPIC_API_KEY, use /login to store a key, or provide a mock in tests"
+                 set a provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENAI_CODEX_AUTH_TOKEN), \
+                 use /login for Anthropic, or provide a mock in tests"
             )
         })?;
 
@@ -305,7 +307,9 @@ impl QueryDeps for QueryEngineDeps {
         parent_message: &crate::types::message::AssistantMessage,
         _on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolExecResult> {
-        use crate::tools::hooks::{self, PermissionOverride, PostToolHookResult, PreToolHookResult};
+        use crate::tools::hooks::{
+            self, PermissionOverride, PostToolHookResult, PreToolHookResult,
+        };
         use crate::types::tool::PermissionResult;
 
         let tool = tools
@@ -362,37 +366,33 @@ impl QueryDeps for QueryEngineDeps {
         let failure_configs = hooks::load_hook_configs(&hooks_map, "PostToolUseFailure");
 
         // ── Pre-tool hooks ─────────────────────────────────────────
-        let (effective_input, permission_override) = match hooks::run_pre_tool_hooks(
-            &request.tool_name,
-            &request.input,
-            &pre_configs,
-        )
-        .await
-        {
-            Ok(PreToolHookResult::Continue {
-                updated_input,
-                permission_override,
-            }) => (
-                updated_input.unwrap_or_else(|| request.input.clone()),
-                permission_override,
-            ),
-            Ok(PreToolHookResult::Stop { message }) => {
-                return Ok(ToolExecResult {
-                    tool_use_id: request.tool_use_id,
-                    tool_name: request.tool_name,
-                    result: crate::types::tool::ToolResult {
-                        data: serde_json::json!(format!("Pre-tool hook stopped: {}", message)),
-                        new_messages: vec![],
-                        ..Default::default()
-                    },
-                    is_error: true,
-                });
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "pre-tool hook error, continuing");
-                (request.input.clone(), None)
-            }
-        };
+        let (effective_input, permission_override) =
+            match hooks::run_pre_tool_hooks(&request.tool_name, &request.input, &pre_configs).await
+            {
+                Ok(PreToolHookResult::Continue {
+                    updated_input,
+                    permission_override,
+                }) => (
+                    updated_input.unwrap_or_else(|| request.input.clone()),
+                    permission_override,
+                ),
+                Ok(PreToolHookResult::Stop { message }) => {
+                    return Ok(ToolExecResult {
+                        tool_use_id: request.tool_use_id,
+                        tool_name: request.tool_name,
+                        result: crate::types::tool::ToolResult {
+                            data: serde_json::json!(format!("Pre-tool hook stopped: {}", message)),
+                            new_messages: vec![],
+                            ..Default::default()
+                        },
+                        is_error: true,
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "pre-tool hook error, continuing");
+                    (request.input.clone(), None)
+                }
+            };
 
         // ── Permission check (hook override first, then rule engine) ──
         if let Some(override_decision) = permission_override {
@@ -406,7 +406,8 @@ impl QueryDeps for QueryEngineDeps {
                             "tool_input": request.input,
                             "reason": format!("Permission denied by hook: {}", reason),
                         });
-                        let _ = hooks::run_event_hooks("PermissionDenied", &payload, &deny_configs).await;
+                        let _ = hooks::run_event_hooks("PermissionDenied", &payload, &deny_configs)
+                            .await;
                     }
 
                     return Ok(ToolExecResult {
@@ -444,7 +445,8 @@ impl QueryDeps for QueryEngineDeps {
                             "tool_input": request.input,
                             "reason": format!("Permission denied: {}", message),
                         });
-                        let _ = hooks::run_event_hooks("PermissionDenied", &payload, &deny_configs).await;
+                        let _ = hooks::run_event_hooks("PermissionDenied", &payload, &deny_configs)
+                            .await;
                     }
 
                     return Ok(ToolExecResult {
@@ -461,14 +463,18 @@ impl QueryDeps for QueryEngineDeps {
                 PermissionResult::Ask { message } => {
                     // Fire PermissionRequest hook before interactive prompt
                     let mut hook_allowed = false;
-                    let perm_req_configs = hooks::load_hook_configs(&hooks_map, "PermissionRequest");
+                    let perm_req_configs =
+                        hooks::load_hook_configs(&hooks_map, "PermissionRequest");
                     if !perm_req_configs.is_empty() {
                         let payload = serde_json::json!({
                             "tool_name": request.tool_name,
                             "tool_input": request.input,
                             "message": message,
                         });
-                        if let Ok(output) = hooks::run_event_hooks("PermissionRequest", &payload, &perm_req_configs).await {
+                        if let Ok(output) =
+                            hooks::run_event_hooks("PermissionRequest", &payload, &perm_req_configs)
+                                .await
+                        {
                             // If hook provides a permission decision, use it
                             if let Some(ref decision) = output.permission_decision {
                                 match decision.as_str() {
@@ -482,21 +488,31 @@ impl QueryDeps for QueryEngineDeps {
                                     }
                                     "deny" => {
                                         // Fire PermissionDenied hook
-                                        let deny_configs = hooks::load_hook_configs(&hooks_map, "PermissionDenied");
+                                        let deny_configs = hooks::load_hook_configs(
+                                            &hooks_map,
+                                            "PermissionDenied",
+                                        );
                                         if !deny_configs.is_empty() {
                                             let deny_payload = serde_json::json!({
                                                 "tool_name": request.tool_name,
                                                 "tool_input": request.input,
                                                 "reason": "Permission denied by PermissionRequest hook",
                                             });
-                                            let _ = hooks::run_event_hooks("PermissionDenied", &deny_payload, &deny_configs).await;
+                                            let _ = hooks::run_event_hooks(
+                                                "PermissionDenied",
+                                                &deny_payload,
+                                                &deny_configs,
+                                            )
+                                            .await;
                                         }
 
                                         return Ok(ToolExecResult {
                                             tool_use_id: request.tool_use_id,
                                             tool_name: request.tool_name,
                                             result: crate::types::tool::ToolResult {
-                                                data: serde_json::json!("Permission denied by hook"),
+                                                data: serde_json::json!(
+                                                    "Permission denied by hook"
+                                                ),
                                                 new_messages: vec![],
                                                 ..Default::default()
                                             },
@@ -510,85 +526,98 @@ impl QueryDeps for QueryEngineDeps {
                     }
 
                     if !hook_allowed {
-                    if let Some(ref callback) = ctx.permission_callback {
-                        let description = format!("{}: {}", request.tool_name, message);
-                        let options = vec![
-                            "Allow".to_string(),
-                            "Deny".to_string(),
-                            "Always Allow".to_string(),
-                        ];
-                        let decision = callback(
-                            request.tool_use_id.clone(),
-                            request.tool_name.clone(),
-                            description,
-                            options,
-                        )
-                        .await;
+                        if let Some(ref callback) = ctx.permission_callback {
+                            let description = format!("{}: {}", request.tool_name, message);
+                            let options = vec![
+                                "Allow".to_string(),
+                                "Deny".to_string(),
+                                "Always Allow".to_string(),
+                            ];
+                            let decision = callback(
+                                request.tool_use_id.clone(),
+                                request.tool_name.clone(),
+                                description,
+                                options,
+                            )
+                            .await;
 
-                        match decision.to_lowercase().as_str() {
-                            "allow" => { /* one-time allow, proceed */ }
-                            "always_allow" => {
-                                // Record a session-level grant so subsequent
-                                // calls to this tool don't re-prompt.
-                                self.state.write()
-                                    .app_state
-                                    .tool_permission_context
-                                    .grant_session_allow(&request.tool_name);
-                                tracing::debug!(
-                                    tool = %request.tool_name,
-                                    "session-level always_allow grant recorded"
-                                );
-                            }
-                            _ => {
-                                // Fire PermissionDenied hook (user chose deny)
-                                let deny_configs = hooks::load_hook_configs(&hooks_map, "PermissionDenied");
-                                if !deny_configs.is_empty() {
-                                    let payload = serde_json::json!({
-                                        "tool_name": request.tool_name,
-                                        "tool_input": request.input,
-                                        "reason": "Permission denied by user",
-                                    });
-                                    let _ = hooks::run_event_hooks("PermissionDenied", &payload, &deny_configs).await;
+                            match decision.to_lowercase().as_str() {
+                                "allow" => { /* one-time allow, proceed */ }
+                                "always_allow" => {
+                                    // Record a session-level grant so subsequent
+                                    // calls to this tool don't re-prompt.
+                                    self.state
+                                        .write()
+                                        .app_state
+                                        .tool_permission_context
+                                        .grant_session_allow(&request.tool_name);
+                                    tracing::debug!(
+                                        tool = %request.tool_name,
+                                        "session-level always_allow grant recorded"
+                                    );
                                 }
+                                _ => {
+                                    // Fire PermissionDenied hook (user chose deny)
+                                    let deny_configs =
+                                        hooks::load_hook_configs(&hooks_map, "PermissionDenied");
+                                    if !deny_configs.is_empty() {
+                                        let payload = serde_json::json!({
+                                            "tool_name": request.tool_name,
+                                            "tool_input": request.input,
+                                            "reason": "Permission denied by user",
+                                        });
+                                        let _ = hooks::run_event_hooks(
+                                            "PermissionDenied",
+                                            &payload,
+                                            &deny_configs,
+                                        )
+                                        .await;
+                                    }
 
-                                return Ok(ToolExecResult {
-                                    tool_use_id: request.tool_use_id,
-                                    tool_name: request.tool_name,
-                                    result: crate::types::tool::ToolResult {
-                                        data: serde_json::json!("Permission denied by user."),
-                                        new_messages: vec![],
-                                        ..Default::default()
-                                    },
-                                    is_error: true,
-                                });
+                                    return Ok(ToolExecResult {
+                                        tool_use_id: request.tool_use_id,
+                                        tool_name: request.tool_name,
+                                        result: crate::types::tool::ToolResult {
+                                            data: serde_json::json!("Permission denied by user."),
+                                            new_messages: vec![],
+                                            ..Default::default()
+                                        },
+                                        is_error: true,
+                                    });
+                                }
                             }
-                        }
-                    } else {
-                        // Fire PermissionDenied hook (no callback available)
-                        let deny_configs = hooks::load_hook_configs(&hooks_map, "PermissionDenied");
-                        if !deny_configs.is_empty() {
-                            let payload = serde_json::json!({
-                                "tool_name": request.tool_name,
-                                "tool_input": request.input,
-                                "reason": format!("Permission required (no callback): {}", message),
-                            });
-                            let _ = hooks::run_event_hooks("PermissionDenied", &payload, &deny_configs).await;
-                        }
+                        } else {
+                            // Fire PermissionDenied hook (no callback available)
+                            let deny_configs =
+                                hooks::load_hook_configs(&hooks_map, "PermissionDenied");
+                            if !deny_configs.is_empty() {
+                                let payload = serde_json::json!({
+                                    "tool_name": request.tool_name,
+                                    "tool_input": request.input,
+                                    "reason": format!("Permission required (no callback): {}", message),
+                                });
+                                let _ = hooks::run_event_hooks(
+                                    "PermissionDenied",
+                                    &payload,
+                                    &deny_configs,
+                                )
+                                .await;
+                            }
 
-                        return Ok(ToolExecResult {
-                            tool_use_id: request.tool_use_id,
-                            tool_name: request.tool_name,
-                            result: crate::types::tool::ToolResult {
-                                data: serde_json::json!(format!(
-                                    "Permission required: {}",
-                                    message
-                                )),
-                                new_messages: vec![],
-                                ..Default::default()
-                            },
-                            is_error: true,
-                        });
-                    }
+                            return Ok(ToolExecResult {
+                                tool_use_id: request.tool_use_id,
+                                tool_name: request.tool_name,
+                                result: crate::types::tool::ToolResult {
+                                    data: serde_json::json!(format!(
+                                        "Permission required: {}",
+                                        message
+                                    )),
+                                    new_messages: vec![],
+                                    ..Default::default()
+                                },
+                                is_error: true,
+                            });
+                        }
                     } // if !hook_allowed
                 }
             }
@@ -671,7 +700,9 @@ impl QueryDeps for QueryEngineDeps {
         Ok(self.state.read().tools.clone())
     }
 
-    fn drain_background_results(&self) -> Vec<crate::tools::background_agents::CompletedBackgroundAgent> {
+    fn drain_background_results(
+        &self,
+    ) -> Vec<crate::tools::background_agents::CompletedBackgroundAgent> {
         self.pending_bg_results.drain_all()
     }
 }

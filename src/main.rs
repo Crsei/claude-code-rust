@@ -13,10 +13,10 @@ mod bootstrap;
 
 // 核心模块
 mod commands;
+mod computer_use;
 mod config;
 mod engine;
 mod permissions;
-mod computer_use;
 mod query;
 mod session;
 mod tools;
@@ -176,8 +176,8 @@ struct Cli {
 /// Delete log files older than `retention_days` in the given directory.
 /// Only removes files matching the `cc-rust.log.YYYY-MM-DD` pattern.
 fn cleanup_old_logs(log_dir: &std::path::Path, retention_days: u64) {
-    let cutoff = std::time::SystemTime::now()
-        - std::time::Duration::from_secs(retention_days * 86400);
+    let cutoff =
+        std::time::SystemTime::now() - std::time::Duration::from_secs(retention_days * 86400);
     let entries = match std::fs::read_dir(log_dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -336,8 +336,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         backend = ?merged_config.backend,
         "settings loaded",
     );
-    let backend =
-        crate::engine::codex_exec::normalize_backend(merged_config.backend.as_deref());
+    let backend = crate::engine::codex_exec::normalize_backend(merged_config.backend.as_deref());
 
     // ── B.2: Determine permission mode ───────────────────────────────
     let permission_mode = resolve_permission_mode(
@@ -399,24 +398,32 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // ── B.4: Create AppState ─────────────────────────────────────────
     // Resolve model: CLI arg > config > provider default > hardcoded fallback
-    let detected_client = if crate::engine::codex_exec::is_codex_backend(&backend) {
-        None
-    } else {
-        crate::api::client::ApiClient::from_env()
-    };
+    let is_codex_backend = crate::engine::codex_exec::is_codex_backend(&backend);
+    let detected_client = crate::api::client::ApiClient::from_backend(Some(&backend));
     let provider_default_model = detected_client
         .as_ref()
         .map(|c| c.config().default_model.clone());
 
-    if detected_client.is_none() && !crate::engine::codex_exec::is_codex_backend(&backend) {
-        warn!("No API provider detected. Set an API key in .env, environment, or use /login.");
-        eprintln!(
-            "\x1b[33m⚠ No API provider detected.\x1b[0m\n  \
-             Set an API key via:\n  \
-             • .env file (ANTHROPIC_API_KEY, AZURE_API_KEY, OPENAI_API_KEY, ...)\n  \
-             • Environment variable\n  \
-             • /login command in the REPL"
-        );
+    if detected_client.is_none() {
+        if is_codex_backend {
+            warn!("No OpenAI Codex auth detected. Set OPENAI_CODEX_AUTH_TOKEN.");
+            eprintln!(
+                "\x1b[33m⚠ No OpenAI Codex auth detected.\x1b[0m\n  \
+                 Set:\n  \
+                 • OPENAI_CODEX_AUTH_TOKEN (required)\n  \
+                 • OPENAI_CODEX_BASE_URL (optional, default: https://chatgpt.com/backend-api)\n  \
+                 • OPENAI_CODEX_MODEL (optional, default: gpt-5.4)"
+            );
+        } else {
+            warn!("No API provider detected. Set an API key in .env, environment, or use /login.");
+            eprintln!(
+                "\x1b[33m⚠ No API provider detected.\x1b[0m\n  \
+                 Set an API key via:\n  \
+                 • .env file (ANTHROPIC_API_KEY, AZURE_API_KEY, OPENAI_API_KEY, ...)\n  \
+                 • Environment variable\n  \
+                 • /login command in the REPL"
+            );
+        }
     }
 
     let model = cli
@@ -425,7 +432,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         .or(merged_config.model.clone())
         .or(provider_default_model)
         .unwrap_or_else(|| {
-            if crate::engine::codex_exec::is_codex_backend(&backend) {
+            if is_codex_backend {
                 crate::engine::codex_exec::DEFAULT_CODEX_MODEL.to_string()
             } else {
                 "claude-sonnet-4-20250514".to_string()

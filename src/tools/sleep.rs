@@ -66,10 +66,7 @@ impl Tool for SleepTool {
                 error_code: 1,
             },
             Some(d) if d < 1 || d > 3600 => ValidationResult::Error {
-                message: format!(
-                    "\"duration_seconds\" must be between 1 and 3600, got {}",
-                    d
-                ),
+                message: format!("\"duration_seconds\" must be between 1 and 3600, got {}", d),
                 error_code: 1,
             },
             Some(_) => ValidationResult::Ok,
@@ -158,10 +155,9 @@ mod tests {
     fn test_sleep_tool_validates_missing_duration() {
         let tool = SleepTool;
         let ctx = make_test_ctx();
-        let result =
-            tokio::runtime::Runtime::new()
-                .unwrap()
-                .block_on(tool.validate_input(&json!({}), &ctx));
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(tool.validate_input(&json!({}), &ctx));
         match result {
             ValidationResult::Error { message, .. } => {
                 assert!(
@@ -178,9 +174,9 @@ mod tests {
     fn test_sleep_tool_validates_too_high() {
         let tool = SleepTool;
         let ctx = make_test_ctx();
-        let result = tokio::runtime::Runtime::new().unwrap().block_on(
-            tool.validate_input(&json!({"duration_seconds": 7200}), &ctx),
-        );
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(tool.validate_input(&json!({"duration_seconds": 7200}), &ctx));
         match result {
             ValidationResult::Error { message, .. } => {
                 assert!(
@@ -197,9 +193,9 @@ mod tests {
     fn test_sleep_tool_validates_too_low() {
         let tool = SleepTool;
         let ctx = make_test_ctx();
-        let result = tokio::runtime::Runtime::new().unwrap().block_on(
-            tool.validate_input(&json!({"duration_seconds": 0}), &ctx),
-        );
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(tool.validate_input(&json!({"duration_seconds": 0}), &ctx));
         match result {
             ValidationResult::Error { .. } => {}
             ValidationResult::Ok => panic!("expected error for duration_seconds < 1"),
@@ -210,9 +206,9 @@ mod tests {
     fn test_sleep_tool_validates_valid_input() {
         let tool = SleepTool;
         let ctx = make_test_ctx();
-        let result = tokio::runtime::Runtime::new().unwrap().block_on(
-            tool.validate_input(&json!({"duration_seconds": 60}), &ctx),
-        );
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(tool.validate_input(&json!({"duration_seconds": 60}), &ctx));
         assert!(
             matches!(result, ValidationResult::Ok),
             "expected Ok for valid input"

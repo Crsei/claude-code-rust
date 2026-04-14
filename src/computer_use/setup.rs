@@ -40,7 +40,7 @@ pub fn register_cu_tools() -> Vec<Arc<dyn Tool>> {
 mod tests {
     use super::*;
     use crate::computer_use::detection::{
-        detect_cu_tools, is_computer_use_tool, computer_use_system_prompt,
+        computer_use_system_prompt, detect_cu_tools, is_computer_use_tool,
     };
 
     #[test]

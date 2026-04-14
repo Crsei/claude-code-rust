@@ -14,11 +14,7 @@ pub enum MouseButton {
 #[derive(Debug, Clone)]
 pub enum InputAction {
     /// Click at screen coordinates.
-    Click {
-        x: i32,
-        y: i32,
-        button: MouseButton,
-    },
+    Click { x: i32, y: i32, button: MouseButton },
     /// Double-click at screen coordinates.
     DoubleClick { x: i32, y: i32 },
     /// Type text via keyboard.

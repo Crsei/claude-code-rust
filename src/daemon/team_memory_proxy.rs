@@ -43,7 +43,13 @@ pub async fn spawn_team_memory_server(
         let sanitized: String = cwd
             .to_string_lossy()
             .chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         dirs::home_dir()
             .unwrap_or_default()
@@ -102,8 +108,7 @@ pub async fn spawn_team_memory_server(
     // Wait for health check.
     let health_url = format!("http://127.0.0.1:{}/health", port);
     let client = reqwest::Client::new();
-    let deadline =
-        tokio::time::Instant::now() + Duration::from_millis(HEALTH_CHECK_TIMEOUT_MS);
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(HEALTH_CHECK_TIMEOUT_MS);
 
     loop {
         if tokio::time::Instant::now() >= deadline {
@@ -118,8 +123,7 @@ pub async fn spawn_team_memory_server(
                 break;
             }
             _ => {
-                tokio::time::sleep(Duration::from_millis(HEALTH_CHECK_INTERVAL_MS))
-                    .await;
+                tokio::time::sleep(Duration::from_millis(HEALTH_CHECK_INTERVAL_MS)).await;
             }
         }
     }
@@ -145,21 +149,13 @@ pub async fn proxy_team_memory(
     let port = match state.team_memory_port {
         Some(p) => p,
         None => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                "team-memory-server not available",
-            )
-                .into_response();
+            return (StatusCode::BAD_GATEWAY, "team-memory-server not available").into_response();
         }
     };
     let secret = match &state.team_memory_secret {
         Some(s) => s.clone(),
         None => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                "team-memory-server not configured",
-            )
-                .into_response();
+            return (StatusCode::BAD_GATEWAY, "team-memory-server not configured").into_response();
         }
     };
 
@@ -190,9 +186,7 @@ pub async fn proxy_team_memory(
 
     // Forward body for PUT.
     if method == Method::PUT {
-        req = req
-            .header("Content-Type", "application/json")
-            .body(body);
+        req = req.header("Content-Type", "application/json").body(body);
     }
 
     match req.send().await {
@@ -211,8 +205,7 @@ pub async fn proxy_team_memory(
             builder
                 .body(axum::body::Body::from(body_bytes))
                 .unwrap_or_else(|_| {
-                    (StatusCode::INTERNAL_SERVER_ERROR, "response build error")
-                        .into_response()
+                    (StatusCode::INTERNAL_SERVER_ERROR, "response build error").into_response()
                 })
         }
         Err(e) => {

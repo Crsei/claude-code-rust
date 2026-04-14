@@ -104,7 +104,10 @@ fn handle_set(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
             let normalized = crate::engine::codex_exec::normalize_backend(Some(&value));
             ctx.app_state.main_loop_backend = normalized.clone();
             ctx.app_state.settings.backend = Some(normalized.clone());
-            Ok(CommandResult::Output(format!("Backend set to: {}", normalized)))
+            Ok(CommandResult::Output(format!(
+                "Backend set to: {}",
+                normalized
+            )))
         }
         "theme" => {
             ctx.app_state.settings.theme = Some(value.clone());
@@ -204,7 +207,10 @@ mod tests {
     async fn test_config_set_backend() {
         let handler = ConfigHandler;
         let mut ctx = test_ctx();
-        let result = handler.execute("set backend codex", &mut ctx).await.unwrap();
+        let result = handler
+            .execute("set backend codex", &mut ctx)
+            .await
+            .unwrap();
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("codex"));

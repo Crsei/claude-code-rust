@@ -167,7 +167,11 @@ pub fn save_session(session_id: &str, messages: &[Message], cwd: &str) -> Result
     std::fs::write(&path, json)
         .with_context(|| format!("Failed to write session file {}", path.display()))?;
 
-    debug!(session_id = session_id, messages = msg_count, "session saved");
+    debug!(
+        session_id = session_id,
+        messages = msg_count,
+        "session saved"
+    );
 
     Ok(())
 }
@@ -176,7 +180,11 @@ pub fn save_session(session_id: &str, messages: &[Message], cwd: &str) -> Result
 pub fn load_session(session_id: &str) -> Result<Vec<Message>> {
     let file = load_session_file(session_id)?;
     let messages = serializable_to_messages(&file.messages);
-    debug!(session_id = session_id, messages = messages.len(), "session loaded");
+    debug!(
+        session_id = session_id,
+        messages = messages.len(),
+        "session loaded"
+    );
     Ok(messages)
 }
 

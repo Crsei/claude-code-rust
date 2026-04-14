@@ -3,7 +3,7 @@
 //! Usage:
 //!   /login-code <authorization-code>
 //!
-//! This is the second step of the OAuth flow started by `/login 2` or `/login 3`.
+//! This is the second step of the OAuth flow started by `/login 2`, `/login 3`, or `/login 4`.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -13,8 +13,7 @@ use crate::auth::oauth::{client, config, pkce};
 use crate::auth::{api_key, token};
 
 /// Pending OAuth state (PKCE verifier, state, method).
-static PENDING_OAUTH: parking_lot::Mutex<Option<PendingOAuth>> =
-    parking_lot::Mutex::new(None);
+static PENDING_OAUTH: parking_lot::Mutex<Option<PendingOAuth>> = parking_lot::Mutex::new(None);
 
 struct PendingOAuth {
     method: config::OAuthMethod,
@@ -29,7 +28,10 @@ pub fn start_pending(method: config::OAuthMethod) -> String {
     let verifier = pkce::generate_code_verifier();
     let challenge = pkce::generate_code_challenge(&verifier);
     let state = pkce::generate_state();
-    let url = config::authorization_url(method, &challenge, &state);
+    let url = match config::authorization_url(method, &challenge, &state) {
+        Ok(url) => url,
+        Err(e) => return format!("Cannot start OAuth flow: {}", e),
+    };
 
     *PENDING_OAUTH.lock() = Some(PendingOAuth {
         method,
@@ -37,10 +39,7 @@ pub fn start_pending(method: config::OAuthMethod) -> String {
         state,
     });
 
-    let method_name = match method {
-        config::OAuthMethod::ClaudeAi => "Claude.ai",
-        config::OAuthMethod::Console => "Console",
-    };
+    let method_name = config::display_name(method);
 
     format!(
         "Opening {} authorization...\n\n\
@@ -59,7 +58,7 @@ impl CommandHandler for LoginCodeHandler {
         if code.is_empty() {
             return Ok(CommandResult::Output(
                 "Usage: /login-code <authorization-code>\n\
-                 Start the OAuth flow first with /login 2 or /login 3"
+                 Start the OAuth flow first with /login 2, /login 3, or /login 4"
                     .to_string(),
             ));
         }
@@ -69,24 +68,27 @@ impl CommandHandler for LoginCodeHandler {
             Some(p) => p,
             None => {
                 return Ok(CommandResult::Output(
-                    "No pending OAuth flow. Start one with /login 2 or /login 3".to_string(),
+                    "No pending OAuth flow. Start one with /login 2, /login 3, or /login 4"
+                        .to_string(),
                 ));
             }
         };
 
+        let code = extract_authorization_code(code);
+
         // Exchange code for tokens
         let token_resp = match client::exchange_code(
-            code,
+            pending.method,
+            &code,
             &pending.verifier,
             &pending.state,
-            config::MANUAL_REDIRECT_URL,
         )
         .await
         {
             Ok(r) => r,
             Err(e) => {
                 return Ok(CommandResult::Output(format!(
-                    "Token exchange failed: {}\n\nPlease retry with /login 2 or /login 3",
+                    "Token exchange failed: {}\n\nPlease retry with /login 2, /login 3, or /login 4",
                     e
                 )));
             }
@@ -94,10 +96,7 @@ impl CommandHandler for LoginCodeHandler {
 
         // Store tokens
         let expires_at = chrono::Utc::now().timestamp() + token_resp.expires_in as i64;
-        let method_str = match pending.method {
-            config::OAuthMethod::ClaudeAi => "claude_ai",
-            config::OAuthMethod::Console => "console",
-        };
+        let method_str = config::method_storage_name(pending.method);
         let scopes: Vec<String> = token_resp
             .scope
             .split_whitespace()
@@ -120,6 +119,12 @@ impl CommandHandler for LoginCodeHandler {
             )));
         }
 
+        if pending.method == config::OAuthMethod::OpenAiCodex {
+            return Ok(CommandResult::Output(
+                "Logged in successfully (OpenAI Codex OAuth).".to_string(),
+            ));
+        }
+
         // Console mode: create API key
         if pending.method == config::OAuthMethod::Console {
             match client::create_api_key(&token_resp.access_token).await {
@@ -131,8 +136,7 @@ impl CommandHandler for LoginCodeHandler {
                         )));
                     }
                     return Ok(CommandResult::Output(
-                        "Logged in successfully (Console). API key stored to keychain."
-                            .to_string(),
+                        "Logged in successfully (Console). API key stored to keychain.".to_string(),
                     ));
                 }
                 Err(e) => {
@@ -149,6 +153,24 @@ impl CommandHandler for LoginCodeHandler {
             "Logged in successfully (Claude.ai).".to_string(),
         ))
     }
+}
+
+fn extract_authorization_code(input: &str) -> String {
+    let trimmed = input.trim();
+    if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
+        return trimmed.to_string();
+    }
+
+    let parsed = match url::Url::parse(trimmed) {
+        Ok(url) => url,
+        Err(_) => return trimmed.to_string(),
+    };
+    for (key, value) in parsed.query_pairs() {
+        if key == "code" && !value.is_empty() {
+            return value.into_owned();
+        }
+    }
+    trimmed.to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -199,8 +221,24 @@ mod tests {
     fn test_start_pending_console_contains_url() {
         let _ = PENDING_OAUTH.lock().take();
         let msg = start_pending(config::OAuthMethod::Console);
-        assert!(msg.contains("Console"), "should mention Console, got: {}", msg);
+        assert!(
+            msg.contains("Console"),
+            "should mention Console, got: {}",
+            msg
+        );
         assert!(msg.contains("https://"));
+    }
+
+    #[test]
+    fn test_start_pending_openai_codex_missing_client_id() {
+        let saved = std::env::var(config::OPENAI_CODEX_OAUTH_CLIENT_ID_ENV).ok();
+        std::env::remove_var(config::OPENAI_CODEX_OAUTH_CLIENT_ID_ENV);
+        let _ = PENDING_OAUTH.lock().take();
+        let msg = start_pending(config::OAuthMethod::OpenAiCodex);
+        assert!(msg.contains("Cannot start OAuth flow"));
+        if let Some(value) = saved {
+            std::env::set_var(config::OPENAI_CODEX_OAUTH_CLIENT_ID_ENV, value);
+        }
     }
 
     #[test]
@@ -223,11 +261,7 @@ mod tests {
         let result = handler.execute("", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(text) => {
-                assert!(
-                    text.contains("Usage"),
-                    "expected usage hint, got: {}",
-                    text
-                );
+                assert!(text.contains("Usage"), "expected usage hint, got: {}", text);
             }
             _ => panic!("Expected Output"),
         }
@@ -250,5 +284,11 @@ mod tests {
             }
             _ => panic!("Expected Output"),
         }
+    }
+
+    #[test]
+    fn test_extract_authorization_code_from_url() {
+        let code = extract_authorization_code("https://example.com/callback?code=abc123&state=x");
+        assert_eq!(code, "abc123");
     }
 }

@@ -63,7 +63,11 @@ pub struct ToolResult {
 
 impl ToolResult {
     /// Create a tool result with structured multimodal content for the model.
-    pub fn with_content(data: Value, model_content: ToolResultContent, display_preview: String) -> Self {
+    pub fn with_content(
+        data: Value,
+        model_content: ToolResultContent,
+        display_preview: String,
+    ) -> Self {
         Self {
             data,
             model_content: Some(model_content),

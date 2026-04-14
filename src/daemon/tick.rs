@@ -11,7 +11,7 @@ use tracing::{debug, info};
 use crate::types::config::QuerySource;
 
 use super::memory_log::append_log_entry;
-use super::state::{DaemonState, SseEvent, next_event_id};
+use super::state::{next_event_id, DaemonState, SseEvent};
 
 const DEFAULT_TICK_INTERVAL_MS: u64 = 30_000;
 
@@ -77,9 +77,7 @@ pub async fn tick_loop(state: DaemonState) {
                     state_clone.broadcast(event);
                 }
             }
-            state_clone
-                .is_query_running
-                .store(false, Ordering::SeqCst);
+            state_clone.is_query_running.store(false, Ordering::SeqCst);
         });
     }
 }

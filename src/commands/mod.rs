@@ -213,7 +213,7 @@ pub fn get_all_commands() -> Vec<Command> {
         Command {
             name: "login".into(),
             aliases: vec![],
-            description: "Authenticate with Anthropic (API key or auth token)".into(),
+            description: "Authenticate (API key, Anthropic OAuth, OpenAI Codex OAuth)".into(),
             handler: Box::new(login::LoginHandler),
         },
         Command {

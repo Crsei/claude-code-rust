@@ -162,11 +162,10 @@ impl LspClient {
 
         // Wait for response with matching id, skipping server notifications.
         loop {
-            let msg = self
-                .transport
-                .recv()
-                .await
-                .with_context(|| format!("failed to receive response for '{method}' (id={id})"))?;
+            let msg =
+                self.transport.recv().await.with_context(|| {
+                    format!("failed to receive response for '{method}' (id={id})")
+                })?;
 
             // Server notifications have no `id` — skip them.
             let msg_id = match msg.get("id") {
@@ -185,10 +184,7 @@ impl LspClient {
                 if let Some(err) = transport::extract_error(&msg) {
                     bail!("{method}: {err}");
                 }
-                return Ok(msg
-                    .get("result")
-                    .cloned()
-                    .unwrap_or(Value::Null));
+                return Ok(msg.get("result").cloned().unwrap_or(Value::Null));
             }
 
             // Response for a different id — log and keep waiting.

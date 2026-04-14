@@ -575,9 +575,7 @@ fn handle_sdk_message(
                     {
                         let (output, content_infos) = match content {
                             ToolResultContent::Text(t) => (t.clone(), None),
-                            ToolResultContent::Blocks(inner) => {
-                                extract_tool_result_output(inner)
-                            }
+                            ToolResultContent::Blocks(inner) => extract_tool_result_output(inner),
                         };
                         let _ = send_to_frontend(&BackendMessage::ToolResult {
                             tool_use_id: tool_use_id.clone(),
@@ -820,7 +818,10 @@ mod tests {
         let routed = try_answer_pending_question(&pending, "my answer".to_string());
 
         assert_eq!(routed.as_deref(), Some("question-1"));
-        assert!(pending.lock().is_empty(), "pending question should be removed");
+        assert!(
+            pending.lock().is_empty(),
+            "pending question should be removed"
+        );
         assert_eq!(
             rx.blocking_recv().expect("answer should be delivered"),
             "my answer"

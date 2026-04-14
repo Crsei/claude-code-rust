@@ -129,7 +129,10 @@ mod tests {
     async fn test_branch_not_in_git_repo_with_name() {
         let handler = BranchHandler;
         let mut ctx = test_ctx(PathBuf::from("/nonexistent/fake/path"));
-        let result = handler.execute("feature/my-branch", &mut ctx).await.unwrap();
+        let result = handler
+            .execute("feature/my-branch", &mut ctx)
+            .await
+            .unwrap();
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("not in a git repository"));

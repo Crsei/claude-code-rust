@@ -89,7 +89,12 @@ async fn run_xdotool(args: &[&str]) -> anyhow::Result<String> {
         .args(args)
         .output()
         .await
-        .map_err(|e| anyhow::anyhow!("xdotool not available: {}. Install with: sudo apt install xdotool", e))?;
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "xdotool not available: {}. Install with: sudo apt install xdotool",
+                e
+            )
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

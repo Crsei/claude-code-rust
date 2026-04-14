@@ -7,8 +7,8 @@ use serde_json::Value;
 
 use crate::permissions::dangerous;
 use crate::permissions::path_validation;
-use crate::types::tool::{PermissionMode, Tool, Tools};
 use crate::types::tool::ToolUseContext;
+use crate::types::tool::{PermissionMode, Tool, Tools};
 
 use super::{make_error_result, ToolExecutionResult};
 
@@ -84,10 +84,7 @@ pub(super) fn security_validate(
             };
 
             // Step 2: check the path is within allowed directories
-            let cwd = crate::bootstrap::PROCESS_STATE
-                .read()
-                .original_cwd
-                .clone();
+            let cwd = crate::bootstrap::PROCESS_STATE.read().original_cwd.clone();
             let perm_ctx = &app_state.tool_permission_context;
 
             if !path_validation::is_path_within_allowed_directories(&canonical, &cwd, perm_ctx) {
@@ -215,8 +212,14 @@ mod tests {
         assert_eq!(head_part, "y".repeat(max / 2));
 
         // tail portion after the omission marker: max/4 = 250 'y's
-        let tail_part: String = s.chars().rev().take(max / 4).collect::<String>()
-            .chars().rev().collect();
+        let tail_part: String = s
+            .chars()
+            .rev()
+            .take(max / 4)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect();
         assert_eq!(tail_part, "y".repeat(max / 4));
 
         // omission message present

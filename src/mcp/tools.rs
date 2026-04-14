@@ -98,7 +98,10 @@ impl Tool for McpToolWrapper {
             })
         } else {
             // Check if content contains any non-text blocks (images, resources with blobs)
-            let has_multimodal = result.content.iter().any(|b| matches!(b, ToolCallContent::Image { .. }));
+            let has_multimodal = result
+                .content
+                .iter()
+                .any(|b| matches!(b, ToolCallContent::Image { .. }));
 
             if has_multimodal {
                 let model_blocks = convert_mcp_to_content_blocks(&result.content);
@@ -162,7 +165,10 @@ fn convert_mcp_to_content_blocks(content: &[ToolCallContent]) -> Vec<ContentBloc
                     });
                 } else if let Some(ref blob) = resource.blob {
                     // Binary resources with a recognized image MIME type become image blocks
-                    let mime = resource.mime_type.as_deref().unwrap_or("application/octet-stream");
+                    let mime = resource
+                        .mime_type
+                        .as_deref()
+                        .unwrap_or("application/octet-stream");
                     if mime.starts_with("image/") {
                         blocks.push(ContentBlock::Image {
                             source: ImageSource {

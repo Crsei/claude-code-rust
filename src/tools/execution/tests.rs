@@ -1,5 +1,5 @@
-use super::*;
 use super::security::{enforce_result_size, find_tool, security_validate};
+use super::*;
 use crate::types::app_state::AppState;
 use crate::types::tool::{
     FileStateCache, PermissionMode, PermissionResult, ToolPermissionContext, ToolUseOptions,
@@ -51,35 +51,67 @@ fn make_ctx_with_mode(mode: PermissionMode) -> ToolUseContext {
 struct ReadOnlyStub;
 #[async_trait::async_trait]
 impl Tool for ReadOnlyStub {
-    fn name(&self) -> &str { "Grep" }
-    async fn description(&self, _: &Value) -> String { String::new() }
-    fn input_json_schema(&self) -> Value { Value::Null }
-    fn is_read_only(&self, _: &Value) -> bool { true }
+    fn name(&self) -> &str {
+        "Grep"
+    }
+    async fn description(&self, _: &Value) -> String {
+        String::new()
+    }
+    fn input_json_schema(&self) -> Value {
+        Value::Null
+    }
+    fn is_read_only(&self, _: &Value) -> bool {
+        true
+    }
     async fn call(
-        &self, _: Value, _: &ToolUseContext,
+        &self,
+        _: Value,
+        _: &ToolUseContext,
         _: &crate::types::message::AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> anyhow::Result<ToolResult> {
-        Ok(ToolResult { data: Value::Null, new_messages: vec![], ..Default::default() })
+        Ok(ToolResult {
+            data: Value::Null,
+            new_messages: vec![],
+            ..Default::default()
+        })
     }
-    async fn prompt(&self) -> String { String::new() }
+    async fn prompt(&self) -> String {
+        String::new()
+    }
 }
 
 struct WritableStub;
 #[async_trait::async_trait]
 impl Tool for WritableStub {
-    fn name(&self) -> &str { "Bash" }
-    async fn description(&self, _: &Value) -> String { String::new() }
-    fn input_json_schema(&self) -> Value { Value::Null }
-    fn is_read_only(&self, _: &Value) -> bool { false }
+    fn name(&self) -> &str {
+        "Bash"
+    }
+    async fn description(&self, _: &Value) -> String {
+        String::new()
+    }
+    fn input_json_schema(&self) -> Value {
+        Value::Null
+    }
+    fn is_read_only(&self, _: &Value) -> bool {
+        false
+    }
     async fn call(
-        &self, _: Value, _: &ToolUseContext,
+        &self,
+        _: Value,
+        _: &ToolUseContext,
         _: &crate::types::message::AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> anyhow::Result<ToolResult> {
-        Ok(ToolResult { data: Value::Null, new_messages: vec![], ..Default::default() })
+        Ok(ToolResult {
+            data: Value::Null,
+            new_messages: vec![],
+            ..Default::default()
+        })
     }
-    async fn prompt(&self) -> String { String::new() }
+    async fn prompt(&self) -> String {
+        String::new()
+    }
 }
 
 // -- Existing tests -----------------------------------------------------
@@ -132,7 +164,10 @@ fn test_plan_mode_blocks_write_tools() {
     let now = Instant::now();
 
     let result = security_validate("id1", "Bash", &input, &tool, &ctx, now);
-    assert!(result.is_some(), "Plan mode should block non-read-only tool");
+    assert!(
+        result.is_some(),
+        "Plan mode should block non-read-only tool"
+    );
     let err = result.unwrap();
     assert!(err.is_error);
     assert!(
@@ -162,7 +197,12 @@ fn test_dangerous_command_blocked() {
     let result = security_validate("id3", "Bash", &input, &tool, &ctx, now);
     assert!(result.is_some(), "Dangerous command should be blocked");
     let err = result.unwrap();
-    assert!(err.result.data.as_str().unwrap().contains("Dangerous command blocked"));
+    assert!(err
+        .result
+        .data
+        .as_str()
+        .unwrap()
+        .contains("Dangerous command blocked"));
 }
 
 #[test]
@@ -186,7 +226,12 @@ fn test_path_traversal_blocked() {
     let result = security_validate("id5", "Write", &input, &tool, &ctx, now);
     assert!(result.is_some(), "Path traversal should be blocked");
     let err = result.unwrap();
-    assert!(err.result.data.as_str().unwrap().contains("Invalid file path"));
+    assert!(err
+        .result
+        .data
+        .as_str()
+        .unwrap()
+        .contains("Invalid file path"));
 }
 
 #[test]
@@ -215,7 +260,12 @@ fn test_path_outside_cwd_blocked() {
         outside_path
     );
     let err = result.unwrap();
-    assert!(err.result.data.as_str().unwrap().contains("outside the allowed"));
+    assert!(err
+        .result
+        .data
+        .as_str()
+        .unwrap()
+        .contains("outside the allowed"));
 }
 
 #[test]
@@ -227,7 +277,10 @@ fn test_bypass_mode_skips_all() {
     let input = serde_json::json!({"command": "rm -rf /"});
     let now = Instant::now();
     let result = security_validate("id7", "Bash", &input, &tool, &ctx, now);
-    assert!(result.is_none(), "Bypass mode should skip all security checks");
+    assert!(
+        result.is_none(),
+        "Bypass mode should skip all security checks"
+    );
 
     // Path traversal — would normally be blocked
     let input2 = serde_json::json!({"file_path": "/../../../../../etc/passwd"});
@@ -244,7 +297,10 @@ fn test_powershell_dangerous_command_blocked() {
 
     // PowerShell should also be checked
     let result = security_validate("id9", "PowerShell", &input, &tool, &ctx, now);
-    assert!(result.is_some(), "PowerShell dangerous command should be blocked");
+    assert!(
+        result.is_some(),
+        "PowerShell dangerous command should be blocked"
+    );
 }
 
 // -- make_error_result tests (shared helper in mod.rs) --------------------
@@ -267,7 +323,11 @@ fn test_make_error_result_duration_is_u64() {
     let started = Instant::now();
     let result = make_error_result("id", "T", "msg", started);
     // duration_ms should be a small number (test runs in < 1s)
-    assert!(result.duration_ms < 5_000, "duration_ms should be reasonable: {}", result.duration_ms);
+    assert!(
+        result.duration_ms < 5_000,
+        "duration_ms should be reasonable: {}",
+        result.duration_ms
+    );
 }
 
 #[test]
@@ -292,6 +352,8 @@ fn test_make_error_result_data_is_string_variant() {
 fn test_make_error_result_hook_stopped_continuation_always_false() {
     let started = Instant::now();
     let result = make_error_result("id", "Tool", "msg", started);
-    assert!(!result.hook_stopped_continuation,
-        "early-exit errors never stop continuation via hooks");
+    assert!(
+        !result.hook_stopped_continuation,
+        "early-exit errors never stop continuation via hooks"
+    );
 }

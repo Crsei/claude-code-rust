@@ -180,24 +180,13 @@ fn map_key_to_applescript(key: &str) -> String {
 
     let key_lower = key.to_lowercase();
     match key_lower.as_str() {
-        "return" | "enter" => {
-            r#"tell application "System Events" to key code 36"#.to_string()
-        }
-        "escape" | "esc" => {
-            r#"tell application "System Events" to key code 53"#.to_string()
-        }
+        "return" | "enter" => r#"tell application "System Events" to key code 36"#.to_string(),
+        "escape" | "esc" => r#"tell application "System Events" to key code 53"#.to_string(),
         "tab" => r#"tell application "System Events" to key code 48"#.to_string(),
-        "space" => {
-            r#"tell application "System Events" to key code 49"#.to_string()
-        }
-        "backspace" | "delete" => {
-            r#"tell application "System Events" to key code 51"#.to_string()
-        }
+        "space" => r#"tell application "System Events" to key code 49"#.to_string(),
+        "backspace" | "delete" => r#"tell application "System Events" to key code 51"#.to_string(),
         _ => {
-            format!(
-                r#"tell application "System Events" to keystroke "{}""#,
-                key
-            )
+            format!(r#"tell application "System Events" to keystroke "{}""#, key)
         }
     }
 }

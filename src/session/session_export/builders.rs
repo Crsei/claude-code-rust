@@ -8,19 +8,13 @@ use crate::compact::auto_compact::get_context_window_size;
 use crate::types::message::{ContentBlock, Message, MessageContent, ToolResultContent};
 use crate::utils::tokens::estimate_messages_tokens;
 
-use super::{
-    format_ts_millis, ContextSnapshot, SessionMeta, TranscriptData,
-};
+use super::{format_ts_millis, ContextSnapshot, SessionMeta, TranscriptData};
 
 // ---------------------------------------------------------------------------
 // Session metadata
 // ---------------------------------------------------------------------------
 
-pub(super) fn build_session_meta(
-    session_id: &str,
-    messages: &[Message],
-    cwd: &str,
-) -> SessionMeta {
+pub(super) fn build_session_meta(session_id: &str, messages: &[Message], cwd: &str) -> SessionMeta {
     let cwd_path = Path::new(cwd);
 
     let git_branch = crate::utils::git::current_branch(cwd_path).ok();

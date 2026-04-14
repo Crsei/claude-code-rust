@@ -6,8 +6,8 @@ pub async fn execute(action: InputAction) -> anyhow::Result<String> {
     let ps_script = match action {
         InputAction::Click { x, y, button } => {
             let btn_code = match button {
-                MouseButton::Left => 0x0002 | 0x0004,   // MOUSEEVENTF_LEFTDOWN | LEFTUP
-                MouseButton::Right => 0x0008 | 0x0010,  // MOUSEEVENTF_RIGHTDOWN | RIGHTUP
+                MouseButton::Left => 0x0002 | 0x0004, // MOUSEEVENTF_LEFTDOWN | LEFTUP
+                MouseButton::Right => 0x0008 | 0x0010, // MOUSEEVENTF_RIGHTDOWN | RIGHTUP
                 MouseButton::Middle => 0x0020 | 0x0040, // MOUSEEVENTF_MIDDLEDOWN | MIDDLEUP
             };
             let btn_name = match button {
@@ -160,14 +160,8 @@ Write-Output "$($pt.X) $($pt.Y)"
 
     let output = run_powershell(ps_script).await?;
     let mut parts = output.trim().split_whitespace();
-    let x: i32 = parts
-        .next()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    let y: i32 = parts
-        .next()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
+    let x: i32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let y: i32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
     Ok(CursorPosition { x, y })
 }
 

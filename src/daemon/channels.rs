@@ -97,10 +97,7 @@ mod tests {
             },
         };
         let xml2 = event_no_sender.to_xml();
-        assert_eq!(
-            xml2,
-            "<channel source=\"github\">\nPR merged\n</channel>"
-        );
+        assert_eq!(xml2, "<channel source=\"github\">\nPR merged\n</channel>");
     }
 
     #[test]

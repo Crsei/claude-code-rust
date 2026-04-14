@@ -185,8 +185,16 @@ fn symbol_info_to_call_hierarchy_json(item: &SymbolInfo) -> Result<serde_json::V
     // Convert 1-based back to 0-based
     let start_line = item.location.line.saturating_sub(1);
     let start_char = item.location.character.saturating_sub(1);
-    let end_line = item.location.end_line.unwrap_or(item.location.line).saturating_sub(1);
-    let end_char = item.location.end_character.unwrap_or(item.location.character).saturating_sub(1);
+    let end_line = item
+        .location
+        .end_line
+        .unwrap_or(item.location.line)
+        .saturating_sub(1);
+    let end_char = item
+        .location
+        .end_character
+        .unwrap_or(item.location.character)
+        .saturating_sub(1);
 
     // SymbolKind::FUNCTION = 12 in LSP specification
     let kind_value = serde_json::to_value(lsp_types::SymbolKind::FUNCTION)
@@ -241,7 +249,9 @@ pub async fn go_to_implementation(
         "textDocument": { "uri": uri },
         "position": { "line": line, "character": character }
     });
-    let response = client.request("textDocument/implementation", params).await?;
+    let response = client
+        .request("textDocument/implementation", params)
+        .await?;
     conversions::parse_location_response(response)
 }
 
@@ -286,7 +296,9 @@ pub async fn document_symbols(uri: &str) -> Result<Vec<SymbolInfo>> {
     let params = serde_json::json!({
         "textDocument": { "uri": uri }
     });
-    let response = client.request("textDocument/documentSymbol", params).await?;
+    let response = client
+        .request("textDocument/documentSymbol", params)
+        .await?;
     conversions::parse_document_symbols_response(response)
 }
 
@@ -331,7 +343,9 @@ pub async fn prepare_call_hierarchy(
         "textDocument": { "uri": uri },
         "position": { "line": line, "character": character }
     });
-    let response = client.request("textDocument/prepareCallHierarchy", params).await?;
+    let response = client
+        .request("textDocument/prepareCallHierarchy", params)
+        .await?;
     conversions::parse_call_hierarchy_items(response)
 }
 
@@ -347,7 +361,9 @@ pub async fn incoming_calls(item: &SymbolInfo) -> Result<Vec<SymbolInfo>> {
 
     let call_item = symbol_info_to_call_hierarchy_json(item)?;
     let params = serde_json::json!({ "item": call_item });
-    let response = client.request("callHierarchy/incomingCalls", params).await?;
+    let response = client
+        .request("callHierarchy/incomingCalls", params)
+        .await?;
     conversions::parse_incoming_calls(response)
 }
 
@@ -363,7 +379,9 @@ pub async fn outgoing_calls(item: &SymbolInfo) -> Result<Vec<SymbolInfo>> {
 
     let call_item = symbol_info_to_call_hierarchy_json(item)?;
     let params = serde_json::json!({ "item": call_item });
-    let response = client.request("callHierarchy/outgoingCalls", params).await?;
+    let response = client
+        .request("callHierarchy/outgoingCalls", params)
+        .await?;
     conversions::parse_outgoing_calls(response)
 }
 

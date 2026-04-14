@@ -1,6 +1,6 @@
-use super::*;
 use super::providers::detect_provider;
 use super::tool::WebSearchTool;
+use super::*;
 
 use serde_json::json;
 
@@ -168,8 +168,7 @@ fn test_filter_results_unified_allowed() {
             age: None,
         },
     ];
-    let filtered =
-        filter_results_unified(results, &["rust-lang.org".to_string()], &[]);
+    let filtered = filter_results_unified(results, &["rust-lang.org".to_string()], &[]);
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].title, "Rust");
 }
@@ -266,18 +265,24 @@ fn test_search_cache_expired() {
 fn test_search_cache_different_keys() {
     let cache = SearchCache::new();
 
-    cache.put("q1|5|tavily", vec![SearchResultEntry {
-        title: "A".into(),
-        url: "https://a.com".into(),
-        description: "".into(),
-        age: None,
-    }]);
-    cache.put("q2|5|tavily", vec![SearchResultEntry {
-        title: "B".into(),
-        url: "https://b.com".into(),
-        description: "".into(),
-        age: None,
-    }]);
+    cache.put(
+        "q1|5|tavily",
+        vec![SearchResultEntry {
+            title: "A".into(),
+            url: "https://a.com".into(),
+            description: "".into(),
+            age: None,
+        }],
+    );
+    cache.put(
+        "q2|5|tavily",
+        vec![SearchResultEntry {
+            title: "B".into(),
+            url: "https://b.com".into(),
+            description: "".into(),
+            age: None,
+        }],
+    );
 
     assert_eq!(cache.get("q1|5|tavily", 300).unwrap()[0].title, "A");
     assert_eq!(cache.get("q2|5|tavily", 300).unwrap()[0].title, "B");
@@ -294,7 +299,11 @@ fn test_build_cache_key() {
     assert_ne!(k1, k2, "different max_results should differ");
     assert_ne!(k1, k3, "different provider should differ");
     assert_ne!(k1, k4, "different query should differ");
-    assert_eq!(k1, build_cache_key("rust", 5, "tavily"), "same inputs same key");
+    assert_eq!(
+        k1,
+        build_cache_key("rust", 5, "tavily"),
+        "same inputs same key"
+    );
 }
 
 #[test]
@@ -318,16 +327,25 @@ fn test_search_cache_evicts_oldest_at_capacity() {
     assert!(cache.get("query0|5|tavily", 300).is_some());
 
     // Add one more — should evict the oldest (query0)
-    cache.put("overflow|5|tavily", vec![SearchResultEntry {
-        title: "Overflow".into(),
-        url: "https://overflow.com".into(),
-        description: "".into(),
-        age: None,
-    }]);
+    cache.put(
+        "overflow|5|tavily",
+        vec![SearchResultEntry {
+            title: "Overflow".into(),
+            url: "https://overflow.com".into(),
+            description: "".into(),
+            age: None,
+        }],
+    );
 
     // query0 should be evicted, overflow should exist
-    assert!(cache.get("query0|5|tavily", 300).is_none(), "oldest should be evicted");
-    assert!(cache.get("overflow|5|tavily", 300).is_some(), "new entry should exist");
+    assert!(
+        cache.get("query0|5|tavily", 300).is_none(),
+        "oldest should be evicted"
+    );
+    assert!(
+        cache.get("overflow|5|tavily", 300).is_some(),
+        "new entry should exist"
+    );
 }
 
 #[test]

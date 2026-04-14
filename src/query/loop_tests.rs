@@ -597,17 +597,11 @@ async fn test_image_tool_result_flows_as_blocks() {
                                     assert_eq!(source.media_type, "image/png");
                                     assert_eq!(source.data, "iVBORw0KGgoAAAANSUhEUg==");
                                 }
-                                other => panic!(
-                                    "second block should be Image, got {:?}",
-                                    other
-                                ),
+                                other => panic!("second block should be Image, got {:?}", other),
                             }
                         }
                         ToolResultContent::Text(t) => {
-                            panic!(
-                                "expected Blocks in tool result, got Text: {}",
-                                t
-                            );
+                            panic!("expected Blocks in tool result, got Text: {}", t);
                         }
                     }
                 }
@@ -721,22 +715,23 @@ impl QueryDeps for CuMockDeps {
         let result = if request.tool_name.contains("screenshot") {
             crate::types::tool::ToolResult {
                 data: serde_json::json!("[Image: image/png]"),
-                model_content: Some(ToolResultContent::Blocks(vec![
-                    ContentBlock::Image {
-                        source: ImageSource {
-                            source_type: "base64".to_string(),
-                            media_type: "image/png".to_string(),
-                            data: "iVBORw0KGgoAAAANSUhEUg==".to_string(),
-                        },
+                model_content: Some(ToolResultContent::Blocks(vec![ContentBlock::Image {
+                    source: ImageSource {
+                        source_type: "base64".to_string(),
+                        media_type: "image/png".to_string(),
+                        data: "iVBORw0KGgoAAAANSUhEUg==".to_string(),
                     },
-                ])),
+                }])),
                 display_preview: Some("[Screenshot: 1920x1080]".to_string()),
                 new_messages: vec![],
             }
         } else {
             // click, type_text, key, scroll → text confirmation
             crate::types::tool::ToolResult {
-                data: serde_json::json!(format!("Action '{}' executed successfully", request.tool_name)),
+                data: serde_json::json!(format!(
+                    "Action '{}' executed successfully",
+                    request.tool_name
+                )),
                 new_messages: vec![],
                 ..Default::default()
             }
@@ -927,7 +922,10 @@ async fn test_computer_use_screenshot_click_round_trip() {
     // Final message should be text
     let final_msg = assistant_msgs.last().unwrap();
     assert!(
-        final_msg.content.iter().any(|b| matches!(b, ContentBlock::Text { text } if text.contains("clicked"))),
+        final_msg
+            .content
+            .iter()
+            .any(|b| matches!(b, ContentBlock::Text { text } if text.contains("clicked"))),
         "final message should mention clicking"
     );
 }

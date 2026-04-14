@@ -1,5 +1,7 @@
 use super::*;
 
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn anthropic_config() -> ApiClientConfig {
     ApiClientConfig {
         provider: ApiProvider::Anthropic {
@@ -140,6 +142,24 @@ fn test_build_url_openai_compat_trailing_slash() {
     let client = ApiClient::new(config);
     let url = client.build_url();
     assert_eq!(url, "https://api.openai.com/v1/chat/completions");
+}
+
+#[test]
+fn test_build_url_openai_codex() {
+    let config = ApiClientConfig {
+        provider: ApiProvider::OpenAiCompat {
+            name: OPENAI_CODEX_PROVIDER_NAME.to_string(),
+            api_key: "token-test".to_string(),
+            base_url: "https://chatgpt.com/backend-api/".to_string(),
+            default_model: "gpt-5.4".to_string(),
+        },
+        default_model: "gpt-5.4".to_string(),
+        max_retries: 3,
+        timeout_secs: 60,
+    };
+    let client = ApiClient::new(config);
+    let url = client.build_url();
+    assert_eq!(url, "https://chatgpt.com/backend-api/conversation");
 }
 
 // -----------------------------------------------------------------------
@@ -283,6 +303,7 @@ fn test_from_provider_info_google() {
 
 #[test]
 fn test_from_env_with_anthropic_key() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     // Temporarily set the env var for this test
     let key = "sk-ant-api03-test-from-env-key";
     std::env::set_var("ANTHROPIC_API_KEY", key);
@@ -307,6 +328,7 @@ fn test_from_env_with_anthropic_key() {
 
 #[test]
 fn test_from_env_no_keys() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     // Save and clear all provider keys
     let saved: Vec<_> = crate::api::providers::PROVIDERS
         .iter()
@@ -330,6 +352,7 @@ fn test_from_env_no_keys() {
 
 #[test]
 fn test_from_auth_with_env() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let key = "sk-ant-api03-test-from-auth-key";
     std::env::set_var("ANTHROPIC_API_KEY", key);
 
@@ -337,6 +360,54 @@ fn test_from_auth_with_env() {
     assert!(client.is_some(), "from_auth should find the env var");
 
     // Clean up
+    std::env::remove_var("ANTHROPIC_API_KEY");
+}
+
+#[test]
+fn test_from_codex_auth_with_env() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    std::env::set_var(OPENAI_CODEX_TOKEN_ENV, "codex-token-test");
+    std::env::set_var(OPENAI_CODEX_BASE_URL_ENV, "https://example.com/codex/");
+    std::env::set_var(OPENAI_CODEX_MODEL_ENV, "gpt-5.3-codex-spark");
+
+    let client = ApiClient::from_codex_auth().expect("from_codex_auth should return Some");
+    match &client.config().provider {
+        ApiProvider::OpenAiCompat {
+            name,
+            api_key,
+            base_url,
+            default_model,
+        } => {
+            assert_eq!(name, OPENAI_CODEX_PROVIDER_NAME);
+            assert_eq!(api_key, "codex-token-test");
+            assert_eq!(base_url, "https://example.com/codex");
+            assert_eq!(default_model, "gpt-5.3-codex-spark");
+        }
+        other => panic!("expected OpenAiCompat provider, got {:?}", other),
+    }
+    assert_eq!(client.config().default_model, "gpt-5.3-codex-spark");
+
+    std::env::remove_var(OPENAI_CODEX_TOKEN_ENV);
+    std::env::remove_var(OPENAI_CODEX_BASE_URL_ENV);
+    std::env::remove_var(OPENAI_CODEX_MODEL_ENV);
+}
+
+#[test]
+fn test_from_backend_codex_prefers_codex_auth() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    std::env::set_var(OPENAI_CODEX_TOKEN_ENV, "codex-token-backend");
+    std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-should-not-win");
+
+    let client = ApiClient::from_backend(Some("codex")).expect("from_backend should return Some");
+    match &client.config().provider {
+        ApiProvider::OpenAiCompat { name, api_key, .. } => {
+            assert_eq!(name, OPENAI_CODEX_PROVIDER_NAME);
+            assert_eq!(api_key, "codex-token-backend");
+        }
+        other => panic!("expected OpenAiCompat provider, got {:?}", other),
+    }
+
+    std::env::remove_var(OPENAI_CODEX_TOKEN_ENV);
     std::env::remove_var("ANTHROPIC_API_KEY");
 }
 

@@ -243,17 +243,10 @@ fn set_entry(key: &str, rest: &str, cwd: &std::path::Path) -> Result<CommandResu
     )))
 }
 
-fn rm_entry(
-    key: &str,
-    scope: MemoryScope,
-    cwd: &std::path::Path,
-) -> Result<CommandResult> {
+fn rm_entry(key: &str, scope: MemoryScope, cwd: &std::path::Path) -> Result<CommandResult> {
     let deleted = memdir::delete_memory(key, scope, cwd)?;
     if deleted {
-        Ok(CommandResult::Output(format!(
-            "Deleted memory '{}'.",
-            key
-        )))
+        Ok(CommandResult::Output(format!("Deleted memory '{}'.", key)))
     } else {
         Ok(CommandResult::Output(format!(
             "Memory '{}' not found.",
@@ -274,7 +267,11 @@ fn search_entries(query: &str, cwd: &std::path::Path) -> Result<CommandResult> {
         )));
     }
 
-    let mut lines = vec![format!("Found {} result(s) for '{}':", results.len(), query)];
+    let mut lines = vec![format!(
+        "Found {} result(s) for '{}':",
+        results.len(),
+        query
+    )];
     for e in &results {
         let cat = if e.category.is_empty() {
             String::new()
@@ -373,10 +370,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_set_get_rm_roundtrip() {
-        let tmp = std::env::temp_dir().join(format!(
-            "cc_rust_mem_cmd_test_{}",
-            uuid::Uuid::new_v4()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("cc_rust_mem_cmd_test_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&tmp).unwrap();
 
         let handler = MemoryHandler;
@@ -435,10 +430,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_set_with_category() {
-        let tmp = std::env::temp_dir().join(format!(
-            "cc_rust_mem_cat_test_{}",
-            uuid::Uuid::new_v4()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("cc_rust_mem_cat_test_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&tmp).unwrap();
 
         let handler = MemoryHandler;

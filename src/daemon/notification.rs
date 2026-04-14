@@ -102,10 +102,7 @@ pub fn send_windows_toast(notif: &FullNotification) {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        debug!(
-            "Windows toast skipped (not on Windows): {}",
-            notif.title
-        );
+        debug!("Windows toast skipped (not on Windows): {}", notif.title);
     }
 }
 

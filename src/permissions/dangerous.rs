@@ -125,13 +125,19 @@ pub fn is_dangerous_command(command: &str) -> Option<String> {
     // Defense-in-depth: flag commands with unterminated quotes as potentially
     // obfuscated to bypass pattern matching
     if has_unterminated_quotes(trimmed) {
-        return Some("Command has unterminated quotes — may be attempting to bypass safety checks".to_string());
+        return Some(
+            "Command has unterminated quotes — may be attempting to bypass safety checks"
+                .to_string(),
+        );
     }
 
     // Flag commands with multiline strings hidden inside quotes, as they can
     // conceal dangerous operations from single-line regex patterns
     if contains_multiline_string(trimmed) {
-        return Some("Command contains multiline strings inside quotes — may hide dangerous operations".to_string());
+        return Some(
+            "Command contains multiline strings inside quotes — may hide dangerous operations"
+                .to_string(),
+        );
     }
 
     for pattern in DANGER_PATTERNS.iter() {

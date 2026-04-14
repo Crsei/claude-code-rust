@@ -97,16 +97,17 @@ mod tests {
         let body = b"token=abc123&event=url_verification";
 
         // Compute expected signature.
-        let sig_basestring = format!(
-            "v0:{}:{}",
-            timestamp,
-            String::from_utf8_lossy(body)
-        );
+        let sig_basestring = format!("v0:{}:{}", timestamp, String::from_utf8_lossy(body));
         let mut mac = HmacSha256::new_from_slice(signing_secret.as_bytes()).unwrap();
         mac.update(sig_basestring.as_bytes());
         let expected = format!("v0={}", hex::encode(mac.finalize().into_bytes()));
 
-        assert!(verify_slack_signature(body, timestamp, &expected, signing_secret));
+        assert!(verify_slack_signature(
+            body,
+            timestamp,
+            &expected,
+            signing_secret
+        ));
     }
 
     #[test]
@@ -116,7 +117,12 @@ mod tests {
         let body = b"token=abc123&event=url_verification";
         let bad_sig = "v0=0000000000000000000000000000000000000000000000000000000000000000";
 
-        assert!(!verify_slack_signature(body, timestamp, bad_sig, signing_secret));
+        assert!(!verify_slack_signature(
+            body,
+            timestamp,
+            bad_sig,
+            signing_secret
+        ));
     }
 
     #[test]
@@ -133,6 +139,11 @@ mod tests {
         mac.update(sig_basestring.as_bytes());
         let sig = format!("v0={}", hex::encode(mac.finalize().into_bytes()));
 
-        assert!(!verify_slack_signature(body, ts_verify, &sig, signing_secret));
+        assert!(!verify_slack_signature(
+            body,
+            ts_verify,
+            &sig,
+            signing_secret
+        ));
     }
 }

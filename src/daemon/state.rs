@@ -24,9 +24,7 @@ static EVENT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Returns a monotonically increasing event ID string.
 pub(super) fn next_event_id() -> String {
-    EVENT_COUNTER
-        .fetch_add(1, Ordering::Relaxed)
-        .to_string()
+    EVENT_COUNTER.fetch_add(1, Ordering::Relaxed).to_string()
 }
 
 // ---------------------------------------------------------------------------

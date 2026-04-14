@@ -22,9 +22,7 @@ impl CommandHandler for ChannelsHandler {
         }
 
         match args.trim() {
-            "" | "list" => Ok(CommandResult::Output(
-                "No channels connected.".into(),
-            )),
+            "" | "list" => Ok(CommandResult::Output("No channels connected.".into())),
             "status" => Ok(CommandResult::Output(
                 "Channel status: no active connections.".into(),
             )),

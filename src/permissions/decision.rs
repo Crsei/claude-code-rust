@@ -136,10 +136,12 @@ fn cu_permission_message(tool_name: &str) -> Option<String> {
         "key" => "press a keyboard shortcut",
         "scroll" => "scroll the mouse wheel",
         "mouse_move" => "move the mouse cursor",
-        _ => return Some(format!(
-            "Allow desktop control action '{}' {}?",
-            action, risk_tag
-        )),
+        _ => {
+            return Some(format!(
+                "Allow desktop control action '{}' {}?",
+                action, risk_tag
+            ))
+        }
     };
 
     Some(format!("Allow {} {}?", description, risk_tag))
@@ -519,12 +521,8 @@ mod tests {
             "session".into(),
             vec!["mcp__computer-use__screenshot".into()],
         );
-        let decision = has_permissions_to_use_tool(
-            "mcp__computer-use__screenshot",
-            &Value::Null,
-            &ctx,
-            None,
-        );
+        let decision =
+            has_permissions_to_use_tool("mcp__computer-use__screenshot", &Value::Null, &ctx, None);
         assert_eq!(decision.behavior, PermissionBehavior::Allow);
         // Should report session as the source
         if let PermissionDecisionReason::Rule { source, .. } = &decision.reason {
@@ -547,12 +545,8 @@ mod tests {
             "session".into(),
             vec!["mcp__computer-use__left_click".into()],
         );
-        let decision = has_permissions_to_use_tool(
-            "mcp__computer-use__left_click",
-            &Value::Null,
-            &ctx,
-            None,
-        );
+        let decision =
+            has_permissions_to_use_tool("mcp__computer-use__left_click", &Value::Null, &ctx, None);
         assert_eq!(decision.behavior, PermissionBehavior::Deny);
     }
 
@@ -578,12 +572,8 @@ mod tests {
     #[test]
     fn test_cu_screenshot_permission_message() {
         let ctx = default_ctx();
-        let decision = has_permissions_to_use_tool(
-            "mcp__computer-use__screenshot",
-            &Value::Null,
-            &ctx,
-            None,
-        );
+        let decision =
+            has_permissions_to_use_tool("mcp__computer-use__screenshot", &Value::Null, &ctx, None);
         assert_eq!(decision.behavior, PermissionBehavior::Ask);
         let msg = decision.message.unwrap();
         assert!(

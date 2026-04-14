@@ -68,6 +68,15 @@ pub static PROVIDERS: &[ProviderInfo] = &[
         label: "OpenAI (GPT)",
         protocol: ProviderProtocol::OpenAiCompat,
     },
+    // ChatGPT OAuth token for Codex service (OpenAI Codex provider path).
+    ProviderInfo {
+        name: "openai-codex",
+        env_key: "OPENAI_CODEX_AUTH_TOKEN",
+        base_url: "https://chatgpt.com/backend-api",
+        default_model: "gpt-5.4",
+        label: "OpenAI Codex (ChatGPT OAuth)",
+        protocol: ProviderProtocol::OpenAiCompat,
+    },
     ProviderInfo {
         name: "google",
         env_key: "GOOGLE_API_KEY",
@@ -279,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_provider_count() {
-        assert_eq!(PROVIDERS.len(), 16);
+        assert_eq!(PROVIDERS.len(), 17);
     }
 
     #[test]
@@ -310,6 +319,13 @@ mod tests {
     fn test_google_protocol() {
         let p = get_provider("google").unwrap();
         assert_eq!(p.protocol, ProviderProtocol::Google);
+    }
+
+    #[test]
+    fn test_openai_codex_protocol() {
+        let p = get_provider("openai-codex").unwrap();
+        assert_eq!(p.env_key, "OPENAI_CODEX_AUTH_TOKEN");
+        assert_eq!(p.protocol, ProviderProtocol::OpenAiCompat);
     }
 
     #[test]

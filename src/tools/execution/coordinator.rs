@@ -211,36 +211,68 @@ mod tests {
     struct ConcurrentStub;
     #[async_trait::async_trait]
     impl Tool for ConcurrentStub {
-        fn name(&self) -> &str { "ConcurrentStub" }
-        async fn description(&self, _: &Value) -> String { String::new() }
-        fn input_json_schema(&self) -> Value { Value::Null }
-        fn is_concurrency_safe(&self, _: &Value) -> bool { true }
+        fn name(&self) -> &str {
+            "ConcurrentStub"
+        }
+        async fn description(&self, _: &Value) -> String {
+            String::new()
+        }
+        fn input_json_schema(&self) -> Value {
+            Value::Null
+        }
+        fn is_concurrency_safe(&self, _: &Value) -> bool {
+            true
+        }
         async fn call(
-            &self, _: Value, _: &ToolUseContext,
+            &self,
+            _: Value,
+            _: &ToolUseContext,
             _: &crate::types::message::AssistantMessage,
             _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
         ) -> anyhow::Result<ToolResult> {
-            Ok(ToolResult { data: Value::Null, new_messages: vec![], ..Default::default() })
+            Ok(ToolResult {
+                data: Value::Null,
+                new_messages: vec![],
+                ..Default::default()
+            })
         }
-        async fn prompt(&self) -> String { String::new() }
+        async fn prompt(&self) -> String {
+            String::new()
+        }
     }
 
     /// A tool stub that reports itself as NOT concurrency-safe (serial).
     struct SerialStub;
     #[async_trait::async_trait]
     impl Tool for SerialStub {
-        fn name(&self) -> &str { "SerialStub" }
-        async fn description(&self, _: &Value) -> String { String::new() }
-        fn input_json_schema(&self) -> Value { Value::Null }
-        fn is_concurrency_safe(&self, _: &Value) -> bool { false }
+        fn name(&self) -> &str {
+            "SerialStub"
+        }
+        async fn description(&self, _: &Value) -> String {
+            String::new()
+        }
+        fn input_json_schema(&self) -> Value {
+            Value::Null
+        }
+        fn is_concurrency_safe(&self, _: &Value) -> bool {
+            false
+        }
         async fn call(
-            &self, _: Value, _: &ToolUseContext,
+            &self,
+            _: Value,
+            _: &ToolUseContext,
             _: &crate::types::message::AssistantMessage,
             _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
         ) -> anyhow::Result<ToolResult> {
-            Ok(ToolResult { data: Value::Null, new_messages: vec![], ..Default::default() })
+            Ok(ToolResult {
+                data: Value::Null,
+                new_messages: vec![],
+                ..Default::default()
+            })
         }
-        async fn prompt(&self) -> String { String::new() }
+        async fn prompt(&self) -> String {
+            String::new()
+        }
     }
 
     // ── TrackedToolState tests ────────────────────────────────────────────
@@ -346,11 +378,18 @@ mod tests {
         let mut executor = StreamingToolExecutor::new();
         let tools: crate::types::tool::Tools = vec![Arc::new(ConcurrentStub)];
 
-        executor.add_tool("id-1".to_string(), "ConcurrentStub".to_string(), json!({}), &tools);
+        executor.add_tool(
+            "id-1".to_string(),
+            "ConcurrentStub".to_string(),
+            json!({}),
+            &tools,
+        );
 
         assert_eq!(executor.tracked.len(), 1);
-        assert!(executor.tracked[0].is_concurrency_safe,
-            "ConcurrentStub must be marked concurrency-safe");
+        assert!(
+            executor.tracked[0].is_concurrency_safe,
+            "ConcurrentStub must be marked concurrency-safe"
+        );
         assert_eq!(executor.tracked[0].tool_use_id, "id-1");
         assert_eq!(executor.tracked[0].state, TrackedToolState::Queued);
     }
@@ -360,11 +399,18 @@ mod tests {
         let mut executor = StreamingToolExecutor::new();
         let tools: crate::types::tool::Tools = vec![Arc::new(SerialStub)];
 
-        executor.add_tool("id-2".to_string(), "SerialStub".to_string(), json!({}), &tools);
+        executor.add_tool(
+            "id-2".to_string(),
+            "SerialStub".to_string(),
+            json!({}),
+            &tools,
+        );
 
         assert_eq!(executor.tracked.len(), 1);
-        assert!(!executor.tracked[0].is_concurrency_safe,
-            "SerialStub must NOT be concurrency-safe");
+        assert!(
+            !executor.tracked[0].is_concurrency_safe,
+            "SerialStub must NOT be concurrency-safe"
+        );
     }
 
     #[test]
@@ -373,24 +419,43 @@ mod tests {
         // Empty tools list — tool name won't be found, map_or(false, ...) kicks in
         let tools: crate::types::tool::Tools = vec![];
 
-        executor.add_tool("id-3".to_string(), "UnknownTool".to_string(), json!({}), &tools);
+        executor.add_tool(
+            "id-3".to_string(),
+            "UnknownTool".to_string(),
+            json!({}),
+            &tools,
+        );
 
         assert_eq!(executor.tracked.len(), 1);
-        assert!(!executor.tracked[0].is_concurrency_safe,
-            "Unknown tools must default to not concurrency-safe");
+        assert!(
+            !executor.tracked[0].is_concurrency_safe,
+            "Unknown tools must default to not concurrency-safe"
+        );
     }
 
     #[test]
     fn test_add_multiple_tools_fifo_order() {
         let mut executor = StreamingToolExecutor::new();
-        let tools: crate::types::tool::Tools = vec![
-            Arc::new(ConcurrentStub),
-            Arc::new(SerialStub),
-        ];
+        let tools: crate::types::tool::Tools = vec![Arc::new(ConcurrentStub), Arc::new(SerialStub)];
 
-        executor.add_tool("id-a".to_string(), "ConcurrentStub".to_string(), json!({}), &tools);
-        executor.add_tool("id-b".to_string(), "SerialStub".to_string(), json!({}), &tools);
-        executor.add_tool("id-c".to_string(), "ConcurrentStub".to_string(), json!({}), &tools);
+        executor.add_tool(
+            "id-a".to_string(),
+            "ConcurrentStub".to_string(),
+            json!({}),
+            &tools,
+        );
+        executor.add_tool(
+            "id-b".to_string(),
+            "SerialStub".to_string(),
+            json!({}),
+            &tools,
+        );
+        executor.add_tool(
+            "id-c".to_string(),
+            "ConcurrentStub".to_string(),
+            json!({}),
+            &tools,
+        );
 
         assert_eq!(executor.tracked.len(), 3);
         assert_eq!(executor.tracked[0].tool_use_id, "id-a");
@@ -407,10 +472,18 @@ mod tests {
         let mut executor = StreamingToolExecutor::new();
         let tools: crate::types::tool::Tools = vec![Arc::new(SerialStub)];
 
-        executor.add_tool("id-q".to_string(), "SerialStub".to_string(), json!({}), &tools);
+        executor.add_tool(
+            "id-q".to_string(),
+            "SerialStub".to_string(),
+            json!({}),
+            &tools,
+        );
 
-        assert_eq!(executor.tracked[0].state, TrackedToolState::Queued,
-            "Freshly added tools must start in Queued state");
+        assert_eq!(
+            executor.tracked[0].state,
+            TrackedToolState::Queued,
+            "Freshly added tools must start in Queued state"
+        );
     }
 
     #[test]
@@ -419,7 +492,12 @@ mod tests {
         let tools: crate::types::tool::Tools = vec![Arc::new(ConcurrentStub)];
         let input = json!({"key": "value", "num": 42});
 
-        executor.add_tool("id-inp".to_string(), "ConcurrentStub".to_string(), input.clone(), &tools);
+        executor.add_tool(
+            "id-inp".to_string(),
+            "ConcurrentStub".to_string(),
+            input.clone(),
+            &tools,
+        );
 
         assert_eq!(executor.tracked[0].input, input);
     }

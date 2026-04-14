@@ -170,11 +170,7 @@ mod tests {
         let result = handler.execute("verify", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(text) => {
-                assert!(
-                    text.contains("Usage"),
-                    "expected usage hint, got: {}",
-                    text
-                );
+                assert!(text.contains("Usage"), "expected usage hint, got: {}", text);
             }
             _ => panic!("Expected Output"),
         }

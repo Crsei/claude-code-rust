@@ -88,7 +88,9 @@ impl QuerySource {
     pub fn is_autonomous(&self) -> bool {
         matches!(
             self,
-            QuerySource::ProactiveTick | QuerySource::WebhookEvent | QuerySource::ChannelNotification
+            QuerySource::ProactiveTick
+                | QuerySource::WebhookEvent
+                | QuerySource::ChannelNotification
         )
     }
 }

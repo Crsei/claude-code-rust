@@ -55,15 +55,14 @@ pub async fn sse_handler(
     );
 
     // Build the SSE stream.
-    let stream =
-        tokio_stream::wrappers::UnboundedReceiverStream::new(rx).map(|sse_event| {
-            let event = Event::default()
-                .id(sse_event.id)
-                .event(sse_event.event_type)
-                .json_data(sse_event.data)
-                .unwrap_or_else(|_| Event::default());
-            Ok(event)
-        });
+    let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx).map(|sse_event| {
+        let event = Event::default()
+            .id(sse_event.id)
+            .event(sse_event.event_type)
+            .json_data(sse_event.data)
+            .unwrap_or_else(|_| Event::default());
+        Ok(event)
+    });
 
     Sse::new(stream).keep_alive(KeepAlive::default())
 }

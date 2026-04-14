@@ -375,8 +375,7 @@ impl Tool for TypeTextTool {
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
         let text = input["text"].as_str().unwrap_or("").to_string();
-        let result =
-            super::input::execute_input(InputAction::TypeText { text }).await?;
+        let result = super::input::execute_input(InputAction::TypeText { text }).await?;
         Ok(ToolResult {
             data: json!(result),
             ..Default::default()
@@ -443,8 +442,7 @@ impl Tool for KeyTool {
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
         let key = input["key"].as_str().unwrap_or("").to_string();
-        let result =
-            super::input::execute_input(InputAction::KeyPress { key }).await?;
+        let result = super::input::execute_input(InputAction::KeyPress { key }).await?;
         Ok(ToolResult {
             data: json!(result),
             ..Default::default()
@@ -506,8 +504,7 @@ impl Tool for ScrollTool {
         let y = input["y"].as_i64().unwrap_or(0) as i32;
         let amount = input["amount"].as_i64().unwrap_or(3) as i32;
 
-        let result =
-            super::input::execute_input(InputAction::Scroll { x, y, amount }).await?;
+        let result = super::input::execute_input(InputAction::Scroll { x, y, amount }).await?;
         Ok(ToolResult {
             data: json!(result),
             ..Default::default()
@@ -564,8 +561,7 @@ impl Tool for MouseMoveTool {
         let x = input["x"].as_i64().unwrap_or(0) as i32;
         let y = input["y"].as_i64().unwrap_or(0) as i32;
 
-        let result =
-            super::input::execute_input(InputAction::MouseMove { x, y }).await?;
+        let result = super::input::execute_input(InputAction::MouseMove { x, y }).await?;
         Ok(ToolResult {
             data: json!(result),
             ..Default::default()

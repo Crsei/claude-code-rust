@@ -39,11 +39,7 @@ impl CommandHandler for AssistantHandler {
              Model:             {}",
             if state.kairos_active { "yes" } else { "no" },
             if state.is_brief_only { "ON" } else { "OFF" },
-            if state.is_assistant_mode {
-                "ON"
-            } else {
-                "OFF"
-            },
+            if state.is_assistant_mode { "ON" } else { "OFF" },
             if state.terminal_focus { "yes" } else { "no" },
             tick_display,
             state.main_loop_model,

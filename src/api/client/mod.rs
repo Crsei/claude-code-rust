@@ -20,6 +20,20 @@ pub(crate) use stream::parse_sse_byte_stream;
 #[cfg(test)]
 use stream::parse_sse_text;
 
+pub const OPENAI_CODEX_PROVIDER_NAME: &str = "openai-codex";
+pub const OPENAI_CODEX_TOKEN_ENV: &str = "OPENAI_CODEX_AUTH_TOKEN";
+pub const OPENAI_CODEX_BASE_URL_ENV: &str = "OPENAI_CODEX_BASE_URL";
+pub const OPENAI_CODEX_MODEL_ENV: &str = "OPENAI_CODEX_MODEL";
+
+pub(crate) fn build_openai_compat_url(base_url: &str, provider_name: &str) -> String {
+    let endpoint = if provider_name.eq_ignore_ascii_case(OPENAI_CODEX_PROVIDER_NAME) {
+        "/conversation"
+    } else {
+        "/chat/completions"
+    };
+    format!("{}{}", base_url.trim_end_matches('/'), endpoint)
+}
+
 /// API provider enum — determines wire protocol and auth method.
 #[derive(Debug, Clone)]
 pub enum ApiProvider {
@@ -151,9 +165,8 @@ impl ApiClient {
                 let endpoint = endpoint.trim_end_matches('/');
                 format!("{}/v1/messages", endpoint)
             }
-            ApiProvider::OpenAiCompat { base_url, .. } => {
-                let base = base_url.trim_end_matches('/');
-                format!("{}/chat/completions", base)
+            ApiProvider::OpenAiCompat { name, base_url, .. } => {
+                build_openai_compat_url(base_url, name)
             }
             ApiProvider::Google { base_url, .. } => base_url.clone(),
             ApiProvider::Bedrock { .. } => {
@@ -226,7 +239,82 @@ impl ApiClient {
             }));
         }
 
+        // OpenAI Codex: allow runtime base_url/model overrides.
+        if info.name == OPENAI_CODEX_PROVIDER_NAME {
+            let base_url = std::env::var(OPENAI_CODEX_BASE_URL_ENV)
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| info.base_url.to_string())
+                .trim_end_matches('/')
+                .to_string();
+            let default_model = std::env::var(OPENAI_CODEX_MODEL_ENV)
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| info.default_model.to_string());
+
+            let provider = ApiProvider::OpenAiCompat {
+                name: info.name.to_string(),
+                api_key,
+                base_url,
+                default_model: default_model.clone(),
+            };
+            return Some(Self::new(ApiClientConfig {
+                provider,
+                default_model,
+                max_retries: 3,
+                timeout_secs: 120,
+            }));
+        }
+
         Some(Self::from_provider_info(info, &api_key))
+    }
+
+    /// Construct an `ApiClient` for the OpenAI Codex provider.
+    ///
+    /// Auth source (in priority order):
+    /// - `OPENAI_CODEX_AUTH_TOKEN`
+    /// - OAuth token saved by `/login 4`
+    ///
+    /// Optional:
+    /// - `OPENAI_CODEX_BASE_URL` (default: https://chatgpt.com/backend-api)
+    /// - `OPENAI_CODEX_MODEL` (default: gpt-5.4)
+    pub fn from_codex_auth() -> Option<Self> {
+        let info = crate::api::providers::get_provider(OPENAI_CODEX_PROVIDER_NAME)?;
+        let api_key = crate::auth::resolve_codex_auth_token()?;
+
+        let base_url = std::env::var(OPENAI_CODEX_BASE_URL_ENV)
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .unwrap_or_else(|| info.base_url.to_string())
+            .trim_end_matches('/')
+            .to_string();
+        let default_model = std::env::var(OPENAI_CODEX_MODEL_ENV)
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .unwrap_or_else(|| info.default_model.to_string());
+
+        Some(Self::new(ApiClientConfig {
+            provider: ApiProvider::OpenAiCompat {
+                name: info.name.to_string(),
+                api_key,
+                base_url,
+                default_model: default_model.clone(),
+            },
+            default_model,
+            max_retries: 3,
+            timeout_secs: 120,
+        }))
+    }
+
+    /// Construct an `ApiClient` for a specific backend.
+    ///
+    /// - `codex` backend: force the OpenAI Codex auth path.
+    /// - other backends: use the standard auth chain.
+    pub fn from_backend(backend: Option<&str>) -> Option<Self> {
+        if backend.is_some_and(crate::engine::codex_exec::is_codex_backend) {
+            return Self::from_codex_auth();
+        }
+        Self::from_auth()
     }
 
     /// Construct an `ApiClient` using the full auth resolution chain.

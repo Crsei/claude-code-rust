@@ -139,7 +139,10 @@ mod tests {
         assert_eq!(web.results.len(), 1);
         assert_eq!(web.results[0].title, "Brave test");
         assert_eq!(web.results[0].url, "https://brave.com");
-        assert_eq!(web.results[0].description, "A privacy-respecting search engine");
+        assert_eq!(
+            web.results[0].description,
+            "A privacy-respecting search engine"
+        );
         assert_eq!(web.results[0].age.as_deref(), Some("1 week ago"));
     }
 
@@ -147,7 +150,10 @@ mod tests {
     fn brave_response_missing_web_field_defaults_to_none() {
         let json_str = r#"{}"#;
         let resp: BraveSearchResponse = serde_json::from_str(json_str).unwrap();
-        assert!(resp.web.is_none(), "missing web field should deserialize as None");
+        assert!(
+            resp.web.is_none(),
+            "missing web field should deserialize as None"
+        );
     }
 
     #[test]
@@ -173,8 +179,10 @@ mod tests {
         }"#;
         let resp: BraveSearchResponse = serde_json::from_str(json_str).unwrap();
         let result = &resp.web.unwrap().results[0];
-        assert_eq!(result.description, "", "description should default to empty string");
+        assert_eq!(
+            result.description, "",
+            "description should default to empty string"
+        );
         assert!(result.age.is_none(), "age should default to None");
     }
-
 }

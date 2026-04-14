@@ -36,7 +36,8 @@ impl JsonRpcTransport {
     ///
     /// Frames the message with `Content-Length` header per LSP spec.
     pub async fn send(&mut self, message: &Value) -> Result<()> {
-        let body = serde_json::to_string(message).context("failed to serialize JSON-RPC message")?;
+        let body =
+            serde_json::to_string(message).context("failed to serialize JSON-RPC message")?;
         let header = format!("Content-Length: {}\r\n\r\n", body.len());
 
         self.writer
@@ -190,7 +191,11 @@ mod tests {
 
     #[test]
     fn test_make_request() {
-        let req = make_request(42, "textDocument/definition", serde_json::json!({"uri": "file:///foo.rs"}));
+        let req = make_request(
+            42,
+            "textDocument/definition",
+            serde_json::json!({"uri": "file:///foo.rs"}),
+        );
         assert_eq!(req["jsonrpc"], "2.0");
         assert_eq!(req["id"], 42);
         assert_eq!(req["method"], "textDocument/definition");
@@ -201,7 +206,10 @@ mod tests {
 
     #[test]
     fn test_make_notification() {
-        let notif = make_notification("textDocument/didOpen", serde_json::json!({"uri": "file:///bar.py"}));
+        let notif = make_notification(
+            "textDocument/didOpen",
+            serde_json::json!({"uri": "file:///bar.py"}),
+        );
         assert_eq!(notif["jsonrpc"], "2.0");
         assert_eq!(notif["method"], "textDocument/didOpen");
         assert_eq!(notif["params"]["uri"], "file:///bar.py");
@@ -223,7 +231,10 @@ mod tests {
         assert!(err.is_some());
         let msg = err.unwrap();
         assert!(msg.contains("-32601"), "expected error code in: {msg}");
-        assert!(msg.contains("Method not found"), "expected message in: {msg}");
+        assert!(
+            msg.contains("Method not found"),
+            "expected message in: {msg}"
+        );
     }
 
     #[test]
