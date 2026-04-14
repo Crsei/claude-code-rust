@@ -1,3 +1,4 @@
+pub mod codex_exec;
 pub mod input_processing;
 pub mod lifecycle;
 pub mod prompt_sections;

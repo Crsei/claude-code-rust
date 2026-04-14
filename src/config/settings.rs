@@ -24,6 +24,8 @@ use serde::{Deserialize, Serialize};
 pub struct GlobalConfig {
     /// Preferred model identifier.
     pub model: Option<String>,
+    /// Backend selection ("native" or "codex").
+    pub backend: Option<String>,
     /// Color theme name.
     pub theme: Option<String>,
     /// Verbose output.
@@ -50,6 +52,8 @@ pub struct GlobalConfig {
 pub struct ProjectConfig {
     /// Preferred model for this project.
     pub model: Option<String>,
+    /// Backend selection ("native" or "codex").
+    pub backend: Option<String>,
     /// Color theme for this project.
     pub theme: Option<String>,
     /// Verbose output.
@@ -71,6 +75,7 @@ pub struct ProjectConfig {
 #[derive(Debug, Clone, Default)]
 pub struct MergedConfig {
     pub model: Option<String>,
+    pub backend: Option<String>,
     pub theme: Option<String>,
     pub verbose: bool,
     pub permission_mode: Option<String>,
@@ -157,6 +162,7 @@ fn find_project_config(cwd: &Path) -> Option<PathBuf> {
 pub fn merge_configs(global: &GlobalConfig, project: &ProjectConfig) -> MergedConfig {
     let mut merged = MergedConfig {
         model: project.model.clone().or_else(|| global.model.clone()),
+        backend: project.backend.clone().or_else(|| global.backend.clone()),
         theme: project.theme.clone().or_else(|| global.theme.clone()),
         verbose: project.verbose.or(global.verbose).unwrap_or(false),
         permission_mode: project
@@ -228,6 +234,10 @@ fn apply_env_overrides(merged: &mut MergedConfig) {
     if let Ok(model) = std::env::var("CLAUDE_MODEL") {
         merged.model = Some(model);
     }
+    if let Ok(backend) = std::env::var("CC_BACKEND").or_else(|_| std::env::var("CLAUDE_BACKEND"))
+    {
+        merged.backend = Some(backend);
+    }
     if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
         merged.api_key = Some(key);
     }
@@ -251,18 +261,21 @@ mod tests {
     fn test_merge_project_overrides_global() {
         let global = GlobalConfig {
             model: Some("claude-sonnet".into()),
+            backend: Some("native".into()),
             theme: Some("dark".into()),
             verbose: Some(false),
             ..Default::default()
         };
         let project = ProjectConfig {
             model: Some("claude-opus".into()),
+            backend: Some("codex".into()),
             verbose: Some(true),
             ..Default::default()
         };
 
         let merged = merge_configs(&global, &project);
         assert_eq!(merged.model.as_deref(), Some("claude-opus"));
+        assert_eq!(merged.backend.as_deref(), Some("codex"));
         assert_eq!(merged.theme.as_deref(), Some("dark")); // falls through to global
         assert!(merged.verbose);
     }
@@ -280,6 +293,7 @@ mod tests {
     fn test_empty_configs_produce_defaults() {
         let merged = merge_configs(&GlobalConfig::default(), &ProjectConfig::default());
         assert!(merged.model.is_none());
+        assert!(merged.backend.is_none());
         assert!(!merged.verbose);
         assert!(merged.allowed_tools.is_empty());
     }

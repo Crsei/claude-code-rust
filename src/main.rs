@@ -291,7 +291,14 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // ── B.1: Load settings (parallel-ready) ──────────────────────────
     let merged_config = settings::load_and_merge(&cwd)?;
-    debug!(?merged_config, "settings loaded");
+    debug!(
+        model = ?merged_config.model,
+        permission_mode = ?merged_config.permission_mode,
+        backend = ?merged_config.backend,
+        "settings loaded",
+    );
+    let backend =
+        crate::engine::codex_exec::normalize_backend(merged_config.backend.as_deref());
 
     // ── B.2: Determine permission mode ───────────────────────────────
     let permission_mode = resolve_permission_mode(
@@ -343,12 +350,16 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // ── B.4: Create AppState ─────────────────────────────────────────
     // Resolve model: CLI arg > config > provider default > hardcoded fallback
-    let detected_client = crate::api::client::ApiClient::from_env();
+    let detected_client = if crate::engine::codex_exec::is_codex_backend(&backend) {
+        None
+    } else {
+        crate::api::client::ApiClient::from_env()
+    };
     let provider_default_model = detected_client
         .as_ref()
         .map(|c| c.config().default_model.clone());
 
-    if detected_client.is_none() {
+    if detected_client.is_none() && !crate::engine::codex_exec::is_codex_backend(&backend) {
         warn!("No API provider detected. Set an API key in .env, environment, or use /login.");
         eprintln!(
             "\x1b[33m⚠ No API provider detected.\x1b[0m\n  \
@@ -364,16 +375,24 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         .clone()
         .or(merged_config.model.clone())
         .or(provider_default_model)
-        .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+        .unwrap_or_else(|| {
+            if crate::engine::codex_exec::is_codex_backend(&backend) {
+                crate::engine::codex_exec::DEFAULT_CODEX_MODEL.to_string()
+            } else {
+                "claude-sonnet-4-20250514".to_string()
+            }
+        });
 
     let app_state = AppState {
         settings: SettingsJson {
             model: Some(model.clone()),
+            backend: Some(backend.clone()),
             theme: merged_config.theme.clone(),
             verbose: Some(cli.verbose),
         },
         verbose: cli.verbose,
         main_loop_model: model.clone(),
+        main_loop_backend: backend.clone(),
         tool_permission_context: ToolPermissionContext {
             mode: permission_mode.clone(),
             additional_working_directories: HashMap::new(),

@@ -351,6 +351,26 @@ fn handle_sdk_message(app: &mut App, msg: SdkMessage, ss: &mut StreamingState) {
             }
         }
 
+        SdkMessage::UserReplay(user) => {
+            if user.is_replay && !user.is_synthetic {
+                return;
+            }
+
+            let content = match user.content_blocks {
+                Some(blocks) => MessageContent::Blocks(blocks),
+                None => MessageContent::Text(user.content),
+            };
+            app.add_message(Message::User(UserMessage {
+                uuid: user.uuid,
+                timestamp: user.timestamp,
+                role: "user".to_string(),
+                content,
+                is_meta: user.is_synthetic,
+                tool_use_result: None,
+                source_tool_assistant_uuid: None,
+            }));
+        }
+
         SdkMessage::Result(result) => {
             // Finalize any leftover streaming state
             ss.text.clear();
