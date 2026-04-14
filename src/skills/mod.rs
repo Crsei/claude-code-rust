@@ -158,6 +158,29 @@ impl SkillDefinition {
 // Global skill registry
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Subsystem event emission
+// ---------------------------------------------------------------------------
+
+/// Event sender for subsystem events.
+static EVENT_TX: LazyLock<Mutex<Option<tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+/// Inject the event sender from the headless event loop.
+#[allow(dead_code)] // Called by headless event loop wiring (Task 12).
+pub fn set_event_sender(
+    tx: tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>,
+) {
+    *EVENT_TX.lock() = Some(tx);
+}
+
+/// Emit a subsystem event.
+fn emit_event(event: crate::ipc::subsystem_events::SubsystemEvent) {
+    if let Some(tx) = EVENT_TX.lock().as_ref() {
+        let _ = tx.send(event);
+    }
+}
+
 /// Global skill registry — holds all loaded skills, keyed by name.
 static REGISTRY: LazyLock<Mutex<Vec<SkillDefinition>>> = LazyLock::new(|| Mutex::new(Vec::new()));
 
@@ -227,6 +250,12 @@ pub fn init_skills(project_dir: Option<&std::path::Path>) {
             }
         }
     }
+
+    // 4. Emit skills-loaded event
+    let count = get_all_skills().len();
+    emit_event(crate::ipc::subsystem_events::SubsystemEvent::Skill(
+        crate::ipc::subsystem_events::SkillEvent::SkillsLoaded { count },
+    ));
 }
 
 // ---------------------------------------------------------------------------

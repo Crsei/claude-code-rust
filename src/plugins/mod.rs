@@ -161,9 +161,50 @@ pub fn known_marketplaces_path() -> PathBuf {
 static REGISTRY: LazyLock<Mutex<HashMap<String, PluginEntry>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+// ---------------------------------------------------------------------------
+// Subsystem event emission
+// ---------------------------------------------------------------------------
+
+/// Event sender for subsystem events.
+static EVENT_TX: LazyLock<Mutex<Option<tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+/// Inject the event sender from the headless event loop.
+#[allow(dead_code)] // Called by headless event loop wiring (Task 12).
+pub fn set_event_sender(
+    tx: tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>,
+) {
+    *EVENT_TX.lock() = Some(tx);
+}
+
+/// Emit a subsystem event.
+fn emit_event(event: crate::ipc::subsystem_events::SubsystemEvent) {
+    if let Some(tx) = EVENT_TX.lock().as_ref() {
+        let _ = tx.send(event);
+    }
+}
+
 /// Register a plugin in the in-memory registry.
 pub fn register_plugin(plugin: PluginEntry) {
+    let status_str = match &plugin.status {
+        PluginStatus::NotInstalled => "not_installed",
+        PluginStatus::Installed => "installed",
+        PluginStatus::Disabled => "disabled",
+        PluginStatus::Error(_) => "error",
+    };
+    let event = crate::ipc::subsystem_events::SubsystemEvent::Plugin(
+        crate::ipc::subsystem_events::PluginEvent::StatusChanged {
+            plugin_id: plugin.id.clone(),
+            name: plugin.name.clone(),
+            status: status_str.to_string(),
+            error: match &plugin.status {
+                PluginStatus::Error(e) => Some(e.clone()),
+                _ => None,
+            },
+        },
+    );
     REGISTRY.lock().insert(plugin.id.clone(), plugin);
+    emit_event(event);
 }
 
 /// Get all registered plugins.
@@ -186,7 +227,18 @@ pub fn get_enabled_plugins() -> Vec<PluginEntry> {
 
 /// Remove a plugin from the registry.
 pub fn unregister_plugin(id: &str) -> Option<PluginEntry> {
-    REGISTRY.lock().remove(id)
+    let result = REGISTRY.lock().remove(id);
+    if let Some(ref removed) = result {
+        emit_event(crate::ipc::subsystem_events::SubsystemEvent::Plugin(
+            crate::ipc::subsystem_events::PluginEvent::StatusChanged {
+                plugin_id: removed.id.clone(),
+                name: removed.name.clone(),
+                status: "not_installed".to_string(),
+                error: None,
+            },
+        ));
+    }
+    result
 }
 
 /// Clear all plugins (for testing or refresh).
