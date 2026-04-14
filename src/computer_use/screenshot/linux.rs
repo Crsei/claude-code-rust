@@ -1,0 +1,73 @@
+//! Linux screenshot via `scrot` (X11) or `grim` (Wayland).
+
+use super::ScreenshotResult;
+
+pub async fn capture_full_screen() -> anyhow::Result<ScreenshotResult> {
+    let tmp_dir = std::env::temp_dir();
+    let tmp_file = tmp_dir.join(format!("cc_rust_screenshot_{}.png", std::process::id()));
+    let tmp_path = tmp_file.to_str().unwrap();
+
+    // Try grim (Wayland) first, then scrot (X11)
+    let result = try_grim(tmp_path).await.or_else(|_| {
+        // try_scrot is sync-returning a future, so wrap
+        Ok::<_, anyhow::Error>(try_scrot(tmp_path))
+    });
+
+    // If grim succeeded, result is Ok(Ok(())). If grim failed, try scrot.
+    let _capture_result = match result {
+        Ok(fut) => fut.await,
+        Err(e) => Err(e),
+    }?;
+
+    let png_bytes = tokio::fs::read(&tmp_file).await?;
+    let _ = tokio::fs::remove_file(&tmp_file).await;
+
+    let (width, height) = parse_png_dimensions(&png_bytes).unwrap_or((1920, 1080));
+    let base64_png = base64_encode(&png_bytes);
+
+    Ok(ScreenshotResult {
+        base64_png,
+        width,
+        height,
+    })
+}
+
+async fn try_grim(output_path: &str) -> anyhow::Result<()> {
+    let output = tokio::process::Command::new("grim")
+        .arg(output_path)
+        .output()
+        .await
+        .map_err(|e| anyhow::anyhow!("grim not available: {}", e))?;
+
+    if !output.status.success() {
+        anyhow::bail!("grim failed: {}", String::from_utf8_lossy(&output.stderr));
+    }
+    Ok(())
+}
+
+async fn try_scrot(output_path: &str) -> anyhow::Result<()> {
+    let output = tokio::process::Command::new("scrot")
+        .arg(output_path)
+        .output()
+        .await
+        .map_err(|e| anyhow::anyhow!("scrot not available: {}", e))?;
+
+    if !output.status.success() {
+        anyhow::bail!("scrot failed: {}", String::from_utf8_lossy(&output.stderr));
+    }
+    Ok(())
+}
+
+fn parse_png_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+    if data.len() < 24 || &data[0..8] != b"\x89PNG\r\n\x1a\n" {
+        return None;
+    }
+    let width = u32::from_be_bytes([data[16], data[17], data[18], data[19]]);
+    let height = u32::from_be_bytes([data[20], data[21], data[22], data[23]]);
+    Some((width, height))
+}
+
+fn base64_encode(data: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(data)
+}

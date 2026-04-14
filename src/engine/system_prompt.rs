@@ -456,6 +456,11 @@ pub fn build_system_prompt(
         let resolved = prompt_sections::resolve_sections(&dynamic_sections);
         parts.extend(resolved);
 
+        // ── Computer Use system prompt (when CU tools are detected) ──
+        if let Some(cu_prompt) = crate::computer_use::detection::computer_use_system_prompt(tools) {
+            parts.push(cu_prompt);
+        }
+
         // ── Tool descriptions ──
         let enabled: Vec<&Arc<dyn Tool>> = tools.iter().filter(|t| t.is_enabled()).collect();
         if !enabled.is_empty() {

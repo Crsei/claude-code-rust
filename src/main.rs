@@ -16,6 +16,7 @@ mod commands;
 mod config;
 mod engine;
 mod permissions;
+mod computer_use;
 mod query;
 mod session;
 mod tools;
@@ -161,6 +162,11 @@ struct Cli {
     /// Daemon HTTP port (default: 19836).
     #[arg(long, default_value = "19836")]
     port: u16,
+
+    /// Enable native Computer Use tools (screenshot, click, type, key, scroll).
+    /// Registers built-in desktop control tools without needing an external MCP server.
+    #[arg(long = "computer-use")]
+    computer_use: bool,
 
     /// Inline prompt (positional argument or via stdin in print mode)
     prompt: Vec<String>,
@@ -384,6 +390,16 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         mcp_manager
     };
 
+    // ── B.3d: Register native Computer Use tools (if --computer-use) ──
+    if cli.computer_use {
+        let cu_tools = computer_use::setup::register_cu_tools();
+        info!(
+            count = cu_tools.len(),
+            "Computer Use: registered native desktop control tools"
+        );
+        tools.extend(cu_tools);
+    }
+
     // ── B.4: Create AppState ─────────────────────────────────────────
     // Resolve model: CLI arg > config > provider default > hardcoded fallback
     let detected_client = if crate::engine::codex_exec::is_codex_backend(&backend) {
@@ -435,6 +451,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             always_allow_rules: HashMap::new(),
             always_deny_rules: HashMap::new(),
             always_ask_rules: HashMap::new(),
+            session_allow_rules: HashMap::new(),
             is_bypass_permissions_mode_available: true,
             is_auto_mode_available: Some(true),
             pre_plan_mode: None,
