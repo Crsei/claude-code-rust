@@ -176,9 +176,12 @@ fn render_assistant_message<'a>(
                     ToolResultContent::Text(t) => t.clone(),
                     ToolResultContent::Blocks(blocks) => blocks
                         .iter()
-                        .filter_map(|b| match b {
-                            ContentBlock::Text { text } => Some(text.clone()),
-                            _ => None,
+                        .map(|b| match b {
+                            ContentBlock::Text { text } => text.clone(),
+                            ContentBlock::Image { source } => {
+                                format!("[image: {}]", source.media_type)
+                            }
+                            _ => "[...]".to_string(),
                         })
                         .collect::<Vec<_>>()
                         .join("\n"),

@@ -10,6 +10,23 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::message::ContentBlock;
 
+/// Lightweight description of a content block in a tool result,
+/// suitable for forwarding to the frontend without embedding raw image data.
+#[derive(Serialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ToolResultContentInfo {
+    /// Plain text content.
+    Text { text: String },
+    /// An image was returned (data is NOT forwarded — only metadata).
+    Image {
+        /// MIME type (e.g. "image/png").
+        media_type: String,
+        /// Approximate byte size of the base64-decoded image data.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        size_bytes: Option<usize>,
+    },
+}
+
 #[derive(Serialize, Debug, Clone)]
 pub struct ConversationMessage {
     pub id: String,
@@ -95,6 +112,11 @@ pub enum BackendMessage {
         tool_use_id: String,
         output: String,
         is_error: bool,
+        /// Structured content blocks when the result includes non-text data
+        /// (e.g. images from Computer Use screenshot). The frontend can use
+        /// this to render image placeholders or thumbnails.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        content_blocks: Option<Vec<ToolResultContentInfo>>,
     },
     /// Ask the UI to show a permission dialog for a tool call.
     PermissionRequest {

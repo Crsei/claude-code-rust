@@ -40,6 +40,7 @@ lru = "0.12"
 # 日志
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
 
 # LSP 协议类型
 lsp-types = "0.97"

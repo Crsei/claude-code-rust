@@ -95,10 +95,38 @@ pub struct ToolPermissionContext {
     pub always_allow_rules: ToolPermissionRulesBySource,
     pub always_deny_rules: ToolPermissionRulesBySource,
     pub always_ask_rules: ToolPermissionRulesBySource,
+    /// Session-level allow grants (cleared on session end).
+    ///
+    /// Checked between `always_allow_rules` and mode fallback.
+    /// Used for Computer Use "always allow" to avoid permanent rules
+    /// for high-risk desktop control tools.
+    pub session_allow_rules: ToolPermissionRulesBySource,
     pub is_bypass_permissions_mode_available: bool,
     pub is_auto_mode_available: Option<bool>,
     /// 计划模式之前的权限模式 (用于恢复)
     pub pre_plan_mode: Option<PermissionMode>,
+}
+
+impl ToolPermissionContext {
+    /// Add a session-level allow grant for a tool.
+    pub fn grant_session_allow(&mut self, tool_name: &str) {
+        self.session_allow_rules
+            .entry("session".into())
+            .or_default()
+            .push(tool_name.to_string());
+    }
+
+    /// Check if a tool has a session-level allow grant.
+    pub fn has_session_grant(&self, tool_name: &str) -> bool {
+        self.session_allow_rules
+            .values()
+            .any(|rules| rules.iter().any(|r| r == tool_name))
+    }
+
+    /// Clear all session-level grants (called on session end).
+    pub fn clear_session_grants(&mut self) {
+        self.session_allow_rules.clear();
+    }
 }
 
 #[derive(Debug, Clone, Default)]

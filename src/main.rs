@@ -16,6 +16,7 @@ mod commands;
 mod config;
 mod engine;
 mod permissions;
+mod computer_use;
 mod query;
 mod session;
 mod tools;
@@ -380,6 +381,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             always_allow_rules: HashMap::new(),
             always_deny_rules: HashMap::new(),
             always_ask_rules: HashMap::new(),
+            session_allow_rules: HashMap::new(),
             is_bypass_permissions_mode_available: true,
             is_auto_mode_available: Some(true),
             pre_plan_mode: None,

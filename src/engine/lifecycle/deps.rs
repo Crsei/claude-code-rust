@@ -525,7 +525,19 @@ impl QueryDeps for QueryEngineDeps {
                         .await;
 
                         match decision.to_lowercase().as_str() {
-                            "allow" | "always_allow" => { /* proceed */ }
+                            "allow" => { /* one-time allow, proceed */ }
+                            "always_allow" => {
+                                // Record a session-level grant so subsequent
+                                // calls to this tool don't re-prompt.
+                                self.state.write()
+                                    .app_state
+                                    .tool_permission_context
+                                    .grant_session_allow(&request.tool_name);
+                                tracing::debug!(
+                                    tool = %request.tool_name,
+                                    "session-level always_allow grant recorded"
+                                );
+                            }
                             _ => {
                                 // Fire PermissionDenied hook (user chose deny)
                                 let deny_configs = hooks::load_hook_configs(&hooks_map, "PermissionDenied");

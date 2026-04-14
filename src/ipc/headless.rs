@@ -526,27 +526,17 @@ fn handle_sdk_message(
                         is_error,
                     } = block
                     {
-                        let output = match content {
-                            ToolResultContent::Text(t) => t.clone(),
+                        let (output, content_infos) = match content {
+                            ToolResultContent::Text(t) => (t.clone(), None),
                             ToolResultContent::Blocks(inner) => {
-                                // Collect text from nested blocks
-                                inner
-                                    .iter()
-                                    .filter_map(|b| {
-                                        if let ContentBlock::Text { text } = b {
-                                            Some(text.as_str())
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .collect::<Vec<_>>()
-                                    .join("\n")
+                                extract_tool_result_output(inner)
                             }
                         };
                         let _ = send_to_frontend(&BackendMessage::ToolResult {
                             tool_use_id: tool_use_id.clone(),
                             output,
                             is_error: *is_error,
+                            content_blocks: content_infos,
                         });
                     }
                 }
@@ -651,6 +641,58 @@ fn handle_stream_event(event: &StreamEvent, message_id: &str) -> std::io::Result
 }
 
 // ---------------------------------------------------------------------------
+// Tool result content extraction
+// ---------------------------------------------------------------------------
+
+use super::protocol::ToolResultContentInfo;
+
+/// Extract human-readable output text and optional structured content info
+/// from a `ToolResultContent::Blocks(...)`.
+///
+/// For text blocks: concatenated into the output string.
+/// For image blocks: represented as `[image: mime_type]` in the output text,
+///   with metadata forwarded in the content_infos vec.
+fn extract_tool_result_output(
+    blocks: &[ContentBlock],
+) -> (String, Option<Vec<ToolResultContentInfo>>) {
+    let mut text_parts: Vec<String> = Vec::new();
+    let mut infos: Vec<ToolResultContentInfo> = Vec::new();
+    let mut has_non_text = false;
+
+    for block in blocks {
+        match block {
+            ContentBlock::Text { text } => {
+                text_parts.push(text.clone());
+                infos.push(ToolResultContentInfo::Text { text: text.clone() });
+            }
+            ContentBlock::Image { source } => {
+                has_non_text = true;
+                let media_type = source.media_type.clone();
+                let size_bytes = Some(source.data.len() * 3 / 4); // approx decoded size
+                text_parts.push(format!("[image: {}]", media_type));
+                infos.push(ToolResultContentInfo::Image {
+                    media_type,
+                    size_bytes,
+                });
+            }
+            _ => {
+                // Other block types (ToolUse, Thinking, etc.) — just note them
+                text_parts.push("[...]".to_string());
+            }
+        }
+    }
+
+    let output = if text_parts.is_empty() {
+        "(no output)".to_string()
+    } else {
+        text_parts.join("\n")
+    };
+
+    let content_infos = if has_non_text { Some(infos) } else { None };
+    (output, content_infos)
+}
+
+// ---------------------------------------------------------------------------
 // Prompt suggestions
 // ---------------------------------------------------------------------------
 
@@ -713,5 +755,80 @@ fn generate_and_send_suggestions(
         if !items.is_empty() {
             let _ = send_to_frontend(&BackendMessage::Suggestions { items });
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::message::ImageSource;
+
+    #[test]
+    fn test_extract_text_only_blocks() {
+        let blocks = vec![
+            ContentBlock::Text {
+                text: "line 1".into(),
+            },
+            ContentBlock::Text {
+                text: "line 2".into(),
+            },
+        ];
+        let (output, infos) = extract_tool_result_output(&blocks);
+        assert_eq!(output, "line 1\nline 2");
+        assert!(infos.is_none(), "no non-text blocks → None");
+    }
+
+    #[test]
+    fn test_extract_image_block_shows_placeholder() {
+        let blocks = vec![ContentBlock::Image {
+            source: ImageSource {
+                source_type: "base64".into(),
+                media_type: "image/png".into(),
+                data: "aGVsbG8=".into(), // 8 chars base64 → ~6 bytes
+            },
+        }];
+        let (output, infos) = extract_tool_result_output(&blocks);
+        assert_eq!(output, "[image: image/png]");
+        let infos = infos.expect("should have content_infos");
+        assert_eq!(infos.len(), 1);
+        match &infos[0] {
+            ToolResultContentInfo::Image { media_type, .. } => {
+                assert_eq!(media_type, "image/png");
+            }
+            _ => panic!("expected Image info"),
+        }
+    }
+
+    #[test]
+    fn test_extract_mixed_text_and_image() {
+        let blocks = vec![
+            ContentBlock::Text {
+                text: "screenshot taken".into(),
+            },
+            ContentBlock::Image {
+                source: ImageSource {
+                    source_type: "base64".into(),
+                    media_type: "image/jpeg".into(),
+                    data: "AAAA".into(),
+                },
+            },
+        ];
+        let (output, infos) = extract_tool_result_output(&blocks);
+        assert!(output.contains("screenshot taken"));
+        assert!(output.contains("[image: image/jpeg]"));
+        let infos = infos.expect("has image → Some");
+        assert_eq!(infos.len(), 2);
+    }
+
+    #[test]
+    fn test_extract_empty_blocks() {
+        let blocks: Vec<ContentBlock> = vec![];
+        let (output, infos) = extract_tool_result_output(&blocks);
+        assert_eq!(output, "(no output)");
+        assert!(infos.is_none());
     }
 }
