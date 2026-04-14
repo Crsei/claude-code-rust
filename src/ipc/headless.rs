@@ -230,6 +230,23 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
                         debug!("headless: quit requested");
                         break;
                     }
+
+                    // Subsystem commands — will be wired in Task 5.
+                    FrontendMessage::LspCommand { command } => {
+                        debug!("headless: lsp command: {:?}", command);
+                    }
+                    FrontendMessage::McpCommand { command } => {
+                        debug!("headless: mcp command: {:?}", command);
+                    }
+                    FrontendMessage::PluginCommand { command } => {
+                        debug!("headless: plugin command: {:?}", command);
+                    }
+                    FrontendMessage::SkillCommand { command } => {
+                        debug!("headless: skill command: {:?}", command);
+                    }
+                    FrontendMessage::QuerySubsystemStatus => {
+                        debug!("headless: query subsystem status");
+                    }
                 }
             }
 
