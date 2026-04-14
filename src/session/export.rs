@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, TimeZone, Utc};
+use tracing::{debug, info};
+
 
 use crate::session::storage::{self, SerializableMessage, SessionFile};
 use crate::types::message::{ContentBlock, Message, MessageContent};
@@ -39,6 +41,8 @@ pub fn export_session_markdown(session_id: &str, output_path: Option<&Path>) -> 
     std::fs::write(&path, md)
         .with_context(|| format!("Failed to write export file {}", path.display()))?;
 
+    info!(session_id = session_id, path = %path.display(), "session exported to markdown");
+
     Ok(path)
 }
 
@@ -66,6 +70,8 @@ pub fn export_messages_markdown(
 
     std::fs::write(&path, md)
         .with_context(|| format!("Failed to write export file {}", path.display()))?;
+
+    debug!(session_id = session_id, path = %path.display(), "live session exported");
 
     Ok(path)
 }

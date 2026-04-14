@@ -240,12 +240,21 @@ impl Tool for AgentTool {
 
             tokio::spawn(async move {
                 let started = std::time::Instant::now();
+                info!(agent_id = %spawn_agent_id, description = %spawn_description, "background agent started");
 
                 let child_engine = QueryEngine::new(child_config);
                 let stream = child_engine
                     .submit_message(&spawn_prompt, QuerySource::Agent(spawn_agent_id.clone()));
                 let (result_text, had_error) = collect_stream_result(stream).await;
                 let duration_ms = started.elapsed().as_millis() as u64;
+
+                info!(
+                    agent_id = %spawn_agent_id,
+                    duration_ms = duration_ms,
+                    result_len = result_text.len(),
+                    had_error = had_error,
+                    "background agent completed",
+                );
 
                 let _ = crate::dashboard::emit_subagent_event(
                     "background_complete",

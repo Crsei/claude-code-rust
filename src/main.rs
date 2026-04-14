@@ -54,6 +54,9 @@ mod shutdown;
 // IPC headless mode
 mod ipc;
 
+// Computer Use
+mod computer_use;
+
 // KAIROS daemon
 mod daemon;
 mod dashboard;
@@ -164,6 +167,34 @@ struct Cli {
 }
 
 // ---------------------------------------------------------------------------
+// Log housekeeping
+// ---------------------------------------------------------------------------
+
+/// Delete log files older than `retention_days` in the given directory.
+/// Only removes files matching the `cc-rust.log.YYYY-MM-DD` pattern.
+fn cleanup_old_logs(log_dir: &std::path::Path, retention_days: u64) {
+    let cutoff = std::time::SystemTime::now()
+        - std::time::Duration::from_secs(retention_days * 86400);
+    let entries = match std::fs::read_dir(log_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !name.starts_with("cc-rust.log.") {
+            continue;
+        }
+        if let Ok(meta) = entry.metadata() {
+            let modified = meta.modified().unwrap_or(std::time::SystemTime::now());
+            if modified < cutoff {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
 
@@ -194,16 +225,19 @@ fn main() -> ExitCode {
     }
 
     // Initialize tracing (log level based on --verbose)
-    // Two layers: stderr (warn default) + file (.logs/ directory, always debug).
+    // Two layers: stderr (warn default) + file (~/.cc-rust/logs/, always debug).
     let log_level = if cli.verbose { "debug" } else { "warn" };
     let stderr_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(log_level));
 
-    let log_dir = std::path::Path::new(".logs");
+    let log_dir = crate::config::settings::global_claude_dir()
+        .map(|d| d.join("logs"))
+        .unwrap_or_else(|_| std::path::PathBuf::from(".logs"));
     if !log_dir.exists() {
-        let _ = std::fs::create_dir_all(log_dir);
+        let _ = std::fs::create_dir_all(&log_dir);
     }
-    let file_appender = tracing_appender::rolling::daily(log_dir, "cc-rust.log");
+    cleanup_old_logs(&log_dir, 7);
+    let file_appender = tracing_appender::rolling::daily(&log_dir, "cc-rust.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
     use tracing_subscriber::layer::SubscriberExt;
@@ -224,7 +258,9 @@ fn main() -> ExitCode {
                 .with_ansi(false)
                 .with_target(true)
                 .with_line_number(true)
-                .with_filter(tracing_subscriber::EnvFilter::new("debug")),
+                .with_filter(tracing_subscriber::EnvFilter::new(
+                    "debug,reqwest=warn,hyper_util=warn,hyper=warn,h2=warn,rustls=warn,ignore=warn,globset=warn",
+                )),
         )
         .init();
 

@@ -6,6 +6,7 @@
 use std::path::Path;
 
 use anyhow::Result;
+use tracing::{debug, info};
 
 use super::storage::{self, SessionInfo};
 use crate::types::message::Message;
@@ -14,7 +15,11 @@ use crate::types::message::Message;
 ///
 /// Returns `None` if no matching session exists.
 pub fn get_last_session(cwd: &Path) -> Result<Option<SessionInfo>> {
-    Ok(storage::list_workspace_sessions(cwd)?.into_iter().next())
+    let session = storage::list_workspace_sessions(cwd)?.into_iter().next();
+    if let Some(ref s) = session {
+        debug!(session_id = %s.session_id, messages = s.message_count, "found last session");
+    }
+    Ok(session)
 }
 
 /// Resume a session by loading its messages from disk.
@@ -22,6 +27,7 @@ pub fn get_last_session(cwd: &Path) -> Result<Option<SessionInfo>> {
 /// This is a thin wrapper around `storage::load_session` that makes intent
 /// clear at the call site.
 pub fn resume_session(session_id: &str) -> Result<Vec<Message>> {
+    info!(session_id = session_id, "resuming session");
     storage::load_session(session_id)
 }
 

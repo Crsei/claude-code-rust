@@ -199,6 +199,7 @@ pub async fn run_tool_use(
         );
     }
 
+    debug!(tool = tool_name, "tool call starting");
     let call_result = tool
         .call(
             effective_input.clone(),
@@ -254,6 +255,7 @@ pub async fn run_tool_use(
 
     match call_result {
         Ok(tool_result) => {
+            debug!(tool = tool_name, duration_ms = duration_ms, "tool call succeeded");
             let new_messages = tool_result.new_messages.clone();
 
             // Enforce result size limit

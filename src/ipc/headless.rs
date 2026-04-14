@@ -25,6 +25,20 @@ use super::protocol::{send_to_frontend, BackendMessage, ConversationMessage, Fro
 
 /// Pending permission requests awaiting a response from the frontend.
 type PendingPermissions = Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>;
+/// Pending AskUserQuestion requests awaiting the user's next submit_prompt.
+type PendingQuestions = Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>;
+
+fn try_answer_pending_question(
+    pending_questions: &PendingQuestions,
+    text: String,
+) -> Option<String> {
+    let mut pending = pending_questions.lock();
+    let pending_id = pending.keys().next().cloned()?;
+    let tx = pending.remove(&pending_id)?;
+    drop(pending);
+    let _ = tx.send(text);
+    Some(pending_id)
+}
 
 /// Run the headless event loop.
 ///
@@ -34,6 +48,7 @@ type PendingPermissions = Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>;
 pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Result<()> {
     // ── 1. Permission bridge setup ─────────────────────────────────
     let pending_permissions: PendingPermissions = Arc::new(Mutex::new(HashMap::new()));
+    let pending_questions: PendingQuestions = Arc::new(Mutex::new(HashMap::new()));
 
     // Set up the permission callback on the engine
     {
@@ -66,6 +81,27 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
             },
         );
         engine.set_permission_callback(callback);
+    }
+
+    // Set up the AskUserQuestion callback on the engine
+    {
+        let pending = pending_questions.clone();
+        let callback: crate::types::tool::AskUserCallback = Arc::new(move |question: String| {
+            let pending = pending.clone();
+            Box::pin(async move {
+                let question_id = uuid::Uuid::new_v4().to_string();
+                let _ = send_to_frontend(&BackendMessage::SystemInfo {
+                    text: format!("Question: {}", question),
+                    level: "info".to_string(),
+                });
+
+                let (tx, rx) = oneshot::channel();
+                pending.lock().insert(question_id, tx);
+
+                rx.await.unwrap_or_default()
+            })
+        });
+        engine.set_ask_user_callback(callback);
     }
 
     // ── 1b. Background agent channel setup ────────────────────────
@@ -122,6 +158,17 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
                 match msg {
                     FrontendMessage::SubmitPrompt { text, id } => {
                         debug!("headless: submit_prompt id={}", id);
+
+                        if let Some(question_id) =
+                            try_answer_pending_question(&pending_questions, text.clone())
+                        {
+                            debug!(
+                                "headless: routed submit_prompt to pending AskUserQuestion id={}",
+                                question_id
+                            );
+                            continue;
+                        }
+
                         engine.reset_abort();
 
                         let engine_clone = engine.clone();
@@ -643,10 +690,7 @@ fn handle_stream_event(event: &StreamEvent, message_id: &str) -> std::io::Result
         StreamEvent::MessageStop => send_to_frontend(&BackendMessage::StreamEnd {
             message_id: message_id.to_string(),
         }),
-        _ => {
-            debug!("headless: ignoring stream event {:?}", event);
-            Ok(())
-        }
+        _ => Ok(()),
     }
 }
 
@@ -713,5 +757,33 @@ fn generate_and_send_suggestions(
         if !items.is_empty() {
             let _ = send_to_frontend(&BackendMessage::Suggestions { items });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn routes_submit_prompt_to_pending_question() {
+        let pending: PendingQuestions = Arc::new(Mutex::new(HashMap::new()));
+        let (tx, rx) = oneshot::channel();
+        pending.lock().insert("question-1".to_string(), tx);
+
+        let routed = try_answer_pending_question(&pending, "my answer".to_string());
+
+        assert_eq!(routed.as_deref(), Some("question-1"));
+        assert!(pending.lock().is_empty(), "pending question should be removed");
+        assert_eq!(
+            rx.blocking_recv().expect("answer should be delivered"),
+            "my answer"
+        );
+    }
+
+    #[test]
+    fn returns_none_when_no_pending_question_exists() {
+        let pending: PendingQuestions = Arc::new(Mutex::new(HashMap::new()));
+        let routed = try_answer_pending_question(&pending, "ignored".to_string());
+        assert!(routed.is_none());
     }
 }

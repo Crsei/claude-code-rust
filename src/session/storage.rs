@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use git2::Repository;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 use crate::types::message::Message;
 
@@ -148,6 +149,7 @@ pub fn save_session(session_id: &str, messages: &[Message], cwd: &str) -> Result
     };
 
     let serializable_messages = messages_to_serializable(messages);
+    let msg_count = serializable_messages.len();
 
     let stable_cwd = normalize_display_path(&stable_workspace_path(Path::new(cwd)));
 
@@ -165,6 +167,8 @@ pub fn save_session(session_id: &str, messages: &[Message], cwd: &str) -> Result
     std::fs::write(&path, json)
         .with_context(|| format!("Failed to write session file {}", path.display()))?;
 
+    debug!(session_id = session_id, messages = msg_count, "session saved");
+
     Ok(())
 }
 
@@ -172,6 +176,7 @@ pub fn save_session(session_id: &str, messages: &[Message], cwd: &str) -> Result
 pub fn load_session(session_id: &str) -> Result<Vec<Message>> {
     let file = load_session_file(session_id)?;
     let messages = serializable_to_messages(&file.messages);
+    debug!(session_id = session_id, messages = messages.len(), "session loaded");
     Ok(messages)
 }
 
@@ -225,6 +230,8 @@ pub fn list_sessions() -> Result<Vec<SessionInfo>> {
 
     // Most recently modified first.
     sessions.sort_by(|a, b| b.last_modified.cmp(&a.last_modified));
+
+    debug!(count = sessions.len(), "sessions listed");
 
     Ok(sessions)
 }

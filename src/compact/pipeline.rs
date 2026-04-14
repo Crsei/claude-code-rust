@@ -133,6 +133,16 @@ pub async fn run_context_pipeline(
         tracking
     };
 
+    if compacted {
+        let final_tokens = tokens::estimate_messages_tokens(&current);
+        info!(
+            before_tokens = estimated,
+            after_tokens = final_tokens,
+            messages = current.len(),
+            "compaction pipeline completed",
+        );
+    }
+
     PipelineResult {
         messages: current,
         tracking: updated_tracking,

@@ -283,7 +283,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
 
             // Inject pending tool use summary as system message
             if let Some(summary) = state.pending_tool_use_summary.take() {
-                debug!(summary = %summary, "injecting tool use summary");
+                debug!(summary = %crate::utils::messages::truncate_text(&summary, 200), "injecting tool use summary");
                 let sys_msg = Message::System(crate::types::message::SystemMessage {
                     uuid: Uuid::parse_str(&deps.uuid()).unwrap_or_else(|_| Uuid::new_v4()),
                     timestamp: chrono::Utc::now().timestamp_millis(),
@@ -526,7 +526,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             }
         }
 
-        debug!(turns = state.turn_count, "query loop finished");
+        info!(turns = state.turn_count, "query loop finished");
     }
 }
 
