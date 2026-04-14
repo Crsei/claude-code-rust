@@ -1,7 +1,13 @@
-//! Computer Use — detection, grouping, and system prompt integration
-//! for external Computer Use MCP tools.
+//! Computer Use — native desktop control tools.
 //!
-//! Reserved MCP server name: `computer-use`
-//! Tool name pattern: `mcp__computer-use__*`
+//! Provides detection/classification for external MCP tools (`detection`),
+//! platform-native backends (`screenshot`, `input`), Tool trait wrappers
+//! (`tools`), and CLI registration (`setup`).
+//!
+//! Reserved tool name prefix: `mcp__computer-use__*`
 
 pub mod detection;
+pub mod input;
+pub mod screenshot;
+pub mod setup;
+pub mod tools;
