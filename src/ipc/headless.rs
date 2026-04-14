@@ -109,6 +109,11 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
     engine.set_bg_agent_tx(bg_tx);
     let pending_bg = engine.pending_bg_results.clone();
 
+    // ── 1c. Subsystem event bus setup ────────────────────────────
+    let event_bus = super::subsystem_events::SubsystemEventBus::new();
+    let mut event_rx = event_bus.subscribe();
+    // Event bus kept alive; senders injected into subsystems in Tasks 6-8.
+
     // ── 2. Prompt suggestion service ───────────────────────────────
     let suggestion_svc = Arc::new(Mutex::new(PromptSuggestionService::new(true)));
 
@@ -231,21 +236,26 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
                         break;
                     }
 
-                    // Subsystem commands — will be wired in Task 5.
                     FrontendMessage::LspCommand { command } => {
-                        debug!("headless: lsp command: {:?}", command);
+                        debug!("headless: LSP command: {:?}", command);
+                        super::subsystem_handlers::handle_lsp_command(command).await;
                     }
                     FrontendMessage::McpCommand { command } => {
-                        debug!("headless: mcp command: {:?}", command);
+                        debug!("headless: MCP command: {:?}", command);
+                        super::subsystem_handlers::handle_mcp_command(command).await;
                     }
                     FrontendMessage::PluginCommand { command } => {
-                        debug!("headless: plugin command: {:?}", command);
+                        debug!("headless: Plugin command: {:?}", command);
+                        super::subsystem_handlers::handle_plugin_command(command).await;
                     }
                     FrontendMessage::SkillCommand { command } => {
-                        debug!("headless: skill command: {:?}", command);
+                        debug!("headless: Skill command: {:?}", command);
+                        super::subsystem_handlers::handle_skill_command(command).await;
                     }
                     FrontendMessage::QuerySubsystemStatus => {
-                        debug!("headless: query subsystem status");
+                        debug!("headless: subsystem status query");
+                        let status = super::subsystem_handlers::build_subsystem_status_snapshot();
+                        let _ = send_to_frontend(&BackendMessage::SubsystemStatus { status });
                     }
                 }
             }
@@ -278,6 +288,25 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
 
                 // Push to shared buffer for query loop injection
                 pending_bg.push(completed);
+            }
+
+            // ── Branch 3: Subsystem events ─────────────────────────
+            Ok(event) = event_rx.recv() => {
+                let msg = match event {
+                    super::subsystem_events::SubsystemEvent::Lsp(e) => {
+                        BackendMessage::LspEvent { event: e }
+                    }
+                    super::subsystem_events::SubsystemEvent::Mcp(e) => {
+                        BackendMessage::McpEvent { event: e }
+                    }
+                    super::subsystem_events::SubsystemEvent::Plugin(e) => {
+                        BackendMessage::PluginEvent { event: e }
+                    }
+                    super::subsystem_events::SubsystemEvent::Skill(e) => {
+                        BackendMessage::SkillEvent { event: e }
+                    }
+                };
+                let _ = send_to_frontend(&msg);
             }
         }
     }
