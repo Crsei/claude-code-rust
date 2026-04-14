@@ -38,6 +38,32 @@ pub const CONNECT_TIMEOUT_SECS: u64 = 30;
 pub const TOOL_CALL_TIMEOUT_SECS: u64 = 300;
 
 // ---------------------------------------------------------------------------
+// Subsystem event emission
+// ---------------------------------------------------------------------------
+
+use std::sync::LazyLock;
+use parking_lot::Mutex as SyncMutex;
+
+/// Event sender for subsystem events.
+static EVENT_TX: LazyLock<SyncMutex<Option<tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>>>> =
+    LazyLock::new(|| SyncMutex::new(None));
+
+/// Inject the event sender from the headless event loop.
+#[allow(dead_code)] // Called by headless event loop wiring (Task 12).
+pub fn set_event_sender(
+    tx: tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>,
+) {
+    *EVENT_TX.lock() = Some(tx);
+}
+
+/// Emit a subsystem event.
+pub(crate) fn emit_event(event: crate::ipc::subsystem_events::SubsystemEvent) {
+    if let Some(tx) = EVENT_TX.lock().as_ref() {
+        let _ = tx.send(event);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Connection state
 // ---------------------------------------------------------------------------
 

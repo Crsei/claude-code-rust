@@ -91,7 +91,7 @@ impl McpClient {
 
     /// Connect to the MCP server.
     pub async fn connect(&mut self) -> Result<()> {
-        match self.config.transport.as_str() {
+        let result = match self.config.transport.as_str() {
             "stdio" => self.connect_stdio().await,
             "sse" => {
                 bail!(
@@ -100,7 +100,19 @@ impl McpClient {
                 )
             }
             other => bail!("unknown MCP transport type: '{}'", other),
+        };
+
+        if let Err(ref e) = result {
+            super::emit_event(crate::ipc::subsystem_events::SubsystemEvent::Mcp(
+                crate::ipc::subsystem_events::McpEvent::ServerStateChanged {
+                    server_name: self.config.name.clone(),
+                    state: "error".to_string(),
+                    error: Some(e.to_string()),
+                },
+            ));
         }
+
+        result
     }
 
     /// Connect via stdio transport -- spawn subprocess.
@@ -172,6 +184,14 @@ impl McpClient {
         self.child = Some(child);
         self.state = McpConnectionState::Connected;
 
+        super::emit_event(crate::ipc::subsystem_events::SubsystemEvent::Mcp(
+            crate::ipc::subsystem_events::McpEvent::ServerStateChanged {
+                server_name: self.config.name.clone(),
+                state: "connected".to_string(),
+                error: None,
+            },
+        ));
+
         debug!(server = %self.config.name, "MCP: stdio server connected");
         Ok(())
     }
@@ -241,6 +261,14 @@ impl McpClient {
         }
 
         self.state = McpConnectionState::Disconnected;
+
+        super::emit_event(crate::ipc::subsystem_events::SubsystemEvent::Mcp(
+            crate::ipc::subsystem_events::McpEvent::ServerStateChanged {
+                server_name: self.config.name.clone(),
+                state: "disconnected".to_string(),
+                error: None,
+            },
+        ));
     }
 
     // -----------------------------------------------------------------------
@@ -273,6 +301,17 @@ impl McpClient {
         );
 
         self.tools = tools.clone();
+
+        super::emit_event(crate::ipc::subsystem_events::SubsystemEvent::Mcp(
+            crate::ipc::subsystem_events::McpEvent::ToolsDiscovered {
+                server_name: self.config.name.clone(),
+                tools: self.tools.iter().map(|t| crate::ipc::subsystem_types::McpToolInfo {
+                    name: t.name.clone(),
+                    description: Some(t.description.clone()),
+                }).collect(),
+            },
+        ));
+
         Ok(tools)
     }
 
@@ -341,6 +380,18 @@ impl McpClient {
         );
 
         self.resources = result.resources.clone();
+
+        super::emit_event(crate::ipc::subsystem_events::SubsystemEvent::Mcp(
+            crate::ipc::subsystem_events::McpEvent::ResourcesDiscovered {
+                server_name: self.config.name.clone(),
+                resources: self.resources.iter().map(|r| crate::ipc::subsystem_types::McpResourceInfo {
+                    uri: r.uri.clone(),
+                    name: Some(r.name.clone()),
+                    mime_type: r.mime_type.clone(),
+                }).collect(),
+            },
+        ));
+
         Ok(result.resources)
     }
 
