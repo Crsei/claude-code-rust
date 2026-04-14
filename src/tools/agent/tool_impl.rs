@@ -91,13 +91,17 @@ impl Tool for AgentTool {
         let description = params.description.as_deref().unwrap_or("unnamed task");
         let subagent_type = params.subagent_type.as_deref().unwrap_or("general-purpose");
 
-        // Resolve model for the subagent
+        // Resolve model for the subagent.
+        // Priority: explicit model param → CLAUDE_MODEL env → parent model.
+        // This ensures subagents default to the .env-configured model even when
+        // the main agent's model has been changed at runtime (e.g. via /model).
         let parent_model = ctx.options.main_loop_model.clone();
+        let env_model = std::env::var("CLAUDE_MODEL").ok().filter(|s| !s.is_empty());
         let agent_model = params
             .model
             .as_deref()
             .map(|m| resolve_model_alias(m, &parent_model))
-            .unwrap_or_else(|| parent_model.clone());
+            .unwrap_or_else(|| env_model.unwrap_or_else(|| parent_model.clone()));
 
         let agent_id = Uuid::new_v4().to_string();
 
@@ -117,6 +121,19 @@ impl Tool for AgentTool {
             isolation = ?params.isolation,
             "spawning subagent"
         );
+        let _ = crate::dashboard::emit_subagent_event(
+            "spawn",
+            &agent_id,
+            ctx.agent_id.as_deref(),
+            Some(description),
+            Some(&agent_model),
+            current_depth + 1,
+            params.run_in_background,
+            Some(json!({
+                "subagent_type": subagent_type,
+                "isolation": params.isolation,
+            })),
+        );
 
         // Load hook configs once (used by both background and synchronous paths)
         let start_configs = {
@@ -135,11 +152,34 @@ impl Tool for AgentTool {
                     agent_id = %agent_id,
                     "run_in_background requested but no bg_agent_tx — running synchronously"
                 );
+                let _ = crate::dashboard::emit_subagent_event(
+                    "warning",
+                    &agent_id,
+                    ctx.agent_id.as_deref(),
+                    Some(description),
+                    Some(&agent_model),
+                    current_depth + 1,
+                    true,
+                    Some(json!({
+                        "message": "run_in_background requested but no completion channel was configured; running synchronously",
+                    })),
+                );
                 // Fall through to synchronous dispatch below
-                return self.run_agent_dispatch(
-                    use_worktree, &params, ctx, &agent_id, &agent_model,
-                    &parent_model, current_depth, description, &start_configs, &stop_configs,
-                ).await;
+                return self
+                    .run_agent_dispatch(
+                        use_worktree,
+                        &params,
+                        ctx,
+                        &agent_id,
+                        &agent_model,
+                        &parent_model,
+                        current_depth,
+                        description,
+                        &start_configs,
+                        &stop_configs,
+                        false,
+                    )
+                    .await;
             };
 
             // Fire SubagentStart hook before spawn
@@ -153,12 +193,26 @@ impl Tool for AgentTool {
                     "depth": current_depth + 1,
                     "background": true,
                 });
-                let _ = crate::tools::hooks::run_event_hooks("SubagentStart", &payload, &start_configs).await;
+                let _ =
+                    crate::tools::hooks::run_event_hooks("SubagentStart", &payload, &start_configs)
+                        .await;
             }
 
             // Build child config now (before move into spawn)
             if use_worktree {
                 warn!(agent_id = %agent_id, "background + worktree not yet combined — using normal cwd");
+                let _ = crate::dashboard::emit_subagent_event(
+                    "warning",
+                    &agent_id,
+                    ctx.agent_id.as_deref(),
+                    Some(description),
+                    Some(&agent_model),
+                    current_depth + 1,
+                    true,
+                    Some(json!({
+                        "message": "background + worktree not yet combined; using normal cwd",
+                    })),
+                );
             }
             let child_cwd = std::env::current_dir()
                 .map(|p| p.to_string_lossy().to_string())
@@ -168,24 +222,45 @@ impl Tool for AgentTool {
             validate_working_directory(&child_cwd)?;
 
             let child_config = build_child_config(
-                child_cwd, ctx, &agent_id, &agent_model, &parent_model, current_depth,
+                child_cwd,
+                ctx,
+                &agent_id,
+                &agent_model,
+                &parent_model,
+                current_depth,
             );
 
             // Capture owned values for the spawned task
             let spawn_agent_id = agent_id.clone();
             let spawn_description = description.to_string();
+            let spawn_parent_agent_id = ctx.agent_id.clone();
             let spawn_prompt = params.prompt.clone();
+            let spawn_agent_model = agent_model.clone();
             let spawn_stop_configs = stop_configs.clone();
 
             tokio::spawn(async move {
                 let started = std::time::Instant::now();
 
                 let child_engine = QueryEngine::new(child_config);
-                let stream = child_engine.submit_message(
-                    &spawn_prompt,
-                    QuerySource::Agent(spawn_agent_id.clone()),
-                );
+                let stream = child_engine
+                    .submit_message(&spawn_prompt, QuerySource::Agent(spawn_agent_id.clone()));
                 let (result_text, had_error) = collect_stream_result(stream).await;
+                let duration_ms = started.elapsed().as_millis() as u64;
+
+                let _ = crate::dashboard::emit_subagent_event(
+                    "background_complete",
+                    &spawn_agent_id,
+                    spawn_parent_agent_id.as_deref(),
+                    Some(&spawn_description),
+                    Some(&spawn_agent_model),
+                    current_depth + 1,
+                    true,
+                    Some(json!({
+                        "duration_ms": duration_ms,
+                        "result_len": result_text.len(),
+                        "had_error": had_error,
+                    })),
+                );
 
                 // Fire SubagentStop hook
                 if !spawn_stop_configs.is_empty() {
@@ -196,8 +271,11 @@ impl Tool for AgentTool {
                         "background": true,
                     });
                     let _ = crate::tools::hooks::run_event_hooks(
-                        "SubagentStop", &payload, &spawn_stop_configs,
-                    ).await;
+                        "SubagentStop",
+                        &payload,
+                        &spawn_stop_configs,
+                    )
+                    .await;
                 }
 
                 let _ = bg_tx.send(crate::tools::background_agents::CompletedBackgroundAgent {
@@ -220,9 +298,19 @@ impl Tool for AgentTool {
 
         // -- Synchronous path
         self.run_agent_dispatch(
-            use_worktree, &params, ctx, &agent_id, &agent_model, &parent_model,
-            current_depth, description, &start_configs, &stop_configs,
-        ).await
+            use_worktree,
+            &params,
+            ctx,
+            &agent_id,
+            &agent_model,
+            &parent_model,
+            current_depth,
+            description,
+            &start_configs,
+            &stop_configs,
+            false,
+        )
+        .await
     }
 
     async fn prompt(&self) -> String {
@@ -384,10 +472,7 @@ mod tests {
             "prompt": "do something"
         }))
         .unwrap();
-        let subagent_type = input
-            .subagent_type
-            .as_deref()
-            .unwrap_or("general-purpose");
+        let subagent_type = input.subagent_type.as_deref().unwrap_or("general-purpose");
         assert_eq!(subagent_type, "general-purpose");
     }
 
@@ -398,10 +483,7 @@ mod tests {
             "subagent_type": "Explore"
         }))
         .unwrap();
-        let subagent_type = input
-            .subagent_type
-            .as_deref()
-            .unwrap_or("general-purpose");
+        let subagent_type = input.subagent_type.as_deref().unwrap_or("general-purpose");
         assert_eq!(subagent_type, "Explore");
     }
 
@@ -453,10 +535,7 @@ mod tests {
         let tool = AgentTool;
         let schema = tool.input_json_schema();
         let model_enum = schema["properties"]["model"]["enum"].as_array().unwrap();
-        let variants: Vec<&str> = model_enum
-            .iter()
-            .map(|v| v.as_str().unwrap())
-            .collect();
+        let variants: Vec<&str> = model_enum.iter().map(|v| v.as_str().unwrap()).collect();
         assert!(variants.contains(&"sonnet"));
         assert!(variants.contains(&"opus"));
         assert!(variants.contains(&"haiku"));
@@ -469,10 +548,7 @@ mod tests {
         let isolation_enum = schema["properties"]["isolation"]["enum"]
             .as_array()
             .unwrap();
-        let variants: Vec<&str> = isolation_enum
-            .iter()
-            .map(|v| v.as_str().unwrap())
-            .collect();
+        let variants: Vec<&str> = isolation_enum.iter().map(|v| v.as_str().unwrap()).collect();
         assert!(variants.contains(&"worktree"));
     }
 

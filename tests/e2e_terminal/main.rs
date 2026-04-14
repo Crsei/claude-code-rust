@@ -18,10 +18,11 @@
 //! Run module:   cargo test --test e2e_terminal commands
 //! Run single:   cargo test --test e2e_terminal usage::usage_update_has_nonzero_tokens -- --ignored
 
-mod helpers;
 mod commands;
+mod helpers;
 mod live;
 mod offline;
 mod permission;
+mod subagent;
 mod tool_display;
 mod usage;

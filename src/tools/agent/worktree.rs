@@ -11,8 +11,8 @@ use crate::types::config::QuerySource;
 use crate::types::tool::*;
 
 use super::{
-    build_child_config, collect_stream_result, count_worktree_changes, find_git_root,
-    get_head_sha, AgentInput, AgentTool,
+    build_child_config, collect_stream_result, count_worktree_changes, find_git_root, get_head_sha,
+    AgentInput, AgentTool,
 };
 use crate::engine::lifecycle::QueryEngine;
 
@@ -26,10 +26,13 @@ impl AgentTool {
         params: &AgentInput,
         ctx: &ToolUseContext,
         agent_id: &str,
+        description: &str,
         agent_model: &str,
         parent_model: &str,
         current_depth: usize,
+        background: bool,
     ) -> Result<ToolResult> {
+        let started = std::time::Instant::now();
         let cwd = std::env::current_dir()?;
 
         // -- 1. Find git root
@@ -41,14 +44,28 @@ impl AgentTool {
                     error = %e,
                     "worktree isolation failed — falling back to normal execution"
                 );
+                let _ = crate::dashboard::emit_subagent_event(
+                    "warning",
+                    agent_id,
+                    ctx.agent_id.as_deref(),
+                    Some(description),
+                    Some(agent_model),
+                    current_depth + 1,
+                    background,
+                    Some(json!({
+                        "message": format!("worktree isolation skipped: {}", e),
+                    })),
+                );
                 return self
                     .run_agent_normal(
                         params,
                         ctx,
                         agent_id,
+                        description,
                         agent_model,
                         parent_model,
                         current_depth,
+                        background,
                     )
                     .await
                     .map(|mut r| {
@@ -98,14 +115,31 @@ impl AgentTool {
                     error = %stderr,
                     "worktree creation failed — falling back to normal execution"
                 );
+                let _ = crate::dashboard::emit_subagent_event(
+                    "warning",
+                    agent_id,
+                    ctx.agent_id.as_deref(),
+                    Some(description),
+                    Some(agent_model),
+                    current_depth + 1,
+                    background,
+                    Some(json!({
+                        "message": format!(
+                            "worktree isolation skipped: git worktree add failed: {}",
+                            stderr.trim()
+                        ),
+                    })),
+                );
                 return self
                     .run_agent_normal(
                         params,
                         ctx,
                         agent_id,
+                        description,
                         agent_model,
                         parent_model,
                         current_depth,
+                        background,
                     )
                     .await
                     .map(|mut r| {
@@ -124,14 +158,28 @@ impl AgentTool {
                     error = %e,
                     "worktree creation failed — falling back to normal execution"
                 );
+                let _ = crate::dashboard::emit_subagent_event(
+                    "warning",
+                    agent_id,
+                    ctx.agent_id.as_deref(),
+                    Some(description),
+                    Some(agent_model),
+                    current_depth + 1,
+                    background,
+                    Some(json!({
+                        "message": format!("worktree isolation skipped: {}", e),
+                    })),
+                );
                 return self
                     .run_agent_normal(
                         params,
                         ctx,
                         agent_id,
+                        description,
                         agent_model,
                         parent_model,
                         current_depth,
+                        background,
                     )
                     .await
                     .map(|mut r| {
@@ -188,6 +236,21 @@ impl AgentTool {
                 new_commits = commits,
                 "agent worktree has changes — keeping"
             );
+            let _ = crate::dashboard::emit_subagent_event(
+                "worktree_kept",
+                agent_id,
+                ctx.agent_id.as_deref(),
+                Some(description),
+                Some(agent_model),
+                current_depth + 1,
+                background,
+                Some(json!({
+                    "files": files,
+                    "commits": commits,
+                    "worktree_path": worktree_path.display().to_string(),
+                    "branch": branch_name,
+                })),
+            );
 
             result_text.push_str(&format!(
                 "\n\n[Worktree isolation: changes detected ({} file(s), {} commit(s)). \
@@ -205,12 +268,41 @@ impl AgentTool {
                 branch = %branch_name,
                 "agent worktree has no changes — cleaning up"
             );
+            let _ = crate::dashboard::emit_subagent_event(
+                "worktree_cleaned",
+                agent_id,
+                ctx.agent_id.as_deref(),
+                Some(description),
+                Some(agent_model),
+                current_depth + 1,
+                background,
+                Some(json!({
+                    "worktree_path": worktree_path.display().to_string(),
+                    "branch": branch_name,
+                })),
+            );
 
             Self::cleanup_worktree(&git_root, &worktree_path, &branch_name, agent_id).await;
 
             result_text
                 .push_str("\n\n[Worktree isolation: no changes detected — worktree cleaned up]");
         }
+
+        let duration_ms = started.elapsed().as_millis() as u64;
+        let kind = if had_error { "error" } else { "complete" };
+        let _ = crate::dashboard::emit_subagent_event(
+            kind,
+            agent_id,
+            ctx.agent_id.as_deref(),
+            Some(description),
+            Some(agent_model),
+            current_depth + 1,
+            background,
+            Some(json!({
+                "duration_ms": duration_ms,
+                "result_len": result_text.len(),
+            })),
+        );
 
         debug!(
             agent_id = %agent_id,
@@ -408,7 +500,10 @@ mod tests {
             Some((files, commits)) => files > 0 || commits > 0,
             None => true,
         };
-        assert!(has_changes, "None result should be treated as has_changes=true");
+        assert!(
+            has_changes,
+            "None result should be treated as has_changes=true"
+        );
     }
 
     #[test]

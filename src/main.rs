@@ -56,6 +56,7 @@ mod ipc;
 
 // KAIROS daemon
 mod daemon;
+mod dashboard;
 
 use std::collections::HashMap;
 use std::process::ExitCode;
@@ -193,13 +194,38 @@ fn main() -> ExitCode {
     }
 
     // Initialize tracing (log level based on --verbose)
+    // Two layers: stderr (warn default) + file (.logs/ directory, always debug).
     let log_level = if cli.verbose { "debug" } else { "warn" };
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(log_level)),
+    let stderr_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(log_level));
+
+    let log_dir = std::path::Path::new(".logs");
+    if !log_dir.exists() {
+        let _ = std::fs::create_dir_all(log_dir);
+    }
+    let file_appender = tracing_appender::rolling::daily(log_dir, "cc-rust.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+    use tracing_subscriber::Layer;
+
+    tracing_subscriber::registry()
+        // stderr layer — respects --verbose / RUST_LOG
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                .with_filter(stderr_filter),
         )
-        .with_target(false)
+        // file layer — always debug, with timestamps + target + line numbers
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(non_blocking)
+                .with_ansi(false)
+                .with_target(true)
+                .with_line_number(true)
+                .with_filter(tracing_subscriber::EnvFilter::new("debug")),
+        )
         .init();
 
     info!("claude-code-rs v{}", env!("CARGO_PKG_VERSION"));
@@ -459,9 +485,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                 "session_id": engine.session_id.as_str(),
                 "cwd": std::env::current_dir().unwrap_or_default().to_string_lossy(),
             });
-            let _ =
-                crate::tools::hooks::run_event_hooks("SessionStart", &payload, &start_configs)
-                    .await;
+            let _ = crate::tools::hooks::run_event_hooks("SessionStart", &payload, &start_configs)
+                .await;
         }
     }
 
@@ -531,7 +556,12 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
         // Spawn team-memory-server if feature is enabled.
         let _team_memory_child = if features::enabled(Feature::TeamMemory) {
-            match daemon::team_memory_proxy::spawn_team_memory_server(cli.port, std::path::Path::new(&cwd)).await {
+            match daemon::team_memory_proxy::spawn_team_memory_server(
+                cli.port,
+                std::path::Path::new(&cwd),
+            )
+            .await
+            {
                 Ok((child, tm_port, tm_secret)) => {
                     daemon_state.team_memory_port = Some(tm_port);
                     daemon_state.team_memory_secret = Some(tm_secret);
@@ -575,10 +605,27 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     // Register shutdown handler
     let shutdown_token = shutdown::register_shutdown_handler();
 
+    let mut dashboard_companion =
+        if crate::config::features::enabled(crate::config::features::Feature::SubagentDashboard) {
+            match dashboard::DashboardCompanion::spawn(dashboard::DashboardConfig::default()).await
+            {
+                Ok(child) => Some(child),
+                Err(e) => {
+                    warn!(error = %e, "failed to start subagent dashboard companion");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
     let tui_result = tui::run_tui(engine.clone(), initial_prompt, &model, shutdown_token).await;
 
     // ── Phase I: Shutdown and cleanup ────────────────────────────────
     shutdown::graceful_shutdown(&engine).await;
+    if let Some(companion) = dashboard_companion.as_mut() {
+        companion.kill();
+    }
 
     match tui_result {
         Ok(()) => Ok(ExitCode::SUCCESS),

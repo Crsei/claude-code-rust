@@ -18,10 +18,13 @@ impl AgentTool {
         params: &AgentInput,
         ctx: &ToolUseContext,
         agent_id: &str,
+        description: &str,
         agent_model: &str,
         parent_model: &str,
         current_depth: usize,
+        background: bool,
     ) -> Result<ToolResult> {
+        let started = std::time::Instant::now();
         let child_cwd = std::env::current_dir()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| ".".to_string());
@@ -43,12 +46,28 @@ impl AgentTool {
             child_engine.submit_message(&params.prompt, QuerySource::Agent(agent_id.to_string()));
 
         let (result_text, had_error) = collect_stream_result(stream).await;
+        let duration_ms = started.elapsed().as_millis() as u64;
 
         debug!(
             agent_id = %agent_id,
             result_len = result_text.len(),
             error = had_error,
             "subagent completed"
+        );
+
+        let kind = if had_error { "error" } else { "complete" };
+        let _ = crate::dashboard::emit_subagent_event(
+            kind,
+            agent_id,
+            ctx.agent_id.as_deref(),
+            Some(description),
+            Some(agent_model),
+            current_depth + 1,
+            background,
+            Some(json!({
+                "duration_ms": duration_ms,
+                "result_len": result_text.len(),
+            })),
         );
 
         Ok(ToolResult {
@@ -72,6 +91,7 @@ impl AgentTool {
         description: &str,
         start_configs: &[crate::tools::hooks::HookEventConfig],
         stop_configs: &[crate::tools::hooks::HookEventConfig],
+        background: bool,
     ) -> Result<ToolResult> {
         // Fire SubagentStart hook
         if !start_configs.is_empty() {
@@ -83,13 +103,34 @@ impl AgentTool {
                 "model": agent_model,
                 "depth": current_depth + 1,
             });
-            let _ = crate::tools::hooks::run_event_hooks("SubagentStart", &payload, start_configs).await;
+            let _ = crate::tools::hooks::run_event_hooks("SubagentStart", &payload, start_configs)
+                .await;
         }
 
         let result = if use_worktree {
-            self.run_in_worktree(params, ctx, agent_id, agent_model, parent_model, current_depth).await
+            self.run_in_worktree(
+                params,
+                ctx,
+                agent_id,
+                description,
+                agent_model,
+                parent_model,
+                current_depth,
+                background,
+            )
+            .await
         } else {
-            self.run_agent_normal(params, ctx, agent_id, agent_model, parent_model, current_depth).await
+            self.run_agent_normal(
+                params,
+                ctx,
+                agent_id,
+                description,
+                agent_model,
+                parent_model,
+                current_depth,
+                background,
+            )
+            .await
         };
 
         // Fire SubagentStop hook
@@ -100,7 +141,8 @@ impl AgentTool {
                 "description": description,
                 "is_error": is_error,
             });
-            let _ = crate::tools::hooks::run_event_hooks("SubagentStop", &payload, stop_configs).await;
+            let _ =
+                crate::tools::hooks::run_event_hooks("SubagentStop", &payload, stop_configs).await;
         }
 
         result

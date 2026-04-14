@@ -5,6 +5,7 @@
 //! (`ui/src/ipc/client.ts`) does.
 
 use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -41,9 +42,8 @@ fn binary_path() -> std::path::PathBuf {
         Ok(p) if p.exists() => p,
         _ => {
             // Fallback: check PATH (works in Docker where binary is in /usr/local/bin)
-            which::which("claude-code-rs").unwrap_or_else(|_| {
-                panic!("claude-code-rs binary not found via cargo_bin or PATH")
-            })
+            which::which("claude-code-rs")
+                .unwrap_or_else(|_| panic!("claude-code-rs binary not found via cargo_bin or PATH"))
         }
     }
 }
@@ -53,6 +53,19 @@ fn binary_path() -> std::path::PathBuf {
 pub fn spawn_headless(
     extra_args: &[&str],
     strip_keys: bool,
+) -> (
+    std::process::Child,
+    std::process::ChildStdin,
+    BufReader<std::process::ChildStdout>,
+) {
+    spawn_headless_with_env(extra_args, strip_keys, &[])
+}
+
+/// Spawn the binary in --headless mode with additional child env vars.
+pub fn spawn_headless_with_env(
+    extra_args: &[&str],
+    strip_keys: bool,
+    extra_env: &[(&str, &str)],
 ) -> (
     std::process::Child,
     std::process::ChildStdin,
@@ -72,6 +85,10 @@ pub fn spawn_headless(
             .env("OPENROUTER_API_KEY", "")
             .env("GOOGLE_API_KEY", "")
             .env("DEEPSEEK_API_KEY", "");
+    }
+
+    for (key, value) in extra_env {
+        cmd.env(key, value);
     }
 
     let mut child = cmd.spawn().expect("failed to spawn headless binary");
@@ -157,4 +174,11 @@ pub fn collect_until(
     }
 
     messages
+}
+
+/// Create a unique per-test workspace directory under the shared workspace root.
+pub fn new_test_workspace(prefix: &str) -> PathBuf {
+    let dir = PathBuf::from(workspace()).join(format!("{}-{}", prefix, uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).expect("create test workspace");
+    dir
 }

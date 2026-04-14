@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "bun run src/main.tsx",
-    "build": "bun build src/main.tsx --target=bun --outdir=dist"
+    "build": "bun build src/main.tsx --target=bun --outdir=dist",
+    "dashboard": "bun run subagent-dashboard/server.ts"
   },
   "dependencies": {
     "@opentui/core": "^0.1.97",

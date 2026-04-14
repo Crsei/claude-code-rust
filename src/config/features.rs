@@ -26,6 +26,7 @@ pub enum Feature {
     KairosGithubWebhooks,
     Proactive,
     TeamMemory,
+    SubagentDashboard,
 }
 
 // ---------------------------------------------------------------------------
@@ -42,6 +43,7 @@ pub struct FeatureFlags {
     pub kairos_github_webhooks: bool,
     pub proactive: bool,
     pub team_memory: bool,
+    pub subagent_dashboard: bool,
 }
 
 impl FeatureFlags {
@@ -67,6 +69,7 @@ impl FeatureFlags {
 
         let kairos = read("FEATURE_KAIROS");
         let team_memory = read("FEATURE_TEAMMEM");
+        let subagent_dashboard = read("FEATURE_SUBAGENT_DASHBOARD");
         let mut kairos_brief = read("FEATURE_KAIROS_BRIEF");
         let mut kairos_channels = read("FEATURE_KAIROS_CHANNELS");
         let mut kairos_push_notification = read("FEATURE_KAIROS_PUSH_NOTIFICATION");
@@ -119,6 +122,7 @@ impl FeatureFlags {
             kairos_github_webhooks,
             proactive,
             team_memory,
+            subagent_dashboard,
         }
     }
 
@@ -132,6 +136,7 @@ impl FeatureFlags {
             Feature::KairosGithubWebhooks => self.kairos_github_webhooks,
             Feature::Proactive => self.proactive,
             Feature::TeamMemory => self.team_memory,
+            Feature::SubagentDashboard => self.subagent_dashboard,
         }
     }
 }
@@ -158,11 +163,7 @@ mod tests {
 
     /// Helper: build flags from a slice of `(&str, &str)` pairs.
     fn flags(pairs: &[(&str, &str)]) -> FeatureFlags {
-        FeatureFlags::from_iter(
-            pairs
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_string())),
-        )
+        FeatureFlags::from_iter(pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())))
     }
 
     #[test]
@@ -174,6 +175,7 @@ mod tests {
         assert!(!f.kairos_push_notification);
         assert!(!f.kairos_github_webhooks);
         assert!(!f.proactive);
+        assert!(!f.subagent_dashboard);
     }
 
     #[test]
@@ -254,10 +256,7 @@ mod tests {
 
     #[test]
     fn false_values_are_not_enabled() {
-        let f = flags(&[
-            ("FEATURE_KAIROS", "0"),
-            ("FEATURE_PROACTIVE", "false"),
-        ]);
+        let f = flags(&[("FEATURE_KAIROS", "0"), ("FEATURE_PROACTIVE", "false")]);
         assert!(!f.kairos);
         assert!(!f.proactive);
     }
@@ -283,5 +282,12 @@ mod tests {
     fn team_memory_default_off() {
         let f = flags(&[]);
         assert!(!f.team_memory);
+    }
+
+    #[test]
+    fn subagent_dashboard_standalone() {
+        let f = flags(&[("FEATURE_SUBAGENT_DASHBOARD", "1")]);
+        assert!(f.subagent_dashboard);
+        assert!(!f.kairos);
     }
 }
