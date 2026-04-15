@@ -206,8 +206,8 @@ fn main() -> ExitCode {
     //   1. ~/.cc-rust/.env        (global user config)
     //   2. <exe-dir>/.env         (portable — next to the binary)
     //   3. <cwd>/.env             (project-local)
-    if let Some(home) = dirs::home_dir() {
-        let global_env = home.join(".cc-rust").join(".env");
+    if let Ok(global_dir) = settings::global_claude_dir() {
+        let global_env = global_dir.join(".env");
         let _ = dotenvy::from_path(&global_env);
     }
     if let Ok(exe_path) = std::env::current_exe() {
@@ -233,12 +233,16 @@ fn main() -> ExitCode {
     let stderr_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(log_level));
 
-    let log_dir = crate::config::settings::global_claude_dir()
+    let preferred_log_dir = crate::config::settings::global_claude_dir()
         .map(|d| d.join("logs"))
         .unwrap_or_else(|_| std::path::PathBuf::from(".logs"));
-    if !log_dir.exists() {
-        let _ = std::fs::create_dir_all(&log_dir);
-    }
+    let log_dir = if std::fs::create_dir_all(&preferred_log_dir).is_ok() {
+        preferred_log_dir
+    } else {
+        let fallback = std::path::PathBuf::from(".logs");
+        let _ = std::fs::create_dir_all(&fallback);
+        fallback
+    };
     cleanup_old_logs(&log_dir, 7);
     let file_appender = tracing_appender::rolling::daily(&log_dir, "cc-rust.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
@@ -271,6 +275,7 @@ fn main() -> ExitCode {
 
     // ── Fast path: --dump-system-prompt ─────────────────────────────────
     if cli.dump_system_prompt {
+        plugins::init_plugins();
         let tools = registry::get_all_tools();
         let provider_default =
             crate::api::client::ApiClient::from_env().map(|c| c.config().default_model.clone());
@@ -345,13 +350,28 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     );
 
     // ── B.3: Register tools ──────────────────────────────────────────
+    plugins::init_plugins();
     let mut tools = registry::get_all_tools();
     info!(count = tools.len(), "tools registered");
 
     // ── B.3b: Initialize plugin system ──────────────────────────────
     plugins::init_plugins();
 
-    // ── B.3c: Discover and connect MCP servers ──────────────────────
+    // ── B.3c: Initialize skills (bundled/user/project + plugin) ────
+    skills::clear_skills();
+    skills::init_skills(Some(std::path::Path::new(&cwd)));
+    let plugin_skills = plugins::discover_plugin_skills();
+    if !plugin_skills.is_empty() {
+        info!(
+            count = plugin_skills.len(),
+            "Skills: loading plugin-contributed skills"
+        );
+        for skill in plugin_skills {
+            skills::register_skill(skill);
+        }
+    }
+
+    // ── B.3d: Discover and connect MCP servers ──────────────────────
     let _mcp_manager = {
         use crate::mcp::discovery::discover_mcp_servers;
         use crate::mcp::manager::McpManager;
@@ -386,7 +406,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         mcp_manager
     };
 
-    // ── B.3d: Register native Computer Use tools (if --computer-use) ──
+    // ── B.3e: Register native Computer Use tools (if --computer-use) ──
     if cli.computer_use {
         let cu_tools = computer_use::setup::register_cu_tools();
         info!(

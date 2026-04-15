@@ -74,6 +74,42 @@ pub struct ToolContribution {
     /// Whether this tool is read-only.
     #[serde(default)]
     pub read_only: bool,
+    /// Whether this tool may run concurrently with sibling tool calls.
+    #[serde(default)]
+    pub concurrency_safe: bool,
+    /// Executable runtime configuration for this tool.
+    ///
+    /// When omitted, the contribution is metadata-only and will not be
+    /// registered as an executable runtime tool.
+    #[serde(default)]
+    pub runtime: Option<ToolRuntime>,
+}
+
+/// Executable runtime for a plugin-contributed tool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ToolRuntime {
+    /// Spawn a subprocess, write JSON input to stdin, and read stdout/stderr.
+    Stdio(StdioToolRuntime),
+}
+
+/// Stdio runtime configuration for a plugin tool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StdioToolRuntime {
+    /// Executable name or relative path inside the plugin directory.
+    pub command: String,
+    /// Command arguments.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Extra environment variables for the subprocess.
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+    /// Optional working directory for the subprocess.
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// Optional timeout in milliseconds.
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
 }
 
 /// A skill contributed by a plugin.
@@ -164,6 +200,17 @@ pub fn validate_manifest(manifest: &PluginManifest) -> Result<()> {
     };
     if unique_len != tool_names.len() {
         bail!("Duplicate tool names in manifest");
+    }
+
+    for tool in &manifest.tools {
+        if let Some(ToolRuntime::Stdio(runtime)) = &tool.runtime {
+            if runtime.command.trim().is_empty() {
+                bail!(
+                    "Plugin tool '{}' has an empty stdio runtime command",
+                    tool.name
+                );
+            }
+        }
     }
 
     Ok(())
@@ -258,12 +305,16 @@ mod tests {
                 description: "".into(),
                 input_schema: None,
                 read_only: false,
+                concurrency_safe: false,
+                runtime: None,
             },
             ToolContribution {
                 name: "dup".into(),
                 description: "".into(),
                 input_schema: None,
                 read_only: false,
+                concurrency_safe: false,
+                runtime: None,
             },
         ];
         assert!(validate_manifest(&m).is_err());
@@ -277,6 +328,14 @@ mod tests {
             description: "Does stuff".into(),
             input_schema: Some(serde_json::json!({"type": "object"})),
             read_only: true,
+            concurrency_safe: true,
+            runtime: Some(ToolRuntime::Stdio(StdioToolRuntime {
+                command: "bin/my-tool".into(),
+                args: vec!["--json".into()],
+                env: HashMap::new(),
+                cwd: Some(".".into()),
+                timeout_ms: Some(30_000),
+            })),
         }];
         m.skills = vec![SkillContribution {
             name: "my-skill".into(),
@@ -299,6 +358,28 @@ mod tests {
         assert_eq!(back.skills.len(), 1);
         assert_eq!(back.mcp_servers.len(), 1);
         assert_eq!(back.dependencies.len(), 1);
+        assert!(matches!(back.tools[0].runtime, Some(ToolRuntime::Stdio(_))));
+    }
+
+    #[test]
+    fn test_validate_stdio_runtime_requires_command() {
+        let mut m = minimal_manifest();
+        m.tools = vec![ToolContribution {
+            name: "runtime-tool".into(),
+            description: "".into(),
+            input_schema: None,
+            read_only: false,
+            concurrency_safe: false,
+            runtime: Some(ToolRuntime::Stdio(StdioToolRuntime {
+                command: "   ".into(),
+                args: vec![],
+                env: HashMap::new(),
+                cwd: None,
+                timeout_ms: None,
+            })),
+        }];
+
+        assert!(validate_manifest(&m).is_err());
     }
 
     #[test]

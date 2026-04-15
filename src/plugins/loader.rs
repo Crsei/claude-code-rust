@@ -9,6 +9,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use tracing::warn;
 
 use super::manifest::{load_manifest, PluginManifest};
 use super::{cache_dir, installed_plugins_path, PluginEntry, PluginSource, PluginStatus};
@@ -40,9 +41,20 @@ pub fn load_installed_plugins() -> Vec<PluginEntry> {
 
     match serde_json::from_str::<InstalledPluginsFile>(&content) {
         Ok(file) => file.plugins,
-        Err(_) => {
+        Err(v2_err) => {
             // Try parsing as bare array (V1 format)
-            serde_json::from_str::<Vec<PluginEntry>>(&content).unwrap_or_default()
+            match serde_json::from_str::<Vec<PluginEntry>>(&content) {
+                Ok(v1_plugins) => v1_plugins,
+                Err(v1_err) => {
+                    warn!(
+                        path = %path.display(),
+                        v2_error = %v2_err,
+                        v1_error = %v1_err,
+                        "Plugin: failed to parse installed_plugins.json"
+                    );
+                    Vec::new()
+                }
+            }
         }
     }
 }
@@ -241,6 +253,8 @@ mod tests {
                 description: "".into(),
                 input_schema: None,
                 read_only: false,
+                concurrency_safe: false,
+                runtime: None,
             }],
             skills: vec![SkillContribution {
                 name: "skill-a".into(),

@@ -1,4 +1,7 @@
+use std::collections::HashSet;
 use std::sync::Arc;
+
+use tracing::warn;
 
 use crate::types::tool::Tools;
 
@@ -33,7 +36,7 @@ use super::worktree::{EnterWorktreeTool, ExitWorktreeTool};
 ///
 /// Corresponds to TypeScript: tools.ts `getAllBaseTools()`
 /// Returns all tool implementations. The caller can filter by `is_enabled()`.
-pub fn get_all_tools() -> Tools {
+fn base_tools() -> Tools {
     let tools: Tools = vec![
         Arc::new(BashTool::new()),
         Arc::new(FileReadTool::new()),
@@ -70,6 +73,24 @@ pub fn get_all_tools() -> Tools {
 
     // Filter to only enabled tools
     tools.into_iter().filter(|t| t.is_enabled()).collect()
+}
+
+/// Get all runtime tools, including plugin-contributed tools that expose an
+/// executable runtime in their plugin manifest.
+pub fn get_all_tools() -> Tools {
+    let mut tools = base_tools();
+    let mut seen: HashSet<String> = tools.iter().map(|tool| tool.name().to_string()).collect();
+
+    for tool in crate::plugins::discover_plugin_tools() {
+        let name = tool.name().to_string();
+        if seen.insert(name.clone()) {
+            tools.push(tool);
+        } else {
+            warn!(tool = %name, "skipping plugin tool with duplicate name");
+        }
+    }
+
+    tools
 }
 
 #[cfg(test)]

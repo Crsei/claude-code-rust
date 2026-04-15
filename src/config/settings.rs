@@ -95,6 +95,12 @@ pub struct MergedConfig {
 
 /// Return the path to the global cc-rust settings directory (`~/.cc-rust/`).
 pub fn global_claude_dir() -> Result<PathBuf> {
+    if let Ok(override_dir) = std::env::var("CC_RUST_HOME") {
+        if !override_dir.trim().is_empty() {
+            return Ok(PathBuf::from(override_dir));
+        }
+    }
+
     let home = dirs::home_dir().context("Could not determine home directory")?;
     Ok(home.join(".cc-rust"))
 }
