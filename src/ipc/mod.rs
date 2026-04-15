@@ -1,4 +1,6 @@
+pub mod agent_channel;
 pub mod agent_events;
+pub mod agent_tree;
 pub mod agent_types;
 pub mod headless;
 pub mod protocol;
