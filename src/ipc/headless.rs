@@ -260,6 +260,14 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
                         let status = super::subsystem_handlers::build_subsystem_status_snapshot();
                         let _ = send_to_frontend(&BackendMessage::SubsystemStatus { status });
                     }
+                    FrontendMessage::AgentCommand { command } => {
+                        debug!("headless: Agent command: {:?}", command);
+                        super::agent_handlers::handle_agent_command(command).await;
+                    }
+                    FrontendMessage::TeamCommand { command } => {
+                        debug!("headless: Team command: {:?}", command);
+                        super::agent_handlers::handle_team_command(command).await;
+                    }
                 }
             }
 

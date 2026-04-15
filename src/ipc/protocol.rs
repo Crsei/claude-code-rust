@@ -90,6 +90,16 @@ pub enum FrontendMessage {
 
     /// Query all subsystem statuses.
     QuerySubsystemStatus,
+
+    /// Agent management commands.
+    AgentCommand {
+        command: super::agent_events::AgentCommand,
+    },
+
+    /// Team management commands.
+    TeamCommand {
+        command: super::agent_events::TeamCommand,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -213,6 +223,16 @@ pub enum BackendMessage {
     SubsystemStatus {
         status: super::subsystem_types::SubsystemStatusSnapshot,
     },
+
+    /// Agent lifecycle + streaming events.
+    AgentEvent {
+        event: super::agent_events::AgentEvent,
+    },
+
+    /// Team events.
+    TeamEvent {
+        event: super::agent_events::TeamEvent,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -315,6 +335,59 @@ mod tests {
         let json = r#"{"type":"query_subsystem_status"}"#;
         let msg: FrontendMessage = serde_json::from_str(json).unwrap();
         assert!(matches!(msg, FrontendMessage::QuerySubsystemStatus));
+    }
+
+    #[test]
+    fn backend_agent_event_serializes() {
+        use super::BackendMessage;
+        use crate::ipc::agent_events::AgentEvent as AE;
+        let msg = BackendMessage::AgentEvent {
+            event: AE::Spawned {
+                agent_id: "a1".into(),
+                parent_agent_id: None,
+                description: "test".into(),
+                agent_type: None,
+                model: None,
+                is_background: false,
+                depth: 1,
+                chain_id: "c1".into(),
+            },
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "agent_event");
+        assert_eq!(json["event"]["kind"], "spawned");
+    }
+
+    #[test]
+    fn frontend_agent_command_deserializes() {
+        use super::FrontendMessage;
+        let json = r#"{"type":"agent_command","command":{"kind":"abort_agent","agent_id":"a1"}}"#;
+        let msg: FrontendMessage = serde_json::from_str(json).unwrap();
+        assert!(matches!(msg, FrontendMessage::AgentCommand { .. }));
+    }
+
+    #[test]
+    fn backend_team_event_serializes() {
+        use super::BackendMessage;
+        use crate::ipc::agent_events::TeamEvent as TE;
+        let msg = BackendMessage::TeamEvent {
+            event: TE::MemberLeft {
+                team_name: "t1".into(),
+                agent_id: "a1".into(),
+                agent_name: "w".into(),
+            },
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "team_event");
+        assert_eq!(json["event"]["kind"], "member_left");
+    }
+
+    #[test]
+    fn frontend_team_command_deserializes() {
+        use super::FrontendMessage;
+        let json = r#"{"type":"team_command","command":{"kind":"query_team_status","team_name":"t1"}}"#;
+        let msg: FrontendMessage = serde_json::from_str(json).unwrap();
+        assert!(matches!(msg, FrontendMessage::TeamCommand { .. }));
     }
 
     #[test]
