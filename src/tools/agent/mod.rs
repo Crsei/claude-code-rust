@@ -148,6 +148,80 @@ async fn count_worktree_changes(
 }
 
 // ---------------------------------------------------------------------------
+// Helper: convert SdkMessage → AgentEvent for IPC forwarding
+// ---------------------------------------------------------------------------
+
+/// Convert an SdkMessage to an AgentEvent for IPC forwarding.
+/// Returns None for messages that don't map to agent events.
+pub(crate) fn sdk_to_agent_event(
+    sdk_msg: &crate::engine::sdk_types::SdkMessage,
+    agent_id: &str,
+) -> Option<crate::ipc::agent_events::AgentEvent> {
+    use crate::engine::sdk_types::SdkMessage;
+    use crate::ipc::agent_events::AgentEvent;
+    use crate::types::message::{ContentBlock, StreamEvent, ToolResultContent};
+
+    match sdk_msg {
+        SdkMessage::StreamEvent(evt) => match &evt.event {
+            StreamEvent::ContentBlockDelta { delta, .. } => {
+                if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
+                    Some(AgentEvent::StreamDelta {
+                        agent_id: agent_id.to_string(),
+                        text: text.to_string(),
+                    })
+                } else if let Some(thinking) = delta.get("thinking").and_then(|v| v.as_str()) {
+                    Some(AgentEvent::ThinkingDelta {
+                        agent_id: agent_id.to_string(),
+                        thinking: thinking.to_string(),
+                    })
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        },
+        SdkMessage::Assistant(a) => {
+            for block in &a.message.content {
+                if let ContentBlock::ToolUse { id, name, input } = block {
+                    return Some(AgentEvent::ToolUse {
+                        agent_id: agent_id.to_string(),
+                        tool_use_id: id.clone(),
+                        tool_name: name.clone(),
+                        input: input.clone(),
+                    });
+                }
+            }
+            None
+        }
+        SdkMessage::UserReplay(replay) => {
+            if let Some(blocks) = &replay.content_blocks {
+                for block in blocks {
+                    if let ContentBlock::ToolResult {
+                        tool_use_id,
+                        content,
+                        is_error,
+                    } = block
+                    {
+                        let output = match content {
+                            ToolResultContent::Text(t) => t.clone(),
+                            ToolResultContent::Blocks(_) => "[complex output]".to_string(),
+                        };
+                        return Some(AgentEvent::ToolResult {
+                            agent_id: agent_id.to_string(),
+                            tool_use_id: tool_use_id.clone(),
+                            output,
+                            is_error: *is_error,
+                        });
+                    }
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Helper: build a child QueryEngineConfig
 // ---------------------------------------------------------------------------
 

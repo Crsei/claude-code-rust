@@ -41,12 +41,56 @@ impl AgentTool {
             current_depth,
         );
 
+        // Register sync agent in tree
+        {
+            let chain_id = ctx
+                .query_tracking
+                .as_ref()
+                .map(|t| t.chain_id.clone())
+                .unwrap_or_default();
+            let node = crate::ipc::agent_types::AgentNode {
+                agent_id: agent_id.to_string(),
+                parent_agent_id: ctx.agent_id.clone(),
+                description: description.to_string(),
+                agent_type: None,
+                model: Some(agent_model.to_string()),
+                state: "running".into(),
+                is_background: false,
+                depth: current_depth + 1,
+                chain_id,
+                spawned_at: chrono::Utc::now().timestamp(),
+                completed_at: None,
+                duration_ms: None,
+                result_preview: None,
+                had_error: false,
+                children: vec![],
+            };
+            crate::ipc::agent_tree::AGENT_TREE.lock().register(node);
+        }
+
         let child_engine = QueryEngine::new(child_config);
         let stream =
             child_engine.submit_message(&params.prompt, QuerySource::Agent(agent_id.to_string()));
 
         let (result_text, had_error) = collect_stream_result(stream).await;
         let duration_ms = started.elapsed().as_millis() as u64;
+
+        // Update tree state
+        {
+            let preview = if result_text.len() > 200 {
+                let end = result_text.floor_char_boundary(200);
+                format!("{}...", &result_text[..end])
+            } else {
+                result_text.clone()
+            };
+            crate::ipc::agent_tree::AGENT_TREE.lock().update_state(
+                agent_id,
+                if had_error { "error" } else { "completed" },
+                Some(preview),
+                Some(duration_ms),
+                had_error,
+            );
+        }
 
         debug!(
             agent_id = %agent_id,
