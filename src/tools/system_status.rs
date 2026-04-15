@@ -28,7 +28,7 @@ impl Tool for SystemStatusTool {
             "properties": {
                 "subsystem": {
                     "type": "string",
-                    "enum": ["lsp", "mcp", "plugins", "skills", "all"],
+                    "enum": ["lsp", "mcp", "plugins", "skills", "agents", "teams", "all"],
                     "description": "Which subsystem to query. Defaults to 'all'."
                 }
             }
@@ -151,7 +151,47 @@ fn format_status_output(subsystem: &str) -> String {
         parts.push(section);
     }
 
+    if subsystem == "all" || subsystem == "agents" {
+        let tree = crate::ipc::agent_tree::AGENT_TREE.lock();
+        let active = tree.active_agents();
+        let bg_count = active.iter().filter(|a| a.is_background).count();
+        let mut section = format!(
+            "## Active Agents ({} total, {} background)\n",
+            active.len(),
+            bg_count
+        );
+        if active.is_empty() {
+            section.push_str("No active agents.\n");
+        } else {
+            for a in &active {
+                section.push_str(&format!(
+                    "- {}: {} [{}{}] — \"{}\" (depth {})\n",
+                    a.agent_id,
+                    a.state,
+                    if a.is_background { "background" } else { "sync" },
+                    a.agent_type
+                        .as_ref()
+                        .map(|t| format!(", {}", t))
+                        .unwrap_or_default(),
+                    a.description,
+                    a.depth,
+                ));
+            }
+        }
+        parts.push(section);
+    }
+
+    if subsystem == "all" || subsystem == "teams" {
+        let mut section = String::from("## Teams\n");
+        section.push_str("Team status requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS feature.\n");
+        parts.push(section);
+    }
+
     parts.join("\n")
+}
+
+fn _count_nodes(node: &crate::ipc::agent_types::AgentNode) -> usize {
+    1 + node.children.iter().map(_count_nodes).sum::<usize>()
 }
 
 #[cfg(test)]

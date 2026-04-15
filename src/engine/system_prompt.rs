@@ -609,20 +609,25 @@ fn build_subsystem_status_reminder() -> Option<String> {
     .unwrap_or(0);
     let plugin_count = crate::plugins::get_enabled_plugins().len();
     let skill_count = crate::skills::get_all_skills().len();
+    let agent_count = crate::ipc::agent_tree::AGENT_TREE.lock().active_agents().len();
 
-    if mcp_count + plugin_count + skill_count == 0 {
+    if mcp_count + plugin_count + skill_count == 0 && agent_count == 0 {
         return None;
     }
 
-    Some(format!(
+    let mut text = format!(
         "# Active Subsystems\n\
          - LSP: {} language(s) configured\n\
          - MCP: {} server(s) configured\n\
          - Plugins: {} enabled\n\
-         - Skills: {} loaded\n\
-         Use the SystemStatus tool for detailed information.\n",
+         - Skills: {} loaded\n",
         lsp_configs, mcp_count, plugin_count, skill_count
-    ))
+    );
+    if agent_count > 0 {
+        text.push_str(&format!("- Agents: {} active\n", agent_count));
+    }
+    text.push_str("Use the SystemStatus tool for detailed information.\n");
+    Some(text)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
