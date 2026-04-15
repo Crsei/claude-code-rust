@@ -53,19 +53,11 @@ pub enum AgentEvent {
         duration_ms: u64,
     },
     /// An agent was aborted by the user or system.
-    Aborted {
-        agent_id: String,
-    },
+    Aborted { agent_id: String },
     /// A streaming text delta from an agent's response.
-    StreamDelta {
-        agent_id: String,
-        text: String,
-    },
+    StreamDelta { agent_id: String, text: String },
     /// A streaming thinking/reasoning delta from an agent.
-    ThinkingDelta {
-        agent_id: String,
-        thinking: String,
-    },
+    ThinkingDelta { agent_id: String, thinking: String },
     /// An agent initiated a tool use.
     ToolUse {
         agent_id: String,
@@ -81,9 +73,7 @@ pub enum AgentEvent {
         is_error: bool,
     },
     /// Full snapshot of the agent tree hierarchy.
-    TreeSnapshot {
-        roots: Vec<AgentNode>,
-    },
+    TreeSnapshot { roots: Vec<AgentNode> },
 }
 
 // ===========================================================================
@@ -345,11 +335,8 @@ mod tests {
             had_error: false,
             children: vec![],
         };
-        let event = AgentEvent::TreeSnapshot {
-            roots: vec![node],
-        };
-        let value =
-            serde_json::to_value(&event).expect("serialize AgentEvent::TreeSnapshot");
+        let event = AgentEvent::TreeSnapshot { roots: vec![node] };
+        let value = serde_json::to_value(&event).expect("serialize AgentEvent::TreeSnapshot");
         assert_eq!(value["kind"], "tree_snapshot");
         let roots = value["roots"].as_array().expect("roots should be array");
         assert_eq!(roots.len(), 1);
@@ -490,8 +477,7 @@ mod tests {
 
     #[test]
     fn team_command_inject_message_deserializes() {
-        let json =
-            r#"{"kind":"inject_message","team_name":"backend-team","to":"agent-10","text":"hello"}"#;
+        let json = r#"{"kind":"inject_message","team_name":"backend-team","to":"agent-10","text":"hello"}"#;
         let cmd: TeamCommand =
             serde_json::from_str(json).expect("deserialize TeamCommand::InjectMessage");
         match cmd {

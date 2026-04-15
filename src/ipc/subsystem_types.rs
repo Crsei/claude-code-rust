@@ -229,7 +229,10 @@ mod tests {
         };
 
         let value = serde_json::to_value(&info).expect("serialize LspServerInfo");
-        assert!(value.get("error").is_none(), "None error field should be omitted");
+        assert!(
+            value.get("error").is_none(),
+            "None error field should be omitted"
+        );
         assert_eq!(value["language_id"], "rust");
         assert_eq!(value["open_files_count"], 3);
     }

@@ -187,7 +187,9 @@ mod tests {
         assert_eq!(value["had_error"], false);
 
         // Children
-        let children = value["children"].as_array().expect("children should be array");
+        let children = value["children"]
+            .as_array()
+            .expect("children should be array");
         assert_eq!(children.len(), 1);
 
         let child_val = &children[0];

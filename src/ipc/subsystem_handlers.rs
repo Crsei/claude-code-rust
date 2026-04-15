@@ -418,11 +418,7 @@ mod tests {
                 skills::SkillSource::Plugin("p".to_string()),
                 "plugin",
             ),
-            (
-                "mcp-sk",
-                skills::SkillSource::Mcp("m".to_string()),
-                "mcp",
-            ),
+            ("mcp-sk", skills::SkillSource::Mcp("m".to_string()), "mcp"),
         ];
 
         for (name, source, _) in &sources {

@@ -324,7 +324,8 @@ mod tests {
     #[test]
     fn frontend_lsp_command_deserializes() {
         use super::FrontendMessage;
-        let json = r#"{"type":"lsp_command","command":{"kind":"start_server","language_id":"rust"}}"#;
+        let json =
+            r#"{"type":"lsp_command","command":{"kind":"start_server","language_id":"rust"}}"#;
         let msg: FrontendMessage = serde_json::from_str(json).unwrap();
         assert!(matches!(msg, FrontendMessage::LspCommand { .. }));
     }
@@ -385,7 +386,8 @@ mod tests {
     #[test]
     fn frontend_team_command_deserializes() {
         use super::FrontendMessage;
-        let json = r#"{"type":"team_command","command":{"kind":"query_team_status","team_name":"t1"}}"#;
+        let json =
+            r#"{"type":"team_command","command":{"kind":"query_team_status","team_name":"t1"}}"#;
         let msg: FrontendMessage = serde_json::from_str(json).unwrap();
         assert!(matches!(msg, FrontendMessage::TeamCommand { .. }));
     }

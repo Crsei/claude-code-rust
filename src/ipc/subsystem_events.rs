@@ -37,9 +37,7 @@ pub enum LspEvent {
         diagnostics: Vec<LspDiagnostic>,
     },
     /// Full list of LSP servers (response to `QueryStatus`).
-    ServerList {
-        servers: Vec<LspServerInfo>,
-    },
+    ServerList { servers: Vec<LspServerInfo> },
 }
 
 /// Events emitted by the MCP subsystem.
@@ -70,9 +68,7 @@ pub enum McpEvent {
         meta: serde_json::Value,
     },
     /// Full list of MCP servers (response to `QueryStatus`).
-    ServerList {
-        servers: Vec<McpServerStatusInfo>,
-    },
+    ServerList { servers: Vec<McpServerStatusInfo> },
 }
 
 /// Events emitted by the plugin subsystem.
@@ -88,9 +84,7 @@ pub enum PluginEvent {
         error: Option<String>,
     },
     /// Full list of plugins (response to `QueryStatus`).
-    PluginList {
-        plugins: Vec<PluginInfo>,
-    },
+    PluginList { plugins: Vec<PluginInfo> },
 }
 
 /// Events emitted by the skill subsystem.
@@ -98,13 +92,9 @@ pub enum PluginEvent {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SkillEvent {
     /// Skills were loaded / reloaded.
-    SkillsLoaded {
-        count: usize,
-    },
+    SkillsLoaded { count: usize },
     /// Full list of skills (response to `QueryStatus`).
-    SkillList {
-        skills: Vec<SkillInfo>,
-    },
+    SkillList { skills: Vec<SkillInfo> },
 }
 
 // ===========================================================================
@@ -551,8 +541,14 @@ mod tests {
         let e1 = rx1.recv().await.expect("rx1 recv");
         let e2 = rx2.recv().await.expect("rx2 recv");
 
-        assert!(matches!(e1, SubsystemEvent::Lsp(LspEvent::ServerStateChanged { .. })));
-        assert!(matches!(e2, SubsystemEvent::Lsp(LspEvent::ServerStateChanged { .. })));
+        assert!(matches!(
+            e1,
+            SubsystemEvent::Lsp(LspEvent::ServerStateChanged { .. })
+        ));
+        assert!(matches!(
+            e2,
+            SubsystemEvent::Lsp(LspEvent::ServerStateChanged { .. })
+        ));
     }
 
     #[test]
@@ -562,7 +558,10 @@ mod tests {
 
         // Sending with no subscribers should return an error but not panic.
         let result = tx.send(SubsystemEvent::Skill(SkillEvent::SkillsLoaded { count: 0 }));
-        assert!(result.is_err(), "send with no subscribers should return Err");
+        assert!(
+            result.is_err(),
+            "send with no subscribers should return Err"
+        );
     }
 
     #[test]
