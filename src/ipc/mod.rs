@@ -1,3 +1,4 @@
+pub mod agent_events;
 pub mod agent_types;
 pub mod headless;
 pub mod protocol;
