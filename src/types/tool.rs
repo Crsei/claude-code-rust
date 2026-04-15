@@ -185,7 +185,7 @@ pub struct ToolUseContext {
     /// Sender for background agent completion results.
     /// When `Some`, the Agent tool can spawn background tasks.
     /// When `None`, `run_in_background` falls back to synchronous execution.
-    pub bg_agent_tx: Option<crate::tools::background_agents::BgAgentSender>,
+    pub bg_agent_tx: Option<crate::ipc::agent_channel::AgentSender>,
 }
 
 /// 工具使用选项 (不可变配置)

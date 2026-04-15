@@ -16,9 +16,6 @@ pub struct CompletedBackgroundAgent {
     pub duration: Duration,
 }
 
-/// Sender half — cloned into each background agent spawn.
-pub type BgAgentSender = tokio::sync::mpsc::UnboundedSender<CompletedBackgroundAgent>;
-
 /// Shared buffer of completed agents waiting to be injected into the query loop.
 ///
 /// The event loop pushes completed agents here after notifying the frontend.

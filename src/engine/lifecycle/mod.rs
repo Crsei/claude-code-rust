@@ -73,7 +73,7 @@ pub(crate) struct QueryEngineState {
     pub(crate) ask_user_callback: Option<crate::types::tool::AskUserCallback>,
     /// Sender for background agent completion channel.
     /// Set by headless/TUI mode; cloned into ToolUseContext.
-    pub(crate) bg_agent_tx: Option<crate::tools::background_agents::BgAgentSender>,
+    pub(crate) bg_agent_tx: Option<crate::ipc::agent_channel::AgentSender>,
     /// If set, the engine is "sleeping" until this instant.
     /// The proactive tick loop skips ticks while `Instant::now() < sleep_until`.
     /// Cleared by `wake_up()` on user messages or external events.
@@ -170,7 +170,7 @@ impl QueryEngine {
     }
 
     /// Set the background agent sender (called by headless/TUI at startup).
-    pub fn set_bg_agent_tx(&self, tx: crate::tools::background_agents::BgAgentSender) {
+    pub fn set_bg_agent_tx(&self, tx: crate::ipc::agent_channel::AgentSender) {
         self.state.write().bg_agent_tx = Some(tx);
     }
 

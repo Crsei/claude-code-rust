@@ -41,7 +41,7 @@ pub(crate) struct QueryEngineDeps {
     /// Propagated into `ToolUseContext` for headless/TUI permission flow.
     pub(crate) permission_callback: Option<crate::types::tool::PermissionCallback>,
     /// Background agent sender — forwarded into ToolUseContext.
-    pub(crate) bg_agent_tx: Option<crate::tools::background_agents::BgAgentSender>,
+    pub(crate) bg_agent_tx: Option<crate::ipc::agent_channel::AgentSender>,
     /// Shared buffer of completed background agents.
     pub(crate) pending_bg_results: crate::tools::background_agents::PendingBackgroundResults,
 }

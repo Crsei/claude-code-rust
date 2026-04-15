@@ -287,13 +287,22 @@ impl Tool for AgentTool {
                     .await;
                 }
 
-                let _ = bg_tx.send(crate::tools::background_agents::CompletedBackgroundAgent {
-                    agent_id: spawn_agent_id,
-                    description: spawn_description,
-                    result_text,
-                    had_error,
-                    duration: started.elapsed(),
-                });
+                let result_preview = if result_text.len() > 200 {
+                    let end = result_text.floor_char_boundary(200);
+                    format!("{}...", &result_text[..end])
+                } else {
+                    result_text.clone()
+                };
+
+                let _ = bg_tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
+                    crate::ipc::agent_events::AgentEvent::Completed {
+                        agent_id: spawn_agent_id.clone(),
+                        result_preview,
+                        had_error,
+                        duration_ms,
+                        output_tokens: None,
+                    },
+                ));
             });
 
             return Ok(ToolResult {

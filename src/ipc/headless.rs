@@ -105,8 +105,8 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
     }
 
     // ── 1b. Background agent channel setup ────────────────────────
-    let (bg_tx, mut bg_rx) = tokio::sync::mpsc::unbounded_channel();
-    engine.set_bg_agent_tx(bg_tx);
+    let (agent_tx, mut agent_rx) = crate::ipc::agent_channel::agent_channel();
+    engine.set_bg_agent_tx(agent_tx);
     let pending_bg = engine.pending_bg_results.clone();
 
     // ── 1c. Subsystem event bus setup ────────────────────────────
@@ -271,34 +271,47 @@ pub async fn run_headless(engine: Arc<QueryEngine>, model: String) -> anyhow::Re
                 }
             }
 
-            // ── Branch 2: Background agent completed ────────────
-            Some(completed) = bg_rx.recv() => {
-                debug!(
-                    agent_id = %completed.agent_id,
-                    description = %completed.description,
-                    had_error = completed.had_error,
-                    "headless: background agent completed"
-                );
+            // ── Branch 2: Agent/Team events ────────────────────────
+            Some(event) = agent_rx.recv() => {
+                match event {
+                    crate::ipc::agent_channel::AgentIpcEvent::Agent(ref agent_event) => {
+                        // Backward compat: send BackgroundAgentComplete for completed bg agents
+                        if let crate::ipc::agent_events::AgentEvent::Completed {
+                            ref agent_id, ref result_preview, had_error, duration_ms, ..
+                        } = agent_event {
+                            let tree = crate::ipc::agent_tree::AGENT_TREE.lock();
+                            let (is_bg, desc) = tree.get(agent_id)
+                                .map(|n| (n.is_background, n.description.clone()))
+                                .unwrap_or((true, "unknown".to_string()));
+                            drop(tree);
 
-                // Truncate result for UI preview (char-boundary safe)
-                let result_preview = if completed.result_text.len() > 200 {
-                    let end = completed.result_text.floor_char_boundary(200);
-                    format!("{}...", &completed.result_text[..end])
-                } else {
-                    completed.result_text.clone()
-                };
-
-                // Notify frontend immediately
-                let _ = send_to_frontend(&BackendMessage::BackgroundAgentComplete {
-                    agent_id: completed.agent_id.clone(),
-                    description: completed.description.clone(),
-                    result_preview,
-                    had_error: completed.had_error,
-                    duration_ms: completed.duration.as_millis() as u64,
-                });
-
-                // Push to shared buffer for query loop injection
-                pending_bg.push(completed);
+                            if is_bg {
+                                let _ = send_to_frontend(&BackendMessage::BackgroundAgentComplete {
+                                    agent_id: agent_id.clone(),
+                                    description: desc.clone(),
+                                    result_preview: result_preview.clone(),
+                                    had_error: *had_error,
+                                    duration_ms: *duration_ms,
+                                });
+                                pending_bg.push(crate::tools::background_agents::CompletedBackgroundAgent {
+                                    agent_id: agent_id.clone(),
+                                    description: desc,
+                                    result_text: result_preview.clone(),
+                                    had_error: *had_error,
+                                    duration: std::time::Duration::from_millis(*duration_ms),
+                                });
+                            }
+                        }
+                        let _ = send_to_frontend(&BackendMessage::AgentEvent {
+                            event: agent_event.clone(),
+                        });
+                    }
+                    crate::ipc::agent_channel::AgentIpcEvent::Team(team_event) => {
+                        let _ = send_to_frontend(&BackendMessage::TeamEvent {
+                            event: team_event,
+                        });
+                    }
+                }
             }
 
             // ── Branch 3: Subsystem events ─────────────────────────
