@@ -1,3 +1,6 @@
 [submodule "ui/ink-terminal"]
 	path = ui/ink-terminal
 	url = https://github.com/Crsei/ink-terminal.git
+[submodule "ink-ui/ink-terminal"]
+	path = ink-ui/ink-terminal
+	url = https://github.com/Crsei/ink-terminal.git
