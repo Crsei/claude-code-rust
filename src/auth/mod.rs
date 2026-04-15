@@ -6,6 +6,7 @@
 //! - OAuth Token: from `~/.cc-rust/credentials.json` (Claude.ai / Console / OpenAI Codex)
 
 pub mod api_key;
+pub mod codex_cli;
 pub mod oauth;
 pub mod token;
 
@@ -109,7 +110,9 @@ pub fn resolve_auth() -> AuthMethod {
 /// Priority:
 /// 1. `OPENAI_CODEX_AUTH_TOKEN` environment variable
 /// 2. OAuth token from `~/.cc-rust/credentials.json` when method is `openai_codex`
+/// 3. Codex CLI credentials from `~/.codex/auth.json` (fallback)
 pub fn resolve_codex_auth_token() -> Option<String> {
+    // 1. Environment variable
     if let Ok(token) = std::env::var(OPENAI_CODEX_AUTH_TOKEN_ENV) {
         let trimmed = token.trim();
         if !trimmed.is_empty() {
@@ -117,6 +120,17 @@ pub fn resolve_codex_auth_token() -> Option<String> {
         }
     }
 
+    // 2. cc-rust credentials.json
+    if let Some(token) = try_resolve_codex_from_credentials() {
+        return Some(token);
+    }
+
+    // 3. Codex CLI fallback (~/.codex/auth.json)
+    try_resolve_codex_cli()
+}
+
+/// Try to resolve Codex token from cc-rust's own `credentials.json`.
+fn try_resolve_codex_from_credentials() -> Option<String> {
     let stored = token::load_token().ok().flatten()?;
     let method = stored.oauth_method.clone().unwrap_or_default();
     if !method.eq_ignore_ascii_case("openai_codex") {
@@ -140,13 +154,87 @@ pub fn resolve_codex_auth_token() -> Option<String> {
         Ok(Some((access_token, refreshed_method))) if refreshed_method == "openai_codex" => {
             Some(access_token)
         }
-        Ok(Some(_)) | Ok(None) => None,
+        Ok(Some(_)) | Ok(None) => {
+            let _ = token::remove_token();
+            None
+        }
         Err(e) => {
             tracing::warn!(error = %e, "OpenAI Codex OAuth auto-refresh failed");
             let _ = token::remove_token();
             None
         }
     }
+}
+
+/// Try to resolve Codex token from Codex CLI's `~/.codex/auth.json`.
+///
+/// If the token is expired, attempt refresh using the Codex CLI client_id
+/// and save the refreshed token to cc-rust's `credentials.json`.
+fn try_resolve_codex_cli() -> Option<String> {
+    let cred = codex_cli::read_codex_cli_credential()?;
+
+    if !codex_cli::is_credential_expired(&cred) {
+        return Some(cred.access_token);
+    }
+
+    // Token expired — try to refresh
+    let refresh_tok = match &cred.refresh_token {
+        Some(t) if !t.trim().is_empty() => t.clone(),
+        _ => return None,
+    };
+
+    let handle = match tokio::runtime::Handle::try_current() {
+        Ok(h) => h,
+        Err(_) => return None,
+    };
+
+    let client_id = cred.client_id.clone();
+    let token_url = oauth::config::token_url_for(oauth::config::OAuthMethod::OpenAiCodex);
+    let scopes_owned: Vec<String> =
+        oauth::config::resolved_scopes_for(oauth::config::OAuthMethod::OpenAiCodex);
+    let refresh_tok_for_fallback = refresh_tok.clone();
+
+    let result = std::thread::spawn(move || {
+        handle.block_on(async {
+            let scope_strs: Vec<&str> = scopes_owned.iter().map(|s| s.as_str()).collect();
+            oauth::client::refresh_token_with_client_id(
+                &client_id,
+                &token_url,
+                &refresh_tok,
+                &scope_strs,
+            )
+            .await
+        })
+    })
+    .join()
+    .ok()?
+    .ok()?;
+
+    // Save refreshed token to cc-rust's credentials.json
+    let expires_at = chrono::Utc::now().timestamp() + result.expires_in as i64;
+    let new_scopes: Vec<String> = result
+        .scope
+        .split_whitespace()
+        .map(|s| s.to_string())
+        .collect();
+    let stored = token::StoredToken {
+        access_token: result.access_token.clone(),
+        refresh_token: result.refresh_token.or(Some(refresh_tok_for_fallback)),
+        expires_at: Some(expires_at),
+        token_type: "bearer".into(),
+        scopes: if new_scopes.is_empty() {
+            oauth::config::OPENAI_CODEX_SCOPES
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        } else {
+            new_scopes
+        },
+        oauth_method: Some("openai_codex".to_string()),
+    };
+    let _ = token::save_token(&stored);
+    tracing::info!("Codex CLI token refreshed and saved to cc-rust credentials");
+    Some(result.access_token)
 }
 
 // ---------------------------------------------------------------------------

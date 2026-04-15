@@ -69,6 +69,19 @@ pub async fn refresh_token(
 ) -> Result<OAuthTokenResponse> {
     let client_id = config::client_id_for(method)?;
     let token_url = config::token_url_for(method);
+    refresh_token_with_client_id(&client_id, &token_url, refresh_tok, scopes).await
+}
+
+/// Refresh an OAuth token using an explicit client_id and token URL.
+///
+/// This is the low-level entry point used by [`refresh_token`] and by the
+/// Codex CLI credential fallback (which needs a different client_id).
+pub async fn refresh_token_with_client_id(
+    client_id: &str,
+    token_url: &str,
+    refresh_tok: &str,
+    scopes: &[&str],
+) -> Result<OAuthTokenResponse> {
     let scope_str = scopes.join(" ");
     let body = serde_json::json!({
         "grant_type": "refresh_token",
