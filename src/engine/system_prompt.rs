@@ -452,9 +452,7 @@ pub fn build_system_prompt(
                         .to_string(),
                 )
             }),
-            cached_section("subsystem_status", || {
-                build_subsystem_status_reminder()
-            }),
+            cached_section("subsystem_status", || build_subsystem_status_reminder()),
         ];
 
         let resolved = prompt_sections::resolve_sections(&dynamic_sections);
@@ -602,14 +600,16 @@ fn format_sub_bullets(items: &[&str]) -> String {
 /// Returns `None` when no subsystems are active beyond defaults.
 fn build_subsystem_status_reminder() -> Option<String> {
     let lsp_configs = crate::lsp_service::default_server_configs().len();
-    let mcp_count = crate::mcp::discovery::discover_mcp_servers(
-        &std::env::current_dir().unwrap_or_default(),
-    )
-    .map(|v| v.len())
-    .unwrap_or(0);
+    let mcp_count =
+        crate::mcp::discovery::discover_mcp_servers(&std::env::current_dir().unwrap_or_default())
+            .map(|v| v.len())
+            .unwrap_or(0);
     let plugin_count = crate::plugins::get_enabled_plugins().len();
     let skill_count = crate::skills::get_all_skills().len();
-    let agent_count = crate::ipc::agent_tree::AGENT_TREE.lock().active_agents().len();
+    let agent_count = crate::ipc::agent_tree::AGENT_TREE
+        .lock()
+        .active_agents()
+        .len();
 
     if mcp_count + plugin_count + skill_count == 0 && agent_count == 0 {
         return None;

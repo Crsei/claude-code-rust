@@ -56,6 +56,7 @@ pub mod compact;
 
 // MCP server management
 pub mod mcp_cmd;
+pub mod plugin_cmd;
 
 // KAIROS / assistant commands
 pub mod assistant;
@@ -325,6 +326,12 @@ pub fn get_all_commands() -> Vec<Command> {
             handler: Box::new(mcp_cmd::McpHandler),
         },
         Command {
+            name: "plugin".into(),
+            aliases: vec![],
+            description: "Plugin management (list, status, enable, disable)".into(),
+            handler: Box::new(plugin_cmd::PluginHandler),
+        },
+        Command {
             name: "model-add".into(),
             aliases: vec!["ma".into()],
             description: "Add a model with token pricing to .env".into(),
@@ -427,6 +434,8 @@ mod tests {
         assert!(names.contains(&"model"));
         assert!(names.contains(&"cost"));
         assert!(names.contains(&"skills"));
+        assert!(names.contains(&"mcp"));
+        assert!(names.contains(&"plugin"));
     }
 
     #[test]

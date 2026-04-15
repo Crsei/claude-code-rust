@@ -242,7 +242,6 @@ pub async fn run_event_hooks(
 ///
 /// Sends `{ "title": ..., "body": ... }` to all hooks registered under the
 /// `"Notification"` event key.  Fire-and-forget: errors are logged internally.
-#[allow(dead_code)] // Called when notification dispatch points are wired
 pub async fn fire_notification_hook(
     title: &str,
     body: &str,

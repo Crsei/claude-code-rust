@@ -15,7 +15,6 @@ mod execution;
 mod post_tool;
 mod pre_tool;
 
-#[allow(unused_imports)] // fire_notification_hook is not wired yet
 pub use post_tool::{
     fire_notification_hook, run_event_hooks, run_post_tool_failure_hooks, run_post_tool_hooks,
     run_stop_hooks,

@@ -1,6 +1,7 @@
 use super::*;
 use crate::types::tool::Tool;
 use serde_json::json;
+use uuid::Uuid;
 
 #[test]
 fn test_resolve_model_alias() {
@@ -141,4 +142,246 @@ async fn test_background_agent_placeholder_format() {
     assert!(placeholder.contains("search codebase"));
     assert!(placeholder.contains("test-agent-123"));
     assert!(placeholder.contains("background"));
+}
+
+// ---------------------------------------------------------------------------
+// sdk_to_agent_event — SdkMessage → AgentEvent mapping
+// ---------------------------------------------------------------------------
+
+fn make_stream_event(delta: serde_json::Value) -> crate::engine::sdk_types::SdkMessage {
+    crate::engine::sdk_types::SdkMessage::StreamEvent(crate::engine::sdk_types::SdkStreamEvent {
+        event: crate::types::message::StreamEvent::ContentBlockDelta { index: 0, delta },
+        session_id: "s1".into(),
+        uuid: Uuid::nil(),
+    })
+}
+
+fn make_assistant_msg(
+    content: Vec<crate::types::message::ContentBlock>,
+) -> crate::engine::sdk_types::SdkMessage {
+    crate::engine::sdk_types::SdkMessage::Assistant(crate::engine::sdk_types::SdkAssistantMessage {
+        message: crate::types::message::AssistantMessage {
+            uuid: Uuid::nil(),
+            timestamp: 0,
+            role: "assistant".into(),
+            content,
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        },
+        session_id: "s1".into(),
+        parent_tool_use_id: None,
+    })
+}
+
+fn make_user_replay(
+    blocks: Vec<crate::types::message::ContentBlock>,
+) -> crate::engine::sdk_types::SdkMessage {
+    crate::engine::sdk_types::SdkMessage::UserReplay(crate::engine::sdk_types::SdkUserReplay {
+        content: String::new(),
+        session_id: "s1".into(),
+        uuid: Uuid::nil(),
+        timestamp: 0,
+        is_replay: false,
+        is_synthetic: true,
+        content_blocks: Some(blocks),
+    })
+}
+
+#[test]
+fn test_sdk_to_agent_event_stream_delta_text() {
+    let msg = make_stream_event(json!({"text": "hello world"}));
+    let event = sdk_to_agent_event(&msg, "a1").unwrap();
+    match event {
+        crate::ipc::agent_events::AgentEvent::StreamDelta { agent_id, text } => {
+            assert_eq!(agent_id, "a1");
+            assert_eq!(text, "hello world");
+        }
+        other => panic!("expected StreamDelta, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_sdk_to_agent_event_stream_delta_thinking() {
+    let msg = make_stream_event(json!({"thinking": "let me consider"}));
+    let event = sdk_to_agent_event(&msg, "a2").unwrap();
+    match event {
+        crate::ipc::agent_events::AgentEvent::ThinkingDelta { agent_id, thinking } => {
+            assert_eq!(agent_id, "a2");
+            assert_eq!(thinking, "let me consider");
+        }
+        other => panic!("expected ThinkingDelta, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_sdk_to_agent_event_stream_delta_unknown_field_returns_none() {
+    let msg = make_stream_event(json!({"other_field": 42}));
+    assert!(sdk_to_agent_event(&msg, "a1").is_none());
+}
+
+#[test]
+fn test_sdk_to_agent_event_tool_use() {
+    let msg = make_assistant_msg(vec![crate::types::message::ContentBlock::ToolUse {
+        id: "tu1".into(),
+        name: "Bash".into(),
+        input: json!({"command": "ls"}),
+    }]);
+    let event = sdk_to_agent_event(&msg, "a3").unwrap();
+    match event {
+        crate::ipc::agent_events::AgentEvent::ToolUse {
+            agent_id,
+            tool_use_id,
+            tool_name,
+            input,
+        } => {
+            assert_eq!(agent_id, "a3");
+            assert_eq!(tool_use_id, "tu1");
+            assert_eq!(tool_name, "Bash");
+            assert_eq!(input, json!({"command": "ls"}));
+        }
+        other => panic!("expected ToolUse, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_sdk_to_agent_event_assistant_text_only_returns_none() {
+    let msg = make_assistant_msg(vec![crate::types::message::ContentBlock::Text {
+        text: "just text".into(),
+    }]);
+    assert!(sdk_to_agent_event(&msg, "a1").is_none());
+}
+
+#[test]
+fn test_sdk_to_agent_event_tool_result_text() {
+    let msg = make_user_replay(vec![crate::types::message::ContentBlock::ToolResult {
+        tool_use_id: "tu1".into(),
+        content: crate::types::message::ToolResultContent::Text("file contents".into()),
+        is_error: false,
+    }]);
+    let event = sdk_to_agent_event(&msg, "a4").unwrap();
+    match event {
+        crate::ipc::agent_events::AgentEvent::ToolResult {
+            agent_id,
+            tool_use_id,
+            output,
+            is_error,
+        } => {
+            assert_eq!(agent_id, "a4");
+            assert_eq!(tool_use_id, "tu1");
+            assert_eq!(output, "file contents");
+            assert!(!is_error);
+        }
+        other => panic!("expected ToolResult, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_sdk_to_agent_event_tool_result_error() {
+    let msg = make_user_replay(vec![crate::types::message::ContentBlock::ToolResult {
+        tool_use_id: "tu2".into(),
+        content: crate::types::message::ToolResultContent::Text("command failed".into()),
+        is_error: true,
+    }]);
+    let event = sdk_to_agent_event(&msg, "a5").unwrap();
+    match event {
+        crate::ipc::agent_events::AgentEvent::ToolResult { is_error, .. } => {
+            assert!(is_error);
+        }
+        other => panic!("expected ToolResult, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_sdk_to_agent_event_tool_result_blocks_shows_placeholder() {
+    let msg = make_user_replay(vec![crate::types::message::ContentBlock::ToolResult {
+        tool_use_id: "tu3".into(),
+        content: crate::types::message::ToolResultContent::Blocks(vec![
+            crate::types::message::ContentBlock::Text {
+                text: "inner".into(),
+            },
+        ]),
+        is_error: false,
+    }]);
+    let event = sdk_to_agent_event(&msg, "a6").unwrap();
+    match event {
+        crate::ipc::agent_events::AgentEvent::ToolResult { output, .. } => {
+            assert_eq!(output, "[complex output]");
+        }
+        other => panic!("expected ToolResult, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_sdk_to_agent_event_user_replay_no_blocks_returns_none() {
+    let msg =
+        crate::engine::sdk_types::SdkMessage::UserReplay(crate::engine::sdk_types::SdkUserReplay {
+            content: "hello".into(),
+            session_id: "s1".into(),
+            uuid: Uuid::nil(),
+            timestamp: 0,
+            is_replay: false,
+            is_synthetic: false,
+            content_blocks: None,
+        });
+    assert!(sdk_to_agent_event(&msg, "a1").is_none());
+}
+
+#[test]
+fn test_sdk_to_agent_event_system_init_returns_none() {
+    let msg = crate::engine::sdk_types::SdkMessage::SystemInit(
+        crate::engine::sdk_types::SystemInitMessage {
+            tools: vec![],
+            model: "test".into(),
+            permission_mode: "default".into(),
+            session_id: "s1".into(),
+            uuid: Uuid::nil(),
+        },
+    );
+    assert!(sdk_to_agent_event(&msg, "a1").is_none());
+}
+
+#[test]
+fn test_sdk_to_agent_event_stream_message_start_returns_none() {
+    let msg = crate::engine::sdk_types::SdkMessage::StreamEvent(
+        crate::engine::sdk_types::SdkStreamEvent {
+            event: crate::types::message::StreamEvent::MessageStart {
+                usage: crate::types::message::Usage {
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+            },
+            session_id: "s1".into(),
+            uuid: Uuid::nil(),
+        },
+    );
+    assert!(sdk_to_agent_event(&msg, "a1").is_none());
+}
+
+#[test]
+fn test_sdk_to_agent_event_tool_use_picks_first() {
+    // When assistant message has multiple tool uses, sdk_to_agent_event returns the first
+    let msg = make_assistant_msg(vec![
+        crate::types::message::ContentBlock::ToolUse {
+            id: "tu-first".into(),
+            name: "Read".into(),
+            input: json!({"path": "/a"}),
+        },
+        crate::types::message::ContentBlock::ToolUse {
+            id: "tu-second".into(),
+            name: "Write".into(),
+            input: json!({"path": "/b"}),
+        },
+    ]);
+    let event = sdk_to_agent_event(&msg, "a7").unwrap();
+    match event {
+        crate::ipc::agent_events::AgentEvent::ToolUse { tool_use_id, .. } => {
+            assert_eq!(tool_use_id, "tu-first");
+        }
+        other => panic!("expected ToolUse, got {:?}", other),
+    }
 }

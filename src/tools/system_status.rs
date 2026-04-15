@@ -145,7 +145,10 @@ fn format_status_output(subsystem: &str) -> String {
             section.push_str("No skills loaded.\n");
         } else {
             for s in &skills {
-                section.push_str(&format!("- {} [{}] — {}\n", s.name, s.source, s.description));
+                section.push_str(&format!(
+                    "- {} [{}] — {}\n",
+                    s.name, s.source, s.description
+                ));
             }
         }
         parts.push(section);
@@ -168,7 +171,11 @@ fn format_status_output(subsystem: &str) -> String {
                     "- {}: {} [{}{}] — \"{}\" (depth {})\n",
                     a.agent_id,
                     a.state,
-                    if a.is_background { "background" } else { "sync" },
+                    if a.is_background {
+                        "background"
+                    } else {
+                        "sync"
+                    },
                     a.agent_type
                         .as_ref()
                         .map(|t| format!(", {}", t))

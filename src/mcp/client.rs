@@ -305,10 +305,14 @@ impl McpClient {
         super::emit_event(crate::ipc::subsystem_events::SubsystemEvent::Mcp(
             crate::ipc::subsystem_events::McpEvent::ToolsDiscovered {
                 server_name: self.config.name.clone(),
-                tools: self.tools.iter().map(|t| crate::ipc::subsystem_types::McpToolInfo {
-                    name: t.name.clone(),
-                    description: Some(t.description.clone()),
-                }).collect(),
+                tools: self
+                    .tools
+                    .iter()
+                    .map(|t| crate::ipc::subsystem_types::McpToolInfo {
+                        name: t.name.clone(),
+                        description: Some(t.description.clone()),
+                    })
+                    .collect(),
             },
         ));
 
@@ -384,11 +388,15 @@ impl McpClient {
         super::emit_event(crate::ipc::subsystem_events::SubsystemEvent::Mcp(
             crate::ipc::subsystem_events::McpEvent::ResourcesDiscovered {
                 server_name: self.config.name.clone(),
-                resources: self.resources.iter().map(|r| crate::ipc::subsystem_types::McpResourceInfo {
-                    uri: r.uri.clone(),
-                    name: Some(r.name.clone()),
-                    mime_type: r.mime_type.clone(),
-                }).collect(),
+                resources: self
+                    .resources
+                    .iter()
+                    .map(|r| crate::ipc::subsystem_types::McpResourceInfo {
+                        uri: r.uri.clone(),
+                        name: Some(r.name.clone()),
+                        mime_type: r.mime_type.clone(),
+                    })
+                    .collect(),
             },
         ));
 

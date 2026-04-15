@@ -41,7 +41,9 @@ impl AgentTool {
             current_depth,
         );
 
-        // Register sync agent in tree
+        let agent_tx = ctx.bg_agent_tx.as_ref();
+
+        // Register sync agent in tree and emit Spawned event
         {
             let chain_id = ctx
                 .query_tracking
@@ -52,12 +54,12 @@ impl AgentTool {
                 agent_id: agent_id.to_string(),
                 parent_agent_id: ctx.agent_id.clone(),
                 description: description.to_string(),
-                agent_type: None,
+                agent_type: params.subagent_type.clone(),
                 model: Some(agent_model.to_string()),
                 state: "running".into(),
                 is_background: false,
                 depth: current_depth + 1,
-                chain_id,
+                chain_id: chain_id.clone(),
                 spawned_at: chrono::Utc::now().timestamp(),
                 completed_at: None,
                 duration_ms: None,
@@ -66,16 +68,37 @@ impl AgentTool {
                 children: vec![],
             };
             crate::ipc::agent_tree::AGENT_TREE.lock().register(node);
+
+            if let Some(tx) = agent_tx {
+                let _ = tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
+                    crate::ipc::agent_events::AgentEvent::Spawned {
+                        agent_id: agent_id.to_string(),
+                        parent_agent_id: ctx.agent_id.clone(),
+                        description: description.to_string(),
+                        agent_type: params.subagent_type.clone(),
+                        model: Some(agent_model.to_string()),
+                        is_background: false,
+                        depth: current_depth + 1,
+                        chain_id,
+                    },
+                ));
+
+                let roots = crate::ipc::agent_tree::AGENT_TREE.lock().build_snapshot();
+                let _ = tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
+                    crate::ipc::agent_events::AgentEvent::TreeSnapshot { roots },
+                ));
+            }
         }
 
         let child_engine = QueryEngine::new(child_config);
         let stream =
             child_engine.submit_message(&params.prompt, QuerySource::Agent(agent_id.to_string()));
 
-        let (result_text, had_error) = collect_stream_result(stream).await;
+        let ipc = agent_tx.map(|tx| (tx, agent_id));
+        let (result_text, had_error) = collect_stream_result(stream, ipc).await;
         let duration_ms = started.elapsed().as_millis() as u64;
 
-        // Update tree state
+        // Update tree state and emit Completed + TreeSnapshot
         {
             let preview = if result_text.len() > 200 {
                 let end = result_text.floor_char_boundary(200);
@@ -86,10 +109,27 @@ impl AgentTool {
             crate::ipc::agent_tree::AGENT_TREE.lock().update_state(
                 agent_id,
                 if had_error { "error" } else { "completed" },
-                Some(preview),
+                Some(preview.clone()),
                 Some(duration_ms),
                 had_error,
             );
+
+            if let Some(tx) = agent_tx {
+                let _ = tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
+                    crate::ipc::agent_events::AgentEvent::Completed {
+                        agent_id: agent_id.to_string(),
+                        result_preview: preview,
+                        had_error,
+                        duration_ms,
+                        output_tokens: None,
+                    },
+                ));
+
+                let roots = crate::ipc::agent_tree::AGENT_TREE.lock().build_snapshot();
+                let _ = tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
+                    crate::ipc::agent_events::AgentEvent::TreeSnapshot { roots },
+                ));
+            }
         }
 
         debug!(

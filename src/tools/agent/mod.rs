@@ -273,10 +273,15 @@ fn build_child_config(
 // Helper: consume a child engine stream and collect text result
 // ---------------------------------------------------------------------------
 
+/// Consume a child engine stream, collecting text output.
+///
+/// When `ipc` is provided (sender + agent_id), intermediate streaming events
+/// are forwarded through the agent IPC channel via [`sdk_to_agent_event`].
 async fn collect_stream_result(
     stream: std::pin::Pin<
         Box<dyn futures::Stream<Item = crate::engine::sdk_types::SdkMessage> + Send>,
     >,
+    ipc: Option<(&crate::ipc::agent_channel::AgentSender, &str)>,
 ) -> (String, bool) {
     use crate::engine::sdk_types::SdkMessage;
     use futures::StreamExt;
@@ -308,6 +313,13 @@ async fn collect_stream_result(
                 }
             }
             _ => {}
+        }
+
+        // Forward intermediate events to IPC when a sender is available
+        if let Some((tx, agent_id)) = ipc {
+            if let Some(agent_event) = sdk_to_agent_event(&msg, agent_id) {
+                let _ = tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(agent_event));
+            }
         }
     }
 

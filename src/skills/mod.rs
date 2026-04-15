@@ -163,8 +163,9 @@ impl SkillDefinition {
 // ---------------------------------------------------------------------------
 
 /// Event sender for subsystem events.
-static EVENT_TX: LazyLock<Mutex<Option<tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>>>> =
-    LazyLock::new(|| Mutex::new(None));
+static EVENT_TX: LazyLock<
+    Mutex<Option<tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>>>,
+> = LazyLock::new(|| Mutex::new(None));
 
 /// Inject the event sender from the headless event loop.
 #[allow(dead_code)] // Called by headless event loop wiring (Task 12).

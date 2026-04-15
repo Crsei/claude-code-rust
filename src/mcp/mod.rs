@@ -41,12 +41,13 @@ pub const TOOL_CALL_TIMEOUT_SECS: u64 = 300;
 // Subsystem event emission
 // ---------------------------------------------------------------------------
 
-use std::sync::LazyLock;
 use parking_lot::Mutex as SyncMutex;
+use std::sync::LazyLock;
 
 /// Event sender for subsystem events.
-static EVENT_TX: LazyLock<SyncMutex<Option<tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>>>> =
-    LazyLock::new(|| SyncMutex::new(None));
+static EVENT_TX: LazyLock<
+    SyncMutex<Option<tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>>>,
+> = LazyLock::new(|| SyncMutex::new(None));
 
 /// Inject the event sender from the headless event loop.
 #[allow(dead_code)] // Called by headless event loop wiring (Task 12).

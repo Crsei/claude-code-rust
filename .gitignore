@@ -52,3 +52,5 @@ ui/ink-terminal/dist/
 ui/ink-terminal/bun.lockb
 ui/ink-terminal/bun.lock
 ui/ink-terminal/package-lock.json
+
+ink-ui/

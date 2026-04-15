@@ -320,9 +320,8 @@ impl Tool for AgentTool {
 
                     // Forward stream event to IPC
                     if let Some(agent_event) = super::sdk_to_agent_event(&msg, &spawn_agent_id) {
-                        let _ = bg_tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
-                            agent_event,
-                        ));
+                        let _ = bg_tx
+                            .send(crate::ipc::agent_channel::AgentIpcEvent::Agent(agent_event));
                     }
                 }
 

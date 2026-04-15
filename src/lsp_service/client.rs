@@ -171,8 +171,7 @@ impl LspClient {
             let msg_id = match msg.get("id") {
                 Some(v) => v,
                 None => {
-                    let method_str =
-                        msg.get("method").and_then(|m| m.as_str()).unwrap_or("?");
+                    let method_str = msg.get("method").and_then(|m| m.as_str()).unwrap_or("?");
                     match method_str {
                         "textDocument/publishDiagnostics" => {
                             if let Some(params) = msg.get("params") {

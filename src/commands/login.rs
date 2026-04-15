@@ -112,9 +112,7 @@ fn codex_auth_status_text() -> Option<String> {
         let method = stored.oauth_method.as_deref().unwrap_or_default();
         if method.eq_ignore_ascii_case("openai_codex") {
             return if auth::token::is_token_expired(&stored) {
-                Some(
-                    "OpenAI Codex OAuth token is expired. Run /login 4 to refresh.".to_string(),
-                )
+                Some("OpenAI Codex OAuth token is expired. Run /login 4 to refresh.".to_string())
             } else {
                 Some("Authenticated: OpenAI Codex OAuth (stored credentials)".to_string())
             };
@@ -164,16 +162,12 @@ fn check_codex_cli() -> String {
 
     // Expired — try to refresh now
     match auth::resolve_codex_auth_token() {
-        Some(_) => {
-            "Codex CLI token was expired but has been refreshed successfully. \
+        Some(_) => "Codex CLI token was expired but has been refreshed successfully. \
              cc-rust will use it automatically."
-                .to_string()
-        }
-        None => {
-            "Codex CLI token is expired and refresh failed. \
+            .to_string(),
+        None => "Codex CLI token is expired and refresh failed. \
              Run /login 4 for a fresh OAuth login, or re-login in Codex CLI."
-                .to_string()
-        }
+            .to_string(),
     }
 }
 

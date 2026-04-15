@@ -292,6 +292,15 @@ fn load_skill_file(
     })
 }
 
+/// Load a single skill from an explicit markdown file path.
+///
+/// This is used by plugin integration where a manifest points to a specific
+/// `SKILL.md` file under the plugin cache directory.
+pub fn load_skill_from_file_path(file_path: &Path, source: SkillSource) -> Option<SkillDefinition> {
+    let skill_dir = file_path.parent()?;
+    load_skill_file(file_path, skill_dir, &source)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
