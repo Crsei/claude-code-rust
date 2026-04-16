@@ -106,7 +106,28 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
     // Step 4: Reset terminal state
     graceful_shutdown_sync();
 
-    // Step 5: Log final usage
+    // Step 5: Emit session.end audit event and sync
+    {
+        use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+        let ctx = engine.audit_context();
+        let usage = engine.usage();
+        ctx.emit(
+            EventKind::SessionEnd,
+            Stage::Session,
+            AuditLevel::Info,
+            Outcome::Completed,
+            None,
+            Some(serde_json::json!({
+                "api_calls": usage.api_call_count,
+                "input_tokens": usage.total_input_tokens,
+                "output_tokens": usage.total_output_tokens,
+                "cost_usd": usage.total_cost_usd,
+            })),
+        );
+        ctx.sync();
+    }
+
+    // Step 6: Log final usage
     let usage = engine.usage();
     if usage.api_call_count > 0 {
         info!(

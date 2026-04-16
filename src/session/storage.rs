@@ -286,6 +286,7 @@ fn messages_to_serializable(messages: &[Message]) -> Vec<SerializableMessage> {
                         "content": a.content,
                         "stop_reason": a.stop_reason,
                         "cost_usd": a.cost_usd,
+                        "usage": a.usage,
                     }),
                 ),
                 Message::System(s) => (
@@ -374,7 +375,8 @@ fn serializable_to_messages(msgs: &[SerializableMessage]) -> Vec<Message> {
                     content: sm.data.get("content")
                         .and_then(|v| serde_json::from_value::<Vec<crate::types::message::ContentBlock>>(v.clone()).ok())
                         .unwrap_or_default(),
-                    usage: None,
+                    usage: sm.data.get("usage")
+                        .and_then(|v| serde_json::from_value::<crate::types::message::Usage>(v.clone()).ok()),
                     stop_reason: sm
                         .data
                         .get("stop_reason")

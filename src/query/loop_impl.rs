@@ -74,6 +74,23 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             let turn_count = state.turn_count;
             debug!(turn = turn_count, "query loop iteration start");
 
+            // Emit query.turn.start audit event
+            let turn_audit_ctx = deps.audit_context().with_turn();
+            {
+                use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                turn_audit_ctx.emit(
+                    EventKind::QueryTurnStart,
+                    Stage::QueryTurn,
+                    AuditLevel::Info,
+                    Outcome::Started,
+                    None,
+                    Some(serde_json::json!({
+                        "turn": turn_count,
+                        "messages_count": state.messages.len(),
+                    })),
+                );
+            }
+
             if deps.is_aborted() {
                 info!("aborted before API call");
                 yield QueryYield::Message(Message::Assistant(make_abort_message(
@@ -199,6 +216,21 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 effort_value: deps.get_app_state().effort_value.clone(),
             };
 
+            // Emit model.request.start audit event
+            let req_audit_ctx = turn_audit_ctx.with_request();
+            {
+                use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                req_audit_ctx.emit(
+                    EventKind::ModelRequestStart,
+                    Stage::ModelCall,
+                    AuditLevel::Info,
+                    Outcome::Started,
+                    None,
+                    None,
+                );
+            }
+            let model_call_start = std::time::Instant::now();
+
             let stream_result = deps.call_model_streaming(call_params).await;
             let mut event_stream = match stream_result {
                 Ok(s) => s,
@@ -252,16 +284,46 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 }
             }
 
-            if let Some(err) = stream_error {
+            if let Some(ref err) = stream_error {
                 warn!(error = %err, "stream error during model call");
+                {
+                    use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                    req_audit_ctx.emit(
+                        EventKind::ModelRequestError,
+                        Stage::ModelCall,
+                        AuditLevel::Error,
+                        Outcome::Failed,
+                        Some(model_call_start.elapsed().as_millis() as u64),
+                        Some(serde_json::json!({"error": err})),
+                    );
+                }
                 yield QueryYield::Message(Message::Assistant(
-                    make_error_message(&deps, &err),
+                    make_error_message(&deps, err),
                 ));
                 break;
             }
 
             let effective_model = deps.get_app_state().main_loop_model;
             let assistant_message = accumulator.build(&effective_model);
+
+            // Emit model.request.finish audit event
+            {
+                use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                let model_duration = model_call_start.elapsed().as_millis() as u64;
+                req_audit_ctx.emit(
+                    EventKind::ModelRequestFinish,
+                    Stage::ModelCall,
+                    AuditLevel::Info,
+                    Outcome::Completed,
+                    Some(model_duration),
+                    Some(serde_json::json!({
+                        "stop_reason": assistant_message.stop_reason,
+                        "tool_use_count": assistant_message.content.iter()
+                            .filter(|b| matches!(b, ContentBlock::ToolUse { .. }))
+                            .count(),
+                    })),
+                );
+            }
 
             // Accumulate usage
             if let Some(ref usage) = assistant_message.usage {

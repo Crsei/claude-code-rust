@@ -65,6 +65,23 @@ impl QueryEngine {
             let mut turn_count_this_submit: usize = 0;
             let mut collected_errors: Vec<String> = Vec::new();
 
+            // Emit submit.received audit event
+            {
+                use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                let ctx = state_ref.read().audit_ctx.with_submit();
+                ctx.emit(
+                    EventKind::SubmitReceived,
+                    Stage::Submit,
+                    AuditLevel::Info,
+                    Outcome::Started,
+                    None,
+                    Some(serde_json::json!({
+                        "prompt_len": prompt.len(),
+                        "source": format!("{:?}", query_source),
+                    })),
+                );
+            }
+
             // ================================================================
             // PHASE A-pre: Fire UserPromptSubmit hook
             // ================================================================
@@ -286,9 +303,11 @@ impl QueryEngine {
             // Create deps for the inner query loop
             let permission_callback = state_ref.read().permission_callback.clone();
             let bg_agent_tx = state_ref.read().bg_agent_tx.clone();
+            let submit_audit_ctx = state_ref.read().audit_ctx.with_submit();
             let deps = Arc::new(QueryEngineDeps {
                 aborted: aborted_ref.clone(),
                 state: state_ref.clone(),
+                audit_ctx: submit_audit_ctx,
                 api_client,
                 agent_context: config.agent_context.clone(),
                 permission_callback,
@@ -679,6 +698,26 @@ impl QueryEngine {
             crate::bootstrap::PROCESS_STATE
                 .read()
                 .api_duration.record(api_duration_ms);
+
+            // Emit submit.completed audit event
+            {
+                use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                let ctx = state_ref.read().audit_ctx.clone();
+                let outcome = if is_success { Outcome::Completed } else { Outcome::Failed };
+                ctx.emit(
+                    EventKind::SubmitCompleted,
+                    Stage::Submit,
+                    AuditLevel::Info,
+                    outcome,
+                    Some(started_at.elapsed().as_millis() as u64),
+                    Some(serde_json::json!({
+                        "num_turns": turn_count_this_submit,
+                        "cost_usd": usage_snap.total_cost_usd,
+                        "is_error": !is_success,
+                    })),
+                );
+                ctx.flush();
+            }
 
             yield SdkMessage::Result(SdkResult {
                 subtype,

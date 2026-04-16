@@ -52,6 +52,9 @@ mod services;
 // Phase I: Shutdown and cleanup
 mod shutdown;
 
+// Observability: runtime audit event logging
+mod observability;
+
 // IPC headless mode
 mod ipc;
 
@@ -583,6 +586,53 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             });
             let _ = crate::tools::hooks::run_event_hooks("SessionStart", &payload, &start_configs)
                 .await;
+        }
+    }
+
+    // ── B.8b: Initialize audit sink ───────────────────────────────────
+    {
+        use crate::observability::{
+            AuditConfig, AuditContext, AuditSink, EventKind, Outcome, SessionMeta, Stage,
+        };
+
+        let audit_config = AuditConfig::from_env();
+        let source_mode = if cli.headless {
+            "headless"
+        } else if cli.daemon {
+            "daemon"
+        } else {
+            "tui"
+        };
+
+        let meta = SessionMeta {
+            session_id: engine.session_id.as_str().to_string(),
+            started_at: chrono::Utc::now(),
+            cwd: cwd.clone(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            platform: std::env::consts::OS.to_string(),
+            source: source_mode.to_string(),
+        };
+
+        match AuditSink::init(engine.session_id.as_str(), &meta, audit_config) {
+            Ok(sink) => {
+                let ctx = AuditContext::new(
+                    engine.session_id.as_str(),
+                    source_mode,
+                    sink,
+                );
+                // Emit session.start
+                ctx.emit_simple(
+                    EventKind::SessionStart,
+                    Stage::Session,
+                    Outcome::Started,
+                );
+                engine.set_audit_context(ctx);
+                debug!("audit sink initialized for session {}", engine.session_id);
+            }
+            Err(e) => {
+                warn!(error = %e, "failed to initialize audit sink, continuing without audit logging");
+                // Engine keeps the noop context from construction
+            }
         }
     }
 

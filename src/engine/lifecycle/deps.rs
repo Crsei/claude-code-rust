@@ -30,6 +30,8 @@ use super::QueryEngineState;
 pub(crate) struct QueryEngineDeps {
     pub(crate) aborted: Arc<AtomicBool>,
     pub(crate) state: Arc<RwLock<QueryEngineState>>,
+    /// Audit context for this submit — carries correlation IDs.
+    pub(crate) audit_ctx: crate::observability::AuditContext,
     /// When `Some`, the deps will use this client for `call_model` /
     /// `call_model_streaming`. When `None`, those methods bail with a
     /// descriptive error.
@@ -433,10 +435,27 @@ impl QueryDeps for QueryEngineDeps {
             }
         } else {
             // Normal permission check via the rule engine
+            let perm_audit_ctx = self.audit_ctx.with_tool_use(&request.tool_use_id);
             let perm_result = tool.check_permissions(&effective_input, &ctx).await;
             match perm_result {
                 PermissionResult::Allow { .. } => { /* proceed */ }
                 PermissionResult::Deny { message } => {
+                    // Emit permission.resolved(denied) audit event
+                    {
+                        use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                        perm_audit_ctx.emit(
+                            EventKind::PermissionResolved,
+                            Stage::Permission,
+                            AuditLevel::Warn,
+                            Outcome::Denied,
+                            None,
+                            Some(serde_json::json!({
+                                "tool_name": request.tool_name,
+                                "decision": "deny",
+                                "reason": message,
+                            })),
+                        );
+                    }
                     // Fire PermissionDenied hook
                     let deny_configs = hooks::load_hook_configs(&hooks_map, "PermissionDenied");
                     if !deny_configs.is_empty() {
@@ -461,6 +480,22 @@ impl QueryDeps for QueryEngineDeps {
                     });
                 }
                 PermissionResult::Ask { message } => {
+                    // Emit permission.requested audit event
+                    {
+                        use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                        perm_audit_ctx.emit(
+                            EventKind::PermissionRequested,
+                            Stage::Permission,
+                            AuditLevel::Info,
+                            Outcome::Info,
+                            None,
+                            Some(serde_json::json!({
+                                "tool_name": request.tool_name,
+                                "message": message,
+                            })),
+                        );
+                    }
+
                     // Fire PermissionRequest hook before interactive prompt
                     let mut hook_allowed = false;
                     let perm_req_configs =
@@ -542,7 +577,21 @@ impl QueryDeps for QueryEngineDeps {
                             .await;
 
                             match decision.to_lowercase().as_str() {
-                                "allow" => { /* one-time allow, proceed */ }
+                                "allow" => {
+                                    // Emit permission.resolved(allow) audit event
+                                    use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                                    perm_audit_ctx.emit(
+                                        EventKind::PermissionResolved,
+                                        Stage::Permission,
+                                        AuditLevel::Info,
+                                        Outcome::Completed,
+                                        None,
+                                        Some(serde_json::json!({
+                                            "tool_name": request.tool_name,
+                                            "decision": "allow",
+                                        })),
+                                    );
+                                }
                                 "always_allow" => {
                                     // Record a session-level grant so subsequent
                                     // calls to this tool don't re-prompt.
@@ -557,6 +606,23 @@ impl QueryDeps for QueryEngineDeps {
                                     );
                                 }
                                 _ => {
+                                    // Emit permission.resolved(denied) audit event
+                                    {
+                                        use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                                        perm_audit_ctx.emit(
+                                            EventKind::PermissionResolved,
+                                            Stage::Permission,
+                                            AuditLevel::Warn,
+                                            Outcome::Denied,
+                                            None,
+                                            Some(serde_json::json!({
+                                                "tool_name": request.tool_name,
+                                                "decision": "deny",
+                                                "source": "user",
+                                            })),
+                                        );
+                                    }
+
                                     // Fire PermissionDenied hook (user chose deny)
                                     let deny_configs =
                                         hooks::load_hook_configs(&hooks_map, "PermissionDenied");
@@ -624,11 +690,44 @@ impl QueryDeps for QueryEngineDeps {
         }
 
         // ── Tool execution with post-hooks ─────────────────────────
+
+        // Emit tool.start audit event
+        let tool_audit_ctx = self.audit_ctx.with_tool_use(&request.tool_use_id);
+        {
+            use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+            tool_audit_ctx.emit(
+                EventKind::ToolStart,
+                Stage::ToolExecution,
+                AuditLevel::Info,
+                Outcome::Started,
+                None,
+                Some(serde_json::json!({
+                    "tool_name": request.tool_name,
+                })),
+            );
+        }
+        let tool_start = std::time::Instant::now();
+
         match tool
             .call(effective_input.clone(), &ctx, parent_message, None)
             .await
         {
             Ok(result) => {
+                // Emit tool.finish audit event
+                {
+                    use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                    tool_audit_ctx.emit(
+                        EventKind::ToolFinish,
+                        Stage::ToolExecution,
+                        AuditLevel::Info,
+                        Outcome::Completed,
+                        Some(tool_start.elapsed().as_millis() as u64),
+                        Some(serde_json::json!({
+                            "tool_name": request.tool_name,
+                        })),
+                    );
+                }
+
                 // Run post-tool hooks on success
                 if !post_configs.is_empty() {
                     if let Ok(PostToolHookResult::StopContinuation { message }) =
@@ -655,6 +754,22 @@ impl QueryDeps for QueryEngineDeps {
                 })
             }
             Err(e) => {
+                // Emit tool.error audit event
+                {
+                    use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                    tool_audit_ctx.emit(
+                        EventKind::ToolError,
+                        Stage::ToolExecution,
+                        AuditLevel::Error,
+                        Outcome::Failed,
+                        Some(tool_start.elapsed().as_millis() as u64),
+                        Some(serde_json::json!({
+                            "tool_name": request.tool_name,
+                            "error": e.to_string(),
+                        })),
+                    );
+                }
+
                 // Run post-failure hooks on error
                 if !failure_configs.is_empty() {
                     let _ = hooks::run_post_tool_failure_hooks(
@@ -704,5 +819,9 @@ impl QueryDeps for QueryEngineDeps {
         &self,
     ) -> Vec<crate::tools::background_agents::CompletedBackgroundAgent> {
         self.pending_bg_results.drain_all()
+    }
+
+    fn audit_context(&self) -> crate::observability::AuditContext {
+        self.audit_ctx.clone()
     }
 }

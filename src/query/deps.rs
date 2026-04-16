@@ -144,4 +144,9 @@ pub trait QueryDeps: Send + Sync {
     ) -> Vec<crate::tools::background_agents::CompletedBackgroundAgent> {
         vec![]
     }
+
+    /// Get the audit context for this submit.
+    fn audit_context(&self) -> crate::observability::AuditContext {
+        crate::observability::AuditContext::noop("unknown")
+    }
 }

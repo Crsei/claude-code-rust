@@ -33,6 +33,7 @@ use std::sync::Arc;
 use tracing::info;
 
 use crate::bootstrap::SessionId;
+use crate::observability::AuditContext;
 use crate::services::session_memory::{SessionMemoryConfig, SessionMemoryService};
 use crate::types::app_state::AppState;
 use crate::types::config::QueryEngineConfig;
@@ -80,6 +81,8 @@ pub(crate) struct QueryEngineState {
     pub(crate) sleep_until: Option<std::time::Instant>,
     /// Session memory service for extracting and persisting conversation insights.
     pub(crate) session_memory: SessionMemoryService,
+    /// Runtime audit context for emitting structured events.
+    pub(crate) audit_ctx: AuditContext,
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +151,7 @@ impl QueryEngine {
                 bg_agent_tx: None,
                 sleep_until: None,
                 session_memory,
+                audit_ctx: AuditContext::noop("pending"),
             })),
             aborted: Arc::new(AtomicBool::new(false)),
             has_handled_orphaned_permission: Arc::new(AtomicBool::new(false)),
@@ -287,6 +291,16 @@ impl QueryEngine {
     #[allow(dead_code)]
     pub fn set_tools(&self, tools: Tools) {
         self.state.write().tools = tools;
+    }
+
+    /// Set the audit context (called after AuditSink is initialized).
+    pub fn set_audit_context(&self, ctx: AuditContext) {
+        self.state.write().audit_ctx = ctx;
+    }
+
+    /// Get a clone of the current audit context.
+    pub fn audit_context(&self) -> AuditContext {
+        self.state.read().audit_ctx.clone()
     }
 
     /// Get discovered skill names from the current turn.
