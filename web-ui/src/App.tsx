@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { Sidebar } from '@/components/sidebar/Sidebar'
+import { DebugPanel } from '@/components/debug/DebugPanel'
 import { useChatStore } from '@/lib/store'
 import { fetchAppState } from '@/lib/api'
 import { Cpu, Shield, Bug, Settings, PanelRightOpen } from 'lucide-react'
@@ -9,7 +10,6 @@ export default function App() {
   const appState = useChatStore((s) => s.appState)
   const debugPanelOpen = useChatStore((s) => s.debugPanelOpen)
   const toggleDebug = useChatStore((s) => s.toggleDebugPanel)
-  const rawEvents = useChatStore((s) => s.rawEvents)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Fetch app state on mount
@@ -18,6 +18,19 @@ export default function App() {
       .then((state) => useChatStore.getState().setAppState(state))
       .catch(console.error)
   }, [])
+
+  // Ctrl+Shift+D keyboard shortcut for debug panel
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+      e.preventDefault()
+      toggleDebug()
+    }
+  }, [toggleDebug])
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [handleKeyDown])
 
   return (
     <div className="flex h-screen w-screen overflow-hidden">
@@ -51,7 +64,7 @@ export default function App() {
               className={`flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors ${
                 debugPanelOpen ? 'bg-primary/20 text-primary' : 'hover:text-foreground'
               }`}
-              title="Toggle debug panel"
+              title="Toggle debug panel (Ctrl+Shift+D)"
             >
               <Bug className="h-3 w-3" />
             </button>
@@ -79,50 +92,13 @@ export default function App() {
             <ChatPanel />
           </div>
 
-          {/* Debug panel */}
-          {debugPanelOpen && (
-            <aside className="w-80 border-l border-border flex flex-col overflow-hidden bg-muted/30 shrink-0">
-              <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                <span className="text-xs font-medium text-foreground">Raw Events</span>
-                <span className="text-[10px] text-muted-foreground">{rawEvents.length}</span>
-              </div>
-              <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                {rawEvents.length === 0 && (
-                  <div className="text-xs text-muted-foreground italic py-4 text-center">
-                    No events yet
-                  </div>
-                )}
-                {rawEvents.map((evt, i) => (
-                  <div key={i} className="rounded border border-border/40 bg-card px-2 py-1.5 text-[10px] font-mono">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="font-medium text-primary">{evt.event}</span>
-                      <span className="text-muted-foreground">
-                        {new Date(evt.timestamp).toLocaleTimeString()}
-                      </span>
-                    </div>
-                    <pre className="text-foreground/60 max-h-20 overflow-y-auto whitespace-pre-wrap break-all">
-                      {tryTruncateJson(evt.data)}
-                    </pre>
-                  </div>
-                ))}
-              </div>
-            </aside>
-          )}
+          {/* Debug panel (tabbed) */}
+          {debugPanelOpen && <DebugPanel />}
         </div>
       </main>
 
-      {/* Settings sidebar (right side, outside main) */}
+      {/* Settings sidebar */}
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
     </div>
   )
-}
-
-function tryTruncateJson(s: string): string {
-  if (s.length <= 200) return s
-  try {
-    const obj = JSON.parse(s)
-    return JSON.stringify(obj, null, 1).slice(0, 300) + '\n...'
-  } catch {
-    return s.slice(0, 200) + '...'
-  }
 }

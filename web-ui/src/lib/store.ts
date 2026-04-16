@@ -16,6 +16,10 @@ interface ChatStore {
   // Debug
   rawEvents: Array<{ timestamp: number; event: string; data: string }>
   debugPanelOpen: boolean
+  debugTab: 'events' | 'messages' | 'timeline'
+
+  // Phase 4: Result tracking
+  lastResult: ResultEvent | null
 
   // Actions
   addUserMessage: (content: string) => void
@@ -26,6 +30,7 @@ interface ChatStore {
   setAppState: (state: AppState) => void
   addRawEvent: (event: string, data: string) => void
   toggleDebugPanel: () => void
+  setDebugTab: (tab: 'events' | 'messages' | 'timeline') => void
   clearMessages: () => void
 
   // Phase 2: Multi-block streaming actions
@@ -44,6 +49,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   appState: null,
   rawEvents: [],
   debugPanelOpen: false,
+  debugTab: 'events' as const,
+  lastResult: null,
 
   addUserMessage: (content: string) => {
     const msg: ChatMessage = {
@@ -71,7 +78,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }))
   },
 
-  finishStreaming: (_result?: ResultEvent) => {
+  finishStreaming: (result?: ResultEvent) => {
+    if (result) {
+      set({ lastResult: result })
+    }
     const { streamingContent, streamingBlocks, messages } = get()
     // If there's accumulated streaming content not yet committed as a message
     if ((streamingContent || streamingBlocks.length > 0) && !messages.some(m => m.isStreaming)) {
@@ -133,6 +143,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   toggleDebugPanel: () => {
     set((state) => ({ debugPanelOpen: !state.debugPanelOpen }))
+  },
+
+  setDebugTab: (tab: 'events' | 'messages' | 'timeline') => {
+    set({ debugTab: tab })
   },
 
   clearMessages: () => {

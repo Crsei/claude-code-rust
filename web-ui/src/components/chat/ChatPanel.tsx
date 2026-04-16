@@ -3,12 +3,14 @@ import { MessageList } from './MessageList'
 import { InputBar } from './InputBar'
 import { StreamingText } from './StreamingText'
 import { StreamingBlocks } from './StreamingBlocks'
+import { ResultBanner } from './ResultBanner'
 import { useChat } from '@/hooks/useChat'
 import { useChatStore } from '@/lib/store'
 
 export function ChatPanel() {
   const { messages, isStreaming, streamingContent, sendMessage, abort } = useChat()
   const streamingBlocks = useChatStore((s) => s.streamingBlocks)
+  const lastResult = useChatStore((s) => s.lastResult)
   const scrollRef = useRef<HTMLDivElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
@@ -39,6 +41,10 @@ export function ChatPanel() {
           )}
           {hasPlainStreaming && (
             <StreamingText content={streamingContent} />
+          )}
+          {/* Result banner — shown after stream completes */}
+          {lastResult && !isStreaming && messages.length > 0 && (
+            <ResultBanner result={lastResult} />
           )}
           {/* Scroll anchor */}
           <div ref={scrollRef} />
