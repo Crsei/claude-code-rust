@@ -1,69 +1,66 @@
 //! Subsystem command handlers and status snapshot builders.
 //!
 //! **Command handlers** respond to `FrontendMessage` commands for each subsystem
-//! (LSP, MCP, Plugin, Skill).  For lifecycle operations that require deeper
-//! integration (MCP connect/disconnect, plugin enable/disable), the handler
-//! replies with a `SystemInfo` message advising the user to use the
-//! corresponding slash command.
+//! (LSP, MCP, Plugin, Skill).  Each handler returns a `Vec<BackendMessage>`
+//! that the caller sends via the [`FrontendSink`].  Handlers never write to
+//! stdout directly.
 //!
 //! **Status snapshot builders** assemble point-in-time status objects from
 //! each subsystem's in-memory state.  These are used by `QueryStatus` commands
 //! and the `SystemStatus` tool.
 
-#![allow(dead_code)] // Handlers/builders are pre-defined for upcoming IPC wiring tasks
-
-use super::protocol::{send_to_frontend, BackendMessage};
+use super::protocol::BackendMessage;
 use super::subsystem_events::{LspEvent, McpEvent, PluginEvent, SkillEvent};
 use super::subsystem_types::*;
 
 // ===========================================================================
-// Command handlers
+// Command handlers (return value pattern — no direct I/O)
 // ===========================================================================
 
 /// Handle an LSP subsystem command from the frontend.
 ///
 /// Lifecycle operations (start/stop/restart) are deferred to the `/lsp` slash
 /// command because `LSP_CLIENTS` is a private static.  `QueryStatus` builds a
-/// server list from the default configurations and sends it back.
-pub async fn handle_lsp_command(cmd: super::subsystem_events::LspCommand) {
+/// server list from the default configurations and returns it.
+pub fn handle_lsp_command(cmd: super::subsystem_events::LspCommand) -> Vec<BackendMessage> {
     use super::subsystem_events::LspCommand;
 
     match cmd {
         LspCommand::StartServer { language_id } => {
             tracing::info!(language_id = %language_id, "LSP start requested via IPC");
-            let _ = send_to_frontend(&BackendMessage::SystemInfo {
+            vec![BackendMessage::SystemInfo {
                 text: format!(
                     "Use /lsp to manage LSP servers. To start the {} server, run: /lsp start {}",
                     language_id, language_id
                 ),
                 level: "info".to_string(),
-            });
+            }]
         }
         LspCommand::StopServer { language_id } => {
             tracing::info!(language_id = %language_id, "LSP stop requested via IPC");
-            let _ = send_to_frontend(&BackendMessage::SystemInfo {
+            vec![BackendMessage::SystemInfo {
                 text: format!(
                     "Use /lsp to manage LSP servers. To stop the {} server, run: /lsp stop {}",
                     language_id, language_id
                 ),
                 level: "info".to_string(),
-            });
+            }]
         }
         LspCommand::RestartServer { language_id } => {
             tracing::info!(language_id = %language_id, "LSP restart requested via IPC");
-            let _ = send_to_frontend(&BackendMessage::SystemInfo {
+            vec![BackendMessage::SystemInfo {
                 text: format!(
                     "Use /lsp to manage LSP servers. To restart the {} server, run: /lsp restart {}",
                     language_id, language_id
                 ),
                 level: "info".to_string(),
-            });
+            }]
         }
         LspCommand::QueryStatus => {
             let servers = build_lsp_server_info_list();
-            let _ = send_to_frontend(&BackendMessage::LspEvent {
+            vec![BackendMessage::LspEvent {
                 event: LspEvent::ServerList { servers },
-            });
+            }]
         }
     }
 }
@@ -72,45 +69,45 @@ pub async fn handle_lsp_command(cmd: super::subsystem_events::LspCommand) {
 ///
 /// Lifecycle operations are deferred to the `/mcp` slash command.
 /// `QueryStatus` builds a server list from discovered configurations.
-pub async fn handle_mcp_command(cmd: super::subsystem_events::McpCommand) {
+pub fn handle_mcp_command(cmd: super::subsystem_events::McpCommand) -> Vec<BackendMessage> {
     use super::subsystem_events::McpCommand;
 
     match cmd {
         McpCommand::ConnectServer { server_name } => {
             tracing::info!(server_name = %server_name, "MCP connect requested via IPC");
-            let _ = send_to_frontend(&BackendMessage::SystemInfo {
+            vec![BackendMessage::SystemInfo {
                 text: format!(
                     "Use /mcp to manage MCP servers. To connect {}, run: /mcp connect {}",
                     server_name, server_name
                 ),
                 level: "info".to_string(),
-            });
+            }]
         }
         McpCommand::DisconnectServer { server_name } => {
             tracing::info!(server_name = %server_name, "MCP disconnect requested via IPC");
-            let _ = send_to_frontend(&BackendMessage::SystemInfo {
+            vec![BackendMessage::SystemInfo {
                 text: format!(
                     "Use /mcp to manage MCP servers. To disconnect {}, run: /mcp disconnect {}",
                     server_name, server_name
                 ),
                 level: "info".to_string(),
-            });
+            }]
         }
         McpCommand::ReconnectServer { server_name } => {
             tracing::info!(server_name = %server_name, "MCP reconnect requested via IPC");
-            let _ = send_to_frontend(&BackendMessage::SystemInfo {
+            vec![BackendMessage::SystemInfo {
                 text: format!(
                     "Use /mcp to manage MCP servers. To reconnect {}, run: /mcp reconnect {}",
                     server_name, server_name
                 ),
                 level: "info".to_string(),
-            });
+            }]
         }
         McpCommand::QueryStatus => {
             let servers = build_mcp_server_info_list();
-            let _ = send_to_frontend(&BackendMessage::McpEvent {
+            vec![BackendMessage::McpEvent {
                 event: McpEvent::ServerList { servers },
-            });
+            }]
         }
     }
 }
@@ -119,35 +116,35 @@ pub async fn handle_mcp_command(cmd: super::subsystem_events::McpCommand) {
 ///
 /// Enable/disable are deferred to the `/plugin` slash command.
 /// `QueryStatus` returns the full plugin list.
-pub async fn handle_plugin_command(cmd: super::subsystem_events::PluginCommand) {
+pub fn handle_plugin_command(cmd: super::subsystem_events::PluginCommand) -> Vec<BackendMessage> {
     use super::subsystem_events::PluginCommand;
 
     match cmd {
         PluginCommand::Enable { plugin_id } => {
             tracing::info!(plugin_id = %plugin_id, "Plugin enable requested via IPC");
-            let _ = send_to_frontend(&BackendMessage::SystemInfo {
+            vec![BackendMessage::SystemInfo {
                 text: format!(
                     "Use /plugin to manage plugins. To enable {}, run: /plugin enable {}",
                     plugin_id, plugin_id
                 ),
                 level: "info".to_string(),
-            });
+            }]
         }
         PluginCommand::Disable { plugin_id } => {
             tracing::info!(plugin_id = %plugin_id, "Plugin disable requested via IPC");
-            let _ = send_to_frontend(&BackendMessage::SystemInfo {
+            vec![BackendMessage::SystemInfo {
                 text: format!(
                     "Use /plugin to manage plugins. To disable {}, run: /plugin disable {}",
                     plugin_id, plugin_id
                 ),
                 level: "info".to_string(),
-            });
+            }]
         }
         PluginCommand::QueryStatus => {
             let plugins = build_plugin_info_list();
-            let _ = send_to_frontend(&BackendMessage::PluginEvent {
+            vec![BackendMessage::PluginEvent {
                 event: PluginEvent::PluginList { plugins },
-            });
+            }]
         }
     }
 }
@@ -156,7 +153,7 @@ pub async fn handle_plugin_command(cmd: super::subsystem_events::PluginCommand) 
 ///
 /// `Reload` clears and re-initialises the skill registry.
 /// `QueryStatus` returns the full skill list.
-pub async fn handle_skill_command(cmd: super::subsystem_events::SkillCommand) {
+pub fn handle_skill_command(cmd: super::subsystem_events::SkillCommand) -> Vec<BackendMessage> {
     use super::subsystem_events::SkillCommand;
 
     match cmd {
@@ -166,15 +163,15 @@ pub async fn handle_skill_command(cmd: super::subsystem_events::SkillCommand) {
             crate::skills::init_skills(cwd.as_deref());
             let count = crate::skills::get_all_skills().len();
             tracing::info!(count, "Skills reloaded via IPC");
-            let _ = send_to_frontend(&BackendMessage::SkillEvent {
+            vec![BackendMessage::SkillEvent {
                 event: SkillEvent::SkillsLoaded { count },
-            });
+            }]
         }
         SkillCommand::QueryStatus => {
             let skills = build_skill_info_list();
-            let _ = send_to_frontend(&BackendMessage::SkillEvent {
+            vec![BackendMessage::SkillEvent {
                 event: SkillEvent::SkillList { skills },
-            });
+            }]
         }
     }
 }
@@ -184,10 +181,6 @@ pub async fn handle_skill_command(cmd: super::subsystem_events::SkillCommand) {
 // ===========================================================================
 
 /// Build a list of LSP server info from the default server configurations.
-///
-/// Because `LSP_CLIENTS` uses a tokio `Mutex` and this function is
-/// synchronous, all servers are reported as `"not_started"`.  Live state
-/// is delivered through `LspEvent::ServerStateChanged` events.
 pub fn build_lsp_server_info_list() -> Vec<LspServerInfo> {
     crate::lsp_service::default_server_configs()
         .into_iter()
@@ -202,9 +195,6 @@ pub fn build_lsp_server_info_list() -> Vec<LspServerInfo> {
 }
 
 /// Build a list of MCP server status info from discovered configurations.
-///
-/// Servers are discovered from settings files.  Without an active connection
-/// we report all as `"pending"`.
 pub fn build_mcp_server_info_list() -> Vec<McpServerStatusInfo> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let configs = crate::mcp::discovery::discover_mcp_servers(&cwd).unwrap_or_default();
@@ -298,7 +288,7 @@ mod tests {
     #[test]
     fn build_lsp_server_info_list_returns_configured_servers() {
         let infos = build_lsp_server_info_list();
-        assert!(infos.len() >= 6); // rust, typescript, python, go, c, java
+        assert!(infos.len() >= 6);
         let rust = infos.iter().find(|i| i.language_id == "rust");
         assert!(rust.is_some());
         assert_eq!(rust.unwrap().state, "not_started");
@@ -316,9 +306,6 @@ mod tests {
 
     #[test]
     fn build_mcp_server_info_list_defaults_to_pending() {
-        // With no settings files present, this should return an empty list or
-        // all-pending entries depending on the environment.  Either way, every
-        // entry must be in "pending" state.
         let infos = build_mcp_server_info_list();
         for info in &infos {
             assert_eq!(info.state, "pending");
@@ -450,5 +437,49 @@ mod tests {
         let snapshot = build_subsystem_status_snapshot();
         assert!(snapshot.timestamp > 0, "timestamp should be positive");
         assert!(snapshot.lsp.len() >= 6);
+    }
+
+    // ── Handler return-value tests ────────────────────────────────────
+
+    #[test]
+    fn handle_lsp_query_status_returns_server_list() {
+        use super::super::subsystem_events::LspCommand;
+        let msgs = handle_lsp_command(LspCommand::QueryStatus);
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(&msgs[0], BackendMessage::LspEvent { .. }));
+    }
+
+    #[test]
+    fn handle_lsp_start_returns_info() {
+        use super::super::subsystem_events::LspCommand;
+        let msgs = handle_lsp_command(LspCommand::StartServer {
+            language_id: "rust".into(),
+        });
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(&msgs[0], BackendMessage::SystemInfo { .. }));
+    }
+
+    #[test]
+    fn handle_mcp_query_status_returns_server_list() {
+        use super::super::subsystem_events::McpCommand;
+        let msgs = handle_mcp_command(McpCommand::QueryStatus);
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(&msgs[0], BackendMessage::McpEvent { .. }));
+    }
+
+    #[test]
+    fn handle_plugin_query_status_returns_plugin_list() {
+        use super::super::subsystem_events::PluginCommand;
+        let msgs = handle_plugin_command(PluginCommand::QueryStatus);
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(&msgs[0], BackendMessage::PluginEvent { .. }));
+    }
+
+    #[test]
+    fn handle_skill_query_status_returns_skill_list() {
+        use super::super::subsystem_events::SkillCommand;
+        let msgs = handle_skill_command(SkillCommand::QueryStatus);
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(&msgs[0], BackendMessage::SkillEvent { .. }));
     }
 }
