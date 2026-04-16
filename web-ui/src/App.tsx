@@ -1,14 +1,16 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { ChatPanel } from '@/components/chat/ChatPanel'
+import { Sidebar } from '@/components/sidebar/Sidebar'
 import { useChatStore } from '@/lib/store'
 import { fetchAppState } from '@/lib/api'
-import { Cpu, Shield, Bug } from 'lucide-react'
+import { Cpu, Shield, Bug, Settings, PanelRightOpen } from 'lucide-react'
 
 export default function App() {
   const appState = useChatStore((s) => s.appState)
   const debugPanelOpen = useChatStore((s) => s.debugPanelOpen)
   const toggleDebug = useChatStore((s) => s.toggleDebugPanel)
   const rawEvents = useChatStore((s) => s.rawEvents)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Fetch app state on mount
   useEffect(() => {
@@ -19,13 +21,14 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden">
-      {/* Main chat area */}
-      <main className="flex flex-1 flex-col">
+      {/* Main area */}
+      <main className="flex flex-1 flex-col overflow-hidden">
         {/* Header bar */}
-        <header className="flex h-12 items-center border-b border-border px-4 gap-3">
+        <header className="flex h-12 items-center border-b border-border px-4 gap-3 shrink-0">
           <h1 className="text-sm font-semibold text-foreground">cc-rust</h1>
           <span className="text-xs text-muted-foreground">Web UI</span>
-          <div className="ml-auto flex items-center gap-3 text-[11px] text-muted-foreground">
+
+          <div className="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground">
             {appState && (
               <>
                 <span className="flex items-center gap-1">
@@ -36,8 +39,13 @@ export default function App() {
                   <Shield className="h-3 w-3" />
                   {appState.permission_mode}
                 </span>
+                {appState.usage && appState.usage.total_cost_usd > 0 && (
+                  <span className="font-mono">${appState.usage.total_cost_usd.toFixed(4)}</span>
+                )}
               </>
             )}
+
+            {/* Debug toggle */}
             <button
               onClick={toggleDebug}
               className={`flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors ${
@@ -46,7 +54,21 @@ export default function App() {
               title="Toggle debug panel"
             >
               <Bug className="h-3 w-3" />
-              Debug
+            </button>
+
+            {/* Settings toggle */}
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className={`flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors ${
+                sidebarOpen ? 'bg-primary/20 text-primary' : 'hover:text-foreground'
+              }`}
+              title="Toggle settings"
+            >
+              {sidebarOpen ? (
+                <PanelRightOpen className="h-3 w-3" />
+              ) : (
+                <Settings className="h-3 w-3" />
+              )}
             </button>
           </div>
         </header>
@@ -57,9 +79,9 @@ export default function App() {
             <ChatPanel />
           </div>
 
-          {/* Debug panel — raw SSE event log */}
+          {/* Debug panel */}
           {debugPanelOpen && (
-            <aside className="w-96 border-l border-border flex flex-col overflow-hidden bg-muted/30">
+            <aside className="w-80 border-l border-border flex flex-col overflow-hidden bg-muted/30 shrink-0">
               <div className="flex items-center justify-between border-b border-border px-3 py-2">
                 <span className="text-xs font-medium text-foreground">Raw Events</span>
                 <span className="text-[10px] text-muted-foreground">{rawEvents.length}</span>
@@ -88,11 +110,13 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {/* Settings sidebar (right side, outside main) */}
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
     </div>
   )
 }
 
-/** Truncate JSON for debug display */
 function tryTruncateJson(s: string): string {
   if (s.length <= 200) return s
   try {

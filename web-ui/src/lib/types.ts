@@ -162,4 +162,13 @@ export interface AppState {
   thinking_enabled: boolean | null
   fast_mode: boolean
   effort: string | null
+  // Phase 3 additions
+  usage?: UsageTracking
+  commands?: CommandInfo[]
+}
+
+export interface CommandInfo {
+  name: string
+  aliases: string[]
+  description: string
 }

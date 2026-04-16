@@ -885,6 +885,16 @@ impl QueryEngine {
     pub fn loaded_nested_memory_paths(&self) -> HashSet<String> {
         self.loaded_nested_memory_paths.lock().unwrap().clone()
     }
+
+    /// Get the tool names registered in this engine.
+    pub fn tool_names(&self) -> Vec<String> {
+        self.tools.read().unwrap().iter().map(|t| t.name().to_string()).collect()
+    }
+
+    /// Get the working directory from the engine configuration.
+    pub fn cwd(&self) -> &str {
+        &self.config.cwd
+    }
 }
 
 

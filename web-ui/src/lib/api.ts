@@ -265,3 +265,72 @@ export async function fetchAppState(): Promise<AppState> {
   const res = await fetch(`${API_BASE}/api/state`)
   return res.json()
 }
+
+// ---------------------------------------------------------------------------
+// Phase 3: Settings and Command APIs
+// ---------------------------------------------------------------------------
+
+interface SettingsResponse {
+  ok: boolean
+  message: string
+}
+
+/**
+ * Update a setting on the server.
+ */
+export async function updateSetting(action: string, value: unknown): Promise<SettingsResponse> {
+  const res = await fetch(`${API_BASE}/api/settings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, value }),
+  })
+  const data = await res.json()
+
+  // Refresh app state after successful mutation
+  if (data.ok) {
+    const newState = await fetchAppState()
+    useChatStore.getState().setAppState(newState)
+  }
+
+  return data
+}
+
+interface CommandResponse {
+  type: 'output' | 'clear' | 'error'
+  content: string
+}
+
+/**
+ * Execute a slash command on the server.
+ */
+export async function executeCommand(command: string, args: string = ''): Promise<CommandResponse> {
+  const res = await fetch(`${API_BASE}/api/command`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command, args }),
+  })
+  const data: CommandResponse = await res.json()
+
+  // Handle clear command
+  if (data.type === 'clear') {
+    useChatStore.getState().clearMessages()
+  }
+
+  // Show output as system message
+  if (data.content && data.type !== 'clear') {
+    useChatStore.getState().addAssistantMessage({
+      id: crypto.randomUUID(),
+      role: 'system',
+      content: `/${command}${args ? ' ' + args : ''}: ${data.content}`,
+      timestamp: Date.now(),
+    })
+  }
+
+  // Refresh app state (command may have changed model, permissions, etc.)
+  try {
+    const newState = await fetchAppState()
+    useChatStore.getState().setAppState(newState)
+  } catch { /* ignore */ }
+
+  return data
+}

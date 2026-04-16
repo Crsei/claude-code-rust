@@ -24,6 +24,9 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/chat", post(handlers::chat_handler))
         .route("/api/abort", post(handlers::abort_handler))
         .route("/api/state", get(handlers::state_handler))
+        // Phase 3: Settings and command endpoints
+        .route("/api/settings", post(handlers::settings_handler))
+        .route("/api/command", post(handlers::command_handler))
         // Static files (SPA)
         .fallback(static_files::static_handler)
         // Middleware
@@ -40,9 +43,6 @@ pub async fn start_server(state: WebState, port: u16, no_open: bool) -> anyhow::
     info!("Web UI starting on http://{}", addr);
 
     if !no_open {
-        // TODO: add `open` crate to Cargo.toml to auto-open browser
-        // let url = format!("http://{}", addr);
-        // let _ = open::that(&url);
         info!("Open http://{} in your browser", addr);
     }
 
