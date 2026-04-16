@@ -54,3 +54,6 @@ ui/ink-terminal/bun.lock
 ui/ink-terminal/package-lock.json
 
 ink-ui/
+
+# Global data dir junction
+.cc-rust
