@@ -88,8 +88,25 @@ impl ApiClient {
     pub fn new(config: ApiClientConfig) -> Self {
         Self {
             http: {
-                let builder = reqwest::Client::builder()
+                let mut builder = reqwest::Client::builder()
                     .timeout(std::time::Duration::from_secs(config.timeout_secs));
+
+                // If HTTPS_PROXY or HTTP_PROXY is set, configure explicit proxy.
+                // This ensures proxy works even under TUN/fake-ip DNS hijacking
+                // (e.g. Clash TUN mode) where the system DNS resolves to a
+                // private IP and TLS handshake fails on direct connections.
+                if let Ok(proxy_url) = std::env::var("HTTPS_PROXY")
+                    .or_else(|_| std::env::var("https_proxy"))
+                    .or_else(|_| std::env::var("HTTP_PROXY"))
+                    .or_else(|_| std::env::var("http_proxy"))
+                    .or_else(|_| std::env::var("ALL_PROXY"))
+                {
+                    if let Ok(proxy) = reqwest::Proxy::all(&proxy_url) {
+                        tracing::info!(proxy = %proxy_url, "using explicit HTTP proxy");
+                        builder = builder.proxy(proxy);
+                    }
+                }
+
                 builder.build().unwrap_or_else(|_| reqwest::Client::new())
             },
             config,

@@ -119,14 +119,26 @@ pub(crate) async fn openai_compat_stream(
         "OpenAI-compat request"
     );
 
-    let response = http
+    let response = match http
         .post(&url)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
         .json(&body)
         .send()
         .await
-        .with_context(|| format!("failed to send request to {}", provider_name))?;
+    {
+        Ok(resp) => resp,
+        Err(e) => {
+            tracing::error!(
+                provider = provider_name,
+                url = %url,
+                error = %e,
+                error_debug = ?e,
+                "HTTP request failed"
+            );
+            anyhow::bail!("failed to send request to {}: {}", provider_name, e);
+        }
+    };
 
     if !response.status().is_success() {
         let status = response.status();
