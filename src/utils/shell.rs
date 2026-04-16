@@ -1,11 +1,9 @@
 //! Shell detection and environment initialization.
 //!
 //! Detects the user's default shell, provides platform-aware shell
-//! configuration, and exports shell-related constants used by tools.
+//! configuration, and exports environment helpers used by shell tools.
 //!
 //! Reference: TypeScript `src/utils/shell/` directory.
-
-#![allow(unused)]
 
 use std::env;
 use std::path::PathBuf;
@@ -28,6 +26,7 @@ pub enum ShellKind {
 
 impl ShellKind {
     /// Display name for the shell.
+    #[allow(dead_code)]
     pub fn display_name(&self) -> &'static str {
         match self {
             ShellKind::Bash => "bash",
@@ -177,48 +176,6 @@ fn which_bash() -> Option<PathBuf> {
 }
 
 // =============================================================================
-// Shell tool names (matches TS shellToolUtils.ts)
-// =============================================================================
-
-/// Tool names that execute shell commands.
-pub const SHELL_TOOL_NAMES: &[&str] = &["Bash"];
-
-/// Check if a tool name is a shell tool.
-pub fn is_shell_tool(name: &str) -> bool {
-    SHELL_TOOL_NAMES.iter().any(|&n| n == name)
-}
-
-// =============================================================================
-// Output limits (matches TS outputLimits.ts)
-// =============================================================================
-
-/// Maximum output size in characters before truncation.
-pub const MAX_OUTPUT_SIZE: usize = 30_000;
-
-/// Upper limit for output (used by bash tool with explicit limit).
-pub const MAX_OUTPUT_UPPER_LIMIT: usize = 150_000;
-
-/// Truncate output to the configured limit, keeping head and tail.
-///
-/// If the output is under the limit, returns it unchanged. Otherwise
-/// returns the first and last portions with a truncation notice.
-pub fn truncate_output(output: &str, max_chars: usize) -> String {
-    if output.len() <= max_chars {
-        return output.to_string();
-    }
-
-    let keep = max_chars / 2;
-    let head = &output[..keep];
-    let tail = &output[output.len() - keep..];
-    let omitted = output.len() - max_chars;
-
-    format!(
-        "{}\n\n... ({} characters omitted) ...\n\n{}",
-        head, omitted, tail
-    )
-}
-
-// =============================================================================
 // Environment initialization
 // =============================================================================
 
@@ -284,27 +241,6 @@ mod tests {
         // Should always return a valid shell
         assert!(!config.path.is_empty());
         assert!(!config.exec_args.is_empty());
-    }
-
-    #[test]
-    fn test_is_shell_tool() {
-        assert!(is_shell_tool("Bash"));
-        assert!(!is_shell_tool("FileRead"));
-        assert!(!is_shell_tool("Grep"));
-    }
-
-    #[test]
-    fn test_truncate_output_short() {
-        let short = "hello world";
-        assert_eq!(truncate_output(short, 100), short);
-    }
-
-    #[test]
-    fn test_truncate_output_long() {
-        let long = "a".repeat(1000);
-        let result = truncate_output(&long, 100);
-        assert!(result.len() < long.len());
-        assert!(result.contains("characters omitted"));
     }
 
     #[test]

@@ -1,11 +1,8 @@
-#![allow(unused)]
 //! SSE (Server-Sent Events) stream parser for the Anthropic Messages API
 use anyhow::Result;
 use serde_json::Value;
 
-use crate::types::message::{
-    AssistantMessage, ContentBlock, MessageDelta, StreamEvent, Usage,
-};
+use crate::types::message::{AssistantMessage, ContentBlock, MessageDelta, StreamEvent, Usage};
 
 /// Parse a single SSE line into a StreamEvent
 pub fn parse_sse_event(event_type: &str, data: &str) -> Result<Option<StreamEvent>> {
@@ -23,10 +20,12 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<Option<StreamEven
         }
         "content_block_start" => {
             let index = parsed.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            let block: ContentBlock = serde_json::from_value(
-                parsed.get("content_block").cloned().unwrap_or_default()
-            )?;
-            Ok(Some(StreamEvent::ContentBlockStart { index, content_block: block }))
+            let block: ContentBlock =
+                serde_json::from_value(parsed.get("content_block").cloned().unwrap_or_default())?;
+            Ok(Some(StreamEvent::ContentBlockStart {
+                index,
+                content_block: block,
+            }))
         }
         "content_block_delta" => {
             let index = parsed.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
@@ -38,10 +37,12 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<Option<StreamEven
             Ok(Some(StreamEvent::ContentBlockStop { index }))
         }
         "message_delta" => {
-            let delta: MessageDelta = serde_json::from_value(
-                parsed.get("delta").cloned().unwrap_or_default()
-            ).unwrap_or(MessageDelta { stop_reason: None });
-            let usage = parsed.get("usage").and_then(|u| serde_json::from_value(u.clone()).ok());
+            let delta: MessageDelta =
+                serde_json::from_value(parsed.get("delta").cloned().unwrap_or_default())
+                    .unwrap_or(MessageDelta { stop_reason: None });
+            let usage = parsed
+                .get("usage")
+                .and_then(|u| serde_json::from_value(u.clone()).ok());
             Ok(Some(StreamEvent::MessageDelta { delta, usage }))
         }
         "message_stop" => Ok(Some(StreamEvent::MessageStop)),
@@ -71,9 +72,14 @@ impl StreamAccumulator {
             StreamEvent::MessageStart { usage } => {
                 self.usage = usage.clone();
             }
-            StreamEvent::ContentBlockStart { index, content_block } => {
+            StreamEvent::ContentBlockStart {
+                index,
+                content_block,
+            } => {
                 while self.content_blocks.len() <= *index {
-                    self.content_blocks.push(ContentBlock::Text { text: String::new() });
+                    self.content_blocks.push(ContentBlock::Text {
+                        text: String::new(),
+                    });
                 }
                 self.content_blocks[*index] = content_block.clone();
             }
@@ -89,14 +95,23 @@ impl StreamAccumulator {
             StreamEvent::MessageDelta { delta, usage } => {
                 self.stop_reason = delta.stop_reason.clone();
                 if let Some(u) = usage {
-                    self.usage.output_tokens = u.output_tokens;
+                    // OpenAI-compatible providers report both input and output
+                    // tokens in the final chunk; Anthropic only sends output here.
+                    if u.input_tokens > 0 {
+                        self.usage.input_tokens = u.input_tokens;
+                    }
+                    if u.output_tokens > 0 {
+                        self.usage.output_tokens = u.output_tokens;
+                    }
                 }
             }
             _ => {}
         }
     }
 
-    pub fn build(self) -> AssistantMessage {
+    /// Build the final AssistantMessage with cost calculated from model pricing.
+    pub fn build(self, model: &str) -> AssistantMessage {
+        let cost_usd = crate::api::pricing::calculate_cost(model, &self.usage);
         AssistantMessage {
             uuid: uuid::Uuid::new_v4(),
             timestamp: chrono::Utc::now().timestamp(),
@@ -106,7 +121,7 @@ impl StreamAccumulator {
             stop_reason: self.stop_reason,
             is_api_error_message: false,
             api_error: None,
-            cost_usd: 0.0,
+            cost_usd,
         }
     }
 }

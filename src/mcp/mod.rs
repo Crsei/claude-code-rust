@@ -7,11 +7,12 @@
 //!
 //! Protocol specification: https://modelcontextprotocol.io/specification/2025-03-26/
 
-#![allow(unused)]
-
+pub mod channel;
 pub mod client;
 pub mod discovery;
+pub mod manager;
 pub mod tools;
+pub mod transport;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -37,6 +38,33 @@ pub const CONNECT_TIMEOUT_SECS: u64 = 30;
 pub const TOOL_CALL_TIMEOUT_SECS: u64 = 300;
 
 // ---------------------------------------------------------------------------
+// Subsystem event emission
+// ---------------------------------------------------------------------------
+
+use parking_lot::Mutex as SyncMutex;
+use std::sync::LazyLock;
+
+/// Event sender for subsystem events.
+static EVENT_TX: LazyLock<
+    SyncMutex<Option<tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>>>,
+> = LazyLock::new(|| SyncMutex::new(None));
+
+/// Inject the event sender from the headless event loop.
+#[allow(dead_code)] // Called by headless event loop wiring (Task 12).
+pub fn set_event_sender(
+    tx: tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>,
+) {
+    *EVENT_TX.lock() = Some(tx);
+}
+
+/// Emit a subsystem event.
+pub(crate) fn emit_event(event: crate::ipc::subsystem_events::SubsystemEvent) {
+    if let Some(tx) = EVENT_TX.lock().as_ref() {
+        let _ = tx.send(event);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Connection state
 // ---------------------------------------------------------------------------
 
@@ -50,6 +78,7 @@ pub enum McpConnectionState {
     /// Disconnected (graceful or after error).
     Disconnected,
     /// Connection failed with an error.
+    #[allow(dead_code)]
     Error(String),
 }
 
@@ -271,6 +300,7 @@ pub struct ListResourcesResult {
 }
 
 /// Result of `resources/read`.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReadResourceResult {
     pub contents: Vec<McpResourceContent>,
@@ -352,7 +382,10 @@ mod tests {
         let config: McpServerConfig = serde_json::from_value(json).unwrap();
         assert_eq!(config.transport, "stdio");
         assert_eq!(config.command.unwrap(), "npx");
-        assert_eq!(config.args.unwrap(), vec!["-y", "@modelcontextprotocol/server-filesystem"]);
+        assert_eq!(
+            config.args.unwrap(),
+            vec!["-y", "@modelcontextprotocol/server-filesystem"]
+        );
     }
 
     #[test]

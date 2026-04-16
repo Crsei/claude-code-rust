@@ -25,10 +25,7 @@ impl CommandHandler for InitHandler {
         }
 
         fs::create_dir_all(&config_dir)?;
-        fs::write(
-            &settings_file,
-            r#"{"model": null, "theme": null}"#,
-        )?;
+        fs::write(&settings_file, r#"{"model": null, "theme": null}"#)?;
 
         Ok(CommandResult::Output(format!(
             "Project initialized. Created {}",
@@ -40,6 +37,7 @@ impl CommandHandler for InitHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
     use std::path::PathBuf;
 
@@ -48,6 +46,7 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("."),
             app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
         }
     }
 

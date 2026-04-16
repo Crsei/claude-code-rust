@@ -5,9 +5,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use crate::types::message::AssistantMessage;
-use crate::types::tool::{
-    Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult,
-};
+use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
 
 /// GlobTool — Find files matching glob patterns
 ///
@@ -28,6 +26,7 @@ impl GlobTool {
         let path = input
             .get("path")
             .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
         (pattern, path)
     }
@@ -69,7 +68,11 @@ impl Tool for GlobTool {
     }
 
     fn get_path(&self, input: &Value) -> Option<String> {
-        input.get("path").and_then(|v| v.as_str()).map(|s| s.to_string())
+        input
+            .get("path")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
@@ -96,6 +99,7 @@ impl Tool for GlobTool {
             return Ok(ToolResult {
                 data: json!({ "error": "pattern is required" }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -109,6 +113,7 @@ impl Tool for GlobTool {
             return Ok(ToolResult {
                 data: json!({ "error": format!("Directory not found: {}", base_dir.display()) }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -180,11 +185,13 @@ impl Tool for GlobTool {
                         "count": count,
                     }),
                     new_messages: vec![],
+                    ..Default::default()
                 })
             }
             Err(e) => Ok(ToolResult {
                 data: json!({ "error": e }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }
@@ -199,5 +206,119 @@ impl Tool for GlobTool {
 
     fn user_facing_name(&self, _input: Option<&Value>) -> String {
         "Glob".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_name() {
+        assert_eq!(GlobTool::new().name(), "Glob");
+    }
+
+    #[test]
+    fn test_parse_input_full() {
+        let input = json!({"pattern": "**/*.rs", "path": "/src"});
+        let (pattern, path) = GlobTool::parse_input(&input);
+        assert_eq!(pattern, "**/*.rs");
+        assert_eq!(path, Some("/src".to_string()));
+    }
+
+    #[test]
+    fn test_parse_input_pattern_only() {
+        let input = json!({"pattern": "*.txt"});
+        let (pattern, path) = GlobTool::parse_input(&input);
+        assert_eq!(pattern, "*.txt");
+        assert!(path.is_none());
+    }
+
+    #[test]
+    fn test_parse_input_empty() {
+        let input = json!({});
+        let (pattern, path) = GlobTool::parse_input(&input);
+        assert_eq!(pattern, "");
+        assert!(path.is_none());
+    }
+
+    #[test]
+    fn test_parse_input_empty_path_treated_as_none() {
+        let input = json!({"pattern": "*.rs", "path": ""});
+        let (pattern, path) = GlobTool::parse_input(&input);
+        assert_eq!(pattern, "*.rs");
+        assert!(
+            path.is_none(),
+            "empty string path should be treated as None"
+        );
+    }
+
+    #[test]
+    fn test_get_path_empty_string_treated_as_none() {
+        let tool = GlobTool::new();
+        assert_eq!(tool.get_path(&json!({"path": ""})), None);
+    }
+
+    #[test]
+    fn test_is_read_only_and_concurrent() {
+        let tool = GlobTool::new();
+        assert!(tool.is_read_only(&json!({})));
+        assert!(tool.is_concurrency_safe(&json!({})));
+    }
+
+    #[test]
+    fn test_schema_requires_pattern() {
+        let schema = GlobTool::new().input_json_schema();
+        let required = schema.get("required").unwrap().as_array().unwrap();
+        assert!(required.contains(&json!("pattern")));
+    }
+
+    #[test]
+    fn test_get_path() {
+        let tool = GlobTool::new();
+        assert_eq!(
+            tool.get_path(&json!({"path": "/src"})),
+            Some("/src".to_string())
+        );
+        assert_eq!(tool.get_path(&json!({})), None);
+    }
+
+    #[tokio::test]
+    async fn test_glob_finds_files() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "").unwrap();
+        std::fs::write(dir.path().join("b.rs"), "").unwrap();
+        std::fs::write(dir.path().join("c.txt"), "").unwrap();
+
+        let pattern = format!("{}/*.rs", dir.path().to_string_lossy().replace('\\', "/"));
+        let matches = tokio::task::spawn_blocking(move || {
+            let mut results = Vec::new();
+            for entry in glob::glob(&pattern).unwrap() {
+                results.push(entry.unwrap().to_string_lossy().to_string());
+            }
+            results
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(matches.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_glob_no_matches() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let pattern = format!("{}/*.xyz", dir.path().to_string_lossy().replace('\\', "/"));
+        let matches = tokio::task::spawn_blocking(move || {
+            let mut results = Vec::new();
+            for entry in glob::glob(&pattern).unwrap() {
+                results.push(entry.unwrap());
+            }
+            results
+        })
+        .await
+        .unwrap();
+
+        assert!(matches.is_empty());
     }
 }

@@ -2,9 +2,7 @@
 //!
 //! Corresponds to TypeScript: queryHelpers.ts (`isResultSuccessful`, etc.)
 
-#![allow(unused)]
-
-use crate::types::message::{AssistantMessage, ContentBlock, Message, MessageContent};
+use crate::types::message::{ContentBlock, Message, MessageContent};
 
 // ---------------------------------------------------------------------------
 // is_result_successful
@@ -112,7 +110,7 @@ pub fn find_terminal_message(messages: &[Message]) -> Option<&Message> {
 mod tests {
     use super::*;
     use crate::types::message::{
-        AssistantMessage, ContentBlock, MessageContent, ToolResultContent, Usage, UserMessage,
+        AssistantMessage, ContentBlock, MessageContent, ToolResultContent, UserMessage,
     };
     use uuid::Uuid;
 

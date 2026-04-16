@@ -2,7 +2,7 @@
 #[allow(unused_imports)]
 use super::message::{Message, SystemMessage, Usage};
 #[allow(unused_imports)]
-use super::tool::{ToolUseContext, Tools, QueryChainTracking};
+use super::tool::{QueryChainTracking, ToolUseContext, Tools};
 
 /// Thinking/extended-thinking configuration.
 ///
@@ -61,6 +61,9 @@ pub enum QuerySource {
     Compact,
     SessionMemory,
     Agent(String),
+    ProactiveTick,
+    WebhookEvent,
+    ChannelNotification,
 }
 
 impl QuerySource {
@@ -72,11 +75,23 @@ impl QuerySource {
             QuerySource::SessionMemory => "session_memory",
             #[allow(unused_variables)]
             QuerySource::Agent(id) => "agent:", // 简化
+            QuerySource::ProactiveTick => "proactive_tick",
+            QuerySource::WebhookEvent => "webhook_event",
+            QuerySource::ChannelNotification => "channel_notification",
         }
     }
 
     pub fn starts_with_agent(&self) -> bool {
         matches!(self, QuerySource::Agent(_))
+    }
+
+    pub fn is_autonomous(&self) -> bool {
+        matches!(
+            self,
+            QuerySource::ProactiveTick
+                | QuerySource::WebhookEvent
+                | QuerySource::ChannelNotification
+        )
     }
 }
 
@@ -104,7 +119,6 @@ pub struct QueryEngineConfig {
     pub initial_messages: Option<Vec<Message>>,
 
     // ── New fields (session lifecycle) ──────────────────────────────────
-
     /// Registered slash commands (placeholder: names only).
     pub commands: Vec<String>,
 
@@ -117,9 +131,31 @@ pub struct QueryEngineConfig {
     /// Whether to replay user messages back to SDK consumers.
     pub replay_user_messages: bool,
 
-    /// Whether to include partial (streaming) messages in SDK output.
-    pub include_partial_messages: bool,
-
     /// Whether to persist the session to disk.
     pub persist_session: bool,
+
+    /// Resolved model name (from CLI > config/env > provider default).
+    /// Used to initialize AppState.main_loop_model.
+    pub resolved_model: Option<String>,
+
+    /// Automatically save session to disk after each assistant turn.
+    /// Default: true.
+    pub auto_save_session: bool,
+
+    /// Sub-agent context — propagated from parent engine to child tools
+    /// so that nested agents can enforce recursion depth limits.
+    pub agent_context: Option<AgentContext>,
+}
+
+/// Context for sub-agent engines, propagated from parent QueryEngine.
+///
+/// When the Agent tool spawns a child engine, it sets this on the child's
+/// `QueryEngineConfig` so that `execute_tool()` can propagate the correct
+/// `agent_id` and `depth` into every `ToolUseContext`.
+#[derive(Debug, Clone)]
+pub struct AgentContext {
+    /// Unique ID of this agent instance.
+    pub agent_id: String,
+    /// Chain tracking for recursion depth enforcement.
+    pub query_tracking: QueryChainTracking,
 }

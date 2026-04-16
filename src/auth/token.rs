@@ -1,10 +1,6 @@
-//! OAuth token persistence — interface only.
+//! OAuth token persistence.
 //!
-//! These types and functions define the storage format for OAuth tokens.
-//! The actual OAuth flow is not implemented; see `auth::oauth_login()`.
-//! Kept for forward compatibility when OAuth is implemented.
-
-#![allow(dead_code)]
+//! Stores OAuth tokens at `~/.cc-rust/credentials.json`.
 
 use anyhow::Result;
 
@@ -23,6 +19,10 @@ pub struct StoredToken {
     pub refresh_token: Option<String>,
     pub expires_at: Option<i64>,
     pub token_type: String,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    #[serde(default)]
+    pub oauth_method: Option<String>,
 }
 
 /// Load stored OAuth token from disk.
@@ -63,5 +63,69 @@ pub fn is_token_expired(token: &StoredToken) -> bool {
         now >= expires_at - 300
     } else {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_save_and_load_roundtrip() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("credentials.json");
+
+        let token = StoredToken {
+            access_token: "test-access".into(),
+            refresh_token: Some("test-refresh".into()),
+            expires_at: Some(1700000000),
+            token_type: "bearer".into(),
+            scopes: vec!["user:profile".into(), "user:inference".into()],
+            oauth_method: Some("claude_ai".into()),
+        };
+
+        let content = serde_json::to_string_pretty(&token).unwrap();
+        std::fs::write(&path, &content).unwrap();
+
+        let loaded: StoredToken =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(loaded.access_token, "test-access");
+        assert_eq!(loaded.refresh_token, Some("test-refresh".into()));
+        assert_eq!(loaded.scopes.len(), 2);
+        assert_eq!(loaded.oauth_method, Some("claude_ai".into()));
+    }
+
+    #[test]
+    fn test_is_token_expired_with_buffer() {
+        let future = chrono::Utc::now().timestamp() + 600;
+        let token = StoredToken {
+            access_token: "t".into(),
+            refresh_token: None,
+            expires_at: Some(future),
+            token_type: "bearer".into(),
+            scopes: vec![],
+            oauth_method: None,
+        };
+        assert!(!is_token_expired(&token));
+
+        let past = chrono::Utc::now().timestamp() - 10;
+        let expired = StoredToken {
+            expires_at: Some(past),
+            ..token.clone()
+        };
+        assert!(is_token_expired(&expired));
+    }
+
+    #[test]
+    fn test_is_token_expired_none_means_not_expired() {
+        let token = StoredToken {
+            access_token: "t".into(),
+            refresh_token: None,
+            expires_at: None,
+            token_type: "bearer".into(),
+            scopes: vec![],
+            oauth_method: None,
+        };
+        assert!(!is_token_expired(&token));
     }
 }

@@ -1,7 +1,5 @@
 //! /version command -- displays the current version.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -14,18 +12,18 @@ pub struct VersionHandler;
 impl CommandHandler for VersionHandler {
     async fn execute(&self, _args: &str, _ctx: &mut CommandContext) -> Result<CommandResult> {
         let version = env!("CARGO_PKG_VERSION");
-        Ok(CommandResult::Output(format!(
-            "claude-code-rs {}",
-            version,
-        )))
+        Ok(CommandResult::Output(
+            format!("claude-code-rs {}", version,),
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
+    use std::path::PathBuf;
 
     #[tokio::test]
     async fn test_version_output() {
@@ -34,6 +32,7 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("."),
             app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
         };
 
         let result = handler.execute("", &mut ctx).await.unwrap();

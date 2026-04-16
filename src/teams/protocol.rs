@@ -238,7 +238,9 @@ mod tests {
             r#"{"type":"idle_notification","from":"r","timestamp":"t","idleReason":"available"}"#
         ));
         assert!(!is_structured_protocol_message("hello plain text"));
-        assert!(!is_structured_protocol_message(r#"{"type":"unknown_type"}"#));
+        assert!(!is_structured_protocol_message(
+            r#"{"type":"unknown_type"}"#
+        ));
         assert!(!is_structured_protocol_message(r#"{"no_type":true}"#));
     }
 
@@ -254,7 +256,10 @@ mod tests {
         let msg = try_parse_protocol_message(json).unwrap();
         match msg {
             ProtocolMessage::ShutdownRequest {
-                request_id, from, reason, ..
+                request_id,
+                from,
+                reason,
+                ..
             } => {
                 assert_eq!(request_id, "shutdown-researcher@team-123");
                 assert_eq!(from, "team-lead");
@@ -276,7 +281,10 @@ mod tests {
         let msg = try_parse_protocol_message(json).unwrap();
         match msg {
             ProtocolMessage::IdleNotification {
-                from, idle_reason, summary, ..
+                from,
+                idle_reason,
+                summary,
+                ..
             } => {
                 assert_eq!(from, "researcher");
                 assert_eq!(idle_reason, "available");
@@ -310,7 +318,12 @@ mod tests {
 
     #[test]
     fn test_format_teammate_xml() {
-        let xml = format_teammate_xml("researcher", Some("blue"), "2026-04-01T12:00:00Z", "Found the bug");
+        let xml = format_teammate_xml(
+            "researcher",
+            Some("blue"),
+            "2026-04-01T12:00:00Z",
+            "Found the bug",
+        );
         assert!(xml.contains("from=\"researcher\""));
         assert!(xml.contains("color=\"blue\""));
         assert!(xml.contains("Found the bug"));

@@ -6,10 +6,9 @@
 //! Cached sections compute once and persist until `/clear` or `/compact`.
 //! Uncached (DANGEROUS) sections recompute every turn and break prompt cache.
 
-#![allow(unused)]
-
+use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -85,7 +84,7 @@ pub fn uncached_section(
 ///
 /// Corresponds to TS: `resolveSystemPromptSections(sections)`
 pub fn resolve_sections(sections: &[PromptSection]) -> Vec<String> {
-    let mut cache = SECTION_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut cache = SECTION_CACHE.lock();
     let mut results = Vec::new();
 
     for section in sections {
@@ -114,7 +113,7 @@ pub fn resolve_sections(sections: &[PromptSection]) -> Vec<String> {
 ///
 /// Corresponds to TS: `clearSystemPromptSections()`
 pub fn clear_cache() {
-    let mut cache = SECTION_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut cache = SECTION_CACHE.lock();
     cache.clear();
 }
 
@@ -135,13 +134,10 @@ mod tests {
     #[test]
     fn test_cached_section_memoizes() {
         clear_cache();
-        let counter = AtomicUsize::new(0);
         // We can't easily test memoization with the current API since
         // resolve_sections takes &[PromptSection] and sections aren't Clone.
         // Just verify basic functionality.
-        let section = cached_section("test_cached", || {
-            Some("hello".to_string())
-        });
+        let section = cached_section("test_cached", || Some("hello".to_string()));
         assert!(!section.cache_break);
         assert_eq!(section.name, "test_cached");
     }
@@ -181,19 +177,19 @@ mod tests {
 
         // Second resolve should use cache (but we can't verify call count
         // since we consumed the section; test the cache directly)
-        let cache = SECTION_CACHE.lock().unwrap();
+        let cache = SECTION_CACHE.lock();
         assert_eq!(cache.get("cached_test"), Some(&Some("value".to_string())));
     }
 
     #[test]
     fn test_clear_cache() {
         {
-            let mut cache = SECTION_CACHE.lock().unwrap();
+            let mut cache = SECTION_CACHE.lock();
             cache.insert("to_clear".into(), Some("old".into()));
         }
         clear_cache();
-        let cache = SECTION_CACHE.lock().unwrap();
-        assert!(cache.is_empty());
+        let cache = SECTION_CACHE.lock();
+        assert!(!cache.contains_key("to_clear"));
     }
 
     #[test]

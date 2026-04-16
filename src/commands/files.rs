@@ -4,8 +4,6 @@
 //! FileEdit, Grep, Glob, etc.) and displays them relative to the working
 //! directory.
 
-#![allow(unused)]
-
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -89,15 +87,10 @@ impl CommandHandler for FilesHandler {
         let files = extract_referenced_files(&ctx.messages);
 
         if files.is_empty() {
-            return Ok(CommandResult::Output(
-                "No files in context".into(),
-            ));
+            return Ok(CommandResult::Output("No files in context".into()));
         }
 
-        let file_list: Vec<String> = files
-            .iter()
-            .map(|f| make_relative(f, &ctx.cwd))
-            .collect();
+        let file_list: Vec<String> = files.iter().map(|f| make_relative(f, &ctx.cwd)).collect();
 
         Ok(CommandResult::Output(format!(
             "Files in context:\n{}",
@@ -109,9 +102,10 @@ impl CommandHandler for FilesHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
     use crate::types::message::AssistantMessage;
+    use std::path::PathBuf;
     use uuid::Uuid;
 
     fn make_assistant_with_tool_use(name: &str, file_path: &str) -> Message {
@@ -139,6 +133,7 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("/test"),
             app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
         };
 
         let result = handler.execute("", &mut ctx).await.unwrap();
@@ -160,6 +155,7 @@ mod tests {
             ],
             cwd: PathBuf::from("/test"),
             app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
         };
 
         let result = handler.execute("", &mut ctx).await.unwrap();

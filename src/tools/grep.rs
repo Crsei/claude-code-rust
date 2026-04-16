@@ -1,12 +1,10 @@
-#![allow(unused)]
-use std::path::Path;
-use std::process::Command;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use ignore::WalkBuilder;
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::process::Command;
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
@@ -46,7 +44,10 @@ async fn try_ripgrep(params: &GrepInput, search_path: &str) -> Option<String> {
         return None;
     }
 
-    let output_mode = params.output_mode.as_deref().unwrap_or("files_with_matches");
+    let output_mode = params
+        .output_mode
+        .as_deref()
+        .unwrap_or("files_with_matches");
 
     let mut cmd = Command::new("rg");
     cmd.arg("--no-heading");
@@ -139,7 +140,9 @@ fn apply_offset_and_limit(output: &str, offset: usize, head_limit: usize) -> Str
 
 #[async_trait]
 impl Tool for GrepTool {
-    fn name(&self) -> &str { "Grep" }
+    fn name(&self) -> &str {
+        "Grep"
+    }
 
     async fn description(&self, _input: &Value) -> String {
         "Search file contents with regex patterns.".to_string()
@@ -167,8 +170,12 @@ impl Tool for GrepTool {
         })
     }
 
-    fn is_concurrency_safe(&self, _input: &Value) -> bool { true }
-    fn is_read_only(&self, _input: &Value) -> bool { true }
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        true
+    }
+    fn is_read_only(&self, _input: &Value) -> bool {
+        true
+    }
 
     async fn call(
         &self,
@@ -178,7 +185,11 @@ impl Tool for GrepTool {
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
         let params: GrepInput = serde_json::from_value(input)?;
-        let search_path = params.path.clone().unwrap_or_else(|| ".".to_string());
+        let search_path = params
+            .path
+            .clone()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| ".".to_string());
         let head_limit = params.head_limit.unwrap_or(250);
         let offset = params.offset.unwrap_or(0);
 
@@ -193,13 +204,17 @@ impl Tool for GrepTool {
             return Ok(ToolResult {
                 data: json!(output),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
         // --- Fallback: internal regex + ignore walker ---
-        let output_mode = params.output_mode.as_deref().unwrap_or("files_with_matches");
+        let output_mode = params
+            .output_mode
+            .as_deref()
+            .unwrap_or("files_with_matches");
         let case_insensitive = params.case_insensitive.unwrap_or(false);
-        let context_lines = params.context.or(params.after_context).unwrap_or(0);
+        let _context_lines = params.context.or(params.after_context).unwrap_or(0);
 
         let pattern_str = if case_insensitive {
             format!("(?i){}", params.pattern)
@@ -224,8 +239,8 @@ impl Tool for GrepTool {
         }
 
         let mut results: Vec<String> = Vec::new();
-        let mut file_count = 0;
-        let mut match_count = 0;
+        let mut _file_count = 0;
+        let mut _match_count = 0;
 
         for entry in walker.build().flatten() {
             if !entry.file_type().map_or(false, |ft| ft.is_file()) {
@@ -251,12 +266,12 @@ impl Tool for GrepTool {
             for (i, line) in lines.iter().enumerate() {
                 if re.is_match(line) {
                     file_matches.push((i + 1, *line));
-                    match_count += 1;
+                    _match_count += 1;
                 }
             }
 
             if !file_matches.is_empty() {
-                file_count += 1;
+                _file_count += 1;
                 let path_str = path.display().to_string();
 
                 match output_mode {
@@ -297,6 +312,7 @@ impl Tool for GrepTool {
         Ok(ToolResult {
             data: json!(output),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 
@@ -349,8 +365,14 @@ mod tests {
         let tool = GrepTool;
         let schema = tool.input_json_schema();
         let props = schema.get("properties").unwrap();
-        assert!(props.get("multiline").is_some(), "schema must include 'multiline' property");
-        assert!(props.get("offset").is_some(), "schema must include 'offset' property");
+        assert!(
+            props.get("multiline").is_some(),
+            "schema must include 'multiline' property"
+        );
+        assert!(
+            props.get("offset").is_some(),
+            "schema must include 'offset' property"
+        );
 
         let ml = props.get("multiline").unwrap();
         assert_eq!(ml.get("type").unwrap(), "boolean");
@@ -360,10 +382,30 @@ mod tests {
     }
 
     #[test]
+    fn test_empty_path_treated_as_cwd() {
+        let json_input = json!({
+            "pattern": "hello",
+            "path": ""
+        });
+        let input: GrepInput = serde_json::from_value(json_input).unwrap();
+        let search_path = input
+            .path
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| ".".to_string());
+        assert_eq!(search_path, ".", "empty path should fall back to cwd");
+    }
+
+    #[test]
     fn test_apply_offset_and_limit() {
         let output = "line1\nline2\nline3\nline4\nline5";
-        assert_eq!(apply_offset_and_limit(output, 0, 250), "line1\nline2\nline3\nline4\nline5");
-        assert_eq!(apply_offset_and_limit(output, 2, 250), "line3\nline4\nline5");
+        assert_eq!(
+            apply_offset_and_limit(output, 0, 250),
+            "line1\nline2\nline3\nline4\nline5"
+        );
+        assert_eq!(
+            apply_offset_and_limit(output, 2, 250),
+            "line3\nline4\nline5"
+        );
         assert_eq!(apply_offset_and_limit(output, 0, 3), "line1\nline2\nline3");
         assert_eq!(apply_offset_and_limit(output, 1, 2), "line2\nline3");
         assert_eq!(apply_offset_and_limit(output, 10, 250), "");

@@ -6,8 +6,6 @@
 //! returns a message indicating the user cannot be prompted and the model
 //! should proceed with its best judgment.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -62,15 +60,44 @@ impl Tool for AskUserQuestionTool {
             .and_then(|v| v.as_str())
             .unwrap_or("(no question provided)");
 
+        if let Some(callback) = &ctx.ask_user_callback {
+            debug!(
+                question = question,
+                "AskUser: routing question through callback"
+            );
+            let answer = callback(question.to_string()).await;
+            debug!(
+                question = question,
+                answer_len = answer.len(),
+                "AskUser: received callback response"
+            );
+
+            let response = if answer.trim().is_empty() {
+                "(User provided no response)".to_string()
+            } else {
+                answer
+            };
+
+            return Ok(ToolResult {
+                data: json!(response),
+                new_messages: vec![],
+                ..Default::default()
+            });
+        }
+
         // Non-interactive sessions cannot prompt the user
         if ctx.options.is_non_interactive_session {
-            debug!(question = question, "AskUser: non-interactive session, skipping prompt");
+            debug!(
+                question = question,
+                "AskUser: non-interactive session, skipping prompt"
+            );
             return Ok(ToolResult {
                 data: json!(
                     "Cannot ask user in non-interactive session. \
                      Proceed with your best judgment."
                 ),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -97,6 +124,7 @@ impl Tool for AskUserQuestionTool {
         Ok(ToolResult {
             data: json!(response),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 
@@ -122,7 +150,10 @@ async fn read_user_line() -> String {
     tokio::task::spawn_blocking(|| {
         let mut line = String::new();
         match std::io::stdin().read_line(&mut line) {
-            Ok(_) => line.trim_end_matches('\n').trim_end_matches('\r').to_string(),
+            Ok(_) => line
+                .trim_end_matches('\n')
+                .trim_end_matches('\r')
+                .to_string(),
             Err(e) => {
                 debug!("AskUser: failed to read stdin: {}", e);
                 String::new()
@@ -174,5 +205,58 @@ mod tests {
     fn test_ask_user_user_facing_name() {
         let tool = AskUserQuestionTool;
         assert_eq!(tool.user_facing_name(None), "AskUserQuestion");
+    }
+
+    #[tokio::test]
+    async fn test_ask_user_uses_callback_when_available() {
+        let tool = AskUserQuestionTool;
+        let callback: AskUserCallback = std::sync::Arc::new(|question: String| {
+            Box::pin(async move { format!("answer for: {}", question) })
+        });
+
+        let ctx = ToolUseContext {
+            options: ToolUseOptions {
+                debug: false,
+                main_loop_model: "gpt-5.2".to_string(),
+                verbose: false,
+                is_non_interactive_session: false,
+                custom_system_prompt: None,
+                append_system_prompt: None,
+                max_budget_usd: None,
+            },
+            abort_signal: {
+                let (_tx, rx) = tokio::sync::watch::channel(false);
+                rx
+            },
+            read_file_state: FileStateCache::default(),
+            get_app_state: std::sync::Arc::new(crate::types::app_state::AppState::default),
+            set_app_state: std::sync::Arc::new(|_| {}),
+            messages: vec![],
+            agent_id: None,
+            agent_type: None,
+            query_tracking: None,
+            permission_callback: None,
+            ask_user_callback: Some(callback),
+            bg_agent_tx: None,
+        };
+
+        let parent = AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: vec![],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        };
+
+        let result = tool
+            .call(json!({"question": "Which project?"}), &ctx, &parent, None)
+            .await
+            .expect("callback ask user should succeed");
+
+        assert_eq!(result.data, json!("answer for: Which project?"));
     }
 }

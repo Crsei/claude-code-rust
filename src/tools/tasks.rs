@@ -6,13 +6,12 @@
 //!
 //! Reference: TypeScript `src/tools/TaskCreateTool/`, `TaskGetTool/`, etc.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
+use parking_lot::Mutex;
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
@@ -86,16 +85,16 @@ impl TaskStore {
             created_at: now,
             updated_at: now,
         };
-        self.tasks.lock().unwrap().insert(id, entry.clone());
+        self.tasks.lock().insert(id, entry.clone());
         entry
     }
 
     pub fn get(&self, id: &str) -> Option<TaskEntry> {
-        self.tasks.lock().unwrap().get(id).cloned()
+        self.tasks.lock().get(id).cloned()
     }
 
     pub fn update_status(&self, id: &str, status: TaskStatus) -> Option<TaskEntry> {
-        let mut tasks = self.tasks.lock().unwrap();
+        let mut tasks = self.tasks.lock();
         if let Some(entry) = tasks.get_mut(id) {
             entry.status = status;
             entry.updated_at = chrono::Utc::now().timestamp();
@@ -105,8 +104,10 @@ impl TaskStore {
         }
     }
 
+    /// Append output text to a task's log (used by background agent execution).
+    #[allow(dead_code)] // Will be used when background agent execution is implemented
     pub fn append_output(&self, id: &str, output: &str) -> Option<TaskEntry> {
-        let mut tasks = self.tasks.lock().unwrap();
+        let mut tasks = self.tasks.lock();
         if let Some(entry) = tasks.get_mut(id) {
             if !entry.output.is_empty() {
                 entry.output.push('\n');
@@ -120,7 +121,7 @@ impl TaskStore {
     }
 
     pub fn list(&self) -> Vec<TaskEntry> {
-        let tasks = self.tasks.lock().unwrap();
+        let tasks = self.tasks.lock();
         let mut entries: Vec<TaskEntry> = tasks.values().cloned().collect();
         entries.sort_by_key(|e| e.created_at);
         entries
@@ -128,10 +129,6 @@ impl TaskStore {
 
     pub fn stop(&self, id: &str) -> Option<TaskEntry> {
         self.update_status(id, TaskStatus::Stopped)
-    }
-
-    pub fn count(&self) -> usize {
-        self.tasks.lock().unwrap().len()
     }
 }
 
@@ -150,9 +147,7 @@ fn task_to_json(entry: &TaskEntry) -> Value {
 // Global task store (lazy singleton)
 // =============================================================================
 
-/// Global shared task store for all task tools.
-static GLOBAL_STORE: std::sync::LazyLock<TaskStore> =
-    std::sync::LazyLock::new(TaskStore::new);
+static GLOBAL_STORE: std::sync::LazyLock<TaskStore> = std::sync::LazyLock::new(TaskStore::new);
 
 fn store() -> &'static TaskStore {
     &GLOBAL_STORE
@@ -194,7 +189,7 @@ impl Tool for TaskCreateTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
@@ -209,12 +204,28 @@ impl Tool for TaskCreateTool {
 
         let entry = store().create(subject, description);
 
+        // Fire TaskCreated hook
+        {
+            let app_state = (ctx.get_app_state)();
+            let configs = crate::tools::hooks::load_hook_configs(&app_state.hooks, "TaskCreated");
+            if !configs.is_empty() {
+                let payload = json!({
+                    "task_id": &entry.id,
+                    "subject": &entry.subject,
+                    "description": &entry.description,
+                });
+                let _ =
+                    crate::tools::hooks::run_event_hooks("TaskCreated", &payload, &configs).await;
+            }
+        }
+
         Ok(ToolResult {
             data: json!({
                 "task": task_to_json(&entry),
                 "message": format!("Created task: {}", entry.subject)
             }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 
@@ -267,19 +278,18 @@ impl Tool for TaskGetTool {
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let id = input
-            .get("task_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
 
         match store().get(id) {
             Some(entry) => Ok(ToolResult {
                 data: json!({ "task": task_to_json(&entry) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
             None => Ok(ToolResult {
                 data: json!({ "error": format!("Task not found: {}", id) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }
@@ -326,14 +336,11 @@ impl Tool for TaskUpdateTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let id = input
-            .get("task_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
         let status_str = input
             .get("status")
             .and_then(|v| v.as_str())
@@ -342,16 +349,40 @@ impl Tool for TaskUpdateTool {
         let status = TaskStatus::from_str(status_str).unwrap_or(TaskStatus::InProgress);
 
         match store().update_status(id, status) {
-            Some(entry) => Ok(ToolResult {
-                data: json!({
-                    "task": task_to_json(&entry),
-                    "message": format!("Task '{}' updated to {}", entry.subject, status.as_str())
-                }),
-                new_messages: vec![],
-            }),
+            Some(entry) => {
+                // Fire TaskCompleted hook when status changes to completed
+                if status == TaskStatus::Completed {
+                    let app_state = (ctx.get_app_state)();
+                    let configs =
+                        crate::tools::hooks::load_hook_configs(&app_state.hooks, "TaskCompleted");
+                    if !configs.is_empty() {
+                        let payload = json!({
+                            "task_id": &entry.id,
+                            "subject": &entry.subject,
+                            "status": status.as_str(),
+                        });
+                        let _ = crate::tools::hooks::run_event_hooks(
+                            "TaskCompleted",
+                            &payload,
+                            &configs,
+                        )
+                        .await;
+                    }
+                }
+
+                Ok(ToolResult {
+                    data: json!({
+                        "task": task_to_json(&entry),
+                        "message": format!("Task '{}' updated to {}", entry.subject, status.as_str())
+                    }),
+                    new_messages: vec![],
+                    ..Default::default()
+                })
+            }
             None => Ok(ToolResult {
                 data: json!({ "error": format!("Task not found: {}", id) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }
@@ -408,6 +439,7 @@ impl Tool for TaskListTool {
                 "count": tasks.len()
             }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 
@@ -452,10 +484,7 @@ impl Tool for TaskStopTool {
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let id = input
-            .get("task_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
 
         match store().stop(id) {
             Some(entry) => Ok(ToolResult {
@@ -464,10 +493,12 @@ impl Tool for TaskStopTool {
                     "message": format!("Task '{}' stopped", entry.subject)
                 }),
                 new_messages: vec![],
+                ..Default::default()
             }),
             None => Ok(ToolResult {
                 data: json!({ "error": format!("Task not found: {}", id) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }
@@ -521,10 +552,7 @@ impl Tool for TaskOutputTool {
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let id = input
-            .get("task_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
 
         match store().get(id) {
             Some(entry) => Ok(ToolResult {
@@ -538,10 +566,12 @@ impl Tool for TaskOutputTool {
                     }
                 }),
                 new_messages: vec![],
+                ..Default::default()
             }),
             None => Ok(ToolResult {
                 data: json!({ "error": format!("Task not found: {}", id) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }
@@ -618,7 +648,9 @@ mod tests {
     fn test_task_store_not_found() {
         let store = TaskStore::new();
         assert!(store.get("nonexistent").is_none());
-        assert!(store.update_status("nonexistent", TaskStatus::Completed).is_none());
+        assert!(store
+            .update_status("nonexistent", TaskStatus::Completed)
+            .is_none());
         assert!(store.stop("nonexistent").is_none());
     }
 

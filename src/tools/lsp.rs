@@ -14,11 +14,9 @@
 //!
 //! Depends on the `lsp-types` crate.
 
-#![allow(unused)]
-
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -61,6 +59,7 @@ impl LspOperation {
     }
 
     /// Get the LSP method name for this operation.
+    #[allow(dead_code)]
     pub fn method(&self) -> &'static str {
         match self {
             Self::GoToDefinition => "textDocument/definition",
@@ -249,10 +248,7 @@ impl Tool for LspTool {
             };
         };
 
-        let file_path = input
-            .get("filePath")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let file_path = input.get("filePath").and_then(|v| v.as_str()).unwrap_or("");
         if file_path.is_empty() {
             return ValidationResult::Error {
                 message: "filePath is required".to_string(),
@@ -291,13 +287,9 @@ impl Tool for LspTool {
             .get("operation")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let op = LspOperation::from_str(op_str)
-            .context("Invalid LSP operation")?;
+        let op = LspOperation::from_str(op_str).context("Invalid LSP operation")?;
 
-        let file_path = input
-            .get("filePath")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let file_path = input.get("filePath").and_then(|v| v.as_str()).unwrap_or("");
 
         // Convert 1-based editor coords to 0-based LSP coords
         let line = input
@@ -320,6 +312,7 @@ impl Tool for LspTool {
                     "operation": op_str,
                 }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -336,23 +329,19 @@ impl Tool for LspTool {
                         "operation": op_str,
                     }),
                     new_messages: vec![],
+                    ..Default::default()
                 });
             }
         }
 
         // ---- LSP execution ----
-        let result = execute_lsp_operation(
-            op,
-            &resolved,
-            line,
-            character,
-        )
-        .await;
+        let result = execute_lsp_operation(op, &resolved, line, character).await;
 
         match result {
             Ok(output) => Ok(ToolResult {
                 data: output,
                 new_messages: vec![],
+                ..Default::default()
             }),
             Err(e) => Ok(ToolResult {
                 data: json!({
@@ -361,6 +350,7 @@ impl Tool for LspTool {
                     "filePath": resolved.display().to_string(),
                 }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }
@@ -405,7 +395,7 @@ fn resolve_file_path(file_path: &str, ctx: &ToolUseContext) -> PathBuf {
         p.to_path_buf()
     } else {
         // Try to get CWD from app state
-        let state = (ctx.get_app_state)();
+        let _state = (ctx.get_app_state)();
         // Fallback to current dir
         std::env::current_dir()
             .unwrap_or_else(|_| PathBuf::from("."))
@@ -537,13 +527,15 @@ fn file_path_to_uri(path: &Path) -> String {
     let abs = if path.is_absolute() {
         path.to_path_buf()
     } else {
-        std::env::current_dir()
-            .unwrap_or_default()
-            .join(path)
+        std::env::current_dir().unwrap_or_default().join(path)
     };
-    format!("file:///{}", abs.to_string_lossy().replace('\\', "/").trim_start_matches('/'))
+    format!(
+        "file:///{}",
+        abs.to_string_lossy()
+            .replace('\\', "/")
+            .trim_start_matches('/')
+    )
 }
-
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -559,10 +551,7 @@ mod tests {
             LspOperation::from_str("goToDefinition"),
             Some(LspOperation::GoToDefinition)
         );
-        assert_eq!(
-            LspOperation::from_str("hover"),
-            Some(LspOperation::Hover)
-        );
+        assert_eq!(LspOperation::from_str("hover"), Some(LspOperation::Hover));
         assert_eq!(
             LspOperation::from_str("findReferences"),
             Some(LspOperation::FindReferences)
@@ -576,10 +565,7 @@ mod tests {
             LspOperation::GoToDefinition.method(),
             "textDocument/definition"
         );
-        assert_eq!(
-            LspOperation::WorkspaceSymbol.method(),
-            "workspace/symbol"
-        );
+        assert_eq!(LspOperation::WorkspaceSymbol.method(), "workspace/symbol");
     }
 
     #[test]

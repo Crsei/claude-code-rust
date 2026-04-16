@@ -48,9 +48,7 @@ pub fn try_get_color() -> Option<String> {
 
 /// Try to get whether plan mode is required.
 pub fn try_get_plan_mode_required() -> Option<bool> {
-    TEAMMATE_CONTEXT
-        .try_with(|ctx| ctx.plan_mode_required)
-        .ok()
+    TEAMMATE_CONTEXT.try_with(|ctx| ctx.plan_mode_required).ok()
 }
 
 /// Try to get the parent session ID.

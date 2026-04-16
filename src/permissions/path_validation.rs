@@ -1,4 +1,3 @@
-#![allow(dead_code)] // Public API — will be used by tool execution pipeline
 //! Path validation for the permission system.
 //!
 //! Validates that file paths are within allowed directories before
@@ -123,10 +122,7 @@ pub fn is_path_in_directory(path: &Path, dir: &Path) -> bool {
 /// be used for directory traversal attacks.
 fn contains_traversal_attack(path: &str) -> bool {
     // Count the number of `..` segments
-    let traversal_count = path
-        .split(['/', '\\'])
-        .filter(|seg| *seg == "..")
-        .count();
+    let traversal_count = path.split(['/', '\\']).filter(|seg| *seg == "..").count();
 
     // More than 5 parent directory references is suspicious
     if traversal_count > 5 {
@@ -139,8 +135,8 @@ fn contains_traversal_attack(path: &str) -> bool {
         "\\..\\..\\..\\..",
         "/etc/passwd",
         "/etc/shadow",
-        "%00",          // null byte encoding
-        "%2e%2e",       // URL-encoded ..
+        "%00",    // null byte encoding
+        "%2e%2e", // URL-encoded ..
     ];
 
     for pattern in &suspicious_patterns {
@@ -184,7 +180,7 @@ fn normalize_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::tool::{PermissionMode, ToolPermissionContext, AdditionalWorkingDirectory};
+    use crate::types::tool::{AdditionalWorkingDirectory, PermissionMode, ToolPermissionContext};
     use std::collections::HashMap;
 
     fn default_ctx() -> ToolPermissionContext {
@@ -194,6 +190,7 @@ mod tests {
             always_allow_rules: HashMap::new(),
             always_deny_rules: HashMap::new(),
             always_ask_rules: HashMap::new(),
+            session_allow_rules: HashMap::new(),
             is_bypass_permissions_mode_available: false,
             is_auto_mode_available: None,
             pre_plan_mode: None,

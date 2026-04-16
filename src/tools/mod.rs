@@ -1,45 +1,56 @@
-// Phase 2: Local tool system
+// Minimal tool system
 //
-// Tool registry + orchestration logic (concurrent/serial partitioning)
-//
-// Local tools:
-//   BashTool, FileReadTool, FileWriteTool, FileEditTool, GlobTool, GrepTool,
-//   NotebookEditTool, AskUserQuestionTool, ToolSearchTool
+// Core tools: Bash, FileRead, FileWrite, FileEdit, Glob, Grep, AskUser
+// Skills: Skill tool for extensibility
 
-pub mod orchestration;
-pub mod hooks;
-pub mod execution;
+pub mod ask_user;
 pub mod bash;
+pub mod execution;
+pub mod file_edit;
 pub mod file_read;
 pub mod file_write;
-pub mod file_edit;
 pub mod glob_tool;
 pub mod grep;
-pub mod notebook_edit;
-pub mod ask_user;
-pub mod tool_search;
+pub mod hooks;
+pub mod orchestration;
 pub mod registry;
 
-// Phase 8: Advanced local tools
-pub mod agent;
-pub mod tasks;
-pub mod plan_mode;
-pub mod worktree;
+// Skills tool
 pub mod skill;
 
-// Phase 12: Network tools (low priority)
+// Agent tool (Phase 2 migration)
+pub mod agent;
+
+// Background agent types (used by Agent tool + query loop + event loop)
+pub mod background_agents;
+
+// Web tools (Phase 3 migration)
 pub mod web_fetch;
 pub mod web_search;
 
-// Phase 12: LSP tool
+// Plan mode + Task tools (Phase 4 migration)
+pub mod plan_mode;
+pub mod tasks;
+
+// Worktree tools (Phase 5 migration)
+pub mod worktree;
+
+// LSP tool (Phase 7 migration)
 pub mod lsp;
 
-// Phase 14C: Additional tools
-pub mod todo_write;
-pub mod snip;
-pub mod sleep;
-
-// Agent Teams tools
-pub mod team_create;
-pub mod team_delete;
+// SendMessage tool (Phase 8 — Teams inter-agent messaging)
 pub mod send_message;
+
+// Phase 14C: Additional tools
+pub mod config_tool;
+pub mod powershell;
+pub mod repl;
+pub mod send_user_message;
+pub mod sleep;
+pub mod structured_output;
+
+// Kairos Brief mode
+pub mod brief;
+
+// SystemStatus tool (Agent subsystem observability)
+pub mod system_status;

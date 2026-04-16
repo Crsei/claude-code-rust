@@ -35,8 +35,8 @@
 use serde_json::Value;
 use tracing::{debug, warn};
 
-use crate::types::tool::{PermissionMode, ToolPermissionContext, ToolPermissionRulesBySource};
 use super::rules::{self, PermissionCheckResult};
+use crate::types::tool::{PermissionMode, ToolPermissionContext, ToolPermissionRulesBySource};
 
 // ---------------------------------------------------------------------------
 // Core types
@@ -108,6 +108,46 @@ impl DenialTracker {
 }
 
 // ---------------------------------------------------------------------------
+// Computer Use permission messages
+// ---------------------------------------------------------------------------
+
+/// Generate a human-readable permission message for Computer Use tools.
+///
+/// Instead of the generic "Allow tool 'mcp__computer-use__screenshot'?",
+/// this produces clear descriptions like "Allow reading the screen (screenshot)?".
+fn cu_permission_message(tool_name: &str) -> Option<String> {
+    use crate::computer_use::detection::{classify_risk, extract_cu_action, CuRiskLevel};
+
+    let action = extract_cu_action(tool_name)?;
+    let risk = classify_risk(action);
+    let risk_tag = match risk {
+        CuRiskLevel::Medium => "[medium risk]",
+        CuRiskLevel::High => "[HIGH RISK]",
+    };
+
+    let description = match action {
+        "screenshot" => "read the screen (take a screenshot)",
+        "cursor_position" => "read the current cursor position",
+        "left_click" => "click the left mouse button on your screen",
+        "right_click" => "click the right mouse button on your screen",
+        "middle_click" => "click the middle mouse button on your screen",
+        "double_click" => "double-click the mouse on your screen",
+        "type_text" | "type" => "type text using the keyboard",
+        "key" => "press a keyboard shortcut",
+        "scroll" => "scroll the mouse wheel",
+        "mouse_move" => "move the mouse cursor",
+        _ => {
+            return Some(format!(
+                "Allow desktop control action '{}' {}?",
+                action, risk_tag
+            ))
+        }
+    };
+
+    Some(format!("Allow {} {}?", description, risk_tag))
+}
+
+// ---------------------------------------------------------------------------
 // Permission matcher (Phase 1b: pattern matching)
 // ---------------------------------------------------------------------------
 
@@ -120,16 +160,10 @@ impl DenialTracker {
 /// For other tools: no pattern matching.
 fn prepare_matcher(tool_name: &str, input: &Value) -> Option<String> {
     match tool_name {
-        "Bash" => input
-            .get("command")
-            .and_then(|v| v.as_str())
-            .map(|cmd| {
-                // Extract the first word (command prefix) for matching
-                cmd.split_whitespace()
-                    .next()
-                    .unwrap_or("")
-                    .to_string()
-            }),
+        "Bash" => input.get("command").and_then(|v| v.as_str()).map(|cmd| {
+            // Extract the first word (command prefix) for matching
+            cmd.split_whitespace().next().unwrap_or("").to_string()
+        }),
         "Read" | "Write" | "Edit" => input
             .get("file_path")
             .and_then(|v| v.as_str())
@@ -160,13 +194,11 @@ fn pattern_rule_matches(rule: &str, tool_name: &str, matcher: Option<&str>) -> b
 
             // prefix: matching
             if let Some(prefix_val) = pattern.strip_prefix("prefix:") {
-                return matcher
-                    .map_or(false, |m| m.starts_with(prefix_val));
+                return matcher.map_or(false, |m| m.starts_with(prefix_val));
             }
 
             // Glob-style matching
-            return matcher
-                .map_or(false, |m| rules::glob_match_public(m, pattern));
+            return matcher.map_or(false, |m| rules::glob_match_public(m, pattern));
         }
     }
 
@@ -273,6 +305,27 @@ pub fn has_permissions_to_use_tool(
         };
     }
 
+    // ── Phase 1c: Session-level grants ───────────────────────────────
+    // Session grants are checked after persistent rules but before mode
+    // fallback. They are transient (cleared when the session ends) and
+    // are the preferred destination for Computer Use "always allow".
+    if let Some((_source, pattern)) =
+        check_pattern_rules(tool_name, matcher_ref, &ctx.session_allow_rules)
+    {
+        if let Some(tracker) = denial_tracker {
+            tracker.record_allow();
+        }
+        return PermissionDecision {
+            behavior: PermissionBehavior::Allow,
+            updated_input: None,
+            message: None,
+            reason: PermissionDecisionReason::Rule {
+                source: "session".into(),
+                pattern,
+            },
+        };
+    }
+
     // ── Phase 2: Hook interception ──────────────────────────────────
     // Phase 1 stub: no hooks, fall through to mode check
 
@@ -321,24 +374,26 @@ pub fn has_permissions_to_use_tool(
         }
         PermissionMode::Plan => {
             // Plan mode: ask for confirmation
+            let message = cu_permission_message(tool_name).unwrap_or_else(|| {
+                format!("Tool '{}' requires confirmation in plan mode.", tool_name)
+            });
             PermissionDecision {
                 behavior: PermissionBehavior::Ask,
                 updated_input: None,
-                message: Some(format!(
-                    "Tool '{}' requires confirmation in plan mode.",
-                    tool_name
-                )),
+                message: Some(message),
                 reason: PermissionDecisionReason::Mode {
                     mode: "plan".into(),
                 },
             }
         }
         PermissionMode::Default => {
-            // Default mode: ask for confirmation
+            // Default mode: ask for confirmation (CU tools get descriptive messages)
+            let message = cu_permission_message(tool_name)
+                .unwrap_or_else(|| format!("Allow tool '{}'?", tool_name));
             PermissionDecision {
                 behavior: PermissionBehavior::Ask,
                 updated_input: None,
-                message: Some(format!("Allow tool '{}'?", tool_name)),
+                message: Some(message),
                 reason: PermissionDecisionReason::Mode {
                     mode: "default".into(),
                 },
@@ -363,6 +418,7 @@ mod tests {
             always_allow_rules: HashMap::new(),
             always_deny_rules: HashMap::new(),
             always_ask_rules: HashMap::new(),
+            session_allow_rules: HashMap::new(),
             is_bypass_permissions_mode_available: false,
             is_auto_mode_available: None,
             pre_plan_mode: None,
@@ -454,5 +510,125 @@ mod tests {
         tracker.record_allow();
         assert_eq!(tracker.consecutive_denials, 0);
         assert_eq!(tracker.total_denials, 2); // total doesn't reset
+    }
+
+    // ── Session-level grant tests ──────────────────────────────────
+
+    #[test]
+    fn test_session_grant_allows_tool() {
+        let mut ctx = default_ctx();
+        ctx.session_allow_rules.insert(
+            "session".into(),
+            vec!["mcp__computer-use__screenshot".into()],
+        );
+        let decision =
+            has_permissions_to_use_tool("mcp__computer-use__screenshot", &Value::Null, &ctx, None);
+        assert_eq!(decision.behavior, PermissionBehavior::Allow);
+        // Should report session as the source
+        if let PermissionDecisionReason::Rule { source, .. } = &decision.reason {
+            assert_eq!(source, "session");
+        } else {
+            panic!("expected Rule reason with session source");
+        }
+    }
+
+    #[test]
+    fn test_session_grant_does_not_override_deny_rules() {
+        let mut ctx = default_ctx();
+        // Deny rule takes priority
+        ctx.always_deny_rules.insert(
+            "policy".into(),
+            vec!["mcp__computer-use__left_click".into()],
+        );
+        // Session grant should not override
+        ctx.session_allow_rules.insert(
+            "session".into(),
+            vec!["mcp__computer-use__left_click".into()],
+        );
+        let decision =
+            has_permissions_to_use_tool("mcp__computer-use__left_click", &Value::Null, &ctx, None);
+        assert_eq!(decision.behavior, PermissionBehavior::Deny);
+    }
+
+    #[test]
+    fn test_session_grant_via_context_method() {
+        let mut ctx = default_ctx();
+        ctx.grant_session_allow("mcp__computer-use__screenshot");
+        assert!(ctx.has_session_grant("mcp__computer-use__screenshot"));
+        assert!(!ctx.has_session_grant("mcp__computer-use__left_click"));
+    }
+
+    #[test]
+    fn test_session_grant_clear() {
+        let mut ctx = default_ctx();
+        ctx.grant_session_allow("mcp__computer-use__screenshot");
+        assert!(ctx.has_session_grant("mcp__computer-use__screenshot"));
+        ctx.clear_session_grants();
+        assert!(!ctx.has_session_grant("mcp__computer-use__screenshot"));
+    }
+
+    // ── CU permission message tests ────────────────────────────────
+
+    #[test]
+    fn test_cu_screenshot_permission_message() {
+        let ctx = default_ctx();
+        let decision =
+            has_permissions_to_use_tool("mcp__computer-use__screenshot", &Value::Null, &ctx, None);
+        assert_eq!(decision.behavior, PermissionBehavior::Ask);
+        let msg = decision.message.unwrap();
+        assert!(
+            msg.contains("screenshot"),
+            "CU screenshot message should mention screenshot: {}",
+            msg
+        );
+        assert!(
+            msg.contains("medium risk"),
+            "CU screenshot should be medium risk: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_cu_click_permission_message() {
+        let ctx = default_ctx();
+        let decision = has_permissions_to_use_tool(
+            "mcp__computer-use__left_click",
+            &serde_json::json!({"x": 100, "y": 200}),
+            &ctx,
+            None,
+        );
+        assert_eq!(decision.behavior, PermissionBehavior::Ask);
+        let msg = decision.message.unwrap();
+        assert!(
+            msg.contains("click"),
+            "CU click message should mention click: {}",
+            msg
+        );
+        assert!(
+            msg.contains("HIGH RISK"),
+            "CU click should be HIGH RISK: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_cu_type_text_permission_message() {
+        let ctx = default_ctx();
+        let decision = has_permissions_to_use_tool(
+            "mcp__computer-use__type_text",
+            &serde_json::json!({"text": "hello"}),
+            &ctx,
+            None,
+        );
+        let msg = decision.message.unwrap();
+        assert!(msg.contains("keyboard"), "type_text message: {}", msg);
+    }
+
+    #[test]
+    fn test_non_cu_tool_gets_generic_message() {
+        let ctx = default_ctx();
+        let decision = has_permissions_to_use_tool("Bash", &Value::Null, &ctx, None);
+        let msg = decision.message.unwrap();
+        assert_eq!(msg, "Allow tool 'Bash'?");
     }
 }

@@ -1,0 +1,60 @@
+# Docker Compose test matrix for cc-rust
+#
+# API keys are loaded automatically from .env in the project root.
+#
+# Usage:
+#   docker compose -f docker-compose.test.yml run --rm test-offline
+#   docker compose -f docker-compose.test.yml run --rm test-live
+#   docker compose -f docker-compose.test.yml up --abort-on-container-exit
+
+services:
+  # ── Offline tests (no network, no API key) ──────────────────
+  test-offline:
+    build:
+      context: .
+      dockerfile: Dockerfile.ci
+      target: tester
+    network_mode: none
+    environment:
+      - E2E_WORKSPACE=/tmp/cc-rust-test
+      # Force-clear all keys so tests run fully offline
+      - ANTHROPIC_API_KEY=
+      - AZURE_API_KEY=
+      - OPENAI_API_KEY=
+      - OPENROUTER_API_KEY=
+      - GOOGLE_API_KEY=
+      - DEEPSEEK_API_KEY=
+    tmpfs:
+      - /tmp:size=100m
+    mem_limit: 2g
+    cpus: 2
+
+  # ── Live API tests (keys from .env) ────────────────────────
+  test-live:
+    build:
+      context: .
+      dockerfile: Dockerfile.ci
+      target: tester
+    env_file: .env
+    environment:
+      - E2E_WORKSPACE=/tmp/cc-rust-test
+    tmpfs:
+      - /tmp:size=100m
+    mem_limit: 2g
+    cpus: 2
+    command: >
+      sh -c '
+        echo "=== cc-rust LIVE test suite ===" &&
+        echo "AZURE_API_KEY=$${AZURE_API_KEY:+set}" &&
+        echo "ANTHROPIC_API_KEY=$${ANTHROPIC_API_KEY:+set}" &&
+        echo "CLAUDE_MODEL=$${CLAUDE_MODEL:-default}" &&
+        mkdir -p /tmp/cc-rust-test &&
+        for t in /app/tests/e2e_*; do
+          [ -x "$$t" ] || continue;
+          name=$$(basename $$t | sed "s/-[a-f0-9]*$$//");
+          echo "--- $$name (live) ---";
+          env "CARGO_BIN_EXE_claude-code-rs=/usr/local/bin/claude-code-rs" \
+            "$$t" --ignored --test-threads=1 2>&1 || true;
+          echo "";
+        done
+      '

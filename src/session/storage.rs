@@ -4,13 +4,13 @@
 //! Each session is identified by a UUID and contains the full message history
 //! along with metadata (creation time, working directory, etc.).
 
-#![allow(unused)]
-
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use chrono::Utc;
+use git2::Repository;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 use crate::types::message::Message;
 
@@ -73,6 +73,55 @@ pub fn get_session_file(session_id: &str) -> PathBuf {
     get_session_dir().join(format!("{}.json", session_id))
 }
 
+fn normalize_display_path(path: &Path) -> String {
+    std::fs::canonicalize(path)
+        .unwrap_or_else(|_| path.components().collect())
+        .to_string_lossy()
+        .to_string()
+}
+
+fn stable_workspace_path(path: &Path) -> PathBuf {
+    crate::utils::git::find_git_root(path).unwrap_or_else(|| path.to_path_buf())
+}
+
+fn normalize_match_key(path: &Path) -> String {
+    let normalized: PathBuf =
+        std::fs::canonicalize(path).unwrap_or_else(|_| path.components().collect());
+    let mut value = normalized.to_string_lossy().to_string();
+
+    if cfg!(windows) {
+        value = value.replace('/', "\\").to_lowercase();
+    }
+
+    value
+}
+
+fn git_common_dir(repo: &Repository) -> PathBuf {
+    if repo.is_worktree() {
+        repo.path()
+            .parent()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| repo.path().to_path_buf())
+    } else {
+        repo.path().to_path_buf()
+    }
+}
+
+fn workspace_key(path: &Path) -> String {
+    if let Ok(repo) = Repository::discover(path) {
+        return normalize_match_key(&git_common_dir(&repo));
+    }
+
+    normalize_match_key(&stable_workspace_path(path))
+}
+
+fn filter_sessions_for_workspace(mut sessions: Vec<SessionInfo>, cwd: &Path) -> Vec<SessionInfo> {
+    let current_workspace = workspace_key(cwd);
+    sessions.retain(|session| workspace_key(Path::new(&session.cwd)) == current_workspace);
+    sessions
+}
+
 // ---------------------------------------------------------------------------
 // Persistence operations
 // ---------------------------------------------------------------------------
@@ -100,20 +149,29 @@ pub fn save_session(session_id: &str, messages: &[Message], cwd: &str) -> Result
     };
 
     let serializable_messages = messages_to_serializable(messages);
+    let msg_count = serializable_messages.len();
+
+    let stable_cwd = normalize_display_path(&stable_workspace_path(Path::new(cwd)));
 
     let session_file = SessionFile {
         session_id: session_id.to_string(),
         created_at,
         last_modified: now,
-        cwd: cwd.to_string(),
+        cwd: stable_cwd,
         messages: serializable_messages,
     };
 
-    let json = serde_json::to_string_pretty(&session_file)
-        .context("Failed to serialize session")?;
+    let json =
+        serde_json::to_string_pretty(&session_file).context("Failed to serialize session")?;
 
     std::fs::write(&path, json)
         .with_context(|| format!("Failed to write session file {}", path.display()))?;
+
+    debug!(
+        session_id = session_id,
+        messages = msg_count,
+        "session saved"
+    );
 
     Ok(())
 }
@@ -122,6 +180,11 @@ pub fn save_session(session_id: &str, messages: &[Message], cwd: &str) -> Result
 pub fn load_session(session_id: &str) -> Result<Vec<Message>> {
     let file = load_session_file(session_id)?;
     let messages = serializable_to_messages(&file.messages);
+    debug!(
+        session_id = session_id,
+        messages = messages.len(),
+        "session loaded"
+    );
     Ok(messages)
 }
 
@@ -176,7 +239,18 @@ pub fn list_sessions() -> Result<Vec<SessionInfo>> {
     // Most recently modified first.
     sessions.sort_by(|a, b| b.last_modified.cmp(&a.last_modified));
 
+    debug!(count = sessions.len(), "sessions listed");
+
     Ok(sessions)
+}
+
+/// List sessions that belong to the same workspace/repository as `cwd`.
+///
+/// For git repositories, this groups together all worktrees that share the
+/// same git common directory. For non-git directories, it falls back to the
+/// stable workspace path (repo root if inside git, otherwise the exact path).
+pub fn list_workspace_sessions(cwd: &Path) -> Result<Vec<SessionInfo>> {
+    Ok(filter_sessions_for_workspace(list_sessions()?, cwd))
 }
 
 // ---------------------------------------------------------------------------
@@ -189,19 +263,30 @@ fn messages_to_serializable(messages: &[Message]) -> Vec<SerializableMessage> {
         .iter()
         .map(|msg| {
             let (msg_type, data) = match msg {
-                Message::User(u) => (
-                    "user".to_string(),
-                    serde_json::json!({
-                        "content": format!("{:?}", u.content),
-                        "is_meta": u.is_meta,
-                    }),
-                ),
+                Message::User(u) => {
+                    let content_value = match &u.content {
+                        crate::types::message::MessageContent::Text(t) => {
+                            serde_json::json!(t)
+                        }
+                        crate::types::message::MessageContent::Blocks(blocks) => {
+                            serde_json::json!(blocks)
+                        }
+                    };
+                    (
+                        "user".to_string(),
+                        serde_json::json!({
+                            "content": content_value,
+                            "is_meta": u.is_meta,
+                        }),
+                    )
+                }
                 Message::Assistant(a) => (
                     "assistant".to_string(),
                     serde_json::json!({
                         "content": a.content,
                         "stop_reason": a.stop_reason,
                         "cost_usd": a.cost_usd,
+                        "usage": a.usage,
                     }),
                 ),
                 Message::System(s) => (
@@ -252,13 +337,29 @@ fn serializable_to_messages(msgs: &[SerializableMessage]) -> Vec<Message> {
                     uuid,
                     timestamp: sm.timestamp,
                     role: "user".into(),
-                    content: MessageContent::Text(
-                        sm.data
-                            .get("content")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                    ),
+                    content: match sm.data.get("content") {
+                        Some(serde_json::Value::String(s)) => MessageContent::Text(s.clone()),
+                        Some(serde_json::Value::Array(blocks)) => {
+                            match serde_json::from_value::<Vec<crate::types::message::ContentBlock>>(
+                                serde_json::Value::Array(blocks.clone()),
+                            ) {
+                                Ok(cb) => MessageContent::Blocks(cb),
+                                Err(_) => MessageContent::Text(
+                                    blocks.iter()
+                                        .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                                        .collect::<Vec<_>>()
+                                        .join("\n"),
+                                ),
+                            }
+                        }
+                        // Backwards compat: old Debug format like Text("hello")
+                        _ => MessageContent::Text(
+                            sm.data.get("content")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                        ),
+                    },
                     is_meta: sm
                         .data
                         .get("is_meta")
@@ -271,8 +372,11 @@ fn serializable_to_messages(msgs: &[SerializableMessage]) -> Vec<Message> {
                     uuid,
                     timestamp: sm.timestamp,
                     role: "assistant".into(),
-                    content: Vec::new(), // Would need full deserialization
-                    usage: None,
+                    content: sm.data.get("content")
+                        .and_then(|v| serde_json::from_value::<Vec<crate::types::message::ContentBlock>>(v.clone()).ok())
+                        .unwrap_or_default(),
+                    usage: sm.data.get("usage")
+                        .and_then(|v| serde_json::from_value::<crate::types::message::Usage>(v.clone()).ok()),
                     stop_reason: sm
                         .data
                         .get("stop_reason")
@@ -312,6 +416,7 @@ fn serializable_to_messages(msgs: &[SerializableMessage]) -> Vec<Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn test_session_dir_path() {
@@ -324,5 +429,73 @@ mod tests {
     fn test_session_file_path() {
         let path = get_session_file("abc-123");
         assert!(path.to_string_lossy().ends_with("abc-123.json"));
+    }
+
+    #[test]
+    fn test_stable_workspace_path_uses_git_root() {
+        let temp = tempdir().unwrap();
+        let repo_dir = temp.path().join("repo");
+        std::fs::create_dir_all(repo_dir.join("target").join("release")).unwrap();
+        Repository::init(&repo_dir).unwrap();
+
+        let nested = repo_dir.join("target").join("release");
+        assert_eq!(stable_workspace_path(&nested), repo_dir);
+    }
+
+    #[test]
+    fn test_filter_sessions_for_workspace_matches_same_repo_subdirs() {
+        let temp = tempdir().unwrap();
+        let repo_dir = temp.path().join("repo");
+        let nested_dir = repo_dir.join("target").join("release");
+        let other_dir = temp.path().join("other");
+
+        std::fs::create_dir_all(&nested_dir).unwrap();
+        std::fs::create_dir_all(&other_dir).unwrap();
+        Repository::init(&repo_dir).unwrap();
+
+        let sessions = vec![
+            SessionInfo {
+                session_id: "repo-root".into(),
+                created_at: 0,
+                last_modified: 3,
+                message_count: 10,
+                cwd: normalize_display_path(&repo_dir),
+            },
+            SessionInfo {
+                session_id: "repo-nested".into(),
+                created_at: 0,
+                last_modified: 2,
+                message_count: 8,
+                cwd: normalize_display_path(&nested_dir),
+            },
+            SessionInfo {
+                session_id: "other".into(),
+                created_at: 0,
+                last_modified: 1,
+                message_count: 2,
+                cwd: normalize_display_path(&other_dir),
+            },
+        ];
+
+        let filtered = filter_sessions_for_workspace(sessions, &nested_dir);
+        let ids: Vec<_> = filtered.into_iter().map(|s| s.session_id).collect();
+        assert_eq!(ids, vec!["repo-root", "repo-nested"]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_workspace_key_is_case_insensitive_on_windows() {
+        let temp = tempdir().unwrap();
+        let repo_dir = temp.path().join("Repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        Repository::init(&repo_dir).unwrap();
+
+        let upper = repo_dir.to_string_lossy().to_uppercase().replace('\\', "/");
+        let lower = repo_dir.to_string_lossy().to_lowercase();
+
+        assert_eq!(
+            workspace_key(Path::new(&upper)),
+            workspace_key(Path::new(&lower))
+        );
     }
 }

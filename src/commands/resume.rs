@@ -1,13 +1,11 @@
 //! /resume command -- resume a previous session.
 //!
 //! Usage:
-//! - `/resume`            -- resume the most recent session for the current directory
-//! - `/resume <id>`       -- resume a specific session by ID (or prefix)
+//! - `/resume`            -- load the most recent session for the current workspace
+//! - `/resume <id>`       -- load a specific session by ID (or prefix)
 //!
 //! The TypeScript version uses an interactive React-based log selector.
 //! In the Rust CLI we accept a session ID argument directly.
-
-#![allow(unused)]
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -36,10 +34,14 @@ impl CommandHandler for ResumeHandler {
 
 /// Resume the most recent session matching the current working directory.
 fn handle_resume_latest(ctx: &mut CommandContext) -> Result<CommandResult> {
-    match session_resume::get_last_session(&ctx.cwd)? {
+    let session = storage::list_workspace_sessions(&ctx.cwd)?
+        .into_iter()
+        .find(|session| session.session_id != ctx.session_id.as_str());
+
+    match session {
         Some(info) => resume_session_by_id(&info.session_id, ctx),
         None => Ok(CommandResult::Output(format!(
-            "No previous session found for directory: {}",
+            "No previous session found for workspace: {}",
             ctx.cwd.display()
         ))),
     }
@@ -47,23 +49,35 @@ fn handle_resume_latest(ctx: &mut CommandContext) -> Result<CommandResult> {
 
 /// Resume a session by ID or prefix.
 fn handle_resume_by_id(target: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
-    let sessions = storage::list_sessions()?;
+    let workspace_sessions = storage::list_workspace_sessions(&ctx.cwd)?;
+    let all_sessions = storage::list_sessions()?;
 
-    // Exact match.
-    if let Some(session) = sessions.iter().find(|s| s.session_id == target) {
+    // Exact match, preferring the current workspace first.
+    if let Some(session) = workspace_sessions.iter().find(|s| s.session_id == target) {
+        return resume_session_by_id(&session.session_id, ctx);
+    }
+    if let Some(session) = all_sessions.iter().find(|s| s.session_id == target) {
         return resume_session_by_id(&session.session_id, ctx);
     }
 
-    // Prefix match.
-    let matches: Vec<_> = sessions
+    // Prefix match, preferring the current workspace first.
+    let workspace_matches: Vec<_> = workspace_sessions
         .iter()
         .filter(|s| s.session_id.starts_with(target))
         .collect();
+    let matches: Vec<_> = if workspace_matches.is_empty() {
+        all_sessions
+            .iter()
+            .filter(|s| s.session_id.starts_with(target))
+            .collect()
+    } else {
+        workspace_matches
+    };
 
     match matches.len() {
         0 => Ok(CommandResult::Output(format!(
             "Session '{}' was not found.\n\
-             Use /session list to see available sessions.",
+             Use /session or /session list to see available sessions.",
             target
         ))),
         1 => resume_session_by_id(&matches[0].session_id, ctx),
@@ -95,22 +109,24 @@ fn resume_session_by_id(session_id: &str, ctx: &mut CommandContext) -> Result<Co
     ctx.messages = messages;
 
     Ok(CommandResult::Output(format!(
-        "Resumed session {} ({} messages).",
-        session_id, msg_count
+        "Loaded history from session {} ({} messages) into the current conversation.",
+        session_id, msg_count,
     )))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
+    use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {
         CommandContext {
             messages: Vec::new(),
             cwd: PathBuf::from("/nonexistent/test/path"),
             app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
         }
     }
 
@@ -135,7 +151,10 @@ mod tests {
     async fn test_resume_nonexistent_id() {
         let handler = ResumeHandler;
         let mut ctx = test_ctx();
-        let result = handler.execute("nonexistent-id-12345", &mut ctx).await.unwrap();
+        let result = handler
+            .execute("nonexistent-id-12345", &mut ctx)
+            .await
+            .unwrap();
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("not found"));

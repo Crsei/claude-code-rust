@@ -34,9 +34,7 @@ pub enum ContentBlock {
     RedactedThinking { data: String },
 
     #[serde(rename = "image")]
-    Image {
-        source: ImageSource,
-    },
+    Image { source: ImageSource },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,7 +48,7 @@ pub enum ToolResultContent {
 pub struct ImageSource {
     #[serde(rename = "type")]
     pub source_type: String, // "base64"
-    pub media_type: String,  // "image/png" etc.
+    pub media_type: String, // "image/png" etc.
     pub data: String,
 }
 
@@ -180,10 +178,7 @@ pub enum Attachment {
     },
 
     #[serde(rename = "max_turns_reached")]
-    MaxTurnsReached {
-        max_turns: usize,
-        turn_count: usize,
-    },
+    MaxTurnsReached { max_turns: usize, turn_count: usize },
 
     #[serde(rename = "structured_output")]
     StructuredOutput { data: serde_json::Value },
@@ -235,11 +230,24 @@ pub enum Message {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StreamEvent {
-    MessageStart { usage: Usage },
-    ContentBlockStart { index: usize, content_block: ContentBlock },
-    ContentBlockDelta { index: usize, delta: serde_json::Value },
-    ContentBlockStop { index: usize },
-    MessageDelta { delta: MessageDelta, usage: Option<Usage> },
+    MessageStart {
+        usage: Usage,
+    },
+    ContentBlockStart {
+        index: usize,
+        content_block: ContentBlock,
+    },
+    ContentBlockDelta {
+        index: usize,
+        delta: serde_json::Value,
+    },
+    ContentBlockStop {
+        index: usize,
+    },
+    MessageDelta {
+        delta: MessageDelta,
+        usage: Option<Usage>,
+    },
     MessageStop,
 }
 

@@ -3,7 +3,6 @@
 /// 消息工具函数
 ///
 /// 对应 TypeScript 中散布在多处的消息处理辅助函数
-
 use crate::types::message::{ContentBlock, Message, MessageContent};
 
 /// 从消息中提取纯文本内容
@@ -157,7 +156,7 @@ pub fn truncate_text(text: &str, max_len: usize) -> String {
         return "...".to_string();
     }
     let content_max = max_len - 3; // room for "..."
-    // Find the last char boundary that fits within content_max bytes
+                                   // Find the last char boundary that fits within content_max bytes
     let mut boundary = content_max;
     while boundary > 0 && !text.is_char_boundary(boundary) {
         boundary -= 1;
@@ -169,7 +168,11 @@ pub fn truncate_text(text: &str, max_len: usize) -> String {
 pub fn format_role(message: &Message) -> &'static str {
     match message {
         Message::User(u) => {
-            if u.is_meta { "system" } else { "user" }
+            if u.is_meta {
+                "system"
+            } else {
+                "user"
+            }
         }
         Message::Assistant(_) => "assistant",
         Message::System(_) => "system",
@@ -256,7 +259,10 @@ pub fn conversation_summary(messages: &[Message]) -> String {
     let tools = get_unique_tool_names(messages);
 
     let mut lines = vec![
-        format!("Messages: {} user, {} assistant", user_count, assistant_count),
+        format!(
+            "Messages: {} user, {} assistant",
+            user_count, assistant_count
+        ),
         format!("Tool calls: {}", tool_count),
         format!("Estimated tokens: {}", token_est),
     ];
@@ -271,9 +277,21 @@ pub fn conversation_summary(messages: &[Message]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::message::AssistantMessage;
+    use crate::types::message::{AssistantMessage, MessageContent, UserMessage};
     use chrono::Utc;
     use uuid::Uuid;
+
+    fn make_user_message(text: &str, is_meta: bool) -> Message {
+        Message::User(UserMessage {
+            uuid: Uuid::new_v4(),
+            timestamp: 0,
+            role: "user".to_string(),
+            content: MessageContent::Text(text.to_string()),
+            is_meta,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        })
+    }
 
     fn make_assistant_with_tool_use(tool_name: &str) -> Message {
         Message::Assistant(AssistantMessage {
@@ -377,12 +395,10 @@ mod tests {
 
     #[test]
     fn test_count_user_messages_excludes_meta() {
-        use crate::compact::messages::create_user_message;
-
         let messages = vec![
-            create_user_message("real input", false),
-            create_user_message("system injected", true),
-            create_user_message("another real", false),
+            make_user_message("real input", false),
+            make_user_message("system injected", true),
+            make_user_message("another real", false),
         ];
 
         assert_eq!(count_user_messages(&messages), 2);
@@ -390,8 +406,7 @@ mod tests {
 
     #[test]
     fn test_get_text_content_user() {
-        use crate::compact::messages::create_user_message;
-        let msg = create_user_message("hello world", false);
+        let msg = make_user_message("hello world", false);
         assert_eq!(get_text_content(&msg), "hello world");
     }
 
@@ -474,18 +489,15 @@ mod tests {
 
     #[test]
     fn test_last_message_role() {
-        let messages = vec![
-            make_assistant_text_only("hi"),
-        ];
+        let messages = vec![make_assistant_text_only("hi")];
         assert_eq!(last_message_role(&messages), Some("assistant"));
         assert_eq!(last_message_role(&[]), None);
     }
 
     #[test]
     fn test_conversation_summary() {
-        use crate::compact::messages::create_user_message;
         let messages = vec![
-            create_user_message("hello", false),
+            make_user_message("hello", false),
             make_assistant_with_tool_use("bash"),
         ];
         let summary = conversation_summary(&messages);

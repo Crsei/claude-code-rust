@@ -1,2 +1,59 @@
 /target
 /target2
+**/*.rs.bk
+*.pdb
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Examples (ink-panel etc.)
+examples/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# E2E test logs (timestamped subdirectories)
+logs/**/*.log
+logs/**/*.logs
+logs/**/*.raw
+logs/**/*.html
+logs/**/*.png
+.logs/
+# macOS
+.DS_Store
+
+
+sdk/typescript/node_modules/
+sdk/typescript/dist/
+sdk/typescript/package-lock.json
+.worktrees
+
+# ink-terminal frontend
+ui/node_modules/
+ui/dist/
+ui/bun.lockb
+ui/bun.lock
+ui/package-lock.json
+
+# ink-terminal library (workspace package)
+ui/ink-terminal/node_modules/
+ui/ink-terminal/dist/
+ui/ink-terminal/bun.lockb
+ui/ink-terminal/bun.lock
+ui/ink-terminal/package-lock.json
+
+ink-ui/
+
+# Global data dir junction
+.cc-rust

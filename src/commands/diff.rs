@@ -3,8 +3,6 @@
 //! Uses the `git2` crate to read the repository status and produce a unified
 //! diff of all modified (staged and unstaged) files relative to HEAD.
 
-#![allow(unused)]
-
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 
@@ -53,9 +51,7 @@ impl CommandHandler for DiffHandler {
         };
 
         if diff_text.is_empty() {
-            return Ok(CommandResult::Output(
-                "No changes detected.".into(),
-            ));
+            return Ok(CommandResult::Output("No changes detected.".into()));
         }
 
         Ok(CommandResult::Output(diff_text))

@@ -1,7 +1,5 @@
 //! /clear command -- clears the conversation history.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -22,8 +20,9 @@ impl CommandHandler for ClearHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
+    use std::path::PathBuf;
 
     #[tokio::test]
     async fn test_clear_returns_clear_result() {
@@ -32,6 +31,7 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("."),
             app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
         };
 
         let result = handler.execute("", &mut ctx).await.unwrap();

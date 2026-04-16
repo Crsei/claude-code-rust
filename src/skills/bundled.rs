@@ -8,9 +8,7 @@
 
 #![allow(unused)]
 
-use super::{
-    register_skill, SkillContext, SkillDefinition, SkillFrontmatter, SkillSource,
-};
+use super::{register_skill, SkillContext, SkillDefinition, SkillFrontmatter, SkillSource};
 
 /// Register all bundled skills.
 ///
@@ -96,12 +94,7 @@ pub fn register_bundled_skills() {
             when_to_use: Some(
                 "When the user reports a bug or error and needs help debugging.".to_string(),
             ),
-            allowed_tools: vec![
-                "Read".into(),
-                "Grep".into(),
-                "Glob".into(),
-                "Bash".into(),
-            ],
+            allowed_tools: vec!["Read".into(), "Grep".into(), "Glob".into(), "Bash".into()],
             user_invocable: true,
             ..Default::default()
         },
@@ -184,7 +177,11 @@ mod tests {
         let all = skills::get_all_skills();
 
         // We should have at least 5 bundled skills
-        assert!(all.len() >= 5, "Expected >= 5 bundled skills, got {}", all.len());
+        assert!(
+            all.len() >= 5,
+            "Expected >= 5 bundled skills, got {}",
+            all.len()
+        );
 
         let names: Vec<&str> = all.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"simplify"));
@@ -207,7 +204,9 @@ mod tests {
             source: SkillSource::Bundled,
             base_dir: None,
             frontmatter: SkillFrontmatter {
-                description: "Simplify and refine code for clarity, consistency, and maintainability.".to_string(),
+                description:
+                    "Simplify and refine code for clarity, consistency, and maintainability."
+                        .to_string(),
                 user_invocable: true,
                 context: SkillContext::Fork,
                 ..Default::default()

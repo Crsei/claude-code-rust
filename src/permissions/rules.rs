@@ -6,8 +6,6 @@
 //! 3. Ask rules (if matched -> ask)
 //! 4. Default: depends on mode (Default -> ask, Auto -> allow, Bypass -> allow)
 
-#![allow(unused)]
-
 use crate::types::tool::{PermissionMode, ToolPermissionContext, ToolPermissionRulesBySource};
 use serde_json::Value;
 
@@ -19,6 +17,7 @@ pub enum PermissionCheckResult {
     /// Tool execution is denied.
     Deny { reason: String },
     /// User must be asked for confirmation.
+    #[allow(dead_code)]
     Ask { message: String },
 }
 
@@ -31,7 +30,7 @@ pub enum PermissionCheckResult {
 /// 4. Fallback based on permission mode
 pub fn check_tool_permission(
     tool_name: &str,
-    input: &Value,
+    _input: &Value,
     ctx: &ToolPermissionContext,
 ) -> PermissionCheckResult {
     // --- Phase 1: Check deny rules ---
@@ -201,6 +200,7 @@ mod tests {
             always_allow_rules: HashMap::new(),
             always_deny_rules: HashMap::new(),
             always_ask_rules: HashMap::new(),
+            session_allow_rules: HashMap::new(),
             is_bypass_permissions_mode_available: false,
             is_auto_mode_available: None,
             pre_plan_mode: None,

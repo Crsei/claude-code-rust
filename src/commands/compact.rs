@@ -5,12 +5,10 @@
 //! - Local compaction (no API): aggressive snip + microcompact
 //! - Full compaction (with API): model-generated summary (future)
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::compact::{compaction, messages as compact_messages, pipeline};
+use crate::compact::{compaction, pipeline};
 use crate::utils::tokens;
 
 use super::{CommandContext, CommandHandler, CommandResult};
@@ -40,19 +38,15 @@ impl CommandHandler for CompactHandler {
         let model = &ctx.app_state.main_loop_model;
 
         // Run the local context management pipeline
-        let pipeline_result = pipeline::run_context_pipeline(
-            ctx.messages.clone(),
-            None,
-            model,
-        )
-        .await;
+        let pipeline_result =
+            pipeline::run_context_pipeline(ctx.messages.clone(), None, model).await;
 
         let post_tokens = pipeline_result.estimated_tokens;
 
         if pipeline_result.compacted {
             // Pipeline made progress — apply the compacted messages
             let freed = pre_tokens.saturating_sub(post_tokens);
-            let new_count = pipeline_result.messages.len();
+            let _new_count = pipeline_result.messages.len();
 
             // Build summary message for the compacted portion
             let summary = if let Some(ref instructions) = custom_instructions {
@@ -61,31 +55,32 @@ impl CommandHandler for CompactHandler {
                 "Conversation compacted to reduce context usage.".to_string()
             };
 
-            let post_messages = compaction::build_post_compact_messages(
-                &summary,
-                &ctx.messages,
-                &compaction::CompactionConfig {
-                    model: model.clone(),
-                    session_id: String::new(),
-                    query_source: "compact".into(),
-                },
-            );
+            let config = compaction::CompactionConfig {
+                model: model.clone(),
+                session_id: String::new(),
+                query_source: "compact".into(),
+            };
+
+            let post_messages =
+                compaction::build_post_compact_messages(&summary, &ctx.messages, &config);
 
             // Create the compact boundary marker
             let boundary = compaction::create_compact_boundary(pre_tokens, post_tokens);
 
+            // Apply: replace conversation with compacted messages + boundary
+            let mut new_messages = pipeline_result.messages;
+            new_messages.push(boundary);
+            new_messages.extend(post_messages);
+            ctx.messages = new_messages;
+
             return Ok(CommandResult::Output(format!(
                 "Compacted: ~{} → ~{} tokens ({} tokens freed)\n\
-                 Messages: {} → {}\n\
-                 {}",
+                 Messages: {} → {}",
                 pre_tokens,
                 post_tokens,
                 freed,
                 message_count,
-                new_count,
-                custom_instructions
-                    .map(|i| format!("Custom instructions applied: {}", i))
-                    .unwrap_or_default(),
+                ctx.messages.len(),
             )));
         }
 
@@ -107,9 +102,10 @@ impl CommandHandler for CompactHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
-    use crate::types::message::{Message, UserMessage, MessageContent};
+    use crate::types::message::{Message, MessageContent, UserMessage};
+    use std::path::PathBuf;
     use uuid::Uuid;
 
     fn make_user_msg(text: &str) -> Message {
@@ -131,6 +127,7 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("."),
             app_state: AppState::default(),
+            session_id: SessionId::new(),
         };
 
         let result = handler.execute("", &mut ctx).await.unwrap();
@@ -149,6 +146,7 @@ mod tests {
             messages: vec![make_user_msg("hello"), make_user_msg("world")],
             cwd: PathBuf::from("."),
             app_state: AppState::default(),
+            session_id: SessionId::new(),
         };
 
         let result = handler.execute("", &mut ctx).await.unwrap();
@@ -168,9 +166,13 @@ mod tests {
             messages: vec![make_user_msg("hello")],
             cwd: PathBuf::from("."),
             app_state: AppState::default(),
+            session_id: SessionId::new(),
         };
 
-        let result = handler.execute("focus on code changes", &mut ctx).await.unwrap();
+        let result = handler
+            .execute("focus on code changes", &mut ctx)
+            .await
+            .unwrap();
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("focus on code changes"));

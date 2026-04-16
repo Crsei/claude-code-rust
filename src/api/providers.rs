@@ -1,4 +1,3 @@
-#![allow(unused)]
 //! Multi-provider registry and auto-detection.
 //!
 //! Supports 15+ LLM providers: Anthropic, OpenAI, Google Gemini,
@@ -32,6 +31,7 @@ pub struct ProviderInfo {
     /// Default model to use when none is specified
     pub default_model: &'static str,
     /// Human-readable label (bilingual for Chinese providers)
+    #[allow(dead_code)]
     pub label: &'static str,
     /// Wire protocol (determines request/response format)
     pub protocol: ProviderProtocol,
@@ -50,12 +50,31 @@ pub static PROVIDERS: &[ProviderInfo] = &[
         label: "Anthropic (Claude)",
         protocol: ProviderProtocol::Anthropic,
     },
+    // Azure OpenAI — base_url is a placeholder; the real endpoint is read
+    // from AZURE_BASE_URL at runtime (deployment-specific).
+    ProviderInfo {
+        name: "azure",
+        env_key: "AZURE_API_KEY",
+        base_url: "https://PLACEHOLDER.openai.azure.com/openai/v1",
+        default_model: "gpt-4o",
+        label: "Azure OpenAI",
+        protocol: ProviderProtocol::OpenAiCompat,
+    },
     ProviderInfo {
         name: "openai",
         env_key: "OPENAI_API_KEY",
         base_url: "https://api.openai.com/v1",
         default_model: "gpt-4o",
         label: "OpenAI (GPT)",
+        protocol: ProviderProtocol::OpenAiCompat,
+    },
+    // ChatGPT OAuth token for Codex service (OpenAI Codex provider path).
+    ProviderInfo {
+        name: "openai-codex",
+        env_key: "OPENAI_CODEX_AUTH_TOKEN",
+        base_url: "https://chatgpt.com/backend-api",
+        default_model: "gpt-5.4",
+        label: "OpenAI Codex (ChatGPT OAuth)",
         protocol: ProviderProtocol::OpenAiCompat,
     },
     ProviderInfo {
@@ -175,12 +194,14 @@ pub fn detect_provider() -> Option<&'static ProviderInfo> {
 }
 
 /// Look up a provider by name (case-insensitive).
+#[allow(dead_code)]
 pub fn get_provider(name: &str) -> Option<&'static ProviderInfo> {
     let name_lower = name.to_lowercase();
     PROVIDERS.iter().find(|p| p.name == name_lower)
 }
 
 /// List all providers that currently have API keys set in the environment.
+#[allow(dead_code)]
 pub fn available_providers() -> Vec<&'static ProviderInfo> {
     PROVIDERS
         .iter()
@@ -267,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_provider_count() {
-        assert_eq!(PROVIDERS.len(), 15);
+        assert_eq!(PROVIDERS.len(), 17);
     }
 
     #[test]
@@ -301,11 +322,34 @@ mod tests {
     }
 
     #[test]
+    fn test_openai_codex_protocol() {
+        let p = get_provider("openai-codex").unwrap();
+        assert_eq!(p.env_key, "OPENAI_CODEX_AUTH_TOKEN");
+        assert_eq!(p.protocol, ProviderProtocol::OpenAiCompat);
+    }
+
+    #[test]
     fn test_all_chinese_providers_are_openai_compat() {
-        let chinese = ["deepseek", "zhipu", "qwen", "moonshot", "baichuan", "minimax", "yi", "siliconflow", "stepfun", "spark"];
+        let chinese = [
+            "deepseek",
+            "zhipu",
+            "qwen",
+            "moonshot",
+            "baichuan",
+            "minimax",
+            "yi",
+            "siliconflow",
+            "stepfun",
+            "spark",
+        ];
         for name in chinese {
             let p = get_provider(name).expect(name);
-            assert_eq!(p.protocol, ProviderProtocol::OpenAiCompat, "{} should be OpenAiCompat", name);
+            assert_eq!(
+                p.protocol,
+                ProviderProtocol::OpenAiCompat,
+                "{} should be OpenAiCompat",
+                name
+            );
         }
     }
 }

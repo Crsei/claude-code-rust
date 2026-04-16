@@ -64,6 +64,20 @@ pub fn register_shutdown_handler() -> CancellationToken {
 pub async fn graceful_shutdown(engine: &QueryEngine) {
     debug!("graceful_shutdown: starting");
 
+    // Step 0: Fire SessionEnd hook (best-effort, fire-and-forget)
+    {
+        let hooks_map = engine.app_state().hooks;
+        let end_configs = crate::tools::hooks::load_hook_configs(&hooks_map, "SessionEnd");
+        if !end_configs.is_empty() {
+            let payload = serde_json::json!({
+                "session_id": engine.session_id.as_str(),
+                "exit_reason": "normal",
+            });
+            let _ =
+                crate::tools::hooks::run_event_hooks("SessionEnd", &payload, &end_configs).await;
+        }
+    }
+
     // Step 1: Abort any running query
     if !engine.is_aborted() {
         engine.abort();
@@ -71,7 +85,7 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
     }
 
     // Step 2: Flush transcript
-    let session_id = &engine.session_id;
+    let session_id = engine.session_id.as_str();
     if let Err(e) = transcript::flush_transcript(session_id) {
         warn!(error = %e, "failed to flush transcript during shutdown");
     } else {
@@ -81,7 +95,7 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
     // Step 3: Persist session (save current messages)
     let messages = engine.messages();
     if !messages.is_empty() {
-        let cwd = ""; // engine doesn't expose cwd directly; acceptable for shutdown
+        let cwd = engine.cwd();
         if let Err(e) = crate::session::storage::save_session(session_id, &messages, cwd) {
             warn!(error = %e, "failed to save session during shutdown");
         } else {
@@ -92,7 +106,28 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
     // Step 4: Reset terminal state
     graceful_shutdown_sync();
 
-    // Step 5: Log final usage
+    // Step 5: Emit session.end audit event and sync
+    {
+        use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+        let ctx = engine.audit_context();
+        let usage = engine.usage();
+        ctx.emit(
+            EventKind::SessionEnd,
+            Stage::Session,
+            AuditLevel::Info,
+            Outcome::Completed,
+            None,
+            Some(serde_json::json!({
+                "api_calls": usage.api_call_count,
+                "input_tokens": usage.total_input_tokens,
+                "output_tokens": usage.total_output_tokens,
+                "cost_usd": usage.total_cost_usd,
+            })),
+        );
+        ctx.sync();
+    }
+
+    // Step 6: Log final usage
     let usage = engine.usage();
     if usage.api_call_count > 0 {
         info!(

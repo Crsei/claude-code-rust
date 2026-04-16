@@ -1,7 +1,5 @@
 //! /help command -- displays available commands and their descriptions.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -18,9 +16,10 @@ impl CommandHandler for HelpHandler {
         // If a specific command name is given, show detailed help for that command.
         if !args.is_empty() {
             let target = args.trim();
-            if let Some(cmd) = commands.iter().find(|c| {
-                c.name == target || c.aliases.iter().any(|a| a == target)
-            }) {
+            if let Some(cmd) = commands
+                .iter()
+                .find(|c| c.name == target || c.aliases.iter().any(|a| a == target))
+            {
                 let aliases = if cmd.aliases.is_empty() {
                     String::new()
                 } else {
@@ -44,11 +43,7 @@ impl CommandHandler for HelpHandler {
         lines.push(String::new());
 
         // Find the longest command name for alignment.
-        let max_len = commands
-            .iter()
-            .map(|c| c.name.len())
-            .max()
-            .unwrap_or(0);
+        let max_len = commands.iter().map(|c| c.name.len()).max().unwrap_or(0);
 
         for cmd in &commands {
             let padding = " ".repeat(max_len - cmd.name.len() + 2);
@@ -75,14 +70,16 @@ impl CommandHandler for HelpHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
+    use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {
         CommandContext {
             messages: Vec::new(),
             cwd: PathBuf::from("."),
             app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
         }
     }
 
@@ -95,7 +92,7 @@ mod tests {
             CommandResult::Output(text) => {
                 assert!(text.contains("/help"));
                 assert!(text.contains("/clear"));
-                assert!(text.contains("/compact"));
+                assert!(text.contains("/commit"));
                 assert!(text.contains("/config"));
                 assert!(text.contains("/diff"));
             }

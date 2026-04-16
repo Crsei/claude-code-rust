@@ -10,8 +10,6 @@
 //! The TypeScript version opens a React-based PermissionRuleList component.
 //! In the Rust CLI we display a text listing and accept subcommands.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -118,7 +116,11 @@ fn handle_mode(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult
         "default" | "ask" => PermissionMode::Default,
         "auto" => PermissionMode::Auto,
         "bypass" => {
-            if !ctx.app_state.tool_permission_context.is_bypass_permissions_mode_available {
+            if !ctx
+                .app_state
+                .tool_permission_context
+                .is_bypass_permissions_mode_available
+            {
                 return Ok(CommandResult::Output(
                     "Bypass mode is not available in the current configuration.".into(),
                 ));
@@ -199,14 +201,16 @@ fn handle_reset(ctx: &mut CommandContext) -> Result<CommandResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
+    use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {
         CommandContext {
             messages: Vec::new(),
             cwd: PathBuf::from("."),
             app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
         }
     }
 
@@ -235,7 +239,10 @@ mod tests {
             }
             _ => panic!("Expected Output result"),
         }
-        assert_eq!(ctx.app_state.tool_permission_context.mode, PermissionMode::Auto);
+        assert_eq!(
+            ctx.app_state.tool_permission_context.mode,
+            PermissionMode::Auto
+        );
     }
 
     #[tokio::test]
@@ -272,7 +279,11 @@ mod tests {
         let mut ctx = test_ctx();
         // First add a rule.
         handler.execute("allow Bash", &mut ctx).await.unwrap();
-        assert!(!ctx.app_state.tool_permission_context.always_allow_rules.is_empty());
+        assert!(!ctx
+            .app_state
+            .tool_permission_context
+            .always_allow_rules
+            .is_empty());
 
         // Then reset.
         let result = handler.execute("reset", &mut ctx).await.unwrap();
@@ -282,7 +293,11 @@ mod tests {
             }
             _ => panic!("Expected Output result"),
         }
-        assert!(ctx.app_state.tool_permission_context.always_allow_rules.is_empty());
+        assert!(ctx
+            .app_state
+            .tool_permission_context
+            .always_allow_rules
+            .is_empty());
     }
 
     #[tokio::test]

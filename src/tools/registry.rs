@@ -1,36 +1,42 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::types::tool::{Tool, Tools};
+use tracing::warn;
+
+use crate::types::tool::Tools;
 
 use super::agent::AgentTool;
 use super::ask_user::AskUserQuestionTool;
 use super::bash::BashTool;
+use super::brief::BriefTool;
+use super::config_tool::ConfigTool;
 use super::file_edit::FileEditTool;
 use super::file_read::FileReadTool;
 use super::file_write::FileWriteTool;
 use super::glob_tool::GlobTool;
 use super::grep::GrepTool;
 use super::lsp::LspTool;
-use super::notebook_edit::NotebookEditTool;
 use super::plan_mode::{EnterPlanModeTool, ExitPlanModeTool};
+use super::powershell::PowerShellTool;
+use super::repl::ReplTool;
+use super::send_message::SendMessageTool;
+use super::send_user_message::SendUserMessageTool;
 use super::skill::SkillTool;
-use super::tool_search::ToolSearchTool;
+use super::sleep::SleepTool;
+use super::structured_output::StructuredOutputTool;
+use super::system_status::SystemStatusTool;
+use super::tasks::{
+    TaskCreateTool, TaskGetTool, TaskListTool, TaskOutputTool, TaskStopTool, TaskUpdateTool,
+};
 use super::web_fetch::WebFetchTool;
 use super::web_search::WebSearchTool;
 use super::worktree::{EnterWorktreeTool, ExitWorktreeTool};
-use super::team_create::TeamCreateTool;
-use super::team_delete::TeamDeleteTool;
-use super::send_message::SendMessageTool;
-use super::tasks::{TaskCreateTool, TaskGetTool, TaskUpdateTool, TaskListTool, TaskStopTool, TaskOutputTool};
-use super::todo_write::TodoWriteTool;
-use super::snip::SnipTool;
-use super::sleep::SleepTool;
 
 /// Get all base tool instances.
 ///
 /// Corresponds to TypeScript: tools.ts `getAllBaseTools()`
 /// Returns all tool implementations. The caller can filter by `is_enabled()`.
-pub fn get_all_tools() -> Tools {
+fn base_tools() -> Tools {
     let tools: Tools = vec![
         Arc::new(BashTool::new()),
         Arc::new(FileReadTool::new()),
@@ -38,51 +44,53 @@ pub fn get_all_tools() -> Tools {
         Arc::new(FileEditTool::new()),
         Arc::new(GlobTool::new()),
         Arc::new(GrepTool),
-        Arc::new(NotebookEditTool),
         Arc::new(AskUserQuestionTool),
-        Arc::new(ToolSearchTool),
         Arc::new(AgentTool),
+        Arc::new(SkillTool),
+        Arc::new(PowerShellTool),
+        Arc::new(ConfigTool),
+        Arc::new(ReplTool),
+        Arc::new(StructuredOutputTool),
+        Arc::new(SendUserMessageTool),
+        Arc::new(WebFetchTool),
+        Arc::new(WebSearchTool),
         Arc::new(EnterPlanModeTool),
         Arc::new(ExitPlanModeTool),
         Arc::new(EnterWorktreeTool),
         Arc::new(ExitWorktreeTool),
-        Arc::new(SkillTool),
-        Arc::new(WebFetchTool),
-        Arc::new(WebSearchTool),
-        Arc::new(LspTool),
-        // Task management tools
         Arc::new(TaskCreateTool),
         Arc::new(TaskGetTool),
         Arc::new(TaskUpdateTool),
         Arc::new(TaskListTool),
         Arc::new(TaskStopTool),
         Arc::new(TaskOutputTool),
-        // Additional tools
-        Arc::new(TodoWriteTool),
-        Arc::new(SnipTool),
-        Arc::new(SleepTool),
-        // Agent Teams tools (feature-gated via is_enabled)
-        Arc::new(TeamCreateTool),
-        Arc::new(TeamDeleteTool),
+        Arc::new(LspTool),
         Arc::new(SendMessageTool),
+        Arc::new(SleepTool),
+        Arc::new(BriefTool),
+        Arc::new(SystemStatusTool),
     ];
 
     // Filter to only enabled tools
     tools.into_iter().filter(|t| t.is_enabled()).collect()
 }
 
-/// Find a tool by name from a tool collection.
-///
-/// Corresponds to TypeScript pattern: `tools.find(t => t.name === name)`
-pub fn find_tool_by_name(tools: &Tools, name: &str) -> Option<Arc<dyn Tool>> {
-    tools.iter().find(|t| t.name() == name).cloned()
-}
+/// Get all runtime tools, including plugin-contributed tools that expose an
+/// executable runtime in their plugin manifest.
+pub fn get_all_tools() -> Tools {
+    let mut tools = base_tools();
+    let mut seen: HashSet<String> = tools.iter().map(|tool| tool.name().to_string()).collect();
 
-/// Get tools filtered for the default preset (all enabled tools).
-///
-/// Corresponds to TypeScript: tools.ts `getToolsForDefaultPreset()`
-pub fn get_tools_for_default_preset() -> Tools {
-    get_all_tools()
+    for tool in crate::plugins::discover_plugin_tools() {
+        let name = tool.name().to_string();
+        if seen.insert(name.clone()) {
+            tools.push(tool);
+        } else {
+            warn!(tool = %name, "skipping plugin tool with duplicate name");
+        }
+    }
+
+    tools
 }
 
 #[cfg(test)]
@@ -99,14 +107,14 @@ mod tests {
     fn test_find_tool_by_name() {
         let tools = get_all_tools();
 
-        let bash = find_tool_by_name(&tools, "Bash");
+        let bash = tools.iter().find(|t| t.name() == "Bash");
         assert!(bash.is_some(), "should find Bash tool");
         assert_eq!(bash.unwrap().name(), "Bash");
 
-        let read = find_tool_by_name(&tools, "Read");
+        let read = tools.iter().find(|t| t.name() == "Read");
         assert!(read.is_some(), "should find Read tool");
 
-        let nonexistent = find_tool_by_name(&tools, "NonExistentTool");
+        let nonexistent = tools.iter().find(|t| t.name() == "NonExistentTool");
         assert!(nonexistent.is_none(), "should not find nonexistent tool");
     }
 
@@ -125,7 +133,11 @@ mod tests {
         let tools = get_all_tools();
         for tool in &tools {
             let schema = tool.input_json_schema();
-            assert!(schema.is_object(), "tool {} schema should be an object", tool.name());
+            assert!(
+                schema.is_object(),
+                "tool {} schema should be an object",
+                tool.name()
+            );
             assert!(
                 schema.get("properties").is_some(),
                 "tool {} schema should have properties",

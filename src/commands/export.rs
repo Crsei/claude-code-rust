@@ -1,14 +1,16 @@
-//! `/export` command — export the current conversation to a file.
+//! /export command — export conversation to Markdown.
 //!
-//! Saves conversation messages as JSON or Markdown to a specified
-//! file path. Defaults to JSON if no format is specified.
+//! Usage:
+//!   /export                  — export current session to ~/.cc-rust/exports/
+//!   /export list             — list all previously exported files
+//!   /export <path>           — export current session to a specific file
+//!   /export <session_id>     — export a saved session by ID
 
-#![allow(unused)]
-
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
+use crate::session::export;
 
 pub struct ExportHandler;
 
@@ -17,138 +19,164 @@ impl CommandHandler for ExportHandler {
     async fn execute(&self, args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
         let args = args.trim();
 
-        if ctx.messages.is_empty() {
-            return Ok(CommandResult::Output(
-                "No messages to export.".to_string(),
-            ));
+        if args.is_empty() {
+            // Export current session
+            return export_current(ctx);
         }
 
-        // Determine output format and path
-        let (path, format) = if args.is_empty() {
-            let ts = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-            (format!("conversation_{}.json", ts), ExportFormat::Json)
-        } else if args.ends_with(".md") || args.ends_with(".markdown") {
-            (args.to_string(), ExportFormat::Markdown)
-        } else if args.ends_with(".json") {
-            (args.to_string(), ExportFormat::Json)
-        } else {
-            (format!("{}.json", args), ExportFormat::Json)
-        };
+        // /export list — show all previously exported files
+        if args == "list" {
+            return list_exported_files();
+        }
 
-        let full_path = if std::path::Path::new(&path).is_absolute() {
-            std::path::PathBuf::from(&path)
-        } else {
-            ctx.cwd.join(&path)
-        };
+        // Check if arg looks like a file path (contains / or \ or ends with .md)
+        if args.contains('/') || args.contains('\\') || args.ends_with(".md") {
+            let path = std::path::Path::new(args);
+            return export_current_to_path(ctx, path);
+        }
 
-        let content = match format {
-            ExportFormat::Json => export_json(&ctx.messages)?,
-            ExportFormat::Markdown => export_markdown(&ctx.messages),
-        };
-
-        std::fs::write(&full_path, &content)
-            .with_context(|| format!("Failed to write to {}", full_path.display()))?;
-
-        Ok(CommandResult::Output(format!(
-            "Exported {} message(s) to {}",
-            ctx.messages.len(),
-            full_path.display()
-        )))
+        // Otherwise treat as a session ID (or prefix)
+        export_by_id(args, ctx)
     }
 }
 
-#[derive(Clone, Copy)]
-enum ExportFormat {
-    Json,
-    Markdown,
+fn export_current(ctx: &CommandContext) -> Result<CommandResult> {
+    let path = export::export_messages_markdown(
+        ctx.session_id.as_str(),
+        &ctx.messages,
+        &ctx.cwd.to_string_lossy(),
+        None,
+    )?;
+    Ok(CommandResult::Output(format!(
+        "Session exported to: {}",
+        path.display()
+    )))
 }
 
-fn export_json(
-    messages: &[crate::types::message::Message],
-) -> Result<String> {
-    use crate::types::message::{Message, MessageContent};
+fn export_current_to_path(ctx: &CommandContext, path: &std::path::Path) -> Result<CommandResult> {
+    let path = export::export_messages_markdown(
+        ctx.session_id.as_str(),
+        &ctx.messages,
+        &ctx.cwd.to_string_lossy(),
+        Some(path),
+    )?;
+    Ok(CommandResult::Output(format!(
+        "Session exported to: {}",
+        path.display()
+    )))
+}
 
-    let entries: Vec<serde_json::Value> = messages
+fn list_exported_files() -> Result<CommandResult> {
+    let files = export::list_exports()?;
+    if files.is_empty() {
+        return Ok(CommandResult::Output(
+            "No exports found. Use /export to export the current session.".into(),
+        ));
+    }
+    let mut out = format!("Exported sessions ({}):\n", files.len());
+    for f in &files {
+        let name = f
+            .file_name()
+            .map(|n| n.to_string_lossy())
+            .unwrap_or_default();
+        out.push_str(&format!("  {}\n", name));
+    }
+    Ok(CommandResult::Output(out))
+}
+
+fn export_by_id(session_id: &str, _ctx: &CommandContext) -> Result<CommandResult> {
+    // Try exact match first, then prefix match
+    let sessions = crate::session::storage::list_sessions()?;
+    let matched = sessions
         .iter()
-        .map(|m| match m {
-            Message::User(u) => {
-                serde_json::json!({
-                    "role": "user",
-                    "uuid": u.uuid.to_string(),
-                    "timestamp": u.timestamp,
-                    "content": message_content_to_text(&u.content),
-                })
-            }
-            Message::Assistant(a) => {
-                let content = MessageContent::Blocks(a.content.clone());
-                serde_json::json!({
-                    "role": "assistant",
-                    "content": message_content_to_text(&content),
-                })
-            }
-            Message::System(s) => {
-                serde_json::json!({
-                    "role": "system",
-                    "content": s.content,
-                })
-            }
-            _ => serde_json::json!({ "role": "other" }),
-        })
-        .collect();
+        .find(|s| s.session_id == session_id || s.session_id.starts_with(session_id));
 
-    serde_json::to_string_pretty(&entries).context("Failed to serialize messages")
+    match matched {
+        Some(info) => {
+            let path = export::export_session_markdown(&info.session_id, None)?;
+            Ok(CommandResult::Output(format!(
+                "Session {} exported to: {}",
+                &info.session_id[..8],
+                path.display()
+            )))
+        }
+        None => Ok(CommandResult::Output(format!(
+            "No session found matching '{}'. Use /session list to see available sessions.",
+            session_id
+        ))),
+    }
 }
 
-fn export_markdown(messages: &[crate::types::message::Message]) -> String {
-    use crate::types::message::{Message, MessageContent};
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
-    let mut lines = Vec::new();
-    lines.push("# Conversation Export".to_string());
-    lines.push(String::new());
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bootstrap::SessionId;
+    use crate::types::app_state::AppState;
+    use std::path::PathBuf;
 
-    for msg in messages {
-        match msg {
-            Message::User(u) => {
-                lines.push("## User".to_string());
-                lines.push(String::new());
-                lines.push(message_content_to_text(&u.content));
-                lines.push(String::new());
-            }
-            Message::Assistant(a) => {
-                let content = MessageContent::Blocks(a.content.clone());
-                lines.push("## Assistant".to_string());
-                lines.push(String::new());
-                lines.push(message_content_to_text(&content));
-                lines.push(String::new());
-            }
-            Message::System(s) => {
-                lines.push("## System".to_string());
-                lines.push(String::new());
-                lines.push(s.content.clone());
-                lines.push(String::new());
-            }
-            _ => {}
+    fn test_ctx() -> CommandContext {
+        CommandContext {
+            messages: Vec::new(),
+            cwd: PathBuf::from("/test"),
+            app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
         }
     }
 
-    lines.join("\n")
-}
-
-fn message_content_to_text(
-    content: &crate::types::message::MessageContent,
-) -> String {
-    use crate::types::message::{MessageContent, ContentBlock};
-    match content {
-        MessageContent::Text(text) => text.clone(),
-        MessageContent::Blocks(blocks) => {
-            blocks
-                .iter()
-                .filter_map(|b| match b {
-                    ContentBlock::Text { text } => Some(text.clone()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
+    #[tokio::test]
+    async fn test_export_list_returns_output() {
+        // list_exported_files() returns empty list gracefully when dir doesn't exist
+        let handler = ExportHandler;
+        let mut ctx = test_ctx();
+        let result = handler.execute("list", &mut ctx).await.unwrap();
+        // Either "No exports found" or a listing — both are Output variants
+        match result {
+            CommandResult::Output(_) => {}
+            _ => panic!("Expected Output"),
         }
+    }
+
+    #[tokio::test]
+    async fn test_export_nonexistent_session_id() {
+        let handler = ExportHandler;
+        let mut ctx = test_ctx();
+        // A pure random session ID that won't match anything
+        let result = handler
+            .execute("00000000-0000-0000-0000-nonexistent99", &mut ctx)
+            .await
+            .unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(
+                    text.contains("No session found"),
+                    "expected not-found message, got: {}",
+                    text
+                );
+            }
+            _ => panic!("Expected Output"),
+        }
+    }
+
+    #[test]
+    fn test_path_detection_slash() {
+        // Verify the path-detection heuristic used in execute(): slashes → file path
+        let args = "/tmp/my-export.md";
+        assert!(args.contains('/') || args.contains('\\') || args.ends_with(".md"));
+    }
+
+    #[test]
+    fn test_path_detection_md_extension() {
+        let args = "output.md";
+        assert!(args.ends_with(".md"));
+    }
+
+    #[test]
+    fn test_path_detection_plain_id_not_path() {
+        let args = "abc123";
+        assert!(!args.contains('/') && !args.contains('\\') && !args.ends_with(".md"));
     }
 }

@@ -1,66 +1,74 @@
-//! `/brief` command -- toggle brief output mode.
+//! `/brief` command -- toggle Brief output mode (KAIROS).
 //!
-//! Brief mode instructs the assistant to give shorter, more concise responses.
-
-use std::sync::atomic::{AtomicBool, Ordering};
+//! Brief mode routes all output through the BriefTool, producing
+//! concise summaries instead of verbose responses.
+//!
+//! Requires `FEATURE_KAIROS_BRIEF=1` (which itself requires `FEATURE_KAIROS=1`).
 
 use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-
-/// Global brief mode flag.
-static BRIEF_MODE: AtomicBool = AtomicBool::new(false);
+use crate::config::features::{self, Feature};
+use crate::engine::prompt_sections;
 
 pub struct BriefHandler;
 
 #[async_trait]
 impl CommandHandler for BriefHandler {
-    async fn execute(&self, args: &str, _ctx: &mut CommandContext) -> Result<CommandResult> {
-        let subcmd = args.trim().to_lowercase();
+    async fn execute(&self, args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
+        if !features::enabled(Feature::KairosBrief) {
+            return Ok(CommandResult::Output(
+                "Brief mode requires FEATURE_KAIROS_BRIEF=1".into(),
+            ));
+        }
 
-        match subcmd.as_str() {
+        match args.trim().to_lowercase().as_str() {
             "on" | "enable" => {
-                BRIEF_MODE.store(true, Ordering::SeqCst);
-                Ok(CommandResult::Output(
-                    "Brief mode enabled. Responses will be more concise.".to_string(),
-                ))
+                ctx.app_state.is_brief_only = true;
+                prompt_sections::clear_cache();
+                Ok(CommandResult::Output("Brief mode enabled.".into()))
             }
             "off" | "disable" => {
-                BRIEF_MODE.store(false, Ordering::SeqCst);
-                Ok(CommandResult::Output(
-                    "Brief mode disabled. Normal response length restored.".to_string(),
-                ))
+                ctx.app_state.is_brief_only = false;
+                prompt_sections::clear_cache();
+                Ok(CommandResult::Output("Brief mode disabled.".into()))
             }
-            "status" => {
-                let status = if BRIEF_MODE.load(Ordering::SeqCst) {
-                    "enabled"
+            "status" => Ok(CommandResult::Output(format!(
+                "Brief mode: {}",
+                if ctx.app_state.is_brief_only {
+                    "ON"
                 } else {
-                    "disabled"
-                };
-                Ok(CommandResult::Output(format!("Brief mode: {}", status)))
-            }
+                    "OFF"
+                }
+            ))),
             "" => {
-                let was_enabled = BRIEF_MODE.fetch_xor(true, Ordering::SeqCst);
-                let now = if was_enabled { "disabled" } else { "enabled" };
-                Ok(CommandResult::Output(format!("Brief mode {}.", now)))
+                ctx.app_state.is_brief_only = !ctx.app_state.is_brief_only;
+                prompt_sections::clear_cache();
+                Ok(CommandResult::Output(format!(
+                    "Brief mode {}.",
+                    if ctx.app_state.is_brief_only {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    }
+                )))
             }
             _ => Ok(CommandResult::Output(
-                "Usage: /brief [on|off|status]\n\nToggles brief mode without arguments."
-                    .to_string(),
+                "Usage: /brief [on|off|status]".into(),
             )),
         }
     }
 }
 
-/// Check if brief mode is currently enabled. Exposed for the query loop.
-pub fn is_brief_mode() -> bool {
-    BRIEF_MODE.load(Ordering::SeqCst)
-}
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
     use std::path::PathBuf;
 
@@ -69,46 +77,30 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("/test"),
             app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
         }
     }
 
     #[tokio::test]
-    async fn test_toggle_on() {
-        // Reset to known state
-        BRIEF_MODE.store(false, Ordering::SeqCst);
-
+    async fn test_feature_gate() {
+        // By default, FEATURE_KAIROS_BRIEF is not set, so the command should reject.
         let handler = BriefHandler;
         let mut ctx = test_ctx();
         let result = handler.execute("on", &mut ctx).await.unwrap();
         match result {
-            CommandResult::Output(text) => assert!(text.contains("enabled")),
+            CommandResult::Output(text) => assert!(text.contains("FEATURE_KAIROS_BRIEF")),
             _ => panic!("Expected Output"),
         }
     }
 
     #[tokio::test]
-    async fn test_toggle_off() {
+    async fn test_unknown_argument_gated() {
+        // Feature is not enabled in test env, so even unknown args hit the gate.
         let handler = BriefHandler;
         let mut ctx = test_ctx();
-        let result = handler.execute("off", &mut ctx).await.unwrap();
+        let result = handler.execute("turbo", &mut ctx).await.unwrap();
         match result {
-            CommandResult::Output(text) => assert!(text.contains("disabled")),
-            _ => panic!("Expected Output"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_status() {
-        BRIEF_MODE.store(false, Ordering::SeqCst);
-
-        let handler = BriefHandler;
-        let mut ctx = test_ctx();
-        let result = handler.execute("status", &mut ctx).await.unwrap();
-        match result {
-            CommandResult::Output(text) => {
-                assert!(text.contains("Brief mode:"));
-                assert!(text.contains("disabled"));
-            }
+            CommandResult::Output(text) => assert!(text.contains("FEATURE_KAIROS_BRIEF")),
             _ => panic!("Expected Output"),
         }
     }

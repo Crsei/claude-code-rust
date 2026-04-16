@@ -1,30 +1,25 @@
-/// 核心查询循环 — 整个系统的心脏
+/// Core query loop -- the heart of the system.
 ///
-/// 对应 TypeScript: query.ts 的 query() async generator
+/// Corresponds to TypeScript: query.ts's query() async generator.
 ///
-/// 结构:
+/// Structure:
 ///   while true {
-///     1. SETUP — 解构状态, 增加查询计数
-///     2. CONTEXT — 应用工具结果预算, 微压缩, 自动压缩
-///     3. API CALL — 流式调用模型, 收集助手消息 + 工具调用块
-///     4. POST-STREAMING — 检查 abort, 处理挂起摘要
-///     5. TERMINAL CHECK (无工具调用时):
-///        - prompt_too_long 恢复 (collapse drain → reactive compact → error)
-///        - max_output_tokens 恢复 (escalate → recovery message → error)
+///     1. SETUP -- destructure state, increment count
+///     2. CONTEXT -- apply tool result budget, microcompact, autocompact
+///     3. API CALL -- streaming model call, collect assistant message + tool use blocks
+///     4. POST-STREAMING -- check abort, handle pending summary
+///     5. TERMINAL CHECK (no tool calls):
+///        - prompt_too_long recovery
+///        - max_output_tokens recovery
 ///        - stop hooks
 ///        - token budget check
-///        - return Terminal
-///     6. TOOL EXECUTION (有工具调用时):
-///        - 分区为并发/串行批次
-///        - 执行工具
-///        - 检查执行期间 abort
-///     7. ATTACHMENTS — 注入文件变更, 记忆, 技能发现
-///     8. CONTINUE — 刷新工具, 检查 maxTurns, state = next
+///     6. TOOL EXECUTION (has tool calls):
+///        - partition into concurrent/serial batches
+///        - execute tools
+///        - check abort during execution
+///     7. ATTACHMENTS -- inject file changes, memory, skill discovery
+///     8. CONTINUE -- refresh tools, check maxTurns, state = next
 ///   }
-///
-/// 在 Rust 中, TypeScript 的 AsyncGenerator 映射为 `impl Stream<Item = QueryYield>`.
-/// 使用 `async_stream::stream!` 宏, 将 `yield` 映射为 stream 产出.
-
 use std::sync::Arc;
 
 use async_stream::stream;
@@ -33,39 +28,32 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::types::config::QueryParams;
+use crate::types::message::QueryYield;
 use crate::types::message::{
-    AssistantMessage, Attachment, AttachmentMessage, ContentBlock, Message, MessageContent,
-    RequestStartEvent, ToolResultContent, Usage, UserMessage,
+    Attachment, AttachmentMessage, ContentBlock, Message, MessageContent, RequestStartEvent,
+    ToolResultContent, Usage, UserMessage,
 };
 use crate::types::state::{BudgetTracker, QueryLoopState, TokenBudgetDecision};
-use crate::types::transitions::{Continue, Terminal};
-use crate::types::message::QueryYield;
+use crate::types::transitions::Continue;
+
+use crate::services::tool_use_summary::{self, ToolInfo};
 
 use super::deps::{ModelCallParams, QueryDeps};
+use super::loop_helpers::{
+    execute_tool_calls, handle_max_output_tokens, handle_prompt_too_long, make_abort_message,
+    make_error_message, make_user_message, MaxTokensRecovery, PromptRecovery,
+};
 use super::stop_hooks::{self, StopHookResult};
 use super::token_budget::check_token_budget;
 
-/// 最大输出 token 恢复尝试次数
-const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT: usize = 3;
-
-/// 升级后的最大输出 token (8k → 64k)
-const ESCALATED_MAX_TOKENS: usize = 64_000;
-
-/// query() — 核心查询循环
+/// query() -- core query loop.
 ///
-/// 接受查询参数和依赖注入, 返回一个 Stream 产出 `QueryYield`.
-/// 调用方 (QueryEngine) 消费此 stream 来驱动 UI 更新和消息收集.
-///
-/// # Arguments
-/// * `params` - 查询参数 (消息, 系统提示, 配置等)
-/// * `deps` - I/O 依赖 (API 客户端, 压缩器, 工具执行器等)
-pub fn query(
-    params: QueryParams,
-    deps: Arc<dyn QueryDeps>,
-) -> impl Stream<Item = QueryYield> {
+/// Takes query parameters and dependency injection, returns a Stream yielding `QueryYield`.
+/// The caller (QueryEngine) consumes this stream to drive UI updates and message collection.
+pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item = QueryYield> {
     stream! {
         // ──────────────────────────────────────────────────────────
-        // 初始化
+        // Initialization
         // ──────────────────────────────────────────────────────────
 
         let mut state = QueryLoopState::initial(params.messages);
@@ -77,16 +65,32 @@ pub fn query(
         let mut budget_tracker = BudgetTracker::new();
         let mut cumulative_usage = Usage::default();
 
-        // 主循环 — 对应 TypeScript 的 while(true)
+        // Main loop
         loop {
             // ──────────────────────────────────────────────────────
-            // STEP 1: SETUP — 解构状态
+            // STEP 1: SETUP
             // ──────────────────────────────────────────────────────
 
             let turn_count = state.turn_count;
             debug!(turn = turn_count, "query loop iteration start");
 
-            // 检查 abort
+            // Emit query.turn.start audit event
+            let turn_audit_ctx = deps.audit_context().with_turn();
+            {
+                use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                turn_audit_ctx.emit(
+                    EventKind::QueryTurnStart,
+                    Stage::QueryTurn,
+                    AuditLevel::Info,
+                    Outcome::Started,
+                    None,
+                    Some(serde_json::json!({
+                        "turn": turn_count,
+                        "messages_count": state.messages.len(),
+                    })),
+                );
+            }
+
             if deps.is_aborted() {
                 info!("aborted before API call");
                 yield QueryYield::Message(Message::Assistant(make_abort_message(
@@ -97,10 +101,45 @@ pub fn query(
             }
 
             // ──────────────────────────────────────────────────────
-            // STEP 2: CONTEXT — 微压缩 + 自动压缩
+            // STEP 1b: Inject completed background agent results
             // ──────────────────────────────────────────────────────
 
-            // 微压缩: 裁剪过大的工具结果
+            let completed_agents = deps.drain_background_results();
+            for agent in &completed_agents {
+                let content = if agent.had_error {
+                    format!(
+                        "[Background agent '{}' (id: {}) failed after {:.1}s]\n\n{}",
+                        agent.description,
+                        agent.agent_id,
+                        agent.duration.as_secs_f64(),
+                        agent.result_text,
+                    )
+                } else {
+                    format!(
+                        "[Background agent '{}' (id: {}) completed in {:.1}s]\n\n{}",
+                        agent.description,
+                        agent.agent_id,
+                        agent.duration.as_secs_f64(),
+                        agent.result_text,
+                    )
+                };
+
+                let sys_msg = Message::System(crate::types::message::SystemMessage {
+                    uuid: Uuid::new_v4(),
+                    timestamp: chrono::Utc::now().timestamp_millis(),
+                    subtype: crate::types::message::SystemSubtype::Informational {
+                        level: crate::types::message::InfoLevel::Info,
+                    },
+                    content,
+                });
+                yield QueryYield::Message(sys_msg.clone());
+                state.messages.push(sys_msg);
+            }
+
+            // ──────────────────────────────────────────────────────
+            // STEP 2: CONTEXT -- microcompact + autocompact
+            // ──────────────────────────────────────────────────────
+
             let messages = match deps.microcompact(state.messages.clone()).await {
                 Ok(msgs) => msgs,
                 Err(e) => {
@@ -109,13 +148,43 @@ pub fn query(
                 }
             };
 
-            // 自动压缩: 达到 token 阈值时压缩历史
+            let message_count_before = messages.len();
+
+            // Fire PreCompact hook before autocompact
+            {
+                let hooks_map = deps.get_app_state().hooks;
+                let compact_pre_configs = crate::tools::hooks::load_hook_configs(&hooks_map, "PreCompact");
+                if !compact_pre_configs.is_empty() {
+                    let payload = serde_json::json!({
+                        "message_count": message_count_before,
+                    });
+                    let _ = crate::tools::hooks::run_event_hooks("PreCompact", &payload, &compact_pre_configs).await;
+                }
+            }
+
             let (messages, auto_compact_tracking) = match deps
                 .autocompact(messages.clone(), state.auto_compact_tracking.clone())
                 .await
             {
                 Ok(Some(result)) => {
                     debug!("autocompact produced compacted messages");
+
+                    // Fire PostCompact hook after successful compaction
+                    {
+                        let hooks_map = deps.get_app_state().hooks;
+                        let compact_post_configs = crate::tools::hooks::load_hook_configs(&hooks_map, "PostCompact");
+                        if !compact_post_configs.is_empty() {
+                            let message_count_after = result.messages.len();
+                            let messages_freed = message_count_before.saturating_sub(message_count_after);
+                            let payload = serde_json::json!({
+                                "message_count_before": message_count_before,
+                                "message_count_after": message_count_after,
+                                "messages_freed": messages_freed,
+                            });
+                            let _ = crate::tools::hooks::run_event_hooks("PostCompact", &payload, &compact_post_configs).await;
+                        }
+                    }
+
                     (result.messages, Some(result.tracking))
                 }
                 Ok(None) => (messages, state.auto_compact_tracking.clone()),
@@ -129,10 +198,9 @@ pub fn query(
             state.auto_compact_tracking = auto_compact_tracking;
 
             // ──────────────────────────────────────────────────────
-            // STEP 3: API CALL — 流式调用模型
+            // STEP 3: API CALL -- streaming model call
             // ──────────────────────────────────────────────────────
 
-            // 产出请求开始事件
             yield QueryYield::RequestStart(RequestStartEvent);
 
             let tools = deps.get_tools();
@@ -148,14 +216,28 @@ pub fn query(
                 effort_value: deps.get_app_state().effort_value.clone(),
             };
 
-            let model_response = match deps.call_model(call_params).await {
-                Ok(resp) => resp,
+            // Emit model.request.start audit event
+            let req_audit_ctx = turn_audit_ctx.with_request();
+            {
+                use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                req_audit_ctx.emit(
+                    EventKind::ModelRequestStart,
+                    Stage::ModelCall,
+                    AuditLevel::Info,
+                    Outcome::Started,
+                    None,
+                    None,
+                );
+            }
+            let model_call_start = std::time::Instant::now();
+
+            let stream_result = deps.call_model_streaming(call_params).await;
+            let mut event_stream = match stream_result {
+                Ok(s) => s,
                 Err(e) => {
-                    // API 错误 — 检查是否是 prompt_too_long
                     let error_str = e.to_string();
 
                     if error_str.contains("prompt_too_long") || error_str.contains("prompt is too long") {
-                        // ── prompt_too_long 恢复路径 ──
                         let terminal = handle_prompt_too_long(
                             &deps,
                             &mut state,
@@ -184,14 +266,66 @@ pub fn query(
                 }
             };
 
-            // 转发流事件
-            for event in &model_response.stream_events {
-                yield QueryYield::Stream(event.clone());
+            // Consume stream events, forwarding to caller while accumulating
+            let mut accumulator = crate::api::streaming::StreamAccumulator::new();
+            let mut stream_error: Option<String> = None;
+
+            use futures::StreamExt;
+            while let Some(event_result) = event_stream.next().await {
+                match event_result {
+                    Ok(event) => {
+                        accumulator.process_event(&event);
+                        yield QueryYield::Stream(event);
+                    }
+                    Err(e) => {
+                        stream_error = Some(e.to_string());
+                        break;
+                    }
+                }
             }
 
-            let assistant_message = model_response.assistant_message.clone();
+            if let Some(ref err) = stream_error {
+                warn!(error = %err, "stream error during model call");
+                {
+                    use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                    req_audit_ctx.emit(
+                        EventKind::ModelRequestError,
+                        Stage::ModelCall,
+                        AuditLevel::Error,
+                        Outcome::Failed,
+                        Some(model_call_start.elapsed().as_millis() as u64),
+                        Some(serde_json::json!({"error": err})),
+                    );
+                }
+                yield QueryYield::Message(Message::Assistant(
+                    make_error_message(&deps, err),
+                ));
+                break;
+            }
 
-            // 累计 usage
+            let effective_model = deps.get_app_state().main_loop_model;
+            let assistant_message = accumulator.build(&effective_model);
+
+            // Emit model.request.finish audit event
+            {
+                use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                let model_duration = model_call_start.elapsed().as_millis() as u64;
+                req_audit_ctx.emit(
+                    EventKind::ModelRequestFinish,
+                    Stage::ModelCall,
+                    AuditLevel::Info,
+                    Outcome::Completed,
+                    Some(model_duration),
+                    Some(serde_json::json!({
+                        "stop_reason": assistant_message.stop_reason,
+                        "tool_use_count": assistant_message.content.iter()
+                            .filter(|b| matches!(b, ContentBlock::ToolUse { .. }))
+                            .count(),
+                    })),
+                );
+            }
+
+            // Accumulate usage
             if let Some(ref usage) = assistant_message.usage {
                 cumulative_usage.input_tokens += usage.input_tokens;
                 cumulative_usage.output_tokens += usage.output_tokens;
@@ -200,39 +334,43 @@ pub fn query(
             }
 
             // ──────────────────────────────────────────────────────
-            // STEP 4: POST-STREAMING — 检查 abort, 处理挂起摘要
+            // STEP 4: POST-STREAMING -- check abort, pending summary
             // ──────────────────────────────────────────────────────
 
-            // 检查 abort
             if deps.is_aborted() {
                 info!("aborted after streaming");
                 yield QueryYield::Message(Message::Assistant(assistant_message));
                 break;
             }
 
-            // 处理挂起的工具使用摘要 (如果有)
-            if let Some(ref _summary) = state.pending_tool_use_summary {
-                // Phase 1: 摘要功能暂不完整实现
-                // 在完整版本中, 这里会将摘要作为系统消息注入
-                state.pending_tool_use_summary = None;
+            // Inject pending tool use summary as system message
+            if let Some(summary) = state.pending_tool_use_summary.take() {
+                debug!(summary = %crate::utils::messages::truncate_text(&summary, 200), "injecting tool use summary");
+                let sys_msg = Message::System(crate::types::message::SystemMessage {
+                    uuid: Uuid::parse_str(&deps.uuid()).unwrap_or_else(|_| Uuid::new_v4()),
+                    timestamp: chrono::Utc::now().timestamp_millis(),
+                    subtype: crate::types::message::SystemSubtype::Informational {
+                        level: crate::types::message::InfoLevel::Info,
+                    },
+                    content: format!("[tool summary] {}", summary),
+                });
+                state.messages.push(sys_msg);
             }
 
-            // 产出助手消息
+            // Yield assistant message
             yield QueryYield::Message(Message::Assistant(assistant_message.clone()));
-
-            // 将助手消息加入对话历史
             state.messages.push(Message::Assistant(assistant_message.clone()));
 
             // ──────────────────────────────────────────────────────
-            // STEP 5 vs 6: 分支 — 有无工具调用
+            // STEP 5 vs 6: Branch -- tool calls or not
             // ──────────────────────────────────────────────────────
 
             let tool_uses = stop_hooks::extract_tool_uses(&assistant_message);
 
             if tool_uses.is_empty() {
-                // ── TERMINAL CHECK (无工具调用) ──
+                // ── TERMINAL CHECK (no tool calls) ──
 
-                // 5a. max_output_tokens 恢复
+                // 5a. max_output_tokens recovery
                 if assistant_message.stop_reason.as_deref() == Some("max_tokens") {
                     let recovery = handle_max_output_tokens(
                         &deps,
@@ -252,20 +390,23 @@ pub fn query(
                 }
 
                 // 5b. stop hooks
+                let hooks_map = deps.get_app_state().hooks;
+                let stop_configs = crate::tools::hooks::load_hook_configs(&hooks_map, "Stop");
+
                 let stop_result = stop_hooks::run_stop_hooks(
                     &assistant_message,
                     &state.messages,
                     state.stop_hook_active,
+                    &stop_configs,
                 )
                 .await;
 
                 match stop_result {
                     Ok(StopHookResult::PreventStop { continuation_message }) => {
-                        // 注入续写消息, 继续循环
                         let user_msg = make_user_message(
                             &deps,
                             &continuation_message,
-                            true, // is_meta
+                            true,
                         );
                         state.messages.push(Message::User(user_msg));
                         state.stop_hook_active = Some(true);
@@ -275,19 +416,23 @@ pub fn query(
                     }
                     Ok(StopHookResult::BlockingError { error }) => {
                         warn!(error = %error, "stop hook blocking error");
-                        // 终止
+
+                        // Fire StopFailure hook
+                        let sf_configs = crate::tools::hooks::load_hook_configs(&hooks_map, "StopFailure");
+                        if !sf_configs.is_empty() {
+                            let payload = serde_json::json!({ "error": error });
+                            let _ = crate::tools::hooks::run_event_hooks("StopFailure", &payload, &sf_configs).await;
+                        }
+
                         break;
                     }
-                    Ok(StopHookResult::AllowStop) => {
-                        // 继续到 token budget 检查
-                    }
+                    Ok(StopHookResult::AllowStop) => {}
                     Err(e) => {
                         warn!(error = %e, "stop hook execution error");
-                        // 出错时也允许停止
                     }
                 }
 
-                // 5c. token budget 检查
+                // 5c. token budget check
                 let global_turn_tokens = cumulative_usage.output_tokens;
                 let budget_decision = check_token_budget(
                     &mut budget_tracker,
@@ -320,12 +465,11 @@ pub fn query(
                                 "token budget: stopping"
                             );
                         }
-                        // 正常终止
                         break;
                     }
                 }
             } else {
-                // ── STEP 6: TOOL EXECUTION (有工具调用) ──
+                // ── STEP 6: TOOL EXECUTION ──
 
                 let tool_results = execute_tool_calls(
                     &deps,
@@ -335,23 +479,31 @@ pub fn query(
                 )
                 .await;
 
-                // 检查工具执行期间 abort
                 if deps.is_aborted() {
                     info!("aborted during tool execution");
                     break;
                 }
 
-                // 将工具结果转为用户消息, 加入对话历史
+                // Convert tool results to user messages
                 for exec_result in &tool_results {
-                    let tool_result_content = if exec_result.is_error {
-                        format!("Error: {}", exec_result.result.data)
+                    // Use structured model_content when available (e.g. images from MCP),
+                    // otherwise fall back to text-only content.
+                    let (tr_content, display_text) = if exec_result.is_error {
+                        let text = format!("Error: {}", exec_result.result.data);
+                        (ToolResultContent::Text(text.clone()), text)
+                    } else if let Some(ref model_content) = exec_result.result.model_content {
+                        let preview = exec_result.result.display_preview
+                            .clone()
+                            .unwrap_or_else(|| exec_result.result.data.to_string());
+                        (model_content.clone(), preview)
                     } else {
-                        exec_result.result.data.to_string()
+                        let text = exec_result.result.data.to_string();
+                        (ToolResultContent::Text(text.clone()), text)
                     };
 
                     let tool_result_block = ContentBlock::ToolResult {
                         tool_use_id: exec_result.tool_use_id.clone(),
-                        content: ToolResultContent::Text(tool_result_content.clone()),
+                        content: tr_content,
                         is_error: exec_result.is_error,
                     };
 
@@ -361,7 +513,7 @@ pub fn query(
                         role: "user".to_string(),
                         content: MessageContent::Blocks(vec![tool_result_block]),
                         is_meta: true,
-                        tool_use_result: Some(tool_result_content),
+                        tool_use_result: Some(display_text),
                         source_tool_assistant_uuid: Some(assistant_message.uuid),
                     };
 
@@ -369,23 +521,41 @@ pub fn query(
                     yield QueryYield::Message(msg.clone());
                     state.messages.push(msg);
 
-                    // 产出子消息 (如 Agent 工具产生的嵌套对话)
                     for sub_msg in &exec_result.result.new_messages {
                         yield QueryYield::Message(sub_msg.clone());
                         state.messages.push(sub_msg.clone());
                     }
                 }
 
-                // ── STEP 7: ATTACHMENTS — 注入文件变更等 ──
-                // Phase 1 简化: 暂不注入附件
-                // 在完整版本中这里会:
-                // - 检测文件系统变更 (git diff)
-                // - 注入记忆消息
-                // - 注入技能发现
+                // ── STEP 6b: Generate tool use summary ──
+                let tool_infos: Vec<ToolInfo> = tool_results
+                    .iter()
+                    .map(|r| ToolInfo {
+                        name: r.tool_name.clone(),
+                        input_summary: r.result.data.to_string(),
+                        output_summary: if r.is_error {
+                            format!("Error: {}", r.result.data)
+                        } else {
+                            r.result.data.to_string()
+                        },
+                    })
+                    .collect();
 
-                // ── STEP 8: CONTINUE — 刷新工具, 检查 maxTurns ──
+                let last_text = assistant_message.content.iter().find_map(|b| {
+                    if let ContentBlock::Text { text } = b { Some(text.as_str()) } else { None }
+                });
 
-                // 检查 maxTurns 限制
+                if let Some(summary) = tool_use_summary::generate_tool_use_summary(
+                    &tool_infos,
+                    last_text,
+                ) {
+                    state.pending_tool_use_summary = Some(summary);
+                }
+
+                // ── STEP 7: ATTACHMENTS (placeholder) ──
+
+                // ── STEP 8: CONTINUE -- refresh tools, check maxTurns ──
+
                 if let Some(max) = max_turns {
                     if state.turn_count >= max {
                         info!(turns = state.turn_count, max = max, "max turns reached");
@@ -402,7 +572,6 @@ pub fn query(
                     }
                 }
 
-                // 尝试刷新工具 (MCP 等可能变化)
                 match deps.refresh_tools().await {
                     Ok(_refreshed) => {
                         debug!("tools refreshed successfully");
@@ -419,606 +588,10 @@ pub fn query(
             }
         }
 
-        debug!(turns = state.turn_count, "query loop finished");
-    }
-}
-
-// ──────────────────────────────────────────────────────────
-// 辅助类型和函数
-// ──────────────────────────────────────────────────────────
-
-/// prompt_too_long 恢复结果
-#[allow(unused)]
-enum PromptRecovery {
-    Continue(Continue),
-    Terminal(Terminal),
-}
-
-/// max_output_tokens 恢复结果
-#[allow(unused)]
-enum MaxTokensRecovery {
-    Continue(Continue),
-    Terminal,
-}
-
-/// 处理 prompt_too_long 错误的恢复逻辑
-///
-/// 三步恢复:
-/// 1. collapse drain (折叠排空) — 移除最旧的非关键消息
-/// 2. reactive compact (响应式压缩) — 紧急压缩
-/// 3. 不可恢复 — 返回错误
-#[allow(unused)]
-async fn handle_prompt_too_long(
-    deps: &Arc<dyn QueryDeps>,
-    state: &mut QueryLoopState,
-    error: &str,
-) -> PromptRecovery {
-    // Step 1: 如果尚未尝试响应式压缩, 先尝试
-    if !state.has_attempted_reactive_compact {
-        debug!("prompt_too_long: attempting reactive compact");
-        state.has_attempted_reactive_compact = true;
-
-        match deps.reactive_compact(state.messages.clone()).await {
-            Ok(Some(result)) => {
-                state.messages = result.messages;
-                state.auto_compact_tracking = Some(result.tracking);
-                return PromptRecovery::Continue(Continue::ReactiveCompactRetry);
-            }
-            Ok(None) => {
-                debug!("reactive compact returned None, cannot recover");
-            }
-            Err(e) => {
-                warn!(error = %e, "reactive compact failed");
-            }
-        }
-    }
-
-    // 不可恢复
-    PromptRecovery::Terminal(Terminal::PromptTooLong)
-}
-
-/// 处理 max_output_tokens 恢复
-///
-/// 三步恢复:
-/// 1. escalate — 将 max_output_tokens 从默认值提升到 ESCALATED_MAX_TOKENS
-/// 2. recovery message — 注入 "continue from where you left off" 消息
-/// 3. 达到 recovery limit — 终止
-fn handle_max_output_tokens(
-    deps: &Arc<dyn QueryDeps>,
-    state: &mut QueryLoopState,
-    _assistant_message: &AssistantMessage,
-) -> MaxTokensRecovery {
-    // Step 1: 如果尚未升级, 先升级
-    if state.max_output_tokens_override.is_none() {
-        debug!("max_output_tokens: escalating to {}", ESCALATED_MAX_TOKENS);
-        state.max_output_tokens_override = Some(ESCALATED_MAX_TOKENS);
-        state.transition = Some(Continue::MaxOutputTokensEscalate);
-        return MaxTokensRecovery::Continue(Continue::MaxOutputTokensEscalate);
-    }
-
-    // Step 2: 尝试 recovery (注入续写消息)
-    if state.max_output_tokens_recovery_count < MAX_OUTPUT_TOKENS_RECOVERY_LIMIT {
-        state.max_output_tokens_recovery_count += 1;
-        let attempt = state.max_output_tokens_recovery_count;
-        debug!(attempt, "max_output_tokens: recovery attempt");
-
-        let recovery_msg = make_user_message(
-            deps,
-            "Your response was cut off due to output length limits. Please continue from where you left off.",
-            true,
-        );
-        state.messages.push(Message::User(recovery_msg));
-        state.turn_count += 1;
-        return MaxTokensRecovery::Continue(Continue::MaxOutputTokensRecovery { attempt });
-    }
-
-    // Step 3: 达到 recovery limit
-    debug!("max_output_tokens: recovery limit reached, terminating");
-    MaxTokensRecovery::Terminal
-}
-
-/// 执行工具调用 (按批次: 并发安全的一起, 其余串行)
-async fn execute_tool_calls(
-    deps: &Arc<dyn QueryDeps>,
-    tool_uses: &[(String, String, serde_json::Value)],
-    tools: &crate::types::tool::Tools,
-    parent_message: &AssistantMessage,
-) -> Vec<super::deps::ToolExecResult> {
-    use super::deps::{ToolExecRequest, ToolExecResult};
-
-    let mut results = Vec::new();
-
-    // 分区: 连续的并发安全工具 → 一个并发批次, 其余串行
-    let mut batches: Vec<(bool, Vec<(String, String, serde_json::Value)>)> = Vec::new();
-
-    for (id, name, input) in tool_uses {
-        let tool = tools.iter().find(|t| t.name() == name);
-        let is_safe = tool.map_or(false, |t| t.is_concurrency_safe(input));
-
-        if is_safe {
-            if let Some(last) = batches.last_mut() {
-                if last.0 {
-                    last.1.push((id.clone(), name.clone(), input.clone()));
-                    continue;
-                }
-            }
-        }
-
-        batches.push((is_safe, vec![(id.clone(), name.clone(), input.clone())]));
-    }
-
-    for (is_concurrent, batch) in batches {
-        if is_concurrent && batch.len() > 1 {
-            // 并发执行
-            let mut handles = Vec::new();
-            for (id, name, input) in batch {
-                let deps = deps.clone();
-                let parent = parent_message.clone();
-                let tools = tools.clone();
-                let handle = tokio::spawn(async move {
-                    let req = ToolExecRequest {
-                        tool_use_id: id,
-                        tool_name: name,
-                        input,
-                    };
-                    deps.execute_tool(req, &tools, &parent, None).await
-                });
-                handles.push(handle);
-            }
-
-            for handle in handles {
-                match handle.await {
-                    Ok(Ok(result)) => results.push(result),
-                    Ok(Err(e)) => {
-                        warn!(error = %e, "tool execution error");
-                        // 产生一个错误结果
-                        results.push(ToolExecResult {
-                            tool_use_id: "unknown".to_string(),
-                            tool_name: "unknown".to_string(),
-                            result: crate::types::tool::ToolResult {
-                                data: serde_json::json!(format!("Internal error: {}", e)),
-                                new_messages: vec![],
-                            },
-                            is_error: true,
-                        });
-                    }
-                    Err(e) => {
-                        warn!(error = %e, "tool task panicked");
-                    }
-                }
-            }
-        } else {
-            // 串行执行
-            for (id, name, input) in batch {
-                let req = ToolExecRequest {
-                    tool_use_id: id,
-                    tool_name: name,
-                    input,
-                };
-                match deps.execute_tool(req, tools, parent_message, None).await {
-                    Ok(result) => results.push(result),
-                    Err(e) => {
-                        warn!(error = %e, "tool execution error");
-                        results.push(ToolExecResult {
-                            tool_use_id: "unknown".to_string(),
-                            tool_name: "unknown".to_string(),
-                            result: crate::types::tool::ToolResult {
-                                data: serde_json::json!(format!("Internal error: {}", e)),
-                                new_messages: vec![],
-                            },
-                            is_error: true,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    results
-}
-
-/// 创建 abort 占位助手消息
-fn make_abort_message(deps: &Arc<dyn QueryDeps>, reason: &str) -> AssistantMessage {
-    AssistantMessage {
-        uuid: Uuid::parse_str(&deps.uuid()).unwrap_or_else(|_| Uuid::new_v4()),
-        timestamp: chrono::Utc::now().timestamp_millis(),
-        role: "assistant".to_string(),
-        content: vec![],
-        usage: None,
-        stop_reason: Some(reason.to_string()),
-        is_api_error_message: false,
-        api_error: None,
-        cost_usd: 0.0,
-    }
-}
-
-/// 创建 API 错误助手消息
-fn make_error_message(deps: &Arc<dyn QueryDeps>, error: &str) -> AssistantMessage {
-    AssistantMessage {
-        uuid: Uuid::parse_str(&deps.uuid()).unwrap_or_else(|_| Uuid::new_v4()),
-        timestamp: chrono::Utc::now().timestamp_millis(),
-        role: "assistant".to_string(),
-        content: vec![ContentBlock::Text {
-            text: format!("API error: {}", error),
-        }],
-        usage: None,
-        stop_reason: Some("error".to_string()),
-        is_api_error_message: true,
-        api_error: Some(error.to_string()),
-        cost_usd: 0.0,
-    }
-}
-
-/// 创建用户消息 (系统注入)
-fn make_user_message(
-    deps: &Arc<dyn QueryDeps>,
-    content: &str,
-    is_meta: bool,
-) -> UserMessage {
-    UserMessage {
-        uuid: Uuid::parse_str(&deps.uuid()).unwrap_or_else(|_| Uuid::new_v4()),
-        timestamp: chrono::Utc::now().timestamp_millis(),
-        role: "user".to_string(),
-        content: MessageContent::Text(content.to_string()),
-        is_meta,
-        tool_use_result: None,
-        source_tool_assistant_uuid: None,
+        info!(turns = state.turn_count, "query loop finished");
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::pin::Pin;
-
-    use anyhow::Result;
-    use futures::StreamExt;
-
-    use crate::query::deps::{
-        CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest,
-        ToolExecResult,
-    };
-    use crate::types::app_state::AppState;
-    use crate::types::config::QuerySource;
-    use crate::types::message::StreamEvent;
-    use crate::types::state::AutoCompactTracking;
-    use crate::types::tool::{ToolProgress, Tools};
-
-    /// 测试用的 mock deps
-    struct MockDeps {
-        /// 预设的模型响应序列
-        responses: std::sync::Mutex<Vec<ModelResponse>>,
-        aborted: std::sync::atomic::AtomicBool,
-    }
-
-    impl MockDeps {
-        fn new(responses: Vec<ModelResponse>) -> Self {
-            Self {
-                responses: std::sync::Mutex::new(responses),
-                aborted: std::sync::atomic::AtomicBool::new(false),
-            }
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl QueryDeps for MockDeps {
-        async fn call_model(&self, _params: ModelCallParams) -> Result<ModelResponse> {
-            let mut responses = self.responses.lock().unwrap();
-            if responses.is_empty() {
-                anyhow::bail!("no more mock responses");
-            }
-            Ok(responses.remove(0))
-        }
-
-        async fn call_model_streaming(
-            &self,
-            _params: ModelCallParams,
-        ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
-            Ok(Box::pin(futures::stream::empty()))
-        }
-
-        async fn microcompact(&self, messages: Vec<Message>) -> Result<Vec<Message>> {
-            Ok(messages)
-        }
-
-        async fn autocompact(
-            &self,
-            _messages: Vec<Message>,
-            _tracking: Option<AutoCompactTracking>,
-        ) -> Result<Option<CompactionResult>> {
-            Ok(None)
-        }
-
-        async fn reactive_compact(
-            &self,
-            _messages: Vec<Message>,
-        ) -> Result<Option<CompactionResult>> {
-            Ok(None)
-        }
-
-        async fn execute_tool(
-            &self,
-            request: ToolExecRequest,
-            _tools: &Tools,
-            _parent: &AssistantMessage,
-            _on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
-        ) -> Result<ToolExecResult> {
-            Ok(ToolExecResult {
-                tool_use_id: request.tool_use_id,
-                tool_name: request.tool_name,
-                result: crate::types::tool::ToolResult {
-                    data: serde_json::json!("mock tool output"),
-                    new_messages: vec![],
-                },
-                is_error: false,
-            })
-        }
-
-        fn get_app_state(&self) -> AppState {
-            AppState::default()
-        }
-
-        fn uuid(&self) -> String {
-            Uuid::new_v4().to_string()
-        }
-
-        fn is_aborted(&self) -> bool {
-            self.aborted.load(std::sync::atomic::Ordering::Relaxed)
-        }
-
-        fn get_tools(&self) -> Tools {
-            vec![]
-        }
-
-        async fn refresh_tools(&self) -> Result<Tools> {
-            Ok(vec![])
-        }
-    }
-
-    fn make_text_response(text: &str) -> ModelResponse {
-        ModelResponse {
-            assistant_message: AssistantMessage {
-                uuid: Uuid::new_v4(),
-                timestamp: chrono::Utc::now().timestamp_millis(),
-                role: "assistant".to_string(),
-                content: vec![ContentBlock::Text {
-                    text: text.to_string(),
-                }],
-                usage: Some(Usage {
-                    input_tokens: 100,
-                    output_tokens: 50,
-                    cache_read_input_tokens: 0,
-                    cache_creation_input_tokens: 0,
-                }),
-                stop_reason: Some("end_turn".to_string()),
-                is_api_error_message: false,
-                api_error: None,
-                cost_usd: 0.001,
-            },
-            stream_events: vec![],
-            usage: Usage {
-                input_tokens: 100,
-                output_tokens: 50,
-                cache_read_input_tokens: 0,
-                cache_creation_input_tokens: 0,
-            },
-        }
-    }
-
-    #[tokio::test]
-    async fn test_simple_text_response_terminates() {
-        let deps = Arc::new(MockDeps::new(vec![make_text_response("Hello, world!")]));
-
-        let params = QueryParams {
-            messages: vec![Message::User(UserMessage {
-                uuid: Uuid::new_v4(),
-                timestamp: 0,
-                role: "user".to_string(),
-                content: MessageContent::Text("Hi".to_string()),
-                is_meta: false,
-                tool_use_result: None,
-                source_tool_assistant_uuid: None,
-            })],
-            system_prompt: vec!["You are a helpful assistant.".to_string()],
-            user_context: Default::default(),
-            system_context: Default::default(),
-            fallback_model: None,
-            query_source: QuerySource::ReplMainThread,
-            max_output_tokens_override: None,
-            max_turns: None,
-            skip_cache_write: None,
-            task_budget: None,
-        };
-
-        let stream = query(params, deps);
-        let items: Vec<QueryYield> = stream.collect().await;
-
-        // Should have: RequestStart, (stream events...), AssistantMessage
-        assert!(items.len() >= 2, "expected at least 2 items, got {}", items.len());
-
-        // First should be RequestStart
-        assert!(matches!(items[0], QueryYield::RequestStart(_)));
-
-        // Should contain an assistant message
-        let has_assistant = items.iter().any(|item| {
-            matches!(item, QueryYield::Message(Message::Assistant(_)))
-        });
-        assert!(has_assistant, "expected an assistant message in output");
-    }
-
-    #[tokio::test]
-    async fn test_tool_use_then_text_response() {
-        let tool_response = ModelResponse {
-            assistant_message: AssistantMessage {
-                uuid: Uuid::new_v4(),
-                timestamp: chrono::Utc::now().timestamp_millis(),
-                role: "assistant".to_string(),
-                content: vec![
-                    ContentBlock::Text {
-                        text: "Let me check.".to_string(),
-                    },
-                    ContentBlock::ToolUse {
-                        id: "tu_1".to_string(),
-                        name: "Bash".to_string(),
-                        input: serde_json::json!({"command": "echo hello"}),
-                    },
-                ],
-                usage: Some(Usage {
-                    input_tokens: 100,
-                    output_tokens: 80,
-                    ..Default::default()
-                }),
-                stop_reason: Some("tool_use".to_string()),
-                is_api_error_message: false,
-                api_error: None,
-                cost_usd: 0.001,
-            },
-            stream_events: vec![],
-            usage: Usage::default(),
-        };
-
-        let text_response = make_text_response("Done! The output was hello.");
-
-        let deps = Arc::new(MockDeps::new(vec![tool_response, text_response]));
-
-        let params = QueryParams {
-            messages: vec![Message::User(UserMessage {
-                uuid: Uuid::new_v4(),
-                timestamp: 0,
-                role: "user".to_string(),
-                content: MessageContent::Text("Run echo hello".to_string()),
-                is_meta: false,
-                tool_use_result: None,
-                source_tool_assistant_uuid: None,
-            })],
-            system_prompt: vec![],
-            user_context: Default::default(),
-            system_context: Default::default(),
-            fallback_model: None,
-            query_source: QuerySource::ReplMainThread,
-            max_output_tokens_override: None,
-            max_turns: None,
-            skip_cache_write: None,
-            task_budget: None,
-        };
-
-        let stream = query(params, deps);
-        let items: Vec<QueryYield> = stream.collect().await;
-
-        // Should have 2 request starts (two turns), assistant messages, tool result messages
-        let request_starts = items
-            .iter()
-            .filter(|i| matches!(i, QueryYield::RequestStart(_)))
-            .count();
-        assert_eq!(request_starts, 2, "expected 2 request starts (two turns)");
-
-        let assistant_msgs = items
-            .iter()
-            .filter(|i| matches!(i, QueryYield::Message(Message::Assistant(_))))
-            .count();
-        assert_eq!(assistant_msgs, 2, "expected 2 assistant messages");
-    }
-
-    #[tokio::test]
-    async fn test_max_turns_limit() {
-        // Both responses have tool calls, but max_turns=1 should stop after first
-        let tool_response = ModelResponse {
-            assistant_message: AssistantMessage {
-                uuid: Uuid::new_v4(),
-                timestamp: chrono::Utc::now().timestamp_millis(),
-                role: "assistant".to_string(),
-                content: vec![ContentBlock::ToolUse {
-                    id: "tu_1".to_string(),
-                    name: "Bash".to_string(),
-                    input: serde_json::json!({"command": "ls"}),
-                }],
-                usage: Some(Usage::default()),
-                stop_reason: Some("tool_use".to_string()),
-                is_api_error_message: false,
-                api_error: None,
-                cost_usd: 0.0,
-            },
-            stream_events: vec![],
-            usage: Usage::default(),
-        };
-
-        let deps = Arc::new(MockDeps::new(vec![tool_response]));
-
-        let params = QueryParams {
-            messages: vec![Message::User(UserMessage {
-                uuid: Uuid::new_v4(),
-                timestamp: 0,
-                role: "user".to_string(),
-                content: MessageContent::Text("list files".to_string()),
-                is_meta: false,
-                tool_use_result: None,
-                source_tool_assistant_uuid: None,
-            })],
-            system_prompt: vec![],
-            user_context: Default::default(),
-            system_context: Default::default(),
-            fallback_model: None,
-            query_source: QuerySource::ReplMainThread,
-            max_output_tokens_override: None,
-            max_turns: Some(1),
-            skip_cache_write: None,
-            task_budget: None,
-        };
-
-        let stream = query(params, deps);
-        let items: Vec<QueryYield> = stream.collect().await;
-
-        // Should have a MaxTurnsReached attachment
-        let has_max_turns = items.iter().any(|item| {
-            matches!(
-                item,
-                QueryYield::Message(Message::Attachment(AttachmentMessage {
-                    attachment: Attachment::MaxTurnsReached { .. },
-                    ..
-                }))
-            )
-        });
-        assert!(has_max_turns, "expected MaxTurnsReached attachment");
-    }
-
-    #[tokio::test]
-    async fn test_abort_before_api_call() {
-        let deps = Arc::new(MockDeps::new(vec![]));
-        deps.aborted
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-
-        let params = QueryParams {
-            messages: vec![Message::User(UserMessage {
-                uuid: Uuid::new_v4(),
-                timestamp: 0,
-                role: "user".to_string(),
-                content: MessageContent::Text("Hi".to_string()),
-                is_meta: false,
-                tool_use_result: None,
-                source_tool_assistant_uuid: None,
-            })],
-            system_prompt: vec![],
-            user_context: Default::default(),
-            system_context: Default::default(),
-            fallback_model: None,
-            query_source: QuerySource::ReplMainThread,
-            max_output_tokens_override: None,
-            max_turns: None,
-            skip_cache_write: None,
-            task_budget: None,
-        };
-
-        let stream = query(params, deps);
-        let items: Vec<QueryYield> = stream.collect().await;
-
-        // Should have an aborted assistant message
-        let has_assistant = items.iter().any(|item| {
-            if let QueryYield::Message(Message::Assistant(msg)) = item {
-                msg.stop_reason.as_deref() == Some("AbortedStreaming")
-            } else {
-                false
-            }
-        });
-        assert!(has_assistant, "expected aborted assistant message");
-    }
-}
+#[path = "loop_tests.rs"]
+mod loop_tests;

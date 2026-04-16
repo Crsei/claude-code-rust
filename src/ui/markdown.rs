@@ -1,11 +1,53 @@
+use std::cell::RefCell;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::num::NonZeroUsize;
+
+use lru::LruCache;
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use super::theme::Theme;
 
+// ---------------------------------------------------------------------------
+// LRU cache (thread-local, 256 entries)
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    static MD_CACHE: RefCell<LruCache<u64, Vec<Line<'static>>>> =
+        RefCell::new(LruCache::new(NonZeroUsize::new(256).unwrap()));
+}
+
+fn cache_key(text: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    text.hash(&mut hasher);
+    hasher.finish()
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 /// Convert a markdown string into a vector of styled ratatui [`Line`]s.
 ///
+/// Results are LRU-cached so repeated calls with the same content skip
+/// re-parsing (e.g. when scrolling back through history).
+pub fn markdown_to_lines(text: &str, theme: &Theme) -> Vec<Line<'static>> {
+    let key = cache_key(text);
+    let cached = MD_CACHE.with(|c| c.borrow_mut().get(&key).cloned());
+    if let Some(lines) = cached {
+        return lines;
+    }
+    let lines = markdown_to_lines_inner(text, theme);
+    MD_CACHE.with(|c| c.borrow_mut().put(key, lines.clone()));
+    lines
+}
+
+// ---------------------------------------------------------------------------
+// Inner implementation (unchanged logic)
+// ---------------------------------------------------------------------------
+
 /// Supported elements:
 /// - Headings (rendered bold + underlined)
 /// - Bold / strong emphasis
@@ -14,13 +56,9 @@ use super::theme::Theme;
 /// - Fenced / indented code blocks (each line rendered with `theme.code`)
 /// - Unordered lists (prefixed with "  - ")
 /// - Ordered lists (prefixed with "  N. ")
-/// - Links (rendered underlined with URL in parentheses)
+/// - Links (rendered underlined)
 /// - Paragraphs (separated by blank lines)
-///
-/// This is intentionally a *simple* renderer --- it does not attempt full
-/// markdown layout (tables, nested block quotes, etc.), keeping the code
-/// small and the output predictable on a terminal.
-pub fn markdown_to_lines(text: &str, theme: &Theme) -> Vec<Line<'static>> {
+fn markdown_to_lines_inner(text: &str, theme: &Theme) -> Vec<Line<'static>> {
     let mut opts = Options::empty();
     opts.insert(Options::ENABLE_STRIKETHROUGH);
     let parser = Parser::new_ext(text, opts);
@@ -42,9 +80,7 @@ pub fn markdown_to_lines(text: &str, theme: &Theme) -> Vec<Line<'static>> {
                     pulldown_cmark::HeadingLevel::H1 => theme
                         .heading
                         .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-                    pulldown_cmark::HeadingLevel::H2 => theme
-                        .heading
-                        .add_modifier(Modifier::BOLD),
+                    pulldown_cmark::HeadingLevel::H2 => theme.heading.add_modifier(Modifier::BOLD),
                     _ => theme.bold,
                 };
                 style_stack.push(heading_style);
@@ -52,7 +88,6 @@ pub fn markdown_to_lines(text: &str, theme: &Theme) -> Vec<Line<'static>> {
             Event::End(TagEnd::Heading(_)) => {
                 flush_line(&mut current_spans, &mut lines);
                 style_stack.pop();
-                // Add a blank line after headings.
                 lines.push(Line::from(""));
             }
 
@@ -128,33 +163,12 @@ pub fn markdown_to_lines(text: &str, theme: &Theme) -> Vec<Line<'static>> {
             // ── Links ───────────────────────────────────────────────
             Event::Start(Tag::Link { dest_url, .. }) => {
                 style_stack.push(theme.link);
-                // We will append the URL after the link text on End.
-                // Store the URL by pushing a marker span. Since we cannot
-                // easily pass data through the stack we push the URL into
-                // a hidden span that we look for on End. In practice we
-                // just style the text; the URL is appended after.
-                // (Simplified: we stash the url in the style stack as an
-                // additional push, and pop twice on End.)
-                style_stack.push(Style::default()); // placeholder for URL
-                // Save URL as a raw span we will emit on End.
-                current_spans.push(Span::styled("", Style::default())); // marker
-                // Actually store the URL somewhere accessible... we use a
-                // simple trick: we encode it as a hidden span at the current
-                // position. On `End(Link)` we pop back.
-                // For simplicity, just render [text](url).
-                current_spans.pop(); // remove marker
+                style_stack.push(Style::default());
+                current_spans.push(Span::styled("", Style::default()));
+                current_spans.pop();
                 current_spans.push(Span::raw("["));
-                // We will push the URL on End using `dest_url`. To pass it
-                // through, we abuse the fact that we can just stash it.
-                // ... Actually, let's use a cleaner approach: stash URLs in
-                // a side-vec.
-                // For now, just underline the text and append URL on End.
-                // We don't have a great way to thread the URL through
-                // pulldown-cmark's event model here. Let's use the knowledge
-                // that End(Link) in pulldown-cmark 0.12 carries the URL.
-                let _ = dest_url; // URL is available on Start but not End in 0.12.
-                // We'll just style the text as a link; no URL append.
-                style_stack.pop(); // remove placeholder
+                let _ = dest_url;
+                style_stack.pop();
             }
             Event::End(TagEnd::Link) => {
                 current_spans.push(Span::raw("]"));
@@ -172,26 +186,19 @@ pub fn markdown_to_lines(text: &str, theme: &Theme) -> Vec<Line<'static>> {
 
             // ── Inline code ─────────────────────────────────────────
             Event::Code(code) => {
-                current_spans.push(Span::styled(
-                    format!("`{}`", code),
-                    theme.code,
-                ));
+                current_spans.push(Span::styled(format!("`{}`", code), theme.code));
             }
 
             // ── Text ────────────────────────────────────────────────
             Event::Text(text) => {
                 let style = current_style(&style_stack);
                 if in_code_block {
-                    // Code blocks: preserve line structure.
                     for (i, line_text) in text.split('\n').enumerate() {
                         if i > 0 {
                             flush_line(&mut current_spans, &mut lines);
                         }
                         if !line_text.is_empty() {
-                            current_spans.push(Span::styled(
-                                line_text.to_string(),
-                                style,
-                            ));
+                            current_spans.push(Span::styled(line_text.to_string(), style));
                         }
                     }
                 } else {
@@ -217,29 +224,31 @@ pub fn markdown_to_lines(text: &str, theme: &Theme) -> Vec<Line<'static>> {
                 lines.push(Line::from(""));
             }
 
-            // Ignore everything else (footnotes, task list markers, etc.)
             _ => {}
         }
     }
 
-    // Flush any remaining spans.
     flush_line(&mut current_spans, &mut lines);
 
     // Remove trailing blank lines.
-    while lines.last().map_or(false, |l| l.spans.is_empty() || line_is_empty(l)) {
+    while lines
+        .last()
+        .map_or(false, |l| l.spans.is_empty() || line_is_empty(l))
+    {
         lines.pop();
     }
 
     lines
 }
 
-/// Get the current (topmost) style from the stack, defaulting to `Style::default()`.
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 fn current_style(stack: &[Style]) -> Style {
     stack.last().copied().unwrap_or_default()
 }
 
-/// Move all accumulated spans into a new `Line` and push it onto `lines`.
-/// Clears `current_spans`.
 fn flush_line(current_spans: &mut Vec<Span<'static>>, lines: &mut Vec<Line<'static>>) {
     if !current_spans.is_empty() {
         let spans = std::mem::take(current_spans);
@@ -247,12 +256,10 @@ fn flush_line(current_spans: &mut Vec<Span<'static>>, lines: &mut Vec<Line<'stat
     }
 }
 
-/// Check if a line is visually empty (all spans contain only whitespace).
 fn line_is_empty(line: &Line) -> bool {
     line.spans.iter().all(|s| s.content.trim().is_empty())
 }
 
-/// Tracking state for list rendering.
 enum ListKind {
     Unordered,
     Ordered(usize),

@@ -1,0 +1,20 @@
+{
+  "name": "cc-rust-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/main.tsx",
+    "build": "bun build src/main.tsx --target=bun --outdir=dist",
+    "dashboard": "bun run subagent-dashboard/server.ts"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.1.97",
+    "@opentui/react": "^0.1.97",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "typescript": "^5.0.0"
+  }
+}

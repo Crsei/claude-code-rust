@@ -81,7 +81,8 @@ fn enable_fast_mode(ctx: &mut CommandContext) -> Result<CommandResult> {
 
     ctx.app_state.fast_mode = true;
 
-    let mut msg = "Fast mode enabled. Output will be generated faster using the same model.".to_string();
+    let mut msg =
+        "Fast mode enabled. Output will be generated faster using the same model.".to_string();
     if switched_model {
         msg.push_str(&format!(
             "\nModel switched from '{}' to '{}' (fast mode requires Opus 4.6).",
@@ -135,6 +136,7 @@ fn show_status(ctx: &CommandContext) -> Result<CommandResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
     use std::path::PathBuf;
 
@@ -143,6 +145,7 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("/test"),
             app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
         }
     }
 

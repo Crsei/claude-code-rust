@@ -70,8 +70,8 @@
 | Phase 14A | 本地补充 | ✅ 100% (10/10) | COMPLETED_FULL.md |
 | Phase 14B | 命令 batch 1+2 | ✅ 100% (20/20) | COMPLETED_FULL.md |
 | Phase 14B-3 | 命令 batch 3 | ✅ 100% (30/30) | 新增 20 commands + 改进 |
-| Phase 14C | 缺失工具补全 | ✅ 80% (9/12) | Task tools + TodoWrite + Snip + Sleep |
-| Phase 14D | 服务补全 | ✅ 50% (2/4) | path_validation + config validation |
+| Phase 14C | 缺失工具补全 | ✅ 100% (lite) | +5 tools: PowerShell, Config, REPL, StructuredOutput, SendUserMessage |
+| Phase 14D | 服务补全 | ✅ 100% (lite) | +4 services: ToolUseSummary, SessionMemory, PromptSuggestion, LSP Lifecycle |
 
 ---
 
@@ -207,17 +207,17 @@ SendUserFile, PushNotification, SubscribePR
   Phase 9-11   API/认证/MCP  ██████████ 100%  (活跃路径完成)
   Phase 12     网络工具      ████████░░  80%  (LSP 服务待完善)
   Phase 13     远程/遥测     ░░░░░░░░░░   0%  (暂不实现)
-  Phase 14B-3  第三批命令    ████████░░  80%  (30/~37 命令已完成)
-  Phase 14C    缺失工具      ████████░░  80%  (9/12 非延迟工具已完成)
-  Phase 14D    服务补全      ████░░░░░░  50%  (path_validation + config validation)
+  Phase 14B    命令 (lite)   ██████████ 100%  (26 命令, 含 extra-usage + rate-limit-options)
+  Phase 14C    工具 (lite)   ██████████ 100%  (13 工具, +5: PowerShell/Config/REPL/StructuredOutput/SendUserMessage)
+  Phase 14D    服务 (lite)   ██████████ 100%  (+4: ToolUseSummary/SessionMemory/PromptSuggestion/LSP Lifecycle)
   Phase 14E    网络/远程      ░░░░░░░░░░   0%  (暂不实现)
 
-  文件总数: 187 .rs 文件
-  代码行数: ~46,886 行 (占 TS ~225K 的 21%)
-  测试数量: 774 个 (偶尔 1-2 个 env/global 竞态)
-  目录覆盖: 22/35 TS 顶级目录 (63%)
-  命令覆盖: 57/85+ (67%)
-  工具覆盖: 30/40+ (75%)
+  Lite 版文件总数: 122 .rs 文件
+  Lite 版代码行数: ~31,554 行 (占 TS ~225K 的 14%)
+  Lite 版测试数量: 537 个 (偶尔 1-2 个 env/global 竞态)
+  Lite 版命令覆盖: 26 个斜杠命令
+  Lite 版工具覆盖: 13 个工具
+  Lite 版服务覆盖: 4 个服务 (tool_use_summary, session_memory, prompt_suggestion, lsp_lifecycle)
 ```
 
 ---

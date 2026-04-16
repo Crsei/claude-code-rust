@@ -1,9 +1,8 @@
-#![allow(unused)]
 //! Retry logic with exponential backoff and model fallback
 use std::time::Duration;
-use anyhow::Result;
 
 /// Retry configuration
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
     pub max_retries: usize,
@@ -29,12 +28,14 @@ impl Default for RetryConfig {
 #[derive(Debug, Clone)]
 pub enum ApiErrorCategory {
     /// Rate limited — retry with backoff
+    #[allow(dead_code)]
     RateLimit { retry_after_ms: Option<u64> },
     /// Server overloaded — retry with backoff, maybe fallback
     Overloaded,
     /// Server error — retry
     ServerError,
     /// Invalid request — don't retry
+    #[allow(dead_code)]
     InvalidRequest { message: String },
     /// Auth error — don't retry
     AuthError,
@@ -43,12 +44,20 @@ pub enum ApiErrorCategory {
     /// Max output tokens — don't retry (handle differently)
     MaxOutputTokens,
     /// Unknown — don't retry
-    Unknown { status: Option<u16>, message: String },
+    #[allow(dead_code)]
+    Unknown {
+        status: Option<u16>,
+        message: String,
+    },
 }
 
 impl ApiErrorCategory {
+    #[allow(dead_code)]
     pub fn is_retryable(&self) -> bool {
-        matches!(self, Self::RateLimit { .. } | Self::Overloaded | Self::ServerError)
+        matches!(
+            self,
+            Self::RateLimit { .. } | Self::Overloaded | Self::ServerError
+        )
     }
 }
 
@@ -60,7 +69,9 @@ pub fn categorize_api_error(status: u16, body: &str) -> ApiErrorCategory {
             if body.contains("overloaded") {
                 ApiErrorCategory::Overloaded
             } else {
-                ApiErrorCategory::RateLimit { retry_after_ms: None }
+                ApiErrorCategory::RateLimit {
+                    retry_after_ms: None,
+                }
             }
         }
         500 | 502 | 503 => ApiErrorCategory::ServerError,
@@ -71,15 +82,21 @@ pub fn categorize_api_error(status: u16, body: &str) -> ApiErrorCategory {
             } else if body.contains("max_tokens") {
                 ApiErrorCategory::MaxOutputTokens
             } else {
-                ApiErrorCategory::InvalidRequest { message: body.to_string() }
+                ApiErrorCategory::InvalidRequest {
+                    message: body.to_string(),
+                }
             }
         }
         401 | 403 => ApiErrorCategory::AuthError,
-        _ => ApiErrorCategory::Unknown { status: Some(status), message: body.to_string() },
+        _ => ApiErrorCategory::Unknown {
+            status: Some(status),
+            message: body.to_string(),
+        },
     }
 }
 
 /// Calculate delay for a retry attempt
+#[allow(dead_code)]
 pub fn retry_delay(config: &RetryConfig, attempt: usize) -> Duration {
     let delay = config.initial_delay_ms as f64 * config.backoff_multiplier.powi(attempt as i32);
     let delay = delay.min(config.max_delay_ms as f64) as u64;
@@ -88,6 +105,7 @@ pub fn retry_delay(config: &RetryConfig, attempt: usize) -> Duration {
     Duration::from_millis((delay as i64 + jitter).max(0) as u64)
 }
 
+#[allow(dead_code)]
 fn rand_fraction() -> f64 {
     // Simple pseudo-random for jitter — not crypto-secure
     use std::time::SystemTime;

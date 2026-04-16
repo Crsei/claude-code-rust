@@ -3,10 +3,10 @@
 //! Identifies shell commands that could cause irreversible damage to the system.
 //! Returns a human-readable reason string when a dangerous pattern is detected.
 
-#![allow(unused)]
-
 use regex::Regex;
 use std::sync::LazyLock;
+
+use crate::utils::bash::{contains_multiline_string, has_unterminated_quotes};
 
 /// A single danger pattern: compiled regex + human-readable reason.
 struct DangerPattern {
@@ -30,7 +30,6 @@ static DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(|| {
             r"rm\s+[^\n]*-[a-zA-Z]*r[a-zA-Z]*\s+/\*",
             "Recursive deletion of all files in root (rm -rf /*)",
         ),
-
         // --- Dangerous git operations ---
         (
             r"git\s+push\s+[^\n]*--force",
@@ -44,29 +43,22 @@ static DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(|| {
             r"git\s+reset\s+--hard",
             "Hard reset discards all uncommitted changes (git reset --hard)",
         ),
-
         // --- Low-level disk operations ---
-        (
-            r"\bdd\s+if=",
-            "Direct disk write can destroy data (dd)",
-        ),
+        (r"\bdd\s+if=", "Direct disk write can destroy data (dd)"),
         (
             r"\bmkfs\b",
             "Filesystem creation will destroy existing data (mkfs)",
         ),
-
         // --- Permission bombs ---
         (
             r"chmod\s+(-[a-zA-Z]*R[a-zA-Z]*\s+)?777\s+/",
             "Recursive chmod 777 on root makes system insecure",
         ),
-
         // --- Fork bomb ---
         (
             r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:",
             "Fork bomb will exhaust system resources",
         ),
-
         // --- Device destruction ---
         (
             r">\s*/dev/sd[a-z]",
@@ -76,7 +68,6 @@ static DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(|| {
             r">\s*/dev/nvme",
             "Writing to NVMe device will destroy filesystem",
         ),
-
         // --- Pipe-to-shell (remote code execution) ---
         (
             r"curl\s+[^\n]*\|\s*(?:ba)?sh",
@@ -94,7 +85,6 @@ static DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(|| {
             r"wget\s+[^\n]*\|\s*sudo\s+(?:ba)?sh",
             "Piping wget output to privileged shell is extremely dangerous",
         ),
-
         // --- Overwriting important system files ---
         (
             r">\s*/etc/passwd",
@@ -109,7 +99,9 @@ static DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(|| {
     patterns
         .into_iter()
         .filter_map(|(pat, reason)| {
-            Regex::new(pat).ok().map(|regex| DangerPattern { regex, reason })
+            Regex::new(pat)
+                .ok()
+                .map(|regex| DangerPattern { regex, reason })
         })
         .collect()
 });
@@ -129,6 +121,24 @@ static DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(|| {
 /// ```
 pub fn is_dangerous_command(command: &str) -> Option<String> {
     let trimmed = command.trim();
+
+    // Defense-in-depth: flag commands with unterminated quotes as potentially
+    // obfuscated to bypass pattern matching
+    if has_unterminated_quotes(trimmed) {
+        return Some(
+            "Command has unterminated quotes — may be attempting to bypass safety checks"
+                .to_string(),
+        );
+    }
+
+    // Flag commands with multiline strings hidden inside quotes, as they can
+    // conceal dangerous operations from single-line regex patterns
+    if contains_multiline_string(trimmed) {
+        return Some(
+            "Command contains multiline strings inside quotes — may hide dangerous operations"
+                .to_string(),
+        );
+    }
 
     for pattern in DANGER_PATTERNS.iter() {
         if pattern.regex.is_match(trimmed) {

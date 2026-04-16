@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cc-rust Subagent Dashboard</title>
+    <style>
+      :root {
+        --paper: #f6f0e4;
+        --paper-strong: #fffaf0;
+        --ink: #1b1a17;
+        --muted: #6c655d;
+        --line: rgba(27, 26, 23, 0.12);
+        --accent: #bc5b35;
+        --accent-soft: rgba(188, 91, 53, 0.12);
+        --ok: #2f7d4a;
+        --warn: #a96b00;
+        --err: #a03232;
+        --shadow: 0 20px 60px rgba(64, 43, 24, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Consolas, "Lucida Console", "SFMono-Regular", monospace;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(188, 91, 53, 0.18), transparent 30%),
+          linear-gradient(180deg, #fdf8ef 0%, #f3ead8 100%);
+      }
+
+      .shell {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 32px 20px 40px;
+      }
+
+      .header,
+      .panel {
+        background: rgba(255, 250, 240, 0.92);
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(12px);
+      }
+
+      .header {
+        padding: 20px 24px;
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+        margin-bottom: 18px;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 28px;
+        letter-spacing: 0.04em;
+      }
+
+      .subtitle,
+      .meta {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--ink);
+      }
+
+      .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--warn);
+      }
+
+      .status-dot.connected {
+        background: var(--ok);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        gap: 18px;
+      }
+
+      .stack {
+        display: grid;
+        gap: 18px;
+      }
+
+      .panel {
+        padding: 18px 18px 16px;
+      }
+
+      .panel h2 {
+        margin: 0 0 14px;
+        font-size: 16px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .agent-list,
+      .lifecycle-list,
+      .event-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .agent-row,
+      .lifecycle-row,
+      .event-row {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 12px 14px;
+        background: rgba(255, 255, 255, 0.6);
+      }
+
+      .agent-row.completed,
+      .lifecycle-row.completed {
+        border-color: rgba(47, 125, 74, 0.26);
+      }
+
+      .agent-row.warning {
+        border-color: rgba(169, 107, 0, 0.3);
+      }
+
+      .agent-row.error,
+      .lifecycle-row.error {
+        border-color: rgba(160, 50, 50, 0.3);
+      }
+
+      .row-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .badge-wrap {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .badge {
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        background: var(--accent-soft);
+        color: var(--muted);
+      }
+
+      .bar {
+        height: 8px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(188, 91, 53, 0.9), rgba(47, 125, 74, 0.55));
+        margin: 8px 0 10px;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .empty {
+        padding: 20px;
+        text-align: center;
+        border: 1px dashed var(--line);
+        border-radius: 16px;
+        color: var(--muted);
+      }
+
+      @media (max-width: 920px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="header">
+        <div>
+          <h1 class="title">cc-rust Subagent Dashboard</h1>
+          <p class="subtitle" id="event-log">loading event log...</p>
+        </div>
+        <div class="status-pill">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="status-text">Connecting</span>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="stack">
+          <div class="panel">
+            <h2>Active Agents</h2>
+            <div class="agent-list" id="agent-list"></div>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="panel">
+            <h2>Lifecycle</h2>
+            <div class="lifecycle-list" id="lifecycle-list"></div>
+          </div>
+          <div class="panel">
+            <h2>Event Stream</h2>
+            <div class="event-list" id="event-list"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const state = {
+        agents: new Map(),
+        recentEvents: [],
+      }
+
+      const agentList = document.getElementById('agent-list')
+      const lifecycleList = document.getElementById('lifecycle-list')
+      const eventList = document.getElementById('event-list')
+      const statusDot = document.getElementById('status-dot')
+      const statusText = document.getElementById('status-text')
+      const eventLog = document.getElementById('event-log')
+
+      function setConnected(connected) {
+        statusDot.classList.toggle('connected', connected)
+        statusText.textContent = connected ? 'Connected' : 'Disconnected'
+      }
+
+      function applyEvent(event) {
+        state.recentEvents.unshift(event)
+        state.recentEvents = state.recentEvents.slice(0, 200)
+
+        const current = state.agents.get(event.agent_id) || {
+          agent_id: event.agent_id,
+          description: event.description,
+          model: event.model,
+          depth: event.depth,
+          background: event.background,
+          status: 'running',
+        }
+
+        const next = {
+          ...current,
+          description: event.description || current.description,
+          model: event.model || current.model,
+          depth: event.depth,
+          background: event.background,
+        }
+
+        switch (event.kind) {
+          case 'spawn':
+            next.status = 'running'
+            next.started_at = event.ts
+            next.ended_at = undefined
+            next.duration_ms = undefined
+            break
+          case 'complete':
+            next.status = 'completed'
+            next.ended_at = event.ts
+            next.duration_ms = event.payload && typeof event.payload.duration_ms === 'number'
+              ? event.payload.duration_ms
+              : undefined
+            break
+          case 'error':
+            next.status = 'error'
+            next.ended_at = event.ts
+            next.duration_ms = event.payload && typeof event.payload.duration_ms === 'number'
+              ? event.payload.duration_ms
+              : undefined
+            break
+          case 'background_complete':
+            next.status = event.payload && event.payload.had_error ? 'error' : 'completed'
+            next.ended_at = event.ts
+            next.duration_ms = event.payload && typeof event.payload.duration_ms === 'number'
+              ? event.payload.duration_ms
+              : undefined
+            break
+          case 'worktree_kept':
+            next.worktree = 'kept'
+            break
+          case 'worktree_cleaned':
+            next.worktree = 'cleaned'
+            break
+          case 'warning':
+            next.warning = event.payload && event.payload.message ? String(event.payload.message) : 'warning'
+            break
+        }
+
+        state.agents.set(event.agent_id, next)
+      }
+
+      function render() {
+        const agents = Array.from(state.agents.values()).sort((lhs, rhs) => {
+          const rank = (status) => status === 'running' ? 0 : status === 'error' ? 1 : 2
+          return rank(lhs.status) - rank(rhs.status)
+        })
+
+        if (agents.length === 0) {
+          agentList.innerHTML = '<div class="empty">No subagent activity yet.</div>'
+          lifecycleList.innerHTML = '<div class="empty">Lifecycle events will appear here.</div>'
+        } else {
+          agentList.innerHTML = agents.map((agent) => {
+            const classes = ['agent-row', agent.status]
+            if (agent.warning) classes.push('warning')
+            return `
+              <article class="${classes.join(' ')}">
+                <div class="row-head">
+                  <strong>${agent.agent_id}</strong>
+                  <span class="muted">${agent.status}</span>
+                </div>
+                <div class="badge-wrap">
+                  ${agent.model ? `<span class="badge">${agent.model}</span>` : ''}
+                  <span class="badge">depth ${agent.depth}</span>
+                  ${agent.background ? '<span class="badge">background</span>' : ''}
+                  ${agent.worktree ? `<span class="badge">worktree ${agent.worktree}</span>` : ''}
+                </div>
+                <p class="muted">${agent.description || 'no description'}</p>
+                ${agent.warning ? `<p>${agent.warning}</p>` : ''}
+              </article>
+            `
+          }).join('')
+
+          lifecycleList.innerHTML = agents.map((agent) => `
+            <article class="lifecycle-row ${agent.status}">
+              <div class="row-head">
+                <strong>${agent.agent_id}</strong>
+                <span class="muted">${agent.duration_ms ? `${agent.duration_ms}ms` : 'running'}</span>
+              </div>
+              <div class="bar"></div>
+              <div class="muted">
+                ${agent.started_at ? `spawn ${formatTime(agent.started_at)}` : 'spawn pending'}
+                ${agent.ended_at ? ` → ${agent.status} ${formatTime(agent.ended_at)}` : ' → running'}
+              </div>
+            </article>
+          `).join('')
+        }
+
+        if (state.recentEvents.length === 0) {
+          eventList.innerHTML = '<div class="empty">No events received yet.</div>'
+        } else {
+          eventList.innerHTML = state.recentEvents.map((event) => `
+            <article class="event-row">
+              <div class="row-head">
+                <strong>${event.kind}</strong>
+                <span class="muted">${formatTime(event.ts)}</span>
+              </div>
+              <div>${event.agent_id}</div>
+              <div class="muted">${formatPayload(event.payload)}</div>
+            </article>
+          `).join('')
+        }
+      }
+
+      function formatPayload(payload) {
+        if (!payload) return ''
+        if (payload.message) return String(payload.message)
+        return JSON.stringify(payload)
+      }
+
+      function formatTime(value) {
+        try {
+          return new Date(value).toLocaleTimeString()
+        } catch {
+          return value
+        }
+      }
+
+      async function bootstrap() {
+        const response = await fetch('/api/state')
+        const snapshot = await response.json()
+        eventLog.textContent = snapshot.event_log_path
+        state.agents.clear()
+        state.recentEvents = []
+        for (const agent of snapshot.agents) {
+          state.agents.set(agent.agent_id, agent)
+        }
+        for (const event of snapshot.recent_events) {
+          state.recentEvents.push(event)
+        }
+        render()
+
+        const source = new EventSource('/events')
+        source.addEventListener('open', () => setConnected(true))
+        source.addEventListener('error', () => setConnected(false))
+        source.addEventListener('snapshot', (message) => {
+          const snapshot = JSON.parse(message.data)
+          eventLog.textContent = snapshot.event_log_path
+        })
+        source.addEventListener('subagent', (message) => {
+          applyEvent(JSON.parse(message.data))
+          render()
+        })
+      }
+
+      setConnected(false)
+      bootstrap().catch((error) => {
+        console.error(error)
+        eventList.innerHTML = `<div class="empty">Failed to load dashboard: ${error}</div>`
+      })
+    </script>
+  </body>
+  </html>

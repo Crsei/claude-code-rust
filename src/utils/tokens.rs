@@ -1,9 +1,20 @@
 #![allow(unused)]
 
-use crate::compact::auto_compact::get_context_window_size;
-use crate::types::message::{
-    ContentBlock, Message, MessageContent, ToolResultContent,
-};
+use crate::types::message::{ContentBlock, Message, MessageContent, ToolResultContent};
+
+/// Get the context window size for a given model.
+/// Returns token count for the model's context window.
+fn get_context_window_size(model: &str) -> u64 {
+    if model.contains("opus") {
+        200_000
+    } else if model.contains("sonnet") {
+        200_000
+    } else if model.contains("haiku") {
+        200_000
+    } else {
+        200_000 // default
+    }
+}
 
 /// Average characters per token for English text.
 /// This is a rough approximation; actual tokenization varies by model
@@ -31,13 +42,11 @@ pub fn estimate_messages_tokens(messages: &[Message]) -> u64 {
 fn estimate_message_tokens(msg: &Message) -> u64 {
     let content_tokens = match msg {
         Message::User(user) => estimate_message_content_tokens(&user.content),
-        Message::Assistant(assistant) => {
-            assistant
-                .content
-                .iter()
-                .map(|b| estimate_content_block_tokens(b))
-                .sum()
-        }
+        Message::Assistant(assistant) => assistant
+            .content
+            .iter()
+            .map(|b| estimate_content_block_tokens(b))
+            .sum(),
         Message::System(sys) => estimate_tokens(&sys.content),
         Message::Progress(prog) => estimate_tokens(&prog.data.to_string()),
         Message::Attachment(_) => 50, // rough fixed estimate for attachment metadata
@@ -64,14 +73,10 @@ fn estimate_content_block_tokens(block: &ContentBlock) -> u64 {
         ContentBlock::ToolUse { id, name, input } => {
             // Tool use has metadata overhead plus the JSON input
             let input_str = input.to_string();
-            estimate_tokens(id)
-                + estimate_tokens(name)
-                + estimate_tokens(&input_str)
-                + 10 // structural overhead
+            estimate_tokens(id) + estimate_tokens(name) + estimate_tokens(&input_str) + 10
+            // structural overhead
         }
-        ContentBlock::ToolResult { content, .. } => {
-            estimate_tool_result_content_tokens(content)
-        }
+        ContentBlock::ToolResult { content, .. } => estimate_tool_result_content_tokens(content),
         ContentBlock::Thinking { thinking, .. } => estimate_tokens(thinking),
         ContentBlock::RedactedThinking { data } => estimate_tokens(data),
         ContentBlock::Image { source } => {
@@ -112,6 +117,20 @@ pub fn is_over_token_limit(messages: &[Message], model: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::message::{Message, MessageContent, UserMessage};
+    use uuid::Uuid;
+
+    fn make_user_message(text: &str, is_meta: bool) -> Message {
+        Message::User(UserMessage {
+            uuid: Uuid::new_v4(),
+            timestamp: 0,
+            role: "user".to_string(),
+            content: MessageContent::Text(text.to_string()),
+            is_meta,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        })
+    }
 
     #[test]
     fn test_estimate_tokens_empty() {
@@ -133,11 +152,9 @@ mod tests {
 
     #[test]
     fn test_estimate_messages_tokens() {
-        use crate::compact::messages::create_user_message;
-
         let messages = vec![
-            create_user_message("hello world", false),
-            create_user_message("how are you?", false),
+            make_user_message("hello world", false),
+            make_user_message("how are you?", false),
         ];
 
         let tokens = estimate_messages_tokens(&messages);
@@ -154,17 +171,13 @@ mod tests {
         // A message with enough text to exceed 160k tokens:
         // 160001 tokens * 4 chars = 640004 chars
         let large_text = "a".repeat(640_004);
-        let messages = vec![
-            crate::compact::messages::create_user_message(&large_text, false),
-        ];
+        let messages = vec![make_user_message(&large_text, false)];
         assert!(is_over_token_limit(&messages, "claude-sonnet-4-20250514"));
     }
 
     #[test]
     fn test_not_over_token_limit() {
-        let messages = vec![
-            crate::compact::messages::create_user_message("hello", false),
-        ];
+        let messages = vec![make_user_message("hello", false)];
         assert!(!is_over_token_limit(&messages, "claude-sonnet-4-20250514"));
     }
 }

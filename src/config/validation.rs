@@ -8,6 +8,8 @@ use anyhow::{bail, Result};
 
 use crate::types::app_state::SettingsJson;
 
+const VALID_BACKENDS: &[&str] = &["native", "codex"];
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -39,10 +41,7 @@ pub struct ValidationWarning {
 // ---------------------------------------------------------------------------
 
 /// Prefixes that are recognized as valid Anthropic model identifiers.
-const VALID_MODEL_PREFIXES: &[&str] = &[
-    "claude-",
-    "anthropic.",
-];
+const VALID_MODEL_PREFIXES: &[&str] = &["claude-", "anthropic."];
 
 /// Specific model names that are always valid (aliases, etc.).
 const VALID_MODEL_NAMES: &[&str] = &[
@@ -68,7 +67,7 @@ const THIRD_PARTY_PREFIXES: &[&str] = &[
     "mistral-",
     "codestral-",
     "command-",
-    "accounts/",  // Vertex AI paths
+    "accounts/", // Vertex AI paths
 ];
 
 // ---------------------------------------------------------------------------
@@ -149,6 +148,21 @@ pub fn validate_settings(settings: &SettingsJson) -> Vec<ValidationWarning> {
         }
     }
 
+    if let Some(ref backend) = settings.backend {
+        let normalized = backend.trim().to_ascii_lowercase();
+        if !normalized.is_empty() && !VALID_BACKENDS.contains(&normalized.as_str()) {
+            warnings.push(ValidationWarning {
+                field: "backend".to_string(),
+                message: format!(
+                    "Unknown backend '{}'. Known backends: {}.",
+                    backend,
+                    VALID_BACKENDS.join(", ")
+                ),
+                severity: WarningSeverity::Error,
+            });
+        }
+    }
+
     // Validate theme
     if let Some(ref theme) = settings.theme {
         let known_themes = ["dark", "light", "auto", "solarized", "monokai", "nord"];
@@ -218,13 +232,17 @@ mod tests {
     fn test_validate_settings_empty() {
         let settings = SettingsJson::default();
         let warnings = validate_settings(&settings);
-        assert!(warnings.is_empty(), "Default settings should have no warnings");
+        assert!(
+            warnings.is_empty(),
+            "Default settings should have no warnings"
+        );
     }
 
     #[test]
     fn test_validate_settings_bad_model() {
         let settings = SettingsJson {
             model: Some("totally invalid model".to_string()),
+            backend: None,
             theme: None,
             verbose: None,
         };
@@ -238,6 +256,7 @@ mod tests {
     fn test_validate_settings_empty_model() {
         let settings = SettingsJson {
             model: Some("".to_string()),
+            backend: None,
             theme: None,
             verbose: None,
         };
@@ -250,6 +269,7 @@ mod tests {
     fn test_validate_settings_unknown_theme() {
         let settings = SettingsJson {
             model: None,
+            backend: None,
             theme: Some("cyberpunk".to_string()),
             verbose: None,
         };
@@ -263,10 +283,25 @@ mod tests {
     fn test_validate_settings_good() {
         let settings = SettingsJson {
             model: Some("claude-sonnet-4-20250514".to_string()),
+            backend: Some("codex".to_string()),
             theme: Some("dark".to_string()),
             verbose: Some(true),
         };
         let warnings = validate_settings(&settings);
         assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validate_settings_bad_backend() {
+        let settings = SettingsJson {
+            model: None,
+            backend: Some("mystery".to_string()),
+            theme: None,
+            verbose: None,
+        };
+        let warnings = validate_settings(&settings);
+        assert!(!warnings.is_empty());
+        assert_eq!(warnings[0].field, "backend");
+        assert_eq!(warnings[0].severity, WarningSeverity::Error);
     }
 }

@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -7,7 +9,23 @@ use serde_json::Value;
 
 use super::app_state::AppState;
 #[allow(unused_imports)]
-use super::message::{AssistantMessage, Message, ContentBlock};
+use super::message::{AssistantMessage, ContentBlock, Message, ToolResultContent};
+
+/// Async callback for interactive permission requests.
+///
+/// Called with (tool_use_id, tool_name, description, options).
+/// Returns the user's decision: "allow", "deny", or "always_allow".
+pub type PermissionCallback = Arc<
+    dyn Fn(String, String, String, Vec<String>) -> Pin<Box<dyn Future<Output = String> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// Async callback for interactive "ask the user" tool requests.
+///
+/// Called with the plain-text question and resolves to the user's answer.
+pub type AskUserCallback =
+    Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = String> + Send>> + Send + Sync>;
 
 /// 工具输入验证结果
 #[derive(Debug, Clone)]
@@ -28,12 +46,35 @@ pub enum PermissionResult {
 }
 
 /// 工具执行结果
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ToolResult {
-    /// 工具输出数据
+    /// 工具输出数据 (legacy: 仅用于兼容和日志)
     pub data: Value,
+    /// 结构化内容块, 用于回传给模型 (支持图片等多模态内容)
+    ///
+    /// 当 `Some`, query loop 使用此字段构建 `ToolResultContent::Blocks(...)`;
+    /// 当 `None`, 退化为 `ToolResultContent::Text(data.to_string())`.
+    pub model_content: Option<ToolResultContent>,
+    /// 人类可读的预览文本 (用于 UI/日志, 不含图片二进制数据)
+    pub display_preview: Option<String>,
     /// 额外产生的消息 (如子代理对话)
     pub new_messages: Vec<Message>,
+}
+
+impl ToolResult {
+    /// Create a tool result with structured multimodal content for the model.
+    pub fn with_content(
+        data: Value,
+        model_content: ToolResultContent,
+        display_preview: String,
+    ) -> Self {
+        Self {
+            data,
+            model_content: Some(model_content),
+            display_preview: Some(display_preview),
+            new_messages: vec![],
+        }
+    }
 }
 
 /// 工具执行进度回调的数据
@@ -64,10 +105,38 @@ pub struct ToolPermissionContext {
     pub always_allow_rules: ToolPermissionRulesBySource,
     pub always_deny_rules: ToolPermissionRulesBySource,
     pub always_ask_rules: ToolPermissionRulesBySource,
+    /// Session-level allow grants (cleared on session end).
+    ///
+    /// Checked between `always_allow_rules` and mode fallback.
+    /// Used for Computer Use "always allow" to avoid permanent rules
+    /// for high-risk desktop control tools.
+    pub session_allow_rules: ToolPermissionRulesBySource,
     pub is_bypass_permissions_mode_available: bool,
     pub is_auto_mode_available: Option<bool>,
     /// 计划模式之前的权限模式 (用于恢复)
     pub pre_plan_mode: Option<PermissionMode>,
+}
+
+impl ToolPermissionContext {
+    /// Add a session-level allow grant for a tool.
+    pub fn grant_session_allow(&mut self, tool_name: &str) {
+        self.session_allow_rules
+            .entry("session".into())
+            .or_default()
+            .push(tool_name.to_string());
+    }
+
+    /// Check if a tool has a session-level allow grant.
+    pub fn has_session_grant(&self, tool_name: &str) -> bool {
+        self.session_allow_rules
+            .values()
+            .any(|rules| rules.iter().any(|r| r == tool_name))
+    }
+
+    /// Clear all session-level grants (called on session end).
+    pub fn clear_session_grants(&mut self) {
+        self.session_allow_rules.clear();
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -106,6 +175,17 @@ pub struct ToolUseContext {
     pub agent_id: Option<String>,
     pub agent_type: Option<String>,
     pub query_tracking: Option<QueryChainTracking>,
+    /// Async callback for interactive permission prompts (headless/TUI mode).
+    /// When set and a tool requires `Ask` permission, this callback is invoked
+    /// instead of immediately denying. If `None`, `Ask` falls back to deny.
+    pub permission_callback: Option<PermissionCallback>,
+    /// Async callback for interactive AskUserQuestion prompts (headless/TUI mode).
+    /// When set, AskUserQuestion routes through the frontend instead of reading stdin.
+    pub ask_user_callback: Option<AskUserCallback>,
+    /// Sender for background agent completion results.
+    /// When `Some`, the Agent tool can spawn background tasks.
+    /// When `None`, `run_in_background` falls back to synchronous execution.
+    pub bg_agent_tx: Option<crate::ipc::agent_channel::AgentSender>,
 }
 
 /// 工具使用选项 (不可变配置)
@@ -145,16 +225,24 @@ pub trait Tool: Send + Sync {
     fn input_json_schema(&self) -> Value;
 
     /// 是否启用
-    fn is_enabled(&self) -> bool { true }
+    fn is_enabled(&self) -> bool {
+        true
+    }
 
     /// 是否并发安全
-    fn is_concurrency_safe(&self, _input: &Value) -> bool { false }
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        false
+    }
 
     /// 是否只读
-    fn is_read_only(&self, _input: &Value) -> bool { false }
+    fn is_read_only(&self, _input: &Value) -> bool {
+        false
+    }
 
     /// 是否破坏性
-    fn is_destructive(&self, _input: &Value) -> bool { false }
+    fn is_destructive(&self, _input: &Value) -> bool {
+        false
+    }
 
     /// 输入验证
     async fn validate_input(&self, _input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
@@ -163,7 +251,9 @@ pub trait Tool: Send + Sync {
 
     /// 权限检查
     async fn check_permissions(&self, input: &Value, _ctx: &ToolUseContext) -> PermissionResult {
-        PermissionResult::Allow { updated_input: input.clone() }
+        PermissionResult::Allow {
+            updated_input: input.clone(),
+        }
     }
 
     /// 执行工具
@@ -184,16 +274,24 @@ pub trait Tool: Send + Sync {
     }
 
     /// 工具结果最大字符数 (超过则持久化到磁盘)
-    fn max_result_size_chars(&self) -> usize { 100_000 }
+    fn max_result_size_chars(&self) -> usize {
+        100_000
+    }
 
     /// 获取操作的文件路径 (如果适用)
-    fn get_path(&self, _input: &Value) -> Option<String> { None }
+    fn get_path(&self, _input: &Value) -> Option<String> {
+        None
+    }
 
     /// 中断行为: cancel (中断) 或 block (等待完成)
-    fn interrupt_behavior(&self) -> InterruptBehavior { InterruptBehavior::Block }
+    fn interrupt_behavior(&self) -> InterruptBehavior {
+        InterruptBehavior::Block
+    }
 
     /// 自动分类器输入 (安全相关)
-    fn to_auto_classifier_input(&self, _input: &Value) -> Value { Value::String(String::new()) }
+    fn to_auto_classifier_input(&self, _input: &Value) -> Value {
+        Value::String(String::new())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -6,8 +6,6 @@
 //!
 //! Reference: TypeScript `src/utils/bash/` directory.
 
-#![allow(unused)]
-
 use std::path::Path;
 use std::time::Duration;
 
@@ -115,7 +113,10 @@ pub fn extract_command_name(command: &str) -> Option<String> {
         // Skip environment variable assignments (VAR=value)
         if word.contains('=') && !word.starts_with('-') {
             let before_eq = word.split('=').next().unwrap_or("");
-            if before_eq.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            if before_eq
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
                 continue;
             }
         }
@@ -130,45 +131,18 @@ pub fn extract_command_name(command: &str) -> Option<String> {
 }
 
 // =============================================================================
-// Shell escaping
-// =============================================================================
-
-/// Quote/escape a list of arguments for safe shell use.
-///
-/// Each argument is individually quoted so it is treated as a single
-/// shell word, preventing injection.
-pub fn quote_args(args: &[&str]) -> String {
-    shell_words::join(args)
-}
-
-/// Quote a single shell argument.
-pub fn quote_arg(arg: &str) -> String {
-    shell_words::join(&[arg])
-}
-
-/// Escape a command string for use inside single quotes.
-///
-/// Replaces each `'` with `'\''` (end quote, escaped quote, start quote).
-pub fn escape_for_single_quotes(s: &str) -> String {
-    s.replace('\'', "'\"'\"'")
-}
-
-// =============================================================================
 // Dangerous command detection (bash-specific)
 // =============================================================================
 
 /// Patterns that indicate commands containing heredoc syntax.
 /// Note: Rust regex doesn't support backreferences, so we use separate
 /// patterns for single-quoted, double-quoted, and unquoted delimiters.
-static HEREDOC_SINGLE_QUOTED: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"<<-?\s*'\w+'").expect("invalid heredoc single-quoted regex")
-});
-static HEREDOC_DOUBLE_QUOTED: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"<<-?\s*"\w+""#).expect("invalid heredoc double-quoted regex")
-});
-static HEREDOC_UNQUOTED: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"<<-?\s*\\?\w+").expect("invalid heredoc unquoted regex")
-});
+static HEREDOC_SINGLE_QUOTED: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<<-?\s*'\w+'").expect("invalid heredoc single-quoted regex"));
+static HEREDOC_DOUBLE_QUOTED: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"<<-?\s*"\w+""#).expect("invalid heredoc double-quoted regex"));
+static HEREDOC_UNQUOTED: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<<-?\s*\\?\w+").expect("invalid heredoc unquoted regex"));
 
 /// Patterns for detecting unterminated/malformed quoting.
 ///
@@ -201,15 +175,19 @@ pub fn has_unterminated_quotes(command: &str) -> bool {
     double_count % 2 != 0 || single_count % 2 != 0
 }
 
+/// Patterns to exclude bit-shift operators from heredoc detection.
+static BIT_SHIFT_DIGIT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\d\s*<<\s*\d").expect("invalid bit-shift digit regex"));
+static ARITH_SHIFT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\$\(\(.*<<.*\)\)").expect("invalid arithmetic shift regex"));
+
 /// Check if a command contains heredoc syntax (`<<EOF`, `<<'EOF'`, etc.).
 pub fn contains_heredoc(command: &str) -> bool {
     if !command.contains("<<") {
         return false;
     }
     // Exclude bit-shift operators like `1 << 2`, `[[ 1 << 2 ]]`, `$(( ... << ... ))`
-    let bit_shift_digit = Regex::new(r"\d\s*<<\s*\d").unwrap();
-    let arith_shift = Regex::new(r"\$\(\(.*<<.*\)\)").unwrap();
-    if bit_shift_digit.is_match(command) || arith_shift.is_match(command) {
+    if BIT_SHIFT_DIGIT.is_match(command) || ARITH_SHIFT.is_match(command) {
         return false;
     }
     HEREDOC_SINGLE_QUOTED.is_match(command)
@@ -217,12 +195,18 @@ pub fn contains_heredoc(command: &str) -> bool {
         || HEREDOC_UNQUOTED.is_match(command)
 }
 
+/// Patterns for detecting multiline strings inside quotes.
+static SINGLE_QUOTE_MULTILINE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"'(?:[^'\\]|\\.)*\n(?:[^'\\]|\\.)*'").expect("invalid single-quote multiline regex")
+});
+static DOUBLE_QUOTE_MULTILINE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#""(?:[^"\\]|\\.)*\n(?:[^"\\]|\\.)*""#)
+        .expect("invalid double-quote multiline regex")
+});
+
 /// Check if a command contains multiline strings inside quotes.
 pub fn contains_multiline_string(command: &str) -> bool {
-    // Check for actual newlines inside quoted strings
-    let single_quote_ml = Regex::new(r"'(?:[^'\\]|\\.)*\n(?:[^'\\]|\\.)*'").unwrap();
-    let double_quote_ml = Regex::new(r#""(?:[^"\\]|\\.)*\n(?:[^"\\]|\\.)*""#).unwrap();
-    single_quote_ml.is_match(command) || double_quote_ml.is_match(command)
+    SINGLE_QUOTE_MULTILINE.is_match(command) || DOUBLE_QUOTE_MULTILINE.is_match(command)
 }
 
 /// Detect if a command already has a stdin redirect (e.g. `< file`).
@@ -331,7 +315,11 @@ pub fn resolve_timeout(requested_ms: Option<u64>) -> Duration {
         Some(ms) if ms > 0 => {
             let requested = Duration::from_millis(ms);
             let max = max_timeout();
-            if requested > max { max } else { requested }
+            if requested > max {
+                max
+            } else {
+                requested
+            }
         }
         _ => default_timeout(),
     }
@@ -408,7 +396,10 @@ fn extract_single_command_prefix(command: &str) -> Option<String> {
     for (i, word) in words.iter().enumerate() {
         if word.contains('=') && !word.starts_with('-') {
             let before = word.split('=').next().unwrap_or("");
-            if before.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            if before
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
                 cmd_start = i + 1;
                 continue;
             }
@@ -424,9 +415,25 @@ fn extract_single_command_prefix(command: &str) -> Option<String> {
 
     // For known commands with subcommands, include the subcommand
     let cmds_with_subcommands = [
-        "git", "npm", "npx", "yarn", "pnpm", "cargo", "docker", "kubectl",
-        "pip", "pip3", "brew", "apt", "apt-get", "dnf", "yum", "pacman",
-        "systemctl", "go", "rustup",
+        "git",
+        "npm",
+        "npx",
+        "yarn",
+        "pnpm",
+        "cargo",
+        "docker",
+        "kubectl",
+        "pip",
+        "pip3",
+        "brew",
+        "apt",
+        "apt-get",
+        "dnf",
+        "yum",
+        "pacman",
+        "systemctl",
+        "go",
+        "rustup",
     ];
 
     let base = Path::new(cmd_name)
@@ -529,21 +536,6 @@ mod tests {
         );
     }
 
-    // --- quote_args ---
-
-    #[test]
-    fn test_quote_args_simple() {
-        let quoted = quote_args(&["echo", "hello world"]);
-        assert_eq!(quoted, "echo 'hello world'");
-    }
-
-    #[test]
-    fn test_quote_arg_with_special_chars() {
-        let quoted = quote_arg("it's a test");
-        assert!(quoted.contains("it"));
-        assert!(quoted.contains("test"));
-    }
-
     // --- unterminated quotes ---
 
     #[test]
@@ -605,18 +597,12 @@ mod tests {
 
     #[test]
     fn test_rewrite_nul() {
-        assert_eq!(
-            rewrite_windows_null_redirect("ls 2>nul"),
-            "ls 2>/dev/null"
-        );
+        assert_eq!(rewrite_windows_null_redirect("ls 2>nul"), "ls 2>/dev/null");
     }
 
     #[test]
     fn test_rewrite_nul_uppercase() {
-        assert_eq!(
-            rewrite_windows_null_redirect("cmd >NUL"),
-            "cmd >/dev/null"
-        );
+        assert_eq!(rewrite_windows_null_redirect("cmd >NUL"), "cmd >/dev/null");
     }
 
     #[test]

@@ -8,8 +8,9 @@
 
 #![allow(unused)]
 
+use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use async_trait::async_trait;
@@ -49,7 +50,7 @@ impl InProcessBackend {
 
     /// Look up a task by agent_id.
     fn find_task(agent_id: &str) -> Option<String> {
-        let registry = TASK_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+        let registry = TASK_REGISTRY.lock();
         registry
             .iter()
             .find(|(_, state)| state.identity.agent_id == agent_id)
@@ -58,7 +59,7 @@ impl InProcessBackend {
 
     /// Get the number of running tasks.
     pub fn running_task_count() -> usize {
-        let registry = TASK_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+        let registry = TASK_REGISTRY.lock();
         registry
             .values()
             .filter(|s| s.status == TaskStatus::Running)
@@ -67,7 +68,7 @@ impl InProcessBackend {
 
     /// Check if any in-process teammates are currently working (not idle).
     pub fn has_working_teammates() -> bool {
-        let registry = TASK_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+        let registry = TASK_REGISTRY.lock();
         registry
             .values()
             .any(|s| s.status == TaskStatus::Running && !s.is_idle)
@@ -76,13 +77,13 @@ impl InProcessBackend {
     /// Register a new task in the registry.
     pub fn register_task(state: InProcessTeammateTaskState) {
         let id = state.id.clone();
-        let mut registry = TASK_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+        let mut registry = TASK_REGISTRY.lock();
         registry.insert(id, state);
     }
 
     /// Update a task's status.
     pub fn update_task_status(task_id: &str, status: TaskStatus) {
-        let mut registry = TASK_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+        let mut registry = TASK_REGISTRY.lock();
         if let Some(state) = registry.get_mut(task_id) {
             state.status = status;
         }
@@ -90,7 +91,7 @@ impl InProcessBackend {
 
     /// Mark a task as idle or working.
     pub fn set_task_idle(task_id: &str, idle: bool) {
-        let mut registry = TASK_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+        let mut registry = TASK_REGISTRY.lock();
         if let Some(state) = registry.get_mut(task_id) {
             state.is_idle = idle;
         }
@@ -98,20 +99,20 @@ impl InProcessBackend {
 
     /// Remove a task from the registry.
     pub fn remove_task(task_id: &str) {
-        let mut registry = TASK_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+        let mut registry = TASK_REGISTRY.lock();
         registry.remove(task_id);
     }
 
     /// Get all task IDs.
     pub fn all_task_ids() -> Vec<String> {
-        let registry = TASK_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+        let registry = TASK_REGISTRY.lock();
         registry.keys().cloned().collect()
     }
 
     /// Clear all tasks (for testing).
     #[cfg(test)]
     pub fn clear_registry() {
-        let mut registry = TASK_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+        let mut registry = TASK_REGISTRY.lock();
         registry.clear();
     }
 }
@@ -128,10 +129,7 @@ impl TeammateExecutor for InProcessBackend {
 
     async fn spawn(&self, config: TeammateSpawnConfig) -> Result<TeammateSpawnResult> {
         let agent_id = identity::format_agent_id(&config.name, &config.team_name);
-        let task_id = format!(
-            "in_process_teammate_{}",
-            uuid::Uuid::new_v4().to_string()
-        );
+        let task_id = format!("in_process_teammate_{}", uuid::Uuid::new_v4().to_string());
 
         let identity = TeammateIdentity {
             agent_id: agent_id.clone(),
@@ -201,7 +199,7 @@ impl TeammateExecutor for InProcessBackend {
 
         // Check if already requested
         {
-            let registry = TASK_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+            let registry = TASK_REGISTRY.lock();
             if let Some(state) = registry.get(&task_id) {
                 if state.shutdown_requested {
                     debug!(agent_id, "shutdown already requested");
@@ -242,7 +240,7 @@ impl TeammateExecutor for InProcessBackend {
 
         // Mark as shutdown requested
         {
-            let mut registry = TASK_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+            let mut registry = TASK_REGISTRY.lock();
             if let Some(state) = registry.get_mut(&task_id) {
                 state.shutdown_requested = true;
             }
@@ -258,7 +256,7 @@ impl TeammateExecutor for InProcessBackend {
             None => return false,
         };
 
-        let mut registry = TASK_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+        let mut registry = TASK_REGISTRY.lock();
         if let Some(state) = registry.get_mut(&task_id) {
             // Abort the task if we have a handle
             if let Some(ref handle) = state.abort_handle {
@@ -277,7 +275,7 @@ impl TeammateExecutor for InProcessBackend {
             Some(id) => id,
             None => return false,
         };
-        let registry = TASK_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+        let registry = TASK_REGISTRY.lock();
         registry
             .get(&task_id)
             .map(|s| s.status == TaskStatus::Running)

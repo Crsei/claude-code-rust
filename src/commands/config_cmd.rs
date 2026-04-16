@@ -5,8 +5,6 @@
 //! - `/config set <key> <value>` -- set a configuration value
 //! - `/config reset`        -- reset to defaults
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -45,6 +43,7 @@ fn handle_show(ctx: &CommandContext) -> Result<CommandResult> {
     lines.push("Current configuration:".into());
     lines.push(String::new());
     lines.push(format!("  model:         {}", state.main_loop_model));
+    lines.push(format!("  backend:       {}", state.main_loop_backend));
     lines.push(format!(
         "  theme:         {}",
         state.settings.theme.as_deref().unwrap_or("(default)")
@@ -88,7 +87,7 @@ fn handle_set(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
     if parts.len() < 2 {
         return Ok(CommandResult::Output(
             "Usage: /config set <key> <value>\n\
-             Available keys: model, theme, verbose"
+             Available keys: model, backend, theme, verbose"
                 .into(),
         ));
     }
@@ -101,6 +100,15 @@ fn handle_set(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
             ctx.app_state.main_loop_model = value.clone();
             Ok(CommandResult::Output(format!("Model set to: {}", value)))
         }
+        "backend" => {
+            let normalized = crate::engine::codex_exec::normalize_backend(Some(&value));
+            ctx.app_state.main_loop_backend = normalized.clone();
+            ctx.app_state.settings.backend = Some(normalized.clone());
+            Ok(CommandResult::Output(format!(
+                "Backend set to: {}",
+                normalized
+            )))
+        }
         "theme" => {
             ctx.app_state.settings.theme = Some(value.clone());
             Ok(CommandResult::Output(format!("Theme set to: {}", value)))
@@ -112,7 +120,7 @@ fn handle_set(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
             Ok(CommandResult::Output(format!("Verbose set to: {}", v)))
         }
         _ => Ok(CommandResult::Output(format!(
-            "Unknown config key: '{}'\nAvailable keys: model, theme, verbose",
+            "Unknown config key: '{}'\nAvailable keys: model, backend, theme, verbose",
             key
         ))),
     }
@@ -123,6 +131,7 @@ fn handle_reset(ctx: &mut CommandContext) -> Result<CommandResult> {
     let default_state = crate::types::app_state::AppState::default();
     ctx.app_state.settings = default_state.settings;
     ctx.app_state.main_loop_model = default_state.main_loop_model;
+    ctx.app_state.main_loop_backend = default_state.main_loop_backend;
     ctx.app_state.verbose = default_state.verbose;
     ctx.app_state.fast_mode = default_state.fast_mode;
     ctx.app_state.effort_value = default_state.effort_value;
@@ -140,14 +149,16 @@ fn handle_reset(ctx: &mut CommandContext) -> Result<CommandResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
+    use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {
         CommandContext {
             messages: Vec::new(),
             cwd: PathBuf::from("/test/project"),
             app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
         }
     }
 
@@ -159,6 +170,7 @@ mod tests {
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("model:"));
+                assert!(text.contains("backend:"));
                 assert!(text.contains("verbose:"));
                 assert!(text.contains("permission_mode:"));
             }
@@ -170,7 +182,10 @@ mod tests {
     async fn test_config_set_model() {
         let handler = ConfigHandler;
         let mut ctx = test_ctx();
-        let result = handler.execute("set model claude-opus", &mut ctx).await.unwrap();
+        let result = handler
+            .execute("set model claude-opus", &mut ctx)
+            .await
+            .unwrap();
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("claude-opus"));
@@ -184,8 +199,25 @@ mod tests {
     async fn test_config_set_verbose() {
         let handler = ConfigHandler;
         let mut ctx = test_ctx();
-        let result = handler.execute("set verbose true", &mut ctx).await.unwrap();
+        let _result = handler.execute("set verbose true", &mut ctx).await.unwrap();
         assert!(ctx.app_state.verbose);
+    }
+
+    #[tokio::test]
+    async fn test_config_set_backend() {
+        let handler = ConfigHandler;
+        let mut ctx = test_ctx();
+        let result = handler
+            .execute("set backend codex", &mut ctx)
+            .await
+            .unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(text.contains("codex"));
+            }
+            _ => panic!("Expected Output result"),
+        }
+        assert_eq!(ctx.app_state.main_loop_backend, "codex");
     }
 
     #[tokio::test]

@@ -9,10 +9,8 @@
 //! - LRU response cache (15 min TTL)
 //! - URL validation and HTTPS upgrade
 
-#![allow(unused)]
-
+use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
@@ -58,7 +56,7 @@ static CACHE: std::sync::LazyLock<Mutex<HashMap<String, CacheEntry>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn cache_get(url: &str) -> Option<(String, u16)> {
-    let cache = CACHE.lock().ok()?;
+    let cache = CACHE.lock();
     let entry = cache.get(url)?;
     if entry.fetched_at.elapsed() < CACHE_TTL {
         Some((entry.content.clone(), entry.status))
@@ -68,7 +66,8 @@ fn cache_get(url: &str) -> Option<(String, u16)> {
 }
 
 fn cache_put(url: &str, content: &str, status: u16) {
-    if let Ok(mut cache) = CACHE.lock() {
+    {
+        let mut cache = CACHE.lock();
         // Evict oldest if over capacity
         if cache.len() >= MAX_CACHE_ENTRIES {
             let oldest_key = cache
@@ -111,21 +110,13 @@ fn strip_html_tags(html: &str) -> String {
         if ch == b'<' {
             // Detect <script and <style blocks
             let rest = &html[i..];
-            if rest.len() > 7
-                && rest[..7].eq_ignore_ascii_case("<script")
-            {
+            if rest.len() > 7 && rest[..7].eq_ignore_ascii_case("<script") {
                 in_script = true;
-            } else if rest.len() > 6
-                && rest[..6].eq_ignore_ascii_case("<style")
-            {
+            } else if rest.len() > 6 && rest[..6].eq_ignore_ascii_case("<style") {
                 in_style = true;
-            } else if rest.len() > 8
-                && rest[..9].eq_ignore_ascii_case("</script>")
-            {
+            } else if rest.len() > 8 && rest[..9].eq_ignore_ascii_case("</script>") {
                 in_script = false;
-            } else if rest.len() > 7
-                && rest[..8].eq_ignore_ascii_case("</style>")
-            {
+            } else if rest.len() > 7 && rest[..8].eq_ignore_ascii_case("</style>") {
                 in_style = false;
             }
             in_tag = true;
@@ -164,9 +155,7 @@ fn collapse_whitespace(text: &str) -> String {
     for ch in text.chars() {
         if ch.is_whitespace() {
             if ch == '\n' {
-                if prev_ws {
-                    // allow up to 2 newlines
-                } else {
+                if !prev_ws {
                     result.push('\n');
                 }
                 prev_ws = true;
@@ -267,10 +256,6 @@ impl Tool for WebFetchTool {
         true
     }
 
-    fn is_enabled(&self) -> bool {
-        true
-    }
-
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
         let url = input.get("url").and_then(|v| v.as_str()).unwrap_or("");
         if url.is_empty() {
@@ -295,14 +280,8 @@ impl Tool for WebFetchTool {
         _parent: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let raw_url = input
-            .get("url")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let _prompt = input
-            .get("prompt")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let raw_url = input.get("url").and_then(|v| v.as_str()).unwrap_or("");
+        let _prompt = input.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
 
         let url = normalise_url(raw_url)?;
 
@@ -316,6 +295,7 @@ impl Tool for WebFetchTool {
                     "cached": true,
                 }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -344,10 +324,7 @@ impl Tool for WebFetchTool {
             .to_string();
 
         // Read body with size limit
-        let body_bytes = resp
-            .bytes()
-            .await
-            .context("Failed to read response body")?;
+        let body_bytes = resp.bytes().await.context("Failed to read response body")?;
 
         if body_bytes.len() > MAX_CONTENT_LENGTH {
             return Ok(ToolResult {
@@ -361,19 +338,19 @@ impl Tool for WebFetchTool {
                     ),
                 }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
         let body = String::from_utf8_lossy(&body_bytes).to_string();
 
         // Extract text from HTML or return raw
-        let text = if content_type.contains("text/html")
-            || content_type.contains("application/xhtml")
-        {
-            strip_html_tags(&body)
-        } else {
-            body
-        };
+        let text =
+            if content_type.contains("text/html") || content_type.contains("application/xhtml") {
+                strip_html_tags(&body)
+            } else {
+                body
+            };
 
         let text = truncate_text(&text, MAX_TEXT_LENGTH);
         let duration_ms = start.elapsed().as_millis() as u64;
@@ -393,6 +370,7 @@ impl Tool for WebFetchTool {
                 "durationMs": duration_ms,
             }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 

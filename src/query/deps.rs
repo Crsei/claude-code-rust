@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// query() 的 I/O 依赖 — 可在测试中 mock
 ///
 /// 对应 TypeScript: query/deps.ts 的 QueryDeps
@@ -22,8 +21,10 @@ pub struct ModelResponse {
     /// 助手消息 (包含文本和工具调用块)
     pub assistant_message: AssistantMessage,
     /// 流事件 (用于透传给调用方)
+    #[allow(dead_code)]
     pub stream_events: Vec<StreamEvent>,
     /// 总用量
+    #[allow(dead_code)]
     pub usage: Usage,
 }
 
@@ -88,10 +89,7 @@ pub trait QueryDeps: Send + Sync {
     ///
     /// 在生产中委托给 api/client.rs
     /// 在测试中返回预设的消息序列
-    async fn call_model(
-        &self,
-        params: ModelCallParams,
-    ) -> Result<ModelResponse>;
+    async fn call_model(&self, params: ModelCallParams) -> Result<ModelResponse>;
 
     /// 调用模型 (流式, 返回 Stream 供实时中继)
     ///
@@ -103,10 +101,7 @@ pub trait QueryDeps: Send + Sync {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>>;
 
     /// 微压缩: 裁剪过大的工具结果
-    async fn microcompact(
-        &self,
-        messages: Vec<Message>,
-    ) -> Result<Vec<Message>>;
+    async fn microcompact(&self, messages: Vec<Message>) -> Result<Vec<Message>>;
 
     /// 自动压缩: 达到 token 阈值时压缩历史
     async fn autocompact(
@@ -116,10 +111,7 @@ pub trait QueryDeps: Send + Sync {
     ) -> Result<Option<CompactionResult>>;
 
     /// 响应式压缩: prompt_too_long 恢复时调用
-    async fn reactive_compact(
-        &self,
-        messages: Vec<Message>,
-    ) -> Result<Option<CompactionResult>>;
+    async fn reactive_compact(&self, messages: Vec<Message>) -> Result<Option<CompactionResult>>;
 
     /// 执行单个工具
     async fn execute_tool(
@@ -144,4 +136,17 @@ pub trait QueryDeps: Send + Sync {
 
     /// 刷新工具列表 (MCP 工具等可能动态变化)
     async fn refresh_tools(&self) -> Result<Tools>;
+
+    /// Drain completed background agent results (called at turn start).
+    /// Default: returns empty vec (no background agent support).
+    fn drain_background_results(
+        &self,
+    ) -> Vec<crate::tools::background_agents::CompletedBackgroundAgent> {
+        vec![]
+    }
+
+    /// Get the audit context for this submit.
+    fn audit_context(&self) -> crate::observability::AuditContext {
+        crate::observability::AuditContext::noop("unknown")
+    }
 }

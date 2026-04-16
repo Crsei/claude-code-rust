@@ -195,7 +195,7 @@ pub async fn state_handler(State(state): State<WebState>) -> impl IntoResponse {
 
     Json(StateResponse {
         model: app_state.main_loop_model.clone(),
-        session_id: state.engine.session_id.clone(),
+        session_id: state.engine.session_id.to_string(),
         tools: tool_names,
         permission_mode: permission_mode.to_string(),
         thinking_enabled: app_state.thinking_enabled,
@@ -345,6 +345,7 @@ pub async fn command_handler(
         messages,
         cwd,
         app_state: app_state.clone(),
+        session_id: state.engine.session_id.clone(),
     };
 
     match cmd.handler.execute(&req.args, &mut ctx).await {

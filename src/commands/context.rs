@@ -6,8 +6,6 @@
 //! provides a simplified local estimate since full token counting requires
 //! an API connection.
 
-#![allow(unused)]
-
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -29,14 +27,10 @@ fn estimate_message_tokens(msg: &Message) -> u64 {
                 blocks.iter().map(|b| estimate_block_chars(b)).sum()
             }
         },
-        Message::Assistant(a) => a
-            .content
-            .iter()
-            .map(|b| estimate_block_chars(b))
-            .sum(),
+        Message::Assistant(a) => a.content.iter().map(|b| estimate_block_chars(b)).sum(),
         Message::System(s) => s.content.len(),
         Message::Progress(p) => p.data.to_string().len(),
-        Message::Attachment(a) => {
+        Message::Attachment(_a) => {
             // Rough estimate for attachment metadata.
             50
         }
@@ -132,9 +126,10 @@ impl CommandHandler for ContextHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
-    use crate::types::message::{Message, UserMessage, MessageContent};
+    use crate::types::message::{Message, MessageContent, UserMessage};
+    use std::path::PathBuf;
     use uuid::Uuid;
 
     fn make_user_msg(text: &str) -> Message {
@@ -154,6 +149,7 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("."),
             app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
         }
     }
 

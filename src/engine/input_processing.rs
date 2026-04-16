@@ -3,8 +3,6 @@
 //! Corresponds to the input-handling portion of `submitMessage()` in
 //! TypeScript's QueryEngine.ts.
 
-#![allow(unused)]
-
 use uuid::Uuid;
 
 use crate::commands;
@@ -23,8 +21,10 @@ pub struct ProcessedInput {
     /// `false` for purely local slash commands (e.g. `/help`, `/clear`).
     pub should_query: bool,
     /// Tool allow-list overridden by a slash command (e.g. `/allowed-tools`).
+    #[allow(dead_code)]
     pub allowed_tools: Option<Vec<String>>,
     /// Model override from a slash command.
+    #[allow(dead_code)]
     pub model: Option<String>,
     /// Text result for local commands (displayed without querying the model).
     pub result_text: Option<String>,
@@ -44,11 +44,7 @@ pub struct ProcessedInput {
 ///      in `messages`.
 /// 2. Otherwise, wrap the input in a plain `UserMessage` with
 ///    `should_query = true`.
-pub fn process_user_input(
-    input: &str,
-    messages: &[Message],
-    cwd: &str,
-) -> ProcessedInput {
+pub fn process_user_input(input: &str, _messages: &[Message], _cwd: &str) -> ProcessedInput {
     let trimmed = input.trim();
 
     // -- Slash-command path ---------------------------------------------------

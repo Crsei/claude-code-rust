@@ -13,7 +13,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crossterm::event::{self, Event};
-use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{
+    self, BeginSynchronizedUpdate, EndSynchronizedUpdate, EnterAlternateScreen,
+    LeaveAlternateScreen,
+};
 use crossterm::{cursor, execute};
 use futures::StreamExt;
 use ratatui::backend::CrosstermBackend;
@@ -22,14 +25,25 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
+use crate::commands::{self, CommandContext, CommandResult};
 use crate::engine::lifecycle::QueryEngine;
 use crate::engine::sdk_types::SdkMessage;
+use crate::services::prompt_suggestion::PromptSuggestionService;
 use crate::types::config::QuerySource;
 use crate::types::message::{
-    InfoLevel, Message, MessageContent, SystemMessage, SystemSubtype, UserMessage,
+    AssistantMessage, ContentBlock, InfoLevel, Message, MessageContent, StreamEvent, SystemMessage,
+    SystemSubtype, UserMessage,
 };
 
 use super::app::{App, AppAction};
+
+/// Tracks the partial assistant message being streamed.
+struct StreamingState {
+    /// Accumulated text content from content_block_delta events.
+    text: String,
+    /// Whether we are inside a content block.
+    active: bool,
+}
 
 // ---------------------------------------------------------------------------
 // Engine event channel type
@@ -95,10 +109,15 @@ pub async fn run_tui(
     // ── Create the App ─────────────────────────────────────────────
     let mut app = App::new();
     app.set_model_name(model_name.to_string());
-    add_welcome_message(&mut app, &engine.session_id, model_name);
+    app.set_session_id(engine.session_id.to_string());
+    app.set_cwd(engine.cwd().to_string());
 
     // ── Create channels ────────────────────────────────────────────
     let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<EngineEvent>();
+    let mut streaming_state = StreamingState {
+        text: String::new(),
+        active: false,
+    };
 
     // ── Spawn terminal event reader thread ─────────────────────────
     //
@@ -134,12 +153,17 @@ pub async fn run_tui(
     }
 
     // ── Main event loop ────────────────────────────────────────────
-    let mut tick_interval = tokio::time::interval(Duration::from_millis(80));
+    let mut tick_interval = tokio::time::interval(Duration::from_millis(16));
     tick_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
-        // Draw the UI
-        terminal.draw(|frame| app.render(frame))?;
+        // Draw the UI only when something changed (dirty flag).
+        if app.is_dirty() {
+            execute!(terminal.backend_mut(), BeginSynchronizedUpdate)?;
+            terminal.draw(|frame| app.render(frame))?;
+            execute!(terminal.backend_mut(), EndSynchronizedUpdate)?;
+            app.mark_clean();
+        }
 
         // Wait for the next event
         tokio::select! {
@@ -158,17 +182,43 @@ pub async fn run_tui(
                         let action = app.handle_key_event(key);
                         match action {
                             AppAction::Submit(text) => {
-                                // Add user message to display
                                 app.add_message(create_user_message(&text));
                                 app.push_history(text.clone());
-                                app.set_streaming(true);
-                                engine.reset_abort();
-                                // Start engine query in background
-                                spawn_engine_query(
-                                    engine.clone(),
-                                    text,
-                                    engine_tx.clone(),
-                                );
+
+                                // Try slash command first
+                                if let Some(action) = try_execute_command(
+                                    &text, &engine, &mut app
+                                ).await {
+                                    match action {
+                                        CmdAction::Handled => {}
+                                        CmdAction::Quit(msg) => {
+                                            add_system_info(&mut app, &msg);
+                                            break;
+                                        }
+                                        CmdAction::Query(msgs) => {
+                                            // Command wants to send messages to the model
+                                            for m in msgs {
+                                                app.add_message(m);
+                                            }
+                                            app.set_streaming(true);
+                                            engine.reset_abort();
+                                            spawn_engine_query(
+                                                engine.clone(),
+                                                text,
+                                                engine_tx.clone(),
+                                            );
+                                        }
+                                    }
+                                } else {
+                                    // Regular message — send to engine
+                                    app.set_streaming(true);
+                                    engine.reset_abort();
+                                    spawn_engine_query(
+                                        engine.clone(),
+                                        text,
+                                        engine_tx.clone(),
+                                    );
+                                }
                             }
                             AppAction::Abort => {
                                 engine.abort();
@@ -191,7 +241,7 @@ pub async fn run_tui(
                         }
                     }
                     Event::Resize(_, _) => {
-                        // ratatui handles resize automatically on next draw
+                        app.mark_dirty();
                     }
                     _ => {}
                 }
@@ -201,7 +251,7 @@ pub async fn run_tui(
             Some(engine_event) = engine_rx.recv() => {
                 match engine_event {
                     EngineEvent::Sdk(sdk_msg) => {
-                        handle_sdk_message(&mut app, sdk_msg);
+                        handle_sdk_message(&mut app, sdk_msg, &mut streaming_state);
                     }
                     EngineEvent::Done => {
                         app.set_streaming(false);
@@ -224,11 +274,7 @@ pub async fn run_tui(
     // (TerminalGuard::drop also handles this, but explicit cleanup is
     // cleaner for the normal exit path.)
     terminal::disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        cursor::Show
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show)?;
     terminal.show_cursor()?;
 
     Ok(())
@@ -264,18 +310,72 @@ fn spawn_engine_query(
 // ---------------------------------------------------------------------------
 
 /// Handle an SDK message from the engine, updating the App state.
-fn handle_sdk_message(app: &mut App, msg: SdkMessage) {
+fn handle_sdk_message(app: &mut App, msg: SdkMessage, ss: &mut StreamingState) {
     match msg {
         SdkMessage::SystemInit(_init) => {
-            // System init info already shown in the welcome banner.
             debug!("TUI: received SystemInit");
         }
 
+        SdkMessage::StreamEvent(sdk_stream) => {
+            match sdk_stream.event {
+                StreamEvent::ContentBlockStart { .. } => {
+                    if !ss.active {
+                        // First content block — start a new streaming message
+                        ss.text.clear();
+                        ss.active = true;
+                        app.add_message(make_partial_assistant(""));
+                    }
+                }
+                StreamEvent::ContentBlockDelta { ref delta, .. } => {
+                    if let Some(t) = delta.get("text").and_then(|v| v.as_str()) {
+                        ss.text.push_str(t);
+                        app.replace_last_message(make_partial_assistant(&ss.text));
+                    }
+                }
+                StreamEvent::MessageStop => {
+                    // Stream complete; the full Assistant message follows.
+                    ss.active = false;
+                }
+                _ => {}
+            }
+        }
+
         SdkMessage::Assistant(assistant) => {
-            app.add_message(Message::Assistant(assistant.message));
+            // Replace the partial streaming message with the final one.
+            if ss.active || !ss.text.is_empty() {
+                app.replace_last_message(Message::Assistant(assistant.message));
+                ss.text.clear();
+                ss.active = false;
+            } else {
+                app.add_message(Message::Assistant(assistant.message));
+            }
+        }
+
+        SdkMessage::UserReplay(user) => {
+            if user.is_replay && !user.is_synthetic {
+                return;
+            }
+
+            let content = match user.content_blocks {
+                Some(blocks) => MessageContent::Blocks(blocks),
+                None => MessageContent::Text(user.content),
+            };
+            app.add_message(Message::User(UserMessage {
+                uuid: user.uuid,
+                timestamp: user.timestamp,
+                role: "user".to_string(),
+                content,
+                is_meta: user.is_synthetic,
+                tool_use_result: None,
+                source_tool_assistant_uuid: None,
+            }));
         }
 
         SdkMessage::Result(result) => {
+            // Finalize any leftover streaming state
+            ss.text.clear();
+            ss.active = false;
+
             app.set_streaming(false);
             app.update_session_cost(result.total_cost_usd);
             if result.is_error {
@@ -288,6 +388,10 @@ fn handle_sdk_message(app: &mut App, msg: SdkMessage) {
                     content: result.result,
                 }));
             }
+
+            // Generate next-prompt suggestions from last assistant turn
+            generate_suggestions(app);
+
             debug!(
                 turns = result.num_turns,
                 cost = format!("{:.4}", result.total_cost_usd),
@@ -314,40 +418,30 @@ fn handle_sdk_message(app: &mut App, msg: SdkMessage) {
             }));
         }
 
-        // UserReplay, StreamEvent, ToolUseSummary: not shown in REPL mode
         _ => {}
     }
+}
+
+/// Build a partial assistant message for streaming display.
+fn make_partial_assistant(text: &str) -> Message {
+    Message::Assistant(AssistantMessage {
+        uuid: uuid::Uuid::new_v4(),
+        timestamp: now_ts(),
+        role: "assistant".to_string(),
+        content: vec![ContentBlock::Text {
+            text: text.to_string(),
+        }],
+        usage: None,
+        stop_reason: None,
+        is_api_error_message: false,
+        api_error: None,
+        cost_usd: 0.0,
+    })
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/// Add the startup welcome message to the App.
-fn add_welcome_message(app: &mut App, session_id: &str, model_name: &str) {
-    let short_session = &session_id[..8.min(session_id.len())];
-    let welcome = format!(
-        concat!(
-            "Claude Code (Rust) v{}\n",
-            "Model: {}\n",
-            "Session: {}\n",
-            "\n",
-            "Type your message and press Enter to send.\n",
-            "Ctrl+C to abort, Ctrl+D to quit. Up/Down for history.",
-        ),
-        env!("CARGO_PKG_VERSION"),
-        model_name,
-        short_session,
-    );
-    app.add_message(Message::System(SystemMessage {
-        uuid: uuid::Uuid::new_v4(),
-        timestamp: now_ts(),
-        subtype: SystemSubtype::Informational {
-            level: InfoLevel::Info,
-        },
-        content: welcome,
-    }));
-}
 
 /// Create a user message from text.
 fn create_user_message(text: &str) -> Message {
@@ -362,7 +456,178 @@ fn create_user_message(text: &str) -> Message {
     })
 }
 
+/// Generate prompt suggestions from the last assistant message in the conversation.
+fn generate_suggestions(app: &mut super::app::App) {
+    let messages = app.messages();
+    let mut svc = PromptSuggestionService::new(true);
+
+    // Check suppression first (not enough messages, etc.)
+    if let Some(reason) = svc.get_suppression_reason(messages.len(), false) {
+        debug!("prompt suggestions suppressed: {:?}", reason);
+        return;
+    }
+
+    if !svc.should_enable() {
+        return;
+    }
+
+    // Find last assistant message
+    let last_assistant = messages.iter().rev().find_map(|msg| match msg {
+        Message::Assistant(a) => Some(a),
+        _ => None,
+    });
+    let Some(assistant) = last_assistant else {
+        return;
+    };
+
+    // Extract tool names and text summary
+    let tool_names: Vec<String> = assistant
+        .content
+        .iter()
+        .filter_map(|b| {
+            if let ContentBlock::ToolUse { name, .. } = b {
+                Some(name.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let summary: String = assistant
+        .content
+        .iter()
+        .filter_map(|b| {
+            if let ContentBlock::Text { text } = b {
+                Some(text.as_str())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if let Some(suggestions) = svc.try_generate(&summary, &tool_names) {
+        app.set_suggestions(suggestions);
+    }
+}
+
 /// Current UTC timestamp in seconds.
 fn now_ts() -> i64 {
     chrono::Utc::now().timestamp()
+}
+
+// ---------------------------------------------------------------------------
+// Slash-command execution
+// ---------------------------------------------------------------------------
+
+/// Internal action returned after executing a slash command.
+enum CmdAction {
+    /// Command fully handled, output already added to app.
+    Handled,
+    /// Command requested exit.
+    Quit(String),
+    /// Command produced messages to send to the model.
+    Query(Vec<Message>),
+}
+
+fn conversation_changed(before: &[Message], after: &[Message]) -> bool {
+    before.len() != after.len()
+        || before
+            .iter()
+            .zip(after.iter())
+            .any(|(lhs, rhs)| lhs.uuid() != rhs.uuid())
+}
+
+fn replace_app_messages(app: &mut App, messages: &[Message]) {
+    app.clear_messages();
+    for message in messages {
+        app.add_message(message.clone());
+    }
+}
+
+/// Try to execute a slash command. Returns `None` if the input is not a command.
+async fn try_execute_command(
+    text: &str,
+    engine: &Arc<QueryEngine>,
+    app: &mut App,
+) -> Option<CmdAction> {
+    let trimmed = text.trim();
+    if !trimmed.starts_with('/') {
+        return None;
+    }
+
+    let (cmd_idx, args) = commands::parse_command_input(trimmed)?;
+    let all_commands = commands::get_all_commands();
+    let cmd = &all_commands[cmd_idx];
+    let original_messages = engine.messages();
+
+    let mut ctx = CommandContext {
+        messages: original_messages.clone(),
+        cwd: std::path::PathBuf::from(engine.cwd()),
+        app_state: engine.app_state(),
+        session_id: engine.session_id.clone(),
+    };
+
+    match cmd.handler.execute(&args, &mut ctx).await {
+        Ok(result) => match result {
+            CommandResult::Output(text) => {
+                if conversation_changed(&original_messages, &ctx.messages) {
+                    engine.replace_messages(ctx.messages.clone());
+                    replace_app_messages(app, &ctx.messages);
+                }
+                add_system_info(app, &text);
+                Some(CmdAction::Handled)
+            }
+            CommandResult::Clear => {
+                // Clear conversation in the engine and the app
+                engine.clear_messages();
+                app.clear_messages();
+                add_system_info(app, "Conversation cleared.");
+                Some(CmdAction::Handled)
+            }
+            CommandResult::Exit(msg) => Some(CmdAction::Quit(msg)),
+            CommandResult::Query(msgs) => {
+                if conversation_changed(&original_messages, &ctx.messages) {
+                    engine.replace_messages(ctx.messages.clone());
+                    replace_app_messages(app, &ctx.messages);
+                }
+                Some(CmdAction::Query(msgs))
+            }
+            CommandResult::None => {
+                if conversation_changed(&original_messages, &ctx.messages) {
+                    engine.replace_messages(ctx.messages.clone());
+                    replace_app_messages(app, &ctx.messages);
+                }
+                Some(CmdAction::Handled)
+            }
+        },
+        Err(e) => {
+            add_system_error(app, &format!("Command error: {e}"));
+            Some(CmdAction::Handled)
+        }
+    }
+}
+
+/// Add an informational system message to the app.
+fn add_system_info(app: &mut App, text: &str) {
+    app.add_message(Message::System(SystemMessage {
+        uuid: uuid::Uuid::new_v4(),
+        timestamp: now_ts(),
+        subtype: SystemSubtype::Informational {
+            level: InfoLevel::Info,
+        },
+        content: text.to_string(),
+    }));
+}
+
+/// Add an error system message to the app.
+fn add_system_error(app: &mut App, text: &str) {
+    app.add_message(Message::System(SystemMessage {
+        uuid: uuid::Uuid::new_v4(),
+        timestamp: now_ts(),
+        subtype: SystemSubtype::Informational {
+            level: InfoLevel::Error,
+        },
+        content: text.to_string(),
+    }));
 }

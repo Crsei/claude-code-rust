@@ -6,9 +6,7 @@ use serde_json::{json, Value};
 use similar::TextDiff;
 
 use crate::types::message::AssistantMessage;
-use crate::types::tool::{
-    Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult,
-};
+use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
 
 /// FileEditTool — Edit a file by replacing exact string matches
 ///
@@ -48,10 +46,7 @@ impl FileEditTool {
     ///
     /// Returns `Some((matched_text, start_line, end_line, similarity_ratio))`
     /// where lines are 1-indexed, or `None` if content is empty.
-    fn find_best_fuzzy_match(
-        content: &str,
-        old_string: &str,
-    ) -> Option<FuzzyMatch> {
+    fn find_best_fuzzy_match(content: &str, old_string: &str) -> Option<FuzzyMatch> {
         let content_lines: Vec<&str> = content.lines().collect();
         let needle_lines: Vec<&str> = old_string.lines().collect();
 
@@ -160,18 +155,27 @@ impl Tool for FileEditTool {
     }
 
     fn get_path(&self, input: &Value) -> Option<String> {
-        input.get("file_path").and_then(|v| v.as_str()).map(|s| s.to_string())
+        input
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
-        let file_path = input.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+        let file_path = input
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         if file_path.is_empty() {
             return ValidationResult::Error {
                 message: "file_path is required".to_string(),
                 error_code: 1,
             };
         }
-        let old_string = input.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
+        let old_string = input
+            .get("old_string")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         if old_string.is_empty() {
             return ValidationResult::Error {
                 message: "old_string is required and must not be empty".to_string(),
@@ -197,7 +201,7 @@ impl Tool for FileEditTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _parent_message: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
@@ -207,6 +211,7 @@ impl Tool for FileEditTool {
             return Ok(ToolResult {
                 data: json!({ "error": "file_path and old_string are required" }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -216,6 +221,7 @@ impl Tool for FileEditTool {
             return Ok(ToolResult {
                 data: json!({ "error": format!("File not found: {}", file_path) }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -226,6 +232,7 @@ impl Tool for FileEditTool {
                 return Ok(ToolResult {
                     data: json!({ "error": format!("Failed to read file: {}", e) }),
                     new_messages: vec![],
+                    ..Default::default()
                 });
             }
         };
@@ -246,6 +253,7 @@ impl Tool for FileEditTool {
                             )
                         }),
                         new_messages: vec![],
+                        ..Default::default()
                     });
                 }
             }
@@ -258,6 +266,7 @@ impl Tool for FileEditTool {
                     )
                 }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -270,6 +279,7 @@ impl Tool for FileEditTool {
                     )
                 }),
                 new_messages: vec![],
+                ..Default::default()
             });
         }
 
@@ -285,6 +295,24 @@ impl Tool for FileEditTool {
         match tokio::fs::write(&file_path, &new_content).await {
             Ok(()) => {
                 let replacements = if replace_all { occurrence_count } else { 1 };
+
+                // Fire FileChanged hook
+                {
+                    let app_state = (ctx.get_app_state)();
+                    let configs =
+                        crate::tools::hooks::load_hook_configs(&app_state.hooks, "FileChanged");
+                    if !configs.is_empty() {
+                        let payload = json!({
+                            "file_path": &file_path,
+                            "operation": "edit",
+                            "replacements": replacements,
+                        });
+                        let _ =
+                            crate::tools::hooks::run_event_hooks("FileChanged", &payload, &configs)
+                                .await;
+                    }
+                }
+
                 Ok(ToolResult {
                     data: json!({
                         "output": format!(
@@ -295,11 +323,13 @@ impl Tool for FileEditTool {
                         "replacements": replacements,
                     }),
                     new_messages: vec![],
+                    ..Default::default()
                 })
             }
             Err(e) => Ok(ToolResult {
                 data: json!({ "error": format!("Failed to write file: {}", e) }),
                 new_messages: vec![],
+                ..Default::default()
             }),
         }
     }

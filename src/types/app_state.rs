@@ -1,6 +1,5 @@
-use std::collections::HashMap;
 use super::tool::{PermissionMode, ToolPermissionContext};
-use crate::teams::types::TeamContext;
+use std::collections::HashMap;
 
 /// 应用全局状态 (简化版)
 ///
@@ -15,6 +14,8 @@ pub struct AppState {
     pub verbose: bool,
     /// 主循环模型
     pub main_loop_model: String,
+    /// Active backend implementation ("native" or "codex").
+    pub main_loop_backend: String,
     /// 工具权限上下文
     pub tool_permission_context: ToolPermissionContext,
     /// thinking 是否启用
@@ -23,14 +24,28 @@ pub struct AppState {
     pub fast_mode: bool,
     /// effort 值
     pub effort_value: Option<String>,
-    /// Agent Teams context (when leading/participating in a team)
-    pub team_context: Option<TeamContext>,
+    /// Agent Teams 上下文 (feature-gated)
+    pub team_context: Option<crate::teams::types::TeamContext>,
+    /// Hook configurations loaded from settings.json (merged config).
+    /// Read by `tools::hooks::load_hook_configs()` and the hook execution pipeline.
+    pub hooks: HashMap<String, serde_json::Value>,
+    /// Whether KAIROS daemon mode is running
+    pub kairos_active: bool,
+    /// Whether output is routed through BriefTool only
+    pub is_brief_only: bool,
+    /// Perpetual session mode
+    pub is_assistant_mode: bool,
+    /// Proactive tick interval (None = disabled)
+    pub autonomous_tick_ms: Option<u64>,
+    /// Whether user is looking at terminal (affects autonomy level)
+    pub terminal_focus: bool,
 }
 
 /// 设置 JSON (简化版)
 #[derive(Debug, Clone, Default)]
 pub struct SettingsJson {
     pub model: Option<String>,
+    pub backend: Option<String>,
     pub theme: Option<String>,
     pub verbose: Option<bool>,
     // 后续添加更多设置字段
@@ -42,12 +57,14 @@ impl Default for AppState {
             settings: SettingsJson::default(),
             verbose: false,
             main_loop_model: "claude-sonnet-4-20250514".to_string(),
+            main_loop_backend: "native".to_string(),
             tool_permission_context: ToolPermissionContext {
                 mode: PermissionMode::Default,
                 additional_working_directories: HashMap::new(),
                 always_allow_rules: HashMap::new(),
                 always_deny_rules: HashMap::new(),
                 always_ask_rules: HashMap::new(),
+                session_allow_rules: HashMap::new(),
                 is_bypass_permissions_mode_available: false,
                 is_auto_mode_available: None,
                 pre_plan_mode: None,
@@ -56,6 +73,12 @@ impl Default for AppState {
             fast_mode: false,
             effort_value: None,
             team_context: None,
+            hooks: HashMap::new(),
+            kairos_active: false,
+            is_brief_only: false,
+            is_assistant_mode: false,
+            autonomous_tick_ms: None,
+            terminal_focus: true,
         }
     }
 }

@@ -3,13 +3,11 @@
 //!
 //! Corresponds to TypeScript: SDKMessage (agentSdkTypes.ts)
 
-#![allow(unused)]
-
 use serde::Serialize;
 use uuid::Uuid;
 
 use crate::engine::lifecycle::{PermissionDenial, UsageTracking};
-use crate::types::message::{CompactMetadata, StreamEvent, Usage};
+use crate::types::message::{CompactMetadata, StreamEvent};
 
 // ---------------------------------------------------------------------------
 // Top-level SDK message enum
@@ -27,7 +25,7 @@ pub enum SdkMessage {
     Assistant(SdkAssistantMessage),
     /// User message replay (for SDK consumers to confirm receipt).
     UserReplay(SdkUserReplay),
-    /// Streaming event (produced when `include_partial_messages = true`).
+    /// Streaming event (real-time text deltas for TUI display).
     StreamEvent(SdkStreamEvent),
     /// Compact boundary (produced after context compaction).
     CompactBoundary(SdkCompactBoundary),
@@ -70,6 +68,10 @@ pub struct SdkUserReplay {
     pub timestamp: i64,
     pub is_replay: bool,
     pub is_synthetic: bool,
+    /// Structured content blocks (tool results, etc.) — present when
+    /// the user message carries `MessageContent::Blocks`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_blocks: Option<Vec<crate::types::message::ContentBlock>>,
 }
 
 /// Streaming event wrapper for SDK output.
@@ -141,5 +143,6 @@ pub enum ResultSubtype {
     ErrorDuringExecution,
     ErrorMaxTurns,
     ErrorMaxBudgetUsd,
+    #[allow(dead_code)]
     ErrorMaxStructuredOutputRetries,
 }

@@ -1,24 +1,11 @@
 //! Context management pipeline — orchestrates all compaction steps.
 //!
-//! Corresponds to: LIFECYCLE_STATE_MACHINE.md §8 (Phase G)
-//!
 //! Pipeline order (each query loop iteration):
 //!   1. applyToolResultBudget — persist oversized tool results to disk
 //!   2. snipCompact — trim old turns beyond max_turns limit
 //!   3. microcompact — remove cached/redundant tool results
 //!   4. contextCollapse — fold old segments into summaries (Phase 2+)
 //!   5. autoCompact — full summarization when nearing token limit
-//!
-//! Recovery paths (after API errors):
-//!   - prompt_too_long (413):
-//!     1. contextCollapse.recoverFromOverflow() → collapse_drain_retry
-//!     2. reactiveCompact.tryReactiveCompact() → reactive_compact_retry
-//!     3. Unrecoverable → return prompt_too_long
-//!
-//!   - max_output_tokens:
-//!     1. Escalate 8k → 64k → max_output_tokens_escalate
-//!     2. Recovery message injection (max 3) → max_output_tokens_recovery
-//!     3. Exhausted → yield error, return completed
 
 #![allow(unused)]
 
@@ -85,12 +72,9 @@ pub async fn run_context_pipeline(
 
     // ── Step 1: Tool result budget (async — saves oversized results to disk) ──
     let mut replacement_state = tool_result_budget::ContentReplacementState::default();
-    let budgeted = tool_result_budget::apply_tool_result_budget(
-        current,
-        &mut replacement_state,
-        100_000,
-    )
-    .await;
+    let budgeted =
+        tool_result_budget::apply_tool_result_budget(current, &mut replacement_state, 100_000)
+            .await;
     if !replacement_state.replacements.is_empty() {
         compacted = true;
         debug!(
@@ -149,6 +133,16 @@ pub async fn run_context_pipeline(
         tracking
     };
 
+    if compacted {
+        let final_tokens = tokens::estimate_messages_tokens(&current);
+        info!(
+            before_tokens = estimated,
+            after_tokens = final_tokens,
+            messages = current.len(),
+            "compaction pipeline completed",
+        );
+    }
+
     PipelineResult {
         messages: current,
         tracking: updated_tracking,
@@ -177,12 +171,9 @@ pub async fn try_reactive_compact(
 
     // First: budget oversized tool results
     let mut replacement_state = tool_result_budget::ContentReplacementState::default();
-    let current = tool_result_budget::apply_tool_result_budget(
-        messages,
-        &mut replacement_state,
-        100_000,
-    )
-    .await;
+    let current =
+        tool_result_budget::apply_tool_result_budget(messages, &mut replacement_state, 100_000)
+            .await;
 
     if !replacement_state.replacements.is_empty() {
         debug!(
@@ -241,9 +232,7 @@ pub async fn try_reactive_compact(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::message::{
-        ContentBlock, MessageContent, UserMessage, AssistantMessage,
-    };
+    use crate::types::message::{AssistantMessage, ContentBlock, MessageContent, UserMessage};
     use uuid::Uuid;
 
     fn make_user(text: &str) -> Message {
@@ -275,12 +264,7 @@ mod tests {
     #[tokio::test]
     async fn test_pipeline_no_changes_small_conversation() {
         let messages = vec![make_user("Hello"), make_assistant("Hi!")];
-        let result = run_context_pipeline(
-            messages,
-            None,
-            "claude-sonnet-4-20250514",
-        )
-        .await;
+        let result = run_context_pipeline(messages, None, "claude-sonnet-4-20250514").await;
         assert_eq!(result.messages.len(), 2);
     }
 

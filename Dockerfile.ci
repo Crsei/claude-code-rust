@@ -1,0 +1,102 @@
+# ============================================================
+# Stage 1: Build — compile binary and test binaries
+# ============================================================
+FROM rust:latest AS builder
+
+WORKDIR /build
+
+# Dependency cache layer: copy only Cargo manifests, build with dummy src
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && \
+    echo "fn main() {}" > src/main.rs && \
+    cargo build --release 2>/dev/null || true && \
+    rm -rf src
+
+# Full source copy
+COPY src/ src/
+COPY tests/ tests/
+
+# Build binary
+RUN cargo build --release
+
+# Build test binaries (--no-run compiles without executing)
+RUN cargo test --release --no-run 2>&1 | tee /build/test-bins.log
+
+# ============================================================
+# Stage 2: Test runner — minimal image with binary + tests
+# ============================================================
+FROM debian:trixie-slim AS tester
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Create test workspace
+ENV E2E_WORKSPACE=/tmp/cc-rust-test
+RUN mkdir -p "$E2E_WORKSPACE"
+
+# assert_cmd::cargo_bin() needs CARGO_BIN_EXE_<name> to find the binary
+# outside of `cargo test`. The env var name contains hyphens which need
+# careful handling in shell — we use env(1) in the CMD to set it.
+
+# Copy binary
+COPY --from=builder /build/target/release/claude-code-rs /usr/local/bin/
+
+# Copy test binaries (glob pattern: they're named like e2e_cli-<hash>)
+COPY --from=builder /build/target/release/deps/e2e_cli-* \
+                    /build/target/release/deps/e2e_env-* \
+                    /build/target/release/deps/e2e_tools-* \
+                    /build/target/release/deps/e2e_services-* \
+                    /build/target/release/deps/e2e_compact-* \
+                    /build/target/release/deps/e2e_audit_export-* \
+                    /build/target/release/deps/e2e_session_export-* \
+                    /build/target/release/deps/e2e_terminal-* \
+                    /app/tests/
+
+# Remove non-executable files (.d dependency files copied by glob)
+RUN find /app/tests -name '*.d' -delete
+
+# Default: run all offline tests
+COPY <<'EOF' /app/run-tests.sh
+#!/bin/sh
+echo '=== cc-rust E2E test suite (Linux container) ==='
+echo "Workspace: $E2E_WORKSPACE"
+echo "Binary: $(claude-code-rs --version 2>/dev/null || echo 'not found')"
+echo ''
+
+passed=0
+failed=0
+for t in /app/tests/e2e_*; do
+    [ -x "$t" ] || continue
+    name=$(basename "$t" | sed 's/-[a-f0-9]*$//')
+    echo "--- $name ---"
+    if env "CARGO_BIN_EXE_claude-code-rs=/usr/local/bin/claude-code-rs" \
+         "$t" --test-threads=1 2>&1; then
+        passed=$((passed + 1))
+    else
+        failed=$((failed + 1))
+    fi
+    echo ''
+done
+
+echo "=== Done: $passed suites passed, $failed failed ==="
+[ $failed -eq 0 ]
+EOF
+RUN chmod +x /app/run-tests.sh
+
+CMD ["/app/run-tests.sh"]
+
+# ============================================================
+# Stage 3: Release — minimal image with just the binary
+# ============================================================
+FROM debian:trixie-slim AS release
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/target/release/claude-code-rs /usr/local/bin/
+
+ENTRYPOINT ["claude-code-rs"]

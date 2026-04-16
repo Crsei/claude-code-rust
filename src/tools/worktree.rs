@@ -15,8 +15,9 @@
 //! - Change detection: counts uncommitted files + new commits before removal
 //! - Requires explicit `discard_changes: true` to remove with unsaved work
 
+use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 
 use anyhow::{bail, Result};
 use async_trait::async_trait;
@@ -49,14 +50,12 @@ static CURRENT_SESSION: LazyLock<Mutex<Option<WorktreeSession>>> =
 
 /// Get the current worktree session (if any).
 pub fn get_current_worktree_session() -> Option<WorktreeSession> {
-    CURRENT_SESSION.lock().ok()?.clone()
+    CURRENT_SESSION.lock().clone()
 }
 
 /// Set the current worktree session.
 fn set_worktree_session(session: Option<WorktreeSession>) {
-    if let Ok(mut s) = CURRENT_SESSION.lock() {
-        *s = session;
-    }
+    *CURRENT_SESSION.lock() = session;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,15 +63,17 @@ fn set_worktree_session(session: Option<WorktreeSession>) {
 // ---------------------------------------------------------------------------
 
 /// Count uncommitted file changes and new commits in a worktree.
-///
-/// Returns `None` if the state cannot be reliably determined (fail-closed).
 async fn count_worktree_changes(
     worktree_path: &Path,
     original_head: Option<&str>,
 ) -> Option<(usize, usize)> {
-    // Count changed files via `git status --porcelain`
     let status = tokio::process::Command::new("git")
-        .args(["-C", &worktree_path.to_string_lossy(), "status", "--porcelain"])
+        .args([
+            "-C",
+            &worktree_path.to_string_lossy(),
+            "status",
+            "--porcelain",
+        ])
         .output()
         .await
         .ok()?;
@@ -86,9 +87,7 @@ async fn count_worktree_changes(
         .filter(|l| !l.trim().is_empty())
         .count();
 
-    // Count new commits since original HEAD
     let Some(orig_head) = original_head else {
-        // Cannot count commits without baseline — return just file changes
         return Some((changed_files, 0));
     };
 
@@ -131,15 +130,10 @@ async fn get_head_sha(cwd: &Path) -> Option<String> {
     }
 }
 
-/// Find the canonical git root from a path (resolves nested worktrees).
+/// Find the canonical git root from a path.
 async fn find_git_root(cwd: &Path) -> Option<PathBuf> {
     let output = tokio::process::Command::new("git")
-        .args([
-            "-C",
-            &cwd.to_string_lossy(),
-            "rev-parse",
-            "--show-toplevel",
-        ])
+        .args(["-C", &cwd.to_string_lossy(), "rev-parse", "--show-toplevel"])
         .output()
         .await
         .ok()?;
@@ -225,20 +219,15 @@ impl Tool for EnterWorktreeTool {
     ) -> Result<ToolResult> {
         let params: EnterWorktreeInput = serde_json::from_value(input)?;
 
-        let slug = params.name.unwrap_or_else(|| {
-            uuid::Uuid::new_v4().to_string()[..8].to_string()
-        });
+        let slug = params
+            .name
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()[..8].to_string());
         validate_slug(&slug)?;
 
         let cwd = std::env::current_dir()?;
-
-        // Resolve to git root
         let git_root = find_git_root(&cwd).await.unwrap_or_else(|| cwd.clone());
-
-        // Record the original HEAD commit for change detection on exit
         let original_head = get_head_sha(&git_root).await;
 
-        // Create worktree path in temp directory
         let worktree_path = std::env::temp_dir().join(format!("cc-worktree-{}", slug));
         let branch_name = format!("cc-worktree-{}", slug);
 
@@ -266,7 +255,6 @@ impl Tool for EnterWorktreeTool {
             bail!("Failed to create worktree: {}", stderr);
         }
 
-        // Save session state
         set_worktree_session(Some(WorktreeSession {
             worktree_path: worktree_path.clone(),
             branch_name: branch_name.clone(),
@@ -293,6 +281,7 @@ impl Tool for EnterWorktreeTool {
                 ),
             }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 
@@ -313,13 +302,14 @@ impl Tool for EnterWorktreeTool {
 /// ExitWorktree — leave and optionally clean up a git worktree.
 pub struct ExitWorktreeTool;
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 struct ExitWorktreeInput {
     /// "keep" to leave worktree intact, "remove" to delete it.
     action: String,
     /// If true, force removal even with uncommitted changes.
+    /// Checked in `validate_input` via raw JSON; kept here for schema completeness.
     #[serde(default)]
+    #[allow(dead_code)]
     discard_changes: bool,
 }
 
@@ -366,10 +356,7 @@ impl Tool for ExitWorktreeTool {
             };
         }
 
-        let action = input
-            .get("action")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let action = input.get("action").and_then(|v| v.as_str()).unwrap_or("");
 
         if action != "keep" && action != "remove" {
             return ValidationResult::Error {
@@ -385,7 +372,7 @@ impl Tool for ExitWorktreeTool {
             .unwrap_or(false);
 
         if action == "remove" && !discard {
-            let session = session.unwrap();
+            let session = session.expect("session guaranteed Some after is_none check");
             let changes = count_worktree_changes(
                 &session.worktree_path,
                 session.original_head_commit.as_deref(),
@@ -394,7 +381,6 @@ impl Tool for ExitWorktreeTool {
 
             match changes {
                 None => {
-                    // Cannot determine state — refuse removal
                     return ValidationResult::Error {
                         message: concat!(
                             "Could not verify worktree state. ",
@@ -454,7 +440,6 @@ impl Tool for ExitWorktreeTool {
                     "keeping worktree"
                 );
 
-                // Clear session, keep files
                 set_worktree_session(None);
 
                 Ok(ToolResult {
@@ -470,6 +455,7 @@ impl Tool for ExitWorktreeTool {
                         ),
                     }),
                     new_messages: vec![],
+                    ..Default::default()
                 })
             }
             "remove" => {
@@ -479,7 +465,6 @@ impl Tool for ExitWorktreeTool {
                     "removing worktree"
                 );
 
-                // Remove the worktree
                 let remove_result = tokio::process::Command::new("git")
                     .args([
                         "-C",
@@ -509,8 +494,6 @@ impl Tool for ExitWorktreeTool {
                     }
                 }
 
-                // Delete the branch
-                // Small delay to let git release locks
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
                 let branch_result = tokio::process::Command::new("git")
@@ -539,7 +522,6 @@ impl Tool for ExitWorktreeTool {
                     }
                 }
 
-                // Clear session
                 set_worktree_session(None);
 
                 let mut result = json!({
@@ -553,6 +535,7 @@ impl Tool for ExitWorktreeTool {
                 Ok(ToolResult {
                     data: result,
                     new_messages: vec![],
+                    ..Default::default()
                 })
             }
             other => bail!("Unknown action: {}. Use 'keep' or 'remove'.", other),
@@ -576,8 +559,9 @@ impl Tool for ExitWorktreeTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, RwLock};
     use crate::types::app_state::AppState;
+    use parking_lot::RwLock;
+    use std::sync::Arc;
 
     fn make_ctx() -> ToolUseContext {
         let state = Arc::new(RwLock::new(AppState::default()));
@@ -596,9 +580,9 @@ mod tests {
             },
             abort_signal: tokio::sync::watch::channel(false).1,
             read_file_state: FileStateCache::default(),
-            get_app_state: Arc::new(move || state_r.read().unwrap().clone()),
+            get_app_state: Arc::new(move || state_r.read().clone()),
             set_app_state: Arc::new(move |f: Box<dyn FnOnce(AppState) -> AppState>| {
-                let mut s = state_w.write().unwrap();
+                let mut s = state_w.write();
                 let old = s.clone();
                 *s = f(old);
             }),
@@ -606,6 +590,9 @@ mod tests {
             agent_id: None,
             agent_type: None,
             query_tracking: None,
+            permission_callback: None,
+            ask_user_callback: None,
+            bg_agent_tx: None,
         }
     }
 
@@ -650,13 +637,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_exit_worktree_no_session() {
-        // Ensure no active session
         set_worktree_session(None);
 
         let tool = ExitWorktreeTool;
         let ctx = make_ctx();
         let result = tool.validate_input(&json!({"action": "keep"}), &ctx).await;
-        assert!(matches!(result, ValidationResult::Error { error_code: 1, .. }));
+        assert!(matches!(
+            result,
+            ValidationResult::Error { error_code: 1, .. }
+        ));
     }
 
     #[tokio::test]
@@ -673,34 +662,30 @@ mod tests {
         let result = tool
             .validate_input(&json!({"action": "invalid"}), &ctx)
             .await;
-        assert!(matches!(result, ValidationResult::Error { error_code: 3, .. }));
+        assert!(matches!(
+            result,
+            ValidationResult::Error { error_code: 3, .. }
+        ));
 
-        // Cleanup
         set_worktree_session(None);
     }
 
     #[test]
     fn test_worktree_session_lifecycle() {
-        // Initially no session
         set_worktree_session(None);
         assert!(get_current_worktree_session().is_none());
 
-        // Set a session
         let session = WorktreeSession {
             worktree_path: PathBuf::from("/tmp/wt"),
             branch_name: "wt-branch".to_string(),
             original_cwd: PathBuf::from("/project"),
             original_head_commit: Some("abc123".to_string()),
         };
-        set_worktree_session(Some(session.clone()));
+        set_worktree_session(Some(session));
         let current = get_current_worktree_session().unwrap();
         assert_eq!(current.branch_name, "wt-branch");
-        assert_eq!(
-            current.original_head_commit.as_deref(),
-            Some("abc123")
-        );
+        assert_eq!(current.original_head_commit.as_deref(), Some("abc123"));
 
-        // Clear session
         set_worktree_session(None);
         assert!(get_current_worktree_session().is_none());
     }
@@ -717,9 +702,11 @@ mod tests {
         let tool = EnterWorktreeTool;
         let ctx = make_ctx();
         let result = tool.validate_input(&json!({}), &ctx).await;
-        assert!(matches!(result, ValidationResult::Error { error_code: 1, .. }));
+        assert!(matches!(
+            result,
+            ValidationResult::Error { error_code: 1, .. }
+        ));
 
-        // Cleanup
         set_worktree_session(None);
     }
 }

@@ -35,10 +35,7 @@ impl CommandHandler for SkillsHandler {
                     "User invocable: {}",
                     skill.frontmatter.user_invocable
                 ));
-                lines.push(format!(
-                    "Model invocable: {}",
-                    skill.is_model_invocable()
-                ));
+                lines.push(format!("Model invocable: {}", skill.is_model_invocable()));
                 return Ok(CommandResult::Output(lines.join("\n")));
             } else {
                 return Ok(CommandResult::Output(format!(
@@ -87,6 +84,7 @@ impl CommandHandler for SkillsHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
     use std::path::PathBuf;
 
@@ -95,6 +93,7 @@ mod tests {
             messages: Vec::new(),
             cwd: PathBuf::from("/test"),
             app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
         }
     }
 
@@ -106,9 +105,7 @@ mod tests {
         match result {
             CommandResult::Output(text) => {
                 // Either shows skills or the "no skills loaded" message
-                assert!(
-                    text.contains("Available Skills") || text.contains("No skills loaded")
-                );
+                assert!(text.contains("Available Skills") || text.contains("No skills loaded"));
             }
             _ => panic!("Expected Output"),
         }

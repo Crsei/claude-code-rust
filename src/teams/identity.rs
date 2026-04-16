@@ -94,8 +94,7 @@ pub fn is_teammate() -> bool {
 ///
 /// Corresponds to TS: `getTeammateColor()`
 pub fn get_teammate_color() -> Option<String> {
-    context::try_get_color()
-        .or_else(|| env::var(TEAMMATE_COLOR_ENV_VAR).ok())
+    context::try_get_color().or_else(|| env::var(TEAMMATE_COLOR_ENV_VAR).ok())
 }
 
 /// Check if plan mode is required for this teammate.

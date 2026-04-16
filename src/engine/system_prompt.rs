@@ -150,13 +150,17 @@ fn using_tools_section(enabled_tools: &[&str]) -> String {
         "You can call multiple tools in a single response. If you intend to call multiple tools and there are no dependencies between them, make all independent tool calls in parallel. Maximize use of parallel tool calls where possible to increase efficiency. However, if some tool calls depend on previous calls to inform dependent values, do NOT call these tools in parallel and instead call them sequentially. For instance, if one operation must complete before another starts, run these operations sequentially instead.".into()
     );
 
-    let bullets: Vec<String> = items.iter().enumerate().map(|(i, item)| {
-        if item.starts_with("  - ") {
-            item.clone()
-        } else {
-            format!(" - {}", item)
-        }
-    }).collect();
+    let bullets: Vec<String> = items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            if item.starts_with("  - ") {
+                item.clone()
+            } else {
+                format!(" - {}", item)
+            }
+        })
+        .collect();
 
     format!("# Using your tools\n{}", bullets.join("\n"))
 }
@@ -192,18 +196,9 @@ If you can say it in one sentence, don't use three. Prefer short, direct sentenc
 /// Corresponds to TS: `computeSimpleEnvInfo(model, dirs)`
 fn env_info_section(model: &str, cwd: &str) -> String {
     let platform = std::env::consts::OS;
-    let is_git = Path::new(cwd).join(".git").exists()
-        || std::process::Command::new("git")
-            .args(["-C", cwd, "rev-parse", "--git-dir"])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
+    let is_git = crate::utils::git::is_git_repo(Path::new(cwd));
 
     let shell = if cfg!(windows) { "bash" } else { "bash" };
-
-    let os_version = std::env::consts::OS;
-
-    let date = chrono::Local::now().format("%Y-%m-%d").to_string();
 
     let model_desc = format!(
         "You are powered by the model {}. The exact model ID is {}.",
@@ -232,6 +227,97 @@ fn env_info_section(model: &str, cwd: &str) -> String {
         model_desc = model_desc,
         cutoff_msg = cutoff_msg,
     )
+}
+
+/// Build a git status snapshot for the system prompt.
+///
+/// Returns `None` if the directory is not a git repo or if any git
+/// operation fails (fail-open: never block prompt construction).
+///
+/// Corresponds to TS: `gitStatus` section in system prompt.
+fn git_status_section(cwd: &str) -> Option<String> {
+    use crate::utils::git;
+
+    let path = Path::new(cwd);
+    if !git::is_git_repo(path) {
+        return None;
+    }
+
+    let branch = git::current_branch(path).ok()?;
+    let default_br = git::default_branch(path).unwrap_or_else(|_| "main".into());
+
+    // Git user name via git2 config
+    let git_user = git::open_repo(path)
+        .ok()
+        .and_then(|repo| repo.config().ok())
+        .and_then(|cfg| cfg.get_string("user.name").ok())
+        .unwrap_or_default();
+
+    // Status (porcelain-style, capped at 20 files)
+    let status_text = match git::get_status(path) {
+        Ok(status) => {
+            let mut lines = Vec::new();
+            for f in &status.staged {
+                let prefix = match f.status {
+                    git::FileStatusKind::Deleted => "D ",
+                    git::FileStatusKind::Renamed => "R ",
+                    git::FileStatusKind::StagedAndModified => "MM",
+                    git::FileStatusKind::Conflicted => "UU",
+                    git::FileStatusKind::Staged
+                    | git::FileStatusKind::Unstaged
+                    | git::FileStatusKind::Untracked => "M ",
+                };
+                lines.push(format!("{} {}", prefix, f.path));
+            }
+            for f in &status.unstaged {
+                let prefix = match f.status {
+                    git::FileStatusKind::Deleted => " D",
+                    git::FileStatusKind::Renamed => " R",
+                    _ => " M",
+                };
+                lines.push(format!("{} {}", prefix, f.path));
+            }
+            for f in &status.untracked {
+                lines.push(format!("?? {}", f.path));
+            }
+            if lines.is_empty() {
+                String::new()
+            } else {
+                let total = lines.len();
+                let mut out: Vec<String> = lines.into_iter().take(20).collect();
+                if total > 20 {
+                    out.push(format!("... and {} more files", total - 20));
+                }
+                format!("\nStatus:\n{}", out.join("\n"))
+            }
+        }
+        Err(_) => String::new(),
+    };
+
+    // Recent commits (up to 10)
+    let commits_text = match git::get_log(path, 10) {
+        Ok(log) if !log.is_empty() => {
+            let lines: Vec<String> = log
+                .iter()
+                .map(|e| format!("{} {}", e.short_sha, e.summary))
+                .collect();
+            format!("\nRecent commits:\n{}", lines.join("\n"))
+        }
+        _ => String::new(),
+    };
+
+    Some(format!(
+        "gitStatus: This is the git status at the start of the conversation. \
+         Note that this status is a snapshot in time, and will not update during the conversation.\n\
+         \n\
+         Current branch: {branch}\n\
+         \n\
+         Main branch (you will usually use this for PRs): {default_br}\n\
+         \n\
+         Git user: {git_user}\
+         {status_text}\
+         {commits_text}",
+    ))
 }
 
 /// Corresponds to TS: `getLanguageSection(language)`
@@ -274,7 +360,11 @@ pub fn build_system_prompt(
     tools: &[Arc<dyn Tool>],
     model: &str,
     cwd: &str,
-) -> (Vec<String>, HashMap<String, String>, HashMap<String, String>) {
+) -> (
+    Vec<String>,
+    HashMap<String, String>,
+    HashMap<String, String>,
+) {
     let mut parts: Vec<String> = Vec::new();
 
     if let Some(custom) = custom_prompt {
@@ -299,10 +389,12 @@ pub fn build_system_prompt(
         let model_owned = model.to_string();
         let cwd_owned = cwd.to_string();
 
+        let cwd_for_git = cwd.to_string();
         let dynamic_sections = vec![
             cached_section("env_info_simple", move || {
                 Some(env_info_section(&model_owned, &cwd_owned))
             }),
+            cached_section("git_status", move || git_status_section(&cwd_for_git)),
             cached_section("summarize_tool_results", || {
                 Some(SUMMARIZE_TOOL_RESULTS.to_string())
             }),
@@ -311,10 +403,65 @@ pub fn build_system_prompt(
                 || mcp_instructions_section(),
                 "MCP servers connect/disconnect between turns",
             ),
+            cached_section("brief_mode", || {
+                use crate::config::features::{self, Feature};
+                if !features::enabled(Feature::KairosBrief) {
+                    return None;
+                }
+                Some("# Brief Mode\n\n\
+                    All user-facing communication MUST go through the Brief tool.\n\
+                    Do not produce plain text output intended for the user outside of this tool.\n\
+                    Plain text you emit will be treated as internal reasoning and may be hidden.\n\n\
+                    Use Brief for:\n\
+                    - Status updates and progress reports\n\
+                    - Questions that need user input\n\
+                    - Final results and summaries\n\
+                    - Proactive notifications (set status: \"proactive\")\n".to_string())
+            }),
+            cached_section("proactive_mode", || {
+                use crate::config::features::{self, Feature};
+                if !features::enabled(Feature::Proactive) {
+                    return None;
+                }
+                Some("# Proactive Mode\n\n\
+                    You receive periodic <tick_tag> messages containing the user's local time\n\
+                    and terminal focus state.\n\n\
+                    ## Rules\n\
+                    - First tick: Greet briefly, ask what to work on. Do NOT explore unprompted.\n\
+                    - Subsequent ticks: Look for useful work — investigate, verify, check, commit.\n\
+                    - No useful work: Call Sleep tool. Do NOT emit \"still waiting\" text.\n\
+                    - Don't spam the user. If you already asked a question, wait for their reply.\n\
+                    - Bias toward action: read files, search code, make changes, commit.\n\n\
+                    ## Terminal Focus\n\
+                    - `focus: false` (user away) → Highly autonomous, execute pending tasks\n\
+                    - `focus: true` (user watching) → More collaborative, ask before large changes\n\n\
+                    ## Output\n\
+                    All user-facing output MUST go through the Brief tool.\n".to_string())
+            }),
+            cached_section("external_channels", || {
+                use crate::config::features::{self, Feature};
+                if !features::enabled(Feature::KairosChannels) {
+                    return None;
+                }
+                Some(
+                    "# External Channels\n\n\
+                    You may receive messages from external channels wrapped in <channel> tags.\n\
+                    These are real messages from external services (Slack, GitHub, etc.).\n\
+                    Respond to channel messages via Brief tool with appropriate context.\n\
+                    Do NOT fabricate channel messages or pretend to have received one.\n"
+                        .to_string(),
+                )
+            }),
+            cached_section("subsystem_status", || build_subsystem_status_reminder()),
         ];
 
         let resolved = prompt_sections::resolve_sections(&dynamic_sections);
         parts.extend(resolved);
+
+        // ── Computer Use system prompt (when CU tools are detected) ──
+        if let Some(cu_prompt) = crate::computer_use::detection::computer_use_system_prompt(tools) {
+            parts.push(cu_prompt);
+        }
 
         // ── Tool descriptions ──
         let enabled: Vec<&Arc<dyn Tool>> = tools.iter().filter(|t| t.is_enabled()).collect();
@@ -428,12 +575,59 @@ pub fn build_effective_system_prompt(
 
 /// Format items as a bullet list. Corresponds to TS: `prependBullets(items)`
 fn format_bullets(items: &[&str]) -> String {
-    items.iter().map(|item| format!(" - {}", item)).collect::<Vec<_>>().join("\n")
+    items
+        .iter()
+        .map(|item| format!(" - {}", item))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Format sub-items as indented bullets.
 fn format_sub_bullets(items: &[&str]) -> String {
-    items.iter().map(|item| format!("  - {}", item)).collect::<Vec<_>>().join("\n")
+    items
+        .iter()
+        .map(|item| format!("  - {}", item))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Subsystem status reminder
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Build a system-reminder with active subsystem counts.
+///
+/// Returns `None` when no subsystems are active beyond defaults.
+fn build_subsystem_status_reminder() -> Option<String> {
+    let lsp_configs = crate::lsp_service::default_server_configs().len();
+    let mcp_count =
+        crate::mcp::discovery::discover_mcp_servers(&std::env::current_dir().unwrap_or_default())
+            .map(|v| v.len())
+            .unwrap_or(0);
+    let plugin_count = crate::plugins::get_enabled_plugins().len();
+    let skill_count = crate::skills::get_all_skills().len();
+    let agent_count = crate::ipc::agent_tree::AGENT_TREE
+        .lock()
+        .active_agents()
+        .len();
+
+    if mcp_count + plugin_count + skill_count == 0 && agent_count == 0 {
+        return None;
+    }
+
+    let mut text = format!(
+        "# Active Subsystems\n\
+         - LSP: {} language(s) configured\n\
+         - MCP: {} server(s) configured\n\
+         - Plugins: {} enabled\n\
+         - Skills: {} loaded\n",
+        lsp_configs, mcp_count, plugin_count, skill_count
+    );
+    if agent_count > 0 {
+        text.push_str(&format!("- Agents: {} active\n", agent_count));
+    }
+    text.push_str("Use the SystemStatus tool for detailed information.\n");
+    Some(text)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -491,7 +685,15 @@ mod tests {
 
     #[test]
     fn test_using_tools_section() {
-        let tools = using_tools_section(&["Bash", "Read", "Edit", "Write", "Glob", "Grep", "TaskCreate"]);
+        let tools = using_tools_section(&[
+            "Bash",
+            "Read",
+            "Edit",
+            "Write",
+            "Glob",
+            "Grep",
+            "TaskCreate",
+        ]);
         assert!(tools.starts_with("# Using your tools"));
         assert!(tools.contains("Read instead of cat"));
         assert!(tools.contains("Edit instead of sed"));
@@ -545,10 +747,16 @@ mod tests {
 
     #[test]
     fn test_default_prompt_has_all_sections() {
-        let (parts, ctx, _) = build_system_prompt(None, None, &[], "claude-sonnet-4-20250514", "/tmp");
+        prompt_sections::clear_cache();
+        let (parts, ctx, _) =
+            build_system_prompt(None, None, &[], "claude-sonnet-4-20250514", "/tmp");
 
         // Should have at least: intro, system, doing_tasks, actions, tools, tone, efficiency, boundary, env_info, summarize
-        assert!(parts.len() >= 9, "expected at least 9 parts, got {}", parts.len());
+        assert!(
+            parts.len() >= 9,
+            "expected at least 9 parts, got {}",
+            parts.len()
+        );
 
         let joined = parts.join("\n");
         assert!(joined.contains("interactive agent"), "missing intro");
@@ -564,9 +772,13 @@ mod tests {
 
     #[test]
     fn test_custom_prompt_replaces_default() {
+        prompt_sections::clear_cache();
         let (parts, _, _) = build_system_prompt(
             Some("You are a custom assistant."),
-            None, &[], "test", "/tmp",
+            None,
+            &[],
+            "test",
+            "/tmp",
         );
         assert_eq!(parts[0], "You are a custom assistant.");
         // Should NOT contain static sections
@@ -576,17 +788,20 @@ mod tests {
 
     #[test]
     fn test_append_prompt() {
-        let (parts, _, _) = build_system_prompt(
-            None, Some("Always be concise."), &[], "test", "/tmp",
-        );
+        prompt_sections::clear_cache();
+        let (parts, _, _) =
+            build_system_prompt(None, Some("Always be concise."), &[], "test", "/tmp");
         assert_eq!(parts.last().unwrap(), "Always be concise.");
     }
 
     #[test]
     fn test_build_effective_override() {
         let result = build_effective_system_prompt(
-            vec!["default".into()], None, None,
-            Some("override"), None,
+            vec!["default".into()],
+            None,
+            None,
+            Some("override"),
+            None,
         );
         assert_eq!(result, vec!["override"]);
     }
@@ -594,24 +809,30 @@ mod tests {
     #[test]
     fn test_build_effective_agent_replaces_default() {
         let result = build_effective_system_prompt(
-            vec!["default".into()], None, None,
-            None, Some("agent prompt"),
+            vec!["default".into()],
+            None,
+            None,
+            None,
+            Some("agent prompt"),
         );
         assert_eq!(result, vec!["agent prompt"]);
     }
 
     #[test]
     fn test_build_effective_custom_replaces_default() {
-        let result = build_effective_system_prompt(
-            vec!["default".into()], Some("custom"), None, None, None,
-        );
+        let result =
+            build_effective_system_prompt(vec!["default".into()], Some("custom"), None, None, None);
         assert_eq!(result, vec!["custom"]);
     }
 
     #[test]
     fn test_build_effective_append() {
         let result = build_effective_system_prompt(
-            vec!["default".into()], None, Some("appended"), None, None,
+            vec!["default".into()],
+            None,
+            Some("appended"),
+            None,
+            None,
         );
         assert_eq!(result, vec!["default", "appended"]);
     }
@@ -624,6 +845,7 @@ mod tests {
 
     #[test]
     fn test_claude_md_injection() {
+        prompt_sections::clear_cache();
         let dir = std::env::temp_dir().join(format!("sysprompt_test_{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
         let md_path = dir.join("CLAUDE.md");
@@ -636,5 +858,76 @@ mod tests {
         assert!(joined.contains("OVERRIDE"));
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ── git_status_section tests ──
+
+    #[test]
+    fn test_git_status_section_in_git_repo() {
+        let cwd = env!("CARGO_MANIFEST_DIR");
+        let result = git_status_section(cwd);
+        assert!(result.is_some(), "should produce output in a git repo");
+        let text = result.unwrap();
+        assert!(text.contains("gitStatus:"));
+        assert!(text.contains("Current branch:"));
+        assert!(text.contains("Recent commits:"));
+    }
+
+    #[test]
+    fn test_git_status_section_not_git_repo() {
+        let dir = std::env::temp_dir().join(format!("no_git_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let result = git_status_section(dir.to_str().unwrap());
+        assert!(result.is_none(), "should return None for non-git dir");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_git_status_section_contains_main_branch() {
+        let cwd = env!("CARGO_MANIFEST_DIR");
+        let result = git_status_section(cwd);
+        if let Some(text) = result {
+            assert!(
+                text.contains("Main branch"),
+                "should contain main branch info"
+            );
+        }
+    }
+
+    #[test]
+    fn test_git_status_section_limits_commits() {
+        let cwd = env!("CARGO_MANIFEST_DIR");
+        if let Some(text) = git_status_section(cwd) {
+            let commit_lines: Vec<&str> = text
+                .lines()
+                .skip_while(|l| !l.contains("Recent commits:"))
+                .skip(1)
+                .filter(|l| !l.is_empty())
+                .collect();
+            assert!(
+                commit_lines.len() <= 10,
+                "should have at most 10 commit lines, got {}",
+                commit_lines.len()
+            );
+        }
+    }
+
+    #[test]
+    fn test_build_system_prompt_includes_git_status() {
+        // Test git_status_section directly to avoid SECTION_CACHE race with parallel tests.
+        // The section is registered in build_system_prompt as cached_section("git_status", ...),
+        // but the global cache makes integration testing unreliable under --test-threads>1.
+        let cwd = env!("CARGO_MANIFEST_DIR");
+        let result = git_status_section(cwd);
+        assert!(
+            result.is_some(),
+            "git_status_section should produce output for this repo"
+        );
+        let text = result.unwrap();
+        // Verify it would be included in a system prompt
+        assert!(
+            text.starts_with("gitStatus:"),
+            "should start with gitStatus header"
+        );
     }
 }

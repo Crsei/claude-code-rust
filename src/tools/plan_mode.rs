@@ -13,8 +13,7 @@
 //!   2. Model explores (read-only tools only)
 //!   3. ExitPlanMode restores mode from `pre_plan_mode`
 
-#[allow(unused_imports)]
-use anyhow::{bail, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -26,12 +25,6 @@ use crate::types::tool::*;
 // ---------------------------------------------------------------------------
 
 /// EnterPlanMode — switch the session to read-only planning mode.
-///
-/// In plan mode the model should:
-/// 1. Explore the codebase (read-only tools: Glob, Grep, Read, LSP)
-/// 2. Identify patterns and architectural approaches
-/// 3. Design an implementation strategy
-/// 4. Call ExitPlanMode when the plan is ready
 pub struct EnterPlanModeTool;
 
 #[async_trait]
@@ -112,10 +105,9 @@ impl Tool for EnterPlanModeTool {
         );
 
         Ok(ToolResult {
-            data: json!({
-                "message": instructions,
-            }),
+            data: json!({ "message": instructions }),
             new_messages: vec![],
+            ..Default::default()
         })
     }
 
@@ -139,9 +131,6 @@ impl Tool for EnterPlanModeTool {
 // ---------------------------------------------------------------------------
 
 /// ExitPlanMode — present the plan for approval and exit plan mode.
-///
-/// Restores the permission mode that was active before EnterPlanMode
-/// was called (saved in `pre_plan_mode`).
 pub struct ExitPlanModeTool;
 
 #[async_trait]
@@ -172,7 +161,6 @@ impl Tool for ExitPlanModeTool {
     }
 
     async fn validate_input(&self, _input: &Value, ctx: &ToolUseContext) -> ValidationResult {
-        // Not in plan mode?
         let state = (ctx.get_app_state)();
         if state.tool_permission_context.mode != PermissionMode::Plan {
             return ValidationResult::Error {
@@ -185,12 +173,10 @@ impl Tool for ExitPlanModeTool {
                 error_code: 1,
             };
         }
-
         ValidationResult::Ok
     }
 
-    #[allow(unused_variables)]
-    async fn check_permissions(&self, input: &Value, _ctx: &ToolUseContext) -> PermissionResult {
+    async fn check_permissions(&self, _input: &Value, _ctx: &ToolUseContext) -> PermissionResult {
         // Require user confirmation to exit plan mode
         PermissionResult::Ask {
             message: "Exit plan mode and begin implementation?".to_string(),
@@ -232,6 +218,7 @@ impl Tool for ExitPlanModeTool {
         Ok(ToolResult {
             data: result,
             new_messages: vec![],
+            ..Default::default()
         })
     }
 
@@ -256,8 +243,9 @@ impl Tool for ExitPlanModeTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, RwLock};
     use crate::types::app_state::AppState;
+    use parking_lot::RwLock;
+    use std::sync::Arc;
 
     fn make_ctx(state: Arc<RwLock<AppState>>) -> ToolUseContext {
         let state_r = Arc::clone(&state);
@@ -275,9 +263,9 @@ mod tests {
             },
             abort_signal: tokio::sync::watch::channel(false).1,
             read_file_state: FileStateCache::default(),
-            get_app_state: Arc::new(move || state_r.read().unwrap().clone()),
+            get_app_state: Arc::new(move || state_r.read().clone()),
             set_app_state: Arc::new(move |f: Box<dyn FnOnce(AppState) -> AppState>| {
-                let mut s = state_w.write().unwrap();
+                let mut s = state_w.write();
                 let old = s.clone();
                 *s = f(old);
             }),
@@ -285,6 +273,9 @@ mod tests {
             agent_id: None,
             agent_type: None,
             query_tracking: None,
+            permission_callback: None,
+            ask_user_callback: None,
+            bg_agent_tx: None,
         }
     }
 
@@ -310,7 +301,10 @@ mod tests {
         ctx.agent_id = Some("agent-1".to_string());
 
         let result = tool.validate_input(&json!({}), &ctx).await;
-        assert!(matches!(result, ValidationResult::Error { error_code: 1, .. }));
+        assert!(matches!(
+            result,
+            ValidationResult::Error { error_code: 1, .. }
+        ));
     }
 
     #[tokio::test]
@@ -318,13 +312,16 @@ mod tests {
         let tool = EnterPlanModeTool;
         let state = Arc::new(RwLock::new(AppState::default()));
         {
-            let mut s = state.write().unwrap();
+            let mut s = state.write();
             s.tool_permission_context.mode = PermissionMode::Plan;
         }
         let ctx = make_ctx(state);
 
         let result = tool.validate_input(&json!({}), &ctx).await;
-        assert!(matches!(result, ValidationResult::Error { error_code: 2, .. }));
+        assert!(matches!(
+            result,
+            ValidationResult::Error { error_code: 2, .. }
+        ));
     }
 
     #[tokio::test]
@@ -348,12 +345,18 @@ mod tests {
         let validation = enter_tool.validate_input(&json!({}), &ctx).await;
         assert!(matches!(validation, ValidationResult::Ok));
 
-        let result = enter_tool.call(json!({}), &ctx, &dummy_msg, None).await.unwrap();
-        assert!(result.data["message"].as_str().unwrap().contains("plan mode"));
+        let result = enter_tool
+            .call(json!({}), &ctx, &dummy_msg, None)
+            .await
+            .unwrap();
+        assert!(result.data["message"]
+            .as_str()
+            .unwrap()
+            .contains("plan mode"));
 
         // Verify state changed
         {
-            let s = state.read().unwrap();
+            let s = state.read();
             assert_eq!(s.tool_permission_context.mode, PermissionMode::Plan);
             assert_eq!(
                 s.tool_permission_context.pre_plan_mode,
@@ -376,7 +379,7 @@ mod tests {
 
         // Verify state restored
         {
-            let s = state.read().unwrap();
+            let s = state.read();
             assert_eq!(s.tool_permission_context.mode, PermissionMode::Default);
             assert!(s.tool_permission_context.pre_plan_mode.is_none());
         }
@@ -389,14 +392,17 @@ mod tests {
         let ctx = make_ctx(state);
 
         let result = tool.validate_input(&json!({}), &ctx).await;
-        assert!(matches!(result, ValidationResult::Error { error_code: 1, .. }));
+        assert!(matches!(
+            result,
+            ValidationResult::Error { error_code: 1, .. }
+        ));
     }
 
     #[tokio::test]
     async fn test_exit_plan_mode_restores_auto() {
         let state = Arc::new(RwLock::new(AppState::default()));
         {
-            let mut s = state.write().unwrap();
+            let mut s = state.write();
             s.tool_permission_context.mode = PermissionMode::Plan;
             s.tool_permission_context.pre_plan_mode = Some(PermissionMode::Auto);
         }
@@ -415,9 +421,12 @@ mod tests {
         };
         let ctx = make_ctx(Arc::clone(&state));
 
-        let _ = exit_tool.call(json!({}), &ctx, &dummy_msg, None).await.unwrap();
+        let _ = exit_tool
+            .call(json!({}), &ctx, &dummy_msg, None)
+            .await
+            .unwrap();
 
-        let s = state.read().unwrap();
+        let s = state.read();
         assert_eq!(s.tool_permission_context.mode, PermissionMode::Auto);
     }
 
