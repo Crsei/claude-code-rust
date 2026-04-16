@@ -283,7 +283,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     };
 
     // ── B.7: Create QueryEngine ──────────────────────────────────────
-    let engine = Arc::new(QueryEngine::new(engine_config));
+    let engine = Arc::new(QueryEngine::with_app_state(engine_config, app_state));
     info!(session = %engine.session_id, "QueryEngine created");
 
     // ── B.8: Handle session resume ───────────────────────────────────

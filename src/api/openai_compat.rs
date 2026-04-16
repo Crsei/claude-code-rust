@@ -112,6 +112,13 @@ pub(crate) async fn openai_compat_stream(
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
     let body = build_openai_request(request);
 
+    tracing::debug!(
+        provider = provider_name,
+        url = %url,
+        body = %serde_json::to_string_pretty(&body).unwrap_or_default(),
+        "OpenAI-compat request"
+    );
+
     let response = http
         .post(&url)
         .header("Authorization", format!("Bearer {}", api_key))

@@ -149,6 +149,11 @@ impl QueryEngine {
 
     /// Create a new QueryEngine with the given configuration.
     pub fn new(config: QueryEngineConfig) -> Self {
+        Self::with_app_state(config, AppState::default())
+    }
+
+    /// Create a new QueryEngine with explicit AppState.
+    pub fn with_app_state(config: QueryEngineConfig, app_state: AppState) -> Self {
         let initial_messages = config.initial_messages.clone().unwrap_or_default();
         let tools = config.tools.clone();
 
@@ -161,7 +166,7 @@ impl QueryEngine {
             usage: Arc::new(Mutex::new(UsageTracking::default())),
             permission_denials: Arc::new(Mutex::new(Vec::new())),
             total_turn_count: Arc::new(Mutex::new(0)),
-            app_state: Arc::new(RwLock::new(AppState::default())),
+            app_state: Arc::new(RwLock::new(app_state)),
             tools: Arc::new(RwLock::new(tools)),
             discovered_skill_names: Arc::new(Mutex::new(HashSet::new())),
             loaded_nested_memory_paths: Arc::new(Mutex::new(HashSet::new())),
@@ -1163,11 +1168,14 @@ fn build_messages_request(
         }
     });
 
+    let resolved_model = params
+        .model
+        .clone()
+        .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+    tracing::debug!(resolved_model = %resolved_model, params_model = ?params.model, "build_messages_request: model");
+
     crate::api::client::MessagesRequest {
-        model: params
-            .model
-            .clone()
-            .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string()),
+        model: resolved_model,
         messages: api_messages,
         system,
         max_tokens: params.max_output_tokens.unwrap_or(16384),

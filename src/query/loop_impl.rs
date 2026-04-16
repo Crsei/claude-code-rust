@@ -141,7 +141,7 @@ pub fn query(
                 messages: state.messages.clone(),
                 system_prompt: system_prompt.clone(),
                 tools: tools.clone(),
-                model: None, // 使用默认模型
+                model: Some(deps.get_app_state().main_loop_model.clone()),
                 max_output_tokens: state.max_output_tokens_override,
                 skip_cache_write,
                 thinking_enabled: deps.get_app_state().thinking_enabled,
