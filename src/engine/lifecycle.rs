@@ -50,7 +50,7 @@ use crate::types::tool::{ToolProgress, Tools};
 // ---------------------------------------------------------------------------
 
 /// Usage tracking -- accumulated across all API calls in a session.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct UsageTracking {
     /// Total input tokens consumed.
     pub total_input_tokens: u64,
@@ -79,7 +79,7 @@ impl UsageTracking {
 }
 
 /// A record of a permission denial.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct PermissionDenial {
     pub tool_name: String,
     pub tool_use_id: String,

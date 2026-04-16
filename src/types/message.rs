@@ -83,7 +83,7 @@ pub struct UserMessage {
 }
 
 /// 助手消息
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct AssistantMessage {
     pub uuid: Uuid,
     pub timestamp: i64,
@@ -128,7 +128,7 @@ pub enum InfoLevel {
     Error,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CompactMetadata {
     pub pre_compact_token_count: u64,
     pub post_compact_token_count: u64,
@@ -232,7 +232,8 @@ pub enum Message {
 }
 
 /// 流事件 (API 流式传输的中间事件)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum StreamEvent {
     MessageStart { usage: Usage },
     ContentBlockStart { index: usize, content_block: ContentBlock },

@@ -29,7 +29,7 @@ thiserror = "2"
 clap = { version = "4", features = ["derive"] }
 
 # UUID
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 
 # 时间处理
 chrono = "0.4"
@@ -118,3 +118,13 @@ lsp-types = "0.97"
 # AST / 图像
 tree-sitter = "0.24"
 image = "0.25"
+
+# ============================================================
+# Web UI (Axum HTTP server + embedded SPA)
+# ============================================================
+
+axum = { version = "0.8", features = ["ws"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+rust-embed = "8"
+mime_guess = "2"

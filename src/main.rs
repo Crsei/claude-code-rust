@@ -36,6 +36,9 @@ mod lsp_service;
 // Agent Teams (multi-agent swarm)
 mod teams;
 
+// Web UI (Axum HTTP server)
+mod web;
+
 // Phase I: Shutdown and cleanup
 mod shutdown;
 
@@ -121,6 +124,18 @@ struct Cli {
     /// Init only: initialize and exit (fast path)
     #[arg(long = "init-only", hide = true)]
     init_only: bool,
+
+    /// Launch web UI mode (HTTP server with chat interface)
+    #[arg(long)]
+    web: bool,
+
+    /// Port for the web UI server (default: 3001)
+    #[arg(long, default_value_t = 3001)]
+    port: u16,
+
+    /// Do not auto-open browser when starting web UI
+    #[arg(long = "no-open")]
+    no_open: bool,
 
     /// Inline prompt (positional argument or via stdin in print mode)
     prompt: Vec<String>,
@@ -300,7 +315,22 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         return run_print_mode(&engine, &prompt).await;
     }
 
-    // ── B.10: Check for inline prompt ────────────────────────────────
+    // ── B.10: Web UI mode ────────────────────────────────────────────
+    if cli.web {
+        let web_state = web::state::WebState {
+            engine: engine.clone(),
+            is_streaming: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        };
+        return match web::start_server(web_state, cli.port, cli.no_open).await {
+            Ok(()) => Ok(ExitCode::SUCCESS),
+            Err(e) => {
+                error!("Web server error: {:#}", e);
+                Ok(ExitCode::FAILURE)
+            }
+        };
+    }
+
+    // ── B.11: Check for inline prompt ───────────────────────────────
     let initial_prompt = if !cli.prompt.is_empty() {
         Some(cli.prompt.join(" "))
     } else {
