@@ -3,6 +3,7 @@ import { ModelSelector } from './ModelSelector'
 import { PermissionPanel } from './PermissionPanel'
 import { UsagePanel } from './UsagePanel'
 import { CommandPalette } from './CommandPalette'
+import { ThemeToggle } from './ThemeToggle'
 import { Settings, X } from 'lucide-react'
 
 interface SidebarProps {
@@ -46,6 +47,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               fastMode={appState.fast_mode}
               effort={appState.effort}
             />
+            <ThemeToggle />
             <UsagePanel usage={appState.usage} />
             <CommandPalette commands={appState.commands} />
           </>

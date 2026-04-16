@@ -3,20 +3,38 @@ import { ChatPanel } from '@/components/chat/ChatPanel'
 import { Sidebar } from '@/components/sidebar/Sidebar'
 import { DebugPanel } from '@/components/debug/DebugPanel'
 import { useChatStore } from '@/lib/store'
-import { fetchAppState } from '@/lib/api'
-import { Cpu, Shield, Bug, Settings, PanelRightOpen } from 'lucide-react'
+import { fetchAppState, checkConnection } from '@/lib/api'
+import { Cpu, Shield, Bug, Settings, PanelRightOpen, Wifi, WifiOff } from 'lucide-react'
 
 export default function App() {
   const appState = useChatStore((s) => s.appState)
   const debugPanelOpen = useChatStore((s) => s.debugPanelOpen)
   const toggleDebug = useChatStore((s) => s.toggleDebugPanel)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [connected, setConnected] = useState(true)
 
-  // Fetch app state on mount
+  // Fetch app state on mount + periodic health check
   useEffect(() => {
     fetchAppState()
-      .then((state) => useChatStore.getState().setAppState(state))
-      .catch(console.error)
+      .then((state) => {
+        useChatStore.getState().setAppState(state)
+        setConnected(true)
+      })
+      .catch(() => setConnected(false))
+
+    // Health check every 30s
+    const interval = setInterval(async () => {
+      const ok = await checkConnection()
+      setConnected(ok)
+      if (ok) {
+        // Refresh state on reconnect
+        try {
+          const state = await fetchAppState()
+          useChatStore.getState().setAppState(state)
+        } catch { /* ignore */ }
+      }
+    }, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   // Ctrl+Shift+D keyboard shortcut for debug panel
@@ -35,25 +53,33 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden">
       {/* Main area */}
-      <main className="flex flex-1 flex-col overflow-hidden">
+      <main className="flex flex-1 flex-col overflow-hidden min-w-0">
         {/* Header bar */}
-        <header className="flex h-12 items-center border-b border-border px-4 gap-3 shrink-0">
-          <h1 className="text-sm font-semibold text-foreground">cc-rust</h1>
-          <span className="text-xs text-muted-foreground">Web UI</span>
+        <header className="flex h-12 items-center border-b border-border px-3 sm:px-4 gap-2 sm:gap-3 shrink-0">
+          <h1 className="text-sm font-semibold text-foreground shrink-0">cc-rust</h1>
+          <span className="text-xs text-muted-foreground hidden sm:inline">Web UI</span>
 
-          <div className="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground">
+          <div className="ml-auto flex items-center gap-1.5 sm:gap-2 text-[11px] text-muted-foreground">
+            {/* Connection indicator */}
+            {!connected && (
+              <span className="flex items-center gap-1 text-red-400" title="Server disconnected">
+                <WifiOff className="h-3 w-3" />
+                <span className="hidden sm:inline">Offline</span>
+              </span>
+            )}
+
             {appState && (
               <>
-                <span className="flex items-center gap-1">
-                  <Cpu className="h-3 w-3" />
-                  {appState.model}
+                <span className="flex items-center gap-1 truncate max-w-32 sm:max-w-none" title={appState.model}>
+                  <Cpu className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{appState.model}</span>
                 </span>
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1 hidden sm:flex">
                   <Shield className="h-3 w-3" />
                   {appState.permission_mode}
                 </span>
                 {appState.usage && appState.usage.total_cost_usd > 0 && (
-                  <span className="font-mono">${appState.usage.total_cost_usd.toFixed(4)}</span>
+                  <span className="font-mono hidden md:inline">${appState.usage.total_cost_usd.toFixed(4)}</span>
                 )}
               </>
             )}
@@ -88,16 +114,20 @@ export default function App() {
 
         <div className="flex flex-1 overflow-hidden">
           {/* Chat panel */}
-          <div className="flex flex-1 flex-col overflow-hidden">
+          <div className="flex flex-1 flex-col overflow-hidden min-w-0">
             <ChatPanel />
           </div>
 
-          {/* Debug panel (tabbed) */}
-          {debugPanelOpen && <DebugPanel />}
+          {/* Debug panel (tabbed) - hidden on small screens */}
+          {debugPanelOpen && (
+            <div className="hidden md:flex">
+              <DebugPanel />
+            </div>
+          )}
         </div>
       </main>
 
-      {/* Settings sidebar */}
+      {/* Settings sidebar - hidden on small screens when debug is open */}
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
     </div>
   )

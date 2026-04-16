@@ -1,5 +1,7 @@
+import { useState, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { Copy, Check } from 'lucide-react'
 
 interface MarkdownContentProps {
   content: string
@@ -7,28 +9,29 @@ interface MarkdownContentProps {
 
 /**
  * Renders markdown text with GFM support (tables, strikethrough, etc.)
- * Styled to match the dark theme.
+ * Includes code block copy button and language badge.
  */
 export function MarkdownContent({ content }: MarkdownContentProps) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        // Code blocks
+        // Code blocks with copy button
         pre: ({ children }) => (
-          <pre className="my-2 overflow-x-auto rounded-md bg-zinc-900 px-3 py-2 text-[12px]">
-            {children}
-          </pre>
+          <div className="group relative my-2">
+            <pre className="overflow-x-auto rounded-md bg-zinc-900 px-3 py-2.5 text-[12px] leading-relaxed">
+              {children}
+            </pre>
+          </div>
         ),
         code: ({ className, children, ...props }) => {
-          const isBlock = className?.startsWith('language-')
-          if (isBlock) {
-            return (
-              <code className="font-mono text-green-300" {...props}>
-                {children}
-              </code>
-            )
+          const match = /language-(\w+)/.exec(className || '')
+          const lang = match ? match[1] : null
+
+          if (lang || className?.startsWith('language-')) {
+            return <CodeBlock lang={lang} code={String(children).replace(/\n$/, '')} />
           }
+
           return (
             <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px] text-primary" {...props}>
               {children}
@@ -81,5 +84,47 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
     >
       {content}
     </ReactMarkdown>
+  )
+}
+
+/** Code block with language badge and copy button */
+function CodeBlock({ lang, code }: { lang: string | null; code: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }, [code])
+
+  return (
+    <>
+      {/* Header with language + copy */}
+      <div className="flex items-center justify-between rounded-t-md bg-zinc-800 px-3 py-1 -mb-2">
+        {lang && (
+          <span className="text-[10px] font-mono text-zinc-400 uppercase">{lang}</span>
+        )}
+        {!lang && <span />}
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-zinc-200 transition-colors"
+          title="Copy code"
+        >
+          {copied ? (
+            <>
+              <Check className="h-3 w-3 text-green-400" />
+              <span className="text-green-400">Copied</span>
+            </>
+          ) : (
+            <>
+              <Copy className="h-3 w-3" />
+              <span>Copy</span>
+            </>
+          )}
+        </button>
+      </div>
+      <code className="font-mono text-green-300 block">{code}</code>
+    </>
   )
 }

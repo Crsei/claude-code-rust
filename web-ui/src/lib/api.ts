@@ -3,6 +3,29 @@ import type { AppState, StreamingBlock } from './types'
 
 const API_BASE = ''  // same origin in dev (Vite proxy) and prod (embedded)
 
+// ---------------------------------------------------------------------------
+// Connection health monitoring
+// ---------------------------------------------------------------------------
+
+let connectionHealthy = true
+
+/** Check if the backend server is reachable */
+export async function checkConnection(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/api/state`, { signal: AbortSignal.timeout(3000) })
+    connectionHealthy = res.ok
+    return connectionHealthy
+  } catch {
+    connectionHealthy = false
+    return false
+  }
+}
+
+/** Get current connection status */
+export function isConnected(): boolean {
+  return connectionHealthy
+}
+
 /**
  * Send a chat message and consume the SSE stream.
  */
