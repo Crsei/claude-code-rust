@@ -119,7 +119,27 @@ export type SdkEvent =
   | ToolUseSummaryEvent
   | ResultEvent
 
+// ---------------------------------------------------------------------------
+// Streaming block tracking — tracks what's being streamed in real time
+// ---------------------------------------------------------------------------
+
+/** A single block being streamed — can be text, tool_use, or thinking */
+export interface StreamingBlock {
+  index: number
+  type: 'text' | 'tool_use' | 'thinking' | 'redacted_thinking'
+  content: string
+  // tool_use specific
+  toolName?: string
+  toolId?: string
+  toolInput?: string  // accumulated JSON string
+  // complete?
+  done: boolean
+}
+
+// ---------------------------------------------------------------------------
 // UI message types for the chat store
+// ---------------------------------------------------------------------------
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'

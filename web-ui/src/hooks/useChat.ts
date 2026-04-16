@@ -6,20 +6,23 @@ export function useChat() {
   const messages = useChatStore((s) => s.messages)
   const isStreaming = useChatStore((s) => s.isStreaming)
   const streamingContent = useChatStore((s) => s.streamingContent)
+  const streamingBlocks = useChatStore((s) => s.streamingBlocks)
 
-  const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || isStreaming) return
-    await sendChatMessage(text.trim())
-  }, [isStreaming])
+  const sendMessage = useCallback((text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed || useChatStore.getState().isStreaming) return
+    sendChatMessage(trimmed)
+  }, [])
 
-  const abort = useCallback(async () => {
-    await abortChat()
+  const abort = useCallback(() => {
+    abortChat()
   }, [])
 
   return {
     messages,
     isStreaming,
     streamingContent,
+    streamingBlocks,
     sendMessage,
     abort,
   }

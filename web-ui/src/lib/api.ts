@@ -1,5 +1,5 @@
 import { useChatStore } from './store'
-import type { AppState } from './types'
+import type { AppState, StreamingBlock } from './types'
 
 const API_BASE = ''  // same origin in dev (Vite proxy) and prod (embedded)
 
@@ -100,18 +100,13 @@ function dispatchSSEEvent(event: string, dataStr: string): void {
 
     switch (event) {
       case 'stream_event': {
-        // Handle text deltas for streaming display
-        if (data.event?.type === 'content_block_delta' && data.event?.delta?.text) {
-          store.appendStreamContent(data.event.delta.text)
-        } else if (data.event?.type === 'content_block_delta' && data.event?.delta?.type === 'text_delta') {
-          store.appendStreamContent(data.event.delta.text || '')
-        }
+        handleStreamEvent(data, store)
         break
       }
 
       case 'assistant': {
         const msg = data.message || data
-        const content = (msg.content || [])
+        const textContent = (msg.content || [])
           .filter((b: any) => b.type === 'text')
           .map((b: any) => b.text)
           .join('')
@@ -119,7 +114,7 @@ function dispatchSSEEvent(event: string, dataStr: string): void {
         store.addAssistantMessage({
           id: msg.uuid || crypto.randomUUID(),
           role: 'assistant',
-          content: content || store.streamingContent,
+          content: textContent || store.streamingContent,
           timestamp: msg.timestamp || Date.now(),
           contentBlocks: msg.content,
           usage: msg.usage,
@@ -145,7 +140,15 @@ function dispatchSSEEvent(event: string, dataStr: string): void {
       }
 
       case 'tool_use_summary': {
-        // Could render inline; for now just log
+        // Show summary as a system message
+        if (data.summary) {
+          store.addAssistantMessage({
+            id: crypto.randomUUID(),
+            role: 'system',
+            content: data.summary,
+            timestamp: Date.now(),
+          })
+        }
         break
       }
 
@@ -168,6 +171,79 @@ function dispatchSSEEvent(event: string, dataStr: string): void {
     }
   } catch (e) {
     console.error('Failed to parse SSE event:', event, dataStr, e)
+  }
+}
+
+/**
+ * Handle stream_event SSE events with multi-block tracking.
+ *
+ * Stream events follow this sequence per API response:
+ *   message_start → (content_block_start → content_block_delta* → content_block_stop)+ → message_delta → message_stop
+ */
+function handleStreamEvent(data: any, store: ReturnType<typeof useChatStore.getState>): void {
+  const evt = data.event
+  if (!evt) return
+
+  switch (evt.type) {
+    case 'content_block_start': {
+      const idx = evt.index ?? 0
+      const block = evt.content_block
+      if (!block) break
+
+      const streamBlock: StreamingBlock = {
+        index: idx,
+        type: block.type || 'text',
+        content: '',
+        done: false,
+      }
+
+      if (block.type === 'tool_use') {
+        streamBlock.toolName = block.name
+        streamBlock.toolId = block.id
+        streamBlock.toolInput = ''
+      } else if (block.type === 'thinking') {
+        streamBlock.content = block.thinking || ''
+      } else if (block.type === 'text') {
+        streamBlock.content = block.text || ''
+      }
+
+      store.startStreamingBlock(idx, streamBlock)
+      break
+    }
+
+    case 'content_block_delta': {
+      const idx = evt.index ?? 0
+      const delta = evt.delta
+
+      if (!delta) break
+
+      if (delta.type === 'text_delta' && delta.text) {
+        store.appendToStreamingBlock(idx, delta.text)
+        // Also append to flat streamingContent for backward compat
+        store.appendStreamContent(delta.text)
+      } else if (delta.type === 'thinking_delta' && delta.thinking) {
+        store.appendToStreamingBlock(idx, delta.thinking)
+      } else if (delta.type === 'input_json_delta' && delta.partial_json) {
+        store.appendToolInputDelta(idx, delta.partial_json)
+      } else if (delta.text) {
+        // Fallback: some providers send raw text without wrapping
+        store.appendToStreamingBlock(idx, delta.text)
+        store.appendStreamContent(delta.text)
+      }
+      break
+    }
+
+    case 'content_block_stop': {
+      const idx = evt.index ?? 0
+      store.finishStreamingBlock(idx)
+      break
+    }
+
+    case 'message_start':
+    case 'message_delta':
+    case 'message_stop':
+      // These are lifecycle markers; no action needed for streaming display
+      break
   }
 }
 
