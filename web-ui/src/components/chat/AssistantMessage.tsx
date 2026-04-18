@@ -100,6 +100,13 @@ function ContentBlockRenderer({ blocks }: { blocks: ContentBlock[] }) {
         // Already paired with tool_use above; render standalone only if unpaired
         if (!block.tool_use_id || !blocks.some(b => b.type === 'tool_use' && b.id === block.tool_use_id)) {
           flushText()
+          const resultText = typeof block.content === 'string'
+            ? block.content
+            : Array.isArray(block.content)
+              ? block.content
+                  .map(b => (b.type === 'text' ? (b.text ?? '') : b.type === 'image' ? '[image]' : ''))
+                  .join('\n')
+              : ''
           elements.push(
             <div
               key={`result-${elements.length}`}
@@ -109,7 +116,7 @@ function ContentBlockRenderer({ blocks }: { blocks: ContentBlock[] }) {
                 Tool Result {block.is_error && <span className="text-red-400">(error)</span>}
               </div>
               <pre className="text-[11px] font-mono text-foreground/80 whitespace-pre-wrap max-h-40 overflow-y-auto">
-                {block.content || '(empty)'}
+                {resultText || '(empty)'}
               </pre>
             </div>
           )

@@ -4,9 +4,26 @@ export type FrontendContentBlock =
   | { type: 'tool_result'; tool_use_id: string; content: ToolResultContent; is_error?: boolean }
   | { type: 'thinking'; thinking: string; signature?: string | null }
   | { type: 'redacted_thinking'; data: string }
-  | { type: 'image'; source: any }
+  | { type: 'image'; source: ImageSource }
 
 export type ToolResultContent = string | FrontendContentBlock[]
+
+/** Base64-encoded image source — mirrors Rust `ImageSource`. */
+export interface ImageSource {
+  type: 'base64'
+  media_type: string
+  data: string
+}
+
+/**
+ * Structured tool result info forwarded over IPC as part of
+ * `BackendMessage.tool_result.content_blocks`. Mirrors Rust
+ * `ToolResultContentInfo` in `src/ipc/protocol/base.rs` — images now include
+ * the raw base64 payload so browser MCP screenshots render inline in the UI.
+ */
+export type ToolResultContentInfo =
+  | { type: 'text'; text: string }
+  | { type: 'image'; media_type: string; size_bytes?: number; data?: string }
 
 // Frontend -> Backend
 export type ConversationMessage = {
@@ -190,7 +207,18 @@ export type BackendMessage =
   | { type: 'stream_end'; message_id: string }
   | { type: 'assistant_message'; id: string; content: FrontendContentBlock[] | null; cost_usd: number }
   | { type: 'tool_use'; id: string; name: string; input: any }
-  | { type: 'tool_result'; tool_use_id: string; output: string; is_error: boolean }
+  | {
+      type: 'tool_result'
+      tool_use_id: string
+      output: string
+      is_error: boolean
+      /**
+       * Structured content blocks when the result includes non-text data
+       * (e.g. images from a browser MCP screenshot). Forwarded from Rust's
+       * `BackendMessage::ToolResult::content_blocks`.
+       */
+      content_blocks?: ToolResultContentInfo[]
+    }
   | { type: 'permission_request'; tool_use_id: string; tool: string; command: string; options: string[] }
   | { type: 'question_request'; id: string; text: string }
   | { type: 'system_info'; text: string; level: string }

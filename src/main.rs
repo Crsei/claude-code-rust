@@ -40,6 +40,9 @@ mod plugins;
 // MCP (Model Context Protocol) 服务器
 mod mcp;
 
+// Browser MCP: identification + prompt + permissions for browser-automation MCP servers
+mod browser;
+
 // LSP 协议服务层
 mod lsp_service;
 
@@ -304,6 +307,17 @@ fn main() -> ExitCode {
             .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
         let model = model_owned.as_str();
         let cwd = resolve_cwd(&cli);
+
+        // Populate the browser MCP server registry from config alone (no live
+        // connection). Config-flagged servers (`"browserMcp": true`) are
+        // authoritative; the heuristic half would need connected tools and
+        // isn't exercised here — use `--init-only` for that path.
+        let cwd_path = std::path::Path::new(&cwd);
+        let server_configs =
+            crate::mcp::discovery::discover_mcp_servers(cwd_path).unwrap_or_default();
+        let browser_servers = crate::browser::detection::detect_browser_servers(&server_configs, &tools);
+        crate::browser::detection::install_browser_servers(browser_servers);
+
         let (parts, _, _) = crate::engine::system_prompt::build_system_prompt(
             cli.system_prompt.as_deref(),
             cli.append_system_prompt.as_deref(),
@@ -399,6 +413,12 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         let server_configs = discover_mcp_servers(cwd_path).unwrap_or_default();
         let mcp_manager = Arc::new(tokio::sync::Mutex::new(McpManager::new()));
 
+        // Keep a copy of the configs so we can feed them to browser detection
+        // alongside the registered tools — config flags (browserMcp: true) are
+        // authoritative even if the server fails to list any recognized
+        // browser-shaped tools.
+        let configs_for_browser = server_configs.clone();
+
         if !server_configs.is_empty() {
             info!(
                 count = server_configs.len(),
@@ -420,6 +440,19 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                 tools.extend(mcp_tools);
             }
         }
+
+        // Install the browser MCP server registry exactly once after MCP tools
+        // are folded into the tool list. Used by system-prompt injection,
+        // permission prompts, and `/mcp list` styling.
+        let browser_servers =
+            crate::browser::detection::detect_browser_servers(&configs_for_browser, &tools);
+        if !browser_servers.is_empty() {
+            info!(
+                count = browser_servers.len(),
+                "Browser MCP: detected browser-shaped MCP server(s)"
+            );
+        }
+        crate::browser::detection::install_browser_servers(browser_servers);
 
         mcp_manager
     };
