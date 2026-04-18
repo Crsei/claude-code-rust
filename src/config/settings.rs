@@ -93,16 +93,14 @@ pub struct MergedConfig {
 // Loading functions
 // ---------------------------------------------------------------------------
 
-/// Return the path to the global cc-rust settings directory (`~/.cc-rust/`).
+/// Return the path to the global cc-rust settings directory.
+///
+/// Historically this could fail if the home directory was unresolvable; the
+/// unified [`crate::config::paths::data_root`] now never fails (it falls back
+/// to a temp dir with a one-time warn), so `Result` is preserved only for
+/// source compatibility with existing `?`-using callers.
 pub fn global_claude_dir() -> Result<PathBuf> {
-    if let Ok(override_dir) = std::env::var("CC_RUST_HOME") {
-        if !override_dir.trim().is_empty() {
-            return Ok(PathBuf::from(override_dir));
-        }
-    }
-
-    let home = dirs::home_dir().context("Could not determine home directory")?;
-    Ok(home.join(".cc-rust"))
+    Ok(crate::config::paths::data_root())
 }
 
 /// Load the global configuration from `~/.cc-rust/settings.json`.
