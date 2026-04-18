@@ -46,18 +46,30 @@ export function MessageBubble({ item, viewMode }: Props) {
         ? c.error
         : item.level === 'warning'
           ? c.warning
-          : c.text
+          : item.level === 'question'
+            ? c.warning
+            : c.text
       const prefix = item.level === 'error'
         ? '[error]'
         : item.level === 'warning'
           ? '[warn]'
-          : '[info]'
+          : item.level === 'question'
+            ? '[?]'
+            : '[info]'
 
       return (
         <box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
-          <text selectable fg={levelColor}>
-            {prefix} {item.content}
-          </text>
+          {item.level === 'question' ? (
+            <box border={['left']} borderColor={c.warning} paddingLeft={1}>
+              <text selectable fg={levelColor}>
+                {prefix} {item.content}
+              </text>
+            </box>
+          ) : (
+            <text selectable fg={levelColor}>
+              {prefix} {item.content}
+            </text>
+          )}
         </box>
       )
     }

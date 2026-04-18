@@ -5,10 +5,12 @@ import type { BackendMessage, FrontendContentBlock } from '../ipc/protocol.js'
 import { shortcutLabel, transcriptTitle } from '../keybindings.js'
 import { useAppDispatch, useAppState } from '../store/app-store.js'
 import { conversationToRawMessage } from '../store/message-model.js'
+import { AgentTreePanel } from './AgentTreePanel.js'
 import { Header } from './Header.js'
 import { InputPrompt } from './InputPrompt.js'
 import { MessageList } from './MessageList.js'
 import { PermissionDialog } from './PermissionDialog.js'
+import { SubsystemStatus } from './SubsystemStatus.js'
 import { Suggestions } from './Suggestions.js'
 import { WelcomeScreen } from './WelcomeScreen.js'
 
@@ -126,6 +128,9 @@ export function App() {
             },
           })
           break
+        case 'question_request':
+          dispatch({ type: 'QUESTION_REQUEST', question: { id: msg.id, text: msg.text } })
+          break
         case 'system_info':
           dispatch({ type: 'SYSTEM_INFO', text: msg.text, level: msg.level })
           break
@@ -160,6 +165,80 @@ export function App() {
           break
         case 'error':
           dispatch({ type: 'ERROR', message: msg.message })
+          break
+
+        // ── Agent events ──────────────────────────────────────
+        case 'agent_event': {
+          const evt = msg.event
+          switch (evt.kind) {
+            case 'spawned':
+              dispatch({ type: 'AGENT_SPAWNED', agentId: evt.agent_id, description: evt.description, parentAgentId: evt.parent_agent_id, agentType: evt.agent_type, model: evt.model, isBackground: evt.is_background, depth: evt.depth })
+              break
+            case 'completed':
+              dispatch({ type: 'AGENT_COMPLETED', agentId: evt.agent_id, resultPreview: evt.result_preview, hadError: evt.had_error, durationMs: evt.duration_ms })
+              break
+            case 'error':
+              dispatch({ type: 'AGENT_ERROR', agentId: evt.agent_id, error: evt.error, durationMs: evt.duration_ms })
+              break
+            case 'aborted':
+              dispatch({ type: 'AGENT_ABORTED', agentId: evt.agent_id })
+              break
+            case 'stream_delta':
+              dispatch({ type: 'AGENT_STREAM_DELTA', agentId: evt.agent_id, text: evt.text })
+              break
+            case 'thinking_delta':
+              dispatch({ type: 'AGENT_THINKING_DELTA', agentId: evt.agent_id, thinking: evt.thinking })
+              break
+            case 'tree_snapshot':
+              dispatch({ type: 'AGENT_TREE_SNAPSHOT', roots: evt.roots })
+              break
+          }
+          break
+        }
+
+        // ── Team events ───────────────────────────────────────
+        case 'team_event': {
+          const evt = msg.event
+          switch (evt.kind) {
+            case 'member_joined':
+              dispatch({ type: 'TEAM_MEMBER_JOINED', teamName: evt.team_name, agentId: evt.agent_id, agentName: evt.agent_name, role: evt.role })
+              break
+            case 'member_left':
+              dispatch({ type: 'TEAM_MEMBER_LEFT', teamName: evt.team_name, agentId: evt.agent_id })
+              break
+            case 'message_routed':
+              dispatch({ type: 'TEAM_MESSAGE_ROUTED', teamName: evt.team_name, from: evt.from, to: evt.to, summary: evt.summary ?? evt.text.slice(0, 80), timestamp: evt.timestamp })
+              break
+            case 'status_snapshot':
+              dispatch({ type: 'TEAM_STATUS_SNAPSHOT', teamName: evt.team_name, members: evt.members, pendingMessages: evt.pending_messages })
+              break
+          }
+          break
+        }
+
+        // ── Subsystem events ──────────────────────────────────
+        case 'lsp_event':
+          if (msg.event.kind === 'server_state_changed') {
+            dispatch({ type: 'LSP_SERVER_STATE', languageId: msg.event.language_id, state: msg.event.state, error: msg.event.error })
+          }
+          break
+        case 'mcp_event':
+          if (msg.event.kind === 'server_state_changed') {
+            dispatch({ type: 'MCP_SERVER_STATE', serverName: msg.event.server_name, state: msg.event.state, error: msg.event.error })
+          }
+          break
+        case 'plugin_event':
+          if (msg.event.kind === 'status_changed') {
+            dispatch({ type: 'PLUGIN_STATUS', pluginId: msg.event.plugin_id, name: msg.event.name, status: msg.event.status, error: msg.event.error })
+          }
+          break
+        case 'skill_event':
+          if (msg.event.kind === 'skills_loaded') {
+            dispatch({ type: 'SKILLS_LOADED', count: msg.event.count })
+          }
+          break
+        case 'subsystem_status':
+          dispatch({ type: 'SUBSYSTEM_STATUS', lsp: msg.status.lsp, mcp: msg.status.mcp, plugins: msg.status.plugins, skills: msg.status.skills })
           break
       }
     }
@@ -259,6 +338,8 @@ export function App() {
               {state.suggestions.length > 0 && !isBusy && state.viewMode === 'prompt' && <Suggestions />}
             </MessageList>
           </box>
+          <AgentTreePanel />
+          <SubsystemStatus />
           <box
             width="100%"
             border

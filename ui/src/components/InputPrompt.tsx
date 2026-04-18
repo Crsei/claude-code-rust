@@ -98,6 +98,7 @@ export function InputPrompt({
     historyIndex,
     vimEnabled,
     queuedSubmissions,
+    pendingQuestion,
   } = useAppState()
   const dispatch = useAppDispatch()
   const renderer = useRenderer()
@@ -278,12 +279,22 @@ export function InputPrompt({
   }, [dispatch, resetComposer])
 
   const submit = useCallback(() => {
-    if (isBusyRef.current) {
+    if (isBusyRef.current && !pendingQuestion) {
       queuePrompt(text)
       return
     }
     const trimmed = text.trim()
     if (!trimmed) {
+      return
+    }
+
+    // Answer a pending question via the explicit QuestionResponse protocol
+    if (pendingQuestion) {
+      dispatch({ type: 'ADD_USER_MESSAGE', id: `answer-${pendingQuestion.id}`, text: trimmed })
+      dispatch({ type: 'PUSH_HISTORY', text: trimmed })
+      backend.send({ type: 'question_response', id: pendingQuestion.id, text: trimmed })
+      dispatch({ type: 'QUESTION_DISMISS' })
+      resetComposer()
       return
     }
 
@@ -297,7 +308,7 @@ export function InputPrompt({
     dispatch({ type: 'PUSH_HISTORY', text: trimmed })
     backend.send({ type: 'submit_prompt', text: trimmed, id })
     resetComposer()
-  }, [backend, dispatch, queuePrompt, resetComposer, sendCommand, text])
+  }, [backend, dispatch, pendingQuestion, queuePrompt, resetComposer, sendCommand, text])
 
   const activateCommand = useCallback((cmd: CommandDef) => {
     if (cmd.kind === 'select' && cmd.options && cmd.options.length > 0) {
