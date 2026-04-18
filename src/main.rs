@@ -251,16 +251,14 @@ fn main() -> ExitCode {
     let stderr_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(log_level));
 
-    let preferred_log_dir = crate::config::settings::global_claude_dir()
-        .map(|d| d.join("logs"))
-        .unwrap_or_else(|_| std::path::PathBuf::from(".logs"));
-    let log_dir = if std::fs::create_dir_all(&preferred_log_dir).is_ok() {
-        preferred_log_dir
-    } else {
-        let fallback = std::path::PathBuf::from(".logs");
-        let _ = std::fs::create_dir_all(&fallback);
-        fallback
-    };
+    let log_dir = crate::config::paths::logs_dir();
+    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+        eprintln!(
+            "warning: failed to create log directory {}: {}. File logging disabled.",
+            log_dir.display(),
+            e
+        );
+    }
     cleanup_old_logs(&log_dir, 7);
     let file_appender = tracing_appender::rolling::daily(&log_dir, "cc-rust.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
