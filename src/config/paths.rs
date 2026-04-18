@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Central registry of cc-rust runtime persistence paths.
 //!
 //! All runtime data — sessions, logs, credentials, transcripts — is resolved
@@ -114,6 +113,10 @@ pub fn team_memory_dir(cwd: &Path) -> PathBuf {
 // ----- Project-local paths (under cwd) -------------------------------------
 
 /// `{cwd}/.cc-rust/` — project-level settings / memory / skills root.
+///
+/// Note: call sites currently inline `cwd.join(".cc-rust")`; this helper exists
+/// for future consolidation. Remove the `#[allow(dead_code)]` once migrated.
+#[allow(dead_code)]
 pub fn project_cc_rust_dir(cwd: &Path) -> PathBuf {
     cwd.join(".cc-rust")
 }
