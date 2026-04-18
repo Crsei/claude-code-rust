@@ -367,6 +367,7 @@ pub fn discover_plugin_mcp_servers() -> Vec<crate::mcp::McpServerConfig> {
                 url: None,
                 headers: None,
                 env,
+                browser_mcp: None,
             });
         }
     }

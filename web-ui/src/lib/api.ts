@@ -147,6 +147,19 @@ function dispatchSSEEvent(event: string, dataStr: string): void {
         break
       }
 
+      case 'user_replay': {
+        // Replay contains the tool_result blocks that answer the preceding
+        // assistant's tool_use calls. Stitch them onto the last assistant
+        // message so ToolCallCard can pair tool_use with its result (which
+        // is how screenshots/pages/console output become visible).
+        const blocks = (data.content_blocks || data.content || []) as any[]
+        const toolResults = blocks.filter(b => b && b.type === 'tool_result')
+        if (toolResults.length > 0) {
+          store.appendToolResultsToLastAssistant(toolResults)
+        }
+        break
+      }
+
       case 'result': {
         store.finishStreaming(data)
         break
