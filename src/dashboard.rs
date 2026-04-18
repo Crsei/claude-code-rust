@@ -123,11 +123,6 @@ pub fn event_log_path() -> Option<PathBuf> {
         .map(|id| crate::config::paths::runs_dir(id).join("subagent-events.ndjson"))
 }
 
-#[allow(dead_code)]
-pub fn event_log_ready() -> bool {
-    SESSION_ID.get().is_some()
-}
-
 pub fn emit_subagent_event(
     kind: &str,
     agent_id: &str,
@@ -334,15 +329,20 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn emit_subagent_event_noops_when_feature_disabled() {
+        // When FEATURE_SUBAGENT_DASHBOARD is off, emit_subagent_event must
+        // return Ok(()) immediately without creating any directory or file,
+        // even if SESSION_ID has been set by a prior test.
         let _feature = EnvGuard::set("FEATURE_SUBAGENT_DASHBOARD", "0");
-        let temp = TempDir::new().expect("tempdir");
-        let original_cwd = {
-            let mut ps = crate::bootstrap::PROCESS_STATE.write();
-            let original = ps.original_cwd.clone();
-            ps.original_cwd = temp.path().to_path_buf();
-            original
-        };
+
+        // Point CC_RUST_HOME to a clean tempdir so we can assert no writes.
+        let tmp = TempDir::new().expect("tempdir");
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+
+        // Ensure SESSION_ID is set; if prior tests already set it, that's fine —
+        // we just need emit_subagent_event to take the feature-gated early return.
+        let _ = SESSION_ID.set("noop-test-session".to_string());
 
         emit_subagent_event(
             "spawn",
@@ -356,18 +356,12 @@ mod tests {
         )
         .expect("emit event");
 
-        {
-            let mut ps = crate::bootstrap::PROCESS_STATE.write();
-            ps.original_cwd = original_cwd;
-        }
-
+        // No file should have been created anywhere under the tempdir.
+        let runs = tmp.path().join("runs");
         assert!(
-            !temp
-                .path()
-                .join(".logs")
-                .join("subagent-events.ndjson")
-                .exists(),
-            "event log should not be created when the feature is disabled"
+            !runs.exists(),
+            "runs/ should not be created when the feature is disabled, but found: {}",
+            runs.display()
         );
     }
 }
