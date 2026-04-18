@@ -16,6 +16,26 @@ export interface UsageTracking {
   api_call_count: number
 }
 
+/**
+ * A structured sub-block inside a tool_result. Mirrors the shape produced by
+ * `ToolResultContent::Blocks(...)` on the Rust side — specifically supports
+ * images (base64) so that browser-MCP screenshots render inline in the UI.
+ */
+export interface ToolResultInnerBlock {
+  type: 'text' | 'image'
+  // text
+  text?: string
+  // image
+  source?: ImageSource
+}
+
+/** Base64-encoded image source, as used by the Anthropic API. */
+export interface ImageSource {
+  type: 'base64'
+  media_type: string
+  data: string
+}
+
 export interface ContentBlock {
   type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'redacted_thinking' | 'image'
   // text
@@ -26,8 +46,10 @@ export interface ContentBlock {
   input?: Record<string, unknown>
   // tool_result
   tool_use_id?: string
-  content?: string
+  content?: string | ToolResultInnerBlock[]
   is_error?: boolean
+  // image
+  source?: ImageSource
   // thinking
   thinking?: string
   signature?: string

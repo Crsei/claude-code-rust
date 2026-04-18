@@ -106,6 +106,12 @@ pub struct McpServerConfig {
     pub headers: Option<HashMap<String, String>>,
     /// Environment variables to set for the subprocess.
     pub env: Option<HashMap<String, String>>,
+    /// Opt-in flag: treat every tool from this server as a browser MCP tool
+    /// (enables the `# Browser Automation` system-prompt section, category-aware
+    /// permission prompts, and browser result rendering). When absent, the
+    /// engine falls back to a tool-name heuristic. See `src/browser/detection.rs`.
+    #[serde(default, rename = "browserMcp")]
+    pub browser_mcp: Option<bool>,
 }
 
 fn default_transport() -> String {

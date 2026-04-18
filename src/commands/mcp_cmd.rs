@@ -72,26 +72,64 @@ fn handle_list(ctx: &CommandContext) -> Result<CommandResult> {
     }
 
     let mut lines = Vec::new();
-    lines.push(format!("Discovered MCP servers ({}):", servers.len()));
+    let browser_count = servers
+        .iter()
+        .filter(|s| is_server_browser(s))
+        .count();
+    if browser_count > 0 {
+        lines.push(format!(
+            "Discovered MCP servers ({}; {} browser):",
+            servers.len(),
+            browser_count
+        ));
+    } else {
+        lines.push(format!("Discovered MCP servers ({}):", servers.len()));
+    }
     lines.push(String::new());
 
     for server in &servers {
         let command = server.command.as_deref().unwrap_or("(unknown)");
         let args = server.args.clone().unwrap_or_default().join(" ");
+        let tag = if is_server_browser(server) {
+            " [browser]"
+        } else {
+            ""
+        };
         if args.is_empty() {
             lines.push(format!(
-                "  {} -- transport: {} -- command: {}",
-                server.name, server.transport, command
+                "  {}{} -- transport: {} -- command: {}",
+                server.name, tag, server.transport, command
             ));
         } else {
             lines.push(format!(
-                "  {} -- transport: {} -- command: {} {}",
-                server.name, server.transport, command, args
+                "  {}{} -- transport: {} -- command: {} {}",
+                server.name, tag, server.transport, command, args
             ));
         }
     }
 
+    if browser_count > 0 {
+        lines.push(String::new());
+        lines.push(
+            "Browser-tagged servers expose browser-automation tools (navigate, \
+             read_page, click, …). See docs/reference/browser-mcp-config.md."
+                .to_string(),
+        );
+    }
+
     Ok(CommandResult::Output(lines.join("\n")))
+}
+
+/// Decide whether a server should be tagged as a browser server in `/mcp list`.
+///
+/// Consults (1) the explicit `browserMcp: true` flag on the server config, and
+/// (2) the runtime registry populated at startup (which folds in the tool-name
+/// heuristic once the server has actually listed its tools).
+fn is_server_browser(server: &McpServerConfig) -> bool {
+    if server.browser_mcp.unwrap_or(false) {
+        return true;
+    }
+    crate::browser::detection::is_browser_server(&server.name)
 }
 
 /// Show connection status of discovered servers.
