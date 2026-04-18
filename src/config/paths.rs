@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Central registry of cc-rust runtime persistence paths.
 //!
 //! All runtime data — sessions, logs, credentials, transcripts — is resolved
