@@ -174,6 +174,18 @@ struct Cli {
     #[arg(long = "computer-use")]
     computer_use: bool,
 
+    /// Enable the first-party Chrome integration ("Claude in Chrome"). Scans
+    /// for the Anthropic Chrome extension and installs the native messaging
+    /// host manifest. Overrides the `CLAUDE_CODE_ENABLE_CFC` env var and the
+    /// saved `claudeInChromeDefaultEnabled` config.
+    #[arg(long = "chrome", conflicts_with = "no_chrome")]
+    chrome: bool,
+
+    /// Explicitly disable the first-party Chrome integration for this session.
+    /// Overrides env and saved config.
+    #[arg(long = "no-chrome")]
+    no_chrome: bool,
+
     /// Launch web UI mode (HTTP server with chat interface).
     #[arg(long)]
     web: bool,
@@ -315,7 +327,22 @@ fn main() -> ExitCode {
         let cwd_path = std::path::Path::new(&cwd);
         let server_configs =
             crate::mcp::discovery::discover_mcp_servers(cwd_path).unwrap_or_default();
-        let browser_servers = crate::browser::detection::detect_browser_servers(&server_configs, &tools);
+        let mut browser_servers =
+            crate::browser::detection::detect_browser_servers(&server_configs, &tools);
+        // Mirror the full-init path: when Chrome subsystem is requested via
+        // CLI / env, pre-register the first-party server name so the
+        // `# Browser Automation` prompt fires under --dump-system-prompt too.
+        let chrome_wanted = cli.chrome
+            || (!cli.no_chrome
+                && matches!(
+                    std::env::var("CLAUDE_CODE_ENABLE_CFC").ok().as_deref(),
+                    Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("on")
+                ));
+        if chrome_wanted {
+            browser_servers.insert(
+                crate::browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string(),
+            );
+        }
         crate::browser::detection::install_browser_servers(browser_servers);
 
         let (parts, _, _) = crate::engine::system_prompt::build_system_prompt(
@@ -444,8 +471,23 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         // Install the browser MCP server registry exactly once after MCP tools
         // are folded into the tool list. Used by system-prompt injection,
         // permission prompts, and `/mcp list` styling.
-        let browser_servers =
+        let mut browser_servers =
             crate::browser::detection::detect_browser_servers(&configs_for_browser, &tools);
+        // Pre-register the first-party Chrome MCP server name when --chrome
+        // (or equivalent) is on. The actual tools come online via #5; doing
+        // this early means the system prompt, permissions, and /mcp list all
+        // already know the capability is expected.
+        if cli.chrome
+            || (!cli.no_chrome
+                && matches!(
+                    std::env::var("CLAUDE_CODE_ENABLE_CFC").ok().as_deref(),
+                    Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("on")
+                ))
+        {
+            browser_servers.insert(
+                crate::browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string(),
+            );
+        }
         if !browser_servers.is_empty() {
             info!(
                 count = browser_servers.len(),
@@ -465,6 +507,34 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             "Computer Use: registered native desktop control tools"
         );
         tools.extend(cu_tools);
+    }
+
+    // ── B.3f: Start the first-party Chrome subsystem (if --chrome) ─────
+    // Resolves CLI flag → env → saved config, runs extension detection and
+    // native-host manifest install. Tool registration for the first-party
+    // bridge lands in #5; for now this just flips state so /chrome reports
+    // accurate status and the system-prompt assembler knows a browser path
+    // is active.
+    {
+        use crate::browser::session::{resolve_enablement, ChromeSession};
+
+        let cli_chrome = if cli.chrome {
+            Some(true)
+        } else if cli.no_chrome {
+            Some(false)
+        } else {
+            None
+        };
+        // TODO(#5): thread `claudeInChromeDefaultEnabled` out of settings.json.
+        // For now we pass None and rely on CLI flag + env var only.
+        let enablement = resolve_enablement(cli_chrome, None);
+        let session = ChromeSession::new(enablement);
+        if let Err(e) = session.start() {
+            warn!(error = %e, "Chrome subsystem startup failed");
+        }
+        if crate::browser::state::is_enabled() {
+            info!("Claude in Chrome subsystem active — use /chrome for status");
+        }
     }
 
     // ── B.4: Create AppState ─────────────────────────────────────────
