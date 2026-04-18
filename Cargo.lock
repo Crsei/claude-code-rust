@@ -664,6 +664,7 @@ dependencies = [
  "ignore",
  "image",
  "keyring",
+ "libc",
  "lru",
  "lsp-types",
  "mime_guess",

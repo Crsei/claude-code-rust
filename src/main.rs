@@ -186,6 +186,20 @@ struct Cli {
     #[arg(long = "no-chrome")]
     no_chrome: bool,
 
+    /// INTERNAL: run as a Chrome native-messaging host. Launched by Chrome
+    /// via the manifest installed by the Chrome subsystem setup (see
+    /// `src/browser/setup.rs`). Reads 4-byte-framed JSON from stdin, opens
+    /// a local socket, bridges the two. Not intended for manual invocation.
+    #[arg(long = "chrome-native-host", hide = true)]
+    chrome_native_host: bool,
+
+    /// INTERNAL: run as the Claude-in-Chrome stdio MCP bridge. Spawned as a
+    /// subprocess of the cc-rust MCP manager when --chrome is active.
+    /// Connects to the native-host socket and exposes the first-party
+    /// browser tool surface via MCP.
+    #[arg(long = "claude-in-chrome-mcp", hide = true)]
+    claude_in_chrome_mcp: bool,
+
     /// Launch web UI mode (HTTP server with chat interface).
     #[arg(long)]
     web: bool,
@@ -258,6 +272,41 @@ fn main() -> ExitCode {
     if cli.version {
         println!("claude-code-rs {}", env!("CARGO_PKG_VERSION"));
         return ExitCode::SUCCESS;
+    }
+
+    // ── Fast path: --chrome-native-host ─────────────────────────────────
+    // Launched by Chrome via the native-messaging manifest installed by the
+    // Chrome subsystem (see src/browser/setup.rs). Skip ALL normal init:
+    // no tracing to stderr (Chrome captures stderr as error logs), no
+    // REPL, no HTTP server. Just bridge Chrome <-> local socket and exit
+    // when Chrome closes stdin.
+    if cli.chrome_native_host {
+        let rt = tokio::runtime::Runtime::new().expect("create tokio runtime");
+        return rt.block_on(async {
+            match crate::browser::native_host::run().await {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("chrome-native-host error: {e:#}");
+                    ExitCode::FAILURE
+                }
+            }
+        });
+    }
+
+    // ── Fast path: --claude-in-chrome-mcp ───────────────────────────────
+    // Spawned as a stdio MCP subprocess by the cc-rust MCP manager when
+    // --chrome is active. Bridges MCP <-> native-host socket.
+    if cli.claude_in_chrome_mcp {
+        let rt = tokio::runtime::Runtime::new().expect("create tokio runtime");
+        return rt.block_on(async {
+            match crate::browser::mcp_bridge::run().await {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("claude-in-chrome-mcp error: {e:#}");
+                    ExitCode::FAILURE
+                }
+            }
+        });
     }
 
     // Initialize tracing (log level based on --verbose)
@@ -437,8 +486,43 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         use crate::mcp::tools::mcp_tools_to_tools;
 
         let cwd_path = std::path::Path::new(&cwd);
-        let server_configs = discover_mcp_servers(cwd_path).unwrap_or_default();
+        let mut server_configs = discover_mcp_servers(cwd_path).unwrap_or_default();
         let mcp_manager = Arc::new(tokio::sync::Mutex::new(McpManager::new()));
+
+        // First-party Chrome integration: when --chrome is on (or env opts in),
+        // register a synthetic `claude-in-chrome` MCP server that points back
+        // at this same binary in `--claude-in-chrome-mcp` mode. The MCP
+        // manager launches it as a stdio subprocess and talks to it like any
+        // other MCP server; the bridge internally forwards over the native
+        // host socket.
+        let chrome_wanted_for_mcp = cli.chrome
+            || (!cli.no_chrome
+                && matches!(
+                    std::env::var("CLAUDE_CODE_ENABLE_CFC").ok().as_deref(),
+                    Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("on")
+                ));
+        if chrome_wanted_for_mcp {
+            if let Ok(exe) = std::env::current_exe() {
+                // De-dupe: if the user also put `claude-in-chrome` in
+                // settings.json for some reason, the explicit config wins.
+                let name = crate::browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME;
+                if !server_configs.iter().any(|c| c.name == name) {
+                    server_configs.push(crate::mcp::McpServerConfig {
+                        name: name.to_string(),
+                        transport: "stdio".to_string(),
+                        command: Some(exe.to_string_lossy().into_owned()),
+                        args: Some(vec!["--claude-in-chrome-mcp".to_string()]),
+                        url: None,
+                        headers: None,
+                        env: None,
+                        browser_mcp: Some(true),
+                    });
+                    info!(
+                        "MCP: registered first-party claude-in-chrome bridge (spawns --claude-in-chrome-mcp subprocess)"
+                    );
+                }
+            }
+        }
 
         // Keep a copy of the configs so we can feed them to browser detection
         // alongside the registered tools — config flags (browserMcp: true) are
