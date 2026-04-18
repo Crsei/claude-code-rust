@@ -2,6 +2,7 @@
 
 > 最后更新: 2026-04-02
 > 已完成模块: [`COMPLETED_FULL.md`](archive/COMPLETED_FULL.md) (完整实现) | [`COMPLETED_SIMPLIFIED.md`](archive/COMPLETED_SIMPLIFIED.md) (大幅简化)
+> 当前仍未补齐的注意事项、设计限制与缩减实现汇总见 [`IMPLEMENTATION_GAPS.md`](IMPLEMENTATION_GAPS.md)
 
 ## 原始项目概况
 

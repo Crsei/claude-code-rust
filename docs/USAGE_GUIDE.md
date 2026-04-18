@@ -1,6 +1,9 @@
 # Claude Code Rust Lite — 使用指南
 
 > 版本: 0.1.0-lite | 最后更新: 2026-04-06
+>
+> 当前 CLI 参数、模式优先级与 REPL 命令注册表请优先参考 [`CLI_REFERENCE.md`](CLI_REFERENCE.md)。本文件中的部分历史示例和说明已经落后于当前实现。
+> 每个斜杠命令的详细子参数和示例见 [`COMMAND_REFERENCE.md`](COMMAND_REFERENCE.md)。
 
 ---
 

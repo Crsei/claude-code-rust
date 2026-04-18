@@ -4,6 +4,10 @@
 >
 > 本文档合并了原 `UNIMPLEMENTED_CHECKLIST.md`、`sdk-work-tracker.md`、`unfinished-features.md`
 > 三份文档，作为唯一的状态跟踪入口。
+>
+> 缩减实现、设计限制与注意事项统一汇总见 [`IMPLEMENTATION_GAPS.md`](IMPLEMENTATION_GAPS.md)。
+>
+> 与 `claude-code-bun` 的差异、Web UI 进行度、REPL 结构对比与后续路线图见 [`claude-code-bun-gap-plan.md`](claude-code-bun-gap-plan.md)。
 
 ---
 
@@ -59,7 +63,7 @@
 |------|------|------|
 | clear_messages | `src/ipc/headless.rs:234` | **TODO** — engine 无此方法，仅通知前端 |
 
-### 1.7 前端 (ink-terminal)
+### 1.7 前端 (终端 UI)
 
 | 功能 | 文件 | 状态 |
 |------|------|------|
@@ -159,7 +163,7 @@
 
 ## 4. 已完成基线
 
-> 详细清单见 `COMPLETED_FULL.md` 和 `COMPLETED_SIMPLIFIED.md`。
+> 详细清单见 [`archive/COMPLETED_FULL.md`](archive/COMPLETED_FULL.md) 和 [`archive/COMPLETED_SIMPLIFIED.md`](archive/COMPLETED_SIMPLIFIED.md)。
 
 - **斜杠命令**: 75/75 (含 `/login-code`, `/extra-usage`, `/rate-limit-options`)
 - **工具**: 30 个 (Bash, Read, Write, Edit, Grep, Glob, Agent, Skill, LSP, Tasks, Web, PowerShell, Brief, Sleep...)

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust, serde, tokio::sync::broadcast, async-trait
 
-**Spec:** `docs/superpowers/specs/2026-04-15-ipc-subsystem-extensions-design.md`
+**Spec:** [`../specs/2026-04-15-ipc-subsystem-extensions-design.md`](../specs/2026-04-15-ipc-subsystem-extensions-design.md)
 
 ---
 

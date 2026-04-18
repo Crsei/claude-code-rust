@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust (axum, reqwest, uuid, tokio), TypeScript/Bun (bun:sqlite, Bun.serve), SQLite
 
-**Spec:** `docs/superpowers/specs/2026-04-11-team-memory-design.md`
+**Spec:** [`../specs/2026-04-11-team-memory-design.md`](../specs/2026-04-11-team-memory-design.md)
 
 ---
 

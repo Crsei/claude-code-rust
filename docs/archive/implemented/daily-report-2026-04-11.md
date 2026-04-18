@@ -14,7 +14,7 @@
 - 编写 **compat/ink-compat.tsx** (421 行)，桥接 API 差异：大写组件名、Text 样式 props、useInput、useAnimationFrame
 - 14 个组件文件**仅改 import 路径**，零业务逻辑变更
 - 更新 `main.tsx` 入口为 `createCliRenderer() + createRoot()`
-- 编写迁移对比文档 `docs/ink-terminal-vs-opentui.md`
+- 编写迁移对比文档 [`ink-terminal-vs-opentui.md`](ink-terminal-vs-opentui.md)
 
 ## Commit 2: `1d56bce` — 原生 OpenTUI + 斜杠命令自动补全 + UX 优化
 

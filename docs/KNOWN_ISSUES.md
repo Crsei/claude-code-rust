@@ -1,6 +1,6 @@
-# Known Issues — ink-terminal Frontend (ui/)
+# Known Issues — Terminal UI / Frontend
 
-This document tracks reported UI/UX issues in the ink-terminal frontend.
+This document tracks reported UI/UX issues in the terminal frontends and headless UI bridge.
 Each issue includes a description, reproduction steps, and current status.
 
 ---

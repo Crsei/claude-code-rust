@@ -2,7 +2,7 @@
 
 > 日期: 2026-04-11
 > 状态: 已批准
-> 前置: `docs/superpowers/specs/2026-04-11-team-memory-design.md` (服务端已实现)
+> 前置: [`../../archive/superpowers/specs/2026-04-11-team-memory-design.md`](../../archive/superpowers/specs/2026-04-11-team-memory-design.md) (服务端已实现)
 
 ## 一、概述
 

@@ -57,3 +57,5 @@ ink-ui/
 
 # Global data dir junction
 .cc-rust
+.omx/
+.claude/

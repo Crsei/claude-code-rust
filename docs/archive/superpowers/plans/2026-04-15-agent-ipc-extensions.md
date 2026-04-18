@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust, serde, tokio::sync::mpsc, parking_lot
 
-**Spec:** `docs/superpowers/specs/2026-04-15-agent-ipc-extensions-design.md`
+**Spec:** [`../specs/2026-04-15-agent-ipc-extensions-design.md`](../specs/2026-04-15-agent-ipc-extensions-design.md)
 
 ---
 

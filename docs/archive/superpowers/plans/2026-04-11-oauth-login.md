@@ -8,7 +8,7 @@
 
 **Tech Stack:** `sha2` (PKCE), `rand` (random bytes), `base64` (encoding), `reqwest` (HTTP), `serde_json` (de/serialization), `chrono` (expiry), `keyring` (API key storage)
 
-**Spec:** `docs/superpowers/specs/2026-04-11-oauth-login-design.md`
+**Spec:** [`../specs/2026-04-11-oauth-login-design.md`](../specs/2026-04-11-oauth-login-design.md)
 
 ---
 

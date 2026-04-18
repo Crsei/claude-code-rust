@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust (tokio, axum, tower-http), SSE (axum built-in), notify-rust (Windows Toast), hmac/sha2 (webhook verification), reqwest (webhook callback)
 
-**Spec:** `docs/superpowers/specs/2026-04-11-kairos-design.md`
+**Spec:** [`../specs/2026-04-11-kairos-design.md`](../specs/2026-04-11-kairos-design.md)
 
 ---
 

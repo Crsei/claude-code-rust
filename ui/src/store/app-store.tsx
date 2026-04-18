@@ -1,5 +1,13 @@
 import React, { createContext, useContext, useReducer, type Dispatch } from 'react'
-import type { FrontendContentBlock } from '../ipc/protocol.js'
+import type {
+  AgentNode,
+  FrontendContentBlock,
+  LspServerInfo,
+  McpServerStatusInfo,
+  PluginInfo,
+  SkillInfo,
+  TeamMemberInfo,
+} from '../ipc/protocol.js'
 import type { ViewMode } from '../keybindings.js'
 import type { RawMessage } from './message-model.js'
 
@@ -26,11 +34,48 @@ export interface BackgroundAgent {
   durationMs?: number
 }
 
+export interface PendingQuestion {
+  id: string
+  text: string
+}
+
 export interface QueuedSubmission {
   id: string
   kind: 'prompt'
   text: string
   queuedAt: number
+}
+
+// ---------------------------------------------------------------------------
+// Agent tree state
+// ---------------------------------------------------------------------------
+
+export interface AgentStreamState {
+  text: string
+  thinking: string
+}
+
+// ---------------------------------------------------------------------------
+// Team state
+// ---------------------------------------------------------------------------
+
+export interface TeamState {
+  name: string
+  members: TeamMemberInfo[]
+  pendingMessages: number
+  recentMessages: Array<{ from: string; to: string; summary: string; timestamp: number }>
+}
+
+// ---------------------------------------------------------------------------
+// Subsystem state
+// ---------------------------------------------------------------------------
+
+export interface SubsystemState {
+  lsp: LspServerInfo[]
+  mcp: McpServerStatusInfo[]
+  plugins: PluginInfo[]
+  skills: SkillInfo[]
+  lastUpdated: number
 }
 
 export interface AppState {
@@ -45,6 +90,7 @@ export interface AppState {
   cwd: string
   usage: Usage
   permissionRequest: PermissionRequest | null
+  pendingQuestion: PendingQuestion | null
   suggestions: string[]
   inputHistory: string[]
   historyIndex: number
@@ -53,6 +99,13 @@ export interface AppState {
   backgroundAgents: BackgroundAgent[]
   queuedSubmissions: QueuedSubmission[]
   viewMode: ViewMode
+  // Agent tree
+  agentTree: AgentNode[]
+  agentStreams: Record<string, AgentStreamState>
+  // Teams
+  teams: Record<string, TeamState>
+  // Subsystems
+  subsystems: SubsystemState
 }
 
 export const initialState: AppState = {
@@ -67,6 +120,7 @@ export const initialState: AppState = {
   cwd: '',
   usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
   permissionRequest: null,
+  pendingQuestion: null,
   suggestions: [],
   inputHistory: [],
   historyIndex: -1,
@@ -75,6 +129,10 @@ export const initialState: AppState = {
   backgroundAgents: [],
   queuedSubmissions: [],
   viewMode: 'prompt',
+  agentTree: [],
+  agentStreams: {},
+  teams: {},
+  subsystems: { lsp: [], mcp: [], plugins: [], skills: [], lastUpdated: 0 },
 }
 
 export type AppAction =
@@ -98,6 +156,8 @@ export type AppAction =
   | { type: 'TOOL_RESULT'; toolUseId: string; output: string; isError: boolean }
   | { type: 'PERMISSION_REQUEST'; request: PermissionRequest }
   | { type: 'PERMISSION_DISMISS' }
+  | { type: 'QUESTION_REQUEST'; question: PendingQuestion }
+  | { type: 'QUESTION_DISMISS' }
   | { type: 'SYSTEM_INFO'; text: string; level: string }
   | { type: 'USAGE_UPDATE'; usage: Usage }
   | { type: 'SUGGESTIONS'; items: string[] }
@@ -119,6 +179,25 @@ export type AppAction =
   | { type: 'DEQUEUE_SUBMISSION' }
   | { type: 'SET_VIEW_MODE'; viewMode: ViewMode }
   | { type: 'TOGGLE_VIEW_MODE' }
+  // Agent tree
+  | { type: 'AGENT_TREE_SNAPSHOT'; roots: AgentNode[] }
+  | { type: 'AGENT_SPAWNED'; agentId: string; description: string; parentAgentId?: string; agentType?: string; model?: string; isBackground: boolean; depth: number }
+  | { type: 'AGENT_COMPLETED'; agentId: string; resultPreview: string; hadError: boolean; durationMs: number }
+  | { type: 'AGENT_ERROR'; agentId: string; error: string; durationMs: number }
+  | { type: 'AGENT_ABORTED'; agentId: string }
+  | { type: 'AGENT_STREAM_DELTA'; agentId: string; text: string }
+  | { type: 'AGENT_THINKING_DELTA'; agentId: string; thinking: string }
+  // Teams
+  | { type: 'TEAM_MEMBER_JOINED'; teamName: string; agentId: string; agentName: string; role: string }
+  | { type: 'TEAM_MEMBER_LEFT'; teamName: string; agentId: string }
+  | { type: 'TEAM_MESSAGE_ROUTED'; teamName: string; from: string; to: string; summary: string; timestamp: number }
+  | { type: 'TEAM_STATUS_SNAPSHOT'; teamName: string; members: TeamMemberInfo[]; pendingMessages: number }
+  // Subsystems
+  | { type: 'SUBSYSTEM_STATUS'; lsp: LspServerInfo[]; mcp: McpServerStatusInfo[]; plugins: PluginInfo[]; skills: SkillInfo[] }
+  | { type: 'LSP_SERVER_STATE'; languageId: string; state: string; error?: string }
+  | { type: 'MCP_SERVER_STATE'; serverName: string; state: string; error?: string }
+  | { type: 'PLUGIN_STATUS'; pluginId: string; name: string; status: string; error?: string }
+  | { type: 'SKILLS_LOADED'; count: number }
 
 export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -236,6 +315,22 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'PERMISSION_DISMISS':
       return { ...state, permissionRequest: null }
+
+    case 'QUESTION_REQUEST':
+      return {
+        ...state,
+        pendingQuestion: action.question,
+        messages: [...state.messages, {
+          id: `question-${action.question.id}`,
+          role: 'system',
+          content: action.question.text,
+          timestamp: Date.now(),
+          level: 'question',
+        }],
+      }
+
+    case 'QUESTION_DISMISS':
+      return { ...state, pendingQuestion: null }
 
     case 'SYSTEM_INFO':
       return {
@@ -358,6 +453,161 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         viewMode: state.viewMode === 'prompt' ? 'transcript' : 'prompt',
       }
 
+    // ── Agent tree ──────────────────────────────────────────────
+    case 'AGENT_TREE_SNAPSHOT':
+      return { ...state, agentTree: action.roots }
+
+    case 'AGENT_SPAWNED':
+      return {
+        ...state,
+        agentStreams: { ...state.agentStreams, [action.agentId]: { text: '', thinking: '' } },
+        messages: [...state.messages, {
+          id: `agent-spawn-${action.agentId}`,
+          role: 'system',
+          content: `Agent spawned: ${action.description}${action.isBackground ? ' (background)' : ''}`,
+          timestamp: Date.now(),
+          level: 'info',
+        }],
+      }
+
+    case 'AGENT_COMPLETED': {
+      const { [action.agentId]: _removed, ...remainingStreams } = state.agentStreams
+      const durationSec = (action.durationMs / 1000).toFixed(1)
+      return {
+        ...state,
+        agentStreams: remainingStreams,
+        messages: [...state.messages, {
+          id: `agent-done-${action.agentId}`,
+          role: 'system',
+          content: `Agent ${action.hadError ? 'FAILED' : 'completed'} (${durationSec}s): ${action.resultPreview}`,
+          timestamp: Date.now(),
+          level: action.hadError ? 'error' : 'info',
+        }],
+      }
+    }
+
+    case 'AGENT_ERROR': {
+      const { [action.agentId]: _removed, ...remainingStreams } = state.agentStreams
+      return {
+        ...state,
+        agentStreams: remainingStreams,
+        messages: [...state.messages, {
+          id: `agent-err-${action.agentId}`,
+          role: 'system',
+          content: `Agent error (${(action.durationMs / 1000).toFixed(1)}s): ${action.error}`,
+          timestamp: Date.now(),
+          level: 'error',
+        }],
+      }
+    }
+
+    case 'AGENT_ABORTED': {
+      const { [action.agentId]: _removed, ...remainingStreams } = state.agentStreams
+      return {
+        ...state,
+        agentStreams: remainingStreams,
+        messages: [...state.messages, {
+          id: `agent-abort-${action.agentId}`,
+          role: 'system',
+          content: `Agent aborted: ${action.agentId}`,
+          timestamp: Date.now(),
+          level: 'warning',
+        }],
+      }
+    }
+
+    case 'AGENT_STREAM_DELTA': {
+      const prev = state.agentStreams[action.agentId] ?? { text: '', thinking: '' }
+      return {
+        ...state,
+        agentStreams: { ...state.agentStreams, [action.agentId]: { ...prev, text: prev.text + action.text } },
+      }
+    }
+
+    case 'AGENT_THINKING_DELTA': {
+      const prev = state.agentStreams[action.agentId] ?? { text: '', thinking: '' }
+      return {
+        ...state,
+        agentStreams: { ...state.agentStreams, [action.agentId]: { ...prev, thinking: prev.thinking + action.thinking } },
+      }
+    }
+
+    // ── Teams ───────────────────────────────────────────────────
+    case 'TEAM_MEMBER_JOINED': {
+      const team = state.teams[action.teamName] ?? { name: action.teamName, members: [], pendingMessages: 0, recentMessages: [] }
+      const newMember: TeamMemberInfo = { agent_id: action.agentId, agent_name: action.agentName, role: action.role, is_active: true, unread_messages: 0 }
+      return {
+        ...state,
+        teams: { ...state.teams, [action.teamName]: { ...team, members: [...team.members, newMember] } },
+      }
+    }
+
+    case 'TEAM_MEMBER_LEFT': {
+      const team = state.teams[action.teamName]
+      if (!team) return state
+      return {
+        ...state,
+        teams: { ...state.teams, [action.teamName]: { ...team, members: team.members.filter(m => m.agent_id !== action.agentId) } },
+      }
+    }
+
+    case 'TEAM_MESSAGE_ROUTED': {
+      const team = state.teams[action.teamName] ?? { name: action.teamName, members: [], pendingMessages: 0, recentMessages: [] }
+      const msg = { from: action.from, to: action.to, summary: action.summary, timestamp: action.timestamp }
+      return {
+        ...state,
+        teams: { ...state.teams, [action.teamName]: { ...team, recentMessages: [...team.recentMessages.slice(-19), msg] } },
+      }
+    }
+
+    case 'TEAM_STATUS_SNAPSHOT': {
+      const team = state.teams[action.teamName] ?? { name: action.teamName, members: [], pendingMessages: 0, recentMessages: [] }
+      return {
+        ...state,
+        teams: { ...state.teams, [action.teamName]: { ...team, members: action.members, pendingMessages: action.pendingMessages } },
+      }
+    }
+
+    // ── Subsystems ──────────────────────────────────────────────
+    case 'SUBSYSTEM_STATUS':
+      return {
+        ...state,
+        subsystems: { lsp: action.lsp, mcp: action.mcp, plugins: action.plugins, skills: action.skills, lastUpdated: Date.now() },
+      }
+
+    case 'LSP_SERVER_STATE':
+      return {
+        ...state,
+        subsystems: {
+          ...state.subsystems,
+          lsp: upsertBy(state.subsystems.lsp, 'language_id', action.languageId, s => ({ ...s, state: action.state, error: action.error })),
+          lastUpdated: Date.now(),
+        },
+      }
+
+    case 'MCP_SERVER_STATE':
+      return {
+        ...state,
+        subsystems: {
+          ...state.subsystems,
+          mcp: upsertBy(state.subsystems.mcp, 'name', action.serverName, s => ({ ...s, state: action.state, error: action.error })),
+          lastUpdated: Date.now(),
+        },
+      }
+
+    case 'PLUGIN_STATUS':
+      return {
+        ...state,
+        subsystems: {
+          ...state.subsystems,
+          plugins: upsertBy(state.subsystems.plugins, 'id', action.pluginId, s => ({ ...s, name: action.name, status: action.status, error: action.error })),
+          lastUpdated: Date.now(),
+        },
+      }
+
+    case 'SKILLS_LOADED':
+      return state // informational only — real data arrives via SUBSYSTEM_STATUS
+
     default:
       return state
   }
@@ -383,4 +633,24 @@ export function useAppState(): AppState {
 
 export function useAppDispatch(): Dispatch<AppAction> {
   return useContext(DispatchContext)
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Update an item in an array by key, or append a stub if missing. */
+function upsertBy<T extends Record<string, any>>(
+  arr: T[],
+  key: keyof T,
+  value: any,
+  updater: (existing: T) => T,
+): T[] {
+  const idx = arr.findIndex(item => item[key] === value)
+  if (idx >= 0) {
+    const copy = [...arr]
+    copy[idx] = updater(copy[idx]!)
+    return copy
+  }
+  return [...arr, updater({ [key]: value } as T)]
 }
