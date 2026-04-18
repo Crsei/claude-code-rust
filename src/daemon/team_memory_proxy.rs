@@ -38,27 +38,8 @@ pub async fn spawn_team_memory_server(
         .ok()
         .and_then(|url| crate::utils::git::parse_github_repo(&url));
 
-    // Compute team memory path: ~/.cc-rust/projects/<sanitized>/memory/team/
-    let team_mem_path = {
-        let sanitized: String = cwd
-            .to_string_lossy()
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '-' || c == '_' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect();
-        dirs::home_dir()
-            .unwrap_or_default()
-            .join(".cc-rust")
-            .join("projects")
-            .join(&sanitized)
-            .join("memory")
-            .join("team")
-    };
+    // Compute team memory path: {data_root}/projects/<sanitized>/memory/team/
+    let team_mem_path = crate::config::paths::team_memory_dir(cwd);
 
     // Resolve the script path relative to the binary location.
     let exe_dir = std::env::current_exe()?
