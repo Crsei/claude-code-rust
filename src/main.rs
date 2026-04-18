@@ -584,6 +584,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     // ── B.8: Create QueryEngine ──────────────────────────────────────
     let engine = Arc::new(QueryEngine::new(engine_config));
     info!(session = %engine.session_id, "QueryEngine created");
+    crate::dashboard::init_session_id(engine.session_id.as_str());
 
     // Apply the fully-resolved AppState (with hooks, permissions, etc.)
     engine.update_app_state(|s| *s = app_state);
