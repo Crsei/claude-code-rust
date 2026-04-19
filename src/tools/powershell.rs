@@ -8,7 +8,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::sandbox::{make_runner, policy_from_app_state};
+use crate::sandbox::{make_runner, policy_from_app_state, preflight_shell_command};
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{
     InterruptBehavior, PermissionResult, Tool, ToolProgress, ToolResult, ToolUseContext,
@@ -180,6 +180,18 @@ impl Tool for PowerShellTool {
         let app_state_arc = (ctx.get_app_state)();
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let policy = policy_from_app_state(&app_state_arc, cwd.clone(), false);
+
+        if let Err(err) = preflight_shell_command(&policy, &command) {
+            return Ok(ToolResult {
+                data: json!({
+                    "error": err.to_string(),
+                    "sandbox_blocked": true,
+                }),
+                new_messages: vec![],
+                ..Default::default()
+            });
+        }
+
         let is_excluded = policy.is_excluded_command(&command);
         if is_excluded && !policy.allow_unsandboxed_commands {
             return Ok(ToolResult {

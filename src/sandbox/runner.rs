@@ -15,7 +15,9 @@ use tokio::process::Command;
 
 use super::availability::Mechanism;
 use super::errors::SandboxError;
+use super::network::NetworkDecision;
 use super::policy::SandboxPolicy;
+use crate::types::tool::ToolPermissionRulesBySource;
 
 /// A command pre-assembled for sandboxed execution.
 ///
@@ -67,6 +69,19 @@ pub fn make_runner(policy: &SandboxPolicy) -> Option<Box<dyn SandboxRunner>> {
         Some(Mechanism::Seatbelt) => Some(Box::new(SeatbeltRunner)),
         Some(Mechanism::WindowsRestrictedToken) | None => Some(Box::new(UnsupportedRunner)),
     }
+}
+
+/// Run best-effort in-process sandbox checks that do not depend on the
+/// platform runner.
+///
+/// This currently covers the shell-facing network policy so `--no-network`
+/// and `allowedDomains` remain effective even when a command is excluded from
+/// sandbox wrapping or the OS primitive is unavailable.
+pub fn preflight_shell_command(policy: &SandboxPolicy, command: &str) -> Result<(), SandboxError> {
+    if let NetworkDecision::Denied(err) = policy.network.check_shell_command(command) {
+        return Err(err);
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -367,35 +382,110 @@ pub fn policy_from_app_state(
     use super::policy::SandboxPolicyBuilder;
 
     // Extract deny rules from the permission system for filesystem merging.
-    let mut deny_reads: Vec<String> = Vec::new();
-    let mut deny_writes: Vec<String> = Vec::new();
-    for deny_rules in app_state.tool_permission_context.always_deny_rules.values() {
-        for rule in deny_rules {
-            if let Some(path) = rule.strip_prefix("Read(").and_then(|s| s.strip_suffix(')')) {
-                deny_reads.push(path.to_string());
-            } else if let Some(path) = rule.strip_prefix("Edit(").and_then(|s| s.strip_suffix(')'))
-            {
-                deny_writes.push(path.to_string());
-            }
-        }
-    }
+    let deny_reads = collect_permission_paths(
+        &app_state.tool_permission_context.always_deny_rules,
+        &["Read"],
+    );
+    let deny_writes = collect_permission_paths(
+        &app_state.tool_permission_context.always_deny_rules,
+        &["Edit", "Write", "MultiEdit", "NotebookEdit"],
+    );
+    let mut allow_reads = collect_permission_paths(
+        &app_state.tool_permission_context.always_allow_rules,
+        &["Read"],
+    );
+    let mut allow_writes = collect_permission_paths(
+        &app_state.tool_permission_context.always_allow_rules,
+        &["Edit", "Write", "MultiEdit", "NotebookEdit"],
+    );
+    allow_reads.extend(collect_permission_paths(
+        &app_state.tool_permission_context.session_allow_rules,
+        &["Read"],
+    ));
+    allow_writes.extend(collect_permission_paths(
+        &app_state.tool_permission_context.session_allow_rules,
+        &["Edit", "Write", "MultiEdit", "NotebookEdit"],
+    ));
 
     // Additional working directories from permissions are extra workspaces.
-    let extra_workspaces: Vec<PathBuf> = app_state
+    let mut extra_workspaces: Vec<PathBuf> = Vec::new();
+    for dir in app_state
         .tool_permission_context
         .additional_working_directories
         .values()
-        .filter(|dir| !dir.read_only)
-        .map(|dir| PathBuf::from(&dir.path))
-        .collect();
+    {
+        allow_reads.push(dir.path.clone());
+        if !dir.read_only {
+            allow_writes.push(dir.path.clone());
+            extra_workspaces.push(PathBuf::from(&dir.path));
+        }
+    }
 
     SandboxPolicyBuilder::new(workspace)
         .settings(app_state.settings.sandbox.clone())
         .no_network(force_no_network)
         .extra_workspaces(extra_workspaces)
+        .permission_allow_reads(allow_reads)
+        .permission_allow_writes(allow_writes)
         .permission_deny_reads(deny_reads)
         .permission_deny_writes(deny_writes)
         .build()
+}
+
+fn collect_permission_paths(
+    rules_by_source: &ToolPermissionRulesBySource,
+    tool_names: &[&str],
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for rules in rules_by_source.values() {
+        for rule in rules {
+            let Some(path) = permission_rule_to_path(rule, tool_names) else {
+                continue;
+            };
+            if !out.contains(&path) {
+                out.push(path);
+            }
+        }
+    }
+    out
+}
+
+fn permission_rule_to_path(rule: &str, tool_names: &[&str]) -> Option<String> {
+    let open = rule.find('(')?;
+    if !rule.ends_with(')') {
+        return None;
+    }
+    let tool_name = rule[..open].trim();
+    if !tool_names.contains(&tool_name) {
+        return None;
+    }
+    let pattern = rule[open + 1..rule.len() - 1].trim();
+    sanitize_permission_path_pattern(pattern)
+}
+
+fn sanitize_permission_path_pattern(pattern: &str) -> Option<String> {
+    let mut value = pattern
+        .trim()
+        .strip_prefix("prefix:")
+        .unwrap_or(pattern)
+        .trim();
+    if value.is_empty() || value == "*" {
+        return None;
+    }
+
+    let trimmed_stars = value.trim_end_matches('*');
+    if trimmed_stars.contains('*') {
+        return None;
+    }
+    value = trimmed_stars;
+
+    if value.ends_with('/') || value.ends_with('\\') {
+        value = &value[..value.len() - 1];
+    }
+    if value.is_empty() {
+        return Some("/".into());
+    }
+    Some(value.to_string())
 }
 
 #[cfg(test)]
@@ -489,5 +579,55 @@ mod tests {
         // Deny-write should have /etc/passwd
         let writes = policy.paths.deny_write_paths();
         assert!(writes.iter().any(|p| p.ends_with("passwd")));
+    }
+
+    #[test]
+    fn preflight_shell_command_checks_network_policy() {
+        use super::super::policy::SandboxPolicyBuilder;
+        use crate::config::settings::{SandboxNetworkSettings, SandboxSettings};
+
+        let policy = SandboxPolicyBuilder::new(std::path::PathBuf::from("/proj"))
+            .settings(SandboxSettings {
+                enabled: Some(true),
+                network: SandboxNetworkSettings {
+                    allowed_domains: vec!["example.com".into()],
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .build();
+
+        let err = preflight_shell_command(&policy, "curl https://evil.net")
+            .expect_err("disallowed host should be blocked");
+        assert!(matches!(err, SandboxError::DomainNotAllowed { .. }));
+    }
+
+    #[test]
+    fn policy_from_app_state_picks_up_allow_rules() {
+        use crate::types::app_state::AppState;
+        use std::collections::HashMap;
+
+        let mut app_state = AppState::default();
+        let mut rules = HashMap::new();
+        rules.insert(
+            "project".to_string(),
+            vec![
+                "Read(/opt/tools/*)".to_string(),
+                "Edit(/tmp/work/*)".to_string(),
+            ],
+        );
+        app_state.tool_permission_context.always_allow_rules = rules;
+
+        let policy = policy_from_app_state(&app_state, std::path::PathBuf::from("/proj"), false);
+        assert!(policy
+            .paths
+            .allow_read_paths()
+            .iter()
+            .any(|p| p == &std::path::PathBuf::from("/opt/tools")));
+        assert!(policy
+            .paths
+            .allow_write_paths()
+            .iter()
+            .any(|p| p == &std::path::PathBuf::from("/tmp/work")));
     }
 }
