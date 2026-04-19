@@ -42,6 +42,9 @@ pub mod status;
 // Workspace
 pub mod add_dir;
 
+// Sandbox
+pub mod sandbox_cmd;
+
 // Export
 pub mod audit_export;
 pub mod export;
@@ -393,6 +396,12 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "Add a new working directory".into(),
             handler: Box::new(add_dir::AddDirHandler),
+        },
+        Command {
+            name: "sandbox".into(),
+            aliases: vec![],
+            description: "View or toggle sandbox + network access settings".into(),
+            handler: Box::new(sandbox_cmd::SandboxHandler),
         },
     ]
 }

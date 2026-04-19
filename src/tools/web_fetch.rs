@@ -17,6 +17,7 @@ use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
+use crate::sandbox::{policy_from_app_state, NetworkDecision};
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
 
@@ -276,7 +277,7 @@ impl Tool for WebFetchTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _parent: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
@@ -284,6 +285,24 @@ impl Tool for WebFetchTool {
         let _prompt = input.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
 
         let url = normalise_url(raw_url)?;
+
+        // Sandbox network policy check (runs before the cache so that a
+        // configuration change is noticed immediately rather than returning
+        // stale-but-allowed content).
+        let app_state = (ctx.get_app_state)();
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let policy = policy_from_app_state(&app_state, cwd, false);
+        if let NetworkDecision::Denied(err) = policy.network.check_url(&url) {
+            return Ok(ToolResult {
+                data: json!({
+                    "url": url,
+                    "error": err.to_string(),
+                    "sandbox_blocked": true,
+                }),
+                new_messages: vec![],
+                ..Default::default()
+            });
+        }
 
         // Check cache first
         if let Some((cached, status)) = cache_get(&url) {

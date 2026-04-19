@@ -244,6 +244,22 @@ pub fn validate_settings(settings: &SettingsJson) -> Vec<ValidationWarning> {
         }
     }
 
+    // Validate sandbox mode
+    if let Some(mode) = &settings.sandbox.mode {
+        let valid = ["read-only", "workspace", "full"];
+        if !valid.contains(&mode.to_lowercase().as_str()) {
+            warnings.push(ValidationWarning {
+                field: "sandbox.mode".to_string(),
+                message: format!(
+                    "Unknown sandbox mode '{}'. Known modes: {}.",
+                    mode,
+                    valid.join(", ")
+                ),
+                severity: WarningSeverity::Error,
+            });
+        }
+    }
+
     warnings
 }
 

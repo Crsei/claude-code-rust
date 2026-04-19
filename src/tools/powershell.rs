@@ -8,6 +8,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
+use crate::sandbox::{make_runner, policy_from_app_state};
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{
     InterruptBehavior, PermissionResult, Tool, ToolProgress, ToolResult, ToolUseContext,
@@ -116,7 +117,27 @@ impl Tool for PowerShellTool {
         ValidationResult::Ok
     }
 
-    async fn check_permissions(&self, input: &Value, _ctx: &ToolUseContext) -> PermissionResult {
+    async fn check_permissions(&self, input: &Value, ctx: &ToolUseContext) -> PermissionResult {
+        // Sandbox escape-hatch gate: same rule as BashTool.
+        let wants_escape = input
+            .get("dangerouslyDisableSandbox")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if wants_escape {
+            let app_state = (ctx.get_app_state)();
+            if !app_state
+                .settings
+                .sandbox
+                .allow_unsandboxed_commands
+                .unwrap_or(true)
+            {
+                return PermissionResult::Deny {
+                    message: "sandbox.allowUnsandboxedCommands=false rejects \
+                              dangerouslyDisableSandbox"
+                        .to_string(),
+                };
+            }
+        }
         PermissionResult::Allow {
             updated_input: input.clone(),
         }
@@ -125,7 +146,7 @@ impl Tool for PowerShellTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _parent_message: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
@@ -151,8 +172,56 @@ impl Tool for PowerShellTool {
             cmd.env(&k, &v);
         }
 
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
+        // Sandbox integration — same flow as BashTool.
+        let escape = input
+            .get("dangerouslyDisableSandbox")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let app_state_arc = (ctx.get_app_state)();
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let policy = policy_from_app_state(&app_state_arc, cwd.clone(), false);
+        let is_excluded = policy.is_excluded_command(&command);
+        if is_excluded && !policy.allow_unsandboxed_commands {
+            return Ok(ToolResult {
+                data: json!({
+                    "error": crate::sandbox::SandboxError::EscapeHatchDisabled {
+                        command: command.clone()
+                    }
+                    .to_string(),
+                    "sandbox_blocked": true,
+                }),
+                new_messages: vec![],
+                ..Default::default()
+            });
+        }
+
+        if !escape && !is_excluded {
+            if let Some(runner) = make_runner(&policy) {
+                match runner.prepare(cmd, &policy, &cwd) {
+                    Ok(prepared) => {
+                        cmd = prepared.cmd;
+                        cmd.stdout(std::process::Stdio::piped());
+                        cmd.stderr(std::process::Stdio::piped());
+                    }
+                    Err(e) => {
+                        return Ok(ToolResult {
+                            data: json!({
+                                "error": e.to_string(),
+                                "sandbox_blocked": true,
+                            }),
+                            new_messages: vec![],
+                            ..Default::default()
+                        });
+                    }
+                }
+            } else {
+                cmd.stdout(std::process::Stdio::piped());
+                cmd.stderr(std::process::Stdio::piped());
+            }
+        } else {
+            cmd.stdout(std::process::Stdio::piped());
+            cmd.stderr(std::process::Stdio::piped());
+        }
 
         let timeout_duration = resolve_timeout(Some(timeout_ms));
 

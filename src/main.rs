@@ -18,6 +18,7 @@ mod config;
 mod engine;
 mod permissions;
 mod query;
+mod sandbox;
 mod session;
 mod tools;
 mod types;
@@ -199,6 +200,12 @@ struct Cli {
     /// browser tool surface via MCP.
     #[arg(long = "claude-in-chrome-mcp", hide = true)]
     claude_in_chrome_mcp: bool,
+
+    /// Disable all network access for the current session. Forwarded to
+    /// [`crate::sandbox::SandboxPolicy`] so shell subprocesses and WebFetch
+    /// are both blocked.
+    #[arg(long = "no-network")]
+    no_network: bool,
 
     /// Launch web UI mode (HTTP server with chat interface).
     #[arg(long)]
@@ -384,9 +391,8 @@ fn main() -> ExitCode {
             .and_then(|cfg| cfg.claude_in_chrome_default_enabled);
         let chrome_wanted = chrome_requested(&cli, chrome_config_default);
         if chrome_wanted {
-            browser_servers.insert(
-                crate::browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string(),
-            );
+            browser_servers
+                .insert(crate::browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string());
         }
         crate::browser::detection::install_browser_servers(browser_servers);
 
@@ -581,9 +587,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         // this early means the system prompt, permissions, and /mcp list all
         // already know the capability is expected.
         if chrome_wanted {
-            browser_servers.insert(
-                crate::browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string(),
-            );
+            browser_servers
+                .insert(crate::browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string());
         }
         if !browser_servers.is_empty() {
             info!(
@@ -661,6 +666,13 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     if cli.permission_mode.is_some() {
         sources.insert("permissionMode".into(), settings::SettingsSource::Cli);
     }
+    // --no-network is a CLI-level override that forces network.disabled=true
+    // on the sandbox section for the remainder of the session.
+    let mut effective_sandbox = merged_config.sandbox.clone();
+    if cli.no_network {
+        effective_sandbox.network.disabled = Some(true);
+        sources.insert("sandbox".into(), settings::SettingsSource::Cli);
+    }
 
     let app_state = AppState {
         settings: SettingsJson {
@@ -670,7 +682,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             verbose: Some(cli.verbose),
             permission_mode: merged_config.permission_mode.clone(),
             permissions: merged_config.permissions.clone(),
-            sandbox: merged_config.sandbox.clone(),
+            sandbox: effective_sandbox,
             status_line: merged_config.status_line.clone(),
             spinner_tips: merged_config.spinner_tips.clone(),
             output_style: merged_config.output_style.clone(),
@@ -827,17 +839,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
         match AuditSink::init(engine.session_id.as_str(), &meta, audit_config) {
             Ok(sink) => {
-                let ctx = AuditContext::new(
-                    engine.session_id.as_str(),
-                    source_mode,
-                    sink,
-                );
+                let ctx = AuditContext::new(engine.session_id.as_str(), source_mode, sink);
                 // Emit session.start
-                ctx.emit_simple(
-                    EventKind::SessionStart,
-                    Stage::Session,
-                    Outcome::Started,
-                );
+                ctx.emit_simple(EventKind::SessionStart, Stage::Session, Outcome::Started);
                 engine.set_audit_context(ctx);
                 debug!("audit sink initialized for session {}", engine.session_id);
             }
@@ -1123,19 +1127,23 @@ fn build_tool_permission_context(
     let mut always_ask_rules: HashMap<String, Vec<String>> = HashMap::new();
     let mut additional_working_directories = HashMap::new();
 
-    let push_rules = |map: &mut HashMap<String, Vec<String>>, source: SettingsSource, items: &[String]| {
-        if items.is_empty() {
-            return;
-        }
-        map.entry(source.as_str().to_string())
-            .or_default()
-            .extend(items.iter().cloned());
-    };
+    let push_rules =
+        |map: &mut HashMap<String, Vec<String>>, source: SettingsSource, items: &[String]| {
+            if items.is_empty() {
+                return;
+            }
+            map.entry(source.as_str().to_string())
+                .or_default()
+                .extend(items.iter().cloned());
+        };
 
     // Pull each layer's rules into the right bucket. We iterate from
     // lowest -> highest priority so /permissions show prints them in a
     // stable order; the matcher itself treats sources uniformly.
-    let layers: [(SettingsSource, Option<&crate::config::settings::RawSettings>); 4] = [
+    let layers: [(
+        SettingsSource,
+        Option<&crate::config::settings::RawSettings>,
+    ); 4] = [
         (SettingsSource::Managed, loaded.managed.as_ref()),
         (SettingsSource::User, loaded.user.as_ref()),
         (SettingsSource::Project, loaded.project.as_ref()),
@@ -1170,10 +1178,7 @@ fn build_tool_permission_context(
         always_deny_rules,
         always_ask_rules,
         session_allow_rules: HashMap::new(),
-        is_bypass_permissions_mode_available: merged
-            .permissions
-            .enable_bypass_mode
-            .unwrap_or(true),
+        is_bypass_permissions_mode_available: merged.permissions.enable_bypass_mode.unwrap_or(true),
         is_auto_mode_available: Some(merged.permissions.enable_auto_mode.unwrap_or(true)),
         pre_plan_mode: None,
     }
