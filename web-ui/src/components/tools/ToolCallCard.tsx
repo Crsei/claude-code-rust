@@ -1,8 +1,14 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Terminal, FileText, Search, Wrench, Check, X, Loader2 } from 'lucide-react'
-import type { ContentBlock } from '@/lib/types'
+import { ChevronDown, ChevronRight, Terminal, FileText, Search, Wrench, Check, X, Loader2, Globe } from 'lucide-react'
+import type { ContentBlock, ToolResultInnerBlock } from '@/lib/types'
 import { BashOutput } from './BashOutput'
 import { FileChangeCard } from './FileChangeCard'
+import { BrowserToolResult } from './BrowserToolResult'
+import {
+  isBrowserTool,
+  classifyBrowserTool,
+  categoryColorClass,
+} from '@/lib/browser-tools'
 
 interface ToolCallCardProps {
   block: ContentBlock
@@ -15,6 +21,7 @@ interface ToolCallCardProps {
 /** Icon for known tool names */
 function toolIcon(name: string) {
   const n = name.toLowerCase()
+  if (isBrowserTool(name)) return <Globe className="h-3.5 w-3.5" />
   if (n === 'bash' || n === 'execute_bash') return <Terminal className="h-3.5 w-3.5" />
   if (n.includes('file') || n.includes('read') || n.includes('write') || n.includes('edit'))
     return <FileText className="h-3.5 w-3.5" />
@@ -67,6 +74,7 @@ function isFileTool(name?: string): boolean {
 export function ToolCallCard({ block, result, isRunning }: ToolCallCardProps) {
   const [expanded, setExpanded] = useState(false)
   const toolName = block.name || 'unknown_tool'
+  const browserCategory = classifyBrowserTool(toolName)
 
   // Format input for display
   const inputStr = block.input
@@ -91,6 +99,14 @@ export function ToolCallCard({ block, result, isRunning }: ToolCallCardProps) {
         }
         <span className="text-muted-foreground">{toolIcon(toolName)}</span>
         <span className="font-mono font-medium text-foreground">{toolName}</span>
+        {browserCategory && (
+          <span
+            className={`shrink-0 rounded-sm border px-1 text-[9px] uppercase tracking-wide ${categoryColorClass(browserCategory)}`}
+            title={`Browser MCP · ${browserCategory}`}
+          >
+            browser·{browserCategory}
+          </span>
+        )}
         {inputPreview && !expanded && (
           <span className="truncate text-muted-foreground font-mono ml-1">{inputPreview}</span>
         )}
@@ -116,13 +132,24 @@ export function ToolCallCard({ block, result, isRunning }: ToolCallCardProps) {
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">
                 Output {result.is_error && <span className="text-red-400 ml-1">(error)</span>}
               </div>
-              {isBashTool(toolName) ? (
-                <BashOutput content={result.content || ''} isError={result.is_error} />
+              {browserCategory ? (
+                <BrowserToolResult
+                  toolName={toolName}
+                  category={browserCategory}
+                  content={result.content}
+                  isError={result.is_error}
+                />
+              ) : isBashTool(toolName) ? (
+                <BashOutput content={stringifyContent(result.content)} isError={result.is_error} />
               ) : isFileTool(toolName) ? (
-                <FileChangeCard content={result.content || ''} toolName={toolName} input={block.input} />
+                <FileChangeCard
+                  content={stringifyContent(result.content)}
+                  toolName={toolName}
+                  input={block.input}
+                />
               ) : (
                 <pre className="overflow-x-auto rounded bg-muted/50 px-2 py-1.5 text-[11px] font-mono text-foreground/80 max-h-60 overflow-y-auto whitespace-pre-wrap">
-                  {result.content || '(empty)'}
+                  {stringifyContent(result.content) || '(empty)'}
                 </pre>
               )}
             </div>
@@ -139,6 +166,15 @@ export function ToolCallCard({ block, result, isRunning }: ToolCallCardProps) {
       )}
     </div>
   )
+}
+
+/** Flatten a tool_result.content into a string (it can be a string or array). */
+function stringifyContent(content: string | ToolResultInnerBlock[] | undefined): string {
+  if (!content) return ''
+  if (typeof content === 'string') return content
+  return content
+    .map(b => (b.type === 'text' ? (b.text ?? '') : b.type === 'image' ? '[image]' : ''))
+    .join('\n')
 }
 
 /** Create a short preview of tool input */

@@ -58,6 +58,9 @@ pub mod compact;
 pub mod mcp_cmd;
 pub mod plugin_cmd;
 
+// First-party Chrome integration (Claude in Chrome)
+pub mod chrome_cmd;
+
 // KAIROS / assistant commands
 pub mod assistant;
 pub mod brief;
@@ -324,6 +327,12 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "MCP server management (list, status)".into(),
             handler: Box::new(mcp_cmd::McpHandler),
+        },
+        Command {
+            name: "chrome".into(),
+            aliases: vec![],
+            description: "Claude in Chrome (first-party integration) status + reconnect".into(),
+            handler: Box::new(chrome_cmd::ChromeHandler),
         },
         Command {
             name: "plugin".into(),

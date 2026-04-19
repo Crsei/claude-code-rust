@@ -144,3 +144,7 @@ portable-pty = "0.9"
 vt100 = "0.15"
 which = "7"
 serial_test = "3"
+
+# POSIX syscalls (Unix socket permissions, PID liveness for Chrome native host #5)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

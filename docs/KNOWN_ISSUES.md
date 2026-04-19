@@ -304,3 +304,40 @@ Each issue includes a description, reproduction steps, and current status.
 - `ui/src/store/message-model.test.ts`
 - `ui/src/components/ToolActivity.tsx`
 - `ui/src/theme.ts`
+
+---
+
+## Browser MCP rendering path not exercised against a real server
+
+**Status**: Open (2026-04-18)
+
+**Description**: Issues #2 and #3 added the self-hosted Browser MCP integration — detection, system-prompt injection, category-aware permission prompts, screenshot/console/network rendering in the Web UI, and an e2e smoke test for the config→prompt path. None of the runtime rendering has been exercised against a real third-party browser MCP server (e.g. `mcp-chrome`, `@playwright/mcp`, `browser-use-mcp`). The smoke test only validates the config-flag detection path; it does not connect to a live MCP server, drive a browser, or round-trip a screenshot.
+
+Specifically, the following behaviors compile and type-check but have NOT been observed end-to-end:
+
+1. Base64 image bytes flowing from Rust `ToolResultContentInfo::Image` → SSE `user_replay` → Web UI `<img src="data:…;base64,…">`.
+2. `BrowserToolResult` screenshot expand/collapse with a real PNG payload and realistic size (we don't know yet whether large screenshots stall the SSE pipe, bloat memory, or look wrong at default viewport dimensions).
+3. Structured console/network rendering in `BrowserToolResult` against actual shapes emitted by real servers (our JSON-shape detector is based on docs, not captures — field names like `url`/`method`/`level`/`text` may not match all servers).
+4. `tools/call` return values for `navigate` / `read_page` / `click` / `fill` arriving at the `McpToolWrapper` and producing the expected `[category] summary` display preview.
+5. Permission dialog wording in the TUI for a real server's tool name (tested via unit tests, but not via a real live `/permission-request` round trip).
+
+**Reproduction (pending)**:
+1. Install `mcp-chrome` (or another Browser MCP server) and add it to `.cc-rust/settings.json` per `docs/reference/browser-mcp-config.md`.
+2. Start cc-rust with a working API key.
+3. Ask the assistant to open a page, take a snapshot, click something, read back the result.
+4. Observe: screenshot renders inline in Web UI; console/network results render as structured lists; browser category badge appears on `ToolCallCard`; permission prompts use category-aware wording.
+
+**Next steps when exercised**:
+- Capture a real `list_console_messages` / `list_network_requests` JSON payload and add it as a regression fixture to `BrowserToolResult.test.tsx` / Rust `tool_rendering` tests.
+- Measure Web UI memory footprint with a screenshot attached to each tool result over a long session (SSE carries full base64 — watch for growth).
+- Decide whether to add a size cap / lazy-load path when a screenshot exceeds N KB.
+
+**Related files**:
+- `src/browser/` — detection, prompt, permissions, tool_rendering
+- `src/ipc/protocol/base.rs` — `ToolResultContentInfo::Image { data }`
+- `src/ipc/sdk_mapper.rs` — image forwarding
+- `web-ui/src/components/tools/BrowserToolResult.tsx`
+- `web-ui/src/components/tools/ToolCallCard.tsx`
+- `web-ui/src/lib/browser-tools.ts`
+- `ui/src/ipc/protocol.ts` — `ToolResultContentInfo` + `tool_result.content_blocks`
+- `tests/e2e_browser_mcp.rs` — current smoke coverage (config flag only)
