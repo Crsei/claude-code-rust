@@ -396,12 +396,21 @@ fn main() -> ExitCode {
         }
         crate::browser::detection::install_browser_servers(browser_servers);
 
+        // Best-effort: load merged settings so --dump-system-prompt reflects
+        // language/output_style overrides without requiring full bootstrap.
+        let dump_settings = crate::config::settings::load_effective(std::path::Path::new(&cwd))
+            .ok()
+            .map(|loaded| loaded.effective);
+        let dump_lang = dump_settings.as_ref().and_then(|s| s.language.clone());
+        let dump_style = dump_settings.as_ref().and_then(|s| s.output_style.clone());
         let (parts, _, _) = crate::engine::system_prompt::build_system_prompt(
             cli.system_prompt.as_deref(),
             cli.append_system_prompt.as_deref(),
             &tools,
             model,
             &cwd,
+            dump_lang.as_deref(),
+            dump_style.as_deref(),
         );
         for part in &parts {
             println!("{}", part);

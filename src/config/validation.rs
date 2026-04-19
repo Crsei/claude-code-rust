@@ -244,6 +244,54 @@ pub fn validate_settings(settings: &SettingsJson) -> Vec<ValidationWarning> {
         }
     }
 
+    // Validate output style. Built-in names always pass; unknown names
+    // are accepted but flagged Info so the user knows we'll look for a
+    // matching <cwd>/.cc-rust/output-styles/<name>.md file at runtime.
+    if let Some(style) = &settings.output_style {
+        let trimmed = style.trim();
+        if trimmed.is_empty() {
+            warnings.push(ValidationWarning {
+                field: "outputStyle".to_string(),
+                message: "outputStyle is set but empty.".into(),
+                severity: WarningSeverity::Warning,
+            });
+        } else {
+            let lower = trimmed.to_ascii_lowercase();
+            if !crate::engine::output_style::BUILT_IN_NAMES
+                .iter()
+                .any(|n| *n == lower)
+            {
+                warnings.push(ValidationWarning {
+                    field: "outputStyle".to_string(),
+                    message: format!(
+                        "Unknown built-in style '{}'. Expected one of {}, or a custom file in .cc-rust/output-styles/.",
+                        trimmed,
+                        crate::engine::output_style::BUILT_IN_NAMES.join(", "),
+                    ),
+                    severity: WarningSeverity::Info,
+                });
+            }
+        }
+    }
+
+    // Validate effort level. Numeric overrides are accepted; unknown
+    // labels are flagged Warning so the user knows they'll get the
+    // default thinking budget at runtime.
+    if let Some(effort) = &settings.effort_level {
+        let trimmed = effort.trim();
+        if !trimmed.is_empty() && crate::engine::effort::effort_to_budget_tokens(trimmed).is_none()
+        {
+            warnings.push(ValidationWarning {
+                field: "effortLevel".to_string(),
+                message: format!(
+                    "Unknown effort '{}'. Expected low/medium/high or a positive integer token count.",
+                    trimmed
+                ),
+                severity: WarningSeverity::Warning,
+            });
+        }
+    }
+
     // Validate sandbox mode
     if let Some(mode) = &settings.sandbox.mode {
         let valid = ["read-only", "workspace", "full"];

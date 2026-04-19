@@ -79,7 +79,10 @@
         "format": { "type": "string" }
       }
     },
-    "outputStyle": { "type": "string" },
+    "outputStyle": {
+      "type": "string",
+      "description": "Built-in: default, explanatory, learning. Custom names are loaded from <cwd>/.cc-rust/output-styles/<name>.md or <data_root>/output-styles/<name>.md."
+    },
     "language": { "type": "string" },
     "voiceEnabled": { "type": "boolean" },
     "editorMode": { "type": "string", "enum": ["normal", "vim"] },
@@ -95,7 +98,10 @@
     },
     "terminalProgressBarEnabled": { "type": "boolean" },
     "availableModels": { "type": "array", "items": { "type": "string" } },
-    "effortLevel": { "type": "string" },
+    "effortLevel": {
+      "type": "string",
+      "description": "Thinking budget label (low|medium|high) or a positive integer token count. low=4096, medium=10240, high=24576."
+    },
     "fastMode": { "type": "boolean" },
     "fastModePerSessionOptIn": { "type": "boolean" },
     "teammateMode": { "type": "boolean" },

@@ -220,6 +220,16 @@ impl QueryEngine {
             // PHASE B: System Prompt Build
             // ================================================================
 
+            // Pull live language/output_style off AppState so /config set
+            // takes effect on the next submit without restarting the engine.
+            let (cfg_language, cfg_output_style) = {
+                let s = state_ref.read();
+                (
+                    s.app_state.settings.language.clone(),
+                    s.app_state.settings.output_style.clone(),
+                )
+            };
+
             let (system_prompt_parts, user_context, system_context) =
                 system_prompt::build_system_prompt(
                     config.custom_system_prompt.as_deref(),
@@ -227,6 +237,8 @@ impl QueryEngine {
                     &tools_snapshot,
                     &model_name,
                     &config.cwd,
+                    cfg_language.as_deref(),
+                    cfg_output_style.as_deref(),
                 );
 
             // Fire InstructionsLoaded hook if CLAUDE.md context was injected
