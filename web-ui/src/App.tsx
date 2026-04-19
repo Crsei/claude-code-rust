@@ -1,16 +1,27 @@
 import { useEffect, useState, useCallback } from 'react'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { Sidebar } from '@/components/sidebar/Sidebar'
+import { SessionSidebar } from '@/components/sessions/SessionSidebar'
 import { DebugPanel } from '@/components/debug/DebugPanel'
 import { useChatStore } from '@/lib/store'
-import { fetchAppState, checkConnection } from '@/lib/api'
-import { Cpu, Shield, Bug, Settings, PanelRightOpen, Wifi, WifiOff } from 'lucide-react'
+import { fetchAppState, checkConnection, fetchSessions } from '@/lib/api'
+import {
+  Bug,
+  Cpu,
+  MessageSquare,
+  PanelRightOpen,
+  Settings,
+  Shield,
+  WifiOff,
+} from 'lucide-react'
 
 export default function App() {
   const appState = useChatStore((s) => s.appState)
   const debugPanelOpen = useChatStore((s) => s.debugPanelOpen)
   const toggleDebug = useChatStore((s) => s.toggleDebugPanel)
+  const setSessions = useChatStore((s) => s.setSessions)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sessionsOpen, setSessionsOpen] = useState(true)
   const [connected, setConnected] = useState(true)
 
   // Fetch app state on mount + periodic health check
@@ -21,6 +32,18 @@ export default function App() {
         setConnected(true)
       })
       .catch(() => setConnected(false))
+
+    // Prime the session sidebar with an initial list so the user can see
+    // their history immediately without clicking refresh.
+    fetchSessions()
+      .then((res) =>
+        setSessions({
+          sessions: res.sessions,
+          currentWorkspace: res.current_workspace,
+          activeSessionId: res.active_session_id,
+        }),
+      )
+      .catch(() => { /* sidebar shows its own empty state on failure */ })
 
     // Health check every 30s
     const interval = setInterval(async () => {
@@ -35,7 +58,7 @@ export default function App() {
       }
     }, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [setSessions])
 
   // Ctrl+Shift+D keyboard shortcut for debug panel
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -52,10 +75,25 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden">
+      {/* Left: session sidebar */}
+      <SessionSidebar
+        open={sessionsOpen}
+        onClose={() => setSessionsOpen(false)}
+      />
+
       {/* Main area */}
       <main className="flex flex-1 flex-col overflow-hidden min-w-0">
         {/* Header bar */}
         <header className="flex h-12 items-center border-b border-border px-3 sm:px-4 gap-2 sm:gap-3 shrink-0">
+          <button
+            onClick={() => setSessionsOpen((v) => !v)}
+            className={`rounded p-1 transition-colors ${
+              sessionsOpen ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'
+            }`}
+            title={sessionsOpen ? 'Hide sessions' : 'Show sessions'}
+          >
+            <MessageSquare className="h-4 w-4" />
+          </button>
           <h1 className="text-sm font-semibold text-foreground shrink-0">cc-rust</h1>
           <span className="text-xs text-muted-foreground hidden sm:inline">Web UI</span>
 

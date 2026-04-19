@@ -1,13 +1,24 @@
 //! Axum route handlers for the web chat API.
 
+use std::path::Path;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{
+    extract::{Path as AxumPath, State},
+    http::StatusCode,
+    response::IntoResponse,
+    Json,
+};
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use tracing::{info, warn};
 
+use crate::bootstrap::SessionId;
+use crate::engine::lifecycle::QueryEngine;
 use crate::engine::sdk_types::SdkMessage;
-use crate::types::config::QuerySource;
+use crate::session::{resume as session_resume, storage};
+use crate::types::config::{QueryEngineConfig, QuerySource};
+use crate::types::message::{ContentBlock, Message, MessageContent};
 use crate::types::tool::PermissionMode;
 
 use super::sse::sdk_stream_to_sse;
@@ -121,7 +132,7 @@ pub async fn chat_handler(
     state.is_streaming.store(true, Ordering::SeqCst);
 
     // Get the stream from the engine
-    let stream = state.engine.submit_message(&req.message, QuerySource::Sdk);
+    let stream = state.engine().submit_message(&req.message, QuerySource::Sdk);
 
     // Wrap in a stream that clears is_streaming when done
     let is_streaming = state.is_streaming.clone();
@@ -157,21 +168,21 @@ pub async fn abort_handler(
     Json(_req): Json<AbortRequest>,
 ) -> impl IntoResponse {
     info!("POST /api/abort");
-    state.engine.abort();
+    state.engine().abort();
     state.is_streaming.store(false, Ordering::SeqCst);
     StatusCode::OK
 }
 
 /// GET /api/state -- Return current application state (enhanced for Phase 3).
 pub async fn state_handler(State(state): State<WebState>) -> impl IntoResponse {
-    let app_state = state.engine.app_state();
+    let app_state = state.engine().app_state();
     let permission_mode = app_state.tool_permission_context.mode.as_str();
 
     // Get tool names from engine
-    let tool_names: Vec<String> = state.engine.tool_names();
+    let tool_names: Vec<String> = state.engine().tool_names();
 
     // Get usage tracking
-    let usage = state.engine.usage();
+    let usage = state.engine().usage();
 
     // Get command list
     let commands: Vec<CommandInfo> = crate::commands::get_all_commands()
@@ -185,7 +196,7 @@ pub async fn state_handler(State(state): State<WebState>) -> impl IntoResponse {
 
     Json(StateResponse {
         model: app_state.main_loop_model.clone(),
-        session_id: state.engine.session_id.to_string(),
+        session_id: state.engine().session_id.to_string(),
         tools: tool_names,
         permission_mode: permission_mode.to_string(),
         thinking_enabled: app_state.thinking_enabled,
@@ -224,7 +235,7 @@ pub async fn settings_handler(
             }
             // Resolve model aliases
             let resolved = resolve_model_alias(&model);
-            state.engine.update_app_state(|s| {
+            state.engine().update_app_state(|s| {
                 s.main_loop_model = resolved.clone();
                 s.settings.model = Some(resolved.clone());
             });
@@ -244,7 +255,7 @@ pub async fn settings_handler(
                 "plan" => PermissionMode::Plan,
                 _ => PermissionMode::Default,
             };
-            state.engine.update_app_state(|s| {
+            state.engine().update_app_state(|s| {
                 s.tool_permission_context.mode = mode.clone();
             });
             (
@@ -257,7 +268,7 @@ pub async fn settings_handler(
         }
         "set_thinking" => {
             let enabled = req.value.as_bool();
-            state.engine.update_app_state(|s| {
+            state.engine().update_app_state(|s| {
                 s.thinking_enabled = enabled;
             });
             (
@@ -270,7 +281,7 @@ pub async fn settings_handler(
         }
         "set_fast_mode" => {
             let enabled = req.value.as_bool().unwrap_or(false);
-            state.engine.update_app_state(|s| {
+            state.engine().update_app_state(|s| {
                 s.fast_mode = enabled;
             });
             (
@@ -283,7 +294,7 @@ pub async fn settings_handler(
         }
         "set_effort" => {
             let effort = req.value.as_str().map(|s| s.to_string());
-            state.engine.update_app_state(|s| {
+            state.engine().update_app_state(|s| {
                 s.effort_value = effort.clone();
             });
             (
@@ -327,22 +338,22 @@ pub async fn command_handler(
     };
 
     // Build a CommandContext
-    let messages = state.engine.messages();
-    let app_state = state.engine.app_state();
-    let cwd = std::path::PathBuf::from(state.engine.cwd());
+    let messages = state.engine().messages();
+    let app_state = state.engine().app_state();
+    let cwd = std::path::PathBuf::from(state.engine().cwd());
 
     let mut ctx = crate::commands::CommandContext {
         messages,
         cwd,
         app_state: app_state.clone(),
-        session_id: state.engine.session_id.clone(),
+        session_id: state.engine().session_id.clone(),
     };
 
     match cmd.handler.execute(&req.args, &mut ctx).await {
         Ok(result) => {
             // Apply any state mutations from the command
             // Commands mutate ctx.app_state in-place; write it back
-            state.engine.update_app_state(|s| {
+            state.engine().update_app_state(|s| {
                 s.main_loop_model = ctx.app_state.main_loop_model.clone();
                 s.settings = ctx.app_state.settings.clone();
                 s.tool_permission_context = ctx.app_state.tool_permission_context.clone();
@@ -386,8 +397,361 @@ pub async fn command_handler(
 }
 
 // ---------------------------------------------------------------------------
+// Session management endpoints (Phase 2)
+// ---------------------------------------------------------------------------
+
+/// Lightweight description of a workspace used to group sessions.
+#[derive(Serialize)]
+pub struct WorkspaceInfo {
+    pub key: String,
+    pub root: String,
+    pub name: String,
+}
+
+/// Response shape for `GET /api/sessions`.
+#[derive(Serialize)]
+pub struct SessionListResponse {
+    /// Workspace derived from the engine's cwd — the UI uses this to mark
+    /// which group is "current".
+    pub current_workspace: WorkspaceInfo,
+    /// Session id currently loaded in the engine.
+    pub active_session_id: String,
+    /// All known sessions on disk, sorted by last_modified desc.
+    pub sessions: Vec<SessionSummary>,
+}
+
+/// Serializable session summary including derived grouping fields.
+#[derive(Serialize)]
+pub struct SessionSummary {
+    pub session_id: String,
+    pub created_at: i64,
+    pub last_modified: i64,
+    pub message_count: usize,
+    pub cwd: String,
+    pub title: String,
+    pub workspace_key: String,
+    pub workspace_root: String,
+    pub workspace_name: String,
+}
+
+impl From<storage::SessionInfo> for SessionSummary {
+    fn from(s: storage::SessionInfo) -> Self {
+        Self {
+            session_id: s.session_id,
+            created_at: s.created_at,
+            last_modified: s.last_modified,
+            message_count: s.message_count,
+            cwd: s.cwd,
+            title: s.title,
+            workspace_key: s.workspace_key,
+            workspace_root: s.workspace_root,
+            workspace_name: s.workspace_name,
+        }
+    }
+}
+
+/// Simplified message shape used by session detail / resume responses.
+#[derive(Serialize)]
+pub struct StoredMessage {
+    pub uuid: String,
+    pub timestamp: i64,
+    pub role: String,
+    /// Plain-text view of the message (concatenation of text blocks for
+    /// assistant, or the raw text for a user message).
+    pub content: String,
+    /// Structured blocks (text / tool_use / tool_result / thinking / image)
+    /// when available — matches the shape the frontend already renders for
+    /// live messages.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_blocks: Option<Vec<ContentBlock>>,
+}
+
+#[derive(Serialize)]
+pub struct SessionDetailResponse {
+    pub session_id: String,
+    pub created_at: i64,
+    pub last_modified: i64,
+    pub cwd: String,
+    pub title: String,
+    pub workspace_name: String,
+    pub messages: Vec<StoredMessage>,
+}
+
+#[derive(Serialize)]
+pub struct NewSessionResponse {
+    pub session_id: String,
+}
+
+/// GET /api/sessions -- List all sessions with workspace grouping metadata.
+pub async fn sessions_list_handler(State(state): State<WebState>) -> impl IntoResponse {
+    let engine = state.engine();
+    let cwd_str = engine.cwd().to_string();
+    let cwd_path = Path::new(&cwd_str);
+
+    let ws_key = storage::workspace_key(cwd_path);
+    let ws_root = storage::workspace_root(cwd_path);
+    let ws_name = storage::workspace_name(&ws_root);
+
+    let sessions = match storage::list_sessions() {
+        Ok(v) => v,
+        Err(e) => {
+            warn!(error = %e, "failed to list sessions");
+            Vec::new()
+        }
+    };
+
+    let summaries: Vec<SessionSummary> = sessions.into_iter().map(SessionSummary::from).collect();
+
+    Json(SessionListResponse {
+        current_workspace: WorkspaceInfo {
+            key: ws_key,
+            root: ws_root.to_string_lossy().to_string(),
+            name: ws_name,
+        },
+        active_session_id: engine.session_id.to_string(),
+        sessions: summaries,
+    })
+}
+
+/// GET /api/sessions/:id -- Load a session's message history for preview.
+pub async fn session_detail_handler(
+    AxumPath(id): AxumPath<String>,
+    State(_state): State<WebState>,
+) -> impl IntoResponse {
+    info!(session_id = %id, "GET /api/sessions/:id");
+
+    let messages = match session_resume::resume_session(&id) {
+        Ok(m) => m,
+        Err(e) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ApiError {
+                    error: format!("Session not found: {}", e),
+                    code: "session_not_found".into(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    // Look up disk metadata for title / cwd / timestamps.
+    let info = storage::list_sessions()
+        .ok()
+        .and_then(|list| list.into_iter().find(|s| s.session_id == id));
+
+    let (title, cwd, created_at, last_modified, workspace_name) = match info {
+        Some(i) => (
+            i.title,
+            i.cwd,
+            i.created_at,
+            i.last_modified,
+            i.workspace_name,
+        ),
+        None => (String::new(), String::new(), 0, 0, String::new()),
+    };
+
+    let rendered: Vec<StoredMessage> = messages.iter().map(stored_message_from).collect();
+
+    Json(SessionDetailResponse {
+        session_id: id,
+        created_at,
+        last_modified,
+        cwd,
+        title,
+        workspace_name,
+        messages: rendered,
+    })
+    .into_response()
+}
+
+/// POST /api/sessions/new -- Start a fresh session in the current workspace.
+///
+/// The existing engine is detached (its history is preserved on disk by the
+/// auto-save path) and a new engine is constructed in its place with an empty
+/// message history and a new session id.
+pub async fn session_new_handler(State(state): State<WebState>) -> impl IntoResponse {
+    if state.is_streaming.load(Ordering::SeqCst) {
+        return (
+            StatusCode::CONFLICT,
+            Json(ApiError {
+                error: "A query is in progress — abort it before starting a new session".into(),
+                code: "engine_busy".into(),
+            }),
+        )
+            .into_response();
+    }
+
+    let engine = rebuild_engine(&state, None);
+    let new_id = engine.session_id.to_string();
+    state.replace_engine(engine);
+
+    info!(session_id = %new_id, "POST /api/sessions/new");
+    Json(NewSessionResponse {
+        session_id: new_id,
+    })
+    .into_response()
+}
+
+/// POST /api/sessions/:id/resume -- Load an existing session into the engine.
+pub async fn session_resume_handler(
+    AxumPath(id): AxumPath<String>,
+    State(state): State<WebState>,
+) -> impl IntoResponse {
+    if state.is_streaming.load(Ordering::SeqCst) {
+        return (
+            StatusCode::CONFLICT,
+            Json(ApiError {
+                error: "A query is in progress — abort it before switching sessions".into(),
+                code: "engine_busy".into(),
+            }),
+        )
+            .into_response();
+    }
+
+    info!(session_id = %id, "POST /api/sessions/:id/resume");
+
+    let messages = match session_resume::resume_session(&id) {
+        Ok(m) => m,
+        Err(e) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ApiError {
+                    error: format!("Session not found: {}", e),
+                    code: "session_not_found".into(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    let engine = rebuild_engine_with_session_id(&state, Some(messages.clone()), Some(&id));
+    state.replace_engine(engine);
+
+    let rendered: Vec<StoredMessage> = messages.iter().map(stored_message_from).collect();
+
+    let info = storage::list_sessions()
+        .ok()
+        .and_then(|list| list.into_iter().find(|s| s.session_id == id));
+
+    let (title, cwd, created_at, last_modified, workspace_name) = match info {
+        Some(i) => (
+            i.title,
+            i.cwd,
+            i.created_at,
+            i.last_modified,
+            i.workspace_name,
+        ),
+        None => (String::new(), String::new(), 0, 0, String::new()),
+    };
+
+    Json(SessionDetailResponse {
+        session_id: id,
+        created_at,
+        last_modified,
+        cwd,
+        title,
+        workspace_name,
+        messages: rendered,
+    })
+    .into_response()
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Build a fresh engine that inherits the current engine's config, with an
+/// optional seed message list. The new engine gets a freshly minted session id.
+fn rebuild_engine(state: &WebState, seed: Option<Vec<Message>>) -> Arc<QueryEngine> {
+    rebuild_engine_with_session_id(state, seed, None)
+}
+
+/// Rebuild with a caller-provided session id (used by resume so the engine's
+/// auto-save keeps writing back to the resumed session file).
+fn rebuild_engine_with_session_id(
+    state: &WebState,
+    seed: Option<Vec<Message>>,
+    session_id: Option<&str>,
+) -> Arc<QueryEngine> {
+    let current = state.engine();
+    let mut cfg: QueryEngineConfig = current.config_ref().clone();
+    cfg.initial_messages = seed;
+
+    let mut engine = QueryEngine::new(cfg);
+    if let Some(id) = session_id {
+        engine.session_id = SessionId::from_string(id);
+    }
+    Arc::new(engine)
+}
+
+/// Convert an internal `Message` into the lightweight wire form used by the
+/// session detail / resume responses.
+fn stored_message_from(msg: &Message) -> StoredMessage {
+    match msg {
+        Message::User(u) => {
+            let (text, blocks) = match &u.content {
+                MessageContent::Text(t) => (t.clone(), None),
+                MessageContent::Blocks(bs) => {
+                    let text = bs
+                        .iter()
+                        .filter_map(|b| match b {
+                            ContentBlock::Text { text } => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    (text, Some(bs.clone()))
+                }
+            };
+            StoredMessage {
+                uuid: u.uuid.to_string(),
+                timestamp: u.timestamp,
+                role: "user".into(),
+                content: text,
+                content_blocks: blocks,
+            }
+        }
+        Message::Assistant(a) => {
+            let text = a
+                .content
+                .iter()
+                .filter_map(|b| match b {
+                    ContentBlock::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("");
+            StoredMessage {
+                uuid: a.uuid.to_string(),
+                timestamp: a.timestamp,
+                role: "assistant".into(),
+                content: text,
+                content_blocks: Some(a.content.clone()),
+            }
+        }
+        Message::System(s) => StoredMessage {
+            uuid: s.uuid.to_string(),
+            timestamp: s.timestamp,
+            role: "system".into(),
+            content: s.content.clone(),
+            content_blocks: None,
+        },
+        Message::Progress(p) => StoredMessage {
+            uuid: p.uuid.to_string(),
+            timestamp: p.timestamp,
+            role: "progress".into(),
+            content: String::new(),
+            content_blocks: None,
+        },
+        Message::Attachment(a) => StoredMessage {
+            uuid: a.uuid.to_string(),
+            timestamp: a.timestamp,
+            role: "attachment".into(),
+            content: String::new(),
+            content_blocks: None,
+        },
+    }
+}
 
 /// Resolve common model aliases to full model names.
 fn resolve_model_alias(name: &str) -> String {

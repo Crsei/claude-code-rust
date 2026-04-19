@@ -905,10 +905,10 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // B.10: Web UI mode
     if cli.web {
-        let web_state = web::state::WebState {
-            engine: engine.clone(),
-            is_streaming: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        };
+        let web_state = web::state::WebState::new(
+            engine.clone(),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        );
         return match web::start_server(web_state, cli.web_port, cli.no_open).await {
             Ok(()) => Ok(ExitCode::SUCCESS),
             Err(e) => {

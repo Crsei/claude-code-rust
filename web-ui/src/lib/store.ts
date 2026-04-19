@@ -1,5 +1,14 @@
 import { create } from 'zustand'
-import type { ChatMessage, AppState, ContentBlock, ResultEvent, StreamingBlock } from './types'
+import type {
+  AppState,
+  ChatMessage,
+  ContentBlock,
+  ResultEvent,
+  SessionSummary,
+  StoredMessage,
+  StreamingBlock,
+  WorkspaceInfo,
+} from './types'
 
 interface ChatStore {
   // Messages
@@ -12,6 +21,12 @@ interface ChatStore {
 
   // App state
   appState: AppState | null
+
+  // Session navigation (Phase 2)
+  sessions: SessionSummary[]
+  currentWorkspace: WorkspaceInfo | null
+  activeSessionId: string | null
+  sessionsLoading: boolean
 
   // Debug
   rawEvents: Array<{ timestamp: number; event: string; data: string }>
@@ -50,6 +65,16 @@ interface ChatStore {
   appendToolInputDelta: (index: number, jsonChunk: string) => void
   finishStreamingBlock: (index: number) => void
   clearStreamingBlocks: () => void
+
+  // Phase 2: session navigation
+  setSessions: (info: {
+    sessions: SessionSummary[]
+    currentWorkspace: WorkspaceInfo
+    activeSessionId: string
+  }) => void
+  setSessionsLoading: (loading: boolean) => void
+  setActiveSessionId: (id: string) => void
+  loadSessionMessages: (messages: StoredMessage[]) => void
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -62,6 +87,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   debugPanelOpen: false,
   debugTab: 'events' as const,
   lastResult: null,
+
+  sessions: [],
+  currentWorkspace: null,
+  activeSessionId: null,
+  sessionsLoading: false,
 
   addUserMessage: (content: string) => {
     const msg: ChatMessage = {
@@ -241,5 +271,64 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   clearStreamingBlocks: () => {
     set({ streamingBlocks: [] })
+  },
+
+  // Phase 2: session navigation
+  setSessions: ({ sessions, currentWorkspace, activeSessionId }) => {
+    set({ sessions, currentWorkspace, activeSessionId })
+  },
+
+  setSessionsLoading: (loading: boolean) => {
+    set({ sessionsLoading: loading })
+  },
+
+  setActiveSessionId: (id: string) => {
+    set({ activeSessionId: id })
+  },
+
+  loadSessionMessages: (messages: StoredMessage[]) => {
+    // Convert StoredMessage[] -> ChatMessage[] the components already render.
+    // user: plain text preferred over blocks so the regular UserMessage view
+    //   renders as if the message were just typed.
+    // assistant: preserve content_blocks so tool cards light up.
+    // system: surface as system messages.
+    // progress/attachment: dropped — they were intermediate transport and
+    //   aren't needed to reconstruct a readable view.
+    const chat: ChatMessage[] = []
+    for (const m of messages) {
+      if (m.role === 'progress' || m.role === 'attachment') continue
+      if (m.role === 'user') {
+        chat.push({
+          id: m.uuid,
+          role: 'user',
+          content: m.content,
+          timestamp: m.timestamp * 1000,
+          contentBlocks: m.content_blocks,
+        })
+      } else if (m.role === 'assistant') {
+        chat.push({
+          id: m.uuid,
+          role: 'assistant',
+          content: m.content,
+          timestamp: m.timestamp * 1000,
+          contentBlocks: m.content_blocks,
+          toolCalls: (m.content_blocks || []).filter((b) => b.type === 'tool_use'),
+        })
+      } else {
+        chat.push({
+          id: m.uuid,
+          role: 'system',
+          content: m.content,
+          timestamp: m.timestamp * 1000,
+        })
+      }
+    }
+    set({
+      messages: chat,
+      streamingContent: '',
+      streamingBlocks: [],
+      isStreaming: false,
+      lastResult: null,
+    })
   },
 }))
