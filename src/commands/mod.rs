@@ -54,6 +54,9 @@ pub mod statusline_cmd;
 // Terminal setup diagnostics (issue #12)
 pub mod terminal_setup;
 
+// Voice dictation (issue #13)
+pub mod voice_cmd;
+
 // Export
 pub mod audit_export;
 pub mod export;
@@ -430,6 +433,12 @@ pub fn get_all_commands() -> Vec<Command> {
             description: "Diagnose terminal env + print Shift+Enter / tmux / notification tips"
                 .into(),
             handler: Box::new(terminal_setup::TerminalSetupHandler),
+        },
+        Command {
+            name: "voice".into(),
+            aliases: vec!["dictation".into()],
+            description: "Toggle push-to-talk voice dictation (+ status / diagnose)".into(),
+            handler: Box::new(voice_cmd::VoiceHandler),
         },
     ]
 }

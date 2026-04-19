@@ -22,6 +22,7 @@ use super::transcript::{
 };
 use super::virtual_scroll::VirtualScroll;
 use super::welcome;
+use crate::voice::{VoiceController, VoiceEvent};
 
 /// Upper cap on the number of stdout lines the status-line runner is
 /// allowed to take up. Arbitrary but small so a runaway script can't
@@ -96,6 +97,18 @@ pub struct App {
     /// Env-driven terminal config: `CLAUDE_CODE_NO_FLICKER`,
     /// `CLAUDE_CODE_DISABLE_MOUSE`, `CLAUDE_CODE_SCROLL_SPEED`.
     terminal_env: TerminalEnvConfig,
+
+    // ── Voice dictation (issue #13) ─────────────────────────────────
+    /// Push-to-talk controller. `None` until the TUI runner installs
+    /// one via [`Self::set_voice_controller`]. Default construction
+    /// (e.g. in tests) leaves it `None` so nothing accidentally records.
+    voice: Option<VoiceController>,
+    /// Snapshot of the effective `voiceEnabled` + `language` settings.
+    /// Updated whenever `/voice` / `/config set` flips them so the
+    /// push-to-talk key handler doesn't need to re-read AppState.
+    voice_enabled: bool,
+    /// Normalized STT language — passed to the controller on press.
+    voice_language: String,
 }
 
 /// Subset of engine usage-tracking relevant to the status-line payload.
@@ -138,6 +151,9 @@ impl App {
             view_mode: ViewMode::default(),
             transcript_state: TranscriptState::default(),
             terminal_env: TerminalEnvConfig::default(),
+            voice: None,
+            voice_enabled: false,
+            voice_language: "en".to_string(),
         }
     }
 
@@ -306,6 +322,77 @@ impl App {
     pub fn set_terminal_env(&mut self, cfg: TerminalEnvConfig) {
         self.terminal_env = cfg;
         self.dirty = true;
+    }
+
+    /// Install the shared voice controller (issue #13). The TUI runner
+    /// supplies a controller already wired to AppState's audio + stt
+    /// backends so `/voice` and the push-to-talk key observe the same
+    /// state machine.
+    pub fn set_voice_controller(&mut self, controller: VoiceController) {
+        self.voice = Some(controller);
+    }
+
+    /// Update the cached `voiceEnabled` flag + normalized language.
+    /// Called at startup and whenever `/voice` or `/config` flips the
+    /// settings so the key handler doesn't need to read through AppState.
+    pub fn set_voice_settings(&mut self, enabled: bool, language: String) {
+        self.voice_enabled = enabled;
+        self.voice_language = language;
+    }
+
+    /// True when `voiceEnabled` is on *and* a controller has been
+    /// installed (tests run without a controller → push-to-talk is a
+    /// no-op, as it should be).
+    pub fn is_voice_ready(&self) -> bool {
+        self.voice_enabled && self.voice.is_some()
+    }
+
+    /// Begin push-to-talk recording. No-op when voice is disabled or no
+    /// controller is installed. Exposed so the TUI runner (and tests)
+    /// can trigger the flow without replaying a key event.
+    pub fn begin_push_to_talk(&mut self) {
+        if !self.is_voice_ready() {
+            return;
+        }
+        if let Some(v) = &self.voice {
+            v.press(self.voice_language.clone());
+        }
+        self.dirty = true;
+    }
+
+    /// Release push-to-talk — transition to Transcribing.
+    pub fn end_push_to_talk(&mut self) {
+        if let Some(v) = &self.voice {
+            v.release();
+        }
+        self.dirty = true;
+    }
+
+    /// Drain voice-controller events into the prompt input. Called once
+    /// per render tick. Returns `true` when something changed, so the
+    /// caller can force a redraw.
+    pub fn drain_voice_events(&mut self) -> bool {
+        let Some(v) = &self.voice else {
+            return false;
+        };
+        let events = v.drain_events();
+        if events.is_empty() {
+            return false;
+        }
+        for evt in events {
+            match evt {
+                VoiceEvent::Transcription(text) => {
+                    // Insert at cursor so transcribed text joins whatever
+                    // the user was typing before they hit push-to-talk.
+                    self.prompt.insert_str(&text);
+                }
+                // StateChanged / Error are reflected through the
+                // composer footer — nothing more to do here.
+                VoiceEvent::StateChanged(_) | VoiceEvent::Error(_) => {}
+            }
+        }
+        self.dirty = true;
+        true
     }
 
     /// Current terminal-env config (read by the TUI runner to decide
@@ -601,6 +688,34 @@ impl App {
             (KeyModifiers::CONTROL, KeyCode::Char('o')) => {
                 // Cycle `Prompt → Transcript → Focus → Prompt`.
                 self.cycle_view_mode();
+                return AppAction::None;
+            }
+            // Voice push-to-talk (issue #13). Ctrl+Space over the chat
+            // input starts recording; the TUI runner translates the
+            // matching KeyEventKind::Release into a release call.
+            // KeyEventKind::Release isn't delivered on every terminal,
+            // so a single press toggles Recording → Transcribing to
+            // keep things usable even without release events.
+            (KeyModifiers::CONTROL, KeyCode::Char(' '))
+                if self.view_mode == ViewMode::Prompt =>
+            {
+                if self.is_voice_ready() {
+                    let state = self
+                        .voice
+                        .as_ref()
+                        .map(|v| v.state())
+                        .unwrap_or(crate::voice::VoiceState::Idle);
+                    match state {
+                        crate::voice::VoiceState::Idle
+                        | crate::voice::VoiceState::Error(_) => self.begin_push_to_talk(),
+                        crate::voice::VoiceState::Recording => self.end_push_to_talk(),
+                        crate::voice::VoiceState::Transcribing => {
+                            // Ignore — wait for the task to finalize.
+                        }
+                    }
+                }
+                // Swallow the keystroke either way so Space doesn't slip
+                // through to the prompt input.
                 return AppAction::None;
             }
             _ => {}
@@ -902,6 +1017,14 @@ impl App {
         let latest = self.status_line_runner.latest();
         if latest.error.is_some() && self.status_line_settings.is_command_mode() {
             parts.push("statusline:err".to_string());
+        }
+
+        // Voice push-to-talk status (issue #13). Shown as the tail entry
+        // so it's the most prominent thing while recording.
+        if let Some(v) = &self.voice {
+            if let Some(label) = v.status_line() {
+                parts.push(label);
+            }
         }
 
         let status_text = format!(" {}", parts.join(" | "));

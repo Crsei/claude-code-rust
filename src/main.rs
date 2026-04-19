@@ -25,6 +25,7 @@ mod tools;
 mod types;
 mod ui;
 mod utils;
+mod voice;
 
 // Context compaction pipeline
 mod compact;
