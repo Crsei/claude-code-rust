@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useKeyboard, useRenderer } from '@opentui/react'
-import type { KeyEvent, PasteEvent } from '@opentui/core'
+import type { KeyEvent } from '@opentui/core'
 import {
   matchesShortcut,
   shortcutLabel,
-  type KeyLike,
   type ViewMode,
 } from '../keybindings.js'
 import { c } from '../theme.js'
@@ -15,57 +14,22 @@ import { VimState } from '../vim/index.js'
 import { CommandHint } from './CommandHint.js'
 import {
   formatPasteSize,
-  insertAtCursor,
-  isPasteInput,
-  isPlainTextInput,
   promptPlaceholder,
   summarizeQueuedSubmissions,
 } from './input-prompt-utils.js'
+import {
+  extractInput,
+  formatWorkedDuration,
+  toShortcutKey,
+} from './input-prompt-keys.js'
+import {
+  useBusyTimer,
+  useComposerState,
+  useInputHistoryNav,
+  usePasteHandler,
+} from './input-prompt-hooks.js'
 
 const PASTE_COMPACT_CHARS = 200
-
-function formatWorkedDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
-}
-
-function extractInput(event: KeyEvent): string {
-  const seq = event.sequence ?? ''
-  if (seq.length === 1 && seq.charCodeAt(0) >= 32) return seq
-  if (!event.ctrl && !event.meta && isPlainTextInput(seq)) return seq
-  if (event.ctrl && (event.name?.length ?? 0) === 1) return event.name ?? ''
-  if ((event.name?.length ?? 0) === 1 && !event.ctrl && !event.meta) return event.name ?? ''
-  return ''
-}
-
-function toShortcutKey(event: KeyEvent): KeyLike & {
-  backspace?: boolean
-  delete?: boolean
-  wheelUp?: boolean
-  wheelDown?: boolean
-} {
-  const name = event.name ?? ''
-  return {
-    ctrl: event.ctrl ?? false,
-    meta: event.meta ?? false,
-    shift: event.shift ?? false,
-    return: name === 'return' || name === 'enter',
-    escape: name === 'escape',
-    tab: name === 'tab',
-    upArrow: name === 'up',
-    downArrow: name === 'down',
-    pageUp: name === 'pageup',
-    pageDown: name === 'pagedown',
-    home: name === 'home',
-    end: name === 'end',
-    backspace: name === 'backspace',
-    delete: name === 'delete',
-    wheelUp: name === 'wheel_up' || name === 'scrollup',
-    wheelDown: name === 'wheel_down' || name === 'scrolldown',
-  }
-}
 
 interface InputPromptProps {
   isActive?: boolean
@@ -82,10 +46,6 @@ export function InputPrompt({
   onStatusChange,
   viewMode,
 }: InputPromptProps) {
-  const [text, setText] = useState('')
-  const [cursorPos, setCursorPos] = useState(0)
-  const [undoStack, setUndoStack] = useState<Array<{ text: string; cursor: number }>>([])
-  const [isPasted, setIsPasted] = useState(false)
   const [hintIndex, setHintIndex] = useState(0)
   const [subMode, setSubMode] = useState<{ cmd: CommandDef; options: string[] } | null>(null)
   const [subIndex, setSubIndex] = useState(0)
@@ -103,14 +63,49 @@ export function InputPrompt({
   const dispatch = useAppDispatch()
   const renderer = useRenderer()
   const vimRef = useRef<VimState>(new VimState())
-  const textRef = useRef('')
-  textRef.current = text
-  const cursorRef = useRef(0)
-  cursorRef.current = cursorPos
 
   const isBusy = isWaiting || isStreaming
   const isBusyRef = useRef(false)
   isBusyRef.current = isBusy
+
+  const focusInput = useCallback(() => {
+    if (isReadOnly || viewMode !== 'prompt') {
+      return false
+    }
+    onActivate?.()
+    return true
+  }, [isReadOnly, onActivate, viewMode])
+
+  const clearSubMode = useCallback(() => {
+    setSubMode(null)
+    setSubIndex(0)
+  }, [])
+
+  const composer = useComposerState({
+    focusInput,
+    onInsert: () => {
+      if (subMode) clearSubMode()
+    },
+  })
+  const {
+    text,
+    setText,
+    cursorPos,
+    setCursorPos,
+    cursorRef,
+    undoStack,
+    setUndoStack,
+    isPasted,
+    setIsPasted,
+    saveUndo,
+    insertText,
+    reset: resetBuffer,
+  } = composer
+
+  const resetComposer = useCallback(() => {
+    resetBuffer()
+    clearSubMode()
+  }, [clearSubMode, resetBuffer])
 
   const slashPrefix = viewMode === 'prompt' && text.startsWith('/') && !text.includes(' ') && !subMode
   const cmdPartial = slashPrefix ? text.slice(1) : ''
@@ -123,29 +118,10 @@ export function InputPrompt({
     setHintIndex(0)
   }, [cmdPartial])
 
-  const [time, setTime] = useState(0)
-  const startRef = useRef(Date.now())
-  useEffect(() => {
-    if (!isBusy) return
-    const id = setInterval(() => setTime(Date.now() - startRef.current), 250)
-    return () => clearInterval(id)
-  }, [isBusy])
+  const { time, busyStartedAtRef, lastWorkedMs } = useBusyTimer(isBusy)
 
-  const busyStartedAtRef = useRef<number | null>(null)
-  const [lastWorkedMs, setLastWorkedMs] = useState(0)
   const inputActive = viewMode === 'prompt' && isActive && !isReadOnly
   const showHint = (slashPrefix || !!subMode) && !isBusy && inputActive
-
-  useEffect(() => {
-    if (isBusy) {
-      if (busyStartedAtRef.current === null) busyStartedAtRef.current = time
-      return
-    }
-    if (busyStartedAtRef.current !== null) {
-      setLastWorkedMs(Math.max(0, time - busyStartedAtRef.current))
-      busyStartedAtRef.current = null
-    }
-  }, [isBusy, time])
 
   const vim = vimRef.current
   if (vimEnabled && !vim.enabled) {
@@ -155,50 +131,7 @@ export function InputPrompt({
     vim.disable()
   }
 
-  const saveUndo = useCallback(() => {
-    setUndoStack(stack => [...stack.slice(-50), {
-      text: textRef.current,
-      cursor: cursorRef.current,
-    }])
-  }, [])
-
-  const focusInput = useCallback(() => {
-    if (isReadOnly || viewMode !== 'prompt') {
-      return false
-    }
-    onActivate?.()
-    return true
-  }, [isReadOnly, onActivate, viewMode])
-
-  const resetComposer = useCallback(() => {
-    setText('')
-    setCursorPos(0)
-    setUndoStack([])
-    setIsPasted(false)
-    setSubMode(null)
-    setSubIndex(0)
-  }, [])
-
-  const insertText = useCallback((value: string, options?: { pasted?: boolean }) => {
-    if (!value || !focusInput()) {
-      return false
-    }
-
-    saveUndo()
-    const next = insertAtCursor(textRef.current, cursorRef.current, value)
-    textRef.current = next.text
-    cursorRef.current = next.cursorPos
-    setText(next.text)
-    setCursorPos(next.cursorPos)
-    if (options?.pasted || isPasteInput(value.length)) {
-      setIsPasted(true)
-    }
-    if (subMode) {
-      setSubMode(null)
-      setSubIndex(0)
-    }
-    return true
-  }, [focusInput, saveUndo, subMode])
+  usePasteHandler({ viewMode, isReadOnly, insertText })
 
   const activateInput = useCallback(() => {
     if (isReadOnly || viewMode !== 'prompt') {
@@ -221,30 +154,11 @@ export function InputPrompt({
     isBusy,
     isReadOnly,
     onActivate,
+    setCursorPos,
+    setText,
     text.length,
     viewMode,
   ])
-
-  useEffect(() => {
-    const handlePaste = (event: PasteEvent) => {
-      if (viewMode !== 'prompt' || isReadOnly) {
-        return
-      }
-
-      const value = new TextDecoder().decode(event.bytes)
-      if (!value) {
-        return
-      }
-
-      event.preventDefault()
-      insertText(value, { pasted: true })
-    }
-
-    renderer._internalKeyInput.onInternal('paste', handlePaste)
-    return () => {
-      renderer._internalKeyInput.offInternal('paste', handlePaste)
-    }
-  }, [insertText, isReadOnly, renderer, viewMode])
 
   const sendCommand = useCallback((raw: string) => {
     if (isBusyRef.current) {
@@ -288,7 +202,6 @@ export function InputPrompt({
       return
     }
 
-    // Answer a pending question via the explicit QuestionResponse protocol
     if (pendingQuestion) {
       dispatch({ type: 'ADD_USER_MESSAGE', id: `answer-${pendingQuestion.id}`, text: trimmed })
       dispatch({ type: 'PUSH_HISTORY', text: trimmed })
@@ -328,33 +241,12 @@ export function InputPrompt({
     }
 
     sendCommand(`/${cmd.name}`)
-  }, [sendCommand])
+  }, [sendCommand, setCursorPos, setText])
 
-  const navigateHistoryUp = useCallback(() => {
-    if (inputHistory.length === 0) return false
-    const nextIndex = historyIndex === -1 ? inputHistory.length - 1 : Math.max(0, historyIndex - 1)
-    dispatch({ type: 'SET_HISTORY_INDEX', index: nextIndex })
-    const historyText = inputHistory[nextIndex] || ''
-    setText(historyText)
-    setCursorPos(historyText.length)
-    return true
-  }, [dispatch, historyIndex, inputHistory])
-
-  const navigateHistoryDown = useCallback(() => {
-    if (historyIndex === -1) return false
-    const nextIndex = historyIndex + 1
-    if (nextIndex >= inputHistory.length) {
-      dispatch({ type: 'SET_HISTORY_INDEX', index: -1 })
-      setText('')
-      setCursorPos(0)
-      return true
-    }
-    dispatch({ type: 'SET_HISTORY_INDEX', index: nextIndex })
-    const historyText = inputHistory[nextIndex] || ''
-    setText(historyText)
-    setCursorPos(historyText.length)
-    return true
-  }, [dispatch, historyIndex, inputHistory])
+  const { navigateUp: navigateHistoryUp, navigateDown: navigateHistoryDown } = useInputHistoryNav({
+    setText,
+    setCursorPos,
+  })
 
   useKeyboard((event: KeyEvent) => {
     if (event.eventType === 'release') {
