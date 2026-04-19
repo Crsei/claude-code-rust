@@ -3,7 +3,7 @@
 //! Corresponds to TypeScript: `utils/teammateMailbox.ts`
 //!
 //! Each teammate has an inbox file at:
-//!   `~/.cc-rust/teams/{team_name}/inboxes/{agent_name}.json`
+//!   `{data_root}/teams/{team_name}/inboxes/{agent_name}.json`
 //!
 //! Messages are stored as a JSON array of `TeammateMessage`.
 //! Write operations use file locking to prevent data loss from concurrent access.
@@ -28,17 +28,14 @@ use super::types::TeammateMessage;
 
 /// Get the base directory for a team's data.
 ///
-/// Returns: `~/.cc-rust/teams/{team_name}`
+/// Returns: `{data_root}/teams/{team_name}`
 pub fn team_dir(team_name: &str) -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".cc-rust")
-        .join(TEAMS_DIR_NAME)
-        .join(sanitize_name(team_name))
+    crate::config::paths::teams_dir().join(sanitize_name(team_name))
 }
 
 /// Get the inbox file path for an agent.
 ///
-/// Returns: `~/.cc-rust/teams/{team_name}/inboxes/{agent_name}.json`
+/// Returns: `{data_root}/teams/{team_name}/inboxes/{agent_name}.json`
 pub fn inbox_path(agent_name: &str, team_name: &str) -> PathBuf {
     team_dir(team_name).join(INBOXES_DIR_NAME).join(format!(
         "{}.{}",
@@ -275,6 +272,30 @@ fn is_stale_lock(lock: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
+    use tempfile::TempDir;
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(v) => std::env::set_var(self.key, v),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     fn test_team() -> (String, String, PathBuf) {
         let id = uuid::Uuid::new_v4().to_string();
@@ -303,6 +324,26 @@ mod tests {
         assert!(path_str.contains("my-team"));
         assert!(path_str.contains("inboxes"));
         assert!(path_str.contains("researcher.json"));
+    }
+
+    #[test]
+    #[serial]
+    fn team_dir_honors_cc_rust_home() {
+        let tmp = TempDir::new().expect("tempdir");
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().expect("utf8 tempdir"));
+
+        let team_path = team_dir("my team");
+        let inbox = inbox_path("agent", "my team");
+
+        assert_eq!(team_path, tmp.path().join("teams").join("my_team"));
+        assert_eq!(
+            inbox,
+            tmp.path()
+                .join("teams")
+                .join("my_team")
+                .join("inboxes")
+                .join("agent.json")
+        );
     }
 
     #[test]

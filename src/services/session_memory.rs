@@ -32,28 +32,13 @@ pub struct SessionMemoryConfig {
 
 impl Default for SessionMemoryConfig {
     fn default() -> Self {
-        let home = home_dir();
         SessionMemoryConfig {
             enabled: true,
-            memory_dir: home.join(".cc-rust").join("session-insights"),
+            memory_dir: crate::config::paths::session_insights_dir(),
             max_entries: 50,
             min_messages_before_extract: 5,
         }
     }
-}
-
-/// Cross-platform home directory resolution.
-fn home_dir() -> PathBuf {
-    dirs::home_dir().unwrap_or_else(|| {
-        // Fallback: try environment variables
-        if let Ok(home) = std::env::var("HOME") {
-            PathBuf::from(home)
-        } else if let Ok(profile) = std::env::var("USERPROFILE") {
-            PathBuf::from(profile)
-        } else {
-            PathBuf::from(".")
-        }
-    })
 }
 
 // ---------------------------------------------------------------------------

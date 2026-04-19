@@ -78,10 +78,10 @@ pub const AGENT_COLORS: &[&str] = &[
 // Paths
 // ---------------------------------------------------------------------------
 
-/// Subdirectory under `~/.cc-rust/` for team data.
+/// Subdirectory under the resolved data root for team data.
 pub const TEAMS_DIR_NAME: &str = "teams";
 
-/// Subdirectory under `~/.cc-rust/` for team task lists.
+/// Subdirectory under the resolved data root for team task lists.
 pub const TASKS_DIR_NAME: &str = "tasks";
 
 /// Filename for the team configuration file.

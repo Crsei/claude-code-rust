@@ -15,8 +15,6 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use crate::config::settings;
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -53,10 +51,7 @@ pub enum MemoryScope {
 /// Get the memory directory for a given scope.
 pub fn memory_dir(scope: MemoryScope, cwd: &Path) -> Result<PathBuf> {
     match scope {
-        MemoryScope::Global => {
-            let global = settings::global_claude_dir()?;
-            Ok(global.join("memory"))
-        }
+        MemoryScope::Global => Ok(crate::config::paths::memory_dir_global()),
         MemoryScope::Project => Ok(cwd.join(".cc-rust").join("memory")),
     }
 }

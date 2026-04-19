@@ -7,5 +7,6 @@
 pub mod claude_md;
 pub mod constants;
 pub mod features;
+pub mod paths;
 pub mod settings;
 pub mod validation;

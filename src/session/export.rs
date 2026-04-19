@@ -95,8 +95,7 @@ pub fn list_exports() -> Result<Vec<PathBuf>> {
 // ---------------------------------------------------------------------------
 
 fn get_export_dir() -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".cc-rust").join("exports")
+    crate::config::paths::exports_dir()
 }
 
 // ---------------------------------------------------------------------------

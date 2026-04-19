@@ -119,9 +119,7 @@ impl AuditSink {
             return Ok(Self::noop(config));
         }
 
-        let global_dir = crate::config::settings::global_claude_dir()
-            .unwrap_or_else(|_| PathBuf::from(".cc-rust"));
-        let runs_dir = global_dir.join("runs").join(session_id);
+        let runs_dir = crate::config::paths::runs_dir(session_id);
 
         std::fs::create_dir_all(&runs_dir)
             .with_context(|| format!("Failed to create runs directory {}", runs_dir.display()))?;

@@ -4,7 +4,7 @@
 //!
 //! Provides multi-agent coordination where a Team Lead creates and manages
 //! multiple Teammate agents running in parallel. Communication happens via
-//! file-based mailbox IPC (`~/.cc-rust/teams/{name}/inboxes/`).
+//! file-based mailbox IPC (`{data_root}/teams/{name}/inboxes/`).
 //!
 //! Feature-gated by `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var.
 

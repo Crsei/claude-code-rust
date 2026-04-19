@@ -25,7 +25,7 @@ use super::types::*;
 
 /// Read a TeamFile from disk.
 ///
-/// Path: `~/.cc-rust/teams/{team_name}/config.json`
+/// Path: `{data_root}/teams/{team_name}/config.json`
 pub fn read_team_file(team_name: &str) -> Result<TeamFile> {
     let path = team_config_path(team_name);
     let content = fs::read_to_string(&path)
@@ -53,10 +53,7 @@ pub fn team_config_path(team_name: &str) -> PathBuf {
 
 /// Get the tasks directory for a team.
 pub fn team_tasks_dir(team_name: &str) -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".cc-rust")
-        .join(TASKS_DIR_NAME)
-        .join(sanitize_team_name(team_name))
+    crate::config::paths::tasks_dir().join(sanitize_team_name(team_name))
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +293,30 @@ pub fn team_exists(team_name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
+    use tempfile::TempDir;
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(v) => std::env::set_var(self.key, v),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     fn cleanup(team_name: &str) {
         let dir = mailbox::team_dir(team_name);
@@ -352,6 +373,42 @@ mod tests {
 
         let updated = read_team_file(&tf.name).unwrap();
         assert_eq!(updated.members.len(), 2);
+
+        cleanup(&tf.name);
+    }
+
+    #[test]
+    #[serial]
+    fn create_team_honors_cc_rust_home_for_config_and_tasks() {
+        let tmp = TempDir::new().expect("tempdir");
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().expect("utf8 tempdir"));
+
+        let name = format!("test-{}", &uuid::Uuid::new_v4().to_string()[..8]);
+        let tf = create_team(&name, Some("Test team".into()), None, "/tmp").unwrap();
+
+        let config_path = team_config_path(&tf.name);
+        let tasks_path = team_tasks_dir(&tf.name);
+
+        assert!(
+            config_path.starts_with(tmp.path()),
+            "config path escaped CC_RUST_HOME: {}",
+            config_path.display()
+        );
+        assert!(
+            tasks_path.starts_with(tmp.path()),
+            "tasks path escaped CC_RUST_HOME: {}",
+            tasks_path.display()
+        );
+        assert!(
+            config_path.exists(),
+            "team config missing at {}",
+            config_path.display()
+        );
+        assert!(
+            tasks_path.is_dir(),
+            "tasks dir missing at {}",
+            tasks_path.display()
+        );
 
         cleanup(&tf.name);
     }

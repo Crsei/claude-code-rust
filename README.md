@@ -147,6 +147,12 @@ cc-rust 的核心架构围绕一个流式的查询引擎和一个可扩展的工
 - 日志：~/.cc-rust/logs/
 - 记忆缓存：~/.cc-rust/cache/
 
+### Storage paths
+
+cc-rust writes all runtime data (sessions, logs, credentials, ...) under a
+single data root — `$CC_RUST_HOME` if set, otherwise `~/.cc-rust/`. See
+[docs/STORAGE.md](docs/STORAGE.md) for the complete layout.
+
 ---
 
 ## 流式对话与安全注意

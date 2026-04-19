@@ -1,24 +1,13 @@
 //! Daily append-only log system for KAIROS perpetual sessions.
-//! Logs stored at ~/.cc-rust/logs/YYYY/MM/YYYY-MM-DD.md
+//! Logs stored at `{data_root}/logs/YYYY/MM/YYYY-MM-DD.md`.
 
 use std::path::PathBuf;
 
 use chrono::Local;
 use tracing::{debug, error};
 
-fn log_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".cc-rust")
-        .join("logs")
-}
-
 pub fn today_log_path() -> PathBuf {
-    let now = Local::now();
-    log_dir()
-        .join(now.format("%Y").to_string())
-        .join(now.format("%m").to_string())
-        .join(now.format("%Y-%m-%d.md").to_string())
+    crate::config::paths::daily_log_path(Local::now())
 }
 
 pub fn read_today_log() -> String {
@@ -89,8 +78,9 @@ mod tests {
 
     #[test]
     fn test_log_dir_structure() {
-        let dir = log_dir();
-        let dir_str = dir.to_string_lossy();
+        let path = today_log_path();
+        let parent = path.parent().expect("today_log_path has parent");
+        let dir_str = parent.to_string_lossy();
         assert!(
             dir_str.contains("logs"),
             "dir should contain logs: {}",

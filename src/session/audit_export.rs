@@ -502,8 +502,7 @@ fn sha256_str(s: &str) -> String {
 // ---------------------------------------------------------------------------
 
 fn get_audit_dir() -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".cc-rust").join("audits")
+    crate::config::paths::audits_dir()
 }
 
 fn write_audit_record(
