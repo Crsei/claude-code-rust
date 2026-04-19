@@ -34,7 +34,8 @@
       "Bash(netstat -ano)",
       "Bash(findstr :3001)",
       "Bash(findstr LISTEN)",
-      "Bash(taskkill //PID 36436 //F)"
+      "Bash(taskkill //PID 36436 //F)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:3001/api/state)"
     ]
   }
 }

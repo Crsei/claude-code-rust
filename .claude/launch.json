@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "cc-rust-web",
-      "runtimeExecutable": "cargo",
-      "runtimeArgs": ["run", "--", "--web", "--port", "3001"],
+      "runtimeExecutable": "target/debug/claude-code-rs.exe",
+      "runtimeArgs": ["--web", "--web-port", "3001", "--no-open"],
       "port": 3001,
       "env": {
         "DEEPSEEK_API_KEY": "sk-68caf426408745c287f4552da4894193",
