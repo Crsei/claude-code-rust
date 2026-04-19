@@ -38,6 +38,9 @@ pub struct GlobalConfig {
     pub system_prompt: Option<String>,
     /// Hooks configuration (keyed by hook point).
     pub hooks: Option<HashMap<String, serde_json::Value>>,
+    /// Whether Claude in Chrome should be enabled by default.
+    #[serde(rename = "claudeInChromeDefaultEnabled")]
+    pub claude_in_chrome_default_enabled: Option<bool>,
     /// API key override (not recommended -- prefer env vars).
     pub api_key: Option<String>,
     /// Additional arbitrary settings.
@@ -66,6 +69,9 @@ pub struct ProjectConfig {
     pub system_prompt: Option<String>,
     /// Hooks configuration.
     pub hooks: Option<HashMap<String, serde_json::Value>>,
+    /// Whether Claude in Chrome should be enabled by default for this project.
+    #[serde(rename = "claudeInChromeDefaultEnabled")]
+    pub claude_in_chrome_default_enabled: Option<bool>,
     /// Additional arbitrary settings.
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
@@ -84,6 +90,7 @@ pub struct MergedConfig {
     #[allow(dead_code)]
     pub system_prompt: Option<String>,
     pub hooks: HashMap<String, serde_json::Value>,
+    pub claude_in_chrome_default_enabled: Option<bool>,
     pub api_key: Option<String>,
     #[allow(dead_code)]
     pub extra: HashMap<String, serde_json::Value>,
@@ -184,6 +191,9 @@ pub fn merge_configs(global: &GlobalConfig, project: &ProjectConfig) -> MergedCo
             .clone()
             .or_else(|| global.system_prompt.clone()),
         hooks: merge_maps(global.hooks.as_ref(), project.hooks.as_ref()),
+        claude_in_chrome_default_enabled: project
+            .claude_in_chrome_default_enabled
+            .or(global.claude_in_chrome_default_enabled),
         api_key: global.api_key.clone(),
         extra: merge_maps(Some(&global.extra), Some(&project.extra)),
     };
@@ -275,6 +285,7 @@ mod tests {
             model: Some("claude-opus".into()),
             backend: Some("codex".into()),
             verbose: Some(true),
+            claude_in_chrome_default_enabled: Some(true),
             ..Default::default()
         };
 
@@ -283,6 +294,7 @@ mod tests {
         assert_eq!(merged.backend.as_deref(), Some("codex"));
         assert_eq!(merged.theme.as_deref(), Some("dark")); // falls through to global
         assert!(merged.verbose);
+        assert_eq!(merged.claude_in_chrome_default_enabled, Some(true));
     }
 
     #[test]
