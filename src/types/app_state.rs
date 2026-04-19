@@ -41,14 +41,48 @@ pub struct AppState {
     pub terminal_focus: bool,
 }
 
-/// 设置 JSON (简化版)
+/// 设置 JSON (运行时投影)
+///
+/// 这是 [`crate::config::settings::EffectiveSettings`] 的运行时镜像 ——
+/// 启动路径在 `main.rs` 用合并后的 effective settings 填充本结构,
+/// 命令(如 `/config set`) 写回这里, 序列化时再回到 RawSettings。
 #[derive(Debug, Clone, Default)]
 pub struct SettingsJson {
+    // -- Core identity --------------------------------------------------
     pub model: Option<String>,
     pub backend: Option<String>,
     pub theme: Option<String>,
     pub verbose: Option<bool>,
-    // 后续添加更多设置字段
+
+    // -- Permissions / sandbox -----------------------------------------
+    pub permission_mode: Option<String>,
+    pub permissions: crate::config::settings::PermissionsSettings,
+    pub sandbox: crate::config::settings::SandboxSettings,
+
+    // -- UI / UX --------------------------------------------------------
+    pub status_line: crate::config::settings::StatusLineSettings,
+    pub spinner_tips: crate::config::settings::SpinnerTipsSettings,
+    pub output_style: Option<String>,
+    pub language: Option<String>,
+    pub voice_enabled: Option<bool>,
+    pub editor_mode: Option<String>,
+    pub view_mode: Option<String>,
+    pub terminal_progress_bar_enabled: Option<bool>,
+
+    // -- Models / effort -----------------------------------------------
+    pub available_models: Vec<String>,
+    pub effort_level: Option<String>,
+    pub fast_mode: Option<bool>,
+    pub fast_mode_per_session_opt_in: Option<bool>,
+
+    // -- Modes / integrations ------------------------------------------
+    pub teammate_mode: Option<bool>,
+    pub claude_in_chrome_default_enabled: Option<bool>,
+
+    // -- Per-key source (provenance) -----------------------------------
+    /// 来源映射: key -> 哪个 layer 提供了该值。由启动路径 + `/config set`
+    /// 在写入对应键时一并更新。`/config show` 读取此 map 显示来源信息。
+    pub sources: crate::config::settings::SourceMap,
 }
 
 impl Default for AppState {

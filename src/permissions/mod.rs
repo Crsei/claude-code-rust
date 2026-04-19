@@ -5,6 +5,7 @@
 // Dangerous command detection: rm -rf, git push --force, etc.
 // Decision state machine: full flow from rules → hooks → mode
 
+pub mod bash_matcher;
 pub mod dangerous;
 pub mod decision;
 pub mod path_validation;

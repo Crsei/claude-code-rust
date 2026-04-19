@@ -50,10 +50,35 @@ These live **inside your project directory** (not under `$ROOT`) and behave like
 | Path | Purpose |
 |------|---------|
 | `{cwd}/.cc-rust/settings.json` | Project-level settings. Loaded in addition to global settings. |
+| `{cwd}/.cc-rust/settings.local.json` | Project-local overrides. Intended to be gitignored. |
 | `{cwd}/.cc-rust/memory/` | Project-scoped memory. |
 | `{cwd}/.cc-rust/skills/` | Project-scoped skills. |
 
 These are discovered by ancestor-walk from the current working directory.
+
+## Settings layering
+
+`settings.json` is loaded from up to four files and merged in this order
+(higher overrides lower):
+
+| Priority | Source | Path |
+|---------:|--------|------|
+| 1 (lowest) | `managed` | Windows: `%ProgramData%\cc-rust\settings.json` · others: `/etc/cc-rust/managed-settings.json` · or `$CC_RUST_MANAGED_SETTINGS` |
+| 2 | `user` | `$ROOT/settings.json` |
+| 3 | `project` | `{cwd}/.cc-rust/settings.json` |
+| 4 | `local` | `{cwd}/.cc-rust/settings.local.json` |
+| 5 | `env` | `CLAUDE_*` / `CC_*` overrides |
+| 6 (highest) | `cli` | `--model`, `--verbose`, `--permission-mode`, ... |
+
+Use `/config show` to see the merged effective values; `/config sources`
+prints which layer won for each key. Schema is at
+[`docs/schemas/settings.schema.json`](schemas/settings.schema.json) and
+generated from `src/config/settings.rs::settings_schema()` (the in-crate
+test `schema_file_matches_runtime` keeps them in sync).
+
+When `/config set` writes a key, the existing file is copied to a
+timestamped `.bak` sibling first; the five most recent backups are
+retained.
 
 ## Platform notes
 

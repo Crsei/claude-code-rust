@@ -437,14 +437,21 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         }
     }
 
-    // B.1: Load settings (parallel-ready)
-    let merged_config = settings::load_and_merge(&cwd)?;
+    // B.1: Load layered settings (managed/user/project/local + env).
+    let loaded_settings = settings::load_effective(std::path::Path::new(&cwd))?;
+    let merged_config = loaded_settings.effective.clone();
     debug!(
         model = ?merged_config.model,
         permission_mode = ?merged_config.permission_mode,
         backend = ?merged_config.backend,
+        layers = loaded_settings.loaded_paths.len(),
         "settings loaded",
     );
+    if !loaded_settings.loaded_paths.is_empty() {
+        for (src, path) in &loaded_settings.loaded_paths {
+            debug!(source = src.as_str(), path = %path.display(), "settings layer");
+        }
+    }
     let backend = crate::engine::codex_exec::normalize_backend(merged_config.backend.as_deref());
 
     // B.2: Determine permission mode
@@ -642,30 +649,54 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             }
         });
 
+    // Mark CLI overrides (model / verbose) in the source map so /config show
+    // reports them correctly.
+    let mut sources = loaded_settings.sources.clone();
+    if cli.model.is_some() {
+        sources.insert("model".into(), settings::SettingsSource::Cli);
+    }
+    if cli.verbose {
+        sources.insert("verbose".into(), settings::SettingsSource::Cli);
+    }
+    if cli.permission_mode.is_some() {
+        sources.insert("permissionMode".into(), settings::SettingsSource::Cli);
+    }
+
     let app_state = AppState {
         settings: SettingsJson {
             model: Some(model.clone()),
             backend: Some(backend.clone()),
             theme: merged_config.theme.clone(),
             verbose: Some(cli.verbose),
+            permission_mode: merged_config.permission_mode.clone(),
+            permissions: merged_config.permissions.clone(),
+            sandbox: merged_config.sandbox.clone(),
+            status_line: merged_config.status_line.clone(),
+            spinner_tips: merged_config.spinner_tips.clone(),
+            output_style: merged_config.output_style.clone(),
+            language: merged_config.language.clone(),
+            voice_enabled: merged_config.voice_enabled,
+            editor_mode: merged_config.editor_mode.clone(),
+            view_mode: merged_config.view_mode.clone(),
+            terminal_progress_bar_enabled: merged_config.terminal_progress_bar_enabled,
+            available_models: merged_config.available_models.clone(),
+            effort_level: merged_config.effort_level.clone(),
+            fast_mode: merged_config.fast_mode,
+            fast_mode_per_session_opt_in: merged_config.fast_mode_per_session_opt_in,
+            teammate_mode: merged_config.teammate_mode,
+            claude_in_chrome_default_enabled: merged_config.claude_in_chrome_default_enabled,
+            sources,
         },
         verbose: cli.verbose,
         main_loop_model: model.clone(),
         main_loop_backend: backend.clone(),
-        tool_permission_context: ToolPermissionContext {
-            mode: permission_mode.clone(),
-            additional_working_directories: HashMap::new(),
-            always_allow_rules: HashMap::new(),
-            always_deny_rules: HashMap::new(),
-            always_ask_rules: HashMap::new(),
-            session_allow_rules: HashMap::new(),
-            is_bypass_permissions_mode_available: true,
-            is_auto_mode_available: Some(true),
-            pre_plan_mode: None,
-        },
+        tool_permission_context: build_tool_permission_context(
+            permission_mode.clone(),
+            &loaded_settings,
+        ),
         thinking_enabled: None,
-        fast_mode: false,
-        effort_value: None,
+        fast_mode: merged_config.fast_mode.unwrap_or(false),
+        effort_value: merged_config.effort_level.clone(),
         team_context: None,
         hooks: merged_config.hooks.clone(),
         kairos_active: false,
@@ -1070,10 +1101,80 @@ fn chrome_requested(cli: &Cli, config_default: Option<bool>) -> bool {
 /// Resolve the permission mode from CLI arg or config.
 fn resolve_permission_mode(cli_mode: Option<&str>, config_mode: Option<&str>) -> PermissionMode {
     let mode_str = cli_mode.or(config_mode).unwrap_or("default");
-    match mode_str.to_lowercase().as_str() {
-        "auto" => PermissionMode::Auto,
-        "bypass" => PermissionMode::Bypass,
-        "plan" => PermissionMode::Plan,
-        _ => PermissionMode::Default,
+    PermissionMode::parse(mode_str)
+}
+
+/// Build the [`ToolPermissionContext`] from layered settings.
+///
+/// Pulls allow/ask/deny lists from `EffectiveSettings::permissions` and
+/// folds them into per-source rule maps tagged with the source of the
+/// settings layer that provided them. `enableBypassMode` /
+/// `enableAutoMode` from settings gate the corresponding modes at runtime.
+fn build_tool_permission_context(
+    mode: PermissionMode,
+    loaded: &settings::LoadedSettings,
+) -> ToolPermissionContext {
+    use settings::SettingsSource;
+
+    let merged = &loaded.effective;
+
+    let mut always_allow_rules: HashMap<String, Vec<String>> = HashMap::new();
+    let mut always_deny_rules: HashMap<String, Vec<String>> = HashMap::new();
+    let mut always_ask_rules: HashMap<String, Vec<String>> = HashMap::new();
+    let mut additional_working_directories = HashMap::new();
+
+    let push_rules = |map: &mut HashMap<String, Vec<String>>, source: SettingsSource, items: &[String]| {
+        if items.is_empty() {
+            return;
+        }
+        map.entry(source.as_str().to_string())
+            .or_default()
+            .extend(items.iter().cloned());
+    };
+
+    // Pull each layer's rules into the right bucket. We iterate from
+    // lowest -> highest priority so /permissions show prints them in a
+    // stable order; the matcher itself treats sources uniformly.
+    let layers: [(SettingsSource, Option<&crate::config::settings::RawSettings>); 4] = [
+        (SettingsSource::Managed, loaded.managed.as_ref()),
+        (SettingsSource::User, loaded.user.as_ref()),
+        (SettingsSource::Project, loaded.project.as_ref()),
+        (SettingsSource::Local, loaded.local.as_ref()),
+    ];
+
+    for (src, raw_opt) in layers {
+        let Some(raw) = raw_opt else { continue };
+        if let Some(perms) = raw.permissions.as_ref() {
+            push_rules(&mut always_allow_rules, src, &perms.allow);
+            push_rules(&mut always_deny_rules, src, &perms.deny);
+            push_rules(&mut always_ask_rules, src, &perms.ask);
+            for dir in &perms.additional_directories {
+                additional_working_directories.insert(
+                    dir.clone(),
+                    crate::types::tool::AdditionalWorkingDirectory {
+                        path: dir.clone(),
+                        read_only: false,
+                    },
+                );
+            }
+        }
+        if let Some(legacy) = raw.allowed_tools.as_ref() {
+            push_rules(&mut always_allow_rules, src, legacy);
+        }
+    }
+
+    ToolPermissionContext {
+        mode,
+        additional_working_directories,
+        always_allow_rules,
+        always_deny_rules,
+        always_ask_rules,
+        session_allow_rules: HashMap::new(),
+        is_bypass_permissions_mode_available: merged
+            .permissions
+            .enable_bypass_mode
+            .unwrap_or(true),
+        is_auto_mode_available: Some(merged.permissions.enable_auto_mode.unwrap_or(true)),
+        pre_plan_mode: None,
     }
 }
