@@ -238,11 +238,7 @@ fn handle_mode(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult
     }
 
     if matches!(requested, PermissionMode::Auto)
-        && ctx
-            .app_state
-            .tool_permission_context
-            .is_auto_mode_available
-            == Some(false)
+        && ctx.app_state.tool_permission_context.is_auto_mode_available == Some(false)
     {
         return Ok(CommandResult::Output(
             "Auto mode is disabled by configuration (permissions.enableAutoMode=false).".into(),
@@ -260,11 +256,7 @@ fn handle_mode(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult
 // Add (allow/ask/deny) with scope persistence
 // ---------------------------------------------------------------------------
 
-fn handle_add(
-    kind: RuleKind,
-    parts: &[&str],
-    ctx: &mut CommandContext,
-) -> Result<CommandResult> {
+fn handle_add(kind: RuleKind, parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult> {
     let mut parts: Vec<&str> = parts.to_vec();
     let scope = PersistScope::parse(&mut parts);
 
@@ -319,8 +311,8 @@ fn persist_rule(
 ) -> Result<String> {
     let path = match scope {
         PersistScope::User => settings::user_settings_path(),
-        PersistScope::Project => cwd.join(".cc-rust").join("settings.json"),
-        PersistScope::Local => cwd.join(".cc-rust").join("settings.local.json"),
+        PersistScope::Project => settings::project_settings_path(cwd),
+        PersistScope::Local => settings::local_settings_path(cwd),
         PersistScope::Session => unreachable!(),
     };
     let mut raw = if path.exists() {
@@ -367,9 +359,7 @@ fn handle_session_grant(parts: &[&str], ctx: &mut CommandContext) -> Result<Comm
 }
 
 fn handle_clear_session(ctx: &mut CommandContext) -> Result<CommandResult> {
-    ctx.app_state
-        .tool_permission_context
-        .clear_session_grants();
+    ctx.app_state.tool_permission_context.clear_session_grants();
     Ok(CommandResult::Output("Session grants cleared.".into()))
 }
 
@@ -393,9 +383,13 @@ mod tests {
     use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {
+        test_ctx_with_cwd(PathBuf::from("."))
+    }
+
+    fn test_ctx_with_cwd(cwd: PathBuf) -> CommandContext {
         CommandContext {
             messages: Vec::new(),
-            cwd: PathBuf::from("."),
+            cwd,
             app_state: AppState::default(),
             session_id: SessionId::from_string("test-session"),
         }
@@ -504,6 +498,45 @@ mod tests {
         assert!(text.contains("allow rule"));
         assert!(text.contains("persisted"));
         assert!(dir.path().join("settings.json").exists());
+    }
+
+    #[tokio::test]
+    async fn test_permissions_allow_project_from_subdir_preserves_existing_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let project_root = dir.path().join("workspace");
+        let nested = project_root.join("src").join("nested");
+        let project_dir = project_root.join(".cc-rust");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::create_dir_all(&project_dir).unwrap();
+
+        let existing = serde_json::json!({
+            "permissions": {
+                "deny": ["Bash(rm)"],
+                "allow": ["Read"]
+            }
+        });
+        std::fs::write(
+            project_dir.join("settings.json"),
+            serde_json::to_string_pretty(&existing).unwrap(),
+        )
+        .unwrap();
+
+        let handler = PermissionsHandler;
+        let mut ctx = test_ctx_with_cwd(nested.clone());
+        handler
+            .execute("allow Bash(prefix:git) --project", &mut ctx)
+            .await
+            .unwrap();
+
+        let written: settings::RawSettings = serde_json::from_str(
+            &std::fs::read_to_string(project_dir.join("settings.json")).unwrap(),
+        )
+        .unwrap();
+        let perms = written.permissions.expect("permissions present");
+        assert!(perms.deny.iter().any(|rule| rule == "Bash(rm)"));
+        assert!(perms.allow.iter().any(|rule| rule == "Read"));
+        assert!(perms.allow.iter().any(|rule| rule == "Bash(prefix:git)"));
+        assert!(!nested.join(".cc-rust").join("settings.json").exists());
     }
 
     #[tokio::test]

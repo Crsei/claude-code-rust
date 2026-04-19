@@ -186,14 +186,31 @@ pub fn validate_settings(settings: &SettingsJson) -> Vec<ValidationWarning> {
         .as_ref()
         .or(settings.permission_mode.as_ref());
     if let Some(mode) = permission_mode {
-        let valid = ["default", "ask", "auto", "bypass", "plan"];
-        if !valid.contains(&mode.to_lowercase().as_str()) {
+        let valid = [
+            "default",
+            "ask",
+            "auto",
+            "bypass",
+            "plan",
+            "acceptedits",
+            "dontask",
+        ];
+        if !valid.contains(&mode.to_ascii_lowercase().as_str()) {
             warnings.push(ValidationWarning {
                 field: "permissionMode".to_string(),
                 message: format!(
                     "Unknown permission mode '{}'. Known modes: {}.",
                     mode,
-                    valid.join(", ")
+                    [
+                        "default",
+                        "ask",
+                        "auto",
+                        "bypass",
+                        "plan",
+                        "acceptEdits",
+                        "dontAsk"
+                    ]
+                    .join(", ")
                 ),
                 severity: WarningSeverity::Error,
             });
@@ -353,8 +370,9 @@ mod tests {
             ..Default::default()
         };
         let warnings = validate_settings(&settings);
-        assert!(warnings.iter().any(|w| w.field == "permissionMode"
-            && w.severity == WarningSeverity::Error));
+        assert!(warnings
+            .iter()
+            .any(|w| w.field == "permissionMode" && w.severity == WarningSeverity::Error));
     }
 
     #[test]
@@ -365,5 +383,26 @@ mod tests {
         };
         let warnings = validate_settings(&settings);
         assert!(warnings.iter().any(|w| w.field == "editorMode"));
+    }
+
+    #[test]
+    fn test_validate_settings_accepts_new_permission_modes() {
+        let settings = SettingsJson {
+            permission_mode: Some("acceptEdits".into()),
+            permissions: crate::config::settings::PermissionsSettings {
+                default_mode: Some("dontAsk".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let warnings = validate_settings(&settings);
+        assert!(
+            !warnings.iter().any(|w| w.field == "permissionMode"),
+            "expected new permission modes to validate cleanly, got {:?}",
+            warnings
+                .iter()
+                .map(|w| (&w.field, &w.message))
+                .collect::<Vec<_>>()
+        );
     }
 }

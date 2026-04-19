@@ -78,12 +78,7 @@ fn handle_show(parts: &[&str], ctx: &CommandContext) -> Result<CommandResult> {
         lines.push(format!("  {:<32} {:<10} {}", k, src(src_key), v));
     };
 
-    row(
-        "model",
-        state.main_loop_model.clone(),
-        "model",
-        &mut lines,
-    );
+    row("model", state.main_loop_model.clone(), "model", &mut lines);
     row(
         "backend",
         state.main_loop_backend.clone(),
@@ -100,12 +95,7 @@ fn handle_show(parts: &[&str], ctx: &CommandContext) -> Result<CommandResult> {
         "theme",
         &mut lines,
     );
-    row(
-        "verbose",
-        state.verbose.to_string(),
-        "verbose",
-        &mut lines,
-    );
+    row("verbose", state.verbose.to_string(), "verbose", &mut lines);
     row(
         "permissionMode",
         state
@@ -260,14 +250,17 @@ fn handle_show(parts: &[&str], ctx: &CommandContext) -> Result<CommandResult> {
 
     lines.push(String::new());
     lines.push("File locations:".into());
-    lines.push(format!("  user:    {}", settings::user_settings_path().display()));
+    lines.push(format!(
+        "  user:    {}",
+        settings::user_settings_path().display()
+    ));
     lines.push(format!(
         "  project: {}",
-        ctx.cwd.join(".cc-rust").join("settings.json").display()
+        settings::project_settings_path(&ctx.cwd).display()
     ));
     lines.push(format!(
         "  local:   {}",
-        ctx.cwd.join(".cc-rust").join("settings.local.json").display()
+        settings::local_settings_path(&ctx.cwd).display()
     ));
     lines.push(format!(
         "  managed: {}",
@@ -409,12 +402,12 @@ fn handle_set(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
         WriteScope::Project => SettingsSource::Project,
         WriteScope::Local => SettingsSource::Local,
     };
-    ctx.app_state
-        .settings
-        .sources
-        .insert(key.to_string(), src);
+    ctx.app_state.settings.sources.insert(key.to_string(), src);
 
-    Ok(CommandResult::Output(format!("{}\n{}", in_memory_msg, file_msg)))
+    Ok(CommandResult::Output(format!(
+        "{}\n{}",
+        in_memory_msg, file_msg
+    )))
 }
 
 /// Apply a key=value to the live AppState. Returns a user-facing message.
@@ -448,6 +441,8 @@ fn apply_set_in_memory(key: &str, value: &str, ctx: &mut CommandContext) -> Resu
         "permissionMode" | "permission_mode" => {
             s.permission_mode = Some(value.to_string());
             s.permissions.default_mode = Some(value.to_string());
+            ctx.app_state.tool_permission_context.mode =
+                crate::types::tool::PermissionMode::parse(value);
             Ok(format!("Permission mode set to: {}", value))
         }
         "outputStyle" | "output_style" => {
@@ -487,10 +482,7 @@ fn apply_set_in_memory(key: &str, value: &str, ctx: &mut CommandContext) -> Resu
         }
         "fastModePerSessionOptIn" | "fast_mode_per_session_opt_in" => {
             s.fast_mode_per_session_opt_in = parsed_bool_opt();
-            Ok(format!(
-                "Fast mode per-session opt-in: {}",
-                parsed_bool()
-            ))
+            Ok(format!("Fast mode per-session opt-in: {}", parsed_bool()))
         }
         "teammateMode" | "teammate_mode" => {
             s.teammate_mode = parsed_bool_opt();
@@ -498,10 +490,7 @@ fn apply_set_in_memory(key: &str, value: &str, ctx: &mut CommandContext) -> Resu
         }
         "claudeInChromeDefaultEnabled" | "claude_in_chrome_default_enabled" => {
             s.claude_in_chrome_default_enabled = parsed_bool_opt();
-            Ok(format!(
-                "Claude-in-Chrome default: {}",
-                parsed_bool()
-            ))
+            Ok(format!("Claude-in-Chrome default: {}", parsed_bool()))
         }
         _ => anyhow::bail!(
             "Unknown config key: '{}'. Run `/config show` to see available keys.",
@@ -531,15 +520,18 @@ fn persist_set(scope: WriteScope, key: &str, value: &str, cwd: &Path) -> Result<
         WriteScope::Project => settings::write_project_settings(cwd, &raw)?,
         WriteScope::Local => settings::write_local_settings(cwd, &raw)?,
     };
-    Ok(format!("→ persisted to {} (backups kept)", written.display()))
+    Ok(format!(
+        "→ persisted to {} (backups kept)",
+        written.display()
+    ))
 }
 
 /// Compute the on-disk path for a scope without touching the filesystem.
 fn scope_path(scope: WriteScope, cwd: &Path) -> std::path::PathBuf {
     match scope {
         WriteScope::User => settings::user_settings_path(),
-        WriteScope::Project => cwd.join(".cc-rust").join("settings.json"),
-        WriteScope::Local => cwd.join(".cc-rust").join("settings.local.json"),
+        WriteScope::Project => settings::project_settings_path(cwd),
+        WriteScope::Local => settings::local_settings_path(cwd),
     }
 }
 
@@ -617,8 +609,8 @@ fn handle_reset(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResul
     if let Some(scope) = scope {
         let path = match scope {
             WriteScope::User => settings::user_settings_path(),
-            WriteScope::Project => ctx.cwd.join(".cc-rust").join("settings.json"),
-            WriteScope::Local => ctx.cwd.join(".cc-rust").join("settings.local.json"),
+            WriteScope::Project => settings::project_settings_path(&ctx.cwd),
+            WriteScope::Local => settings::local_settings_path(&ctx.cwd),
         };
         settings::write_settings_file(&path, &RawSettings::default())?;
         return Ok(CommandResult::Output(format!(
@@ -646,9 +638,13 @@ mod tests {
     use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {
+        test_ctx_with_cwd(PathBuf::from("/test/project"))
+    }
+
+    fn test_ctx_with_cwd(cwd: PathBuf) -> CommandContext {
         CommandContext {
             messages: Vec::new(),
-            cwd: PathBuf::from("/test/project"),
+            cwd,
             app_state: AppState::default(),
             session_id: SessionId::from_string("test-session"),
         }
@@ -689,7 +685,64 @@ mod tests {
             _ => panic!("Expected Output result"),
         }
         assert_eq!(ctx.app_state.main_loop_model, "claude-opus");
-        assert!(dir.path().join("settings.json").exists());
+        assert!(settings::user_settings_path().exists());
+    }
+
+    #[tokio::test]
+    async fn test_config_set_permission_mode_updates_live_context() {
+        let dir = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+        let handler = ConfigHandler;
+        let mut ctx = test_ctx();
+        let result = handler
+            .execute("set permissionMode dontAsk", &mut ctx)
+            .await
+            .unwrap();
+        let CommandResult::Output(text) = result else {
+            panic!("expected output")
+        };
+        assert!(text.contains("Permission mode set to: dontAsk"));
+        assert_eq!(
+            ctx.app_state.tool_permission_context.mode,
+            crate::types::tool::PermissionMode::DontAsk
+        );
+    }
+
+    #[tokio::test]
+    async fn test_config_set_project_from_subdir_preserves_existing_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let project_root = dir.path().join("workspace");
+        let nested = project_root.join("src").join("nested");
+        let project_dir = project_root.join(".cc-rust");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::create_dir_all(&project_dir).unwrap();
+
+        let existing = serde_json::json!({
+            "model": "claude-opus",
+            "verbose": true,
+            "theme": "dark"
+        });
+        std::fs::write(
+            project_dir.join("settings.json"),
+            serde_json::to_string_pretty(&existing).unwrap(),
+        )
+        .unwrap();
+
+        let handler = ConfigHandler;
+        let mut ctx = test_ctx_with_cwd(nested.clone());
+        handler
+            .execute("set theme light --project", &mut ctx)
+            .await
+            .unwrap();
+
+        let written: RawSettings = serde_json::from_str(
+            &std::fs::read_to_string(project_dir.join("settings.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(written.model.as_deref(), Some("claude-opus"));
+        assert_eq!(written.verbose, Some(true));
+        assert_eq!(written.theme.as_deref(), Some("light"));
+        assert!(!nested.join(".cc-rust").join("settings.json").exists());
     }
 
     #[tokio::test]
