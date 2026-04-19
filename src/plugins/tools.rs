@@ -14,7 +14,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
 use crate::permissions::decision::{self, PermissionBehavior};
-use crate::tools::bash::truncate_output;
+use crate::tools::exec::bash::truncate_output;
 use crate::types::app_state::AppState;
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{
