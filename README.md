@@ -178,6 +178,22 @@ single data root — `$CC_RUST_HOME` if set, otherwise `~/.cc-rust/`. See
 1) 在 rust/src/api/ 下实现对新服务提供商的封装，遵循现有 Client 设计模式。
 2) 集成到 config 中的 provider 切换逻辑，确保在运行时可选切换。
 
+已内置的第三方云 Claude 接入（AWS Bedrock / GCP Vertex AI）使用方法及已知限制，参见
+[`docs/cloud-providers.md`](docs/cloud-providers.md)。启用示例：
+
+```bash
+# AWS Bedrock
+export CLAUDE_CODE_USE_BEDROCK=1
+export AWS_REGION=us-east-1
+export AWS_BEARER_TOKEN_BEDROCK=...   # or AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY
+
+# GCP Vertex AI
+export CLAUDE_CODE_USE_VERTEX=1
+export ANTHROPIC_VERTEX_PROJECT_ID=my-project
+export CLOUD_ML_REGION=us-east5
+gcloud auth application-default login
+```
+
 测试策略
 - 单元测试：为核心组件（QueryEngine、Tool、Skill、Permissions 等）编写单元测试。
 - 集成测试：通过模拟前端输入，验证整个对话流的正确性与边界条件。
