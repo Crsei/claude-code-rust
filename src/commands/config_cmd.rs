@@ -166,6 +166,18 @@ fn handle_show(parts: &[&str], ctx: &CommandContext) -> Result<CommandResult> {
         "outputStyle",
         &mut lines,
     );
+    // Resolve the configured style now so the user sees what will actually
+    // be injected — built-ins always show as the canonical name; custom
+    // styles surface as their resolved name (or fall back to default if
+    // the file can't be loaded).
+    if let Some(name) = state.settings.output_style.as_deref() {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let resolved = crate::engine::output_style::resolve(name, &cwd);
+        lines.push(format!(
+            "  outputStyle (resolved): {}",
+            resolved.name()
+        ));
+    }
     row(
         "language",
         opt_str(state.settings.language.clone()),

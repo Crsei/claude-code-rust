@@ -353,6 +353,10 @@ const SUMMARIZE_TOOL_RESULTS: &str =
 ///
 /// Corresponds to TS: `getSystemPrompt(tools, model, dirs, mcpClients)`
 ///
+/// `language` and `output_style` come from the resolved settings layer:
+/// when present, they extend the dynamic section list with a
+/// `# Language` and `# Output Style: <name>` section respectively.
+///
 /// Returns `(system_prompt_parts, user_context, system_context)`.
 pub fn build_system_prompt(
     custom_prompt: Option<&str>,
@@ -360,6 +364,8 @@ pub fn build_system_prompt(
     tools: &[Arc<dyn Tool>],
     model: &str,
     cwd: &str,
+    language: Option<&str>,
+    output_style: Option<&str>,
 ) -> (
     Vec<String>,
     HashMap<String, String>,
@@ -390,11 +396,28 @@ pub fn build_system_prompt(
         let cwd_owned = cwd.to_string();
 
         let cwd_for_git = cwd.to_string();
+        let language_owned = language.map(|s| s.to_string());
+        let output_style_owned = output_style.map(|s| s.to_string());
+        let cwd_for_style = std::path::PathBuf::from(cwd);
         let dynamic_sections = vec![
             cached_section("env_info_simple", move || {
                 Some(env_info_section(&model_owned, &cwd_owned))
             }),
             cached_section("git_status", move || git_status_section(&cwd_for_git)),
+            uncached_section(
+                "language",
+                move || language_section(language_owned.as_deref()),
+                "language is a runtime setting that may change between sessions",
+            ),
+            uncached_section(
+                "output_style",
+                move || {
+                    let name = output_style_owned.as_deref()?;
+                    let style = crate::engine::output_style::resolve(name, &cwd_for_style);
+                    crate::engine::output_style::style_section(&style)
+                },
+                "output style files are read from disk per session",
+            ),
             cached_section("summarize_tool_results", || {
                 Some(SUMMARIZE_TOOL_RESULTS.to_string())
             }),
@@ -760,8 +783,15 @@ mod tests {
     #[test]
     fn test_default_prompt_has_all_sections() {
         prompt_sections::clear_cache();
-        let (parts, ctx, _) =
-            build_system_prompt(None, None, &[], "claude-sonnet-4-20250514", "/tmp");
+        let (parts, ctx, _) = build_system_prompt(
+            None,
+            None,
+            &[],
+            "claude-sonnet-4-20250514",
+            "/tmp",
+            None,
+            None,
+        );
 
         // Should have at least: intro, system, doing_tasks, actions, tools, tone, efficiency, boundary, env_info, summarize
         assert!(
@@ -780,6 +810,72 @@ mod tests {
         assert!(joined.contains("# Output efficiency"), "missing efficiency");
         assert!(joined.contains(DYNAMIC_BOUNDARY), "missing boundary");
         assert!(joined.contains("<env>"), "missing env_info");
+        assert!(
+            !joined.contains("# Language"),
+            "language section should be omitted when language is None"
+        );
+        assert!(
+            !joined.contains("# Output Style"),
+            "output style should be omitted when None"
+        );
+    }
+
+    #[test]
+    fn test_language_setting_injects_section() {
+        prompt_sections::clear_cache();
+        let (parts, _, _) = build_system_prompt(
+            None,
+            None,
+            &[],
+            "claude-sonnet-4-20250514",
+            "/tmp",
+            Some("Chinese"),
+            None,
+        );
+        let joined = parts.join("\n");
+        assert!(joined.contains("# Language"), "language section missing");
+        assert!(
+            joined.contains("Chinese"),
+            "language name should appear in prompt"
+        );
+    }
+
+    #[test]
+    fn test_output_style_explanatory_injects_section() {
+        prompt_sections::clear_cache();
+        let (parts, _, _) = build_system_prompt(
+            None,
+            None,
+            &[],
+            "claude-sonnet-4-20250514",
+            "/tmp",
+            None,
+            Some("explanatory"),
+        );
+        let joined = parts.join("\n");
+        assert!(
+            joined.contains("# Output Style: Explanatory"),
+            "expected explanatory output style header"
+        );
+    }
+
+    #[test]
+    fn test_output_style_default_emits_no_section() {
+        prompt_sections::clear_cache();
+        let (parts, _, _) = build_system_prompt(
+            None,
+            None,
+            &[],
+            "claude-sonnet-4-20250514",
+            "/tmp",
+            None,
+            Some("default"),
+        );
+        let joined = parts.join("\n");
+        assert!(
+            !joined.contains("# Output Style"),
+            "default style should not emit a section"
+        );
     }
 
     #[test]
@@ -791,6 +887,8 @@ mod tests {
             &[],
             "test",
             "/tmp",
+            None,
+            None,
         );
         assert_eq!(parts[0], "You are a custom assistant.");
         // Should NOT contain static sections
@@ -801,8 +899,15 @@ mod tests {
     #[test]
     fn test_append_prompt() {
         prompt_sections::clear_cache();
-        let (parts, _, _) =
-            build_system_prompt(None, Some("Always be concise."), &[], "test", "/tmp");
+        let (parts, _, _) = build_system_prompt(
+            None,
+            Some("Always be concise."),
+            &[],
+            "test",
+            "/tmp",
+            None,
+            None,
+        );
         assert_eq!(parts.last().unwrap(), "Always be concise.");
     }
 
@@ -864,7 +969,7 @@ mod tests {
         fs::write(&md_path, "# Rules\nUse snake_case.").unwrap();
 
         let cwd = dir.to_str().unwrap();
-        let (parts, _, _) = build_system_prompt(None, None, &[], "test", cwd);
+        let (parts, _, _) = build_system_prompt(None, None, &[], "test", cwd, None, None);
         let joined = parts.join("\n");
         assert!(joined.contains("snake_case"));
         assert!(joined.contains("OVERRIDE"));

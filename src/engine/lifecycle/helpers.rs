@@ -163,12 +163,23 @@ pub(crate) fn build_messages_request(
         )
     };
 
-    // Build thinking config
+    // Build thinking config.
+    //
+    // The budget is resolved with `effort_value` taking priority over
+    // `max_output_tokens`, so /effort low|medium|high (or a numeric override)
+    // controls reasoning depth without also capping the response length.
     let thinking = params.thinking_enabled.and_then(|enabled| {
         if enabled {
+            let max_tokens_fallback = params
+                .max_output_tokens
+                .map(|n| n.min(u32::MAX as usize) as u32);
+            let budget = crate::engine::effort::resolve_thinking_budget(
+                params.effort_value.as_deref(),
+                max_tokens_fallback,
+            );
             Some(serde_json::json!({
                 "type": "enabled",
-                "budget_tokens": params.max_output_tokens.unwrap_or(16384)
+                "budget_tokens": budget,
             }))
         } else {
             None
@@ -187,5 +198,78 @@ pub(crate) fn build_messages_request(
         stream: true,
         thinking,
         tool_choice: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::deps::ModelCallParams;
+
+    fn base_params() -> ModelCallParams {
+        ModelCallParams {
+            messages: vec![],
+            system_prompt: vec!["sys".into()],
+            tools: vec![],
+            model: Some("claude-sonnet-4-20250514".into()),
+            max_output_tokens: Some(16_384),
+            skip_cache_write: None,
+            thinking_enabled: Some(true),
+            effort_value: None,
+        }
+    }
+
+    #[test]
+    fn thinking_budget_uses_effort_high_over_max_tokens() {
+        let mut p = base_params();
+        p.effort_value = Some("high".into());
+        p.max_output_tokens = Some(99_999);
+
+        let req = build_messages_request(&p);
+        let thinking = req.thinking.expect("thinking config present");
+        assert_eq!(thinking["type"], "enabled");
+        assert_eq!(thinking["budget_tokens"], 24_576);
+    }
+
+    #[test]
+    fn thinking_budget_falls_back_to_max_tokens_when_effort_missing() {
+        let mut p = base_params();
+        p.effort_value = None;
+        p.max_output_tokens = Some(8_000);
+
+        let req = build_messages_request(&p);
+        let thinking = req.thinking.expect("thinking config present");
+        assert_eq!(thinking["budget_tokens"], 8_000);
+    }
+
+    #[test]
+    fn thinking_budget_accepts_numeric_effort_override() {
+        let mut p = base_params();
+        p.effort_value = Some("12345".into());
+        p.max_output_tokens = Some(8_000);
+
+        let req = build_messages_request(&p);
+        let thinking = req.thinking.expect("thinking config present");
+        assert_eq!(thinking["budget_tokens"], 12_345);
+    }
+
+    #[test]
+    fn thinking_omitted_when_disabled() {
+        let mut p = base_params();
+        p.thinking_enabled = Some(false);
+        p.effort_value = Some("high".into());
+
+        let req = build_messages_request(&p);
+        assert!(req.thinking.is_none());
+    }
+
+    #[test]
+    fn thinking_omitted_when_unset() {
+        let mut p = base_params();
+        p.thinking_enabled = None;
+        p.effort_value = Some("high".into());
+
+        let req = build_messages_request(&p);
+        assert!(req.thinking.is_none());
     }
 }
