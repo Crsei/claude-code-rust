@@ -208,6 +208,8 @@ pub struct ToolUseContext {
     pub read_file_state: FileStateCache,
     pub get_app_state: Arc<dyn Fn() -> AppState + Send + Sync>,
     pub set_app_state: Arc<dyn Fn(Box<dyn FnOnce(AppState) -> AppState>) + Send + Sync>,
+    pub session_id: String,
+    pub langfuse_session_id: String,
     pub messages: Vec<Message>,
     pub agent_id: Option<String>,
     pub agent_type: Option<String>,

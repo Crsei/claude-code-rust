@@ -206,6 +206,7 @@ impl AgentTool {
             worktree_path.to_string_lossy().to_string(),
             ctx,
             agent_id,
+            params.subagent_type.as_deref(),
             agent_model,
             parent_model,
             current_depth,

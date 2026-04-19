@@ -156,8 +156,11 @@ fn main() -> ExitCode {
         return startup::fast_paths::run_claude_in_chrome_mcp();
     }
 
-    // Initialize tracing (stderr + file). Guard must outlive the process.
-    let _tracing_guard = startup::logging::init_tracing(cli.verbose);
+    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+    let _tracing_guard = {
+        let _enter = rt.enter();
+        startup::logging::init_tracing(cli.verbose)
+    };
 
     info!("claude-code-rs v{}", env!("CARGO_PKG_VERSION"));
 
@@ -166,10 +169,7 @@ fn main() -> ExitCode {
         return startup::fast_paths::run_dump_system_prompt(&cli);
     }
 
-    // Phase B: full initialization
-    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
-
-    rt.block_on(async {
+    let exit_code = rt.block_on(async {
         match run_full_init(cli).await {
             Ok(code) => code,
             Err(e) => {
@@ -177,7 +177,9 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         }
-    })
+    });
+    crate::services::langfuse::shutdown_langfuse();
+    exit_code
 }
 
 // ---------------------------------------------------------------------------

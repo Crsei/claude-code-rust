@@ -229,6 +229,7 @@ fn build_child_config(
     cwd: String,
     ctx: &ToolUseContext,
     agent_id: &str,
+    child_agent_type: Option<&str>,
     agent_model: &str,
     parent_model: &str,
     current_depth: usize,
@@ -265,6 +266,8 @@ fn build_child_config(
                 chain_id,
                 depth: current_depth + 1,
             },
+            langfuse_session_id: ctx.langfuse_session_id.clone(),
+            agent_type: child_agent_type.map(|value| value.to_string()),
         }),
     }
 }

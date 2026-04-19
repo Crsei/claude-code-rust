@@ -32,6 +32,7 @@ pub(crate) struct QueryEngineDeps {
     pub(crate) state: Arc<RwLock<QueryEngineState>>,
     /// Audit context for this submit — carries correlation IDs.
     pub(crate) audit_ctx: crate::observability::AuditContext,
+    pub(crate) langfuse_trace: Option<crate::services::langfuse::LangfuseTrace>,
     /// When `Some`, the deps will use this client for `call_model` /
     /// `call_model_streaming`. When `None`, those methods bail with a
     /// descriptive error.
@@ -349,9 +350,18 @@ impl QueryDeps for QueryEngineDeps {
                     s.app_state = updater(old);
                 })
             },
+            session_id: self.audit_ctx.session_id.clone(),
+            langfuse_session_id: self
+                .langfuse_trace
+                .as_ref()
+                .map(|trace| trace.session_id.clone())
+                .unwrap_or_else(|| self.audit_ctx.session_id.clone()),
             messages: vec![],
             agent_id: self.agent_context.as_ref().map(|ac| ac.agent_id.clone()),
-            agent_type: self.agent_context.as_ref().map(|_| "subagent".to_string()),
+            agent_type: self
+                .agent_context
+                .as_ref()
+                .and_then(|ac| ac.agent_type.clone()),
             query_tracking: self
                 .agent_context
                 .as_ref()
@@ -697,6 +707,15 @@ impl QueryDeps for QueryEngineDeps {
 
         // Emit tool.start audit event
         let tool_audit_ctx = self.audit_ctx.with_tool_use(&request.tool_use_id);
+        let tool_langfuse_span = self.langfuse_trace.as_ref().and_then(|trace| {
+            crate::services::langfuse::create_tool_span(
+                trace,
+                &request.tool_name,
+                &request.tool_use_id,
+                &effective_input,
+                request.langfuse_batch_span.as_ref(),
+            )
+        });
         {
             use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
             tool_audit_ctx.emit(
@@ -717,6 +736,22 @@ impl QueryDeps for QueryEngineDeps {
             .await
         {
             Ok(result) => {
+                let result_preview =
+                    result
+                        .display_preview
+                        .clone()
+                        .unwrap_or_else(|| match &result.data {
+                            serde_json::Value::String(value) => value.clone(),
+                            other => {
+                                serde_json::to_string(other).unwrap_or_else(|_| "null".to_string())
+                            }
+                        });
+                crate::services::langfuse::finish_tool_span(
+                    tool_langfuse_span,
+                    &request.tool_name,
+                    &result_preview,
+                    false,
+                );
                 // Emit tool.finish audit event
                 {
                     use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
@@ -758,6 +793,12 @@ impl QueryDeps for QueryEngineDeps {
                 })
             }
             Err(e) => {
+                crate::services::langfuse::finish_tool_span(
+                    tool_langfuse_span,
+                    &request.tool_name,
+                    &e.to_string(),
+                    true,
+                );
                 // Emit tool.error audit event
                 {
                     use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
@@ -827,5 +868,15 @@ impl QueryDeps for QueryEngineDeps {
 
     fn audit_context(&self) -> crate::observability::AuditContext {
         self.audit_ctx.clone()
+    }
+
+    fn langfuse_trace(&self) -> Option<crate::services::langfuse::LangfuseTrace> {
+        self.langfuse_trace.clone()
+    }
+
+    fn langfuse_provider_name(&self) -> Option<String> {
+        self.api_client
+            .as_ref()
+            .map(|client| client.langfuse_provider_name().to_string())
     }
 }

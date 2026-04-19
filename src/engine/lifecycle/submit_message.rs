@@ -278,6 +278,7 @@ impl QueryEngine {
             };
 
             // Create API client for the selected backend.
+            let mut submit_langfuse_trace = None;
             let api_client: Option<Arc<crate::api::client::ApiClient>> =
                 crate::api::client::ApiClient::from_backend(Some(&backend_name)).map(Arc::new);
             if api_client.is_none() {
@@ -312,6 +313,31 @@ impl QueryEngine {
                 return;
             }
 
+            if let Some(ref api_client) = api_client {
+                let provider = api_client.langfuse_provider_name().to_string();
+                submit_langfuse_trace = if let Some(agent_context) = config.agent_context.as_ref() {
+                    crate::services::langfuse::create_subagent_trace(
+                        &agent_context.langfuse_session_id,
+                        agent_context
+                            .agent_type
+                            .as_deref()
+                            .unwrap_or("general-purpose"),
+                        &agent_context.agent_id,
+                        &model_name,
+                        &provider,
+                        &prompt,
+                    )
+                } else {
+                    crate::services::langfuse::create_trace(
+                        session_id.as_str(),
+                        &model_name,
+                        &provider,
+                        &prompt,
+                        Some(query_source.as_str()),
+                    )
+                };
+            }
+
             // Create deps for the inner query loop
             let permission_callback = state_ref.read().permission_callback.clone();
             let bg_agent_tx = state_ref.read().bg_agent_tx.clone();
@@ -320,6 +346,7 @@ impl QueryEngine {
                 aborted: aborted_ref.clone(),
                 state: state_ref.clone(),
                 audit_ctx: submit_audit_ctx,
+                langfuse_trace: submit_langfuse_trace.clone(),
                 api_client,
                 agent_context: config.agent_context.clone(),
                 permission_callback,
@@ -488,10 +515,17 @@ impl QueryEngine {
                                 max_turns,
                                 turn_count,
                             } => {
+                                let result_text =
+                                    format!("Reached maximum of {} turns", max_turns);
                                 let (usage_snap, denials_snap) = {
                                     let s = state_ref.read();
                                     (s.usage.clone(), s.permission_denials.clone())
                                 };
+                                crate::services::langfuse::end_trace(
+                                    submit_langfuse_trace.take(),
+                                    Some(&result_text),
+                                    Some(crate::services::langfuse::TraceStatus::Error),
+                                );
 
                                 yield SdkMessage::Result(SdkResult {
                                     subtype: ResultSubtype::ErrorMaxTurns,
@@ -505,10 +539,7 @@ impl QueryEngine {
                                         .as_millis()
                                         as u64,
                                     num_turns: *turn_count,
-                                    result: format!(
-                                        "Reached maximum of {} turns",
-                                        max_turns
-                                    ),
+                                    result: result_text,
                                     stop_reason: last_stop_reason.clone(),
                                     session_id: session_id.to_string(),
                                     total_cost_usd: usage_snap.total_cost_usd,
@@ -643,6 +674,15 @@ impl QueryEngine {
                             let s = state_ref.read();
                             (s.usage.clone(), s.permission_denials.clone())
                         };
+                        let result_text = format!(
+                            "Stopped: cost ${:.4} exceeded budget ${:.4}",
+                            current_cost, max_budget
+                        );
+                        crate::services::langfuse::end_trace(
+                            submit_langfuse_trace.take(),
+                            Some(&result_text),
+                            Some(crate::services::langfuse::TraceStatus::Error),
+                        );
 
                         yield SdkMessage::Result(SdkResult {
                             subtype: ResultSubtype::ErrorMaxBudgetUsd,
@@ -656,10 +696,7 @@ impl QueryEngine {
                                 .as_millis()
                                 as u64,
                             num_turns: turn_count_this_submit,
-                            result: format!(
-                                "Stopped: cost ${:.4} exceeded budget ${:.4}",
-                                current_cost, max_budget
-                            ),
+                            result: result_text,
                             stop_reason: last_stop_reason.clone(),
                             session_id: session_id.to_string(),
                             total_cost_usd: current_cost,
@@ -730,6 +767,16 @@ impl QueryEngine {
                 );
                 ctx.flush();
             }
+
+            crate::services::langfuse::end_trace(
+                submit_langfuse_trace.take(),
+                Some(&text_result),
+                if is_success {
+                    None
+                } else {
+                    Some(crate::services::langfuse::TraceStatus::Error)
+                },
+            );
 
             yield SdkMessage::Result(SdkResult {
                 subtype,

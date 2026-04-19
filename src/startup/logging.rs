@@ -53,7 +53,7 @@ pub fn init_tracing(verbose: bool) -> WorkerGuard {
     let file_appender = tracing_appender::rolling::daily(&log_dir, "cc-rust.log");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
-    tracing_subscriber::registry()
+    let subscriber = tracing_subscriber::registry()
         .with(
             tracing_subscriber::fmt::layer()
                 .with_target(false)
@@ -68,8 +68,22 @@ pub fn init_tracing(verbose: bool) -> WorkerGuard {
                 .with_filter(tracing_subscriber::EnvFilter::new(
                     "debug,reqwest=warn,hyper_util=warn,hyper=warn,h2=warn,rustls=warn,ignore=warn,globset=warn",
                 )),
-        )
-        .init();
+        );
+
+    match crate::services::langfuse::init_langfuse() {
+        Ok(Some(tracer)) => {
+            let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+            subscriber.with(telemetry).init();
+        }
+        Ok(None) => subscriber.init(),
+        Err(error) => {
+            eprintln!(
+                "warning: failed to initialize Langfuse tracing: {}. Continuing without Langfuse.",
+                error
+            );
+            subscriber.init();
+        }
+    }
 
     guard
 }

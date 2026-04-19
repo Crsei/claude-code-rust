@@ -132,7 +132,23 @@ pub(crate) async fn execute_tool_calls(
         batches.push((is_safe, vec![(id.clone(), name.clone(), input.clone())]));
     }
 
+    let mut batch_index = 0usize;
     for (is_concurrent, batch) in batches {
+        let batch_tool_names = batch
+            .iter()
+            .map(|(_, name, _)| name.clone())
+            .collect::<Vec<String>>();
+        let batch_span = if is_concurrent && batch.len() > 1 {
+            deps.langfuse_trace().as_ref().and_then(|trace| {
+                crate::services::langfuse::create_tool_batch_span(
+                    trace,
+                    &batch_tool_names,
+                    batch_index,
+                )
+            })
+        } else {
+            None
+        };
         if is_concurrent && batch.len() > 1 {
             // Concurrent execution
             let mut handles = Vec::new();
@@ -140,11 +156,13 @@ pub(crate) async fn execute_tool_calls(
                 let deps = deps.clone();
                 let parent = parent_message.clone();
                 let tools = tools.clone();
+                let batch_span = batch_span.clone();
                 let handle = tokio::spawn(async move {
                     let req = ToolExecRequest {
                         tool_use_id: id,
                         tool_name: name,
                         input,
+                        langfuse_batch_span: batch_span,
                     };
                     deps.execute_tool(req, &tools, &parent, None).await
                 });
@@ -179,6 +197,7 @@ pub(crate) async fn execute_tool_calls(
                     tool_use_id: id,
                     tool_name: name,
                     input,
+                    langfuse_batch_span: None,
                 };
                 match deps.execute_tool(req, tools, parent_message, None).await {
                     Ok(result) => results.push(result),
@@ -198,6 +217,8 @@ pub(crate) async fn execute_tool_calls(
                 }
             }
         }
+        crate::services::langfuse::end_span(batch_span);
+        batch_index += 1;
     }
 
     results

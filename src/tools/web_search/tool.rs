@@ -384,6 +384,8 @@ mod tests {
             read_file_state: FileStateCache::default(),
             get_app_state: Arc::new(move || state.clone()),
             set_app_state: Arc::new(|_| {}),
+            session_id: "test-session".to_string(),
+            langfuse_session_id: "test-session".to_string(),
             messages: vec![],
             agent_id: None,
             agent_type: None,

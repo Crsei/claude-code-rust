@@ -231,6 +231,8 @@ mod tests {
             read_file_state: FileStateCache::default(),
             get_app_state: std::sync::Arc::new(crate::types::app_state::AppState::default),
             set_app_state: std::sync::Arc::new(|_| {}),
+            session_id: "test-session".to_string(),
+            langfuse_session_id: "test-session".to_string(),
             messages: vec![],
             agent_id: None,
             agent_type: None,
