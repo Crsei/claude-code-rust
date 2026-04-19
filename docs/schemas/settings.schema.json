@@ -36,8 +36,36 @@
       "additionalProperties": true,
       "properties": {
         "enabled": { "type": "boolean" },
-        "mode": { "type": "string" },
-        "allowedCommands": { "type": "array", "items": { "type": "string" } }
+        "mode": {
+          "type": "string",
+          "enum": ["read-only", "workspace", "full"]
+        },
+        "failIfUnavailable": { "type": "boolean" },
+        "allowUnsandboxedCommands": { "type": "boolean" },
+        "allowManagedReadPathsOnly": { "type": "boolean" },
+        "allowManagedDomainsOnly": { "type": "boolean" },
+        "excludedCommands": { "type": "array", "items": { "type": "string" } },
+        "allowedCommands": { "type": "array", "items": { "type": "string" } },
+        "filesystem": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "allowRead": { "type": "array", "items": { "type": "string" } },
+            "denyRead": { "type": "array", "items": { "type": "string" } },
+            "allowWrite": { "type": "array", "items": { "type": "string" } },
+            "denyWrite": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "network": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "disabled": { "type": "boolean" },
+            "allowedDomains": { "type": "array", "items": { "type": "string" } },
+            "httpProxyPort": { "type": "integer", "minimum": 0, "maximum": 65535 },
+            "socksProxyPort": { "type": "integer", "minimum": 0, "maximum": 65535 }
+          }
+        }
       }
     },
     "hooks": { "type": "object", "additionalProperties": true },

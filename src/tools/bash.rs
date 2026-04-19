@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 use tokio::process::Command;
 
 use crate::permissions::dangerous::is_dangerous_command;
+use crate::sandbox::{make_runner, policy_from_app_state};
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{
     InterruptBehavior, PermissionResult, Tool, ToolProgress, ToolResult, ToolUseContext,
@@ -211,6 +212,20 @@ impl Tool for BashTool {
             }
         }
 
+        // Sandbox escape-hatch gate: when the caller passed
+        // `dangerouslyDisableSandbox: true` but settings forbid it, deny.
+        let wants_escape = input
+            .get("dangerouslyDisableSandbox")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if wants_escape && !app_state.settings.sandbox.allow_unsandboxed_commands.unwrap_or(true) {
+            return PermissionResult::Deny {
+                message: "sandbox.allowUnsandboxedCommands=false rejects \
+                          dangerouslyDisableSandbox"
+                    .to_string(),
+            };
+        }
+
         PermissionResult::Allow {
             updated_input: input.clone(),
         }
@@ -219,7 +234,7 @@ impl Tool for BashTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _parent_message: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
@@ -259,9 +274,66 @@ impl Tool for BashTool {
             cmd.env(&k, &v);
         }
 
-        // Capture stdout and stderr
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
+        // Sandbox integration. Build the effective policy from the current
+        // AppState + cwd and wrap the command when the sandbox is active.
+        // The `dangerouslyDisableSandbox` escape hatch (already gated by
+        // check_permissions) bypasses wrapping but still records a warning.
+        let escape = input
+            .get("dangerouslyDisableSandbox")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let app_state_arc = (ctx.get_app_state)();
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let policy =
+            policy_from_app_state(&app_state_arc, cwd.clone(), false);
+
+        // Excluded-commands check: if the command matches, short-circuit the
+        // sandbox wrapping (runs in the host) unless unsandboxed is forbidden.
+        let is_excluded = policy.is_excluded_command(&command);
+        if is_excluded && !policy.allow_unsandboxed_commands {
+            return Ok(ToolResult {
+                data: json!({
+                    "error": crate::sandbox::SandboxError::EscapeHatchDisabled {
+                        command: command.clone()
+                    }
+                    .to_string(),
+                    "sandbox_blocked": true,
+                }),
+                new_messages: vec![],
+                ..Default::default()
+            });
+        }
+
+        let mut sandbox_description = String::from("unsandboxed");
+        if !escape && !is_excluded {
+            if let Some(runner) = make_runner(&policy) {
+                match runner.prepare(cmd, &policy, &cwd) {
+                    Ok(prepared) => {
+                        sandbox_description = prepared.description;
+                        cmd = prepared.cmd;
+                        // Piped stdio must be re-applied because the wrapper command
+                        // is freshly constructed.
+                        cmd.stdout(std::process::Stdio::piped());
+                        cmd.stderr(std::process::Stdio::piped());
+                    }
+                    Err(e) => {
+                        return Ok(ToolResult {
+                            data: json!({
+                                "error": e.to_string(),
+                                "sandbox_blocked": true,
+                            }),
+                            new_messages: vec![],
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
+        } else {
+            // Capture stdout and stderr on the unwrapped command.
+            cmd.stdout(std::process::Stdio::piped());
+            cmd.stderr(std::process::Stdio::piped());
+        }
+        tracing::debug!(sandbox = %sandbox_description, "bash tool exec");
 
         let timeout_duration = resolve_timeout(timeout_ms);
 

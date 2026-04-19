@@ -141,18 +141,124 @@ impl PermissionsSettings {
     }
 }
 
+/// Filesystem paths the sandbox permits or denies access to.
+///
+/// Paths accept three prefix conventions (matching Claude Code):
+/// - `/absolute/path` — absolute path
+/// - `~/relative` — relative to `$HOME`
+/// - `./relative` or bare `relative` — relative to the project root (or the
+///   enclosing `~/.cc-rust/` for user settings)
+///
+/// Lists from every [`SettingsSource`] are **merged**, not replaced, so users
+/// can extend managed rules without overriding them.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SandboxFilesystemSettings {
+    pub allow_read: Vec<String>,
+    pub deny_read: Vec<String>,
+    pub allow_write: Vec<String>,
+    pub deny_write: Vec<String>,
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
+}
+
+impl SandboxFilesystemSettings {
+    pub fn is_effectively_empty(&self) -> bool {
+        self.allow_read.is_empty()
+            && self.deny_read.is_empty()
+            && self.allow_write.is_empty()
+            && self.deny_write.is_empty()
+            && self.extra.is_empty()
+    }
+}
+
+/// Network restrictions applied to shell subprocesses and WebFetch.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SandboxNetworkSettings {
+    /// Hard-disable all network access (matches `--no-network`).
+    pub disabled: Option<bool>,
+    /// Domain allowlist. Empty list means "no restriction".
+    pub allowed_domains: Vec<String>,
+    /// Optional HTTP proxy port for advanced network sandboxing.
+    pub http_proxy_port: Option<u16>,
+    /// Optional SOCKS proxy port for advanced network sandboxing.
+    pub socks_proxy_port: Option<u16>,
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
+}
+
+impl SandboxNetworkSettings {
+    pub fn is_effectively_empty(&self) -> bool {
+        self.disabled.is_none()
+            && self.allowed_domains.is_empty()
+            && self.http_proxy_port.is_none()
+            && self.socks_proxy_port.is_none()
+            && self.extra.is_empty()
+    }
+}
+
 /// Sandbox section of settings.json.
+///
+/// Aligned with Claude Code's `sandbox.*` settings surface. A pragmatic
+/// subset of the TypeScript reference is enforced at runtime:
+/// - `enabled` + `mode` drive policy assembly
+/// - `failIfUnavailable` controls the hard-fail path when the OS primitives
+///   (bubblewrap / sandbox-exec / Restricted Token) are missing
+/// - `allowUnsandboxedCommands` gates the `dangerouslyDisableSandbox` escape
+///   hatch
+/// - `excludedCommands` forces specific commands outside the sandbox
+/// - `filesystem.*` controls subprocess fs access (merged with Read/Edit
+///   permission rules)
+/// - `network.*` controls subprocess + WebFetch network access
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct SandboxSettings {
-    /// Enable sandbox for shell / tool execution.
+    /// Enable sandbox for shell / tool execution. Defaults to `false`.
     pub enabled: Option<bool>,
-    /// Sandbox profile / mode identifier.
+    /// Sandbox profile identifier: `read-only`, `workspace`, or `full` (off).
     pub mode: Option<String>,
-    /// Per-command allow list.
+    /// When `true` and the OS primitive is unavailable, fail hard instead of
+    /// falling back to unsandboxed execution (default: `false`).
+    pub fail_if_unavailable: Option<bool>,
+    /// When `false`, reject the `dangerouslyDisableSandbox` escape hatch
+    /// regardless of permission rules (default: `true`).
+    pub allow_unsandboxed_commands: Option<bool>,
+    /// When `true` in managed settings, only managed `allowRead` entries are
+    /// respected; user/project/local entries are ignored. `denyRead` still
+    /// merges from every source.
+    pub allow_managed_read_paths_only: Option<bool>,
+    /// When `true` in managed settings, only managed `allowedDomains` entries
+    /// are respected; user/project/local entries are ignored.
+    pub allow_managed_domains_only: Option<bool>,
+    /// Commands (glob patterns / prefixes) that must run outside the sandbox.
+    pub excluded_commands: Vec<String>,
+    /// Commands that are pre-approved for sandboxed execution. When the
+    /// active mode is `workspace`, commands in this list are run without
+    /// going through the ask/allow flow.
     pub allowed_commands: Vec<String>,
+    /// Filesystem allow/deny lists (merged with Read/Edit permission rules).
+    pub filesystem: SandboxFilesystemSettings,
+    /// Network policy (allowed domains + --no-network).
+    pub network: SandboxNetworkSettings,
     #[serde(flatten)]
     pub extra: HashMap<String, Value>,
+}
+
+impl SandboxSettings {
+    pub fn is_effectively_empty(&self) -> bool {
+        self.enabled.is_none()
+            && self.mode.is_none()
+            && self.fail_if_unavailable.is_none()
+            && self.allow_unsandboxed_commands.is_none()
+            && self.allow_managed_read_paths_only.is_none()
+            && self.allow_managed_domains_only.is_none()
+            && self.excluded_commands.is_empty()
+            && self.allowed_commands.is_empty()
+            && self.filesystem.is_effectively_empty()
+            && self.network.is_effectively_empty()
+            && self.extra.is_empty()
+    }
 }
 
 /// Status-line configuration.
@@ -279,7 +385,12 @@ impl RawSettings {
             }
         }
 
-        merge_opt!(sandbox, "sandbox");
+        if let Some(sbx) = other.sandbox {
+            if !sbx.is_effectively_empty() {
+                self.sandbox = Some(merge_sandbox(self.sandbox.take(), sbx));
+                sources.insert("sandbox".to_string(), source);
+            }
+        }
 
         if let Some(hooks) = other.hooks {
             let mut merged = self.hooks.take().unwrap_or_default();
@@ -337,6 +448,78 @@ fn merge_permissions(
     }
     if over.enable_auto_mode.is_some() {
         out.enable_auto_mode = over.enable_auto_mode;
+    }
+    for (k, v) in over.extra {
+        out.extra.insert(k, v);
+    }
+    out
+}
+
+/// Merge sandbox settings by overlaying scalar fields and concatenating
+/// (deduped) list fields. This matches the Claude Code spec where
+/// `allowWrite` / `denyWrite` / `allowRead` / `denyRead` / `allowedDomains`
+/// / `excludedCommands` are merged across scopes rather than replaced.
+fn merge_sandbox(base: Option<SandboxSettings>, over: SandboxSettings) -> SandboxSettings {
+    let mut out = base.unwrap_or_default();
+    if over.enabled.is_some() {
+        out.enabled = over.enabled;
+    }
+    if over.mode.is_some() {
+        out.mode = over.mode;
+    }
+    if over.fail_if_unavailable.is_some() {
+        out.fail_if_unavailable = over.fail_if_unavailable;
+    }
+    if over.allow_unsandboxed_commands.is_some() {
+        out.allow_unsandboxed_commands = over.allow_unsandboxed_commands;
+    }
+    if over.allow_managed_read_paths_only.is_some() {
+        out.allow_managed_read_paths_only = over.allow_managed_read_paths_only;
+    }
+    if over.allow_managed_domains_only.is_some() {
+        out.allow_managed_domains_only = over.allow_managed_domains_only;
+    }
+    out.excluded_commands =
+        merge_str_lists(Some(&out.excluded_commands), Some(&over.excluded_commands));
+    out.allowed_commands =
+        merge_str_lists(Some(&out.allowed_commands), Some(&over.allowed_commands));
+    out.filesystem = merge_sandbox_fs(out.filesystem, over.filesystem);
+    out.network = merge_sandbox_net(out.network, over.network);
+    for (k, v) in over.extra {
+        out.extra.insert(k, v);
+    }
+    out
+}
+
+fn merge_sandbox_fs(
+    base: SandboxFilesystemSettings,
+    over: SandboxFilesystemSettings,
+) -> SandboxFilesystemSettings {
+    let mut out = base;
+    out.allow_read = merge_str_lists(Some(&out.allow_read), Some(&over.allow_read));
+    out.deny_read = merge_str_lists(Some(&out.deny_read), Some(&over.deny_read));
+    out.allow_write = merge_str_lists(Some(&out.allow_write), Some(&over.allow_write));
+    out.deny_write = merge_str_lists(Some(&out.deny_write), Some(&over.deny_write));
+    for (k, v) in over.extra {
+        out.extra.insert(k, v);
+    }
+    out
+}
+
+fn merge_sandbox_net(
+    base: SandboxNetworkSettings,
+    over: SandboxNetworkSettings,
+) -> SandboxNetworkSettings {
+    let mut out = base;
+    if over.disabled.is_some() {
+        out.disabled = over.disabled;
+    }
+    out.allowed_domains = merge_str_lists(Some(&out.allowed_domains), Some(&over.allowed_domains));
+    if over.http_proxy_port.is_some() {
+        out.http_proxy_port = over.http_proxy_port;
+    }
+    if over.socks_proxy_port.is_some() {
+        out.socks_proxy_port = over.socks_proxy_port;
     }
     for (k, v) in over.extra {
         out.extra.insert(k, v);
@@ -926,9 +1109,41 @@ pub fn settings_schema() -> Value {
                 "additionalProperties": true,
                 "properties": {
                     "enabled": { "type": "boolean" },
-                    "mode": { "type": "string" },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["read-only", "workspace", "full"]
+                    },
+                    "failIfUnavailable": { "type": "boolean" },
+                    "allowUnsandboxedCommands": { "type": "boolean" },
+                    "allowManagedReadPathsOnly": { "type": "boolean" },
+                    "allowManagedDomainsOnly": { "type": "boolean" },
+                    "excludedCommands": {
+                        "type": "array", "items": { "type": "string" }
+                    },
                     "allowedCommands": {
                         "type": "array", "items": { "type": "string" }
+                    },
+                    "filesystem": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "properties": {
+                            "allowRead": { "type": "array", "items": { "type": "string" } },
+                            "denyRead": { "type": "array", "items": { "type": "string" } },
+                            "allowWrite": { "type": "array", "items": { "type": "string" } },
+                            "denyWrite": { "type": "array", "items": { "type": "string" } }
+                        }
+                    },
+                    "network": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "properties": {
+                            "disabled": { "type": "boolean" },
+                            "allowedDomains": {
+                                "type": "array", "items": { "type": "string" }
+                            },
+                            "httpProxyPort": { "type": "integer", "minimum": 0, "maximum": 65535 },
+                            "socksProxyPort": { "type": "integer", "minimum": 0, "maximum": 65535 }
+                        }
                     }
                 }
             },
