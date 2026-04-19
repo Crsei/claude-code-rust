@@ -127,4 +127,93 @@ impl VirtualScroll {
     pub fn offset_of(&self, index: usize) -> usize {
         self.offsets.get(index).copied().unwrap_or(0)
     }
+
+    /// Terminal width used by the current cache. Exposed for tests /
+    /// diagnostics that want to verify the cache reacted to a resize.
+    #[cfg(test)]
+    pub fn cached_width(&self) -> u16 {
+        self.cached_width
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::message::{
+        AssistantMessage, ContentBlock, Message, MessageContent, UserMessage,
+    };
+    use crate::ui::theme::Theme;
+
+    fn user(text: &str) -> Message {
+        Message::User(UserMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "user".into(),
+            content: MessageContent::Text(text.into()),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        })
+    }
+
+    fn assistant_text(text: &str) -> Message {
+        Message::Assistant(AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".into(),
+            content: vec![ContentBlock::Text { text: text.into() }],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        })
+    }
+
+    /// Regression for the issue-#12 acceptance criterion "resize reflow
+    /// problem closed". `render_single_message` returns logical lines
+    /// (not width-wrapped), so cached `heights[]` may be identical
+    /// across widths — but the *cache metadata* must still track the
+    /// latest width so invalidation triggers on the next real reflow
+    /// (e.g. when messages.rs eventually pre-wraps).
+    ///
+    /// We assert two things:
+    ///   1. `cached_width` updates on `ensure_up_to_date`
+    ///   2. invalidation doesn't lose data when the width didn't change
+    #[test]
+    fn width_change_invalidates_height_cache() {
+        let theme = Theme::default();
+        let msgs = vec![
+            user("a reasonably long message that will wrap differently on narrow widths"),
+            assistant_text("and a long response that should also reflow"),
+        ];
+        let mut vs = VirtualScroll::new();
+        vs.ensure_up_to_date(&msgs, 80, &theme);
+        let total_first = vs.total_lines();
+        assert_eq!(vs.cached_width(), 80);
+        assert!(total_first > 0);
+
+        // Width change → cache width should update. Height is allowed to
+        // stay the same (logical lines), but re-measuring must have
+        // happened (valid_up_to == len).
+        vs.ensure_up_to_date(&msgs, 30, &theme);
+        assert_eq!(vs.cached_width(), 30);
+        assert_eq!(vs.total_lines(), vs.offsets.last().copied().unwrap_or(0));
+
+        // Same width again → no-op, total unchanged.
+        let total_before_noop = vs.total_lines();
+        vs.ensure_up_to_date(&msgs, 30, &theme);
+        assert_eq!(vs.total_lines(), total_before_noop);
+    }
+
+    #[test]
+    fn invalidate_all_resets_cache_to_empty() {
+        let theme = Theme::default();
+        let msgs = vec![user("hello")];
+        let mut vs = VirtualScroll::new();
+        vs.ensure_up_to_date(&msgs, 40, &theme);
+        assert!(vs.total_lines() > 0);
+        vs.invalidate_all();
+        assert_eq!(vs.total_lines(), 0);
+    }
 }

@@ -51,6 +51,9 @@ pub mod keybindings_cmd;
 // Scriptable status line (issue #11)
 pub mod statusline_cmd;
 
+// Terminal setup diagnostics (issue #12)
+pub mod terminal_setup;
+
 // Export
 pub mod audit_export;
 pub mod export;
@@ -420,6 +423,13 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec!["status-line".into()],
             description: "View, edit, or test the scriptable status line".into(),
             handler: Box::new(statusline_cmd::StatusLineHandler),
+        },
+        Command {
+            name: "terminal-setup".into(),
+            aliases: vec!["term-setup".into(), "terminal".into()],
+            description: "Diagnose terminal env + print Shift+Enter / tmux / notification tips"
+                .into(),
+            handler: Box::new(terminal_setup::TerminalSetupHandler),
         },
     ]
 }
