@@ -269,6 +269,8 @@ mod tests {
                 let old = s.clone();
                 *s = f(old);
             }),
+            session_id: "test-session".to_string(),
+            langfuse_session_id: "test-session".to_string(),
             messages: vec![],
             agent_id: None,
             agent_type: None,

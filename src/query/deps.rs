@@ -41,6 +41,7 @@ pub struct ToolExecRequest {
     pub tool_use_id: String,
     pub tool_name: String,
     pub input: Value,
+    pub langfuse_batch_span: Option<crate::services::langfuse::LangfuseSpan>,
 }
 
 /// 工具执行结果 (附带原始 tool_use_id 以便关联)
@@ -148,5 +149,15 @@ pub trait QueryDeps: Send + Sync {
     /// Get the audit context for this submit.
     fn audit_context(&self) -> crate::observability::AuditContext {
         crate::observability::AuditContext::noop("unknown")
+    }
+
+    /// Root Langfuse trace for the current submit, if Langfuse is enabled.
+    fn langfuse_trace(&self) -> Option<crate::services::langfuse::LangfuseTrace> {
+        None
+    }
+
+    /// Provider label used in Langfuse observation metadata.
+    fn langfuse_provider_name(&self) -> Option<String> {
+        None
     }
 }

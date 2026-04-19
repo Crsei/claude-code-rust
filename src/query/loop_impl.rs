@@ -31,7 +31,7 @@ use crate::types::config::QueryParams;
 use crate::types::message::QueryYield;
 use crate::types::message::{
     Attachment, AttachmentMessage, ContentBlock, Message, MessageContent, RequestStartEvent,
-    ToolResultContent, Usage, UserMessage,
+    StreamEvent, ToolResultContent, Usage, UserMessage,
 };
 use crate::types::state::{BudgetTracker, QueryLoopState, TokenBudgetDecision};
 use crate::types::transitions::Continue;
@@ -215,6 +215,26 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 thinking_enabled: deps.get_app_state().thinking_enabled,
                 effort_value: deps.get_app_state().effort_value.clone(),
             };
+            let model_for_langfuse = call_params
+                .model
+                .clone()
+                .unwrap_or_else(|| deps.get_app_state().main_loop_model.clone());
+            let provider_for_langfuse = deps
+                .langfuse_provider_name()
+                .unwrap_or_else(|| "unknown".to_string());
+            let generation_input = crate::services::langfuse::convert::convert_generation_input(
+                &call_params.messages,
+                &call_params.system_prompt,
+                &call_params.tools,
+            );
+            let mut generation_span = deps.langfuse_trace().as_ref().and_then(|trace| {
+                crate::services::langfuse::create_generation_span(
+                    trace,
+                    &model_for_langfuse,
+                    &provider_for_langfuse,
+                    generation_input,
+                )
+            });
 
             // Emit model.request.start audit event
             let req_audit_ctx = turn_audit_ctx.with_request();
@@ -236,6 +256,13 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 Ok(s) => s,
                 Err(e) => {
                     let error_str = e.to_string();
+                    crate::services::langfuse::finish_generation_span(
+                        generation_span.take(),
+                        None,
+                        None,
+                        None,
+                        Some(&error_str),
+                    );
 
                     if error_str.contains("prompt_too_long") || error_str.contains("prompt is too long") {
                         let terminal = handle_prompt_too_long(
@@ -269,11 +296,21 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             // Consume stream events, forwarding to caller while accumulating
             let mut accumulator = crate::api::streaming::StreamAccumulator::new();
             let mut stream_error: Option<String> = None;
+            let mut first_response_at: Option<std::time::Instant> = None;
 
             use futures::StreamExt;
             while let Some(event_result) = event_stream.next().await {
                 match event_result {
                     Ok(event) => {
+                        if first_response_at.is_none()
+                            && matches!(
+                                &event,
+                                StreamEvent::ContentBlockStart { .. }
+                                    | StreamEvent::ContentBlockDelta { .. }
+                            )
+                        {
+                            first_response_at = Some(std::time::Instant::now());
+                        }
                         accumulator.process_event(&event);
                         yield QueryYield::Stream(event);
                     }
@@ -285,6 +322,15 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             }
 
             if let Some(ref err) = stream_error {
+                let ttft_ms = first_response_at
+                    .map(|instant| instant.duration_since(model_call_start).as_millis() as u64);
+                crate::services::langfuse::finish_generation_span(
+                    generation_span.take(),
+                    None,
+                    None,
+                    ttft_ms,
+                    Some(err),
+                );
                 warn!(error = %err, "stream error during model call");
                 {
                     use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
@@ -305,6 +351,17 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
 
             let effective_model = deps.get_app_state().main_loop_model;
             let assistant_message = accumulator.build(&effective_model);
+            let ttft_ms = first_response_at
+                .map(|instant| instant.duration_since(model_call_start).as_millis() as u64);
+            crate::services::langfuse::finish_generation_span(
+                generation_span.take(),
+                Some(crate::services::langfuse::convert::convert_assistant_output(
+                    &assistant_message,
+                )),
+                assistant_message.usage.as_ref(),
+                ttft_ms,
+                None,
+            );
 
             // Emit model.request.finish audit event
             {

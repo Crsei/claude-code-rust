@@ -71,6 +71,27 @@ pub enum ApiProvider {
     },
 }
 
+impl ApiProvider {
+    pub fn langfuse_provider_name(&self) -> &str {
+        match self {
+            ApiProvider::Anthropic { .. } => "anthropic",
+            ApiProvider::Azure { .. } => "azure",
+            ApiProvider::OpenAiCompat { name, .. } => {
+                if name.eq_ignore_ascii_case(OPENAI_CODEX_PROVIDER_NAME)
+                    || name.eq_ignore_ascii_case("openai")
+                {
+                    "openai"
+                } else {
+                    name.as_str()
+                }
+            }
+            ApiProvider::Google { .. } => "google",
+            ApiProvider::Bedrock { .. } => "bedrock",
+            ApiProvider::Vertex { .. } => "vertex",
+        }
+    }
+}
+
 /// Request body for the Messages API
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MessagesRequest {
@@ -574,6 +595,10 @@ impl ApiClient {
     /// Get a reference to the config.
     pub fn config(&self) -> &ApiClientConfig {
         &self.config
+    }
+
+    pub fn langfuse_provider_name(&self) -> &str {
+        self.config.provider.langfuse_provider_name()
     }
 }
 

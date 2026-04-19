@@ -158,4 +158,8 @@ pub struct AgentContext {
     pub agent_id: String,
     /// Chain tracking for recursion depth enforcement.
     pub query_tracking: QueryChainTracking,
+    /// Root Langfuse session ID inherited from the parent agent chain.
+    pub langfuse_session_id: String,
+    /// Sub-agent role/type used for telemetry naming.
+    pub agent_type: Option<String>,
 }

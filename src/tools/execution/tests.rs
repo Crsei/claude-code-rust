@@ -36,6 +36,8 @@ fn make_ctx_with_mode(mode: PermissionMode) -> ToolUseContext {
         },
         get_app_state: Arc::new(move || app.clone()),
         set_app_state: Arc::new(|_| {}),
+        session_id: "test-session".to_string(),
+        langfuse_session_id: "test-session".to_string(),
         messages: vec![],
         agent_id: None,
         agent_type: None,

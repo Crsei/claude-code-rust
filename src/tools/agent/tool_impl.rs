@@ -222,6 +222,7 @@ impl Tool for AgentTool {
                 child_cwd,
                 ctx,
                 &agent_id,
+                params.subagent_type.as_deref(),
                 &agent_model,
                 &parent_model,
                 current_depth,
