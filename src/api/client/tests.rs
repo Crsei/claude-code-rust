@@ -61,35 +61,69 @@ fn test_build_url_anthropic_trailing_slash() {
 }
 
 #[test]
-#[should_panic(expected = "AWS Bedrock provider is not implemented")]
-fn test_build_url_bedrock_not_implemented() {
+fn test_build_url_bedrock_returns_aws_endpoint() {
     let config = ApiClientConfig {
         provider: ApiProvider::Bedrock {
             region: "us-east-1".to_string(),
-            model_id: "anthropic.claude-sonnet-4-20250514-v1:0".to_string(),
+            auth: crate::api::bedrock::BedrockAuth::BearerToken("dummy".to_string()),
+            base_url_override: None,
         },
-        default_model: "claude-sonnet-4-20250514".to_string(),
+        default_model: "claude-sonnet-4-5-20250929".to_string(),
         max_retries: 3,
         timeout_secs: 60,
     };
     let client = ApiClient::new(config);
-    let _ = client.build_url(); // should panic
+    let url = client.build_url();
+    assert!(
+        url.starts_with("https://bedrock-runtime.us-east-1.amazonaws.com/model/"),
+        "unexpected URL: {url}"
+    );
+    assert!(url.ends_with("/invoke"), "unexpected URL: {url}");
+    // Default model gets translated to its Bedrock ID.
+    assert!(
+        url.contains("us.anthropic.claude-sonnet-4-5-20250929-v1"),
+        "URL missing translated Bedrock model: {url}"
+    );
 }
 
 #[test]
-#[should_panic(expected = "GCP Vertex AI provider is not implemented")]
-fn test_build_url_vertex_not_implemented() {
+fn test_build_url_bedrock_with_override() {
     let config = ApiClientConfig {
-        provider: ApiProvider::Vertex {
-            project_id: "my-project".to_string(),
-            region: "us-central1".to_string(),
+        provider: ApiProvider::Bedrock {
+            region: "us-east-1".to_string(),
+            auth: crate::api::bedrock::BedrockAuth::BearerToken("dummy".to_string()),
+            base_url_override: Some("https://proxy.example.com".to_string()),
         },
-        default_model: "claude-sonnet-4-20250514".to_string(),
+        default_model: "claude-sonnet-4-5-20250929".to_string(),
         max_retries: 3,
         timeout_secs: 60,
     };
     let client = ApiClient::new(config);
-    let _ = client.build_url(); // should panic
+    let url = client.build_url();
+    assert!(
+        url.starts_with("https://proxy.example.com/model/"),
+        "override should be used, got: {url}"
+    );
+}
+
+#[test]
+fn test_build_url_vertex_returns_streamrawpredict() {
+    let config = ApiClientConfig {
+        provider: ApiProvider::Vertex {
+            project_id: "my-project".to_string(),
+            region: "us-east5".to_string(),
+            access_token: crate::api::vertex::VertexAccessToken("dummy".to_string()),
+        },
+        default_model: "claude-sonnet-4-5-20250929".to_string(),
+        max_retries: 3,
+        timeout_secs: 60,
+    };
+    let client = ApiClient::new(config);
+    let url = client.build_url();
+    assert_eq!(
+        url,
+        "https://us-east5-aiplatform.googleapis.com/v1/projects/my-project/locations/us-east5/publishers/anthropic/models/claude-sonnet-4-5@20250929:streamRawPredict"
+    );
 }
 
 #[test]
@@ -243,7 +277,8 @@ fn test_build_headers_bedrock_no_api_key() {
     let config = ApiClientConfig {
         provider: ApiProvider::Bedrock {
             region: "us-east-1".to_string(),
-            model_id: "model-id".to_string(),
+            auth: crate::api::bedrock::BedrockAuth::BearerToken("dummy".to_string()),
+            base_url_override: None,
         },
         default_model: "model".to_string(),
         max_retries: 1,
@@ -251,7 +286,11 @@ fn test_build_headers_bedrock_no_api_key() {
     };
     let client = ApiClient::new(config);
     let headers = client.build_headers_map();
+    // Generic header map deliberately does not include Bedrock auth — the
+    // Bedrock provider sets Bearer/SigV4 headers per-request in its stream
+    // implementation.
     assert!(headers.get("x-api-key").is_none());
+    assert!(headers.get("authorization").is_none());
     assert_eq!(headers.get("content-type").unwrap(), "application/json");
 }
 
@@ -390,6 +429,111 @@ fn test_from_codex_auth_with_env() {
     std::env::remove_var(OPENAI_CODEX_TOKEN_ENV);
     std::env::remove_var(OPENAI_CODEX_BASE_URL_ENV);
     std::env::remove_var(OPENAI_CODEX_MODEL_ENV);
+}
+
+#[test]
+fn test_from_env_prefers_bedrock_when_flag_set() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    // Save + clear all provider keys so Anthropic-API-key detection doesn't shadow.
+    let saved_keys: Vec<_> = crate::api::providers::PROVIDERS
+        .iter()
+        .filter_map(|p| std::env::var(p.env_key).ok().map(|v| (p.env_key, v)))
+        .collect();
+    for p in crate::api::providers::PROVIDERS {
+        std::env::remove_var(p.env_key);
+    }
+
+    std::env::set_var("CLAUDE_CODE_USE_BEDROCK", "1");
+    std::env::set_var("AWS_BEARER_TOKEN_BEDROCK", "bedrock-123");
+    std::env::set_var("AWS_REGION", "us-west-2");
+
+    let client = ApiClient::from_env().expect("Bedrock flag should produce a client");
+    match &client.config().provider {
+        ApiProvider::Bedrock { region, .. } => assert_eq!(region, "us-west-2"),
+        other => panic!("expected Bedrock provider, got {:?}", other),
+    }
+
+    std::env::remove_var("CLAUDE_CODE_USE_BEDROCK");
+    std::env::remove_var("AWS_BEARER_TOKEN_BEDROCK");
+    std::env::remove_var("AWS_REGION");
+    for (k, v) in saved_keys {
+        std::env::set_var(k, v);
+    }
+}
+
+#[test]
+fn test_from_env_prefers_vertex_when_flag_set() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved_keys: Vec<_> = crate::api::providers::PROVIDERS
+        .iter()
+        .filter_map(|p| std::env::var(p.env_key).ok().map(|v| (p.env_key, v)))
+        .collect();
+    for p in crate::api::providers::PROVIDERS {
+        std::env::remove_var(p.env_key);
+    }
+    let saved_p_id = std::env::var("ANTHROPIC_VERTEX_PROJECT_ID").ok();
+    let saved_token = std::env::var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN").ok();
+    let saved_region = std::env::var("CLOUD_ML_REGION").ok();
+
+    std::env::set_var("CLAUDE_CODE_USE_VERTEX", "true");
+    std::env::set_var("ANTHROPIC_VERTEX_PROJECT_ID", "proj-42");
+    std::env::set_var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN", "ya29.test");
+    std::env::set_var("CLOUD_ML_REGION", "europe-west4");
+
+    let client = ApiClient::from_env().expect("Vertex flag should produce a client");
+    match &client.config().provider {
+        ApiProvider::Vertex {
+            project_id, region, ..
+        } => {
+            assert_eq!(project_id, "proj-42");
+            assert_eq!(region, "europe-west4");
+        }
+        other => panic!("expected Vertex provider, got {:?}", other),
+    }
+
+    std::env::remove_var("CLAUDE_CODE_USE_VERTEX");
+    std::env::remove_var("ANTHROPIC_VERTEX_PROJECT_ID");
+    std::env::remove_var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN");
+    std::env::remove_var("CLOUD_ML_REGION");
+    if let Some(v) = saved_p_id {
+        std::env::set_var("ANTHROPIC_VERTEX_PROJECT_ID", v);
+    }
+    if let Some(v) = saved_token {
+        std::env::set_var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN", v);
+    }
+    if let Some(v) = saved_region {
+        std::env::set_var("CLOUD_ML_REGION", v);
+    }
+    for (k, v) in saved_keys {
+        std::env::set_var(k, v);
+    }
+}
+
+#[test]
+fn test_from_bedrock_env_returns_none_without_auth() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    // Ensure neither auth method is available.
+    let saved_bearer = std::env::var("AWS_BEARER_TOKEN_BEDROCK").ok();
+    let saved_ak = std::env::var("AWS_ACCESS_KEY_ID").ok();
+    let saved_sk = std::env::var("AWS_SECRET_ACCESS_KEY").ok();
+    std::env::remove_var("AWS_BEARER_TOKEN_BEDROCK");
+    std::env::remove_var("AWS_ACCESS_KEY_ID");
+    std::env::remove_var("AWS_SECRET_ACCESS_KEY");
+
+    assert!(
+        ApiClient::from_bedrock_env().is_none(),
+        "from_bedrock_env should yield None without AWS creds"
+    );
+
+    if let Some(v) = saved_bearer {
+        std::env::set_var("AWS_BEARER_TOKEN_BEDROCK", v);
+    }
+    if let Some(v) = saved_ak {
+        std::env::set_var("AWS_ACCESS_KEY_ID", v);
+    }
+    if let Some(v) = saved_sk {
+        std::env::set_var("AWS_SECRET_ACCESS_KEY", v);
+    }
 }
 
 #[test]
