@@ -262,6 +262,27 @@ impl SandboxSettings {
 }
 
 /// Status-line configuration.
+///
+/// Aligned with `customize-status-line.md`: a `command` type lets the user
+/// feed a JSON payload to an external script on stdin and render its stdout
+/// as the terminal footer.
+///
+/// # Fields
+///
+/// - `type` — `"none"`, `"minimal"`, `"command"`, or `"script"`.
+///   `"command"` is the one driven by [`crate::ui::status_line`].
+/// - `command` — shell command executed for `type = command`. The runtime
+///   pipes a [`crate::ui::status_line::StatusLinePayload`] JSON blob to its
+///   stdin and captures stdout.
+/// - `script` — path to a script (equivalent to `command` when the path is
+///   executable; kept separate for schema clarity).
+/// - `enabled` — explicit on/off switch. When `Some(false)` the runtime
+///   always falls back to the default footer regardless of `type`.
+/// - `padding` — spaces of left padding added to the rendered output.
+/// - `refreshIntervalMs` — minimum gap between refreshes. Defaults to
+///   `300` ms when absent (see [`Self::effective_refresh_ms`]).
+/// - `timeoutMs` — how long to wait for stdout before killing the child.
+///   Defaults to `2000` ms.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct StatusLineSettings {
@@ -271,10 +292,76 @@ pub struct StatusLineSettings {
     pub command: Option<String>,
     /// Path to a script for `script` type.
     pub script: Option<String>,
-    /// Optional format template.
+    /// Optional format template (for legacy `minimal` rendering — unused by
+    /// the command runner which trusts the script's stdout verbatim).
     pub format: Option<String>,
+    /// Explicit on/off. When `Some(false)` the runner short-circuits even if
+    /// `command`/`script` is set.
+    pub enabled: Option<bool>,
+    /// Spaces of left padding added to each rendered line.
+    pub padding: Option<u16>,
+    /// Minimum milliseconds between refreshes.
+    #[serde(rename = "refreshIntervalMs")]
+    pub refresh_interval_ms: Option<u64>,
+    /// Milliseconds to wait for stdout before killing the child.
+    #[serde(rename = "timeoutMs")]
+    pub timeout_ms: Option<u64>,
+    /// Forward-compat / passthrough.
     #[serde(flatten)]
     pub extra: HashMap<String, Value>,
+}
+
+impl StatusLineSettings {
+    /// Effective refresh interval (ms). Returns the user value or the
+    /// conservative default of 300 ms. Clamped to `[100, 5_000]` so a typo
+    /// can't pin the CPU at 100 % or leave the bar frozen for minutes.
+    pub fn effective_refresh_ms(&self) -> u64 {
+        const DEFAULT_MS: u64 = 300;
+        const MIN_MS: u64 = 100;
+        const MAX_MS: u64 = 5_000;
+        self.refresh_interval_ms
+            .unwrap_or(DEFAULT_MS)
+            .clamp(MIN_MS, MAX_MS)
+    }
+
+    /// Effective subprocess timeout (ms). Returns the user value or the
+    /// default of 2000 ms. Clamped to `[100, 30_000]`.
+    pub fn effective_timeout_ms(&self) -> u64 {
+        const DEFAULT_MS: u64 = 2_000;
+        const MIN_MS: u64 = 100;
+        const MAX_MS: u64 = 30_000;
+        self.timeout_ms
+            .unwrap_or(DEFAULT_MS)
+            .clamp(MIN_MS, MAX_MS)
+    }
+
+    /// The command the runner should spawn, if any. Prefers `command`;
+    /// falls back to `script`.
+    pub fn runnable_command(&self) -> Option<&str> {
+        self.command
+            .as_deref()
+            .or(self.script.as_deref())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }
+
+    /// True when the caller has opted into the `command` runner. A missing
+    /// `type` still counts as enabled when a `command` is set — this matches
+    /// the spec's "set a command, get a status line" ergonomics.
+    pub fn is_command_mode(&self) -> bool {
+        if matches!(self.enabled, Some(false)) {
+            return false;
+        }
+        let ty = self.r#type.as_deref().unwrap_or("").trim().to_ascii_lowercase();
+        if ty == "none" {
+            return false;
+        }
+        if matches!(ty.as_str(), "command" | "script") {
+            return self.runnable_command().is_some();
+        }
+        // No explicit type → treat presence of a command as opt-in.
+        ty.is_empty() && self.runnable_command().is_some()
+    }
 }
 
 /// Spinner-tip configuration.
@@ -1152,10 +1239,17 @@ pub fn settings_schema() -> Value {
                 "type": "object",
                 "additionalProperties": true,
                 "properties": {
-                    "type": { "type": "string" },
+                    "type": {
+                        "type": "string",
+                        "enum": ["none", "minimal", "command", "script"]
+                    },
                     "command": { "type": "string" },
                     "script": { "type": "string" },
-                    "format": { "type": "string" }
+                    "format": { "type": "string" },
+                    "enabled": { "type": "boolean" },
+                    "padding": { "type": "integer", "minimum": 0, "maximum": 64 },
+                    "refreshIntervalMs": { "type": "integer", "minimum": 100, "maximum": 5000 },
+                    "timeoutMs": { "type": "integer", "minimum": 100, "maximum": 30000 }
                 }
             },
             "outputStyle": { "type": "string" },

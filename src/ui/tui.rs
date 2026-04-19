@@ -112,6 +112,20 @@ pub async fn run_tui(
     app.set_session_id(engine.session_id.to_string());
     app.set_cwd(engine.cwd().to_string());
 
+    // Scriptable status line (issue #11) — seed from the effective
+    // settings snapshot held on AppState. Subsequent edits via
+    // `/statusline` reach the App through the command handler.
+    //
+    // We also adopt the runner handle from AppState so `/statusline`'s
+    // status-subcommand reads the live counters from the same instance
+    // the TUI is driving (the Arc<Mutex<...>> inside StatusLineRunner
+    // makes the clones observe each other).
+    {
+        let app_state = engine.app_state();
+        app.set_status_line_runner(app_state.status_line_runner.clone());
+        app.set_status_line_settings(app_state.settings.status_line.clone());
+    }
+
     // ── Create channels ────────────────────────────────────────────
     let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<EngineEvent>();
     let mut streaming_state = StreamingState {
@@ -378,6 +392,17 @@ fn handle_sdk_message(app: &mut App, msg: SdkMessage, ss: &mut StreamingState) {
 
             app.set_streaming(false);
             app.update_session_cost(result.total_cost_usd);
+            // Feed aggregate usage into the status-line payload (issue #11).
+            // `result.usage` is engine `UsageTracking` (accumulated across
+            // turns) — the payload wants per-session totals, so we pass
+            // the totals straight through.
+            app.update_session_usage(
+                result.usage.total_input_tokens,
+                result.usage.total_output_tokens,
+                result.usage.total_cache_read_tokens,
+                result.usage.total_cache_creation_tokens,
+                result.usage.api_call_count,
+            );
             if result.is_error {
                 app.add_message(Message::System(SystemMessage {
                     uuid: uuid::Uuid::new_v4(),

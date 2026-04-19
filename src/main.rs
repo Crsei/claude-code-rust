@@ -729,6 +729,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         keybindings: crate::keybindings::KeybindingRegistry::with_user_path(Some(
             crate::config::paths::keybindings_path(),
         )),
+        status_line_runner: crate::ui::status_line::StatusLineRunner::new(),
     };
 
     // B.5: Init-only fast path

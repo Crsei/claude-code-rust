@@ -45,6 +45,10 @@ pub struct AppState {
     /// Multiple UI surfaces (Rust TUI, IPC-driven OpenTUI) share the same
     /// handle so reloads are observed everywhere.
     pub keybindings: crate::keybindings::KeybindingRegistry,
+    /// Shared scriptable status-line runner (issue #11). The TUI owns the
+    /// renderer-facing side; `/statusline` and the IPC driver both reach
+    /// into this handle to inspect / reset the subprocess.
+    pub status_line_runner: crate::ui::status_line::StatusLineRunner,
 }
 
 /// 设置 JSON (运行时投影)
@@ -120,6 +124,7 @@ impl Default for AppState {
             autonomous_tick_ms: None,
             terminal_focus: true,
             keybindings: crate::keybindings::KeybindingRegistry::with_defaults(),
+            status_line_runner: crate::ui::status_line::StatusLineRunner::new(),
         }
     }
 }

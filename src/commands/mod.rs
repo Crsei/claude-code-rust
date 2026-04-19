@@ -48,6 +48,9 @@ pub mod sandbox_cmd;
 // Keybindings
 pub mod keybindings_cmd;
 
+// Scriptable status line (issue #11)
+pub mod statusline_cmd;
+
 // Export
 pub mod audit_export;
 pub mod export;
@@ -411,6 +414,12 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec!["keys".into(), "shortcuts".into()],
             description: "View, edit, or reload keybindings.json".into(),
             handler: Box::new(keybindings_cmd::KeybindingsHandler),
+        },
+        Command {
+            name: "statusline".into(),
+            aliases: vec!["status-line".into()],
+            description: "View, edit, or test the scriptable status line".into(),
+            handler: Box::new(statusline_cmd::StatusLineHandler),
         },
     ]
 }
