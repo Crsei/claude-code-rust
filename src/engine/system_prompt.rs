@@ -463,6 +463,18 @@ pub fn build_system_prompt(
             parts.push(cu_prompt);
         }
 
+        // ── Browser MCP system prompt (when browser MCP tools are detected) ──
+        // Looks up the set of browser MCP server names installed during MCP
+        // startup; if any tool matches (by heuristic or by config flag) we
+        // emit a dedicated "# Browser Automation" section so the model knows
+        // it can drive a browser and how to do so safely.
+        let browser_servers = crate::browser::detection::browser_servers_snapshot();
+        if let Some(browser_prompt) =
+            crate::browser::prompt::browser_system_prompt(tools, &browser_servers)
+        {
+            parts.push(browser_prompt);
+        }
+
         // ── Tool descriptions ──
         let enabled: Vec<&Arc<dyn Tool>> = tools.iter().filter(|t| t.is_enabled()).collect();
         if !enabled.is_empty() {

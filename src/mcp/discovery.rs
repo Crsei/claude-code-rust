@@ -103,6 +103,7 @@ mod tests {
             url: None,
             headers: None,
             env: None,
+            browser_mcp: None,
         }];
         let incoming = vec![McpServerConfig {
             name: "same".to_string(),
@@ -112,6 +113,7 @@ mod tests {
             url: None,
             headers: None,
             env: None,
+            browser_mcp: None,
         }];
 
         merge_server_configs(&mut base, incoming);

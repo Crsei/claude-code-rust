@@ -21,6 +21,7 @@ fn test_mcp_client_new() {
         url: None,
         headers: None,
         env: None,
+        browser_mcp: None,
     };
 
     let client = McpClient::new(config);
@@ -47,6 +48,7 @@ fn test_jsonrpc_request_ids_increment() {
         url: None,
         headers: None,
         env: None,
+        browser_mcp: None,
     };
     let client = McpClient::new(config);
 
@@ -134,6 +136,7 @@ async fn test_connect_stdio_missing_command() {
         url: None,
         headers: None,
         env: None,
+        browser_mcp: None,
     };
 
     let mut client = McpClient::new(config);
@@ -152,6 +155,7 @@ async fn test_connect_sse_not_implemented() {
         url: Some("http://localhost:8080".to_string()),
         headers: None,
         env: None,
+        browser_mcp: None,
     };
 
     let mut client = McpClient::new(config);
@@ -170,6 +174,7 @@ async fn test_disconnect_idempotent() {
         url: None,
         headers: None,
         env: None,
+        browser_mcp: None,
     };
 
     let mut client = McpClient::new(config);
@@ -190,6 +195,7 @@ async fn test_list_tools_not_connected() {
         url: None,
         headers: None,
         env: None,
+        browser_mcp: None,
     };
 
     let mut client = McpClient::new(config);
@@ -208,6 +214,7 @@ async fn test_call_tool_not_connected() {
         url: None,
         headers: None,
         env: None,
+        browser_mcp: None,
     };
 
     let client = McpClient::new(config);
@@ -226,6 +233,7 @@ async fn test_mcp_manager_connect_all_invalid_server() {
         url: None,
         headers: None,
         env: None,
+        browser_mcp: None,
     }];
 
     let result = manager.connect_all(configs).await;

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ChatMessage, AppState, ResultEvent, StreamingBlock } from './types'
+import type { ChatMessage, AppState, ContentBlock, ResultEvent, StreamingBlock } from './types'
 
 interface ChatStore {
   // Messages
@@ -26,6 +26,17 @@ interface ChatStore {
   startStreaming: () => void
   appendStreamContent: (text: string) => void
   addAssistantMessage: (msg: ChatMessage) => void
+  /**
+   * Attach tool_result content blocks to the most recent assistant message.
+   *
+   * The Rust engine emits tool results as a separate `user_replay` SSE event
+   * (they legally belong to a synthetic user message that replays them back
+   * to the model). Here we stitch them onto the preceding assistant message
+   * so `AssistantMessage.tsx` can pair each tool_use with its result — which
+   * is what makes screenshots, page text, and console logs actually show up
+   * under the matching tool card.
+   */
+  appendToolResultsToLastAssistant: (blocks: ContentBlock[]) => void
   finishStreaming: (result?: ResultEvent) => void
   setAppState: (state: AppState) => void
   addRawEvent: (event: string, data: string) => void
@@ -76,6 +87,38 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       streamingContent: '',
       streamingBlocks: [],
     }))
+  },
+
+  appendToolResultsToLastAssistant: (blocks: ContentBlock[]) => {
+    if (blocks.length === 0) return
+    set((state) => {
+      // Walk backwards to find the most recent assistant message. System
+      // messages (api_retry, tool_use_summary) don't own tool calls.
+      for (let i = state.messages.length - 1; i >= 0; i--) {
+        const m = state.messages[i]
+        if (m.role !== 'assistant') continue
+        const existing = m.contentBlocks ?? []
+        // Skip results that are already attached (idempotent against
+        // reconnects / duplicate replay events).
+        const seen = new Set(
+          existing
+            .filter(b => b.type === 'tool_result' && b.tool_use_id)
+            .map(b => b.tool_use_id as string),
+        )
+        const fresh = blocks.filter(
+          b => b.type === 'tool_result' && b.tool_use_id && !seen.has(b.tool_use_id),
+        )
+        if (fresh.length === 0) return state
+        const updated: ChatMessage = {
+          ...m,
+          contentBlocks: [...existing, ...fresh],
+        }
+        const next = state.messages.slice()
+        next[i] = updated
+        return { messages: next }
+      }
+      return state
+    })
   },
 
   finishStreaming: (result?: ResultEvent) => {

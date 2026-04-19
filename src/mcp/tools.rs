@@ -97,22 +97,35 @@ impl Tool for McpToolWrapper {
                 ..Default::default()
             })
         } else {
-            // Check if content contains any non-text blocks (images, resources with blobs)
             let has_multimodal = result
                 .content
                 .iter()
                 .any(|b| matches!(b, ToolCallContent::Image { .. }));
 
+            // Browser MCP tools get an enriched display preview
+            // ("[navigation] navigated → https://…", etc.) without touching the
+            // full content that the model sees.
+            let browser_preview = browser_display_preview(
+                &self.server_name,
+                &self.def.name,
+                &result.content,
+                has_multimodal,
+            );
+
             if has_multimodal {
                 let model_blocks = convert_mcp_to_content_blocks(&result.content);
+                let preview = browser_preview
+                    .clone()
+                    .unwrap_or_else(|| display_text.clone());
                 Ok(ToolResult::with_content(
                     json!(display_text),
                     ToolResultContent::Blocks(model_blocks),
-                    display_text,
+                    preview,
                 ))
             } else {
                 Ok(ToolResult {
-                    data: json!(display_text),
+                    data: json!(display_text.clone()),
+                    display_preview: browser_preview,
                     new_messages: vec![],
                     ..Default::default()
                 })
@@ -135,6 +148,42 @@ impl Tool for McpToolWrapper {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Build a compact display preview for a browser MCP tool result.
+///
+/// Returns `None` when the tool isn't classified as browser-shaped, letting
+/// the caller fall back to the generic tool display. For browser tools, emits
+/// a prefix-tagged preview such as `[navigation] navigated → https://…` or
+/// `[screenshot] screenshot (12KB text + image)` that frontends can use as the
+/// collapsed-view label without re-parsing the full payload.
+fn browser_display_preview(
+    server_name: &str,
+    tool_basename: &str,
+    content: &[ToolCallContent],
+    has_image: bool,
+) -> Option<String> {
+    use crate::browser::detection::{is_browser_server, BROWSER_TOOL_BASENAMES};
+    use crate::browser::tool_rendering::{infer_kind, short_summary};
+
+    let is_known_action = BROWSER_TOOL_BASENAMES.contains(&tool_basename);
+    if !is_known_action && !is_browser_server(server_name) {
+        return None;
+    }
+
+    // Flatten the text parts of the result so short_summary can inspect it.
+    let text: String = content
+        .iter()
+        .filter_map(|b| match b {
+            ToolCallContent::Text { text } => Some(text.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let kind = infer_kind(tool_basename, has_image);
+    let summary = short_summary(tool_basename, &text, has_image);
+    Some(format!("[{}] {}", kind.label(), summary))
+}
 
 /// Convert MCP tool call content blocks to Anthropic API ContentBlocks.
 ///

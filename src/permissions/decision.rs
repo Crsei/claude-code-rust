@@ -108,7 +108,7 @@ impl DenialTracker {
 }
 
 // ---------------------------------------------------------------------------
-// Computer Use permission messages
+// Descriptive permission messages (Computer Use + Browser MCP)
 // ---------------------------------------------------------------------------
 
 /// Generate a human-readable permission message for Computer Use tools.
@@ -145,6 +145,40 @@ fn cu_permission_message(tool_name: &str) -> Option<String> {
     };
 
     Some(format!("Allow {} {}?", description, risk_tag))
+}
+
+/// Resolve the best permission-prompt message for a tool, preferring the
+/// most specific source:
+///   1. Computer Use (exact `mcp__computer-use__*` prefix)
+///   2. Browser MCP (heuristic by action basename OR server flagged browserMcp)
+///   3. None — caller uses the generic "Allow tool 'X'?" fallback.
+fn descriptive_permission_message(tool_name: &str) -> Option<String> {
+    if let Some(m) = cu_permission_message(tool_name) {
+        return Some(m);
+    }
+
+    // Browser heuristic on action basename
+    if let Some(m) = crate::browser::permissions::browser_permission_message(tool_name) {
+        return Some(m);
+    }
+
+    // Config-flagged server: even if the action basename isn't in the known
+    // browser list, give it a browser-styled prompt with an "other" category.
+    if let Some(rest) = tool_name.strip_prefix("mcp__") {
+        if let Some((server, action)) = rest.split_once("__") {
+            if crate::browser::detection::is_browser_server(server) {
+                let cat = crate::browser::permissions::classify_browser_action(action);
+                return Some(format!(
+                    "Allow browser action '{}' via MCP server '{}' {}?",
+                    action,
+                    server,
+                    cat.risk_tag()
+                ));
+            }
+        }
+    }
+
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -374,7 +408,7 @@ pub fn has_permissions_to_use_tool(
         }
         PermissionMode::Plan => {
             // Plan mode: ask for confirmation
-            let message = cu_permission_message(tool_name).unwrap_or_else(|| {
+            let message = descriptive_permission_message(tool_name).unwrap_or_else(|| {
                 format!("Tool '{}' requires confirmation in plan mode.", tool_name)
             });
             PermissionDecision {
@@ -387,8 +421,8 @@ pub fn has_permissions_to_use_tool(
             }
         }
         PermissionMode::Default => {
-            // Default mode: ask for confirmation (CU tools get descriptive messages)
-            let message = cu_permission_message(tool_name)
+            // Default mode: ask for confirmation (CU/browser tools get descriptive messages)
+            let message = descriptive_permission_message(tool_name)
                 .unwrap_or_else(|| format!("Allow tool '{}'?", tool_name));
             PermissionDecision {
                 behavior: PermissionBehavior::Ask,

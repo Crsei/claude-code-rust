@@ -243,9 +243,14 @@ pub fn extract_tool_result_output(
                 let media_type = source.media_type.clone();
                 let size_bytes = Some(source.data.len() * 3 / 4); // approx decoded size
                 text_parts.push(format!("[image: {}]", media_type));
+                // Forward the base64 payload to the frontend so browser
+                // screenshots can render inline. The data was already expanded
+                // into memory when the MCP tool call completed, so this is a
+                // clone of existing bytes — not a fresh allocation.
                 infos.push(ToolResultContentInfo::Image {
                     media_type,
                     size_bytes,
+                    data: Some(source.data.clone()),
                 });
             }
             _ => {
