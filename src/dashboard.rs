@@ -288,11 +288,7 @@ mod tests {
         let _ = SESSION_ID.set("test-session".to_string());
         let path = event_log_path().expect("session_id should be set by now");
         let s = path.to_string_lossy().replace('\\', "/");
-        assert!(
-            s.contains("/runs/"),
-            "expected path under runs/, got {}",
-            s
-        );
+        assert!(s.contains("/runs/"), "expected path under runs/, got {}", s);
         assert!(
             s.ends_with("/subagent-events.ndjson"),
             "expected subagent-events.ndjson filename, got {}",

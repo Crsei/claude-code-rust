@@ -24,8 +24,8 @@ use anyhow::{Context, Result};
 use tracing::{debug, warn};
 
 use super::common::{
-    all_browser_data_paths, all_native_messaging_paths, all_windows_registry_keys,
-    extension_ids, BrowserDataPath, ChromiumBrowser, NATIVE_HOST_IDENTIFIER,
+    all_browser_data_paths, all_native_messaging_paths, all_windows_registry_keys, extension_ids,
+    BrowserDataPath, ChromiumBrowser, NATIVE_HOST_IDENTIFIER,
 };
 
 // ---------------------------------------------------------------------------
@@ -263,10 +263,7 @@ fn register_windows_native_hosts(manifest_path: &Path) -> Result<()> {
     let manifest_path_str = manifest_path.to_string_lossy().to_string();
 
     for entry in all_windows_registry_keys() {
-        let full_key = format!(
-            "HKCU\\{}\\{}",
-            entry.key, NATIVE_HOST_IDENTIFIER
-        );
+        let full_key = format!("HKCU\\{}\\{}", entry.key, NATIVE_HOST_IDENTIFIER);
         let output = Command::new("reg")
             .args([
                 "add",
@@ -355,7 +352,10 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(10));
         let path2 = create_wrapper_script("\"/bin/echo\" hello").unwrap();
         let mtime2 = fs::metadata(&path2).unwrap().modified().unwrap();
-        assert_eq!(mtime1, mtime2, "wrapper should not be rewritten when unchanged");
+        assert_eq!(
+            mtime1, mtime2,
+            "wrapper should not be rewritten when unchanged"
+        );
 
         if let Some(v) = prev_home {
             std::env::set_var("HOME", v);

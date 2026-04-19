@@ -579,7 +579,9 @@ impl QueryDeps for QueryEngineDeps {
                             match decision.to_lowercase().as_str() {
                                 "allow" => {
                                     // Emit permission.resolved(allow) audit event
-                                    use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                                    use crate::observability::{
+                                        AuditLevel, EventKind, Outcome, Stage,
+                                    };
                                     perm_audit_ctx.emit(
                                         EventKind::PermissionResolved,
                                         Stage::Permission,
@@ -608,7 +610,9 @@ impl QueryDeps for QueryEngineDeps {
                                 _ => {
                                     // Emit permission.resolved(denied) audit event
                                     {
-                                        use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                                        use crate::observability::{
+                                            AuditLevel, EventKind, Outcome, Stage,
+                                        };
                                         perm_audit_ctx.emit(
                                             EventKind::PermissionResolved,
                                             Stage::Permission,

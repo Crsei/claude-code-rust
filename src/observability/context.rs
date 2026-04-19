@@ -244,10 +244,7 @@ mod tests {
     fn child_turn_clears_downstream_ids() {
         let ctx = AuditContext::noop("sess_01");
         let submit_ctx = ctx.with_submit();
-        let turn_ctx = submit_ctx
-            .with_turn()
-            .with_request()
-            .with_tool_use("tu_01");
+        let turn_ctx = submit_ctx.with_turn().with_request().with_tool_use("tu_01");
 
         // New turn should clear request, message, tool_use
         let new_turn = turn_ctx.with_turn();

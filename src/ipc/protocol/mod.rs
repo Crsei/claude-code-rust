@@ -159,9 +159,7 @@ pub enum BackendMessage {
         level: String,
     },
     /// Replace the full visible conversation history in the frontend.
-    ConversationReplaced {
-        messages: Vec<ConversationMessage>,
-    },
+    ConversationReplaced { messages: Vec<ConversationMessage> },
     /// Token usage update.
     UsageUpdate {
         input_tokens: u64,

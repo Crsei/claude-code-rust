@@ -77,11 +77,7 @@ fn dump_prompt_emits_browser_section_when_server_flagged() {
 
     let mut cmd = cli();
     strip_api_keys(&mut cmd)
-        .args([
-            "--dump-system-prompt",
-            "-C",
-            dir.path().to_str().unwrap(),
-        ])
+        .args(["--dump-system-prompt", "-C", dir.path().to_str().unwrap()])
         .env("CC_RUST_HOME", dir.path().to_str().unwrap())
         .assert()
         .success()
@@ -96,11 +92,7 @@ fn dump_prompt_has_no_browser_section_without_flagged_server() {
 
     let mut cmd = cli();
     strip_api_keys(&mut cmd)
-        .args([
-            "--dump-system-prompt",
-            "-C",
-            dir.path().to_str().unwrap(),
-        ])
+        .args(["--dump-system-prompt", "-C", dir.path().to_str().unwrap()])
         .env("CC_RUST_HOME", dir.path().to_str().unwrap())
         .assert()
         .success()

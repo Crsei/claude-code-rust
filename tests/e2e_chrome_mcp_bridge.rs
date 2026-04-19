@@ -57,16 +57,31 @@ fn bridge_initializes_before_native_host_exists() {
         .recv_timeout(Duration::from_secs(5))
         .expect("initialize response timeout")
         .expect("initialize response read failed");
-    assert!(init.contains(r#""jsonrpc":"2.0""#), "unexpected init: {init}");
-    assert!(init.contains(r#""claude-in-chrome""#), "unexpected init: {init}");
+    assert!(
+        init.contains(r#""jsonrpc":"2.0""#),
+        "unexpected init: {init}"
+    );
+    assert!(
+        init.contains(r#""claude-in-chrome""#),
+        "unexpected init: {init}"
+    );
 
-    send_json_line(&mut stdin, r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#);
+    send_json_line(
+        &mut stdin,
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+    );
     let tools = rx
         .recv_timeout(Duration::from_secs(5))
         .expect("tools/list response timeout")
         .expect("tools/list response read failed");
-    assert!(tools.contains(r#""tools""#), "unexpected tools/list: {tools}");
-    assert!(tools.contains(r#""navigate""#), "unexpected tools/list: {tools}");
+    assert!(
+        tools.contains(r#""tools""#),
+        "unexpected tools/list: {tools}"
+    );
+    assert!(
+        tools.contains(r#""navigate""#),
+        "unexpected tools/list: {tools}"
+    );
 
     drop(stdin);
     let exit = child.wait().expect("wait for bridge");

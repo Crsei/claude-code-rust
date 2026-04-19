@@ -1,85 +1,583 @@
-//! Settings management.
+//! Settings management (layered, source-aware).
 //!
-//! Loads configuration from multiple sources and merges them with a defined
-//! precedence order:
-//!   1. Global config (`~/.cc-rust/settings.json`)       -- lowest priority
-//!   2. Project config (`.cc-rust/settings.json` in CWD) -- higher priority
-//!   3. Environment variables                           -- highest priority
+//! # Layered configuration
 //!
-//! The merged result drives `AppState::settings`.
+//! Configuration is merged from the following sources, in **ascending**
+//! priority (higher overrides lower):
+//!
+//! 1. `Managed` — policy-level settings. Windows prefers
+//!    `%ProgramData%\cc-rust\settings.json`; other platforms use
+//!    `/etc/cc-rust/managed-settings.json`. Overridable with
+//!    `CC_RUST_MANAGED_SETTINGS`.
+//! 2. `User` — `{data_root}/settings.json` (i.e. `~/.cc-rust/settings.json`
+//!    or `$CC_RUST_HOME/settings.json`).
+//! 3. `Project` — `.cc-rust/settings.json` in CWD or any ancestor directory.
+//! 4. `Local` — `.cc-rust/settings.local.json` next to the project settings
+//!    (intended for gitignored per-machine overrides).
+//! 5. `Env` — a handful of CLAUDE_* / CC_* environment variables.
+//! 6. `Cli` — command-line flags (applied by the caller, not this module).
+//!
+//! The merge produces an [`EffectiveSettings`] together with a
+//! [`SourceMap`] that records which layer won for each key.
+//!
+//! # Backward compatibility
+//!
+//! The legacy names [`GlobalConfig`], [`ProjectConfig`], [`MergedConfig`],
+//! [`load_global_config`], [`load_project_config`], [`merge_configs`], and
+//! [`load_and_merge`] are preserved so existing callers keep compiling.
+//! New callers should prefer [`load_effective`], [`RawSettings`], and
+//! [`EffectiveSettings`].
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 // ---------------------------------------------------------------------------
-// Config types
+// Source tracking
 // ---------------------------------------------------------------------------
 
-/// Global (user-level) configuration loaded from `~/.cc-rust/settings.json`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct GlobalConfig {
-    /// Preferred model identifier.
+/// Origin of a single configuration value.
+///
+/// Used by [`SourceMap`] so the user can introspect where each effective
+/// value came from (`/config show --effective`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SettingsSource {
+    /// Compiled-in default (no file / env provided a value).
+    Default,
+    /// Managed / policy-level settings.
+    Managed,
+    /// User-level settings (`~/.cc-rust/settings.json`).
+    User,
+    /// Project-level settings (`.cc-rust/settings.json`).
+    Project,
+    /// Project-local overrides (`.cc-rust/settings.local.json`).
+    Local,
+    /// Environment variable override.
+    Env,
+    /// CLI flag override (set by `main.rs` after loading).
+    Cli,
+}
+
+impl SettingsSource {
+    /// Priority ranking — higher wins in a merge.
+    ///
+    /// Exposed so callers (e.g. `/config sources`) can break ties or sort
+    /// by priority order without re-implementing the table.
+    #[allow(dead_code)]
+    pub fn rank(self) -> u8 {
+        match self {
+            SettingsSource::Default => 0,
+            SettingsSource::Managed => 1,
+            SettingsSource::User => 2,
+            SettingsSource::Project => 3,
+            SettingsSource::Local => 4,
+            SettingsSource::Env => 5,
+            SettingsSource::Cli => 6,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SettingsSource::Default => "default",
+            SettingsSource::Managed => "managed",
+            SettingsSource::User => "user",
+            SettingsSource::Project => "project",
+            SettingsSource::Local => "local",
+            SettingsSource::Env => "env",
+            SettingsSource::Cli => "cli",
+        }
+    }
+}
+
+/// Per-key provenance for merged settings. Uses a `BTreeMap` so the output
+/// of `/config show` is deterministic.
+pub type SourceMap = BTreeMap<String, SettingsSource>;
+
+// ---------------------------------------------------------------------------
+// Typed sub-structures for richer settings
+// ---------------------------------------------------------------------------
+
+/// Permissions section of settings.json.
+///
+/// Mirrors the Claude Code TS `PermissionsSettings` shape at a high level.
+/// Missing fields are `None`; empty arrays are treated the same as missing
+/// for merge purposes.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PermissionsSettings {
+    /// Permission mode. One of: `default`, `ask`, `auto`, `bypass`, `plan`.
+    pub default_mode: Option<String>,
+    /// Tools that are always allowed (patterns).
+    pub allow: Vec<String>,
+    /// Tools that are always asked before execution.
+    pub ask: Vec<String>,
+    /// Tools that are always denied.
+    pub deny: Vec<String>,
+    /// Additional working directories the tools may access.
+    pub additional_directories: Vec<String>,
+    /// Whether `bypass` mode should be allowed at runtime.
+    pub enable_bypass_mode: Option<bool>,
+    /// Whether `auto` mode should be allowed at runtime.
+    pub enable_auto_mode: Option<bool>,
+    /// Unknown fields so forward-compat is preserved.
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
+}
+
+impl PermissionsSettings {
+    pub fn is_effectively_empty(&self) -> bool {
+        self.default_mode.is_none()
+            && self.allow.is_empty()
+            && self.ask.is_empty()
+            && self.deny.is_empty()
+            && self.additional_directories.is_empty()
+            && self.enable_bypass_mode.is_none()
+            && self.enable_auto_mode.is_none()
+            && self.extra.is_empty()
+    }
+}
+
+/// Filesystem paths the sandbox permits or denies access to.
+///
+/// Paths accept three prefix conventions (matching Claude Code):
+/// - `/absolute/path` — absolute path
+/// - `~/relative` — relative to `$HOME`
+/// - `./relative` or bare `relative` — relative to the project root (or the
+///   enclosing `~/.cc-rust/` for user settings)
+///
+/// Lists from every [`SettingsSource`] are **merged**, not replaced, so users
+/// can extend managed rules without overriding them.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SandboxFilesystemSettings {
+    pub allow_read: Vec<String>,
+    pub deny_read: Vec<String>,
+    pub allow_write: Vec<String>,
+    pub deny_write: Vec<String>,
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
+}
+
+impl SandboxFilesystemSettings {
+    pub fn is_effectively_empty(&self) -> bool {
+        self.allow_read.is_empty()
+            && self.deny_read.is_empty()
+            && self.allow_write.is_empty()
+            && self.deny_write.is_empty()
+            && self.extra.is_empty()
+    }
+}
+
+/// Network restrictions applied to shell subprocesses and WebFetch.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SandboxNetworkSettings {
+    /// Hard-disable all network access (matches `--no-network`).
+    pub disabled: Option<bool>,
+    /// Domain allowlist. Empty list means "no restriction".
+    pub allowed_domains: Vec<String>,
+    /// Optional HTTP proxy port for advanced network sandboxing.
+    pub http_proxy_port: Option<u16>,
+    /// Optional SOCKS proxy port for advanced network sandboxing.
+    pub socks_proxy_port: Option<u16>,
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
+}
+
+impl SandboxNetworkSettings {
+    pub fn is_effectively_empty(&self) -> bool {
+        self.disabled.is_none()
+            && self.allowed_domains.is_empty()
+            && self.http_proxy_port.is_none()
+            && self.socks_proxy_port.is_none()
+            && self.extra.is_empty()
+    }
+}
+
+/// Sandbox section of settings.json.
+///
+/// Aligned with Claude Code's `sandbox.*` settings surface. A pragmatic
+/// subset of the TypeScript reference is enforced at runtime:
+/// - `enabled` + `mode` drive policy assembly
+/// - `failIfUnavailable` controls the hard-fail path when the OS primitives
+///   (bubblewrap / sandbox-exec / Restricted Token) are missing
+/// - `allowUnsandboxedCommands` gates the `dangerouslyDisableSandbox` escape
+///   hatch
+/// - `excludedCommands` forces specific commands outside the sandbox
+/// - `filesystem.*` controls subprocess fs access (merged with Read/Edit
+///   permission rules)
+/// - `network.*` controls subprocess + WebFetch network access
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SandboxSettings {
+    /// Enable sandbox for shell / tool execution. Defaults to `false`.
+    pub enabled: Option<bool>,
+    /// Sandbox profile identifier: `read-only`, `workspace`, or `full` (off).
+    pub mode: Option<String>,
+    /// When `true` and the OS primitive is unavailable, fail hard instead of
+    /// falling back to unsandboxed execution (default: `false`).
+    pub fail_if_unavailable: Option<bool>,
+    /// When `false`, reject the `dangerouslyDisableSandbox` escape hatch
+    /// regardless of permission rules (default: `true`).
+    pub allow_unsandboxed_commands: Option<bool>,
+    /// When `true` in managed settings, only managed `allowRead` entries are
+    /// respected; user/project/local entries are ignored. `denyRead` still
+    /// merges from every source.
+    pub allow_managed_read_paths_only: Option<bool>,
+    /// When `true` in managed settings, only managed `allowedDomains` entries
+    /// are respected; user/project/local entries are ignored.
+    pub allow_managed_domains_only: Option<bool>,
+    /// Commands (glob patterns / prefixes) that must run outside the sandbox.
+    pub excluded_commands: Vec<String>,
+    /// Commands that are pre-approved for sandboxed execution. When the
+    /// active mode is `workspace`, commands in this list are run without
+    /// going through the ask/allow flow.
+    pub allowed_commands: Vec<String>,
+    /// Filesystem allow/deny lists (merged with Read/Edit permission rules).
+    pub filesystem: SandboxFilesystemSettings,
+    /// Network policy (allowed domains + --no-network).
+    pub network: SandboxNetworkSettings,
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
+}
+
+impl SandboxSettings {
+    pub fn is_effectively_empty(&self) -> bool {
+        self.enabled.is_none()
+            && self.mode.is_none()
+            && self.fail_if_unavailable.is_none()
+            && self.allow_unsandboxed_commands.is_none()
+            && self.allow_managed_read_paths_only.is_none()
+            && self.allow_managed_domains_only.is_none()
+            && self.excluded_commands.is_empty()
+            && self.allowed_commands.is_empty()
+            && self.filesystem.is_effectively_empty()
+            && self.network.is_effectively_empty()
+            && self.extra.is_empty()
+    }
+}
+
+/// Status-line configuration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct StatusLineSettings {
+    /// Status-line type, e.g. `none`, `minimal`, `command`, `script`.
+    pub r#type: Option<String>,
+    /// Inline command to execute for `command` type.
+    pub command: Option<String>,
+    /// Path to a script for `script` type.
+    pub script: Option<String>,
+    /// Optional format template.
+    pub format: Option<String>,
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
+}
+
+/// Spinner-tip configuration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SpinnerTipsSettings {
+    pub enabled: Option<bool>,
+    pub interval_ms: Option<u64>,
+    pub custom_tips: Vec<String>,
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
+}
+
+// ---------------------------------------------------------------------------
+// RawSettings — on-disk shape of a single settings file
+// ---------------------------------------------------------------------------
+
+/// On-disk shape of a single `settings.json` (or `settings.local.json`,
+/// managed settings, etc.). All fields are optional.
+///
+/// Unknown keys fall into [`RawSettings::extra`] to preserve forward
+/// compatibility.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct RawSettings {
+    // -- Core identity --------------------------------------------------
     pub model: Option<String>,
-    /// Backend selection ("native" or "codex").
     pub backend: Option<String>,
-    /// Color theme name.
     pub theme: Option<String>,
-    /// Verbose output.
     pub verbose: Option<bool>,
-    /// Permission mode override (e.g. "auto", "bypass").
+
+    // -- Permissions / sandbox -----------------------------------------
+    /// Legacy top-level permission mode (e.g. "auto"). Prefer
+    /// `permissions.defaultMode`. If both are present, nested wins.
     pub permission_mode: Option<String>,
-    /// Tools that are always allowed (list of patterns).
+    /// Legacy flat allowed-tools list. Prefer `permissions.allow`.
     pub allowed_tools: Option<Vec<String>>,
-    /// Custom system prompt to prepend.
-    pub system_prompt: Option<String>,
-    /// Hooks configuration (keyed by hook point).
-    pub hooks: Option<HashMap<String, serde_json::Value>>,
-    /// Whether Claude in Chrome should be enabled by default.
+    pub permissions: Option<PermissionsSettings>,
+    pub sandbox: Option<SandboxSettings>,
+
+    // -- Hooks ----------------------------------------------------------
+    /// Event → config value mapping (deserialized by tools/hooks).
+    pub hooks: Option<HashMap<String, Value>>,
+
+    // -- UI / UX --------------------------------------------------------
+    pub status_line: Option<StatusLineSettings>,
+    pub output_style: Option<String>,
+    pub language: Option<String>,
+    pub voice_enabled: Option<bool>,
+    pub editor_mode: Option<String>,
+    pub view_mode: Option<String>,
+    pub spinner_tips: Option<SpinnerTipsSettings>,
+    pub terminal_progress_bar_enabled: Option<bool>,
+
+    // -- Model / effort -------------------------------------------------
+    pub available_models: Option<Vec<String>>,
+    pub effort_level: Option<String>,
+    pub fast_mode: Option<bool>,
+    pub fast_mode_per_session_opt_in: Option<bool>,
+
+    // -- Modes / integrations ------------------------------------------
+    pub teammate_mode: Option<bool>,
     #[serde(rename = "claudeInChromeDefaultEnabled")]
     pub claude_in_chrome_default_enabled: Option<bool>,
-    /// API key override (not recommended -- prefer env vars).
+
+    // -- Prompts --------------------------------------------------------
+    pub system_prompt: Option<String>,
+
+    // -- Credentials ----------------------------------------------------
+    /// API key override. User-level only; strongly discouraged. Redacted in
+    /// source-map output.
     pub api_key: Option<String>,
-    /// Additional arbitrary settings.
+
+    // -- Arbitrary passthrough ------------------------------------------
     #[serde(flatten)]
-    pub extra: HashMap<String, serde_json::Value>,
+    pub extra: HashMap<String, Value>,
 }
 
-/// Project-level configuration loaded from `.cc-rust/settings.json` in the
-/// working directory (or an ancestor).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ProjectConfig {
-    /// Preferred model for this project.
-    pub model: Option<String>,
-    /// Backend selection ("native" or "codex").
-    pub backend: Option<String>,
-    /// Color theme for this project.
-    pub theme: Option<String>,
-    /// Verbose output.
-    pub verbose: Option<bool>,
-    /// Permission mode override.
-    pub permission_mode: Option<String>,
-    /// Tools that are always allowed.
-    pub allowed_tools: Option<Vec<String>>,
-    /// Custom system prompt (project-level).
-    pub system_prompt: Option<String>,
-    /// Hooks configuration.
-    pub hooks: Option<HashMap<String, serde_json::Value>>,
-    /// Whether Claude in Chrome should be enabled by default for this project.
-    #[serde(rename = "claudeInChromeDefaultEnabled")]
-    pub claude_in_chrome_default_enabled: Option<bool>,
-    /// Additional arbitrary settings.
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_json::Value>,
+impl RawSettings {
+    /// Merge `other` **on top of** `self`. Mutates `self` in place and
+    /// records, in `sources`, every key that `other` provided.
+    fn merge_from(&mut self, other: RawSettings, source: SettingsSource, sources: &mut SourceMap) {
+        macro_rules! merge_opt {
+            ($field:ident, $key:expr) => {
+                if let Some(v) = other.$field {
+                    self.$field = Some(v);
+                    sources.insert($key.to_string(), source);
+                }
+            };
+        }
+
+        merge_opt!(model, "model");
+        merge_opt!(backend, "backend");
+        merge_opt!(theme, "theme");
+        merge_opt!(verbose, "verbose");
+        merge_opt!(permission_mode, "permissionMode");
+
+        if let Some(list) = other.allowed_tools {
+            let merged = merge_str_lists(self.allowed_tools.as_deref(), Some(&list));
+            self.allowed_tools = Some(merged);
+            sources.insert("allowedTools".to_string(), source);
+        }
+
+        if let Some(perms) = other.permissions {
+            if !perms.is_effectively_empty() {
+                self.permissions = Some(merge_permissions(self.permissions.take(), perms));
+                sources.insert("permissions".to_string(), source);
+            }
+        }
+
+        if let Some(sbx) = other.sandbox {
+            if !sbx.is_effectively_empty() {
+                self.sandbox = Some(merge_sandbox(self.sandbox.take(), sbx));
+                sources.insert("sandbox".to_string(), source);
+            }
+        }
+
+        if let Some(hooks) = other.hooks {
+            let mut merged = self.hooks.take().unwrap_or_default();
+            for (k, v) in hooks {
+                merged.insert(k, v);
+            }
+            self.hooks = Some(merged);
+            sources.insert("hooks".to_string(), source);
+        }
+
+        merge_opt!(status_line, "statusLine");
+        merge_opt!(output_style, "outputStyle");
+        merge_opt!(language, "language");
+        merge_opt!(voice_enabled, "voiceEnabled");
+        merge_opt!(editor_mode, "editorMode");
+        merge_opt!(view_mode, "viewMode");
+        merge_opt!(spinner_tips, "spinnerTips");
+        merge_opt!(terminal_progress_bar_enabled, "terminalProgressBarEnabled");
+        merge_opt!(available_models, "availableModels");
+        merge_opt!(effort_level, "effortLevel");
+        merge_opt!(fast_mode, "fastMode");
+        merge_opt!(fast_mode_per_session_opt_in, "fastModePerSessionOptIn");
+        merge_opt!(teammate_mode, "teammateMode");
+        merge_opt!(
+            claude_in_chrome_default_enabled,
+            "claudeInChromeDefaultEnabled"
+        );
+        merge_opt!(system_prompt, "systemPrompt");
+        merge_opt!(api_key, "apiKey");
+
+        for (k, v) in other.extra {
+            self.extra.insert(k.clone(), v);
+            sources.insert(k, source);
+        }
+    }
 }
 
-/// Merged configuration with values resolved from all sources.
+fn merge_permissions(
+    base: Option<PermissionsSettings>,
+    over: PermissionsSettings,
+) -> PermissionsSettings {
+    let mut out = base.unwrap_or_default();
+    if over.default_mode.is_some() {
+        out.default_mode = over.default_mode;
+    }
+    out.allow = merge_str_lists(Some(&out.allow), Some(&over.allow));
+    out.ask = merge_str_lists(Some(&out.ask), Some(&over.ask));
+    out.deny = merge_str_lists(Some(&out.deny), Some(&over.deny));
+    out.additional_directories = merge_str_lists(
+        Some(&out.additional_directories),
+        Some(&over.additional_directories),
+    );
+    if over.enable_bypass_mode.is_some() {
+        out.enable_bypass_mode = over.enable_bypass_mode;
+    }
+    if over.enable_auto_mode.is_some() {
+        out.enable_auto_mode = over.enable_auto_mode;
+    }
+    for (k, v) in over.extra {
+        out.extra.insert(k, v);
+    }
+    out
+}
+
+/// Merge sandbox settings by overlaying scalar fields and concatenating
+/// (deduped) list fields. This matches the Claude Code spec where
+/// `allowWrite` / `denyWrite` / `allowRead` / `denyRead` / `allowedDomains`
+/// / `excludedCommands` are merged across scopes rather than replaced.
+fn merge_sandbox(base: Option<SandboxSettings>, over: SandboxSettings) -> SandboxSettings {
+    let mut out = base.unwrap_or_default();
+    if over.enabled.is_some() {
+        out.enabled = over.enabled;
+    }
+    if over.mode.is_some() {
+        out.mode = over.mode;
+    }
+    if over.fail_if_unavailable.is_some() {
+        out.fail_if_unavailable = over.fail_if_unavailable;
+    }
+    if over.allow_unsandboxed_commands.is_some() {
+        out.allow_unsandboxed_commands = over.allow_unsandboxed_commands;
+    }
+    if over.allow_managed_read_paths_only.is_some() {
+        out.allow_managed_read_paths_only = over.allow_managed_read_paths_only;
+    }
+    if over.allow_managed_domains_only.is_some() {
+        out.allow_managed_domains_only = over.allow_managed_domains_only;
+    }
+    out.excluded_commands =
+        merge_str_lists(Some(&out.excluded_commands), Some(&over.excluded_commands));
+    out.allowed_commands =
+        merge_str_lists(Some(&out.allowed_commands), Some(&over.allowed_commands));
+    out.filesystem = merge_sandbox_fs(out.filesystem, over.filesystem);
+    out.network = merge_sandbox_net(out.network, over.network);
+    for (k, v) in over.extra {
+        out.extra.insert(k, v);
+    }
+    out
+}
+
+fn merge_sandbox_fs(
+    base: SandboxFilesystemSettings,
+    over: SandboxFilesystemSettings,
+) -> SandboxFilesystemSettings {
+    let mut out = base;
+    out.allow_read = merge_str_lists(Some(&out.allow_read), Some(&over.allow_read));
+    out.deny_read = merge_str_lists(Some(&out.deny_read), Some(&over.deny_read));
+    out.allow_write = merge_str_lists(Some(&out.allow_write), Some(&over.allow_write));
+    out.deny_write = merge_str_lists(Some(&out.deny_write), Some(&over.deny_write));
+    for (k, v) in over.extra {
+        out.extra.insert(k, v);
+    }
+    out
+}
+
+fn merge_sandbox_net(
+    base: SandboxNetworkSettings,
+    over: SandboxNetworkSettings,
+) -> SandboxNetworkSettings {
+    let mut out = base;
+    if over.disabled.is_some() {
+        out.disabled = over.disabled;
+    }
+    out.allowed_domains = merge_str_lists(Some(&out.allowed_domains), Some(&over.allowed_domains));
+    if over.http_proxy_port.is_some() {
+        out.http_proxy_port = over.http_proxy_port;
+    }
+    if over.socks_proxy_port.is_some() {
+        out.socks_proxy_port = over.socks_proxy_port;
+    }
+    for (k, v) in over.extra {
+        out.extra.insert(k, v);
+    }
+    out
+}
+
+fn merge_str_lists(base: Option<&[String]>, over: Option<&[String]>) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(b) = base {
+        out.extend_from_slice(b);
+    }
+    if let Some(o) = over {
+        for item in o {
+            if !out.contains(item) {
+                out.push(item.clone());
+            }
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Backward-compat type aliases
+// ---------------------------------------------------------------------------
+
+/// Legacy alias — global/user settings file shape.
+///
+/// Prefer [`RawSettings`] in new code. Kept so that historic call sites
+/// (`use settings::GlobalConfig;`) continue to compile after the refactor.
+#[allow(dead_code)]
+pub type GlobalConfig = RawSettings;
+
+/// Legacy alias — project settings file shape.
+///
+/// Prefer [`RawSettings`] in new code. Kept for the same reason as
+/// [`GlobalConfig`].
+#[allow(dead_code)]
+pub type ProjectConfig = RawSettings;
+
+/// Merged runtime configuration. See [`EffectiveSettings`] for the new,
+/// source-aware form.
+pub type MergedConfig = EffectiveSettings;
+
+// ---------------------------------------------------------------------------
+// EffectiveSettings — runtime-ready, merged form
+// ---------------------------------------------------------------------------
+
+/// Fully-merged, runtime-ready settings.
+///
+/// Fields that have reasonable defaults are fully materialised (e.g.
+/// `verbose: bool` rather than `Option<bool>`). Fields that have no
+/// meaningful default stay `Option`.
+///
+/// Paired with a [`SourceMap`] via [`LoadedSettings`].
 #[derive(Debug, Clone, Default)]
-pub struct MergedConfig {
+pub struct EffectiveSettings {
+    // -- Legacy (consumed by main.rs) ----------------------------------
     pub model: Option<String>,
     pub backend: Option<String>,
     pub theme: Option<String>,
@@ -89,62 +587,180 @@ pub struct MergedConfig {
     pub allowed_tools: Vec<String>,
     #[allow(dead_code)]
     pub system_prompt: Option<String>,
-    pub hooks: HashMap<String, serde_json::Value>,
+    pub hooks: HashMap<String, Value>,
     pub claude_in_chrome_default_enabled: Option<bool>,
     pub api_key: Option<String>,
     #[allow(dead_code)]
-    pub extra: HashMap<String, serde_json::Value>,
+    pub extra: HashMap<String, Value>,
+
+    // -- New typed fields ----------------------------------------------
+    pub permissions: PermissionsSettings,
+    pub sandbox: SandboxSettings,
+    pub status_line: StatusLineSettings,
+    pub spinner_tips: SpinnerTipsSettings,
+    pub output_style: Option<String>,
+    pub language: Option<String>,
+    pub voice_enabled: Option<bool>,
+    pub editor_mode: Option<String>,
+    pub view_mode: Option<String>,
+    pub terminal_progress_bar_enabled: Option<bool>,
+    pub available_models: Vec<String>,
+    pub effort_level: Option<String>,
+    pub fast_mode: Option<bool>,
+    pub fast_mode_per_session_opt_in: Option<bool>,
+    pub teammate_mode: Option<bool>,
+}
+
+impl EffectiveSettings {
+    fn from_raw(raw: RawSettings) -> Self {
+        let mut perms = raw.permissions.unwrap_or_default();
+        // Fold legacy top-level fields into the nested struct so downstream
+        // code only needs to look in one place.
+        if perms.default_mode.is_none() {
+            perms.default_mode = raw.permission_mode.clone();
+        }
+        if let Some(legacy) = raw.allowed_tools.as_ref() {
+            perms.allow = merge_str_lists(Some(&perms.allow), Some(legacy));
+        }
+
+        Self {
+            model: raw.model,
+            backend: raw.backend,
+            theme: raw.theme,
+            verbose: raw.verbose.unwrap_or(false),
+            permission_mode: perms.default_mode.clone().or(raw.permission_mode),
+            allowed_tools: perms.allow.clone(),
+            system_prompt: raw.system_prompt,
+            hooks: raw.hooks.unwrap_or_default(),
+            claude_in_chrome_default_enabled: raw.claude_in_chrome_default_enabled,
+            api_key: raw.api_key,
+            extra: raw.extra,
+            permissions: perms,
+            sandbox: raw.sandbox.unwrap_or_default(),
+            status_line: raw.status_line.unwrap_or_default(),
+            spinner_tips: raw.spinner_tips.unwrap_or_default(),
+            output_style: raw.output_style,
+            language: raw.language,
+            voice_enabled: raw.voice_enabled,
+            editor_mode: raw.editor_mode,
+            view_mode: raw.view_mode,
+            terminal_progress_bar_enabled: raw.terminal_progress_bar_enabled,
+            available_models: raw.available_models.unwrap_or_default(),
+            effort_level: raw.effort_level,
+            fast_mode: raw.fast_mode,
+            fast_mode_per_session_opt_in: raw.fast_mode_per_session_opt_in,
+            teammate_mode: raw.teammate_mode,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
-// Loading functions
+// LoadedSettings — effective + raw layers + source map
 // ---------------------------------------------------------------------------
 
-/// Return the path to the global cc-rust settings directory.
-///
-/// Historically this could fail if the home directory was unresolvable; the
-/// unified [`crate::config::paths::data_root`] now never fails (it falls back
-/// to a temp dir with a one-time warn), so `Result` is preserved only for
-/// source compatibility with existing `?`-using callers.
+/// Result of [`load_effective`]. Holds the merged [`EffectiveSettings`]
+/// and a [`SourceMap`] recording which layer provided each key, plus the
+/// raw per-layer contents for diagnostics.
+#[derive(Debug, Clone, Default)]
+pub struct LoadedSettings {
+    pub effective: EffectiveSettings,
+    pub sources: SourceMap,
+    pub managed: Option<RawSettings>,
+    pub user: Option<RawSettings>,
+    pub project: Option<RawSettings>,
+    pub local: Option<RawSettings>,
+    /// Paths that were actually read (present on disk).
+    pub loaded_paths: Vec<(SettingsSource, PathBuf)>,
+}
+
+impl LoadedSettings {
+    /// Source of a specific key (e.g. `"model"`, `"permissions"`).
+    ///
+    /// Returns [`SettingsSource::Default`] if no layer provided the key.
+    /// Used by `/config sources` and tests; reserved for downstream callers
+    /// that want to inspect provenance without iterating the full map.
+    #[allow(dead_code)]
+    pub fn source_of(&self, key: &str) -> SettingsSource {
+        self.sources
+            .get(key)
+            .copied()
+            .unwrap_or(SettingsSource::Default)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Paths
+// ---------------------------------------------------------------------------
+
+/// Global cc-rust data directory. Never fails — falls back to a temp dir.
 pub fn global_claude_dir() -> Result<PathBuf> {
     Ok(crate::config::paths::data_root())
 }
 
-/// Load the global configuration from `~/.cc-rust/settings.json`.
-///
-/// Returns `Ok(GlobalConfig::default())` if the file does not exist.
-pub fn load_global_config() -> Result<GlobalConfig> {
-    let dir = global_claude_dir()?;
-    let path = dir.join("settings.json");
-
-    if !path.exists() {
-        return Ok(GlobalConfig::default());
-    }
-
-    let contents = std::fs::read_to_string(&path)
-        .with_context(|| format!("Failed to read {}", path.display()))?;
-
-    let config: GlobalConfig = serde_json::from_str(&contents)
-        .with_context(|| format!("Failed to parse {}", path.display()))?;
-
-    Ok(config)
+/// Path to the user-level settings file.
+pub fn user_settings_path() -> PathBuf {
+    crate::config::paths::data_root().join("settings.json")
 }
 
-/// Load the project configuration from `.cc-rust/settings.json` relative to
-/// `cwd`, or any ancestor directory.
+/// Path to the effective project-level settings file for `cwd`.
 ///
-/// Returns `Ok(ProjectConfig::default())` if no project config is found.
-pub fn load_project_config(cwd: &Path) -> Result<ProjectConfig> {
-    let path = find_project_config(cwd);
-    match path {
-        Some(p) => {
-            let contents = std::fs::read_to_string(&p)
-                .with_context(|| format!("Failed to read {}", p.display()))?;
-            let config: ProjectConfig = serde_json::from_str(&contents)
-                .with_context(|| format!("Failed to parse {}", p.display()))?;
-            Ok(config)
+/// If `cwd` is inside an existing `.cc-rust/` project hierarchy, this
+/// resolves to the nearest ancestor settings file location. Otherwise it
+/// points at `cwd/.cc-rust/settings.json`, which is also where a new file
+/// would be created.
+pub fn project_settings_path(cwd: &Path) -> PathBuf {
+    find_project_dir(cwd)
+        .unwrap_or_else(|| cwd.join(".cc-rust"))
+        .join("settings.json")
+}
+
+/// Path to the effective local override settings file for `cwd`.
+///
+/// Mirrors [`project_settings_path`] but targets `settings.local.json`.
+pub fn local_settings_path(cwd: &Path) -> PathBuf {
+    find_project_dir(cwd)
+        .unwrap_or_else(|| cwd.join(".cc-rust"))
+        .join("settings.local.json")
+}
+
+/// Path to the managed/policy settings file, if one is configured.
+///
+/// Resolution:
+///   1. `CC_RUST_MANAGED_SETTINGS` env (if non-empty).
+///   2. Windows: `%ProgramData%\cc-rust\settings.json` (or
+///      `C:\ProgramData\cc-rust\settings.json` if the env var is absent).
+///   3. Other: `/etc/cc-rust/managed-settings.json`.
+pub fn managed_settings_path() -> PathBuf {
+    if let Ok(p) = std::env::var("CC_RUST_MANAGED_SETTINGS") {
+        if !p.trim().is_empty() {
+            return PathBuf::from(p);
         }
-        None => Ok(ProjectConfig::default()),
+    }
+    #[cfg(windows)]
+    {
+        let base = std::env::var_os("ProgramData")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("C:\\ProgramData"));
+        base.join("cc-rust").join("settings.json")
+    }
+    #[cfg(not(windows))]
+    {
+        PathBuf::from("/etc/cc-rust/managed-settings.json")
+    }
+}
+
+/// Return the path to the nearest ancestor project settings directory
+/// (`.cc-rust/`) or `None`.
+fn find_project_dir(cwd: &Path) -> Option<PathBuf> {
+    let mut dir = cwd.to_path_buf();
+    loop {
+        let candidate = dir.join(".cc-rust");
+        if candidate.is_dir() {
+            return Some(candidate);
+        }
+        if !dir.pop() {
+            return None;
+        }
     }
 }
 
@@ -162,104 +778,415 @@ fn find_project_config(cwd: &Path) -> Option<PathBuf> {
     }
 }
 
+/// Search for `.cc-rust/settings.local.json`.
+fn find_local_config(cwd: &Path) -> Option<PathBuf> {
+    let mut dir = cwd.to_path_buf();
+    loop {
+        let candidate = dir.join(".cc-rust").join("settings.local.json");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
-// Merge logic
+// Loaders
 // ---------------------------------------------------------------------------
 
-/// Merge global and project configs into a single resolved `MergedConfig`.
+fn load_raw_from(path: &Path) -> Result<Option<RawSettings>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let contents = std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read {}", path.display()))?;
+    let raw: RawSettings = serde_json::from_str(&contents)
+        .with_context(|| format!("Failed to parse {}", path.display()))?;
+    Ok(Some(raw))
+}
+
+/// Load the user-level settings. Returns `Ok(RawSettings::default())` if
+/// the file does not exist.
 ///
-/// Project settings override global settings where present. Environment
-/// variables are applied last (highest priority).
+/// Convenience wrapper kept for callers that only want one layer; the full
+/// stack is loaded via [`load_effective`].
+#[allow(dead_code)]
+pub fn load_global_config() -> Result<RawSettings> {
+    Ok(load_raw_from(&user_settings_path())?.unwrap_or_default())
+}
+
+/// Load the project-level settings. Returns defaults if none is found.
+#[allow(dead_code)]
+pub fn load_project_config(cwd: &Path) -> Result<RawSettings> {
+    match find_project_config(cwd) {
+        Some(p) => Ok(load_raw_from(&p)?.unwrap_or_default()),
+        None => Ok(RawSettings::default()),
+    }
+}
+
+/// Load project-local overrides (`.cc-rust/settings.local.json`).
+#[allow(dead_code)]
+pub fn load_local_config(cwd: &Path) -> Result<RawSettings> {
+    match find_local_config(cwd) {
+        Some(p) => Ok(load_raw_from(&p)?.unwrap_or_default()),
+        None => Ok(RawSettings::default()),
+    }
+}
+
+/// Load managed / policy settings, if a managed settings file exists on
+/// disk. Errors reading an existing file are surfaced; a missing file is
+/// treated as "no managed layer".
+#[allow(dead_code)]
+pub fn load_managed_config() -> Result<RawSettings> {
+    Ok(load_raw_from(&managed_settings_path())?.unwrap_or_default())
+}
+
+// ---------------------------------------------------------------------------
+// Merge / env overrides
+// ---------------------------------------------------------------------------
+
+/// Merge exactly two layers (global then project). Preserved for
+/// backward compatibility with earlier call sites.
+#[allow(dead_code)]
 pub fn merge_configs(global: &GlobalConfig, project: &ProjectConfig) -> MergedConfig {
-    let mut merged = MergedConfig {
-        model: project.model.clone().or_else(|| global.model.clone()),
-        backend: project.backend.clone().or_else(|| global.backend.clone()),
-        theme: project.theme.clone().or_else(|| global.theme.clone()),
-        verbose: project.verbose.or(global.verbose).unwrap_or(false),
-        permission_mode: project
-            .permission_mode
-            .clone()
-            .or_else(|| global.permission_mode.clone()),
-        allowed_tools: merge_string_lists(
-            global.allowed_tools.as_deref(),
-            project.allowed_tools.as_deref(),
-        ),
-        system_prompt: project
-            .system_prompt
-            .clone()
-            .or_else(|| global.system_prompt.clone()),
-        hooks: merge_maps(global.hooks.as_ref(), project.hooks.as_ref()),
-        claude_in_chrome_default_enabled: project
-            .claude_in_chrome_default_enabled
-            .or(global.claude_in_chrome_default_enabled),
-        api_key: global.api_key.clone(),
-        extra: merge_maps(Some(&global.extra), Some(&project.extra)),
-    };
-
-    // Apply environment variable overrides.
-    apply_env_overrides(&mut merged);
-
+    let mut acc = RawSettings::default();
+    let mut sources = SourceMap::new();
+    acc.merge_from(global.clone(), SettingsSource::User, &mut sources);
+    acc.merge_from(project.clone(), SettingsSource::Project, &mut sources);
+    let mut merged = EffectiveSettings::from_raw(acc);
+    apply_env_overrides(&mut merged, &mut sources);
     merged
 }
 
-/// Merge two optional string lists by concatenation (global first, project second).
-fn merge_string_lists(global: Option<&[String]>, project: Option<&[String]>) -> Vec<String> {
-    let mut result = Vec::new();
-    if let Some(g) = global {
-        result.extend_from_slice(g);
-    }
-    if let Some(p) = project {
-        for item in p {
-            if !result.contains(item) {
-                result.push(item.clone());
-            }
-        }
-    }
-    result
-}
+/// Apply environment-variable overrides in place.
+fn apply_env_overrides(merged: &mut EffectiveSettings, sources: &mut SourceMap) {
+    let set_src = |key: &str, sources: &mut SourceMap| {
+        sources.insert(key.to_string(), SettingsSource::Env);
+    };
 
-/// Merge two optional maps. Project values override global values for the
-/// same key.
-fn merge_maps(
-    global: Option<&HashMap<String, serde_json::Value>>,
-    project: Option<&HashMap<String, serde_json::Value>>,
-) -> HashMap<String, serde_json::Value> {
-    let mut result = HashMap::new();
-    if let Some(g) = global {
-        result.extend(g.clone());
-    }
-    if let Some(p) = project {
-        result.extend(p.clone());
-    }
-    result
-}
-
-/// Load all config sources and merge them in one call.
-///
-/// Convenience function for the initialization path.
-pub fn load_and_merge(cwd: &str) -> Result<MergedConfig> {
-    let global = load_global_config()?;
-    let project = load_project_config(Path::new(cwd))?;
-    Ok(merge_configs(&global, &project))
-}
-
-/// Apply environment variable overrides to merged config.
-fn apply_env_overrides(merged: &mut MergedConfig) {
     if let Ok(model) = std::env::var("CLAUDE_MODEL") {
         merged.model = Some(model);
+        set_src("model", sources);
     }
     if let Ok(backend) = std::env::var("CC_BACKEND").or_else(|_| std::env::var("CLAUDE_BACKEND")) {
         merged.backend = Some(backend);
+        set_src("backend", sources);
     }
     if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
         merged.api_key = Some(key);
+        set_src("apiKey", sources);
     }
     if let Ok(v) = std::env::var("CLAUDE_VERBOSE") {
         merged.verbose = v == "1" || v.eq_ignore_ascii_case("true");
+        set_src("verbose", sources);
     }
     if let Ok(mode) = std::env::var("CLAUDE_PERMISSION_MODE") {
-        merged.permission_mode = Some(mode);
+        merged.permission_mode = Some(mode.clone());
+        merged.permissions.default_mode = Some(mode);
+        set_src("permissionMode", sources);
     }
+    if let Ok(lang) = std::env::var("CLAUDE_LANGUAGE") {
+        merged.language = Some(lang);
+        set_src("language", sources);
+    }
+    if let Ok(style) = std::env::var("CLAUDE_OUTPUT_STYLE") {
+        merged.output_style = Some(style);
+        set_src("outputStyle", sources);
+    }
+    if let Ok(theme) = std::env::var("CLAUDE_THEME") {
+        merged.theme = Some(theme);
+        set_src("theme", sources);
+    }
+}
+
+/// Load the full four-layer stack (managed/user/project/local) plus env.
+///
+/// This is the preferred entry point for new code. The legacy
+/// [`load_and_merge`] wraps this and returns only [`EffectiveSettings`].
+pub fn load_effective(cwd: &Path) -> Result<LoadedSettings> {
+    let mut acc = RawSettings::default();
+    let mut sources = SourceMap::new();
+    let mut loaded_paths = Vec::new();
+    let mut managed = None;
+    let mut user = None;
+    let mut project = None;
+    let mut local = None;
+
+    // 1. managed
+    let managed_path = managed_settings_path();
+    if let Some(raw) = load_raw_from(&managed_path)? {
+        acc.merge_from(raw.clone(), SettingsSource::Managed, &mut sources);
+        managed = Some(raw);
+        loaded_paths.push((SettingsSource::Managed, managed_path));
+    }
+
+    // 2. user
+    let user_path = user_settings_path();
+    if let Some(raw) = load_raw_from(&user_path)? {
+        acc.merge_from(raw.clone(), SettingsSource::User, &mut sources);
+        user = Some(raw);
+        loaded_paths.push((SettingsSource::User, user_path));
+    }
+
+    // 3. project
+    if let Some(p) = find_project_config(cwd) {
+        if let Some(raw) = load_raw_from(&p)? {
+            acc.merge_from(raw.clone(), SettingsSource::Project, &mut sources);
+            project = Some(raw);
+            loaded_paths.push((SettingsSource::Project, p));
+        }
+    }
+
+    // 4. local
+    if let Some(p) = find_local_config(cwd) {
+        if let Some(raw) = load_raw_from(&p)? {
+            acc.merge_from(raw.clone(), SettingsSource::Local, &mut sources);
+            local = Some(raw);
+            loaded_paths.push((SettingsSource::Local, p));
+        }
+    }
+
+    let mut effective = EffectiveSettings::from_raw(acc);
+
+    // 5. env
+    apply_env_overrides(&mut effective, &mut sources);
+
+    Ok(LoadedSettings {
+        effective,
+        sources,
+        managed,
+        user,
+        project,
+        local,
+        loaded_paths,
+    })
+}
+
+/// Convenience wrapper — loads the full stack and returns the merged
+/// runtime view.
+pub fn load_and_merge(cwd: &str) -> Result<MergedConfig> {
+    Ok(load_effective(Path::new(cwd))?.effective)
+}
+
+// ---------------------------------------------------------------------------
+// Write + backup
+// ---------------------------------------------------------------------------
+
+/// Maximum number of backup copies to retain per settings file.
+pub const MAX_SETTINGS_BACKUPS: usize = 5;
+
+/// Serialise `raw` to JSON (pretty) with atomic write + rotating backup.
+///
+/// - Creates parent directories as needed.
+/// - If `path` already exists, it's copied to `{path}.{timestamp}.bak`.
+/// - Old backups beyond [`MAX_SETTINGS_BACKUPS`] are pruned.
+pub fn write_settings_file(path: &Path, raw: &RawSettings) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create directory {}", parent.display()))?;
+    }
+
+    if path.exists() {
+        let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
+        let bak = path.with_extension(format!("json.{}.bak", ts));
+        if let Err(e) = std::fs::copy(path, &bak) {
+            tracing::warn!(
+                source = %path.display(),
+                target = %bak.display(),
+                error = %e,
+                "failed to copy settings backup"
+            );
+        }
+        prune_backups(path, MAX_SETTINGS_BACKUPS);
+    }
+
+    let pretty =
+        serde_json::to_string_pretty(raw).context("Failed to serialize settings to JSON")?;
+
+    // Atomic-ish: write to a tmp sibling, then rename.
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, pretty).with_context(|| format!("Failed to write {}", tmp.display()))?;
+    std::fs::rename(&tmp, path)
+        .with_context(|| format!("Failed to rename {} -> {}", tmp.display(), path.display()))?;
+
+    Ok(())
+}
+
+/// Write to the user-level settings file.
+pub fn write_user_settings(raw: &RawSettings) -> Result<PathBuf> {
+    let path = user_settings_path();
+    write_settings_file(&path, raw)?;
+    Ok(path)
+}
+
+/// Write to `cwd/.cc-rust/settings.json`, creating the directory if needed.
+pub fn write_project_settings(cwd: &Path, raw: &RawSettings) -> Result<PathBuf> {
+    let path = project_settings_path(cwd);
+    write_settings_file(&path, raw)?;
+    Ok(path)
+}
+
+/// Write to `cwd/.cc-rust/settings.local.json`.
+pub fn write_local_settings(cwd: &Path, raw: &RawSettings) -> Result<PathBuf> {
+    let path = local_settings_path(cwd);
+    write_settings_file(&path, raw)?;
+    Ok(path)
+}
+
+fn prune_backups(path: &Path, keep: usize) {
+    let Some(parent) = path.parent() else { return };
+    let Some(stem) = path.file_name().map(|n| n.to_string_lossy().into_owned()) else {
+        return;
+    };
+    let prefix = format!("{}.", stem);
+
+    let mut backups: Vec<PathBuf> = Vec::new();
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with(&prefix) && name.ends_with(".bak") {
+            backups.push(entry.path());
+        }
+    }
+    // Sort newest-first by filename (our timestamp format is sortable).
+    backups.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+    for old in backups.into_iter().skip(keep) {
+        let _ = std::fs::remove_file(old);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// JSON Schema
+// ---------------------------------------------------------------------------
+
+/// Return a JSON Schema (Draft 2020-12) describing the on-disk
+/// `settings.json` shape.
+///
+/// The schema is hand-maintained so the repo can commit it without pulling
+/// in `schemars`. Keep in sync with [`RawSettings`].
+pub fn settings_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://cc-rust/settings.schema.json",
+        "title": "cc-rust settings",
+        "description": "On-disk shape of settings.json (managed/user/project/local).",
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+            "model": { "type": "string" },
+            "backend": { "type": "string", "enum": ["native", "codex"] },
+            "theme": { "type": "string" },
+            "verbose": { "type": "boolean" },
+            "permissionMode": {
+                "type": "string",
+                "enum": ["default", "ask", "auto", "bypass", "plan", "acceptEdits", "dontAsk"]
+            },
+            "allowedTools": { "type": "array", "items": { "type": "string" } },
+            "permissions": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                    "defaultMode": {
+                        "type": "string",
+                        "enum": ["default", "ask", "auto", "bypass", "plan", "acceptEdits", "dontAsk"]
+                    },
+                    "allow": { "type": "array", "items": { "type": "string" } },
+                    "ask": { "type": "array", "items": { "type": "string" } },
+                    "deny": { "type": "array", "items": { "type": "string" } },
+                    "additionalDirectories": {
+                        "type": "array", "items": { "type": "string" }
+                    },
+                    "enableBypassMode": { "type": "boolean" },
+                    "enableAutoMode": { "type": "boolean" }
+                }
+            },
+            "sandbox": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                    "enabled": { "type": "boolean" },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["read-only", "workspace", "full"]
+                    },
+                    "failIfUnavailable": { "type": "boolean" },
+                    "allowUnsandboxedCommands": { "type": "boolean" },
+                    "allowManagedReadPathsOnly": { "type": "boolean" },
+                    "allowManagedDomainsOnly": { "type": "boolean" },
+                    "excludedCommands": {
+                        "type": "array", "items": { "type": "string" }
+                    },
+                    "allowedCommands": {
+                        "type": "array", "items": { "type": "string" }
+                    },
+                    "filesystem": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "properties": {
+                            "allowRead": { "type": "array", "items": { "type": "string" } },
+                            "denyRead": { "type": "array", "items": { "type": "string" } },
+                            "allowWrite": { "type": "array", "items": { "type": "string" } },
+                            "denyWrite": { "type": "array", "items": { "type": "string" } }
+                        }
+                    },
+                    "network": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "properties": {
+                            "disabled": { "type": "boolean" },
+                            "allowedDomains": {
+                                "type": "array", "items": { "type": "string" }
+                            },
+                            "httpProxyPort": { "type": "integer", "minimum": 0, "maximum": 65535 },
+                            "socksProxyPort": { "type": "integer", "minimum": 0, "maximum": 65535 }
+                        }
+                    }
+                }
+            },
+            "hooks": { "type": "object", "additionalProperties": true },
+            "statusLine": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                    "type": { "type": "string" },
+                    "command": { "type": "string" },
+                    "script": { "type": "string" },
+                    "format": { "type": "string" }
+                }
+            },
+            "outputStyle": { "type": "string" },
+            "language": { "type": "string" },
+            "voiceEnabled": { "type": "boolean" },
+            "editorMode": { "type": "string", "enum": ["normal", "vim"] },
+            "viewMode": { "type": "string" },
+            "spinnerTips": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                    "enabled": { "type": "boolean" },
+                    "intervalMs": { "type": "integer", "minimum": 0 },
+                    "customTips": {
+                        "type": "array", "items": { "type": "string" }
+                    }
+                }
+            },
+            "terminalProgressBarEnabled": { "type": "boolean" },
+            "availableModels": {
+                "type": "array", "items": { "type": "string" }
+            },
+            "effortLevel": { "type": "string" },
+            "fastMode": { "type": "boolean" },
+            "fastModePerSessionOptIn": { "type": "boolean" },
+            "teammateMode": { "type": "boolean" },
+            "claudeInChromeDefaultEnabled": { "type": "boolean" },
+            "systemPrompt": { "type": "string" },
+            "apiKey": { "type": "string" }
+        }
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -271,15 +1198,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_merge_project_overrides_global() {
-        let global = GlobalConfig {
+    fn project_overrides_global() {
+        let global = RawSettings {
             model: Some("claude-sonnet".into()),
             backend: Some("native".into()),
             theme: Some("dark".into()),
             verbose: Some(false),
             ..Default::default()
         };
-        let project = ProjectConfig {
+        let project = RawSettings {
             model: Some("claude-opus".into()),
             backend: Some("codex".into()),
             verbose: Some(true),
@@ -290,26 +1217,183 @@ mod tests {
         let merged = merge_configs(&global, &project);
         assert_eq!(merged.model.as_deref(), Some("claude-opus"));
         assert_eq!(merged.backend.as_deref(), Some("codex"));
-        assert_eq!(merged.theme.as_deref(), Some("dark")); // falls through to global
+        assert_eq!(merged.theme.as_deref(), Some("dark"));
         assert!(merged.verbose);
         assert_eq!(merged.claude_in_chrome_default_enabled, Some(true));
     }
 
     #[test]
-    fn test_merge_allowed_tools_deduplicates() {
-        let tools = merge_string_lists(
-            Some(&["Bash".into(), "FileRead".into()]),
-            Some(&["FileRead".into(), "Grep".into()]),
-        );
+    fn allowed_tools_dedup_merges() {
+        let base: Vec<String> = vec!["Bash".into(), "FileRead".into()];
+        let over: Vec<String> = vec!["FileRead".into(), "Grep".into()];
+        let tools = merge_str_lists(Some(&base), Some(&over));
         assert_eq!(tools, vec!["Bash", "FileRead", "Grep"]);
     }
 
     #[test]
-    fn test_empty_configs_produce_defaults() {
-        let merged = merge_configs(&GlobalConfig::default(), &ProjectConfig::default());
+    fn empty_configs_produce_defaults() {
+        let merged = merge_configs(&RawSettings::default(), &RawSettings::default());
         assert!(merged.model.is_none());
         assert!(merged.backend.is_none());
         assert!(!merged.verbose);
         assert!(merged.allowed_tools.is_empty());
+    }
+
+    #[test]
+    fn permissions_legacy_fallback() {
+        let raw = RawSettings {
+            permission_mode: Some("auto".into()),
+            allowed_tools: Some(vec!["Bash".into()]),
+            ..Default::default()
+        };
+        let eff = EffectiveSettings::from_raw(raw);
+        assert_eq!(eff.permissions.default_mode.as_deref(), Some("auto"));
+        assert_eq!(eff.permissions.allow, vec!["Bash".to_string()]);
+        assert_eq!(eff.permission_mode.as_deref(), Some("auto"));
+    }
+
+    #[test]
+    fn permissions_nested_overrides_legacy() {
+        let raw = RawSettings {
+            permission_mode: Some("auto".into()),
+            permissions: Some(PermissionsSettings {
+                default_mode: Some("bypass".into()),
+                allow: vec!["Grep".into()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let eff = EffectiveSettings::from_raw(raw);
+        assert_eq!(eff.permissions.default_mode.as_deref(), Some("bypass"));
+        assert!(eff.permissions.allow.contains(&"Grep".to_string()));
+    }
+
+    #[test]
+    fn source_map_tracks_layer() {
+        let user = RawSettings {
+            model: Some("sonnet".into()),
+            ..Default::default()
+        };
+        let project = RawSettings {
+            model: Some("opus".into()),
+            theme: Some("dark".into()),
+            ..Default::default()
+        };
+        let mut acc = RawSettings::default();
+        let mut sources = SourceMap::new();
+        acc.merge_from(user, SettingsSource::User, &mut sources);
+        acc.merge_from(project, SettingsSource::Project, &mut sources);
+        assert_eq!(sources.get("model"), Some(&SettingsSource::Project));
+        assert_eq!(sources.get("theme"), Some(&SettingsSource::Project));
+    }
+
+    #[test]
+    fn unknown_keys_land_in_extra() {
+        let raw: RawSettings = serde_json::from_str(
+            r#"{ "model": "opus", "customFlag": true, "anotherNested": {"a":1} }"#,
+        )
+        .unwrap();
+        assert_eq!(raw.model.as_deref(), Some("opus"));
+        assert!(raw.extra.contains_key("customFlag"));
+        assert!(raw.extra.contains_key("anotherNested"));
+    }
+
+    #[test]
+    fn schema_has_known_keys() {
+        let s = settings_schema();
+        let props = s
+            .pointer("/properties")
+            .and_then(|v| v.as_object())
+            .expect("schema has /properties");
+        for key in [
+            "model",
+            "backend",
+            "permissions",
+            "sandbox",
+            "statusLine",
+            "outputStyle",
+            "spinnerTips",
+            "availableModels",
+            "fastMode",
+        ] {
+            assert!(props.contains_key(key), "missing schema key: {}", key);
+        }
+    }
+
+    /// The committed schema file is the canonical doc. This test makes
+    /// sure it never drifts from the runtime [`settings_schema`] output.
+    /// To regenerate the file, run:
+    /// `cargo test schema_file_matches_runtime -- --ignored` (then update).
+    #[test]
+    fn schema_file_matches_runtime() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("docs")
+            .join("schemas")
+            .join("settings.schema.json");
+
+        let on_disk: Value = serde_json::from_str(
+            &std::fs::read_to_string(&path).expect("docs/schemas/settings.schema.json missing"),
+        )
+        .expect("schema file is not valid JSON");
+
+        let runtime = settings_schema();
+
+        // Compare the `properties` object specifically — the human-curated
+        // file may carry additional doc-only metadata but its property
+        // shape must match. (We only assert the property keys are equal.)
+        let on_disk_keys: std::collections::BTreeSet<_> = on_disk
+            .pointer("/properties")
+            .and_then(|v| v.as_object())
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default();
+        let runtime_keys: std::collections::BTreeSet<_> = runtime
+            .pointer("/properties")
+            .and_then(|v| v.as_object())
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default();
+        assert_eq!(
+            on_disk_keys, runtime_keys,
+            "settings.schema.json drift — committed file is missing keys \
+             present in settings_schema(), or vice versa. Update \
+             docs/schemas/settings.schema.json to match.",
+        );
+    }
+
+    #[test]
+    fn write_creates_backup_and_prunes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("settings.json");
+
+        let raw1 = RawSettings {
+            model: Some("claude-a".into()),
+            ..Default::default()
+        };
+        write_settings_file(&path, &raw1).unwrap();
+        assert!(path.exists());
+
+        // Do several more writes separated by one second to get unique
+        // backup timestamps (format is YYYYMMDD-HHMMSS).
+        for i in 0..(MAX_SETTINGS_BACKUPS + 2) {
+            std::thread::sleep(std::time::Duration::from_millis(1100));
+            let raw = RawSettings {
+                model: Some(format!("claude-{}", i)),
+                ..Default::default()
+            };
+            write_settings_file(&path, &raw).unwrap();
+        }
+
+        let entries: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let n = e.file_name().to_string_lossy().into_owned();
+                n.starts_with("settings.json.") && n.ends_with(".bak")
+            })
+            .collect();
+        assert!(
+            entries.len() <= MAX_SETTINGS_BACKUPS,
+            "too many backups: {}",
+            entries.len()
+        );
     }
 }

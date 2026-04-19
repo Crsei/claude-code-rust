@@ -203,7 +203,11 @@ mod tests {
         with_clean_env(|| {
             std::env::set_var("CLAUDE_CODE_ENABLE_CFC", "true");
             let got = resolve_enablement(Some(false), Some(true));
-            assert_eq!(got, ChromeEnablement::Disabled, "--no-chrome overrides env and config");
+            assert_eq!(
+                got,
+                ChromeEnablement::Disabled,
+                "--no-chrome overrides env and config"
+            );
             std::env::remove_var("CLAUDE_CODE_ENABLE_CFC");
         });
     }

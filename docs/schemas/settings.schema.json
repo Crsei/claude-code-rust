@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cc-rust/settings.schema.json",
+  "title": "cc-rust settings",
+  "description": "On-disk shape of settings.json (managed/user/project/local). Generated from src/config/settings.rs::settings_schema() — keep in sync via the `schema_file_matches_runtime` test.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "model": { "type": "string" },
+    "backend": { "type": "string", "enum": ["native", "codex"] },
+    "theme": { "type": "string" },
+    "verbose": { "type": "boolean" },
+    "permissionMode": {
+      "type": "string",
+      "enum": ["default", "ask", "auto", "bypass", "plan", "acceptEdits", "dontAsk"]
+    },
+    "allowedTools": { "type": "array", "items": { "type": "string" } },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "defaultMode": {
+          "type": "string",
+          "enum": ["default", "ask", "auto", "bypass", "plan", "acceptEdits", "dontAsk"]
+        },
+        "allow": { "type": "array", "items": { "type": "string" } },
+        "ask": { "type": "array", "items": { "type": "string" } },
+        "deny": { "type": "array", "items": { "type": "string" } },
+        "additionalDirectories": { "type": "array", "items": { "type": "string" } },
+        "enableBypassMode": { "type": "boolean" },
+        "enableAutoMode": { "type": "boolean" }
+      }
+    },
+    "sandbox": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mode": {
+          "type": "string",
+          "enum": ["read-only", "workspace", "full"]
+        },
+        "failIfUnavailable": { "type": "boolean" },
+        "allowUnsandboxedCommands": { "type": "boolean" },
+        "allowManagedReadPathsOnly": { "type": "boolean" },
+        "allowManagedDomainsOnly": { "type": "boolean" },
+        "excludedCommands": { "type": "array", "items": { "type": "string" } },
+        "allowedCommands": { "type": "array", "items": { "type": "string" } },
+        "filesystem": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "allowRead": { "type": "array", "items": { "type": "string" } },
+            "denyRead": { "type": "array", "items": { "type": "string" } },
+            "allowWrite": { "type": "array", "items": { "type": "string" } },
+            "denyWrite": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "network": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "disabled": { "type": "boolean" },
+            "allowedDomains": { "type": "array", "items": { "type": "string" } },
+            "httpProxyPort": { "type": "integer", "minimum": 0, "maximum": 65535 },
+            "socksProxyPort": { "type": "integer", "minimum": 0, "maximum": 65535 }
+          }
+        }
+      }
+    },
+    "hooks": { "type": "object", "additionalProperties": true },
+    "statusLine": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": { "type": "string" },
+        "command": { "type": "string" },
+        "script": { "type": "string" },
+        "format": { "type": "string" }
+      }
+    },
+    "outputStyle": { "type": "string" },
+    "language": { "type": "string" },
+    "voiceEnabled": { "type": "boolean" },
+    "editorMode": { "type": "string", "enum": ["normal", "vim"] },
+    "viewMode": { "type": "string" },
+    "spinnerTips": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "intervalMs": { "type": "integer", "minimum": 0 },
+        "customTips": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "terminalProgressBarEnabled": { "type": "boolean" },
+    "availableModels": { "type": "array", "items": { "type": "string" } },
+    "effortLevel": { "type": "string" },
+    "fastMode": { "type": "boolean" },
+    "fastModePerSessionOptIn": { "type": "boolean" },
+    "teammateMode": { "type": "boolean" },
+    "claudeInChromeDefaultEnabled": { "type": "boolean" },
+    "systemPrompt": { "type": "string" },
+    "apiKey": { "type": "string" }
+  }
+}

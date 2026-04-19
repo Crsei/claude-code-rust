@@ -6,10 +6,26 @@ use std::time::Instant;
 use serde_json::Value;
 use tracing::{debug, warn};
 
-use crate::permissions::decision::{self, PermissionBehavior, PermissionDecision};
+use crate::permissions::decision::{
+    self, HookPermissionDecision, PermissionBehavior, PermissionDecision,
+};
 use crate::tools::hooks::{
     self, HookEventConfig, PermissionOverride, PostToolHookResult, PreToolHookResult,
 };
+
+/// Convert the legacy [`PermissionOverride`] (carried back by
+/// `run_pre_tool_hooks`) into the richer [`HookPermissionDecision`] the
+/// central decision flow expects.
+fn build_hook_decision(o: Option<&PermissionOverride>) -> Option<HookPermissionDecision> {
+    let o = o?;
+    let mut h = HookPermissionDecision::default();
+    h.source = Some("PreToolUse".into());
+    match o {
+        PermissionOverride::Allow => h.allow = true,
+        PermissionOverride::Deny { reason } => h.deny = Some(reason.clone()),
+    }
+    Some(h)
+}
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools};
 
@@ -140,56 +156,96 @@ pub async fn run_tool_use(
     }
 
     // ── Stage 5: Permission check ───────────────────────────────────
-    // Resolve hook permission override first, then fall back to rule engine
-    if let Some(override_decision) = permission_override {
-        match override_decision {
-            PermissionOverride::Deny { reason } => {
-                return make_error_result(
-                    tool_use_id,
-                    tool_name,
-                    &format!("Permission denied by hook: {}", reason),
-                    started,
-                );
-            }
-            PermissionOverride::Allow => {
-                // Hook explicitly allowed — skip normal permission check
-                debug!(tool = tool_name, "permission allowed by hook override");
-            }
+    // Build a `HookPermissionDecision` from the pre-tool hook output and
+    // route everything (rules + hook + mode) through the central
+    // decision flow so deny / ask still beat hook allow per spec.
+    let hook_decision = build_hook_decision(permission_override.as_ref());
+
+    // The tool may still expose its own per-tool checks (e.g. dangerous
+    // command detection in Bash). Run them first so tool-local deny/ask
+    // decisions cannot be bypassed by hook overrides, broad allow rules,
+    // or permissive modes.
+    match tool.check_permissions(&effective_input, ctx).await {
+        crate::types::tool::PermissionResult::Deny { message } => {
+            return make_error_result(
+                tool_use_id,
+                tool_name,
+                &format!("Permission denied: {}", message),
+                started,
+            );
         }
-    } else {
-        // Normal permission check via the rule engine
-        let perm_result = tool.check_permissions(&effective_input, ctx).await;
-        match perm_result {
-            crate::types::tool::PermissionResult::Allow { .. } => {
-                // Allowed
-            }
-            crate::types::tool::PermissionResult::Deny { message } => {
+        crate::types::tool::PermissionResult::Ask { message } => {
+            if ctx.options.is_non_interactive_session {
                 return make_error_result(
                     tool_use_id,
                     tool_name,
-                    &format!("Permission denied: {}", message),
+                    &format!("Permission required (non-interactive mode): {}", message),
                     started,
                 );
             }
-            crate::types::tool::PermissionResult::Ask { message } => {
-                // In non-interactive mode, deny with explanation
-                if ctx.options.is_non_interactive_session {
-                    return make_error_result(
-                        tool_use_id,
-                        tool_name,
-                        &format!("Permission required (non-interactive mode): {}", message),
-                        started,
-                    );
-                }
-                // In interactive mode, this would prompt the user.
-                // Phase 1: deny with explanation.
+            return make_error_result(
+                tool_use_id,
+                tool_name,
+                &format!("Permission required: {}", message),
+                started,
+            );
+        }
+        crate::types::tool::PermissionResult::Allow { .. } => {
+            // Continue to the central flow.
+        }
+    }
+
+    let app_state = (ctx.get_app_state)();
+    let central_decision = decision::has_permissions_to_use_tool_with_hook(
+        tool_name,
+        &effective_input,
+        &app_state.tool_permission_context,
+        hook_decision.as_ref(),
+        None,
+    );
+
+    let effective_input = central_decision
+        .updated_input
+        .clone()
+        .unwrap_or(effective_input);
+
+    match central_decision.behavior {
+        PermissionBehavior::Allow => {
+            debug!(
+                tool = tool_name,
+                reason = ?central_decision.reason,
+                "permission allowed"
+            );
+        }
+        PermissionBehavior::Deny => {
+            return make_error_result(
+                tool_use_id,
+                tool_name,
+                &format!(
+                    "Permission denied: {}",
+                    central_decision.message.unwrap_or_else(|| "policy".into())
+                ),
+                started,
+            );
+        }
+        PermissionBehavior::Ask => {
+            let message = central_decision
+                .message
+                .unwrap_or_else(|| format!("Allow tool '{}'?", tool_name));
+            if ctx.options.is_non_interactive_session {
                 return make_error_result(
                     tool_use_id,
                     tool_name,
-                    &format!("Permission required: {}", message),
+                    &format!("Permission required (non-interactive mode): {}", message),
                     started,
                 );
             }
+            return make_error_result(
+                tool_use_id,
+                tool_name,
+                &format!("Permission required: {}", message),
+                started,
+            );
         }
     }
 
@@ -328,9 +384,124 @@ pub async fn run_tool_use(
 
 #[cfg(test)]
 mod tests {
-    use super::super::{make_error_result, ToolExecutionResult};
+    use super::super::make_error_result;
     use super::*;
+    use crate::types::app_state::AppState;
+    use crate::types::message::AssistantMessage;
+    use crate::types::tool::{
+        FileStateCache, PermissionMode, PermissionResult, ToolUseOptions, ValidationResult,
+    };
+    use async_trait::async_trait;
+    use serde_json::json;
+    use std::sync::{Arc, RwLock};
     use std::time::Instant;
+    use uuid::Uuid;
+
+    struct AskTool;
+
+    #[async_trait]
+    impl Tool for AskTool {
+        fn name(&self) -> &str {
+            "AskTool"
+        }
+
+        async fn description(&self, _input: &Value) -> String {
+            "Test tool that always requests confirmation.".into()
+        }
+
+        fn input_json_schema(&self) -> Value {
+            json!({
+                "type": "object",
+                "additionalProperties": false
+            })
+        }
+
+        fn is_concurrency_safe(&self, _input: &Value) -> bool {
+            true
+        }
+
+        fn is_read_only(&self, _input: &Value) -> bool {
+            true
+        }
+
+        async fn validate_input(&self, _input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
+            ValidationResult::Ok
+        }
+
+        async fn check_permissions(
+            &self,
+            _input: &Value,
+            _ctx: &ToolUseContext,
+        ) -> PermissionResult {
+            PermissionResult::Ask {
+                message: "tool-local confirmation".into(),
+            }
+        }
+
+        async fn call(
+            &self,
+            _input: Value,
+            _ctx: &ToolUseContext,
+            _parent_message: &AssistantMessage,
+            _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
+        ) -> anyhow::Result<ToolResult> {
+            Ok(ToolResult {
+                data: Value::String("executed".into()),
+                ..Default::default()
+            })
+        }
+
+        async fn prompt(&self) -> String {
+            "Ask tool prompt".into()
+        }
+    }
+
+    fn make_ctx(state: Arc<RwLock<AppState>>, is_non_interactive_session: bool) -> ToolUseContext {
+        let state_reader = Arc::clone(&state);
+        let state_writer = Arc::clone(&state);
+        let (_tx, rx) = tokio::sync::watch::channel(false);
+
+        ToolUseContext {
+            options: ToolUseOptions {
+                debug: false,
+                main_loop_model: "test-model".to_string(),
+                verbose: false,
+                is_non_interactive_session,
+                custom_system_prompt: None,
+                append_system_prompt: None,
+                max_budget_usd: None,
+            },
+            abort_signal: rx,
+            read_file_state: FileStateCache::default(),
+            get_app_state: Arc::new(move || state_reader.read().unwrap().clone()),
+            set_app_state: Arc::new(move |update| {
+                let current = state_writer.read().unwrap().clone();
+                let next = update(current);
+                *state_writer.write().unwrap() = next;
+            }),
+            messages: vec![],
+            agent_id: None,
+            agent_type: None,
+            query_tracking: None,
+            permission_callback: None,
+            ask_user_callback: None,
+            bg_agent_tx: None,
+        }
+    }
+
+    fn dummy_parent() -> AssistantMessage {
+        AssistantMessage {
+            uuid: Uuid::new_v4(),
+            timestamp: chrono::Utc::now().timestamp_millis(),
+            role: "assistant".to_string(),
+            content: vec![],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        }
+    }
 
     /// Verify that `make_error_result` (the shared early-exit helper used by
     /// every pipeline stage) produces a correctly structured error result.
@@ -370,5 +541,32 @@ mod tests {
         // Referencing the async fn without calling it confirms it is in scope.
         // We use size_of_val on a ZST to avoid an invalid cast.
         let _ = std::mem::size_of_val(&run_tool_use);
+    }
+
+    #[tokio::test]
+    async fn tool_local_ask_is_not_bypassed_by_permission_mode() {
+        let mut app_state = AppState::default();
+        app_state.tool_permission_context.mode = PermissionMode::Bypass;
+        let state = Arc::new(RwLock::new(app_state));
+        let ctx = make_ctx(state, false);
+        let tools: Tools = vec![Arc::new(AskTool)];
+
+        let result = run_tool_use(
+            "tool-use-1",
+            "AskTool",
+            json!({}),
+            &tools,
+            &ctx,
+            &dummy_parent(),
+            None,
+            &[],
+        )
+        .await;
+
+        assert!(result.is_error, "tool-local Ask should stop execution");
+        assert_eq!(
+            result.result.data.as_str(),
+            Some("Permission required: tool-local confirmation")
+        );
     }
 }

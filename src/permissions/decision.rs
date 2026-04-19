@@ -2,40 +2,30 @@
 //!
 //! Corresponds to: LIFECYCLE_STATE_MACHINE.md §7 (Phase F)
 //!
-//! Decision flow:
-//!   Phase 1a: Unconditional rules (tool name only)
-//!     - toolAlwaysAllowedRule → allow
-//!     - getDenyRuleForTool → deny
-//!     - getAskRuleForTool → ask
+//! Decision flow (deny > ask > allow per spec):
+//!   Phase 1a: Hook deny — pre-tool hooks may force deny.
+//!   Phase 1b: Unconditional rules + pattern rules at sources Managed/User/Project/Local.
+//!             Deny rules win first; ask rules force a prompt; allow rules
+//!             pre-approve.
+//!   Phase 2:  Hook ask / hook allow — applied AFTER deny/ask rules but
+//!             BEFORE the mode fallback so a hook can pre-approve a tool
+//!             that would otherwise prompt.
+//!   Phase 3:  Session-level grants (transient).
+//!   Phase 4:  Mode fallback — Default/Plan ask, Auto/Bypass allow,
+//!             AcceptEdits allows file-edit tools, DontAsk silently denies.
 //!
-//!   Phase 1b: Pattern matching rules (tool name + parameters)
-//!     - preparePermissionMatcher(input) → Matcher
-//!     - Check allow/deny/ask rules with matcher
-//!
-//!   Phase 2: Hook interception
-//!     - executePermissionRequestHooks()
-//!     - Can return: allow / deny / modified permission context
-//!
-//!   Phase 3: Mode check
-//!     - BypassPermissions → allow
-//!     - DontAsk → deny (silent)
-//!     - Default/Plan → interactive prompt
-//!     - Auto → classifier (stub)
-//!
-//! Rule sources (priority descending):
-//!   1. policySettings (enterprise)
-//!   2. projectSettings (.cc-rust/settings.json)
-//!   3. userSettings (~/.cc-rust/settings.json)
-//!   4. localSettings (repo-specific)
-//!   5. cliArg (command-line)
-//!   6. session (session-level grants)
-
-#![allow(unused)]
+//! Rule sources (priority descending — used by `/permissions show` only;
+//! the rule engine treats them uniformly):
+//!   1. Managed (enterprise / policy)
+//!   2. Project (.cc-rust/settings.json)
+//!   3. Local   (.cc-rust/settings.local.json)
+//!   4. User    (~/.cc-rust/settings.json)
+//!   5. CLI     (--permission-mode et al.)
+//!   6. Session (transient grants)
 
 use serde_json::Value;
-use tracing::{debug, warn};
 
-use super::rules::{self, PermissionCheckResult};
+use super::rules;
 use crate::types::tool::{PermissionMode, ToolPermissionContext, ToolPermissionRulesBySource};
 
 // ---------------------------------------------------------------------------
@@ -65,15 +55,47 @@ pub enum PermissionBehavior {
 
 /// How a permission decision was reached (for audit/debugging).
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum PermissionDecisionReason {
     /// Matched a rule from a specific source.
     Rule { source: String, pattern: String },
     /// A hook made the decision.
-    Hook { hook_name: String },
+    Hook { detail: String },
     /// The permission mode determined the outcome.
     Mode { mode: String },
     /// Pattern matching on tool input.
     PatternMatch { tool: String, pattern: String },
+}
+
+/// Result a hook contributed to the central decision flow.
+///
+/// Built from [`crate::tools::hooks::PreToolHookResult`] in `pipeline.rs`
+/// and threaded through [`has_permissions_to_use_tool`] so a hook can
+/// allow / deny / ask / modify input *without* skipping the rule engine.
+#[derive(Debug, Clone, Default)]
+pub struct HookPermissionDecision {
+    /// Hook said "force allow this tool".
+    pub allow: bool,
+    /// Hook said "deny" (string is the reason).
+    pub deny: Option<String>,
+    /// Hook said "ask the user" (string is the prompt message).
+    pub ask: Option<String>,
+    /// Hook supplied a modified input value to use.
+    pub updated_input: Option<Value>,
+    /// Identifier for the contributing hook (`PreToolUse:<matcher>` etc).
+    pub source: Option<String>,
+}
+
+impl HookPermissionDecision {
+    /// True if the hook contributed nothing actionable.
+    ///
+    /// Used by callers (and tests) that want to short-circuit when a
+    /// hook plug returns an empty result; intentionally part of the
+    /// public surface of `HookPermissionDecision`.
+    #[allow(dead_code)]
+    pub fn is_noop(&self) -> bool {
+        !self.allow && self.deny.is_none() && self.ask.is_none() && self.updated_input.is_none()
+    }
 }
 
 /// Denial tracking state for Auto mode.
@@ -87,6 +109,11 @@ pub struct DenialTracker {
 
 impl DenialTracker {
     /// Record a denial. Returns true if fallback to interactive should happen.
+    ///
+    /// Public for downstream callers (auto-mode classifier shim) and
+    /// covered by tests; cargo's non-test build can't see test usage so
+    /// silence the warning.
+    #[allow(dead_code)]
     pub fn record_denial(&mut self) -> bool {
         self.consecutive_denials += 1;
         self.total_denials += 1;
@@ -112,9 +139,6 @@ impl DenialTracker {
 // ---------------------------------------------------------------------------
 
 /// Generate a human-readable permission message for Computer Use tools.
-///
-/// Instead of the generic "Allow tool 'mcp__computer-use__screenshot'?",
-/// this produces clear descriptions like "Allow reading the screen (screenshot)?".
 fn cu_permission_message(tool_name: &str) -> Option<String> {
     use crate::computer_use::detection::{classify_risk, extract_cu_action, CuRiskLevel};
 
@@ -147,23 +171,15 @@ fn cu_permission_message(tool_name: &str) -> Option<String> {
     Some(format!("Allow {} {}?", description, risk_tag))
 }
 
-/// Resolve the best permission-prompt message for a tool, preferring the
-/// most specific source:
-///   1. Computer Use (exact `mcp__computer-use__*` prefix)
-///   2. Browser MCP (heuristic by action basename OR server flagged browserMcp)
-///   3. None — caller uses the generic "Allow tool 'X'?" fallback.
 fn descriptive_permission_message(tool_name: &str) -> Option<String> {
     if let Some(m) = cu_permission_message(tool_name) {
         return Some(m);
     }
 
-    // Browser heuristic on action basename
     if let Some(m) = crate::browser::permissions::browser_permission_message(tool_name) {
         return Some(m);
     }
 
-    // Config-flagged server: even if the action basename isn't in the known
-    // browser list, give it a browser-styled prompt with an "other" category.
     if let Some(rest) = tool_name.strip_prefix("mcp__") {
         if let Some((server, action)) = rest.split_once("__") {
             if crate::browser::detection::is_browser_server(server) {
@@ -185,19 +201,15 @@ fn descriptive_permission_message(tool_name: &str) -> Option<String> {
 // Permission matcher (Phase 1b: pattern matching)
 // ---------------------------------------------------------------------------
 
-/// Prepare a permission matcher for a tool invocation.
-///
-/// Corresponds to TypeScript: `preparePermissionMatcher(input)`
-///
-/// For Bash: matches the command prefix.
-/// For file tools: matches the file path.
-/// For other tools: no pattern matching.
+/// Prepare a permission matcher for a tool invocation. Used only by the
+/// session-grant pass below — full pattern matching for Bash / Read / etc.
+/// is delegated to [`super::rules::rule_matches`].
 fn prepare_matcher(tool_name: &str, input: &Value) -> Option<String> {
     match tool_name {
-        "Bash" => input.get("command").and_then(|v| v.as_str()).map(|cmd| {
-            // Extract the first word (command prefix) for matching
-            cmd.split_whitespace().next().unwrap_or("").to_string()
-        }),
+        "Bash" => input
+            .get("command")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
         "Read" | "Write" | "Edit" => input
             .get("file_path")
             .and_then(|v| v.as_str())
@@ -210,45 +222,15 @@ fn prepare_matcher(tool_name: &str, input: &Value) -> Option<String> {
     }
 }
 
-/// Check if a pattern rule matches a matcher value.
-///
-/// Pattern rules in TypeScript can be:
-/// - `Bash(prefix:git)` → matches commands starting with "git"
-/// - `Read(/tmp/*)` → matches file paths under /tmp/
-/// - Plain tool name → matches unconditionally
-fn pattern_rule_matches(rule: &str, tool_name: &str, matcher: Option<&str>) -> bool {
-    // Check for pattern syntax: ToolName(pattern)
-    if let Some(inner_start) = rule.find('(') {
-        if let Some(inner_end) = rule.rfind(')') {
-            let rule_tool = &rule[..inner_start];
-            if rule_tool != tool_name {
-                return false;
-            }
-            let pattern = &rule[inner_start + 1..inner_end];
-
-            // prefix: matching
-            if let Some(prefix_val) = pattern.strip_prefix("prefix:") {
-                return matcher.map_or(false, |m| m.starts_with(prefix_val));
-            }
-
-            // Glob-style matching
-            return matcher.map_or(false, |m| rules::glob_match_public(m, pattern));
-        }
-    }
-
-    // Plain tool name match
-    rule == tool_name
-}
-
 /// Check pattern rules against all sources.
 fn check_pattern_rules(
     tool_name: &str,
-    matcher: Option<&str>,
+    input: &Value,
     rules_by_source: &ToolPermissionRulesBySource,
 ) -> Option<(String, String)> {
     for (source, patterns) in rules_by_source.iter() {
         for pattern in patterns {
-            if pattern_rule_matches(pattern, tool_name, matcher) {
+            if rules::rule_matches(tool_name, input, pattern) {
                 return Some((source.clone(), pattern.clone()));
             }
         }
@@ -269,89 +251,129 @@ pub fn has_permissions_to_use_tool(
     ctx: &ToolPermissionContext,
     denial_tracker: Option<&mut DenialTracker>,
 ) -> PermissionDecision {
-    // ── Phase 1a: Unconditional rules (tool name only) ──────────────
-    let simple_check = rules::check_tool_permission(tool_name, input, ctx);
-    match simple_check {
-        PermissionCheckResult::Allow => {
+    has_permissions_to_use_tool_with_hook(tool_name, input, ctx, None, denial_tracker)
+}
+
+/// Like [`has_permissions_to_use_tool`] but folds in a hook-supplied
+/// decision per the precedence documented at the top of this module.
+pub fn has_permissions_to_use_tool_with_hook(
+    tool_name: &str,
+    input: &Value,
+    ctx: &ToolPermissionContext,
+    hook: Option<&HookPermissionDecision>,
+    denial_tracker: Option<&mut DenialTracker>,
+) -> PermissionDecision {
+    let updated_input = hook.and_then(|h| h.updated_input.clone());
+
+    // ── Phase 1a: Hook deny — short-circuit even before deny rules.
+    // (Hook deny is treated as policy: it cannot be overridden.)
+    if let Some(h) = hook {
+        if let Some(reason) = &h.deny {
+            return PermissionDecision {
+                behavior: PermissionBehavior::Deny,
+                updated_input,
+                message: Some(reason.clone()),
+                reason: PermissionDecisionReason::Hook {
+                    detail: h.source.clone().unwrap_or_else(|| "PreToolUse".into()),
+                },
+            };
+        }
+    }
+
+    // Pick the input the rest of the flow sees.
+    let effective_input: &Value = updated_input.as_ref().unwrap_or(input);
+
+    // ── Phase 1b: Deny rules.
+    if let Some((source, pattern)) =
+        check_pattern_rules(tool_name, effective_input, &ctx.always_deny_rules)
+    {
+        return PermissionDecision {
+            behavior: PermissionBehavior::Deny,
+            updated_input: updated_input.clone(),
+            message: Some(format!("Denied by rule: {} (source={})", pattern, source)),
+            reason: PermissionDecisionReason::PatternMatch {
+                tool: tool_name.into(),
+                pattern,
+            },
+        };
+    }
+
+    // ── Phase 1c: Ask rules — force a prompt regardless of allow rules.
+    if let Some((source, pattern)) =
+        check_pattern_rules(tool_name, effective_input, &ctx.always_ask_rules)
+    {
+        let message = descriptive_permission_message(tool_name).unwrap_or_else(|| {
+            format!(
+                "Ask rule '{}' (source={}) requires confirmation.",
+                pattern, source
+            )
+        });
+        return PermissionDecision {
+            behavior: PermissionBehavior::Ask,
+            updated_input: updated_input.clone(),
+            message: Some(message),
+            reason: PermissionDecisionReason::PatternMatch {
+                tool: tool_name.into(),
+                pattern,
+            },
+        };
+    }
+
+    // ── Phase 1d: Allow rules.
+    if let Some((source, pattern)) =
+        check_pattern_rules(tool_name, effective_input, &ctx.always_allow_rules)
+    {
+        if let Some(tracker) = denial_tracker {
+            tracker.record_allow();
+        }
+        return PermissionDecision {
+            behavior: PermissionBehavior::Allow,
+            updated_input: updated_input.clone(),
+            message: None,
+            reason: PermissionDecisionReason::Rule { source, pattern },
+        };
+    }
+
+    // ── Phase 2: Hook ask / hook allow.
+    if let Some(h) = hook {
+        if let Some(prompt) = &h.ask {
+            return PermissionDecision {
+                behavior: PermissionBehavior::Ask,
+                updated_input: updated_input.clone(),
+                message: Some(prompt.clone()),
+                reason: PermissionDecisionReason::Hook {
+                    detail: h.source.clone().unwrap_or_else(|| "PreToolUse".into()),
+                },
+            };
+        }
+        if h.allow {
             if let Some(tracker) = denial_tracker {
                 tracker.record_allow();
             }
             return PermissionDecision {
                 behavior: PermissionBehavior::Allow,
-                updated_input: None,
+                updated_input: updated_input.clone(),
                 message: None,
-                reason: PermissionDecisionReason::Rule {
-                    source: "unconditional".into(),
-                    pattern: tool_name.into(),
+                reason: PermissionDecisionReason::Hook {
+                    detail: h.source.clone().unwrap_or_else(|| "PreToolUse".into()),
                 },
             };
-        }
-        PermissionCheckResult::Deny { reason } => {
-            return PermissionDecision {
-                behavior: PermissionBehavior::Deny,
-                updated_input: None,
-                message: Some(reason.clone()),
-                reason: PermissionDecisionReason::Rule {
-                    source: "unconditional".into(),
-                    pattern: reason,
-                },
-            };
-        }
-        PermissionCheckResult::Ask { .. } => {
-            // Fall through to pattern matching
         }
     }
 
-    // ── Phase 1b: Pattern matching rules ────────────────────────────
-    let matcher = prepare_matcher(tool_name, input);
-    let matcher_ref = matcher.as_deref();
-
-    // Check allow patterns
-    if let Some((source, pattern)) =
-        check_pattern_rules(tool_name, matcher_ref, &ctx.always_allow_rules)
-    {
+    // ── Phase 3: Session-level grants ───────────────────────────────────
+    let matcher_for_session = prepare_matcher(tool_name, effective_input);
+    if let Some((_source, pattern)) = check_pattern_rules_via_matcher(
+        tool_name,
+        matcher_for_session.as_deref(),
+        &ctx.session_allow_rules,
+    ) {
         if let Some(tracker) = denial_tracker {
             tracker.record_allow();
         }
         return PermissionDecision {
             behavior: PermissionBehavior::Allow,
-            updated_input: None,
-            message: None,
-            reason: PermissionDecisionReason::PatternMatch {
-                tool: tool_name.into(),
-                pattern,
-            },
-        };
-    }
-
-    // Check deny patterns
-    if let Some((source, pattern)) =
-        check_pattern_rules(tool_name, matcher_ref, &ctx.always_deny_rules)
-    {
-        return PermissionDecision {
-            behavior: PermissionBehavior::Deny,
-            updated_input: None,
-            message: Some(format!("Denied by pattern: {}", pattern)),
-            reason: PermissionDecisionReason::PatternMatch {
-                tool: tool_name.into(),
-                pattern,
-            },
-        };
-    }
-
-    // ── Phase 1c: Session-level grants ───────────────────────────────
-    // Session grants are checked after persistent rules but before mode
-    // fallback. They are transient (cleared when the session ends) and
-    // are the preferred destination for Computer Use "always allow".
-    if let Some((_source, pattern)) =
-        check_pattern_rules(tool_name, matcher_ref, &ctx.session_allow_rules)
-    {
-        if let Some(tracker) = denial_tracker {
-            tracker.record_allow();
-        }
-        return PermissionDecision {
-            behavior: PermissionBehavior::Allow,
-            updated_input: None,
+            updated_input: updated_input.clone(),
             message: None,
             reason: PermissionDecisionReason::Rule {
                 source: "session".into(),
@@ -360,10 +382,7 @@ pub fn has_permissions_to_use_tool(
         };
     }
 
-    // ── Phase 2: Hook interception ──────────────────────────────────
-    // Phase 1 stub: no hooks, fall through to mode check
-
-    // ── Phase 3: Mode check ─────────────────────────────────────────
+    // ── Phase 4: Mode fallback ──────────────────────────────────────────
     match ctx.mode {
         PermissionMode::Bypass => {
             if let Some(tracker) = denial_tracker {
@@ -371,7 +390,7 @@ pub fn has_permissions_to_use_tool(
             }
             PermissionDecision {
                 behavior: PermissionBehavior::Allow,
-                updated_input: None,
+                updated_input,
                 message: None,
                 reason: PermissionDecisionReason::Mode {
                     mode: "bypass".into(),
@@ -379,13 +398,11 @@ pub fn has_permissions_to_use_tool(
             }
         }
         PermissionMode::Auto => {
-            // Auto mode: allow by default, but check denial tracker
             if let Some(tracker) = denial_tracker {
                 if tracker.should_fallback_to_interactive() {
-                    // Fallback to interactive prompting
                     return PermissionDecision {
                         behavior: PermissionBehavior::Ask,
-                        updated_input: None,
+                        updated_input,
                         message: Some(format!(
                             "Auto mode fallback: {} consecutive denials",
                             tracker.consecutive_denials
@@ -399,7 +416,7 @@ pub fn has_permissions_to_use_tool(
             }
             PermissionDecision {
                 behavior: PermissionBehavior::Allow,
-                updated_input: None,
+                updated_input,
                 message: None,
                 reason: PermissionDecisionReason::Mode {
                     mode: "auto".into(),
@@ -407,13 +424,12 @@ pub fn has_permissions_to_use_tool(
             }
         }
         PermissionMode::Plan => {
-            // Plan mode: ask for confirmation
             let message = descriptive_permission_message(tool_name).unwrap_or_else(|| {
                 format!("Tool '{}' requires confirmation in plan mode.", tool_name)
             });
             PermissionDecision {
                 behavior: PermissionBehavior::Ask,
-                updated_input: None,
+                updated_input,
                 message: Some(message),
                 reason: PermissionDecisionReason::Mode {
                     mode: "plan".into(),
@@ -421,19 +437,89 @@ pub fn has_permissions_to_use_tool(
             }
         }
         PermissionMode::Default => {
-            // Default mode: ask for confirmation (CU/browser tools get descriptive messages)
             let message = descriptive_permission_message(tool_name)
                 .unwrap_or_else(|| format!("Allow tool '{}'?", tool_name));
             PermissionDecision {
                 behavior: PermissionBehavior::Ask,
-                updated_input: None,
+                updated_input,
                 message: Some(message),
                 reason: PermissionDecisionReason::Mode {
                     mode: "default".into(),
                 },
             }
         }
+        PermissionMode::AcceptEdits => {
+            if rules::is_edit_tool(tool_name) {
+                if let Some(tracker) = denial_tracker {
+                    tracker.record_allow();
+                }
+                PermissionDecision {
+                    behavior: PermissionBehavior::Allow,
+                    updated_input,
+                    message: None,
+                    reason: PermissionDecisionReason::Mode {
+                        mode: "acceptEdits".into(),
+                    },
+                }
+            } else {
+                let message = descriptive_permission_message(tool_name)
+                    .unwrap_or_else(|| format!("Allow tool '{}'?", tool_name));
+                PermissionDecision {
+                    behavior: PermissionBehavior::Ask,
+                    updated_input,
+                    message: Some(message),
+                    reason: PermissionDecisionReason::Mode {
+                        mode: "acceptEdits".into(),
+                    },
+                }
+            }
+        }
+        PermissionMode::DontAsk => PermissionDecision {
+            behavior: PermissionBehavior::Deny,
+            updated_input,
+            message: Some(format!(
+                "Permission mode 'dontAsk': '{}' silently denied (add an allow rule to permit).",
+                tool_name
+            )),
+            reason: PermissionDecisionReason::Mode {
+                mode: "dontAsk".into(),
+            },
+        },
     }
+}
+
+/// Match session-grant patterns using a lightweight matcher (no
+/// per-tool argument parsing — sessions store tool names verbatim).
+fn check_pattern_rules_via_matcher(
+    tool_name: &str,
+    matcher: Option<&str>,
+    rules_by_source: &ToolPermissionRulesBySource,
+) -> Option<(String, String)> {
+    for (source, patterns) in rules_by_source.iter() {
+        for pattern in patterns {
+            if pattern_rule_matches_simple(pattern, tool_name, matcher) {
+                return Some((source.clone(), pattern.clone()));
+            }
+        }
+    }
+    None
+}
+
+fn pattern_rule_matches_simple(rule: &str, tool_name: &str, matcher: Option<&str>) -> bool {
+    if let Some(inner_start) = rule.find('(') {
+        if let Some(inner_end) = rule.rfind(')') {
+            let rule_tool = &rule[..inner_start];
+            if rule_tool != tool_name {
+                return false;
+            }
+            let pattern = &rule[inner_start + 1..inner_end];
+            if let Some(prefix_val) = pattern.strip_prefix("prefix:") {
+                return matcher.is_some_and(|m| m.starts_with(prefix_val));
+            }
+            return matcher.is_some_and(|m| rules::glob_match_public(m, pattern));
+        }
+    }
+    rule == tool_name
 }
 
 // ---------------------------------------------------------------------------
@@ -509,20 +595,141 @@ mod tests {
             .insert("user".into(), vec!["Bash(prefix:git)".into()]);
         let input = serde_json::json!({"command": "rm -rf /"});
         let decision = has_permissions_to_use_tool("Bash", &input, &ctx, None);
-        // Should fall through to mode check (default → ask)
         assert_eq!(decision.behavior, PermissionBehavior::Ask);
     }
 
     #[test]
+    fn test_compound_command_caught_by_deny() {
+        let mut ctx = default_ctx();
+        ctx.always_deny_rules
+            .insert("policy".into(), vec!["Bash(rm)".into()]);
+        ctx.always_allow_rules
+            .insert("user".into(), vec!["Bash(prefix:git)".into()]);
+        let input = serde_json::json!({"command": "git status && rm -rf /tmp/x"});
+        let decision = has_permissions_to_use_tool("Bash", &input, &ctx, None);
+        assert_eq!(decision.behavior, PermissionBehavior::Deny);
+    }
+
+    #[test]
+    fn test_ask_overrides_allow_in_decision() {
+        let mut ctx = default_ctx();
+        ctx.always_allow_rules
+            .insert("user".into(), vec!["Read".into()]);
+        ctx.always_ask_rules
+            .insert("project".into(), vec!["Read".into()]);
+        let decision = has_permissions_to_use_tool("Read", &Value::Null, &ctx, None);
+        assert_eq!(decision.behavior, PermissionBehavior::Ask);
+    }
+
+    #[test]
+    fn test_accept_edits_mode_allows_edit_tools() {
+        let mut ctx = default_ctx();
+        ctx.mode = PermissionMode::AcceptEdits;
+        let decision = has_permissions_to_use_tool("Edit", &Value::Null, &ctx, None);
+        assert_eq!(decision.behavior, PermissionBehavior::Allow);
+        let decision = has_permissions_to_use_tool("Bash", &Value::Null, &ctx, None);
+        assert_eq!(decision.behavior, PermissionBehavior::Ask);
+    }
+
+    #[test]
+    fn test_dont_ask_mode_silent_deny() {
+        let mut ctx = default_ctx();
+        ctx.mode = PermissionMode::DontAsk;
+        let decision = has_permissions_to_use_tool("Bash", &Value::Null, &ctx, None);
+        assert_eq!(decision.behavior, PermissionBehavior::Deny);
+    }
+
+    // -- Hook decision tests --
+
+    #[test]
+    fn test_hook_deny_overrides_allow_rule() {
+        let mut ctx = default_ctx();
+        ctx.always_allow_rules
+            .insert("user".into(), vec!["Bash".into()]);
+        let hook = HookPermissionDecision {
+            deny: Some("PolicyViolation".into()),
+            source: Some("PreToolUse:audit".into()),
+            ..Default::default()
+        };
+        let decision =
+            has_permissions_to_use_tool_with_hook("Bash", &Value::Null, &ctx, Some(&hook), None);
+        assert_eq!(decision.behavior, PermissionBehavior::Deny);
+        assert!(decision.message.unwrap().contains("PolicyViolation"));
+    }
+
+    #[test]
+    fn test_deny_rule_still_blocks_hook_allow() {
+        let mut ctx = default_ctx();
+        ctx.always_deny_rules
+            .insert("policy".into(), vec!["Bash".into()]);
+        let hook = HookPermissionDecision {
+            allow: true,
+            ..Default::default()
+        };
+        let decision =
+            has_permissions_to_use_tool_with_hook("Bash", &Value::Null, &ctx, Some(&hook), None);
+        // Per spec: deny rule wins over hook allow.
+        assert_eq!(decision.behavior, PermissionBehavior::Deny);
+    }
+
+    #[test]
+    fn test_ask_rule_still_overrides_hook_allow() {
+        let mut ctx = default_ctx();
+        ctx.always_ask_rules
+            .insert("project".into(), vec!["Bash".into()]);
+        let hook = HookPermissionDecision {
+            allow: true,
+            ..Default::default()
+        };
+        let decision =
+            has_permissions_to_use_tool_with_hook("Bash", &Value::Null, &ctx, Some(&hook), None);
+        // Per spec: ask rule wins over hook allow.
+        assert_eq!(decision.behavior, PermissionBehavior::Ask);
+    }
+
+    #[test]
+    fn test_hook_allow_lifts_default_ask() {
+        let ctx = default_ctx();
+        let hook = HookPermissionDecision {
+            allow: true,
+            source: Some("PreToolUse:trustedAgent".into()),
+            ..Default::default()
+        };
+        let decision =
+            has_permissions_to_use_tool_with_hook("Bash", &Value::Null, &ctx, Some(&hook), None);
+        assert_eq!(decision.behavior, PermissionBehavior::Allow);
+    }
+
+    #[test]
+    fn test_hook_modifies_input() {
+        let ctx = default_ctx();
+        let modified = serde_json::json!({"command": "ls -la"});
+        let hook = HookPermissionDecision {
+            allow: true,
+            updated_input: Some(modified.clone()),
+            ..Default::default()
+        };
+        let original = serde_json::json!({"command": "rm -rf /"});
+        let decision =
+            has_permissions_to_use_tool_with_hook("Bash", &original, &ctx, Some(&hook), None);
+        assert_eq!(decision.behavior, PermissionBehavior::Allow);
+        assert_eq!(decision.updated_input.as_ref(), Some(&modified));
+    }
+
+    #[test]
+    fn test_hook_decision_is_noop_when_empty() {
+        let h = HookPermissionDecision::default();
+        assert!(h.is_noop());
+    }
+
+    // -- Auto mode + tracker --
+
+    #[test]
     fn test_auto_mode_denial_tracker_fallback() {
         let mut tracker = DenialTracker::default();
-
-        // Record 3 consecutive denials
         tracker.record_denial();
         tracker.record_denial();
         tracker.record_denial();
-
-        // After 3 consecutive denials, should_fallback_to_interactive is true
         assert!(tracker.should_fallback_to_interactive());
     }
 
@@ -540,13 +747,12 @@ mod tests {
         tracker.record_denial();
         tracker.record_denial();
         assert_eq!(tracker.consecutive_denials, 2);
-
         tracker.record_allow();
         assert_eq!(tracker.consecutive_denials, 0);
-        assert_eq!(tracker.total_denials, 2); // total doesn't reset
+        assert_eq!(tracker.total_denials, 2);
     }
 
-    // ── Session-level grant tests ──────────────────────────────────
+    // -- Session grants --
 
     #[test]
     fn test_session_grant_allows_tool() {
@@ -558,7 +764,6 @@ mod tests {
         let decision =
             has_permissions_to_use_tool("mcp__computer-use__screenshot", &Value::Null, &ctx, None);
         assert_eq!(decision.behavior, PermissionBehavior::Allow);
-        // Should report session as the source
         if let PermissionDecisionReason::Rule { source, .. } = &decision.reason {
             assert_eq!(source, "session");
         } else {
@@ -569,12 +774,10 @@ mod tests {
     #[test]
     fn test_session_grant_does_not_override_deny_rules() {
         let mut ctx = default_ctx();
-        // Deny rule takes priority
         ctx.always_deny_rules.insert(
             "policy".into(),
             vec!["mcp__computer-use__left_click".into()],
         );
-        // Session grant should not override
         ctx.session_allow_rules.insert(
             "session".into(),
             vec!["mcp__computer-use__left_click".into()],
@@ -601,7 +804,7 @@ mod tests {
         assert!(!ctx.has_session_grant("mcp__computer-use__screenshot"));
     }
 
-    // ── CU permission message tests ────────────────────────────────
+    // -- CU permission message --
 
     #[test]
     fn test_cu_screenshot_permission_message() {
@@ -610,16 +813,8 @@ mod tests {
             has_permissions_to_use_tool("mcp__computer-use__screenshot", &Value::Null, &ctx, None);
         assert_eq!(decision.behavior, PermissionBehavior::Ask);
         let msg = decision.message.unwrap();
-        assert!(
-            msg.contains("screenshot"),
-            "CU screenshot message should mention screenshot: {}",
-            msg
-        );
-        assert!(
-            msg.contains("medium risk"),
-            "CU screenshot should be medium risk: {}",
-            msg
-        );
+        assert!(msg.contains("screenshot"));
+        assert!(msg.contains("medium risk"));
     }
 
     #[test]
@@ -633,16 +828,8 @@ mod tests {
         );
         assert_eq!(decision.behavior, PermissionBehavior::Ask);
         let msg = decision.message.unwrap();
-        assert!(
-            msg.contains("click"),
-            "CU click message should mention click: {}",
-            msg
-        );
-        assert!(
-            msg.contains("HIGH RISK"),
-            "CU click should be HIGH RISK: {}",
-            msg
-        );
+        assert!(msg.contains("click"));
+        assert!(msg.contains("HIGH RISK"));
     }
 
     #[test]
@@ -655,7 +842,7 @@ mod tests {
             None,
         );
         let msg = decision.message.unwrap();
-        assert!(msg.contains("keyboard"), "type_text message: {}", msg);
+        assert!(msg.contains("keyboard"));
     }
 
     #[test]

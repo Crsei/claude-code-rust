@@ -276,7 +276,9 @@ async fn connect_native_host() -> Result<tokio::net::UnixStream> {
                 debug!(path = %path.display(), "mcp-bridge: connected to native host");
                 return Ok(s);
             }
-            Err(e) => debug!(path = %path.display(), error = %e, "mcp-bridge: socket not available"),
+            Err(e) => {
+                debug!(path = %path.display(), error = %e, "mcp-bridge: socket not available")
+            }
         }
     }
     anyhow::bail!(
@@ -350,16 +352,17 @@ async fn socket_reader_task<R: tokio::io::AsyncReadExt + Unpin>(
                 // Native host strips `type` before forwarding, but the
                 // extension includes `request_id` (per the wire protocol).
                 // If this is a tool_response for a known request, deliver it.
-                let request_id = value
-                    .get("request_id")
-                    .and_then(|v| v.as_u64());
+                let request_id = value.get("request_id").and_then(|v| v.as_u64());
                 if let Some(id) = request_id {
                     if let Some(sender) = pending.lock().remove(&id) {
                         let _ = sender.send(value);
                         continue;
                     }
                 }
-                debug!(?value, "mcp-bridge: unsolicited socket message (no matching request_id)");
+                debug!(
+                    ?value,
+                    "mcp-bridge: unsolicited socket message (no matching request_id)"
+                );
             }
             Ok(None) => {
                 warn!("mcp-bridge: native-host socket closed");
@@ -387,8 +390,7 @@ async fn forward_tool_call(
     connections: &NativeConnectionStore,
     method: &str,
     params: Value,
-) -> Result<Value>
-{
+) -> Result<Value> {
     let connection = ensure_native_host_connection(connections).await?;
     let request_id = next_request_id();
     let (tx, rx) = oneshot::channel();
@@ -547,7 +549,11 @@ mod tests {
     #[test]
     fn tool_catalogue_has_input_schemas() {
         for tool in tool_catalogue() {
-            assert!(tool.get("inputSchema").is_some(), "tool missing inputSchema: {:?}", tool);
+            assert!(
+                tool.get("inputSchema").is_some(),
+                "tool missing inputSchema: {:?}",
+                tool
+            );
         }
     }
 
