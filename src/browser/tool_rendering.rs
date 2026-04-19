@@ -66,9 +66,9 @@ pub fn infer_kind(action: &str, has_image: bool) -> BrowserResultKind {
         },
         BrowserCategory::Write => BrowserResultKind::WriteAck,
         BrowserCategory::Observability => match action {
-            "get_network_request"
-            | "list_network_requests"
-            | "read_network_requests" => BrowserResultKind::NetworkLog,
+            "get_network_request" | "list_network_requests" | "read_network_requests" => {
+                BrowserResultKind::NetworkLog
+            }
             _ => BrowserResultKind::ConsoleLog,
         },
         _ => BrowserResultKind::Generic,
@@ -209,10 +209,7 @@ mod tests {
             BrowserResultKind::DomSnapshot
         );
         // screenshot flag dominates
-        assert_eq!(
-            infer_kind("anything", true),
-            BrowserResultKind::Screenshot
-        );
+        assert_eq!(infer_kind("anything", true), BrowserResultKind::Screenshot);
         assert_eq!(infer_kind("click", false), BrowserResultKind::WriteAck);
         assert_eq!(
             infer_kind("list_console_messages", false),

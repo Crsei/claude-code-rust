@@ -33,8 +33,8 @@ impl FrontendSink {
     pub fn send_many(&self, msgs: impl IntoIterator<Item = BackendMessage>) -> io::Result<()> {
         let mut stdout = io::stdout().lock();
         for msg in msgs {
-            let json = serde_json::to_string(&msg)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            let json =
+                serde_json::to_string(&msg).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             writeln!(stdout, "{}", json)?;
         }
         stdout.flush()

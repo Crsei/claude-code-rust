@@ -94,10 +94,7 @@ impl HookPermissionDecision {
     /// public surface of `HookPermissionDecision`.
     #[allow(dead_code)]
     pub fn is_noop(&self) -> bool {
-        !self.allow
-            && self.deny.is_none()
-            && self.ask.is_none()
-            && self.updated_input.is_none()
+        !self.allow && self.deny.is_none() && self.ask.is_none() && self.updated_input.is_none()
     }
 }
 
@@ -305,8 +302,12 @@ pub fn has_permissions_to_use_tool_with_hook(
     if let Some((source, pattern)) =
         check_pattern_rules(tool_name, effective_input, &ctx.always_ask_rules)
     {
-        let message = descriptive_permission_message(tool_name)
-            .unwrap_or_else(|| format!("Ask rule '{}' (source={}) requires confirmation.", pattern, source));
+        let message = descriptive_permission_message(tool_name).unwrap_or_else(|| {
+            format!(
+                "Ask rule '{}' (source={}) requires confirmation.",
+                pattern, source
+            )
+        });
         return PermissionDecision {
             behavior: PermissionBehavior::Ask,
             updated_input: updated_input.clone(),
@@ -650,13 +651,8 @@ mod tests {
             source: Some("PreToolUse:audit".into()),
             ..Default::default()
         };
-        let decision = has_permissions_to_use_tool_with_hook(
-            "Bash",
-            &Value::Null,
-            &ctx,
-            Some(&hook),
-            None,
-        );
+        let decision =
+            has_permissions_to_use_tool_with_hook("Bash", &Value::Null, &ctx, Some(&hook), None);
         assert_eq!(decision.behavior, PermissionBehavior::Deny);
         assert!(decision.message.unwrap().contains("PolicyViolation"));
     }
@@ -670,13 +666,8 @@ mod tests {
             allow: true,
             ..Default::default()
         };
-        let decision = has_permissions_to_use_tool_with_hook(
-            "Bash",
-            &Value::Null,
-            &ctx,
-            Some(&hook),
-            None,
-        );
+        let decision =
+            has_permissions_to_use_tool_with_hook("Bash", &Value::Null, &ctx, Some(&hook), None);
         // Per spec: deny rule wins over hook allow.
         assert_eq!(decision.behavior, PermissionBehavior::Deny);
     }
@@ -690,13 +681,8 @@ mod tests {
             allow: true,
             ..Default::default()
         };
-        let decision = has_permissions_to_use_tool_with_hook(
-            "Bash",
-            &Value::Null,
-            &ctx,
-            Some(&hook),
-            None,
-        );
+        let decision =
+            has_permissions_to_use_tool_with_hook("Bash", &Value::Null, &ctx, Some(&hook), None);
         // Per spec: ask rule wins over hook allow.
         assert_eq!(decision.behavior, PermissionBehavior::Ask);
     }
@@ -709,13 +695,8 @@ mod tests {
             source: Some("PreToolUse:trustedAgent".into()),
             ..Default::default()
         };
-        let decision = has_permissions_to_use_tool_with_hook(
-            "Bash",
-            &Value::Null,
-            &ctx,
-            Some(&hook),
-            None,
-        );
+        let decision =
+            has_permissions_to_use_tool_with_hook("Bash", &Value::Null, &ctx, Some(&hook), None);
         assert_eq!(decision.behavior, PermissionBehavior::Allow);
     }
 
@@ -729,13 +710,8 @@ mod tests {
             ..Default::default()
         };
         let original = serde_json::json!({"command": "rm -rf /"});
-        let decision = has_permissions_to_use_tool_with_hook(
-            "Bash",
-            &original,
-            &ctx,
-            Some(&hook),
-            None,
-        );
+        let decision =
+            has_permissions_to_use_tool_with_hook("Bash", &original, &ctx, Some(&hook), None);
         assert_eq!(decision.behavior, PermissionBehavior::Allow);
         assert_eq!(decision.updated_input.as_ref(), Some(&modified));
     }
@@ -785,12 +761,8 @@ mod tests {
             "session".into(),
             vec!["mcp__computer-use__screenshot".into()],
         );
-        let decision = has_permissions_to_use_tool(
-            "mcp__computer-use__screenshot",
-            &Value::Null,
-            &ctx,
-            None,
-        );
+        let decision =
+            has_permissions_to_use_tool("mcp__computer-use__screenshot", &Value::Null, &ctx, None);
         assert_eq!(decision.behavior, PermissionBehavior::Allow);
         if let PermissionDecisionReason::Rule { source, .. } = &decision.reason {
             assert_eq!(source, "session");
@@ -810,12 +782,8 @@ mod tests {
             "session".into(),
             vec!["mcp__computer-use__left_click".into()],
         );
-        let decision = has_permissions_to_use_tool(
-            "mcp__computer-use__left_click",
-            &Value::Null,
-            &ctx,
-            None,
-        );
+        let decision =
+            has_permissions_to_use_tool("mcp__computer-use__left_click", &Value::Null, &ctx, None);
         assert_eq!(decision.behavior, PermissionBehavior::Deny);
     }
 
@@ -841,12 +809,8 @@ mod tests {
     #[test]
     fn test_cu_screenshot_permission_message() {
         let ctx = default_ctx();
-        let decision = has_permissions_to_use_tool(
-            "mcp__computer-use__screenshot",
-            &Value::Null,
-            &ctx,
-            None,
-        );
+        let decision =
+            has_permissions_to_use_tool("mcp__computer-use__screenshot", &Value::Null, &ctx, None);
         assert_eq!(decision.behavior, PermissionBehavior::Ask);
         let msg = decision.message.unwrap();
         assert!(msg.contains("screenshot"));

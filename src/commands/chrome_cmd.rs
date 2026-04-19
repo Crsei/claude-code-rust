@@ -46,9 +46,7 @@ fn render_status() -> String {
 
     if !supports_claude_in_chrome() {
         lines.push("  Platform: UNSUPPORTED".into());
-        lines.push(
-            "  Claude in Chrome is only available on macOS, Linux, and Windows.".into(),
-        );
+        lines.push("  Claude in Chrome is only available on macOS, Linux, and Windows.".into());
         return lines.join("\n");
     }
 
@@ -177,9 +175,9 @@ fn handle_reconnect() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bootstrap::SessionId;
     use crate::browser::common::ChromiumBrowser;
     use crate::browser::state::{self, ChromeConnectionState};
-    use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
     use std::path::PathBuf;
 

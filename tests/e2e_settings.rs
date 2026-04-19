@@ -92,8 +92,7 @@ fn cli_starts_with_extended_user_settings() {
     // Use a project workspace dir distinct from CC_RUST_HOME.
     let project = tempfile::tempdir().expect("project tmpdir");
 
-    let mut cmd =
-        assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
+    let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
     cmd.env("CC_RUST_HOME", dir.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")

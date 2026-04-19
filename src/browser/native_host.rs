@@ -101,7 +101,10 @@ pub async fn read_framed<R: AsyncReadExt + Unpin>(reader: &mut R) -> io::Result<
 }
 
 /// Write one framed message to an async writer.
-pub async fn write_framed<W: AsyncWriteExt + Unpin>(writer: &mut W, payload: &[u8]) -> io::Result<()> {
+pub async fn write_framed<W: AsyncWriteExt + Unpin>(
+    writer: &mut W,
+    payload: &[u8],
+) -> io::Result<()> {
     let len = payload.len();
     if len > MAX_MESSAGE_SIZE as usize {
         return Err(io::Error::new(
@@ -250,7 +253,10 @@ struct McpToolRequest {
 
 fn chrome_tool_request_message(req: McpToolRequest) -> Value {
     let mut payload = serde_json::Map::new();
-    payload.insert("type".to_string(), Value::String("tool_request".to_string()));
+    payload.insert(
+        "type".to_string(),
+        Value::String("tool_request".to_string()),
+    );
     payload.insert("method".to_string(), Value::String(req.method));
     payload.insert("params".to_string(), req.params.unwrap_or(Value::Null));
     if let Some(request_id) = req.request_id {
@@ -260,7 +266,11 @@ fn chrome_tool_request_message(req: McpToolRequest) -> Value {
 }
 
 #[cfg(unix)]
-async fn run_socket_server(chrome: ChromeSink, mcp_bus: McpBus, client_count: Arc<SyncMutex<usize>>) -> Result<()> {
+async fn run_socket_server(
+    chrome: ChromeSink,
+    mcp_bus: McpBus,
+    client_count: Arc<SyncMutex<usize>>,
+) -> Result<()> {
     use tokio::net::UnixListener;
     prepare_socket_dir()?;
     let path = secure_socket_path();
@@ -291,7 +301,11 @@ async fn run_socket_server(chrome: ChromeSink, mcp_bus: McpBus, client_count: Ar
 }
 
 #[cfg(windows)]
-async fn run_socket_server(chrome: ChromeSink, mcp_bus: McpBus, client_count: Arc<SyncMutex<usize>>) -> Result<()> {
+async fn run_socket_server(
+    chrome: ChromeSink,
+    mcp_bus: McpBus,
+    client_count: Arc<SyncMutex<usize>>,
+) -> Result<()> {
     use tokio::net::windows::named_pipe::{PipeMode, ServerOptions};
     let pipe_name = secure_socket_path();
     let pipe_name_str = pipe_name.to_string_lossy().to_string();
@@ -365,9 +379,7 @@ where
         };
         match serde_json::from_slice::<McpToolRequest>(&frame) {
             Ok(req) => {
-                let _ = chrome
-                    .send(&chrome_tool_request_message(req))
-                    .await;
+                let _ = chrome.send(&chrome_tool_request_message(req)).await;
             }
             Err(e) => {
                 warn!(error = %e, "chrome-native-host: bad tool_request from MCP client");
@@ -417,26 +429,24 @@ pub async fn run() -> Result<()> {
     let mut stdin = tokio::io::stdin();
     loop {
         match read_framed(&mut stdin).await {
-            Ok(Some(bytes)) => {
-                match serde_json::from_slice::<ChromeMessage>(&bytes) {
-                    Ok(msg) => {
-                        if let Err(e) =
-                            handle_chrome_message(msg, &chrome, &mcp_bus, &client_count).await
-                        {
-                            warn!(error = %e, "chrome-native-host: handler failed");
-                        }
-                    }
-                    Err(e) => {
-                        warn!(error = %e, "chrome-native-host: invalid Chrome JSON");
-                        let _ = chrome
-                            .send(&make_chrome_message(
-                                "error",
-                                serde_json::json!({ "error": "Invalid message format" }),
-                            ))
-                            .await;
+            Ok(Some(bytes)) => match serde_json::from_slice::<ChromeMessage>(&bytes) {
+                Ok(msg) => {
+                    if let Err(e) =
+                        handle_chrome_message(msg, &chrome, &mcp_bus, &client_count).await
+                    {
+                        warn!(error = %e, "chrome-native-host: handler failed");
                     }
                 }
-            }
+                Err(e) => {
+                    warn!(error = %e, "chrome-native-host: invalid Chrome JSON");
+                    let _ = chrome
+                        .send(&make_chrome_message(
+                            "error",
+                            serde_json::json!({ "error": "Invalid message format" }),
+                        ))
+                        .await;
+                }
+            },
             Ok(None) => {
                 info!("chrome-native-host: Chrome closed stdin, exiting");
                 break;

@@ -130,8 +130,8 @@ impl AuditSink {
 
         // Write meta.json
         let meta_path = runs_dir.join("meta.json");
-        let meta_json = serde_json::to_string_pretty(meta)
-            .context("Failed to serialize session meta")?;
+        let meta_json =
+            serde_json::to_string_pretty(meta).context("Failed to serialize session meta")?;
         std::fs::write(&meta_path, meta_json)
             .with_context(|| format!("Failed to write {}", meta_path.display()))?;
 

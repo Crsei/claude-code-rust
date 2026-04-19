@@ -34,10 +34,7 @@ pub fn install_permission_callback(
     sink: FrontendSink,
 ) {
     let callback: crate::types::tool::PermissionCallback = Arc::new(
-        move |tool_use_id: String,
-              tool_name: String,
-              description: String,
-              options: Vec<String>| {
+        move |tool_use_id: String, tool_name: String, description: String, options: Vec<String>| {
             let pending = pending.clone();
             let sink = sink.clone();
             Box::pin(async move {
