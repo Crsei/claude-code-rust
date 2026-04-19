@@ -31,8 +31,8 @@ const PROCESS_WRAPPERS: &[&str] = &[
 const SHELL_DASH_C: &[&str] = &["bash", "sh", "zsh", "ksh", "dash"];
 
 /// Wrappers that prefix a command line: their first non-flag argument is
-/// the command we want to inspect (e.g. `xargs cargo test`).
-const ARG_FORWARDERS: &[&str] = &["xargs", "watch", "timeout", "parallel"];
+/// the command we want to inspect (e.g. `timeout 30 cargo test`).
+const ARG_FORWARDERS: &[&str] = &["watch", "timeout", "parallel"];
 
 /// Tokenise a shell command into the set of "interesting" sub-commands
 /// for permission purposes.
@@ -122,7 +122,7 @@ fn strip_wrappers(command: &str) -> StripResult {
         }
         // `sh -c "<script>"` / `bash -c ...` — extract the script and ask
         // the caller to re-tokenise.
-        if SHELL_DASH_C.iter().any(|s| *s == head) {
+        if SHELL_DASH_C.contains(&head) {
             // Look for `-c <script>`
             let mut j = idx + 1;
             while j < words.len() {
@@ -140,7 +140,7 @@ fn strip_wrappers(command: &str) -> StripResult {
             return StripResult::Plain(words[idx..].join(" "));
         }
         // Generic process wrapper — drop and continue with the rest.
-        if PROCESS_WRAPPERS.iter().any(|s| *s == head) {
+        if PROCESS_WRAPPERS.contains(&head) {
             idx += 1;
             // Skip wrapper-specific flags (anything starting with `-`).
             while idx < words.len() && words[idx].starts_with('-') {
@@ -148,10 +148,20 @@ fn strip_wrappers(command: &str) -> StripResult {
             }
             continue;
         }
-        // Argument forwarder: `xargs cmd ...` / `timeout 30 cmd ...`.
-        if ARG_FORWARDERS.iter().any(|s| *s == head) {
+        // Bare `xargs` is stripped, but `xargs -n1 ...` stays as `xargs`
+        // per the permission docs.
+        if head == "xargs" {
+            let xargs_idx = idx;
             idx += 1;
-            // `timeout` consumes a duration argument; `xargs` may take flags.
+            if idx < words.len() && words[idx].starts_with('-') {
+                return StripResult::Plain(words[xargs_idx..].join(" "));
+            }
+            continue;
+        }
+        // Argument forwarder: `timeout 30 cmd ...`.
+        if ARG_FORWARDERS.contains(&head) {
+            idx += 1;
+            // `timeout` consumes a duration argument and may take flags.
             while idx < words.len()
                 && (words[idx].starts_with('-') || is_duration_token(&words[idx]))
             {
@@ -193,11 +203,11 @@ fn is_duration_token(s: &str) -> bool {
 ///
 /// `pattern` is the inner text of `Bash(<pattern>)`:
 ///   - `prefix:foo`    — matches if any token's first word equals or
-///                       begins with `foo`.
+///     begins with `foo`.
 ///   - `<exact>`       — exact match against any token after wrapper
-///                       stripping.
+///     stripping.
 ///   - `<glob with *>` — glob match against any token (or the joined
-///                       compound command).
+///     compound command).
 ///   - empty / `*`     — matches everything (any Bash command).
 ///
 /// Returns true iff the pattern matches the command.
@@ -291,8 +301,15 @@ mod tests {
     fn strips_xargs_and_timeout() {
         let toks = extract_command_tokens("timeout 30 cargo test");
         assert!(toks.contains(&"cargo test".to_string()));
-        let toks = extract_command_tokens("xargs -n1 cargo build");
+        let toks = extract_command_tokens("xargs cargo build");
         assert!(toks.contains(&"cargo build".to_string()));
+    }
+
+    #[test]
+    fn does_not_strip_xargs_with_flags() {
+        let toks = extract_command_tokens("xargs -n1 cargo build");
+        assert!(toks.contains(&"xargs -n1 cargo build".to_string()));
+        assert!(!toks.contains(&"cargo build".to_string()));
     }
 
     #[test]
