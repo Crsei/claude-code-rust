@@ -27,7 +27,11 @@ fn main() {
     println!("cargo:warning=Building web-ui frontend...");
 
     // Check if npm is available
-    let npm_cmd = if cfg!(target_os = "windows") { "npm.cmd" } else { "npm" };
+    let npm_cmd = if cfg!(target_os = "windows") {
+        "npm.cmd"
+    } else {
+        "npm"
+    };
 
     let npm_check = Command::new(npm_cmd).arg("--version").output();
     if npm_check.is_err() || !npm_check.unwrap().status.success() {
@@ -49,7 +53,10 @@ fn main() {
         match install {
             Ok(s) if s.success() => {}
             Ok(s) => {
-                println!("cargo:warning=npm install failed (exit {}), skipping web build", s);
+                println!(
+                    "cargo:warning=npm install failed (exit {}), skipping web build",
+                    s
+                );
                 return;
             }
             Err(e) => {

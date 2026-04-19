@@ -99,7 +99,10 @@ fn strip_wrappers(command: &str) -> StripResult {
         // Skip env var assignments: `FOO=bar BAZ=qux cargo build`
         if words[idx].contains('=') && !words[idx].starts_with('-') {
             let before = words[idx].split('=').next().unwrap_or("");
-            if before.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            if before
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
                 idx += 1;
                 continue;
             }
@@ -149,7 +152,8 @@ fn strip_wrappers(command: &str) -> StripResult {
         if ARG_FORWARDERS.iter().any(|s| *s == head) {
             idx += 1;
             // `timeout` consumes a duration argument; `xargs` may take flags.
-            while idx < words.len() && (words[idx].starts_with('-') || is_duration_token(&words[idx]))
+            while idx < words.len()
+                && (words[idx].starts_with('-') || is_duration_token(&words[idx]))
             {
                 idx += 1;
             }
@@ -301,10 +305,7 @@ mod tests {
     #[test]
     fn pattern_glob_matches_token() {
         assert!(bash_pattern_matches("cargo *", "cargo test --release"));
-        assert!(bash_pattern_matches(
-            "*test*",
-            "FOO=1 cargo test --release"
-        ));
+        assert!(bash_pattern_matches("*test*", "FOO=1 cargo test --release"));
         assert!(!bash_pattern_matches("cargo *", "rm -rf /"));
     }
 

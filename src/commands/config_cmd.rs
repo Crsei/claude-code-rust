@@ -685,7 +685,7 @@ mod tests {
             _ => panic!("Expected Output result"),
         }
         assert_eq!(ctx.app_state.main_loop_model, "claude-opus");
-        assert!(settings::user_settings_path().exists());
+        assert!(dir.path().join("settings.json").exists());
     }
 
     #[tokio::test]

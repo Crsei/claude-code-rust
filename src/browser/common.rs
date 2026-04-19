@@ -249,11 +249,7 @@ fn config_for(browser: ChromiumBrowser) -> BrowserConfig {
         },
         ChromiumBrowser::Opera => BrowserConfig {
             macos_app_bundle: "Opera",
-            macos_data: &[
-                "Library",
-                "Application Support",
-                "com.operasoftware.Opera",
-            ],
+            macos_data: &["Library", "Application Support", "com.operasoftware.Opera"],
             macos_native_messaging: &[
                 "Library",
                 "Application Support",
@@ -407,9 +403,7 @@ pub fn native_messaging_path_for(browser: ChromiumBrowser) -> Option<PathBuf> {
 pub fn all_browser_data_paths() -> Vec<BrowserDataPath> {
     BROWSER_DETECTION_ORDER
         .iter()
-        .filter_map(|&browser| {
-            data_path_for(browser).map(|path| BrowserDataPath { browser, path })
-        })
+        .filter_map(|&browser| data_path_for(browser).map(|path| BrowserDataPath { browser, path }))
         .collect()
 }
 
@@ -419,8 +413,7 @@ pub fn all_native_messaging_paths() -> Vec<NativeMessagingPath> {
     BROWSER_DETECTION_ORDER
         .iter()
         .filter_map(|&browser| {
-            native_messaging_path_for(browser)
-                .map(|path| NativeMessagingPath { browser, path })
+            native_messaging_path_for(browser).map(|path| NativeMessagingPath { browser, path })
         })
         .collect()
 }
@@ -448,7 +441,11 @@ pub fn all_windows_registry_keys() -> Vec<WindowsRegistryKey> {
 /// Supported: macOS, Linux, Windows. Everything else (non-WSL BSD, etc.)
 /// returns `false` and the `/chrome` command should tell the user so.
 pub fn supports_claude_in_chrome() -> bool {
-    cfg!(any(target_os = "macos", target_os = "linux", target_os = "windows"))
+    cfg!(any(
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "windows"
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -461,8 +458,7 @@ mod tests {
 
     #[test]
     fn all_browsers_have_distinct_slugs() {
-        let mut slugs: Vec<&str> =
-            BROWSER_DETECTION_ORDER.iter().map(|b| b.slug()).collect();
+        let mut slugs: Vec<&str> = BROWSER_DETECTION_ORDER.iter().map(|b| b.slug()).collect();
         slugs.sort_unstable();
         slugs.dedup();
         assert_eq!(slugs.len(), BROWSER_DETECTION_ORDER.len());
@@ -497,7 +493,10 @@ mod tests {
         // At least Chrome should resolve to *some* path on each supported OS.
         let p = data_path_for(ChromiumBrowser::Chrome);
         if supports_claude_in_chrome() {
-            assert!(p.is_some(), "Chrome data path should resolve on supported OS");
+            assert!(
+                p.is_some(),
+                "Chrome data path should resolve on supported OS"
+            );
         }
     }
 

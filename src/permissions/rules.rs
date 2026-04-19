@@ -185,10 +185,7 @@ fn tool_name_matches(tool_name: &str, rule: &str) -> bool {
 fn specifier_matches(tool_name: &str, input: &Value, pattern: &str) -> bool {
     match tool_name {
         "Bash" => {
-            let cmd = input
-                .get("command")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let cmd = input.get("command").and_then(|v| v.as_str()).unwrap_or("");
             bash_matcher::bash_pattern_matches(pattern, cmd)
         }
         "Read" | "Write" | "Edit" | "MultiEdit" | "NotebookEdit" => {
@@ -199,10 +196,7 @@ fn specifier_matches(tool_name: &str, input: &Value, pattern: &str) -> bool {
             text_specifier_matches(pattern, path)
         }
         "Glob" => {
-            let pat = input
-                .get("pattern")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let pat = input.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
             text_specifier_matches(pattern, pat)
         }
         "WebFetch" | "WebSearch" => {
@@ -221,9 +215,7 @@ fn specifier_matches(tool_name: &str, input: &Value, pattern: &str) -> bool {
                 .unwrap_or("");
             text_specifier_matches(pattern, agent_type)
         }
-        _ if tool_name.starts_with("mcp__") => {
-            text_specifier_matches(pattern, tool_name)
-        }
+        _ if tool_name.starts_with("mcp__") => text_specifier_matches(pattern, tool_name),
         _ => {
             // Generic specifier: stringify input and glob-match.
             let s = input.to_string();
@@ -461,7 +453,11 @@ mod tests {
     #[test]
     fn test_webfetch_specifier_glob() {
         let input = json!({"url": "https://api.example.com/v1/foo"});
-        assert!(rule_matches("WebFetch", &input, "WebFetch(https://api.example.com/*)"));
+        assert!(rule_matches(
+            "WebFetch",
+            &input,
+            "WebFetch(https://api.example.com/*)"
+        ));
     }
 
     #[test]

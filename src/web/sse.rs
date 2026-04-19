@@ -14,9 +14,8 @@ pub fn sdk_stream_to_sse(
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let sse_stream = stream.map(|msg| {
         let event_name = msg.event_name();
-        let data = serde_json::to_string(&msg).unwrap_or_else(|e| {
-            format!(r#"{{"error":"serialization failed: {}"}}"#, e)
-        });
+        let data = serde_json::to_string(&msg)
+            .unwrap_or_else(|e| format!(r#"{{"error":"serialization failed: {}"}}"#, e));
         Ok(Event::default().event(event_name).data(data))
     });
     Sse::new(sse_stream).keep_alive(

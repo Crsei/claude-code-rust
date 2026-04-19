@@ -117,8 +117,9 @@ fn action_verb(action: &str) -> String {
         "navigate" | "navigate_page" | "goto" => "navigating the browser".to_string(),
         "tabs_create" | "tabs_create_mcp" | "new_page" => "opening a new browser tab".to_string(),
         "tabs_close" | "tabs_close_mcp" | "close_page" => "closing a browser tab".to_string(),
-        "tabs_context" | "tabs_context_mcp" | "list_pages" | "select_page"
-        | "switch_browser" => "reading tab context".to_string(),
+        "tabs_context" | "tabs_context_mcp" | "list_pages" | "select_page" | "switch_browser" => {
+            "reading tab context".to_string()
+        }
         "read_page" | "get_page_text" | "get_page" => "reading the current page".to_string(),
         "take_snapshot" | "snapshot" => "taking a DOM snapshot".to_string(),
         "take_screenshot" | "screenshot" => "taking a screenshot".to_string(),
@@ -160,16 +161,28 @@ mod tests {
 
     #[test]
     fn categorizes_by_action_basename() {
-        assert_eq!(classify_browser_action("navigate"), BrowserCategory::Navigation);
+        assert_eq!(
+            classify_browser_action("navigate"),
+            BrowserCategory::Navigation
+        );
         assert_eq!(classify_browser_action("read_page"), BrowserCategory::Read);
         assert_eq!(classify_browser_action("click"), BrowserCategory::Write);
-        assert_eq!(classify_browser_action("upload_file"), BrowserCategory::Upload);
-        assert_eq!(classify_browser_action("evaluate_script"), BrowserCategory::JavaScript);
+        assert_eq!(
+            classify_browser_action("upload_file"),
+            BrowserCategory::Upload
+        );
+        assert_eq!(
+            classify_browser_action("evaluate_script"),
+            BrowserCategory::JavaScript
+        );
         assert_eq!(
             classify_browser_action("list_console_messages"),
             BrowserCategory::Observability
         );
-        assert_eq!(classify_browser_action("something_else"), BrowserCategory::Other);
+        assert_eq!(
+            classify_browser_action("something_else"),
+            BrowserCategory::Other
+        );
     }
 
     #[test]
