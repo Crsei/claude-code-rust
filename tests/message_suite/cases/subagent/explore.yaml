@@ -1,0 +1,40 @@
+id: subagent.explore
+category: subagent
+concurrency_group: subagent-llm-serial
+timeout_sec: 240
+prereq:
+  files:
+    - path: src/auth.rs
+      content: |
+        pub fn login_user() { /* handles login */ }
+        pub fn logout_user() { /* handles logout */ }
+    - path: src/orders.rs
+      content: |
+        pub fn create_order() {}
+        pub fn cancel_order() {}
+    - path: src/db.rs
+      content: |
+        pub fn query() {}
+steps:
+  - kind: chat
+    name: delegate-exploration
+    message: |
+      Use the Agent tool with subagent_type: "Explore" to find every function
+      in src/ related to user AUTHENTICATION (login/logout). The Explore
+      agent should search the code; do not run Grep yourself. Report the
+      function names you found.
+    timeout_sec: 240
+    expect:
+      - tool_call_order: ["Agent"]
+      - sse_event:
+          type: stream_event
+          match:
+            event:
+              type: content_block_start
+              content_block:
+                type: tool_use
+                name: "Agent"
+                input:
+                  subagent_type: "Explore"
+      - response_contains: ["login_user", "logout_user"]
+cleanup: {}

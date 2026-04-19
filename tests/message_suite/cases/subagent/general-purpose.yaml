@@ -1,0 +1,27 @@
+id: subagent.general-purpose
+category: subagent
+concurrency_group: subagent-llm-serial
+timeout_sec: 240
+prereq:
+  files:
+    - path: alpha/inner.txt
+      content: alpha-file
+    - path: beta/inner.txt
+      content: beta-file
+    - path: gamma/inner.txt
+      content: gamma-file
+steps:
+  - kind: chat
+    name: delegate-dir-listing
+    # Explicitly force Agent-tool dispatch so DeepSeek doesn't short-circuit
+    # to a direct Bash/Glob call.
+    message: |
+      Use the Agent tool (subagent_type: "general-purpose") to list the
+      top-level directory names in the current working directory. The
+      subagent should use Bash or Glob internally; do NOT call those
+      tools yourself. Report the names back.
+    timeout_sec: 240
+    expect:
+      - tool_call_order: ["Agent"]
+      - response_contains: ["alpha", "beta", "gamma"]
+cleanup: {}

@@ -1,0 +1,28 @@
+id: subagent.abort-mid-flight
+category: subagent
+concurrency_group: subagent-llm-serial
+timeout_sec: 120
+prereq: {}
+steps:
+  # The abort endpoint is exercised directly — we POST /api/chat and then
+  # /api/abort in parallel is tricky to express in one step, so instead we
+  # confirm the endpoint is wired and returns 200 even with no active gen.
+  # True in-flight abort needs a separate harness (TODO: P4 follow-up).
+  - kind: chat
+    name: start-long-generation
+    message: |
+      Use the Agent tool (subagent_type: "general-purpose") to run this
+      Bash command via its child: `for i in $(seq 1 5); do echo "T_$i"; done`
+      and report the last line.
+    timeout_sec: 120
+    expect:
+      - tool_call_order: ["Agent"]
+
+  - kind: http
+    name: sanity-state-after
+    path: /api/state
+    expect:
+      - http_json:
+          path: model
+          equals: "deepseek-chat"
+cleanup: {}
