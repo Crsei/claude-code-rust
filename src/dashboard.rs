@@ -2,7 +2,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex, OnceLock};
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
@@ -11,6 +11,14 @@ use serde_json::Value;
 use tracing::{debug, info};
 
 static EVENT_LOG_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+static SESSION_ID: OnceLock<String> = OnceLock::new();
+
+/// Initialize the dashboard's session_id. Called once during main bootstrap
+/// (after QueryEngine is created). Subsequent calls are no-ops.
+pub fn init_session_id(id: &str) {
+    let _ = SESSION_ID.set(id.to_string());
+}
 
 const DEFAULT_PORT: u16 = 19838;
 const HEALTH_CHECK_TIMEOUT_MS: u64 = 5000;
@@ -27,7 +35,10 @@ impl Default for DashboardConfig {
     fn default() -> Self {
         Self {
             port: DEFAULT_PORT,
-            event_log_path: event_log_path(),
+            // init_session_id() is called from main.rs before DashboardCompanion::spawn(),
+            // so this should always resolve. Panic is a programming error if ordering breaks.
+            event_log_path: event_log_path()
+                .expect("DashboardConfig::default() called before init_session_id"),
             auto_open_browser: std::env::var("FEATURE_SUBAGENT_DASHBOARD_OPEN")
                 .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true"))
                 .unwrap_or(false),
@@ -102,9 +113,14 @@ impl Drop for DashboardCompanion {
     }
 }
 
-pub fn event_log_path() -> PathBuf {
-    let base = resolve_base_dir();
-    event_log_path_for_base(&base)
+/// Return the subagent event log path. Resolves to
+/// `{data_root}/runs/{session_id}/subagent-events.ndjson` once the session_id
+/// has been initialized via [`init_session_id`]. Before that, returns `None`
+/// and callers should skip writing.
+pub fn event_log_path() -> Option<PathBuf> {
+    SESSION_ID
+        .get()
+        .map(|id| crate::config::paths::runs_dir(id).join("subagent-events.ndjson"))
 }
 
 pub fn emit_subagent_event(
@@ -136,8 +152,17 @@ pub fn emit_subagent_event(
 }
 
 fn append_event(event: &SubagentEvent) -> Result<()> {
-    let path = event_log_path();
-    append_event_to_path(&path, event)
+    match event_log_path() {
+        Some(path) => append_event_to_path(&path, event),
+        None => {
+            debug!(
+                kind = %event.kind,
+                agent_id = %event.agent_id,
+                "subagent event dropped: session_id not initialized yet"
+            );
+            Ok(())
+        }
+    }
 }
 
 fn append_event_to_path(path: &Path, event: &SubagentEvent) -> Result<()> {
@@ -163,18 +188,6 @@ fn append_event_to_path(path: &Path, event: &SubagentEvent) -> Result<()> {
 
     debug!(path = %path.display(), kind = %event.kind, agent_id = %event.agent_id, "subagent event appended");
     Ok(())
-}
-
-fn event_log_path_for_base(base: &Path) -> PathBuf {
-    base.join(".logs").join("subagent-events.ndjson")
-}
-
-fn resolve_base_dir() -> PathBuf {
-    let cwd = crate::bootstrap::state::original_cwd();
-    if !cwd.as_os_str().is_empty() {
-        return cwd;
-    }
-    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
 fn dashboard_enabled() -> bool {
@@ -268,11 +281,22 @@ mod tests {
     }
 
     #[test]
-    fn event_log_path_for_base_appends_logs_file() {
-        let path = event_log_path_for_base(Path::new("/tmp/dashboard-test"));
-        assert_eq!(
-            path,
-            PathBuf::from("/tmp/dashboard-test/.logs/subagent-events.ndjson")
+    #[serial_test::serial]
+    fn event_log_path_points_into_runs_dir() {
+        // OnceLock can only be set once per process — tolerate prior sets by
+        // other tests. We only assert path structure.
+        let _ = SESSION_ID.set("test-session".to_string());
+        let path = event_log_path().expect("session_id should be set by now");
+        let s = path.to_string_lossy().replace('\\', "/");
+        assert!(
+            s.contains("/runs/"),
+            "expected path under runs/, got {}",
+            s
+        );
+        assert!(
+            s.ends_with("/subagent-events.ndjson"),
+            "expected subagent-events.ndjson filename, got {}",
+            s
         );
     }
 
@@ -305,15 +329,20 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn emit_subagent_event_noops_when_feature_disabled() {
+        // When FEATURE_SUBAGENT_DASHBOARD is off, emit_subagent_event must
+        // return Ok(()) immediately without creating any directory or file,
+        // even if SESSION_ID has been set by a prior test.
         let _feature = EnvGuard::set("FEATURE_SUBAGENT_DASHBOARD", "0");
-        let temp = TempDir::new().expect("tempdir");
-        let original_cwd = {
-            let mut ps = crate::bootstrap::PROCESS_STATE.write();
-            let original = ps.original_cwd.clone();
-            ps.original_cwd = temp.path().to_path_buf();
-            original
-        };
+
+        // Point CC_RUST_HOME to a clean tempdir so we can assert no writes.
+        let tmp = TempDir::new().expect("tempdir");
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+
+        // Ensure SESSION_ID is set; if prior tests already set it, that's fine —
+        // we just need emit_subagent_event to take the feature-gated early return.
+        let _ = SESSION_ID.set("noop-test-session".to_string());
 
         emit_subagent_event(
             "spawn",
@@ -327,18 +356,12 @@ mod tests {
         )
         .expect("emit event");
 
-        {
-            let mut ps = crate::bootstrap::PROCESS_STATE.write();
-            ps.original_cwd = original_cwd;
-        }
-
+        // No file should have been created anywhere under the tempdir.
+        let runs = tmp.path().join("runs");
         assert!(
-            !temp
-                .path()
-                .join(".logs")
-                .join("subagent-events.ndjson")
-                .exists(),
-            "event log should not be created when the feature is disabled"
+            !runs.exists(),
+            "runs/ should not be created when the feature is disabled, but found: {}",
+            runs.display()
         );
     }
 }

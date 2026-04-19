@@ -230,14 +230,12 @@ pub fn init_skills(project_dir: Option<&std::path::Path>) {
     // 1. Register bundled skills
     bundled::register_bundled_skills();
 
-    // 2. Load user skills from ~/.cc-rust/skills/
-    if let Some(home) = dirs::home_dir() {
-        let user_skills_dir = home.join(".cc-rust").join("skills");
-        if user_skills_dir.is_dir() {
-            let skills = loader::load_skills_from_dir(&user_skills_dir, SkillSource::User);
-            for skill in skills {
-                register_skill(skill);
-            }
+    // 2. Load user skills from {data_root}/skills/
+    let user_skills_dir = crate::config::paths::skills_dir_global();
+    if user_skills_dir.is_dir() {
+        let skills = loader::load_skills_from_dir(&user_skills_dir, SkillSource::User);
+        for skill in skills {
+            register_skill(skill);
         }
     }
 

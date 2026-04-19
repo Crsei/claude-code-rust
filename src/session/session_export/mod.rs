@@ -219,8 +219,7 @@ pub fn build_session_export(session_id: &str, messages: &[Message], cwd: &str) -
 // ---------------------------------------------------------------------------
 
 pub(crate) fn get_export_dir() -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".cc-rust").join("exports")
+    crate::config::paths::exports_dir()
 }
 
 fn write_session_export(

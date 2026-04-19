@@ -62,10 +62,10 @@ pub struct SerializableMessage {
 // Path helpers
 // ---------------------------------------------------------------------------
 
-/// Return the base directory for session storage (`~/.cc-rust/sessions/`).
+/// Return the base directory for session storage. Resolves through
+/// [`crate::config::paths::sessions_dir`].
 pub fn get_session_dir() -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".cc-rust").join("sessions")
+    crate::config::paths::sessions_dir()
 }
 
 /// Return the file path for a specific session.

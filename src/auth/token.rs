@@ -4,12 +4,9 @@
 
 use anyhow::Result;
 
-/// Token storage file path: `~/.cc-rust/credentials.json`
+/// Token storage file path: `{data_root}/credentials.json`
 pub fn token_file_path() -> std::path::PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".cc-rust")
-        .join("credentials.json")
+    crate::config::paths::credentials_path()
 }
 
 /// Stored token data (OAuth).

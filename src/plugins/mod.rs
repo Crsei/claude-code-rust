@@ -134,9 +134,7 @@ pub struct MarketplaceEntry {
 /// └── installed_plugins.json       ← installation metadata
 /// ```
 pub fn plugins_dir() -> PathBuf {
-    crate::config::settings::global_claude_dir()
-        .unwrap_or_else(|_| PathBuf::from(".").join(".cc-rust"))
-        .join("plugins")
+    crate::config::paths::plugins_dir()
 }
 
 pub fn cache_dir() -> PathBuf {

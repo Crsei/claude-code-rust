@@ -37,10 +37,10 @@ struct TranscriptEntry {
 // Path helpers
 // ---------------------------------------------------------------------------
 
-/// Return the directory for transcript files (`~/.cc-rust/transcripts/`).
+/// Return the directory for transcript files. Resolves through
+/// [`crate::config::paths::transcripts_dir`].
 fn get_transcript_dir() -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".cc-rust").join("transcripts")
+    crate::config::paths::transcripts_dir()
 }
 
 /// Return the transcript file path for a specific session.
