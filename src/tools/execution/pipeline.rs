@@ -6,10 +6,28 @@ use std::time::Instant;
 use serde_json::Value;
 use tracing::{debug, warn};
 
-use crate::permissions::decision::{self, PermissionBehavior, PermissionDecision};
+use crate::permissions::decision::{
+    self, HookPermissionDecision, PermissionBehavior, PermissionDecision,
+};
 use crate::tools::hooks::{
     self, HookEventConfig, PermissionOverride, PostToolHookResult, PreToolHookResult,
 };
+
+/// Convert the legacy [`PermissionOverride`] (carried back by
+/// `run_pre_tool_hooks`) into the richer [`HookPermissionDecision`] the
+/// central decision flow expects.
+fn build_hook_decision(
+    o: Option<&PermissionOverride>,
+) -> Option<HookPermissionDecision> {
+    let o = o?;
+    let mut h = HookPermissionDecision::default();
+    h.source = Some("PreToolUse".into());
+    match o {
+        PermissionOverride::Allow => h.allow = true,
+        PermissionOverride::Deny { reason } => h.deny = Some(reason.clone()),
+    }
+    Some(h)
+}
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools};
 
@@ -140,56 +158,82 @@ pub async fn run_tool_use(
     }
 
     // ── Stage 5: Permission check ───────────────────────────────────
-    // Resolve hook permission override first, then fall back to rule engine
-    if let Some(override_decision) = permission_override {
-        match override_decision {
-            PermissionOverride::Deny { reason } => {
-                return make_error_result(
-                    tool_use_id,
-                    tool_name,
-                    &format!("Permission denied by hook: {}", reason),
-                    started,
-                );
-            }
-            PermissionOverride::Allow => {
-                // Hook explicitly allowed — skip normal permission check
-                debug!(tool = tool_name, "permission allowed by hook override");
-            }
+    // Build a `HookPermissionDecision` from the pre-tool hook output and
+    // route everything (rules + hook + mode) through the central
+    // decision flow so deny / ask still beat hook allow per spec.
+    let hook_decision = build_hook_decision(permission_override.as_ref());
+
+    // The tool may still expose its own per-tool checks (e.g. dangerous
+    // command detection in Bash). Run them first so a deny from the tool
+    // wins over the hook's allow.
+    match tool.check_permissions(&effective_input, ctx).await {
+        crate::types::tool::PermissionResult::Deny { message } => {
+            return make_error_result(
+                tool_use_id,
+                tool_name,
+                &format!("Permission denied: {}", message),
+                started,
+            );
         }
-    } else {
-        // Normal permission check via the rule engine
-        let perm_result = tool.check_permissions(&effective_input, ctx).await;
-        match perm_result {
-            crate::types::tool::PermissionResult::Allow { .. } => {
-                // Allowed
-            }
-            crate::types::tool::PermissionResult::Deny { message } => {
+        crate::types::tool::PermissionResult::Allow { .. }
+        | crate::types::tool::PermissionResult::Ask { .. } => {
+            // Continue to the central flow.
+        }
+    }
+
+    let app_state = (ctx.get_app_state)();
+    let central_decision = decision::has_permissions_to_use_tool_with_hook(
+        tool_name,
+        &effective_input,
+        &app_state.tool_permission_context,
+        hook_decision.as_ref(),
+        None,
+    );
+
+    let effective_input = central_decision
+        .updated_input
+        .clone()
+        .unwrap_or(effective_input);
+
+    match central_decision.behavior {
+        PermissionBehavior::Allow => {
+            debug!(
+                tool = tool_name,
+                reason = ?central_decision.reason,
+                "permission allowed"
+            );
+        }
+        PermissionBehavior::Deny => {
+            return make_error_result(
+                tool_use_id,
+                tool_name,
+                &format!(
+                    "Permission denied: {}",
+                    central_decision
+                        .message
+                        .unwrap_or_else(|| "policy".into())
+                ),
+                started,
+            );
+        }
+        PermissionBehavior::Ask => {
+            let message = central_decision
+                .message
+                .unwrap_or_else(|| format!("Allow tool '{}'?", tool_name));
+            if ctx.options.is_non_interactive_session {
                 return make_error_result(
                     tool_use_id,
                     tool_name,
-                    &format!("Permission denied: {}", message),
+                    &format!("Permission required (non-interactive mode): {}", message),
                     started,
                 );
             }
-            crate::types::tool::PermissionResult::Ask { message } => {
-                // In non-interactive mode, deny with explanation
-                if ctx.options.is_non_interactive_session {
-                    return make_error_result(
-                        tool_use_id,
-                        tool_name,
-                        &format!("Permission required (non-interactive mode): {}", message),
-                        started,
-                    );
-                }
-                // In interactive mode, this would prompt the user.
-                // Phase 1: deny with explanation.
-                return make_error_result(
-                    tool_use_id,
-                    tool_name,
-                    &format!("Permission required: {}", message),
-                    started,
-                );
-            }
+            return make_error_result(
+                tool_use_id,
+                tool_name,
+                &format!("Permission required: {}", message),
+                started,
+            );
         }
     }
 

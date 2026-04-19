@@ -170,12 +170,7 @@ pub async fn abort_handler(
 /// GET /api/state -- Return current application state (enhanced for Phase 3).
 pub async fn state_handler(State(state): State<WebState>) -> impl IntoResponse {
     let app_state = state.engine.app_state();
-    let permission_mode = match app_state.tool_permission_context.mode {
-        PermissionMode::Default => "default",
-        PermissionMode::Auto => "auto",
-        PermissionMode::Bypass => "bypass",
-        PermissionMode::Plan => "plan",
-    };
+    let permission_mode = app_state.tool_permission_context.mode.as_str();
 
     // Get tool names from engine
     let tool_names: Vec<String> = state.engine.tool_names();
