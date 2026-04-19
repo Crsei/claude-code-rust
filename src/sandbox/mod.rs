@@ -42,4 +42,4 @@ pub use availability::{Availability, Mechanism};
 pub use errors::SandboxError;
 pub use mode::SandboxMode;
 pub use network::NetworkDecision;
-pub use runner::{make_runner, policy_from_app_state};
+pub use runner::{make_runner, policy_from_app_state, preflight_shell_command};

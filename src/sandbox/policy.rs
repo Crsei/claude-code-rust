@@ -96,6 +96,10 @@ pub struct SandboxPolicyBuilder {
     force_no_network: bool,
     /// From `permissions.additionalDirectories` and session `addDir` grants.
     extra_workspaces: Vec<PathBuf>,
+    /// Merged allow-read rules sourced from `Read(...)` permission allows.
+    perm_allow_reads: Vec<String>,
+    /// Merged allow-write rules sourced from `Edit(...)` permission allows.
+    perm_allow_writes: Vec<String>,
     /// Merged deny-read rules sourced from `Read(...)` permission denies.
     perm_deny_reads: Vec<String>,
     /// Merged deny-write rules sourced from `Edit(...)` permission denies.
@@ -109,6 +113,8 @@ impl SandboxPolicyBuilder {
             settings: SandboxSettings::default(),
             force_no_network: false,
             extra_workspaces: Vec::new(),
+            perm_allow_reads: Vec::new(),
+            perm_allow_writes: Vec::new(),
             perm_deny_reads: Vec::new(),
             perm_deny_writes: Vec::new(),
         }
@@ -129,6 +135,16 @@ impl SandboxPolicyBuilder {
         self
     }
 
+    pub fn permission_allow_reads(mut self, rules: Vec<String>) -> Self {
+        self.perm_allow_reads = rules;
+        self
+    }
+
+    pub fn permission_allow_writes(mut self, rules: Vec<String>) -> Self {
+        self.perm_allow_writes = rules;
+        self
+    }
+
     pub fn permission_deny_reads(mut self, rules: Vec<String>) -> Self {
         self.perm_deny_reads = rules;
         self
@@ -145,6 +161,8 @@ impl SandboxPolicyBuilder {
             settings,
             force_no_network,
             extra_workspaces,
+            perm_allow_reads,
+            perm_allow_writes,
             perm_deny_reads,
             perm_deny_writes,
         } = self;
@@ -173,6 +191,12 @@ impl SandboxPolicyBuilder {
         }
         for raw in &settings.filesystem.deny_read {
             paths.add_deny_read(raw);
+        }
+        for raw in &perm_allow_writes {
+            paths.add_allow_write(raw);
+        }
+        for raw in &perm_allow_reads {
+            paths.add_allow_read(raw);
         }
         for raw in &perm_deny_writes {
             paths.add_deny_write(raw);
