@@ -1,0 +1,24 @@
+id: workspace.multi-parallel
+category: workspace
+# Distinct concurrency_group lets the runner start this alongside other
+# workspace cases. The *server* has its own port/home/cwd already, so the
+# only thing this case really exercises is that those are independent.
+concurrency_group: workspace-multi-a
+timeout_sec: 30
+prereq:
+  files:
+    - path: alpha.txt
+      content: alpha-workspace-unique-marker
+steps:
+  - kind: http
+    name: verify-cwd-isolated
+    path: /api/sessions
+    expect:
+      - http_json:
+          path: current_workspace.root
+          contains: ${workspace}
+      # The workspace must not leak the sibling parallel case's marker.
+      - http_json:
+          path: current_workspace.name
+          matches: "multi-parallel"
+cleanup: {}

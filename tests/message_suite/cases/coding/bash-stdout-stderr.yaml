@@ -1,0 +1,21 @@
+id: coding.bash-stdout-stderr
+category: coding
+concurrency_group: coding-bash
+timeout_sec: 90
+prereq: {}
+steps:
+  - kind: chat
+    name: echo-dual-stream
+    message: |
+      Run this exact Bash command and report its output:
+      `echo STDOUT_LINE_42 && echo STDERR_LINE_99 1>&2`
+    timeout_sec: 60
+    expect:
+      - tool_call_order: ["Bash"]
+      # Both markers must surface in the assistant's summary — implies the
+      # bash tool captured stdout AND stderr and streamed them back.
+      - response_contains: ["STDOUT_LINE_42", "STDERR_LINE_99"]
+      # Proof that the tool actually produced a result the engine replayed.
+      - sse_event:
+          type: user_replay
+cleanup: {}

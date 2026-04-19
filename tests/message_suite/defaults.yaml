@@ -1,0 +1,12 @@
+# Shared defaults merged into every case's `prereq` (case overrides win).
+# Keep secrets here so individual yaml files stay reviewable.
+prereq:
+  env:
+    # DeepSeek is cheap + fast enough for live suite runs.
+    DEEPSEEK_API_KEY: "sk-68caf426408745c287f4552da4894193"
+    CLAUDE_MODEL: "deepseek-chat"
+    HTTPS_PROXY: "http://127.0.0.1:7890"
+    HTTP_PROXY: "http://127.0.0.1:7890"
+    RUST_LOG: "warn"
+  # Bypass permission prompts so tool-use cases don't hang waiting for UI.
+  permission_mode: bypass
