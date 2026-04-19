@@ -6,12 +6,20 @@
 // Phase A: CLI arg parsing -> fast path detection -> immediate exit
 // Phase B: Full initialization -> settings, permissions, tools, AppState -> REPL
 // Phase I: Shutdown and cleanup (graceful_shutdown)
+//
+// Most of the heavy lifting lives in:
+//   - `cli`           — argument shape (`Cli` struct + clap derives)
+//   - `startup`       — logging, fast paths, runtime config helpers, print/json modes
+// Keep main.rs focused on orchestration: fast-path routing, Phase B
+// sequencing, and handing control off to the selected mode (daemon / web /
+// headless / TUI / print / json).
 // ============================================================================
 
 // Process-wide bootstrap singleton layer (import DAG leaf node)
 mod bootstrap;
 
 // Core modules
+mod cli;
 mod commands;
 mod computer_use;
 mod config;
@@ -21,6 +29,7 @@ mod permissions;
 mod query;
 mod sandbox;
 mod session;
+mod startup;
 mod tools;
 mod types;
 mod ui;
@@ -71,7 +80,6 @@ mod ipc;
 mod daemon;
 mod dashboard;
 
-use std::collections::HashMap;
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -79,200 +87,23 @@ use anyhow::Context;
 use clap::Parser;
 use tracing::{debug, error, info, warn};
 
+use crate::cli::Cli;
 use crate::config::settings;
 use crate::engine::lifecycle::QueryEngine;
+use crate::startup::runtime_config::{
+    build_tool_permission_context, chrome_cli_override, resolve_cwd, resolve_permission_mode,
+};
 use crate::tools::registry;
 use crate::types::app_state::{AppState, SettingsJson};
-use crate::types::config::{QueryEngineConfig, QuerySource};
-use crate::types::tool::{PermissionMode, ToolPermissionContext};
+use crate::types::config::QueryEngineConfig;
 use crate::ui::tui;
-
-// ---------------------------------------------------------------------------
-// CLI argument definitions (Phase A)
-// ---------------------------------------------------------------------------
-
-/// Claude Code CLI - Rust implementation
-#[derive(Parser, Debug)]
-#[command(
-    name = "claude",
-    version,
-    about = "Claude Code CLI",
-    disable_version_flag = true
-)]
-struct Cli {
-    /// Print the version and exit (fast path)
-    #[arg(short = 'V', long)]
-    version: bool,
-
-    /// Print mode: output model response and exit (non-interactive)
-    #[arg(short = 'p', long = "print")]
-    print: bool,
-
-    /// Resume the most recent session
-    #[arg(long)]
-    resume: bool,
-
-    /// Continue a specific session by ID
-    #[arg(long = "continue")]
-    continue_session: Option<String>,
-
-    /// Maximum number of turns for agentic loops
-    #[arg(long)]
-    max_turns: Option<usize>,
-
-    /// Working directory override
-    #[arg(short = 'C', long = "cwd")]
-    cwd: Option<String>,
-
-    /// Model override
-    #[arg(short = 'm', long)]
-    model: Option<String>,
-
-    /// Custom system prompt (replaces default)
-    #[arg(long = "system-prompt")]
-    system_prompt: Option<String>,
-
-    /// Append to the system prompt
-    #[arg(long = "append-system-prompt")]
-    append_system_prompt: Option<String>,
-
-    /// Permission mode: default, auto, bypass
-    #[arg(long = "permission-mode")]
-    permission_mode: Option<String>,
-
-    /// Verbose output
-    #[arg(short, long)]
-    verbose: bool,
-
-    /// Maximum budget in USD
-    #[arg(long = "max-budget")]
-    max_budget: Option<f64>,
-
-    /// Output format (text, json, stream-json)
-    #[arg(long = "output-format")]
-    output_format: Option<String>,
-
-    /// Dump system prompt and exit (fast path, internal)
-    #[arg(long = "dump-system-prompt", hide = true)]
-    dump_system_prompt: bool,
-
-    /// Init only: initialize and exit (fast path)
-    #[arg(long = "init-only", hide = true)]
-    init_only: bool,
-
-    /// Headless mode: run without TUI, communicate via JSON on stdin/stdout
-    #[arg(long, hide = true)]
-    headless: bool,
-
-    /// Run as a background daemon with HTTP server (KAIROS mode).
-    #[arg(long, hide = true)]
-    daemon: bool,
-
-    /// Daemon HTTP port (default: 19836).
-    #[arg(long, default_value = "19836")]
-    port: u16,
-
-    /// Enable native Computer Use tools (screenshot, click, type, key, scroll).
-    /// Registers built-in desktop control tools without needing an external MCP server.
-    #[arg(long = "computer-use")]
-    computer_use: bool,
-
-    /// Enable the first-party Chrome integration ("Claude in Chrome"). Scans
-    /// for the Anthropic Chrome extension and installs the native messaging
-    /// host manifest. Overrides the `CLAUDE_CODE_ENABLE_CFC` env var and the
-    /// saved `claudeInChromeDefaultEnabled` config.
-    #[arg(long = "chrome", conflicts_with = "no_chrome")]
-    chrome: bool,
-
-    /// Explicitly disable the first-party Chrome integration for this session.
-    /// Overrides env and saved config.
-    #[arg(long = "no-chrome")]
-    no_chrome: bool,
-
-    /// INTERNAL: run as a Chrome native-messaging host. Launched by Chrome
-    /// via the manifest installed by the Chrome subsystem setup (see
-    /// `src/browser/setup.rs`). Reads 4-byte-framed JSON from stdin, opens
-    /// a local socket, bridges the two. Not intended for manual invocation.
-    #[arg(long = "chrome-native-host", hide = true)]
-    chrome_native_host: bool,
-
-    /// INTERNAL: run as the Claude-in-Chrome stdio MCP bridge. Spawned as a
-    /// subprocess of the cc-rust MCP manager when --chrome is active.
-    /// Connects to the native-host socket and exposes the first-party
-    /// browser tool surface via MCP.
-    #[arg(long = "claude-in-chrome-mcp", hide = true)]
-    claude_in_chrome_mcp: bool,
-
-    /// Disable all network access for the current session. Forwarded to
-    /// [`crate::sandbox::SandboxPolicy`] so shell subprocesses and WebFetch
-    /// are both blocked.
-    #[arg(long = "no-network")]
-    no_network: bool,
-
-    /// Launch web UI mode (HTTP server with chat interface).
-    #[arg(long)]
-    web: bool,
-
-    /// Port for the web UI server (default: 3001).
-    #[arg(long = "web-port", default_value_t = 3001)]
-    web_port: u16,
-
-    /// Do not auto-open browser when starting web UI.
-    #[arg(long = "no-open")]
-    no_open: bool,
-
-    /// Inline prompt (positional argument or via stdin in print mode)
-    prompt: Vec<String>,
-}
-
-// ---------------------------------------------------------------------------
-// Log housekeeping
-// ---------------------------------------------------------------------------
-
-/// Delete log files older than `retention_days` in the given directory.
-/// Only removes files matching the `cc-rust.log.YYYY-MM-DD` pattern.
-fn cleanup_old_logs(log_dir: &std::path::Path, retention_days: u64) {
-    let cutoff =
-        std::time::SystemTime::now() - std::time::Duration::from_secs(retention_days * 86400);
-    let entries = match std::fs::read_dir(log_dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if !name.starts_with("cc-rust.log.") {
-            continue;
-        }
-        if let Ok(meta) = entry.metadata() {
-            let modified = meta.modified().unwrap_or(std::time::SystemTime::now());
-            if modified < cutoff {
-                let _ = std::fs::remove_file(entry.path());
-            }
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
 
 fn main() -> ExitCode {
-    // Load .env in priority order (later loads do NOT override earlier ones):
-    //   1. ~/.cc-rust/.env        (global user config)
-    //   2. <exe-dir>/.env         (portable, next to the binary)
-    //   3. <cwd>/.env             (project-local)
-    if let Ok(global_dir) = settings::global_claude_dir() {
-        let global_env = global_dir.join(".env");
-        let _ = dotenvy::from_path(&global_env);
-    }
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            let exe_env = exe_dir.join(".env");
-            let _ = dotenvy::from_path(&exe_env);
-        }
-    }
-    let _ = dotenvy::dotenv();
+    startup::load_env_files();
 
     // Phase A: parse args first so fast paths can exit immediately
     let cli = Cli::parse();
@@ -290,134 +121,24 @@ fn main() -> ExitCode {
     // REPL, no HTTP server. Just bridge Chrome <-> local socket and exit
     // when Chrome closes stdin.
     if cli.chrome_native_host {
-        let rt = tokio::runtime::Runtime::new().expect("create tokio runtime");
-        return rt.block_on(async {
-            match crate::browser::native_host::run().await {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(e) => {
-                    eprintln!("chrome-native-host error: {e:#}");
-                    ExitCode::FAILURE
-                }
-            }
-        });
+        return startup::fast_paths::run_chrome_native_host();
     }
 
     // Fast path: --claude-in-chrome-mcp
     // Spawned as a stdio MCP subprocess by the cc-rust MCP manager when
     // --chrome is active. Bridges MCP <-> native-host socket.
     if cli.claude_in_chrome_mcp {
-        let rt = tokio::runtime::Runtime::new().expect("create tokio runtime");
-        return rt.block_on(async {
-            match crate::browser::mcp_bridge::run().await {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(e) => {
-                    eprintln!("claude-in-chrome-mcp error: {e:#}");
-                    ExitCode::FAILURE
-                }
-            }
-        });
+        return startup::fast_paths::run_claude_in_chrome_mcp();
     }
 
-    // Initialize tracing (log level based on --verbose)
-    // Two layers: stderr (warn default) + file (~/.cc-rust/logs/, always debug).
-    let log_level = if cli.verbose { "debug" } else { "warn" };
-    let stderr_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(log_level));
-
-    let log_dir = crate::config::paths::logs_dir();
-    if let Err(e) = std::fs::create_dir_all(&log_dir) {
-        eprintln!(
-            "warning: failed to create log directory {}: {}. File logging disabled.",
-            log_dir.display(),
-            e
-        );
-    }
-    cleanup_old_logs(&log_dir, 7);
-    let file_appender = tracing_appender::rolling::daily(&log_dir, "cc-rust.log");
-    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-
-    use tracing_subscriber::layer::SubscriberExt;
-    use tracing_subscriber::util::SubscriberInitExt;
-    use tracing_subscriber::Layer;
-
-    tracing_subscriber::registry()
-        // stderr layer -> respects --verbose / RUST_LOG
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_target(false)
-                .with_filter(stderr_filter),
-        )
-        // file layer -> always debug, with timestamps + target + line numbers
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_writer(non_blocking)
-                .with_ansi(false)
-                .with_target(true)
-                .with_line_number(true)
-                .with_filter(tracing_subscriber::EnvFilter::new(
-                    "debug,reqwest=warn,hyper_util=warn,hyper=warn,h2=warn,rustls=warn,ignore=warn,globset=warn",
-                )),
-        )
-        .init();
+    // Initialize tracing (stderr + file). Guard must outlive the process.
+    let _tracing_guard = startup::logging::init_tracing(cli.verbose);
 
     info!("claude-code-rs v{}", env!("CARGO_PKG_VERSION"));
 
     // Fast path: --dump-system-prompt
     if cli.dump_system_prompt {
-        plugins::init_plugins();
-        let tools = registry::get_all_tools();
-        let provider_default =
-            crate::api::client::ApiClient::from_env().map(|c| c.config().default_model.clone());
-        let model_owned = cli
-            .model
-            .clone()
-            .or(provider_default)
-            .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
-        let model = model_owned.as_str();
-        let cwd = resolve_cwd(&cli);
-
-        // Populate the browser MCP server registry from config alone (no live
-        // connection). Config-flagged servers (`"browserMcp": true`) are
-        // authoritative; the heuristic half would need connected tools and
-        // isn't exercised here; use `--init-only` for that path.
-        let cwd_path = std::path::Path::new(&cwd);
-        let server_configs =
-            crate::mcp::discovery::discover_mcp_servers(cwd_path).unwrap_or_default();
-        let mut browser_servers =
-            crate::browser::detection::detect_browser_servers(&server_configs, &tools);
-        // Mirror the full-init path: when Chrome subsystem is requested via
-        // CLI / env, pre-register the first-party server name so the
-        // `# Browser Automation` prompt fires under --dump-system-prompt too.
-        let chrome_config_default = settings::load_and_merge(&cwd)
-            .ok()
-            .and_then(|cfg| cfg.claude_in_chrome_default_enabled);
-        let chrome_wanted = chrome_requested(&cli, chrome_config_default);
-        if chrome_wanted {
-            browser_servers
-                .insert(crate::browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string());
-        }
-        crate::browser::detection::install_browser_servers(browser_servers);
-
-        // Best-effort: load merged settings so --dump-system-prompt reflects
-        // language/output_style overrides without requiring full bootstrap.
-        let dump_settings = crate::config::settings::load_effective(std::path::Path::new(&cwd))
-            .ok()
-            .map(|loaded| loaded.effective);
-        let dump_lang = dump_settings.as_ref().and_then(|s| s.language.clone());
-        let dump_style = dump_settings.as_ref().and_then(|s| s.output_style.clone());
-        let (parts, _, _) = crate::engine::system_prompt::build_system_prompt(
-            cli.system_prompt.as_deref(),
-            cli.append_system_prompt.as_deref(),
-            &tools,
-            model,
-            &cwd,
-            dump_lang.as_deref(),
-            dump_style.as_deref(),
-        );
-        for part in &parts {
-            println!("{}", part);
-        }
-        return ExitCode::SUCCESS;
+        return startup::fast_paths::run_dump_system_prompt(&cli);
     }
 
     // Phase B: full initialization
@@ -888,9 +609,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             use std::io::Read;
             let mut buf = String::new();
             std::io::stdin().read_to_string(&mut buf)?;
-            return run_json_mode(&engine, buf.trim()).await;
+            return startup::modes::run_json_mode(&engine, buf.trim()).await;
         }
-        return run_json_mode(&engine, &prompt).await;
+        return startup::modes::run_json_mode(&engine, &prompt).await;
     }
 
     // Plain text print mode (-p without --output-format json)
@@ -900,7 +621,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             error!("print mode requires a prompt argument");
             return Ok(ExitCode::FAILURE);
         }
-        return run_print_mode(&engine, &prompt).await;
+        return startup::modes::run_print_mode(&engine, &prompt).await;
     }
 
     // B.10: Web UI mode
@@ -1025,176 +746,5 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             error!("TUI error: {:#}", e);
             Ok(ExitCode::FAILURE)
         }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// JSON output mode (for SDK consumers -- JSONL on stdout)
-// ---------------------------------------------------------------------------
-
-async fn run_json_mode(engine: &QueryEngine, prompt: &str) -> anyhow::Result<ExitCode> {
-    use futures::StreamExt;
-
-    let stream = engine.submit_message(prompt, QuerySource::Sdk);
-    let mut stream = std::pin::pin!(stream);
-    let mut exit_code = ExitCode::SUCCESS;
-
-    while let Some(msg) = stream.next().await {
-        let json = serde_json::to_string(&msg).context("failed to serialize SdkMessage to JSON")?;
-        println!("{}", json);
-
-        if let crate::engine::sdk_types::SdkMessage::Result(ref result) = msg {
-            if result.is_error {
-                exit_code = ExitCode::FAILURE;
-            }
-        }
-    }
-
-    Ok(exit_code)
-}
-
-// ---------------------------------------------------------------------------
-// Print mode (non-interactive)
-// ---------------------------------------------------------------------------
-
-async fn run_print_mode(engine: &QueryEngine, prompt: &str) -> anyhow::Result<ExitCode> {
-    use futures::StreamExt;
-
-    let stream = engine.submit_message(prompt, QuerySource::Sdk);
-    let mut stream = std::pin::pin!(stream);
-
-    let mut exit_code = ExitCode::SUCCESS;
-
-    while let Some(msg) = stream.next().await {
-        match &msg {
-            crate::engine::sdk_types::SdkMessage::Assistant(assistant_msg) => {
-                for block in &assistant_msg.message.content {
-                    if let crate::types::message::ContentBlock::Text { text } = block {
-                        print!("{}", text);
-                    }
-                }
-            }
-            crate::engine::sdk_types::SdkMessage::Result(result) => {
-                if result.is_error {
-                    exit_code = ExitCode::FAILURE;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    println!(); // trailing newline
-    Ok(exit_code)
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Resolve the working directory from CLI args or environment.
-fn resolve_cwd(cli: &Cli) -> String {
-    cli.cwd.clone().unwrap_or_else(|| {
-        std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| ".".to_string())
-    })
-}
-
-fn chrome_cli_override(cli: &Cli) -> Option<bool> {
-    if cli.chrome {
-        Some(true)
-    } else if cli.no_chrome {
-        Some(false)
-    } else {
-        None
-    }
-}
-
-fn chrome_requested(cli: &Cli, config_default: Option<bool>) -> bool {
-    matches!(
-        crate::browser::session::resolve_enablement(chrome_cli_override(cli), config_default),
-        crate::browser::session::ChromeEnablement::Enabled
-    )
-}
-
-/// Resolve the permission mode from CLI arg or config.
-fn resolve_permission_mode(cli_mode: Option<&str>, config_mode: Option<&str>) -> PermissionMode {
-    let mode_str = cli_mode.or(config_mode).unwrap_or("default");
-    PermissionMode::parse(mode_str)
-}
-
-/// Build the [`ToolPermissionContext`] from layered settings.
-///
-/// Pulls allow/ask/deny lists from `EffectiveSettings::permissions` and
-/// folds them into per-source rule maps tagged with the source of the
-/// settings layer that provided them. `enableBypassMode` /
-/// `enableAutoMode` from settings gate the corresponding modes at runtime.
-fn build_tool_permission_context(
-    mode: PermissionMode,
-    loaded: &settings::LoadedSettings,
-) -> ToolPermissionContext {
-    use settings::SettingsSource;
-
-    let merged = &loaded.effective;
-
-    let mut always_allow_rules: HashMap<String, Vec<String>> = HashMap::new();
-    let mut always_deny_rules: HashMap<String, Vec<String>> = HashMap::new();
-    let mut always_ask_rules: HashMap<String, Vec<String>> = HashMap::new();
-    let mut additional_working_directories = HashMap::new();
-
-    let push_rules =
-        |map: &mut HashMap<String, Vec<String>>, source: SettingsSource, items: &[String]| {
-            if items.is_empty() {
-                return;
-            }
-            map.entry(source.as_str().to_string())
-                .or_default()
-                .extend(items.iter().cloned());
-        };
-
-    // Pull each layer's rules into the right bucket. We iterate from
-    // lowest -> highest priority so /permissions show prints them in a
-    // stable order; the matcher itself treats sources uniformly.
-    let layers: [(
-        SettingsSource,
-        Option<&crate::config::settings::RawSettings>,
-    ); 4] = [
-        (SettingsSource::Managed, loaded.managed.as_ref()),
-        (SettingsSource::User, loaded.user.as_ref()),
-        (SettingsSource::Project, loaded.project.as_ref()),
-        (SettingsSource::Local, loaded.local.as_ref()),
-    ];
-
-    for (src, raw_opt) in layers {
-        let Some(raw) = raw_opt else { continue };
-        if let Some(perms) = raw.permissions.as_ref() {
-            push_rules(&mut always_allow_rules, src, &perms.allow);
-            push_rules(&mut always_deny_rules, src, &perms.deny);
-            push_rules(&mut always_ask_rules, src, &perms.ask);
-            for dir in &perms.additional_directories {
-                additional_working_directories.insert(
-                    dir.clone(),
-                    crate::types::tool::AdditionalWorkingDirectory {
-                        path: dir.clone(),
-                        read_only: false,
-                    },
-                );
-            }
-        }
-        if let Some(legacy) = raw.allowed_tools.as_ref() {
-            push_rules(&mut always_allow_rules, src, legacy);
-        }
-    }
-
-    ToolPermissionContext {
-        mode,
-        additional_working_directories,
-        always_allow_rules,
-        always_deny_rules,
-        always_ask_rules,
-        session_allow_rules: HashMap::new(),
-        is_bypass_permissions_mode_available: merged.permissions.enable_bypass_mode.unwrap_or(true),
-        is_auto_mode_available: Some(merged.permissions.enable_auto_mode.unwrap_or(true)),
-        pre_plan_mode: None,
     }
 }
