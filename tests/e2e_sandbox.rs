@@ -62,7 +62,12 @@ fn schema_file_declares_extended_sandbox_shape() {
         .pointer("/properties/sandbox/properties/network/properties")
         .and_then(|p| p.as_object())
         .expect("network properties exist");
-    for must_have in ["disabled", "allowedDomains", "httpProxyPort", "socksProxyPort"] {
+    for must_have in [
+        "disabled",
+        "allowedDomains",
+        "httpProxyPort",
+        "socksProxyPort",
+    ] {
         assert!(
             net_props.contains_key(must_have),
             "sandbox.network schema missing key '{}'",

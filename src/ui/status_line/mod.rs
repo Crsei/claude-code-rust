@@ -18,7 +18,5 @@ pub mod runner;
 // `payload::VimStatus` for the future wire-up of vim-mode reporting;
 // pulling it up front is left out deliberately so the active surface
 // stays small.
-pub use payload::{
-    ContextWindowStatus, CostStatus, ModelInfo, StatusLinePayload, WorkspaceStatus,
-};
+pub use payload::{ContextWindowStatus, CostStatus, ModelInfo, StatusLinePayload, WorkspaceStatus};
 pub use runner::{StatusLineOutput, StatusLineRunner};

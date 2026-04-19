@@ -218,7 +218,13 @@ impl Tool for BashTool {
             .get("dangerouslyDisableSandbox")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        if wants_escape && !app_state.settings.sandbox.allow_unsandboxed_commands.unwrap_or(true) {
+        if wants_escape
+            && !app_state
+                .settings
+                .sandbox
+                .allow_unsandboxed_commands
+                .unwrap_or(true)
+        {
             return PermissionResult::Deny {
                 message: "sandbox.allowUnsandboxedCommands=false rejects \
                           dangerouslyDisableSandbox"
@@ -284,8 +290,7 @@ impl Tool for BashTool {
             .unwrap_or(false);
         let app_state_arc = (ctx.get_app_state)();
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let policy =
-            policy_from_app_state(&app_state_arc, cwd.clone(), false);
+        let policy = policy_from_app_state(&app_state_arc, cwd.clone(), false);
 
         // Excluded-commands check: if the command matches, short-circuit the
         // sandbox wrapping (runs in the host) unless unsandboxed is forbidden.

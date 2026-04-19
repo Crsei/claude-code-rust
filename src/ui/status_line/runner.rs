@@ -340,7 +340,11 @@ mod tests {
             .expect("refresh to start");
         handle.await.expect("join");
         let output = runner.latest();
-        assert!(output.error.is_none(), "unexpected error: {:?}", output.error);
+        assert!(
+            output.error.is_none(),
+            "unexpected error: {:?}",
+            output.error
+        );
         assert!(
             output.stdout.contains("sess-1"),
             "expected payload echo, got: {:?}",

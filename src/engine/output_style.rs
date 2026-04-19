@@ -152,7 +152,10 @@ mod tests {
         assert!(matches!(resolve("default", cwd), OutputStyle::Default));
         assert!(matches!(resolve("Default", cwd), OutputStyle::Default));
         assert!(matches!(resolve("", cwd), OutputStyle::Default));
-        assert!(matches!(resolve("Explanatory", cwd), OutputStyle::Explanatory));
+        assert!(matches!(
+            resolve("Explanatory", cwd),
+            OutputStyle::Explanatory
+        ));
         assert!(matches!(resolve("LEARNING", cwd), OutputStyle::Learning));
     }
 

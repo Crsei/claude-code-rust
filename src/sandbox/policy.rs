@@ -77,11 +77,7 @@ fn command_matches_any(cmd: &str, rules: &[String]) -> bool {
         return false;
     }
     for rule in rules {
-        let r = rule
-            .trim()
-            .trim_end_matches('*')
-            .trim_end()
-            .to_string();
+        let r = rule.trim().trim_end_matches('*').trim_end().to_string();
         if r.is_empty() {
             continue;
         }

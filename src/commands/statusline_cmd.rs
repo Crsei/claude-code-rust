@@ -47,9 +47,7 @@ impl CommandHandler for StatusLineHandler {
         let runner = ctx.app_state.status_line_runner.clone();
 
         let result = match sub.as_str() {
-            "" | "status" | "show" => {
-                render_status(&ctx.app_state.settings.status_line, &runner)
-            }
+            "" | "status" | "show" => render_status(&ctx.app_state.settings.status_line, &runner),
             "clear" | "remove" | "unset" => clear_command(ctx).await,
             "set" => set_command(rest, ctx).await,
             "enable" => toggle_enabled(Some(true), ctx).await,
@@ -111,7 +109,9 @@ fn render_status(s: &StatusLineSettings, runner: &StatusLineRunner) -> Result<St
     ));
     out.push_str(&format!(
         "  padding:           {}\n",
-        s.padding.map(|p| p.to_string()).unwrap_or_else(|| "0".into())
+        s.padding
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| "0".into())
     ));
     out.push_str(&format!(
         "  refreshIntervalMs: {} (effective: {})\n",
@@ -160,7 +160,9 @@ async fn set_command(rest: &str, ctx: &mut CommandContext) -> Result<String> {
         return Ok("Usage: /statusline set <command ...>".into());
     }
     let written = mutate_user_settings(|raw| {
-        let sl = raw.status_line.get_or_insert_with(StatusLineSettings::default);
+        let sl = raw
+            .status_line
+            .get_or_insert_with(StatusLineSettings::default);
         sl.r#type = Some("command".into());
         sl.command = Some(cmd.to_string());
         if sl.enabled == Some(false) {
@@ -185,7 +187,9 @@ async fn set_command(rest: &str, ctx: &mut CommandContext) -> Result<String> {
 
 async fn clear_command(ctx: &mut CommandContext) -> Result<String> {
     let written = mutate_user_settings(|raw| {
-        let sl = raw.status_line.get_or_insert_with(StatusLineSettings::default);
+        let sl = raw
+            .status_line
+            .get_or_insert_with(StatusLineSettings::default);
         sl.command = None;
         sl.script = None;
     })?;
@@ -202,7 +206,9 @@ async fn clear_command(ctx: &mut CommandContext) -> Result<String> {
 
 async fn toggle_enabled(enabled: Option<bool>, ctx: &mut CommandContext) -> Result<String> {
     let written = mutate_user_settings(|raw| {
-        let sl = raw.status_line.get_or_insert_with(StatusLineSettings::default);
+        let sl = raw
+            .status_line
+            .get_or_insert_with(StatusLineSettings::default);
         sl.enabled = enabled;
     })?;
     ctx.app_state.settings.status_line.enabled = enabled;
@@ -224,7 +230,9 @@ async fn set_u64_field(field: &str, rest: &str, ctx: &mut CommandContext) -> Res
         .parse()
         .map_err(|_| anyhow::anyhow!("expected a positive integer, got: {:?}", rest))?;
     let written = mutate_user_settings(|raw| {
-        let sl = raw.status_line.get_or_insert_with(StatusLineSettings::default);
+        let sl = raw
+            .status_line
+            .get_or_insert_with(StatusLineSettings::default);
         match field {
             "refreshIntervalMs" => sl.refresh_interval_ms = Some(n),
             "timeoutMs" => sl.timeout_ms = Some(n),
@@ -253,7 +261,9 @@ async fn set_padding(rest: &str, ctx: &mut CommandContext) -> Result<String> {
         .parse()
         .map_err(|_| anyhow::anyhow!("expected a non-negative integer, got: {:?}", rest))?;
     let written = mutate_user_settings(|raw| {
-        let sl = raw.status_line.get_or_insert_with(StatusLineSettings::default);
+        let sl = raw
+            .status_line
+            .get_or_insert_with(StatusLineSettings::default);
         sl.padding = Some(n);
     })?;
     ctx.app_state.settings.status_line.padding = Some(n);

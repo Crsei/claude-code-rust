@@ -146,10 +146,7 @@ pub async fn run_tui(
         let lang = crate::voice::language::normalize_language_for_stt(
             app_state.settings.language.as_deref(),
         );
-        app.set_voice_settings(
-            app_state.settings.voice_enabled.unwrap_or(false),
-            lang.code,
-        );
+        app.set_voice_settings(app_state.settings.voice_enabled.unwrap_or(false), lang.code);
     }
 
     // ── Create channels ────────────────────────────────────────────
@@ -737,25 +734,14 @@ async fn export_to_editor(body: &str) -> anyhow::Result<std::path::PathBuf> {
         // Leave the alternate screen so the editor can paint over a real
         // terminal. Re-entering on the way out is handled by the caller
         // via the dirty flag + next render.
-        let _ = execute!(
-            std::io::stdout(),
-            LeaveAlternateScreen,
-            cursor::Show
-        );
+        let _ = execute!(std::io::stdout(), LeaveAlternateScreen, cursor::Show);
         let _ = terminal::disable_raw_mode();
 
-        let status = tokio::process::Command::new(&ed)
-            .arg(&path)
-            .status()
-            .await;
+        let status = tokio::process::Command::new(&ed).arg(&path).status().await;
 
         // Always re-arm the terminal, even on editor failure.
         let _ = terminal::enable_raw_mode();
-        let _ = execute!(
-            std::io::stdout(),
-            EnterAlternateScreen,
-            cursor::Hide
-        );
+        let _ = execute!(std::io::stdout(), EnterAlternateScreen, cursor::Hide);
 
         match status {
             Ok(s) if s.success() => {}

@@ -84,8 +84,7 @@ impl TerminalEnvConfig {
                 }
                 "CLAUDE_CODE_SCROLL_SPEED" => {
                     if let Ok(n) = v.as_ref().trim().parse::<u16>() {
-                        cfg.scroll_speed =
-                            n.clamp(Self::MIN_SCROLL_SPEED, Self::MAX_SCROLL_SPEED);
+                        cfg.scroll_speed = n.clamp(Self::MIN_SCROLL_SPEED, Self::MAX_SCROLL_SPEED);
                     }
                 }
                 _ => {}
@@ -137,9 +136,12 @@ mod tests {
     #[test]
     fn disable_mouse_accepts_common_truthy() {
         for value in ["1", "true", "YES", "on"] {
-            let cfg =
-                TerminalEnvConfig::from_iter(vec![("CLAUDE_CODE_DISABLE_MOUSE", value)]);
-            assert!(cfg.disable_mouse, "value {:?} should enable disable_mouse", value);
+            let cfg = TerminalEnvConfig::from_iter(vec![("CLAUDE_CODE_DISABLE_MOUSE", value)]);
+            assert!(
+                cfg.disable_mouse,
+                "value {:?} should enable disable_mouse",
+                value
+            );
         }
     }
 

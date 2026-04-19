@@ -203,8 +203,7 @@ mod tests {
     async fn test_model_switch_allowed_when_in_available_models() {
         let handler = ModelHandler;
         let mut ctx = test_ctx();
-        ctx.app_state.settings.available_models =
-            vec!["claude-opus-4-20250514".to_string()];
+        ctx.app_state.settings.available_models = vec!["claude-opus-4-20250514".to_string()];
         let result = handler.execute("opus", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(text) => assert!(text.contains("Model changed")),
@@ -217,8 +216,7 @@ mod tests {
     async fn test_model_show_lists_available_models() {
         let handler = ModelHandler;
         let mut ctx = test_ctx();
-        ctx.app_state.settings.available_models =
-            vec!["alpha".to_string(), "beta".to_string()];
+        ctx.app_state.settings.available_models = vec!["alpha".to_string(), "beta".to_string()];
         let result = handler.execute("", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(text) => {

@@ -330,9 +330,7 @@ impl StatusLineSettings {
         const DEFAULT_MS: u64 = 2_000;
         const MIN_MS: u64 = 100;
         const MAX_MS: u64 = 30_000;
-        self.timeout_ms
-            .unwrap_or(DEFAULT_MS)
-            .clamp(MIN_MS, MAX_MS)
+        self.timeout_ms.unwrap_or(DEFAULT_MS).clamp(MIN_MS, MAX_MS)
     }
 
     /// The command the runner should spawn, if any. Prefers `command`;
@@ -352,7 +350,12 @@ impl StatusLineSettings {
         if matches!(self.enabled, Some(false)) {
             return false;
         }
-        let ty = self.r#type.as_deref().unwrap_or("").trim().to_ascii_lowercase();
+        let ty = self
+            .r#type
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
         if ty == "none" {
             return false;
         }

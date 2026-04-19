@@ -18,11 +18,7 @@ fn schema_file_declares_expected_properties() {
         .join("docs")
         .join("schemas")
         .join("keybindings.schema.json");
-    assert!(
-        path.exists(),
-        "expected schema at {}",
-        path.display()
-    );
+    assert!(path.exists(), "expected schema at {}", path.display());
     let txt = std::fs::read_to_string(&path).expect("read schema");
     let v: serde_json::Value = serde_json::from_str(&txt).expect("schema is valid JSON");
 

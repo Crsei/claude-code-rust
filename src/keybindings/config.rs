@@ -182,13 +182,7 @@ impl fmt::Display for KeybindingsConfigIssue {
                 context,
                 chord,
                 error,
-            } => write!(
-                f,
-                "[{}] chord '{}': {}",
-                context.as_str(),
-                chord,
-                error
-            ),
+            } => write!(f, "[{}] chord '{}': {}", context.as_str(), chord, error),
             KeybindingsConfigIssue::BadAction {
                 context,
                 chord,
@@ -252,7 +246,10 @@ mod tests {
         match err {
             KeybindingsConfigError::Issues(issues) => {
                 assert_eq!(issues.len(), 1);
-                assert!(matches!(issues[0], KeybindingsConfigIssue::UnknownContext(_)));
+                assert!(matches!(
+                    issues[0],
+                    KeybindingsConfigIssue::UnknownContext(_)
+                ));
             }
             _ => panic!("expected Issues"),
         }
@@ -319,7 +316,11 @@ mod tests {
         let err = UserBindings::parse_json(text).unwrap_err();
         match err {
             KeybindingsConfigError::Issues(issues) => {
-                assert!(issues.len() >= 2, "expected at least 2 issues, got {}", issues.len());
+                assert!(
+                    issues.len() >= 2,
+                    "expected at least 2 issues, got {}",
+                    issues.len()
+                );
             }
             _ => panic!("expected Issues"),
         }

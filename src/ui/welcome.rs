@@ -504,7 +504,6 @@ pub fn welcome_height_for(width: u16) -> u16 {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
