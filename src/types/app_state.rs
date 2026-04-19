@@ -39,6 +39,12 @@ pub struct AppState {
     pub autonomous_tick_ms: Option<u64>,
     /// Whether user is looking at terminal (affects autonomy level)
     pub terminal_focus: bool,
+    /// Shared keybinding registry (default + user, with hot reload).
+    ///
+    /// Populated at startup from `~/.cc-rust/keybindings.json` (issue #10).
+    /// Multiple UI surfaces (Rust TUI, IPC-driven OpenTUI) share the same
+    /// handle so reloads are observed everywhere.
+    pub keybindings: crate::keybindings::KeybindingRegistry,
 }
 
 /// 设置 JSON (运行时投影)
@@ -113,6 +119,7 @@ impl Default for AppState {
             is_assistant_mode: false,
             autonomous_tick_ms: None,
             terminal_focus: true,
+            keybindings: crate::keybindings::KeybindingRegistry::with_defaults(),
         }
     }
 }

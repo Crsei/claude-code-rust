@@ -64,6 +64,15 @@ pub fn credentials_path() -> PathBuf {
     data_root().join("credentials.json")
 }
 
+/// `{data_root}/keybindings.json` — user keybinding overrides (issue #10).
+///
+/// Location matches the Claude Code spec convention of sitting next to
+/// `settings.json`; on cc-rust that's inside `{data_root}` rather than
+/// `~/.claude/` to preserve path isolation.
+pub fn keybindings_path() -> PathBuf {
+    data_root().join("keybindings.json")
+}
+
 pub fn runs_dir(session_id: &str) -> PathBuf {
     data_root().join("runs").join(session_id)
 }

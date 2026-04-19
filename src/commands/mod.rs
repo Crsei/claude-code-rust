@@ -45,6 +45,9 @@ pub mod add_dir;
 // Sandbox
 pub mod sandbox_cmd;
 
+// Keybindings
+pub mod keybindings_cmd;
+
 // Export
 pub mod audit_export;
 pub mod export;
@@ -402,6 +405,12 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "View or toggle sandbox + network access settings".into(),
             handler: Box::new(sandbox_cmd::SandboxHandler),
+        },
+        Command {
+            name: "keybindings".into(),
+            aliases: vec!["keys".into(), "shortcuts".into()],
+            description: "View, edit, or reload keybindings.json".into(),
+            handler: Box::new(keybindings_cmd::KeybindingsHandler),
         },
     ]
 }

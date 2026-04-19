@@ -16,6 +16,7 @@ mod commands;
 mod computer_use;
 mod config;
 mod engine;
+mod keybindings;
 mod permissions;
 mod query;
 mod sandbox;
@@ -725,6 +726,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         is_assistant_mode: false,
         autonomous_tick_ms: None,
         terminal_focus: true,
+        keybindings: crate::keybindings::KeybindingRegistry::with_user_path(Some(
+            crate::config::paths::keybindings_path(),
+        )),
     };
 
     // B.5: Init-only fast path
