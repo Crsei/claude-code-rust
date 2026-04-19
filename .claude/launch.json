@@ -12,6 +12,13 @@
         "HTTPS_PROXY": "http://127.0.0.1:7890",
         "HTTP_PROXY": "http://127.0.0.1:7890"
       }
+    },
+    {
+      "name": "web-ui-dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173,
+      "cwd": "web-ui"
     }
   ]
 }

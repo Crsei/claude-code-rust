@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { MessageList } from './MessageList'
-import { InputBar } from './InputBar'
+import { ComposerBar } from './ComposerBar'
 import { StreamingText } from './StreamingText'
 import { StreamingBlocks } from './StreamingBlocks'
 import { ResultBanner } from './ResultBanner'
@@ -50,7 +50,7 @@ export function ChatPanel() {
           <div ref={scrollRef} />
         </div>
       </div>
-      <InputBar
+      <ComposerBar
         onSend={sendMessage}
         onAbort={abort}
         isStreaming={isStreaming}
