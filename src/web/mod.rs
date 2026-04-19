@@ -27,6 +27,14 @@ pub fn build_router(state: WebState) -> Router {
         // Phase 3: Settings and command endpoints
         .route("/api/settings", post(handlers::settings_handler))
         .route("/api/command", post(handlers::command_handler))
+        // Phase 2 of the web UI overhaul: session management
+        .route("/api/sessions", get(handlers::sessions_list_handler))
+        .route("/api/sessions/new", post(handlers::session_new_handler))
+        .route("/api/sessions/{id}", get(handlers::session_detail_handler))
+        .route(
+            "/api/sessions/{id}/resume",
+            post(handlers::session_resume_handler),
+        )
         // Static files (SPA)
         .fallback(static_files::static_handler)
         // Middleware

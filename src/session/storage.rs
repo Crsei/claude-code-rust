@@ -31,6 +31,19 @@ pub struct SessionInfo {
     pub message_count: usize,
     /// Working directory at the time the session was created.
     pub cwd: String,
+    /// Derived title — first user message text, truncated. Empty if not computable.
+    #[serde(default)]
+    pub title: String,
+    /// Stable grouping key for the workspace. Sessions sharing the same git
+    /// common-dir (or canonical path for non-git dirs) get the same key.
+    #[serde(default)]
+    pub workspace_key: String,
+    /// Root directory for the workspace (git root or the session cwd).
+    #[serde(default)]
+    pub workspace_root: String,
+    /// Human-readable workspace label (basename of the root).
+    #[serde(default)]
+    pub workspace_name: String,
 }
 
 /// On-disk representation of a saved session.
@@ -108,7 +121,12 @@ fn git_common_dir(repo: &Repository) -> PathBuf {
     }
 }
 
-fn workspace_key(path: &Path) -> String {
+/// Stable workspace key for grouping sessions that belong to the same repo.
+///
+/// For git repositories (including worktrees) this is the canonical form of
+/// the git common directory, so all worktrees of the same repo share a key.
+/// For non-git directories it's the canonical path (or stable workspace path).
+pub fn workspace_key(path: &Path) -> String {
     if let Ok(repo) = Repository::discover(path) {
         return normalize_match_key(&git_common_dir(&repo));
     }
@@ -116,9 +134,126 @@ fn workspace_key(path: &Path) -> String {
     normalize_match_key(&stable_workspace_path(path))
 }
 
+/// Return the root directory for the workspace (git root when available, else
+/// the path itself). This is a display-friendly absolute path.
+pub fn workspace_root(path: &Path) -> PathBuf {
+    if let Ok(repo) = Repository::discover(path) {
+        let common = git_common_dir(&repo);
+        // `.git` or `worktrees/<name>` live under the root -- strip one level
+        // so the root points at the working directory, not the git metadata.
+        if common.file_name().and_then(|s| s.to_str()) == Some(".git") {
+            if let Some(parent) = common.parent() {
+                return parent.to_path_buf();
+            }
+        }
+        return common;
+    }
+    stable_workspace_path(path)
+}
+
+/// Display name for a workspace — the basename of the workspace root.
+pub fn workspace_name(root: &Path) -> String {
+    root.file_name()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| root.to_string_lossy().to_string())
+}
+
+/// Extract a title from the first non-meta user message in a SessionFile.
+/// Returns an empty string if no suitable message exists.
+fn derive_title(messages: &[SerializableMessage]) -> String {
+    for sm in messages {
+        if sm.msg_type != "user" {
+            continue;
+        }
+        // Skip meta messages (system-injected context).
+        if sm
+            .data
+            .get("is_meta")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            continue;
+        }
+
+        let text = extract_user_text(&sm.data);
+        if text.is_empty() {
+            continue;
+        }
+
+        let trimmed = text.trim();
+        // Pick the first non-empty line, then truncate.
+        let first_line = trimmed.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+        let first_line = first_line.trim();
+        if first_line.is_empty() {
+            continue;
+        }
+
+        const MAX: usize = 80;
+        let out: String = first_line.chars().take(MAX).collect();
+        if first_line.chars().count() > MAX {
+            return format!("{}…", out);
+        }
+        return out;
+    }
+    String::new()
+}
+
+/// Pull plain text from the `content` field of a serialized user message.
+/// Accepts the two historical representations: a bare string or a list of
+/// content blocks with `{type: "text", text: ...}` entries.
+fn extract_user_text(data: &serde_json::Value) -> String {
+    let Some(content) = data.get("content") else {
+        return String::new();
+    };
+
+    match content {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Array(blocks) => blocks
+            .iter()
+            .filter_map(|b| {
+                let ty = b.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                if ty != "text" {
+                    return None;
+                }
+                b.get("text").and_then(|v| v.as_str()).map(|s| s.to_string())
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
+    }
+}
+
+fn build_session_info(file: SessionFile) -> SessionInfo {
+    let cwd_path = Path::new(&file.cwd);
+    let ws_root = workspace_root(cwd_path);
+    let ws_key = workspace_key(cwd_path);
+    let ws_name = workspace_name(&ws_root);
+    let title = derive_title(&file.messages);
+    SessionInfo {
+        session_id: file.session_id,
+        created_at: file.created_at,
+        last_modified: file.last_modified,
+        message_count: file.messages.len(),
+        cwd: file.cwd,
+        title,
+        workspace_key: ws_key,
+        workspace_root: ws_root.to_string_lossy().to_string(),
+        workspace_name: ws_name,
+    }
+}
+
 fn filter_sessions_for_workspace(mut sessions: Vec<SessionInfo>, cwd: &Path) -> Vec<SessionInfo> {
     let current_workspace = workspace_key(cwd);
-    sessions.retain(|session| workspace_key(Path::new(&session.cwd)) == current_workspace);
+    sessions.retain(|session| {
+        // Use the cached workspace_key when present (new code), fall back to
+        // computing from cwd for sessions written by older builds.
+        if !session.workspace_key.is_empty() {
+            session.workspace_key == current_workspace
+        } else {
+            workspace_key(Path::new(&session.cwd)) == current_workspace
+        }
+    });
     sessions
 }
 
@@ -227,13 +362,7 @@ pub fn list_sessions() -> Result<Vec<SessionInfo>> {
             Err(_) => continue,
         };
 
-        sessions.push(SessionInfo {
-            session_id: file.session_id,
-            created_at: file.created_at,
-            last_modified: file.last_modified,
-            message_count: file.messages.len(),
-            cwd: file.cwd,
-        });
+        sessions.push(build_session_info(file));
     }
 
     // Most recently modified first.
@@ -453,28 +582,24 @@ mod tests {
         std::fs::create_dir_all(&other_dir).unwrap();
         Repository::init(&repo_dir).unwrap();
 
+        fn info(id: &str, cwd: &Path, modified: i64, messages: usize) -> SessionInfo {
+            SessionInfo {
+                session_id: id.into(),
+                created_at: 0,
+                last_modified: modified,
+                message_count: messages,
+                cwd: normalize_display_path(cwd),
+                title: String::new(),
+                workspace_key: workspace_key(cwd),
+                workspace_root: workspace_root(cwd).to_string_lossy().to_string(),
+                workspace_name: workspace_name(&workspace_root(cwd)),
+            }
+        }
+
         let sessions = vec![
-            SessionInfo {
-                session_id: "repo-root".into(),
-                created_at: 0,
-                last_modified: 3,
-                message_count: 10,
-                cwd: normalize_display_path(&repo_dir),
-            },
-            SessionInfo {
-                session_id: "repo-nested".into(),
-                created_at: 0,
-                last_modified: 2,
-                message_count: 8,
-                cwd: normalize_display_path(&nested_dir),
-            },
-            SessionInfo {
-                session_id: "other".into(),
-                created_at: 0,
-                last_modified: 1,
-                message_count: 2,
-                cwd: normalize_display_path(&other_dir),
-            },
+            info("repo-root", &repo_dir, 3, 10),
+            info("repo-nested", &nested_dir, 2, 8),
+            info("other", &other_dir, 1, 2),
         ];
 
         let filtered = filter_sessions_for_workspace(sessions, &nested_dir);
