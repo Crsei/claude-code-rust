@@ -1,56 +1,66 @@
-// Minimal tool system
-//
-// Core tools: Bash, FileRead, FileWrite, FileEdit, Glob, Grep, AskUser
-// Skills: Skill tool for extensibility
+//! Tool system entry point.
+//!
+//! Tools are grouped by domain. Each sub-domain module exposes a `tools()`
+//! aggregator that returns the tools it owns, and `registry.rs` concatenates
+//! those aggregators into the global tool list. This keeps `registry.rs`
+//! decoupled from individual tool implementations, so adding a new tool
+//! touches only its sub-domain's `mod.rs`.
+//!
+//! Placement rules for new tools live in `src/tools/ARCHITECTURE.md`.
 
-pub mod ask_user;
-pub mod bash;
+// --- Domain sub-modules ------------------------------------------------------
+//
+// Filesystem: read, write, search files on the local disk.
+pub mod fs;
+// Execution: spawn subprocesses, drive time, run embedded runtimes.
+pub mod exec;
+
+// --- Infrastructure ----------------------------------------------------------
+//
+// Shared tool-execution machinery (permission pipeline, hook dispatch, etc.)
+// Not tools themselves.
 pub mod execution;
-pub mod file_edit;
-pub mod file_read;
-pub mod file_write;
-pub mod glob_tool;
-pub mod grep;
 pub mod hooks;
 pub mod orchestration;
 pub mod registry;
 
-// Skills tool
+// --- Single-tool / small-cluster modules -------------------------------------
+//
+// Not yet grouped into a sub-domain. Keep this list short — once a new
+// adjacent tool appears, promote the pair into a proper sub-domain instead of
+// stacking here.
+pub mod ask_user;
 pub mod skill;
 
-// Agent tool (Phase 2 migration)
+// Agent sub-domain (already grouped).
 pub mod agent;
-
-// Background agent types (used by Agent tool + query loop + event loop)
+// Background agent types (used by Agent tool + query loop + event loop).
 pub mod background_agents;
 
-// Web tools (Phase 3 migration)
+// Web / network tools.
 pub mod web_fetch;
 pub mod web_search;
 
-// Plan mode + Task tools (Phase 4 migration)
+// Plan mode + Task tools.
 pub mod plan_mode;
 pub mod tasks;
 
-// Worktree tools (Phase 5 migration)
+// Worktree tools.
 pub mod worktree;
 
-// LSP tool (Phase 7 migration)
+// Code intelligence.
 pub mod lsp;
 
-// SendMessage tool (Phase 8 — Teams inter-agent messaging)
+// Inter-agent messaging (Teams).
 pub mod send_message;
 
-// Phase 14C: Additional tools
+// Meta / UX tools.
 pub mod config_tool;
-pub mod powershell;
-pub mod repl;
 pub mod send_user_message;
-pub mod sleep;
 pub mod structured_output;
 
-// Kairos Brief mode
+// Kairos Brief mode.
 pub mod brief;
 
-// SystemStatus tool (Agent subsystem observability)
+// SystemStatus (agent subsystem observability).
 pub mod system_status;

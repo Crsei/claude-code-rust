@@ -445,7 +445,7 @@ mod tests {
             "Bash".to_string(),
             serde_json::json!({"command": "ls"}),
         )];
-        let tools: Tools = vec![Arc::new(crate::tools::bash::BashTool::new())];
+        let tools: Tools = vec![Arc::new(crate::tools::exec::bash::BashTool::new())];
         let batches = partition_tool_calls(&tool_uses, &tools);
         assert_eq!(batches.len(), 1);
         assert!(!batches[0].is_concurrency_safe);
@@ -468,8 +468,8 @@ mod tests {
             ),
         ];
         let tools: Tools = vec![
-            Arc::new(crate::tools::file_read::FileReadTool::new()),
-            Arc::new(crate::tools::glob_tool::GlobTool::new()),
+            Arc::new(crate::tools::fs::file_read::FileReadTool::new()),
+            Arc::new(crate::tools::fs::glob_tool::GlobTool::new()),
         ];
         let batches = partition_tool_calls(&tool_uses, &tools);
         assert_eq!(batches.len(), 1);
@@ -498,9 +498,9 @@ mod tests {
             ),
         ];
         let tools: Tools = vec![
-            Arc::new(crate::tools::file_read::FileReadTool::new()),
-            Arc::new(crate::tools::bash::BashTool::new()),
-            Arc::new(crate::tools::glob_tool::GlobTool::new()),
+            Arc::new(crate::tools::fs::file_read::FileReadTool::new()),
+            Arc::new(crate::tools::exec::bash::BashTool::new()),
+            Arc::new(crate::tools::fs::glob_tool::GlobTool::new()),
         ];
         let batches = partition_tool_calls(&tool_uses, &tools);
         assert_eq!(batches.len(), 3);
