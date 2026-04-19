@@ -1,0 +1,36 @@
+id: subagent.background
+category: subagent
+concurrency_group: subagent-llm-serial
+timeout_sec: 180
+prereq:
+  files:
+    - path: data.txt
+      content: |
+        line 1
+        line 2
+        line 3
+steps:
+  - kind: chat
+    name: spawn-background-agent
+    # A background agent must return its task id synchronously from the Agent
+    # tool even though the underlying work continues after the main turn.
+    message: |
+      Use the Agent tool with run_in_background: true to count the lines in
+      data.txt. The Agent tool call must include "run_in_background": true
+      in its input JSON. After the tool call returns, just describe what it
+      returned to you (don't wait for completion).
+    timeout_sec: 120
+    expect:
+      - tool_call_order: ["Agent"]
+      # The Agent tool call must carry run_in_background=true in the input.
+      - sse_event:
+          type: stream_event
+          match:
+            event:
+              type: content_block_start
+              content_block:
+                type: tool_use
+                name: "Agent"
+                input:
+                  run_in_background: true
+cleanup: {}

@@ -368,7 +368,47 @@ class CaseRunner:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(spec.get("content") or "", encoding="utf-8")
 
+        # Optional git init so worktree-based cases have something to branch from.
+        if prereq.get("git_init"):
+            self._git_init(ws_path)
+
         return ws_path, home_path
+
+    def _git_init(self, ws_path: Path) -> None:
+        # Use a quiet init; fall back silently if git isn't installed so other
+        # cases on the same host can still run.
+        try:
+            subprocess.run(
+                ["git", "init", "-q", "-b", "main"],
+                cwd=str(ws_path),
+                check=True,
+                capture_output=True,
+            )
+            # Minimal identity — avoid host-global config bleed.
+            for k, v in (
+                ("user.email", "suite@example.local"),
+                ("user.name", "cc-rust-suite"),
+                ("commit.gpgsign", "false"),
+            ):
+                subprocess.run(
+                    ["git", "config", k, v],
+                    cwd=str(ws_path),
+                    check=True,
+                    capture_output=True,
+                )
+            # Stage + commit whatever files the case pre-seeded.
+            subprocess.run(
+                ["git", "add", "-A"], cwd=str(ws_path), check=True, capture_output=True
+            )
+            # Allow empty in case no files were seeded.
+            subprocess.run(
+                ["git", "commit", "-q", "--allow-empty", "-m", "suite: initial"],
+                cwd=str(ws_path),
+                check=True,
+                capture_output=True,
+            )
+        except (FileNotFoundError, subprocess.CalledProcessError) as e:
+            self._log("git_init_failed", error=repr(e))
 
     def _cleanup(self, workspace: Path | None, home: Path | None) -> None:
         # Only nuke tempdirs we created — keep fixtures and user-supplied

@@ -1,0 +1,26 @@
+id: subagent.nested
+category: subagent
+# Slow — nested LLM calls compound latency. Schedule alone.
+concurrency_group: subagent-llm-serial
+timeout_sec: 360
+prereq:
+  files:
+    - path: inner/target.txt
+      content: NESTED_OK_TOKEN
+steps:
+  - kind: chat
+    name: delegate-twice
+    # A nested delegation forces the main agent to spawn a child that itself
+    # spawns a grandchild. cc-rust caps depth via MAX_AGENT_DEPTH — we just
+    # want proof that two-level dispatch doesn't deadlock and surfaces the
+    # grandchild's result back up.
+    message: |
+      Use the Agent tool (subagent_type: "general-purpose") and instruct the
+      child agent to ITSELF use the Agent tool again (nested) to read
+      inner/target.txt. The outer agent should forward the grandchild's
+      finding back to you. Report the token it contains.
+    timeout_sec: 360
+    expect:
+      - tool_call_order: ["Agent"]
+      - response_contains: ["NESTED_OK_TOKEN"]
+cleanup: {}

@@ -1,0 +1,37 @@
+id: subagent.worktree-isolation
+category: subagent
+concurrency_group: subagent-llm-serial
+timeout_sec: 240
+prereq:
+  git_init: true
+  files:
+    - path: README.md
+      content: "# main branch\n"
+    - path: src/lib.rs
+      content: |
+        pub fn hello() -> &'static str { "hi" }
+steps:
+  - kind: chat
+    name: spawn-isolated-agent
+    # The assistant must pass `isolation: "worktree"` so the dispatcher
+    # creates a temporary git worktree. We don't require the child agent to
+    # actually modify anything — just that the Agent call includes the flag.
+    message: |
+      Use the Agent tool with isolation: "worktree" to read README.md and
+      echo back its first line. The Agent tool call input must include
+      "isolation": "worktree".
+    timeout_sec: 240
+    expect:
+      - tool_call_order: ["Agent"]
+      - sse_event:
+          type: stream_event
+          match:
+            event:
+              type: content_block_start
+              content_block:
+                type: tool_use
+                name: "Agent"
+                input:
+                  isolation: "worktree"
+      - response_contains: ["main branch"]
+cleanup: {}
