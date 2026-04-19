@@ -216,7 +216,9 @@ fn extract_user_text(data: &serde_json::Value) -> String {
                 if ty != "text" {
                     return None;
                 }
-                b.get("text").and_then(|v| v.as_str()).map(|s| s.to_string())
+                b.get("text")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
             })
             .collect::<Vec<_>>()
             .join("\n"),

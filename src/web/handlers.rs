@@ -132,7 +132,9 @@ pub async fn chat_handler(
     state.is_streaming.store(true, Ordering::SeqCst);
 
     // Get the stream from the engine
-    let stream = state.engine().submit_message(&req.message, QuerySource::Sdk);
+    let stream = state
+        .engine()
+        .submit_message(&req.message, QuerySource::Sdk);
 
     // Wrap in a stream that clears is_streaming when done
     let is_streaming = state.is_streaming.clone();
@@ -586,10 +588,7 @@ pub async fn session_new_handler(State(state): State<WebState>) -> impl IntoResp
     state.replace_engine(engine);
 
     info!(session_id = %new_id, "POST /api/sessions/new");
-    Json(NewSessionResponse {
-        session_id: new_id,
-    })
-    .into_response()
+    Json(NewSessionResponse { session_id: new_id }).into_response()
 }
 
 /// POST /api/sessions/:id/resume -- Load an existing session into the engine.
