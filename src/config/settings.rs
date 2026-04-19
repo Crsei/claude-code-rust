@@ -297,17 +297,11 @@ impl RawSettings {
         merge_opt!(editor_mode, "editorMode");
         merge_opt!(view_mode, "viewMode");
         merge_opt!(spinner_tips, "spinnerTips");
-        merge_opt!(
-            terminal_progress_bar_enabled,
-            "terminalProgressBarEnabled"
-        );
+        merge_opt!(terminal_progress_bar_enabled, "terminalProgressBarEnabled");
         merge_opt!(available_models, "availableModels");
         merge_opt!(effort_level, "effortLevel");
         merge_opt!(fast_mode, "fastMode");
-        merge_opt!(
-            fast_mode_per_session_opt_in,
-            "fastModePerSessionOptIn"
-        );
+        merge_opt!(fast_mode_per_session_opt_in, "fastModePerSessionOptIn");
         merge_opt!(teammate_mode, "teammateMode");
         merge_opt!(
             claude_in_chrome_default_enabled,
@@ -323,7 +317,10 @@ impl RawSettings {
     }
 }
 
-fn merge_permissions(base: Option<PermissionsSettings>, over: PermissionsSettings) -> PermissionsSettings {
+fn merge_permissions(
+    base: Option<PermissionsSettings>,
+    over: PermissionsSettings,
+) -> PermissionsSettings {
     let mut out = base.unwrap_or_default();
     if over.default_mode.is_some() {
         out.default_mode = over.default_mode;
@@ -520,6 +517,27 @@ pub fn global_claude_dir() -> Result<PathBuf> {
 /// Path to the user-level settings file.
 pub fn user_settings_path() -> PathBuf {
     crate::config::paths::data_root().join("settings.json")
+}
+
+/// Path to the effective project-level settings file for `cwd`.
+///
+/// If `cwd` is inside an existing `.cc-rust/` project hierarchy, this
+/// resolves to the nearest ancestor settings file location. Otherwise it
+/// points at `cwd/.cc-rust/settings.json`, which is also where a new file
+/// would be created.
+pub fn project_settings_path(cwd: &Path) -> PathBuf {
+    find_project_dir(cwd)
+        .unwrap_or_else(|| cwd.join(".cc-rust"))
+        .join("settings.json")
+}
+
+/// Path to the effective local override settings file for `cwd`.
+///
+/// Mirrors [`project_settings_path`] but targets `settings.local.json`.
+pub fn local_settings_path(cwd: &Path) -> PathBuf {
+    find_project_dir(cwd)
+        .unwrap_or_else(|| cwd.join(".cc-rust"))
+        .join("settings.local.json")
 }
 
 /// Path to the managed/policy settings file, if one is configured.
@@ -801,13 +819,12 @@ pub fn write_settings_file(path: &Path, raw: &RawSettings) -> Result<()> {
         prune_backups(path, MAX_SETTINGS_BACKUPS);
     }
 
-    let pretty = serde_json::to_string_pretty(raw)
-        .context("Failed to serialize settings to JSON")?;
+    let pretty =
+        serde_json::to_string_pretty(raw).context("Failed to serialize settings to JSON")?;
 
     // Atomic-ish: write to a tmp sibling, then rename.
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, pretty)
-        .with_context(|| format!("Failed to write {}", tmp.display()))?;
+    std::fs::write(&tmp, pretty).with_context(|| format!("Failed to write {}", tmp.display()))?;
     std::fs::rename(&tmp, path)
         .with_context(|| format!("Failed to rename {} -> {}", tmp.display(), path.display()))?;
 
@@ -823,16 +840,14 @@ pub fn write_user_settings(raw: &RawSettings) -> Result<PathBuf> {
 
 /// Write to `cwd/.cc-rust/settings.json`, creating the directory if needed.
 pub fn write_project_settings(cwd: &Path, raw: &RawSettings) -> Result<PathBuf> {
-    let dir = find_project_dir(cwd).unwrap_or_else(|| cwd.join(".cc-rust"));
-    let path = dir.join("settings.json");
+    let path = project_settings_path(cwd);
     write_settings_file(&path, raw)?;
     Ok(path)
 }
 
 /// Write to `cwd/.cc-rust/settings.local.json`.
 pub fn write_local_settings(cwd: &Path, raw: &RawSettings) -> Result<PathBuf> {
-    let dir = find_project_dir(cwd).unwrap_or_else(|| cwd.join(".cc-rust"));
-    let path = dir.join("settings.local.json");
+    let path = local_settings_path(cwd);
     write_settings_file(&path, raw)?;
     Ok(path)
 }
@@ -845,7 +860,9 @@ fn prune_backups(path: &Path, keep: usize) {
     let prefix = format!("{}.", stem);
 
     let mut backups: Vec<PathBuf> = Vec::new();
-    let Ok(entries) = std::fs::read_dir(parent) else { return };
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return;
+    };
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         if name.starts_with(&prefix) && name.ends_with(".bak") {
