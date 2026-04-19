@@ -1,25 +1,35 @@
-//! Browser MCP — identification and UX for self-hosted browser MCP servers.
+//! Browser subsystem — two coexisting integrations with shared UX.
 //!
-//! A "browser MCP server" is any MCP server (e.g. `mcp-chrome`, `mcp-playwright`,
-//! or a user-rolled stdio server) that exposes browser-automation tools such as
-//! `navigate`, `get_page_text`, `tabs_create`, `click`, `fill`, and so on.
+//! The `browser/` module covers two related but independent ways cc-rust can
+//! talk to a web browser:
 //!
-//! This module does not embed a browser. It only recognizes browser-shaped tool
-//! capabilities coming in over MCP and adds four things on top:
+//! 1. **External browser MCP servers** (issues #2/#3). A user configures a
+//!    third-party MCP server (e.g. `mcp-chrome`, `@playwright/mcp`) in
+//!    `settings.json`; cc-rust identifies it and layers prompt guidance,
+//!    permission categories, and structured result rendering on top.
+//! 2. **First-party Chrome integration** (issues #4/#5). cc-rust ships its
+//!    own native messaging host + MCP bridge and talks directly to the
+//!    Anthropic Chrome extension — no third-party MCP server required.
 //!
-//! 1. **Detection** (`detection`) — mark a server as "browser" via explicit config
-//!    (`"browserMcp": true` in settings.json) **or** by a tool-name heuristic.
-//! 2. **Prompt guidance** (`prompt`) — inject a `# Browser Automation` section into
-//!    the system prompt when at least one browser MCP server is active.
-//! 3. **Permission categories** (`permissions`) — bucket browser actions into
-//!    navigation / read / write / upload / js / observability with risk levels,
-//!    so permission prompts read as "Allow navigating the browser to URL?" instead
-//!    of "Allow tool 'mcp__chrome__navigate'?".
-//! 4. **Tool result rendering** (`tool_rendering`) — classify common browser
-//!    result shapes (screenshots, page dumps, console/network) and produce a
-//!    compact one-line preview for the UI.
+//! Both paths feed into the same downstream UX (prompt, permissions,
+//! rendering), so they're grouped here rather than in separate crates.
+//!
+//! Module layout:
+//!
+//! - `detection` — heuristics for recognizing browser MCP tools (both paths).
+//! - `permissions` — category / risk classification for permission prompts.
+//! - `prompt` — `# Browser Automation` system-prompt section.
+//! - `tool_rendering` — one-line previews for browser tool results.
+//! - `common` — cross-platform Chromium browser paths + constants (#4+#5).
+//! - `state` — runtime state for the first-party Chrome subsystem (#4+#5).
+//! - `setup` — extension detection + native host manifest install (#4+#5).
+//! - `session` — `ChromeSession` lifecycle (#4; transport lives in #5).
 
+pub mod common;
 pub mod detection;
 pub mod permissions;
 pub mod prompt;
+pub mod session;
+pub mod setup;
+pub mod state;
 pub mod tool_rendering;
