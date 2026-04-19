@@ -1,0 +1,24 @@
+id: coding.read-single
+category: coding
+concurrency_group: coding-read
+timeout_sec: 120
+prereq:
+  files:
+    - path: hello.txt
+      content: |
+        LINE_ALPHA_MARKER
+        line two
+        line three
+steps:
+  - kind: chat
+    name: read-hello
+    # Explicit instruction so DeepSeek picks the Read tool deterministically.
+    message: "Use the Read tool to open hello.txt (in the current directory) and quote its first line verbatim."
+    timeout_sec: 90
+    expect:
+      - tool_call_order: ["Read"]
+      - response_contains: ["LINE_ALPHA_MARKER"]
+      - sse_event:
+          type: user_replay
+      - cost_between: [0.0, 0.02]
+cleanup: {}

@@ -1,0 +1,27 @@
+id: coding.edit-error-recovery
+category: coding
+concurrency_group: coding-edit-err
+timeout_sec: 150
+prereq:
+  files:
+    - path: script.py
+      content: |
+        x = 1
+        y = 2
+        print(x + y)
+steps:
+  - kind: chat
+    name: recover-from-missing-old-string
+    message: |
+      First try to edit script.py by replacing the string "NONEXISTENT_TOKEN"
+      with "anything" using the Edit tool. When the edit fails, recover by
+      reading the file and replacing the line `y = 2` with `y = 99`.
+    timeout_sec: 150
+    expect:
+      # At least one Edit *and* the successful fallback path should both run.
+      - tool_call_order: ["Edit"]
+      # The recovery edit must actually land.
+      - fs_contains:
+          path: ${workspace}/script.py
+          substring: "y = 99"
+cleanup: {}

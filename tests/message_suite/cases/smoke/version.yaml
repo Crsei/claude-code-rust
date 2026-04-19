@@ -1,0 +1,21 @@
+id: smoke.version
+category: smoke
+concurrency_group: smoke
+timeout_sec: 30
+prereq: {}
+steps:
+  - kind: command
+    name: version-cmd
+    cmd: /version
+    expect:
+      - command_response:
+          type: output
+          contains: "claude-code-rs"
+  - kind: command
+    name: help-cmd
+    cmd: /help
+    expect:
+      - command_response:
+          type: output
+          contains: ["/version", "/help"]
+cleanup: {}

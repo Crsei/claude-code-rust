@@ -1,0 +1,39 @@
+id: workspace.single-cwd
+category: workspace
+concurrency_group: workspace-single
+timeout_sec: 30
+prereq:
+  files:
+    - path: README.md
+      content: |
+        # fixture workspace
+        hello
+    - path: src/main.rs
+      content: |
+        fn main() { println!("hi"); }
+steps:
+  - kind: http
+    name: sessions-endpoint
+    path: /api/sessions
+    expect:
+      # The workspace path is a temp dir; we only need to prove that cc-rust
+      # reports the same path we spawned it with.
+      - http_json:
+          path: current_workspace.root
+          contains: ${workspace}
+
+  - kind: command
+    name: status-prints-cwd
+    cmd: /status
+    expect:
+      - command_response:
+          type: output
+
+  - kind: command
+    name: version-works
+    cmd: /version
+    expect:
+      - command_response:
+          type: output
+          contains: "claude-code-rs"
+cleanup: {}

@@ -1,0 +1,14 @@
+id: smoke.deepseek-chat
+category: smoke
+concurrency_group: deepseek-smoke
+timeout_sec: 60
+prereq: {}  # inherits defaults (DEEPSEEK_API_KEY + proxy)
+steps:
+  - kind: chat
+    name: simple-greeting
+    message: "Reply with exactly the word: pong"
+    timeout_sec: 45
+    expect:
+      - response_matches: "(?i)pong"
+      - cost_between: [0.0, 0.01]
+cleanup: {}

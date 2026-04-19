@@ -1,0 +1,30 @@
+id: workspace.session-scoping
+category: workspace
+concurrency_group: workspace-scoping
+timeout_sec: 30
+prereq:
+  files:
+    - path: marker.txt
+      content: isolated-workspace-marker
+steps:
+  - kind: http
+    name: sessions-include-workspace
+    path: /api/sessions
+    expect:
+      - http_json:
+          path: current_workspace.root
+          contains: ${workspace}
+      - http_json:
+          path: current_workspace.name
+          # The workspace name is derived from the last path segment and is
+          # unique to this per-case tempdir (contains "workspace.session-scoping").
+          matches: "workspace\\.session-scoping"
+
+  - kind: http
+    name: state-session-id-present
+    path: /api/state
+    expect:
+      - http_json:
+          path: session_id
+          matches: "^[0-9a-f-]{32,}$"
+cleanup: {}
