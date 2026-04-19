@@ -2,12 +2,7 @@
 
 use std::sync::atomic::Ordering;
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -170,12 +165,7 @@ pub async fn abort_handler(
 /// GET /api/state -- Return current application state (enhanced for Phase 3).
 pub async fn state_handler(State(state): State<WebState>) -> impl IntoResponse {
     let app_state = state.engine.app_state();
-    let permission_mode = match app_state.tool_permission_context.mode {
-        PermissionMode::Default => "default",
-        PermissionMode::Auto => "auto",
-        PermissionMode::Bypass => "bypass",
-        PermissionMode::Plan => "plan",
-    };
+    let permission_mode = app_state.tool_permission_context.mode.as_str();
 
     // Get tool names from engine
     let tool_names: Vec<String> = state.engine.tool_names();
@@ -322,9 +312,9 @@ pub async fn command_handler(
     info!(command = %req.command, args = %req.args, "POST /api/command");
 
     let commands = crate::commands::get_all_commands();
-    let cmd = commands.iter().find(|c| {
-        c.name == req.command || c.aliases.contains(&req.command)
-    });
+    let cmd = commands
+        .iter()
+        .find(|c| c.name == req.command || c.aliases.contains(&req.command));
 
     let cmd = match cmd {
         Some(c) => c,
@@ -362,45 +352,36 @@ pub async fn command_handler(
             });
 
             match result {
-                crate::commands::CommandResult::Output(text) => {
-                    Json(CommandResponse {
-                        response_type: "output".into(),
-                        content: text,
-                    })
-                }
-                crate::commands::CommandResult::Clear => {
-                    Json(CommandResponse {
-                        response_type: "clear".into(),
-                        content: "Conversation cleared".into(),
-                    })
-                }
-                crate::commands::CommandResult::Exit(msg) => {
-                    Json(CommandResponse {
-                        response_type: "output".into(),
-                        content: msg,
-                    })
-                }
+                crate::commands::CommandResult::Output(text) => Json(CommandResponse {
+                    response_type: "output".into(),
+                    content: text,
+                }),
+                crate::commands::CommandResult::Clear => Json(CommandResponse {
+                    response_type: "clear".into(),
+                    content: "Conversation cleared".into(),
+                }),
+                crate::commands::CommandResult::Exit(msg) => Json(CommandResponse {
+                    response_type: "output".into(),
+                    content: msg,
+                }),
                 crate::commands::CommandResult::Query(_msgs) => {
                     // TODO: inject messages and start a new SSE stream
                     Json(CommandResponse {
                         response_type: "output".into(),
-                        content: "Command queued (query commands not yet supported in web UI)".into(),
+                        content: "Command queued (query commands not yet supported in web UI)"
+                            .into(),
                     })
                 }
-                crate::commands::CommandResult::None => {
-                    Json(CommandResponse {
-                        response_type: "output".into(),
-                        content: "OK".into(),
-                    })
-                }
+                crate::commands::CommandResult::None => Json(CommandResponse {
+                    response_type: "output".into(),
+                    content: "OK".into(),
+                }),
             }
         }
-        Err(e) => {
-            Json(CommandResponse {
-                response_type: "error".into(),
-                content: format!("Command error: {}", e),
-            })
-        }
+        Err(e) => Json(CommandResponse {
+            response_type: "error".into(),
+            content: format!("Command error: {}", e),
+        }),
     }
 }
 

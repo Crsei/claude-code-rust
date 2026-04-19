@@ -92,8 +92,14 @@ fn ping_pong_round_trips_over_framed_stdio() {
     let deadline = Instant::now() + Duration::from_secs(5);
     let response = read_frame(&mut stdout, deadline).expect("read pong frame");
     let text = String::from_utf8(response).expect("utf8");
-    assert!(text.contains(r#""type":"pong""#), "unexpected response: {text}");
-    assert!(text.contains(r#""timestamp""#), "pong missing timestamp: {text}");
+    assert!(
+        text.contains(r#""type":"pong""#),
+        "unexpected response: {text}"
+    );
+    assert!(
+        text.contains(r#""timestamp""#),
+        "pong missing timestamp: {text}"
+    );
 
     // Close stdin; native host should exit cleanly.
     drop(stdin);
@@ -152,7 +158,10 @@ fn unknown_type_returns_error_message() {
     let deadline = Instant::now() + Duration::from_secs(5);
     let response = read_frame(&mut stdout, deadline).expect("read error frame");
     let text = String::from_utf8(response).expect("utf8");
-    assert!(text.contains(r#""type":"error""#), "unexpected response: {text}");
+    assert!(
+        text.contains(r#""type":"error""#),
+        "unexpected response: {text}"
+    );
 
     drop(stdin);
     let _ = child.wait();

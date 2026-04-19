@@ -305,11 +305,7 @@ pub(crate) async fn openai_compat_stream(
         req_builder = req_builder.header("Authorization", format!("Bearer {}", api_key));
     }
 
-    let response = match req_builder
-        .json(&body)
-        .send()
-        .await
-    {
+    let response = match req_builder.json(&body).send().await {
         Ok(resp) => resp,
         Err(e) => {
             tracing::error!(

@@ -55,10 +55,7 @@ pub fn socket_dir() -> PathBuf {
 pub fn secure_socket_path() -> PathBuf {
     if cfg!(windows) {
         let user = socket_username();
-        PathBuf::from(format!(
-            r"\\.\pipe\claude-mcp-browser-bridge-{}",
-            user
-        ))
+        PathBuf::from(format!(r"\\.\pipe\claude-mcp-browser-bridge-{}", user))
     } else {
         let pid = std::process::id();
         socket_dir().join(format!("{}.sock", pid))

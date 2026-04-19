@@ -44,7 +44,12 @@ fn chrome_flag_is_accepted() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut cmd = cli();
     strip_api_keys(&mut cmd)
-        .args(["--chrome", "--init-only", "-C", dir.path().to_str().unwrap()])
+        .args([
+            "--chrome",
+            "--init-only",
+            "-C",
+            dir.path().to_str().unwrap(),
+        ])
         .env("CC_RUST_HOME", dir.path().to_str().unwrap())
         .assert()
         .success();
@@ -93,11 +98,7 @@ fn chrome_flag_emits_browser_automation_section() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut cmd = cli();
     strip_api_keys(&mut cmd)
-        .args([
-            "--dump-system-prompt",
-            "-C",
-            dir.path().to_str().unwrap(),
-        ])
+        .args(["--dump-system-prompt", "-C", dir.path().to_str().unwrap()])
         .env("CC_RUST_HOME", dir.path().to_str().unwrap())
         .env("CLAUDE_CODE_ENABLE_CFC", "1")
         .assert()
@@ -113,11 +114,7 @@ fn no_env_no_cli_no_browser_section() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut cmd = cli();
     strip_api_keys(&mut cmd)
-        .args([
-            "--dump-system-prompt",
-            "-C",
-            dir.path().to_str().unwrap(),
-        ])
+        .args(["--dump-system-prompt", "-C", dir.path().to_str().unwrap()])
         .env("CC_RUST_HOME", dir.path().to_str().unwrap())
         .assert()
         .success()

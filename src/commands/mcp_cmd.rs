@@ -72,10 +72,7 @@ fn handle_list(ctx: &CommandContext) -> Result<CommandResult> {
     }
 
     let mut lines = Vec::new();
-    let browser_count = servers
-        .iter()
-        .filter(|s| is_server_browser(s))
-        .count();
+    let browser_count = servers.iter().filter(|s| is_server_browser(s)).count();
     if browser_count > 0 {
         lines.push(format!(
             "Discovered MCP servers ({}; {} browser):",

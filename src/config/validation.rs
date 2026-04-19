@@ -179,6 +179,87 @@ pub fn validate_settings(settings: &SettingsJson) -> Vec<ValidationWarning> {
         }
     }
 
+    // Validate permission mode (legacy + nested)
+    let permission_mode = settings
+        .permissions
+        .default_mode
+        .as_ref()
+        .or(settings.permission_mode.as_ref());
+    if let Some(mode) = permission_mode {
+        let valid = [
+            "default",
+            "ask",
+            "auto",
+            "bypass",
+            "plan",
+            "acceptedits",
+            "dontask",
+        ];
+        if !valid.contains(&mode.to_ascii_lowercase().as_str()) {
+            warnings.push(ValidationWarning {
+                field: "permissionMode".to_string(),
+                message: format!(
+                    "Unknown permission mode '{}'. Known modes: {}.",
+                    mode,
+                    [
+                        "default",
+                        "ask",
+                        "auto",
+                        "bypass",
+                        "plan",
+                        "acceptEdits",
+                        "dontAsk"
+                    ]
+                    .join(", ")
+                ),
+                severity: WarningSeverity::Error,
+            });
+        }
+    }
+
+    // Validate editor mode
+    if let Some(mode) = &settings.editor_mode {
+        let valid = ["normal", "vim"];
+        if !valid.contains(&mode.to_lowercase().as_str()) {
+            warnings.push(ValidationWarning {
+                field: "editorMode".to_string(),
+                message: format!(
+                    "Unknown editor mode '{}'. Known modes: {}.",
+                    mode,
+                    valid.join(", ")
+                ),
+                severity: WarningSeverity::Warning,
+            });
+        }
+    }
+
+    // Validate language code looks like BCP-47 / a short identifier.
+    if let Some(lang) = &settings.language {
+        if lang.trim().is_empty() {
+            warnings.push(ValidationWarning {
+                field: "language".to_string(),
+                message: "Language code is set but empty.".into(),
+                severity: WarningSeverity::Warning,
+            });
+        }
+    }
+
+    // Validate sandbox mode
+    if let Some(mode) = &settings.sandbox.mode {
+        let valid = ["read-only", "workspace", "full"];
+        if !valid.contains(&mode.to_lowercase().as_str()) {
+            warnings.push(ValidationWarning {
+                field: "sandbox.mode".to_string(),
+                message: format!(
+                    "Unknown sandbox mode '{}'. Known modes: {}.",
+                    mode,
+                    valid.join(", ")
+                ),
+                severity: WarningSeverity::Error,
+            });
+        }
+    }
+
     warnings
 }
 
@@ -242,9 +323,7 @@ mod tests {
     fn test_validate_settings_bad_model() {
         let settings = SettingsJson {
             model: Some("totally invalid model".to_string()),
-            backend: None,
-            theme: None,
-            verbose: None,
+            ..Default::default()
         };
         let warnings = validate_settings(&settings);
         assert!(!warnings.is_empty());
@@ -256,9 +335,7 @@ mod tests {
     fn test_validate_settings_empty_model() {
         let settings = SettingsJson {
             model: Some("".to_string()),
-            backend: None,
-            theme: None,
-            verbose: None,
+            ..Default::default()
         };
         let warnings = validate_settings(&settings);
         assert!(!warnings.is_empty());
@@ -268,10 +345,8 @@ mod tests {
     #[test]
     fn test_validate_settings_unknown_theme() {
         let settings = SettingsJson {
-            model: None,
-            backend: None,
             theme: Some("cyberpunk".to_string()),
-            verbose: None,
+            ..Default::default()
         };
         let warnings = validate_settings(&settings);
         assert_eq!(warnings.len(), 1);
@@ -286,6 +361,7 @@ mod tests {
             backend: Some("codex".to_string()),
             theme: Some("dark".to_string()),
             verbose: Some(true),
+            ..Default::default()
         };
         let warnings = validate_settings(&settings);
         assert!(warnings.is_empty());
@@ -294,14 +370,55 @@ mod tests {
     #[test]
     fn test_validate_settings_bad_backend() {
         let settings = SettingsJson {
-            model: None,
             backend: Some("mystery".to_string()),
-            theme: None,
-            verbose: None,
+            ..Default::default()
         };
         let warnings = validate_settings(&settings);
         assert!(!warnings.is_empty());
         assert_eq!(warnings[0].field, "backend");
         assert_eq!(warnings[0].severity, WarningSeverity::Error);
+    }
+
+    #[test]
+    fn test_validate_settings_bad_permission_mode() {
+        let settings = SettingsJson {
+            permission_mode: Some("nope".into()),
+            ..Default::default()
+        };
+        let warnings = validate_settings(&settings);
+        assert!(warnings
+            .iter()
+            .any(|w| w.field == "permissionMode" && w.severity == WarningSeverity::Error));
+    }
+
+    #[test]
+    fn test_validate_settings_bad_editor_mode() {
+        let settings = SettingsJson {
+            editor_mode: Some("emacs".into()),
+            ..Default::default()
+        };
+        let warnings = validate_settings(&settings);
+        assert!(warnings.iter().any(|w| w.field == "editorMode"));
+    }
+
+    #[test]
+    fn test_validate_settings_accepts_new_permission_modes() {
+        let settings = SettingsJson {
+            permission_mode: Some("acceptEdits".into()),
+            permissions: crate::config::settings::PermissionsSettings {
+                default_mode: Some("dontAsk".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let warnings = validate_settings(&settings);
+        assert!(
+            !warnings.iter().any(|w| w.field == "permissionMode"),
+            "expected new permission modes to validate cleanly, got {:?}",
+            warnings
+                .iter()
+                .map(|w| (&w.field, &w.message))
+                .collect::<Vec<_>>()
+        );
     }
 }

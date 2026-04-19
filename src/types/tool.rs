@@ -85,6 +85,8 @@ pub struct ToolProgress {
 }
 
 /// 权限模式
+///
+/// 对齐 docs/claude-code-configuration/permissions.md 中描述的 6 种模式。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PermissionMode {
     /// 默认/询问模式: 需要用户确认
@@ -95,6 +97,41 @@ pub enum PermissionMode {
     Bypass,
     /// 计划模式: 只读, 不执行写入
     Plan,
+    /// AcceptEdits: 文件编辑工具 (Write/Edit/MultiEdit) 与常用工作区
+    /// 文件系统命令默认允许; 其它工具仍走默认询问流程。
+    AcceptEdits,
+    /// DontAsk: 对所有需要询问的请求静默 deny。常用于 headless / CI
+    /// 场景, 避免阻塞。`deny` 规则仍优先生效。
+    DontAsk,
+}
+
+impl PermissionMode {
+    /// Parse a mode string. Accepts both kebab-case and camelCase tokens
+    /// from the permissions docs as well as the legacy lower-case forms.
+    /// Unknown / empty values fall back to [`PermissionMode::Default`].
+    pub fn parse(value: &str) -> PermissionMode {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "auto" => PermissionMode::Auto,
+            "bypass" | "bypasspermissions" | "bypass-permissions" => PermissionMode::Bypass,
+            "plan" | "readonly" | "read-only" => PermissionMode::Plan,
+            "acceptedits" | "accept-edits" | "accept_edits" => PermissionMode::AcceptEdits,
+            "dontask" | "dont-ask" | "dont_ask" | "no-ask" => PermissionMode::DontAsk,
+            _ => PermissionMode::Default,
+        }
+    }
+
+    /// Stable lower-case identifier (camelCase) used for source-map tagging
+    /// and `/permissions show` output.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PermissionMode::Default => "default",
+            PermissionMode::Auto => "auto",
+            PermissionMode::Bypass => "bypass",
+            PermissionMode::Plan => "plan",
+            PermissionMode::AcceptEdits => "acceptEdits",
+            PermissionMode::DontAsk => "dontAsk",
+        }
+    }
 }
 
 /// 工具权限上下文
