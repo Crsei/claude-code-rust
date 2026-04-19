@@ -115,6 +115,20 @@ impl VimState {
         }
     }
 
+    /// Build a [`VimState`] honouring the `editorMode` setting.
+    ///
+    /// - `Some("vim")` → enabled, starting in Normal (matches `/config`
+    ///   editor mode = vim)
+    /// - `Some("normal")` / `None` → disabled (plain editing)
+    /// - Any other value → disabled (validation warns at config-load)
+    pub fn from_editor_mode(editor_mode: Option<&str>) -> Self {
+        let mut state = Self::new();
+        if matches!(editor_mode.map(str::trim), Some("vim")) {
+            state.enable();
+        }
+        state
+    }
+
     /// Enable vim mode, starting in Normal.
     pub fn enable(&mut self) {
         self.enabled = true;
@@ -571,6 +585,31 @@ mod tests {
 
     fn char_key(c: char) -> KeyEvent {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn from_editor_mode_normal_is_disabled() {
+        let v = VimState::from_editor_mode(Some("normal"));
+        assert!(!v.enabled);
+    }
+
+    #[test]
+    fn from_editor_mode_vim_is_enabled() {
+        let v = VimState::from_editor_mode(Some("vim"));
+        assert!(v.enabled);
+        assert_eq!(v.mode, VimMode::Normal);
+    }
+
+    #[test]
+    fn from_editor_mode_unset_is_disabled() {
+        let v = VimState::from_editor_mode(None);
+        assert!(!v.enabled);
+    }
+
+    #[test]
+    fn from_editor_mode_unknown_is_disabled() {
+        let v = VimState::from_editor_mode(Some("emacs"));
+        assert!(!v.enabled);
     }
 
     #[test]
