@@ -114,6 +114,18 @@ impl PromptInput {
         None
     }
 
+    /// Insert `text` at the current cursor position and advance the
+    /// cursor past it. Used by voice dictation (issue #13) so
+    /// transcribed text lands wherever the user was typing instead of
+    /// being appended at the end.
+    pub fn insert_str(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        self.input.insert_str(self.cursor_position, text);
+        self.cursor_position += text.len();
+    }
+
     /// Render the prompt input widget.
     ///
     /// Shows a "> " prompt prefix followed by the input text with a visible

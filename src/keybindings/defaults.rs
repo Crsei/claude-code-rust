@@ -46,6 +46,11 @@ pub const DEFAULTS: &[Default] = &[
     Default { context: Context::Chat, chord: "ctrl+x ctrl+e",  action: "chat:externalEditor" },
     Default { context: Context::Chat, chord: "ctrl+s",         action: "chat:stash" },
     Default { context: Context::Chat, chord: "ctrl+v",         action: "chat:imagePaste" },
+    // Voice dictation (issue #13). Hold Ctrl+Space to capture audio;
+    // release to transcribe. Ctrl+Space is chosen over bare Space so the
+    // space bar still types a space. The user can rebind via
+    // `~/.cc-rust/keybindings.json` → `voice:pushToTalk`.
+    Default { context: Context::Chat, chord: "ctrl+space",     action: "voice:pushToTalk" },
 
     // -- Autocomplete ---------------------------------------------------
     Default { context: Context::Autocomplete, chord: "tab",    action: "autocomplete:accept" },

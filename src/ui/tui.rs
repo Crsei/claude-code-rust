@@ -132,6 +132,26 @@ pub async fn run_tui(
     let terminal_env = super::terminal_env::TerminalEnvConfig::from_env();
     app.set_terminal_env(terminal_env);
 
+    // Voice dictation (issue #13) — build a controller from the null
+    // backends for now. Real cpal + voice_stream backends can replace
+    // these arguments without changing anything above.
+    {
+        use std::sync::Arc;
+        let audio = Arc::new(crate::voice::audio::NullAudioBackend::new());
+        let stt = Arc::new(crate::voice::stt::NullTranscriptionClient::new());
+        let voice_controller = crate::voice::VoiceController::new(audio, stt);
+        app.set_voice_controller(voice_controller);
+
+        let app_state = engine.app_state();
+        let lang = crate::voice::language::normalize_language_for_stt(
+            app_state.settings.language.as_deref(),
+        );
+        app.set_voice_settings(
+            app_state.settings.voice_enabled.unwrap_or(false),
+            lang.code,
+        );
+    }
+
     // ── Create channels ────────────────────────────────────────────
     let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<EngineEvent>();
     let mut streaming_state = StreamingState {
@@ -304,6 +324,10 @@ pub async fn run_tui(
             // Tick timer (spinner animation, ~80ms)
             _ = tick_interval.tick() => {
                 app.tick();
+                // Drain any pending voice-controller events (issue #13).
+                // Returns true when something was inserted into the
+                // prompt or the state changed — both cases need a redraw.
+                app.drain_voice_events();
             }
         }
 
@@ -628,6 +652,20 @@ async fn try_execute_command(
                     engine.replace_messages(ctx.messages.clone());
                     replace_app_messages(app, &ctx.messages);
                 }
+                // Propagate settings mutations (e.g. `/voice on/off`,
+                // `/statusline set`) back to the engine's AppState and
+                // refresh App's cached voice snapshot so push-to-talk
+                // picks up the change without restart.
+                let voice_enabled = ctx.app_state.settings.voice_enabled.unwrap_or(false);
+                let lang = crate::voice::language::normalize_language_for_stt(
+                    ctx.app_state.settings.language.as_deref(),
+                );
+                let lang_code = lang.code.clone();
+                engine.update_app_state(|s| {
+                    s.settings.voice_enabled = Some(voice_enabled);
+                    s.settings.language = ctx.app_state.settings.language.clone();
+                });
+                app.set_voice_settings(voice_enabled, lang_code);
                 add_system_info(app, &text);
                 Some(CmdAction::Handled)
             }
