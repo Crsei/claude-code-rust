@@ -194,3 +194,54 @@ export interface CommandInfo {
   aliases: string[]
   description: string
 }
+
+// ---------------------------------------------------------------------------
+// Session navigation (Phase 2 of the web UI overhaul)
+// ---------------------------------------------------------------------------
+
+/** Workspace descriptor — the grouping key used on the session sidebar. */
+export interface WorkspaceInfo {
+  key: string
+  root: string
+  name: string
+}
+
+/** Summary row returned by GET /api/sessions. */
+export interface SessionSummary {
+  session_id: string
+  created_at: number
+  last_modified: number
+  message_count: number
+  cwd: string
+  title: string
+  workspace_key: string
+  workspace_root: string
+  workspace_name: string
+}
+
+/** GET /api/sessions response shape. */
+export interface SessionListResponse {
+  current_workspace: WorkspaceInfo
+  active_session_id: string
+  sessions: SessionSummary[]
+}
+
+/** One message from a loaded session. Mirrors the Rust `StoredMessage`. */
+export interface StoredMessage {
+  uuid: string
+  timestamp: number
+  role: 'user' | 'assistant' | 'system' | 'progress' | 'attachment'
+  content: string
+  content_blocks?: ContentBlock[]
+}
+
+/** Full session payload returned by GET /api/sessions/:id and resume. */
+export interface SessionDetail {
+  session_id: string
+  created_at: number
+  last_modified: number
+  cwd: string
+  title: string
+  workspace_name: string
+  messages: StoredMessage[]
+}
