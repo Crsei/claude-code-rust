@@ -1,17 +1,17 @@
 // ============================================================================
 // Phase A+B: Process startup, fast paths, and full initialization
 //
-// Corresponds to: LIFECYCLE_STATE_MACHINE.md §2 (Phase A) and §3 (Phase B)
+// Corresponds to: LIFECYCLE_STATE_MACHINE.md 鎼? (Phase A) and 鎼? (Phase B)
 //
-// Phase A: CLI arg parsing → fast path detection → immediate exit
-// Phase B: Full initialization → settings, permissions, tools, AppState → REPL
+// Phase A: CLI arg parsing 閳?fast path detection 閳?immediate exit
+// Phase B: Full initialization 閳?settings, permissions, tools, AppState 閳?REPL
 // Phase I: Shutdown and cleanup (graceful_shutdown)
 // ============================================================================
 
-// 进程级全局单例层 (import DAG 叶节点)
+// 鏉╂稓鈻肩痪褍鍙忕仦鈧崡鏇氱伐鐏?(import DAG 閸欐儼濡悙?
 mod bootstrap;
 
-// 核心模块
+// 閺嶇绺惧Ο鈥虫健
 mod commands;
 mod computer_use;
 mod config;
@@ -24,32 +24,32 @@ mod types;
 mod ui;
 mod utils;
 
-// 上下文压缩管道
+// 娑撳﹣绗呴弬鍥у竾缂傗晝顓搁柆?
 mod compact;
 
-// 网络 / API / 认证
+// 缂冩垹绮?/ API / 鐠併倛鐦?
 mod api;
 mod auth;
 
-// 技能系统
+// 閹垛偓閼崇晫閮寸紒?
 mod skills;
 
-// 插件系统
+// 閹绘帊娆㈢化鑽ょ埠
 mod plugins;
 
-// MCP (Model Context Protocol) 服务器
+// MCP (Model Context Protocol) 閺堝秴濮熼崳?
 mod mcp;
 
 // Browser MCP: identification + prompt + permissions for browser-automation MCP servers
 mod browser;
 
-// LSP 协议服务层
+// LSP 閸楀繗顔呴張宥呭鐏?
 mod lsp_service;
 
-// 多 Agent Teams (feature-gated: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS)
+// 婢?Agent Teams (feature-gated: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS)
 mod teams;
 
-// 服务层
+// 閺堝秴濮熺仦?
 mod services;
 
 // Web UI (Axum HTTP server)
@@ -88,7 +88,7 @@ use crate::ui::tui;
 // CLI argument definitions (Phase A)
 // ---------------------------------------------------------------------------
 
-/// Claude Code CLI — Rust implementation
+/// Claude Code CLI 閳?Rust implementation
 #[derive(Parser, Debug)]
 #[command(
     name = "claude",
@@ -186,6 +186,20 @@ struct Cli {
     #[arg(long = "no-chrome")]
     no_chrome: bool,
 
+    /// INTERNAL: run as a Chrome native-messaging host. Launched by Chrome
+    /// via the manifest installed by the Chrome subsystem setup (see
+    /// `src/browser/setup.rs`). Reads 4-byte-framed JSON from stdin, opens
+    /// a local socket, bridges the two. Not intended for manual invocation.
+    #[arg(long = "chrome-native-host", hide = true)]
+    chrome_native_host: bool,
+
+    /// INTERNAL: run as the Claude-in-Chrome stdio MCP bridge. Spawned as a
+    /// subprocess of the cc-rust MCP manager when --chrome is active.
+    /// Connects to the native-host socket and exposes the first-party
+    /// browser tool surface via MCP.
+    #[arg(long = "claude-in-chrome-mcp", hide = true)]
+    claude_in_chrome_mcp: bool,
+
     /// Launch web UI mode (HTTP server with chat interface).
     #[arg(long)]
     web: bool,
@@ -237,7 +251,7 @@ fn cleanup_old_logs(log_dir: &std::path::Path, retention_days: u64) {
 fn main() -> ExitCode {
     // Load .env in priority order (later loads do NOT override earlier ones):
     //   1. ~/.cc-rust/.env        (global user config)
-    //   2. <exe-dir>/.env         (portable — next to the binary)
+    //   2. <exe-dir>/.env         (portable 閳?next to the binary)
     //   3. <cwd>/.env             (project-local)
     if let Ok(global_dir) = settings::global_claude_dir() {
         let global_env = global_dir.join(".env");
@@ -251,13 +265,48 @@ fn main() -> ExitCode {
     }
     let _ = dotenvy::dotenv();
 
-    // Phase A: fast path — parse args first
+    // Phase A: fast path 閳?parse args first
     let cli = Cli::parse();
 
-    // ── Fast path: --version ────────────────────────────────────────────
+    // 閳光偓閳光偓 Fast path: --version 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     if cli.version {
         println!("claude-code-rs {}", env!("CARGO_PKG_VERSION"));
         return ExitCode::SUCCESS;
+    }
+
+    // 閳光偓閳光偓 Fast path: --chrome-native-host 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
+    // Launched by Chrome via the native-messaging manifest installed by the
+    // Chrome subsystem (see src/browser/setup.rs). Skip ALL normal init:
+    // no tracing to stderr (Chrome captures stderr as error logs), no
+    // REPL, no HTTP server. Just bridge Chrome <-> local socket and exit
+    // when Chrome closes stdin.
+    if cli.chrome_native_host {
+        let rt = tokio::runtime::Runtime::new().expect("create tokio runtime");
+        return rt.block_on(async {
+            match crate::browser::native_host::run().await {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("chrome-native-host error: {e:#}");
+                    ExitCode::FAILURE
+                }
+            }
+        });
+    }
+
+    // 閳光偓閳光偓 Fast path: --claude-in-chrome-mcp 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
+    // Spawned as a stdio MCP subprocess by the cc-rust MCP manager when
+    // --chrome is active. Bridges MCP <-> native-host socket.
+    if cli.claude_in_chrome_mcp {
+        let rt = tokio::runtime::Runtime::new().expect("create tokio runtime");
+        return rt.block_on(async {
+            match crate::browser::mcp_bridge::run().await {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("claude-in-chrome-mcp error: {e:#}");
+                    ExitCode::FAILURE
+                }
+            }
+        });
     }
 
     // Initialize tracing (log level based on --verbose)
@@ -285,13 +334,13 @@ fn main() -> ExitCode {
     use tracing_subscriber::Layer;
 
     tracing_subscriber::registry()
-        // stderr layer — respects --verbose / RUST_LOG
+        // stderr layer 閳?respects --verbose / RUST_LOG
         .with(
             tracing_subscriber::fmt::layer()
                 .with_target(false)
                 .with_filter(stderr_filter),
         )
-        // file layer — always debug, with timestamps + target + line numbers
+        // file layer 閳?always debug, with timestamps + target + line numbers
         .with(
             tracing_subscriber::fmt::layer()
                 .with_writer(non_blocking)
@@ -306,7 +355,7 @@ fn main() -> ExitCode {
 
     info!("claude-code-rs v{}", env!("CARGO_PKG_VERSION"));
 
-    // ── Fast path: --dump-system-prompt ─────────────────────────────────
+    // 閳光偓閳光偓 Fast path: --dump-system-prompt 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     if cli.dump_system_prompt {
         plugins::init_plugins();
         let tools = registry::get_all_tools();
@@ -323,7 +372,7 @@ fn main() -> ExitCode {
         // Populate the browser MCP server registry from config alone (no live
         // connection). Config-flagged servers (`"browserMcp": true`) are
         // authoritative; the heuristic half would need connected tools and
-        // isn't exercised here — use `--init-only` for that path.
+        // isn't exercised here 閳?use `--init-only` for that path.
         let cwd_path = std::path::Path::new(&cwd);
         let server_configs =
             crate::mcp::discovery::discover_mcp_servers(cwd_path).unwrap_or_default();
@@ -356,7 +405,7 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    // ── Phase B: full initialization ────────────────────────────────────
+    // 閳光偓閳光偓 Phase B: full initialization 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
 
     rt.block_on(async {
@@ -390,7 +439,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         }
     }
 
-    // ── B.1: Load settings (parallel-ready) ──────────────────────────
+    // 閳光偓閳光偓 B.1: Load settings (parallel-ready) 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     let merged_config = settings::load_and_merge(&cwd)?;
     debug!(
         model = ?merged_config.model,
@@ -400,21 +449,29 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     );
     let backend = crate::engine::codex_exec::normalize_backend(merged_config.backend.as_deref());
 
-    // ── B.2: Determine permission mode ───────────────────────────────
+    // 閳光偓閳光偓 B.2: Determine permission mode 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     let permission_mode = resolve_permission_mode(
         cli.permission_mode.as_deref(),
         merged_config.permission_mode.as_deref(),
     );
+    let chrome_enablement = crate::browser::session::resolve_enablement(
+        chrome_cli_override(&cli),
+        merged_config.claude_in_chrome_default_enabled,
+    );
+    let chrome_wanted = matches!(
+        chrome_enablement,
+        crate::browser::session::ChromeEnablement::Enabled
+    );
 
-    // ── B.3: Register tools ──────────────────────────────────────────
+    // 閳光偓閳光偓 B.3: Register tools 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     plugins::init_plugins();
     let mut tools = registry::get_all_tools();
     info!(count = tools.len(), "tools registered");
 
-    // ── B.3b: Initialize plugin system ──────────────────────────────
+    // 閳光偓閳光偓 B.3b: Initialize plugin system 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     plugins::init_plugins();
 
-    // ── B.3c: Initialize skills (bundled/user/project + plugin) ────
+    // 閳光偓閳光偓 B.3c: Initialize skills (bundled/user/project + plugin) 閳光偓閳光偓閳光偓閳光偓
     skills::clear_skills();
     skills::init_skills(Some(std::path::Path::new(&cwd)));
     let plugin_skills = plugins::discover_plugin_skills();
@@ -428,18 +485,61 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         }
     }
 
-    // ── B.3d: Discover and connect MCP servers ──────────────────────
+    // Start Chrome setup before registering the synthetic MCP bridge so the
+    // manifest/shims are in place before the bridge begins serving requests.
+    {
+        use crate::browser::session::ChromeSession;
+
+        let session = ChromeSession::new(chrome_enablement);
+        if let Err(e) = session.start() {
+            warn!(error = %e, "Chrome subsystem startup failed");
+        }
+        if crate::browser::state::is_enabled() {
+            info!("Claude in Chrome subsystem active 閳?use /chrome for status");
+        }
+    }
+
+    // 閳光偓閳光偓 B.3d: Discover and connect MCP servers 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     let _mcp_manager = {
         use crate::mcp::discovery::discover_mcp_servers;
         use crate::mcp::manager::McpManager;
         use crate::mcp::tools::mcp_tools_to_tools;
 
         let cwd_path = std::path::Path::new(&cwd);
-        let server_configs = discover_mcp_servers(cwd_path).unwrap_or_default();
+        let mut server_configs = discover_mcp_servers(cwd_path).unwrap_or_default();
         let mcp_manager = Arc::new(tokio::sync::Mutex::new(McpManager::new()));
 
+        // First-party Chrome integration: when --chrome is on (or env opts in),
+        // register a synthetic `claude-in-chrome` MCP server that points back
+        // at this same binary in `--claude-in-chrome-mcp` mode. The MCP
+        // manager launches it as a stdio subprocess and talks to it like any
+        // other MCP server; the bridge internally forwards over the native
+        // host socket.
+        if chrome_wanted {
+            if let Ok(exe) = std::env::current_exe() {
+                // De-dupe: if the user also put `claude-in-chrome` in
+                // settings.json for some reason, the explicit config wins.
+                let name = crate::browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME;
+                if !server_configs.iter().any(|c| c.name == name) {
+                    server_configs.push(crate::mcp::McpServerConfig {
+                        name: name.to_string(),
+                        transport: "stdio".to_string(),
+                        command: Some(exe.to_string_lossy().into_owned()),
+                        args: Some(vec!["--claude-in-chrome-mcp".to_string()]),
+                        url: None,
+                        headers: None,
+                        env: None,
+                        browser_mcp: Some(true),
+                    });
+                    info!(
+                        "MCP: registered first-party claude-in-chrome bridge (spawns --claude-in-chrome-mcp subprocess)"
+                    );
+                }
+            }
+        }
+
         // Keep a copy of the configs so we can feed them to browser detection
-        // alongside the registered tools — config flags (browserMcp: true) are
+        // alongside the registered tools 閳?config flags (browserMcp: true) are
         // authoritative even if the server fails to list any recognized
         // browser-shaped tools.
         let configs_for_browser = server_configs.clone();
@@ -475,7 +575,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         // (or equivalent) is on. The actual tools come online via #5; doing
         // this early means the system prompt, permissions, and /mcp list all
         // already know the capability is expected.
-        if chrome_requested(&cli, merged_config.claude_in_chrome_default_enabled) {
+        if chrome_wanted {
             browser_servers.insert(
                 crate::browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string(),
             );
@@ -491,7 +591,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         mcp_manager
     };
 
-    // ── B.3e: Register native Computer Use tools (if --computer-use) ──
+    // 閳光偓閳光偓 B.3e: Register native Computer Use tools (if --computer-use) 閳光偓閳光偓
     if cli.computer_use {
         let cu_tools = computer_use::setup::register_cu_tools();
         info!(
@@ -501,29 +601,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         tools.extend(cu_tools);
     }
 
-    // ── B.3f: Start the first-party Chrome subsystem (if --chrome) ─────
-    // Resolves CLI flag → env → saved config, runs extension detection and
-    // native-host manifest install. Tool registration for the first-party
-    // bridge lands in #5; for now this just flips state so /chrome reports
-    // accurate status and the system-prompt assembler knows a browser path
-    // is active.
-    {
-        use crate::browser::session::{resolve_enablement, ChromeSession};
-
-        let enablement = resolve_enablement(
-            chrome_cli_override(&cli),
-            merged_config.claude_in_chrome_default_enabled,
-        );
-        let session = ChromeSession::new(enablement);
-        if let Err(e) = session.start() {
-            warn!(error = %e, "Chrome subsystem startup failed");
-        }
-        if crate::browser::state::is_enabled() {
-            info!("Claude in Chrome subsystem active — use /chrome for status");
-        }
-    }
-
-    // ── B.4: Create AppState ─────────────────────────────────────────
+    // B.4: Create AppState
     // Resolve model: CLI arg > config > provider default > hardcoded fallback
     let is_codex_backend = crate::engine::codex_exec::is_codex_backend(&backend);
     let detected_client = crate::api::client::ApiClient::from_backend(Some(&backend));
@@ -535,20 +613,20 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         if is_codex_backend {
             warn!("No OpenAI Codex auth detected. Set OPENAI_CODEX_AUTH_TOKEN.");
             eprintln!(
-                "\x1b[33m⚠ No OpenAI Codex auth detected.\x1b[0m\n  \
+                "\x1b[33m閳?No OpenAI Codex auth detected.\x1b[0m\n  \
                  Set:\n  \
-                 • OPENAI_CODEX_AUTH_TOKEN (required)\n  \
-                 • OPENAI_CODEX_BASE_URL (optional, default: https://chatgpt.com/backend-api)\n  \
-                 • OPENAI_CODEX_MODEL (optional, default: gpt-5.4)"
+                 閳?OPENAI_CODEX_AUTH_TOKEN (required)\n  \
+                 閳?OPENAI_CODEX_BASE_URL (optional, default: https://chatgpt.com/backend-api)\n  \
+                 閳?OPENAI_CODEX_MODEL (optional, default: gpt-5.4)"
             );
         } else {
             warn!("No API provider detected. Set an API key in .env, environment, or use /login.");
             eprintln!(
-                "\x1b[33m⚠ No API provider detected.\x1b[0m\n  \
+                "\x1b[33m閳?No API provider detected.\x1b[0m\n  \
                  Set an API key via:\n  \
-                 • .env file (ANTHROPIC_API_KEY, AZURE_API_KEY, OPENAI_API_KEY, ...)\n  \
-                 • Environment variable\n  \
-                 • /login command in the REPL"
+                 閳?.env file (ANTHROPIC_API_KEY, AZURE_API_KEY, OPENAI_API_KEY, ...)\n  \
+                 閳?Environment variable\n  \
+                 閳?/login command in the REPL"
             );
         }
     }
@@ -599,13 +677,13 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         terminal_focus: true,
     };
 
-    // ── B.5: Init-only fast path ─────────────────────────────────────
+    // 閳光偓閳光偓 B.5: Init-only fast path 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     if cli.init_only {
         info!("init-only mode: initialization complete");
         return Ok(ExitCode::SUCCESS);
     }
 
-    // ── B.6: Handle session resume (before engine creation) ─────────
+    // 閳光偓閳光偓 B.6: Handle session resume (before engine creation) 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     let resume_messages: Option<Vec<crate::types::message::Message>> = if cli.resume {
         match session::resume::get_last_session(std::path::Path::new(&cwd)) {
             Ok(Some(info)) => {
@@ -646,7 +724,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         None
     };
 
-    // ── B.7: Build QueryEngineConfig ─────────────────────────────────
+    // 閳光偓閳光偓 B.7: Build QueryEngineConfig 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     let engine_config = QueryEngineConfig {
         cwd: cwd.clone(),
         tools: tools.clone(),
@@ -672,14 +750,14 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         agent_context: None,
     };
 
-    // ── B.8: Create QueryEngine ──────────────────────────────────────
+    // 閳光偓閳光偓 B.8: Create QueryEngine 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     let engine = Arc::new(QueryEngine::new(engine_config));
     info!(session = %engine.session_id, "QueryEngine created");
 
     // Apply the fully-resolved AppState (with hooks, permissions, etc.)
     engine.update_app_state(|s| *s = app_state);
 
-    // ── B.8a: Fire SessionStart hook (fire-and-forget) ──────────────
+    // 閳光偓閳光偓 B.8a: Fire SessionStart hook (fire-and-forget) 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     {
         let start_configs =
             crate::tools::hooks::load_hook_configs(&merged_config.hooks, "SessionStart");
@@ -693,7 +771,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         }
     }
 
-    // ── B.8b: Initialize audit sink ───────────────────────────────────
+    // 閳光偓閳光偓 B.8b: Initialize audit sink 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     {
         use crate::observability::{
             AuditConfig, AuditContext, AuditSink, EventKind, Outcome, SessionMeta, Stage,
@@ -740,7 +818,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         }
     }
 
-    // ── B.8.1: Initialize global ProcessState ────────────────────────
+    // 閳光偓閳光偓 B.8.1: Initialize global ProcessState 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     let cwd_path = std::path::PathBuf::from(&cwd);
     let project_root =
         crate::utils::git::find_git_root(&cwd_path).unwrap_or_else(|| cwd_path.clone());
@@ -752,7 +830,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         Some(model.clone()),
     );
 
-    // ── B.9: Non-interactive output modes ──────────────────────────────
+    // 閳光偓閳光偓 B.9: Non-interactive output modes 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     // JSON output mode takes priority (SDK sends both -p and --output-format json)
     if cli.output_format.as_deref() == Some("json") {
         let prompt = cli.prompt.join(" ");
@@ -776,7 +854,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         return run_print_mode(&engine, &prompt).await;
     }
 
-    // ── B.10: Web UI mode ────────────────────────────────────────────
+    // 閳光偓閳光偓 B.10: Web UI mode 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     if cli.web {
         let web_state = web::state::WebState {
             engine: engine.clone(),
@@ -791,14 +869,14 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         };
     }
 
-    // ── B.11: Check for inline prompt ───────────────────────────────
+    // 閳光偓閳光偓 B.11: Check for inline prompt 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     let initial_prompt = if !cli.prompt.is_empty() {
         Some(cli.prompt.join(" "))
     } else {
         None
     };
 
-    // ── Daemon mode ──
+    // 閳光偓閳光偓 Daemon mode 閳光偓閳光偓
     if cli.daemon {
         use crate::config::features::{self, Feature};
         if !features::enabled(Feature::Kairos) {
@@ -860,7 +938,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         };
     }
 
-    // ── B.10: Enter TUI or headless mode ────────────────────────────
+    // 閳光偓閳光偓 B.10: Enter TUI or headless mode 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     if cli.headless {
         return ipc::headless::run_headless(engine, model)
             .await
@@ -886,7 +964,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     let tui_result = tui::run_tui(engine.clone(), initial_prompt, &model, shutdown_token).await;
 
-    // ── Phase I: Shutdown and cleanup ────────────────────────────────
+    // 閳光偓閳光偓 Phase I: Shutdown and cleanup 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     shutdown::graceful_shutdown(&engine).await;
     if let Some(companion) = dashboard_companion.as_mut() {
         companion.kill();

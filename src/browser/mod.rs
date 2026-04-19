@@ -27,9 +27,12 @@
 
 pub mod common;
 pub mod detection;
+pub mod mcp_bridge;
+pub mod native_host;
 pub mod permissions;
 pub mod prompt;
 pub mod session;
 pub mod setup;
 pub mod state;
 pub mod tool_rendering;
+pub mod transport;
