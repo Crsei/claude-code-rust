@@ -15,7 +15,11 @@ use super::status_line::{
     ContextWindowStatus, CostStatus, ModelInfo, StatusLinePayload, StatusLineRunner,
     WorkspaceStatus,
 };
+use super::terminal_env::TerminalEnvConfig;
 use super::theme::Theme;
+use super::transcript::{
+    self, SearchMatch, TranscriptInputMode, TranscriptState, ViewMode,
+};
 use super::virtual_scroll::VirtualScroll;
 use super::welcome;
 
@@ -34,6 +38,10 @@ pub enum AppAction {
     ScrollUp,
     ScrollDown,
     PermissionResponse(PermissionChoice),
+    /// Transcript mode requested an export to `$EDITOR`. Carries the
+    /// pre-rendered markdown body — the caller writes it to disk and
+    /// spawns the editor so `App` stays free of IO.
+    ExportTranscript(String),
 }
 
 /// Main TUI application state.
@@ -79,6 +87,15 @@ pub struct App {
     /// Accumulated usage / cost for the current session (fed to the
     /// status-line payload). Updated from engine `Result` events.
     session_usage: SessionUsageSnapshot,
+
+    // ── Transcript / focus view + terminal env (issue #12) ─────────
+    /// Which view the user is currently in — cycled with `Ctrl+O`.
+    view_mode: ViewMode,
+    /// Extra state only used in transcript/focus modes.
+    transcript_state: TranscriptState,
+    /// Env-driven terminal config: `CLAUDE_CODE_NO_FLICKER`,
+    /// `CLAUDE_CODE_DISABLE_MOUSE`, `CLAUDE_CODE_SCROLL_SPEED`.
+    terminal_env: TerminalEnvConfig,
 }
 
 /// Subset of engine usage-tracking relevant to the status-line payload.
@@ -118,6 +135,9 @@ impl App {
             status_line_settings: StatusLineSettings::default(),
             status_line_runner: StatusLineRunner::new(),
             session_usage: SessionUsageSnapshot::default(),
+            view_mode: ViewMode::default(),
+            transcript_state: TranscriptState::default(),
+            terminal_env: TerminalEnvConfig::default(),
         }
     }
 
@@ -278,6 +298,184 @@ impl App {
         self.status_line_runner = runner;
     }
 
+    // ── Terminal env + transcript (issue #12) ──────────────────────────
+
+    /// Install a resolved terminal-env config. Called by the TUI runner
+    /// once at startup; `ScrollSpeed` is then consumed by the scroll
+    /// helpers in both prompt and transcript modes.
+    pub fn set_terminal_env(&mut self, cfg: TerminalEnvConfig) {
+        self.terminal_env = cfg;
+        self.dirty = true;
+    }
+
+    /// Current terminal-env config (read by the TUI runner to decide
+    /// whether to emit synchronized-update escapes).
+    pub fn terminal_env(&self) -> TerminalEnvConfig {
+        self.terminal_env
+    }
+
+    /// Current view mode — tests and the TUI key binding use this to
+    /// verify Ctrl+O cycling.
+    pub fn view_mode(&self) -> ViewMode {
+        self.view_mode
+    }
+
+    /// Advance the view mode (`Prompt → Transcript → Focus → Prompt`).
+    /// Exposed separately so `/` slash commands could also drive it in
+    /// the future.
+    pub fn cycle_view_mode(&mut self) {
+        // Leaving transcript throws away search state — entering fresh
+        // next time is less surprising than stale matches hanging around.
+        if self.view_mode.is_transcript_like() {
+            self.transcript_state.clear_search();
+        }
+        self.view_mode = self.view_mode.next();
+        // Seed the transcript scroll offset to the bottom on entry so the
+        // user starts reading the latest exchange.
+        if self.view_mode.is_transcript_like() {
+            self.transcript_state.scroll_offset = usize::MAX;
+        }
+        self.dirty = true;
+    }
+
+    /// Current transcript state — exposed read-only so tests can assert
+    /// search invariants without going through the render path.
+    pub fn transcript_state(&self) -> &TranscriptState {
+        &self.transcript_state
+    }
+
+    /// Dispatch a key event to the transcript handler. Returns an
+    /// [`AppAction`] the TUI runner must act on (Quit / export / None).
+    fn handle_transcript_key(&mut self, key: KeyEvent) -> AppAction {
+        use KeyCode::*;
+        let step = self.terminal_env.scroll_speed.max(1) as usize;
+
+        // Search input mode — keystrokes build the query.
+        if matches!(
+            self.transcript_state.input_mode,
+            TranscriptInputMode::Search
+        ) {
+            match (key.modifiers, key.code) {
+                (_, Esc) => {
+                    self.transcript_state.clear_search();
+                }
+                (_, Enter) => {
+                    self.commit_search();
+                }
+                (_, Backspace) => {
+                    self.transcript_state.query.pop();
+                }
+                (m, Char(c)) if !m.contains(KeyModifiers::CONTROL) => {
+                    self.transcript_state.query.push(c);
+                }
+                _ => {}
+            }
+            return AppAction::None;
+        }
+
+        // Normal transcript navigation.
+        match (key.modifiers, key.code) {
+            // Exit transcript back to prompt.
+            (_, Esc) | (_, Char('q')) => {
+                // Hop straight back to Prompt (not the next cycle step)
+                // since Esc / q are the documented "leave" keys.
+                self.transcript_state.clear_search();
+                self.view_mode = ViewMode::Prompt;
+                self.dirty = true;
+            }
+            // Start a search.
+            (_, Char('/')) => {
+                self.transcript_state.input_mode = TranscriptInputMode::Search;
+                self.transcript_state.query.clear();
+                self.transcript_state.matches.clear();
+                self.transcript_state.focused = None;
+                self.dirty = true;
+            }
+            // Navigate search hits.
+            (_, Char('n')) => {
+                self.transcript_state.next_match();
+                self.snap_to_current_match();
+            }
+            (_, Char('N')) => {
+                self.transcript_state.prev_match();
+                self.snap_to_current_match();
+            }
+            // Export to editor.
+            (_, Char('e')) => {
+                let body = transcript::render_markdown_dump(&self.messages);
+                return AppAction::ExportTranscript(body);
+            }
+            // Less-style scroll.
+            (_, Char('j')) | (_, Down) => {
+                self.scroll_transcript_down(1);
+            }
+            (_, Char('k')) | (_, Up) => {
+                self.scroll_transcript_up(1);
+            }
+            (_, PageDown) => {
+                self.scroll_transcript_down(step.max(5));
+            }
+            (_, PageUp) => {
+                self.scroll_transcript_up(step.max(5));
+            }
+            (KeyModifiers::CONTROL, Char('d')) => {
+                self.scroll_transcript_down(step.max(5));
+            }
+            (KeyModifiers::CONTROL, Char('u')) => {
+                self.scroll_transcript_up(step.max(5));
+            }
+            (_, Home) => {
+                self.transcript_state.scroll_offset = 0;
+                self.dirty = true;
+            }
+            (_, End) | (_, Char('G')) => {
+                self.transcript_state.scroll_offset = usize::MAX;
+                self.dirty = true;
+            }
+            (_, Char('g')) => {
+                self.transcript_state.scroll_offset = 0;
+                self.dirty = true;
+            }
+            _ => {}
+        }
+        AppAction::None
+    }
+
+    fn scroll_transcript_down(&mut self, lines: usize) {
+        self.transcript_state.scroll_offset = self
+            .transcript_state
+            .scroll_offset
+            .saturating_add(lines);
+        self.dirty = true;
+    }
+
+    fn scroll_transcript_up(&mut self, lines: usize) {
+        self.transcript_state.scroll_offset = self
+            .transcript_state
+            .scroll_offset
+            .saturating_sub(lines);
+        self.dirty = true;
+    }
+
+    fn commit_search(&mut self) {
+        let hits = transcript::search_messages(&self.messages, &self.transcript_state.query);
+        self.transcript_state.set_matches(hits);
+        self.transcript_state.input_mode = TranscriptInputMode::Normal;
+        self.snap_to_current_match();
+    }
+
+    /// Move the viewport so the currently-focused match is visible. We
+    /// snap to the match's message start line; the messages pane handles
+    /// the rest of the clamp.
+    fn snap_to_current_match(&mut self) {
+        if let Some(SearchMatch { message_index }) = self.transcript_state.current_match() {
+            let line = self.vscroll.offset_of(message_index);
+            // Bias slightly upward so the line has context above it.
+            self.transcript_state.scroll_offset = line.saturating_sub(1);
+            self.dirty = true;
+        }
+    }
+
     /// Build the current status-line payload from app state.
     fn build_status_payload(&self) -> StatusLinePayload {
         let mut p = StatusLinePayload::new();
@@ -382,6 +580,8 @@ impl App {
             return AppAction::None;
         }
 
+        // Ctrl+C / Ctrl+D retain their "abort or quit" semantics even in
+        // transcript / focus modes — the user always needs a way out.
         match (key.modifiers, key.code) {
             (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
                 if self.is_streaming {
@@ -392,28 +592,47 @@ impl App {
                 }
             }
             (KeyModifiers::CONTROL, KeyCode::Char('d'))
-                if self.prompt.is_active || !self.is_streaming =>
+                if self.view_mode == ViewMode::Prompt
+                    && (self.prompt.is_active || !self.is_streaming) =>
             {
                 self.should_quit = true;
                 return AppAction::Quit;
             }
+            (KeyModifiers::CONTROL, KeyCode::Char('o')) => {
+                // Cycle `Prompt → Transcript → Focus → Prompt`.
+                self.cycle_view_mode();
+                return AppAction::None;
+            }
+            _ => {}
+        }
+
+        // Transcript / focus modes take over all remaining keystrokes.
+        if self.view_mode.is_transcript_like() {
+            return self.handle_transcript_key(key);
+        }
+
+        match (key.modifiers, key.code) {
 
             (_, KeyCode::PageUp) | (KeyModifiers::SHIFT, KeyCode::Up) => {
-                self.scroll_up(5);
+                let step = self.terminal_env.scroll_speed as usize;
+                self.scroll_up(step);
                 return AppAction::ScrollUp;
             }
             (_, KeyCode::PageDown) | (KeyModifiers::SHIFT, KeyCode::Down) => {
-                self.scroll_down(5);
+                let step = self.terminal_env.scroll_speed as usize;
+                self.scroll_down(step);
                 return AppAction::ScrollDown;
             }
             (KeyModifiers::CONTROL, KeyCode::Char('u')) if !self.prompt.is_active => {
-                self.scroll_up(10);
+                let step = (self.terminal_env.scroll_speed as usize).saturating_mul(2);
+                self.scroll_up(step);
                 return AppAction::ScrollUp;
             }
             (KeyModifiers::CONTROL, KeyCode::Char('d'))
                 if !self.prompt.is_active && self.is_streaming =>
             {
-                self.scroll_down(10);
+                let step = (self.terminal_env.scroll_speed as usize).saturating_mul(2);
+                self.scroll_down(step);
                 return AppAction::ScrollDown;
             }
 
@@ -444,6 +663,13 @@ impl App {
             return;
         }
 
+        // Transcript / focus modes have a different chrome — dispatch
+        // before we compute the prompt-mode layout.
+        if self.view_mode.is_transcript_like() {
+            self.render_transcript(frame, size);
+            return;
+        }
+
         // Kick the status-line runner before computing layout so this
         // frame already has a chance to show a refreshed output. The
         // runner throttles refreshes internally.
@@ -471,7 +697,10 @@ impl App {
         };
         let bottom_height = spinner_height + suggestion_height + input_height + status_height;
         let min_message_height = if self.show_welcome {
-            welcome::welcome_height()
+            // Size-aware minimum (issue #12): narrow terminals use shorter
+            // layouts, so reserving 16 lines always left narrow splits
+            // with no room for the messages pane.
+            welcome::welcome_height_for(size.width)
         } else {
             1
         };
@@ -677,6 +906,97 @@ impl App {
 
         let status_text = format!(" {}", parts.join(" | "));
         let line = Line::from(vec![Span::styled(status_text, self.theme.dim)]);
+        buf.set_line(area.x, area.y, &line, area.width);
+    }
+
+    // ── Transcript rendering (issue #12) ───────────────────────────
+
+    fn render_transcript(&mut self, frame: &mut Frame, size: Rect) {
+        // Focus mode hides all chrome and uses the full height for body;
+        // Transcript mode reserves 1 line for header + 1 for footer.
+        let chrome = if matches!(self.view_mode, ViewMode::Transcript) {
+            1u16
+        } else {
+            0
+        };
+        let header_height = chrome;
+        let footer_height = chrome;
+        let body_height = size.height.saturating_sub(header_height + footer_height);
+
+        let rows = Layout::vertical([
+            Constraint::Length(header_height),
+            Constraint::Length(body_height),
+            Constraint::Length(footer_height),
+        ])
+        .split(size);
+
+        let body_area = rows[1];
+
+        // Ensure the virtual-scroll cache matches the body width. Sharing
+        // `vscroll` with prompt mode is fine because both invalidate on
+        // width change.
+        self.vscroll
+            .ensure_up_to_date(&self.messages, body_area.width, &self.theme);
+        let total = self.vscroll.total_lines();
+        let max_scroll = total.saturating_sub(body_area.height as usize);
+        if self.transcript_state.scroll_offset > max_scroll {
+            self.transcript_state.scroll_offset = max_scroll;
+        }
+
+        render_messages(
+            &self.messages,
+            body_area,
+            frame.buffer_mut(),
+            &self.theme,
+            self.transcript_state.scroll_offset,
+            &self.vscroll,
+        );
+
+        if header_height > 0 {
+            self.render_transcript_header(rows[0], frame.buffer_mut());
+        }
+        if footer_height > 0 {
+            self.render_transcript_footer(rows[2], frame.buffer_mut());
+        }
+    }
+
+    fn render_transcript_header(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        let total = self.messages.len();
+        let mut parts = vec![format!("── {} · {} messages", self.view_mode.label(), total)];
+        if matches!(
+            self.transcript_state.input_mode,
+            TranscriptInputMode::Search
+        ) {
+            parts.push(format!("search: \"{}\"", self.transcript_state.query));
+        } else if !self.transcript_state.query.is_empty() {
+            let total = self.transcript_state.matches.len();
+            let idx = self
+                .transcript_state
+                .focused
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            parts.push(format!(
+                "search: \"{}\" ({}/{})",
+                self.transcript_state.query, idx, total
+            ));
+        }
+        let text = parts.join(" · ");
+        let line = Line::from(vec![Span::styled(text, self.theme.dim)]);
+        buf.set_line(area.x, area.y, &line, area.width);
+    }
+
+    fn render_transcript_footer(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        let text = match self.transcript_state.input_mode {
+            TranscriptInputMode::Search => {
+                " [Enter] commit · [Esc] cancel · type to extend query".to_string()
+            }
+            TranscriptInputMode::Normal => {
+                " [Esc/q] prompt · [Ctrl+O] cycle · [/] search · [n]/[N] next/prev · \
+                 [e] editor · [g]/[G] top/bottom"
+                    .to_string()
+            }
+        };
+        let line = Line::from(vec![Span::styled(text, self.theme.dim)]);
         buf.set_line(area.x, area.y, &line, area.width);
     }
 }

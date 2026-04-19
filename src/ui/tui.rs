@@ -126,6 +126,12 @@ pub async fn run_tui(
         app.set_status_line_settings(app_state.settings.status_line.clone());
     }
 
+    // Terminal env config (issue #12) — `CLAUDE_CODE_NO_FLICKER`,
+    // `CLAUDE_CODE_DISABLE_MOUSE`, `CLAUDE_CODE_SCROLL_SPEED`. Cached
+    // for the duration of the session.
+    let terminal_env = super::terminal_env::TerminalEnvConfig::from_env();
+    app.set_terminal_env(terminal_env);
+
     // ── Create channels ────────────────────────────────────────────
     let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<EngineEvent>();
     let mut streaming_state = StreamingState {
@@ -172,10 +178,17 @@ pub async fn run_tui(
 
     loop {
         // Draw the UI only when something changed (dirty flag).
+        // `CLAUDE_CODE_NO_FLICKER=0` bypasses synchronized-update escapes
+        // (issue #12) for users on terminals that handle them poorly.
         if app.is_dirty() {
-            execute!(terminal.backend_mut(), BeginSynchronizedUpdate)?;
+            let sync = app.terminal_env().sync_updates;
+            if sync {
+                execute!(terminal.backend_mut(), BeginSynchronizedUpdate)?;
+            }
             terminal.draw(|frame| app.render(frame))?;
-            execute!(terminal.backend_mut(), EndSynchronizedUpdate)?;
+            if sync {
+                execute!(terminal.backend_mut(), EndSynchronizedUpdate)?;
+            }
             app.mark_clean();
         }
 
@@ -249,6 +262,21 @@ pub async fn run_tui(
                             AppAction::Quit => {
                                 debug!("TUI: quit requested");
                                 break;
+                            }
+                            AppAction::ExportTranscript(body) => {
+                                match export_to_editor(&body).await {
+                                    Ok(path) => add_system_info(
+                                        &mut app,
+                                        &format!(
+                                            "Transcript exported to {}",
+                                            path.display()
+                                        ),
+                                    ),
+                                    Err(e) => add_system_info(
+                                        &mut app,
+                                        &format!("Transcript export failed: {}", e),
+                                    ),
+                                }
                             }
                             // Scroll actions are handled internally by App
                             _ => {}
@@ -643,6 +671,67 @@ fn add_system_info(app: &mut App, text: &str) {
         },
         content: text.to_string(),
     }));
+}
+
+/// Export a pre-rendered transcript body to a temp file and open it in
+/// `$VISUAL` / `$EDITOR`. Returns the path on success. The TUI exits
+/// alternate screen while the editor runs so the user can scroll freely,
+/// and re-enters before returning to the main loop.
+///
+/// Falls back to "just write the file" when no editor env var is set.
+async fn export_to_editor(body: &str) -> anyhow::Result<std::path::PathBuf> {
+    use std::io::Write as _;
+    let mut path = std::env::temp_dir();
+    let stem = format!(
+        "cc-rust-transcript-{}.md",
+        chrono::Utc::now().format("%Y%m%d-%H%M%S")
+    );
+    path.push(stem);
+    {
+        let mut f = std::fs::File::create(&path)?;
+        f.write_all(body.as_bytes())?;
+    }
+
+    let editor = std::env::var("VISUAL")
+        .or_else(|_| std::env::var("EDITOR"))
+        .ok();
+    if let Some(ed) = editor.filter(|s| !s.trim().is_empty()) {
+        // Leave the alternate screen so the editor can paint over a real
+        // terminal. Re-entering on the way out is handled by the caller
+        // via the dirty flag + next render.
+        let _ = execute!(
+            std::io::stdout(),
+            LeaveAlternateScreen,
+            cursor::Show
+        );
+        let _ = terminal::disable_raw_mode();
+
+        let status = tokio::process::Command::new(&ed)
+            .arg(&path)
+            .status()
+            .await;
+
+        // Always re-arm the terminal, even on editor failure.
+        let _ = terminal::enable_raw_mode();
+        let _ = execute!(
+            std::io::stdout(),
+            EnterAlternateScreen,
+            cursor::Hide
+        );
+
+        match status {
+            Ok(s) if s.success() => {}
+            Ok(s) => {
+                return Err(anyhow::anyhow!(
+                    "{} exited with status {}",
+                    ed,
+                    s.code().unwrap_or(-1)
+                ))
+            }
+            Err(e) => return Err(anyhow::anyhow!("could not launch '{}': {}", ed, e)),
+        }
+    }
+    Ok(path)
 }
 
 /// Add an error system message to the app.

@@ -7,7 +7,7 @@ Each issue includes a description, reproduction steps, and current status.
 
 ## 1. Terminal resize does not reflow content
 
-**Status**: Open
+**Status**: Fixed for Rust TUI (2026-04-19, issue #12). Still open for the TS/OpenTUI frontend.
 
 **Description**: When the terminal window is resized (e.g., dragging the window border to shrink/expand), the rendered content does not adapt to the new dimensions. The user must use `Ctrl + -` / `Ctrl + +` to zoom out/in to see the full content. This affects all components: message list, input prompt, tool output blocks, etc.
 
@@ -19,7 +19,18 @@ Each issue includes a description, reproduction steps, and current status.
 3. Drag the terminal window to a narrower width
 4. Observe that text is clipped or overflows rather than reflowing
 
-**Likely cause**: The `Resize` frontend message is sent to the backend but the ink-terminal rendering layer may not be re-measuring `process.stdout.columns` / `process.stdout.rows` on resize events, or components are not subscribing to terminal dimension changes.
+**Fix (Rust side)**:
+- `src/ui/tui.rs` already forwards `Event::Resize` to `App::mark_dirty`
+- `src/ui/virtual_scroll.rs` now has explicit regression tests confirming
+  a width change invalidates the height cache, re-measures every message,
+  and produces a new prefix-sum offset table
+- `src/ui/welcome.rs` gained `welcome_height_for(width)` so narrow
+  terminals don't reserve 16 rows when they only need 8 / 12
+
+**Still open (TS/OpenTUI side)**:
+The ink-terminal rendering layer may not be re-measuring
+`process.stdout.columns` / `process.stdout.rows` on resize events, or
+components are not subscribing to terminal dimension changes.
 
 **Related files**:
 - `ui/src/ipc/protocol.ts` — `Resize` message type

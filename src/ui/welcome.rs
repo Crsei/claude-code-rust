@@ -480,11 +480,30 @@ fn render_compact(area: Rect, buf: &mut Buffer, version: &str, model_name: &str,
     p.render(area, buf);
 }
 
-/// Height of the welcome screen (for layout calculation).
-pub fn welcome_height() -> u16 {
-    // logo(8) + spacer(1) + info(5) + border(2) = 16, minimum usable
-    16
+/// Preferred minimum height of the welcome screen at the given terminal
+/// width. Used by the main layout to decide how much vertical space to
+/// reserve before the bottom chrome (input / status line).
+///
+/// Narrow terminals fall back to shorter layouts, so forcing 16 lines
+/// everywhere caused content clipping at small sizes (issue #12 —
+/// "窄终端 welcome screen 截断"). The three tiers mirror the three
+/// render paths in this module:
+///
+/// | Width (outer) | Layout                  | Rows needed |
+/// |---------------|-------------------------|-------------|
+/// | `< 30`        | compact (inside border) | 8           |
+/// | `< 80`        | single-column           | 12          |
+/// | `>= 80`       | two-column + logo       | 16          |
+pub fn welcome_height_for(width: u16) -> u16 {
+    if width < 30 {
+        8
+    } else if width < 80 {
+        12
+    } else {
+        16
+    }
 }
+
 
 #[cfg(test)]
 mod tests {
