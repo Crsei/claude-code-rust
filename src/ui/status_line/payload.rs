@@ -160,7 +160,10 @@ mod tests {
     fn payload_serializes_minimum_required_keys() {
         let payload = StatusLinePayload::new();
         let v = serde_json::to_value(&payload).unwrap();
-        assert_eq!(v.get("hookEventName").and_then(|x| x.as_str()), Some("StatusLine"));
+        assert_eq!(
+            v.get("hookEventName").and_then(|x| x.as_str()),
+            Some("StatusLine")
+        );
         assert_eq!(v.get("version").and_then(|x| x.as_u64()), Some(1));
         assert_eq!(v.get("streaming").and_then(|x| x.as_bool()), Some(false));
         // Absent-optional fields really are absent from the JSON.
@@ -200,14 +203,19 @@ mod tests {
                 session_duration_secs: Some(42),
             }),
             output_style: Some("default".into()),
-            vim: Some(VimStatus { mode: "normal".into() }),
+            vim: Some(VimStatus {
+                mode: "normal".into(),
+            }),
             streaming: true,
             message_count: 7,
         };
         let s = serde_json::to_string(&p).unwrap();
         let parsed: StatusLinePayload = serde_json::from_str(&s).unwrap();
         assert_eq!(parsed.session_id.as_deref(), Some("abc-123"));
-        assert_eq!(parsed.model.as_ref().unwrap().id, "claude-sonnet-4-20250514");
+        assert_eq!(
+            parsed.model.as_ref().unwrap().id,
+            "claude-sonnet-4-20250514"
+        );
         assert_eq!(parsed.context.as_ref().unwrap().input_tokens, 1000);
         assert!(parsed.streaming);
         assert_eq!(parsed.message_count, 7);

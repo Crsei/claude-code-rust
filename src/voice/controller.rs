@@ -77,10 +77,7 @@ struct ControllerState {
 }
 
 impl VoiceController {
-    pub fn new(
-        audio: Arc<dyn AudioCaptureBackend>,
-        stt: Arc<dyn TranscriptionClient>,
-    ) -> Self {
+    pub fn new(audio: Arc<dyn AudioCaptureBackend>, stt: Arc<dyn TranscriptionClient>) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
         Self {
             inner: Arc::new(Mutex::new(ControllerState {
@@ -212,9 +209,8 @@ impl VoiceController {
                         guard.state = VoiceState::Error(msg.clone());
                         guard.active_handle = None;
                     }
-                    let _ = events_tx.send(VoiceEvent::StateChanged(VoiceState::Error(
-                        msg.clone(),
-                    )));
+                    let _ =
+                        events_tx.send(VoiceEvent::StateChanged(VoiceState::Error(msg.clone())));
                     let _ = events_tx.send(VoiceEvent::Error(msg));
                 }
             }
@@ -237,9 +233,9 @@ fn format_stt_error(e: &SttError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use crate::voice::audio::NullAudioBackend;
     use crate::voice::stt::{NullTranscriptionClient, SttUnavailable};
+    use async_trait::async_trait;
 
     /// Local canned client: echoes a fixed transcription back regardless
     /// of the audio input. Inline to keep stt.rs's test module private.

@@ -51,10 +51,7 @@ impl Feasibility {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FeasibilityReason {
     /// Auth layer can't serve `voice_stream` — API keys, Bedrock, etc.
-    UnsupportedAuth {
-        auth_label: String,
-        message: String,
-    },
+    UnsupportedAuth { auth_label: String, message: String },
     /// User isn't logged in at all.
     NotAuthenticated(String),
     /// Remote environment (SSH session, CC_RUST_REMOTE).
@@ -108,8 +105,7 @@ pub fn check_feasibility(
 pub fn auth_blocker(auth: &AuthMethod) -> Option<FeasibilityReason> {
     match auth {
         AuthMethod::None => Some(FeasibilityReason::NotAuthenticated(
-            "Voice mode requires a Claude.ai account. Run `/login` to sign in."
-                .to_string(),
+            "Voice mode requires a Claude.ai account. Run `/login` to sign in.".to_string(),
         )),
         AuthMethod::ApiKey(_) => Some(FeasibilityReason::UnsupportedAuth {
             auth_label: "api_key".into(),
@@ -186,7 +182,10 @@ mod tests {
         let auth = AuthMethod::ApiKey("sk-foo".into());
         let f = check_feasibility(&auth, &a, &s);
         match f.reason().unwrap() {
-            FeasibilityReason::UnsupportedAuth { auth_label, message } => {
+            FeasibilityReason::UnsupportedAuth {
+                auth_label,
+                message,
+            } => {
                 assert_eq!(auth_label, "api_key");
                 assert!(message.contains("Claude.ai OAuth"));
             }

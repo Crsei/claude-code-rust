@@ -168,7 +168,11 @@ fn reload_now(reg: &KeybindingRegistry) -> String {
                     reg.all_bindings().len()
                 )
             } else {
-                let mut out = format!("Reloaded {} with {} issue(s):\n", path.display(), issues.len());
+                let mut out = format!(
+                    "Reloaded {} with {} issue(s):\n",
+                    path.display(),
+                    issues.len()
+                );
                 for i in issues {
                     out.push_str(&format!("  - {}\n", i));
                 }

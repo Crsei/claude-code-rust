@@ -48,8 +48,8 @@ impl CommandHandler for EffortHandler {
         }
 
         let lower = arg.to_lowercase();
-        let accepted = VALID_LEVELS.contains(&lower.as_str())
-            || effort_to_budget_tokens(&arg).is_some();
+        let accepted =
+            VALID_LEVELS.contains(&lower.as_str()) || effort_to_budget_tokens(&arg).is_some();
 
         if !accepted {
             return Ok(CommandResult::Output(format!(

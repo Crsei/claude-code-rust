@@ -36,7 +36,11 @@ pub struct VoiceHandler;
 #[async_trait]
 impl CommandHandler for VoiceHandler {
     async fn execute(&self, args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
-        let sub = args.split_whitespace().next().unwrap_or("").to_ascii_lowercase();
+        let sub = args
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
         let output = match sub.as_str() {
             "" | "status" | "show" => render_status(ctx),
             "on" | "enable" => toggle(true, ctx).await,
@@ -99,7 +103,9 @@ fn render_status(ctx: &CommandContext) -> String {
         }
     }
 
-    out.push_str("\nPush-to-talk: hold `Ctrl+Space` in the chat input to record; release to transcribe.\n");
+    out.push_str(
+        "\nPush-to-talk: hold `Ctrl+Space` in the chat input to record; release to transcribe.\n",
+    );
     out.push_str("Config path: ");
     out.push_str(&settings::user_settings_path().display().to_string());
     out.push('\n');

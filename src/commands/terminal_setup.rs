@@ -262,10 +262,7 @@ fn render_env(p: &EnvProbe) -> String {
     out.push_str(&row("EDITOR", &p.editor));
 
     out.push_str("\nCLAUDE_CODE_* toggles (issue #12)\n");
-    out.push_str(&row(
-        "CLAUDE_CODE_NO_FLICKER",
-        &p.claude_code_no_flicker,
-    ));
+    out.push_str(&row("CLAUDE_CODE_NO_FLICKER", &p.claude_code_no_flicker));
     out.push_str(&format!(
         "    → synchronized updates: {}\n",
         if effective.sync_updates { "on" } else { "off" }
@@ -300,7 +297,11 @@ fn render_tips(p: &EnvProbe) -> String {
     out.push_str("Tips\n");
     out.push_str("────\n");
 
-    out.push_str(&format!("Shift+Enter ({}):\n  • {}\n\n", label.as_str(), label.shift_enter_tip()));
+    out.push_str(&format!(
+        "Shift+Enter ({}):\n  • {}\n\n",
+        label.as_str(),
+        label.shift_enter_tip()
+    ));
 
     if p.tmux.is_some() {
         out.push_str("tmux detected:\n");
@@ -319,7 +320,9 @@ fn render_tips(p: &EnvProbe) -> String {
         "  • Terminal bell / OSC 9 notifications are emitted when the agent finishes a turn. \
          If your terminal suppresses them, check its 'Silence bell' / 'Visual bell' setting.\n",
     );
-    out.push_str("  • On Linux desktops, `notify-send` hooks can be wired through `statusLine.command`.\n\n");
+    out.push_str(
+        "  • On Linux desktops, `notify-send` hooks can be wired through `statusLine.command`.\n\n",
+    );
 
     out.push_str("Transcript / focus view (issue #12):\n");
     out.push_str("  • Ctrl+O cycles Prompt → Transcript → Focus.\n");
@@ -416,10 +419,7 @@ mod tests {
 
     #[test]
     fn terminal_label_prefers_windows_terminal_when_wt_session_set() {
-        let p = EnvProbe::from_iter(vec![
-            ("WT_SESSION", "abc"),
-            ("TERM_PROGRAM", "unknown"),
-        ]);
+        let p = EnvProbe::from_iter(vec![("WT_SESSION", "abc"), ("TERM_PROGRAM", "unknown")]);
         assert_eq!(p.terminal_label(), TerminalLabel::WindowsTerminal);
     }
 

@@ -207,9 +207,7 @@ impl KeybindingRegistry {
                 out.push((*ctx, chord.clone(), action.clone()));
             }
         }
-        out.sort_by(|a, b| {
-            (a.0.as_str(), a.1.display()).cmp(&(b.0.as_str(), b.1.display()))
-        });
+        out.sort_by(|a, b| (a.0.as_str(), a.1.display()).cmp(&(b.0.as_str(), b.1.display())));
         out
     }
 
@@ -234,10 +232,7 @@ fn install_defaults(map: &mut HashMap<Context, HashMap<Chord, Action>>) {
     }
 }
 
-fn apply_user(
-    effective: &mut HashMap<Context, HashMap<Chord, Action>>,
-    user: &UserBindings,
-) {
+fn apply_user(effective: &mut HashMap<Context, HashMap<Chord, Action>>, user: &UserBindings) {
     for (ctx, entries) in &user.per_context {
         let ctx_map = effective.entry(*ctx).or_default();
         // First pass: handle unbinds. Support unbinding a specific chord,
@@ -277,10 +272,7 @@ mod tests {
         let reg = KeybindingRegistry::with_defaults();
         let stroke = Keystroke::parse("ctrl+c").unwrap();
         let r = reg.resolve_single(Context::Chat, &stroke);
-        assert_eq!(
-            r,
-            Resolution::Action(Action::new_static("app:interrupt"))
-        );
+        assert_eq!(r, Resolution::Action(Action::new_static("app:interrupt")));
     }
 
     #[test]
@@ -304,10 +296,7 @@ mod tests {
         let reg = KeybindingRegistry::with_defaults();
         let chord = Chord::parse("ctrl+x ctrl+k").unwrap();
         let r = reg.resolve_chord(Context::Chat, &chord);
-        assert_eq!(
-            r,
-            Resolution::Action(Action::new_static("chat:killAgents"))
-        );
+        assert_eq!(r, Resolution::Action(Action::new_static("chat:killAgents")));
     }
 
     #[test]

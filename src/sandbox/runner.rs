@@ -198,10 +198,7 @@ fn extract_command_parts(
     (program, args, envs, cwd)
 }
 
-fn apply_envs(
-    cmd: &mut Command,
-    envs: &[(std::ffi::OsString, Option<std::ffi::OsString>)],
-) {
+fn apply_envs(cmd: &mut Command, envs: &[(std::ffi::OsString, Option<std::ffi::OsString>)]) {
     for (k, v) in envs {
         match v {
             Some(val) => {

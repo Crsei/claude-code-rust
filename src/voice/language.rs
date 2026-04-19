@@ -147,13 +147,28 @@ mod tests {
     #[test]
     fn common_bcp47_variants_map_to_base_code() {
         for raw in ["en-US", "en_us", "EN-us", "English", "english"] {
-            assert_eq!(normalize_language_for_stt(Some(raw)).code, "en", "raw={}", raw);
+            assert_eq!(
+                normalize_language_for_stt(Some(raw)).code,
+                "en",
+                "raw={}",
+                raw
+            );
         }
         for raw in ["zh-CN", "zh_hans", "CHINESE", "中文"] {
-            assert_eq!(normalize_language_for_stt(Some(raw)).code, "zh", "raw={}", raw);
+            assert_eq!(
+                normalize_language_for_stt(Some(raw)).code,
+                "zh",
+                "raw={}",
+                raw
+            );
         }
         for raw in ["es-mx", "Español", "ES-ES"] {
-            assert_eq!(normalize_language_for_stt(Some(raw)).code, "es", "raw={}", raw);
+            assert_eq!(
+                normalize_language_for_stt(Some(raw)).code,
+                "es",
+                "raw={}",
+                raw
+            );
         }
     }
 

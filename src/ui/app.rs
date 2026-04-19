@@ -17,9 +17,7 @@ use super::status_line::{
 };
 use super::terminal_env::TerminalEnvConfig;
 use super::theme::Theme;
-use super::transcript::{
-    self, SearchMatch, TranscriptInputMode, TranscriptState, ViewMode,
-};
+use super::transcript::{self, SearchMatch, TranscriptInputMode, TranscriptState, ViewMode};
 use super::virtual_scroll::VirtualScroll;
 use super::welcome;
 use crate::voice::{VoiceController, VoiceEvent};
@@ -529,18 +527,14 @@ impl App {
     }
 
     fn scroll_transcript_down(&mut self, lines: usize) {
-        self.transcript_state.scroll_offset = self
-            .transcript_state
-            .scroll_offset
-            .saturating_add(lines);
+        self.transcript_state.scroll_offset =
+            self.transcript_state.scroll_offset.saturating_add(lines);
         self.dirty = true;
     }
 
     fn scroll_transcript_up(&mut self, lines: usize) {
-        self.transcript_state.scroll_offset = self
-            .transcript_state
-            .scroll_offset
-            .saturating_sub(lines);
+        self.transcript_state.scroll_offset =
+            self.transcript_state.scroll_offset.saturating_sub(lines);
         self.dirty = true;
     }
 
@@ -696,9 +690,7 @@ impl App {
             // KeyEventKind::Release isn't delivered on every terminal,
             // so a single press toggles Recording → Transcribing to
             // keep things usable even without release events.
-            (KeyModifiers::CONTROL, KeyCode::Char(' '))
-                if self.view_mode == ViewMode::Prompt =>
-            {
+            (KeyModifiers::CONTROL, KeyCode::Char(' ')) if self.view_mode == ViewMode::Prompt => {
                 if self.is_voice_ready() {
                     let state = self
                         .voice
@@ -706,8 +698,9 @@ impl App {
                         .map(|v| v.state())
                         .unwrap_or(crate::voice::VoiceState::Idle);
                     match state {
-                        crate::voice::VoiceState::Idle
-                        | crate::voice::VoiceState::Error(_) => self.begin_push_to_talk(),
+                        crate::voice::VoiceState::Idle | crate::voice::VoiceState::Error(_) => {
+                            self.begin_push_to_talk()
+                        }
                         crate::voice::VoiceState::Recording => self.end_push_to_talk(),
                         crate::voice::VoiceState::Transcribing => {
                             // Ignore — wait for the task to finalize.
@@ -727,7 +720,6 @@ impl App {
         }
 
         match (key.modifiers, key.code) {
-
             (_, KeyCode::PageUp) | (KeyModifiers::SHIFT, KeyCode::Up) => {
                 let step = self.terminal_env.scroll_speed as usize;
                 self.scroll_up(step);
@@ -790,13 +782,12 @@ impl App {
         // runner throttles refreshes internally.
         self.trigger_status_refresh();
         let status_output = self.status_line_runner.latest();
-        let custom_lines: Vec<String> = if status_output.is_usable()
-            && self.status_line_settings.is_command_mode()
-        {
-            status_output.lines(STATUS_LINE_MAX_LINES)
-        } else {
-            Vec::new()
-        };
+        let custom_lines: Vec<String> =
+            if status_output.is_usable() && self.status_line_settings.is_command_mode() {
+                status_output.lines(STATUS_LINE_MAX_LINES)
+            } else {
+                Vec::new()
+            };
 
         let spinner_height = if self.is_streaming { 1u16 } else { 0 };
         let suggestion_height = if !self.is_streaming && self.suggestions.is_some() {
@@ -1085,7 +1076,11 @@ impl App {
 
     fn render_transcript_header(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
         let total = self.messages.len();
-        let mut parts = vec![format!("── {} · {} messages", self.view_mode.label(), total)];
+        let mut parts = vec![format!(
+            "── {} · {} messages",
+            self.view_mode.label(),
+            total
+        )];
         if matches!(
             self.transcript_state.input_mode,
             TranscriptInputMode::Search
@@ -1093,11 +1088,7 @@ impl App {
             parts.push(format!("search: \"{}\"", self.transcript_state.query));
         } else if !self.transcript_state.query.is_empty() {
             let total = self.transcript_state.matches.len();
-            let idx = self
-                .transcript_state
-                .focused
-                .map(|i| i + 1)
-                .unwrap_or(0);
+            let idx = self.transcript_state.focused.map(|i| i + 1).unwrap_or(0);
             parts.push(format!(
                 "search: \"{}\" ({}/{})",
                 self.transcript_state.query, idx, total

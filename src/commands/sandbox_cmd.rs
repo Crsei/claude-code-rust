@@ -140,7 +140,10 @@ fn render_status(ctx: &CommandContext) -> String {
         "  Fail if unavailable: {}\n",
         policy.fail_if_unavailable
     ));
-    out.push_str(&format!("  Workspace: {}\n", policy.paths.workspace().display()));
+    out.push_str(&format!(
+        "  Workspace: {}\n",
+        policy.paths.workspace().display()
+    ));
 
     // Platform / OS primitive
     out.push_str("\nPlatform:\n");
@@ -161,10 +164,7 @@ fn render_status(ctx: &CommandContext) -> String {
 
     // Network summary
     out.push_str("\nNetwork:\n");
-    out.push_str(&format!(
-        "  Disabled:        {}\n",
-        policy.network.disabled
-    ));
+    out.push_str(&format!("  Disabled:        {}\n", policy.network.disabled));
     if policy.network.allowed_domains.is_empty() {
         out.push_str("  Allowed domains: (all, no restriction)\n");
     } else {
@@ -273,10 +273,7 @@ mod tests {
         let handler = SandboxHandler;
         let mut ctx = make_ctx();
         handler.execute("no-network", &mut ctx).await.unwrap();
-        assert_eq!(
-            ctx.app_state.settings.sandbox.network.disabled,
-            Some(true)
-        );
+        assert_eq!(ctx.app_state.settings.sandbox.network.disabled, Some(true));
     }
 
     #[tokio::test]
@@ -285,10 +282,7 @@ mod tests {
         let mut ctx = make_ctx();
         ctx.app_state.settings.sandbox.network.disabled = Some(true);
         handler.execute("network on", &mut ctx).await.unwrap();
-        assert_eq!(
-            ctx.app_state.settings.sandbox.network.disabled,
-            Some(false)
-        );
+        assert_eq!(ctx.app_state.settings.sandbox.network.disabled, Some(false));
     }
 
     #[tokio::test]
