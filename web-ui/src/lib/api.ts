@@ -1,5 +1,10 @@
 import { useChatStore } from './store'
-import type { AppState, StreamingBlock } from './types'
+import type {
+  AppState,
+  SessionDetail,
+  SessionListResponse,
+  StreamingBlock,
+} from './types'
 
 const API_BASE = ''  // same origin in dev (Vite proxy) and prod (embedded)
 
@@ -334,6 +339,50 @@ export async function updateSetting(action: string, value: unknown): Promise<Set
 interface CommandResponse {
   type: 'output' | 'clear' | 'error'
   content: string
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: Session navigation APIs
+// ---------------------------------------------------------------------------
+
+/** List all sessions + the current workspace descriptor. */
+export async function fetchSessions(): Promise<SessionListResponse> {
+  const res = await fetch(`${API_BASE}/api/sessions`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+/** Create a fresh session. Returns the new session_id. */
+export async function createNewSession(): Promise<{ session_id: string }> {
+  const res = await fetch(`${API_BASE}/api/sessions/new`, { method: 'POST' })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+/** Load a session's messages without switching the engine. */
+export async function fetchSessionDetail(id: string): Promise<SessionDetail> {
+  const res = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(id)}`)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+/** Switch the engine to a previously saved session. */
+export async function resumeSession(id: string): Promise<SessionDetail> {
+  const res = await fetch(
+    `${API_BASE}/api/sessions/${encodeURIComponent(id)}/resume`,
+    { method: 'POST' },
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error || `HTTP ${res.status}`)
+  }
+  return res.json()
 }
 
 /**

@@ -287,6 +287,14 @@ impl QueryEngine {
         &self.config.cwd
     }
 
+    /// Get a reference to the engine's immutable configuration.
+    ///
+    /// Used by the web layer to clone the config when rebuilding an engine
+    /// on `/api/sessions/new` or `/api/sessions/:id/resume`.
+    pub fn config_ref(&self) -> &QueryEngineConfig {
+        &self.config
+    }
+
     /// Replace the tool registry.
     #[allow(dead_code)]
     pub fn set_tools(&self, tools: Tools) {
