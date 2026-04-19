@@ -14,9 +14,11 @@
 pub mod payload;
 pub mod runner;
 
-// Re-export the typed building blocks. `VimStatus` is reachable via
-// `payload::VimStatus` for the future wire-up of vim-mode reporting;
-// pulling it up front is left out deliberately so the active surface
-// stays small.
-pub use payload::{ContextWindowStatus, CostStatus, ModelInfo, StatusLinePayload, WorkspaceStatus};
+// Re-export the typed building blocks and the payload helpers used by the
+// TUI and IPC layers to assemble one shared status snapshot shape.
+#[allow(unused_imports)]
+pub use payload::{
+    ContextWindowStatus, CostStatus, ModelInfo, StatusLinePayload, StatusLineSnapshot,
+    WorkspaceStatus, build_payload_from_snapshot,
+};
 pub use runner::{StatusLineOutput, StatusLineRunner};

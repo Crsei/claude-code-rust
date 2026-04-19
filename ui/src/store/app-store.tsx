@@ -79,7 +79,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'PUSH_HISTORY':
     case 'SET_HISTORY_INDEX':
+    case 'SET_EDITOR_MODE':
     case 'SET_VIM_MODE':
+    case 'SET_KEYBINDINGS_CONFIG':
     case 'TOGGLE_VIM':
     case 'QUEUE_SUBMISSION':
     case 'DEQUEUE_SUBMISSION':

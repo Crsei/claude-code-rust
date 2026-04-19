@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useTerminalDimensions } from '@opentui/react'
 import { useBackend } from '../ipc/context.js'
 import type { BackendMessage, FrontendContentBlock } from '../ipc/protocol.js'
+import type { KeybindingConfig } from '../keybindings.js'
 import { shortcutLabel, transcriptTitle } from '../keybindings.js'
 import { useAppDispatch, useAppState } from '../store/app-store.js'
 import { conversationToRawMessage } from '../store/message-model.js'
@@ -45,15 +46,15 @@ function extractFromContent(
   return { text: '', thinking: '' }
 }
 
-function composerHint(isTranscript: boolean): string {
+function composerHint(isTranscript: boolean, keybindingConfig: KeybindingConfig | null): string {
   if (isTranscript) {
-    return transcriptTitle()
+    return transcriptTitle(keybindingConfig)
   }
 
   return [
-    `${shortcutLabel('app.toggleTranscript')} transcript`,
-    `${shortcutLabel('app.toggleVim')} vim`,
-    `${shortcutLabel('app.quit')} quit`,
+    `${shortcutLabel('app:toggleTranscript', { context: 'Global', config: keybindingConfig })} transcript`,
+    `${shortcutLabel('app:toggleVim', { context: 'Global', config: keybindingConfig })} vim`,
+    `${shortcutLabel('app:exit', { context: 'Global', config: keybindingConfig })} quit`,
   ].join(' | ')
 }
 
@@ -71,7 +72,15 @@ export function App() {
     const handler = (msg: BackendMessage) => {
       switch (msg.type) {
         case 'ready':
-          dispatch({ type: 'READY', model: msg.model, sessionId: msg.session_id, cwd: msg.cwd })
+          dispatch({
+            type: 'READY',
+            model: msg.model,
+            sessionId: msg.session_id,
+            cwd: msg.cwd,
+            editorMode: (msg as BackendMessage & { editor_mode?: string | null }).editor_mode,
+            viewMode: (msg as BackendMessage & { view_mode?: 'prompt' | 'transcript' | null }).view_mode,
+            keybindings: (msg as BackendMessage & { keybindings?: KeybindingConfig | null }).keybindings,
+          })
           break
         case 'stream_start':
           dispatch({ type: 'STREAM_START', messageId: msg.message_id })
@@ -292,8 +301,8 @@ export function App() {
 
   const queueSuffix = queuedCount > 0 ? ` | queued ${queuedCount}` : ''
   const inputTitle = isTranscript
-    ? composerHint(true)
-    : `${inputStatus || composerHint(false)}${queueSuffix}`
+    ? composerHint(true, state.keybindingConfig)
+    : `${inputStatus || composerHint(false, state.keybindingConfig)}${queueSuffix}`
 
   return (
     <box flexDirection="column" height="100%">
@@ -323,7 +332,7 @@ export function App() {
           </box>
           <box marginTop={1}>
             <text fg="#45475A">
-              <em>{shortcutLabel('app.quit')} to quit</em>
+              <em>{shortcutLabel('app:exit', { context: 'Global', config: state.keybindingConfig })} to quit</em>
             </text>
           </box>
         </box>

@@ -32,7 +32,7 @@
 //! recomputed lazily and the viewport snaps to the first hit. `n` / `N`
 //! cycle through hits, wrapping at the ends.
 
-use crate::types::message::{ContentBlock, Message, MessageContent, SystemSubtype};
+use crate::types::message::{Attachment, ContentBlock, Message, MessageContent, SystemSubtype};
 
 /// The three view modes the TUI can be in. Cycling is `Prompt →
 /// Transcript → Focus → Prompt` via `Ctrl+O`.
@@ -95,6 +95,53 @@ impl Default for TranscriptInputMode {
 pub struct SearchMatch {
     /// Index into the messages slice.
     pub message_index: usize,
+}
+
+/// Lightweight transcript entry that future renderers can consume without
+/// re-matching the raw `Message` enum on every draw.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TranscriptEntry {
+    pub message_index: usize,
+    pub role: TranscriptEntryRole,
+    pub body: String,
+}
+
+impl TranscriptEntry {
+    pub fn label(&self) -> &'static str {
+        self.role.label()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TranscriptEntryRole {
+    User,
+    Assistant,
+    System,
+    Progress,
+    Attachment,
+}
+
+impl TranscriptEntryRole {
+    pub fn label(self) -> &'static str {
+        match self {
+            TranscriptEntryRole::User => "User",
+            TranscriptEntryRole::Assistant => "Assistant",
+            TranscriptEntryRole::System => "System",
+            TranscriptEntryRole::Progress => "Progress",
+            TranscriptEntryRole::Attachment => "Attachment",
+        }
+    }
+}
+
+/// Render-ready focus-view model derived from the current message list.
+/// The leader can wire this into `app.rs` later without re-deriving the
+/// prompt/summary/response slices in the hot render path.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FocusView {
+    pub prompt: Option<TranscriptEntry>,
+    pub tool_summary: Option<String>,
+    pub response: Option<TranscriptEntry>,
+    pub edited_files: Vec<String>,
 }
 
 /// All transient state needed for transcript/focus modes.
@@ -191,6 +238,20 @@ pub fn message_plaintext(message: &Message) -> String {
     }
 }
 
+/// Flatten the visible transcript into role-labelled entries that can be
+/// reused by search, export, and future focus-mode renderers.
+pub fn transcript_entries(messages: &[Message]) -> Vec<TranscriptEntry> {
+    messages
+        .iter()
+        .enumerate()
+        .map(|(message_index, message)| TranscriptEntry {
+            message_index,
+            role: transcript_entry_role(message),
+            body: message_plaintext(message),
+        })
+        .collect()
+}
+
 fn blocks_to_text(blocks: &[ContentBlock]) -> String {
     let mut out = String::new();
     for b in blocks {
@@ -249,21 +310,75 @@ pub fn search_messages(messages: &[Message], query: &str) -> Vec<SearchMatch> {
     hits
 }
 
+/// Build a render-ready focus view from the current transcript.
+///
+/// Selection rules are intentionally simple and stable:
+/// - `prompt`: the last non-empty user message
+/// - `tool_summary`: the last `[tool summary] ...` system line after that
+///   prompt, otherwise a synthesized edited-file summary from attachments
+/// - `response`: the last non-empty assistant message after that prompt
+pub fn build_focus_view(messages: &[Message]) -> FocusView {
+    let entries = transcript_entries(messages);
+    let prompt = entries
+        .iter()
+        .rev()
+        .find(|entry| entry.role == TranscriptEntryRole::User && !entry.body.trim().is_empty())
+        .cloned();
+    let prompt_index = prompt
+        .as_ref()
+        .map(|entry| entry.message_index)
+        .unwrap_or(0);
+
+    let response = entries
+        .iter()
+        .rev()
+        .find(|entry| {
+            entry.message_index >= prompt_index
+                && entry.role == TranscriptEntryRole::Assistant
+                && !entry.body.trim().is_empty()
+        })
+        .cloned();
+
+    let edited_files = messages
+        .iter()
+        .skip(prompt_index)
+        .filter_map(|message| match message {
+            Message::Attachment(attachment) => match &attachment.attachment {
+                Attachment::EditedTextFile { path } => Some(path.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    let tool_summary = messages
+        .iter()
+        .enumerate()
+        .rev()
+        .filter(|(idx, _)| *idx >= prompt_index)
+        .find_map(|(_, message)| extract_tool_summary(message))
+        .or_else(|| synthesize_edit_summary(&edited_files));
+
+    FocusView {
+        prompt,
+        tool_summary,
+        response,
+        edited_files,
+    }
+}
+
 /// Render the entire conversation as plain-text markdown suitable for
 /// dumping into `$EDITOR` (issue #12 acceptance criterion).
 pub fn render_markdown_dump(messages: &[Message]) -> String {
     let mut out = String::new();
     out.push_str("# Conversation transcript\n\n");
-    for (i, m) in messages.iter().enumerate() {
-        match m {
-            Message::User(_) => out.push_str(&format!("## [{}] User\n\n", i)),
-            Message::Assistant(_) => out.push_str(&format!("## [{}] Assistant\n\n", i)),
-            Message::System(_) => out.push_str(&format!("## [{}] System\n\n", i)),
-            // Unexpected variants get a generic header so the dump stays
-            // well-formed markdown; body fills in via `message_plaintext`.
-            _ => out.push_str(&format!("## [{}] Other\n\n", i)),
-        }
-        let body = message_plaintext(m);
+    for entry in transcript_entries(messages) {
+        out.push_str(&format!(
+            "## [{}] {}\n\n",
+            entry.message_index,
+            entry.label()
+        ));
+        let body = entry.body;
         if body.is_empty() {
             out.push_str("_(empty)_\n");
         } else {
@@ -277,11 +392,55 @@ pub fn render_markdown_dump(messages: &[Message]) -> String {
     out
 }
 
+fn transcript_entry_role(message: &Message) -> TranscriptEntryRole {
+    match message {
+        Message::User(_) => TranscriptEntryRole::User,
+        Message::Assistant(_) => TranscriptEntryRole::Assistant,
+        Message::System(_) => TranscriptEntryRole::System,
+        Message::Progress(_) => TranscriptEntryRole::Progress,
+        Message::Attachment(_) => TranscriptEntryRole::Attachment,
+    }
+}
+
+fn extract_tool_summary(message: &Message) -> Option<String> {
+    let Message::System(system) = message else {
+        return None;
+    };
+    let prefix = "[tool summary]";
+    system
+        .content
+        .strip_prefix(prefix)
+        .map(str::trim)
+        .filter(|summary| !summary.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn synthesize_edit_summary(edited_files: &[String]) -> Option<String> {
+    if edited_files.is_empty() {
+        return None;
+    }
+
+    let preview = edited_files
+        .iter()
+        .take(3)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    let extra = edited_files.len().saturating_sub(3);
+
+    Some(if extra == 0 {
+        format!("edited {}", preview)
+    } else {
+        format!("edited {} (+{} more)", preview, extra)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::message::{
-        AssistantMessage, InfoLevel, MessageContent, SystemMessage, SystemSubtype, UserMessage,
+        AssistantMessage, AttachmentMessage, InfoLevel, MessageContent, SystemMessage,
+        SystemSubtype, UserMessage,
     };
 
     fn user(text: &str) -> Message {
@@ -316,6 +475,14 @@ mod tests {
             timestamp: 0,
             subtype: SystemSubtype::Informational { level },
             content: text.into(),
+        })
+    }
+
+    fn attachment(path: &str) -> Message {
+        Message::Attachment(AttachmentMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            attachment: Attachment::EditedTextFile { path: path.into() },
         })
     }
 
@@ -401,5 +568,57 @@ mod tests {
         assert!(dump.contains("hello"));
         assert!(dump.contains("[1] Assistant"));
         assert!(dump.contains("hi there"));
+    }
+
+    #[test]
+    fn transcript_entries_preserve_role_labels() {
+        let entries = transcript_entries(&[user("hello"), assistant("hi")]);
+        assert_eq!(entries[0].label(), "User");
+        assert_eq!(entries[1].label(), "Assistant");
+    }
+
+    #[test]
+    fn focus_view_uses_last_user_summary_and_last_assistant() {
+        let msgs = vec![
+            user("first prompt"),
+            assistant("intermediate answer"),
+            user("final prompt"),
+            system(
+                InfoLevel::Info,
+                "[tool summary] ran cargo test; edited 2 files",
+            ),
+            assistant("final answer"),
+        ];
+
+        let focus = build_focus_view(&msgs);
+        assert_eq!(
+            focus.prompt.as_ref().map(|entry| entry.body.as_str()),
+            Some("final prompt")
+        );
+        assert_eq!(
+            focus.tool_summary.as_deref(),
+            Some("ran cargo test; edited 2 files")
+        );
+        assert_eq!(
+            focus.response.as_ref().map(|entry| entry.body.as_str()),
+            Some("final answer")
+        );
+    }
+
+    #[test]
+    fn focus_view_falls_back_to_attachment_summary() {
+        let msgs = vec![
+            user("prompt"),
+            attachment("src/ui/app.rs"),
+            attachment("src/ui/messages.rs"),
+            assistant("answer"),
+        ];
+
+        let focus = build_focus_view(&msgs);
+        assert_eq!(
+            focus.tool_summary.as_deref(),
+            Some("edited src/ui/app.rs, src/ui/messages.rs")
+        );
+        assert_eq!(focus.edited_files.len(), 2);
     }
 }

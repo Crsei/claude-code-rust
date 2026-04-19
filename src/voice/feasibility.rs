@@ -1,20 +1,9 @@
-//! Feasibility checks for voice dictation (issue #13).
+//! Feasibility checks for voice dictation.
 //!
-//! `/voice` and the push-to-talk keybinding both need to know, before
-//! opening a microphone, whether voice mode is allowed in this
-//! environment. The claude-code-bun reference gates on:
-//!
-//! 1. Anthropic OAuth is the active auth (API keys / Bedrock / Vertex /
-//!    Foundry don't have the `voice_stream` endpoint).
-//! 2. A growthbook kill-switch (`tengu_amber_quartz_disabled`).
-//! 3. Not running in a remote / SSH environment.
-//! 4. Native audio module or SoX / arecord is present.
-//! 5. OS microphone permission is granted.
-//!
-//! The cc-rust port only needs (1), (3) and (4) at the feasibility-check
-//! layer — (5) is delegated to the capture backend's probe, (2) is
-//! absent (no growthbook). We return a [`Feasibility`] enum so the
-//! command handler can print a specific, actionable error per reason.
+//! In this build, `/voice` should clearly report that real recording and
+//! transcription are unsupported. Build-level unsupported backends are
+//! surfaced before auth or remote-environment gates so users are not
+//! told to log in for a feature that does not exist here.
 
 use crate::auth::AuthMethod;
 
@@ -26,7 +15,7 @@ use super::stt::{SttUnavailable, TranscriptionClient};
 pub enum Feasibility {
     /// Ready: the user can flip `voiceEnabled` and use push-to-talk.
     Ready {
-        /// Friendly backend label (e.g. `"null"`, `"cpal"`, `"voice_stream"`).
+        /// Friendly backend label.
         backend: String,
         /// STT client label.
         client: String,
@@ -39,6 +28,7 @@ impl Feasibility {
     pub fn is_ready(&self) -> bool {
         matches!(self, Feasibility::Ready { .. })
     }
+
     pub fn reason(&self) -> Option<&FeasibilityReason> {
         match self {
             Feasibility::Ready { .. } => None,
@@ -50,15 +40,15 @@ impl Feasibility {
 /// Concrete blocker surfaced to the user by `/voice`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FeasibilityReason {
-    /// Auth layer can't serve `voice_stream` — API keys, Bedrock, etc.
+    /// Auth layer cannot serve voice dictation.
     UnsupportedAuth { auth_label: String, message: String },
-    /// User isn't logged in at all.
+    /// User is not logged in at all.
     NotAuthenticated(String),
     /// Remote environment (SSH session, CC_RUST_REMOTE).
     RemoteEnvironment(String),
-    /// Audio capture backend isn't available.
+    /// Audio capture backend is unavailable.
     AudioBackend(AudioUnavailable),
-    /// STT endpoint isn't available.
+    /// STT endpoint is unavailable.
     SttBackend(SttUnavailable),
 }
 
@@ -74,14 +64,17 @@ impl FeasibilityReason {
     }
 }
 
-/// Check (in order) whether voice is supported right now. Returns the
-/// first blocker we hit — callers don't need to distinguish cascaded
-/// failures.
+/// Check whether voice is supported right now. Build-level unsupported
+/// backends are reported first so the command output stays honest in
+/// this downgraded build.
 pub fn check_feasibility(
     auth: &AuthMethod,
     audio: &dyn AudioCaptureBackend,
     stt: &dyn TranscriptionClient,
 ) -> Feasibility {
+    if let Some(reason) = build_support_blocker(audio, stt) {
+        return Feasibility::Blocked(reason);
+    }
     if let Some(reason) = auth_blocker(auth) {
         return Feasibility::Blocked(reason);
     }
@@ -100,8 +93,31 @@ pub fn check_feasibility(
     }
 }
 
-/// Reject auth methods that can't reach the Anthropic `voice_stream`
-/// endpoint. Only Claude.ai OAuth is supported upstream.
+fn build_support_blocker(
+    audio: &dyn AudioCaptureBackend,
+    stt: &dyn TranscriptionClient,
+) -> Option<FeasibilityReason> {
+    match audio.is_available() {
+        Err(AudioUnavailable::NotImplemented(reason)) => {
+            return Some(FeasibilityReason::AudioBackend(
+                AudioUnavailable::NotImplemented(reason),
+            ));
+        }
+        Err(_) | Ok(()) => {}
+    }
+    match stt.is_available() {
+        Err(SttUnavailable::NotImplemented(reason)) => Some(FeasibilityReason::SttBackend(
+            SttUnavailable::NotImplemented(reason),
+        )),
+        Err(SttUnavailable::Disabled(reason)) => Some(FeasibilityReason::SttBackend(
+            SttUnavailable::Disabled(reason),
+        )),
+        Err(_) | Ok(()) => None,
+    }
+}
+
+/// Reject auth methods that cannot serve real voice dictation.
+/// Only Claude.ai OAuth would be accepted once a real backend exists.
 pub fn auth_blocker(auth: &AuthMethod) -> Option<FeasibilityReason> {
     match auth {
         AuthMethod::None => Some(FeasibilityReason::NotAuthenticated(
@@ -110,26 +126,24 @@ pub fn auth_blocker(auth: &AuthMethod) -> Option<FeasibilityReason> {
         AuthMethod::ApiKey(_) => Some(FeasibilityReason::UnsupportedAuth {
             auth_label: "api_key".into(),
             message: "Voice mode requires Claude.ai OAuth. API keys, Bedrock, Vertex, \
-                      and Foundry cannot reach the voice_stream endpoint. \
-                      Run `/login` to switch to OAuth."
+                      and Foundry cannot use real voice dictation."
                 .into(),
         }),
         AuthMethod::ExternalToken(_) => Some(FeasibilityReason::UnsupportedAuth {
             auth_label: "external_token".into(),
             message: "Voice mode requires Claude.ai OAuth. External bearer tokens \
-                      (ANTHROPIC_AUTH_TOKEN) aren't supported by voice_stream."
+                      (ANTHROPIC_AUTH_TOKEN) are not supported for real voice dictation."
                 .into(),
         }),
         AuthMethod::OAuthToken { method, .. } => {
-            // Only Claude.ai OAuth works; Console and OpenAI Codex OAuth do not.
             if method == "claude_ai" {
                 None
             } else {
                 Some(FeasibilityReason::UnsupportedAuth {
                     auth_label: method.clone(),
                     message: format!(
-                        "Voice mode requires Claude.ai OAuth. The active OAuth method \
-                         ({}) does not include voice_stream.",
+                        "Voice mode requires Claude.ai OAuth. The active OAuth method ({}) \
+                         does not support real voice dictation.",
                         method
                     ),
                 })
@@ -139,20 +153,14 @@ pub fn auth_blocker(auth: &AuthMethod) -> Option<FeasibilityReason> {
 }
 
 /// Detect remote-run environments where a local microphone is unlikely.
-/// Exact parity with claude-code-bun's `isRunningOnHomespace()` /
-/// `CLAUDE_CODE_REMOTE` check.
 fn remote_environment_blocker() -> Option<FeasibilityReason> {
     if truthy_env("CC_RUST_REMOTE") || truthy_env("CLAUDE_CODE_REMOTE") {
         return Some(FeasibilityReason::RemoteEnvironment(
-            "Voice mode needs a local microphone, but CC_RUST_REMOTE is set — \
-             this looks like a remote / Homespace session. Run cc-rust locally \
-             to use voice."
+            "Voice mode needs a local microphone, but this session is marked remote. \
+             Run cc-rust locally to use voice."
                 .to_string(),
         ));
     }
-    // SSH connections set SSH_TTY / SSH_CONNECTION; most are headless and
-    // have no audio device forwarded. Warn but don't block — users with
-    // X11-forwarded audio may still work.
     None
 }
 
@@ -171,14 +179,72 @@ mod tests {
     use super::*;
     use crate::voice::audio::NullAudioBackend;
     use crate::voice::stt::NullTranscriptionClient;
+    use serial_test::serial;
+
+    struct ReadyAudioBackend;
+
+    impl AudioCaptureBackend for ReadyAudioBackend {
+        fn name(&self) -> &'static str {
+            "ready-audio"
+        }
+
+        fn is_available(&self) -> Result<(), AudioUnavailable> {
+            Ok(())
+        }
+
+        fn start(&self) -> Result<super::super::audio::RecordingHandle, AudioUnavailable> {
+            let (_tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let stopped = std::sync::Arc::new(parking_lot::Mutex::new(false));
+            Ok(super::super::audio::RecordingHandle::new(rx, stopped))
+        }
+    }
+
+    struct ReadySttClient;
+
+    #[async_trait::async_trait]
+    impl TranscriptionClient for ReadySttClient {
+        fn name(&self) -> &'static str {
+            "ready-stt"
+        }
+
+        fn is_available(&self) -> Result<(), SttUnavailable> {
+            Ok(())
+        }
+
+        async fn transcribe(
+            &self,
+            _handle: super::super::audio::RecordingHandle,
+            language: &str,
+        ) -> Result<super::super::stt::TranscriptionResult, super::super::stt::SttError> {
+            Ok(super::super::stt::TranscriptionResult {
+                text: String::new(),
+                language: language.to_string(),
+            })
+        }
+    }
+
+    fn ready_pair() -> (ReadyAudioBackend, ReadySttClient) {
+        (ReadyAudioBackend, ReadySttClient)
+    }
 
     fn null_pair() -> (NullAudioBackend, NullTranscriptionClient) {
         (NullAudioBackend::new(), NullTranscriptionClient::new())
     }
 
     #[test]
-    fn api_key_auth_is_rejected_with_switch_to_oauth_message() {
+    fn build_unsupported_takes_precedence_over_missing_auth() {
         let (a, s) = null_pair();
+        let auth = AuthMethod::None;
+        let f = check_feasibility(&auth, &a, &s);
+        assert!(matches!(
+            f.reason().unwrap(),
+            FeasibilityReason::AudioBackend(AudioUnavailable::NotImplemented(_))
+        ));
+    }
+
+    #[test]
+    fn api_key_auth_is_rejected_when_backends_are_ready() {
+        let (a, s) = ready_pair();
         let auth = AuthMethod::ApiKey("sk-foo".into());
         let f = check_feasibility(&auth, &a, &s);
         match f.reason().unwrap() {
@@ -194,8 +260,8 @@ mod tests {
     }
 
     #[test]
-    fn none_auth_is_rejected_with_login_hint() {
-        let (a, s) = null_pair();
+    fn none_auth_is_rejected_with_login_hint_when_backends_are_ready() {
+        let (a, s) = ready_pair();
         let auth = AuthMethod::None;
         let f = check_feasibility(&auth, &a, &s);
         assert!(matches!(
@@ -205,23 +271,19 @@ mod tests {
     }
 
     #[test]
-    fn claude_ai_oauth_passes_auth_gate() {
-        let (a, s) = null_pair();
+    fn claude_ai_oauth_is_ready_when_backends_are_ready() {
+        let (a, s) = ready_pair();
         let auth = AuthMethod::OAuthToken {
             access_token: "tok".into(),
             method: "claude_ai".into(),
         };
         let f = check_feasibility(&auth, &a, &s);
-        // Audio null backend kicks in after auth passes.
-        assert!(matches!(
-            f.reason().unwrap(),
-            FeasibilityReason::AudioBackend(AudioUnavailable::NotImplemented(_))
-        ));
+        assert!(matches!(f, Feasibility::Ready { .. }));
     }
 
     #[test]
     fn non_claude_ai_oauth_is_rejected() {
-        let (a, s) = null_pair();
+        let (a, s) = ready_pair();
         let auth = AuthMethod::OAuthToken {
             access_token: "tok".into(),
             method: "console".into(),
@@ -236,11 +298,10 @@ mod tests {
     }
 
     #[test]
-    fn remote_env_var_blocks_even_with_good_auth() {
-        // Serialize on a single thread so the env mutation doesn't race
-        // another test. See also the guard comment below.
+    #[serial]
+    fn remote_env_var_blocks_when_backends_and_auth_are_ready() {
         std::env::set_var("CC_RUST_REMOTE", "1");
-        let (a, s) = null_pair();
+        let (a, s) = ready_pair();
         let auth = AuthMethod::OAuthToken {
             access_token: "tok".into(),
             method: "claude_ai".into(),

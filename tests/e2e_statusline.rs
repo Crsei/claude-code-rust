@@ -18,6 +18,93 @@
 
 use serde_json::json;
 use serial_test::serial;
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+
+fn headless_bin() -> std::path::PathBuf {
+    assert_cmd::cargo::cargo_bin("claude-code-rs")
+}
+
+fn normalize_path_for_assert(path: &str) -> String {
+    path.replace('\\', "/").trim_end_matches('/').to_string()
+}
+
+struct HeadlessSession {
+    child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+}
+
+impl HeadlessSession {
+    fn spawn(cwd: &std::path::Path, cc_rust_home: &std::path::Path) -> Self {
+        let mut child = Command::new(headless_bin())
+            .arg("--headless")
+            .arg("-C")
+            .arg(cwd)
+            .env("CC_RUST_HOME", cc_rust_home)
+            .env("ANTHROPIC_API_KEY", "")
+            .env("AZURE_API_KEY", "")
+            .env("OPENAI_API_KEY", "")
+            .env_remove("ANTHROPIC_AUTH_TOKEN")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn headless");
+
+        let stdin = child.stdin.take().expect("stdin");
+        let stdout = BufReader::new(child.stdout.take().expect("stdout"));
+        Self {
+            child,
+            stdin,
+            stdout,
+        }
+    }
+
+    fn send(&mut self, msg: serde_json::Value) {
+        writeln!(self.stdin, "{}", serde_json::to_string(&msg).unwrap()).unwrap();
+        self.stdin.flush().unwrap();
+    }
+
+    fn read_until_type(&mut self, expected_type: &str) -> serde_json::Value {
+        let mut line = String::new();
+        loop {
+            line.clear();
+            let bytes = self.stdout.read_line(&mut line).expect("read stdout");
+            assert!(
+                bytes > 0,
+                "headless backend exited before {}",
+                expected_type
+            );
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let parsed: serde_json::Value = serde_json::from_str(trimmed).expect("valid JSONL");
+            if parsed.get("type").and_then(|value| value.as_str()) == Some(expected_type) {
+                return parsed;
+            }
+        }
+    }
+
+    fn shutdown(&mut self) {
+        let _ = self.send_quit();
+        let _ = self.child.wait();
+    }
+
+    fn send_quit(&mut self) -> std::io::Result<()> {
+        writeln!(self.stdin, "{}", json!({ "type": "quit" }))?;
+        self.stdin.flush()
+    }
+}
+
+impl Drop for HeadlessSession {
+    fn drop(&mut self) {
+        let _ = self.send_quit();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
 
 #[test]
 #[serial]
@@ -147,4 +234,80 @@ fn cli_init_only_starts_without_status_line_config() {
         .arg("--cwd")
         .arg(project.path());
     cmd.assert().success();
+}
+
+#[test]
+#[serial]
+fn headless_statusline_payload_surfaces_runtime_snapshot_fields() {
+    let home = tempfile::tempdir().expect("cc-rust home");
+    std::fs::write(
+        home.path().join("settings.json"),
+        serde_json::to_string_pretty(&json!({
+            "outputStyle": "explanatory",
+            "editorMode": "vim"
+        }))
+        .unwrap(),
+    )
+    .expect("write settings");
+
+    let project = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+
+    let mut session = HeadlessSession::spawn(&project, home.path());
+    let _ready = session.read_until_type("ready");
+
+    session.send(json!({
+        "type": "slash_command",
+        "raw": "/statusline payload"
+    }));
+
+    let msg = session.read_until_type("system_info");
+    let payload_text = msg
+        .get("text")
+        .and_then(|value| value.as_str())
+        .expect("system_info text");
+    let payload: serde_json::Value =
+        serde_json::from_str(payload_text).expect("slash command payload JSON");
+
+    assert_eq!(
+        payload
+            .pointer("/outputStyle")
+            .and_then(|value| value.as_str()),
+        Some("explanatory")
+    );
+    assert_eq!(
+        payload
+            .pointer("/vim/mode")
+            .and_then(|value| value.as_str()),
+        Some("NORMAL")
+    );
+    let payload_project_dir = payload
+        .pointer("/workspace/projectDir")
+        .and_then(|value| value.as_str())
+        .expect("workspace.projectDir");
+    assert_eq!(
+        normalize_path_for_assert(payload_project_dir),
+        normalize_path_for_assert(&project.to_string_lossy())
+    );
+    assert!(
+        payload
+            .pointer("/workspace/gitBranch")
+            .and_then(|value| value.as_str())
+            .map(|branch| !branch.is_empty())
+            .unwrap_or(false),
+        "expected gitBranch in payload"
+    );
+    assert_eq!(
+        payload
+            .pointer("/context/maxTokens")
+            .and_then(|value| value.as_u64()),
+        Some(200_000)
+    );
+    assert_eq!(
+        payload
+            .pointer("/messageCount")
+            .and_then(|value| value.as_u64()),
+        Some(0)
+    );
+
+    session.shutdown();
 }

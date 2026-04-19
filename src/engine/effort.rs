@@ -1,24 +1,22 @@
-//! Effort level → thinking budget tokens mapping.
+//! Effort level to thinking budget tokens mapping.
 //!
 //! Used by `build_messages_request` to translate a user-facing effort
-//! label (`low` / `medium` / `high`) or numeric override into the
-//! `thinking.budget_tokens` value sent to the model API.
-//!
-//! Per issue #9 scope: this is the *only* effort behavior wired up.
-//! `/effort auto`, `/effort max`, and model-compatibility checks are
-//! intentionally not implemented.
+//! label or numeric override into the `thinking.budget_tokens` value
+//! sent to the model API.
 
-/// Default budget when thinking is enabled but no effort level is set.
+/// Default budget when thinking is enabled but no explicit effort level is set.
 pub const DEFAULT_THINKING_BUDGET: u32 = 10_240;
 
-/// Map an effort label to a `thinking.budget_tokens` value.
+/// Highest fixed budget supported by this lite fork's budget-based thinking path.
+pub const MAX_THINKING_BUDGET: u32 = 32_768;
+
+/// Normalize a user-provided effort value.
 ///
 /// Accepts:
-///   - `"low"` / `"medium"` / `"high"` (case-insensitive)
-///   - A numeric string (e.g. `"8000"`) used directly as the budget
-///
-/// Returns `None` for empty input or unrecognized non-numeric labels.
-pub fn effort_to_budget_tokens(effort: &str) -> Option<u32> {
+///   - `"low"` / `"medium"` / `"high"` / `"auto"` / `"max"` (case-insensitive)
+///   - `"med"` as a shorthand for `"medium"`
+///   - A positive numeric string used directly as the budget
+pub fn normalize_effort_value(effort: &str) -> Option<String> {
     let trimmed = effort.trim();
     if trimmed.is_empty() {
         return None;
@@ -28,14 +26,33 @@ pub fn effort_to_budget_tokens(effort: &str) -> Option<u32> {
         if n == 0 {
             return None;
         }
-        return Some(n);
+        return Some(n.to_string());
     }
 
     match trimmed.to_ascii_lowercase().as_str() {
-        "low" => Some(4_096),
-        "medium" | "med" => Some(10_240),
-        "high" => Some(24_576),
+        "low" => Some("low".to_string()),
+        "medium" | "med" => Some("medium".to_string()),
+        "high" => Some("high".to_string()),
+        "auto" => Some("auto".to_string()),
+        "max" => Some("max".to_string()),
         _ => None,
+    }
+}
+
+/// Map an effort label to a `thinking.budget_tokens` value.
+///
+/// `auto` resets to the model default budget used by this fork.
+/// `max` selects the highest fixed budget supported by this budget-based path.
+pub fn effort_to_budget_tokens(effort: &str) -> Option<u32> {
+    let normalized = normalize_effort_value(effort)?;
+
+    match normalized.as_str() {
+        "low" => Some(4_096),
+        "medium" => Some(10_240),
+        "high" => Some(24_576),
+        "auto" => Some(DEFAULT_THINKING_BUDGET),
+        "max" => Some(MAX_THINKING_BUDGET),
+        numeric => numeric.parse::<u32>().ok(),
     }
 }
 
@@ -67,10 +84,24 @@ mod tests {
     }
 
     #[test]
+    fn auto_and_max_map_to_supported_budgets() {
+        assert_eq!(
+            effort_to_budget_tokens("auto"),
+            Some(DEFAULT_THINKING_BUDGET)
+        );
+        assert_eq!(effort_to_budget_tokens("max"), Some(MAX_THINKING_BUDGET));
+    }
+
+    #[test]
     fn labels_are_case_insensitive() {
         assert_eq!(effort_to_budget_tokens("LOW"), Some(4_096));
         assert_eq!(effort_to_budget_tokens("Medium"), Some(10_240));
         assert_eq!(effort_to_budget_tokens("HIGH"), Some(24_576));
+        assert_eq!(
+            effort_to_budget_tokens("AUTO"),
+            Some(DEFAULT_THINKING_BUDGET)
+        );
+        assert_eq!(effort_to_budget_tokens("MAX"), Some(MAX_THINKING_BUDGET));
     }
 
     #[test]
@@ -90,14 +121,31 @@ mod tests {
     #[test]
     fn unknown_labels_return_none() {
         assert_eq!(effort_to_budget_tokens("ultra"), None);
-        assert_eq!(effort_to_budget_tokens("auto"), None);
-        assert_eq!(effort_to_budget_tokens("max"), None);
         assert_eq!(effort_to_budget_tokens("not-a-number-or-label"), None);
+    }
+
+    #[test]
+    fn normalize_effort_value_canonicalizes_labels() {
+        assert_eq!(normalize_effort_value("med"), Some("medium".to_string()));
+        assert_eq!(normalize_effort_value(" AUTO "), Some("auto".to_string()));
+        assert_eq!(normalize_effort_value(" 12000 "), Some("12000".to_string()));
     }
 
     #[test]
     fn resolve_prefers_effort_label() {
         assert_eq!(resolve_thinking_budget(Some("high"), Some(99_999)), 24_576);
+    }
+
+    #[test]
+    fn resolve_supports_auto_and_max() {
+        assert_eq!(
+            resolve_thinking_budget(Some("auto"), Some(99_999)),
+            DEFAULT_THINKING_BUDGET
+        );
+        assert_eq!(
+            resolve_thinking_budget(Some("max"), Some(99_999)),
+            MAX_THINKING_BUDGET
+        );
     }
 
     #[test]

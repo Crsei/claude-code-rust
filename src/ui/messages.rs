@@ -1,6 +1,7 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
+use unicode_width::UnicodeWidthChar;
 
 use crate::types::message::{
     ContentBlock, InfoLevel, Message, MessageContent, SystemSubtype, ToolResultContent,
@@ -28,17 +29,17 @@ pub fn render_messages(
     }
 
     let viewport_h = area.height as usize;
-    let (start, end) = vscroll.visible_range(scroll, viewport_h);
+    let (start, end) = vscroll.visual_range(scroll, viewport_h);
 
-    // Where the first visible message starts in global line space.
-    let first_offset = vscroll.offset_of(start);
+    // Where the first visible message starts in wrapped visual line space.
+    let first_offset = vscroll.visual_offset_of(start);
     // How many lines to skip inside the first visible message.
     let skip_in_first = scroll.saturating_sub(first_offset);
 
     let mut y = 0usize; // current row in the viewport
 
     for idx in start..end.min(messages.len()) {
-        let msg_lines = render_single_message(&messages[idx], theme);
+        let msg_lines = render_single_message_wrapped(&messages[idx], theme, area.width);
 
         // Separator blank line (between messages, not after last)
         let has_sep = idx < messages.len() - 1;
@@ -59,6 +60,60 @@ pub fn render_messages(
             buf.set_line(area.x, area.y + y as u16, line, area.width);
             y += 1;
         }
+    }
+}
+
+fn render_single_message_wrapped<'a>(msg: &Message, theme: &Theme, width: u16) -> Vec<Line<'a>> {
+    render_single_message(msg, theme)
+        .into_iter()
+        .flat_map(|line| wrap_line_to_width(&line, width))
+        .collect()
+}
+
+fn wrap_line_to_width(line: &Line<'_>, width: u16) -> Vec<Line<'static>> {
+    let max_width = usize::from(width.max(1));
+    if max_width == 0 {
+        return vec![Line::default()];
+    }
+
+    let mut wrapped = Vec::new();
+    let mut current_spans: Vec<Span<'static>> = Vec::new();
+    let mut current_width = 0usize;
+
+    for span in &line.spans {
+        let style = span.style;
+        let mut segment = String::new();
+
+        for ch in span.content.chars() {
+            let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+            if current_width > 0 && current_width + ch_width > max_width {
+                if !segment.is_empty() {
+                    current_spans.push(Span::styled(std::mem::take(&mut segment), style));
+                }
+                wrapped.push(Line::from(std::mem::take(&mut current_spans)));
+                current_width = 0;
+            }
+
+            segment.push(ch);
+            current_width += ch_width;
+
+            if current_width >= max_width {
+                current_spans.push(Span::styled(std::mem::take(&mut segment), style));
+                wrapped.push(Line::from(std::mem::take(&mut current_spans)));
+                current_width = 0;
+            }
+        }
+
+        if !segment.is_empty() {
+            current_spans.push(Span::styled(segment, style));
+        }
+    }
+
+    if current_spans.is_empty() {
+        vec![Line::default()]
+    } else {
+        wrapped.push(Line::from(current_spans));
+        wrapped
     }
 }
 

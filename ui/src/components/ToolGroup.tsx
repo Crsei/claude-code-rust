@@ -2,6 +2,7 @@ import React from 'react'
 import { shortcutLabel } from '../keybindings.js'
 import { c } from '../theme.js'
 import type { ToolGroupRenderItem } from '../store/message-model.js'
+import { useAppState } from '../store/app-store.js'
 
 interface Props {
   item: ToolGroupRenderItem
@@ -16,8 +17,9 @@ const STATUS_COLORS = {
 } as const
 
 export function ToolGroup({ item }: Props) {
+  const { keybindingConfig } = useAppState()
   const color = STATUS_COLORS[item.status]
-  const expandHint = `${shortcutLabel('app.toggleTranscript')} to expand`
+  const expandHint = `${shortcutLabel('app:toggleTranscript', { context: 'Global', config: keybindingConfig })} to expand`
 
   return (
     <box flexDirection="column" paddingX={1} marginBottom={1} width="100%">

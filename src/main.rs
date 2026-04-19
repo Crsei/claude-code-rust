@@ -88,6 +88,31 @@ use clap::Parser;
 use tracing::{debug, error, info, warn};
 
 use crate::cli::Cli;
+
+fn resolve_startup_model(
+    requested: Option<&str>,
+    provider_default: Option<&str>,
+    hardcoded_default: &str,
+    available: &[String],
+) -> String {
+    for candidate in [requested, provider_default, Some(hardcoded_default)] {
+        let Some(candidate) = candidate else { continue };
+        if let Ok(model) = crate::commands::model::resolve_and_validate_model(candidate, available)
+        {
+            return model;
+        }
+    }
+
+    if let Some(first_allowed) = available.first() {
+        warn!(
+            fallback = %first_allowed,
+            "no requested/default model satisfied availableModels; falling back to the first allowed entry"
+        );
+        return crate::commands::model::resolve_model_alias(first_allowed);
+    }
+
+    crate::commands::model::resolve_model_alias(hardcoded_default)
+}
 use crate::config::settings;
 use crate::engine::lifecycle::QueryEngine;
 use crate::startup::runtime_config::{
@@ -373,18 +398,18 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         }
     }
 
-    let model = cli
-        .model
-        .clone()
-        .or(merged_config.model.clone())
-        .or(provider_default_model)
-        .unwrap_or_else(|| {
-            if is_codex_backend {
-                crate::engine::codex_exec::DEFAULT_CODEX_MODEL.to_string()
-            } else {
-                "claude-sonnet-4-20250514".to_string()
-            }
-        });
+    let hardcoded_default = if is_codex_backend {
+        crate::engine::codex_exec::DEFAULT_CODEX_MODEL.to_string()
+    } else {
+        "claude-sonnet-4-20250514".to_string()
+    };
+    let requested_model = cli.model.clone().or(merged_config.model.clone());
+    let model = resolve_startup_model(
+        requested_model.as_deref(),
+        provider_default_model.as_deref(),
+        &hardcoded_default,
+        &merged_config.available_models,
+    );
 
     // Mark CLI overrides (model / verbose) in the source map so /config show
     // reports them correctly.

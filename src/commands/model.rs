@@ -13,34 +13,40 @@ use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
 
-/// Minimal alias set shared with `web::handlers::resolve_model_alias`.
-/// Kept short on purpose — the project supports non-Anthropic providers
-/// where these aliases would be misleading.
-const MODEL_ALIASES: &[(&str, &str)] = &[
+/// Minimal alias set shared with `/model` and web `set_model`.
+/// Kept short on purpose: this fork supports non-Anthropic providers where
+/// larger Anthropic-specific alias sets would be misleading.
+pub const MODEL_ALIASES: &[(&str, &str)] = &[
     ("opus", "claude-opus-4-20250514"),
     ("sonnet", "claude-sonnet-4-20250514"),
     ("haiku", "claude-haiku-3-5-20241022"),
 ];
 
 /// Resolve a model alias to its full identifier, or return the input as-is.
-fn resolve_model_alias(name: &str) -> String {
+pub fn resolve_model_alias(name: &str) -> String {
+    let trimmed = name.trim();
     for (alias, full) in MODEL_ALIASES {
-        if name.eq_ignore_ascii_case(alias) {
+        if trimmed.eq_ignore_ascii_case(alias) {
             return full.to_string();
         }
     }
-    name.to_string()
+    trimmed.to_string()
+}
+
+fn available_model_matches(allowed: &str, resolved_target: &str) -> bool {
+    let trimmed = allowed.trim();
+    !trimmed.is_empty() && resolve_model_alias(trimmed) == resolved_target
 }
 
 /// Check whether `model` is allowed by the configured `availableModels` list.
 ///
 /// Returns `Ok(())` when the list is empty (no restriction) or `model`
 /// appears in it. Returns `Err(message)` describing the violation otherwise.
-fn check_available(model: &str, available: &[String]) -> Result<(), String> {
+pub fn check_available(model: &str, available: &[String]) -> Result<(), String> {
     if available.is_empty() {
         return Ok(());
     }
-    if available.iter().any(|m| m == model) {
+    if available.iter().any(|m| available_model_matches(m, model)) {
         return Ok(());
     }
     Err(format!(
@@ -48,6 +54,19 @@ fn check_available(model: &str, available: &[String]) -> Result<(), String> {
         model,
         available.join(", "),
     ))
+}
+
+/// Resolve a user-provided model selection and validate it against
+/// `availableModels`.
+pub fn resolve_and_validate_model(name: &str, available: &[String]) -> Result<String, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("model name required".to_string());
+    }
+
+    let resolved = resolve_model_alias(trimmed);
+    check_available(&resolved, available)?;
+    Ok(resolved)
 }
 
 /// Handler for the `/model` slash command.
@@ -78,15 +97,14 @@ impl CommandHandler for ModelHandler {
                 }
             }
             lines.push(String::new());
-            lines.push("Usage: /model <name or alias>".into());
+            lines.push("Usage: /model <model-id or alias>".into());
             return Ok(CommandResult::Output(lines.join("\n")));
         }
 
-        let resolved = resolve_model_alias(target);
-
-        if let Err(msg) = check_available(&resolved, &available) {
-            return Ok(CommandResult::Output(format!("Rejected: {}", msg)));
-        }
+        let resolved = match resolve_and_validate_model(target, &available) {
+            Ok(model) => model,
+            Err(msg) => return Ok(CommandResult::Output(format!("Rejected: {}", msg))),
+        };
 
         let previous = ctx.app_state.main_loop_model.clone();
         ctx.app_state.main_loop_model = resolved.clone();
@@ -169,6 +187,18 @@ mod tests {
     }
 
     #[test]
+    fn test_check_available_accepts_alias_entries() {
+        let allowed = vec!["opus".to_string(), "gpt-4o".to_string()];
+        assert!(check_available("claude-opus-4-20250514", &allowed).is_ok());
+    }
+
+    #[test]
+    fn test_check_available_accepts_full_id_entries_for_alias_input() {
+        let allowed = vec!["claude-opus-4-20250514".to_string()];
+        assert!(check_available(&resolve_model_alias("opus"), &allowed).is_ok());
+    }
+
+    #[test]
     fn test_check_available_rejects_unlisted() {
         let allowed = vec!["claude-opus-4-20250514".to_string(), "gpt-4o".to_string()];
         let err = check_available("deepseek-chat", &allowed).unwrap_err();
@@ -180,6 +210,12 @@ mod tests {
     fn test_check_available_accepts_listed() {
         let allowed = vec!["gpt-4o".to_string()];
         assert!(check_available("gpt-4o", &allowed).is_ok());
+    }
+
+    #[test]
+    fn test_resolve_and_validate_model_rejects_blank_input() {
+        let err = resolve_and_validate_model("   ", &[]).unwrap_err();
+        assert!(err.contains("model name required"));
     }
 
     #[tokio::test]
@@ -195,7 +231,6 @@ mod tests {
             }
             _ => panic!("Expected Output"),
         }
-        // Model must NOT have been mutated.
         assert_ne!(ctx.app_state.main_loop_model, "claude-opus-4-20250514");
     }
 
@@ -203,8 +238,11 @@ mod tests {
     async fn test_model_switch_allowed_when_in_available_models() {
         let handler = ModelHandler;
         let mut ctx = test_ctx();
-        ctx.app_state.settings.available_models = vec!["claude-opus-4-20250514".to_string()];
-        let result = handler.execute("opus", &mut ctx).await.unwrap();
+        ctx.app_state.settings.available_models = vec!["opus".to_string()];
+        let result = handler
+            .execute("claude-opus-4-20250514", &mut ctx)
+            .await
+            .unwrap();
         match result {
             CommandResult::Output(text) => assert!(text.contains("Model changed")),
             _ => panic!("Expected Output"),

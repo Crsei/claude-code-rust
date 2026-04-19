@@ -226,17 +226,20 @@ pub async fn settings_handler(
     match req.action.as_str() {
         "set_model" => {
             let model = req.value.as_str().unwrap_or("").to_string();
-            if model.is_empty() {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(SettingsResponse {
-                        ok: false,
-                        message: "model name required".into(),
-                    }),
-                );
-            }
-            // Resolve model aliases
-            let resolved = resolve_model_alias(&model);
+            let available = state.engine().app_state().settings.available_models.clone();
+            let resolved =
+                match crate::commands::model::resolve_and_validate_model(&model, &available) {
+                    Ok(model) => model,
+                    Err(message) => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(SettingsResponse {
+                                ok: false,
+                                message: format!("Rejected: {}", message),
+                            }),
+                        );
+                    }
+                };
             state.engine().update_app_state(|s| {
                 s.main_loop_model = resolved.clone();
                 s.settings.model = Some(resolved.clone());
@@ -752,19 +755,103 @@ fn stored_message_from(msg: &Message) -> StoredMessage {
     }
 }
 
-/// Resolve common model aliases to full model names.
-fn resolve_model_alias(name: &str) -> String {
-    match name.to_lowercase().as_str() {
-        "opus" | "claude-opus" => "claude-opus-4-20250514".to_string(),
-        "sonnet" | "claude-sonnet" => "claude-sonnet-4-20250514".to_string(),
-        "haiku" | "claude-haiku" => "claude-haiku-3-5-20241022".to_string(),
-        "deepseek" | "deepseek-chat" => "deepseek-chat".to_string(),
-        "deepseek-reasoner" | "r1" => "deepseek-reasoner".to_string(),
-        "gpt-4o" | "4o" => "gpt-4o".to_string(),
-        "gpt-4.1" => "gpt-4.1".to_string(),
-        "o3" => "o3".to_string(),
-        "o4-mini" => "o4-mini".to_string(),
-        "gemini-2.5-pro" | "gemini-pro" => "gemini-2.5-pro-preview-05-06".to_string(),
-        other => other.to_string(),
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+    use serde_json::{json, Value};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+
+    fn make_web_state() -> WebState {
+        let engine = Arc::new(QueryEngine::new(QueryEngineConfig {
+            cwd: ".".to_string(),
+            tools: vec![],
+            custom_system_prompt: None,
+            append_system_prompt: None,
+            user_specified_model: None,
+            fallback_model: None,
+            max_turns: None,
+            max_budget_usd: None,
+            task_budget: None,
+            verbose: false,
+            initial_messages: None,
+            commands: vec![],
+            thinking_config: None,
+            json_schema: None,
+            replay_user_messages: false,
+            persist_session: false,
+            resolved_model: None,
+            auto_save_session: false,
+            agent_context: None,
+        }));
+        WebState::new(engine, Arc::new(AtomicBool::new(false)))
+    }
+
+    async fn response_json(response: axum::response::Response) -> Value {
+        let body = to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .expect("response body");
+        serde_json::from_slice(&body).expect("json body")
+    }
+
+    #[tokio::test]
+    async fn set_model_rejects_values_outside_available_models() {
+        let state = make_web_state();
+        state.engine().update_app_state(|s| {
+            s.settings.available_models = vec!["gpt-4o".to_string()];
+        });
+
+        let response = settings_handler(
+            State(state.clone()),
+            Json(SettingsRequest {
+                action: "set_model".to_string(),
+                value: json!("opus"),
+            }),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = response_json(response).await;
+        assert_eq!(body["ok"], json!(false));
+        assert!(body["message"]
+            .as_str()
+            .expect("message")
+            .contains("not in availableModels"));
+        assert_ne!(
+            state.engine().app_state().main_loop_model,
+            "claude-opus-4-20250514"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_model_accepts_alias_when_full_id_is_allowlisted() {
+        let state = make_web_state();
+        state.engine().update_app_state(|s| {
+            s.settings.available_models = vec!["claude-opus-4-20250514".to_string()];
+        });
+
+        let response = settings_handler(
+            State(state.clone()),
+            Json(SettingsRequest {
+                action: "set_model".to_string(),
+                value: json!("opus"),
+            }),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["ok"], json!(true));
+        assert_eq!(
+            state.engine().app_state().main_loop_model,
+            "claude-opus-4-20250514"
+        );
+        assert_eq!(
+            state.engine().app_state().settings.model.as_deref(),
+            Some("claude-opus-4-20250514")
+        );
     }
 }

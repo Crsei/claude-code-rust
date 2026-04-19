@@ -1,16 +1,8 @@
-//! Audio-capture backend abstraction (issue #13).
+//! Audio-capture backend abstraction for voice dictation.
 //!
-//! The TS reference implementation (claude-code-bun) uses a native
-//! cpal-backed module on macOS/Linux/Windows with SoX `rec` and ALSA
-//! `arecord` as Linux fallbacks. For the Rust port, we wrap everything
-//! behind a trait so those platform backends can land as follow-up PRs
-//! without churning the command/controller layer.
-//!
-//! This module currently ships [`NullAudioBackend`] — an honest "not
-//! implemented on this platform" stub that lets `/voice` gate correctly
-//! and the UI state machine behave. A future backend module can
-//! implement [`AudioCaptureBackend`] against cpal / SoX / arecord and
-//! the rest of the voice subsystem will pick it up unchanged.
+//! This build deliberately ships only [`NullAudioBackend`]. The trait
+//! boundary remains so the controller can keep correct press/release/
+//! cancel semantics, but no real recording backend is available here.
 
 use std::sync::Arc;
 
@@ -22,7 +14,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 /// [`RecordingHandle::stop`] when push-to-talk is released.
 pub struct RecordingHandle {
     pub audio: UnboundedReceiver<Vec<u8>>,
-    /// Cancel flag — flipped by [`Self::stop`] so the backend can tear
+    /// Cancel flag flipped by [`Self::stop`] so the backend can tear
     /// down its capture thread.
     stopped: Arc<Mutex<bool>>,
 }
@@ -40,6 +32,12 @@ impl RecordingHandle {
         Self { audio, stopped }
     }
 
+    /// Clone the stop flag so controller logic can signal shutdown
+    /// without owning the receiver half.
+    pub fn stop_flag(&self) -> Arc<Mutex<bool>> {
+        Arc::clone(&self.stopped)
+    }
+
     /// Signal the backend to stop. Backends should poll this flag on
     /// their capture thread and drain / close the sender cleanly.
     pub fn stop(&self) {
@@ -55,9 +53,7 @@ impl Drop for RecordingHandle {
 
 /// Trait every audio backend implements.
 ///
-/// Backends return PCM frames as `Vec<u8>` chunks (16 kHz mono s16le —
-/// the format Anthropic's `voice_stream` expects). A real cpal backend
-/// will resample / rechannel to this format before forwarding.
+/// Backends return PCM frames as `Vec<u8>` chunks (16 kHz mono s16le).
 pub trait AudioCaptureBackend: Send + Sync {
     /// Short human label for diagnostics (`/voice status`).
     fn name(&self) -> &'static str;
@@ -75,13 +71,13 @@ pub trait AudioCaptureBackend: Send + Sync {
 /// Why an audio backend refused to record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AudioUnavailable {
-    /// Backend is a stub — no implementation yet on this platform.
+    /// Backend is intentionally unavailable in this build.
     NotImplemented(String),
     /// Backend or its native library is missing.
     ToolMissing(String),
     /// Microphone permission denied / no device.
     PermissionDenied(String),
-    /// Remote environment (SSH, Homespace, WSL1) — no local mic.
+    /// Remote environment (SSH, Homespace, WSL1) with no local mic.
     NoLocalAudio(String),
     /// Anything else with a one-line reason.
     Other(String),
@@ -100,14 +96,10 @@ impl AudioUnavailable {
 }
 
 // ---------------------------------------------------------------------------
-// NullAudioBackend — ships today; honest "not yet implemented" stub.
+// NullAudioBackend - ships today as an explicit unsupported-build stub.
 // ---------------------------------------------------------------------------
 
 /// The default backend: always reports unavailable with a clear reason.
-///
-/// Used by `/voice` when no real backend has been compiled in. Because
-/// the controller + command layer honour [`AudioUnavailable`], wiring a
-/// real cpal backend later is a localized change.
 pub struct NullAudioBackend {
     /// Reason surfaced through `is_available()` / `start()`. Useful for
     /// tests and future backends that want to return a different
@@ -122,8 +114,7 @@ impl NullAudioBackend {
         }
     }
 
-    /// Construct a stub that reports the supplied reason — used by tests
-    /// to exercise the different `AudioUnavailable` branches.
+    /// Construct a stub that reports the supplied reason for tests.
     #[cfg(test)]
     pub fn with_reason(reason: impl Into<String>) -> Self {
         Self {
@@ -153,8 +144,8 @@ impl AudioCaptureBackend for NullAudioBackend {
 }
 
 fn default_reason() -> String {
-    "Voice capture is not implemented in this build of cc-rust. \
-     Native cpal + SoX / arecord backends land in a follow-up (issue #13)."
+    "Voice capture is unsupported in this build of cc-rust. \
+     No recording backend is compiled, so push-to-talk cannot start a real recording."
         .to_string()
 }
 
@@ -163,13 +154,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn null_backend_reports_not_implemented_by_default() {
+    fn null_backend_reports_unsupported_recording_by_default() {
         let b = NullAudioBackend::new();
         assert_eq!(b.name(), "null");
         let err = b.is_available().unwrap_err();
         assert!(matches!(err, AudioUnavailable::NotImplemented(_)));
         let reason = err.reason().to_string();
-        assert!(reason.contains("not implemented"), "{}", reason);
+        assert!(reason.contains("unsupported"), "{}", reason);
     }
 
     #[test]
@@ -186,6 +177,16 @@ mod tests {
         let flag = Arc::new(Mutex::new(false));
         let h = RecordingHandle::new(rx, Arc::clone(&flag));
         h.stop();
+        assert!(*flag.lock());
+    }
+
+    #[test]
+    fn recording_handle_exposes_stop_flag_clone() {
+        let (_tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let flag = Arc::new(Mutex::new(false));
+        let h = RecordingHandle::new(rx, Arc::clone(&flag));
+        let shared = h.stop_flag();
+        *shared.lock() = true;
         assert!(*flag.lock());
     }
 

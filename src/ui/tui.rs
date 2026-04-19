@@ -109,6 +109,7 @@ pub async fn run_tui(
     // ── Create the App ─────────────────────────────────────────────
     let mut app = App::new();
     app.set_model_name(model_name.to_string());
+    app.set_backend_name(engine.app_state().main_loop_backend.clone());
     app.set_session_id(engine.session_id.to_string());
     app.set_cwd(engine.cwd().to_string());
 
@@ -124,6 +125,9 @@ pub async fn run_tui(
         let app_state = engine.app_state();
         app.set_status_line_runner(app_state.status_line_runner.clone());
         app.set_status_line_settings(app_state.settings.status_line.clone());
+        app.set_keybindings(app_state.keybindings.clone());
+        app.set_editor_mode(app_state.settings.editor_mode.as_deref());
+        app.set_output_style(app_state.settings.output_style.clone());
     }
 
     // Terminal env config (issue #12) — `CLAUDE_CODE_NO_FLICKER`,
@@ -146,7 +150,15 @@ pub async fn run_tui(
         let lang = crate::voice::language::normalize_language_for_stt(
             app_state.settings.language.as_deref(),
         );
-        app.set_voice_settings(app_state.settings.voice_enabled.unwrap_or(false), lang.code);
+        let voice_supported = matches!(
+            crate::commands::voice_cmd::current_feasibility(),
+            crate::voice::feasibility::Feasibility::Ready { .. }
+        );
+        app.set_voice_settings(
+            app_state.settings.voice_enabled.unwrap_or(false),
+            lang.code,
+            voice_supported,
+        );
     }
 
     // ── Create channels ────────────────────────────────────────────
@@ -649,20 +661,7 @@ async fn try_execute_command(
                     engine.replace_messages(ctx.messages.clone());
                     replace_app_messages(app, &ctx.messages);
                 }
-                // Propagate settings mutations (e.g. `/voice on/off`,
-                // `/statusline set`) back to the engine's AppState and
-                // refresh App's cached voice snapshot so push-to-talk
-                // picks up the change without restart.
-                let voice_enabled = ctx.app_state.settings.voice_enabled.unwrap_or(false);
-                let lang = crate::voice::language::normalize_language_for_stt(
-                    ctx.app_state.settings.language.as_deref(),
-                );
-                let lang_code = lang.code.clone();
-                engine.update_app_state(|s| {
-                    s.settings.voice_enabled = Some(voice_enabled);
-                    s.settings.language = ctx.app_state.settings.language.clone();
-                });
-                app.set_voice_settings(voice_enabled, lang_code);
+                sync_app_runtime_from_state(engine, app, &ctx.app_state);
                 add_system_info(app, &text);
                 Some(CmdAction::Handled)
             }
@@ -679,6 +678,7 @@ async fn try_execute_command(
                     engine.replace_messages(ctx.messages.clone());
                     replace_app_messages(app, &ctx.messages);
                 }
+                sync_app_runtime_from_state(engine, app, &ctx.app_state);
                 Some(CmdAction::Query(msgs))
             }
             CommandResult::None => {
@@ -686,6 +686,7 @@ async fn try_execute_command(
                     engine.replace_messages(ctx.messages.clone());
                     replace_app_messages(app, &ctx.messages);
                 }
+                sync_app_runtime_from_state(engine, app, &ctx.app_state);
                 Some(CmdAction::Handled)
             }
         },
@@ -694,6 +695,37 @@ async fn try_execute_command(
             Some(CmdAction::Handled)
         }
     }
+}
+
+fn sync_app_runtime_from_state(engine: &Arc<QueryEngine>, app: &mut App, state: &crate::types::app_state::AppState) {
+    engine.update_app_state(|engine_state| {
+        engine_state.main_loop_model = state.main_loop_model.clone();
+        engine_state.main_loop_backend = state.main_loop_backend.clone();
+        engine_state.settings = state.settings.clone();
+        engine_state.tool_permission_context = state.tool_permission_context.clone();
+        engine_state.thinking_enabled = state.thinking_enabled;
+        engine_state.fast_mode = state.fast_mode;
+        engine_state.effort_value = state.effort_value.clone();
+        engine_state.keybindings = state.keybindings.clone();
+    });
+
+    app.set_model_name(state.main_loop_model.clone());
+    app.set_backend_name(state.main_loop_backend.clone());
+    app.set_status_line_settings(state.settings.status_line.clone());
+    app.set_output_style(state.settings.output_style.clone());
+    app.set_editor_mode(state.settings.editor_mode.as_deref());
+    app.set_keybindings(state.keybindings.clone());
+
+    let lang = crate::voice::language::normalize_language_for_stt(state.settings.language.as_deref());
+    let voice_supported = matches!(
+        crate::commands::voice_cmd::current_feasibility(),
+        crate::voice::feasibility::Feasibility::Ready { .. }
+    );
+    app.set_voice_settings(
+        state.settings.voice_enabled.unwrap_or(false),
+        lang.code,
+        voice_supported,
+    );
 }
 
 /// Add an informational system message to the app.
@@ -737,7 +769,17 @@ async fn export_to_editor(body: &str) -> anyhow::Result<std::path::PathBuf> {
         let _ = execute!(std::io::stdout(), LeaveAlternateScreen, cursor::Show);
         let _ = terminal::disable_raw_mode();
 
-        let status = tokio::process::Command::new(&ed).arg(&path).status().await;
+        let parts = shell_words::split(&ed)
+            .map_err(|e| anyhow::anyhow!("could not parse editor command '{}': {}", ed, e))?;
+        let (program, args) = parts
+            .split_first()
+            .ok_or_else(|| anyhow::anyhow!("editor command is empty"))?;
+
+        let status = tokio::process::Command::new(program)
+            .args(args)
+            .arg(&path)
+            .status()
+            .await;
 
         // Always re-arm the terminal, even on editor failure.
         let _ = terminal::enable_raw_mode();

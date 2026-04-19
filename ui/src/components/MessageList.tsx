@@ -35,7 +35,7 @@ export function MessageList({
   viewMode,
 }: MessageListProps) {
   const scrollRef = useRef<any>(null)
-  const { messages, isStreaming, isWaiting, streamingText, streamingThinking } = useAppState()
+  const { keybindingConfig, messages, isStreaming, isWaiting, streamingText, streamingThinking } = useAppState()
 
   const items = useMemo(
     () => buildRenderItems(messages, {
@@ -68,33 +68,33 @@ export function MessageList({
     const key = toShortcutKey(event)
     const name = event.name
 
-    if (matchesShortcut('messages.pageUp', '', key, name)) {
+    if (matchesShortcut('scroll:pageUp', '', key, name, { context: 'Scroll', config: keybindingConfig })) {
       scroll.scrollBy(-10)
       return
     }
-    if (matchesShortcut('messages.pageDown', '', key, name)) {
+    if (matchesShortcut('scroll:pageDown', '', key, name, { context: 'Scroll', config: keybindingConfig })) {
       scroll.scrollBy(10)
       return
     }
-    if (matchesShortcut('messages.scrollUp', '', key, name)) {
+    if (matchesShortcut('scroll:lineUp', '', key, name, { context: 'Scroll', config: keybindingConfig })) {
       scroll.scrollBy(-3)
       return
     }
-    if (matchesShortcut('messages.scrollDown', '', key, name)) {
+    if (matchesShortcut('scroll:lineDown', '', key, name, { context: 'Scroll', config: keybindingConfig })) {
       scroll.scrollBy(3)
       return
     }
-    if (matchesShortcut('messages.top', '', key, name)) {
+    if (matchesShortcut('scroll:top', '', key, name, { context: 'Scroll', config: keybindingConfig })) {
       scroll.scrollTo(0)
       return
     }
-    if (matchesShortcut('messages.bottom', '', key, name)) {
+    if (matchesShortcut('scroll:bottom', '', key, name, { context: 'Scroll', config: keybindingConfig })) {
       scroll.scrollToBottom()
     }
   })
 
   const title = viewMode === 'transcript'
-    ? `Transcript | ${shortcutLabel('app.toggleTranscript')} prompt | ${shortcutLabel('transcript.exit')} exit`
+    ? `Transcript | ${shortcutLabel('app:toggleTranscript', { context: 'Global', config: keybindingConfig })} prompt | ${shortcutLabel('transcript:exit', { context: 'Transcript', config: keybindingConfig })} exit`
     : 'Conversation'
 
   return (
@@ -109,7 +109,7 @@ export function MessageList({
       onMouseDown={() => onActivate?.()}
     >
       <box paddingX={1}>
-        <text fg="#666666">{messageScrollHint()}</text>
+        <text fg="#666666">{messageScrollHint(keybindingConfig)}</text>
       </box>
       <scrollbox ref={scrollRef} focused={isActive} flexGrow={1} width="100%">
         {items.map(item => (

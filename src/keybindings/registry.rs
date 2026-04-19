@@ -1,4 +1,4 @@
-//! Effective keybinding registry — merged default + user bindings, with
+//! Effective keybinding registry: merged defaults + user bindings, with
 //! context-aware lookup and mtime-polled hot reload.
 //!
 //! Resolution order:
@@ -7,19 +7,20 @@
 //!   3. Misses return `None`.
 //!
 //! The registry holds an `Arc<RwLock<State>>` so the Rust TUI can share one
-//! instance across threads. `resolve()` transparently re-reads the user
-//! file when its `mtime` changes; parse failures are logged and the last
-//! good config is retained.
+//! instance across threads. `resolve()` transparently re-reads the user file
+//! when its `mtime` changes; parse failures are logged and the last good
+//! config is retained.
 
 #![allow(dead_code)]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use parking_lot::RwLock;
+use serde::Serialize;
 
 use super::action::Action;
 use super::config::{BindingValue, KeybindingsConfigError, UserBindings};
@@ -30,25 +31,39 @@ use super::keystroke::{Chord, Keystroke};
 /// A prefix match that waits for the next keystroke in a chord.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Resolution {
-    /// Chord fully matched → here's the action.
+    /// Chord fully matched; here is the action.
     Action(Action),
-    /// Pressed keystroke matches the prefix of some chord; wait for the
-    /// next keystroke.
+    /// Pressed keystroke matches the prefix of some chord; wait for the next
+    /// keystroke.
     Pending,
     /// No binding matches.
     None,
 }
 
-/// Inner registry state — one effective map.
+/// JSON-friendly snapshot of the effective bindings for frontend consumers.
+///
+/// The leader can wire this into IPC from the shared hotspot files without
+/// recreating merge logic there.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct EffectiveKeybindingsSnapshot {
+    pub bindings: Vec<EffectiveKeybindingBlock>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct EffectiveKeybindingBlock {
+    pub context: String,
+    pub bindings: HashMap<String, String>,
+}
+
+/// Inner registry state.
 #[derive(Debug, Default)]
 struct State {
-    /// `Context → (Chord → Action)` map.
     effective: HashMap<Context, HashMap<Chord, Action>>,
-    /// Last user-file mtime we observed.
+    /// Context-local unbinds that must suppress global fallback for that
+    /// context. Prefix entries suppress longer matching chords too.
+    blocked: HashMap<Context, Vec<Chord>>,
     last_mtime: Option<SystemTime>,
-    /// Path to the user file (may or may not exist).
     user_path: Option<PathBuf>,
-    /// Parse issues from the last attempted reload (empty means all good).
     last_issues: Vec<String>,
 }
 
@@ -72,51 +87,49 @@ impl KeybindingRegistry {
     pub fn with_user_path(user_path: Option<PathBuf>) -> Self {
         let me = Self::with_defaults();
         {
-            let mut s = me.inner.write();
-            s.user_path = user_path;
+            let mut state = me.inner.write();
+            state.user_path = user_path;
         }
-        // Best-effort initial load; parse issues are kept on the state.
         let _ = me.reload();
         me
     }
 
-    /// Is a user file path configured?
     pub fn has_user_path(&self) -> bool {
         self.inner.read().user_path.is_some()
     }
 
-    /// Return the configured user path (for `/keybindings`).
     pub fn user_path(&self) -> Option<PathBuf> {
         self.inner.read().user_path.clone()
     }
 
     /// Force a reload now. Returns `Ok(())` when the reload succeeds (or the
-    /// file doesn't exist) and `Err` when the user file exists but can't be
+    /// file does not exist) and `Err` when the user file exists but cannot be
     /// parsed; in that case the previous effective set is retained.
     pub fn reload(&self) -> Result<(), KeybindingsConfigError> {
         let mut state = self.inner.write();
         let Some(path) = state.user_path.clone() else {
             return Ok(());
         };
-        let mtime = fs::metadata(&path).and_then(|m| m.modified()).ok();
+        let mtime = fs::metadata(&path).and_then(|metadata| metadata.modified()).ok();
         state.last_mtime = mtime;
 
         match fs::read_to_string(&path) {
             Ok(text) => {
                 let user = UserBindings::parse_json(&text)?;
                 let mut effective = HashMap::new();
+                let mut blocked = HashMap::new();
                 install_defaults(&mut effective);
-                apply_user(&mut effective, &user);
+                apply_user(&mut effective, &mut blocked, &user);
                 state.effective = effective;
+                state.blocked = blocked;
                 state.last_issues.clear();
                 Ok(())
             }
             Err(_) => {
-                // Missing file is not an error; unreadable is logged and we
-                // fall back to defaults.
                 let mut effective = HashMap::new();
                 install_defaults(&mut effective);
                 state.effective = effective;
+                state.blocked.clear();
                 Ok(())
             }
         }
@@ -124,12 +137,12 @@ impl KeybindingRegistry {
 
     /// Check the user file's mtime and reload if it changed.
     ///
-    /// On parse failure, the error is stashed (see [`Self::last_issues`])
-    /// and the previous effective config is kept so the UI stays usable.
+    /// On parse failure, the error is stashed (see [`Self::last_issues`]) and
+    /// the previous effective config is kept so the UI stays usable.
     pub fn refresh_if_changed(&self) {
         let path = self.inner.read().user_path.clone();
         let Some(path) = path else { return };
-        let new_mtime = fs::metadata(&path).and_then(|m| m.modified()).ok();
+        let new_mtime = fs::metadata(&path).and_then(|metadata| metadata.modified()).ok();
         let changed = {
             let state = self.inner.read();
             state.last_mtime != new_mtime
@@ -137,43 +150,37 @@ impl KeybindingRegistry {
         if !changed {
             return;
         }
-        if let Err(e) = self.reload() {
+        if let Err(error) = self.reload() {
             let mut state = self.inner.write();
-            state.last_issues = vec![e.to_string()];
-            state.last_mtime = new_mtime; // avoid flapping on repeated errors
-            tracing::warn!(error = %e, "keybindings.json parse failed; keeping previous config");
+            state.last_issues = vec![error.to_string()];
+            state.last_mtime = new_mtime;
+            tracing::warn!(error = %error, "keybindings.json parse failed; keeping previous config");
         }
     }
 
-    /// Return issues from the most recent reload attempt (empty if clean).
     pub fn last_issues(&self) -> Vec<String> {
         self.inner.read().last_issues.clone()
     }
 
-    /// Resolve a single-keystroke lookup. For chords, use [`Self::resolve_chord`].
+    /// Resolve a single-keystroke lookup. For full chords, use
+    /// [`Self::resolve_chord`].
     pub fn resolve_single(&self, ctx: Context, stroke: &Keystroke) -> Resolution {
-        // Auto-refresh if the user file changed.
         self.refresh_if_changed();
 
         let state = self.inner.read();
-        // Try the specific context first, then Global.
-        for &lookup_ctx in &[ctx, Context::Global] {
-            if let Some(map) = state.effective.get(&lookup_ctx) {
-                // Exact single-stroke match
-                for (chord, action) in map {
-                    if chord.is_single() && chord.strokes()[0] == *stroke {
-                        return Resolution::Action(action.clone());
-                    }
-                }
-                // Prefix match → pending
-                for chord in map.keys() {
-                    if chord.strokes().len() > 1 && chord.strokes()[0] == *stroke {
-                        return Resolution::Pending;
-                    }
-                }
+        if let Some(map) = state.effective.get(&ctx) {
+            if let Some(resolution) = resolve_single_from_map(map, stroke, None) {
+                return resolution;
             }
-            if ctx == Context::Global {
-                break;
+        }
+        if ctx == Context::Global {
+            return Resolution::None;
+        }
+        if let Some(map) = state.effective.get(&Context::Global) {
+            if let Some(resolution) =
+                resolve_single_from_map(map, stroke, state.blocked.get(&ctx))
+            {
+                return resolution;
             }
         }
         Resolution::None
@@ -184,14 +191,20 @@ impl KeybindingRegistry {
         self.refresh_if_changed();
 
         let state = self.inner.read();
-        for &lookup_ctx in &[ctx, Context::Global] {
-            if let Some(map) = state.effective.get(&lookup_ctx) {
-                if let Some(action) = map.get(chord) {
-                    return Resolution::Action(action.clone());
-                }
+        if let Some(map) = state.effective.get(&ctx) {
+            if let Some(action) = map.get(chord) {
+                return Resolution::Action(action.clone());
             }
-            if ctx == Context::Global {
-                break;
+        }
+        if ctx == Context::Global {
+            return Resolution::None;
+        }
+        if is_blocked_in_context(state.blocked.get(&ctx), chord) {
+            return Resolution::None;
+        }
+        if let Some(map) = state.effective.get(&Context::Global) {
+            if let Some(action) = map.get(chord) {
+                return Resolution::Action(action.clone());
             }
         }
         Resolution::None
@@ -207,7 +220,9 @@ impl KeybindingRegistry {
                 out.push((*ctx, chord.clone(), action.clone()));
             }
         }
-        out.sort_by(|a, b| (a.0.as_str(), a.1.display()).cmp(&(b.0.as_str(), b.1.display())));
+        out.sort_by(|left, right| {
+            (left.0.as_str(), left.1.display()).cmp(&(right.0.as_str(), right.1.display()))
+        });
         out
     }
 
@@ -216,13 +231,40 @@ impl KeybindingRegistry {
         let state = self.inner.read();
         let mut out = Vec::new();
         for (ctx, map) in &state.effective {
-            for (chord, a) in map {
-                if a == action {
+            for (chord, candidate) in map {
+                if candidate == action {
                     out.push((*ctx, chord.clone()));
                 }
             }
         }
         out
+    }
+
+    /// Export the current effective bindings as simple strings grouped by
+    /// context so OpenTUI/IPC wiring can consume one resolved table.
+    pub fn effective_snapshot(&self) -> EffectiveKeybindingsSnapshot {
+        self.refresh_if_changed();
+
+        let state = self.inner.read();
+        let mut blocks = Vec::new();
+        for ctx in Context::all() {
+            let Some(map) = state.effective.get(ctx) else {
+                continue;
+            };
+            if map.is_empty() {
+                continue;
+            }
+
+            let mut bindings = HashMap::new();
+            for (chord, action) in map {
+                bindings.insert(chord.display(), action.as_str().to_string());
+            }
+            blocks.push(EffectiveKeybindingBlock {
+                context: ctx.as_str().to_string(),
+                bindings,
+            });
+        }
+        EffectiveKeybindingsSnapshot { bindings: blocks }
     }
 }
 
@@ -232,27 +274,71 @@ fn install_defaults(map: &mut HashMap<Context, HashMap<Chord, Action>>) {
     }
 }
 
-fn apply_user(effective: &mut HashMap<Context, HashMap<Chord, Action>>, user: &UserBindings) {
+fn apply_user(
+    effective: &mut HashMap<Context, HashMap<Chord, Action>>,
+    blocked: &mut HashMap<Context, Vec<Chord>>,
+    user: &UserBindings,
+) {
     for (ctx, entries) in &user.per_context {
         let ctx_map = effective.entry(*ctx).or_default();
-        // First pass: handle unbinds. Support unbinding a specific chord,
-        // and also unbinding all chords that share a prefix (spec).
-        let mut to_unbind: HashSet<Chord> = HashSet::new();
         for (chord, value) in entries {
-            if matches!(value, BindingValue::Unbind) {
-                to_unbind.insert(chord.clone());
-            }
-        }
-        if !to_unbind.is_empty() {
-            ctx_map.retain(|c, _| !to_unbind.contains(c));
-        }
-        // Second pass: apply binds (overrides defaults).
-        for (chord, value) in entries {
-            if let BindingValue::Bind(action) = value {
-                ctx_map.insert(chord.clone(), action.clone());
+            match value {
+                BindingValue::Unbind => {
+                    ctx_map.retain(|candidate, _| !chord_has_prefix(candidate, chord));
+                    blocked.entry(*ctx).or_default().push(chord.clone());
+                }
+                BindingValue::Bind(action) => {
+                    ctx_map.insert(chord.clone(), action.clone());
+                }
             }
         }
     }
+}
+
+fn resolve_single_from_map(
+    map: &HashMap<Chord, Action>,
+    stroke: &Keystroke,
+    blocked: Option<&Vec<Chord>>,
+) -> Option<Resolution> {
+    for (chord, action) in map {
+        if is_blocked_in_context(blocked, chord) {
+            continue;
+        }
+        if chord.is_single() && chord.strokes()[0] == *stroke {
+            return Some(Resolution::Action(action.clone()));
+        }
+    }
+    for chord in map.keys() {
+        if is_blocked_in_context(blocked, chord) {
+            continue;
+        }
+        if chord.strokes().len() > 1 && chord.strokes()[0] == *stroke {
+            return Some(Resolution::Pending);
+        }
+    }
+    None
+}
+
+fn is_blocked_in_context(blocked: Option<&Vec<Chord>>, chord: &Chord) -> bool {
+    blocked
+        .map(|entries| {
+            entries
+                .iter()
+                .any(|blocked_chord| chord_has_prefix(chord, blocked_chord))
+        })
+        .unwrap_or(false)
+}
+
+fn chord_has_prefix(candidate: &Chord, prefix: &Chord) -> bool {
+    let candidate_strokes = candidate.strokes();
+    let prefix_strokes = prefix.strokes();
+    if prefix_strokes.len() > candidate_strokes.len() {
+        return false;
+    }
+    candidate_strokes
+        .iter()
+        .zip(prefix_strokes.iter())
+        .all(|(candidate_stroke, prefix_stroke)| candidate_stroke == prefix_stroke)
 }
 
 #[cfg(test)]
@@ -271,41 +357,41 @@ mod tests {
     fn resolve_global_ctrl_c() {
         let reg = KeybindingRegistry::with_defaults();
         let stroke = Keystroke::parse("ctrl+c").unwrap();
-        let r = reg.resolve_single(Context::Chat, &stroke);
-        assert_eq!(r, Resolution::Action(Action::new_static("app:interrupt")));
+        let result = reg.resolve_single(Context::Chat, &stroke);
+        assert_eq!(result, Resolution::Action(Action::new_static("app:interrupt")));
     }
 
     #[test]
     fn resolve_context_specific_enter_submits() {
         let reg = KeybindingRegistry::with_defaults();
         let stroke = Keystroke::parse("enter").unwrap();
-        let r = reg.resolve_single(Context::Chat, &stroke);
-        assert_eq!(r, Resolution::Action(Action::new_static("chat:submit")));
+        let result = reg.resolve_single(Context::Chat, &stroke);
+        assert_eq!(result, Resolution::Action(Action::new_static("chat:submit")));
     }
 
     #[test]
     fn resolve_chord_prefix_returns_pending() {
         let reg = KeybindingRegistry::with_defaults();
         let stroke = Keystroke::parse("ctrl+x").unwrap();
-        let r = reg.resolve_single(Context::Chat, &stroke);
-        assert_eq!(r, Resolution::Pending);
+        let result = reg.resolve_single(Context::Chat, &stroke);
+        assert_eq!(result, Resolution::Pending);
     }
 
     #[test]
     fn resolve_full_chord_returns_action() {
         let reg = KeybindingRegistry::with_defaults();
         let chord = Chord::parse("ctrl+x ctrl+k").unwrap();
-        let r = reg.resolve_chord(Context::Chat, &chord);
-        assert_eq!(r, Resolution::Action(Action::new_static("chat:killAgents")));
+        let result = reg.resolve_chord(Context::Chat, &chord);
+        assert_eq!(result, Resolution::Action(Action::new_static("chat:killAgents")));
     }
 
     #[test]
     fn user_can_override_default() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("keybindings.json");
-        let mut f = std::fs::File::create(&path).unwrap();
+        let mut file = std::fs::File::create(&path).unwrap();
         writeln!(
-            f,
+            file,
             r#"{{
                 "bindings": [
                     {{"context": "Chat", "bindings": {{"enter": "chat:newline"}}}}
@@ -313,12 +399,12 @@ mod tests {
             }}"#
         )
         .unwrap();
-        drop(f);
+        drop(file);
 
         let reg = KeybindingRegistry::with_user_path(Some(path));
         let stroke = Keystroke::parse("enter").unwrap();
-        let r = reg.resolve_single(Context::Chat, &stroke);
-        assert_eq!(r, Resolution::Action(Action::new_static("chat:newline")));
+        let result = reg.resolve_single(Context::Chat, &stroke);
+        assert_eq!(result, Resolution::Action(Action::new_static("chat:newline")));
     }
 
     #[test]
@@ -337,8 +423,57 @@ mod tests {
 
         let reg = KeybindingRegistry::with_user_path(Some(path));
         let stroke = Keystroke::parse("ctrl+l").unwrap();
-        let r = reg.resolve_single(Context::Chat, &stroke);
-        assert_eq!(r, Resolution::None);
+        let result = reg.resolve_single(Context::Chat, &stroke);
+        assert_eq!(result, Resolution::None);
+    }
+
+    #[test]
+    fn local_unbind_suppresses_global_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("keybindings.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "bindings": [
+                    {"context": "Chat", "bindings": {"ctrl+c": null}}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let reg = KeybindingRegistry::with_user_path(Some(path));
+        let stroke = Keystroke::parse("ctrl+c").unwrap();
+        assert_eq!(reg.resolve_single(Context::Chat, &stroke), Resolution::None);
+        assert_eq!(
+            reg.resolve_single(Context::Global, &stroke),
+            Resolution::Action(Action::new_static("app:interrupt"))
+        );
+    }
+
+    #[test]
+    fn local_prefix_unbind_suppresses_global_pending() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("keybindings.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "bindings": [
+                    {"context": "Global", "bindings": {"ctrl+x ctrl+e": "app:exit"}},
+                    {"context": "Chat", "bindings": {"ctrl+x": null}}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let reg = KeybindingRegistry::with_user_path(Some(path));
+        let stroke = Keystroke::parse("ctrl+x").unwrap();
+        let chord = Chord::parse("ctrl+x ctrl+e").unwrap();
+        assert_eq!(reg.resolve_single(Context::Chat, &stroke), Resolution::None);
+        assert_eq!(reg.resolve_chord(Context::Chat, &chord), Resolution::None);
+        assert_eq!(
+            reg.resolve_chord(Context::Global, &chord),
+            Resolution::Action(Action::new_static("app:exit"))
+        );
     }
 
     #[test]
@@ -362,18 +497,14 @@ mod tests {
             r#"{"bindings":[{"context":"Chat","bindings":{"enter":"chat:newline"}}]}"#,
         )
         .unwrap();
-        // Set mtime to an old value so the future rewrite is detected
         let reg = KeybindingRegistry::with_user_path(Some(path.clone()));
 
-        // Sanity: initial override works
         let stroke = Keystroke::parse("enter").unwrap();
         assert_eq!(
             reg.resolve_single(Context::Chat, &stroke),
             Resolution::Action(Action::new_static("chat:newline"))
         );
 
-        // Sleep briefly so the mtime actually advances on coarse timestamp
-        // systems, then rewrite the file.
         std::thread::sleep(std::time::Duration::from_millis(50));
         std::fs::write(
             &path,
@@ -381,7 +512,6 @@ mod tests {
         )
         .unwrap();
 
-        // Resolve triggers refresh_if_changed → rereads → picks up submit.
         assert_eq!(
             reg.resolve_single(Context::Chat, &stroke),
             Resolution::Action(Action::new_static("chat:submit"))
@@ -405,7 +535,6 @@ mod tests {
             Resolution::Action(Action::new_static("chat:newline"))
         );
 
-        // Now write invalid JSON — should NOT break the registry.
         std::thread::sleep(std::time::Duration::from_millis(50));
         std::fs::write(&path, "{ this is not json").unwrap();
         assert_eq!(
@@ -423,8 +552,27 @@ mod tests {
         let cancel = Action::new_static("chat:cancel");
         let hits = reg.bindings_for(&cancel);
         assert!(
-            hits.iter().any(|(c, _)| *c == Context::Chat),
+            hits.iter().any(|(context, _)| *context == Context::Chat),
             "chat:cancel should be bound in Chat context"
+        );
+    }
+
+    #[test]
+    fn effective_snapshot_contains_context_blocks() {
+        let reg = KeybindingRegistry::with_defaults();
+        let snapshot = reg.effective_snapshot();
+        assert!(
+            snapshot.bindings.iter().any(|block| block.context == "Global"),
+            "snapshot should include the Global block"
+        );
+        assert!(
+            snapshot
+                .bindings
+                .iter()
+                .find(|block| block.context == "Chat")
+                .and_then(|block| block.bindings.get("enter"))
+                .is_some(),
+            "snapshot should expose the Chat enter binding"
         );
     }
 }

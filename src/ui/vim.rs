@@ -46,6 +46,28 @@ impl VimMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorModeSetting {
+    Normal,
+    Vim,
+}
+
+impl EditorModeSetting {
+    pub fn parse(editor_mode: Option<&str>) -> Self {
+        match editor_mode.map(str::trim) {
+            Some("vim") => EditorModeSetting::Vim,
+            _ => EditorModeSetting::Normal,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EditorModeSetting::Normal => "normal",
+            EditorModeSetting::Vim => "vim",
+        }
+    }
+}
+
 /// Result of processing a vim key event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VimAction {
@@ -123,10 +145,23 @@ impl VimState {
     /// - Any other value → disabled (validation warns at config-load)
     pub fn from_editor_mode(editor_mode: Option<&str>) -> Self {
         let mut state = Self::new();
-        if matches!(editor_mode.map(str::trim), Some("vim")) {
-            state.enable();
-        }
+        state.apply_editor_mode(editor_mode);
         state
+    }
+
+    pub fn apply_editor_mode(&mut self, editor_mode: Option<&str>) {
+        match EditorModeSetting::parse(editor_mode) {
+            EditorModeSetting::Normal => self.disable(),
+            EditorModeSetting::Vim => self.enable(),
+        }
+    }
+
+    pub fn editor_mode_setting(&self) -> EditorModeSetting {
+        if self.enabled {
+            EditorModeSetting::Vim
+        } else {
+            EditorModeSetting::Normal
+        }
     }
 
     /// Enable vim mode, starting in Normal.
@@ -610,6 +645,22 @@ mod tests {
     fn from_editor_mode_unknown_is_disabled() {
         let v = VimState::from_editor_mode(Some("emacs"));
         assert!(!v.enabled);
+    }
+
+    #[test]
+    fn editor_mode_setting_round_trips() {
+        let mut v = VimState::new();
+        assert_eq!(v.editor_mode_setting(), EditorModeSetting::Normal);
+        assert_eq!(EditorModeSetting::parse(Some("vim")), EditorModeSetting::Vim);
+        assert_eq!(EditorModeSetting::parse(Some("normal")).as_str(), "normal");
+
+        v.apply_editor_mode(Some("vim"));
+        assert!(v.enabled);
+        assert_eq!(v.editor_mode_setting(), EditorModeSetting::Vim);
+
+        v.apply_editor_mode(Some("normal"));
+        assert!(!v.enabled);
+        assert_eq!(v.editor_mode_setting(), EditorModeSetting::Normal);
     }
 
     #[test]

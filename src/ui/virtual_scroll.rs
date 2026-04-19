@@ -4,6 +4,9 @@
 //! array. Uses binary search to find the visible message range in O(log n)
 //! instead of iterating all messages every frame.
 
+use ratatui::text::Line;
+use unicode_width::UnicodeWidthStr;
+
 use crate::types::message::Message;
 
 use super::messages::render_single_message;
@@ -14,11 +17,16 @@ use super::theme::Theme;
 const OVERSCAN: usize = 40;
 
 pub struct VirtualScroll {
-    /// Per-message rendered line count (including +1 separator for all but last).
+    /// Per-message logical line count (including +1 separator for all but last).
+    /// This preserves the current prompt/transcript renderer contract.
     heights: Vec<usize>,
     /// Prefix-sum offsets: `offsets[i]` = sum of `heights[0..i]`.
     /// `offsets[0]` = 0, `offsets[n]` = total lines.
     offsets: Vec<usize>,
+    /// Per-message wrapped visual line count at `cached_width`.
+    visual_heights: Vec<usize>,
+    /// Prefix-sum offsets for width-aware wrapped rendering.
+    visual_offsets: Vec<usize>,
     /// Index from which the cache is invalid.
     valid_up_to: usize,
     /// Terminal width used for the cached heights.
@@ -30,6 +38,8 @@ impl VirtualScroll {
         Self {
             heights: Vec::new(),
             offsets: vec![0],
+            visual_heights: Vec::new(),
+            visual_offsets: vec![0],
             valid_up_to: 0,
             cached_width: 0,
         }
@@ -40,6 +50,9 @@ impl VirtualScroll {
         self.heights.clear();
         self.offsets.clear();
         self.offsets.push(0);
+        self.visual_heights.clear();
+        self.visual_offsets.clear();
+        self.visual_offsets.push(0);
         self.valid_up_to = 0;
     }
 
@@ -50,6 +63,8 @@ impl VirtualScroll {
         }
         self.heights.truncate(index);
         self.offsets.truncate(index + 1); // keep offsets[0..=index]
+        self.visual_heights.truncate(index);
+        self.visual_offsets.truncate(index + 1);
     }
 
     /// Ensure heights and offsets are up-to-date for all messages.
@@ -72,14 +87,21 @@ impl VirtualScroll {
         for i in start..total {
             let lines = render_single_message(&messages[i], theme);
             let mut h = lines.len();
+            let mut visual_h = wrapped_line_height(&lines, width);
             // Separator blank line between messages (not after last)
             if i < total - 1 {
                 h += 1;
+                visual_h += 1;
             }
             if i < self.heights.len() {
                 self.heights[i] = h;
             } else {
                 self.heights.push(h);
+            }
+            if i < self.visual_heights.len() {
+                self.visual_heights[i] = visual_h;
+            } else {
+                self.visual_heights.push(visual_h);
             }
             // Rebuild offset
             let prev = if i < self.offsets.len() {
@@ -93,39 +115,69 @@ impl VirtualScroll {
             } else {
                 self.offsets.push(new_off);
             }
+
+            let prev_visual = if i < self.visual_offsets.len() {
+                self.visual_offsets[i]
+            } else {
+                *self.visual_offsets.last().unwrap_or(&0)
+            };
+            let new_visual_off = prev_visual + visual_h;
+            if i + 1 < self.visual_offsets.len() {
+                self.visual_offsets[i + 1] = new_visual_off;
+            } else {
+                self.visual_offsets.push(new_visual_off);
+            }
         }
         // Make sure offsets has exactly total+1 entries
         self.offsets.truncate(total + 1);
+        self.visual_offsets.truncate(total + 1);
         self.valid_up_to = total;
     }
 
     /// Total rendered line count across all messages.
+    #[allow(dead_code)]
     pub fn total_lines(&self) -> usize {
         self.offsets.last().copied().unwrap_or(0)
     }
 
-    /// Compute the visible message index range `[start, end)` for the given
-    /// scroll offset and viewport height.
-    pub fn visible_range(&self, scroll_offset: usize, viewport_height: usize) -> (usize, usize) {
-        let total_msgs = self.heights.len();
-        if total_msgs == 0 {
-            return (0, 0);
-        }
-
-        let lo = scroll_offset.saturating_sub(OVERSCAN);
-        let hi = scroll_offset + viewport_height + OVERSCAN;
-
-        // Binary search: first message whose cumulative end > lo
-        let start = self.offsets.partition_point(|&o| o <= lo).saturating_sub(1);
-        // First message whose cumulative start >= hi
-        let end = self.offsets.partition_point(|&o| o < hi).min(total_msgs);
-
-        (start, end)
+    /// Total wrapped visual line count across all messages at the cached
+    /// width. This is the layout leader-side render code should use for a
+    /// true width-aware transcript/focus view.
+    pub fn total_visual_lines(&self) -> usize {
+        self.visual_offsets.last().copied().unwrap_or(0)
     }
 
-    /// Line offset of message `index` in the global line space.
-    pub fn offset_of(&self, index: usize) -> usize {
-        self.offsets.get(index).copied().unwrap_or(0)
+    /// Compute the visible message index range `[start, end)` for the given
+    /// scroll offset and viewport height.
+    #[allow(dead_code)]
+    pub fn visible_range(&self, scroll_offset: usize, viewport_height: usize) -> (usize, usize) {
+        visible_range_in_offsets(
+            &self.offsets,
+            self.heights.len(),
+            scroll_offset,
+            viewport_height,
+        )
+    }
+
+    /// Width-aware visible range computed from wrapped visual heights.
+    pub fn visual_range(&self, scroll_offset: usize, viewport_height: usize) -> (usize, usize) {
+        visible_range_in_offsets(
+            &self.visual_offsets,
+            self.visual_heights.len(),
+            scroll_offset,
+            viewport_height,
+        )
+    }
+
+    /// Line offset of message `index` in the wrapped visual line space.
+    pub fn visual_offset_of(&self, index: usize) -> usize {
+        self.visual_offsets.get(index).copied().unwrap_or(0)
+    }
+
+    /// Wrapped visual line count for a single cached message.
+    #[allow(dead_code)]
+    pub fn visual_height_of(&self, index: usize) -> usize {
+        self.visual_heights.get(index).copied().unwrap_or(0)
     }
 
     /// Terminal width used by the current cache. Exposed for tests /
@@ -133,6 +185,51 @@ impl VirtualScroll {
     #[cfg(test)]
     pub fn cached_width(&self) -> u16 {
         self.cached_width
+    }
+}
+
+fn visible_range_in_offsets(
+    offsets: &[usize],
+    total_msgs: usize,
+    scroll_offset: usize,
+    viewport_height: usize,
+) -> (usize, usize) {
+    if total_msgs == 0 {
+        return (0, 0);
+    }
+
+    let lo = scroll_offset.saturating_sub(OVERSCAN);
+    let hi = scroll_offset + viewport_height + OVERSCAN;
+
+    // Binary search: first message whose cumulative end > lo
+    let start = offsets.partition_point(|&o| o <= lo).saturating_sub(1);
+    // First message whose cumulative start >= hi
+    let end = offsets.partition_point(|&o| o < hi).min(total_msgs);
+
+    (start, end)
+}
+
+/// Sum the wrapped display height for a rendered message body.
+fn wrapped_line_height(lines: &[Line<'_>], width: u16) -> usize {
+    let width = usize::from(width.max(1));
+    lines
+        .iter()
+        .map(|line| rendered_line_width(line).max(1).div_ceil(width))
+        .sum()
+}
+
+fn rendered_line_width(line: &Line<'_>) -> usize {
+    line.spans
+        .iter()
+        .map(|span| UnicodeWidthStr::width(span.content.as_ref()))
+        .sum()
+}
+
+impl VirtualScroll {
+    /// Line offset of message `index` in the global logical line space.
+    #[allow(dead_code)]
+    pub fn offset_of(&self, index: usize) -> usize {
+        self.offsets.get(index).copied().unwrap_or(0)
     }
 }
 
@@ -170,18 +267,11 @@ mod tests {
         })
     }
 
-    /// Regression for the issue-#12 acceptance criterion "resize reflow
-    /// problem closed". `render_single_message` returns logical lines
-    /// (not width-wrapped), so cached `heights[]` may be identical
-    /// across widths — but the *cache metadata* must still track the
-    /// latest width so invalidation triggers on the next real reflow
-    /// (e.g. when messages.rs eventually pre-wraps).
-    ///
-    /// We assert two things:
-    ///   1. `cached_width` updates on `ensure_up_to_date`
-    ///   2. invalidation doesn't lose data when the width didn't change
+    /// Width-aware cache data should reflect real visual reflow on resize,
+    /// even before the shared renderer is switched over to the new visual
+    /// offsets by the leader.
     #[test]
-    fn width_change_invalidates_height_cache() {
+    fn width_change_recomputes_visual_heights() {
         let theme = Theme::default();
         let msgs = vec![
             user("a reasonably long message that will wrap differently on narrow widths"),
@@ -189,21 +279,44 @@ mod tests {
         ];
         let mut vs = VirtualScroll::new();
         vs.ensure_up_to_date(&msgs, 80, &theme);
-        let total_first = vs.total_lines();
+        let logical_total = vs.total_lines();
+        let visual_total_wide = vs.total_visual_lines();
         assert_eq!(vs.cached_width(), 80);
-        assert!(total_first > 0);
+        assert!(logical_total > 0);
 
-        // Width change → cache width should update. Height is allowed to
-        // stay the same (logical lines), but re-measuring must have
-        // happened (valid_up_to == len).
+        // Width change -> wrapped heights should grow while logical heights
+        // remain stable for the existing renderer contract.
         vs.ensure_up_to_date(&msgs, 30, &theme);
         assert_eq!(vs.cached_width(), 30);
-        assert_eq!(vs.total_lines(), vs.offsets.last().copied().unwrap_or(0));
+        assert_eq!(vs.total_lines(), logical_total);
+        assert!(vs.total_visual_lines() > visual_total_wide);
+        assert!(vs.visual_offset_of(1) >= vs.offset_of(1));
+        assert!(vs.visual_height_of(0) >= 2);
 
-        // Same width again → no-op, total unchanged.
-        let total_before_noop = vs.total_lines();
+        // Same width again -> stable totals and offsets.
+        let total_before_noop = vs.total_visual_lines();
         vs.ensure_up_to_date(&msgs, 30, &theme);
-        assert_eq!(vs.total_lines(), total_before_noop);
+        assert_eq!(vs.total_visual_lines(), total_before_noop);
+    }
+
+    #[test]
+    fn visual_range_uses_wrapped_offsets() {
+        let theme = Theme::default();
+        let msgs = vec![
+            user("this message wraps a lot on narrow widths and should consume more than one line"),
+            assistant_text("short"),
+        ];
+        let mut vs = VirtualScroll::new();
+        vs.ensure_up_to_date(&msgs, 18, &theme);
+
+        let first_visual_height = vs.visual_height_of(0);
+        assert!(first_visual_height > 2);
+        let before_boundary = vs.visual_range(first_visual_height.saturating_sub(1), 1);
+        assert_eq!(before_boundary.0, 0);
+        assert!(before_boundary.1 >= 1);
+        let after_boundary = vs.visual_range(first_visual_height, 1);
+        assert!(after_boundary.0 <= 1);
+        assert!(after_boundary.1 >= 1);
     }
 
     #[test]

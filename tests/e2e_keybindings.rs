@@ -104,6 +104,47 @@ fn cli_init_only_accepts_user_keybindings() {
     cmd.assert().success();
 }
 
+/// Context-local unbinds should parse cleanly even when they shadow a global
+/// fallback chord.
+#[test]
+#[serial]
+fn cli_init_only_accepts_context_local_unbinds() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let kb_path = dir.path().join("keybindings.json");
+    let body = json!({
+        "$schema": "https://cc-rust/keybindings.schema.json",
+        "bindings": [
+            {
+                "context": "Global",
+                "bindings": {
+                    "ctrl+x ctrl+e": "app:exit"
+                }
+            },
+            {
+                "context": "Chat",
+                "bindings": {
+                    "ctrl+x": null,
+                    "ctrl+c": null
+                }
+            }
+        ]
+    });
+    std::fs::write(&kb_path, serde_json::to_string_pretty(&body).unwrap())
+        .expect("write keybindings");
+
+    let project = tempfile::tempdir().expect("project tmpdir");
+    let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
+    cmd.env("CC_RUST_HOME", dir.path())
+        .env("ANTHROPIC_API_KEY", "")
+        .env("AZURE_API_KEY", "")
+        .env("OPENAI_API_KEY", "")
+        .env_remove("ANTHROPIC_AUTH_TOKEN")
+        .arg("--init-only")
+        .arg("--cwd")
+        .arg(project.path());
+    cmd.assert().success();
+}
+
 /// A malformed user keybindings file must NOT prevent startup — the
 /// registry logs the issue and falls back to the defaults.
 #[test]

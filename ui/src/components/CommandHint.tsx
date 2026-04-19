@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react'
 import { shortcutLabel } from '../keybindings.js'
 import { c } from '../theme.js'
 import { KIND_COLORS, type CommandDef } from '../commands.js'
+import { useAppState } from '../store/app-store.js'
 
 const MAX_VISIBLE = 10
 
@@ -21,6 +22,7 @@ export function CommandHint({
   subSelectedIndex,
 }: Props) {
   const scrollRef = useRef<any>(null)
+  const { keybindingConfig } = useAppState()
 
   useEffect(() => {
     scrollRef.current?.scrollChildIntoView?.(`cmd-${selectedIndex}`)
@@ -41,7 +43,7 @@ export function CommandHint({
         })}
         <box paddingLeft={1}>
           <text fg={c.muted}>
-            Up/Down navigate  {shortcutLabel('input.confirm')} confirm  {shortcutLabel('input.cancel')} cancel
+            Up/Down navigate  {shortcutLabel('select:accept', { context: 'Select', config: keybindingConfig })} confirm  {shortcutLabel('select:cancel', { context: 'Select', config: keybindingConfig })} cancel
           </text>
         </box>
       </box>
@@ -99,7 +101,7 @@ export function CommandHint({
       ) : list}
       <box paddingLeft={1}>
         <text fg={c.muted}>
-          {matches.length} commands  {shortcutLabel('input.complete')} complete  Up/Down navigate  {shortcutLabel('input.confirm')} run
+          {matches.length} commands  {shortcutLabel('autocomplete:accept', { context: 'Autocomplete', config: keybindingConfig })} complete  Up/Down navigate  {shortcutLabel('select:accept', { context: 'Select', config: keybindingConfig })} run
         </text>
       </box>
     </box>

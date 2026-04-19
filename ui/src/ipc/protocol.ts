@@ -128,6 +128,66 @@ export interface SubsystemStatusSnapshot {
 }
 
 // ---------------------------------------------------------------------------
+// Status line payload contract
+// ---------------------------------------------------------------------------
+
+export interface StatusLineModelInfo {
+  id: string
+  displayName?: string
+  backend?: string
+}
+
+export interface StatusLineWorkspaceStatus {
+  cwd: string
+  projectDir?: string
+  gitBranch?: string
+  isWorktree?: boolean
+  gitWorktree?: string
+}
+
+export interface StatusLineContextStatus {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  maxTokens?: number
+  usedFraction?: number
+}
+
+export interface StatusLineCostStatus {
+  totalUsd: number
+  apiCalls: number
+  sessionDurationSecs?: number
+}
+
+export interface StatusLineVimStatus {
+  mode: string
+}
+
+export interface StatusLineWorktreeStatus {
+  name: string
+  path: string
+  branch?: string
+  originalCwd: string
+  originalBranch?: string
+}
+
+export interface StatusLinePayload {
+  hookEventName: 'StatusLine'
+  version: number
+  sessionId?: string
+  model?: StatusLineModelInfo
+  workspace?: StatusLineWorkspaceStatus
+  context?: StatusLineContextStatus
+  cost?: StatusLineCostStatus
+  outputStyle?: string
+  vim?: StatusLineVimStatus
+  worktree?: StatusLineWorktreeStatus
+  streaming: boolean
+  messageCount: number
+}
+
+// ---------------------------------------------------------------------------
 // Agent events (Backend -> Frontend)
 // ---------------------------------------------------------------------------
 
@@ -200,7 +260,15 @@ export type FrontendMessage =
 
 export type BackendMessage =
   // Core conversation
-  | { type: 'ready'; session_id: string; model: string; cwd: string }
+  | {
+      type: 'ready'
+      session_id: string
+      model: string
+      cwd: string
+      editor_mode?: string | null
+      view_mode?: 'prompt' | 'transcript' | null
+      keybindings?: any
+    }
   | { type: 'stream_start'; message_id: string }
   | { type: 'stream_delta'; message_id: string; text: string }
   | { type: 'thinking_delta'; message_id: string; thinking: string }
@@ -239,7 +307,7 @@ export type BackendMessage =
    */
   | {
       type: 'status_line_update'
-      payload: Record<string, unknown>
+      payload: StatusLinePayload
       lines: string[]
       error?: string
     }
