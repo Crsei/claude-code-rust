@@ -55,12 +55,20 @@ pub enum ApiProvider {
     },
     /// Google Gemini (streamGenerateContent API)
     Google { api_key: String, base_url: String },
-    /// AWS Bedrock (interface only — not implemented)
-    #[allow(dead_code)]
-    Bedrock { region: String, model_id: String },
-    /// GCP Vertex AI (interface only — not implemented)
-    #[allow(dead_code)]
-    Vertex { project_id: String, region: String },
+    /// AWS Bedrock — Claude via AWS-managed endpoints.
+    ///
+    /// `base_url_override` is read from `ANTHROPIC_BEDROCK_BASE_URL` when set.
+    Bedrock {
+        region: String,
+        auth: crate::api::bedrock::BedrockAuth,
+        base_url_override: Option<String>,
+    },
+    /// GCP Vertex AI — Claude via Google-managed endpoints.
+    Vertex {
+        project_id: String,
+        region: String,
+        access_token: crate::api::vertex::VertexAccessToken,
+    },
 }
 
 /// Request body for the Messages API
@@ -125,13 +133,24 @@ fn make_stream_provider(
             api_key: api_key.clone(),
             base_url: endpoint.clone(),
         }),
-        ApiProvider::Bedrock { .. } | ApiProvider::Vertex { .. } => {
-            // These are stubs — create an Anthropic provider that will fail on use
-            Box::new(AnthropicStreamProvider {
-                api_key: String::new(),
-                base_url: String::new(),
-            })
-        }
+        ApiProvider::Bedrock {
+            region,
+            auth,
+            base_url_override,
+        } => Box::new(crate::api::bedrock::BedrockStreamProvider {
+            region: region.clone(),
+            auth: auth.clone(),
+            base_url_override: base_url_override.clone(),
+        }),
+        ApiProvider::Vertex {
+            project_id,
+            region,
+            access_token,
+        } => Box::new(crate::api::vertex::VertexStreamProvider {
+            region: region.clone(),
+            project_id: project_id.clone(),
+            access_token: access_token.clone(),
+        }),
     }
 }
 
@@ -186,12 +205,22 @@ impl ApiClient {
                 build_openai_compat_url(base_url, name)
             }
             ApiProvider::Google { base_url, .. } => base_url.clone(),
-            ApiProvider::Bedrock { .. } => {
-                unimplemented!("AWS Bedrock provider is not implemented")
-            }
-            ApiProvider::Vertex { .. } => {
-                unimplemented!("GCP Vertex AI provider is not implemented")
-            }
+            ApiProvider::Bedrock {
+                region,
+                base_url_override,
+                ..
+            } => crate::api::bedrock::build_invoke_url(
+                region,
+                &crate::api::model_mapping::to_bedrock_model_id(&self.config.default_model),
+                base_url_override.as_deref(),
+            ),
+            ApiProvider::Vertex {
+                project_id, region, ..
+            } => crate::api::vertex::build_stream_url(
+                region,
+                project_id,
+                &crate::api::model_mapping::to_vertex_model_id(&self.config.default_model),
+            ),
         }
     }
 
@@ -223,14 +252,26 @@ impl ApiClient {
 
     /// Auto-detect provider from environment variables and construct an `ApiClient`.
     ///
-    /// Checks all registered providers (Anthropic, Azure, OpenAI, Google, DeepSeek, etc.)
-    /// and returns the first one that has an API key set in the environment.
+    /// Priority:
+    /// 1. `CLAUDE_CODE_USE_BEDROCK=1` → AWS Bedrock (Claude)
+    /// 2. `CLAUDE_CODE_USE_VERTEX=1`  → GCP Vertex AI (Claude)
+    /// 3. First of the registered API-key providers (Anthropic, Azure, OpenAI, …)
+    ///    that has its env var set.
     ///
     /// For Azure OpenAI, the base URL is read from `AZURE_BASE_URL` since it is
     /// deployment-specific (e.g. `https://<resource>.openai.azure.com/openai/v1/`).
     ///
-    /// Returns `None` if no provider has an API key set.
+    /// Returns `None` if no provider is configured.
     pub fn from_env() -> Option<Self> {
+        // 1. CLAUDE_CODE_USE_BEDROCK / _VERTEX — third-party cloud providers
+        //    checked BEFORE API-key providers, matching claude-code-bun.
+        if is_env_truthy("CLAUDE_CODE_USE_BEDROCK") {
+            return Self::from_bedrock_env();
+        }
+        if is_env_truthy("CLAUDE_CODE_USE_VERTEX") {
+            return Self::from_vertex_env();
+        }
+
         let info = crate::api::providers::detect_provider()?;
         let api_key = std::env::var(info.env_key).ok()?;
 
@@ -284,6 +325,66 @@ impl ApiClient {
         }
 
         Some(Self::from_provider_info(info, &api_key))
+    }
+
+    /// Construct an `ApiClient` for AWS Bedrock using environment variables.
+    ///
+    /// Honors (matching claude-code-bun):
+    /// - `AWS_REGION` / `AWS_DEFAULT_REGION` — region selection
+    /// - `AWS_BEARER_TOKEN_BEDROCK` — preferred auth (Bedrock API key)
+    /// - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` — SigV4
+    /// - `ANTHROPIC_BEDROCK_BASE_URL` — override the default endpoint
+    ///
+    /// Returns `None` if neither auth mode is available.
+    pub fn from_bedrock_env() -> Option<Self> {
+        let auth = crate::api::bedrock::BedrockAuth::from_env()?;
+        let region = crate::api::bedrock::resolve_region();
+        let base_url_override = std::env::var("ANTHROPIC_BEDROCK_BASE_URL")
+            .ok()
+            .filter(|v| !v.is_empty());
+        let default_model = std::env::var("ANTHROPIC_MODEL")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| "claude-sonnet-4-5-20250929".to_string());
+        Some(Self::new(ApiClientConfig {
+            provider: ApiProvider::Bedrock {
+                region,
+                auth,
+                base_url_override,
+            },
+            default_model,
+            max_retries: 3,
+            timeout_secs: 120,
+        }))
+    }
+
+    /// Construct an `ApiClient` for GCP Vertex AI using environment variables.
+    ///
+    /// Honors:
+    /// - `CLOUD_ML_REGION` — region (default: `us-east5`)
+    /// - `ANTHROPIC_VERTEX_PROJECT_ID` / `GOOGLE_CLOUD_PROJECT` / `GCLOUD_PROJECT` — project ID
+    /// - `CLAUDE_CODE_VERTEX_ACCESS_TOKEN` / `GOOGLE_OAUTH_ACCESS_TOKEN` — access token
+    ///   (falls back to `gcloud auth application-default print-access-token` subprocess)
+    ///
+    /// Returns `None` if project ID or access token can't be resolved.
+    pub fn from_vertex_env() -> Option<Self> {
+        let project_id = crate::api::vertex::resolve_project_id()?;
+        let region = crate::api::vertex::resolve_region();
+        let access_token = crate::api::vertex::VertexAccessToken::from_env_or_gcloud()?;
+        let default_model = std::env::var("ANTHROPIC_MODEL")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| "claude-sonnet-4-5-20250929".to_string());
+        Some(Self::new(ApiClientConfig {
+            provider: ApiProvider::Vertex {
+                project_id,
+                region,
+                access_token,
+            },
+            default_model,
+            max_retries: 3,
+            timeout_secs: 120,
+        }))
     }
 
     /// Construct an `ApiClient` for the OpenAI Codex provider.
@@ -473,5 +574,17 @@ impl ApiClient {
     /// Get a reference to the config.
     pub fn config(&self) -> &ApiClientConfig {
         &self.config
+    }
+}
+
+/// Return true if env var `name` is set to a truthy value (`1`, `true`, `yes`,
+/// `on`). Matches claude-code-bun's `isEnvTruthy` semantics.
+pub(crate) fn is_env_truthy(name: &str) -> bool {
+    match std::env::var(name) {
+        Ok(v) => matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        Err(_) => false,
     }
 }
