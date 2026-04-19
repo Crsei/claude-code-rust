@@ -159,8 +159,7 @@ pub fn create_wrapper_script(command: &str) -> Result<PathBuf> {
 }
 
 fn cc_rust_chrome_dir() -> Result<PathBuf> {
-    let home = dirs::home_dir().context("could not locate $HOME")?;
-    Ok(home.join(".cc-rust").join("chrome"))
+    Ok(crate::config::settings::global_claude_dir()?.join("chrome"))
 }
 
 // ---------------------------------------------------------------------------
@@ -207,7 +206,7 @@ pub fn install_native_host_manifest(binary_path: &Path) -> Result<usize> {
     if cfg!(windows) {
         // Windows: write one manifest to a cc-rust-owned dir, then point each
         // browser's registry key at it.
-        let manifest_dir = home_dir()?.join("AppData").join("Local").join("cc-rust").join("ChromeNativeHost");
+        let manifest_dir = cc_rust_chrome_dir()?.join("native-host");
         fs::create_dir_all(&manifest_dir)
             .with_context(|| format!("creating {}", manifest_dir.display()))?;
         let manifest_path = manifest_dir.join(&manifest_filename);
@@ -258,11 +257,6 @@ fn write_if_changed(path: &Path, content: &str) -> io::Result<bool> {
     fs::write(path, content)?;
     Ok(true)
 }
-
-fn home_dir() -> Result<PathBuf> {
-    dirs::home_dir().context("could not locate $HOME")
-}
-
 #[cfg(windows)]
 fn register_windows_native_hosts(manifest_path: &Path) -> Result<()> {
     use std::process::Command;
@@ -343,12 +337,16 @@ mod tests {
     fn wrapper_script_round_trips() {
         // Use a tempdir to avoid touching the real ~/.cc-rust.
         let tmp = tempfile::tempdir().unwrap();
+        let prev_home = std::env::var("HOME").ok();
+        let prev_userprofile = std::env::var("USERPROFILE").ok();
+        let prev_cc_rust_home = std::env::var("CC_RUST_HOME").ok();
         std::env::set_var("HOME", tmp.path());
-        // On Windows, dirs::home_dir also checks USERPROFILE.
         std::env::set_var("USERPROFILE", tmp.path());
+        std::env::set_var("CC_RUST_HOME", tmp.path());
 
         let path = create_wrapper_script("\"/bin/echo\" hello").unwrap();
         assert!(path.exists(), "wrapper should have been created");
+        assert!(path.starts_with(tmp.path()));
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("hello"));
 
@@ -358,6 +356,22 @@ mod tests {
         let path2 = create_wrapper_script("\"/bin/echo\" hello").unwrap();
         let mtime2 = fs::metadata(&path2).unwrap().modified().unwrap();
         assert_eq!(mtime1, mtime2, "wrapper should not be rewritten when unchanged");
+
+        if let Some(v) = prev_home {
+            std::env::set_var("HOME", v);
+        } else {
+            std::env::remove_var("HOME");
+        }
+        if let Some(v) = prev_userprofile {
+            std::env::set_var("USERPROFILE", v);
+        } else {
+            std::env::remove_var("USERPROFILE");
+        }
+        if let Some(v) = prev_cc_rust_home {
+            std::env::set_var("CC_RUST_HOME", v);
+        } else {
+            std::env::remove_var("CC_RUST_HOME");
+        }
     }
 
     #[test]

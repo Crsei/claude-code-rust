@@ -11,7 +11,7 @@
 //! `Enabled` (ready for #5 to flip to `Connecting → Connected`).
 
 use anyhow::Result;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use super::setup::{self, ExtensionDetection};
 use super::state::{self, ChromeConnectionState};
@@ -137,8 +137,8 @@ impl ChromeSession {
             Err(e) => {
                 let msg = format!("native host install failed: {e}");
                 state::set_connection(ChromeConnectionState::Error(msg));
-                // Fall through — subsystem still transitions to Enabled
-                // below so the user can reconnect via /chrome after fixing.
+                warn!(error = %e, "claude-in-chrome: native host install failed");
+                return Ok(());
             }
         }
 

@@ -332,12 +332,10 @@ fn main() -> ExitCode {
         // Mirror the full-init path: when Chrome subsystem is requested via
         // CLI / env, pre-register the first-party server name so the
         // `# Browser Automation` prompt fires under --dump-system-prompt too.
-        let chrome_wanted = cli.chrome
-            || (!cli.no_chrome
-                && matches!(
-                    std::env::var("CLAUDE_CODE_ENABLE_CFC").ok().as_deref(),
-                    Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("on")
-                ));
+        let chrome_config_default = settings::load_and_merge(&cwd)
+            .ok()
+            .and_then(|cfg| cfg.claude_in_chrome_default_enabled);
+        let chrome_wanted = chrome_requested(&cli, chrome_config_default);
         if chrome_wanted {
             browser_servers.insert(
                 crate::browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string(),
@@ -477,13 +475,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         // (or equivalent) is on. The actual tools come online via #5; doing
         // this early means the system prompt, permissions, and /mcp list all
         // already know the capability is expected.
-        if cli.chrome
-            || (!cli.no_chrome
-                && matches!(
-                    std::env::var("CLAUDE_CODE_ENABLE_CFC").ok().as_deref(),
-                    Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("on")
-                ))
-        {
+        if chrome_requested(&cli, merged_config.claude_in_chrome_default_enabled) {
             browser_servers.insert(
                 crate::browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string(),
             );
@@ -518,16 +510,10 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     {
         use crate::browser::session::{resolve_enablement, ChromeSession};
 
-        let cli_chrome = if cli.chrome {
-            Some(true)
-        } else if cli.no_chrome {
-            Some(false)
-        } else {
-            None
-        };
-        // TODO(#5): thread `claudeInChromeDefaultEnabled` out of settings.json.
-        // For now we pass None and rely on CLI flag + env var only.
-        let enablement = resolve_enablement(cli_chrome, None);
+        let enablement = resolve_enablement(
+            chrome_cli_override(&cli),
+            merged_config.claude_in_chrome_default_enabled,
+        );
         let session = ChromeSession::new(enablement);
         if let Err(e) = session.start() {
             warn!(error = %e, "Chrome subsystem startup failed");
@@ -985,6 +971,23 @@ fn resolve_cwd(cli: &Cli) -> String {
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| ".".to_string())
     })
+}
+
+fn chrome_cli_override(cli: &Cli) -> Option<bool> {
+    if cli.chrome {
+        Some(true)
+    } else if cli.no_chrome {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+fn chrome_requested(cli: &Cli, config_default: Option<bool>) -> bool {
+    matches!(
+        crate::browser::session::resolve_enablement(chrome_cli_override(cli), config_default),
+        crate::browser::session::ChromeEnablement::Enabled
+    )
 }
 
 /// Resolve the permission mode from CLI arg or config.
