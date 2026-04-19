@@ -1,0 +1,24 @@
+id: coding.long-bash-streaming
+category: coding
+concurrency_group: coding-longbash
+timeout_sec: 120
+prereq: {}
+steps:
+  - kind: chat
+    name: run-large-echo
+    # 120 numbered lines — large enough to force more than one SSE delta
+    # block for the tool input + result without being slow.
+    message: |
+      Run this exact Bash command and summarise only the FIRST and LAST lines
+      of its output: `for i in $(seq 1 120); do echo "LINE_$i"; done`
+    timeout_sec: 90
+    expect:
+      - tool_call_order: ["Bash"]
+      - response_contains: ["LINE_1", "LINE_120"]
+      # content_block_delta should fire multiple times during streaming.
+      - sse_event:
+          type: stream_event
+          match:
+            event:
+              type: content_block_delta
+cleanup: {}

@@ -1,0 +1,39 @@
+id: workspace.add-dir
+category: workspace
+concurrency_group: workspace-add-dir
+timeout_sec: 60
+prereq:
+  files:
+    - path: main.md
+      content: primary workspace file
+steps:
+  - kind: command
+    name: initial-empty
+    cmd: /add-dir
+    # Bare /add-dir with no args reports the empty state.
+    expect:
+      - command_response:
+          type: output
+          contains: ["No additional working"]
+
+  # /add-dir rejects paths *inside* the current workspace ("already within
+  # the current working directory"). Use ${home} — the per-case CC_RUST_HOME
+  # tempdir — which is a sibling of the workspace and always exists.
+  - kind: command
+    name: add-external-dir
+    cmd: /add-dir
+    args: ${home}
+    expect:
+      - command_response:
+          type: output
+
+  - kind: command
+    name: list-after-add
+    cmd: /add-dir
+    expect:
+      - command_response:
+          type: output
+          # The listing must mention *something* from the added path. The
+          # CC_RUST_HOME tempdir name contains the literal "ccrs-home".
+          contains: ["ccrs-home"]
+cleanup: {}

@@ -1,0 +1,29 @@
+id: coding.glob-grep-chain
+category: coding
+concurrency_group: coding-search
+timeout_sec: 120
+prereq:
+  files:
+    - path: src/a.rs
+      content: |
+        fn find_me_alpha() {}
+    - path: src/b.rs
+      content: |
+        fn something_else() {}
+    - path: src/nested/c.rs
+      content: |
+        fn find_me_beta() {}
+    - path: README.md
+      content: unrelated
+steps:
+  - kind: chat
+    name: locate-find-me-functions
+    message: |
+      Find every `.rs` file under `src/` that contains a function whose name
+      starts with `find_me_`. Use Glob and Grep. List the file paths you found.
+    timeout_sec: 120
+    expect:
+      - tool_call_order: ["Glob", "Grep"]
+      - response_contains: ["a.rs"]
+      - response_contains: ["c.rs"]
+cleanup: {}

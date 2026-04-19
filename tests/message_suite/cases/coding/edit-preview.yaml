@@ -1,0 +1,29 @@
+id: coding.edit-preview
+category: coding
+concurrency_group: coding-edit
+timeout_sec: 120
+prereq:
+  files:
+    - path: config.toml
+      content: |
+        [server]
+        port = 3000
+        host = "localhost"
+steps:
+  - kind: chat
+    name: edit-port-value
+    message: |
+      Open config.toml with the Read tool first, then use the Edit tool to
+      change the line `port = 3000` to `port = 4242`. Do NOT use Write.
+    timeout_sec: 120
+    expect:
+      - tool_call_order: ["Read", "Edit"]
+
+  - kind: http
+    name: verify-edit-applied
+    path: /api/state
+    expect:
+      - fs_contains:
+          path: ${workspace}/config.toml
+          substring: "port = 4242"
+cleanup: {}

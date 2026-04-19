@@ -1,0 +1,24 @@
+id: workspace.add-dir-nonexistent
+category: workspace
+concurrency_group: workspace-add-dir-err
+timeout_sec: 30
+prereq: {}
+steps:
+  - kind: command
+    name: add-missing-dir
+    cmd: /add-dir
+    args: ${workspace}/does/not/exist/ever
+    expect:
+      # cc-rust surfaces the failure as a non-panic error response. The runner
+      # tolerates either type=error or type=output with a recognisable message.
+      - command_response:
+          contains: ["not found"]
+
+  - kind: http
+    name: still-alive
+    path: /api/state
+    expect:
+      - http_json:
+          path: model
+          equals: "deepseek-chat"
+cleanup: {}

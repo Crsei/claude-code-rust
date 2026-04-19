@@ -1,0 +1,25 @@
+id: coding.parallel-reads
+category: coding
+concurrency_group: coding-parallel
+timeout_sec: 120
+prereq:
+  files:
+    - path: a.md
+      content: CONTENT_A_TOKEN
+    - path: b.md
+      content: CONTENT_B_TOKEN
+    - path: c.md
+      content: CONTENT_C_TOKEN
+steps:
+  - kind: chat
+    name: read-three-files
+    message: |
+      Read all three files at once (a.md, b.md, c.md) and report the single
+      token each contains. Prefer issuing the three Read calls in parallel in
+      the same turn.
+    timeout_sec: 90
+    expect:
+      # All three Read calls present somewhere in the turn sequence.
+      - tool_call_order: ["Read", "Read", "Read"]
+      - response_contains: ["CONTENT_A_TOKEN", "CONTENT_B_TOKEN", "CONTENT_C_TOKEN"]
+cleanup: {}

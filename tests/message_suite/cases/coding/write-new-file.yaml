@@ -1,0 +1,26 @@
+id: coding.write-new-file
+category: coding
+concurrency_group: coding-write
+timeout_sec: 120
+prereq:
+  files:
+    - path: README.md
+      content: "# workspace\n"
+steps:
+  - kind: chat
+    name: create-notes
+    message: "Create a new file named NOTES.md with exactly these two lines:\n\nhello\nCREATED_BY_SUITE\n"
+    timeout_sec: 90
+    expect:
+      - tool_call_order: ["Write"]
+
+  - kind: http
+    name: verify-fs-state
+    path: /api/state
+    expect:
+      - fs_exists: ${workspace}/NOTES.md
+      - fs_contains:
+          path: ${workspace}/NOTES.md
+          substring: CREATED_BY_SUITE
+cleanup:
+  files_rm: [NOTES.md]

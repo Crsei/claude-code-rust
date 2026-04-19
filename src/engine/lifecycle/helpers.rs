@@ -186,18 +186,67 @@ pub(crate) fn build_messages_request(
         }
     });
 
+    let resolved_model = params
+        .model
+        .clone()
+        .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+
     crate::api::client::MessagesRequest {
-        model: params
-            .model
-            .clone()
-            .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string()),
+        max_tokens: clamp_max_tokens_for_model(
+            params.max_output_tokens.unwrap_or(16384),
+            &resolved_model,
+        ),
+        model: resolved_model,
         messages: api_messages,
         system,
-        max_tokens: params.max_output_tokens.unwrap_or(16384),
         tools,
         stream: true,
         thinking,
         tool_choice: None,
+    }
+}
+
+/// Some OpenAI-compatible providers cap `max_tokens` below cc-rust's default
+/// 16384. Rather than rely on provider-side errors surfacing as a blown
+/// response, clamp at build time so the first request also succeeds.
+pub(crate) fn clamp_max_tokens_for_model(requested: usize, model: &str) -> usize {
+    // Keep the rules here narrow and documented; only add an entry when a
+    // provider has confirmed, consistent behaviour.
+    let lower = model.to_ascii_lowercase();
+    let cap: Option<usize> = if lower.starts_with("deepseek") {
+        // Confirmed via https://api.deepseek.com: valid range is [1, 8192].
+        Some(8192)
+    } else {
+        None
+    };
+    match cap {
+        Some(c) => requested.min(c),
+        None => requested,
+    }
+}
+
+#[cfg(test)]
+mod clamp_tests {
+    use super::clamp_max_tokens_for_model;
+
+    #[test]
+    fn deepseek_is_capped_at_8192() {
+        assert_eq!(clamp_max_tokens_for_model(16384, "deepseek-chat"), 8192);
+        assert_eq!(clamp_max_tokens_for_model(20000, "DeepSeek-Reasoner"), 8192);
+    }
+
+    #[test]
+    fn deepseek_below_cap_unchanged() {
+        assert_eq!(clamp_max_tokens_for_model(4096, "deepseek-chat"), 4096);
+    }
+
+    #[test]
+    fn non_deepseek_unchanged() {
+        assert_eq!(
+            clamp_max_tokens_for_model(16384, "claude-sonnet-4-20250514"),
+            16384
+        );
+        assert_eq!(clamp_max_tokens_for_model(32000, "gpt-4o"), 32000);
     }
 }
 
