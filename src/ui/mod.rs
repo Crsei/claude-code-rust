@@ -14,6 +14,7 @@ pub mod permissions;
 pub mod prompt_input;
 #[allow(dead_code)]
 pub mod spinner;
+pub mod status_line;
 #[allow(dead_code)]
 pub mod theme;
 pub mod tui;

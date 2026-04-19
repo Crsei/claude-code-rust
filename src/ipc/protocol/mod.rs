@@ -166,6 +166,26 @@ pub enum BackendMessage {
         output_tokens: u64,
         cost_usd: f64,
     },
+    /// Scriptable status-line snapshot (issue #11).
+    ///
+    /// `payload` is the same JSON the Rust TUI pipes to the user's
+    /// `statusLine.command` — frontends that want to run their own script
+    /// can use this. `lines` carries the already-rendered stdout (split
+    /// on `\n`) so frontends that trust the Rust runner can skip spawning
+    /// a second process. `error` is populated when the most recent run
+    /// failed; in that case `lines` is typically empty and the frontend
+    /// falls back to its built-in footer.
+    StatusLineUpdate {
+        /// Full payload — see `StatusLinePayload`.
+        payload: serde_json::Value,
+        /// Rendered stdout, one entry per line, trimmed to at most a few
+        /// lines.
+        #[serde(default)]
+        lines: Vec<String>,
+        /// Non-empty when the last run failed.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
     /// Prompt suggestions for the UI to display.
     Suggestions { items: Vec<String> },
     /// An error occurred.

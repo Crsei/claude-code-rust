@@ -1,0 +1,150 @@
+//! E2E tests for the scriptable status line (issue #11).
+//!
+//! Black-box checks:
+//!
+//! - the committed settings schema declares every documented statusLine
+//!   field (type/command/enabled/padding/refreshIntervalMs/timeoutMs);
+//! - CLI `--init-only` accepts a settings.json with a command-typed
+//!   statusLine without choking (fail-closed would break the TUI);
+//! - CLI `--init-only` tolerates an invalid statusLine (bad type, bogus
+//!   padding) — the runtime must boot and let `/statusline status` show
+//!   the problem later.
+//!
+//! Run with: `cargo test --test e2e_statusline`
+//!
+//! Unit-level behaviour (runner spawn/stdin/stdout, throttling, timeout,
+//! payload serialization) is covered in `src/ui/status_line/*.rs`
+//! `#[cfg(test)]` blocks.
+
+use serde_json::json;
+use serial_test::serial;
+
+#[test]
+#[serial]
+fn schema_file_declares_extended_status_line_shape() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("docs")
+        .join("schemas")
+        .join("settings.schema.json");
+    let txt = std::fs::read_to_string(&path).expect("schema file exists");
+    let v: serde_json::Value = serde_json::from_str(&txt).expect("valid JSON");
+    let props = v
+        .pointer("/properties/statusLine/properties")
+        .and_then(|p| p.as_object())
+        .expect("statusLine properties exist");
+    for must_have in [
+        "type",
+        "command",
+        "script",
+        "format",
+        "enabled",
+        "padding",
+        "refreshIntervalMs",
+        "timeoutMs",
+    ] {
+        assert!(
+            props.contains_key(must_have),
+            "statusLine schema missing key '{}'",
+            must_have
+        );
+    }
+    // `type` should carry an explicit enum so IDEs/lints can catch typos.
+    let type_enum = v
+        .pointer("/properties/statusLine/properties/type/enum")
+        .and_then(|e| e.as_array())
+        .expect("type enum declared");
+    let names: Vec<&str> = type_enum.iter().filter_map(|x| x.as_str()).collect();
+    for required in ["none", "minimal", "command", "script"] {
+        assert!(
+            names.contains(&required),
+            "statusLine.type enum missing '{}'",
+            required
+        );
+    }
+}
+
+/// CLI init-only should accept a well-formed statusLine config.
+#[test]
+#[serial]
+fn cli_init_only_accepts_status_line_command() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let settings_path = dir.path().join("settings.json");
+    let body = json!({
+        "statusLine": {
+            "type": "command",
+            "command": "echo hello",
+            "padding": 2,
+            "refreshIntervalMs": 500,
+            "timeoutMs": 3000,
+            "enabled": true
+        }
+    });
+    std::fs::write(&settings_path, serde_json::to_string_pretty(&body).unwrap())
+        .expect("write settings");
+
+    let project = tempfile::tempdir().expect("project tmpdir");
+    let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
+    cmd.env("CC_RUST_HOME", dir.path())
+        .env("ANTHROPIC_API_KEY", "")
+        .env("AZURE_API_KEY", "")
+        .env("OPENAI_API_KEY", "")
+        .env_remove("ANTHROPIC_AUTH_TOKEN")
+        .arg("--init-only")
+        .arg("--cwd")
+        .arg(project.path());
+    cmd.assert().success();
+}
+
+/// A malformed statusLine (unknown `type`, negative padding) must NOT
+/// prevent startup. The runtime logs / surfaces the issue through
+/// `/statusline status`; it must still boot.
+#[test]
+#[serial]
+fn cli_init_only_tolerates_malformed_status_line() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let settings_path = dir.path().join("settings.json");
+    // Deliberately bogus shape — type is not in the enum and padding is
+    // out of range.
+    let body = json!({
+        "statusLine": {
+            "type": "orbiting-laser",
+            "command": "",
+            "padding": 9999,
+            "refreshIntervalMs": 1
+        }
+    });
+    std::fs::write(&settings_path, serde_json::to_string_pretty(&body).unwrap())
+        .expect("write settings");
+
+    let project = tempfile::tempdir().expect("project tmpdir");
+    let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
+    cmd.env("CC_RUST_HOME", dir.path())
+        .env("ANTHROPIC_API_KEY", "")
+        .env("AZURE_API_KEY", "")
+        .env("OPENAI_API_KEY", "")
+        .env_remove("ANTHROPIC_AUTH_TOKEN")
+        .arg("--init-only")
+        .arg("--cwd")
+        .arg(project.path());
+    cmd.assert().success();
+}
+
+/// A missing statusLine block should still start cleanly with the
+/// default (no-custom-command) configuration.
+#[test]
+#[serial]
+fn cli_init_only_starts_without_status_line_config() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    let project = tempfile::tempdir().expect("project tmpdir");
+    let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
+    cmd.env("CC_RUST_HOME", dir.path())
+        .env("ANTHROPIC_API_KEY", "")
+        .env("AZURE_API_KEY", "")
+        .env("OPENAI_API_KEY", "")
+        .env_remove("ANTHROPIC_AUTH_TOKEN")
+        .arg("--init-only")
+        .arg("--cwd")
+        .arg(project.path());
+    cmd.assert().success();
+}

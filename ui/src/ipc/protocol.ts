@@ -224,6 +224,25 @@ export type BackendMessage =
   | { type: 'system_info'; text: string; level: string }
   | { type: 'conversation_replaced'; messages: ConversationMessage[] }
   | { type: 'usage_update'; input_tokens: number; output_tokens: number; cost_usd: number }
+  /**
+   * Scriptable status-line snapshot — see Rust issue #11.
+   *
+   * `payload` mirrors the JSON Rust pipes into `statusLine.command`
+   * (hookEventName/version/model/workspace/context/cost/…). Frontends
+   * that want to drive their own script can pass it to their runner.
+   *
+   * `lines` is the already-rendered stdout (split on `\n`). Frontends
+   * that trust the Rust runner can show this directly and skip spawning.
+   *
+   * `error` is populated when the last run failed; callers should fall
+   * back to the built-in footer in that case.
+   */
+  | {
+      type: 'status_line_update'
+      payload: Record<string, unknown>
+      lines: string[]
+      error?: string
+    }
   | { type: 'suggestions'; items: string[] }
   | { type: 'background_agent_complete'; agent_id: string; description: string; result_preview: string; had_error: boolean; duration_ms: number }
   | { type: 'brief_message'; message: string; status: string; attachments: string[] }

@@ -147,6 +147,21 @@ pub fn handle_sdk_message(
                 cost_usd: r.usage.total_cost_usd,
             });
 
+            // Scriptable status-line snapshot (issue #11). We always emit
+            // the payload so a frontend can run its own script even when
+            // the Rust runner is disabled; `lines`/`error` come from the
+            // Rust runner's cache when one is running.
+            if let Ok(payload) = build_status_line_payload(engine, r) {
+                let runner_output = engine.app_state().status_line_runner.latest();
+                let lines = runner_output.lines(3);
+                let error = runner_output.error.clone();
+                let _ = sink.send(&BackendMessage::StatusLineUpdate {
+                    payload,
+                    lines,
+                    error,
+                });
+            }
+
             if r.is_error {
                 let _ = sink.send(&BackendMessage::Error {
                     message: r.result.clone(),
@@ -268,6 +283,66 @@ pub fn extract_tool_result_output(
 
     let content_infos = if has_non_text { Some(infos) } else { None };
     (output, content_infos)
+}
+
+// ---------------------------------------------------------------------------
+// Scriptable status-line payload builder (issue #11)
+// ---------------------------------------------------------------------------
+
+/// Build the JSON payload published alongside every `Result` SDK message.
+/// Extracted so `handle_sdk_message` stays readable.
+///
+/// The output is a free-form `serde_json::Value` so a future schema bump
+/// (adding/removing fields) doesn't need an IPC protocol change — the
+/// frontend validates it against its own shape.
+fn build_status_line_payload(
+    engine: &Arc<QueryEngine>,
+    result: &crate::engine::sdk_types::SdkResult,
+) -> serde_json::Result<serde_json::Value> {
+    use crate::ui::status_line::{
+        ContextWindowStatus, CostStatus, ModelInfo, StatusLinePayload, WorkspaceStatus,
+    };
+
+    let app_state = engine.app_state();
+    let mut payload = StatusLinePayload::new();
+    payload.session_id = Some(result.session_id.clone());
+    payload.message_count = engine.messages().len();
+
+    let model_id = app_state.main_loop_model.clone();
+    if !model_id.is_empty() {
+        payload.model = Some(ModelInfo {
+            id: model_id,
+            display_name: None,
+            backend: Some(app_state.main_loop_backend.clone()),
+        });
+    }
+
+    let cwd = engine.cwd();
+    if !cwd.is_empty() {
+        payload.workspace = Some(WorkspaceStatus {
+            cwd: cwd.to_string(),
+            ..Default::default()
+        });
+    }
+
+    payload.context = Some(ContextWindowStatus {
+        input_tokens: result.usage.total_input_tokens,
+        output_tokens: result.usage.total_output_tokens,
+        cache_read_tokens: result.usage.total_cache_read_tokens,
+        cache_creation_tokens: result.usage.total_cache_creation_tokens,
+        max_tokens: None,
+        used_fraction: None,
+    });
+
+    payload.cost = Some(CostStatus {
+        total_usd: result.total_cost_usd,
+        api_calls: result.usage.api_call_count,
+        session_duration_secs: Some(result.duration_ms / 1000),
+    });
+
+    payload.output_style = app_state.settings.output_style.clone();
+
+    serde_json::to_value(&payload)
 }
 
 // ---------------------------------------------------------------------------

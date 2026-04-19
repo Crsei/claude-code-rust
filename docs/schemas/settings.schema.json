@@ -72,11 +72,19 @@
     "statusLine": {
       "type": "object",
       "additionalProperties": true,
+      "description": "Scriptable status line. When `type` is `command`, the runtime pipes a JSON payload to the command's stdin and renders stdout as the footer. See docs/claude-code-configuration/customize-status-line.md.",
       "properties": {
-        "type": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["none", "minimal", "command", "script"]
+        },
         "command": { "type": "string" },
         "script": { "type": "string" },
-        "format": { "type": "string" }
+        "format": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "padding": { "type": "integer", "minimum": 0, "maximum": 64 },
+        "refreshIntervalMs": { "type": "integer", "minimum": 100, "maximum": 5000 },
+        "timeoutMs": { "type": "integer", "minimum": 100, "maximum": 30000 }
       }
     },
     "outputStyle": {

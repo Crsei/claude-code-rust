@@ -3,6 +3,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::Frame;
 
+use crate::config::settings::StatusLineSettings;
 use crate::services::prompt_suggestion::PromptSuggestion;
 use crate::types::message::Message;
 
@@ -10,9 +11,18 @@ use super::messages::render_messages;
 use super::permissions::{PermissionChoice, PermissionDialog};
 use super::prompt_input::PromptInput;
 use super::spinner::SpinnerState;
+use super::status_line::{
+    ContextWindowStatus, CostStatus, ModelInfo, StatusLinePayload, StatusLineRunner,
+    WorkspaceStatus,
+};
 use super::theme::Theme;
 use super::virtual_scroll::VirtualScroll;
 use super::welcome;
+
+/// Upper cap on the number of stdout lines the status-line runner is
+/// allowed to take up. Arbitrary but small so a runaway script can't
+/// eat the messages pane.
+const STATUS_LINE_MAX_LINES: usize = 3;
 
 /// Actions produced by the app in response to user input.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +67,29 @@ pub struct App {
     dirty: bool,
     /// Tick counter for throttling spinner frame advances.
     tick_counter: u32,
+
+    // ── Scriptable status line (issue #11) ─────────────────────────
+    /// Resolved status-line configuration (command, padding, intervals).
+    /// Populated from effective settings at TUI startup; further updates
+    /// go through [`Self::update_status_line_settings`] when the user
+    /// reloads config.
+    status_line_settings: StatusLineSettings,
+    /// Subprocess runner — shared handle used by `/statusline` as well.
+    status_line_runner: StatusLineRunner,
+    /// Accumulated usage / cost for the current session (fed to the
+    /// status-line payload). Updated from engine `Result` events.
+    session_usage: SessionUsageSnapshot,
+}
+
+/// Subset of engine usage-tracking relevant to the status-line payload.
+/// Populated by [`App::update_session_usage`].
+#[derive(Debug, Clone, Default)]
+struct SessionUsageSnapshot {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub api_calls: u64,
 }
 
 impl App {
@@ -82,6 +115,9 @@ impl App {
             vscroll: VirtualScroll::new(),
             dirty: true,
             tick_counter: 0,
+            status_line_settings: StatusLineSettings::default(),
+            status_line_runner: StatusLineRunner::new(),
+            session_usage: SessionUsageSnapshot::default(),
         }
     }
 
@@ -197,6 +233,108 @@ impl App {
         self.dirty = true;
     }
 
+    /// Update the accumulated session usage (tokens + api calls) used by
+    /// the scriptable status-line payload.
+    pub fn update_session_usage(
+        &mut self,
+        input_tokens: u64,
+        output_tokens: u64,
+        cache_read_tokens: u64,
+        cache_creation_tokens: u64,
+        api_calls: u64,
+    ) {
+        self.session_usage = SessionUsageSnapshot {
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+            cache_creation_tokens,
+            api_calls,
+        };
+        // No dirty flip — `update_session_cost` already ran and marked it.
+    }
+
+    /// Replace the resolved status-line settings (e.g. after `/statusline`
+    /// edits the config).
+    pub fn set_status_line_settings(&mut self, settings: StatusLineSettings) {
+        self.status_line_settings = settings;
+        // Drop any stale output so we fall back immediately if the user
+        // disabled or cleared the command.
+        if !self.status_line_settings.is_command_mode() {
+            self.status_line_runner.reset();
+        }
+        self.dirty = true;
+    }
+
+    /// Shared handle to the status-line runner. `/statusline` calls this
+    /// to inspect / reset the runner without owning the App.
+    pub fn status_line_runner(&self) -> StatusLineRunner {
+        self.status_line_runner.clone()
+    }
+
+    /// Adopt a pre-existing runner (e.g. the one stored on [`AppState`])
+    /// so every UI surface and the `/statusline` command observe the same
+    /// subprocess state.
+    pub fn set_status_line_runner(&mut self, runner: StatusLineRunner) {
+        self.status_line_runner = runner;
+    }
+
+    /// Build the current status-line payload from app state.
+    fn build_status_payload(&self) -> StatusLinePayload {
+        let mut p = StatusLinePayload::new();
+        if !self.session_id.is_empty() {
+            p.session_id = Some(self.session_id.clone());
+        }
+        if !self.model_name.is_empty() {
+            let short = self
+                .model_name
+                .strip_prefix("claude-")
+                .unwrap_or(&self.model_name);
+            let short = short.split('-').take(2).collect::<Vec<_>>().join("-");
+            p.model = Some(ModelInfo {
+                id: self.model_name.clone(),
+                display_name: Some(short),
+                backend: None,
+            });
+        }
+        if !self.cwd.is_empty() {
+            p.workspace = Some(WorkspaceStatus {
+                cwd: self.cwd.clone(),
+                ..Default::default()
+            });
+        }
+        // Context window — max_tokens currently unknown at this layer; the
+        // IPC / daemon path fills it from the model registry.
+        p.context = Some(ContextWindowStatus {
+            input_tokens: self.session_usage.input_tokens,
+            output_tokens: self.session_usage.output_tokens,
+            cache_read_tokens: self.session_usage.cache_read_tokens,
+            cache_creation_tokens: self.session_usage.cache_creation_tokens,
+            max_tokens: None,
+            used_fraction: None,
+        });
+        if self.session_cost_usd > 0.0 || self.session_usage.api_calls > 0 {
+            p.cost = Some(CostStatus {
+                total_usd: self.session_cost_usd,
+                api_calls: self.session_usage.api_calls,
+                session_duration_secs: None,
+            });
+        }
+        p.streaming = self.is_streaming;
+        p.message_count = self.messages.len();
+        p
+    }
+
+    /// Kick the runner. Throttling / cancellation lives inside the runner.
+    fn trigger_status_refresh(&self) {
+        if !self.status_line_settings.is_command_mode() {
+            return;
+        }
+        let payload = self.build_status_payload();
+        let _ = self
+            .status_line_runner
+            .refresh(&self.status_line_settings, &payload);
+    }
+
     pub fn set_spinner_message(&mut self, msg: String) {
         self.spinner_state.set_message(msg);
         self.dirty = true;
@@ -306,6 +444,19 @@ impl App {
             return;
         }
 
+        // Kick the status-line runner before computing layout so this
+        // frame already has a chance to show a refreshed output. The
+        // runner throttles refreshes internally.
+        self.trigger_status_refresh();
+        let status_output = self.status_line_runner.latest();
+        let custom_lines: Vec<String> = if status_output.is_usable()
+            && self.status_line_settings.is_command_mode()
+        {
+            status_output.lines(STATUS_LINE_MAX_LINES)
+        } else {
+            Vec::new()
+        };
+
         let spinner_height = if self.is_streaming { 1u16 } else { 0 };
         let suggestion_height = if !self.is_streaming && self.suggestions.is_some() {
             1u16
@@ -313,7 +464,11 @@ impl App {
             0
         };
         let input_height = 1u16;
-        let status_height = 1u16;
+        let status_height = if custom_lines.is_empty() {
+            1u16
+        } else {
+            custom_lines.len().min(STATUS_LINE_MAX_LINES) as u16
+        };
         let bottom_height = spinner_height + suggestion_height + input_height + status_height;
         let min_message_height = if self.show_welcome {
             welcome::welcome_height()
@@ -382,7 +537,7 @@ impl App {
         self.prompt
             .render(bottom_chunks[2], frame.buffer_mut(), &self.theme);
 
-        self.render_status_bar(bottom_chunks[3], frame.buffer_mut());
+        self.render_status_bar(bottom_chunks[3], frame.buffer_mut(), &custom_lines);
 
         if let Some(ref dialog) = self.permission_dialog {
             dialog.render(size, frame.buffer_mut(), &self.theme);
@@ -457,11 +612,36 @@ impl App {
         }
     }
 
-    fn render_status_bar(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+    fn render_status_bar(
+        &self,
+        area: Rect,
+        buf: &mut ratatui::buffer::Buffer,
+        custom_lines: &[String],
+    ) {
         if area.height == 0 {
             return;
         }
 
+        // 1. Custom scriptable status-line (issue #11) — when present, take
+        //    full priority over the built-in footer. Padding from settings.
+        if !custom_lines.is_empty() {
+            let padding = self.status_line_settings.padding.unwrap_or(0) as usize;
+            let pad_str: String = " ".repeat(padding);
+            for (i, text) in custom_lines.iter().enumerate() {
+                if (i as u16) >= area.height {
+                    break;
+                }
+                let line = Line::from(vec![Span::styled(
+                    format!("{}{}", pad_str, text),
+                    self.theme.dim,
+                )]);
+                buf.set_line(area.x, area.y + i as u16, &line, area.width);
+            }
+            return;
+        }
+
+        // 2. Built-in default footer — also the fallback when the runner
+        //    errors or the script is disabled.
         let msg_count = self.messages.len();
         let mode = if self.is_streaming {
             "streaming"
@@ -487,6 +667,13 @@ impl App {
             "Ctrl+C {}",
             if self.is_streaming { "abort" } else { "quit" }
         ));
+
+        // If the runner reported an error, surface a quiet marker so the
+        // user knows to run `/statusline status` to see why.
+        let latest = self.status_line_runner.latest();
+        if latest.error.is_some() && self.status_line_settings.is_command_mode() {
+            parts.push("statusline:err".to_string());
+        }
 
         let status_text = format!(" {}", parts.join(" | "));
         let line = Line::from(vec![Span::styled(status_text, self.theme.dim)]);
