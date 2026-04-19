@@ -1,32 +1,37 @@
-//! `/effort` command — set the thinking effort level.
+//! `/effort` command -- set the thinking effort level.
 //!
-//! Controls the reasoning depth for the model by mapping a label
-//! (`low` / `medium` / `high`) or numeric override to the
-//! `thinking.budget_tokens` value sent on the next request.
-//!
-//! Per issue #9 scope: `/effort auto` and `/effort max` are intentionally
-//! not implemented — the project supports vendors where those semantics
-//! don't apply. Numeric overrides cover the same need explicitly.
+//! Controls the reasoning depth for the model by mapping a label or numeric
+//! override to the `thinking.budget_tokens` value sent on the next request.
 
 use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::engine::effort::{effort_to_budget_tokens, DEFAULT_THINKING_BUDGET};
+use crate::engine::effort::{
+    effort_to_budget_tokens, normalize_effort_value, DEFAULT_THINKING_BUDGET, MAX_THINKING_BUDGET,
+};
 
 pub struct EffortHandler;
 
-const VALID_LEVELS: &[&str] = &["low", "medium", "high"];
+const VALID_LEVELS: &[&str] = &["low", "medium", "high", "auto", "max"];
 
 fn budget_summary(value: Option<&str>) -> String {
     match value {
         None => format!(
-            "(not set — thinking falls back to {} tokens when enabled)",
+            "(not set - thinking falls back to {} tokens when enabled)",
             DEFAULT_THINKING_BUDGET
+        ),
+        Some("auto") => format!(
+            "auto (model default; {} thinking tokens in the fixed-budget path)",
+            DEFAULT_THINKING_BUDGET
+        ),
+        Some("max") => format!(
+            "max (highest fixed budget in this fork: {} thinking tokens)",
+            MAX_THINKING_BUDGET
         ),
         Some(s) => match effort_to_budget_tokens(s) {
             Some(tokens) => format!("{} ({} thinking tokens)", s, tokens),
-            None => format!("{} (unrecognized — will use default budget)", s),
+            None => format!("{} (unrecognized - will use default budget)", s),
         },
     }
 }
@@ -39,7 +44,7 @@ impl CommandHandler for EffortHandler {
         if arg.is_empty() {
             return Ok(CommandResult::Output(format!(
                 "Current effort: {}\n\n\
-                 Usage: /effort <low|medium|high|<token-count>>\n\
+                 Usage: /effort <low|medium|high|auto|max|<token-count>>\n\
                  Valid labels: {}\n\
                  Numeric values are passed through as the thinking budget.",
                 budget_summary(ctx.app_state.effort_value.as_deref()),
@@ -47,23 +52,17 @@ impl CommandHandler for EffortHandler {
             )));
         }
 
-        let lower = arg.to_lowercase();
-        let accepted =
-            VALID_LEVELS.contains(&lower.as_str()) || effort_to_budget_tokens(&arg).is_some();
-
-        if !accepted {
-            return Ok(CommandResult::Output(format!(
-                "Invalid effort: '{}'\nValid labels: {} (or a numeric budget token count)",
-                arg,
-                VALID_LEVELS.join(", ")
-            )));
-        }
-
-        let stored = if VALID_LEVELS.contains(&lower.as_str()) {
-            lower
-        } else {
-            arg.trim().to_string()
+        let stored = match normalize_effort_value(&arg) {
+            Some(value) => value,
+            None => {
+                return Ok(CommandResult::Output(format!(
+                    "Invalid effort: '{}'\nValid labels: {} (or a numeric budget token count)",
+                    arg,
+                    VALID_LEVELS.join(", ")
+                )));
+            }
         };
+
         ctx.app_state.effort_value = Some(stored.clone());
         Ok(CommandResult::Output(format!(
             "Effort set to: {}",
@@ -98,6 +97,8 @@ mod tests {
                 assert!(text.contains("Current effort"));
                 assert!(text.contains("not set"));
                 assert!(text.contains("thinking tokens") || text.contains("thinking budget"));
+                assert!(text.contains("auto"));
+                assert!(text.contains("max"));
             }
             _ => panic!("Expected Output"),
         }
@@ -124,7 +125,7 @@ mod tests {
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("high"));
-                assert!(text.contains("24576"), "expected high → 24576: {}", text);
+                assert!(text.contains("24576"), "expected high -> 24576: {}", text);
             }
             _ => panic!("Expected Output"),
         }
@@ -140,6 +141,36 @@ mod tests {
             _ => panic!("Expected Output"),
         }
         assert_eq!(ctx.app_state.effort_value.as_deref(), Some("high"));
+    }
+
+    #[tokio::test]
+    async fn test_effort_set_auto() {
+        let handler = EffortHandler;
+        let mut ctx = test_ctx();
+        let result = handler.execute("auto", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(text.contains("auto"));
+                assert!(text.contains(&DEFAULT_THINKING_BUDGET.to_string()));
+            }
+            _ => panic!("Expected Output"),
+        }
+        assert_eq!(ctx.app_state.effort_value.as_deref(), Some("auto"));
+    }
+
+    #[tokio::test]
+    async fn test_effort_set_max() {
+        let handler = EffortHandler;
+        let mut ctx = test_ctx();
+        let result = handler.execute("MAX", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(text.contains("max"));
+                assert!(text.contains(&MAX_THINKING_BUDGET.to_string()));
+            }
+            _ => panic!("Expected Output"),
+        }
+        assert_eq!(ctx.app_state.effort_value.as_deref(), Some("max"));
     }
 
     #[tokio::test]

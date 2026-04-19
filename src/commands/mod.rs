@@ -437,7 +437,8 @@ pub fn get_all_commands() -> Vec<Command> {
         Command {
             name: "voice".into(),
             aliases: vec!["dictation".into()],
-            description: "Toggle push-to-talk voice dictation (+ status / diagnose)".into(),
+            description: "Inspect compatibility-only voice settings (runtime voice unsupported)"
+                .into(),
             handler: Box::new(voice_cmd::VoiceHandler),
         },
     ]

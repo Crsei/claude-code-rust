@@ -1,16 +1,10 @@
-//! Push-to-talk state machine (issue #13).
+//! Push-to-talk state machine for voice dictation.
 //!
-//! [`VoiceController`] owns the `Idle → Recording → Transcribing →
-//! Idle` transitions and produces [`VoiceEvent`]s the TUI consumes. The
-//! TS reference keeps this logic spread across a React hook + a service
-//! object; in the Rust port it's a single struct so the TUI key handler
-//! can simply call `.press()` / `.release()` and then drain events
-//! synchronously.
-//!
-//! The controller is deliberately I/O-free: it just coordinates the
-//! audio backend + STT client + an event queue. Real transport work
-//! happens on a tokio task that the controller spawns at `press()`
-//! time.
+//! [`VoiceController`] owns the `Idle -> Recording -> Transcribing ->
+//! Idle` transitions and produces [`VoiceEvent`] values for the TUI.
+//! The controller stays I/O-light: it coordinates the audio backend, the
+//! STT client, and an event queue while a tokio task performs the async
+//! transcription work.
 
 use std::sync::Arc;
 
@@ -48,15 +42,15 @@ impl VoiceState {
     }
 }
 
-/// Events pushed to the TUI. The TUI drains these with [`VoiceController::drain_events`]
-/// on each render tick.
+/// Events pushed to the TUI. The TUI drains these with
+/// [`VoiceController::drain_events`] on each render tick.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VoiceEvent {
-    /// State changed — the TUI should redraw the composer / status line.
+    /// State changed; the TUI should redraw the composer / status line.
     StateChanged(VoiceState),
     /// Final transcription ready for insertion.
     Transcription(String),
-    /// Recoverable error — caller may choose to display and keep going.
+    /// Recoverable error; caller may choose to display and keep going.
     Error(String),
 }
 
@@ -72,8 +66,13 @@ struct ControllerState {
     audio: Arc<dyn AudioCaptureBackend>,
     stt: Arc<dyn TranscriptionClient>,
     state: VoiceState,
-    /// Active recording's stop flag — flipped on `release()`.
-    active_handle: Option<RecordingHandle>,
+    next_recording_id: u64,
+    active_recording: Option<ActiveRecording>,
+}
+
+struct ActiveRecording {
+    id: u64,
+    stop_flag: Arc<Mutex<bool>>,
 }
 
 impl VoiceController {
@@ -84,7 +83,8 @@ impl VoiceController {
                 audio,
                 stt,
                 state: VoiceState::Idle,
-                active_handle: None,
+                next_recording_id: 1,
+                active_recording: None,
             })),
             events_tx: tx,
             events_rx: Arc::new(Mutex::new(Some(rx))),
@@ -100,15 +100,15 @@ impl VoiceController {
     pub fn status_line(&self) -> Option<String> {
         match self.state() {
             VoiceState::Idle => None,
-            VoiceState::Recording => Some("● REC · release key to transcribe".to_string()),
-            VoiceState::Transcribing => Some("… transcribing".to_string()),
+            VoiceState::Recording => Some("voice: recording (release key to finish)".to_string()),
+            VoiceState::Transcribing => Some("voice: finalizing transcription".to_string()),
             VoiceState::Error(msg) => Some(format!("voice error: {}", msg)),
         }
     }
 
     /// Push-to-talk key was pressed. Attempts to start audio capture
-    /// and dispatches a transcription task. Idempotent: repeated presses
-    /// while already recording are ignored.
+    /// and dispatches a transcription task. Repeated presses while a
+    /// session is already active are ignored.
     pub fn press(&self, language: String) {
         let mut guard = self.inner.lock();
         if !matches!(guard.state, VoiceState::Idle | VoiceState::Error(_)) {
@@ -116,15 +116,21 @@ impl VoiceController {
         }
         match guard.audio.start() {
             Ok(handle) => {
+                let recording_id = guard.next_recording_id;
+                guard.next_recording_id += 1;
                 guard.state = VoiceState::Recording;
-                guard.active_handle = None;
+                guard.active_recording = Some(ActiveRecording {
+                    id: recording_id,
+                    stop_flag: handle.stop_flag(),
+                });
                 drop(guard);
                 self.send(VoiceEvent::StateChanged(VoiceState::Recording));
-                self.spawn_transcription_task(handle, language);
+                self.spawn_transcription_task(handle, recording_id, language);
             }
             Err(e) => {
                 let msg = format_audio_error(&e);
                 guard.state = VoiceState::Error(msg.clone());
+                guard.active_recording = None;
                 drop(guard);
                 self.send(VoiceEvent::StateChanged(VoiceState::Error(msg.clone())));
                 self.send(VoiceEvent::Error(msg));
@@ -132,17 +138,17 @@ impl VoiceController {
         }
     }
 
-    /// Release of the push-to-talk key — stop capturing audio. The
-    /// spawned transcription task will observe the channel closing and
-    /// finalize.
+    /// Release of the push-to-talk key stops capturing audio. The
+    /// spawned transcription task will finalize once the backend closes
+    /// its sender side.
     pub fn release(&self) {
         let mut guard = self.inner.lock();
         if !matches!(guard.state, VoiceState::Recording) {
             return;
         }
         guard.state = VoiceState::Transcribing;
-        if let Some(h) = guard.active_handle.take() {
-            h.stop();
+        if let Some(active) = &guard.active_recording {
+            *active.stop_flag.lock() = true;
         }
         drop(guard);
         self.send(VoiceEvent::StateChanged(VoiceState::Transcribing));
@@ -155,15 +161,16 @@ impl VoiceController {
         if matches!(guard.state, VoiceState::Idle) {
             return;
         }
+        let active = guard.active_recording.take();
         guard.state = VoiceState::Idle;
-        if let Some(h) = guard.active_handle.take() {
-            h.stop();
-        }
         drop(guard);
+        if let Some(active) = active {
+            *active.stop_flag.lock() = true;
+        }
         self.send(VoiceEvent::StateChanged(VoiceState::Idle));
     }
 
-    /// Drain every queued event. Safe to call on every tick; returns
+    /// Drain every queued event. Safe to call on every tick; returns an
     /// empty vec if nothing is pending.
     pub fn drain_events(&self) -> Vec<VoiceEvent> {
         let mut guard = self.events_rx.lock();
@@ -182,8 +189,14 @@ impl VoiceController {
         let _ = self.events_tx.send(evt);
     }
 
-    /// Spawn the transcription task. Caller already holds `state = Recording`.
-    fn spawn_transcription_task(&self, handle: RecordingHandle, language: String) {
+    /// Spawn the transcription task. Caller already holds
+    /// `state = Recording`.
+    fn spawn_transcription_task(
+        &self,
+        handle: RecordingHandle,
+        recording_id: u64,
+        language: String,
+    ) {
         let stt = { self.inner.lock().stt.clone() };
         let events_tx = self.events_tx.clone();
         let inner = Arc::clone(&self.inner);
@@ -192,26 +205,46 @@ impl VoiceController {
             match result {
                 Ok(TranscriptionResult { text, .. }) => {
                     let trimmed = text.trim().to_string();
-                    {
+                    let should_publish = {
                         let mut guard = inner.lock();
-                        guard.state = VoiceState::Idle;
-                        guard.active_handle = None;
-                    }
-                    let _ = events_tx.send(VoiceEvent::StateChanged(VoiceState::Idle));
-                    if !trimmed.is_empty() {
-                        let _ = events_tx.send(VoiceEvent::Transcription(trimmed));
+                        if !matches!(
+                            guard.active_recording.as_ref().map(|active| active.id),
+                            Some(id) if id == recording_id
+                        ) {
+                            false
+                        } else {
+                            guard.state = VoiceState::Idle;
+                            guard.active_recording = None;
+                            true
+                        }
+                    };
+                    if should_publish {
+                        let _ = events_tx.send(VoiceEvent::StateChanged(VoiceState::Idle));
+                        if !trimmed.is_empty() {
+                            let _ = events_tx.send(VoiceEvent::Transcription(trimmed));
+                        }
                     }
                 }
                 Err(e) => {
                     let msg = format_stt_error(&e);
-                    {
+                    let should_publish = {
                         let mut guard = inner.lock();
-                        guard.state = VoiceState::Error(msg.clone());
-                        guard.active_handle = None;
+                        if !matches!(
+                            guard.active_recording.as_ref().map(|active| active.id),
+                            Some(id) if id == recording_id
+                        ) {
+                            false
+                        } else {
+                            guard.state = VoiceState::Error(msg.clone());
+                            guard.active_recording = None;
+                            true
+                        }
+                    };
+                    if should_publish {
+                        let _ = events_tx
+                            .send(VoiceEvent::StateChanged(VoiceState::Error(msg.clone())));
+                        let _ = events_tx.send(VoiceEvent::Error(msg));
                     }
-                    let _ =
-                        events_tx.send(VoiceEvent::StateChanged(VoiceState::Error(msg.clone())));
-                    let _ = events_tx.send(VoiceEvent::Error(msg));
                 }
             }
         });
@@ -237,26 +270,62 @@ mod tests {
     use crate::voice::stt::{NullTranscriptionClient, SttUnavailable};
     use async_trait::async_trait;
 
-    /// Local canned client: echoes a fixed transcription back regardless
-    /// of the audio input. Inline to keep stt.rs's test module private.
-    struct EchoClient {
-        pub text: String,
+    struct InspectableBackend {
+        flags: Arc<Mutex<Vec<Arc<Mutex<bool>>>>>,
+    }
+
+    impl Default for InspectableBackend {
+        fn default() -> Self {
+            Self {
+                flags: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+    }
+
+    impl InspectableBackend {
+        fn latest_flag(&self) -> Arc<Mutex<bool>> {
+            self.flags.lock().last().cloned().expect("recording flag")
+        }
+    }
+
+    impl AudioCaptureBackend for InspectableBackend {
+        fn name(&self) -> &'static str {
+            "inspectable"
+        }
+
+        fn is_available(&self) -> Result<(), AudioUnavailable> {
+            Ok(())
+        }
+
+        fn start(&self) -> Result<RecordingHandle, AudioUnavailable> {
+            let (_tx, rx) = mpsc::unbounded_channel();
+            let stopped = Arc::new(Mutex::new(false));
+            self.flags.lock().push(Arc::clone(&stopped));
+            Ok(RecordingHandle::new(rx, stopped))
+        }
+    }
+
+    struct DelayedClient {
+        text: String,
+        delay_ms: u64,
     }
 
     #[async_trait]
-    impl TranscriptionClient for EchoClient {
+    impl TranscriptionClient for DelayedClient {
         fn name(&self) -> &'static str {
-            "echo"
+            "delayed"
         }
+
         fn is_available(&self) -> Result<(), SttUnavailable> {
             Ok(())
         }
+
         async fn transcribe(
             &self,
-            mut handle: RecordingHandle,
+            _handle: RecordingHandle,
             language: &str,
         ) -> Result<TranscriptionResult, SttError> {
-            while (handle.audio.recv().await).is_some() {}
+            tokio::time::sleep(std::time::Duration::from_millis(self.delay_ms)).await;
             Ok(TranscriptionResult {
                 text: self.text.clone(),
                 language: language.to_string(),
@@ -278,62 +347,62 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn echo_client_end_to_end_emits_transcription_event() {
+    async fn release_moves_to_transcribing_and_sets_stop_flag() {
+        let backend = Arc::new(InspectableBackend::default());
         let c = VoiceController::new(
-            Arc::new(EchoPipeBackend::default()),
-            Arc::new(EchoClient {
+            backend.clone(),
+            Arc::new(DelayedClient {
                 text: "hello world".into(),
+                delay_ms: 10,
             }),
         );
-        c.press("en".into());
-        // Give the spawned task a moment — release should push state to
-        // Transcribing, then the task will finalize to Idle and emit the
-        // transcription event.
-        c.release();
-        for _ in 0..50 {
-            let events = c.drain_events();
-            if events
-                .iter()
-                .any(|e| matches!(e, VoiceEvent::Transcription(t) if t == "hello world"))
-            {
-                return;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-        panic!("transcription event never arrived");
-    }
 
-    #[tokio::test]
-    async fn cancel_from_recording_goes_idle_without_transcription() {
-        let c = VoiceController::new(
-            Arc::new(EchoPipeBackend::default()),
-            Arc::new(EchoClient {
-                text: "ignored".into(),
-            }),
-        );
         c.press("en".into());
-        c.cancel();
+        assert_eq!(c.state(), VoiceState::Recording);
+        assert!(!*backend.latest_flag().lock());
+
+        c.release();
+        assert_eq!(c.state(), VoiceState::Transcribing);
+        assert!(*backend.latest_flag().lock());
+
+        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        let events = c.drain_events();
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, VoiceEvent::StateChanged(VoiceState::Recording))));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, VoiceEvent::StateChanged(VoiceState::Transcribing))));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, VoiceEvent::Transcription(t) if t == "hello world")));
         assert_eq!(c.state(), VoiceState::Idle);
     }
 
-    /// Backend that successfully starts but never sends audio — lets
-    /// EchoClient exit immediately via an empty drain.
-    #[derive(Default)]
-    struct EchoPipeBackend;
+    #[tokio::test]
+    async fn cancel_suppresses_stale_transcription_and_resets_to_idle() {
+        let backend = Arc::new(InspectableBackend::default());
+        let c = VoiceController::new(
+            backend.clone(),
+            Arc::new(DelayedClient {
+                text: "ignored".into(),
+                delay_ms: 20,
+            }),
+        );
 
-    impl AudioCaptureBackend for EchoPipeBackend {
-        fn name(&self) -> &'static str {
-            "echo-pipe"
-        }
-        fn is_available(&self) -> Result<(), AudioUnavailable> {
-            Ok(())
-        }
-        fn start(&self) -> Result<RecordingHandle, AudioUnavailable> {
-            // Sender dropped immediately → receiver closes → EchoClient
-            // finishes as soon as it's polled.
-            let (_tx, rx) = mpsc::unbounded_channel();
-            let stopped = Arc::new(Mutex::new(false));
-            Ok(RecordingHandle::new(rx, stopped))
-        }
+        c.press("en".into());
+        c.cancel();
+        assert_eq!(c.state(), VoiceState::Idle);
+        assert!(*backend.latest_flag().lock());
+
+        tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+        let events = c.drain_events();
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, VoiceEvent::StateChanged(VoiceState::Idle))));
+        assert!(!events
+            .iter()
+            .any(|e| matches!(e, VoiceEvent::Transcription(t) if t == "ignored")));
+        assert_eq!(c.state(), VoiceState::Idle);
     }
 }

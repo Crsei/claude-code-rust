@@ -7,7 +7,7 @@ import type {
   SkillInfo,
   TeamMemberInfo,
 } from '../ipc/protocol.js'
-import type { ViewMode } from '../keybindings.js'
+import type { EditorMode, KeybindingConfig, ViewMode } from '../keybindings.js'
 import type { RawMessage } from './message-model.js'
 
 export interface Usage {
@@ -81,8 +81,10 @@ export interface AppState {
   suggestions: string[]
   inputHistory: string[]
   historyIndex: number
+  editorMode: EditorMode
   vimEnabled: boolean
   vimMode: string
+  keybindingConfig: KeybindingConfig | null
   backgroundAgents: BackgroundAgent[]
   queuedSubmissions: QueuedSubmission[]
   viewMode: ViewMode
@@ -108,8 +110,10 @@ export const initialState: AppState = {
   suggestions: [],
   inputHistory: [],
   historyIndex: -1,
+  editorMode: 'normal',
   vimEnabled: false,
   vimMode: 'NORMAL',
+  keybindingConfig: null,
   backgroundAgents: [],
   queuedSubmissions: [],
   viewMode: 'prompt',
@@ -120,7 +124,15 @@ export const initialState: AppState = {
 }
 
 export type CoreAction =
-  | { type: 'READY'; model: string; sessionId: string; cwd: string }
+  | {
+      type: 'READY'
+      model: string
+      sessionId: string
+      cwd: string
+      editorMode?: string | null
+      viewMode?: ViewMode | null
+      keybindings?: KeybindingConfig | null
+    }
   | { type: 'REPLACE_MESSAGES'; messages: RawMessage[] }
   | { type: 'ADD_USER_MESSAGE'; id: string; text: string }
   | { type: 'ADD_COMMAND_MESSAGE'; id: string; text: string }
@@ -194,7 +206,9 @@ export type SubsystemAction =
 export type InputAction =
   | { type: 'PUSH_HISTORY'; text: string }
   | { type: 'SET_HISTORY_INDEX'; index: number }
+  | { type: 'SET_EDITOR_MODE'; editorMode: EditorMode }
   | { type: 'SET_VIM_MODE'; mode: string }
+  | { type: 'SET_KEYBINDINGS_CONFIG'; keybindings: KeybindingConfig | null }
   | { type: 'TOGGLE_VIM' }
   | { type: 'QUEUE_SUBMISSION'; submission: QueuedSubmission }
   | { type: 'DEQUEUE_SUBMISSION' }

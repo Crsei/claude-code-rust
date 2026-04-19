@@ -1,5 +1,5 @@
-//! E2E tests for issue #9: model restriction, effort → thinking budget,
-//! output_style and language injection into the system prompt.
+//! E2E tests for issue #9 prompt behavior:
+//! outputStyle and language injection into the system prompt.
 //!
 //! These tests are hermetic: they pin `CC_RUST_HOME` to a per-test
 //! tempdir and use `--dump-system-prompt` to inspect the assembled
@@ -74,6 +74,36 @@ fn dump_prompt_injects_explanatory_output_style() {
 
 #[test]
 #[serial]
+fn dump_prompt_supports_language_and_output_style_together() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let settings = json!({
+        "language": "Chinese",
+        "outputStyle": "explanatory"
+    });
+    std::fs::write(
+        dir.path().join("settings.json"),
+        serde_json::to_string_pretty(&settings).unwrap(),
+    )
+    .unwrap();
+
+    let mut cmd = cli();
+    let assert = strip_keys(&mut cmd)
+        .args(["--dump-system-prompt", "-C", dir.path().to_str().unwrap()])
+        .env("CC_RUST_HOME", dir.path().to_str().unwrap())
+        .assert()
+        .success();
+
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(out.contains("# Language"), "language section missing");
+    assert!(out.contains("Chinese"), "language value missing");
+    assert!(
+        out.contains("# Output Style: Explanatory"),
+        "output style section missing"
+    );
+}
+
+#[test]
+#[serial]
 fn dump_prompt_loads_custom_output_style_from_project_dir() {
     let dir = tempfile::tempdir().expect("tempdir");
     let project = tempfile::tempdir().expect("project tmpdir");
@@ -118,7 +148,6 @@ fn dump_prompt_loads_custom_output_style_from_project_dir() {
 #[serial]
 fn dump_prompt_omits_language_and_output_style_when_unset() {
     let dir = tempfile::tempdir().expect("tempdir");
-    // No settings.json at all.
 
     let mut cmd = cli();
     let assert = strip_keys(&mut cmd)

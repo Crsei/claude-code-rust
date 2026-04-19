@@ -1,9 +1,24 @@
 import type { AppState, CoreAction } from '../app-state.js'
+import { normalizeEditorMode } from '../../keybindings.js'
 
 export function reduceCore(state: AppState, action: CoreAction): AppState {
   switch (action.type) {
-    case 'READY':
-      return { ...state, model: action.model, sessionId: action.sessionId, cwd: action.cwd }
+    case 'READY': {
+      const editorMode = action.editorMode === undefined
+        ? state.editorMode
+        : normalizeEditorMode(action.editorMode)
+      return {
+        ...state,
+        model: action.model,
+        sessionId: action.sessionId,
+        cwd: action.cwd,
+        editorMode,
+        vimEnabled: editorMode === 'vim',
+        vimMode: editorMode === 'vim' ? 'NORMAL' : '',
+        viewMode: action.viewMode === undefined ? state.viewMode : action.viewMode ?? 'prompt',
+        keybindingConfig: action.keybindings === undefined ? state.keybindingConfig : action.keybindings,
+      }
+    }
 
     case 'REPLACE_MESSAGES':
       return {

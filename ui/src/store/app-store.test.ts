@@ -51,6 +51,31 @@ describe('appReducer streaming lifecycle', () => {
 })
 
 describe('appReducer view mode', () => {
+  test('ready hydrates editor mode, view mode, and keybinding config', () => {
+    const ready = appReducer(initialState, {
+      type: 'READY',
+      model: 'gpt-test',
+      sessionId: 'session-1',
+      cwd: '/tmp',
+      editorMode: 'vim',
+      viewMode: 'transcript',
+      keybindings: {
+        bindings: [
+          {
+            context: 'Chat',
+            bindings: { enter: 'chat:newline' },
+          },
+        ],
+      },
+    })
+
+    expect(ready.editorMode).toBe('vim')
+    expect(ready.vimEnabled).toBe(true)
+    expect(ready.vimMode).toBe('NORMAL')
+    expect(ready.viewMode).toBe('transcript')
+    expect(ready.keybindingConfig?.bindings?.[0]?.context).toBe('Chat')
+  })
+
   test('toggle transcript mode flips between prompt and transcript', () => {
     const transcript = appReducer(initialState, { type: 'TOGGLE_VIEW_MODE' })
     const prompt = appReducer(transcript, { type: 'TOGGLE_VIEW_MODE' })
@@ -61,6 +86,18 @@ describe('appReducer view mode', () => {
 })
 
 describe('appReducer queued submissions', () => {
+  test('toggle vim keeps editor mode and mode label in sync', () => {
+    const enabled = appReducer(initialState, { type: 'TOGGLE_VIM' })
+    const disabled = appReducer(enabled, { type: 'TOGGLE_VIM' })
+
+    expect(enabled.editorMode).toBe('vim')
+    expect(enabled.vimEnabled).toBe(true)
+    expect(enabled.vimMode).toBe('NORMAL')
+    expect(disabled.editorMode).toBe('normal')
+    expect(disabled.vimEnabled).toBe(false)
+    expect(disabled.vimMode).toBe('')
+  })
+
   test('queues and dequeues prompt submissions in FIFO order', () => {
     const first = appReducer(initialState, {
       type: 'QUEUE_SUBMISSION',

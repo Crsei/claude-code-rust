@@ -103,6 +103,12 @@ pub enum BackendMessage {
         session_id: String,
         model: String,
         cwd: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        editor_mode: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        view_mode: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        keybindings: Option<serde_json::Value>,
     },
     /// Assistant started streaming a new content block.
     StreamStart { message_id: String },

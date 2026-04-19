@@ -27,10 +27,9 @@ use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::config::settings::{self, RawSettings, StatusLineSettings};
-use crate::ui::status_line::{
-    ContextWindowStatus, CostStatus, ModelInfo, StatusLineOutput, StatusLinePayload,
-    StatusLineRunner, WorkspaceStatus,
-};
+use crate::types::message::Message;
+use crate::ui::status_line::payload::{build_payload_from_snapshot, StatusLineSnapshot};
+use crate::ui::status_line::{StatusLineOutput, StatusLinePayload, StatusLineRunner};
 
 pub struct StatusLineHandler;
 
@@ -292,7 +291,8 @@ async fn test_run(rest: &str, ctx: &mut CommandContext) -> Result<String> {
         );
     }
 
-    // Build a synthetic payload so tests don't depend on an active session.
+    // Build a best-effort runtime snapshot from the current slash-command
+    // context instead of a mostly synthetic placeholder payload.
     let payload = build_test_payload(ctx);
 
     // Use a brand-new runner so the test result doesn't pollute the TUI's
@@ -342,29 +342,58 @@ fn print_payload(ctx: &CommandContext) -> Result<String> {
 }
 
 fn build_test_payload(ctx: &CommandContext) -> StatusLinePayload {
-    let mut p = StatusLinePayload::new();
-    p.session_id = Some(ctx.session_id.to_string());
-    let model_id = ctx.app_state.main_loop_model.clone();
-    if !model_id.is_empty() {
-        p.model = Some(ModelInfo {
-            id: model_id,
-            display_name: ctx
-                .app_state
-                .settings
-                .model
-                .as_ref()
-                .and_then(|m| m.split('-').nth(1).map(|s| s.to_string())),
-            backend: Some(ctx.app_state.main_loop_backend.clone()),
-        });
+    let usage = gather_usage_snapshot(&ctx.messages);
+    build_payload_from_snapshot(StatusLineSnapshot {
+        session_id: Some(ctx.session_id.to_string()),
+        model_id: &ctx.app_state.main_loop_model,
+        backend: Some(&ctx.app_state.main_loop_backend),
+        cwd: &ctx.cwd,
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        cache_read_tokens: usage.cache_read_tokens,
+        cache_creation_tokens: usage.cache_creation_tokens,
+        total_cost_usd: usage.total_cost_usd,
+        api_calls: usage.api_calls,
+        session_duration_secs: None,
+        output_style: ctx.app_state.settings.output_style.as_deref(),
+        editor_mode: ctx.app_state.settings.editor_mode.as_deref(),
+        streaming: false,
+        message_count: ctx.messages.len(),
+    })
+}
+
+#[derive(Default)]
+struct UsageSnapshot {
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read_tokens: u64,
+    cache_creation_tokens: u64,
+    total_cost_usd: f64,
+    api_calls: u64,
+}
+
+fn gather_usage_snapshot(messages: &[Message]) -> UsageSnapshot {
+    let mut usage = UsageSnapshot::default();
+
+    for message in messages {
+        if let Message::Assistant(assistant) = message {
+            usage.api_calls = usage.api_calls.saturating_add(1);
+            usage.total_cost_usd += assistant.cost_usd;
+
+            if let Some(stats) = &assistant.usage {
+                usage.input_tokens = usage.input_tokens.saturating_add(stats.input_tokens);
+                usage.output_tokens = usage.output_tokens.saturating_add(stats.output_tokens);
+                usage.cache_read_tokens = usage
+                    .cache_read_tokens
+                    .saturating_add(stats.cache_read_input_tokens);
+                usage.cache_creation_tokens = usage
+                    .cache_creation_tokens
+                    .saturating_add(stats.cache_creation_input_tokens);
+            }
+        }
     }
-    p.workspace = Some(WorkspaceStatus {
-        cwd: ctx.cwd.display().to_string(),
-        ..Default::default()
-    });
-    p.context = Some(ContextWindowStatus::default());
-    p.cost = Some(CostStatus::default());
-    p.message_count = ctx.messages.len();
-    p
+
+    usage
 }
 
 fn mutate_user_settings<F>(mutate: F) -> Result<std::path::PathBuf>
@@ -388,6 +417,8 @@ mod tests {
     use super::*;
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
+    use crate::types::message::{AssistantMessage, Usage};
+    use uuid::Uuid;
 
     fn make_ctx() -> CommandContext {
         CommandContext {
@@ -396,6 +427,31 @@ mod tests {
             app_state: AppState::default(),
             session_id: SessionId::new(),
         }
+    }
+
+    fn assistant_message(
+        input_tokens: u64,
+        output_tokens: u64,
+        cache_read_tokens: u64,
+        cache_creation_tokens: u64,
+        cost_usd: f64,
+    ) -> Message {
+        Message::Assistant(AssistantMessage {
+            uuid: Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".into(),
+            content: Vec::new(),
+            usage: Some(Usage {
+                input_tokens,
+                output_tokens,
+                cache_read_input_tokens: cache_read_tokens,
+                cache_creation_input_tokens: cache_creation_tokens,
+            }),
+            stop_reason: Some("end_turn".into()),
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd,
+        })
     }
 
     #[tokio::test]
@@ -424,6 +480,52 @@ mod tests {
                 assert_eq!(
                     v.get("hookEventName").and_then(|x| x.as_str()),
                     Some("StatusLine")
+                );
+            }
+            _ => panic!("expected Output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn payload_subcommand_uses_runtime_snapshot_fields() {
+        let handler = StatusLineHandler;
+        let mut ctx = make_ctx();
+        ctx.cwd = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        ctx.app_state.main_loop_model = "claude-sonnet-4-20250514".into();
+        ctx.app_state.main_loop_backend = "native".into();
+        ctx.app_state.settings.output_style = Some("explanatory".into());
+        ctx.app_state.settings.editor_mode = Some("vim".into());
+        ctx.messages = vec![assistant_message(1200, 400, 50, 25, 0.1234)];
+
+        let r = handler.execute("payload", &mut ctx).await.unwrap();
+        match r {
+            CommandResult::Output(s) => {
+                let v: serde_json::Value = serde_json::from_str(&s).expect("valid JSON");
+                assert_eq!(
+                    v.pointer("/outputStyle").and_then(|value| value.as_str()),
+                    Some("explanatory")
+                );
+                assert_eq!(
+                    v.pointer("/vim/mode").and_then(|value| value.as_str()),
+                    Some("NORMAL")
+                );
+                assert_eq!(
+                    v.pointer("/context/inputTokens")
+                        .and_then(|value| value.as_u64()),
+                    Some(1200)
+                );
+                assert_eq!(
+                    v.pointer("/context/maxTokens")
+                        .and_then(|value| value.as_u64()),
+                    Some(200_000)
+                );
+                assert_eq!(
+                    v.pointer("/cost/apiCalls").and_then(|value| value.as_u64()),
+                    Some(1)
+                );
+                assert_eq!(
+                    v.pointer("/messageCount").and_then(|value| value.as_u64()),
+                    Some(1)
                 );
             }
             _ => panic!("expected Output"),
@@ -475,6 +577,44 @@ mod tests {
                 assert!(
                     s.contains("statusline-ok"),
                     "expected command output, got: {}",
+                    s
+                );
+            }
+            _ => panic!("expected Output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_subcommand_streams_real_payload_snapshot_to_command() {
+        let handler = StatusLineHandler;
+        let mut ctx = make_ctx();
+        ctx.app_state.main_loop_model = "claude-sonnet-4-20250514".into();
+        ctx.app_state.main_loop_backend = "native".into();
+        ctx.app_state.settings.output_style = Some("explanatory".into());
+        ctx.app_state.settings.editor_mode = Some("vim".into());
+        ctx.messages = vec![assistant_message(321, 123, 7, 5, 0.0456)];
+
+        #[cfg(unix)]
+        let cmd = "test cat";
+        #[cfg(windows)]
+        let cmd = "test findstr x*";
+
+        let r = handler.execute(cmd, &mut ctx).await.unwrap();
+        match r {
+            CommandResult::Output(s) => {
+                assert!(
+                    s.contains("\"outputStyle\":\"explanatory\""),
+                    "expected outputStyle in payload, got: {}",
+                    s
+                );
+                assert!(
+                    s.contains("\"mode\":\"NORMAL\""),
+                    "expected vim mode in payload, got: {}",
+                    s
+                );
+                assert!(
+                    s.contains("\"messageCount\":1"),
+                    "expected message count in payload, got: {}",
                     s
                 );
             }

@@ -23,10 +23,13 @@ export function toShortcutKey(event: KeyEvent): ShortcutKey {
   return {
     ctrl: event.ctrl ?? false,
     meta: event.meta ?? false,
+    alt: event.alt ?? false,
     shift: event.shift ?? false,
     return: name === 'return' || name === 'enter',
     escape: name === 'escape',
     tab: name === 'tab',
+    leftArrow: name === 'left',
+    rightArrow: name === 'right',
     upArrow: name === 'up',
     downArrow: name === 'down',
     pageUp: name === 'pageup',

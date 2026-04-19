@@ -56,6 +56,7 @@ export function InputPrompt({
     isWaiting,
     inputHistory,
     historyIndex,
+    keybindingConfig,
     vimEnabled,
     queuedSubmissions,
     pendingQuestion,
@@ -257,36 +258,36 @@ export function InputPrompt({
     const key = toShortcutKey(event)
     const name = event.name
 
-    if (matchesShortcut('app.abort', input, key, name) && isBusyRef.current) {
+    if (matchesShortcut('app:interrupt', input, key, name, { context: 'Global', config: keybindingConfig }) && isBusyRef.current) {
       backend.send({ type: 'abort_query' })
       return
     }
 
-    if (matchesShortcut('app.quit', input, key, name)) {
+    if (matchesShortcut('app:exit', input, key, name, { context: 'Global', config: keybindingConfig })) {
       backend.send({ type: 'quit' })
       renderer.destroy()
       return
     }
 
-    if (matchesShortcut('app.redraw', input, key, name)) {
+    if (matchesShortcut('app:redraw', input, key, name, { context: 'Global', config: keybindingConfig })) {
       renderer.clearSelection()
       renderer.intermediateRender()
       return
     }
 
-    if (matchesShortcut('app.toggleVim', input, key, name)) {
+    if (matchesShortcut('app:toggleVim', input, key, name, { context: 'Global', config: keybindingConfig })) {
       vim.toggle()
       dispatch({ type: 'TOGGLE_VIM' })
       return
     }
 
-    if (matchesShortcut('app.toggleTranscript', input, key, name)) {
+    if (matchesShortcut('app:toggleTranscript', input, key, name, { context: 'Global', config: keybindingConfig })) {
       dispatch({ type: 'TOGGLE_VIEW_MODE' })
       return
     }
 
     if (viewMode === 'transcript') {
-      if (matchesShortcut('transcript.exit', input, key, name)) {
+      if (matchesShortcut('transcript:exit', input, key, name, { context: 'Transcript', config: keybindingConfig })) {
         dispatch({ type: 'SET_VIEW_MODE', viewMode: 'prompt' })
       }
       return
@@ -299,22 +300,22 @@ export function InputPrompt({
     if (subMode) {
       const options = subMode.options
 
-      if (matchesShortcut('list.previous', '', key, name)) {
+      if (matchesShortcut('select:previous', '', key, name, { context: 'Select', config: keybindingConfig })) {
         setSubIndex(index => (index - 1 + options.length) % options.length)
         return
       }
 
-      if (matchesShortcut('list.next', '', key, name)) {
+      if (matchesShortcut('select:next', '', key, name, { context: 'Select', config: keybindingConfig })) {
         setSubIndex(index => (index + 1) % options.length)
         return
       }
 
-      if (matchesShortcut('input.confirm', input, key, name)) {
+      if (matchesShortcut('select:accept', input, key, name, { context: 'Select', config: keybindingConfig })) {
         sendCommand(`/${subMode.cmd.name} ${options[subIndex]}`)
         return
       }
 
-      if (matchesShortcut('input.complete', input, key, name)) {
+      if (matchesShortcut('autocomplete:accept', input, key, name, { context: 'Autocomplete', config: keybindingConfig })) {
         const filled = `/${subMode.cmd.name} ${options[subIndex]}`
         setText(filled)
         setCursorPos(filled.length)
@@ -322,7 +323,7 @@ export function InputPrompt({
         return
       }
 
-      if (matchesShortcut('input.cancel', input, key, name)) {
+      if (matchesShortcut('select:cancel', input, key, name, { context: 'Select', config: keybindingConfig })) {
         const fallback = `/${subMode.cmd.name}`
         setText(fallback)
         setCursorPos(fallback.length)
@@ -414,23 +415,34 @@ export function InputPrompt({
     }
 
     if (showHint && slashPrefix && cmdMatches.length > 0) {
-      if (matchesShortcut('input.complete', input, key, name) || input === ' ') {
+      if (
+        matchesShortcut('autocomplete:accept', input, key, name, { context: 'Autocomplete', config: keybindingConfig })
+        || input === ' '
+      ) {
         const command = cmdMatches[hintIndex]
         if (command) activateCommand(command)
         return
       }
 
-      if (matchesShortcut('list.previous', '', key, name) && !key.ctrl && !key.meta) {
+      if (
+        matchesShortcut('select:previous', '', key, name, { context: 'Select', config: keybindingConfig })
+        && !key.ctrl
+        && !key.meta
+      ) {
         setHintIndex(index => (index - 1 + cmdMatches.length) % cmdMatches.length)
         return
       }
 
-      if (matchesShortcut('list.next', '', key, name) && !key.ctrl && !key.meta) {
+      if (
+        matchesShortcut('select:next', '', key, name, { context: 'Select', config: keybindingConfig })
+        && !key.ctrl
+        && !key.meta
+      ) {
         setHintIndex(index => (index + 1) % cmdMatches.length)
         return
       }
 
-      if (matchesShortcut('input.confirm', input, key, name)) {
+      if (matchesShortcut('select:accept', input, key, name, { context: 'Select', config: keybindingConfig })) {
         const command = cmdMatches[hintIndex]
         if (command && cmdPartial) {
           activateCommand(command)
@@ -441,8 +453,16 @@ export function InputPrompt({
       }
     }
 
-    if (matchesShortcut('input.confirm', input, key, name)) {
+    if (matchesShortcut('chat:submit', input, key, name, { context: 'Chat', config: keybindingConfig })) {
       submit()
+      return
+    }
+
+    if (matchesShortcut('chat:clearInput', input, key, name, { context: 'Chat', config: keybindingConfig })) {
+      setText('')
+      setCursorPos(0)
+      setIsPasted(false)
+      clearSubMode()
       return
     }
 
@@ -506,12 +526,20 @@ export function InputPrompt({
       return
     }
 
-    if (matchesShortcut('list.previous', '', key, name) && !key.ctrl && !key.meta) {
+    if (
+      matchesShortcut('history:previous', '', key, name, { context: 'Global', config: keybindingConfig })
+      && !key.ctrl
+      && !key.meta
+    ) {
       navigateHistoryUp()
       return
     }
 
-    if (matchesShortcut('list.next', '', key, name) && !key.ctrl && !key.meta) {
+    if (
+      matchesShortcut('history:next', '', key, name, { context: 'Global', config: keybindingConfig })
+      && !key.ctrl
+      && !key.meta
+    ) {
       navigateHistoryDown()
       return
     }
@@ -555,7 +583,7 @@ export function InputPrompt({
             <text fg={c.dim}>{showPasteCompact ? formatPasteSize(text) : text}</text>
           ) : (
             <text fg={c.dim}>
-              Transcript mode. {shortcutLabel('app.toggleTranscript')} prompt. {shortcutLabel('transcript.exit')} exit.
+              Transcript mode. {shortcutLabel('app:toggleTranscript', { context: 'Global', config: keybindingConfig })} prompt. {shortcutLabel('transcript:exit', { context: 'Transcript', config: keybindingConfig })} exit.
             </text>
           )
         ) : showPasteCompact ? (

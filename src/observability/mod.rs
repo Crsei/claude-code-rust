@@ -32,5 +32,6 @@ pub mod sink;
 
 // Re-export primary types for ergonomic use
 pub use context::AuditContext;
+#[allow(unused_imports)]
 pub use event::{AuditEvent, AuditLevel, EventKind, Outcome, SessionMeta, Stage};
 pub use sink::{AuditConfig, AuditSink};

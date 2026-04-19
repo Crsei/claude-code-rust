@@ -203,7 +203,7 @@ fn render_right_panel(area: Rect, buf: &mut Buffer) {
             Style::default().fg(LIGHT),
         )),
         Line::from(Span::styled(
-            truncate_str("  /model to switch models", w),
+            truncate_str("  Ctrl+O for transcript / focus view", w),
             Style::default().fg(LIGHT),
         )),
     ];
@@ -259,6 +259,15 @@ fn render_right_panel(area: Rect, buf: &mut Buffer) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled("scroll messages", Style::default().fg(LIGHT)),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "  Ctrl+O ",
+                Style::default()
+                    .fg(Color::Rgb(255, 200, 100))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("transcript / focus", Style::default().fg(LIGHT)),
         ]),
     ];
     let kb_widget = Paragraph::new(keybindings);
@@ -322,7 +331,7 @@ fn render_single_column(
         "  Type a message and press Enter to send",
         "  Start with / for slash commands",
         "  /help to see all commands",
-        "  /model to switch models",
+        "  Ctrl+O for transcript / focus view",
     ] {
         lines.push(Line::from(Span::styled(
             truncate_str(tip, w),
@@ -346,6 +355,7 @@ fn render_single_column(
         ("  Ctrl+D ", "quit"),
         ("  Up/Down ", "input history"),
         ("  PgUp/PgDn ", "scroll messages"),
+        ("  Ctrl+O ", "transcript / focus"),
     ];
     for &(key, desc) in kb_items {
         let total_len = key.len() + desc.len();

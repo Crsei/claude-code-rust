@@ -77,10 +77,19 @@ impl HeadlessRuntime {
         crate::skills::set_event_sender(event_bus.sender());
 
         // ── 2. Send Ready ────────────────────────────────────────────
+        let app_state = self.engine.app_state();
+        let keybindings = app_state
+            .keybindings
+            .user_path()
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
         self.sink.send(&BackendMessage::Ready {
             session_id: self.engine.session_id.to_string(),
             model,
             cwd: self.engine.cwd().to_string(),
+            editor_mode: app_state.settings.editor_mode.clone(),
+            view_mode: app_state.settings.view_mode.clone(),
+            keybindings,
         })?;
 
         // ── 3. Main select loop ──────────────────────────────────────

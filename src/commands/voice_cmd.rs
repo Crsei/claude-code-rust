@@ -1,24 +1,8 @@
-//! `/voice` slash command — toggle voice dictation and run pre-flight
-//! checks (issue #13).
+//! `/voice` slash command for compatibility-only voice settings.
 //!
-//! Mirrors the behaviour of `claude-code-bun/src/commands/voice/voice.ts`:
-//!
-//! - `/voice` / `/voice status` — show whether voice is enabled + any
-//!   feasibility blockers (auth, audio backend, STT client).
-//! - `/voice on` / `/voice enable` — flip `voiceEnabled = true` and
-//!   persist to user settings; fails fast with a specific reason when
-//!   the environment is hostile (API key auth, no mic, remote session).
-//! - `/voice off` / `/voice disable` — flip to false. No pre-flight
-//!   needed.
-//! - `/voice toggle` — equivalent to on/off depending on the current
-//!   state.
-//! - `/voice diagnose` — long-form environment dump (auth method,
-//!   backend label, language mapping) for filing bug reports.
-//!
-//! Persisted changes go to `~/.cc-rust/settings.json` (user scope) via
-//! the existing `settings::write_user_settings` helper. The in-memory
-//! `AppState.settings.voice_enabled` is also patched so the change
-//! takes effect within the current session.
+//! This build keeps the stored `voiceEnabled` flag, language
+//! normalization, and diagnostics surface, but it does not ship real
+//! recording or transcription support.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -26,10 +10,10 @@ use async_trait::async_trait;
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::auth::{self, AuthMethod};
 use crate::config::settings::{self, RawSettings};
-use crate::voice::audio::NullAudioBackend;
+use crate::voice::audio::{AudioUnavailable, NullAudioBackend};
 use crate::voice::feasibility::{check_feasibility, Feasibility, FeasibilityReason};
 use crate::voice::language::normalize_language_for_stt;
-use crate::voice::stt::NullTranscriptionClient;
+use crate::voice::stt::{NullTranscriptionClient, SttUnavailable};
 
 pub struct VoiceHandler;
 
@@ -59,11 +43,11 @@ impl CommandHandler for VoiceHandler {
 fn usage(other: &str) -> String {
     format!(
         "Unknown /voice subcommand '{}'.\n\nUsage:\n  \
-         /voice                 — show state + pre-flight check\n  \
-         /voice on | enable     — enable voice dictation\n  \
-         /voice off | disable   — disable voice dictation\n  \
-         /voice toggle          — flip the enabled flag\n  \
-         /voice diagnose        — full environment dump",
+         /voice                 - show stored config + unsupported runtime status\n  \
+         /voice on | enable     - attempt to enable voice if supported\n  \
+         /voice off | disable   - disable the stored voice flag\n  \
+         /voice toggle          - flip the stored enabled flag when allowed\n  \
+         /voice diagnose        - full environment dump",
         other
     )
 }
@@ -75,19 +59,21 @@ fn render_status(ctx: &CommandContext) -> String {
 
     let mut out = String::new();
     out.push_str("Voice dictation\n");
-    out.push_str("───────────────\n");
+    out.push_str("---------------\n");
+    out.push_str("  runtime support:   unsupported in this build\n");
     out.push_str(&format!(
-        "  voiceEnabled:      {}\n",
+        "  stored enabled:    {}\n",
         if enabled { "true" } else { "false" }
     ));
     out.push_str(&format!("  dictation lang:    {}", lang.code));
     if let Some(raw) = &lang.fell_back_from {
         out.push_str(&format!(
-            " (falling back from \"{}\" — not supported by voice_stream)",
+            " (fallback from \"{}\" because the configured language is unsupported)",
             raw
         ));
     }
     out.push('\n');
+    out.push_str("  push-to-talk:      disabled in this build\n");
     match &feas {
         Feasibility::Ready { backend, client } => {
             out.push_str(&format!("  audio backend:     {}\n", backend));
@@ -99,14 +85,13 @@ fn render_status(ctx: &CommandContext) -> String {
                 "  feasibility:       blocked ({})\n",
                 short_reason_code(reason)
             ));
-            out.push_str(&format!("  reason:            {}\n", reason.short()));
+            out.push_str(&format!("  blocker:           {}\n", reason.short()));
+            if enabled {
+                out.push_str("  note:              voiceEnabled is stored, but runtime voice remains unavailable\n");
+            }
         }
     }
-
-    out.push_str(
-        "\nPush-to-talk: hold `Ctrl+Space` in the chat input to record; release to transcribe.\n",
-    );
-    out.push_str("Config path: ");
+    out.push_str("  config path:       ");
     out.push_str(&settings::user_settings_path().display().to_string());
     out.push('\n');
     out
@@ -116,7 +101,7 @@ fn render_diagnose(ctx: &CommandContext) -> String {
     let mut out = render_status(ctx);
     out.push('\n');
     out.push_str("Environment\n");
-    out.push_str("───────────\n");
+    out.push_str("-----------\n");
     let auth = auth::resolve_auth();
     out.push_str(&format!("  auth method:       {}\n", auth_label(&auth)));
     out.push_str(&format!(
@@ -137,22 +122,20 @@ fn render_diagnose(ctx: &CommandContext) -> String {
     ));
     out.push('\n');
     out.push_str(
-        "Note: native audio capture + voice_stream WebSocket transcription are stubbed in this \
-         build of cc-rust. /voice is wired end-to-end (config + command + keybinding + UI), but \
-         pushing Ctrl+Space currently produces a feasibility error. A cpal-based capture backend \
-         + voice_stream client are tracked as follow-ups to issue #13.\n",
+        "Compatibility note: this build preserves `/voice`, `voiceEnabled`, language \
+         normalization, and keybinding parsing, but it does not support real recording \
+         or transcription.\n",
     );
     out
 }
 
 async fn toggle(target: bool, ctx: &mut CommandContext) -> String {
-    // Turning OFF: no feasibility check required.
     if !target {
         return match persist(false) {
             Ok(path) => {
                 ctx.app_state.settings.voice_enabled = Some(false);
                 format!(
-                    "Voice dictation disabled.\n→ persisted to {}",
+                    "Voice dictation disabled.\n-> persisted to {}\nRuntime note: this build does not support real recording/transcription.",
                     path.display()
                 )
             }
@@ -160,7 +143,6 @@ async fn toggle(target: bool, ctx: &mut CommandContext) -> String {
         };
     }
 
-    // Turning ON: run the feasibility gate first.
     match current_feasibility() {
         Feasibility::Blocked(reason) => format_blocked(&reason),
         Feasibility::Ready { .. } => match persist(true) {
@@ -168,13 +150,12 @@ async fn toggle(target: bool, ctx: &mut CommandContext) -> String {
                 ctx.app_state.settings.voice_enabled = Some(true);
                 let lang = normalize_language_for_stt(ctx.app_state.settings.language.as_deref());
                 let mut out = format!(
-                    "Voice dictation enabled.\n→ persisted to {}",
+                    "Voice dictation enabled.\n-> persisted to {}",
                     path.display()
                 );
                 if let Some(raw) = lang.fell_back_from {
                     out.push_str(&format!(
-                        "\nNote: \"{}\" is not a supported dictation language; falling back to `en`. \
-                         Change it via /config set language <code>.",
+                        "\nNote: \"{}\" is not a supported dictation language; falling back to `en`.",
                         raw
                     ));
                 } else {
@@ -183,7 +164,6 @@ async fn toggle(target: bool, ctx: &mut CommandContext) -> String {
                         lang.code
                     ));
                 }
-                out.push_str("\nHold Ctrl+Space to record.");
                 out
             }
             Err(e) => format!("Failed to persist voiceEnabled=true: {}", e),
@@ -192,40 +172,54 @@ async fn toggle(target: bool, ctx: &mut CommandContext) -> String {
 }
 
 fn format_blocked(reason: &FeasibilityReason) -> String {
-    let mut out = String::from("Voice mode is not available.\n\n");
+    let mut out = if is_build_unsupported(reason) {
+        String::from("Voice dictation is unsupported in this build.\n\n")
+    } else {
+        String::from("Voice dictation is currently unavailable.\n\n")
+    };
     out.push_str(&format!("Reason: {}\n", reason.short()));
     match reason {
         FeasibilityReason::UnsupportedAuth { .. } | FeasibilityReason::NotAuthenticated(_) => {
-            out.push_str("Hint: run `/login` and select the Claude.ai OAuth option.\n");
+            out.push_str(
+                "Hint: use `/login` with Claude.ai OAuth once a real voice backend exists.\n",
+            );
         }
         FeasibilityReason::RemoteEnvironment(_) => {
+            out.push_str("Hint: run cc-rust locally if and when a real voice backend is added.\n");
+        }
+        FeasibilityReason::AudioBackend(AudioUnavailable::NotImplemented(_))
+        | FeasibilityReason::SttBackend(SttUnavailable::NotImplemented(_))
+        | FeasibilityReason::SttBackend(SttUnavailable::Disabled(_)) => {
             out.push_str(
-                "Hint: unset CC_RUST_REMOTE / CLAUDE_CODE_REMOTE, or run cc-rust locally.\n",
+                "Hint: leave `voiceEnabled` disabled. The stored setting and keybinding are kept only for config compatibility in this build.\n",
             );
         }
         FeasibilityReason::AudioBackend(_) => {
-            out.push_str(
-                "Hint: a capture backend is not compiled in. Build cc-rust with a cpal \
-                 backend, or install SoX / arecord on Linux.\n",
-            );
+            out.push_str("Hint: fix local audio capture before enabling voice.\n");
         }
         FeasibilityReason::SttBackend(_) => {
-            out.push_str(
-                "Hint: the STT client is not wired up. Track the voice_stream follow-up in issue #13.\n",
-            );
+            out.push_str("Hint: fix the transcription backend before enabling voice.\n");
         }
     }
     out
 }
 
-/// Produce a [`Feasibility`] snapshot using the live auth + the null
-/// backends. Shared so both `render_status` and `toggle(true)` see the
-/// same view.
+/// Produce a [`Feasibility`] snapshot using the live auth and the
+/// shipped unsupported backends.
 pub fn current_feasibility() -> Feasibility {
     let auth = auth::resolve_auth();
     let audio = NullAudioBackend::new();
     let stt = NullTranscriptionClient::new();
     check_feasibility(&auth, &audio, &stt)
+}
+
+fn is_build_unsupported(reason: &FeasibilityReason) -> bool {
+    matches!(
+        reason,
+        FeasibilityReason::AudioBackend(AudioUnavailable::NotImplemented(_))
+            | FeasibilityReason::SttBackend(SttUnavailable::NotImplemented(_))
+            | FeasibilityReason::SttBackend(SttUnavailable::Disabled(_))
+    )
 }
 
 fn short_reason_code(r: &FeasibilityReason) -> &'static str {
@@ -270,6 +264,33 @@ mod tests {
     use super::*;
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
+    use serial_test::serial;
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: Option<&str>) -> Self {
+            let previous = std::env::var(key).ok();
+            match value {
+                Some(v) => std::env::set_var(key, v),
+                None => std::env::remove_var(key),
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = &self.previous {
+                std::env::set_var(self.key, previous);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
 
     fn make_ctx() -> CommandContext {
         CommandContext {
@@ -281,16 +302,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn status_shows_disabled_by_default_with_config_path() {
+    async fn status_shows_unsupported_runtime_with_config_path() {
         let handler = VoiceHandler;
         let mut ctx = make_ctx();
         let r = handler.execute("", &mut ctx).await.unwrap();
         match r {
             CommandResult::Output(s) => {
-                assert!(s.contains("voiceEnabled:      false"));
+                assert!(s.contains("runtime support:   unsupported in this build"));
+                assert!(s.contains("stored enabled:    false"));
+                assert!(s.contains("push-to-talk:      disabled in this build"));
+                assert!(s.contains("config path:"));
+                assert!(!s.contains("Hold Ctrl+Space"));
+            }
+            _ => panic!("expected Output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn status_reports_stored_enabled_flag_and_language_fallback() {
+        let handler = VoiceHandler;
+        let mut ctx = make_ctx();
+        ctx.app_state.settings.voice_enabled = Some(true);
+        ctx.app_state.settings.language = Some("klingon".into());
+        let r = handler.execute("status", &mut ctx).await.unwrap();
+        match r {
+            CommandResult::Output(s) => {
+                assert!(s.contains("stored enabled:    true"));
                 assert!(s.contains("dictation lang:    en"));
-                assert!(s.contains("feasibility:       blocked"));
-                assert!(s.contains("Config path:"));
+                assert!(s.contains("fallback from \"klingon\""));
+                assert!(s.contains("voiceEnabled is stored, but runtime voice remains unavailable"));
             }
             _ => panic!("expected Output"),
         }
@@ -311,7 +351,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn diagnose_includes_auth_method_and_follow_up_note() {
+    async fn diagnose_includes_auth_method_and_compatibility_note() {
         let handler = VoiceHandler;
         let mut ctx = make_ctx();
         let r = handler.execute("diagnose", &mut ctx).await.unwrap();
@@ -319,32 +359,64 @@ mod tests {
             CommandResult::Output(s) => {
                 assert!(s.contains("auth method:"));
                 assert!(s.contains("language setting:"));
-                assert!(s.contains("follow-up"));
+                assert!(s.contains("Compatibility note:"));
+                assert!(!s.contains("follow-up"));
             }
             _ => panic!("expected Output"),
         }
     }
 
     #[tokio::test]
-    async fn enable_without_auth_returns_hint() {
-        std::env::remove_var("ANTHROPIC_API_KEY");
-        std::env::remove_var("ANTHROPIC_AUTH_TOKEN");
+    #[serial]
+    async fn enable_reports_unsupported_build_before_auth_hints() {
+        let _api = EnvGuard::set("ANTHROPIC_API_KEY", None);
+        let _token = EnvGuard::set("ANTHROPIC_AUTH_TOKEN", None);
+        let _remote = EnvGuard::set("CC_RUST_REMOTE", None);
+        let _remote2 = EnvGuard::set("CLAUDE_CODE_REMOTE", None);
         let handler = VoiceHandler;
         let mut ctx = make_ctx();
         let r = handler.execute("on", &mut ctx).await.unwrap();
         match r {
             CommandResult::Output(s) => {
-                assert!(s.contains("Voice mode is not available"));
-                assert!(s.contains("Hint:"));
+                assert!(s.contains("Voice dictation is unsupported in this build."));
+                assert!(s.contains("config compatibility"));
+                assert!(!s.contains("/login"));
             }
             _ => panic!("expected Output"),
         }
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn disable_persists_false_flag_for_compatibility() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let home = tmp.path().to_string_lossy().to_string();
+        let _home = EnvGuard::set("CC_RUST_HOME", Some(&home));
+
+        let handler = VoiceHandler;
+        let mut ctx = make_ctx();
+        ctx.app_state.settings.voice_enabled = Some(true);
+        let r = handler.execute("off", &mut ctx).await.unwrap();
+
+        match r {
+            CommandResult::Output(s) => {
+                assert!(s.contains("Voice dictation disabled."));
+                assert!(s.contains(
+                    "Runtime note: this build does not support real recording/transcription."
+                ));
+            }
+            _ => panic!("expected Output"),
+        }
+
+        assert_eq!(ctx.app_state.settings.voice_enabled, Some(false));
+        let saved =
+            std::fs::read_to_string(settings::user_settings_path()).expect("saved settings");
+        let json: serde_json::Value = serde_json::from_str(&saved).expect("valid json");
+        assert_eq!(json["voiceEnabled"], serde_json::Value::Bool(false));
+    }
+
     #[test]
     fn short_reason_code_covers_all_feasibility_variants() {
-        use crate::voice::audio::AudioUnavailable;
-        use crate::voice::stt::SttUnavailable;
         let variants = [
             FeasibilityReason::UnsupportedAuth {
                 auth_label: "x".into(),
@@ -353,11 +425,10 @@ mod tests {
             FeasibilityReason::NotAuthenticated("none".into()),
             FeasibilityReason::RemoteEnvironment("remote".into()),
             FeasibilityReason::AudioBackend(AudioUnavailable::NotImplemented("x".into())),
-            FeasibilityReason::SttBackend(SttUnavailable::NotImplemented("x".into())),
+            FeasibilityReason::SttBackend(SttUnavailable::Disabled("y".into())),
         ];
         let codes: Vec<_> = variants.iter().map(short_reason_code).collect();
         assert_eq!(codes.len(), 5);
-        // All distinct.
         let set: std::collections::HashSet<_> = codes.iter().copied().collect();
         assert_eq!(set.len(), 5);
     }

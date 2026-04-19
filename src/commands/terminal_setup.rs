@@ -1,17 +1,15 @@
-//! `/terminal-setup` slash command — diagnose the current terminal
+//! `/terminal-setup` slash command: diagnose the current terminal
 //! environment and print configuration tips (issue #12).
 //!
 //! Output covers:
-//!
 //! - detected shell / terminal program / multiplexer
 //! - status of the three `CLAUDE_CODE_*` env toggles
 //! - tips for Shift+Enter support across common terminals
 //! - tmux passthrough advice when `$TMUX` is set
-//! - how to turn on OSC 52 clipboard / system-bell notifications
+//! - transcript-export expectations for `$VISUAL` / `$EDITOR`
+//! - notification / bell guidance
 //!
-//! The command is read-only — it never mutates the user's config. Writing
-//! an actual config template is left to a follow-up issue (see the
-//! "建议先做到按当前终端环境输出建议" guidance in the spec).
+//! The command is read-only. It never mutates the user's config.
 //!
 //! Usage:
 //!
@@ -25,7 +23,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::ui::terminal_env::TerminalEnvConfig;
+use crate::ui::terminal_env::{parse_editor_command, TerminalEnvConfig};
 
 pub struct TerminalSetupHandler;
 
@@ -40,9 +38,9 @@ impl CommandHandler for TerminalSetupHandler {
             "tips" | "help" => render_tips(&probe),
             other => format!(
                 "Unknown /terminal-setup subcommand '{}'.\n\nUsage:\n  \
-                 /terminal-setup         — environment diagnostics + tips\n  \
-                 /terminal-setup env     — just the env-var table\n  \
-                 /terminal-setup tips    — just the per-terminal tips",
+                 /terminal-setup         - environment diagnostics + tips\n  \
+                 /terminal-setup env     - just the env-var table\n  \
+                 /terminal-setup tips    - just the per-terminal tips",
                 other
             ),
         };
@@ -50,8 +48,7 @@ impl CommandHandler for TerminalSetupHandler {
     }
 }
 
-/// Snapshot of the subset of env vars we care about. Captured all at
-/// once so the renderers don't re-query the environment for each field.
+/// Snapshot of the subset of env vars we care about.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EnvProbe {
     pub term: Option<String>,
@@ -85,32 +82,24 @@ impl EnvProbe {
     {
         let mut p = Self::default();
         for (k, v) in iter {
-            let v = v.as_ref().to_string();
-            let vo = |s: &str| {
-                let t = s.trim();
-                if t.is_empty() {
-                    None
-                } else {
-                    Some(t.to_string())
-                }
-            };
+            let value = normalize_env_value(v.as_ref());
             match k.as_ref() {
-                "TERM" => p.term = vo(&v),
-                "TERM_PROGRAM" => p.term_program = vo(&v),
-                "TERM_PROGRAM_VERSION" => p.term_program_version = vo(&v),
-                "COLORTERM" => p.colorterm = vo(&v),
-                "SHELL" => p.shell = vo(&v),
-                "TMUX" => p.tmux = vo(&v),
-                "ZELLIJ" => p.zellij = vo(&v),
-                "STY" => p.screen_socket = vo(&v),
-                "SSH_TTY" => p.ssh_tty = vo(&v),
-                "VISUAL" => p.visual = vo(&v),
-                "EDITOR" => p.editor = vo(&v),
-                "VTE_VERSION" => p.vte_version = vo(&v),
-                "WT_SESSION" => p.wt_session = vo(&v),
-                "CLAUDE_CODE_NO_FLICKER" => p.claude_code_no_flicker = vo(&v),
-                "CLAUDE_CODE_DISABLE_MOUSE" => p.claude_code_disable_mouse = vo(&v),
-                "CLAUDE_CODE_SCROLL_SPEED" => p.claude_code_scroll_speed = vo(&v),
+                "TERM" => p.term = value,
+                "TERM_PROGRAM" => p.term_program = value,
+                "TERM_PROGRAM_VERSION" => p.term_program_version = value,
+                "COLORTERM" => p.colorterm = value,
+                "SHELL" => p.shell = value,
+                "TMUX" => p.tmux = value,
+                "ZELLIJ" => p.zellij = value,
+                "STY" => p.screen_socket = value,
+                "SSH_TTY" => p.ssh_tty = value,
+                "VISUAL" => p.visual = value,
+                "EDITOR" => p.editor = value,
+                "VTE_VERSION" => p.vte_version = value,
+                "WT_SESSION" => p.wt_session = value,
+                "CLAUDE_CODE_NO_FLICKER" => p.claude_code_no_flicker = value,
+                "CLAUDE_CODE_DISABLE_MOUSE" => p.claude_code_disable_mouse = value,
+                "CLAUDE_CODE_SCROLL_SPEED" => p.claude_code_scroll_speed = value,
                 _ => {}
             }
         }
@@ -144,7 +133,6 @@ impl EnvProbe {
     }
 }
 
-/// Coarse label for the running terminal — used to pick Shift+Enter tips.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerminalLabel {
     ITerm2,
@@ -183,10 +171,10 @@ impl TerminalLabel {
     pub fn shift_enter_tip(self) -> &'static str {
         match self {
             TerminalLabel::ITerm2 => {
-                "iTerm2 → Settings → Keys → Key Bindings → map Shift+Return to 'Send Escape Sequence' with value `[27;2;13~`."
+                "iTerm2 -> Settings -> Keys -> Key Bindings -> map Shift+Return to 'Send Escape Sequence' with value `[27;2;13~`."
             }
             TerminalLabel::AppleTerminal => {
-                "Terminal.app → Settings → Profiles → Keyboard → add `Shift+Return` sending `\\033[27;2;13~`."
+                "Terminal.app -> Settings -> Profiles -> Keyboard -> add Shift+Return sending `\\033[27;2;13~`."
             }
             TerminalLabel::VsCode => {
                 "Add to keybindings.json: `{\"key\":\"shift+enter\",\"command\":\"workbench.action.terminal.sendSequence\",\"args\":{\"text\":\"\\u001b[27;2;13~\"}}`."
@@ -201,22 +189,22 @@ impl TerminalLabel {
                 "kitty.conf: `map shift+enter send_text all \\x1b[27;2;13~`."
             }
             TerminalLabel::Ghostty => {
-                "Ghostty honours `keybind = shift+enter=text:\\x1b[27;2;13~` in config.toml."
+                "Ghostty honors `keybind = shift+enter=text:\\x1b[27;2;13~` in config.toml."
             }
             TerminalLabel::Hyper => {
                 "Hyper: enable `hyper-csi-u` or `hyperterm-shift-enter` plugins for Shift+Enter support."
             }
             TerminalLabel::Tabby => {
-                "Tabby → Settings → Hotkeys → add Shift+Enter sending `\\x1b[27;2;13~`."
+                "Tabby -> Settings -> Hotkeys -> add Shift+Enter sending `\\x1b[27;2;13~`."
             }
             TerminalLabel::WindowsTerminal => {
                 "Windows Terminal settings.json: add `{ \"command\": { \"action\": \"sendInput\", \"input\": \"\\u001b[27;2;13~\" }, \"keys\": \"shift+enter\" }`."
             }
             TerminalLabel::GnomeLikeVte => {
-                "gnome-terminal / tilix: no stable Shift+Enter binding. Try tmux passthrough or use `/export-transcript` for long edits."
+                "gnome-terminal / tilix: no stable Shift+Enter binding. Try tmux passthrough, transcript mode search, or transcript export (`e`) for long edits."
             }
             TerminalLabel::Unknown => {
-                "If Shift+Enter isn't working, try Alt+Enter, Ctrl+J, or map Shift+Return to emit `\\x1b[27;2;13~`."
+                "If Shift+Enter is not working, try Alt+Enter, Ctrl+J, or map Shift+Return to emit `\\x1b[27;2;13~`."
             }
         }
     }
@@ -247,7 +235,7 @@ fn render_env(p: &EnvProbe) -> String {
 
     let mut out = String::new();
     out.push_str("Terminal setup\n");
-    out.push_str("──────────────\n");
+    out.push_str("--------------\n");
     out.push_str(&format!("  Detected:   {}\n", p.terminal_label().as_str()));
     out.push_str(&row("TERM", &p.term));
     out.push_str(&row("TERM_PROGRAM", &p.term_program));
@@ -260,11 +248,14 @@ fn render_env(p: &EnvProbe) -> String {
     out.push_str(&row("SSH_TTY", &p.ssh_tty));
     out.push_str(&row("VISUAL", &p.visual));
     out.push_str(&row("EDITOR", &p.editor));
+    if let Some(note) = editor_launch_note(p) {
+        out.push_str(&format!("    -> editor export:        {}\n", note));
+    }
 
     out.push_str("\nCLAUDE_CODE_* toggles (issue #12)\n");
     out.push_str(&row("CLAUDE_CODE_NO_FLICKER", &p.claude_code_no_flicker));
     out.push_str(&format!(
-        "    → synchronized updates: {}\n",
+        "    -> synchronized updates: {}\n",
         if effective.sync_updates { "on" } else { "off" }
     ));
     out.push_str(&row(
@@ -272,11 +263,15 @@ fn render_env(p: &EnvProbe) -> String {
         &p.claude_code_disable_mouse,
     ));
     out.push_str(&format!(
-        "    → mouse capture:        {}\n",
-        if effective.disable_mouse {
-            "disabled (mouse wheel won't be captured)"
+        "    -> mouse capture:        {}\n",
+        if TerminalEnvConfig::DISABLE_MOUSE_RUNTIME_SUPPORTED {
+            if effective.disable_mouse {
+                "disabled by env flag"
+            } else {
+                "enabled unless future runtime disables it"
+            }
         } else {
-            "not grabbed (default)"
+            "not implemented in current runtime (env is diagnostic-only)"
         }
     ));
     out.push_str(&row(
@@ -284,7 +279,7 @@ fn render_env(p: &EnvProbe) -> String {
         &p.claude_code_scroll_speed,
     ));
     out.push_str(&format!(
-        "    → scroll speed:         {} lines / step\n",
+        "    -> scroll speed:         {} lines / step\n",
         effective.scroll_speed
     ));
 
@@ -295,10 +290,10 @@ fn render_tips(p: &EnvProbe) -> String {
     let label = p.terminal_label();
     let mut out = String::new();
     out.push_str("Tips\n");
-    out.push_str("────\n");
+    out.push_str("----\n");
 
     out.push_str(&format!(
-        "Shift+Enter ({}):\n  • {}\n\n",
+        "Shift+Enter ({}):\n  - {}\n\n",
         label.as_str(),
         label.shift_enter_tip()
     ));
@@ -306,27 +301,41 @@ fn render_tips(p: &EnvProbe) -> String {
     if p.tmux.is_some() {
         out.push_str("tmux detected:\n");
         out.push_str(
-            "  • Add `set -g extended-keys on` + `set -as terminal-features ',xterm*:extkeys'` for \
-             Shift+Enter passthrough.\n",
+            "  - Add `set -g extended-keys on` + `set -as terminal-features ',xterm*:extkeys'` for Shift+Enter passthrough.\n",
         );
         out.push_str(
-            "  • Use `set -g allow-passthrough on` (tmux ≥ 3.3) so Claude Code can emit \
-             notifications / OSC sequences.\n\n",
+            "  - Use `set -g allow-passthrough on` (tmux >= 3.3) so Claude Code can emit notifications / OSC sequences.\n\n",
         );
     }
 
     out.push_str("Notifications:\n");
     out.push_str(
-        "  • Terminal bell / OSC 9 notifications are emitted when the agent finishes a turn. \
-         If your terminal suppresses them, check its 'Silence bell' / 'Visual bell' setting.\n",
+        "  - Terminal bell / OSC 9 notifications are emitted when the agent finishes a turn. If your terminal suppresses them, check its bell settings.\n",
     );
     out.push_str(
-        "  • On Linux desktops, `notify-send` hooks can be wired through `statusLine.command`.\n\n",
+        "  - On Linux desktops, `notify-send` hooks can be wired through `statusLine.command`.\n\n",
     );
 
+    out.push_str("Editor export:\n");
+    out.push_str(
+        "  - Transcript export currently launches `$VISUAL` / `$EDITOR` as a single executable path.\n",
+    );
+    out.push_str(
+        "  - Values with arguments such as `code --wait` or `nvim -f` are not supported yet; use a wrapper script or set the env var to the executable only.\n\n",
+    );
+
+    if !TerminalEnvConfig::DISABLE_MOUSE_RUNTIME_SUPPORTED {
+        out.push_str("Mouse flag status:\n");
+        out.push_str(
+            "  - `CLAUDE_CODE_DISABLE_MOUSE` is parsed and shown here, but the current Rust TUI does not change mouse capture at runtime yet.\n\n",
+        );
+    }
+
     out.push_str("Transcript / focus view (issue #12):\n");
-    out.push_str("  • Ctrl+O cycles Prompt → Transcript → Focus.\n");
-    out.push_str("  • In transcript mode: `/` search, `n`/`N` next/prev, `e` export to $EDITOR, `q`/Esc exit.\n");
+    out.push_str("  - Ctrl+O cycles Prompt -> Transcript -> Focus.\n");
+    out.push_str(
+        "  - In transcript mode: `/` search, `n`/`N` next/prev, `e` export to the configured editor, `q`/Esc exit.\n",
+    );
 
     out
 }
@@ -337,6 +346,37 @@ fn row(label: &str, value: &Option<String>) -> String {
         .filter(|s| !s.is_empty())
         .unwrap_or("(unset)");
     format!("  {:<25} {}\n", format!("{}:", label), shown)
+}
+
+fn editor_launch_note(p: &EnvProbe) -> Option<String> {
+    for (name, raw) in [
+        ("VISUAL", p.visual.as_deref()),
+        ("EDITOR", p.editor.as_deref()),
+    ] {
+        let Some(raw) = raw else {
+            continue;
+        };
+        let Some(parsed) = parse_editor_command(raw) else {
+            return Some(format!("{name} is set but could not be parsed"));
+        };
+        return Some(if parsed.transcript_export_supported() {
+            format!("{name} -> {}", parsed.program)
+        } else {
+            format!(
+                "{name} includes arguments; transcript export currently needs a bare executable path"
+            )
+        });
+    }
+    None
+}
+
+fn normalize_env_value(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -377,7 +417,7 @@ mod tests {
         match r {
             CommandResult::Output(s) => {
                 assert!(s.contains("CLAUDE_CODE_NO_FLICKER"));
-                assert!(!s.contains("Tips\n────\n"));
+                assert!(!s.contains("Tips\n----\n"));
             }
             _ => panic!("expected Output"),
         }
@@ -391,7 +431,7 @@ mod tests {
         match r {
             CommandResult::Output(s) => {
                 assert!(s.contains("Tips"));
-                assert!(!s.contains("Terminal setup\n──────────────"));
+                assert!(!s.contains("Terminal setup\n--------------"));
             }
             _ => panic!("expected Output"),
         }
@@ -434,5 +474,28 @@ mod tests {
         let p = EnvProbe::from_iter(vec![("CLAUDE_CODE_SCROLL_SPEED", "7")]);
         let out = render_env(&p);
         assert!(out.contains("7 lines / step"), "{}", out);
+    }
+
+    #[test]
+    fn gnome_tip_no_longer_mentions_export_transcript_command() {
+        let p = EnvProbe::from_iter(vec![("VTE_VERSION", "7206")]);
+        let out = render_tips(&p);
+        assert!(!out.contains("/export-transcript"));
+        assert!(out.contains("transcript export (`e`)"));
+    }
+
+    #[test]
+    fn env_table_reports_editor_argument_limitations() {
+        let p = EnvProbe::from_iter(vec![("VISUAL", "code --wait")]);
+        let out = render_env(&p);
+        assert!(out.contains("VISUAL includes arguments"));
+        assert!(out.contains("bare executable path"));
+    }
+
+    #[test]
+    fn env_table_marks_disable_mouse_as_diagnostic_only() {
+        let p = EnvProbe::from_iter(vec![("CLAUDE_CODE_DISABLE_MOUSE", "1")]);
+        let out = render_env(&p);
+        assert!(out.contains("not implemented in current runtime"));
     }
 }

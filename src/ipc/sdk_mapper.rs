@@ -18,6 +18,7 @@ use crate::types::message::{ContentBlock, Message, StreamEvent, ToolResultConten
 
 use super::protocol::{BackendMessage, ToolResultContentInfo};
 use super::sink::FrontendSink;
+use crate::ui::status_line::payload::{build_payload_from_snapshot, StatusLineSnapshot};
 
 // ---------------------------------------------------------------------------
 // SdkMessage → BackendMessage mapping
@@ -299,48 +300,25 @@ fn build_status_line_payload(
     engine: &Arc<QueryEngine>,
     result: &crate::engine::sdk_types::SdkResult,
 ) -> serde_json::Result<serde_json::Value> {
-    use crate::ui::status_line::{
-        ContextWindowStatus, CostStatus, ModelInfo, StatusLinePayload, WorkspaceStatus,
-    };
-
     let app_state = engine.app_state();
-    let mut payload = StatusLinePayload::new();
-    payload.session_id = Some(result.session_id.clone());
-    payload.message_count = engine.messages().len();
-
-    let model_id = app_state.main_loop_model.clone();
-    if !model_id.is_empty() {
-        payload.model = Some(ModelInfo {
-            id: model_id,
-            display_name: None,
-            backend: Some(app_state.main_loop_backend.clone()),
-        });
-    }
-
-    let cwd = engine.cwd();
-    if !cwd.is_empty() {
-        payload.workspace = Some(WorkspaceStatus {
-            cwd: cwd.to_string(),
-            ..Default::default()
-        });
-    }
-
-    payload.context = Some(ContextWindowStatus {
+    let cwd = std::path::Path::new(engine.cwd());
+    let payload = build_payload_from_snapshot(StatusLineSnapshot {
+        session_id: Some(result.session_id.clone()),
+        model_id: &app_state.main_loop_model,
+        backend: Some(&app_state.main_loop_backend),
+        cwd,
         input_tokens: result.usage.total_input_tokens,
         output_tokens: result.usage.total_output_tokens,
         cache_read_tokens: result.usage.total_cache_read_tokens,
         cache_creation_tokens: result.usage.total_cache_creation_tokens,
-        max_tokens: None,
-        used_fraction: None,
-    });
-
-    payload.cost = Some(CostStatus {
-        total_usd: result.total_cost_usd,
+        total_cost_usd: result.total_cost_usd,
         api_calls: result.usage.api_call_count,
         session_duration_secs: Some(result.duration_ms / 1000),
+        output_style: app_state.settings.output_style.as_deref(),
+        editor_mode: app_state.settings.editor_mode.as_deref(),
+        streaming: false,
+        message_count: engine.messages().len(),
     });
-
-    payload.output_style = app_state.settings.output_style.clone();
 
     serde_json::to_value(&payload)
 }
@@ -419,7 +397,34 @@ pub fn generate_and_send_suggestions(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::sdk_types::{ResultSubtype, SdkResult};
+    use crate::types::config::QueryEngineConfig;
     use crate::types::message::ImageSource;
+    use uuid::Uuid;
+
+    fn make_engine(cwd: &str) -> Arc<QueryEngine> {
+        Arc::new(QueryEngine::new(QueryEngineConfig {
+            cwd: cwd.to_string(),
+            tools: vec![],
+            custom_system_prompt: None,
+            append_system_prompt: None,
+            user_specified_model: None,
+            fallback_model: None,
+            max_turns: None,
+            max_budget_usd: None,
+            task_budget: None,
+            verbose: false,
+            initial_messages: None,
+            commands: vec![],
+            thinking_config: None,
+            json_schema: None,
+            replay_user_messages: false,
+            persist_session: false,
+            resolved_model: Some("claude-sonnet-4-20250514".into()),
+            auto_save_session: false,
+            agent_context: None,
+        }))
+    }
 
     #[test]
     fn test_extract_text_only_blocks() {
@@ -484,5 +489,75 @@ mod tests {
         let (output, infos) = extract_tool_result_output(&blocks);
         assert_eq!(output, "(no output)");
         assert!(infos.is_none());
+    }
+
+    #[test]
+    fn status_line_payload_uses_runtime_snapshot_fields() {
+        let engine = make_engine(env!("CARGO_MANIFEST_DIR"));
+        engine.update_app_state(|state| {
+            state.main_loop_backend = "native".into();
+            state.settings.output_style = Some("explanatory".into());
+            state.settings.editor_mode = Some("vim".into());
+        });
+
+        let payload = build_status_line_payload(
+            &engine,
+            &SdkResult {
+                subtype: ResultSubtype::Success,
+                is_error: false,
+                duration_ms: 4200,
+                duration_api_ms: 1500,
+                num_turns: 1,
+                result: "ok".into(),
+                stop_reason: Some("end_turn".into()),
+                session_id: engine.session_id.to_string(),
+                total_cost_usd: 0.1234,
+                usage: crate::engine::lifecycle::UsageTracking {
+                    total_input_tokens: 1200,
+                    total_output_tokens: 300,
+                    total_cache_read_tokens: 20,
+                    total_cache_creation_tokens: 10,
+                    total_cost_usd: 0.1234,
+                    api_call_count: 2,
+                },
+                permission_denials: vec![],
+                structured_output: None,
+                uuid: Uuid::new_v4(),
+                errors: vec![],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            payload
+                .pointer("/outputStyle")
+                .and_then(|value| value.as_str()),
+            Some("explanatory")
+        );
+        assert_eq!(
+            payload
+                .pointer("/vim/mode")
+                .and_then(|value| value.as_str()),
+            Some("NORMAL")
+        );
+        assert_eq!(
+            payload
+                .pointer("/context/maxTokens")
+                .and_then(|value| value.as_u64()),
+            Some(200_000)
+        );
+        assert_eq!(
+            payload
+                .pointer("/workspace/projectDir")
+                .and_then(|value| value.as_str())
+                .map(|value| !value.is_empty()),
+            Some(true)
+        );
+        assert_eq!(
+            payload
+                .pointer("/cost/apiCalls")
+                .and_then(|value| value.as_u64()),
+            Some(2)
+        );
     }
 }

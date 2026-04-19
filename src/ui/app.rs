@@ -4,6 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::Frame;
 
 use crate::config::settings::StatusLineSettings;
+use crate::keybindings::KeybindingRegistry;
 use crate::services::prompt_suggestion::PromptSuggestion;
 use crate::types::message::Message;
 
@@ -11,14 +12,12 @@ use super::messages::render_messages;
 use super::permissions::{PermissionChoice, PermissionDialog};
 use super::prompt_input::PromptInput;
 use super::spinner::SpinnerState;
-use super::status_line::{
-    ContextWindowStatus, CostStatus, ModelInfo, StatusLinePayload, StatusLineRunner,
-    WorkspaceStatus,
-};
+use super::status_line::{StatusLinePayload, StatusLineRunner, StatusLineSnapshot, build_payload_from_snapshot};
 use super::terminal_env::TerminalEnvConfig;
 use super::theme::Theme;
 use super::transcript::{self, SearchMatch, TranscriptInputMode, TranscriptState, ViewMode};
 use super::virtual_scroll::VirtualScroll;
+use super::vim::{VimAction, VimState};
 use super::welcome;
 use crate::voice::{VoiceController, VoiceEvent};
 
@@ -54,8 +53,10 @@ pub struct App {
     should_quit: bool,
     theme: Theme,
     model_name: String,
+    backend_name: String,
     session_id: String,
     cwd: String,
+    output_style: Option<String>,
     session_cost_usd: f64,
     /// Whether the welcome screen is currently shown.
     show_welcome: bool,
@@ -74,6 +75,9 @@ pub struct App {
     dirty: bool,
     /// Tick counter for throttling spinner frame advances.
     tick_counter: u32,
+    keybindings: KeybindingRegistry,
+    pending_chord: Vec<crate::keybindings::keystroke::Keystroke>,
+    vim: VimState,
 
     // ── Scriptable status line (issue #11) ─────────────────────────
     /// Resolved status-line configuration (command, padding, intervals).
@@ -105,6 +109,8 @@ pub struct App {
     /// Updated whenever `/voice` / `/config set` flips them so the
     /// push-to-talk key handler doesn't need to re-read AppState.
     voice_enabled: bool,
+    /// Whether this build/runtime supports actual recording and STT.
+    voice_supported: bool,
     /// Normalized STT language — passed to the controller on press.
     voice_language: String,
 }
@@ -132,8 +138,10 @@ impl App {
             should_quit: false,
             theme: Theme::default(),
             model_name: String::new(),
+            backend_name: String::new(),
             session_id: String::new(),
             cwd: String::new(),
+            output_style: None,
             session_cost_usd: 0.0,
             show_welcome: true,
             suggestions: None,
@@ -143,6 +151,9 @@ impl App {
             vscroll: VirtualScroll::new(),
             dirty: true,
             tick_counter: 0,
+            keybindings: KeybindingRegistry::with_defaults(),
+            pending_chord: Vec::new(),
+            vim: VimState::new(),
             status_line_settings: StatusLineSettings::default(),
             status_line_runner: StatusLineRunner::new(),
             session_usage: SessionUsageSnapshot::default(),
@@ -151,6 +162,7 @@ impl App {
             terminal_env: TerminalEnvConfig::default(),
             voice: None,
             voice_enabled: false,
+            voice_supported: false,
             voice_language: "en".to_string(),
         }
     }
@@ -252,6 +264,11 @@ impl App {
         self.dirty = true;
     }
 
+    pub fn set_backend_name(&mut self, name: String) {
+        self.backend_name = name;
+        self.dirty = true;
+    }
+
     pub fn set_session_id(&mut self, id: String) {
         self.session_id = id;
         self.dirty = true;
@@ -259,6 +276,21 @@ impl App {
 
     pub fn set_cwd(&mut self, cwd: String) {
         self.cwd = cwd;
+        self.dirty = true;
+    }
+
+    pub fn set_output_style(&mut self, output_style: Option<String>) {
+        self.output_style = output_style;
+        self.dirty = true;
+    }
+
+    pub fn set_keybindings(&mut self, keybindings: KeybindingRegistry) {
+        self.keybindings = keybindings;
+        self.pending_chord.clear();
+    }
+
+    pub fn set_editor_mode(&mut self, editor_mode: Option<&str>) {
+        self.vim = VimState::from_editor_mode(editor_mode);
         self.dirty = true;
     }
 
@@ -333,16 +365,18 @@ impl App {
     /// Update the cached `voiceEnabled` flag + normalized language.
     /// Called at startup and whenever `/voice` or `/config` flips the
     /// settings so the key handler doesn't need to read through AppState.
-    pub fn set_voice_settings(&mut self, enabled: bool, language: String) {
+    pub fn set_voice_settings(&mut self, enabled: bool, language: String, supported: bool) {
         self.voice_enabled = enabled;
+        self.voice_supported = supported;
         self.voice_language = language;
+        self.dirty = true;
     }
 
     /// True when `voiceEnabled` is on *and* a controller has been
     /// installed (tests run without a controller → push-to-talk is a
     /// no-op, as it should be).
     pub fn is_voice_ready(&self) -> bool {
-        self.voice_enabled && self.voice.is_some()
+        self.voice_enabled && self.voice_supported && self.voice.is_some()
     }
 
     /// Begin push-to-talk recording. No-op when voice is disabled or no
@@ -550,7 +584,7 @@ impl App {
     /// the rest of the clamp.
     fn snap_to_current_match(&mut self) {
         if let Some(SearchMatch { message_index }) = self.transcript_state.current_match() {
-            let line = self.vscroll.offset_of(message_index);
+            let line = self.vscroll.visual_offset_of(message_index);
             // Bias slightly upward so the line has context above it.
             self.transcript_state.scroll_offset = line.saturating_sub(1);
             self.dirty = true;
@@ -559,48 +593,29 @@ impl App {
 
     /// Build the current status-line payload from app state.
     fn build_status_payload(&self) -> StatusLinePayload {
-        let mut p = StatusLinePayload::new();
-        if !self.session_id.is_empty() {
-            p.session_id = Some(self.session_id.clone());
-        }
-        if !self.model_name.is_empty() {
-            let short = self
-                .model_name
-                .strip_prefix("claude-")
-                .unwrap_or(&self.model_name);
-            let short = short.split('-').take(2).collect::<Vec<_>>().join("-");
-            p.model = Some(ModelInfo {
-                id: self.model_name.clone(),
-                display_name: Some(short),
-                backend: None,
-            });
-        }
-        if !self.cwd.is_empty() {
-            p.workspace = Some(WorkspaceStatus {
-                cwd: self.cwd.clone(),
-                ..Default::default()
-            });
-        }
-        // Context window — max_tokens currently unknown at this layer; the
-        // IPC / daemon path fills it from the model registry.
-        p.context = Some(ContextWindowStatus {
+        let mut payload = build_payload_from_snapshot(StatusLineSnapshot {
+            session_id: (!self.session_id.is_empty()).then(|| self.session_id.clone()),
+            model_id: &self.model_name,
+            backend: (!self.backend_name.is_empty()).then_some(self.backend_name.as_str()),
+            cwd: std::path::Path::new(&self.cwd),
             input_tokens: self.session_usage.input_tokens,
             output_tokens: self.session_usage.output_tokens,
             cache_read_tokens: self.session_usage.cache_read_tokens,
             cache_creation_tokens: self.session_usage.cache_creation_tokens,
-            max_tokens: None,
-            used_fraction: None,
+            total_cost_usd: self.session_cost_usd,
+            api_calls: self.session_usage.api_calls,
+            session_duration_secs: None,
+            output_style: self.output_style.as_deref(),
+            editor_mode: self.vim.enabled.then_some("vim"),
+            streaming: self.is_streaming,
+            message_count: self.messages.len(),
         });
-        if self.session_cost_usd > 0.0 || self.session_usage.api_calls > 0 {
-            p.cost = Some(CostStatus {
-                total_usd: self.session_cost_usd,
-                api_calls: self.session_usage.api_calls,
-                session_duration_secs: None,
+        if self.vim.enabled {
+            payload.vim = Some(super::status_line::payload::VimStatus {
+                mode: self.vim.mode.indicator().to_string(),
             });
         }
-        p.streaming = self.is_streaming;
-        p.message_count = self.messages.len();
-        p
+        payload
     }
 
     /// Kick the runner. Throttling / cancellation lives inside the runner.
@@ -661,6 +676,14 @@ impl App {
             return AppAction::None;
         }
 
+        if let Some(action) = self.resolve_bound_action(&key) {
+            if let Some(app_action) = self.dispatch_bound_action(&action) {
+                return app_action;
+            }
+        } else if !self.pending_chord.is_empty() {
+            return AppAction::None;
+        }
+
         // Ctrl+C / Ctrl+D retain their "abort or quit" semantics even in
         // transcript / focus modes — the user always needs a way out.
         match (key.modifiers, key.code) {
@@ -682,33 +705,6 @@ impl App {
             (KeyModifiers::CONTROL, KeyCode::Char('o')) => {
                 // Cycle `Prompt → Transcript → Focus → Prompt`.
                 self.cycle_view_mode();
-                return AppAction::None;
-            }
-            // Voice push-to-talk (issue #13). Ctrl+Space over the chat
-            // input starts recording; the TUI runner translates the
-            // matching KeyEventKind::Release into a release call.
-            // KeyEventKind::Release isn't delivered on every terminal,
-            // so a single press toggles Recording → Transcribing to
-            // keep things usable even without release events.
-            (KeyModifiers::CONTROL, KeyCode::Char(' ')) if self.view_mode == ViewMode::Prompt => {
-                if self.is_voice_ready() {
-                    let state = self
-                        .voice
-                        .as_ref()
-                        .map(|v| v.state())
-                        .unwrap_or(crate::voice::VoiceState::Idle);
-                    match state {
-                        crate::voice::VoiceState::Idle | crate::voice::VoiceState::Error(_) => {
-                            self.begin_push_to_talk()
-                        }
-                        crate::voice::VoiceState::Recording => self.end_push_to_talk(),
-                        crate::voice::VoiceState::Transcribing => {
-                            // Ignore — wait for the task to finalize.
-                        }
-                    }
-                }
-                // Swallow the keystroke either way so Space doesn't slip
-                // through to the prompt input.
                 return AppAction::None;
             }
             _ => {}
@@ -753,6 +749,17 @@ impl App {
             }
 
             _ => {}
+        }
+
+        if self.vim.enabled && self.prompt.is_active {
+            let vim_action = self.vim.handle_key(
+                key,
+                &self.prompt.input,
+                self.prompt.cursor_position,
+            );
+            if let Some(app_action) = self.apply_vim_action(vim_action) {
+                return app_action;
+            }
         }
 
         if let Some(submitted) = self.prompt.handle_key(key) {
@@ -834,7 +841,7 @@ impl App {
             // ── Messages (virtual scroll) ───────────────────────────
             self.vscroll
                 .ensure_up_to_date(&self.messages, message_area.width, &self.theme);
-            let total = self.vscroll.total_lines();
+            let total = self.vscroll.total_visual_lines();
             let max_scroll = total.saturating_sub(message_area.height as usize);
             if self.scroll_offset > max_scroll {
                 self.scroll_offset = max_scroll;
@@ -927,6 +934,240 @@ impl App {
         }
     }
 
+    fn take_prompt_submission(&mut self) -> Option<String> {
+        let text = self.prompt.input.trim().to_string();
+        if text.is_empty() {
+            return None;
+        }
+        self.prompt.input.clear();
+        self.prompt.cursor_position = 0;
+        Some(text)
+    }
+
+    fn active_keybinding_contexts(&self) -> [crate::keybindings::context::Context; 2] {
+        if self.view_mode.is_transcript_like() {
+            [
+                crate::keybindings::context::Context::Transcript,
+                crate::keybindings::context::Context::Scroll,
+            ]
+        } else {
+            [
+                crate::keybindings::context::Context::Chat,
+                crate::keybindings::context::Context::Scroll,
+            ]
+        }
+    }
+
+    fn resolve_bound_action(
+        &mut self,
+        key: &KeyEvent,
+    ) -> Option<crate::keybindings::action::Action> {
+        use crate::keybindings::keystroke::{Chord, Keystroke};
+        use crate::keybindings::registry::Resolution;
+
+        let stroke = Keystroke::from_event(key)?;
+
+        if !self.pending_chord.is_empty() {
+            self.pending_chord.push(stroke.clone());
+            let chord = Chord(self.pending_chord.clone());
+            for context in self.active_keybinding_contexts() {
+                match self.keybindings.resolve_chord(context, &chord) {
+                    Resolution::Action(action) => {
+                        self.pending_chord.clear();
+                        return Some(action);
+                    }
+                    Resolution::Pending => return None,
+                    Resolution::None => {}
+                }
+            }
+            self.pending_chord.clear();
+        }
+
+        for context in self.active_keybinding_contexts() {
+            match self.keybindings.resolve_single(context, &stroke) {
+                Resolution::Action(action) => return Some(action),
+                Resolution::Pending => {
+                    self.pending_chord = vec![stroke.clone()];
+                    return None;
+                }
+                Resolution::None => {}
+            }
+        }
+
+        None
+    }
+
+    fn dispatch_bound_action(
+        &mut self,
+        action: &crate::keybindings::action::Action,
+    ) -> Option<AppAction> {
+        match action.as_str() {
+            "app:interrupt" => {
+                if self.is_streaming {
+                    return Some(AppAction::Abort);
+                }
+                self.should_quit = true;
+                return Some(AppAction::Quit);
+            }
+            "app:exit" => {
+                if self.view_mode == ViewMode::Prompt && (self.prompt.is_active || !self.is_streaming)
+                {
+                    self.should_quit = true;
+                    return Some(AppAction::Quit);
+                }
+                return Some(AppAction::None);
+            }
+            "app:toggleTranscript" => {
+                self.cycle_view_mode();
+                return Some(AppAction::None);
+            }
+            "app:toggleVim" => {
+                self.vim.toggle();
+                self.dirty = true;
+                return Some(AppAction::None);
+            }
+            "app:redraw" => {
+                self.mark_dirty();
+                return Some(AppAction::None);
+            }
+            "history:previous" => {
+                if self.prompt.is_active && !self.is_streaming {
+                    self.history_up();
+                }
+                return Some(AppAction::None);
+            }
+            "history:next" => {
+                if self.prompt.is_active && !self.is_streaming {
+                    self.history_down();
+                }
+                return Some(AppAction::None);
+            }
+            "chat:clearInput" => {
+                self.prompt.input.clear();
+                self.prompt.cursor_position = 0;
+                self.dirty = true;
+                return Some(AppAction::None);
+            }
+            "chat:submit" => return Some(self.take_prompt_submission().map_or(AppAction::None, AppAction::Submit)),
+            "voice:pushToTalk" => {
+                if self.is_voice_ready() {
+                    match self
+                        .voice
+                        .as_ref()
+                        .map(|voice| voice.state())
+                        .unwrap_or(crate::voice::VoiceState::Idle)
+                    {
+                        crate::voice::VoiceState::Idle | crate::voice::VoiceState::Error(_) => {
+                            self.begin_push_to_talk();
+                        }
+                        crate::voice::VoiceState::Recording => self.end_push_to_talk(),
+                        crate::voice::VoiceState::Transcribing => {}
+                    }
+                }
+                return Some(AppAction::None);
+            }
+            "transcript:exit" => {
+                self.transcript_state.clear_search();
+                self.view_mode = ViewMode::Prompt;
+                self.dirty = true;
+                return Some(AppAction::None);
+            }
+            "scroll:pageUp" => {
+                let step = self.terminal_env.scroll_speed.max(5) as usize;
+                if self.view_mode.is_transcript_like() {
+                    self.scroll_transcript_up(step);
+                } else {
+                    self.scroll_up(step);
+                }
+                return Some(AppAction::ScrollUp);
+            }
+            "scroll:pageDown" => {
+                let step = self.terminal_env.scroll_speed.max(5) as usize;
+                if self.view_mode.is_transcript_like() {
+                    self.scroll_transcript_down(step);
+                } else {
+                    self.scroll_down(step);
+                }
+                return Some(AppAction::ScrollDown);
+            }
+            "scroll:lineUp" => {
+                if self.view_mode.is_transcript_like() {
+                    self.scroll_transcript_up(1);
+                } else {
+                    self.scroll_up(1);
+                }
+                return Some(AppAction::ScrollUp);
+            }
+            "scroll:lineDown" => {
+                if self.view_mode.is_transcript_like() {
+                    self.scroll_transcript_down(1);
+                } else {
+                    self.scroll_down(1);
+                }
+                return Some(AppAction::ScrollDown);
+            }
+            "scroll:top" => {
+                if self.view_mode.is_transcript_like() {
+                    self.transcript_state.scroll_offset = 0;
+                } else {
+                    self.scroll_offset = 0;
+                }
+                self.dirty = true;
+                return Some(AppAction::None);
+            }
+            "scroll:bottom" => {
+                if self.view_mode.is_transcript_like() {
+                    self.transcript_state.scroll_offset = usize::MAX;
+                } else {
+                    self.scroll_offset = usize::MAX;
+                }
+                self.dirty = true;
+                return Some(AppAction::None);
+            }
+            _ => {}
+        }
+
+        None
+    }
+
+    fn apply_vim_action(&mut self, action: VimAction) -> Option<AppAction> {
+        match action {
+            VimAction::None => Some(AppAction::None),
+            VimAction::InsertChar(c) => {
+                self.prompt.insert_str(&c.to_string());
+                Some(AppAction::None)
+            }
+            VimAction::Delete { start, end } => {
+                if start <= end && end <= self.prompt.input.len() {
+                    self.prompt.input.drain(start..end);
+                    self.prompt.cursor_position = start.min(self.prompt.input.len());
+                }
+                Some(AppAction::None)
+            }
+            VimAction::MoveCursor(pos) => {
+                self.prompt.cursor_position = pos.min(self.prompt.input.len());
+                Some(AppAction::None)
+            }
+            VimAction::Yank { .. } | VimAction::YankLine | VimAction::Undo => Some(AppAction::None),
+            VimAction::Paste(text) => {
+                self.prompt.insert_str(&text);
+                Some(AppAction::None)
+            }
+            VimAction::DeleteLine => {
+                self.prompt.input.clear();
+                self.prompt.cursor_position = 0;
+                Some(AppAction::None)
+            }
+            VimAction::Submit => Some(self.take_prompt_submission().map_or(AppAction::None, AppAction::Submit)),
+            VimAction::SwitchMode(_) => Some(AppAction::None),
+            VimAction::Passthrough(key) => Some(
+                self.prompt
+                    .handle_key(key)
+                    .map_or(AppAction::None, AppAction::Submit),
+            ),
+        }
+    }
+
     fn render_suggestions(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
         if area.height == 0 {
             return;
@@ -997,6 +1238,9 @@ impl App {
         if self.session_cost_usd > 0.0 {
             parts.push(format!("${:.4}", self.session_cost_usd));
         }
+        if self.vim.enabled {
+            parts.push(format!("vim:{}", self.vim.mode.indicator()));
+        }
         parts.push(mode.to_string());
         parts.push(format!(
             "Ctrl+C {}",
@@ -1012,7 +1256,9 @@ impl App {
 
         // Voice push-to-talk status (issue #13). Shown as the tail entry
         // so it's the most prominent thing while recording.
-        if let Some(v) = &self.voice {
+        if self.voice_enabled && !self.voice_supported {
+            parts.push("voice:unsupported".to_string());
+        } else if let Some(v) = &self.voice {
             if let Some(label) = v.status_line() {
                 parts.push(label);
             }
@@ -1026,13 +1272,14 @@ impl App {
     // ── Transcript rendering (issue #12) ───────────────────────────
 
     fn render_transcript(&mut self, frame: &mut Frame, size: Rect) {
+        if matches!(self.view_mode, ViewMode::Focus) {
+            self.render_focus_view(frame, size);
+            return;
+        }
+
         // Focus mode hides all chrome and uses the full height for body;
         // Transcript mode reserves 1 line for header + 1 for footer.
-        let chrome = if matches!(self.view_mode, ViewMode::Transcript) {
-            1u16
-        } else {
-            0
-        };
+        let chrome = 1u16;
         let header_height = chrome;
         let footer_height = chrome;
         let body_height = size.height.saturating_sub(header_height + footer_height);
@@ -1051,7 +1298,7 @@ impl App {
         // width change.
         self.vscroll
             .ensure_up_to_date(&self.messages, body_area.width, &self.theme);
-        let total = self.vscroll.total_lines();
+        let total = self.vscroll.total_visual_lines();
         let max_scroll = total.saturating_sub(body_area.height as usize);
         if self.transcript_state.scroll_offset > max_scroll {
             self.transcript_state.scroll_offset = max_scroll;
@@ -1071,6 +1318,60 @@ impl App {
         }
         if footer_height > 0 {
             self.render_transcript_footer(rows[2], frame.buffer_mut());
+        }
+    }
+
+    fn render_focus_view(&mut self, frame: &mut Frame, size: Rect) {
+        let focus = transcript::build_focus_view(&self.messages);
+        let mut lines = Vec::new();
+
+        if let Some(prompt) = focus.prompt {
+            lines.push(Line::from(vec![Span::styled(
+                "Prompt",
+                self.theme.assistant_name,
+            )]));
+            for body_line in prompt.body.lines() {
+                lines.push(Line::from(body_line.to_string()));
+            }
+        }
+
+        if let Some(summary) = focus.tool_summary {
+            if !lines.is_empty() {
+                lines.push(Line::default());
+            }
+            lines.push(Line::from(vec![Span::styled(
+                "Tool Summary",
+                self.theme.tool_name,
+            )]));
+            for body_line in summary.lines() {
+                lines.push(Line::from(body_line.to_string()));
+            }
+        }
+
+        if let Some(response) = focus.response {
+            if !lines.is_empty() {
+                lines.push(Line::default());
+            }
+            lines.push(Line::from(vec![Span::styled(
+                "Response",
+                self.theme.user_name,
+            )]));
+            for body_line in response.body.lines() {
+                lines.push(Line::from(body_line.to_string()));
+            }
+        }
+
+        if lines.is_empty() {
+            lines.push(Line::from(vec![Span::styled(
+                "No focused transcript content yet.",
+                self.theme.dim,
+            )]));
+        }
+
+        for (row, line) in lines.iter().enumerate().take(size.height as usize) {
+            frame
+                .buffer_mut()
+                .set_line(size.x, size.y + row as u16, line, size.width);
         }
     }
 

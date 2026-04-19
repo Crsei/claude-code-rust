@@ -5,6 +5,9 @@
 //! - CLI `--init-only` accepts each of the three `CLAUDE_CODE_*` env
 //!   toggles without crashing (NO_FLICKER, DISABLE_MOUSE, SCROLL_SPEED).
 //! - Garbage values still boot cleanly (parser falls back to defaults).
+//! - Editor env vars with quoted paths / argument suffixes do not break
+//!   startup, even though transcript export still requires a bare
+//!   executable path at runtime.
 //!
 //! Unit-level behaviour (env parsing / clamping, transcript state machine,
 //! search, welcome-height tiers, resize cache invalidation) lives in
@@ -82,5 +85,16 @@ fn cli_init_only_accepts_all_three_env_toggles_together() {
         cmd.env("CLAUDE_CODE_NO_FLICKER", "1")
             .env("CLAUDE_CODE_DISABLE_MOUSE", "0")
             .env("CLAUDE_CODE_SCROLL_SPEED", "8");
+    });
+}
+
+#[test]
+#[serial]
+fn cli_init_only_tolerates_editor_env_with_arguments() {
+    run_init_only(|cmd| {
+        cmd.env("VISUAL", "code --wait").env(
+            "EDITOR",
+            "\"C:\\Program Files\\Neovim\\bin\\nvim-qt.exe\" -f",
+        );
     });
 }
