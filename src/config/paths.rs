@@ -96,12 +96,26 @@ pub fn skills_dir_global() -> PathBuf {
     data_root().join("skills")
 }
 
+pub fn teams_dir() -> PathBuf {
+    data_root().join("teams")
+}
+
+pub fn tasks_dir() -> PathBuf {
+    data_root().join("tasks")
+}
+
 /// `{data_root}/projects/{sanitized_cwd}/memory/team/`
 pub fn team_memory_dir(cwd: &Path) -> PathBuf {
     let sanitized: String = cwd
         .to_string_lossy()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     data_root()
         .join("projects")
@@ -124,8 +138,8 @@ pub fn project_cc_rust_dir(cwd: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
     use chrono::TimeZone;
+    use serial_test::serial;
 
     struct EnvGuard {
         key: &'static str,
@@ -225,6 +239,8 @@ mod tests {
         assert_eq!(session_insights_dir(), base.join("session-insights"));
         assert_eq!(plugins_dir(), base.join("plugins"));
         assert_eq!(skills_dir_global(), base.join("skills"));
+        assert_eq!(teams_dir(), base.join("teams"));
+        assert_eq!(tasks_dir(), base.join("tasks"));
     }
 
     #[test]

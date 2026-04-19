@@ -38,6 +38,8 @@ Let `$ROOT` denote the resolved data root.
 | `$ROOT/session-insights/` | Session insight extracts. |
 | `$ROOT/plugins/` | Installed plugin metadata + marketplace cache. |
 | `$ROOT/skills/` | User-installed skills. |
+| `$ROOT/teams/{sanitized_team_name}/` | Agent Teams config and mailbox state. |
+| `$ROOT/tasks/{sanitized_team_name}/` | Agent Teams task lists. |
 | `$ROOT/projects/{sanitized_cwd}/memory/team/` | Per-workspace Team Memory sync mirror. |
 
 ## Project-local paths

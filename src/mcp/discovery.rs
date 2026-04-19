@@ -8,7 +8,7 @@ use std::path::Path;
 ///
 /// Precedence for same server name (higher overrides lower):
 /// 1. Plugin-contributed defaults
-/// 2. Global config (`~/.cc-rust/settings.json`)
+/// 2. Global config (`{data_root}/settings.json`)
 /// 3. Project config (`.cc-rust/settings.json`)
 pub fn discover_mcp_servers(cwd: &Path) -> Result<Vec<McpServerConfig>> {
     let mut servers = Vec::new();
@@ -16,12 +16,10 @@ pub fn discover_mcp_servers(cwd: &Path) -> Result<Vec<McpServerConfig>> {
     // Lowest precedence: plugin-contributed servers from installed plugins.
     merge_server_configs(&mut servers, crate::plugins::discover_plugin_mcp_servers());
 
-    // Global config: ~/.cc-rust/settings.json
-    if let Some(home) = dirs::home_dir() {
-        let global_settings = home.join(".cc-rust").join("settings.json");
-        if let Ok(configs) = load_mcp_from_settings(&global_settings) {
-            merge_server_configs(&mut servers, configs);
-        }
+    // Global config: {data_root}/settings.json
+    let global_settings = crate::config::paths::data_root().join("settings.json");
+    if let Ok(configs) = load_mcp_from_settings(&global_settings) {
+        merge_server_configs(&mut servers, configs);
     }
 
     // Highest precedence: project config .cc-rust/settings.json
@@ -69,7 +67,31 @@ fn merge_server_configs(into: &mut Vec<McpServerConfig>, incoming: Vec<McpServer
 mod tests {
     use super::*;
     use crate::plugins::{self, PluginEntry, PluginSource, PluginStatus};
+    use serial_test::serial;
     use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(v) => std::env::set_var(self.key, v),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     #[test]
     fn merge_server_configs_overrides_by_name() {
@@ -155,5 +177,40 @@ mod tests {
 
         plugins::clear_plugins();
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    #[serial]
+    fn discover_mcp_servers_reads_global_config_from_cc_rust_home() {
+        let cc_rust_home = TempDir::new().expect("cc_rust_home tempdir");
+        let cwd = TempDir::new().expect("cwd tempdir");
+        let _home = EnvGuard::set(
+            "CC_RUST_HOME",
+            cc_rust_home.path().to_str().expect("utf8 tempdir"),
+        );
+
+        let settings = serde_json::json!({
+            "mcpServers": {
+                "override-server": {
+                    "transport": "stdio",
+                    "command": "from-cc-rust-home",
+                    "args": ["--flag"]
+                }
+            }
+        });
+        std::fs::write(
+            cc_rust_home.path().join("settings.json"),
+            serde_json::to_string_pretty(&settings).expect("serialize settings"),
+        )
+        .expect("write settings");
+
+        let servers = discover_mcp_servers(cwd.path()).expect("discover servers");
+        let server = servers
+            .iter()
+            .find(|s| s.name == "override-server")
+            .expect("server from CC_RUST_HOME settings");
+
+        assert_eq!(server.command.as_deref(), Some("from-cc-rust-home"));
+        assert_eq!(server.args.as_ref(), Some(&vec!["--flag".to_string()]));
     }
 }
