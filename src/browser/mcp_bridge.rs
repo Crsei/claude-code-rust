@@ -226,6 +226,35 @@ fn next_request_id() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
+#[cfg(unix)]
+type NativeStream = tokio::net::UnixStream;
+#[cfg(windows)]
+type NativeStream = tokio::net::windows::named_pipe::NamedPipeClient;
+
+type NativeWriteHalf = tokio::io::WriteHalf<NativeStream>;
+
+#[derive(Clone)]
+struct NativeHostConnection {
+    id: u64,
+    writer: Arc<tokio::sync::Mutex<NativeWriteHalf>>,
+    pending: Pending,
+}
+
+type NativeConnectionStore = Arc<tokio::sync::Mutex<Option<NativeHostConnection>>>;
+
+fn next_connection_id() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+async fn clear_connection_if_current(connections: &NativeConnectionStore, connection_id: u64) {
+    let mut guard = connections.lock().await;
+    if guard.as_ref().map(|conn| conn.id) == Some(connection_id) {
+        *guard = None;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Socket connection
 // ---------------------------------------------------------------------------
@@ -269,6 +298,39 @@ async fn connect_native_host() -> Result<tokio::net::windows::named_pipe::NamedP
     Ok(client)
 }
 
+async fn ensure_native_host_connection(
+    connections: &NativeConnectionStore,
+) -> Result<NativeHostConnection> {
+    if let Some(existing) = connections.lock().await.clone() {
+        return Ok(existing);
+    }
+
+    let stream = connect_native_host().await?;
+    let (read_half, write_half) = tokio::io::split(stream);
+    let connection = NativeHostConnection {
+        id: next_connection_id(),
+        writer: Arc::new(tokio::sync::Mutex::new(write_half)),
+        pending: Arc::new(SyncMutex::new(HashMap::new())),
+    };
+
+    {
+        let mut guard = connections.lock().await;
+        if let Some(existing) = guard.clone() {
+            return Ok(existing);
+        }
+        *guard = Some(connection.clone());
+    }
+
+    let pending = Arc::clone(&connection.pending);
+    let connection_id = connection.id;
+    let connection_store = Arc::clone(connections);
+    tokio::spawn(async move {
+        socket_reader_task(read_half, pending, connection_store, connection_id).await;
+    });
+
+    Ok(connection)
+}
+
 // ---------------------------------------------------------------------------
 // Socket reader — dispatches tool_response messages to pending awaiters.
 // ---------------------------------------------------------------------------
@@ -276,6 +338,8 @@ async fn connect_native_host() -> Result<tokio::net::windows::named_pipe::NamedP
 async fn socket_reader_task<R: tokio::io::AsyncReadExt + Unpin>(
     mut reader: R,
     pending: Pending,
+    connections: NativeConnectionStore,
+    connection_id: u64,
 ) {
     loop {
         match read_framed(&mut reader).await {
@@ -312,24 +376,23 @@ async fn socket_reader_task<R: tokio::io::AsyncReadExt + Unpin>(
     for tx in senders {
         let _ = tx.send(json!({ "error": "native host socket closed" }));
     }
+    clear_connection_if_current(&connections, connection_id).await;
 }
 
 // ---------------------------------------------------------------------------
 // Tool call forwarding
 // ---------------------------------------------------------------------------
 
-async fn forward_tool_call<W>(
-    writer: Arc<tokio::sync::Mutex<W>>,
-    pending: &Pending,
+async fn forward_tool_call(
+    connections: &NativeConnectionStore,
     method: &str,
     params: Value,
 ) -> Result<Value>
-where
-    W: tokio::io::AsyncWriteExt + Unpin + Send + 'static,
 {
+    let connection = ensure_native_host_connection(connections).await?;
     let request_id = next_request_id();
     let (tx, rx) = oneshot::channel();
-    pending.lock().insert(request_id, tx);
+    connection.pending.lock().insert(request_id, tx);
 
     let payload = json!({
         "method": method,
@@ -338,15 +401,22 @@ where
     });
     let bytes = serde_json::to_vec(&payload)?;
     {
-        let mut guard = writer.lock().await;
-        write_framed(&mut *guard, &bytes).await?;
+        let mut guard = connection.writer.lock().await;
+        if let Err(e) = write_framed(&mut *guard, &bytes).await {
+            connection.pending.lock().remove(&request_id);
+            clear_connection_if_current(connections, connection.id).await;
+            return Err(e.into());
+        }
     }
 
     match tokio::time::timeout(TOOL_CALL_TIMEOUT, rx).await {
         Ok(Ok(value)) => Ok(value),
-        Ok(Err(_)) => anyhow::bail!("native host dropped the response channel"),
+        Ok(Err(_)) => {
+            clear_connection_if_current(connections, connection.id).await;
+            anyhow::bail!("native host dropped the response channel")
+        }
         Err(_) => {
-            pending.lock().remove(&request_id);
+            connection.pending.lock().remove(&request_id);
             anyhow::bail!(
                 "tool '{method}' timed out after {}s (is the Chrome extension connected?)",
                 TOOL_CALL_TIMEOUT.as_secs()
@@ -362,19 +432,14 @@ where
 pub async fn run() -> Result<()> {
     info!("claude-in-chrome-mcp: starting stdio MCP bridge");
 
-    // Connect to the native host; if it's not running, fail fast with a
-    // clear message.
-    let stream = connect_native_host().await?;
-    let (read_half, write_half) = tokio::io::split(stream);
-    let writer = Arc::new(tokio::sync::Mutex::new(write_half));
-    let pending: Pending = Arc::new(SyncMutex::new(HashMap::new()));
-
-    // Spawn the socket reader so tool_responses get routed to awaiters.
-    {
-        let pending = Arc::clone(&pending);
-        tokio::spawn(async move {
-            socket_reader_task(read_half, pending).await;
-        });
+    // The native host may not exist yet on a fresh startup; keep the bridge
+    // alive and defer the actual socket connection until the first tool call.
+    let connections: NativeConnectionStore = Arc::new(tokio::sync::Mutex::new(None));
+    if let Err(e) = ensure_native_host_connection(&connections).await {
+        info!(
+            error = %e,
+            "claude-in-chrome-mcp: native host not available yet; will retry on tool call"
+        );
     }
 
     // Main loop: read JSON-RPC requests from stdin, handle them, write
@@ -426,7 +491,7 @@ pub async fn run() -> Result<()> {
                     .get("arguments")
                     .cloned()
                     .unwrap_or_else(|| json!({}));
-                match forward_tool_call(Arc::clone(&writer), &pending, &tool_name, args).await {
+                match forward_tool_call(&connections, &tool_name, args).await {
                     Ok(result) => rpc_ok(
                         id,
                         json!({

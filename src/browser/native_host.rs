@@ -244,6 +244,19 @@ struct McpToolRequest {
     method: String,
     #[serde(default)]
     params: Option<Value>,
+    #[serde(default)]
+    request_id: Option<u64>,
+}
+
+fn chrome_tool_request_message(req: McpToolRequest) -> Value {
+    let mut payload = serde_json::Map::new();
+    payload.insert("type".to_string(), Value::String("tool_request".to_string()));
+    payload.insert("method".to_string(), Value::String(req.method));
+    payload.insert("params".to_string(), req.params.unwrap_or(Value::Null));
+    if let Some(request_id) = req.request_id {
+        payload.insert("request_id".to_string(), Value::from(request_id));
+    }
+    Value::Object(payload)
 }
 
 #[cfg(unix)]
@@ -353,11 +366,7 @@ where
         match serde_json::from_slice::<McpToolRequest>(&frame) {
             Ok(req) => {
                 let _ = chrome
-                    .send(&serde_json::json!({
-                        "type": "tool_request",
-                        "method": req.method,
-                        "params": req.params,
-                    }))
+                    .send(&chrome_tool_request_message(req))
                     .await;
             }
             Err(e) => {
@@ -499,5 +508,18 @@ mod tests {
         let v = make_chrome_message("mcp_connected", Value::Null);
         assert_eq!(v["type"], "mcp_connected");
         assert!(v.get("data").is_none());
+    }
+
+    #[test]
+    fn tool_request_message_preserves_request_id() {
+        let v = chrome_tool_request_message(McpToolRequest {
+            method: "navigate".to_string(),
+            params: Some(serde_json::json!({ "url": "https://example.com" })),
+            request_id: Some(42),
+        });
+        assert_eq!(v["type"], "tool_request");
+        assert_eq!(v["method"], "navigate");
+        assert_eq!(v["request_id"], 42);
+        assert_eq!(v["params"]["url"], "https://example.com");
     }
 }
