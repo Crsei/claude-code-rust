@@ -12,8 +12,11 @@
 //! so compound commands and process wrappers participate in matching.
 
 use crate::permissions::bash_matcher;
+use crate::permissions::path_validation;
 use crate::types::tool::{PermissionMode, ToolPermissionContext, ToolPermissionRulesBySource};
+use crate::utils::bash::{parse_command, split_compound_command};
 use serde_json::Value;
+use std::path::{Path, PathBuf};
 
 /// Result of a permission check against the rule engine.
 ///
@@ -45,9 +48,49 @@ const EDIT_TOOLS: &[&str] = &[
     "ApplyDiff",
 ];
 
+/// Read-like built-in tools that should honor `Read(...)` rules on a
+/// best-effort basis.
+const READ_LIKE_TOOLS: &[&str] = &["Read", "FileRead", "Glob", "Grep"];
+
+/// Common workspace-local filesystem commands auto-approved by
+/// `acceptEdits` when every referenced path stays inside the working
+/// directory or `additionalDirectories`.
+const ACCEPT_EDITS_BASH_COMMANDS: &[&str] = &["mkdir", "touch", "mv", "cp"];
+
 /// True when a tool counts as a file-system edit for accept-edits semantics.
 pub fn is_edit_tool(tool_name: &str) -> bool {
-    EDIT_TOOLS.iter().any(|t| *t == tool_name)
+    EDIT_TOOLS.contains(&tool_name)
+}
+
+fn is_read_like_tool(tool_name: &str) -> bool {
+    READ_LIKE_TOOLS.contains(&tool_name)
+}
+
+/// True when `acceptEdits` should auto-approve this tool call.
+pub fn is_accept_edits_tool_call(
+    tool_name: &str,
+    input: &Value,
+    ctx: &ToolPermissionContext,
+) -> bool {
+    if is_edit_tool(tool_name) {
+        return true;
+    }
+
+    if tool_name != "Bash" {
+        return false;
+    }
+
+    let command = input
+        .get("command")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
+    if command.is_empty() {
+        return false;
+    }
+
+    let cwd = crate::bootstrap::PROCESS_STATE.read().original_cwd.clone();
+    accept_edits_bash_command_is_safe(command, &cwd, ctx)
 }
 
 /// Check whether a tool invocation is permitted given the current context.
@@ -101,7 +144,7 @@ pub fn check_tool_permission(
             ),
         },
         PermissionMode::AcceptEdits => {
-            if is_edit_tool(tool_name) {
+            if is_accept_edits_tool_call(tool_name, input, ctx) {
                 PermissionCheckResult::Allow
             } else {
                 PermissionCheckResult::Ask {
@@ -153,15 +196,15 @@ pub(crate) fn rule_matches(tool_name: &str, input: &Value, rule: &str) -> bool {
     if let Some(open) = rule.find('(') {
         if rule.ends_with(')') {
             let rule_tool = &rule[..open];
-            if !tool_name_matches(tool_name, rule_tool) {
+            if !rule_tool_matches_invocation(rule_tool, tool_name) {
                 return false;
             }
             let pattern = &rule[open + 1..rule.len() - 1];
-            return specifier_matches(tool_name, input, pattern);
+            return specifier_matches(rule_tool, tool_name, input, pattern);
         }
     }
 
-    tool_name_matches(tool_name, rule)
+    rule_tool_matches_invocation(rule, tool_name)
 }
 
 /// Match a rule's tool-name component (no specifier) against a tool name.
@@ -172,8 +215,7 @@ fn tool_name_matches(tool_name: &str, rule: &str) -> bool {
     if rule.contains('*') {
         return glob_match(tool_name, rule);
     }
-    if tool_name.starts_with(rule) {
-        let rest = &tool_name[rule.len()..];
+    if let Some(rest) = tool_name.strip_prefix(rule) {
         if rest.is_empty() || rest.starts_with('_') || rest.starts_with('/') {
             return true;
         }
@@ -181,33 +223,52 @@ fn tool_name_matches(tool_name: &str, rule: &str) -> bool {
     false
 }
 
+fn rule_tool_matches_invocation(rule_tool: &str, tool_name: &str) -> bool {
+    if tool_name_matches(tool_name, rule_tool) {
+        return true;
+    }
+
+    match rule_tool {
+        "Read" => is_read_like_tool(tool_name),
+        "Edit" => is_edit_tool(tool_name),
+        _ => false,
+    }
+}
+
 /// Match a `ToolName(pattern)` specifier against the tool's input.
-fn specifier_matches(tool_name: &str, input: &Value, pattern: &str) -> bool {
-    match tool_name {
-        "Bash" => {
+fn specifier_matches(rule_tool: &str, tool_name: &str, input: &Value, pattern: &str) -> bool {
+    match rule_tool {
+        "Bash" if tool_name == "Bash" => {
             let cmd = input.get("command").and_then(|v| v.as_str()).unwrap_or("");
             bash_matcher::bash_pattern_matches(pattern, cmd)
         }
-        "Read" | "Write" | "Edit" | "MultiEdit" | "NotebookEdit" => {
-            let path = input
-                .get("file_path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            text_specifier_matches(pattern, path)
+        "Read" if is_read_like_tool(tool_name) => read_specifier_matches(tool_name, input, pattern),
+        "Edit" if is_edit_tool(tool_name) => file_path_specifier_matches(input, pattern),
+        "Write" if matches!(tool_name, "Write" | "FileWrite") => {
+            file_path_specifier_matches(input, pattern)
         }
-        "Glob" => {
+        "MultiEdit" if matches!(tool_name, "MultiEdit" | "FileMultiEdit") => {
+            file_path_specifier_matches(input, pattern)
+        }
+        "NotebookEdit" if tool_name == "NotebookEdit" => {
+            file_path_specifier_matches(input, pattern)
+        }
+        "Read" | "Write" | "Edit" | "MultiEdit" | "NotebookEdit" => {
+            file_path_specifier_matches(input, pattern)
+        }
+        "Glob" if tool_name == "Glob" => {
             let pat = input.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
             text_specifier_matches(pattern, pat)
         }
-        "WebFetch" | "WebSearch" => {
-            let url = input
-                .get("url")
-                .or_else(|| input.get("query"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+        "WebFetch" if tool_name == "WebFetch" => {
+            let url = input.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            url_specifier_matches(pattern, url)
+        }
+        "WebSearch" if tool_name == "WebSearch" => {
+            let url = input.get("query").and_then(|v| v.as_str()).unwrap_or("");
             text_specifier_matches(pattern, url)
         }
-        "Agent" => {
+        "Agent" if tool_name == "Agent" => {
             let agent_type = input
                 .get("subagent_type")
                 .or_else(|| input.get("agent_type"))
@@ -215,13 +276,77 @@ fn specifier_matches(tool_name: &str, input: &Value, pattern: &str) -> bool {
                 .unwrap_or("");
             text_specifier_matches(pattern, agent_type)
         }
-        _ if tool_name.starts_with("mcp__") => text_specifier_matches(pattern, tool_name),
+        _ if rule_tool.starts_with("mcp__") && tool_name.starts_with("mcp__") => {
+            text_specifier_matches(pattern, tool_name)
+        }
         _ => {
             // Generic specifier: stringify input and glob-match.
             let s = input.to_string();
             text_specifier_matches(pattern, &s)
         }
     }
+}
+
+fn file_path_specifier_matches(input: &Value, pattern: &str) -> bool {
+    let path = input
+        .get("file_path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    text_specifier_matches(pattern, path)
+}
+
+fn read_specifier_matches(tool_name: &str, input: &Value, pattern: &str) -> bool {
+    match tool_name {
+        "Read" | "FileRead" => file_path_specifier_matches(input, pattern),
+        "Glob" => {
+            let path = input
+                .get("path")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty());
+            let glob = input
+                .get("pattern")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty());
+
+            path.is_some_and(|p| text_specifier_matches(pattern, p))
+                || glob.is_some_and(|g| text_specifier_matches(pattern, g))
+                || match (path, glob) {
+                    (Some(base), Some(glob_pat)) => {
+                        let joined = Path::new(base).join(glob_pat);
+                        text_specifier_matches(pattern, &joined.to_string_lossy())
+                    }
+                    _ => false,
+                }
+        }
+        "Grep" => input
+            .get("path")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .is_some_and(|p| text_specifier_matches(pattern, p)),
+        _ => false,
+    }
+}
+
+fn url_specifier_matches(pattern: &str, value: &str) -> bool {
+    let pat = pattern.trim();
+    if let Some(domain) = pat.strip_prefix("domain:") {
+        return url_matches_domain(value, domain.trim());
+    }
+    text_specifier_matches(pat, value)
+}
+
+fn url_matches_domain(url: &str, domain: &str) -> bool {
+    if domain.is_empty() {
+        return false;
+    }
+
+    if let Ok(parsed) = url::Url::parse(url) {
+        if let Some(host) = parsed.host_str() {
+            return host == domain || host.ends_with(&format!(".{}", domain));
+        }
+    }
+
+    false
 }
 
 fn text_specifier_matches(pattern: &str, value: &str) -> bool {
@@ -281,6 +406,144 @@ fn glob_match(text: &str, pattern: &str) -> bool {
 /// Public wrapper around `glob_match` for use in other permission modules.
 pub fn glob_match_public(text: &str, pattern: &str) -> bool {
     glob_match(text, pattern)
+}
+
+fn accept_edits_bash_command_is_safe(
+    command: &str,
+    cwd: &Path,
+    ctx: &ToolPermissionContext,
+) -> bool {
+    let subcommands = split_compound_command(command);
+    if subcommands.is_empty() {
+        return accept_edits_subcommand_is_safe(command.trim(), cwd, ctx);
+    }
+
+    subcommands
+        .iter()
+        .all(|subcmd| accept_edits_subcommand_is_safe(subcmd.trim(), cwd, ctx))
+}
+
+fn accept_edits_subcommand_is_safe(
+    subcommand: &str,
+    cwd: &Path,
+    ctx: &ToolPermissionContext,
+) -> bool {
+    if subcommand.is_empty() {
+        return false;
+    }
+
+    let words = match parse_command(subcommand) {
+        Ok(words) => words,
+        Err(_) => return false,
+    };
+    let Some((command_index, command_name)) = first_bash_command(&words) else {
+        return false;
+    };
+    if !ACCEPT_EDITS_BASH_COMMANDS.contains(&command_name.as_str()) {
+        return false;
+    }
+
+    let path_args = extract_command_path_args(&words[command_index + 1..]);
+    if path_args.is_empty() {
+        return false;
+    }
+
+    path_args
+        .iter()
+        .all(|raw| accept_edits_path_is_safe(raw, cwd, ctx))
+}
+
+fn first_bash_command(words: &[String]) -> Option<(usize, String)> {
+    for (idx, word) in words.iter().enumerate() {
+        if word.starts_with('-') {
+            return None;
+        }
+
+        if let Some((name, _value)) = word.split_once('=') {
+            if !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                continue;
+            }
+        }
+
+        let normalized = Path::new(word)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(word)
+            .to_string();
+        return Some((idx, normalized));
+    }
+
+    None
+}
+
+fn extract_command_path_args(words: &[String]) -> Vec<&str> {
+    words
+        .iter()
+        .filter_map(|word| {
+            if word.starts_with('-') || word.is_empty() {
+                None
+            } else {
+                Some(word.as_str())
+            }
+        })
+        .collect()
+}
+
+fn accept_edits_path_is_safe(path_arg: &str, cwd: &Path, ctx: &ToolPermissionContext) -> bool {
+    if path_arg == "-" {
+        return false;
+    }
+
+    let candidate = if Path::new(path_arg).is_absolute() {
+        PathBuf::from(path_arg)
+    } else {
+        cwd.join(path_arg)
+    };
+
+    let Ok(validated) = path_validation::validate_file_path(&candidate.to_string_lossy()) else {
+        return false;
+    };
+
+    accept_edits_path_within_allowed_directories(&validated, cwd, ctx)
+}
+
+fn accept_edits_path_within_allowed_directories(
+    path: &Path,
+    cwd: &Path,
+    ctx: &ToolPermissionContext,
+) -> bool {
+    if accept_edits_path_is_in_directory(path, cwd) {
+        return true;
+    }
+
+    ctx.additional_working_directories
+        .values()
+        .any(|dir| accept_edits_path_is_in_directory(path, Path::new(&dir.path)))
+}
+
+fn accept_edits_path_is_in_directory(path: &Path, dir: &Path) -> bool {
+    let normalized_path = normalize_for_prefix_compare(path);
+    let normalized_dir = normalize_for_prefix_compare(dir);
+    normalized_path.starts_with(&normalized_dir)
+}
+
+fn normalize_for_prefix_compare(path: &Path) -> PathBuf {
+    if let Ok(canonical) = path.canonicalize() {
+        return canonical;
+    }
+
+    for ancestor in path.ancestors() {
+        if ancestor.exists() {
+            if let Ok(canonical_ancestor) = ancestor.canonicalize() {
+                if let Ok(stripped) = path.strip_prefix(ancestor) {
+                    return canonical_ancestor.join(stripped);
+                }
+            }
+            break;
+        }
+    }
+
+    path.to_path_buf()
 }
 
 // ---------------------------------------------------------------------------
@@ -403,10 +666,64 @@ mod tests {
             check_tool_permission("Write", &Value::Null, &ctx),
             PermissionCheckResult::Allow
         ));
-        // Non-edit tool still asks.
+        // Bash without an approved workspace command still asks.
         assert!(matches!(
             check_tool_permission("Bash", &Value::Null, &ctx),
             PermissionCheckResult::Ask { .. }
+        ));
+    }
+
+    #[test]
+    fn test_accept_edits_allows_workspace_filesystem_bash_commands() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = default_ctx();
+        assert!(accept_edits_bash_command_is_safe(
+            "mkdir src && touch src/lib.rs",
+            dir.path(),
+            &ctx
+        ));
+        assert!(accept_edits_bash_command_is_safe(
+            "cp src/lib.rs src/lib.backup",
+            dir.path(),
+            &ctx
+        ));
+    }
+
+    #[test]
+    fn test_accept_edits_rejects_outside_workspace_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = default_ctx();
+        assert!(!accept_edits_bash_command_is_safe(
+            "mkdir ../outside",
+            dir.path(),
+            &ctx
+        ));
+    }
+
+    #[test]
+    fn test_accept_edits_honors_additional_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let extra = tempfile::tempdir().unwrap();
+        let mut ctx = default_ctx();
+        ctx.additional_working_directories.insert(
+            "extra".into(),
+            crate::types::tool::AdditionalWorkingDirectory {
+                path: extra.path().to_string_lossy().to_string(),
+                read_only: false,
+            },
+        );
+        let command = format!(
+            "mkdir {}",
+            extra
+                .path()
+                .join("generated")
+                .to_string_lossy()
+                .replace('\\', "/")
+        );
+        assert!(accept_edits_bash_command_is_safe(
+            &command,
+            dir.path(),
+            &ctx
         ));
     }
 
@@ -451,12 +768,58 @@ mod tests {
     }
 
     #[test]
+    fn test_edit_specifier_matches_write_tool() {
+        let input = json!({"file_path": "/tmp/foo.log"});
+        assert!(rule_matches("Write", &input, "Edit(/tmp/*)"));
+    }
+
+    #[test]
+    fn test_read_specifier_matches_glob_tool() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().to_string_lossy().to_string();
+        let input = json!({"path": base, "pattern": "*.log"});
+        let rule = format!(
+            "Read({}{}*)",
+            dir.path().display(),
+            std::path::MAIN_SEPARATOR
+        );
+        assert!(rule_matches("Glob", &input, &rule));
+    }
+
+    #[test]
+    fn test_read_specifier_matches_grep_tool() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = json!({"path": dir.path().join("src").to_string_lossy().to_string()});
+        let rule = format!(
+            "Read({}{}*)",
+            dir.path().display(),
+            std::path::MAIN_SEPARATOR
+        );
+        assert!(rule_matches("Grep", &input, &rule));
+    }
+
+    #[test]
     fn test_webfetch_specifier_glob() {
         let input = json!({"url": "https://api.example.com/v1/foo"});
         assert!(rule_matches(
             "WebFetch",
             &input,
             "WebFetch(https://api.example.com/*)"
+        ));
+    }
+
+    #[test]
+    fn test_webfetch_domain_specifier_matches_subdomains() {
+        let input = json!({"url": "https://api.example.com/v1/foo"});
+        assert!(rule_matches(
+            "WebFetch",
+            &input,
+            "WebFetch(domain:example.com)"
+        ));
+        assert!(!rule_matches(
+            "WebFetch",
+            &input,
+            "WebFetch(domain:example.org)"
         ));
     }
 

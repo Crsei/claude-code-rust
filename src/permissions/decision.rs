@@ -449,7 +449,7 @@ pub fn has_permissions_to_use_tool_with_hook(
             }
         }
         PermissionMode::AcceptEdits => {
-            if rules::is_edit_tool(tool_name) {
+            if rules::is_accept_edits_tool_call(tool_name, effective_input, ctx) {
                 if let Some(tracker) = denial_tracker {
                     tracker.record_allow();
                 }
@@ -629,6 +629,21 @@ mod tests {
         assert_eq!(decision.behavior, PermissionBehavior::Allow);
         let decision = has_permissions_to_use_tool("Bash", &Value::Null, &ctx, None);
         assert_eq!(decision.behavior, PermissionBehavior::Ask);
+    }
+
+    #[test]
+    fn test_accept_edits_mode_allows_workspace_bash_commands() {
+        let dir = tempfile::tempdir().unwrap();
+        {
+            let mut ps = crate::bootstrap::PROCESS_STATE.write();
+            ps.original_cwd = dir.path().to_path_buf();
+        }
+
+        let mut ctx = default_ctx();
+        ctx.mode = PermissionMode::AcceptEdits;
+        let input = serde_json::json!({"command": "mkdir src && touch src/lib.rs"});
+        let decision = has_permissions_to_use_tool("Bash", &input, &ctx, None);
+        assert_eq!(decision.behavior, PermissionBehavior::Allow);
     }
 
     #[test]
