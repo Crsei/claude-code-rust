@@ -24,6 +24,9 @@ pub mod version;
 // Git & workflow
 pub mod branch;
 pub mod commit;
+pub mod recap;
+pub mod review;
+pub mod security_review;
 
 // Model control
 pub mod effort;
@@ -450,6 +453,24 @@ pub fn get_all_commands() -> Vec<Command> {
             description: "Manage Agent Teams (create, list, spawn, send, kill, leave, delete)"
                 .into(),
             handler: Box::new(team_cmd::TeamHandler),
+        },
+        Command {
+            name: "review".into(),
+            aliases: vec![],
+            description: "Review a pull request using a local gh pr workflow".into(),
+            handler: Box::new(review::ReviewHandler),
+        },
+        Command {
+            name: "security-review".into(),
+            aliases: vec!["secreview".into()],
+            description: "Run a focused security review of the current branch diff".into(),
+            handler: Box::new(security_review::SecurityReviewHandler),
+        },
+        Command {
+            name: "recap".into(),
+            aliases: vec![],
+            description: "Summarize the current session (short | long)".into(),
+            handler: Box::new(recap::RecapHandler),
         },
     ]
 }
