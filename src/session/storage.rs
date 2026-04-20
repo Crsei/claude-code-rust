@@ -31,9 +31,15 @@ pub struct SessionInfo {
     pub message_count: usize,
     /// Working directory at the time the session was created.
     pub cwd: String,
-    /// Derived title — first user message text, truncated. Empty if not computable.
+    /// Display title — prefers `custom_title` (set via `/rename`), falls back to
+    /// the derived title (first user message text, truncated). Empty when
+    /// neither is available.
     #[serde(default)]
     pub title: String,
+    /// Explicit user-assigned title, or `None` to fall back to the derived
+    /// title. Populated by `/rename` and persisted on the `SessionFile`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_title: Option<String>,
     /// Stable grouping key for the workspace. Sessions sharing the same git
     /// common-dir (or canonical path for non-git dirs) get the same key.
     #[serde(default)]
@@ -53,6 +59,10 @@ pub struct SessionFile {
     pub created_at: i64,
     pub last_modified: i64,
     pub cwd: String,
+    /// Custom user-assigned title (via `/rename`). `None` means use the
+    /// auto-derived title from the first user message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_title: Option<String>,
     pub messages: Vec<SerializableMessage>,
 }
 
@@ -231,7 +241,13 @@ fn build_session_info(file: SessionFile) -> SessionInfo {
     let ws_root = workspace_root(cwd_path);
     let ws_key = workspace_key(cwd_path);
     let ws_name = workspace_name(&ws_root);
-    let title = derive_title(&file.messages);
+    let derived = derive_title(&file.messages);
+    let title = file
+        .custom_title
+        .as_ref()
+        .filter(|t| !t.is_empty())
+        .cloned()
+        .unwrap_or(derived);
     SessionInfo {
         session_id: file.session_id,
         created_at: file.created_at,
@@ -239,6 +255,7 @@ fn build_session_info(file: SessionFile) -> SessionInfo {
         message_count: file.messages.len(),
         cwd: file.cwd,
         title,
+        custom_title: file.custom_title,
         workspace_key: ws_key,
         workspace_root: ws_root.to_string_lossy().to_string(),
         workspace_name: ws_name,
@@ -276,13 +293,14 @@ pub fn save_session(session_id: &str, messages: &[Message], cwd: &str) -> Result
 
     let now = Utc::now().timestamp();
 
-    // Try to preserve the original created_at if we are updating.
-    let created_at = if path.exists() {
-        load_session_file(session_id)
-            .map(|f| f.created_at)
-            .unwrap_or(now)
+    // Preserve the original created_at and custom_title when updating.
+    let (created_at, custom_title) = if path.exists() {
+        match load_session_file(session_id) {
+            Ok(f) => (f.created_at, f.custom_title),
+            Err(_) => (now, None),
+        }
     } else {
-        now
+        (now, None)
     };
 
     let serializable_messages = messages_to_serializable(messages);
@@ -295,6 +313,7 @@ pub fn save_session(session_id: &str, messages: &[Message], cwd: &str) -> Result
         created_at,
         last_modified: now,
         cwd: stable_cwd,
+        custom_title,
         messages: serializable_messages,
     };
 
@@ -311,6 +330,105 @@ pub fn save_session(session_id: &str, messages: &[Message], cwd: &str) -> Result
     );
 
     Ok(())
+}
+
+/// Maximum length (in chars) for a custom session title.
+pub const MAX_CUSTOM_TITLE_LEN: usize = 200;
+
+/// Set or clear the user-assigned title for a session.
+///
+/// `title = None` clears the custom title (falling back to the auto-derived
+/// one). A non-empty title is trimmed and truncated to [`MAX_CUSTOM_TITLE_LEN`]
+/// characters before persistence.
+///
+/// Updates `last_modified` to the current time. Returns the final stored title
+/// (after trimming/truncation) or `None` if cleared.
+pub fn set_session_title(session_id: &str, title: Option<&str>) -> Result<Option<String>> {
+    let mut file = load_session_file(session_id)?;
+
+    let new_title = title.and_then(|raw| {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let truncated: String = trimmed.chars().take(MAX_CUSTOM_TITLE_LEN).collect();
+        Some(truncated)
+    });
+
+    file.custom_title = new_title.clone();
+    file.last_modified = Utc::now().timestamp();
+
+    let path = get_session_file(session_id);
+    let json = serde_json::to_string_pretty(&file).context("Failed to serialize session")?;
+    std::fs::write(&path, json)
+        .with_context(|| format!("Failed to write session file {}", path.display()))?;
+
+    debug!(
+        session_id = session_id,
+        title = ?new_title,
+        "session title updated"
+    );
+
+    Ok(new_title)
+}
+
+/// Truncate the stored session to its first `keep` messages, producing a
+/// backup copy of the pre-truncation file for recovery.
+///
+/// Returns the new length after truncation. The backup is written next to the
+/// session file as `{session_id}.rewind-{epoch_seconds}.json`. When `keep`
+/// exceeds the current message count, this is a no-op and no backup is
+/// produced.
+///
+/// Use [`load_session`] afterwards to fetch the truncated messages.
+pub fn truncate_session(session_id: &str, keep: usize) -> Result<usize> {
+    let mut file = load_session_file(session_id)?;
+
+    if keep >= file.messages.len() {
+        return Ok(file.messages.len());
+    }
+
+    let backup_path = rewind_backup_path(session_id);
+    let original = serde_json::to_string_pretty(&file)
+        .context("Failed to serialize session for backup")?;
+    std::fs::write(&backup_path, original).with_context(|| {
+        format!(
+            "Failed to write rewind backup {}",
+            backup_path.display()
+        )
+    })?;
+
+    file.messages.truncate(keep);
+    file.last_modified = Utc::now().timestamp();
+    let new_len = file.messages.len();
+
+    let path = get_session_file(session_id);
+    let json = serde_json::to_string_pretty(&file).context("Failed to serialize session")?;
+    std::fs::write(&path, json)
+        .with_context(|| format!("Failed to write session file {}", path.display()))?;
+
+    debug!(
+        session_id = session_id,
+        kept = new_len,
+        backup = %backup_path.display(),
+        "session truncated"
+    );
+
+    Ok(new_len)
+}
+
+fn rewind_backup_path(session_id: &str) -> PathBuf {
+    let ts = Utc::now().timestamp();
+    get_session_dir().join(format!("{}.rewind-{}.json", session_id, ts))
+}
+
+/// Return the raw on-disk view of a single session file.
+///
+/// Useful for analytics and tooling that need the canonical view before
+/// rebuilding the derived [`SessionInfo`].
+pub fn load_session_info(session_id: &str) -> Result<SessionInfo> {
+    let file = load_session_file(session_id)?;
+    Ok(build_session_info(file))
 }
 
 /// Load a session from disk and return the messages.
@@ -592,6 +710,7 @@ mod tests {
                 message_count: messages,
                 cwd: normalize_display_path(cwd),
                 title: String::new(),
+                custom_title: None,
                 workspace_key: workspace_key(cwd),
                 workspace_root: workspace_root(cwd).to_string_lossy().to_string(),
                 workspace_name: workspace_name(&workspace_root(cwd)),
@@ -607,6 +726,184 @@ mod tests {
         let filtered = filter_sessions_for_workspace(sessions, &nested_dir);
         let ids: Vec<_> = filtered.into_iter().map(|s| s.session_id).collect();
         assert_eq!(ids, vec!["repo-root", "repo-nested"]);
+    }
+
+    // ------------------------------------------------------------------
+    // Round-trip tests for the new title / truncate / info APIs. These
+    // all pin CC_RUST_HOME to a tempdir and run serially so they cannot
+    // stomp on each other or on the user's real session directory.
+    // ------------------------------------------------------------------
+
+    struct HomeGuard {
+        previous: Option<String>,
+    }
+
+    impl HomeGuard {
+        fn set(path: &Path) -> Self {
+            let previous = std::env::var("CC_RUST_HOME").ok();
+            std::env::set_var("CC_RUST_HOME", path);
+            Self { previous }
+        }
+    }
+
+    impl Drop for HomeGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(v) => std::env::set_var("CC_RUST_HOME", v),
+                None => std::env::remove_var("CC_RUST_HOME"),
+            }
+        }
+    }
+
+    fn write_fixture_session(
+        id: &str,
+        messages: Vec<SerializableMessage>,
+        cwd: &str,
+    ) -> Result<()> {
+        let file = SessionFile {
+            session_id: id.into(),
+            created_at: 1_700_000_000,
+            last_modified: 1_700_000_000,
+            cwd: cwd.into(),
+            custom_title: None,
+            messages,
+        };
+        std::fs::create_dir_all(get_session_dir())?;
+        let json = serde_json::to_string_pretty(&file)?;
+        std::fs::write(get_session_file(id), json)?;
+        Ok(())
+    }
+
+    fn user_sm(text: &str, uuid: &str) -> SerializableMessage {
+        SerializableMessage {
+            msg_type: "user".into(),
+            uuid: uuid.into(),
+            timestamp: 0,
+            data: serde_json::json!({ "content": text, "is_meta": false }),
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_set_session_title_roundtrip() {
+        let temp = tempdir().unwrap();
+        let _g = HomeGuard::set(temp.path());
+
+        write_fixture_session(
+            "s1",
+            vec![user_sm("hello world", "00000000-0000-0000-0000-000000000001")],
+            "/proj",
+        )
+        .unwrap();
+
+        // Initially empty, derived title used.
+        let info = load_session_info("s1").unwrap();
+        assert_eq!(info.custom_title, None);
+        assert_eq!(info.title, "hello world");
+
+        // Set a custom title — preferred over derived.
+        let stored = set_session_title("s1", Some("  Renamed  ")).unwrap();
+        assert_eq!(stored.as_deref(), Some("Renamed"));
+        let info = load_session_info("s1").unwrap();
+        assert_eq!(info.custom_title.as_deref(), Some("Renamed"));
+        assert_eq!(info.title, "Renamed");
+
+        // save_session preserves custom_title even though the saver does not
+        // know about it.
+        save_session("s1", &[], "/proj").unwrap();
+        let info = load_session_info("s1").unwrap();
+        assert_eq!(info.custom_title.as_deref(), Some("Renamed"));
+
+        // Clear via explicit None.
+        let stored = set_session_title("s1", None).unwrap();
+        assert_eq!(stored, None);
+        let info = load_session_info("s1").unwrap();
+        assert_eq!(info.custom_title, None);
+
+        // Empty / whitespace also clears.
+        set_session_title("s1", Some("x")).unwrap();
+        let stored = set_session_title("s1", Some("   ")).unwrap();
+        assert_eq!(stored, None);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_set_session_title_truncates_long_input() {
+        let temp = tempdir().unwrap();
+        let _g = HomeGuard::set(temp.path());
+
+        write_fixture_session(
+            "s2",
+            vec![user_sm("x", "00000000-0000-0000-0000-000000000002")],
+            "/proj",
+        )
+        .unwrap();
+
+        let long = "a".repeat(MAX_CUSTOM_TITLE_LEN + 50);
+        let stored = set_session_title("s2", Some(&long)).unwrap().unwrap();
+        assert_eq!(stored.chars().count(), MAX_CUSTOM_TITLE_LEN);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_truncate_session_keeps_prefix_and_writes_backup() {
+        let temp = tempdir().unwrap();
+        let _g = HomeGuard::set(temp.path());
+
+        let messages = (0..5)
+            .map(|i| {
+                user_sm(
+                    &format!("msg {}", i),
+                    &format!("00000000-0000-0000-0000-00000000000{}", i),
+                )
+            })
+            .collect();
+        write_fixture_session("s3", messages, "/proj").unwrap();
+
+        let new_len = truncate_session("s3", 2).unwrap();
+        assert_eq!(new_len, 2);
+
+        let info = load_session_info("s3").unwrap();
+        assert_eq!(info.message_count, 2);
+
+        // Backup file must exist alongside the session.
+        let backup_count = std::fs::read_dir(get_session_dir())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("s3.rewind-")
+            })
+            .count();
+        assert_eq!(backup_count, 1);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_truncate_session_noop_when_keep_exceeds_len() {
+        let temp = tempdir().unwrap();
+        let _g = HomeGuard::set(temp.path());
+
+        write_fixture_session(
+            "s4",
+            vec![user_sm("only", "00000000-0000-0000-0000-000000000010")],
+            "/proj",
+        )
+        .unwrap();
+
+        let new_len = truncate_session("s4", 99).unwrap();
+        assert_eq!(new_len, 1);
+        let backups: Vec<_> = std::fs::read_dir(get_session_dir())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("s4.rewind-")
+            })
+            .collect();
+        assert!(backups.is_empty(), "expected no backup when no truncation");
     }
 
     #[cfg(windows)]
