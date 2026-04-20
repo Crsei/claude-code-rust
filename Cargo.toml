@@ -1,43 +1,17 @@
-[package]
-name = "claude-code-rs"
-version = "0.1.0"
-edition = "2021"
-description = "Claude Code CLI - Rust implementation (lite)"
+[workspace]
+resolver = "2"
+members = ["crates/*"]
 
 # ============================================================
-# Features
-# ============================================================
-#
-# default — minimal build: no telemetry, no embedded web assets,
-#           no image/syntect/tree-sitter pulls. Keeps `cargo build`
-#           fast and avoids heavy native deps (onig, tonic/prost).
-#
-# Opt-in:
-#   telemetry   — Langfuse + OpenTelemetry export (pulls tonic/prost).
-#   web-ui      — Embed the React SPA (rust-embed) into the binary.
-#   image       — Image decoding (png/jpeg only).
-#   syntect     — Syntax highlighting via fancy-regex (no onig C dep).
-#   tree-sitter — AST parsing.
-
-[features]
-default = []
-telemetry = [
-    "dep:tracing-opentelemetry",
-    "dep:opentelemetry",
-    "dep:opentelemetry_sdk",
-    "dep:opentelemetry-langfuse",
-]
-web-ui = ["dep:rust-embed"]
-image = ["dep:image"]
-syntect = ["dep:syntect"]
-tree-sitter = ["dep:tree-sitter"]
-
-# ============================================================
-# 核心类型 + 状态机
+# Shared dependency versions.
+# ------------------------------------------------------------
+# All member crates declare deps via `dep.workspace = true`, so
+# versions live in one place. Features remain crate-local: a
+# crate adds `features = [...]` on top of the workspace entry.
 # ============================================================
 
-[dependencies]
-# 异步运行时 — 按需选择 tokio 子模块，避免 `full` 带来的编译开销
+[workspace.dependencies]
+# 异步运行时
 tokio = { version = "1", default-features = false, features = [
     "rt-multi-thread",
     "macros",
@@ -80,19 +54,13 @@ lru = "0.12"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
-# Telemetry stack (Langfuse + OpenTelemetry) — optional, enable via `telemetry` feature.
-# Pulls in tonic/prost et al., which is why it is off by default.
-tracing-opentelemetry = { version = "0.32.1", optional = true }
-opentelemetry = { version = "0.31", features = ["trace"], optional = true }
-opentelemetry_sdk = { version = "0.31.0", features = ["trace", "rt-tokio", "experimental_trace_batch_span_processor_with_async_runtime"], optional = true }
-opentelemetry-langfuse = { version = "0.6.1", optional = true }
+tracing-opentelemetry = "0.32.1"
+opentelemetry = { version = "0.31", features = ["trace"] }
+opentelemetry_sdk = { version = "0.31.0", features = ["trace", "rt-tokio", "experimental_trace_batch_span_processor_with_async_runtime"] }
+opentelemetry-langfuse = "0.6.1"
 
 # LSP 协议类型
 lsp-types = "0.97"
-
-# ============================================================
-# 本地工具系统
-# ============================================================
 
 # 文件搜索 & 路径
 glob = "0.3"
@@ -100,7 +68,7 @@ ignore = "0.4"
 walkdir = "2"
 dirs = "6"
 
-# 正则表达式
+# 正则
 regex = "1"
 
 # Git 操作
@@ -112,15 +80,12 @@ similar = "2"
 # 进程管理
 shell-words = "1"
 
-# ============================================================
 # 终端 UI
-# ============================================================
-
 ratatui = "0.29"
 crossterm = "0.28"
 
-# 语法高亮 — optional，启用 default-fancy 用 fancy-regex 代替 onig (避免 C 编译)
-syntect = { version = "5", default-features = false, features = ["default-fancy"], optional = true }
+# 语法高亮
+syntect = { version = "5", default-features = false, features = ["default-fancy"] }
 
 # 文本处理
 textwrap = "0.16"
@@ -130,7 +95,7 @@ strip-ansi-escapes = "0.2"
 # Markdown 渲染
 pulldown-cmark = "0.12"
 
-# 哈希 (审计记录完整性)
+# 哈希
 sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
@@ -142,11 +107,7 @@ url = "2"
 urlencoding = "2"
 semver = "1"
 
-# ============================================================
-# 网络 / API / 认证
-# ============================================================
-
-# 网络 — native-tls works with Clash TUN/fake-ip environments
+# 网络
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "native-tls"] }
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 eventsource-stream = "0.2"
@@ -155,47 +116,39 @@ eventsource-stream = "0.2"
 keyring = "3"
 dotenvy = "0.15.7"
 
-# 同步原语 (无 lock poisoning)
+# 同步原语
 parking_lot = "0.12"
 
-# Daemon HTTP server (KAIROS) + Web UI server
+# Daemon HTTP server
 axum = { version = "0.8", features = ["ws"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 hmac = "0.12"
 notify-rust = "4"
 
-# Web UI: embed React SPA dist/ at compile time — optional, enable via `web-ui` feature.
-rust-embed = { version = "8", optional = true }
+# Web UI
+rust-embed = "8"
 mime_guess = "2"
 
-# AST / 图像 — optional，默认不编译 (目前无使用点)
-tree-sitter = { version = "0.24", optional = true }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"], optional = true }
+# AST / 图像
+tree-sitter = "0.24"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
-# ============================================================
-# E2E 测试
-# ============================================================
+# POSIX syscalls
+libc = "0.2"
 
-[dev-dependencies]
+# Dev / test
 assert_cmd = "2"
 predicates = "3"
 assert_fs = "1"
 tempfile = "3"
-sha2 = "0.10"
-hex = "0.4"
-serde_json = "1"
 portable-pty = "0.9"
 vt100 = "0.15"
 which = "7"
 serial_test = "3"
 
-# POSIX syscalls (Unix socket permissions, PID liveness for Chrome native host #5)
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
 # ============================================================
-# 构建配置 - 压缩 Windows 下 pdb 体积
+# Profiles (apply to the whole workspace)
 # ============================================================
 
 [profile.dev]
