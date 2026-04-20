@@ -57,6 +57,12 @@ pub mod sandbox_cmd;
 // Keybindings
 pub mod keybindings_cmd;
 
+// Read-only browsers (issues #34, #39, #40, #54)
+pub mod agents_cmd;
+pub mod doctor;
+pub mod hooks_cmd;
+pub mod tasks_cmd;
+
 // Scriptable status line (issue #11)
 pub mod statusline_cmd;
 
@@ -493,6 +499,30 @@ pub fn get_all_commands() -> Vec<Command> {
             description: "Summarize the current session (short | long)".into(),
             handler: Box::new(recap::RecapHandler),
         },
+        Command {
+            name: "hooks".into(),
+            aliases: vec![],
+            description: "Read-only merged hook tree (managed + user + project + local)".into(),
+            handler: Box::new(hooks_cmd::HooksHandler),
+        },
+        Command {
+            name: "agents".into(),
+            aliases: vec![],
+            description: "Browse agent definitions with source + override visibility".into(),
+            handler: Box::new(agents_cmd::AgentsHandler),
+        },
+        Command {
+            name: "doctor".into(),
+            aliases: vec!["diagnostics".into()],
+            description: "Aggregated diagnostics (install, auth, settings, MCP, terminal)".into(),
+            handler: Box::new(doctor::DoctorHandler),
+        },
+        Command {
+            name: "tasks".into(),
+            aliases: vec![],
+            description: "List and drill into background tasks (tool + team)".into(),
+            handler: Box::new(tasks_cmd::TasksHandler),
+        },
     ]
 }
 
@@ -544,6 +574,14 @@ mod tests {
         assert!(names.contains(&"skills"));
         assert!(names.contains(&"mcp"));
         assert!(names.contains(&"plugin"));
+        assert!(names.contains(&"review"));
+        assert!(names.contains(&"security-review"));
+        assert!(names.contains(&"recap"));
+        // Read-only browser family (issues #34, #39, #40, #54).
+        assert!(names.contains(&"hooks"));
+        assert!(names.contains(&"agents"));
+        assert!(names.contains(&"doctor"));
+        assert!(names.contains(&"tasks"));
     }
 
     #[test]
