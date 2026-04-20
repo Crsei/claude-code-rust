@@ -53,6 +53,7 @@ pub mod lsp;
 
 // Inter-agent messaging (Teams).
 pub mod send_message;
+pub mod team_spawn;
 
 // Meta / UX tools.
 pub mod config_tool;

@@ -12,6 +12,7 @@ use super::config_tool::ConfigTool;
 use super::lsp::LspTool;
 use super::plan_mode::{EnterPlanModeTool, ExitPlanModeTool};
 use super::send_message::SendMessageTool;
+use super::team_spawn::TeamSpawnTool;
 use super::send_user_message::SendUserMessageTool;
 use super::skill::SkillTool;
 use super::structured_output::StructuredOutputTool;
@@ -66,6 +67,7 @@ fn base_tools() -> Tools {
         Arc::new(TaskOutputTool) as _,
         Arc::new(LspTool) as _,
         Arc::new(SendMessageTool) as _,
+        Arc::new(TeamSpawnTool) as _,
         Arc::new(BriefTool) as _,
         Arc::new(SystemStatusTool) as _,
     ]);

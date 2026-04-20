@@ -30,16 +30,21 @@
 
 ### 1.3 Agent Teams / Coordinator Mode
 
-整个模块 feature-gated (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`)，所有文件 `#![allow(unused)]`。
+**收口状态**：in-process 闭环 + 用户面全量已落地。env var 不再是唯一开关，`/team create` 或 `TeamSpawn` 工具会在会话内即时解锁 team 功能。
 
 | 子模块 | 文件 | 状态 |
 |--------|------|------|
-| Runner 协议处理 | `src/teams/runner.rs` | **Stub** — plan approval / permission 仅 log，无真实阻塞 |
-| 终端后端 | `src/teams/backend.rs` | **仅 Trait** — Tmux / iTerm2 未实现，仅 in-process 可用 |
-| 前端 Dashboard | — | **不存在** — 无 Team 管理 UI 组件 |
-| 斜杠命令 | — | **不存在** — 无 `/team` 类命令 |
+| in-process runner | `src/teams/runner.rs` | ✅ — 驱动子 QueryEngine，处理 mailbox 协议消息 |
+| `SendMessage` 工具 | `src/tools/send_message.rs` | ✅ — 对话内消息路由；`is_enabled` 总返回 true，call 时检查 team_context |
+| `TeamSpawn` 工具 | `src/tools/team_spawn.rs` | ✅ — 对话内拉起 teammate，缺 team 时自动建 session 团队 |
+| `/team` 斜杠命令 | `src/commands/team_cmd.rs` | ✅ — `create / list / status / spawn / send / kill / leave / delete` |
+| Team Dashboard | `ui/src/components/TeamPanel.tsx` | ✅ — 订阅 `BackendMessage::TeamEvent`，展示成员/未读/最近消息 |
+| IPC QueryTeamStatus | `src/ipc/agent_handlers.rs` | ✅ — `build_team_status_events` 读盘后发 `StatusSnapshot` |
+| 终端后端 trait | `src/teams/backend.rs` | **保留类型、不实现** — `PaneBackend` trait 作为完整版接口占位；Tmux / iTerm2 不进入 rust-lite |
 
-已完成 (8/11): types, protocol, mailbox, context, identity, in_process, helpers, constants
+- 激活入口：`crate::teams::is_agent_teams_active(&app_state)` — env var 或 `team_context` 任一满足即启用
+- ingress 同步：`src/ipc/ingress.rs` 斜杠命令执行后把 `app_state.team_context` 同步回 engine
+- 已完成 (10/11 含 runner/backend + SendMessage + TeamSpawn + /team 命令 + TeamPanel)
 
 ### 1.4 工具
 
@@ -53,22 +58,22 @@
 
 | 阶段 | 文件 | 状态 |
 |------|------|------|
-| Phase 2 (Hook 拦截) | `src/permissions/decision.rs:269` | **Stub** — 跳过 hook 层直接 fall through |
+| Phase 2 (Hook 拦截) | `src/permissions/decision.rs:259-362` + `src/tools/execution/pipeline.rs:124-211` | ✅ — 预执行 hook 结果经 `HookPermissionDecision` 折入中心决策，deny/ask/allow 按 spec 顺序生效 |
 
-已完成: Phase 1a/1b 规则匹配, Phase 3 模式检查
+已完成: Phase 1a/1b 规则匹配, Phase 2 hook 拦截, Phase 3 模式检查。
 
 ### 1.6 IPC
 
 | 功能 | 文件 | 状态 |
 |------|------|------|
-| clear_messages | `src/ipc/headless.rs:234` | **TODO** — engine 无此方法，仅通知前端 |
+| clear_messages | `src/engine/lifecycle/mod.rs:245` + `src/ipc/ingress.rs:332-339` | ✅ — `/clear` 命令调用 `engine.clear_messages()` 真清空后端历史，再广播 `conversation_replaced` 给前端 |
 
 ### 1.7 前端 (终端 UI)
 
 | 功能 | 文件 | 状态 |
 |------|------|------|
-| Vim 状态机 | `ui/src/vim/state-machine.ts` | **部分** — 模式切换可用，按键处理器不完整 |
-| 终端 resize 回流 | — | **Open** — KNOWN_ISSUES #1 |
+| Vim 状态机 | `ui/src/vim/state-machine.ts` | ✅ — normal/insert/visual 三模式；导航 (h/l/0/$/^/w/b/e)、operator (d/y/c)、单键 (x/X/p/u/D/C) 与 visual 选区；不计划扩展到完整 Vim 语义 |
+| 终端 resize 回流 | `src/ui/tui.rs` + `src/ui/virtual_scroll.rs` | ✅ (Rust TUI 端 2026-04-19) / **Open** (TS/OpenTUI 端) — 见 KNOWN_ISSUES #1 |
 | 窄终端布局降级 | — | **Open** — KNOWN_ISSUES #4, #5 |
 
 14 个核心组件均已完成。
@@ -178,13 +183,13 @@
 ## 5. 完成度总览
 
 ```
-  API 提供商    ████████████░░░░  4/6 (67%)
+  API 提供商    ████████████░░░░  4/6 (67%) — Bedrock/Vertex 单独立项
   认证          ████████████████  4/4 (100%) ✅
-  Teams 系统    ████████████░░░░  8/11 模块 (73%) — feature-gated
+  Teams 系统    ████████████████  in-process + /team + TeamSpawn + Dashboard ✅
   工具          ████████████████  30/30 (100%) ✅
-  权限          ████████████░░░░  2/3 phases (67%)
+  权限          ████████████████  3/3 phases ✅ (Phase 2 hook 已接入中心决策)
   斜杠命令      ████████████████  75/75 (100%)
-  IPC           ████████████████  ~98%
+  IPC           ████████████████  clear_messages 已落地
   前端组件      ████████████████  14/14 (100%)
-  Vim 模式      ████████░░░░░░░░  ~50%
+  Vim 模式      ████████████████  ~90% (normal/insert/visual + motions/ops)
 ```
