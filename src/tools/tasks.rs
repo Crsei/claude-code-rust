@@ -153,6 +153,15 @@ fn store() -> &'static TaskStore {
     &GLOBAL_STORE
 }
 
+/// Read-only handle to the global task store, exposed for command surfaces
+/// (`/tasks`) that want to enumerate tool-driven tasks without running a
+/// tool call. The store is intentionally cheap to clone (all interior state
+/// is behind `Arc`), so returning a fresh clone keeps the caller from
+/// holding a long-lived reference.
+pub fn global_store() -> TaskStore {
+    GLOBAL_STORE.clone()
+}
+
 // =============================================================================
 // TaskCreateTool
 // =============================================================================

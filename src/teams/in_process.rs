@@ -109,12 +109,54 @@ impl InProcessBackend {
         registry.keys().cloned().collect()
     }
 
+    /// Read-only snapshot of every task in the registry.
+    ///
+    /// `InProcessTeammateTaskState` holds non-`Clone` data (an abort handle
+    /// among other things), so we project the registry into a simple
+    /// struct that callers can use for display or inspection without having
+    /// to hold the registry lock.
+    pub fn task_snapshots() -> Vec<TeammateTaskSnapshot> {
+        let registry = TASK_REGISTRY.lock();
+        registry
+            .values()
+            .map(|state| TeammateTaskSnapshot {
+                id: state.id.clone(),
+                agent_id: state.identity.agent_id.clone(),
+                agent_name: state.identity.agent_name.clone(),
+                team_name: state.identity.team_name.clone(),
+                status: state.status,
+                is_idle: state.is_idle,
+                has_error: state.error.is_some(),
+                error_message: state.error.clone(),
+                prompt: state.prompt.clone(),
+                model: state.model.clone(),
+                awaiting_plan_approval: state.awaiting_plan_approval,
+            })
+            .collect()
+    }
+
     /// Clear all tasks (for testing).
     #[cfg(test)]
     pub fn clear_registry() {
         let mut registry = TASK_REGISTRY.lock();
         registry.clear();
     }
+}
+
+/// Immutable projection of an in-process teammate task, safe to move around.
+#[derive(Debug, Clone)]
+pub struct TeammateTaskSnapshot {
+    pub id: String,
+    pub agent_id: String,
+    pub agent_name: String,
+    pub team_name: String,
+    pub status: TaskStatus,
+    pub is_idle: bool,
+    pub has_error: bool,
+    pub error_message: Option<String>,
+    pub prompt: String,
+    pub model: Option<String>,
+    pub awaiting_plan_approval: bool,
 }
 
 #[async_trait]
