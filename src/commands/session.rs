@@ -55,11 +55,11 @@ fn format_session_table(
     lines.push(String::new());
     lines.push(format!(
         "  {:<38} {:>6}  {:<20}  {}",
-        "Session ID", "Msgs", "Last Modified", "Directory"
+        "Session ID", "Msgs", "Last Modified", "Title / Directory"
     ));
     lines.push(format!(
         "  {:<38} {:>6}  {:<20}  {}",
-        "----------", "----", "-------------", "---------"
+        "----------", "----", "-------------", "-----------------"
     ));
 
     for session in visible {
@@ -67,15 +67,24 @@ fn format_session_table(
             .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
             .unwrap_or_else(|| "unknown".into());
 
-        let dir = if session.cwd.len() > 40 {
-            format!("...{}", &session.cwd[session.cwd.len() - 37..])
+        let label = if !session.title.is_empty() {
+            let prefix = if session.custom_title.is_some() { "★ " } else { "" };
+            let max = 60;
+            let truncated: String = session.title.chars().take(max).collect();
+            if session.title.chars().count() > max {
+                format!("{}{}…", prefix, truncated)
+            } else {
+                format!("{}{}", prefix, truncated)
+            }
+        } else if session.cwd.len() > 60 {
+            format!("...{}", &session.cwd[session.cwd.len() - 57..])
         } else {
             session.cwd.clone()
         };
 
         lines.push(format!(
             "  {:<38} {:>6}  {:<20}  {}",
-            session.session_id, session.message_count, ts, dir
+            session.session_id, session.message_count, ts, label
         ));
     }
 
@@ -95,6 +104,17 @@ fn handle_show(ctx: &CommandContext) -> Result<CommandResult> {
     lines.push("Current session:".into());
     lines.push(String::new());
     lines.push(format!("  Session ID:        {}", ctx.session_id));
+    // Show the persisted title if we already have a session file — skip the
+    // disk read otherwise so freshly-started sessions don't pay for it.
+    if storage::get_session_file(ctx.session_id.as_str()).exists() {
+        if let Ok(info) = storage::load_session_info(ctx.session_id.as_str()) {
+            if let Some(custom) = info.custom_title.as_deref() {
+                lines.push(format!("  Title (custom):    {}", custom));
+            } else if !info.title.is_empty() {
+                lines.push(format!("  Title (auto):      {}", info.title));
+            }
+        }
+    }
     lines.push(format!("  Working directory: {}", cwd));
     lines.push(format!("  Messages:          {}", msg_count));
     lines.push(format!(
