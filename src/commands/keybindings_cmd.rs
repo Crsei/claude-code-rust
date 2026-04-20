@@ -1,18 +1,22 @@
-//! `/keybindings` slash command — open, create, list, or reload the user
+//! `/keybindings` slash command — create, open, list, or reload the user
 //! keybindings file.
 //!
+//! The default action mirrors the Bun reference: ensure the file exists
+//! (creating it from an empty template if missing) and open it in the user's
+//! `$VISUAL`/`$EDITOR`. Everything else is a named subcommand so callers who
+//! want the old status readout keep their flow.
+//!
 //! Usage:
-//!   /keybindings                 show status + file path
-//!   /keybindings open            ensure file exists and open in `$EDITOR`
+//!   /keybindings                 ensure file exists and open in editor
+//!   /keybindings status          show file path + effective binding count
+//!   /keybindings open            alias for the default action
 //!   /keybindings list [ctx]      list effective bindings (optionally for a
 //!                                context)
 //!   /keybindings reload          force a reload now
 //!   /keybindings path            print the config file path
 //!
-//! `~/.cc-rust/keybindings.json` is created from an empty template when
-//! missing.
-
-use std::io::Write;
+//! `~/.cc-rust/keybindings.json` is created from [`EMPTY_TEMPLATE`] when
+//! missing. The existing file is never overwritten.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -22,6 +26,7 @@ use crate::config::paths;
 use crate::keybindings::config::EMPTY_TEMPLATE;
 use crate::keybindings::context::Context as KbContext;
 use crate::keybindings::registry::KeybindingRegistry;
+use crate::ui::browser::{ensure_and_open, format_open_outcome};
 
 pub struct KeybindingsHandler;
 
@@ -37,12 +42,15 @@ impl CommandHandler for KeybindingsHandler {
         let reg = ctx.app_state.keybindings.clone();
 
         match sub.as_str() {
-            "" | "status" | "show" => Ok(CommandResult::Output(render_status(&reg))),
+            // Default: editor-first flow. Matches the Bun reference where
+            // `/keybindings` creates the template (if missing) and hands the
+            // user straight to their editor rather than a status readout.
+            "" | "open" | "edit" => Ok(CommandResult::Output(open_for_edit(&reg))),
+            "status" | "show" => Ok(CommandResult::Output(render_status(&reg))),
             "path" => Ok(CommandResult::Output(format!(
                 "{}",
                 paths::keybindings_path().display()
             ))),
-            "open" | "edit" => Ok(CommandResult::Output(open_for_edit(&reg))),
             "reload" | "refresh" => Ok(CommandResult::Output(reload_now(&reg))),
             "list" => {
                 let filter_ctx = parts.next().and_then(|s| s.parse::<KbContext>().ok());
@@ -50,8 +58,8 @@ impl CommandHandler for KeybindingsHandler {
             }
             other => Ok(CommandResult::Output(format!(
                 "Unknown /keybindings subcommand '{}'.\n\nUsage:\n  \
-                 /keybindings                 — show status\n  \
-                 /keybindings open            — create (if missing) and open in $EDITOR\n  \
+                 /keybindings                 — create (if missing) and open in $EDITOR\n  \
+                 /keybindings status          — show status and effective binding count\n  \
                  /keybindings list [context]  — list effective bindings\n  \
                  /keybindings reload          — force a reload\n  \
                  /keybindings path            — print config file path",
@@ -84,7 +92,7 @@ fn render_status(reg: &KeybindingRegistry) -> String {
         }
     }
     out.push_str(
-        "\nTip: run `/keybindings open` to create and edit the file, or \
+        "\nTip: run `/keybindings` to create and edit the file, or \
          `/keybindings list` to see every effective binding.\n",
     );
     out
@@ -92,68 +100,8 @@ fn render_status(reg: &KeybindingRegistry) -> String {
 
 fn open_for_edit(reg: &KeybindingRegistry) -> String {
     let path = reg.user_path().unwrap_or_else(paths::keybindings_path);
-    if let Some(parent) = path.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            return format!(
-                "Error: could not create parent directory {}: {}",
-                parent.display(),
-                e
-            );
-        }
-    }
-    let mut created = false;
-    if !path.exists() {
-        match std::fs::File::create(&path) {
-            Ok(mut f) => {
-                if let Err(e) = f.write_all(EMPTY_TEMPLATE.as_bytes()) {
-                    return format!("Error: could not write template: {}", e);
-                }
-                created = true;
-            }
-            Err(e) => return format!("Error: could not create {}: {}", path.display(), e),
-        }
-    }
-
-    let editor = std::env::var("VISUAL")
-        .or_else(|_| std::env::var("EDITOR"))
-        .ok();
-
-    match editor {
-        Some(ed) if !ed.trim().is_empty() => {
-            // Fire-and-forget — we don't block the REPL.
-            let status = std::process::Command::new(&ed).arg(&path).status();
-            match status {
-                Ok(s) if s.success() => format!(
-                    "{}Opened {} in {}.",
-                    if created { "Created and " } else { "" },
-                    path.display(),
-                    ed
-                ),
-                Ok(s) => format!(
-                    "{} exited with status {}. File: {}",
-                    ed,
-                    s.code().unwrap_or(-1),
-                    path.display()
-                ),
-                Err(e) => format!(
-                    "Error: could not launch '{}' — {}. File: {}",
-                    ed,
-                    e,
-                    path.display()
-                ),
-            }
-        }
-        _ => format!(
-            "{}File: {}\n\
-             (Set $VISUAL or $EDITOR to auto-open in an editor.)",
-            if created {
-                "Created keybindings template.\n"
-            } else {
-                ""
-            },
-            path.display()
-        ),
-    }
+    let outcome = ensure_and_open(&path, EMPTY_TEMPLATE);
+    format_open_outcome(&outcome, &path)
 }
 
 fn reload_now(reg: &KeybindingRegistry) -> String {
@@ -223,14 +171,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn status_renders_path_line() {
+    async fn status_subcommand_renders_path_line() {
+        let handler = KeybindingsHandler;
+        let mut ctx = make_ctx();
+        let result = handler.execute("status", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(s) => {
+                assert!(s.contains("Config path:"));
+                assert!(s.contains("Effective bindings:"));
+            }
+            _ => panic!("expected Output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn default_action_is_open_for_edit() {
+        // Default `/keybindings` should either open the file in an editor or,
+        // when no editor is set, return a path-pointing message — never the
+        // old status readout.
         let handler = KeybindingsHandler;
         let mut ctx = make_ctx();
         let result = handler.execute("", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(s) => {
-                assert!(s.contains("Config path:"));
-                assert!(s.contains("Effective bindings:"));
+                // `render_status` output contains the literal string
+                // "Effective bindings:" which the editor-first flow never
+                // emits. This is the discriminator we care about.
+                assert!(
+                    !s.contains("Effective bindings:"),
+                    "default should not show status readout, got: {}",
+                    s
+                );
+                assert!(
+                    s.contains("keybindings.json")
+                        || s.contains("Opened")
+                        || s.contains("Created"),
+                    "expected editor-first output, got: {}",
+                    s
+                );
             }
             _ => panic!("expected Output"),
         }
