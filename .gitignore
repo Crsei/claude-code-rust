@@ -53,6 +53,14 @@ ui/ink-terminal/bun.lockb
 ui/ink-terminal/bun.lock
 ui/ink-terminal/package-lock.json
 
+# web-ui frontend (React SPA embedded via rust-embed)
+web-ui/node_modules/
+web-ui/dist/
+web-ui/bun.lockb
+web-ui/bun.lock
+web-ui/package-lock.json
+web-ui/tsconfig.tsbuildinfo
+
 ink-ui/
 
 # Global data dir junction
