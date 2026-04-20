@@ -1,5 +1,8 @@
+#[cfg(feature = "telemetry")]
 use serde::Serialize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value};
+#[cfg(any(test, feature = "telemetry"))]
+use serde_json::json;
 
 const MAX_TEXT_LEN: usize = 40_000;
 const MAX_TOOL_OUTPUT_LEN: usize = 500;
@@ -18,6 +21,9 @@ const SENSITIVE_KEYWORDS: &[&str] = &[
     "authorization",
 ];
 
+/// Only consumed by the OpenTelemetry-backed tracing path; the compiler
+/// would otherwise flag it as dead code for default builds.
+#[cfg(feature = "telemetry")]
 pub fn sanitize_global<T: Serialize>(value: &T) -> Value {
     match serde_json::to_value(value) {
         Ok(value) => sanitize_global_value(&value),
@@ -45,6 +51,7 @@ pub fn sanitize_global_string(value: &str) -> String {
     truncate_string(&replace_home_dir(value), MAX_TEXT_LEN)
 }
 
+#[cfg(feature = "telemetry")]
 pub fn sanitize_tool_input(tool_name: &str, input: &Value) -> Value {
     let _ = tool_name;
     sanitize_global_value(input)
@@ -81,6 +88,7 @@ pub fn serialize_sanitized_value(value: &Value) -> String {
     }
 }
 
+#[cfg(feature = "telemetry")]
 pub fn metadata_json(entries: Vec<(&str, Value)>) -> String {
     let mut map = Map::new();
     for (key, value) in entries {
