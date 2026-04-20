@@ -16,7 +16,7 @@ use serde_json::Value;
 // ---------------------------------------------------------------------------
 
 /// Current session format version.
-pub const CURRENT_VERSION: u32 = 3;
+pub const CURRENT_VERSION: u32 = 4;
 
 /// Minimum version we can migrate from.
 pub const MIN_SUPPORTED_VERSION: u32 = 1;
@@ -43,6 +43,11 @@ fn all_migrations() -> Vec<Migration> {
             from_version: 2,
             description: "Normalize message content blocks",
             migrate: migrate_v2_to_v3,
+        },
+        Migration {
+            from_version: 3,
+            description: "Add optional custom_title field",
+            migrate: migrate_v3_to_v4,
         },
     ]
 }
@@ -197,6 +202,21 @@ fn normalize_message_content(msg: &mut Value) {
     }
 }
 
+/// V3 → V4: Introduce optional `custom_title` field for user-renamed sessions.
+///
+/// Sessions written before `/rename` existed did not carry the field; since
+/// serde marks it `#[serde(default)]` on load, the on-disk file is already
+/// forward-compatible. This migration simply stamps the format version so any
+/// consumer inspecting the `version` field knows the file has been surveyed.
+fn migrate_v3_to_v4(mut data: Value) -> Result<Value> {
+    if let Some(obj) = data.as_object_mut() {
+        obj.entry("custom_title".to_string())
+            .or_insert(Value::Null);
+        obj.insert("version".to_string(), Value::from(4u32));
+    }
+    Ok(data)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -277,8 +297,33 @@ mod tests {
 
         let (result, log) = migrate_to_current(v1).unwrap();
         assert_eq!(result["version"], CURRENT_VERSION);
-        assert_eq!(log.len(), 2); // v1→v2, v2→v3
+        assert_eq!(log.len(), 3); // v1→v2, v2→v3, v3→v4
         assert!(result["messages"][0]["content"].is_array());
+        assert!(result.get("custom_title").is_some());
+    }
+
+    #[test]
+    fn test_migrate_v3_to_v4_adds_custom_title() {
+        let v3 = json!({
+            "version": 3,
+            "session_id": "xyz",
+            "messages": []
+        });
+        let v4 = migrate_v3_to_v4(v3).unwrap();
+        assert_eq!(v4["version"], 4);
+        assert!(v4.get("custom_title").is_some());
+        assert!(v4["custom_title"].is_null());
+    }
+
+    #[test]
+    fn test_migrate_v3_to_v4_preserves_existing_custom_title() {
+        let v3 = json!({
+            "version": 3,
+            "messages": [],
+            "custom_title": "My cool session"
+        });
+        let v4 = migrate_v3_to_v4(v3).unwrap();
+        assert_eq!(v4["custom_title"], "My cool session");
     }
 
     #[test]
