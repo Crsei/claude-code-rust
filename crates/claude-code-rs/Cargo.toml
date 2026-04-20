@@ -131,6 +131,9 @@ dotenvy = { workspace = true }
 # 同步原语
 parking_lot = { workspace = true }
 
+# 内部 workspace crates (P1)
+cc-keybindings = { workspace = true }
+
 # Daemon
 axum = { workspace = true }
 tower = { workspace = true }
