@@ -70,20 +70,26 @@ pub fn init_tracing(verbose: bool) -> WorkerGuard {
                 )),
         );
 
-    match crate::services::langfuse::init_langfuse() {
-        Ok(Some(tracer)) => {
-            let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
-            subscriber.with(telemetry).init();
-        }
-        Ok(None) => subscriber.init(),
-        Err(error) => {
-            eprintln!(
-                "warning: failed to initialize Langfuse tracing: {}. Continuing without Langfuse.",
-                error
-            );
-            subscriber.init();
+    #[cfg(feature = "telemetry")]
+    {
+        match crate::services::langfuse::init_langfuse() {
+            Ok(Some(tracer)) => {
+                let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+                subscriber.with(telemetry).init();
+            }
+            Ok(None) => subscriber.init(),
+            Err(error) => {
+                eprintln!(
+                    "warning: failed to initialize Langfuse tracing: {}. Continuing without Langfuse.",
+                    error
+                );
+                subscriber.init();
+            }
         }
     }
+
+    #[cfg(not(feature = "telemetry"))]
+    subscriber.init();
 
     guard
 }
