@@ -5,12 +5,51 @@ edition = "2021"
 description = "Claude Code CLI - Rust implementation (lite)"
 
 # ============================================================
+# Features
+# ============================================================
+#
+# default — minimal build: no telemetry, no embedded web assets,
+#           no image/syntect/tree-sitter pulls. Keeps `cargo build`
+#           fast and avoids heavy native deps (onig, tonic/prost).
+#
+# Opt-in:
+#   telemetry   — Langfuse + OpenTelemetry export (pulls tonic/prost).
+#   web-ui      — Embed the React SPA (rust-embed) into the binary.
+#   image       — Image decoding (png/jpeg only).
+#   syntect     — Syntax highlighting via fancy-regex (no onig C dep).
+#   tree-sitter — AST parsing.
+
+[features]
+default = []
+telemetry = [
+    "dep:tracing-opentelemetry",
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-langfuse",
+]
+web-ui = ["dep:rust-embed"]
+image = ["dep:image"]
+syntect = ["dep:syntect"]
+tree-sitter = ["dep:tree-sitter"]
+
+# ============================================================
 # 核心类型 + 状态机
 # ============================================================
 
 [dependencies]
-# 异步运行时
-tokio = { version = "1", features = ["full"] }
+# 异步运行时 — 按需选择 tokio 子模块，避免 `full` 带来的编译开销
+tokio = { version = "1", default-features = false, features = [
+    "rt-multi-thread",
+    "macros",
+    "io-util",
+    "io-std",
+    "net",
+    "fs",
+    "process",
+    "signal",
+    "sync",
+    "time",
+] }
 futures = "0.3"
 async-trait = "0.1"
 async-stream = "0.3"
@@ -41,10 +80,12 @@ lru = "0.12"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
-tracing-opentelemetry = "0.32.1"
-opentelemetry = { version = "0.31", features = ["trace"] }
-opentelemetry_sdk = { version = "0.31.0", features = ["trace", "rt-tokio", "experimental_trace_batch_span_processor_with_async_runtime"] }
-opentelemetry-langfuse = "0.6.1"
+# Telemetry stack (Langfuse + OpenTelemetry) — optional, enable via `telemetry` feature.
+# Pulls in tonic/prost et al., which is why it is off by default.
+tracing-opentelemetry = { version = "0.32.1", optional = true }
+opentelemetry = { version = "0.31", features = ["trace"], optional = true }
+opentelemetry_sdk = { version = "0.31.0", features = ["trace", "rt-tokio", "experimental_trace_batch_span_processor_with_async_runtime"], optional = true }
+opentelemetry-langfuse = { version = "0.6.1", optional = true }
 
 # LSP 协议类型
 lsp-types = "0.97"
@@ -78,8 +119,8 @@ shell-words = "1"
 ratatui = "0.29"
 crossterm = "0.28"
 
-# 语法高亮
-syntect = "5"
+# 语法高亮 — optional，启用 default-fancy 用 fancy-regex 代替 onig (避免 C 编译)
+syntect = { version = "5", default-features = false, features = ["default-fancy"], optional = true }
 
 # 文本处理
 textwrap = "0.16"
@@ -124,13 +165,13 @@ tower-http = { version = "0.6", features = ["cors", "trace"] }
 hmac = "0.12"
 notify-rust = "4"
 
-# Web UI: embed React SPA dist/ at compile time
-rust-embed = "8"
+# Web UI: embed React SPA dist/ at compile time — optional, enable via `web-ui` feature.
+rust-embed = { version = "8", optional = true }
 mime_guess = "2"
 
-# AST / 图像
-tree-sitter = "0.24"
-image = "0.25"
+# AST / 图像 — optional，默认不编译 (目前无使用点)
+tree-sitter = { version = "0.24", optional = true }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"], optional = true }
 
 # ============================================================
 # E2E 测试
