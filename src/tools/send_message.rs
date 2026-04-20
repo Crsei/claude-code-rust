@@ -65,7 +65,11 @@ impl Tool for SendMessageTool {
     }
 
     fn is_enabled(&self) -> bool {
-        crate::teams::is_agent_teams_enabled()
+        // Always advertise the tool to the model; the call path gracefully
+        // rejects invocations when no team context is active. This lets a
+        // conversation spin up a team via `/team create` or `TeamSpawn`
+        // without the tool being filtered out at startup.
+        true
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {

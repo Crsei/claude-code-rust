@@ -6,32 +6,40 @@
 //! multiple Teammate agents running in parallel. Communication happens via
 //! file-based mailbox IPC (`{data_root}/teams/{name}/inboxes/`).
 //!
-//! # Scope in rust-lite (closure policy)
+//! # What rust-lite implements
 //!
-//! This module is **feature-gated** by the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`
-//! env var (see [`is_agent_teams_enabled`]) and **does not appear on the default
-//! tool path** — [`crate::tools::send_message::SendMessageTool::is_enabled`]
-//! consults the same gate, so `base_tools()` filters the tool out unless the
-//! user opts in.
+//! - `in_process` backend + `mailbox` + `protocol` + `runner` — the
+//!   "same-process multi-agent mailbox" loop. Teammates run as tokio
+//!   tasks with `task_local!` identity isolation.
+//! - `SendMessage` tool — routes plain-text and structured messages
+//!   between teammates via the mailbox.
+//! - `TeamSpawn` tool — spawns a new teammate from within a
+//!   conversation, so the model can orchestrate its own sub-agents.
+//! - `/team` slash command family — `create`, `list`, `status`, `spawn`,
+//!   `send`, `kill`, `leave`, `delete` (see [`crate::commands::team_cmd`]).
+//! - Team Dashboard (TS/Ink): `ui/src/components/TeamPanel.tsx`
+//!   subscribed to `BackendMessage::TeamEvent` over IPC.
 //!
-//! The rust-lite closure intentionally keeps:
+//! # Enablement
 //!
-//! - `in_process` backend + `mailbox` + `protocol` + `runner` + `SendMessage`
-//!   tool — the minimal "same-process multi-agent mailbox" loop.
+//! Teams activate when **either** of these holds:
 //!
-//! The rust-lite closure intentionally **does not** implement:
+//! - `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var is set — matches the
+//!   upstream TypeScript behavior.
+//! - An active [`types::TeamContext`] exists on the session's `AppState`
+//!   (populated by `/team create` or by the `TeamSpawn` tool). This is
+//!   how conversation-triggered teams "just work" without the user
+//!   needing to pre-set the env var.
 //!
-//! - tmux / iTerm2 terminal backends — the [`backend::PaneBackend`] trait
-//!   is kept only as the interface placeholder for the full edition.
-//! - A Team Dashboard UI component.
-//! - `/team` slash commands.
+//! See [`is_agent_teams_enabled`] for the env-var fast path and
+//! [`is_agent_teams_active`] for the runtime check that also honors
+//! `AppState::team_context`.
 //!
-//! Users who need terminal-split collaboration should use the full-edition
-//! claude-code; this file is the canonical record of that decision so the
-//! module's status is not re-opened as an ambiguous half-implementation.
-//! See `docs/IMPLEMENTATION_GAPS.md` §1.1 for the matching doc entry.
-
-#![allow(unused)]
+//! # Not implemented in rust-lite
+//!
+//! - tmux / iTerm2 terminal backends — the [`backend::PaneBackend`]
+//!   trait stays as an interface placeholder for the full edition.
+//!   In-process teammates are the only supported execution surface.
 
 pub mod backend;
 pub mod constants;
@@ -50,16 +58,38 @@ use std::env;
 // Feature gate
 // ---------------------------------------------------------------------------
 
-/// Check if Agent Teams is enabled.
+/// Check if Agent Teams is enabled via the upstream env-var switch.
 ///
-/// Enabled when `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is set to a truthy value
-/// ("1", "true", "yes").
+/// True when `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is set to a truthy value
+/// ("1", "true", "yes"). This is the quick static check — call sites that
+/// also want to honor a runtime-created team should use
+/// [`is_agent_teams_active`] instead.
 ///
-/// Corresponds to TS: `isAgentSwarmsEnabled()`
-/// Simplified: no GrowthBook check, just env var.
+/// Corresponds to TS: `isAgentSwarmsEnabled()` (no GrowthBook; env var only).
+///
+/// Kept on the public API for compat with the upstream check and for any
+/// caller that needs a non-context variant (e.g. startup-time decisions).
+#[allow(dead_code)]
 pub fn is_agent_teams_enabled() -> bool {
     env::var(constants::AGENT_TEAMS_ENV_VAR)
         .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false)
+}
+
+/// Check if Agent Teams is active in the given app state.
+///
+/// Returns true when **either** the env-var opt-in is set **or** an active
+/// [`types::TeamContext`] already exists. The second condition lets
+/// conversation-triggered flows (`/team create`, `TeamSpawn` tool) unlock
+/// team tools without the user needing to pre-export the env var.
+pub fn is_agent_teams_active(app_state: &crate::types::app_state::AppState) -> bool {
+    if is_agent_teams_enabled() {
+        return true;
+    }
+    app_state
+        .team_context
+        .as_ref()
+        .map(|tc| !tc.team_name.is_empty())
         .unwrap_or(false)
 }
 
