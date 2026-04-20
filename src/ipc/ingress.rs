@@ -306,15 +306,33 @@ async fn handle_slash_command(
 
     let cmd_result = cmd.handler.execute(&args, &mut ctx).await;
 
-    // Sync any state mutations (e.g. /add-dir) back to the engine
+    // Sync any state mutations (e.g. /add-dir, /team) back to the engine.
+    // Commands operate on a cloned snapshot; without this sync their edits
+    // would be lost to the next tool invocation.
     if cmd_result.is_ok() {
+        let new_adl = ctx
+            .app_state
+            .tool_permission_context
+            .additional_working_directories
+            .clone();
+        let new_team_ctx = ctx.app_state.team_context.clone();
         engine.update_app_state(|s| {
-            s.tool_permission_context.additional_working_directories = ctx
-                .app_state
-                .tool_permission_context
-                .additional_working_directories
-                .clone();
+            s.tool_permission_context.additional_working_directories = new_adl;
+            s.team_context = new_team_ctx;
         });
+
+        // If this was a /team command (or any command that mutated team_context),
+        // push a fresh StatusSnapshot so the Team Dashboard reflects the change
+        // without the frontend having to poll.
+        if cmd.name == "team" {
+            if let Some(tc) = ctx.app_state.team_context.as_ref() {
+                if !tc.team_name.is_empty() {
+                    let events =
+                        super::agent_handlers::build_team_status_events(&tc.team_name);
+                    let _ = sink.send_many(events);
+                }
+            }
+        }
     }
 
     match cmd_result {

@@ -39,6 +39,9 @@ pub mod copy;
 pub mod init;
 pub mod status;
 
+// Agent Teams
+pub mod team_cmd;
+
 // Workspace
 pub mod add_dir;
 
@@ -440,6 +443,13 @@ pub fn get_all_commands() -> Vec<Command> {
             description: "Inspect compatibility-only voice settings (runtime voice unsupported)"
                 .into(),
             handler: Box::new(voice_cmd::VoiceHandler),
+        },
+        Command {
+            name: "team".into(),
+            aliases: vec!["teams".into()],
+            description: "Manage Agent Teams (create, list, spawn, send, kill, leave, delete)"
+                .into(),
+            handler: Box::new(team_cmd::TeamHandler),
         },
     ]
 }

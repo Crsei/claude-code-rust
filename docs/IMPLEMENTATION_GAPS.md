@@ -10,24 +10,26 @@
 | 范围 | 当前状态 | 说明 |
 |------|----------|------|
 | API providers | 未完成 (单独立项) | Bedrock、Vertex 仍未实现；由独立 issue 追踪 |
-| Agent Teams | Feature-gated (实验性) | 见 §1.1 — 默认不上主路径，lite 不提供 Dashboard / tmux / iTerm2 后端 |
 | Team Memory 客户端同步 | 未实现 | 服务端代理已落地 (`src/daemon/team_memory_proxy.rs` + `ui/team-memory-server/`)；前端尚未调用，计划见 `superpowers/plans/2026-04-11-team-memory-sync.md` |
 
-> 以下三项在历史文档中曾标注为 stub，经代码核对已在 `rust-lite` 分支中收口，保留在本节做历史追踪：
+> 以下项在历史文档中曾标注为 stub，经代码核对已在 `rust-lite` 分支中收口，保留在本节做历史追踪：
 >
 > - **IPC `clear_messages`** — 已由 `QueryEngine::clear_messages()` (`src/engine/lifecycle/mod.rs:245`) 实现，`/clear` 路径在 `src/ipc/ingress.rs:332-339` 调用 engine 清空并回传 `conversation_replaced`。
 > - **权限 Phase 2 Hook 拦截** — `src/tools/execution/pipeline.rs:124-211` 先跑 `run_pre_tool_hooks`，再把结果折进 `has_permissions_to_use_tool_with_hook` (`src/permissions/decision.rs:259-362`)，hook 的 deny/ask/allow 会按规范顺序生效。
 > - **Vim 状态机** — `ui/src/vim/state-machine.ts` 已覆盖 normal/insert/visual 三模式、导航 (h/l/0/$/^/w/b/e)、operator (d/y/c)、单键 (x/X/p/u/D/C) 与 visual 选区操作；KNOWN_ISSUES 中目前无相关 open 项。
+> - **Agent Teams 用户面** — `/team` 斜杠命令 + `TeamSpawn` 工具 + Team Dashboard 已落地，详见 §1.1。
 
-### 1.1 Agent Teams 收口政策
+### 1.1 Agent Teams 收口状态
 
-`src/teams/` 存在 10 个子模块 (types/protocol/mailbox/context/identity/in_process/helpers/constants/runner/backend) + `SendMessageTool`。**rust-lite 中的明确收口方针**：
+rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全量**"：
 
-- **保留**：in-process backend + mailbox + 协议 + runner + `SendMessage` 工具。这些构成"同进程多代理 mailbox"的最小闭环。
-- **不实现**：tmux / iTerm2 终端后端 (`backend.rs` 中的 `PaneBackend` trait 仅作类型保留)、Team Dashboard、`/team` 类斜杠命令。需要终端分屏协作的用户请用完整版 claude-code。
-- **默认不可见**：整个模块通过 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var 门控。`SendMessageTool::is_enabled()` 直接查询 `is_agent_teams_enabled()`，未启用时不会进入 `base_tools()` 的过滤结果 (`src/tools/registry.rs:68-74`)，主路径不会暴露任何 team 工具。
+- **闭环核心** — `src/teams/` 的 10 个子模块 (types/protocol/mailbox/context/identity/in_process/helpers/constants/runner/backend) 驱动同进程多代理 mailbox，teammate 作为 tokio 任务在 `task_local!` 身份隔离下运行。
+- **工具层** — `SendMessage` 工具处理消息路由和协议消息；`TeamSpawn` 工具 (`src/tools/team_spawn.rs`) 让模型从对话里直接拉起新 teammate，必要时自动创建 session 绑定的团队。
+- **REPL 层** — `/team` 斜杠命令家族 (`src/commands/team_cmd.rs`) 覆盖 `create / list / status / spawn / send / kill / leave / delete`。
+- **UI 层** — `ui/src/components/TeamPanel.tsx` 订阅 `BackendMessage::TeamEvent`，展示活跃 team、成员在线状态、未读计数、最近消息。
+- **启用条件** — `is_agent_teams_active(app_state)` 同时接受 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var 与 `AppState::team_context` 存在两种启用方式，后者让 `/team create` 或 `TeamSpawn` 调用在会话内就能解锁 team 功能。
 
-模块顶部 doc 已补充此收口声明，避免"文档承认未完成但代码继续裸露主路径"的悬置状态。
+**rust-lite 中明确不实现**：tmux / iTerm2 终端后端。`backend::PaneBackend` trait 作为完整版接口占位保留，in-process 是唯一执行后端。需要终端分屏的用户请用完整版 claude-code。
 
 ## 2. 已完成但仍为缩减实现
 

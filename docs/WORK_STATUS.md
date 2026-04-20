@@ -30,18 +30,21 @@
 
 ### 1.3 Agent Teams / Coordinator Mode
 
-**收口状态**：Feature-gated (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`)，默认关闭。rust-lite 明确保留 in-process 闭环，不提供终端分屏 / Dashboard / `/team` 命令。
+**收口状态**：in-process 闭环 + 用户面全量已落地。env var 不再是唯一开关，`/team create` 或 `TeamSpawn` 工具会在会话内即时解锁 team 功能。
 
-| 子模块 | 文件 | 收口方向 |
-|--------|------|----------|
-| in-process runner | `src/teams/runner.rs` | **保留** — 驱动子 QueryEngine，处理 mailbox 协议消息；plan-approval/permission 的阻塞语义由父引擎承担，runner 仅转发 |
+| 子模块 | 文件 | 状态 |
+|--------|------|------|
+| in-process runner | `src/teams/runner.rs` | ✅ — 驱动子 QueryEngine，处理 mailbox 协议消息 |
+| `SendMessage` 工具 | `src/tools/send_message.rs` | ✅ — 对话内消息路由；`is_enabled` 总返回 true，call 时检查 team_context |
+| `TeamSpawn` 工具 | `src/tools/team_spawn.rs` | ✅ — 对话内拉起 teammate，缺 team 时自动建 session 团队 |
+| `/team` 斜杠命令 | `src/commands/team_cmd.rs` | ✅ — `create / list / status / spawn / send / kill / leave / delete` |
+| Team Dashboard | `ui/src/components/TeamPanel.tsx` | ✅ — 订阅 `BackendMessage::TeamEvent`，展示成员/未读/最近消息 |
+| IPC QueryTeamStatus | `src/ipc/agent_handlers.rs` | ✅ — `build_team_status_events` 读盘后发 `StatusSnapshot` |
 | 终端后端 trait | `src/teams/backend.rs` | **保留类型、不实现** — `PaneBackend` trait 作为完整版接口占位；Tmux / iTerm2 不进入 rust-lite |
-| 前端 Dashboard | — | **不实现** — 需要 Dashboard 的场景请用完整版 claude-code |
-| 斜杠命令 | — | **不实现** — 主路径默认不暴露 Teams，避免误用 |
 
-- 激活入口：`crate::teams::is_agent_teams_enabled()` 读取 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`
-- 工具门控：`SendMessageTool::is_enabled()` 查询同一开关 (`src/tools/send_message.rs:67-69`)
-- 已完成 (8/11): types, protocol, mailbox, context, identity, in_process, helpers, constants
+- 激活入口：`crate::teams::is_agent_teams_active(&app_state)` — env var 或 `team_context` 任一满足即启用
+- ingress 同步：`src/ipc/ingress.rs` 斜杠命令执行后把 `app_state.team_context` 同步回 engine
+- 已完成 (10/11 含 runner/backend + SendMessage + TeamSpawn + /team 命令 + TeamPanel)
 
 ### 1.4 工具
 
@@ -182,7 +185,7 @@
 ```
   API 提供商    ████████████░░░░  4/6 (67%) — Bedrock/Vertex 单独立项
   认证          ████████████████  4/4 (100%) ✅
-  Teams 系统    ████████████████  in-process 闭环已收口 — feature-gated
+  Teams 系统    ████████████████  in-process + /team + TeamSpawn + Dashboard ✅
   工具          ████████████████  30/30 (100%) ✅
   权限          ████████████████  3/3 phases ✅ (Phase 2 hook 已接入中心决策)
   斜杠命令      ████████████████  75/75 (100%)
