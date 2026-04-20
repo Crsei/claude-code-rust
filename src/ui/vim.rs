@@ -651,7 +651,10 @@ mod tests {
     fn editor_mode_setting_round_trips() {
         let mut v = VimState::new();
         assert_eq!(v.editor_mode_setting(), EditorModeSetting::Normal);
-        assert_eq!(EditorModeSetting::parse(Some("vim")), EditorModeSetting::Vim);
+        assert_eq!(
+            EditorModeSetting::parse(Some("vim")),
+            EditorModeSetting::Vim
+        );
         assert_eq!(EditorModeSetting::parse(Some("normal")).as_str(), "normal");
 
         v.apply_editor_mode(Some("vim"));

@@ -110,7 +110,9 @@ impl KeybindingRegistry {
         let Some(path) = state.user_path.clone() else {
             return Ok(());
         };
-        let mtime = fs::metadata(&path).and_then(|metadata| metadata.modified()).ok();
+        let mtime = fs::metadata(&path)
+            .and_then(|metadata| metadata.modified())
+            .ok();
         state.last_mtime = mtime;
 
         match fs::read_to_string(&path) {
@@ -142,7 +144,9 @@ impl KeybindingRegistry {
     pub fn refresh_if_changed(&self) {
         let path = self.inner.read().user_path.clone();
         let Some(path) = path else { return };
-        let new_mtime = fs::metadata(&path).and_then(|metadata| metadata.modified()).ok();
+        let new_mtime = fs::metadata(&path)
+            .and_then(|metadata| metadata.modified())
+            .ok();
         let changed = {
             let state = self.inner.read();
             state.last_mtime != new_mtime
@@ -177,8 +181,7 @@ impl KeybindingRegistry {
             return Resolution::None;
         }
         if let Some(map) = state.effective.get(&Context::Global) {
-            if let Some(resolution) =
-                resolve_single_from_map(map, stroke, state.blocked.get(&ctx))
+            if let Some(resolution) = resolve_single_from_map(map, stroke, state.blocked.get(&ctx))
             {
                 return resolution;
             }
@@ -358,7 +361,10 @@ mod tests {
         let reg = KeybindingRegistry::with_defaults();
         let stroke = Keystroke::parse("ctrl+c").unwrap();
         let result = reg.resolve_single(Context::Chat, &stroke);
-        assert_eq!(result, Resolution::Action(Action::new_static("app:interrupt")));
+        assert_eq!(
+            result,
+            Resolution::Action(Action::new_static("app:interrupt"))
+        );
     }
 
     #[test]
@@ -366,7 +372,10 @@ mod tests {
         let reg = KeybindingRegistry::with_defaults();
         let stroke = Keystroke::parse("enter").unwrap();
         let result = reg.resolve_single(Context::Chat, &stroke);
-        assert_eq!(result, Resolution::Action(Action::new_static("chat:submit")));
+        assert_eq!(
+            result,
+            Resolution::Action(Action::new_static("chat:submit"))
+        );
     }
 
     #[test]
@@ -382,7 +391,10 @@ mod tests {
         let reg = KeybindingRegistry::with_defaults();
         let chord = Chord::parse("ctrl+x ctrl+k").unwrap();
         let result = reg.resolve_chord(Context::Chat, &chord);
-        assert_eq!(result, Resolution::Action(Action::new_static("chat:killAgents")));
+        assert_eq!(
+            result,
+            Resolution::Action(Action::new_static("chat:killAgents"))
+        );
     }
 
     #[test]
@@ -404,7 +416,10 @@ mod tests {
         let reg = KeybindingRegistry::with_user_path(Some(path));
         let stroke = Keystroke::parse("enter").unwrap();
         let result = reg.resolve_single(Context::Chat, &stroke);
-        assert_eq!(result, Resolution::Action(Action::new_static("chat:newline")));
+        assert_eq!(
+            result,
+            Resolution::Action(Action::new_static("chat:newline"))
+        );
     }
 
     #[test]
@@ -562,7 +577,10 @@ mod tests {
         let reg = KeybindingRegistry::with_defaults();
         let snapshot = reg.effective_snapshot();
         assert!(
-            snapshot.bindings.iter().any(|block| block.context == "Global"),
+            snapshot
+                .bindings
+                .iter()
+                .any(|block| block.context == "Global"),
             "snapshot should include the Global block"
         );
         assert!(

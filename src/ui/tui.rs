@@ -697,7 +697,11 @@ async fn try_execute_command(
     }
 }
 
-fn sync_app_runtime_from_state(engine: &Arc<QueryEngine>, app: &mut App, state: &crate::types::app_state::AppState) {
+fn sync_app_runtime_from_state(
+    engine: &Arc<QueryEngine>,
+    app: &mut App,
+    state: &crate::types::app_state::AppState,
+) {
     engine.update_app_state(|engine_state| {
         engine_state.main_loop_model = state.main_loop_model.clone();
         engine_state.main_loop_backend = state.main_loop_backend.clone();
@@ -716,7 +720,8 @@ fn sync_app_runtime_from_state(engine: &Arc<QueryEngine>, app: &mut App, state: 
     app.set_editor_mode(state.settings.editor_mode.as_deref());
     app.set_keybindings(state.keybindings.clone());
 
-    let lang = crate::voice::language::normalize_language_for_stt(state.settings.language.as_deref());
+    let lang =
+        crate::voice::language::normalize_language_for_stt(state.settings.language.as_deref());
     let voice_supported = matches!(
         crate::commands::voice_cmd::current_feasibility(),
         crate::voice::feasibility::Feasibility::Ready { .. }

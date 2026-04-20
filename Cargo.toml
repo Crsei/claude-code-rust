@@ -152,3 +152,11 @@ serial_test = "3"
 # POSIX syscalls (Unix socket permissions, PID liveness for Chrome native host #5)
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# ============================================================
+# 构建配置 - 压缩 Windows 下 pdb 体积
+# ============================================================
+
+[profile.dev]
+debug = "line-tables-only"
+split-debuginfo = "packed"

@@ -59,3 +59,5 @@ ink-ui/
 .cc-rust
 .omx/
 .claude/
+tests/message_suite/results/
+docs/architecture/

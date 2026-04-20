@@ -241,9 +241,9 @@ mod tests {
             date_stamp: "20240115".to_string(),
         };
         let signed = sign(&req, &creds).unwrap();
-        assert!(signed
-            .authorization
-            .contains("SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token"));
+        assert!(signed.authorization.contains(
+            "SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token"
+        ));
         assert_eq!(signed.x_amz_security_token.as_deref(), Some("tok"));
     }
 
