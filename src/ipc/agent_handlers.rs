@@ -64,7 +64,19 @@ pub fn handle_team_command(cmd: TeamCommand) -> Vec<BackendMessage> {
                 crate::teams::mailbox::write_to_mailbox(&to, msg, &team_name)
             });
             match result {
-                Ok(Ok(())) => vec![],
+                Ok(Ok(())) => {
+                    // Echo a MessageRouted event so the dashboard updates.
+                    vec![BackendMessage::TeamEvent {
+                        event: TeamEvent::MessageRouted {
+                            team_name: team_name.clone(),
+                            from: "__frontend__".into(),
+                            to: to.clone(),
+                            text: text.clone(),
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                            summary: None,
+                        },
+                    }]
+                }
                 Ok(Err(e)) => {
                     vec![BackendMessage::SystemInfo {
                         text: format!("Failed to inject message: {}", e),
@@ -81,12 +93,55 @@ pub fn handle_team_command(cmd: TeamCommand) -> Vec<BackendMessage> {
         }
         TeamCommand::QueryTeamStatus { team_name } => {
             debug!(team = %team_name, "IPC: query team status");
-            vec![BackendMessage::SystemInfo {
-                text: format!("Team status query not yet implemented for {}", team_name),
-                level: "info".into(),
-            }]
+            build_team_status_events(&team_name)
         }
     }
+}
+
+/// Build a `StatusSnapshot` event by reading the team's config from disk
+/// and tallying unread messages for each member.
+///
+/// Returns a `SystemInfo` error message if the team does not exist.
+pub fn build_team_status_events(team_name: &str) -> Vec<BackendMessage> {
+    use crate::ipc::agent_types::TeamMemberInfo;
+    use crate::teams::{helpers, mailbox};
+
+    let tf = match helpers::read_team_file(team_name) {
+        Ok(tf) => tf,
+        Err(e) => {
+            return vec![BackendMessage::SystemInfo {
+                text: format!("Team '{}' not found: {}", team_name, e),
+                level: "warning".into(),
+            }];
+        }
+    };
+
+    let mut total_pending = 0usize;
+    let members: Vec<TeamMemberInfo> = tf
+        .members
+        .iter()
+        .map(|m| {
+            let unread = mailbox::read_unread_messages(&m.name, team_name)
+                .map(|v| v.len())
+                .unwrap_or(0);
+            total_pending = total_pending.saturating_add(unread);
+            TeamMemberInfo {
+                agent_id: m.agent_id.clone(),
+                agent_name: m.name.clone(),
+                role: m.agent_type.clone(),
+                is_active: m.is_active.unwrap_or(true),
+                unread_messages: unread,
+            }
+        })
+        .collect();
+
+    vec![BackendMessage::TeamEvent {
+        event: TeamEvent::StatusSnapshot {
+            team_name: team_name.to_string(),
+            members,
+            pending_messages: total_pending,
+        },
+    }]
 }
 
 // ===========================================================================

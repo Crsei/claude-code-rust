@@ -13,6 +13,7 @@ import { MessageList } from './MessageList.js'
 import { PermissionDialog } from './PermissionDialog.js'
 import { SubsystemStatus } from './SubsystemStatus.js'
 import { Suggestions } from './Suggestions.js'
+import { TeamPanel } from './TeamPanel.js'
 import { WelcomeScreen } from './WelcomeScreen.js'
 
 type ActivePane = 'messages' | 'input'
@@ -348,6 +349,7 @@ export function App() {
             </MessageList>
           </box>
           <AgentTreePanel />
+          <TeamPanel />
           <SubsystemStatus />
           <box
             width="100%"
