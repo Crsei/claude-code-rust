@@ -40,6 +40,9 @@ pub mod skills_cmd;
 // Session management
 pub mod copy;
 pub mod init;
+pub mod insights;
+pub mod rename;
+pub mod rewind;
 pub mod status;
 
 // Agent Teams
@@ -216,6 +219,24 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "Resume a previous session".into(),
             handler: Box::new(resume::ResumeHandler),
+        },
+        Command {
+            name: "rename".into(),
+            aliases: vec![],
+            description: "Set or clear the custom title for the current session".into(),
+            handler: Box::new(rename::RenameHandler),
+        },
+        Command {
+            name: "rewind".into(),
+            aliases: vec![],
+            description: "Rewind the conversation to an earlier user turn".into(),
+            handler: Box::new(rewind::RewindHandler),
+        },
+        Command {
+            name: "insights".into(),
+            aliases: vec![],
+            description: "Session history analytics (cross-session statistics)".into(),
+            handler: Box::new(insights::InsightsHandler),
         },
         Command {
             name: "files".into(),
