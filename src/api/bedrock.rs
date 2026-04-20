@@ -190,7 +190,10 @@ fn synthesize_stream_events(resp: InvokeResponse) -> Vec<StreamEvent> {
                 }
                 events.push(StreamEvent::ContentBlockStop { index: idx });
             }
-            ContentBlock::Thinking { thinking, signature } => {
+            ContentBlock::Thinking {
+                thinking,
+                signature,
+            } => {
                 events.push(StreamEvent::ContentBlockStart {
                     index: idx,
                     content_block: ContentBlock::Thinking {
@@ -264,7 +267,11 @@ impl crate::api::stream_provider::StreamProvider for BedrockStreamProvider {
         request: &MessagesRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         let bedrock_model = to_bedrock_model_id(&request.model);
-        let url = build_invoke_url(&self.region, &bedrock_model, self.base_url_override.as_deref());
+        let url = build_invoke_url(
+            &self.region,
+            &bedrock_model,
+            self.base_url_override.as_deref(),
+        );
         let body = to_bedrock_body(request)?;
 
         let mut builder = http

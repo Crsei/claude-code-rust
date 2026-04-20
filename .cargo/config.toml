@@ -1,3 +1,6 @@
 [env]
 LIB = { value = "", force = true }
 INCLUDE = { value = "", force = true }
+
+[build]
+target-dir = "F:/cargo-target/cc-rust"

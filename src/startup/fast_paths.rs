@@ -65,8 +65,7 @@ pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
     // authoritative; the heuristic half would need connected tools and
     // isn't exercised here; use `--init-only` for that path.
     let cwd_path = std::path::Path::new(&cwd);
-    let server_configs =
-        crate::mcp::discovery::discover_mcp_servers(cwd_path).unwrap_or_default();
+    let server_configs = crate::mcp::discovery::discover_mcp_servers(cwd_path).unwrap_or_default();
     let mut browser_servers =
         crate::browser::detection::detect_browser_servers(&server_configs, &tools);
     // Mirror the full-init path: when Chrome subsystem is requested via

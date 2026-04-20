@@ -12,12 +12,14 @@ use super::messages::render_messages;
 use super::permissions::{PermissionChoice, PermissionDialog};
 use super::prompt_input::PromptInput;
 use super::spinner::SpinnerState;
-use super::status_line::{StatusLinePayload, StatusLineRunner, StatusLineSnapshot, build_payload_from_snapshot};
+use super::status_line::{
+    build_payload_from_snapshot, StatusLinePayload, StatusLineRunner, StatusLineSnapshot,
+};
 use super::terminal_env::TerminalEnvConfig;
 use super::theme::Theme;
 use super::transcript::{self, SearchMatch, TranscriptInputMode, TranscriptState, ViewMode};
-use super::virtual_scroll::VirtualScroll;
 use super::vim::{VimAction, VimState};
+use super::virtual_scroll::VirtualScroll;
 use super::welcome;
 use crate::voice::{VoiceController, VoiceEvent};
 
@@ -752,11 +754,9 @@ impl App {
         }
 
         if self.vim.enabled && self.prompt.is_active {
-            let vim_action = self.vim.handle_key(
-                key,
-                &self.prompt.input,
-                self.prompt.cursor_position,
-            );
+            let vim_action =
+                self.vim
+                    .handle_key(key, &self.prompt.input, self.prompt.cursor_position);
             if let Some(app_action) = self.apply_vim_action(vim_action) {
                 return app_action;
             }
@@ -1010,7 +1010,8 @@ impl App {
                 return Some(AppAction::Quit);
             }
             "app:exit" => {
-                if self.view_mode == ViewMode::Prompt && (self.prompt.is_active || !self.is_streaming)
+                if self.view_mode == ViewMode::Prompt
+                    && (self.prompt.is_active || !self.is_streaming)
                 {
                     self.should_quit = true;
                     return Some(AppAction::Quit);
@@ -1048,7 +1049,12 @@ impl App {
                 self.dirty = true;
                 return Some(AppAction::None);
             }
-            "chat:submit" => return Some(self.take_prompt_submission().map_or(AppAction::None, AppAction::Submit)),
+            "chat:submit" => {
+                return Some(
+                    self.take_prompt_submission()
+                        .map_or(AppAction::None, AppAction::Submit),
+                )
+            }
             "voice:pushToTalk" => {
                 if self.is_voice_ready() {
                     match self
@@ -1158,7 +1164,10 @@ impl App {
                 self.prompt.cursor_position = 0;
                 Some(AppAction::None)
             }
-            VimAction::Submit => Some(self.take_prompt_submission().map_or(AppAction::None, AppAction::Submit)),
+            VimAction::Submit => Some(
+                self.take_prompt_submission()
+                    .map_or(AppAction::None, AppAction::Submit),
+            ),
             VimAction::SwitchMode(_) => Some(AppAction::None),
             VimAction::Passthrough(key) => Some(
                 self.prompt
