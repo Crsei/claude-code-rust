@@ -9,12 +9,25 @@
 
 | 范围 | 当前状态 | 说明 |
 |------|----------|------|
-| API providers | 未完成 | Bedrock、Vertex 仍是 `unimplemented!()` 存根 |
-| Agent Teams | 部分实现 | feature-gated；Runner 仅 log，Tmux/iTerm2 后端未实现，无 Dashboard / `/team` 命令 |
-| 权限系统 | 部分实现 | Phase 2 hook 拦截仍是 stub，当前直接 fall through |
-| IPC | 部分实现 | `clear_messages` 仅通知前端，engine 端无对应清空逻辑 |
-| 前端交互 | 部分实现 | Vim 状态机只有模式切换完整，按键处理仍不完整 |
-| Team Memory | 部分实现 | 服务端最小代理已落地，客户端同步仍待实现 |
+| API providers | 未完成 (单独立项) | Bedrock、Vertex 仍未实现；由独立 issue 追踪 |
+| Agent Teams | Feature-gated (实验性) | 见 §1.1 — 默认不上主路径，lite 不提供 Dashboard / tmux / iTerm2 后端 |
+| Team Memory 客户端同步 | 未实现 | 服务端代理已落地 (`src/daemon/team_memory_proxy.rs` + `ui/team-memory-server/`)；前端尚未调用，计划见 `superpowers/plans/2026-04-11-team-memory-sync.md` |
+
+> 以下三项在历史文档中曾标注为 stub，经代码核对已在 `rust-lite` 分支中收口，保留在本节做历史追踪：
+>
+> - **IPC `clear_messages`** — 已由 `QueryEngine::clear_messages()` (`src/engine/lifecycle/mod.rs:245`) 实现，`/clear` 路径在 `src/ipc/ingress.rs:332-339` 调用 engine 清空并回传 `conversation_replaced`。
+> - **权限 Phase 2 Hook 拦截** — `src/tools/execution/pipeline.rs:124-211` 先跑 `run_pre_tool_hooks`，再把结果折进 `has_permissions_to_use_tool_with_hook` (`src/permissions/decision.rs:259-362`)，hook 的 deny/ask/allow 会按规范顺序生效。
+> - **Vim 状态机** — `ui/src/vim/state-machine.ts` 已覆盖 normal/insert/visual 三模式、导航 (h/l/0/$/^/w/b/e)、operator (d/y/c)、单键 (x/X/p/u/D/C) 与 visual 选区操作；KNOWN_ISSUES 中目前无相关 open 项。
+
+### 1.1 Agent Teams 收口政策
+
+`src/teams/` 存在 10 个子模块 (types/protocol/mailbox/context/identity/in_process/helpers/constants/runner/backend) + `SendMessageTool`。**rust-lite 中的明确收口方针**：
+
+- **保留**：in-process backend + mailbox + 协议 + runner + `SendMessage` 工具。这些构成"同进程多代理 mailbox"的最小闭环。
+- **不实现**：tmux / iTerm2 终端后端 (`backend.rs` 中的 `PaneBackend` trait 仅作类型保留)、Team Dashboard、`/team` 类斜杠命令。需要终端分屏协作的用户请用完整版 claude-code。
+- **默认不可见**：整个模块通过 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var 门控。`SendMessageTool::is_enabled()` 直接查询 `is_agent_teams_enabled()`，未启用时不会进入 `base_tools()` 的过滤结果 (`src/tools/registry.rs:68-74`)，主路径不会暴露任何 team 工具。
+
+模块顶部 doc 已补充此收口声明，避免"文档承认未完成但代码继续裸露主路径"的悬置状态。
 
 ## 2. 已完成但仍为缩减实现
 

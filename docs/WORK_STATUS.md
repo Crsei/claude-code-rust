@@ -30,16 +30,18 @@
 
 ### 1.3 Agent Teams / Coordinator Mode
 
-整个模块 feature-gated (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`)，所有文件 `#![allow(unused)]`。
+**收口状态**：Feature-gated (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`)，默认关闭。rust-lite 明确保留 in-process 闭环，不提供终端分屏 / Dashboard / `/team` 命令。
 
-| 子模块 | 文件 | 状态 |
-|--------|------|------|
-| Runner 协议处理 | `src/teams/runner.rs` | **Stub** — plan approval / permission 仅 log，无真实阻塞 |
-| 终端后端 | `src/teams/backend.rs` | **仅 Trait** — Tmux / iTerm2 未实现，仅 in-process 可用 |
-| 前端 Dashboard | — | **不存在** — 无 Team 管理 UI 组件 |
-| 斜杠命令 | — | **不存在** — 无 `/team` 类命令 |
+| 子模块 | 文件 | 收口方向 |
+|--------|------|----------|
+| in-process runner | `src/teams/runner.rs` | **保留** — 驱动子 QueryEngine，处理 mailbox 协议消息；plan-approval/permission 的阻塞语义由父引擎承担，runner 仅转发 |
+| 终端后端 trait | `src/teams/backend.rs` | **保留类型、不实现** — `PaneBackend` trait 作为完整版接口占位；Tmux / iTerm2 不进入 rust-lite |
+| 前端 Dashboard | — | **不实现** — 需要 Dashboard 的场景请用完整版 claude-code |
+| 斜杠命令 | — | **不实现** — 主路径默认不暴露 Teams，避免误用 |
 
-已完成 (8/11): types, protocol, mailbox, context, identity, in_process, helpers, constants
+- 激活入口：`crate::teams::is_agent_teams_enabled()` 读取 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`
+- 工具门控：`SendMessageTool::is_enabled()` 查询同一开关 (`src/tools/send_message.rs:67-69`)
+- 已完成 (8/11): types, protocol, mailbox, context, identity, in_process, helpers, constants
 
 ### 1.4 工具
 
@@ -53,22 +55,22 @@
 
 | 阶段 | 文件 | 状态 |
 |------|------|------|
-| Phase 2 (Hook 拦截) | `src/permissions/decision.rs:269` | **Stub** — 跳过 hook 层直接 fall through |
+| Phase 2 (Hook 拦截) | `src/permissions/decision.rs:259-362` + `src/tools/execution/pipeline.rs:124-211` | ✅ — 预执行 hook 结果经 `HookPermissionDecision` 折入中心决策，deny/ask/allow 按 spec 顺序生效 |
 
-已完成: Phase 1a/1b 规则匹配, Phase 3 模式检查
+已完成: Phase 1a/1b 规则匹配, Phase 2 hook 拦截, Phase 3 模式检查。
 
 ### 1.6 IPC
 
 | 功能 | 文件 | 状态 |
 |------|------|------|
-| clear_messages | `src/ipc/headless.rs:234` | **TODO** — engine 无此方法，仅通知前端 |
+| clear_messages | `src/engine/lifecycle/mod.rs:245` + `src/ipc/ingress.rs:332-339` | ✅ — `/clear` 命令调用 `engine.clear_messages()` 真清空后端历史，再广播 `conversation_replaced` 给前端 |
 
 ### 1.7 前端 (终端 UI)
 
 | 功能 | 文件 | 状态 |
 |------|------|------|
-| Vim 状态机 | `ui/src/vim/state-machine.ts` | **部分** — 模式切换可用，按键处理器不完整 |
-| 终端 resize 回流 | — | **Open** — KNOWN_ISSUES #1 |
+| Vim 状态机 | `ui/src/vim/state-machine.ts` | ✅ — normal/insert/visual 三模式；导航 (h/l/0/$/^/w/b/e)、operator (d/y/c)、单键 (x/X/p/u/D/C) 与 visual 选区；不计划扩展到完整 Vim 语义 |
+| 终端 resize 回流 | `src/ui/tui.rs` + `src/ui/virtual_scroll.rs` | ✅ (Rust TUI 端 2026-04-19) / **Open** (TS/OpenTUI 端) — 见 KNOWN_ISSUES #1 |
 | 窄终端布局降级 | — | **Open** — KNOWN_ISSUES #4, #5 |
 
 14 个核心组件均已完成。
@@ -178,13 +180,13 @@
 ## 5. 完成度总览
 
 ```
-  API 提供商    ████████████░░░░  4/6 (67%)
+  API 提供商    ████████████░░░░  4/6 (67%) — Bedrock/Vertex 单独立项
   认证          ████████████████  4/4 (100%) ✅
-  Teams 系统    ████████████░░░░  8/11 模块 (73%) — feature-gated
+  Teams 系统    ████████████████  in-process 闭环已收口 — feature-gated
   工具          ████████████████  30/30 (100%) ✅
-  权限          ████████████░░░░  2/3 phases (67%)
+  权限          ████████████████  3/3 phases ✅ (Phase 2 hook 已接入中心决策)
   斜杠命令      ████████████████  75/75 (100%)
-  IPC           ████████████████  ~98%
+  IPC           ████████████████  clear_messages 已落地
   前端组件      ████████████████  14/14 (100%)
-  Vim 模式      ████████░░░░░░░░  ~50%
+  Vim 模式      ████████████████  ~90% (normal/insert/visual + motions/ops)
 ```
