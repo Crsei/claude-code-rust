@@ -480,6 +480,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-keybindings"
+version = "0.1.0"
+dependencies = [
+ "crossterm",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -557,6 +569,7 @@ dependencies = [
  "axum",
  "base64",
  "bytes",
+ "cc-keybindings",
  "chrono",
  "clap",
  "crossterm",

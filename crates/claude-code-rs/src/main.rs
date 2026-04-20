@@ -24,7 +24,9 @@ mod commands;
 mod computer_use;
 mod config;
 mod engine;
-mod keybindings;
+// `keybindings` lives in its own crate (`cc-keybindings`). Re-alias at the
+// crate root so existing `crate::keybindings::...` paths continue to resolve.
+use cc_keybindings as keybindings;
 mod permissions;
 mod query;
 mod sandbox;

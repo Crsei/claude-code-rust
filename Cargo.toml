@@ -119,6 +119,9 @@ dotenvy = "0.15.7"
 # 同步原语
 parking_lot = "0.12"
 
+# 内部 crates (workspace split)
+cc-keybindings = { path = "crates/cc-keybindings" }
+
 # Daemon HTTP server
 axum = { version = "0.8", features = ["ws"] }
 tower = "0.5"
