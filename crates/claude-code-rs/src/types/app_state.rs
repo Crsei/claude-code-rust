@@ -22,6 +22,13 @@ pub struct AppState {
     pub main_loop_model: String,
     /// Active backend implementation ("native" or "codex").
     pub main_loop_backend: String,
+    /// Optional advisor model (issue #33).
+    ///
+    /// When `Some`, and the current provider supports advisors (see
+    /// `provider_supports_advisor` in `api::client`), the advisor model id
+    /// is attached to every outbound [`crate::api::client::MessagesRequest`].
+    /// Other providers log a warning and ignore the setting.
+    pub advisor_model: Option<String>,
     /// 工具权限上下文
     pub tool_permission_context: ToolPermissionContext,
     /// thinking 是否启用
@@ -64,6 +71,7 @@ impl Default for AppState {
             verbose: false,
             main_loop_model: "claude-sonnet-4-20250514".to_string(),
             main_loop_backend: "native".to_string(),
+            advisor_model: None,
             tool_permission_context: ToolPermissionContext {
                 mode: PermissionMode::Default,
                 additional_working_directories: HashMap::new(),

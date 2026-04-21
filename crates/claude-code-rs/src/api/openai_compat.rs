@@ -633,6 +633,7 @@ mod tests {
             stream: true,
             thinking: None,
             tool_choice: None,
+            advisor_model: None,
         };
         let body = build_openai_request(&req, "openai");
         assert_eq!(body["model"], "gpt-4o");
@@ -660,6 +661,7 @@ mod tests {
             stream: true,
             thinking: None,
             tool_choice: None,
+            advisor_model: None,
         };
         let body = build_openai_request(&req, OPENAI_CODEX_PROVIDER_NAME);
         assert_eq!(body["model"], "gpt-5.4");
@@ -680,6 +682,7 @@ mod tests {
             stream: true,
             thinking: None,
             tool_choice: None,
+            advisor_model: None,
         };
         let body = build_openai_request(&req, "deepseek");
         let messages = body["messages"].as_array().unwrap();
@@ -706,6 +709,7 @@ mod tests {
             stream: true,
             thinking: None,
             tool_choice: None,
+            advisor_model: None,
         };
         let body = build_openai_request(&req, "openai");
         let messages = body["messages"].as_array().unwrap();

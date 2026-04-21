@@ -7,6 +7,7 @@
 //! This enables delegation of complex, multi-step tasks to specialized subagents.
 
 mod dispatch;
+pub mod fork;
 mod tool_impl;
 mod worktree;
 

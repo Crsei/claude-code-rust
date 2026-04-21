@@ -38,6 +38,13 @@ pub mod model_add;
 pub mod memory;
 pub mod skills_cmd;
 
+// Fork-agent dependent commands (issues #37, #62)
+pub mod btw;
+pub mod simplify;
+
+// Advisor model plumbing (issue #33)
+pub mod advisor;
+
 // Plan mode (issue #46)
 pub mod plan;
 
@@ -538,6 +545,25 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "List and drill into background tasks (tool + team)".into(),
             handler: Box::new(tasks_cmd::TasksHandler),
+        },
+        // Fork-agent dependent commands.
+        Command {
+            name: "btw".into(),
+            aliases: vec![],
+            description: "Ask a side question in a forked agent (issue #37)".into(),
+            handler: Box::new(btw::BtwHandler),
+        },
+        Command {
+            name: "simplify".into(),
+            aliases: vec![],
+            description: "Multi-agent simplify review of recently changed code (issue #62)".into(),
+            handler: Box::new(simplify::SimplifyHandler),
+        },
+        Command {
+            name: "advisor".into(),
+            aliases: vec![],
+            description: "Show, set, or clear the advisor model (issue #33)".into(),
+            handler: Box::new(advisor::AdvisorHandler),
         },
     ]
 }

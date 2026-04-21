@@ -214,6 +214,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 skip_cache_write,
                 thinking_enabled: deps.get_app_state().thinking_enabled,
                 effort_value: deps.get_app_state().effort_value.clone(),
+                advisor_model: deps.get_app_state().advisor_model.clone(),
             };
             let model_for_langfuse = call_params
                 .model

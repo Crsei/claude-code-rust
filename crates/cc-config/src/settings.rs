@@ -424,6 +424,10 @@ pub struct RawSettings {
     pub effort_level: Option<String>,
     pub fast_mode: Option<bool>,
     pub fast_mode_per_session_opt_in: Option<bool>,
+    /// Stronger secondary model used as an advisor (issue #33).
+    /// Persisted under `advisorModel`. Only honored by providers that
+    /// advertise advisor support; others log a warning and ignore it.
+    pub advisor_model: Option<String>,
 
     // -- Modes / integrations ------------------------------------------
     pub teammate_mode: Option<bool>,
@@ -516,6 +520,7 @@ impl RawSettings {
             "claudeInChromeDefaultEnabled"
         );
         merge_opt!(auto_memory_enabled, "autoMemoryEnabled");
+        merge_opt!(advisor_model, "advisorModel");
         merge_opt!(system_prompt, "systemPrompt");
         merge_opt!(api_key, "apiKey");
 
@@ -709,6 +714,8 @@ pub struct EffectiveSettings {
     pub teammate_mode: Option<bool>,
     /// Auto-memory toggle (issue #45). `None` means "inherit default" (off).
     pub auto_memory_enabled: Option<bool>,
+    /// Advisor model id (issue #33).
+    pub advisor_model: Option<String>,
 }
 
 impl EffectiveSettings {
@@ -751,6 +758,7 @@ impl EffectiveSettings {
             fast_mode_per_session_opt_in: raw.fast_mode_per_session_opt_in,
             teammate_mode: raw.teammate_mode,
             auto_memory_enabled: raw.auto_memory_enabled,
+            advisor_model: raw.advisor_model,
         }
     }
 }
@@ -1292,6 +1300,7 @@ pub fn settings_schema() -> Value {
             "teammateMode": { "type": "boolean" },
             "claudeInChromeDefaultEnabled": { "type": "boolean" },
             "autoMemoryEnabled": { "type": "boolean" },
+            "advisorModel": { "type": "string" },
             "systemPrompt": { "type": "string" },
             "apiKey": { "type": "string" }
         }

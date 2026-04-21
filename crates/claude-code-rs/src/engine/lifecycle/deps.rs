@@ -76,6 +76,17 @@ impl QueryDeps for QueryEngineDeps {
             });
         }
 
+        // Strip advisor_model for providers that don't support it (issue #33).
+        if !crate::api::client::provider_supports_advisor(&client.config().provider)
+            && params.advisor_model.is_some()
+        {
+            tracing::debug!(
+                provider = client.langfuse_provider_name(),
+                "dropping advisor_model — provider does not support it"
+            );
+            params.advisor_model = None;
+        }
+
         let request = build_messages_request(&params);
         let stream = client.messages_stream(request).await?;
         let mut stream = std::pin::pin!(stream);
@@ -121,6 +132,17 @@ impl QueryDeps for QueryEngineDeps {
             } else {
                 app_model
             });
+        }
+
+        // Strip advisor_model for providers that don't support it (issue #33).
+        if !crate::api::client::provider_supports_advisor(&client.config().provider)
+            && params.advisor_model.is_some()
+        {
+            tracing::debug!(
+                provider = client.langfuse_provider_name(),
+                "dropping advisor_model — provider does not support it"
+            );
+            params.advisor_model = None;
         }
 
         let request = build_messages_request(&params);
@@ -194,6 +216,7 @@ impl QueryDeps for QueryEngineDeps {
                         skip_cache_write: Some(true),
                         thinking_enabled: None,
                         effort_value: None,
+                        advisor_model: None,
                     };
 
                     match self.call_model(summary_params).await {
