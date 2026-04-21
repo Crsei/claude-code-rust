@@ -532,11 +532,13 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             teammate_mode: merged_config.teammate_mode,
             claude_in_chrome_default_enabled: merged_config.claude_in_chrome_default_enabled,
             auto_memory_enabled: merged_config.auto_memory_enabled,
+            advisor_model: merged_config.advisor_model.clone(),
             sources,
         },
         verbose: cli.verbose,
         main_loop_model: model.clone(),
         main_loop_backend: backend.clone(),
+        advisor_model: merged_config.advisor_model.clone(),
         tool_permission_context: build_tool_permission_context(
             permission_mode.clone(),
             &loaded_settings,

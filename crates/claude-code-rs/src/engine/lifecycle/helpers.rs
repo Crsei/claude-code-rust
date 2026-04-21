@@ -203,6 +203,7 @@ pub(crate) fn build_messages_request(
         stream: true,
         thinking,
         tool_choice: None,
+        advisor_model: params.advisor_model.clone(),
     }
 }
 
@@ -265,6 +266,7 @@ mod tests {
             skip_cache_write: None,
             thinking_enabled: Some(true),
             effort_value: None,
+            advisor_model: None,
         }
     }
 

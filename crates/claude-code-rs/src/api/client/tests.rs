@@ -722,15 +722,17 @@ fn test_messages_request_serialization() {
         stream: true,
         thinking: None,
         tool_choice: None,
+        advisor_model: None,
     };
 
     let json = serde_json::to_value(&req).unwrap();
     assert_eq!(json["model"], "claude-sonnet-4-20250514");
     assert_eq!(json["max_tokens"], 1024);
     assert_eq!(json["stream"], true);
-    // thinking and tool_choice should be omitted when None
+    // thinking, tool_choice and advisor_model should be omitted when None
     assert!(json.get("thinking").is_none());
     assert!(json.get("tool_choice").is_none());
+    assert!(json.get("advisor_model").is_none());
 }
 
 #[test]
@@ -746,10 +748,52 @@ fn test_messages_request_with_thinking() {
         stream: true,
         thinking: Some(serde_json::json!({"type": "enabled", "budget_tokens": 2048})),
         tool_choice: None,
+        advisor_model: None,
     };
 
     let json = serde_json::to_value(&req).unwrap();
     assert!(json.get("thinking").is_some());
     assert_eq!(json["thinking"]["type"], "enabled");
     assert!(json.get("system").is_some());
+}
+
+#[test]
+fn test_messages_request_advisor_model_serializes_when_set() {
+    let req = MessagesRequest {
+        model: "claude-sonnet-4-20250514".to_string(),
+        messages: vec![],
+        system: None,
+        max_tokens: 1024,
+        tools: None,
+        stream: true,
+        thinking: None,
+        tool_choice: None,
+        advisor_model: Some("claude-opus-4-20250514".to_string()),
+    };
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["advisor_model"], "claude-opus-4-20250514");
+}
+
+#[test]
+fn test_provider_supports_advisor_matrix() {
+    use crate::api::client::{provider_supports_advisor, ApiProvider};
+    assert!(provider_supports_advisor(&ApiProvider::Anthropic {
+        api_key: "k".into(),
+        base_url: None,
+    }));
+    assert!(provider_supports_advisor(&ApiProvider::Azure {
+        endpoint: "e".into(),
+        api_key: "k".into(),
+    }));
+    assert!(!provider_supports_advisor(&ApiProvider::OpenAiCompat {
+        name: "openai".into(),
+        api_key: "k".into(),
+        base_url: "u".into(),
+        default_model: "m".into(),
+    }));
+    assert!(!provider_supports_advisor(&ApiProvider::Google {
+        api_key: "k".into(),
+        base_url: "u".into(),
+    }));
 }

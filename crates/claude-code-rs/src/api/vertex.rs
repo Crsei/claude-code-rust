@@ -286,6 +286,7 @@ mod tests {
             stream: true,
             thinking: None,
             tool_choice: None,
+            advisor_model: None,
         };
         let raw = to_vertex_body(&req).unwrap();
         let v: Value = serde_json::from_slice(&raw).unwrap();
