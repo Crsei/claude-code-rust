@@ -166,15 +166,14 @@ pub fn register_bundled_skills() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::skills;
 
     #[test]
     fn test_register_bundled_skills() {
         // Clear any previous state
-        skills::clear_skills();
+        crate::clear_skills();
 
         register_bundled_skills();
-        let all = skills::get_all_skills();
+        let all = crate::get_all_skills();
 
         // We should have at least 5 bundled skills
         assert!(
@@ -196,7 +195,7 @@ mod tests {
         // Ensure bundled skills are registered (may already be from other tests)
         register_bundled_skills();
 
-        let all = skills::get_all_skills();
+        let all = crate::get_all_skills();
         // These may or may not be present due to concurrent clear_skills() from other tests.
         // We verify the properties of SkillDefinition directly instead.
         let simplify = SkillDefinition {
@@ -236,10 +235,10 @@ mod tests {
 
     #[test]
     fn test_bundled_skill_prompts_not_empty() {
-        skills::clear_skills();
+        crate::clear_skills();
         register_bundled_skills();
 
-        let all = skills::get_all_skills();
+        let all = crate::get_all_skills();
         for skill in &all {
             assert!(
                 !skill.prompt_body.is_empty(),
