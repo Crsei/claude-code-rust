@@ -221,17 +221,31 @@ pub fn handle_plugin_command(cmd: super::subsystem_events::PluginCommand) -> Vec
         }
         PluginCommand::Uninstall {
             plugin_id,
-            purge_cache: _,
+            purge_cache,
         } => {
-            tracing::info!(plugin_id = %plugin_id, "Plugin uninstall requested via IPC");
-            vec![BackendMessage::SystemInfo {
-                text: format!(
-                    "Uninstall not yet implemented (issue #47). To disable '{}' temporarily, \
-                     run: /plugin disable {}",
-                    plugin_id, plugin_id
-                ),
-                level: "warning".to_string(),
-            }]
+            tracing::info!(
+                plugin_id = %plugin_id,
+                purge_cache,
+                "Plugin uninstall requested via IPC"
+            );
+            match crate::plugins::uninstall_plugin(&plugin_id, purge_cache) {
+                Ok(Some(entry)) => vec![BackendMessage::PluginEvent {
+                    event: PluginEvent::StatusChanged {
+                        plugin_id: entry.id.clone(),
+                        name: entry.name.clone(),
+                        status: "not_installed".to_string(),
+                        error: None,
+                    },
+                }],
+                Ok(None) => vec![BackendMessage::SystemInfo {
+                    text: format!("Plugin '{}' is not installed.", plugin_id),
+                    level: "warn".to_string(),
+                }],
+                Err(e) => vec![BackendMessage::SystemInfo {
+                    text: format!("Failed to uninstall '{}': {}", plugin_id, e),
+                    level: "error".to_string(),
+                }],
+            }
         }
     }
 }

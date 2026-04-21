@@ -187,6 +187,15 @@ fn emit_event(event: crate::ipc::subsystem_events::SubsystemEvent) {
     }
 }
 
+/// Emit a subsystem event from outside this module (e.g. from `/plugin`).
+///
+/// Routes through the same sender as internal emissions so attached
+/// frontends can't tell the difference. Used when slash-command handlers
+/// detect drift and need to notify the UI that a reload is appropriate.
+pub fn emit_event_external(event: crate::ipc::subsystem_events::SubsystemEvent) {
+    emit_event(event);
+}
+
 /// Register a plugin in the in-memory registry.
 pub fn register_plugin(plugin: PluginEntry) {
     let status_str = match &plugin.status {
@@ -278,6 +287,201 @@ pub fn unregister_plugin(id: &str) -> Option<PluginEntry> {
 /// Clear all plugins (for testing or refresh).
 pub fn clear_plugins() {
     REGISTRY.lock().clear();
+}
+
+// ---------------------------------------------------------------------------
+// Drift detection & uninstall (issue #47)
+// ---------------------------------------------------------------------------
+
+/// Summary of how the in-memory registry differs from
+/// `installed_plugins.json`.
+///
+/// Used by [`needs_refresh`] to build a human-readable reason string when
+/// the active session has drifted from disk. Kept `pub(crate)` so tests
+/// and the command module can introspect it if needed.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct DriftReport {
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+    pub updated: Vec<String>,
+}
+
+impl DriftReport {
+    fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.removed.is_empty() && self.updated.is_empty()
+    }
+}
+
+/// Compare `installed_plugins.json` on disk to the in-memory registry.
+///
+/// Returns the full drift report without mutating either side. Used both by
+/// [`needs_refresh`] and by `/plugin status` to render a detailed diff.
+pub(crate) fn compute_drift() -> DriftReport {
+    use std::collections::{HashMap, HashSet};
+
+    let disk_plugins = loader::load_installed_plugins();
+    let in_memory = get_all_plugins();
+
+    let disk_by_id: HashMap<String, &PluginEntry> =
+        disk_plugins.iter().map(|p| (p.id.clone(), p)).collect();
+    let mem_by_id: HashMap<String, &PluginEntry> =
+        in_memory.iter().map(|p| (p.id.clone(), p)).collect();
+
+    let disk_ids: HashSet<&String> = disk_by_id.keys().collect();
+    let mem_ids: HashSet<&String> = mem_by_id.keys().collect();
+
+    let mut added: Vec<String> = disk_ids
+        .difference(&mem_ids)
+        .map(|s| (*s).clone())
+        .collect();
+    let mut removed: Vec<String> = mem_ids
+        .difference(&disk_ids)
+        .map(|s| (*s).clone())
+        .collect();
+    let mut updated: Vec<String> = Vec::new();
+
+    for id in disk_ids.intersection(&mem_ids) {
+        let disk = disk_by_id.get(*id).expect("id in disk");
+        let mem = mem_by_id.get(*id).expect("id in mem");
+        if status_variant_differs(&disk.status, &mem.status) {
+            updated.push((*id).clone());
+        }
+    }
+
+    added.sort();
+    removed.sort();
+    updated.sort();
+
+    DriftReport {
+        added,
+        removed,
+        updated,
+    }
+}
+
+fn status_variant_differs(a: &PluginStatus, b: &PluginStatus) -> bool {
+    !matches!(
+        (a, b),
+        (PluginStatus::NotInstalled, PluginStatus::NotInstalled)
+            | (PluginStatus::Installed, PluginStatus::Installed)
+            | (PluginStatus::Disabled, PluginStatus::Disabled)
+            | (PluginStatus::Error(_), PluginStatus::Error(_)),
+    )
+}
+
+/// Inspect whether the in-memory registry has drifted from
+/// `installed_plugins.json`. Returns a user-facing reason when drift exists.
+///
+/// Called by `/plugin status` and after any mutation that persists state so
+/// the caller can emit `PluginEvent::RefreshNeeded`.
+pub fn needs_refresh() -> Option<String> {
+    let drift = compute_drift();
+    if drift.is_empty() {
+        return None;
+    }
+
+    let mut parts = Vec::new();
+    if !drift.added.is_empty() {
+        parts.push(format!(
+            "{} added on disk ({})",
+            drift.added.len(),
+            drift.added.join(", ")
+        ));
+    }
+    if !drift.removed.is_empty() {
+        parts.push(format!(
+            "{} removed from disk ({})",
+            drift.removed.len(),
+            drift.removed.join(", ")
+        ));
+    }
+    if !drift.updated.is_empty() {
+        parts.push(format!(
+            "{} status changed ({})",
+            drift.updated.len(),
+            drift.updated.join(", ")
+        ));
+    }
+    Some(parts.join("; "))
+}
+
+/// Remove a plugin from `installed_plugins.json` and (optionally) purge its
+/// cache directory under `~/.cc-rust/plugins/cache/{marketplace}/{id}`.
+///
+/// Also drops the plugin from the in-memory registry and emits a
+/// `PluginEvent::StatusChanged { status: "not_installed" }` event so any
+/// attached frontends update immediately.
+///
+/// Returns `Ok(None)` when the plugin was not installed, and
+/// `Ok(Some(entry))` on success with the removed `PluginEntry` so callers
+/// can render a confirmation.
+pub fn uninstall_plugin(
+    plugin_id: &str,
+    purge_cache: bool,
+) -> anyhow::Result<Option<PluginEntry>> {
+    let mut installed = loader::load_installed_plugins();
+    let Some(pos) = installed.iter().position(|p| p.id == plugin_id) else {
+        return Ok(None);
+    };
+    let removed = installed.remove(pos);
+    loader::save_installed_plugins(&installed)?;
+
+    // Drop from in-memory registry (and emit StatusChanged via unregister).
+    unregister_plugin(plugin_id);
+
+    // Optionally delete the cached plugin directory. We don't want a path
+    // error to fail the overall uninstall — persistence is the primary effect.
+    if purge_cache {
+        if let Some(path) = cache_path_for(&removed) {
+            if path.exists() {
+                if let Err(e) = std::fs::remove_dir_all(&path) {
+                    tracing::warn!(
+                        plugin_id,
+                        path = %path.display(),
+                        error = %e,
+                        "uninstall: failed to purge cache directory"
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(Some(removed))
+}
+
+/// Resolve the `cache/{marketplace}/{id}` directory for a plugin, if one
+/// exists. Prefers the persisted `cache_path` when present, falling back
+/// to the `{cache_dir}/{marketplace}/{plugin_name}` layout.
+fn cache_path_for(entry: &PluginEntry) -> Option<PathBuf> {
+    if let Some(ref cached) = entry.cache_path {
+        // cache_path typically points to `.../cache/{mp}/{name}/{version}`.
+        // For --purge we want to remove the plugin-level directory so every
+        // installed version is wiped.
+        let mut p = cached.clone();
+        if p.parent().is_some() && p.file_name().is_some() {
+            if let Some(parent) = p.parent() {
+                let parent = parent.to_path_buf();
+                // Heuristic: only pop if the parent is under `cache/`.
+                if parent
+                    .components()
+                    .any(|c| c.as_os_str() == std::ffi::OsStr::new("cache"))
+                {
+                    p = parent;
+                }
+            }
+        }
+        return Some(p);
+    }
+
+    // Fall back to computing from marketplace + id.
+    let marketplace = entry.marketplace.as_deref()?;
+    // `id` has form "name@marketplace"; extract the bare name.
+    let name = entry
+        .id
+        .split_once('@')
+        .map(|(n, _)| n)
+        .unwrap_or(entry.id.as_str());
+    Some(cache_dir().join(marketplace).join(name))
 }
 
 // ---------------------------------------------------------------------------
@@ -475,6 +679,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_register_and_find() {
         clear_plugins();
         let p = make_plugin("test-find");
@@ -485,6 +690,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_get_enabled_plugins() {
         clear_plugins();
         let mut p1 = make_plugin("enabled-1");
@@ -500,6 +706,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_unregister() {
         clear_plugins();
         register_plugin(make_plugin("to-remove"));
@@ -550,16 +757,24 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_paths() {
+        // Ensure CC_RUST_HOME isn't set by a sibling test running in parallel.
+        let old = std::env::var("CC_RUST_HOME").ok();
+        std::env::remove_var("CC_RUST_HOME");
         let pd = plugins_dir();
         assert!(pd.to_string_lossy().contains(".cc-rust"));
         assert!(cache_dir().to_string_lossy().contains("cache"));
         assert!(installed_plugins_path()
             .to_string_lossy()
             .contains("installed_plugins"));
+        if let Some(v) = old {
+            std::env::set_var("CC_RUST_HOME", v);
+        }
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_set_plugin_status() {
         clear_plugins();
         register_plugin(make_plugin("status-target"));
@@ -570,6 +785,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_discover_plugin_mcp_servers() {
         clear_plugins();
 
@@ -622,6 +838,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_discover_plugin_skills() {
         clear_plugins();
 
@@ -684,6 +901,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_discover_plugin_tools() {
         clear_plugins();
 
