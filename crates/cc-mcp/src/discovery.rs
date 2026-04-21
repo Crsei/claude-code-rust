@@ -36,17 +36,52 @@ fn plugin_servers() -> Vec<McpServerConfig> {
         .unwrap_or_default()
 }
 
+// ---------------------------------------------------------------------------
+// IDE-contributed server hook (issue #41)
+// ---------------------------------------------------------------------------
+//
+// Mirrors `set_plugin_hook` for the IDE-as-MCP-source bridge. The host
+// (`crate::ide`) registers a callback that, when an IDE is selected,
+// returns the bridge `McpServerConfig` to merge into discovery.
+
+type IdeHook = Box<dyn Fn() -> Vec<McpServerConfig> + Send + Sync>;
+
+static IDE_HOOK: LazyLock<Mutex<Option<IdeHook>>> = LazyLock::new(|| Mutex::new(None));
+
+/// Register a callback for IDE-sourced MCP server configs. Replaces any
+/// previous hook.
+pub fn set_ide_hook<F>(cb: F)
+where
+    F: Fn() -> Vec<McpServerConfig> + Send + Sync + 'static,
+{
+    *IDE_HOOK.lock() = Some(Box::new(cb));
+}
+
+fn ide_servers() -> Vec<McpServerConfig> {
+    IDE_HOOK
+        .lock()
+        .as_ref()
+        .map(|cb| cb())
+        .unwrap_or_default()
+}
+
 /// Discover MCP server configurations from all supported sources.
 ///
 /// Precedence for same server name (higher overrides lower):
 /// 1. Plugin-contributed defaults
-/// 2. Global config (`{data_root}/settings.json`)
-/// 3. Project config (`.cc-rust/settings.json`)
+/// 2. IDE-contributed bridge (selected via `/ide select`, issue #41)
+/// 3. Global config (`{data_root}/settings.json`)
+/// 4. Project config (`.cc-rust/settings.json`)
 pub fn discover_mcp_servers(cwd: &Path) -> Result<Vec<McpServerConfig>> {
     let mut servers = Vec::new();
 
     // Lowest precedence: plugin-contributed servers from installed plugins.
     merge_server_configs(&mut servers, plugin_servers());
+
+    // IDE-contributed bridge (issue #41). Sits between plugins and user
+    // settings so a user-authored `settings.json` entry with the same name
+    // can still override it.
+    merge_server_configs(&mut servers, ide_servers());
 
     // Global config: {data_root}/settings.json
     let global_settings = cc_config::paths::data_root().join("settings.json");

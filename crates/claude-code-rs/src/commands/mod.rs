@@ -100,6 +100,9 @@ pub mod mcp_cmd;
 pub mod plugin_cmd;
 pub mod reload_plugins_cmd;
 
+// IDE integration (issue #41)
+pub mod ide_cmd;
+
 // First-party Chrome integration (Claude in Chrome)
 pub mod chrome_cmd;
 
@@ -399,6 +402,12 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "MCP server management (list, status)".into(),
             handler: Box::new(mcp_cmd::McpHandler),
+        },
+        Command {
+            name: "ide".into(),
+            aliases: vec![],
+            description: "IDE integration: detect, select, reconnect MCP bridge (issue #41)".into(),
+            handler: Box::new(ide_cmd::IdeHandler),
         },
         Command {
             name: "chrome".into(),

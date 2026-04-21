@@ -73,6 +73,7 @@ impl HeadlessRuntime {
         let mut event_rx = event_bus.subscribe();
         crate::lsp_service::set_event_sender(event_bus.sender());
         crate::plugins::set_event_sender(event_bus.sender());
+        crate::ide::set_event_sender(event_bus.sender());
         // cc-skills lives in its own crate and no longer knows about
         // `SubsystemEvent`. Adapt its minimal event enum into ours here.
         let skills_tx = event_bus.sender();
@@ -138,6 +139,8 @@ impl HeadlessRuntime {
         // `crate::mcp::McpServerConfig`, which is re-exported from
         // `cc_mcp::McpServerConfig`, so they are the same type.
         cc_mcp::discovery::set_plugin_hook(|| crate::plugins::discover_plugin_mcp_servers());
+        // Wire the IDE-contributed MCP bridge hook (issue #41).
+        cc_mcp::discovery::set_ide_hook(|| crate::ide::selected_ide_mcp_config());
 
         // ── 2. Send Ready ────────────────────────────────────────────
         let app_state = self.engine.app_state();

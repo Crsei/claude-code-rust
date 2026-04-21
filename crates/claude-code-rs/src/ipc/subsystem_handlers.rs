@@ -200,11 +200,12 @@ pub fn handle_plugin_command(cmd: super::subsystem_events::PluginCommand) -> Vec
     }
 }
 
-/// Handle an IDE-integration subsystem command from the frontend.
+/// Handle an IDE subsystem command from the frontend (issue #41).
 ///
-/// The current implementation is a placeholder that acknowledges requests
-/// with an empty IDE list or a cleared selection — Team D (issue #41)
-/// replaces these branches with real detection + persistence.
+/// - `Detect` / `QueryStatus` re-run detection and return the current list.
+/// - `Select` / `Clear` persist the user's selection through `crate::ide`.
+/// - `Reconnect` re-triggers a `ConnectionStateChanged` event so the MCP
+///   manager notices the selection on its next discovery pass.
 pub fn handle_ide_command(cmd: super::subsystem_events::IdeCommand) -> Vec<BackendMessage> {
     use super::subsystem_events::IdeCommand;
 
@@ -217,26 +218,46 @@ pub fn handle_ide_command(cmd: super::subsystem_events::IdeCommand) -> Vec<Backe
         }
         IdeCommand::Select { ide_id } => {
             tracing::info!(ide_id = %ide_id, "IDE select requested via IPC");
-            vec![BackendMessage::SystemInfo {
-                text: format!(
-                    "IDE selection not yet implemented (issue #41). Requested: {}",
-                    ide_id
-                ),
-                level: "warning".to_string(),
-            }]
+            match crate::ide::select_ide(&ide_id) {
+                Ok(()) => {
+                    let ides = build_ide_info_list();
+                    vec![BackendMessage::IdeEvent {
+                        event: IdeEvent::IdeList { ides },
+                    }]
+                }
+                Err(e) => vec![BackendMessage::SystemInfo {
+                    text: format!("IDE select failed: {}", e),
+                    level: "error".to_string(),
+                }],
+            }
         }
         IdeCommand::Clear => {
-            tracing::info!("IDE clear requested via IPC");
-            vec![BackendMessage::IdeEvent {
-                event: IdeEvent::SelectionChanged { ide_id: None },
-            }]
+            tracing::info!("IDE selection clear requested via IPC");
+            match crate::ide::clear_selection() {
+                Ok(()) => {
+                    let ides = build_ide_info_list();
+                    vec![BackendMessage::IdeEvent {
+                        event: IdeEvent::IdeList { ides },
+                    }]
+                }
+                Err(e) => vec![BackendMessage::SystemInfo {
+                    text: format!("IDE clear failed: {}", e),
+                    level: "error".to_string(),
+                }],
+            }
         }
         IdeCommand::Reconnect => {
             tracing::info!("IDE reconnect requested via IPC");
-            vec![BackendMessage::SystemInfo {
-                text: "IDE reconnect not yet implemented (issue #41)".to_string(),
-                level: "warning".to_string(),
-            }]
+            match crate::ide::reconnect_selected() {
+                Ok(()) => vec![BackendMessage::SystemInfo {
+                    text: "IDE reconnect scheduled".to_string(),
+                    level: "info".to_string(),
+                }],
+                Err(e) => vec![BackendMessage::SystemInfo {
+                    text: format!("IDE reconnect failed: {}", e),
+                    level: "error".to_string(),
+                }],
+            }
         }
     }
 }
@@ -338,13 +359,14 @@ pub fn build_mcp_server_config_entries() -> Vec<McpServerConfigEntry> {
         .collect()
 }
 
-/// Build the list of detected IDE integrations.
+/// Build the list of detected IDE integrations (issue #41).
 ///
-/// Placeholder that returns an empty list. Team D (issue #41) replaces
-/// this with real OS-level detection (running processes, installed paths)
-/// and selection lookup.
+/// Thin wrapper around [`crate::ide::detect_ides`] that exists primarily
+/// so the IPC layer has a stable entry point we can hook from other
+/// places (e.g. the future `/ide` TUI view) without reaching into the
+/// `ide` module.
 pub fn build_ide_info_list() -> Vec<IdeInfo> {
-    Vec::new()
+    crate::ide::detect_ides()
 }
 
 /// Build a list of plugin info from the in-memory plugin registry.
