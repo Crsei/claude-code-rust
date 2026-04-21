@@ -98,6 +98,7 @@ pub mod compact;
 // MCP server management
 pub mod mcp_cmd;
 pub mod plugin_cmd;
+pub mod reload_plugins_cmd;
 
 // First-party Chrome integration (Claude in Chrome)
 pub mod chrome_cmd;
@@ -410,6 +411,12 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "Plugin management (list, status, enable, disable)".into(),
             handler: Box::new(plugin_cmd::PluginHandler),
+        },
+        Command {
+            name: "reload-plugins".into(),
+            aliases: vec![],
+            description: "Hot-refresh the plugin registry (issue #49)".into(),
+            handler: Box::new(reload_plugins_cmd::ReloadPluginsHandler),
         },
         Command {
             name: "model-add".into(),

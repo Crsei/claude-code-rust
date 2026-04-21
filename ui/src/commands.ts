@@ -47,6 +47,7 @@ export const COMMANDS: CommandDef[] = [
   { name: 'audit-export',     aliases: ['audit'],               description: 'Export verifiable audit record',   kind: 'action' },
   { name: 'session-export',   aliases: ['sexport'],             description: 'Export structured JSON data',      kind: 'action' },
   { name: 'init',             aliases: [],                      description: 'Initialize project config',        kind: 'action' },
+  { name: 'reload-plugins',   aliases: [],                      description: 'Hot-refresh the plugin registry',  kind: 'action' },
   { name: 'login',            aliases: [],                      description: 'Authenticate with Anthropic',      kind: 'action' },
   { name: 'logout',           aliases: [],                      description: 'Clear stored credentials',         kind: 'action' },
   { name: 'resume',           aliases: [],                      description: 'Resume a previous session',        kind: 'action' },
