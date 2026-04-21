@@ -105,31 +105,36 @@ async fn run_xdotool(args: &[&str]) -> anyhow::Result<String> {
 }
 
 fn map_key_to_xdotool(key: &str) -> String {
-    // xdotool uses X11 keysym names and "+" for combos
-    // Most common keys map directly
+    // xdotool uses X11 keysym names and "+" for combos.
+    // Most common keys map directly; unknowns pass through as-is.
     let parts: Vec<&str> = key.split('+').collect();
     parts
         .iter()
-        .map(|p| match p.to_lowercase().as_str() {
-            "ctrl" | "control" => "ctrl",
-            "alt" => "alt",
-            "shift" => "shift",
-            "super" | "cmd" | "command" | "meta" => "super",
-            "return" | "enter" => "Return",
-            "escape" | "esc" => "Escape",
-            "tab" => "Tab",
-            "backspace" | "back" => "BackSpace",
-            "delete" | "del" => "Delete",
-            "space" => "space",
-            "up" => "Up",
-            "down" => "Down",
-            "left" => "Left",
-            "right" => "Right",
-            "home" => "Home",
-            "end" => "End",
-            "pageup" | "page_up" => "Prior",
-            "pagedown" | "page_down" => "Next",
-            other => other,
+        .map(|p| {
+            // Rebind to a named local so `as_str()`'s borrow lives long enough.
+            let p_lower = p.to_lowercase();
+            match p_lower.as_str() {
+                "ctrl" | "control" => "ctrl".to_string(),
+                "alt" => "alt".to_string(),
+                "shift" => "shift".to_string(),
+                "super" | "cmd" | "command" | "meta" => "super".to_string(),
+                "return" | "enter" => "Return".to_string(),
+                "escape" | "esc" => "Escape".to_string(),
+                "tab" => "Tab".to_string(),
+                "backspace" | "back" => "BackSpace".to_string(),
+                "delete" | "del" => "Delete".to_string(),
+                "space" => "space".to_string(),
+                "up" => "Up".to_string(),
+                "down" => "Down".to_string(),
+                "left" => "Left".to_string(),
+                "right" => "Right".to_string(),
+                "home" => "Home".to_string(),
+                "end" => "End".to_string(),
+                "pageup" | "page_up" => "Prior".to_string(),
+                "pagedown" | "page_down" => "Next".to_string(),
+                // Unknown: preserve original case from the input.
+                _ => (*p).to_string(),
+            }
         })
         .collect::<Vec<_>>()
         .join("+")
