@@ -15,7 +15,10 @@
 
 pub mod loader;
 pub mod manifest;
+pub mod refresh;
 pub mod tools;
+
+pub use refresh::{reload_plugins, ReloadReport};
 
 use parking_lot::Mutex;
 use std::collections::HashMap;

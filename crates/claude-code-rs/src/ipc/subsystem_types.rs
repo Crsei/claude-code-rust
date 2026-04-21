@@ -12,6 +12,8 @@
 
 #![allow(dead_code)] // Types are pre-defined for upcoming IPC extension tasks
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -96,6 +98,72 @@ pub struct McpServerInfoBrief {
     pub version: String,
 }
 
+/// Where a config entry lives in the settings layering.
+///
+/// The first two variants (`user`, `project`) are editable; the remaining
+/// variants are *read-only* sources that cannot be mutated directly — they
+/// must be managed through the plugin or IDE subsystem respectively.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ConfigScope {
+    /// Global user scope (`~/.cc-rust/settings.json`).
+    User,
+    /// Current project scope (`.cc-rust/settings.json`).
+    Project,
+    /// Contributed by a plugin (read-only; edit via `/plugin`).
+    Plugin {
+        /// Plugin id that contributes the entry.
+        id: String,
+    },
+    /// Dynamically injected by an IDE integration (read-only; edit via `/ide`).
+    Ide {
+        /// IDE identifier that contributes the entry.
+        id: String,
+    },
+}
+
+impl ConfigScope {
+    /// True when this scope can be edited directly via settings files.
+    pub fn is_editable(&self) -> bool {
+        matches!(self, ConfigScope::User | ConfigScope::Project)
+    }
+}
+
+/// Editable MCP server entry — full config payload plus its scope.
+///
+/// Distinct from [`McpServerStatusInfo`], which describes live connection
+/// state. This type is used by the `/mcp` editable management UX to
+/// round-trip a server definition between frontend and backend without
+/// losing fields.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct McpServerConfigEntry {
+    /// Logical name / unique key in the settings map.
+    pub name: String,
+    /// Transport family: `"stdio"` | `"sse"` | `"streamable-http"`.
+    pub transport: String,
+    /// Command for `stdio` transport.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// Command arguments for `stdio` transport.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
+    /// URL for `sse` / `streamable-http` transports.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// HTTP headers for `sse` / `streamable-http` transports.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, String>>,
+    /// Environment variables for `stdio`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env: Option<HashMap<String, String>>,
+    /// Explicit browser-MCP marker (affects tooling heuristics).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub browser_mcp: Option<bool>,
+    /// Where this entry lives. Non-editable scopes (plugin/ide) are
+    /// returned for display but reject `UpsertConfig` / `RemoveConfig`.
+    pub scope: ConfigScope,
+}
+
 /// Aggregate status of a single MCP server connection.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct McpServerStatusInfo {
@@ -147,6 +215,36 @@ pub struct PluginInfo {
 }
 
 // ---------------------------------------------------------------------------
+// IDE-integration types
+// ---------------------------------------------------------------------------
+
+/// Detected IDE and its integration state.
+///
+/// An IDE is either (a) merely present on the host, (b) running and
+/// available to bind to, or (c) the currently selected default whose
+/// MCP bridge is being actively managed.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct IdeInfo {
+    /// Stable identifier such as `"vscode"`, `"cursor"`, `"jetbrains"`.
+    pub id: String,
+    /// Human-readable name for display in lists.
+    pub name: String,
+    /// Whether this IDE is installed on the host machine.
+    pub installed: bool,
+    /// Whether this IDE currently has a running instance we can bind to.
+    pub running: bool,
+    /// Whether this IDE is the selected default integration.
+    pub selected: bool,
+    /// Current connection state when bound: `"disconnected"` |
+    /// `"connecting"` | `"connected"` | `"error"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection_state: Option<String>,
+    /// Error message when the IDE MCP bridge is in an error state.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
 // Skill types
 // ---------------------------------------------------------------------------
 
@@ -182,6 +280,13 @@ pub struct SubsystemStatusSnapshot {
     pub plugins: Vec<PluginInfo>,
     /// All registered skills.
     pub skills: Vec<SkillInfo>,
+    /// Detected IDE integrations and the currently selected default.
+    ///
+    /// Empty when IDE detection has not run yet. The field is marked
+    /// `#[serde(default)]` so older snapshots without this key deserialize
+    /// cleanly.
+    #[serde(default)]
+    pub ides: Vec<IdeInfo>,
     /// Unix timestamp (seconds since epoch) when this snapshot was captured.
     pub timestamp: i64,
 }
@@ -249,6 +354,138 @@ mod tests {
 
         let value = serde_json::to_value(&info).expect("serialize LspServerInfo");
         assert_eq!(value["error"], "server crashed");
+    }
+
+    #[test]
+    fn config_scope_editable_flag() {
+        assert!(ConfigScope::User.is_editable());
+        assert!(ConfigScope::Project.is_editable());
+        assert!(!ConfigScope::Plugin {
+            id: "p".into()
+        }
+        .is_editable());
+        assert!(!ConfigScope::Ide { id: "vscode".into() }.is_editable());
+    }
+
+    #[test]
+    fn config_scope_roundtrip() {
+        let cases = vec![
+            ConfigScope::User,
+            ConfigScope::Project,
+            ConfigScope::Plugin { id: "com.x".into() },
+            ConfigScope::Ide { id: "vscode".into() },
+        ];
+        for scope in cases {
+            let json = serde_json::to_string(&scope).expect("serialize scope");
+            let back: ConfigScope = serde_json::from_str(&json).expect("deserialize scope");
+            assert_eq!(back, scope);
+        }
+    }
+
+    #[test]
+    fn config_scope_serializes_kind_tag() {
+        let value = serde_json::to_value(&ConfigScope::User).unwrap();
+        assert_eq!(value["kind"], "user");
+        let value = serde_json::to_value(&ConfigScope::Plugin { id: "p".into() }).unwrap();
+        assert_eq!(value["kind"], "plugin");
+        assert_eq!(value["id"], "p");
+    }
+
+    #[test]
+    fn mcp_server_config_entry_roundtrip() {
+        let entry = McpServerConfigEntry {
+            name: "context7".into(),
+            transport: "stdio".into(),
+            command: Some("npx".into()),
+            args: Some(vec!["-y".into(), "context7".into()]),
+            url: None,
+            headers: None,
+            env: Some(HashMap::from([("NODE_ENV".into(), "production".into())])),
+            browser_mcp: None,
+            scope: ConfigScope::User,
+        };
+
+        let json = serde_json::to_string(&entry).expect("serialize entry");
+        let back: McpServerConfigEntry = serde_json::from_str(&json).expect("deserialize entry");
+
+        assert_eq!(back.name, "context7");
+        assert_eq!(back.transport, "stdio");
+        assert_eq!(back.command.as_deref(), Some("npx"));
+        assert_eq!(back.env.unwrap().get("NODE_ENV").cloned(), Some("production".into()));
+
+        let value = serde_json::to_value(&entry).unwrap();
+        assert!(value.get("url").is_none(), "None url should be omitted");
+        assert!(value.get("browser_mcp").is_none());
+    }
+
+    #[test]
+    fn mcp_server_config_entry_http_transport() {
+        let entry = McpServerConfigEntry {
+            name: "remote".into(),
+            transport: "streamable-http".into(),
+            command: None,
+            args: None,
+            url: Some("https://example.com/mcp".into()),
+            headers: Some(HashMap::from([("Authorization".into(), "Bearer x".into())])),
+            env: None,
+            browser_mcp: Some(true),
+            scope: ConfigScope::Project,
+        };
+        let value = serde_json::to_value(&entry).unwrap();
+        assert_eq!(value["url"], "https://example.com/mcp");
+        assert_eq!(value["browser_mcp"], true);
+    }
+
+    #[test]
+    fn ide_info_roundtrip() {
+        let ide = IdeInfo {
+            id: "vscode".into(),
+            name: "Visual Studio Code".into(),
+            installed: true,
+            running: true,
+            selected: false,
+            connection_state: None,
+            error: None,
+        };
+        let json = serde_json::to_string(&ide).unwrap();
+        let back: IdeInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, "vscode");
+        assert!(back.installed);
+
+        let value = serde_json::to_value(&ide).unwrap();
+        assert!(value.get("connection_state").is_none());
+        assert!(value.get("error").is_none());
+    }
+
+    #[test]
+    fn ide_info_with_connection_state() {
+        let ide = IdeInfo {
+            id: "cursor".into(),
+            name: "Cursor".into(),
+            installed: true,
+            running: true,
+            selected: true,
+            connection_state: Some("connected".into()),
+            error: None,
+        };
+        let value = serde_json::to_value(&ide).unwrap();
+        assert_eq!(value["connection_state"], "connected");
+        assert_eq!(value["selected"], true);
+    }
+
+    #[test]
+    fn subsystem_snapshot_backward_compatible_missing_ides() {
+        // Older payloads without `ides` field must still deserialize.
+        let json = r#"{
+            "lsp": [],
+            "mcp": [],
+            "plugins": [],
+            "skills": [],
+            "timestamp": 123
+        }"#;
+        let parsed: SubsystemStatusSnapshot = serde_json::from_str(json).expect("deserialize");
+        assert!(parsed.ides.is_empty());
+        assert_eq!(parsed.timestamp, 123);
     }
 
     #[test]
@@ -384,6 +621,15 @@ mod tests {
                 user_invocable: true,
                 model_invocable: true,
             }],
+            ides: vec![IdeInfo {
+                id: "vscode".to_string(),
+                name: "VS Code".to_string(),
+                installed: true,
+                running: true,
+                selected: true,
+                connection_state: Some("connected".to_string()),
+                error: None,
+            }],
             timestamp: 1713168000,
         };
 
@@ -395,6 +641,8 @@ mod tests {
         assert_eq!(parsed.mcp.len(), 1);
         assert_eq!(parsed.plugins.len(), 1);
         assert_eq!(parsed.skills.len(), 1);
+        assert_eq!(parsed.ides.len(), 1);
+        assert_eq!(parsed.ides[0].id, "vscode");
         assert_eq!(parsed.timestamp, 1713168000);
 
         // Verify nested None fields are omitted
@@ -415,6 +663,7 @@ mod tests {
             mcp: vec![],
             plugins: vec![],
             skills: vec![],
+            ides: vec![],
             timestamp: 0,
         };
 
@@ -426,6 +675,7 @@ mod tests {
         assert!(parsed.mcp.is_empty());
         assert!(parsed.plugins.is_empty());
         assert!(parsed.skills.is_empty());
+        assert!(parsed.ides.is_empty());
         assert_eq!(parsed.timestamp, 0);
     }
 }
