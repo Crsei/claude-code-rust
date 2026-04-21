@@ -505,6 +505,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-types"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -584,6 +594,7 @@ dependencies = [
  "bytes",
  "cc-keybindings",
  "cc-observability",
+ "cc-types",
  "chrono",
  "clap",
  "crossterm",
