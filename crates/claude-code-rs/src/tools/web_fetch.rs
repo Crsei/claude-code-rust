@@ -291,7 +291,12 @@ impl Tool for WebFetchTool {
         // stale-but-allowed content).
         let app_state = (ctx.get_app_state)();
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let policy = policy_from_app_state(&app_state, cwd, false);
+        let policy = policy_from_app_state(
+            &app_state.tool_permission_context,
+            &app_state.settings.sandbox,
+            cwd,
+            false,
+        );
         if let NetworkDecision::Denied(err) = policy.network.check_url(&url) {
             return Ok(ToolResult {
                 data: json!({

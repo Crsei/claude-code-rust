@@ -14,25 +14,20 @@
 //! Both paths feed into the same downstream UX (prompt, permissions,
 //! rendering), so they're grouped here rather than in separate crates.
 //!
-//! Module layout:
-//!
-//! - `detection` — heuristics for recognizing browser MCP tools (both paths).
-//! - `permissions` — category / risk classification for permission prompts.
-//! - `prompt` — `# Browser Automation` system-prompt section.
-//! - `tool_rendering` — one-line previews for browser tool results.
-//! - `common` — cross-platform Chromium browser paths + constants (#4+#5).
-//! - `state` — runtime state for the first-party Chrome subsystem (#4+#5).
-//! - `setup` — extension detection + native host manifest install (#4+#5).
-//! - `session` — `ChromeSession` lifecycle (#4; transport lives in #5).
+//! Phase 4 (issue #73) moved the parts of this module that did not touch
+//! the `Tool` trait into the `cc-browser` workspace crate and re-exports
+//! them here. `detection` and `prompt` still live locally because they
+//! accept `Arc<dyn Tool>` — unblocked once the Tool trait leaves the root
+//! crate (Phase 5 hub-cycle break).
 
-pub mod common;
+pub use cc_browser::{
+    common, mcp_bridge, native_host, permissions, session, state, tool_rendering,
+};
+// `setup` and `transport` are consumed by the CLI + integration tests via the
+// full path `cc_browser::{setup,transport}::…`. Re-export them under the
+// legacy `crate::browser::` names so any lingering call sites keep compiling.
+#[allow(unused_imports)]
+pub use cc_browser::{setup, transport};
+
 pub mod detection;
-pub mod mcp_bridge;
-pub mod native_host;
-pub mod permissions;
 pub mod prompt;
-pub mod session;
-pub mod setup;
-pub mod state;
-pub mod tool_rendering;
-pub mod transport;

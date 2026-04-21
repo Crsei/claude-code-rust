@@ -131,13 +131,23 @@ dotenvy = { workspace = true }
 # 同步原语
 parking_lot = { workspace = true }
 
-# 内部 workspace crates (P1/P2)
+# 内部 workspace crates (P1/P2/P3)
 cc-keybindings = { workspace = true }
 cc-observability = { workspace = true }
 cc-types = { workspace = true }
 cc-bootstrap = { workspace = true }
 cc-auth = { workspace = true }
 cc-skills = { workspace = true }
+cc-config = { workspace = true }
+cc-utils = { workspace = true }
+cc-mcp = { workspace = true }
+cc-services = { workspace = true }
+cc-computer-use = { workspace = true }
+cc-compact = { workspace = true }
+cc-sandbox = { workspace = true }
+cc-permissions = { workspace = true }
+cc-browser = { workspace = true }
+cc-session = { workspace = true }
 
 # Daemon
 axum = { workspace = true }

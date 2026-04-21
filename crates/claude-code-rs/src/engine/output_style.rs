@@ -42,9 +42,6 @@ impl OutputStyle {
     }
 }
 
-/// Names of the built-in styles, exposed for `/config show` and tests.
-pub const BUILT_IN_NAMES: &[&str] = &["default", "explanatory", "learning"];
-
 /// Resolve the named output style.
 ///
 /// Built-in names always win over custom files of the same name (so

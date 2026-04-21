@@ -179,7 +179,12 @@ impl Tool for PowerShellTool {
             .unwrap_or(false);
         let app_state_arc = (ctx.get_app_state)();
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let policy = policy_from_app_state(&app_state_arc, cwd.clone(), false);
+        let policy = policy_from_app_state(
+            &app_state_arc.tool_permission_context,
+            &app_state_arc.settings.sandbox,
+            cwd.clone(),
+            false,
+        );
 
         if let Err(err) = preflight_shell_command(&policy, &command) {
             return Ok(ToolResult {
