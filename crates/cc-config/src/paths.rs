@@ -93,6 +93,15 @@ pub fn memory_dir_global() -> PathBuf {
     data_root().join("memory")
 }
 
+/// `{data_root}/auto_memory/` — auto-captured memories (issue #45).
+///
+/// Separated from the primary `memory/` directory so users can inspect
+/// or purge auto-captured notes independently of curated entries.
+/// Creation is deferred to `memdir::ensure_memory_dir` on first write.
+pub fn auto_memory_dir() -> PathBuf {
+    data_root().join("auto_memory")
+}
+
 pub fn session_insights_dir() -> PathBuf {
     data_root().join("session-insights")
 }
@@ -142,6 +151,38 @@ pub fn team_memory_dir(cwd: &Path) -> PathBuf {
 #[allow(dead_code)]
 pub fn project_cc_rust_dir(cwd: &Path) -> PathBuf {
     cwd.join(".cc-rust")
+}
+
+// ----- Plan file (issue #46) -----------------------------------------------
+
+/// `{cwd}/.cc-rust/plan.md` — project-scoped plan file.
+pub fn plan_file_path_project(cwd: &Path) -> PathBuf {
+    cwd.join(".cc-rust").join("plan.md")
+}
+
+/// `{data_root}/plan.md` — fallback global plan file used outside a project.
+pub fn plan_file_path_global() -> PathBuf {
+    data_root().join("plan.md")
+}
+
+/// Resolve the plan file the current session should read/write.
+///
+/// Priority:
+///   1. If `{cwd}/.cc-rust/plan.md` already exists → use it (idempotent).
+///   2. Else if `{cwd}/.cc-rust/` or `{cwd}/CLAUDE.md` is present → project path.
+///   3. Else → global `{data_root}/plan.md`.
+pub fn current_plan_file_path(cwd: &Path) -> PathBuf {
+    let project = plan_file_path_project(cwd);
+    if project.exists() {
+        return project;
+    }
+    let has_project_marker =
+        cwd.join(".cc-rust").is_dir() || cwd.join("CLAUDE.md").is_file();
+    if has_project_marker {
+        project
+    } else {
+        plan_file_path_global()
+    }
 }
 
 #[cfg(test)]
@@ -245,6 +286,7 @@ mod tests {
         assert_eq!(audits_dir(), base.join("audits"));
         assert_eq!(transcripts_dir(), base.join("transcripts"));
         assert_eq!(memory_dir_global(), base.join("memory"));
+        assert_eq!(auto_memory_dir(), base.join("auto_memory"));
         assert_eq!(session_insights_dir(), base.join("session-insights"));
         assert_eq!(plugins_dir(), base.join("plugins"));
         assert_eq!(skills_dir_global(), base.join("skills"));
@@ -286,5 +328,63 @@ mod tests {
             project_cc_rust_dir(Path::new("/foo/bar")),
             PathBuf::from("/foo/bar/.cc-rust")
         );
+    }
+
+    // Plan file path helpers (issue #46) ----------------------------------
+
+    #[test]
+    #[serial]
+    fn plan_file_path_project_is_cwd_relative() {
+        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/ignored");
+        assert_eq!(
+            plan_file_path_project(Path::new("/foo/bar")),
+            PathBuf::from("/foo/bar/.cc-rust/plan.md")
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn plan_file_path_global_is_under_data_root() {
+        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/cc-plan-global");
+        assert_eq!(
+            plan_file_path_global(),
+            PathBuf::from("/tmp/cc-plan-global/plan.md")
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn current_plan_prefers_project_when_markers_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".cc-rust")).unwrap();
+        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/should-not-be-used");
+        assert_eq!(
+            current_plan_file_path(tmp.path()),
+            tmp.path().join(".cc-rust").join("plan.md")
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn current_plan_falls_back_to_global_without_markers() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        assert_eq!(
+            current_plan_file_path(tmp.path()),
+            home.path().join("plan.md")
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn current_plan_is_idempotent_once_plan_exists() {
+        let tmp = tempfile::tempdir().unwrap();
+        let plan = tmp.path().join(".cc-rust").join("plan.md");
+        std::fs::create_dir_all(plan.parent().unwrap()).unwrap();
+        std::fs::write(&plan, "# Plan\n").unwrap();
+        // Even without other markers, an existing plan.md sticks.
+        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/unused");
+        assert_eq!(current_plan_file_path(tmp.path()), plan);
     }
 }
