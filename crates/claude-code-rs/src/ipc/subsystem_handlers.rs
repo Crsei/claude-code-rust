@@ -10,7 +10,7 @@
 //! and the `SystemStatus` tool.
 
 use super::protocol::BackendMessage;
-use super::subsystem_events::{LspEvent, McpEvent, PluginEvent, SkillEvent};
+use super::subsystem_events::{IdeEvent, LspEvent, McpEvent, PluginEvent, SkillEvent};
 use super::subsystem_types::*;
 
 // ===========================================================================
@@ -109,6 +109,33 @@ pub fn handle_mcp_command(cmd: super::subsystem_events::McpCommand) -> Vec<Backe
                 event: McpEvent::ServerList { servers },
             }]
         }
+        McpCommand::QueryConfig => {
+            let entries = build_mcp_server_config_entries();
+            vec![BackendMessage::McpEvent {
+                event: McpEvent::ConfigList { entries },
+            }]
+        }
+        McpCommand::UpsertConfig { entry } => {
+            tracing::info!(server = %entry.name, "MCP upsert requested via IPC");
+            // Team A (issue #44) plugs the real writer into this slot.
+            // Until then we reject and surface a clear config error so the
+            // UI doesn't think the change landed.
+            vec![BackendMessage::McpEvent {
+                event: McpEvent::ConfigError {
+                    server_name: entry.name,
+                    error: "UpsertConfig not yet implemented (issue #44)".to_string(),
+                },
+            }]
+        }
+        McpCommand::RemoveConfig { server_name, scope: _ } => {
+            tracing::info!(server = %server_name, "MCP remove requested via IPC");
+            vec![BackendMessage::McpEvent {
+                event: McpEvent::ConfigError {
+                    server_name,
+                    error: "RemoveConfig not yet implemented (issue #44)".to_string(),
+                },
+            }]
+        }
     }
 }
 
@@ -144,6 +171,71 @@ pub fn handle_plugin_command(cmd: super::subsystem_events::PluginCommand) -> Vec
             let plugins = build_plugin_info_list();
             vec![BackendMessage::PluginEvent {
                 event: PluginEvent::PluginList { plugins },
+            }]
+        }
+        PluginCommand::Reload => {
+            tracing::info!("Plugin reload requested via IPC");
+            let report = crate::plugins::reload_plugins();
+            vec![BackendMessage::PluginEvent {
+                event: PluginEvent::Reloaded {
+                    count: report.count,
+                    had_error: report.had_error(),
+                },
+            }]
+        }
+        PluginCommand::Uninstall {
+            plugin_id,
+            purge_cache: _,
+        } => {
+            tracing::info!(plugin_id = %plugin_id, "Plugin uninstall requested via IPC");
+            vec![BackendMessage::SystemInfo {
+                text: format!(
+                    "Uninstall not yet implemented (issue #47). To disable '{}' temporarily, \
+                     run: /plugin disable {}",
+                    plugin_id, plugin_id
+                ),
+                level: "warning".to_string(),
+            }]
+        }
+    }
+}
+
+/// Handle an IDE-integration subsystem command from the frontend.
+///
+/// The current implementation is a placeholder that acknowledges requests
+/// with an empty IDE list or a cleared selection — Team D (issue #41)
+/// replaces these branches with real detection + persistence.
+pub fn handle_ide_command(cmd: super::subsystem_events::IdeCommand) -> Vec<BackendMessage> {
+    use super::subsystem_events::IdeCommand;
+
+    match cmd {
+        IdeCommand::Detect | IdeCommand::QueryStatus => {
+            let ides = build_ide_info_list();
+            vec![BackendMessage::IdeEvent {
+                event: IdeEvent::IdeList { ides },
+            }]
+        }
+        IdeCommand::Select { ide_id } => {
+            tracing::info!(ide_id = %ide_id, "IDE select requested via IPC");
+            vec![BackendMessage::SystemInfo {
+                text: format!(
+                    "IDE selection not yet implemented (issue #41). Requested: {}",
+                    ide_id
+                ),
+                level: "warning".to_string(),
+            }]
+        }
+        IdeCommand::Clear => {
+            tracing::info!("IDE clear requested via IPC");
+            vec![BackendMessage::IdeEvent {
+                event: IdeEvent::SelectionChanged { ide_id: None },
+            }]
+        }
+        IdeCommand::Reconnect => {
+            tracing::info!("IDE reconnect requested via IPC");
+            vec![BackendMessage::SystemInfo {
+                text: "IDE reconnect not yet implemented (issue #41)".to_string(),
+                level: "warning".to_string(),
             }]
         }
     }
@@ -217,6 +309,44 @@ pub fn build_mcp_server_info_list() -> Vec<McpServerStatusInfo> {
         .collect()
 }
 
+/// Build the editable MCP config entry list.
+///
+/// Walks the same discovery chain as [`build_mcp_server_info_list`] but
+/// returns the *settings-level* view (`McpServerConfigEntry`) rather than
+/// the runtime connection view. Scope is inferred from discovery order —
+/// Team A (issue #44) refines this once the discovery layer tags each
+/// entry with its source.
+pub fn build_mcp_server_config_entries() -> Vec<McpServerConfigEntry> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let configs = crate::mcp::discovery::discover_mcp_servers(&cwd).unwrap_or_default();
+
+    configs
+        .into_iter()
+        .map(|cfg| McpServerConfigEntry {
+            name: cfg.name,
+            transport: cfg.transport,
+            command: cfg.command,
+            args: cfg.args,
+            url: cfg.url,
+            headers: cfg.headers,
+            env: cfg.env,
+            browser_mcp: cfg.browser_mcp,
+            // Default to `User` scope until discovery tags entries with
+            // their real origin (tracked in issue #44).
+            scope: ConfigScope::User,
+        })
+        .collect()
+}
+
+/// Build the list of detected IDE integrations.
+///
+/// Placeholder that returns an empty list. Team D (issue #41) replaces
+/// this with real OS-level detection (running processes, installed paths)
+/// and selection lookup.
+pub fn build_ide_info_list() -> Vec<IdeInfo> {
+    Vec::new()
+}
+
 /// Build a list of plugin info from the in-memory plugin registry.
 pub fn build_plugin_info_list() -> Vec<PluginInfo> {
     use crate::plugins::PluginStatus;
@@ -276,6 +406,7 @@ pub fn build_subsystem_status_snapshot() -> SubsystemStatusSnapshot {
         mcp: build_mcp_server_info_list(),
         plugins: build_plugin_info_list(),
         skills: build_skill_info_list(),
+        ides: build_ide_info_list(),
         timestamp: chrono::Utc::now().timestamp(),
     }
 }

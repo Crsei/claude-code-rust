@@ -69,6 +69,21 @@ pub enum McpEvent {
     },
     /// Full list of MCP servers (response to `QueryStatus`).
     ServerList { servers: Vec<McpServerStatusInfo> },
+    /// Full list of editable config entries (response to `QueryConfig`).
+    ///
+    /// Distinct from `ServerList`: this is the settings-level view (source
+    /// of truth for the editor) rather than the live runtime view.
+    ConfigList { entries: Vec<McpServerConfigEntry> },
+    /// A config entry was upserted or removed.
+    ///
+    /// `entry` is `None` when the server was deleted from the scope.
+    ConfigChanged {
+        server_name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        entry: Option<McpServerConfigEntry>,
+    },
+    /// Config validation / persistence failure.
+    ConfigError { server_name: String, error: String },
 }
 
 /// Events emitted by the plugin subsystem.
@@ -85,6 +100,39 @@ pub enum PluginEvent {
     },
     /// Full list of plugins (response to `QueryStatus`).
     PluginList { plugins: Vec<PluginInfo> },
+    /// Emitted when on-disk plugin state diverges from the in-memory
+    /// registry and the session should call `/reload-plugins` to sync.
+    ///
+    /// `reason` is a short human-readable hint (`"installed_plugins.json changed"`,
+    /// `"marketplace updated"`, etc.) that the UI can surface inline.
+    RefreshNeeded { reason: String },
+    /// Emitted after a reload cycle completes.
+    ///
+    /// `count` is the number of plugins in the registry post-reload.
+    /// `had_error` is true when any plugin failed to load.
+    Reloaded { count: usize, had_error: bool },
+}
+
+/// Events emitted by the IDE-integration subsystem.
+#[derive(Serialize, Debug, Clone)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum IdeEvent {
+    /// Full list of detected IDEs, including the currently selected one
+    /// (response to `QueryStatus`).
+    IdeList { ides: Vec<IdeInfo> },
+    /// The selected default IDE changed. `ide_id: None` means the
+    /// selection was cleared.
+    SelectionChanged {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ide_id: Option<String>,
+    },
+    /// Connection state of the bound IDE MCP bridge changed.
+    ConnectionStateChanged {
+        ide_id: String,
+        state: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
 }
 
 /// Events emitted by the skill subsystem.
@@ -119,6 +167,20 @@ pub enum McpCommand {
     DisconnectServer { server_name: String },
     ReconnectServer { server_name: String },
     QueryStatus,
+    /// Request the full list of editable config entries
+    /// (drives the `/mcp` editor view).
+    QueryConfig,
+    /// Create or replace a config entry.
+    ///
+    /// The entry's `scope` determines which settings file is written.
+    /// Non-editable scopes (`Plugin`/`Ide`) must be rejected by the
+    /// handler with a `ConfigError` event.
+    UpsertConfig { entry: McpServerConfigEntry },
+    /// Remove a config entry from the given scope.
+    RemoveConfig {
+        server_name: String,
+        scope: ConfigScope,
+    },
 }
 
 /// Commands the frontend can send to the plugin subsystem.
@@ -127,6 +189,35 @@ pub enum McpCommand {
 pub enum PluginCommand {
     Enable { plugin_id: String },
     Disable { plugin_id: String },
+    QueryStatus,
+    /// Hot-refresh the plugin registry — drives `/reload-plugins`.
+    ///
+    /// Clears the in-memory registry and rebuilds from disk, then emits
+    /// a `PluginEvent::Reloaded` with the new count.
+    Reload,
+    /// Uninstall a plugin (removes from `installed_plugins.json` and,
+    /// when `purge_cache` is `true`, the local cache directory).
+    Uninstall {
+        plugin_id: String,
+        #[serde(default)]
+        purge_cache: bool,
+    },
+}
+
+/// Commands the frontend can send to the IDE-integration subsystem.
+#[derive(Deserialize, Debug)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum IdeCommand {
+    /// Re-run host detection.
+    Detect,
+    /// Set the default IDE integration. Persists the selection and
+    /// binds the corresponding MCP client.
+    Select { ide_id: String },
+    /// Clear the default IDE integration and disconnect the bridge.
+    Clear,
+    /// Reconnect the bound IDE MCP bridge.
+    Reconnect,
+    /// Query the current detection + selection state.
     QueryStatus,
 }
 
@@ -149,6 +240,7 @@ pub enum SubsystemEvent {
     Mcp(McpEvent),
     Plugin(PluginEvent),
     Skill(SkillEvent),
+    Ide(IdeEvent),
 }
 
 // ===========================================================================
@@ -322,6 +414,113 @@ mod tests {
         };
         let value = serde_json::to_value(&event).expect("serialize");
         assert_eq!(value["kind"], "server_list");
+    }
+
+    #[test]
+    fn mcp_event_config_list_serializes() {
+        let event = McpEvent::ConfigList {
+            entries: vec![McpServerConfigEntry {
+                name: "ctx7".into(),
+                transport: "stdio".into(),
+                command: Some("npx".into()),
+                args: None,
+                url: None,
+                headers: None,
+                env: None,
+                browser_mcp: None,
+                scope: ConfigScope::User,
+            }],
+        };
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(value["kind"], "config_list");
+        assert_eq!(value["entries"][0]["name"], "ctx7");
+        assert_eq!(value["entries"][0]["scope"]["kind"], "user");
+    }
+
+    #[test]
+    fn mcp_event_config_changed_with_none_entry_omits_field() {
+        let event = McpEvent::ConfigChanged {
+            server_name: "gone".into(),
+            entry: None,
+        };
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(value["kind"], "config_changed");
+        assert_eq!(value["server_name"], "gone");
+        assert!(
+            value.get("entry").is_none(),
+            "None entry should be omitted"
+        );
+    }
+
+    #[test]
+    fn mcp_event_config_error_serializes() {
+        let event = McpEvent::ConfigError {
+            server_name: "bad".into(),
+            error: "invalid url".into(),
+        };
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(value["kind"], "config_error");
+        assert_eq!(value["error"], "invalid url");
+    }
+
+    #[test]
+    fn plugin_event_refresh_needed_serializes() {
+        let event = PluginEvent::RefreshNeeded {
+            reason: "installed_plugins.json changed".into(),
+        };
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(value["kind"], "refresh_needed");
+        assert_eq!(value["reason"], "installed_plugins.json changed");
+    }
+
+    #[test]
+    fn plugin_event_reloaded_serializes() {
+        let event = PluginEvent::Reloaded {
+            count: 4,
+            had_error: false,
+        };
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(value["kind"], "reloaded");
+        assert_eq!(value["count"], 4);
+        assert_eq!(value["had_error"], false);
+    }
+
+    #[test]
+    fn ide_event_ide_list_serializes() {
+        let event = IdeEvent::IdeList {
+            ides: vec![IdeInfo {
+                id: "vscode".into(),
+                name: "VS Code".into(),
+                installed: true,
+                running: false,
+                selected: false,
+                connection_state: None,
+                error: None,
+            }],
+        };
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(value["kind"], "ide_list");
+        assert_eq!(value["ides"][0]["id"], "vscode");
+    }
+
+    #[test]
+    fn ide_event_selection_changed_none_omits_field() {
+        let event = IdeEvent::SelectionChanged { ide_id: None };
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(value["kind"], "selection_changed");
+        assert!(value.get("ide_id").is_none());
+    }
+
+    #[test]
+    fn ide_event_connection_state_changed_serializes() {
+        let event = IdeEvent::ConnectionStateChanged {
+            ide_id: "cursor".into(),
+            state: "connected".into(),
+            error: None,
+        };
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(value["kind"], "connection_state_changed");
+        assert_eq!(value["state"], "connected");
     }
 
     #[test]
