@@ -15,4 +15,6 @@
 pub use cc_services::*;
 
 pub mod langfuse;
+pub mod onboarding;
+pub mod scheduler;
 pub mod session_analytics;

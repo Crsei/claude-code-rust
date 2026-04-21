@@ -48,6 +48,13 @@ pub mod advisor;
 // Plan mode (issue #46)
 pub mod plan;
 
+// Scheduling / automation (issues #58, #60)
+pub mod loop_cmd;
+pub mod schedule;
+
+// Team onboarding (issue #63)
+pub mod team_onboarding;
+
 // Session management
 pub mod copy;
 pub mod init;
@@ -565,6 +572,32 @@ pub fn get_all_commands() -> Vec<Command> {
             description: "Show, set, or clear the advisor model (issue #33)".into(),
             handler: Box::new(advisor::AdvisorHandler),
         },
+        // Scheduling / automation (issues #58, #60).
+        Command {
+            name: "loop".into(),
+            aliases: vec![],
+            description:
+                "Register a recurring local task (prompt or slash command) and run it once \
+                 (issue #58)"
+                    .into(),
+            handler: Box::new(loop_cmd::LoopHandler),
+        },
+        Command {
+            name: "schedule".into(),
+            aliases: vec!["cron".into()],
+            description:
+                "Manage local cron tasks (add, list, pause, trigger, remove) (issue #60)".into(),
+            handler: Box::new(schedule::ScheduleHandler),
+        },
+        // Team onboarding (issue #63).
+        Command {
+            name: "team-onboarding".into(),
+            aliases: vec!["teamonboarding".into()],
+            description:
+                "Generate a teammate onboarding guide from real project/team state (issue #63)"
+                    .into(),
+            handler: Box::new(team_onboarding::TeamOnboardingHandler),
+        },
     ]
 }
 
@@ -661,6 +694,11 @@ mod tests {
         assert!(names.contains(&"agents"));
         assert!(names.contains(&"doctor"));
         assert!(names.contains(&"tasks"));
+        // Scheduling / automation (issues #58, #60).
+        assert!(names.contains(&"loop"));
+        assert!(names.contains(&"schedule"));
+        // Team onboarding (issue #63).
+        assert!(names.contains(&"team-onboarding"));
     }
 
     #[test]
@@ -684,6 +722,9 @@ mod tests {
         assert!(find_command("br").is_some());
         assert!(find_command("gitbranch").is_some());
         assert!(find_command("mem").is_some());
+        // New aliases (issues #58, #60, #63).
+        assert!(find_command("cron").is_some());
+        assert!(find_command("teamonboarding").is_some());
     }
 
     #[test]
