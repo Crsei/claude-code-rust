@@ -105,6 +105,29 @@ pub struct MessagesRequest {
     pub thinking: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<Value>,
+    /// Optional advisor model id (issue #33). Carried through the request
+    /// pipeline only for providers that advertise advisor support
+    /// (see [`provider_supports_advisor`]). Serialized as `advisor_model`;
+    /// omitted when `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub advisor_model: Option<String>,
+}
+
+/// Return `true` when the given provider supports the advisor-model field.
+///
+/// Only the Anthropic Messages API currently recognizes `advisor_model`.
+/// For Bedrock/Vertex (which ultimately reach the same Anthropic shape) we
+/// also pass it through; OpenAI-compatible and Google providers don't have
+/// the field in their native schema, so we drop it there and the `/advisor`
+/// command surfaces an "inactive" message.
+pub fn provider_supports_advisor(provider: &ApiProvider) -> bool {
+    matches!(
+        provider,
+        ApiProvider::Anthropic { .. }
+            | ApiProvider::Azure { .. }
+            | ApiProvider::Bedrock { .. }
+            | ApiProvider::Vertex { .. }
+    )
 }
 
 /// API client configuration

@@ -64,6 +64,10 @@ pub struct ModelCallParams {
     pub skip_cache_write: Option<bool>,
     pub thinking_enabled: Option<bool>,
     pub effort_value: Option<String>,
+    /// Optional advisor model id (issue #33). Plumbed through to
+    /// [`crate::api::client::MessagesRequest::advisor_model`] when the
+    /// active provider supports advisors.
+    pub advisor_model: Option<String>,
 }
 
 impl std::fmt::Debug for ModelCallParams {

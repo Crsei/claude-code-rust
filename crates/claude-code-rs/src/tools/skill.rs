@@ -157,7 +157,7 @@ impl Tool for SkillTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _parent: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
@@ -207,29 +207,76 @@ impl Tool for SkillTool {
                 })
             }
             SkillContext::Fork => {
-                // Fork context: ideally runs in a sub-agent.
-                // For now, fall back to inline execution with a note.
-                let skill_message = make_skill_message(&skill, args);
+                // Fork context: run the skill prompt in a bounded sub-engine
+                // so its execution doesn't pollute the parent transcript.
+                // Tools are restricted to the skill's declared allowed_tools.
+                let expanded_prompt = skill.expand_prompt(args, None);
+                let cwd = std::env::current_dir()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| ".".to_string());
+
+                let tools = crate::tools::registry::get_all_tools()
+                    .into_iter()
+                    .filter(|t| {
+                        skill.frontmatter.allowed_tools.is_empty()
+                            || skill.frontmatter.allowed_tools.iter().any(|a| a == t.name())
+                    })
+                    .collect::<Vec<_>>();
+                let tool_count = tools.len();
+                let max_turns = if tools.is_empty() { 1 } else { 30 };
+
+                let fork_model = skill
+                    .frontmatter
+                    .model
+                    .clone()
+                    .unwrap_or_else(|| ctx.options.main_loop_model.clone());
 
                 debug!(
                     skill = %skill.name,
-                    "fork skill falling back to inline (sub-agent fork not yet implemented)"
+                    tool_count,
+                    max_turns,
+                    "fork skill dispatching via engine::agent::fork"
                 );
 
-                Ok(ToolResult {
-                    data: json!({
-                        "success": true,
-                        "skill": skill.name,
-                        "context": "fork (inline fallback)",
-                        "message": format!(
-                            "Skill '{}' invoked (fork context, running inline). \
-                             Follow the instructions in the injected prompt.",
-                            skill.name,
-                        ),
+                let params = crate::engine::agent::fork::ForkParams {
+                    prompt: expanded_prompt,
+                    cwd,
+                    model: fork_model,
+                    fallback_model: Some(ctx.options.main_loop_model.clone()),
+                    tools,
+                    max_turns: Some(max_turns),
+                    parent_messages: None,
+                    append_system_prompt: ctx.options.append_system_prompt.clone(),
+                    custom_system_prompt: ctx.options.custom_system_prompt.clone(),
+                    hook_runner: ctx.hook_runner.clone(),
+                    command_dispatcher: ctx.command_dispatcher.clone(),
+                };
+
+                match crate::engine::agent::fork::run_fork(params).await {
+                    Ok(outcome) => Ok(ToolResult {
+                        data: json!({
+                            "success": !outcome.had_error,
+                            "skill": skill.name,
+                            "context": "fork",
+                            "agent_id": outcome.agent_id,
+                            "duration_ms": outcome.duration_ms,
+                            "had_error": outcome.had_error,
+                            "text": outcome.text,
+                        }),
+                        new_messages: vec![],
+                        ..Default::default()
                     }),
-                    new_messages: vec![skill_message],
-                    ..Default::default()
-                })
+                    Err(e) => Ok(ToolResult {
+                        data: json!({
+                            "success": false,
+                            "skill": skill.name,
+                            "context": "fork",
+                            "error": e.to_string(),
+                        }),
+                        new_messages: vec![],
+                        ..Default::default()
+                    }),
+                }
             }
         }
     }
