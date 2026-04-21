@@ -607,8 +607,12 @@ impl App {
             total_cost_usd: self.session_cost_usd,
             api_calls: self.session_usage.api_calls,
             session_duration_secs: None,
-            output_style: self.output_style.as_deref(),
+            resolved_output_style_name: crate::ui::status_line_resolver::resolve_output_style_name(
+                self.output_style.as_deref(),
+                std::path::Path::new(&self.cwd),
+            ),
             editor_mode: self.vim.enabled.then_some("vim"),
+            worktree: crate::ui::status_line_resolver::current_worktree_status(),
             streaming: self.is_streaming,
             message_count: self.messages.len(),
         });

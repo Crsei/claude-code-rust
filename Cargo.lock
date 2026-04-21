@@ -585,7 +585,24 @@ dependencies = [
 name = "cc-engine"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "async-trait",
+ "cc-bootstrap",
+ "cc-compact",
+ "cc-config",
+ "cc-keybindings",
  "cc-types",
+ "chrono",
+ "futures",
+ "git2",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -870,6 +887,7 @@ dependencies = [
  "cc-compact",
  "cc-computer-use",
  "cc-config",
+ "cc-engine",
  "cc-keybindings",
  "cc-mcp",
  "cc-observability",

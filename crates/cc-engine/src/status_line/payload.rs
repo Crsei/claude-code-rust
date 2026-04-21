@@ -14,8 +14,8 @@ use std::path::{Path, PathBuf};
 use git2::Repository;
 use serde::{Deserialize, Serialize};
 
-use crate::bootstrap::model::ModelSetting;
-use crate::compact::auto_compact::get_context_window_size;
+use cc_bootstrap::model::ModelSetting;
+use cc_compact::auto_compact::get_context_window_size;
 
 /// Top-level payload piped to the user's status-line command on stdin.
 ///
@@ -169,6 +169,11 @@ pub struct WorktreeStatus {
 }
 
 /// Inputs needed to assemble a concrete status-line payload snapshot.
+///
+/// `resolved_output_style_name` and `worktree` are pre-computed by callers
+/// because resolving them requires root-crate modules (`engine::output_style`
+/// and `tools::worktree`) that cc-engine cannot reach. Callers that don't
+/// need either field pass `None`.
 pub struct StatusLineSnapshot<'a> {
     pub session_id: Option<String>,
     pub model_id: &'a str,
@@ -181,8 +186,13 @@ pub struct StatusLineSnapshot<'a> {
     pub total_cost_usd: f64,
     pub api_calls: u64,
     pub session_duration_secs: Option<u64>,
-    pub output_style: Option<&'a str>,
+    /// Pre-resolved canonical output-style name. Callers compute this by
+    /// calling `crate::engine::output_style::resolve(style, cwd).name()`.
+    pub resolved_output_style_name: Option<String>,
     pub editor_mode: Option<&'a str>,
+    /// Pre-built worktree status. Callers compute this from
+    /// `crate::tools::worktree::get_current_worktree_session()`.
+    pub worktree: Option<WorktreeStatus>,
     pub streaming: bool,
     pub message_count: usize,
 }
@@ -220,9 +230,9 @@ pub fn build_payload_from_snapshot(snapshot: StatusLineSnapshot<'_>) -> StatusLi
         api_calls: snapshot.api_calls,
         session_duration_secs: snapshot.session_duration_secs,
     });
-    payload.output_style = resolve_output_style_name(snapshot.output_style, snapshot.cwd);
+    payload.output_style = snapshot.resolved_output_style_name;
     payload.vim = vim_status_from_editor_mode(snapshot.editor_mode);
-    payload.worktree = current_worktree_status();
+    payload.worktree = snapshot.worktree;
     payload.streaming = snapshot.streaming;
     payload.message_count = snapshot.message_count;
     payload
@@ -244,16 +254,10 @@ pub fn model_info_from_runtime(model_id: &str, backend: Option<&str>) -> Option<
     })
 }
 
-pub fn resolve_output_style_name(output_style: Option<&str>, cwd: &Path) -> Option<String> {
-    output_style
-        .map(str::trim)
-        .filter(|style| !style.is_empty())
-        .map(|style| {
-            crate::engine::output_style::resolve(style, cwd)
-                .name()
-                .to_string()
-        })
-}
+// `resolve_output_style_name` used to live here but touched
+// `crate::engine::output_style::resolve` in the root crate. Callers now
+// pre-resolve the canonical name and pass it via
+// `StatusLineSnapshot::resolved_output_style_name`.
 
 pub fn vim_status_from_editor_mode(editor_mode: Option<&str>) -> Option<VimStatus> {
     match editor_mode.map(str::trim) {
@@ -316,27 +320,13 @@ pub fn workspace_status_from_path(cwd: &Path) -> Option<WorkspaceStatus> {
     })
 }
 
-pub fn current_worktree_status() -> Option<WorktreeStatus> {
-    let session = crate::tools::worktree::get_current_worktree_session()?;
-    let name = session
-        .worktree_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty())
-        .unwrap_or("worktree")
-        .to_string();
-
-    Some(WorktreeStatus {
-        name,
-        path: session.worktree_path.display().to_string(),
-        branch: Some(session.branch_name),
-        original_cwd: session.original_cwd.display().to_string(),
-        original_branch: None,
-    })
-}
+// `current_worktree_status` used to live here but read the
+// `crate::tools::worktree::get_current_worktree_session()` global.
+// Callers now build a `WorktreeStatus` themselves and pass it via
+// `StatusLineSnapshot::worktree`.
 
 fn project_dir_for_statusline(cwd: &Path, git_root: Option<&Path>) -> Option<PathBuf> {
-    let configured = crate::bootstrap::state::project_root();
+    let configured = cc_bootstrap::state::project_root();
     if !configured.as_os_str().is_empty() {
         return Some(configured);
     }
@@ -470,8 +460,9 @@ mod tests {
             total_cost_usd: 0.42,
             api_calls: 3,
             session_duration_secs: Some(9),
-            output_style: Some("default"),
+            resolved_output_style_name: Some("default".into()),
             editor_mode: Some("vim"),
+            worktree: None,
             streaming: true,
             message_count: 5,
         });
