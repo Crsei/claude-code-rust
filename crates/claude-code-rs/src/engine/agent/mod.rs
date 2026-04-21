@@ -157,9 +157,9 @@ async fn count_worktree_changes(
 pub(crate) fn sdk_to_agent_event(
     sdk_msg: &crate::engine::sdk_types::SdkMessage,
     agent_id: &str,
-) -> Option<crate::ipc::agent_events::AgentEvent> {
+) -> Option<cc_types::agent_events::AgentEvent> {
     use crate::engine::sdk_types::SdkMessage;
-    use crate::ipc::agent_events::AgentEvent;
+    use cc_types::agent_events::AgentEvent;
     use crate::types::message::{ContentBlock, StreamEvent, ToolResultContent};
 
     match sdk_msg {
@@ -285,7 +285,7 @@ async fn collect_stream_result(
     stream: std::pin::Pin<
         Box<dyn futures::Stream<Item = crate::engine::sdk_types::SdkMessage> + Send>,
     >,
-    ipc: Option<(&crate::ipc::agent_channel::AgentSender, &str)>,
+    ipc: Option<(&cc_types::agent_channel::AgentSender, &str)>,
 ) -> (String, bool) {
     use crate::engine::sdk_types::SdkMessage;
     use futures::StreamExt;
@@ -322,7 +322,7 @@ async fn collect_stream_result(
         // Forward intermediate events to IPC when a sender is available
         if let Some((tx, agent_id)) = ipc {
             if let Some(agent_event) = sdk_to_agent_event(&msg, agent_id) {
-                let _ = tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(agent_event));
+                let _ = tx.send(cc_types::agent_channel::AgentIpcEvent::Agent(agent_event));
             }
         }
     }

@@ -15,7 +15,10 @@ pub mod permissions;
 pub mod prompt_input;
 #[allow(dead_code)]
 pub mod spinner;
-pub mod status_line;
+// `status_line` moved to `cc-engine` in Phase 6 (issue #75). Downstream
+// consumers should import from `cc_engine::status_line` directly.
+pub use cc_engine::status_line;
+pub mod status_line_resolver;
 pub mod terminal_env;
 #[allow(dead_code)]
 pub mod theme;

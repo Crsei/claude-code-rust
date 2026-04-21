@@ -355,8 +355,12 @@ fn build_test_payload(ctx: &CommandContext) -> StatusLinePayload {
         total_cost_usd: usage.total_cost_usd,
         api_calls: usage.api_calls,
         session_duration_secs: None,
-        output_style: ctx.app_state.settings.output_style.as_deref(),
+        resolved_output_style_name: crate::ui::status_line_resolver::resolve_output_style_name(
+            ctx.app_state.settings.output_style.as_deref(),
+            &ctx.cwd,
+        ),
         editor_mode: ctx.app_state.settings.editor_mode.as_deref(),
+        worktree: crate::ui::status_line_resolver::current_worktree_status(),
         streaming: false,
         message_count: ctx.messages.len(),
     })

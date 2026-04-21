@@ -109,7 +109,7 @@ pub struct QueryEngine {
     pub(crate) has_handled_orphaned_permission: Arc<AtomicBool>,
     /// Shared buffer of completed background agents.
     /// Event loop pushes; query loop drains.
-    pub(crate) pending_bg_results: crate::tools::background_agents::PendingBackgroundResults,
+    pub(crate) pending_bg_results: cc_types::background_agents::PendingBackgroundResults,
     /// Hook runner for the tool-execution hook system.
     ///
     /// Defaults to [`cc_types::hooks::NoopHookRunner`]. Call sites that want
@@ -167,7 +167,7 @@ impl QueryEngine {
             })),
             aborted: Arc::new(AtomicBool::new(false)),
             has_handled_orphaned_permission: Arc::new(AtomicBool::new(false)),
-            pending_bg_results: crate::tools::background_agents::PendingBackgroundResults::new(),
+            pending_bg_results: cc_types::background_agents::PendingBackgroundResults::new(),
             hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
             command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
         }

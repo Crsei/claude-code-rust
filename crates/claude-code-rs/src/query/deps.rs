@@ -146,8 +146,15 @@ pub trait QueryDeps: Send + Sync {
     /// Default: returns empty vec (no background agent support).
     fn drain_background_results(
         &self,
-    ) -> Vec<crate::tools::background_agents::CompletedBackgroundAgent> {
+    ) -> Vec<cc_types::background_agents::CompletedBackgroundAgent> {
         vec![]
+    }
+
+    /// Hook runner for the query loop (PreCompact / PostCompact / Stop /
+    /// StopFailure events). Defaults to a no-op runner so tests using the
+    /// default trait impl don't need to provide one.
+    fn hook_runner(&self) -> Arc<dyn cc_types::hooks::HookRunner> {
+        Arc::new(cc_types::hooks::NoopHookRunner)
     }
 
     /// Get the audit context for this submit.

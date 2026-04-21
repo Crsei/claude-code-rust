@@ -46,7 +46,7 @@ pub(crate) struct QueryEngineDeps {
     /// Background agent sender — forwarded into ToolUseContext.
     pub(crate) bg_agent_tx: Option<crate::ipc::agent_channel::AgentSender>,
     /// Shared buffer of completed background agents.
-    pub(crate) pending_bg_results: crate::tools::background_agents::PendingBackgroundResults,
+    pub(crate) pending_bg_results: cc_types::background_agents::PendingBackgroundResults,
     /// Hook runner — used via the `HookRunner` trait from `cc-types::hooks` so
     /// the engine has no direct dependency on `crate::tools::hooks`.
     pub(crate) hook_runner: Arc<dyn cc_types::hooks::HookRunner>,
@@ -901,8 +901,12 @@ impl QueryDeps for QueryEngineDeps {
 
     fn drain_background_results(
         &self,
-    ) -> Vec<crate::tools::background_agents::CompletedBackgroundAgent> {
+    ) -> Vec<cc_types::background_agents::CompletedBackgroundAgent> {
         self.pending_bg_results.drain_all()
+    }
+
+    fn hook_runner(&self) -> Arc<dyn cc_types::hooks::HookRunner> {
+        self.hook_runner.clone()
     }
 
     fn audit_context(&self) -> crate::observability::AuditContext {

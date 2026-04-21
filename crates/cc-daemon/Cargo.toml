@@ -1,0 +1,8 @@
+[package]
+name = "cc-daemon"
+version = "0.1.0"
+edition = "2021"
+description = "KAIROS daemon: HTTP/SSE server, proactive tick, webhooks, team-memory proxy. Phase 7 workspace split (scaffold)."
+
+[dependencies]
+cc-types = { workspace = true }

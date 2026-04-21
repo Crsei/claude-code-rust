@@ -98,33 +98,13 @@ impl LspOperation {
 // ---------------------------------------------------------------------------
 // LSP location types
 // ---------------------------------------------------------------------------
-
-/// A location in a source file (simplified LSP Location).
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SourceLocation {
-    pub file_path: String,
-    pub line: u32,      // 1-based
-    pub character: u32, // 1-based
-    pub end_line: Option<u32>,
-    pub end_character: Option<u32>,
-}
-
-/// A symbol in a document.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SymbolInfo {
-    pub name: String,
-    pub kind: String,
-    pub location: SourceLocation,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub children: Vec<SymbolInfo>,
-}
-
-/// Hover information.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct HoverInfo {
-    pub contents: String,
-    pub range: Option<SourceLocation>,
-}
+//
+// Moved to `crate::lsp_service::types` in Phase 6 prep so the `lsp_service`
+// crate no longer has to depend on `crate::tools::lsp` (breaks the
+// `tools::lsp <-> lsp_service` cycle). Re-exported here so existing
+// `crate::tools::lsp::{HoverInfo, SourceLocation, SymbolInfo}` call sites
+// keep compiling.
+pub use crate::lsp_service::types::{HoverInfo, SourceLocation, SymbolInfo};
 
 // ---------------------------------------------------------------------------
 // Result formatting

@@ -1,0 +1,50 @@
+[package]
+name = "cc-engine"
+version = "0.1.0"
+edition = "2021"
+description = "QueryEngine + query loop + AppState + Tool trait + status-line runner (Phase 6 extraction)."
+
+# Phase 6 is being landed incrementally:
+#
+#   Step 1 (this crate, landed): publish an empty scaffold wired into the
+#   workspace.
+#
+#   Step 2 (in progress): move `src/ui/status_line/` and
+#   `src/types/{tool, app_state, config}.rs` into this crate — these are the
+#   last runtime-free-ish items blocking `ToolUseContext` / `AppState` from
+#   leaving the root crate.
+#
+#   Step 3 (follow-up): move `src/engine/` and `src/query/` into this crate.
+
+[dependencies]
+# Async
+tokio = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Errors / logging
+anyhow = { workspace = true }
+tracing = { workspace = true }
+
+# Shared primitives
+chrono = { workspace = true }
+uuid = { workspace = true }
+parking_lot = { workspace = true }
+
+# Git (for status-line payload repo lookups)
+git2 = { workspace = true }
+
+# Workspace siblings (only leaf / already-extracted crates)
+cc-types = { workspace = true }
+cc-config = { workspace = true }
+cc-bootstrap = { workspace = true }
+cc-compact = { workspace = true }
+cc-keybindings = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+serial_test = { workspace = true }
