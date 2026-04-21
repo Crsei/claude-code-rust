@@ -74,6 +74,9 @@ mod browser;
 // LSP service layer
 mod lsp_service;
 
+// IDE detection + selection + MCP bridge (issue #41)
+mod ide;
+
 // Multi-agent Teams (feature-gated: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS)
 mod teams;
 
