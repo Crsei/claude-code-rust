@@ -20,6 +20,7 @@
 //! See `docs/superpowers/specs/2026-04-20-workspace-split-design.md`.
 
 pub mod status_line;
+pub mod types;
 
 // Re-export from cc-types so consumers can eventually write
 // `use cc_engine::{HookRunner, CommandDispatcher}` once the engine types

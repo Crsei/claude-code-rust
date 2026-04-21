@@ -50,11 +50,11 @@ pub struct AppState {
     /// Populated at startup from `~/.cc-rust/keybindings.json` (issue #10).
     /// Multiple UI surfaces (Rust TUI, IPC-driven OpenTUI) share the same
     /// handle so reloads are observed everywhere.
-    pub keybindings: crate::keybindings::KeybindingRegistry,
+    pub keybindings: cc_keybindings::KeybindingRegistry,
     /// Shared scriptable status-line runner (issue #11). The TUI owns the
     /// renderer-facing side; `/statusline` and the IPC driver both reach
     /// into this handle to inspect / reset the subprocess.
-    pub status_line_runner: crate::ui::status_line::StatusLineRunner,
+    pub status_line_runner: crate::status_line::StatusLineRunner,
 }
 
 impl Default for AppState {
@@ -85,8 +85,8 @@ impl Default for AppState {
             is_assistant_mode: false,
             autonomous_tick_ms: None,
             terminal_focus: true,
-            keybindings: crate::keybindings::KeybindingRegistry::with_defaults(),
-            status_line_runner: crate::ui::status_line::StatusLineRunner::new(),
+            keybindings: cc_keybindings::KeybindingRegistry::with_defaults(),
+            status_line_runner: crate::status_line::StatusLineRunner::new(),
         }
     }
 }
