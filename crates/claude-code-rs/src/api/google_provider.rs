@@ -340,6 +340,7 @@ mod tests {
             stream: true,
             thinking: None,
             tool_choice: None,
+            advisor_model: None,
         };
         let body = build_gemini_request(&req);
         assert_eq!(body["generationConfig"]["maxOutputTokens"], 1024);
@@ -361,6 +362,7 @@ mod tests {
             stream: true,
             thinking: None,
             tool_choice: None,
+            advisor_model: None,
         };
         let body = build_gemini_request(&req);
         assert_eq!(
@@ -384,6 +386,7 @@ mod tests {
             stream: true,
             thinking: None,
             tool_choice: None,
+            advisor_model: None,
         };
         let body = build_gemini_request(&req);
         let contents = body["contents"].as_array().unwrap();
@@ -408,6 +411,7 @@ mod tests {
             stream: true,
             thinking: None,
             tool_choice: None,
+            advisor_model: None,
         };
         let body = build_gemini_request(&req);
         let contents = body["contents"].as_array().unwrap();
@@ -437,6 +441,7 @@ mod tests {
             stream: true,
             thinking: None,
             tool_choice: None,
+            advisor_model: None,
         };
         let body = build_gemini_request(&req);
         let contents = body["contents"].as_array().unwrap();
