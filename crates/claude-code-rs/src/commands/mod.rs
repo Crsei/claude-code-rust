@@ -24,6 +24,7 @@ pub mod version;
 // Git & workflow
 pub mod branch;
 pub mod commit;
+pub mod gbranch;
 pub mod recap;
 pub mod review;
 pub mod security_review;
@@ -36,6 +37,9 @@ pub mod model_add;
 // Memory & skills
 pub mod memory;
 pub mod skills_cmd;
+
+// Plan mode (issue #46)
+pub mod plan;
 
 // Session management
 pub mod copy;
@@ -263,6 +267,12 @@ pub fn get_all_commands() -> Vec<Command> {
             handler: Box::new(permissions_cmd::PermissionsHandler),
         },
         Command {
+            name: "plan".into(),
+            aliases: vec![],
+            description: "Enter plan mode and show/edit the plan file (issue #46)".into(),
+            handler: Box::new(plan::PlanHandler),
+        },
+        Command {
             name: "login".into(),
             aliases: vec![],
             description: "Authenticate (API key, Anthropic OAuth, OpenAI Codex OAuth)".into(),
@@ -289,8 +299,14 @@ pub fn get_all_commands() -> Vec<Command> {
         Command {
             name: "branch".into(),
             aliases: vec!["br".into()],
-            description: "Show or switch git branches".into(),
+            description: "Fork the current conversation (transcript-level branch)".into(),
             handler: Box::new(branch::BranchHandler),
+        },
+        Command {
+            name: "gbranch".into(),
+            aliases: vec!["gitbranch".into()],
+            description: "Show or switch git branches (moved from /branch, issue #36)".into(),
+            handler: Box::new(gbranch::GitBranchHandler),
         },
         Command {
             name: "effort".into(),
@@ -577,6 +593,9 @@ mod tests {
         assert!(names.contains(&"review"));
         assert!(names.contains(&"security-review"));
         assert!(names.contains(&"recap"));
+        // Conversation fork (issue #36) and renamed git-branch wrapper.
+        assert!(names.contains(&"branch"));
+        assert!(names.contains(&"gbranch"));
         // Read-only browser family (issues #34, #39, #40, #54).
         assert!(names.contains(&"hooks"));
         assert!(names.contains(&"agents"));
@@ -603,6 +622,7 @@ mod tests {
         assert!(find_command("ctx").is_some());
         assert!(find_command("perms").is_some());
         assert!(find_command("br").is_some());
+        assert!(find_command("gitbranch").is_some());
         assert!(find_command("mem").is_some());
     }
 

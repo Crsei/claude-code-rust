@@ -256,6 +256,12 @@ fn handle_show(parts: &[&str], ctx: &CommandContext) -> Result<CommandResult> {
         "claudeInChromeDefaultEnabled",
         &mut lines,
     );
+    row(
+        "autoMemoryEnabled",
+        opt_str(state.settings.auto_memory_enabled.map(|b| b.to_string())),
+        "autoMemoryEnabled",
+        &mut lines,
+    );
 
     lines.push(String::new());
     lines.push("File locations:".into());
@@ -390,7 +396,8 @@ fn handle_set(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
              Available keys: model, backend, theme, verbose, permissionMode,\n  \
                outputStyle, language, voiceEnabled, editorMode, viewMode,\n  \
                terminalProgressBarEnabled, effortLevel, fastMode,\n  \
-               fastModePerSessionOptIn, teammateMode, claudeInChromeDefaultEnabled\n\n{}",
+               fastModePerSessionOptIn, teammateMode, claudeInChromeDefaultEnabled,\n  \
+               autoMemoryEnabled\n\n{}",
             usage_text()
         )));
     }
@@ -501,6 +508,10 @@ fn apply_set_in_memory(key: &str, value: &str, ctx: &mut CommandContext) -> Resu
             s.claude_in_chrome_default_enabled = parsed_bool_opt();
             Ok(format!("Claude-in-Chrome default: {}", parsed_bool()))
         }
+        "autoMemoryEnabled" | "auto_memory_enabled" => {
+            s.auto_memory_enabled = parsed_bool_opt();
+            Ok(format!("Auto-memory enabled: {}", parsed_bool()))
+        }
         _ => anyhow::bail!(
             "Unknown config key: '{}'. Run `/config show` to see available keys.",
             key
@@ -579,6 +590,7 @@ fn apply_set_to_raw(raw: &mut RawSettings, key: &str, value: &str) {
         "claudeInChromeDefaultEnabled" | "claude_in_chrome_default_enabled" => {
             raw.claude_in_chrome_default_enabled = bool_opt();
         }
+        "autoMemoryEnabled" | "auto_memory_enabled" => raw.auto_memory_enabled = bool_opt(),
         // Unknown keys get stuffed in `extra` so users can experiment with
         // future fields without losing data.
         _ => {
