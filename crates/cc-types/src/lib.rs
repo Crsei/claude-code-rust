@@ -16,4 +16,5 @@ pub mod hooks;
 pub mod message;
 pub mod permissions;
 pub mod state;
+pub mod teams;
 pub mod transitions;
