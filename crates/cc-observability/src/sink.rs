@@ -108,18 +108,25 @@ impl AuditSink {
     /// Initialize the audit sink for a session.
     ///
     /// Creates:
-    /// - `~/.cc-rust/runs/<session_id>/events.ndjson`
-    /// - `~/.cc-rust/runs/<session_id>/meta.json`
-    /// - `~/.cc-rust/runs/<session_id>/artifacts/`
+    /// - `<runs_dir>/events.ndjson`
+    /// - `<runs_dir>/meta.json`
+    /// - `<runs_dir>/artifacts/`
+    ///
+    /// `runs_dir` is the per-session output directory (resolved by the caller,
+    /// typically `~/.cc-rust/runs/<session_id>/`). Injecting it here keeps this
+    /// crate free of any dependency on the root config module.
     ///
     /// Returns `Ok(sink)` even if the directory cannot be created (sink becomes
     /// a no-op so the process can still run).
-    pub fn init(session_id: &str, meta: &SessionMeta, config: AuditConfig) -> Result<Self> {
+    pub fn init(
+        session_id: &str,
+        runs_dir: PathBuf,
+        meta: &SessionMeta,
+        config: AuditConfig,
+    ) -> Result<Self> {
         if !config.enabled {
             return Ok(Self::noop(config));
         }
-
-        let runs_dir = crate::config::paths::runs_dir(session_id);
 
         std::fs::create_dir_all(&runs_dir)
             .with_context(|| format!("Failed to create runs directory {}", runs_dir.display()))?;

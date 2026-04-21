@@ -492,6 +492,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-observability"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -570,6 +583,7 @@ dependencies = [
  "base64",
  "bytes",
  "cc-keybindings",
+ "cc-observability",
  "chrono",
  "clap",
  "crossterm",
