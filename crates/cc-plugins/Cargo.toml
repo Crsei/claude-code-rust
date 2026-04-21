@@ -1,0 +1,8 @@
+[package]
+name = "cc-plugins"
+version = "0.1.0"
+edition = "2021"
+description = "Plugin loader (discovery, manifest parsing, tool contribution). Phase 7 workspace split (scaffold)."
+
+[dependencies]
+cc-types = { workspace = true }

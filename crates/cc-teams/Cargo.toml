@@ -1,0 +1,8 @@
+[package]
+name = "cc-teams"
+version = "0.1.0"
+edition = "2021"
+description = "Team coordination: backend, mailbox, protocol, runner. Phase 7 workspace split (scaffold)."
+
+[dependencies]
+cc-types = { workspace = true }

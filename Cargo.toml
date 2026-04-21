@@ -136,6 +136,16 @@ cc-sandbox = { path = "crates/cc-sandbox" }
 cc-permissions = { path = "crates/cc-permissions" }
 cc-browser = { path = "crates/cc-browser" }
 cc-session = { path = "crates/cc-session" }
+# Phase 6 / Phase 7 scaffolds (issues #75, #76).
+cc-engine = { path = "crates/cc-engine" }
+cc-query = { path = "crates/cc-query" }
+cc-tools = { path = "crates/cc-tools" }
+cc-lsp-service = { path = "crates/cc-lsp-service" }
+cc-plugins = { path = "crates/cc-plugins" }
+cc-teams = { path = "crates/cc-teams" }
+cc-daemon = { path = "crates/cc-daemon" }
+cc-commands = { path = "crates/cc-commands" }
+cc-ipc = { path = "crates/cc-ipc" }
 
 # Daemon HTTP server
 axum = { version = "0.8", features = ["ws"] }

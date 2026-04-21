@@ -1,0 +1,8 @@
+[package]
+name = "cc-query"
+version = "0.1.0"
+edition = "2021"
+description = "Async streaming query-loop driver for QueryEngine. Phase 6 workspace split (scaffold)."
+
+[dependencies]
+cc-types = { workspace = true }

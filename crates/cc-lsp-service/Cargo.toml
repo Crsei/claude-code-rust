@@ -1,0 +1,8 @@
+[package]
+name = "cc-lsp-service"
+version = "0.1.0"
+edition = "2021"
+description = "LSP client service. Phase 6 workspace split (scaffold)."
+
+[dependencies]
+cc-types = { workspace = true }

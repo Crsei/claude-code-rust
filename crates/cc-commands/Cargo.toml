@@ -1,0 +1,8 @@
+[package]
+name = "cc-commands"
+version = "0.1.0"
+edition = "2021"
+description = "Slash-command implementations (53 commands: /commit, /review, /session, /memory, etc.). Phase 7 workspace split (scaffold)."
+
+[dependencies]
+cc-types = { workspace = true }

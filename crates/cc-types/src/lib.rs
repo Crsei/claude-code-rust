@@ -7,6 +7,10 @@
 //!
 //! See issue #70 (`[workspace-split] Phase 1`) for the rationale behind this
 //! partial split.
+pub mod agent_channel;
+pub mod agent_events;
+pub mod agent_types;
+pub mod background_agents;
 pub mod commands;
 pub mod hooks;
 pub mod message;

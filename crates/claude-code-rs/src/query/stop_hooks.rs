@@ -8,7 +8,7 @@
 ///   - 报告阻塞错误 (终止并标记为 hook 问题)
 use anyhow::Result;
 
-use crate::tools::hooks::HookEventConfig;
+use cc_types::hooks::{HookEventConfig, HookRunner};
 use crate::types::message::{AssistantMessage, Message};
 
 /// Stop hook 检查结果
@@ -39,6 +39,7 @@ pub enum StopHookResult {
 /// # Returns
 /// * `StopHookResult` - 决定是否允许终止
 pub async fn run_stop_hooks(
+    runner: &dyn HookRunner,
     _assistant_message: &AssistantMessage,
     _messages: &[Message],
     stop_hook_active: Option<bool>,
@@ -49,9 +50,9 @@ pub async fn run_stop_hooks(
         return Ok(StopHookResult::AllowStop);
     }
 
-    use crate::tools::hooks::{self, PostToolHookResult};
+    use cc_types::hooks::PostToolHookResult;
 
-    match hooks::run_stop_hooks(hook_configs).await {
+    match runner.run_stop_hooks(hook_configs).await {
         Ok(PostToolHookResult::Continue) => Ok(StopHookResult::AllowStop),
         Ok(PostToolHookResult::StopContinuation { message }) => Ok(StopHookResult::PreventStop {
             continuation_message: message,
@@ -160,7 +161,10 @@ mod tests {
     #[tokio::test]
     async fn test_stop_hooks_allow_by_default() {
         let msg = make_assistant_message(vec![]);
-        let result = run_stop_hooks(&msg, &[], None, &[]).await.unwrap();
+        let runner = cc_types::hooks::NoopHookRunner;
+        let result = run_stop_hooks(&runner, &msg, &[], None, &[])
+            .await
+            .unwrap();
         assert!(matches!(result, StopHookResult::AllowStop));
     }
 }
