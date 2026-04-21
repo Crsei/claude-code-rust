@@ -72,7 +72,6 @@ impl HeadlessRuntime {
         let event_bus = super::subsystem_events::SubsystemEventBus::new();
         let mut event_rx = event_bus.subscribe();
         crate::lsp_service::set_event_sender(event_bus.sender());
-        crate::mcp::set_event_sender(event_bus.sender());
         crate::plugins::set_event_sender(event_bus.sender());
         // cc-skills lives in its own crate and no longer knows about
         // `SubsystemEvent`. Adapt its minimal event enum into ours here.
@@ -87,6 +86,58 @@ impl HeadlessRuntime {
             };
             let _ = skills_tx.send(adapted);
         });
+        // cc-mcp is the same: adapt its minimal event enum into ours here.
+        let mcp_tx = event_bus.sender();
+        cc_mcp::set_event_callback(move |e| {
+            let adapted = match e {
+                cc_mcp::McpSubsystemEvent::ServerStateChanged {
+                    server_name,
+                    state,
+                    error,
+                } => super::subsystem_events::SubsystemEvent::Mcp(
+                    super::subsystem_events::McpEvent::ServerStateChanged {
+                        server_name,
+                        state,
+                        error,
+                    },
+                ),
+                cc_mcp::McpSubsystemEvent::ToolsDiscovered { server_name, tools } => {
+                    super::subsystem_events::SubsystemEvent::Mcp(
+                        super::subsystem_events::McpEvent::ToolsDiscovered {
+                            server_name,
+                            tools: tools
+                                .into_iter()
+                                .map(|t| super::subsystem_types::McpToolInfo {
+                                    name: t.tool_name,
+                                    description: Some(t.description),
+                                })
+                                .collect(),
+                        },
+                    )
+                }
+                cc_mcp::McpSubsystemEvent::ResourcesDiscovered {
+                    server_name,
+                    resources,
+                } => super::subsystem_events::SubsystemEvent::Mcp(
+                    super::subsystem_events::McpEvent::ResourcesDiscovered {
+                        server_name,
+                        resources: resources
+                            .into_iter()
+                            .map(|r| super::subsystem_types::McpResourceInfo {
+                                uri: r.uri,
+                                name: Some(r.name),
+                                mime_type: r.mime_type,
+                            })
+                            .collect(),
+                    },
+                ),
+            };
+            let _ = mcp_tx.send(adapted);
+        });
+        // Wire the plugin-contributed MCP discovery hook. Plugins return
+        // `crate::mcp::McpServerConfig`, which is re-exported from
+        // `cc_mcp::McpServerConfig`, so they are the same type.
+        cc_mcp::discovery::set_plugin_hook(|| crate::plugins::discover_plugin_mcp_servers());
 
         // ── 2. Send Ready ────────────────────────────────────────────
         let app_state = self.engine.app_state();

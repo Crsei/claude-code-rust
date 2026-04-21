@@ -20,115 +20,18 @@ use std::sync::Arc;
 use crate::mcp::McpServerConfig;
 use crate::types::tool::Tool;
 
-/// MCP tool-name prefix for all MCP-wrapped tools.
-pub(crate) const MCP_PREFIX: &str = "mcp__";
-
-/// Known browser-automation tool basenames.
-///
-/// Intentionally generous — different servers use different names for
-/// essentially the same actions (`click` vs `browser_click`, `navigate`
-/// vs `goto`). We match on basename only, so the leading `mcp__{server}__`
-/// has already been stripped.
-pub(crate) const BROWSER_TOOL_BASENAMES: &[&str] = &[
-    // Navigation / tabs
-    "navigate",
-    "navigate_page",
-    "goto",
-    "tabs_create",
-    "tabs_create_mcp",
-    "tabs_close",
-    "tabs_close_mcp",
-    "tabs_context",
-    "tabs_context_mcp",
-    "new_page",
-    "close_page",
-    "switch_browser",
-    "select_page",
-    "list_pages",
-    // Page reading
-    "read_page",
-    "get_page_text",
-    "take_snapshot",
-    "snapshot",
-    "get_page",
-    // DOM / element interaction
-    "click",
-    "browser_click",
-    "double_click",
-    "hover",
-    "drag",
-    "press_key",
-    "type_text",
-    "fill",
-    "fill_form",
-    "form_input",
-    "select",
-    // File upload
-    "upload_file",
-    "file_upload",
-    // JavaScript execution
-    "evaluate_script",
-    "javascript_tool",
-    "evaluate",
-    // Console / network observability
-    "get_console_message",
-    "list_console_messages",
-    "read_console_messages",
-    "get_network_request",
-    "list_network_requests",
-    "read_network_requests",
-    // Screenshots / visual
-    "take_screenshot",
-    "screenshot",
-    // Misc
-    "wait_for",
-    "find",
-    "resize_page",
-    "resize_window",
-    "emulate",
-    "handle_dialog",
-];
-
-// ---------------------------------------------------------------------------
-// Process-wide registry of browser server names
-// ---------------------------------------------------------------------------
-//
-// Populated once at startup after MCP discovery + tool registration, then
-// consulted by:
-//   - the system-prompt assembler (to decide whether to inject the browser
-//     section and which servers to mention)
-//   - the permission decision path (so "Allow clicking on the page?" can
-//     replace "Allow tool 'mcp__chrome__click'?" even for servers whose
-//     action basename isn't in `BROWSER_TOOL_BASENAMES`).
-//   - `/mcp list` (to tag browser servers distinctly).
-//
-// A global is justified here because the permission layer is called deep in
-// the tool dispatch with no natural way to thread server metadata through.
-
-static BROWSER_SERVERS: parking_lot::RwLock<Option<HashSet<String>>> =
-    parking_lot::RwLock::new(None);
-
-/// Install the set of browser MCP server names for the rest of the process.
-///
-/// Call this once after MCP discovery + tool registration. Subsequent calls
-/// overwrite the registry.
-pub fn install_browser_servers(servers: HashSet<String>) {
-    *BROWSER_SERVERS.write() = Some(servers);
-}
-
-/// Snapshot the current set of browser server names (empty if not installed).
-pub fn browser_servers_snapshot() -> HashSet<String> {
-    BROWSER_SERVERS.read().clone().unwrap_or_default()
-}
-
-/// Check whether a server name is registered as a browser server. Consults the
-/// global registry and falls back to `false` if the registry was never installed.
-pub fn is_browser_server(name: &str) -> bool {
-    match BROWSER_SERVERS.read().as_ref() {
-        Some(set) => set.contains(name),
-        None => false,
-    }
-}
+// Phase 4 (issue #73) moved the pure-parsing and server-registry helpers
+// into `cc_browser::detection`. Re-export them here so every
+// `crate::browser::detection::{MCP_PREFIX, BROWSER_TOOL_BASENAMES,
+// extract_browser_action, install_browser_servers,
+// browser_servers_snapshot, is_browser_server}` call site keeps
+// resolving unchanged.
+pub use cc_browser::detection::{
+    browser_servers_snapshot, extract_browser_action, install_browser_servers, is_browser_server,
+    BROWSER_TOOL_BASENAMES, MCP_PREFIX,
+};
+#[cfg(test)]
+use cc_browser::detection::clear_browser_servers_for_tests;
 
 /// Metadata for a tool that was classified as a browser MCP tool.
 #[derive(Debug, Clone)]
@@ -139,18 +42,6 @@ pub struct BrowserToolInfo {
     pub server_name: String,
     /// Action basename (the part after the last `__`), e.g. `navigate`.
     pub action: String,
-}
-
-/// Parse an MCP tool name into `(server, action)` if the action matches a
-/// recognized browser basename.
-pub fn extract_browser_action(tool_name: &str) -> Option<(&str, &str)> {
-    let rest = tool_name.strip_prefix(MCP_PREFIX)?;
-    let (server, action) = rest.split_once("__")?;
-    if BROWSER_TOOL_BASENAMES.contains(&action) {
-        Some((server, action))
-    } else {
-        None
-    }
 }
 
 /// Detect the set of browser MCP server names given registered tools and
@@ -218,11 +109,6 @@ pub fn detect_browser_tools(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-
-#[cfg(test)]
-pub(crate) fn clear_browser_servers_for_tests() {
-    *BROWSER_SERVERS.write() = None;
-}
 
 #[cfg(test)]
 mod tests {

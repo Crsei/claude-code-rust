@@ -1,0 +1,17 @@
+[package]
+name = "cc-services"
+version = "0.1.0"
+edition = "2021"
+description = "Background services for cc-rust: LSP lifecycle, prompt suggestions, session memory, tool-use summaries"
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+
+cc-config = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

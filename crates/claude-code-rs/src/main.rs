@@ -24,24 +24,34 @@ use cc_bootstrap as bootstrap;
 mod cli;
 mod commands;
 mod computer_use;
-mod config;
+// `config` lives in its own crate (`cc-config`). Re-alias at the crate root so
+// existing `crate::config::...` paths continue to resolve.
+use cc_config as config;
 mod engine;
 // `keybindings` lives in its own crate (`cc-keybindings`). Re-alias at the
 // crate root so existing `crate::keybindings::...` paths continue to resolve.
 use cc_keybindings as keybindings;
-mod permissions;
+// `permissions` lives in its own crate (`cc-permissions`).
+use cc_permissions as permissions;
 mod query;
-mod sandbox;
-mod session;
+// `sandbox` lives in its own crate (`cc-sandbox`). Re-alias at the crate
+// root so existing `crate::sandbox::...` paths continue to resolve.
+use cc_sandbox as sandbox;
+// `session` lives in its own crate (`cc-session`).
+use cc_session as session;
 mod startup;
 mod tools;
 mod types;
 mod ui;
-mod utils;
+// `utils` lives in its own crate (`cc-utils`). Re-alias at the crate root so
+// existing `crate::utils::...` paths continue to resolve.
+use cc_utils as utils;
 mod voice;
 
-// Context compaction pipeline
-mod compact;
+// Context compaction pipeline — lives in its own crate (`cc-compact`).
+// Re-alias at the crate root so existing `crate::compact::...` paths continue
+// to resolve.
+use cc_compact as compact;
 
 // Network / API / auth. `auth` lives in its own crate (`cc-auth`); re-alias
 // so existing `crate::auth::...` paths continue to resolve.
@@ -141,6 +151,56 @@ fn main() -> ExitCode {
     // (P2, issue #71) so it can't call `crate::config::paths::credentials_path()`
     // directly. Register once, before any fast path might hit OAuth resolution.
     cc_auth::set_credentials_path(crate::config::paths::credentials_path());
+
+    // Wire cc-permissions' descriptive-prompt callbacks. cc-permissions moved
+    // out of the root crate in Phase 4 (issue #73); the Computer Use and
+    // browser prompt strings still live here, so we register look-ups.
+    cc_permissions::decision::set_cu_message_callback(|tool_name: &str| {
+        let action = crate::computer_use::detection::extract_cu_action(tool_name)?;
+        let risk = crate::computer_use::detection::classify_risk(action);
+        let risk_tag = match risk {
+            crate::computer_use::detection::CuRiskLevel::Medium => "[medium risk]",
+            crate::computer_use::detection::CuRiskLevel::High => "[HIGH RISK]",
+        };
+        let description = match action {
+            "screenshot" => "read the screen (take a screenshot)",
+            "cursor_position" => "read the current cursor position",
+            "left_click" => "click the left mouse button on your screen",
+            "right_click" => "click the right mouse button on your screen",
+            "middle_click" => "click the middle mouse button on your screen",
+            "double_click" => "double-click the mouse on your screen",
+            "type_text" | "type" => "type text using the keyboard",
+            "key" => "press a keyboard shortcut",
+            "scroll" => "scroll the mouse wheel",
+            "mouse_move" => "move the mouse cursor",
+            _ => {
+                return Some(format!(
+                    "Allow desktop control action '{}' {}?",
+                    action, risk_tag
+                ))
+            }
+        };
+        Some(format!("Allow {} {}?", description, risk_tag))
+    });
+    cc_permissions::decision::set_browser_message_callback(|tool_name: &str| {
+        if let Some(m) = crate::browser::permissions::browser_permission_message(tool_name) {
+            return Some(m);
+        }
+        if let Some(rest) = tool_name.strip_prefix("mcp__") {
+            if let Some((server, action)) = rest.split_once("__") {
+                if crate::browser::detection::is_browser_server(server) {
+                    let cat = crate::browser::permissions::classify_browser_action(action);
+                    return Some(format!(
+                        "Allow browser action '{}' via MCP server '{}' {}?",
+                        action,
+                        server,
+                        cat.risk_tag()
+                    ));
+                }
+            }
+        }
+        None
+    });
 
     // Phase A: parse args first so fast paths can exit immediately
     let cli = Cli::parse();

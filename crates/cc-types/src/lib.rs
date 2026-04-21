@@ -8,5 +8,6 @@
 //! See issue #70 (`[workspace-split] Phase 1`) for the rationale behind this
 //! partial split.
 pub mod message;
+pub mod permissions;
 pub mod state;
 pub mod transitions;
