@@ -123,7 +123,12 @@ impl CommandHandler for SandboxHandler {
 
 /// Render a multi-line status block for display in the REPL.
 fn render_status(ctx: &CommandContext) -> String {
-    let policy = policy_from_app_state(&ctx.app_state, ctx.cwd.clone(), false);
+    let policy = policy_from_app_state(
+        &ctx.app_state.tool_permission_context,
+        &ctx.app_state.settings.sandbox,
+        ctx.cwd.clone(),
+        false,
+    );
     let mut out = String::new();
     out.push_str("Sandbox status\n");
     out.push_str("──────────────\n");

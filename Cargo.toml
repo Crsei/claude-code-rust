@@ -126,6 +126,16 @@ cc-types = { path = "crates/cc-types" }
 cc-bootstrap = { path = "crates/cc-bootstrap" }
 cc-auth = { path = "crates/cc-auth" }
 cc-skills = { path = "crates/cc-skills" }
+cc-config = { path = "crates/cc-config" }
+cc-utils = { path = "crates/cc-utils" }
+cc-mcp = { path = "crates/cc-mcp" }
+cc-services = { path = "crates/cc-services" }
+cc-computer-use = { path = "crates/cc-computer-use" }
+cc-compact = { path = "crates/cc-compact" }
+cc-sandbox = { path = "crates/cc-sandbox" }
+cc-permissions = { path = "crates/cc-permissions" }
+cc-browser = { path = "crates/cc-browser" }
+cc-session = { path = "crates/cc-session" }
 
 # Daemon HTTP server
 axum = { version = "0.8", features = ["ws"] }
