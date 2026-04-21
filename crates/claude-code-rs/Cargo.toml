@@ -134,6 +134,7 @@ parking_lot = { workspace = true }
 # 内部 workspace crates (P1)
 cc-keybindings = { workspace = true }
 cc-observability = { workspace = true }
+cc-types = { workspace = true }
 
 # Daemon
 axum = { workspace = true }
