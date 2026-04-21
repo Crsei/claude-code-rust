@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::app_state::AppState;
 #[allow(unused_imports)]
-use super::message::{AssistantMessage, ContentBlock, Message, ToolResultContent};
+use cc_types::message::{AssistantMessage, ContentBlock, Message, ToolResultContent};
 
 /// Async callback for interactive permission requests.
 ///

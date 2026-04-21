@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 #[allow(unused_imports)]
-use super::message::{Message, SystemMessage, Usage};
+use cc_types::message::{Message, SystemMessage, Usage};
 #[allow(unused_imports)]
 use super::tool::{QueryChainTracking, ToolUseContext, Tools};
 
