@@ -1,0 +1,169 @@
+[package]
+name = "claude-code-rs"
+version = "0.1.0"
+edition = "2021"
+description = "Claude Code CLI - Rust implementation (lite)"
+build = "build.rs"
+
+# ============================================================
+# Features
+# ============================================================
+#
+# default — minimal build: no telemetry, no embedded web assets,
+#           no image/syntect/tree-sitter pulls. Keeps `cargo build`
+#           fast and avoids heavy native deps (onig, tonic/prost).
+#
+# Opt-in:
+#   telemetry   — Langfuse + OpenTelemetry export (pulls tonic/prost).
+#   web-ui      — Embed the React SPA (rust-embed) into the binary.
+#   image       — Image decoding (png/jpeg only).
+#   syntect     — Syntax highlighting via fancy-regex (no onig C dep).
+#   tree-sitter — AST parsing.
+
+[features]
+default = []
+telemetry = [
+    "dep:tracing-opentelemetry",
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-langfuse",
+]
+web-ui = ["dep:rust-embed"]
+image = ["dep:image"]
+syntect = ["dep:syntect"]
+tree-sitter = ["dep:tree-sitter"]
+
+[dependencies]
+# 异步运行时
+tokio = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+async-stream = { workspace = true }
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
+
+# 序列化
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# 错误处理
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+
+# UUID
+uuid = { workspace = true }
+
+# 时间
+chrono = { workspace = true }
+
+# LRU
+lru = { workspace = true }
+
+# 日志
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-opentelemetry = { workspace = true, optional = true }
+opentelemetry = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
+opentelemetry-langfuse = { workspace = true, optional = true }
+
+# LSP
+lsp-types = { workspace = true }
+
+# 文件 & 路径
+glob = { workspace = true }
+ignore = { workspace = true }
+walkdir = { workspace = true }
+dirs = { workspace = true }
+
+# 正则
+regex = { workspace = true }
+
+# Git
+git2 = { workspace = true }
+
+# Diff
+similar = { workspace = true }
+
+# 进程
+shell-words = { workspace = true }
+
+# 终端 UI
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+
+# 语法高亮
+syntect = { workspace = true, optional = true }
+
+# 文本
+textwrap = { workspace = true }
+unicode-width = { workspace = true }
+strip-ansi-escapes = { workspace = true }
+
+# Markdown
+pulldown-cmark = { workspace = true }
+
+# 哈希
+sha2 = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+
+# 编码
+base64 = { workspace = true }
+bytes = { workspace = true }
+url = { workspace = true }
+urlencoding = { workspace = true }
+semver = { workspace = true }
+
+# 网络
+reqwest = { workspace = true }
+tokio-tungstenite = { workspace = true }
+eventsource-stream = { workspace = true }
+
+# 认证
+keyring = { workspace = true }
+dotenvy = { workspace = true }
+
+# 同步原语
+parking_lot = { workspace = true }
+
+# 内部 workspace crates (P1)
+cc-keybindings = { workspace = true }
+cc-observability = { workspace = true }
+
+# Daemon
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+hmac = { workspace = true }
+notify-rust = { workspace = true }
+
+# Web UI embed
+rust-embed = { workspace = true, optional = true }
+mime_guess = { workspace = true }
+
+# AST / 图像
+tree-sitter = { workspace = true, optional = true }
+image = { workspace = true, optional = true }
+
+# 可执行文件查找 (sandbox/availability.rs 用它探测 bwrap/sandbox-exec)
+which = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = { workspace = true }
+predicates = { workspace = true }
+assert_fs = { workspace = true }
+tempfile = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+serde_json = { workspace = true }
+portable-pty = { workspace = true }
+vt100 = { workspace = true }
+serial_test = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }

@@ -24,7 +24,9 @@ mod commands;
 mod computer_use;
 mod config;
 mod engine;
-mod keybindings;
+// `keybindings` lives in its own crate (`cc-keybindings`). Re-alias at the
+// crate root so existing `crate::keybindings::...` paths continue to resolve.
+use cc_keybindings as keybindings;
 mod permissions;
 mod query;
 mod sandbox;
@@ -70,8 +72,9 @@ mod web;
 // Phase I: Shutdown and cleanup
 mod shutdown;
 
-// Observability: runtime audit event logging
-mod observability;
+// Observability lives in its own crate (`cc-observability`). Re-alias at the
+// crate root so existing `crate::observability::...` paths continue to resolve.
+use cc_observability as observability;
 
 // IPC headless mode
 mod ipc;
@@ -600,7 +603,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             source: source_mode.to_string(),
         };
 
-        match AuditSink::init(engine.session_id.as_str(), &meta, audit_config) {
+        let runs_dir = crate::config::paths::runs_dir(engine.session_id.as_str());
+        match AuditSink::init(engine.session_id.as_str(), runs_dir, &meta, audit_config) {
             Ok(sink) => {
                 let ctx = AuditContext::new(engine.session_id.as_str(), source_mode, sink);
                 // Emit session.start

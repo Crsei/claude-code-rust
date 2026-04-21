@@ -16,11 +16,11 @@
 FROM rust:latest AS rust-builder
 
 WORKDIR /build
-COPY Cargo.toml Cargo.lock ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs && \
-    cargo build --release 2>/dev/null || true && rm -rf src
 
-COPY src/ src/
+# Workspace layout (after Phase 0 of the workspace split):
+# copy manifest + every crate, then a straight `cargo build` at the root.
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ crates/
 RUN cargo build --release
 
 # ── Stage 2: UI test runner ──────────────────────────────────

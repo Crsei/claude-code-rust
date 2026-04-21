@@ -1423,7 +1423,10 @@ mod tests {
     /// `cargo test schema_file_matches_runtime -- --ignored` (then update).
     #[test]
     fn schema_file_matches_runtime() {
+        // docs/ lives at the workspace root, two levels above the crate.
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
             .join("docs")
             .join("schemas")
             .join("settings.schema.json");
