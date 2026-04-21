@@ -91,7 +91,9 @@ impl AgentTool {
             }
         }
 
-        let child_engine = QueryEngine::new(child_config);
+        let mut child_engine = QueryEngine::new(child_config);
+        child_engine.set_hook_runner(ctx.hook_runner.clone());
+        child_engine.set_command_dispatcher(ctx.command_dispatcher.clone());
         let stream =
             child_engine.submit_message(&params.prompt, QuerySource::Agent(agent_id.to_string()));
 
@@ -175,8 +177,8 @@ impl AgentTool {
         parent_model: &str,
         current_depth: usize,
         description: &str,
-        start_configs: &[crate::tools::hooks::HookEventConfig],
-        stop_configs: &[crate::tools::hooks::HookEventConfig],
+        start_configs: &[cc_types::hooks::HookEventConfig],
+        stop_configs: &[cc_types::hooks::HookEventConfig],
         background: bool,
     ) -> Result<ToolResult> {
         // Fire SubagentStart hook
@@ -189,7 +191,9 @@ impl AgentTool {
                 "model": agent_model,
                 "depth": current_depth + 1,
             });
-            let _ = crate::tools::hooks::run_event_hooks("SubagentStart", &payload, start_configs)
+            let _ = ctx
+                .hook_runner
+                .run_event_hooks("SubagentStart", &payload, start_configs)
                 .await;
         }
 
@@ -227,8 +231,10 @@ impl AgentTool {
                 "description": description,
                 "is_error": is_error,
             });
-            let _ =
-                crate::tools::hooks::run_event_hooks("SubagentStop", &payload, stop_configs).await;
+            let _ = ctx
+                .hook_runner
+                .run_event_hooks("SubagentStop", &payload, stop_configs)
+                .await;
         }
 
         result

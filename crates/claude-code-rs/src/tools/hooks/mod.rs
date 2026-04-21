@@ -10,6 +10,10 @@
 //! the `hooks` key. Each hook event (PreToolUse, PostToolUse, Stop) contains
 //! a list of HookEventConfig entries, each with an optional matcher and a
 //! list of HookEntry commands to execute as subprocesses.
+//!
+//! The plain data types and the `HookRunner` trait live in `cc-types::hooks`.
+//! This module provides the concrete shell-command runner (`ShellHookRunner`)
+//! together with free functions that the rest of the crate uses directly.
 
 mod execution;
 mod post_tool;
@@ -21,124 +25,20 @@ pub use post_tool::{
 };
 pub use pre_tool::run_pre_tool_hooks;
 
-use std::collections::HashMap;
+// Re-export the plain data types from cc-types so existing
+// `crate::tools::hooks::{HookEventConfig, HookOutput, ...}` import paths keep
+// working without changes.
+pub use cc_types::hooks::{
+    HookEntry, HookEventConfig, HookOutput, HookRunner, HooksMap, PermissionOverride,
+    PostToolHookResult, PreToolHookResult,
+};
 
-use serde::Deserialize;
+use async_trait::async_trait;
 use serde_json::Value;
 use tracing::warn;
 
 // ---------------------------------------------------------------------------
-// Hook types (public API)
-// ---------------------------------------------------------------------------
-
-/// Result of running pre-tool hooks.
-#[derive(Debug, Clone)]
-pub enum PreToolHookResult {
-    /// Continue with execution (possibly with modified input).
-    Continue {
-        /// Modified input (None = use original).
-        updated_input: Option<Value>,
-        /// Permission override from hook.
-        permission_override: Option<PermissionOverride>,
-    },
-    /// Stop tool execution (hook explicitly blocked it).
-    Stop {
-        /// Message explaining why the hook stopped execution.
-        message: String,
-    },
-}
-
-/// Permission override from a hook.
-#[derive(Debug, Clone)]
-pub enum PermissionOverride {
-    /// Force allow.
-    Allow,
-    /// Force deny.
-    Deny { reason: String },
-}
-
-/// Result of running post-tool hooks.
-#[derive(Debug, Clone)]
-pub enum PostToolHookResult {
-    /// Continue normally.
-    Continue,
-    /// Hook wants to stop the continuation chain.
-    StopContinuation { message: String },
-}
-
-// ---------------------------------------------------------------------------
-// Hook configuration types (deserialized from settings.json)
-// ---------------------------------------------------------------------------
-
-/// Hook configuration from settings.json.
-///
-/// Each event (e.g. "PreToolUse") contains a list of these, each optionally
-/// matching a tool name and containing a list of hook entries to run.
-#[derive(Debug, Clone, Deserialize)]
-pub struct HookEventConfig {
-    /// Tool name matcher (e.g., "Bash", "Read", "*").
-    /// None or "*" matches all tools.
-    pub matcher: Option<String>,
-    /// List of hook entries to run when this config matches.
-    pub hooks: Vec<HookEntry>,
-}
-
-/// A single hook entry — currently only "command" type is supported.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "type")]
-pub enum HookEntry {
-    #[serde(rename = "command")]
-    Command {
-        command: String,
-        #[serde(default = "default_timeout")]
-        timeout: u64, // seconds
-    },
-}
-
-fn default_timeout() -> u64 {
-    60
-}
-
-/// JSON output from a hook subprocess.
-///
-/// The subprocess writes a single JSON line to stdout. All fields are
-/// optional; the default is to continue execution without changes.
-#[derive(Debug, Deserialize)]
-#[serde(default)]
-pub struct HookOutput {
-    /// If false, stop tool execution.
-    #[serde(rename = "continue")]
-    pub should_continue: bool,
-    /// Reason for stopping (post-tool hooks).
-    pub stop_reason: Option<String>,
-    /// Decision string (e.g., "allow", "deny", "block").
-    pub decision: Option<String>,
-    /// Reason for the decision.
-    pub reason: Option<String>,
-    /// Permission decision for pre-tool hooks ("allow" or "deny").
-    pub permission_decision: Option<String>,
-    /// Modified tool input (pre-tool hooks).
-    pub updated_input: Option<Value>,
-    /// Additional context to include in messages.
-    pub additional_context: Option<String>,
-}
-
-impl Default for HookOutput {
-    fn default() -> Self {
-        Self {
-            should_continue: true,
-            stop_reason: None,
-            decision: None,
-            reason: None,
-            permission_decision: None,
-            updated_input: None,
-            additional_context: None,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Matcher logic
+// Matcher logic (still needed by the free-function implementations)
 // ---------------------------------------------------------------------------
 
 /// Check if a matcher pattern matches a tool name.
@@ -162,10 +62,7 @@ fn matches_tool(matcher: Option<&str>, tool_name: &str) -> bool {
 ///
 /// `hooks_value` is the deserialized `hooks` map from GlobalConfig.
 /// `event_name` is one of "PreToolUse", "PostToolUse", "Stop".
-pub fn load_hook_configs(
-    hooks_value: &HashMap<String, Value>,
-    event_name: &str,
-) -> Vec<HookEventConfig> {
+pub fn load_hook_configs(hooks_value: &HooksMap, event_name: &str) -> Vec<HookEventConfig> {
     let Some(event_value) = hooks_value.get(event_name) else {
         return vec![];
     };
@@ -184,6 +81,78 @@ pub fn load_hook_configs(
 }
 
 // ---------------------------------------------------------------------------
+// ShellHookRunner — concrete HookRunner backed by the shell-command impl
+// ---------------------------------------------------------------------------
+
+/// Shell-command-backed `HookRunner`.
+///
+/// Delegates every trait method to the free functions in this module so the
+/// implementations (`execute_command_hook`, subprocess spawning, etc.) remain
+/// in one place.
+pub struct ShellHookRunner;
+
+impl ShellHookRunner {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for ShellHookRunner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl HookRunner for ShellHookRunner {
+    fn load_hook_configs(
+        &self,
+        hooks_value: &HooksMap,
+        event_name: &str,
+    ) -> Vec<HookEventConfig> {
+        load_hook_configs(hooks_value, event_name)
+    }
+
+    async fn run_pre_tool_hooks(
+        &self,
+        tool_name: &str,
+        input: &Value,
+        hook_configs: &[HookEventConfig],
+    ) -> anyhow::Result<PreToolHookResult> {
+        run_pre_tool_hooks(tool_name, input, hook_configs).await
+    }
+
+    async fn run_post_tool_hooks(
+        &self,
+        tool_name: &str,
+        input: &Value,
+        tool_result_data: &Value,
+        hook_configs: &[HookEventConfig],
+    ) -> anyhow::Result<PostToolHookResult> {
+        post_tool::run_post_tool_hooks_data(tool_name, input, tool_result_data, hook_configs).await
+    }
+
+    async fn run_post_tool_failure_hooks(
+        &self,
+        tool_name: &str,
+        input: &Value,
+        error: &str,
+        hook_configs: &[HookEventConfig],
+    ) -> anyhow::Result<()> {
+        run_post_tool_failure_hooks(tool_name, input, error, hook_configs).await
+    }
+
+    async fn run_event_hooks(
+        &self,
+        event_name: &str,
+        payload: &Value,
+        hook_configs: &[HookEventConfig],
+    ) -> anyhow::Result<HookOutput> {
+        run_event_hooks(event_name, payload, hook_configs).await
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -191,6 +160,7 @@ pub fn load_hook_configs(
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::collections::HashMap;
 
     // -- matches_tool tests --
 

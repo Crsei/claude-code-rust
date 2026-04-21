@@ -7,6 +7,8 @@
 //!
 //! See issue #70 (`[workspace-split] Phase 1`) for the rationale behind this
 //! partial split.
+pub mod commands;
+pub mod hooks;
 pub mod message;
 pub mod permissions;
 pub mod state;

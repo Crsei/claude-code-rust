@@ -107,7 +107,13 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
             agent_context: None,
         };
 
-        let engine = QueryEngine::new(engine_config);
+        let mut engine = QueryEngine::new(engine_config);
+        engine.set_hook_runner(std::sync::Arc::new(
+            crate::tools::hooks::ShellHookRunner::new(),
+        ));
+        engine.set_command_dispatcher(std::sync::Arc::new(
+            crate::commands::DefaultCommandDispatcher::new(),
+        ));
 
         // Submit the initial prompt
         {

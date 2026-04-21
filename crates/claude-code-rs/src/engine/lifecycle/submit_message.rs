@@ -21,7 +21,6 @@ use crate::engine::sdk_types::*;
 use crate::engine::system_prompt;
 use crate::query::loop_impl;
 use crate::session::transcript;
-use crate::tools::hooks;
 use crate::types::config::{QueryParams, QuerySource};
 use crate::types::message::{
     Attachment, Message, MessageContent, QueryYield, StreamEvent, SystemSubtype,
@@ -57,6 +56,8 @@ impl QueryEngine {
         let state_ref = self.state.clone();
         let aborted_ref = self.aborted.clone();
         let pending_bg_results = self.pending_bg_results.clone();
+        let hook_runner = self.hook_runner.clone();
+        let command_dispatcher = self.command_dispatcher.clone();
 
         let stream = async_stream::stream! {
             let started_at = Instant::now();
@@ -87,12 +88,15 @@ impl QueryEngine {
             // ================================================================
             {
                 let hooks_map = state_ref.read().app_state.hooks.clone();
-                let configs = hooks::load_hook_configs(&hooks_map, "UserPromptSubmit");
+                let configs = hook_runner.load_hook_configs(&hooks_map, "UserPromptSubmit");
                 if !configs.is_empty() {
                     let payload = serde_json::json!({
                         "prompt": &prompt,
                     });
-                    match hooks::run_event_hooks("UserPromptSubmit", &payload, &configs).await {
+                    match hook_runner
+                        .run_event_hooks("UserPromptSubmit", &payload, &configs)
+                        .await
+                    {
                         Ok(output) => {
                             if !output.should_continue {
                                 info!("UserPromptSubmit hook blocked prompt");
@@ -138,6 +142,7 @@ impl QueryEngine {
                 &prompt,
                 &current_msgs_snapshot,
                 &config.cwd,
+                command_dispatcher.as_ref(),
             );
 
             // A.3: Push processed messages into mutable_messages
@@ -246,14 +251,17 @@ impl QueryEngine {
                 let content_length: usize = system_prompt_parts.iter().map(|p| p.len()).sum();
                 if content_length > 0 {
                     let hooks_map = state_ref.read().app_state.hooks.clone();
-                    let configs = hooks::load_hook_configs(&hooks_map, "InstructionsLoaded");
+                    let configs =
+                        hook_runner.load_hook_configs(&hooks_map, "InstructionsLoaded");
                     if !configs.is_empty() {
                         let payload = serde_json::json!({
                             "source": "system_prompt",
                             "content_length": content_length,
                             "cwd": &config.cwd,
                         });
-                        let _ = hooks::run_event_hooks("InstructionsLoaded", &payload, &configs).await;
+                        let _ = hook_runner
+                            .run_event_hooks("InstructionsLoaded", &payload, &configs)
+                            .await;
                     }
                 }
             }
@@ -352,6 +360,8 @@ impl QueryEngine {
                 permission_callback,
                 bg_agent_tx,
                 pending_bg_results: pending_bg_results.clone(),
+                hook_runner: hook_runner.clone(),
+                command_dispatcher: command_dispatcher.clone(),
             });
 
             // Run the query loop
