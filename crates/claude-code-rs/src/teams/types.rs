@@ -5,8 +5,6 @@
 
 #![allow(unused)]
 
-use std::collections::HashMap;
-
 use serde::{Deserialize, Serialize};
 
 use crate::types::tool::PermissionMode;
@@ -103,32 +101,13 @@ pub struct TeamMember {
 // ---------------------------------------------------------------------------
 // TeamContext — AppState extension
 // ---------------------------------------------------------------------------
-
-/// Runtime team context stored in AppState.
-#[derive(Debug, Clone, Default)]
-pub struct TeamContext {
-    pub team_name: String,
-    pub team_file_path: String,
-    pub lead_agent_id: String,
-    pub self_agent_id: Option<String>,
-    pub self_agent_name: Option<String>,
-    pub is_leader: Option<bool>,
-    pub self_agent_color: Option<String>,
-    pub teammates: HashMap<String, TeammateInfo>,
-}
-
-/// Runtime info about a spawned teammate.
-#[derive(Debug, Clone)]
-pub struct TeammateInfo {
-    pub name: String,
-    pub agent_type: Option<String>,
-    pub color: Option<String>,
-    pub tmux_session_name: String,
-    pub tmux_pane_id: String,
-    pub cwd: String,
-    pub worktree_path: Option<String>,
-    pub spawned_at: i64,
-}
+//
+// `TeamContext` and `TeammateInfo` are pure data types consumed by
+// `types/app_state.rs`. They moved to `cc-types::teams` so cc-types no longer
+// needs to reach back into the root crate's `teams::` module. See issue #75
+// ("Remaining before the source move" in the workspace-split design doc).
+#[allow(unused_imports)]
+pub use cc_types::teams::{TeamContext, TeammateInfo};
 
 // ---------------------------------------------------------------------------
 // TeammateMessage — mailbox message
@@ -330,12 +309,8 @@ mod tests {
         assert_ne!(TaskStatus::Running, TaskStatus::Completed);
     }
 
-    #[test]
-    fn test_team_context_default() {
-        let ctx = TeamContext::default();
-        assert!(ctx.team_name.is_empty());
-        assert!(ctx.teammates.is_empty());
-    }
+    // `test_team_context_default` moved to `cc-types::teams` together with
+    // `TeamContext` / `TeammateInfo`.
 
     #[test]
     fn test_idle_reason_serde() {

@@ -31,7 +31,7 @@ pub struct AppState {
     /// effort 值
     pub effort_value: Option<String>,
     /// Agent Teams 上下文 (feature-gated)
-    pub team_context: Option<crate::teams::types::TeamContext>,
+    pub team_context: Option<cc_types::teams::TeamContext>,
     /// Hook configurations loaded from settings.json (merged config).
     /// Read by `tools::hooks::load_hook_configs()` and the hook execution pipeline.
     pub hooks: HashMap<String, serde_json::Value>,
