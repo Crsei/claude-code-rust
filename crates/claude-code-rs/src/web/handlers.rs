@@ -680,6 +680,8 @@ fn rebuild_engine_with_session_id(
     cfg.initial_messages = seed;
 
     let mut engine = QueryEngine::new(cfg);
+    engine.set_hook_runner(current.hook_runner());
+    engine.set_command_dispatcher(current.command_dispatcher());
     if let Some(id) = session_id {
         engine.session_id = SessionId::from_string(id);
     }

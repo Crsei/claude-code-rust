@@ -5,7 +5,8 @@
 
 use uuid::Uuid;
 
-use crate::commands;
+use cc_types::commands::CommandDispatcher;
+
 use crate::types::message::{Message, MessageContent, UserMessage};
 
 // ---------------------------------------------------------------------------
@@ -44,27 +45,39 @@ pub struct ProcessedInput {
 ///      in `messages`.
 /// 2. Otherwise, wrap the input in a plain `UserMessage` with
 ///    `should_query = true`.
-pub fn process_user_input(input: &str, _messages: &[Message], _cwd: &str) -> ProcessedInput {
+///
+/// `dispatcher` is the command dispatcher used to parse slash commands. The
+/// engine no longer imports `crate::commands` directly (see issue #74 / 5c).
+pub fn process_user_input(
+    input: &str,
+    _messages: &[Message],
+    _cwd: &str,
+    dispatcher: &dyn CommandDispatcher,
+) -> ProcessedInput {
     let trimmed = input.trim();
 
     // -- Slash-command path ---------------------------------------------------
     if trimmed.starts_with('/') {
-        if let Some((cmd_idx, args)) = commands::parse_command_input(trimmed) {
+        if let Some(parsed) = dispatcher.parse_command_input(trimmed) {
             // We matched a registered command. For now we treat all
             // commands as local (should_query = false) and return the
             // command name + args as result_text. Full command execution
             // (which requires async) will be wired later; this gives the
             // engine the information it needs to route.
-            let all_commands = commands::get_all_commands();
-            let cmd = &all_commands[cmd_idx];
-            let cmd_name = cmd.name.clone();
+            let cmd_name = dispatcher
+                .command_name(parsed.index)
+                .unwrap_or_else(|| String::from("unknown"));
 
             return ProcessedInput {
                 messages: Vec::new(),
                 should_query: false,
                 allowed_tools: None,
                 model: None,
-                result_text: Some(format!("/{cmd_name} {args}").trim().to_string()),
+                result_text: Some(
+                    format!("/{cmd_name} {args}", args = parsed.args)
+                        .trim()
+                        .to_string(),
+                ),
             };
         }
 
@@ -99,10 +112,46 @@ pub fn process_user_input(input: &str, _messages: &[Message], _cwd: &str) -> Pro
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cc_types::commands::{CommandDispatcher, ParsedCommand};
+
+    /// Minimal dispatcher used only in tests.  Recognises `/help` and
+    /// `/config`; everything else is treated as regular text.
+    struct TestDispatcher;
+
+    impl CommandDispatcher for TestDispatcher {
+        fn parse_command_input(&self, input: &str) -> Option<ParsedCommand> {
+            let trimmed = input.trim();
+            if !trimmed.starts_with('/') {
+                return None;
+            }
+            let without_slash = &trimmed[1..];
+            let name = without_slash.split_whitespace().next().unwrap_or("");
+            let args = without_slash
+                .strip_prefix(name)
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let index = match name {
+                "help" => 0,
+                "config" => 1,
+                _ => return None,
+            };
+            Some(ParsedCommand { index, args })
+        }
+
+        fn command_name(&self, index: usize) -> Option<String> {
+            match index {
+                0 => Some("help".to_string()),
+                1 => Some("config".to_string()),
+                _ => None,
+            }
+        }
+    }
 
     #[test]
     fn test_regular_text() {
-        let result = process_user_input("Hello, Claude!", &[], "/tmp");
+        let d = TestDispatcher;
+        let result = process_user_input("Hello, Claude!", &[], "/tmp", &d);
         assert!(result.should_query);
         assert_eq!(result.messages.len(), 1);
         assert!(result.result_text.is_none());
@@ -110,7 +159,8 @@ mod tests {
 
     #[test]
     fn test_slash_command_known() {
-        let result = process_user_input("/help", &[], "/tmp");
+        let d = TestDispatcher;
+        let result = process_user_input("/help", &[], "/tmp", &d);
         assert!(!result.should_query);
         assert!(result.messages.is_empty());
         assert!(result.result_text.is_some());
@@ -119,7 +169,8 @@ mod tests {
 
     #[test]
     fn test_slash_command_with_args() {
-        let result = process_user_input("/config set model opus", &[], "/tmp");
+        let d = TestDispatcher;
+        let result = process_user_input("/config set model opus", &[], "/tmp", &d);
         assert!(!result.should_query);
         assert!(result.result_text.is_some());
         let text = result.result_text.unwrap();
@@ -129,7 +180,8 @@ mod tests {
 
     #[test]
     fn test_unknown_slash_command() {
-        let result = process_user_input("/nonexistent_command", &[], "/tmp");
+        let d = TestDispatcher;
+        let result = process_user_input("/nonexistent_command", &[], "/tmp", &d);
         // Unknown commands are treated as regular text.
         assert!(result.should_query);
         assert_eq!(result.messages.len(), 1);
@@ -137,14 +189,16 @@ mod tests {
 
     #[test]
     fn test_empty_input() {
-        let result = process_user_input("", &[], "/tmp");
+        let d = TestDispatcher;
+        let result = process_user_input("", &[], "/tmp", &d);
         assert!(result.should_query);
         assert_eq!(result.messages.len(), 1);
     }
 
     #[test]
     fn test_whitespace_only() {
-        let result = process_user_input("   ", &[], "/tmp");
+        let d = TestDispatcher;
+        let result = process_user_input("   ", &[], "/tmp", &d);
         assert!(result.should_query);
         assert_eq!(result.messages.len(), 1);
     }
