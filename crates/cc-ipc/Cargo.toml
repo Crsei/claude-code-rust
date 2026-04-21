@@ -1,0 +1,8 @@
+[package]
+name = "cc-ipc"
+version = "0.1.0"
+edition = "2021"
+description = "IPC spine: JSONL/stdio (headless) + HTTP/SSE (daemon) protocols for frontend bridging. Phase 7 workspace split (scaffold)."
+
+[dependencies]
+cc-types = { workspace = true }

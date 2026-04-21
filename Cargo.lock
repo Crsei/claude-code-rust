@@ -529,6 +529,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-commands"
+version = "0.1.0"
+dependencies = [
+ "cc-types",
+]
+
+[[package]]
 name = "cc-compact"
 version = "0.1.0"
 dependencies = [
@@ -568,6 +575,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-daemon"
+version = "0.1.0"
+dependencies = [
+ "cc-types",
+]
+
+[[package]]
+name = "cc-engine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "cc-bootstrap",
+ "cc-compact",
+ "cc-config",
+ "cc-keybindings",
+ "cc-types",
+ "chrono",
+ "futures",
+ "git2",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "cc-ipc"
+version = "0.1.0"
+dependencies = [
+ "cc-types",
+]
+
+[[package]]
 name = "cc-keybindings"
 version = "0.1.0"
 dependencies = [
@@ -577,6 +622,13 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tracing",
+]
+
+[[package]]
+name = "cc-lsp-service"
+version = "0.1.0"
+dependencies = [
+ "cc-types",
 ]
 
 [[package]]
@@ -622,6 +674,20 @@ dependencies = [
  "tempfile",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "cc-plugins"
+version = "0.1.0"
+dependencies = [
+ "cc-types",
+]
+
+[[package]]
+name = "cc-query"
+version = "0.1.0"
+dependencies = [
+ "cc-types",
 ]
 
 [[package]]
@@ -692,14 +758,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-teams"
+version = "0.1.0"
+dependencies = [
+ "cc-types",
+]
+
+[[package]]
+name = "cc-tools"
+version = "0.1.0"
+dependencies = [
+ "cc-types",
+]
+
+[[package]]
 name = "cc-types"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "parking_lot",
  "serde",
  "serde_json",
+ "tokio",
  "uuid",
 ]
 
@@ -805,6 +887,7 @@ dependencies = [
  "cc-compact",
  "cc-computer-use",
  "cc-config",
+ "cc-engine",
  "cc-keybindings",
  "cc-mcp",
  "cc-observability",

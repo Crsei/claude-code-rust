@@ -150,6 +150,13 @@ impl HookRunner for ShellHookRunner {
     ) -> anyhow::Result<HookOutput> {
         run_event_hooks(event_name, payload, hook_configs).await
     }
+
+    async fn run_stop_hooks(
+        &self,
+        hook_configs: &[HookEventConfig],
+    ) -> anyhow::Result<PostToolHookResult> {
+        run_stop_hooks(hook_configs).await
+    }
 }
 
 // ---------------------------------------------------------------------------

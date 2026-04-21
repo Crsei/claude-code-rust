@@ -6,7 +6,7 @@
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
-use crate::tools::lsp::{HoverInfo, SourceLocation, SymbolInfo};
+use crate::lsp_service::types::{HoverInfo, SourceLocation, SymbolInfo};
 
 // ---------------------------------------------------------------------------
 // URI helpers

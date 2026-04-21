@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::app_state::AppState;
 #[allow(unused_imports)]
-use super::message::{AssistantMessage, ContentBlock, Message, ToolResultContent};
+use cc_types::message::{AssistantMessage, ContentBlock, Message, ToolResultContent};
 
 /// Async callback for interactive permission requests.
 ///
@@ -136,7 +136,7 @@ pub struct ToolUseContext {
     /// Sender for background agent completion results.
     /// When `Some`, the Agent tool can spawn background tasks.
     /// When `None`, `run_in_background` falls back to synchronous execution.
-    pub bg_agent_tx: Option<crate::ipc::agent_channel::AgentSender>,
+    pub bg_agent_tx: Option<cc_types::agent_channel::AgentSender>,
     /// Hook runner used by tools (e.g. the Agent tool fires SubagentStart /
     /// SubagentStop events through this trait rather than importing
     /// `crate::tools::hooks` directly).

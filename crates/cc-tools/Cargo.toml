@@ -1,0 +1,8 @@
+[package]
+name = "cc-tools"
+version = "0.1.0"
+edition = "2021"
+description = "Tool implementations (FileRead/FileWrite/Bash/Glob/Grep/...). Phase 6 workspace split (scaffold)."
+
+[dependencies]
+cc-types = { workspace = true }
