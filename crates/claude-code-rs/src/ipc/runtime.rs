@@ -74,7 +74,19 @@ impl HeadlessRuntime {
         crate::lsp_service::set_event_sender(event_bus.sender());
         crate::mcp::set_event_sender(event_bus.sender());
         crate::plugins::set_event_sender(event_bus.sender());
-        crate::skills::set_event_sender(event_bus.sender());
+        // cc-skills lives in its own crate and no longer knows about
+        // `SubsystemEvent`. Adapt its minimal event enum into ours here.
+        let skills_tx = event_bus.sender();
+        crate::skills::set_event_callback(move |e| {
+            let adapted = match e {
+                crate::skills::SkillSubsystemEvent::SkillsLoaded { count } => {
+                    super::subsystem_events::SubsystemEvent::Skill(
+                        super::subsystem_events::SkillEvent::SkillsLoaded { count },
+                    )
+                }
+            };
+            let _ = skills_tx.send(adapted);
+        });
 
         // ── 2. Send Ready ────────────────────────────────────────────
         let app_state = self.engine.app_state();

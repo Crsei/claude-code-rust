@@ -480,6 +480,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-auth"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "chrono",
+ "dirs",
+ "keyring",
+ "parking_lot",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "urlencoding",
+]
+
+[[package]]
+name = "cc-bootstrap"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "cc-keybindings"
 version = "0.1.0"
 dependencies = [
@@ -502,6 +534,14 @@ dependencies = [
  "serde_json",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "cc-skills"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "serde",
 ]
 
 [[package]]
@@ -592,8 +632,11 @@ dependencies = [
  "axum",
  "base64",
  "bytes",
+ "cc-auth",
+ "cc-bootstrap",
  "cc-keybindings",
  "cc-observability",
+ "cc-skills",
  "cc-types",
  "chrono",
  "clap",

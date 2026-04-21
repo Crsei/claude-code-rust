@@ -1,12 +1,18 @@
 //! OAuth token persistence.
 //!
-//! Stores OAuth tokens at `~/.cc-rust/credentials.json`.
+//! Stores OAuth tokens at the path registered via
+//! [`crate::set_credentials_path`]. The path is injected from the root crate at
+//! startup (see `main.rs`) so cc-auth stays decoupled from `config::paths`.
 
 use anyhow::Result;
 
-/// Token storage file path: `{data_root}/credentials.json`
+/// Token storage file path (set once by the host at startup).
+///
+/// Panics if [`crate::set_credentials_path`] has not been called yet. Any code
+/// path that reaches token I/O runs after the early bootstrap has registered
+/// the path, so this is a programmer-error guard rather than a runtime check.
 pub fn token_file_path() -> std::path::PathBuf {
-    crate::config::paths::credentials_path()
+    crate::credentials_path()
 }
 
 /// Stored token data (OAuth).

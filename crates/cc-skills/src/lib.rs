@@ -161,24 +161,37 @@ impl SkillDefinition {
 // ---------------------------------------------------------------------------
 // Subsystem event emission
 // ---------------------------------------------------------------------------
+//
+// cc-skills used to hold a `broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>`
+// directly. Once `skills` moved into its own crate (issue #71), referencing
+// the root crate's `ipc` module would have been a cycle. The host now
+// registers a simple callback that receives cc-skills's own minimal event
+// enum and is responsible for adapting it into `SubsystemEvent`.
 
-/// Event sender for subsystem events.
-static EVENT_TX: LazyLock<
-    Mutex<Option<tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>>>,
-> = LazyLock::new(|| Mutex::new(None));
-
-/// Inject the event sender from the headless event loop.
-#[allow(dead_code)] // Called by headless event loop wiring (Task 12).
-pub fn set_event_sender(
-    tx: tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>,
-) {
-    *EVENT_TX.lock() = Some(tx);
+/// Minimal event set emitted by the skill subsystem. The host adapts these
+/// into its own subsystem-event wrapper.
+#[derive(Debug, Clone)]
+pub enum SkillSubsystemEvent {
+    /// Skills were loaded / reloaded.
+    SkillsLoaded { count: usize },
 }
 
-/// Emit a subsystem event.
-fn emit_event(event: crate::ipc::subsystem_events::SubsystemEvent) {
-    if let Some(tx) = EVENT_TX.lock().as_ref() {
-        let _ = tx.send(event);
+type EventCallback = Box<dyn Fn(SkillSubsystemEvent) + Send + Sync>;
+
+static EVENT_CALLBACK: LazyLock<Mutex<Option<EventCallback>>> = LazyLock::new(|| Mutex::new(None));
+
+/// Register the host's event adapter. Replaces any previous callback.
+pub fn set_event_callback<F>(cb: F)
+where
+    F: Fn(SkillSubsystemEvent) + Send + Sync + 'static,
+{
+    *EVENT_CALLBACK.lock() = Some(Box::new(cb));
+}
+
+/// Emit an event through the registered callback (no-op if unset).
+fn emit_event(event: SkillSubsystemEvent) {
+    if let Some(cb) = EVENT_CALLBACK.lock().as_ref() {
+        cb(event);
     }
 }
 
@@ -226,14 +239,20 @@ pub fn clear_skills() {
 }
 
 /// Initialize the skill system — loads bundled + directory skills.
-pub fn init_skills(project_dir: Option<&std::path::Path>) {
+///
+/// `user_skills_dir` is the path that used to be resolved internally via
+/// `crate::config::paths::skills_dir_global()`. The host passes it in so
+/// cc-skills stays decoupled from the root crate's path layer.
+pub fn init_skills(
+    user_skills_dir: &std::path::Path,
+    project_dir: Option<&std::path::Path>,
+) {
     // 1. Register bundled skills
     bundled::register_bundled_skills();
 
-    // 2. Load user skills from {data_root}/skills/
-    let user_skills_dir = crate::config::paths::skills_dir_global();
+    // 2. Load user skills from the host-provided directory
     if user_skills_dir.is_dir() {
-        let skills = loader::load_skills_from_dir(&user_skills_dir, SkillSource::User);
+        let skills = loader::load_skills_from_dir(user_skills_dir, SkillSource::User);
         for skill in skills {
             register_skill(skill);
         }
@@ -250,11 +269,9 @@ pub fn init_skills(project_dir: Option<&std::path::Path>) {
         }
     }
 
-    // 4. Emit skills-loaded event
+    // 4. Emit skills-loaded event through the host-registered callback
     let count = get_all_skills().len();
-    emit_event(crate::ipc::subsystem_events::SubsystemEvent::Skill(
-        crate::ipc::subsystem_events::SkillEvent::SkillsLoaded { count },
-    ));
+    emit_event(SkillSubsystemEvent::SkillsLoaded { count });
 }
 
 // ---------------------------------------------------------------------------
