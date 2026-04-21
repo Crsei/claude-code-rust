@@ -138,7 +138,10 @@ mod tests {
     async fn test_submit_local_command() {
         use futures::StreamExt;
 
-        let engine = QueryEngine::new(make_config());
+        let mut engine = QueryEngine::new(make_config());
+        engine.set_command_dispatcher(std::sync::Arc::new(
+            crate::commands::DefaultCommandDispatcher::new(),
+        ));
         let stream = engine.submit_message("/clear", QuerySource::Sdk);
         let mut stream = std::pin::pin!(stream);
 

@@ -137,6 +137,13 @@ pub struct ToolUseContext {
     /// When `Some`, the Agent tool can spawn background tasks.
     /// When `None`, `run_in_background` falls back to synchronous execution.
     pub bg_agent_tx: Option<crate::ipc::agent_channel::AgentSender>,
+    /// Hook runner used by tools (e.g. the Agent tool fires SubagentStart /
+    /// SubagentStop events through this trait rather than importing
+    /// `crate::tools::hooks` directly).
+    pub hook_runner: Arc<dyn cc_types::hooks::HookRunner>,
+    /// Command dispatcher — propagated to child engines spawned by the Agent
+    /// tool so they inherit the same slash-command registry.
+    pub command_dispatcher: Arc<dyn cc_types::commands::CommandDispatcher>,
 }
 
 /// 工具使用选项 (不可变配置)

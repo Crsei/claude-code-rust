@@ -261,7 +261,9 @@ impl AgentTool {
             }
         }
 
-        let child_engine = QueryEngine::new(child_config);
+        let mut child_engine = QueryEngine::new(child_config);
+        child_engine.set_hook_runner(ctx.hook_runner.clone());
+        child_engine.set_command_dispatcher(ctx.command_dispatcher.clone());
         let stream =
             child_engine.submit_message(&params.prompt, QuerySource::Agent(agent_id.to_string()));
 

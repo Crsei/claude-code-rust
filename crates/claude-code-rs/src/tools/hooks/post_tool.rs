@@ -10,20 +10,15 @@ use super::{
 };
 use crate::types::tool::ToolResult;
 
-// ---------------------------------------------------------------------------
-// Post-tool hooks
-// ---------------------------------------------------------------------------
-
-/// Run post-tool hooks after successful tool execution.
+/// Value-only variant of [`run_post_tool_hooks`] used by `ShellHookRunner`.
 ///
-/// Corresponds to TypeScript: `runPostToolUseHooks()` in toolExecution.ts
-///
-/// Stdin includes `tool_result` field in addition to tool_name and tool_input.
-/// If any hook returns `stop_reason`, returns `StopContinuation`.
-pub async fn run_post_tool_hooks(
+/// Takes the already-extracted tool_result data (`&Value`) instead of a
+/// `&ToolResult`, so `cc-types` does not need to depend on the main crate's
+/// tool types.
+pub(crate) async fn run_post_tool_hooks_data(
     tool_name: &str,
     input: &Value,
-    result: &ToolResult,
+    tool_result_data: &Value,
     hook_configs: &[HookEventConfig],
 ) -> Result<PostToolHookResult> {
     if hook_configs.is_empty() {
@@ -34,7 +29,7 @@ pub async fn run_post_tool_hooks(
     let stdin_json = serde_json::json!({
         "tool_name": tool_name,
         "tool_input": input,
-        "tool_result": result.data,
+        "tool_result": tool_result_data,
     });
 
     for config in hook_configs {
@@ -53,7 +48,6 @@ pub async fn run_post_tool_hooks(
 
             match execute_command_hook(command, &stdin_json, *timeout).await {
                 Ok(output) => {
-                    // Check for stop
                     if !output.should_continue {
                         let message = output
                             .stop_reason
@@ -81,6 +75,28 @@ pub async fn run_post_tool_hooks(
     }
 
     Ok(PostToolHookResult::Continue)
+}
+
+// ---------------------------------------------------------------------------
+// Post-tool hooks
+// ---------------------------------------------------------------------------
+
+/// Run post-tool hooks after successful tool execution.
+///
+/// Corresponds to TypeScript: `runPostToolUseHooks()` in toolExecution.ts
+///
+/// Stdin includes `tool_result` field in addition to tool_name and tool_input.
+/// If any hook returns `stop_reason`, returns `StopContinuation`.
+pub async fn run_post_tool_hooks(
+    tool_name: &str,
+    input: &Value,
+    result: &ToolResult,
+    hook_configs: &[HookEventConfig],
+) -> Result<PostToolHookResult> {
+    // Delegate to the Value-only variant — keeps the logic in one place and
+    // lets the HookRunner trait operate without pulling the `ToolResult` type
+    // into `cc-types`.
+    run_post_tool_hooks_data(tool_name, input, &result.data, hook_configs).await
 }
 
 /// Run post-tool failure hooks after failed tool execution.

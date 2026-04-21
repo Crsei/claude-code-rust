@@ -240,6 +240,10 @@ mod tests {
             permission_callback: None,
             ask_user_callback: Some(callback),
             bg_agent_tx: None,
+            hook_runner: std::sync::Arc::new(cc_types::hooks::NoopHookRunner::new()),
+            command_dispatcher: std::sync::Arc::new(
+                cc_types::commands::NoopCommandDispatcher::new(),
+            ),
         };
 
         let parent = AssistantMessage {

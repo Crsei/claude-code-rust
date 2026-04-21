@@ -630,7 +630,12 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     };
 
     // B.8: Create QueryEngine
-    let engine = Arc::new(QueryEngine::new(engine_config));
+    let engine = Arc::new({
+        let mut e = QueryEngine::new(engine_config);
+        e.set_hook_runner(Arc::new(crate::tools::hooks::ShellHookRunner::new()));
+        e.set_command_dispatcher(Arc::new(crate::commands::DefaultCommandDispatcher::new()));
+        e
+    });
     info!(session = %engine.session_id, "QueryEngine created");
     crate::dashboard::init_session_id(engine.session_id.as_str());
 

@@ -393,6 +393,8 @@ mod tests {
             permission_callback: None,
             ask_user_callback: None,
             bg_agent_tx: None,
+            hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
+            command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
         }
     }
 

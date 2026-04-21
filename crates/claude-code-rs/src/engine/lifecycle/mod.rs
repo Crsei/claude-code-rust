@@ -110,6 +110,18 @@ pub struct QueryEngine {
     /// Shared buffer of completed background agents.
     /// Event loop pushes; query loop drains.
     pub(crate) pending_bg_results: crate::tools::background_agents::PendingBackgroundResults,
+    /// Hook runner for the tool-execution hook system.
+    ///
+    /// Defaults to [`cc_types::hooks::NoopHookRunner`]. Call sites that want
+    /// real shell-command hooks wire in the concrete `ShellHookRunner` via
+    /// [`QueryEngine::set_hook_runner`] at construction time.
+    pub(crate) hook_runner: Arc<dyn cc_types::hooks::HookRunner>,
+    /// Slash-command dispatcher used by input processing.
+    ///
+    /// Defaults to [`cc_types::commands::NoopCommandDispatcher`]. Call sites
+    /// wire in `DefaultCommandDispatcher` from the main crate's `commands::`
+    /// module via [`QueryEngine::set_command_dispatcher`].
+    pub(crate) command_dispatcher: Arc<dyn cc_types::commands::CommandDispatcher>,
 }
 
 impl QueryEngine {
@@ -156,7 +168,39 @@ impl QueryEngine {
             aborted: Arc::new(AtomicBool::new(false)),
             has_handled_orphaned_permission: Arc::new(AtomicBool::new(false)),
             pending_bg_results: crate::tools::background_agents::PendingBackgroundResults::new(),
+            hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
+            command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
         }
+    }
+
+    /// Install a concrete hook runner (normally `ShellHookRunner` from the
+    /// main crate's `tools::hooks` module).
+    ///
+    /// Must be called before `submit_message` if runtime hook firing is
+    /// desired; otherwise the [`cc_types::hooks::NoopHookRunner`] default is
+    /// used and no hooks execute.
+    pub fn set_hook_runner(&mut self, runner: Arc<dyn cc_types::hooks::HookRunner>) {
+        self.hook_runner = runner;
+    }
+
+    /// Clone of the current hook runner.  Useful when rebuilding a sibling
+    /// engine that should share the same runner as an existing one.
+    pub fn hook_runner(&self) -> Arc<dyn cc_types::hooks::HookRunner> {
+        self.hook_runner.clone()
+    }
+
+    /// Install a concrete command dispatcher (normally
+    /// `DefaultCommandDispatcher` from `crate::commands`).
+    pub fn set_command_dispatcher(
+        &mut self,
+        dispatcher: Arc<dyn cc_types::commands::CommandDispatcher>,
+    ) {
+        self.command_dispatcher = dispatcher;
+    }
+
+    /// Clone of the current command dispatcher.
+    pub fn command_dispatcher(&self) -> Arc<dyn cc_types::commands::CommandDispatcher> {
+        self.command_dispatcher.clone()
     }
 
     // -- Permission callback --------------------------------------------------
