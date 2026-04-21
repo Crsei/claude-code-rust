@@ -9,6 +9,7 @@
 
 pub mod audit_export;
 pub mod export;
+pub mod fork;
 pub mod memdir;
 pub mod migrations;
 pub mod resume;

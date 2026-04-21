@@ -114,6 +114,7 @@
     "fastModePerSessionOptIn": { "type": "boolean" },
     "teammateMode": { "type": "boolean" },
     "claudeInChromeDefaultEnabled": { "type": "boolean" },
+    "autoMemoryEnabled": { "type": "boolean" },
     "systemPrompt": { "type": "string" },
     "apiKey": { "type": "string" }
   }

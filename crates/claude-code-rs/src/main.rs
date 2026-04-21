@@ -531,6 +531,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             fast_mode_per_session_opt_in: merged_config.fast_mode_per_session_opt_in,
             teammate_mode: merged_config.teammate_mode,
             claude_in_chrome_default_enabled: merged_config.claude_in_chrome_default_enabled,
+            auto_memory_enabled: merged_config.auto_memory_enabled,
             sources,
         },
         verbose: cli.verbose,

@@ -430,6 +430,13 @@ pub struct RawSettings {
     #[serde(rename = "claudeInChromeDefaultEnabled")]
     pub claude_in_chrome_default_enabled: Option<bool>,
 
+    // -- Memory (issue #45) --------------------------------------------
+    /// Auto-memory toggle: when `true`, memories captured during a session
+    /// are surfaced by `/memory` and injected into the prompt via
+    /// `build_memory_context_with`. Default is `None` (off). The capture
+    /// hook itself is not yet wired up — only the state is persisted.
+    pub auto_memory_enabled: Option<bool>,
+
     // -- Prompts --------------------------------------------------------
     pub system_prompt: Option<String>,
 
@@ -508,6 +515,7 @@ impl RawSettings {
             claude_in_chrome_default_enabled,
             "claudeInChromeDefaultEnabled"
         );
+        merge_opt!(auto_memory_enabled, "autoMemoryEnabled");
         merge_opt!(system_prompt, "systemPrompt");
         merge_opt!(api_key, "apiKey");
 
@@ -699,6 +707,8 @@ pub struct EffectiveSettings {
     pub fast_mode: Option<bool>,
     pub fast_mode_per_session_opt_in: Option<bool>,
     pub teammate_mode: Option<bool>,
+    /// Auto-memory toggle (issue #45). `None` means "inherit default" (off).
+    pub auto_memory_enabled: Option<bool>,
 }
 
 impl EffectiveSettings {
@@ -740,6 +750,7 @@ impl EffectiveSettings {
             fast_mode: raw.fast_mode,
             fast_mode_per_session_opt_in: raw.fast_mode_per_session_opt_in,
             teammate_mode: raw.teammate_mode,
+            auto_memory_enabled: raw.auto_memory_enabled,
         }
     }
 }
@@ -1280,6 +1291,7 @@ pub fn settings_schema() -> Value {
             "fastModePerSessionOptIn": { "type": "boolean" },
             "teammateMode": { "type": "boolean" },
             "claudeInChromeDefaultEnabled": { "type": "boolean" },
+            "autoMemoryEnabled": { "type": "boolean" },
             "systemPrompt": { "type": "string" },
             "apiKey": { "type": "string" }
         }
