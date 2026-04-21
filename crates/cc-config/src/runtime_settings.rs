@@ -49,6 +49,11 @@ pub struct SettingsJson {
     pub effort_level: Option<String>,
     pub fast_mode: Option<bool>,
     pub fast_mode_per_session_opt_in: Option<bool>,
+    /// Optional advisor model id (issue #33). Persisted under
+    /// `settings.json::advisorModel`. When set and the active provider
+    /// supports advisors, this model is attached to the Messages request
+    /// via `MessagesRequest::advisor_model`.
+    pub advisor_model: Option<String>,
 
     // -- Modes / integrations ------------------------------------------
     pub teammate_mode: Option<bool>,

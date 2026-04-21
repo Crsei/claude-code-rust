@@ -100,6 +100,46 @@ export interface McpServerStatusInfo {
   error?: string
 }
 
+/**
+ * Scope where a config entry lives. User/project are editable; plugin/ide
+ * are read-only sources managed through their own subsystems.
+ */
+export type ConfigScope =
+  | { kind: 'user' }
+  | { kind: 'project' }
+  | { kind: 'plugin'; id: string }
+  | { kind: 'ide'; id: string }
+
+/**
+ * Editable MCP server config entry — carries the full settings payload
+ * plus its source scope. Used by the `/mcp` editor view.
+ */
+export interface McpServerConfigEntry {
+  name: string
+  transport: string
+  command?: string
+  args?: string[]
+  url?: string
+  headers?: Record<string, string>
+  env?: Record<string, string>
+  browser_mcp?: boolean
+  scope: ConfigScope
+}
+
+/**
+ * Detected IDE integration and its connection state. Drives the `/ide`
+ * command's detect → select → connect flow.
+ */
+export interface IdeInfo {
+  id: string
+  name: string
+  installed: boolean
+  running: boolean
+  selected: boolean
+  connection_state?: string
+  error?: string
+}
+
 export interface PluginInfo {
   id: string
   name: string
@@ -124,6 +164,11 @@ export interface SubsystemStatusSnapshot {
   mcp: McpServerStatusInfo[]
   plugins: PluginInfo[]
   skills: SkillInfo[]
+  /**
+   * Detected IDE integrations. Older snapshots may omit this field; treat
+   * missing values as an empty list.
+   */
+  ides?: IdeInfo[]
   timestamp: number
 }
 
@@ -223,14 +268,29 @@ export type McpEvent =
   | { kind: 'resources_discovered'; server_name: string; resources: McpResourceInfo[] }
   | { kind: 'channel_notification'; server_name: string; content: string; meta: any }
   | { kind: 'server_list'; servers: McpServerStatusInfo[] }
+  /** Editable config list — distinct from `server_list` (live state). */
+  | { kind: 'config_list'; entries: McpServerConfigEntry[] }
+  /** A config entry was upserted (entry present) or removed (entry undefined). */
+  | { kind: 'config_changed'; server_name: string; entry?: McpServerConfigEntry }
+  /** Config validation or persistence failure. */
+  | { kind: 'config_error'; server_name: string; error: string }
 
 export type PluginEvent =
   | { kind: 'status_changed'; plugin_id: string; name: string; status: string; error?: string }
   | { kind: 'plugin_list'; plugins: PluginInfo[] }
+  /** Disk state diverged from the in-memory registry — run `/reload-plugins`. */
+  | { kind: 'refresh_needed'; reason: string }
+  /** Emitted after a reload cycle completes. */
+  | { kind: 'reloaded'; count: number; had_error: boolean }
 
 export type SkillEvent =
   | { kind: 'skills_loaded'; count: number }
   | { kind: 'skill_list'; skills: SkillInfo[] }
+
+export type IdeEvent =
+  | { kind: 'ide_list'; ides: IdeInfo[] }
+  | { kind: 'selection_changed'; ide_id?: string }
+  | { kind: 'connection_state_changed'; ide_id: string; state: string; error?: string }
 
 // ---------------------------------------------------------------------------
 // FrontendMessage (Frontend -> Backend)
@@ -249,9 +309,33 @@ export type FrontendMessage =
   | { type: 'team_command'; command: { kind: 'inject_message'; team_name: string; to: string; text: string } | { kind: 'query_team_status'; team_name: string } }
   // Subsystem commands
   | { type: 'lsp_command'; command: { kind: 'start_server' | 'stop_server' | 'restart_server'; language_id: string } | { kind: 'query_status' } }
-  | { type: 'mcp_command'; command: { kind: 'connect_server' | 'disconnect_server' | 'reconnect_server'; server_name: string } | { kind: 'query_status' } }
-  | { type: 'plugin_command'; command: { kind: 'enable' | 'disable'; plugin_id: string } | { kind: 'query_status' } }
+  | {
+      type: 'mcp_command'
+      command:
+        | { kind: 'connect_server' | 'disconnect_server' | 'reconnect_server'; server_name: string }
+        | { kind: 'query_status' }
+        | { kind: 'query_config' }
+        | { kind: 'upsert_config'; entry: McpServerConfigEntry }
+        | { kind: 'remove_config'; server_name: string; scope: ConfigScope }
+    }
+  | {
+      type: 'plugin_command'
+      command:
+        | { kind: 'enable' | 'disable'; plugin_id: string }
+        | { kind: 'query_status' }
+        | { kind: 'reload' }
+        | { kind: 'uninstall'; plugin_id: string; purge_cache?: boolean }
+    }
   | { type: 'skill_command'; command: { kind: 'reload' } | { kind: 'query_status' } }
+  | {
+      type: 'ide_command'
+      command:
+        | { kind: 'detect' }
+        | { kind: 'select'; ide_id: string }
+        | { kind: 'clear' }
+        | { kind: 'reconnect' }
+        | { kind: 'query_status' }
+    }
   | { type: 'query_subsystem_status' }
 
 // ---------------------------------------------------------------------------
@@ -325,4 +409,5 @@ export type BackendMessage =
   | { type: 'mcp_event'; event: McpEvent }
   | { type: 'plugin_event'; event: PluginEvent }
   | { type: 'skill_event'; event: SkillEvent }
+  | { type: 'ide_event'; event: IdeEvent }
   | { type: 'subsystem_status'; status: SubsystemStatusSnapshot }
