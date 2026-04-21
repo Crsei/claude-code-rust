@@ -512,6 +512,62 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-browser"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc-config",
+ "cc-mcp",
+ "chrono",
+ "dirs",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "cc-compact"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc-types",
+ "cc-utils",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "cc-computer-use"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "tokio",
+]
+
+[[package]]
+name = "cc-config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "cc-keybindings"
 version = "0.1.0"
 dependencies = [
@@ -520,6 +576,21 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "tracing",
+]
+
+[[package]]
+name = "cc-mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc-config",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tokio",
  "tracing",
 ]
 
@@ -537,6 +608,82 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-permissions"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc-bootstrap",
+ "cc-types",
+ "cc-utils",
+ "parking_lot",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "cc-sandbox"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc-config",
+ "cc-types",
+ "cc-utils",
+ "dirs",
+ "libc",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "url",
+ "which",
+]
+
+[[package]]
+name = "cc-services"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc-config",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
+name = "cc-session"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc-bootstrap",
+ "cc-compact",
+ "cc-config",
+ "cc-types",
+ "cc-utils",
+ "chrono",
+ "dirs",
+ "git2",
+ "hex",
+ "parking_lot",
+ "regex",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+ "walkdir",
+]
+
+[[package]]
 name = "cc-skills"
 version = "0.1.0"
 dependencies = [
@@ -551,6 +698,24 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "cc-utils"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc-config",
+ "cc-types",
+ "chrono",
+ "git2",
+ "lru",
+ "parking_lot",
+ "regex",
+ "serde_json",
+ "shell-words",
+ "tokio",
  "uuid",
 ]
 
@@ -634,10 +799,20 @@ dependencies = [
  "bytes",
  "cc-auth",
  "cc-bootstrap",
+ "cc-browser",
+ "cc-compact",
+ "cc-computer-use",
+ "cc-config",
  "cc-keybindings",
+ "cc-mcp",
  "cc-observability",
+ "cc-permissions",
+ "cc-sandbox",
+ "cc-services",
+ "cc-session",
  "cc-skills",
  "cc-types",
+ "cc-utils",
  "chrono",
  "clap",
  "crossterm",

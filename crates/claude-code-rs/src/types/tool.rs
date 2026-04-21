@@ -84,106 +84,18 @@ pub struct ToolProgress {
     pub data: Value,
 }
 
-/// 权限模式
-///
-/// 对齐 docs/claude-code-configuration/permissions.md 中描述的 6 种模式。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PermissionMode {
-    /// 默认/询问模式: 需要用户确认
-    Default,
-    /// 自动模式: 自动批准 (带安全分类器)
-    Auto,
-    /// 绕过模式: 跳过所有权限检查
-    Bypass,
-    /// 计划模式: 只读, 不执行写入
-    Plan,
-    /// AcceptEdits: 文件编辑工具 (Write/Edit/MultiEdit) 与常用工作区
-    /// 文件系统命令默认允许; 其它工具仍走默认询问流程。
-    AcceptEdits,
-    /// DontAsk: 对所有需要询问的请求静默 deny。常用于 headless / CI
-    /// 场景, 避免阻塞。`deny` 规则仍优先生效。
-    DontAsk,
-}
-
-impl PermissionMode {
-    /// Parse a mode string. Accepts both kebab-case and camelCase tokens
-    /// from the permissions docs as well as the legacy lower-case forms.
-    /// Unknown / empty values fall back to [`PermissionMode::Default`].
-    pub fn parse(value: &str) -> PermissionMode {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "auto" => PermissionMode::Auto,
-            "bypass" | "bypasspermissions" | "bypass-permissions" => PermissionMode::Bypass,
-            "plan" | "readonly" | "read-only" => PermissionMode::Plan,
-            "acceptedits" | "accept-edits" | "accept_edits" => PermissionMode::AcceptEdits,
-            "dontask" | "dont-ask" | "dont_ask" | "no-ask" => PermissionMode::DontAsk,
-            _ => PermissionMode::Default,
-        }
-    }
-
-    /// Stable lower-case identifier (camelCase) used for source-map tagging
-    /// and `/permissions show` output.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            PermissionMode::Default => "default",
-            PermissionMode::Auto => "auto",
-            PermissionMode::Bypass => "bypass",
-            PermissionMode::Plan => "plan",
-            PermissionMode::AcceptEdits => "acceptEdits",
-            PermissionMode::DontAsk => "dontAsk",
-        }
-    }
-}
-
-/// 工具权限上下文
-#[derive(Debug, Clone)]
-pub struct ToolPermissionContext {
-    pub mode: PermissionMode,
-    pub additional_working_directories: HashMap<String, AdditionalWorkingDirectory>,
-    pub always_allow_rules: ToolPermissionRulesBySource,
-    pub always_deny_rules: ToolPermissionRulesBySource,
-    pub always_ask_rules: ToolPermissionRulesBySource,
-    /// Session-level allow grants (cleared on session end).
-    ///
-    /// Checked between `always_allow_rules` and mode fallback.
-    /// Used for Computer Use "always allow" to avoid permanent rules
-    /// for high-risk desktop control tools.
-    pub session_allow_rules: ToolPermissionRulesBySource,
-    pub is_bypass_permissions_mode_available: bool,
-    pub is_auto_mode_available: Option<bool>,
-    /// 计划模式之前的权限模式 (用于恢复)
-    pub pre_plan_mode: Option<PermissionMode>,
-}
-
-impl ToolPermissionContext {
-    /// Add a session-level allow grant for a tool.
-    pub fn grant_session_allow(&mut self, tool_name: &str) {
-        self.session_allow_rules
-            .entry("session".into())
-            .or_default()
-            .push(tool_name.to_string());
-    }
-
-    /// Check if a tool has a session-level allow grant.
-    pub fn has_session_grant(&self, tool_name: &str) -> bool {
-        self.session_allow_rules
-            .values()
-            .any(|rules| rules.iter().any(|r| r == tool_name))
-    }
-
-    /// Clear all session-level grants (called on session end).
-    pub fn clear_session_grants(&mut self) {
-        self.session_allow_rules.clear();
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct AdditionalWorkingDirectory {
-    pub path: String,
-    pub read_only: bool,
-}
-
-/// 权限规则, 按来源分组
-pub type ToolPermissionRulesBySource = HashMap<String, Vec<String>>;
+// Permission-context types moved into `cc-types::permissions` in Phase 4
+// (issue #73) so workspace crates like cc-sandbox and cc-permissions can
+// consult them without a reverse dep on the root crate. Re-exported here
+// so existing `crate::types::tool::{PermissionMode, …}` paths resolve.
+// `ToolPermissionRulesBySource` is a pub alias — re-export it too so any
+// future consumer in the root crate can still reach it via the classic
+// `crate::types::tool::` path.
+pub use cc_types::permissions::{
+    AdditionalWorkingDirectory, PermissionMode, ToolPermissionContext,
+};
+#[allow(unused_imports)]
+pub use cc_types::permissions::ToolPermissionRulesBySource;
 
 /// 文件状态缓存 (LRU, 追踪工具已读/已写的文件)
 #[derive(Debug, Clone, Default)]
