@@ -1,0 +1,16 @@
+[package]
+name = "cc-engine"
+version = "0.1.0"
+edition = "2021"
+description = "QueryEngine + Agent tool + query loop driver. Phase 6 workspace split (scaffold)."
+
+# NOTE: Phase 6 extraction is staged in two steps to land incrementally:
+#   1. (this crate, current PR) Publish an empty scaffold wired into the
+#      workspace. The engine source still lives under
+#      `crates/claude-code-rs/src/engine/` until the remaining hub-cycle
+#      breaks land (moving `types/tool.rs`, `types/app_state.rs`,
+#      `types/config.rs` to `cc-types`).
+#   2. (follow-up PR) Move the engine source files here and delete the root
+#      copies.
+[dependencies]
+cc-types = { workspace = true }

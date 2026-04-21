@@ -51,7 +51,7 @@ impl AgentTool {
                 .as_ref()
                 .map(|t| t.chain_id.clone())
                 .unwrap_or_default();
-            let node = crate::ipc::agent_types::AgentNode {
+            let node = cc_types::agent_types::AgentNode {
                 agent_id: agent_id.to_string(),
                 parent_agent_id: ctx.agent_id.clone(),
                 description: description.to_string(),
@@ -71,8 +71,8 @@ impl AgentTool {
             crate::ipc::agent_tree::AGENT_TREE.lock().register(node);
 
             if let Some(tx) = agent_tx {
-                let _ = tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
-                    crate::ipc::agent_events::AgentEvent::Spawned {
+                let _ = tx.send(cc_types::agent_channel::AgentIpcEvent::Agent(
+                    cc_types::agent_events::AgentEvent::Spawned {
                         agent_id: agent_id.to_string(),
                         parent_agent_id: ctx.agent_id.clone(),
                         description: description.to_string(),
@@ -85,8 +85,8 @@ impl AgentTool {
                 ));
 
                 let roots = crate::ipc::agent_tree::AGENT_TREE.lock().build_snapshot();
-                let _ = tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
-                    crate::ipc::agent_events::AgentEvent::TreeSnapshot { roots },
+                let _ = tx.send(cc_types::agent_channel::AgentIpcEvent::Agent(
+                    cc_types::agent_events::AgentEvent::TreeSnapshot { roots },
                 ));
             }
         }
@@ -118,8 +118,8 @@ impl AgentTool {
             );
 
             if let Some(tx) = agent_tx {
-                let _ = tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
-                    crate::ipc::agent_events::AgentEvent::Completed {
+                let _ = tx.send(cc_types::agent_channel::AgentIpcEvent::Agent(
+                    cc_types::agent_events::AgentEvent::Completed {
                         agent_id: agent_id.to_string(),
                         result_preview: preview,
                         had_error,
@@ -129,8 +129,8 @@ impl AgentTool {
                 ));
 
                 let roots = crate::ipc::agent_tree::AGENT_TREE.lock().build_snapshot();
-                let _ = tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
-                    crate::ipc::agent_events::AgentEvent::TreeSnapshot { roots },
+                let _ = tx.send(cc_types::agent_channel::AgentIpcEvent::Agent(
+                    cc_types::agent_events::AgentEvent::TreeSnapshot { roots },
                 ));
             }
         }

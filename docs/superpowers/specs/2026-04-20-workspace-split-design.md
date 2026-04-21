@@ -222,6 +222,50 @@ Now that cycles are gone:
 **Estimated effort**: L (2 days)
 **Risk**: medium — large surface (17k LOC for tools).
 
+**Current status (issue #75 — in progress)**: scaffolding + cycle-breaking landed:
+
+- All four Phase 6 crates (`cc-engine`, `cc-query`, `cc-tools`, `cc-lsp-service`)
+  exist as workspace members with stub `lib.rs` files and dependency
+  declarations. The physical source move is staged in follow-up PRs.
+- Phase-5 residual `query -> tools` cycle fully eliminated: the query loop
+  now drives hooks through `cc_types::hooks::HookRunner` via a new
+  `QueryDeps::hook_runner()` accessor. `HookRunner` gained a `run_stop_hooks`
+  method, implemented by both `NoopHookRunner` (cc-types) and
+  `ShellHookRunner` (root crate).
+- `background_agents` (CompletedBackgroundAgent, PendingBackgroundResults)
+  moved to `cc-types::background_agents` so the engine `QueryDeps` trait can
+  cite them without touching `crate::tools::*`.
+- Agent IPC type trio (`agent_types`, `agent_events`, `agent_channel`) moved
+  to `cc-types::{agent_types, agent_events, agent_channel}`. Root
+  `src/ipc/agent_*.rs` are now thin re-exports. This unblocks the
+  `engine -> ipc` edge (the engine `sdk_to_agent_event` helper now depends
+  only on cc-types).
+- `ToolUseContext::bg_agent_tx` typed against `cc_types::agent_channel::AgentSender`
+  instead of `crate::ipc::agent_channel::AgentSender`, removing the
+  `types -> ipc` edge in the Tool trait surface.
+- LSP shared types (`HoverInfo`, `SourceLocation`, `SymbolInfo`) moved from
+  `tools/lsp.rs` into a new `lsp_service/types.rs` module. Tool side now
+  re-exports. This breaks the `lsp_service -> tools::lsp` cycle; when
+  `tools/lsp.rs` moves into `cc-lsp-service` in the next pass, the crate is
+  self-contained.
+
+**Remaining before the source move**:
+
+1. Hoist `types/tool.rs` (Tool trait, `ToolUseContext`) to cc-types. Blocker:
+   `ToolUseContext::get_app_state` returns `AppState`, which lives in
+   `types/app_state.rs` and transitively reaches into `teams::types::TeamContext`
+   and `ui::status_line::StatusLineRunner`. Either (a) abstract `AppState`
+   behind an opaque `Arc<dyn AppStateHandle>` trait, or (b) move `TeamContext`
+   and `StatusLineRunner` to cc-types first.
+2. Move `types/config.rs` (QueryEngineConfig, QueryParams) and the
+   `types/app_state.rs` residue to cc-types once (1) unblocks.
+3. Move the three cycle-causing tool files to their natural homes:
+   - `tools/lsp.rs` -> cc-lsp-service
+   - `tools/send_message.rs` + `tools/team_spawn.rs` -> cc-teams
+   - `tools/system_status.rs` -> cc-ipc
+4. Physically move `src/engine/`, `src/query/`, `src/tools/`, `src/lsp_service/`
+   into their respective crates and rewire `use crate::X` imports.
+
 ### Phase 7 — Extract high-level crates
 
 - `cc-plugins`
@@ -232,6 +276,12 @@ Now that cycles are gone:
 
 **Estimated effort**: L (2 days)
 **Risk**: medium.
+
+**Current status (issue #76 — scaffold only)**: all five Phase 7 crates exist
+as workspace members with stub `lib.rs` files and description comments. The
+source move blocks on completion of Phase 6, because every Phase 7 crate
+depends transitively on `cc-engine`, `cc-tools`, or the `Tool` trait in
+`types/tool.rs`. See Phase 6 remaining items above.
 
 ### Phase 8 — Thin root bin crate
 

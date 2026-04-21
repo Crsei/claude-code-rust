@@ -184,6 +184,15 @@ pub trait HookRunner: Send + Sync {
         payload: &Value,
         hook_configs: &[HookEventConfig],
     ) -> anyhow::Result<HookOutput>;
+
+    /// Run Stop lifecycle hooks — called by the query loop after the model
+    /// stops generating (no tool calls in final assistant message).
+    ///
+    /// Returns `StopContinuation` if any hook asked the loop to keep going.
+    async fn run_stop_hooks(
+        &self,
+        hook_configs: &[HookEventConfig],
+    ) -> anyhow::Result<PostToolHookResult>;
 }
 
 // ---------------------------------------------------------------------------
@@ -259,5 +268,12 @@ impl HookRunner for NoopHookRunner {
         _hook_configs: &[HookEventConfig],
     ) -> anyhow::Result<HookOutput> {
         Ok(HookOutput::default())
+    }
+
+    async fn run_stop_hooks(
+        &self,
+        _hook_configs: &[HookEventConfig],
+    ) -> anyhow::Result<PostToolHookResult> {
+        Ok(PostToolHookResult::Continue)
     }
 }

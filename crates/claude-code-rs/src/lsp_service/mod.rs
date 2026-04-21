@@ -10,6 +10,7 @@
 
 pub mod client;
 pub mod conversions;
+pub mod types;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -18,7 +19,7 @@ use std::sync::LazyLock;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::tools::lsp::{HoverInfo, SourceLocation, SymbolInfo};
+pub use types::{HoverInfo, SourceLocation, SymbolInfo};
 
 pub mod transport;
 

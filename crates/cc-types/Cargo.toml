@@ -11,3 +11,5 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 async-trait = { workspace = true }
 anyhow = { workspace = true }
+parking_lot = { workspace = true }
+tokio = { workspace = true }

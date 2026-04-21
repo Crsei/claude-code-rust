@@ -195,7 +195,7 @@ fn test_sdk_to_agent_event_stream_delta_text() {
     let msg = make_stream_event(json!({"text": "hello world"}));
     let event = sdk_to_agent_event(&msg, "a1").unwrap();
     match event {
-        crate::ipc::agent_events::AgentEvent::StreamDelta { agent_id, text } => {
+        cc_types::agent_events::AgentEvent::StreamDelta { agent_id, text } => {
             assert_eq!(agent_id, "a1");
             assert_eq!(text, "hello world");
         }
@@ -208,7 +208,7 @@ fn test_sdk_to_agent_event_stream_delta_thinking() {
     let msg = make_stream_event(json!({"thinking": "let me consider"}));
     let event = sdk_to_agent_event(&msg, "a2").unwrap();
     match event {
-        crate::ipc::agent_events::AgentEvent::ThinkingDelta { agent_id, thinking } => {
+        cc_types::agent_events::AgentEvent::ThinkingDelta { agent_id, thinking } => {
             assert_eq!(agent_id, "a2");
             assert_eq!(thinking, "let me consider");
         }
@@ -231,7 +231,7 @@ fn test_sdk_to_agent_event_tool_use() {
     }]);
     let event = sdk_to_agent_event(&msg, "a3").unwrap();
     match event {
-        crate::ipc::agent_events::AgentEvent::ToolUse {
+        cc_types::agent_events::AgentEvent::ToolUse {
             agent_id,
             tool_use_id,
             tool_name,
@@ -263,7 +263,7 @@ fn test_sdk_to_agent_event_tool_result_text() {
     }]);
     let event = sdk_to_agent_event(&msg, "a4").unwrap();
     match event {
-        crate::ipc::agent_events::AgentEvent::ToolResult {
+        cc_types::agent_events::AgentEvent::ToolResult {
             agent_id,
             tool_use_id,
             output,
@@ -287,7 +287,7 @@ fn test_sdk_to_agent_event_tool_result_error() {
     }]);
     let event = sdk_to_agent_event(&msg, "a5").unwrap();
     match event {
-        crate::ipc::agent_events::AgentEvent::ToolResult { is_error, .. } => {
+        cc_types::agent_events::AgentEvent::ToolResult { is_error, .. } => {
             assert!(is_error);
         }
         other => panic!("expected ToolResult, got {:?}", other),
@@ -307,7 +307,7 @@ fn test_sdk_to_agent_event_tool_result_blocks_shows_placeholder() {
     }]);
     let event = sdk_to_agent_event(&msg, "a6").unwrap();
     match event {
-        crate::ipc::agent_events::AgentEvent::ToolResult { output, .. } => {
+        cc_types::agent_events::AgentEvent::ToolResult { output, .. } => {
             assert_eq!(output, "[complex output]");
         }
         other => panic!("expected ToolResult, got {:?}", other),
@@ -379,7 +379,7 @@ fn test_sdk_to_agent_event_tool_use_picks_first() {
     ]);
     let event = sdk_to_agent_event(&msg, "a7").unwrap();
     match event {
-        crate::ipc::agent_events::AgentEvent::ToolUse { tool_use_id, .. } => {
+        cc_types::agent_events::AgentEvent::ToolUse { tool_use_id, .. } => {
             assert_eq!(tool_use_id, "tu-first");
         }
         other => panic!("expected ToolUse, got {:?}", other),
