@@ -5,16 +5,15 @@ FROM rust:latest AS builder
 
 WORKDIR /build
 
-# Dependency cache layer: copy only Cargo manifests, build with dummy src
+# Workspace layout (after Phase 0 of the workspace split):
+#   /build/Cargo.toml               — workspace manifest
+#   /build/crates/claude-code-rs/   — the bin crate (src/, tests/)
+#
+# The old "empty-shell src cache layer" trick doesn't fit a workspace
+# cleanly (would need every crate's Cargo.toml + dummy src). We rely on
+# Docker BuildKit's registry cache / layer cache instead.
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir src && \
-    echo "fn main() {}" > src/main.rs && \
-    cargo build --release 2>/dev/null || true && \
-    rm -rf src
-
-# Full source copy
-COPY src/ src/
-COPY tests/ tests/
+COPY crates/ crates/
 
 # Build binary
 RUN cargo build --release

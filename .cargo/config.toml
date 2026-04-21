@@ -2,8 +2,19 @@
 LIB = { value = "", force = true }
 INCLUDE = { value = "", force = true }
 
-[build]
-target-dir = "F:/cargo-target/cc-rust"
+# ============================================================
+# target-dir 为什么不在这里
+# ------------------------------------------------------------
+# 绝对路径（如 F:/cargo-target/cc-rust）会污染 CI，报
+#   "failed to create directory F:/cargo-target"
+# 需要把构建产物放到其他盘的话，在你**自己的** ~/.cargo/config.toml
+# 里加：
+#
+#   [build]
+#   target-dir = "F:/cargo-target/cc-rust"
+#
+# 或用环境变量 CARGO_TARGET_DIR。两者都会覆盖仓库级配置。
+# ============================================================
 
 # ============================================================
 # 链接器加速: 使用 rust-lld 替换 MSVC link.exe
