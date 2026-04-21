@@ -98,6 +98,10 @@ pub mod compact;
 // MCP server management
 pub mod mcp_cmd;
 pub mod plugin_cmd;
+pub mod reload_plugins_cmd;
+
+// IDE integration (issue #41)
+pub mod ide_cmd;
 
 // First-party Chrome integration (Claude in Chrome)
 pub mod chrome_cmd;
@@ -396,8 +400,14 @@ pub fn get_all_commands() -> Vec<Command> {
         Command {
             name: "mcp".into(),
             aliases: vec![],
-            description: "MCP server management (list, status)".into(),
+            description: "MCP server management (list, status, add, edit, remove, connect)".into(),
             handler: Box::new(mcp_cmd::McpHandler),
+        },
+        Command {
+            name: "ide".into(),
+            aliases: vec![],
+            description: "IDE integration: detect, select, reconnect MCP bridge (issue #41)".into(),
+            handler: Box::new(ide_cmd::IdeHandler),
         },
         Command {
             name: "chrome".into(),
@@ -410,6 +420,12 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "Plugin management (list, status, enable, disable)".into(),
             handler: Box::new(plugin_cmd::PluginHandler),
+        },
+        Command {
+            name: "reload-plugins".into(),
+            aliases: vec![],
+            description: "Hot-refresh the plugin registry (issue #49)".into(),
+            handler: Box::new(reload_plugins_cmd::ReloadPluginsHandler),
         },
         Command {
             name: "model-add".into(),

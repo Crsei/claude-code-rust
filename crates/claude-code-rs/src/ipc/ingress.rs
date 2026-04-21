@@ -124,6 +124,11 @@ pub(crate) async fn dispatch(
             let msgs = super::subsystem_handlers::handle_skill_command(command);
             let _ = sink.send_many(msgs);
         }
+        FrontendMessage::IdeCommand { command } => {
+            debug!("headless: IDE command: {:?}", command);
+            let msgs = super::subsystem_handlers::handle_ide_command(command);
+            let _ = sink.send_many(msgs);
+        }
         FrontendMessage::QuerySubsystemStatus => {
             debug!("headless: subsystem status query");
             let status = super::subsystem_handlers::build_subsystem_status_snapshot();
