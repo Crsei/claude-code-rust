@@ -123,6 +123,9 @@ parking_lot = "0.12"
 cc-keybindings = { path = "crates/cc-keybindings" }
 cc-observability = { path = "crates/cc-observability" }
 cc-types = { path = "crates/cc-types" }
+cc-bootstrap = { path = "crates/cc-bootstrap" }
+cc-auth = { path = "crates/cc-auth" }
+cc-skills = { path = "crates/cc-skills" }
 
 # Daemon HTTP server
 axum = { version = "0.8", features = ["ws"] }

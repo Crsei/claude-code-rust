@@ -3,7 +3,7 @@
 //! Supports three active auth methods:
 //! - API Key: via `ANTHROPIC_API_KEY` env var or system keychain
 //! - External Auth Token: via `ANTHROPIC_AUTH_TOKEN` env var
-//! - OAuth Token: from `~/.cc-rust/credentials.json` (Claude.ai / Console / OpenAI Codex)
+//! - OAuth Token: from the registered credentials path (Claude.ai / Console / OpenAI Codex)
 
 pub mod api_key;
 pub mod codex_cli;
@@ -11,6 +11,54 @@ pub mod oauth;
 pub mod token;
 
 const OPENAI_CODEX_AUTH_TOKEN_ENV: &str = "OPENAI_CODEX_AUTH_TOKEN";
+
+// ---------------------------------------------------------------------------
+// Host-provided credentials path
+// ---------------------------------------------------------------------------
+//
+// cc-auth used to call `crate::config::paths::credentials_path()` directly
+// from `token.rs`. That's a cycle the moment `auth` moves out of the root
+// crate, so the host now registers the path once at startup and cc-auth reads
+// it back through this module.
+
+use parking_lot::RwLock;
+use std::path::PathBuf;
+use std::sync::LazyLock;
+
+static CREDENTIALS_PATH: LazyLock<RwLock<Option<PathBuf>>> =
+    LazyLock::new(|| RwLock::new(None));
+
+/// Register the OAuth credentials file path. The host calls this once during
+/// process startup; if a caller reaches token I/O without it having run
+/// (e.g. a unit test that exercises `resolve_auth` directly), the fallback
+/// in [`credentials_path`] mirrors the root crate's
+/// `config::paths::credentials_path()` layout.
+pub fn set_credentials_path(path: PathBuf) {
+    *CREDENTIALS_PATH.write() = Some(path);
+}
+
+/// Return the registered credentials path, falling back to
+/// `{CC_RUST_HOME | ~/.cc-rust | $TMP/cc-rust}/credentials.json` when the host
+/// hasn't registered one. Kept in sync with `config::paths::data_root` in the
+/// root crate — a small duplication that decouples cc-auth from it.
+pub(crate) fn credentials_path() -> PathBuf {
+    if let Some(p) = CREDENTIALS_PATH.read().clone() {
+        return p;
+    }
+    data_root_fallback().join("credentials.json")
+}
+
+fn data_root_fallback() -> PathBuf {
+    if let Ok(override_dir) = std::env::var("CC_RUST_HOME") {
+        if !override_dir.trim().is_empty() {
+            return PathBuf::from(override_dir);
+        }
+    }
+    if let Some(home) = dirs::home_dir() {
+        return home.join(".cc-rust");
+    }
+    std::env::temp_dir().join("cc-rust")
+}
 
 // ---------------------------------------------------------------------------
 // Auth method enum

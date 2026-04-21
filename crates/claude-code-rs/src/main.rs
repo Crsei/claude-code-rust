@@ -15,8 +15,10 @@
 // headless / TUI / print / json).
 // ============================================================================
 
-// Process-wide bootstrap singleton layer (import DAG leaf node)
-mod bootstrap;
+// Process-wide bootstrap singleton layer (import DAG leaf node).
+// Lives in its own crate (`cc-bootstrap`). Re-alias so existing
+// `crate::bootstrap::...` paths continue to resolve.
+use cc_bootstrap as bootstrap;
 
 // Core modules
 mod cli;
@@ -41,12 +43,14 @@ mod voice;
 // Context compaction pipeline
 mod compact;
 
-// Network / API / auth
+// Network / API / auth. `auth` lives in its own crate (`cc-auth`); re-alias
+// so existing `crate::auth::...` paths continue to resolve.
 mod api;
-mod auth;
+use cc_auth as auth;
 
-// Skills system
-mod skills;
+// Skills system lives in its own crate (`cc-skills`). Re-alias so existing
+// `crate::skills::...` paths continue to resolve.
+use cc_skills as skills;
 
 // Plugin system
 mod plugins;
@@ -132,6 +136,11 @@ use crate::ui::tui;
 
 fn main() -> ExitCode {
     startup::load_env_files();
+
+    // Wire `cc-auth`'s credentials path — it lives outside the root crate now
+    // (P2, issue #71) so it can't call `crate::config::paths::credentials_path()`
+    // directly. Register once, before any fast path might hit OAuth resolution.
+    cc_auth::set_credentials_path(crate::config::paths::credentials_path());
 
     // Phase A: parse args first so fast paths can exit immediately
     let cli = Cli::parse();
@@ -246,7 +255,10 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // B.3c: Initialize skills (bundled/user/project + plugin)
     skills::clear_skills();
-    skills::init_skills(Some(std::path::Path::new(&cwd)));
+    skills::init_skills(
+        &crate::config::paths::skills_dir_global(),
+        Some(std::path::Path::new(&cwd)),
+    );
     let plugin_skills = plugins::discover_plugin_skills();
     if !plugin_skills.is_empty() {
         info!(

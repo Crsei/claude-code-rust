@@ -160,7 +160,10 @@ pub fn handle_skill_command(cmd: super::subsystem_events::SkillCommand) -> Vec<B
         SkillCommand::Reload => {
             let cwd = std::env::current_dir().ok();
             crate::skills::clear_skills();
-            crate::skills::init_skills(cwd.as_deref());
+            crate::skills::init_skills(
+                &crate::config::paths::skills_dir_global(),
+                cwd.as_deref(),
+            );
             let count = crate::skills::get_all_skills().len();
             tracing::info!(count, "Skills reloaded via IPC");
             vec![BackendMessage::SkillEvent {
