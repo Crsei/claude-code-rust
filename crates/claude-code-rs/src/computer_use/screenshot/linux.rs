@@ -7,17 +7,12 @@ pub async fn capture_full_screen() -> anyhow::Result<ScreenshotResult> {
     let tmp_file = tmp_dir.join(format!("cc_rust_screenshot_{}.png", std::process::id()));
     let tmp_path = tmp_file.to_str().unwrap();
 
-    // Try grim (Wayland) first, then scrot (X11)
-    let result = try_grim(tmp_path).await.or_else(|_| {
-        // try_scrot is sync-returning a future, so wrap
-        Ok::<_, anyhow::Error>(try_scrot(tmp_path))
-    });
-
-    // If grim succeeded, result is Ok(Ok(())). If grim failed, try scrot.
-    let _capture_result = match result {
-        Ok(fut) => fut.await,
-        Err(e) => Err(e),
-    }?;
+    // Try grim (Wayland) first, then scrot (X11).
+    // `or_else` can't short-circuit across awaits, so we dispatch manually.
+    match try_grim(tmp_path).await {
+        Ok(()) => {}
+        Err(_) => try_scrot(tmp_path).await?,
+    }
 
     let png_bytes = tokio::fs::read(&tmp_file).await?;
     let _ = tokio::fs::remove_file(&tmp_file).await;
