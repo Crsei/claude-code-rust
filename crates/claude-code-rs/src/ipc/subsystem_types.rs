@@ -127,6 +127,18 @@ impl ConfigScope {
     pub fn is_editable(&self) -> bool {
         matches!(self, ConfigScope::User | ConfigScope::Project)
     }
+
+    /// Short human-readable label used in `/mcp list` and error messages.
+    pub fn label(&self) -> String {
+        match self {
+            ConfigScope::User => "user".to_string(),
+            ConfigScope::Project => "project".to_string(),
+            ConfigScope::Plugin { id } if id.is_empty() => "plugin".to_string(),
+            ConfigScope::Plugin { id } => format!("plugin:{}", id),
+            ConfigScope::Ide { id } if id.is_empty() => "ide".to_string(),
+            ConfigScope::Ide { id } => format!("ide:{}", id),
+        }
+    }
 }
 
 /// Editable MCP server entry — full config payload plus its scope.
