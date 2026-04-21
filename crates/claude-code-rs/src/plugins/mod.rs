@@ -334,6 +334,17 @@ pub fn discover_plugin_tools() -> Vec<Arc<dyn crate::types::tool::Tool>> {
 ///
 /// These are loaded from each plugin's cached `plugin.json`.
 pub fn discover_plugin_mcp_servers() -> Vec<crate::mcp::McpServerConfig> {
+    discover_plugin_mcp_servers_scoped()
+        .into_iter()
+        .map(|(_id, cfg)| cfg)
+        .collect()
+}
+
+/// Scope-aware variant used by `/mcp` (issue #44) to attribute each
+/// discovered server to its owning plugin.
+///
+/// Returns `(plugin_id, config)` pairs.
+pub fn discover_plugin_mcp_servers_scoped() -> Vec<(String, crate::mcp::McpServerConfig)> {
     let mut out = Vec::new();
 
     for plugin in get_enabled_plugins() {
@@ -360,16 +371,19 @@ pub fn discover_plugin_mcp_servers() -> Vec<crate::mcp::McpServerConfig> {
             } else {
                 Some(mcp.env.clone())
             };
-            out.push(crate::mcp::McpServerConfig {
-                name: mcp.name,
-                transport: "stdio".to_string(),
-                command: Some(mcp.command),
-                args: Some(mcp.args),
-                url: None,
-                headers: None,
-                env,
-                browser_mcp: None,
-            });
+            out.push((
+                plugin.id.clone(),
+                crate::mcp::McpServerConfig {
+                    name: mcp.name,
+                    transport: "stdio".to_string(),
+                    command: Some(mcp.command),
+                    args: Some(mcp.args),
+                    url: None,
+                    headers: None,
+                    env,
+                    browser_mcp: None,
+                },
+            ));
         }
     }
 
