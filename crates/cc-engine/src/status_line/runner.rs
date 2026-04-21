@@ -27,7 +27,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::task::{AbortHandle, JoinHandle};
 
-use crate::config::settings::StatusLineSettings;
+use cc_config::settings::StatusLineSettings;
 
 use super::payload::StatusLinePayload;
 
@@ -310,7 +310,7 @@ pub fn payload_from_value(v: Value) -> Result<StatusLinePayload, serde_json::Err
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::settings::StatusLineSettings;
+    use cc_config::settings::StatusLineSettings;
 
     fn make_settings(command: &str) -> StatusLineSettings {
         StatusLineSettings {

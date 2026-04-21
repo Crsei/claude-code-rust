@@ -314,8 +314,12 @@ fn build_status_line_payload(
         total_cost_usd: result.total_cost_usd,
         api_calls: result.usage.api_call_count,
         session_duration_secs: Some(result.duration_ms / 1000),
-        output_style: app_state.settings.output_style.as_deref(),
+        resolved_output_style_name: crate::ui::status_line_resolver::resolve_output_style_name(
+            app_state.settings.output_style.as_deref(),
+            cwd,
+        ),
         editor_mode: app_state.settings.editor_mode.as_deref(),
+        worktree: crate::ui::status_line_resolver::current_worktree_status(),
         streaming: false,
         message_count: engine.messages().len(),
     });
