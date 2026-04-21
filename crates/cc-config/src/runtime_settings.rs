@@ -54,6 +54,12 @@ pub struct SettingsJson {
     pub teammate_mode: Option<bool>,
     pub claude_in_chrome_default_enabled: Option<bool>,
 
+    // -- Memory (issue #45) --------------------------------------------
+    /// Whether auto-memory capture + injection is enabled for this session.
+    /// Persisted via `settings.json::autoMemoryEnabled`; toggled by
+    /// `/memory auto on|off`. Default is `None` (off).
+    pub auto_memory_enabled: Option<bool>,
+
     // -- Per-key source (provenance) -----------------------------------
     /// 来源映射: key -> 哪个 layer 提供了该值。由启动路径 + `/config set`
     /// 在写入对应键时一并更新。`/config show` 读取此 map 显示来源信息。

@@ -1,65 +1,29 @@
-//! /context command -- display context usage information.
+//! `/context` — show the effective, post-compact API view of the conversation.
 //!
-//! Shows an overview of the conversation context: message count, estimated
-//! token usage, and model information. In the TypeScript version this calls
-//! `analyzeContextUsage()` with full system prompt analysis. The Rust CLI
-//! provides a simplified local estimate since full token counting requires
-//! an API connection.
+//! Delegates to [`cc_compact::context_analysis::analyze_context_usage`]
+//! which runs the same snip + microcompact transforms as the real send
+//! pipeline, categorises the result into tracked buckets (messages,
+//! system prompt, skills, file cache, tool schemas, hook results,
+//! free budget) and renders it either as a TUI token grid or as JSON.
+//!
+//! Subcommands (matching the pattern established by `/doctor`):
+//!
+//! ```text
+//! /context            — rendered TUI output (token grid + percentages)
+//! /context json       — machine-readable JSON (headless / scripting)
+//! /context raw        — alias for `json`
+//! ```
 
 use anyhow::Result;
 use async_trait::async_trait;
+use cc_compact::context_analysis::{
+    analyze_context_usage, ContextAnalysis, ContextAnalysisInput,
+};
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::types::message::Message;
 
-/// Handler for the `/context` slash command.
 pub struct ContextHandler;
 
-/// Rough estimate of tokens in a message for display purposes.
-///
-/// Uses a simple heuristic of ~4 characters per token. The real
-/// implementation requires a tokenizer (tiktoken / API-based counting).
-fn estimate_message_tokens(msg: &Message) -> u64 {
-    let text_len = match msg {
-        Message::User(u) => match &u.content {
-            crate::types::message::MessageContent::Text(t) => t.len(),
-            crate::types::message::MessageContent::Blocks(blocks) => {
-                blocks.iter().map(|b| estimate_block_chars(b)).sum()
-            }
-        },
-        Message::Assistant(a) => a.content.iter().map(|b| estimate_block_chars(b)).sum(),
-        Message::System(s) => s.content.len(),
-        Message::Progress(p) => p.data.to_string().len(),
-        Message::Attachment(_a) => {
-            // Rough estimate for attachment metadata.
-            50
-        }
-    };
-
-    // ~4 chars per token is a common rough estimate.
-    (text_len as u64 / 4).max(1)
-}
-
-/// Estimate character count for a content block.
-fn estimate_block_chars(block: &crate::types::message::ContentBlock) -> usize {
-    match block {
-        crate::types::message::ContentBlock::Text { text } => text.len(),
-        crate::types::message::ContentBlock::ToolUse { name, input, .. } => {
-            name.len() + input.to_string().len()
-        }
-        crate::types::message::ContentBlock::ToolResult { content, .. } => match content {
-            crate::types::message::ToolResultContent::Text(t) => t.len(),
-            crate::types::message::ToolResultContent::Blocks(blocks) => {
-                blocks.iter().map(|b| estimate_block_chars(b)).sum()
-            }
-        },
-        crate::types::message::ContentBlock::Thinking { thinking, .. } => thinking.len(),
-        crate::types::message::ContentBlock::RedactedThinking { data } => data.len(),
-        crate::types::message::ContentBlock::Image { .. } => 1000, // Images use many tokens.
-    }
-}
-
-/// Format a token count for display.
 fn format_tokens(n: u64) -> String {
     if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)
@@ -70,56 +34,93 @@ fn format_tokens(n: u64) -> String {
     }
 }
 
+fn render_bar(percent: f32, width: usize) -> String {
+    let pct = percent.clamp(0.0, 100.0);
+    let filled = ((pct / 100.0) * width as f32).round() as usize;
+    let filled = filled.min(width);
+    let empty = width - filled;
+    let mut bar = String::with_capacity(width);
+    for _ in 0..filled { bar.push('\u{2588}'); }
+    for _ in 0..empty { bar.push('\u{2591}'); }
+    bar
+}
+
+fn render_tui(report: &ContextAnalysis) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    lines.push("## Context Usage".into());
+    lines.push(String::new());
+    lines.push(format!("**Model:** {}", report.model));
+    lines.push(format!("**Window:** {} tokens", format_tokens(report.context_window)));
+    lines.push(format!(
+        "**Used:**   {} / {} ({:.1}%){}",
+        format_tokens(report.total_used),
+        format_tokens(report.context_window),
+        report.total_percent,
+        if report.compacted { "  [compacted]" } else { "" },
+    ));
+    lines.push(format!(
+        "**Messages:** {} in -> {} after pre-send pipeline",
+        report.messages_in, report.messages_out,
+    ));
+    lines.push(String::new());
+    lines.push("### Breakdown".into());
+    lines.push(String::new());
+    let bar_width = 24;
+    let label_width = report.categories.iter().map(|c| c.label.len()).max().unwrap_or(0);
+    for cat in &report.categories {
+        lines.push(format!(
+            "  {:<lw$}  {}  {:>7}  {:>5.1}%",
+            cat.label,
+            render_bar(cat.percent, bar_width),
+            format_tokens(cat.tokens),
+            cat.percent,
+            lw = label_width,
+        ));
+    }
+    lines.push(String::new());
+    lines.push(
+        "Note: token counts are estimated with the standard ~4-chars/token \
+         heuristic. Snip + microcompact are simulated; the async \
+         tool-result-budget pass is skipped."
+            .into(),
+    );
+    lines.join("\n")
+}
+
 #[async_trait]
 impl CommandHandler for ContextHandler {
-    async fn execute(&self, _args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
-        let messages = &ctx.messages;
-        let model = &ctx.app_state.main_loop_model;
-
-        if messages.is_empty() {
-            return Ok(CommandResult::Output(
-                "Context is empty -- no messages in the conversation.".into(),
-            ));
-        }
-
-        let mut user_msgs = 0u64;
-        let mut assistant_msgs = 0u64;
-        let mut system_msgs = 0u64;
-        let mut total_tokens: u64 = 0;
-
-        for msg in messages {
-            match msg {
-                Message::User(_) => user_msgs += 1,
-                Message::Assistant(_) => assistant_msgs += 1,
-                Message::System(_) => system_msgs += 1,
-                _ => {}
+    async fn execute(&self, args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
+        let mode = args.trim().to_ascii_lowercase();
+        let hook_results_str = if ctx.app_state.hooks.is_empty() {
+            None
+        } else {
+            serde_json::to_string(&ctx.app_state.hooks).ok()
+        };
+        let input = ContextAnalysisInput {
+            messages: &ctx.messages,
+            system_prompt: None,
+            skills_manifest: None,
+            cached_files_chars: 0,
+            tools_schema: None,
+            hook_results: hook_results_str.as_deref(),
+            model: &ctx.app_state.main_loop_model,
+        };
+        let report = analyze_context_usage(input);
+        match mode.as_str() {
+            "json" | "raw" => {
+                let json = serde_json::to_string_pretty(&report)
+                    .unwrap_or_else(|e| format!("(serialisation error: {})", e));
+                Ok(CommandResult::Output(json))
             }
-            total_tokens += estimate_message_tokens(msg);
+            "" | "tui" | "full" => Ok(CommandResult::Output(render_tui(&report))),
+            other => Ok(CommandResult::Output(format!(
+                "Unknown /context subcommand '{}'.\n\n\
+                 Usage:\n  \
+                 /context        - rendered TUI output (token grid + percentages)\n  \
+                 /context json   - machine-readable JSON (headless / scripting)\n",
+                other
+            ))),
         }
-
-        let mut lines = Vec::new();
-        lines.push("## Context Usage".into());
-        lines.push(String::new());
-        lines.push(format!("**Model:** {}", model));
-        lines.push(format!(
-            "**Tokens:** ~{} (estimated, local heuristic)",
-            format_tokens(total_tokens)
-        ));
-        lines.push(String::new());
-        lines.push("### Message breakdown".into());
-        lines.push(String::new());
-        lines.push(format!("  User messages:      {}", user_msgs));
-        lines.push(format!("  Assistant messages:  {}", assistant_msgs));
-        lines.push(format!("  System messages:     {}", system_msgs));
-        lines.push(format!("  Total messages:      {}", messages.len()));
-        lines.push(String::new());
-        lines.push(
-            "Note: Accurate token counts require an API connection. \
-             Counts shown here are rough estimates."
-                .into(),
-        );
-
-        Ok(CommandResult::Output(lines.join("\n")))
     }
 }
 
@@ -154,20 +155,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_context_empty() {
+    async fn test_context_empty_renders_tui() {
         let handler = ContextHandler;
         let mut ctx = test_ctx();
         let result = handler.execute("", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(text) => {
-                assert!(text.contains("empty"));
+                assert!(text.contains("Context Usage"));
+                assert!(text.contains("Breakdown"));
+                assert!(text.contains("free"));
             }
             _ => panic!("Expected Output result"),
         }
     }
 
     #[tokio::test]
-    async fn test_context_with_messages() {
+    async fn test_context_with_messages_tui() {
         let handler = ContextHandler;
         let mut ctx = test_ctx();
         ctx.messages = vec![
@@ -178,8 +181,57 @@ mod tests {
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("Context Usage"));
-                assert!(text.contains("User messages:"));
-                assert!(text.contains("2"));
+                assert!(text.contains("messages"));
+                assert!(text.contains(&ctx.app_state.main_loop_model));
+            }
+            _ => panic!("Expected Output result"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_context_json_output_parses() {
+        let handler = ContextHandler;
+        let mut ctx = test_ctx();
+        ctx.messages = vec![make_user_msg("hello")];
+        let result = handler.execute("json", &mut ctx).await.unwrap();
+        let text = match result {
+            CommandResult::Output(text) => text,
+            _ => panic!("Expected Output result"),
+        };
+        let parsed: serde_json::Value =
+            serde_json::from_str(&text).expect("/context json must emit valid JSON");
+        assert!(parsed.get("model").is_some());
+        assert!(parsed.get("context_window").is_some());
+        let total_used = parsed.get("total_used").unwrap().as_u64().unwrap();
+        assert!(total_used > 0);
+        let total_pct = parsed.get("total_percent").unwrap().as_f64().unwrap();
+        assert!(total_pct >= 0.0 && total_pct <= 100.0);
+        let cats = parsed.get("categories").unwrap().as_array().unwrap();
+        assert!(!cats.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_context_json_alias_raw() {
+        let handler = ContextHandler;
+        let mut ctx = test_ctx();
+        let result = handler.execute("raw", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                let _parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
+            }
+            _ => panic!("Expected Output result"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_context_unknown_subcommand() {
+        let handler = ContextHandler;
+        let mut ctx = test_ctx();
+        let result = handler.execute("wobble", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(text.contains("Unknown /context subcommand"));
+                assert!(text.contains("wobble"));
             }
             _ => panic!("Expected Output result"),
         }
@@ -190,5 +242,18 @@ mod tests {
         assert_eq!(format_tokens(500), "500");
         assert_eq!(format_tokens(1500), "1.5K");
         assert_eq!(format_tokens(1_500_000), "1.5M");
+    }
+
+    #[test]
+    fn test_render_bar_bounds() {
+        let zero = render_bar(0.0, 10);
+        assert_eq!(zero.chars().filter(|c| *c == '\u{2588}').count(), 0);
+        let full = render_bar(100.0, 10);
+        assert_eq!(full.chars().filter(|c| *c == '\u{2588}').count(), 10);
+        let half = render_bar(50.0, 10);
+        let filled = half.chars().filter(|c| *c == '\u{2588}').count();
+        assert!(filled == 5, "expected 5 filled chars at 50%, got {}", filled);
+        let over = render_bar(999.0, 10);
+        assert_eq!(over.chars().filter(|c| *c == '\u{2588}').count(), 10);
     }
 }

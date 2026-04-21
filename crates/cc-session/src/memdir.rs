@@ -38,10 +38,31 @@ pub struct MemoryEntry {
 /// Scope of memory storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemoryScope {
-    /// Global memories: `~/.cc-rust/memory/`
+    /// Global memories: `{data_root}/memory/`
     Global,
     /// Project-local memories: `.cc-rust/memory/` relative to cwd
     Project,
+    /// Team-shared memories: `{data_root}/projects/{sanitized_cwd}/memory/team/`.
+    /// Gated by `FEATURE_TEAMMEM`; the directory itself is readable/writable
+    /// even when the feature is off so legacy data is never stranded.
+    Team,
+    /// Auto-captured memories: `{data_root}/auto_memory/`.
+    /// Gated at the context-injection layer by the `auto_memory_enabled`
+    /// toggle; the directory is always readable so prior captures can be
+    /// inspected and purged.
+    Auto,
+}
+
+impl MemoryScope {
+    /// Short label used in selector output and JSON representations.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MemoryScope::Global => "global",
+            MemoryScope::Project => "project",
+            MemoryScope::Team => "team",
+            MemoryScope::Auto => "auto",
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -53,6 +74,8 @@ pub fn memory_dir(scope: MemoryScope, cwd: &Path) -> Result<PathBuf> {
     match scope {
         MemoryScope::Global => Ok(cc_config::paths::memory_dir_global()),
         MemoryScope::Project => Ok(cwd.join(".cc-rust").join("memory")),
+        MemoryScope::Team => Ok(cc_config::paths::team_memory_dir(cwd)),
+        MemoryScope::Auto => Ok(cc_config::paths::auto_memory_dir()),
     }
 }
 
@@ -208,7 +231,21 @@ pub fn search_memories(query: &str, scope: MemoryScope, cwd: &Path) -> Result<Ve
 /// Build a memory context string for injection into system prompts.
 ///
 /// Collects relevant memories and formats them for the model's context.
+/// Equivalent to `build_memory_context_with(cwd, false)` — the auto
+/// scope is skipped unless the caller opts in.
 pub fn build_memory_context(cwd: &Path) -> Result<String> {
+    build_memory_context_with(cwd, false)
+}
+
+/// See [`build_memory_context`]. Extra `include_auto` flag lets the root
+/// crate wire in the per-session `auto_memory_enabled` toggle without
+/// dragging settings types into this crate.
+///
+/// Scopes included:
+/// - `Project` and `Global` are always considered.
+/// - `Team` is included when `FEATURE_TEAMMEM` is enabled.
+/// - `Auto` is included when `include_auto` is true.
+pub fn build_memory_context_with(cwd: &Path, include_auto: bool) -> Result<String> {
     let mut sections = Vec::new();
 
     // Collect project memories
@@ -230,6 +267,34 @@ pub fn build_memory_context(cwd: &Path) -> Result<String> {
                 s.push_str(&format!("- **{}**: {}\n", mem.key, mem.value));
             }
             sections.push(s);
+        }
+    }
+
+    // Team memories — gated on FEATURE_TEAMMEM at the context-injection
+    // layer. The dir is readable regardless so the selector can still show
+    // legacy entries even when the feature is off.
+    if cc_config::features::enabled(cc_config::features::Feature::TeamMemory) {
+        if let Ok(team_mems) = list_memories(MemoryScope::Team, cwd) {
+            if !team_mems.is_empty() {
+                let mut s = String::from("## Team Memories\n");
+                for mem in &team_mems {
+                    s.push_str(&format!("- **{}**: {}\n", mem.key, mem.value));
+                }
+                sections.push(s);
+            }
+        }
+    }
+
+    // Auto memories — injected only when the caller opts in via toggle.
+    if include_auto {
+        if let Ok(auto_mems) = list_memories(MemoryScope::Auto, cwd) {
+            if !auto_mems.is_empty() {
+                let mut s = String::from("## Auto Memories\n");
+                for mem in &auto_mems {
+                    s.push_str(&format!("- **{}**: {}\n", mem.key, mem.value));
+                }
+                sections.push(s);
+            }
         }
     }
 
@@ -391,5 +456,75 @@ mod tests {
         assert!(ctx.contains("dark mode"));
 
         cleanup(&cwd);
+    }
+
+    /// Every `MemoryScope` variant resolves to a concrete path.
+    /// Uses a `CC_RUST_HOME` override so tests don't touch real
+    /// `~/.cc-rust/`.
+    #[test]
+    #[serial_test::serial]
+    fn test_memory_dir_resolves_all_scopes() {
+        let root = make_temp_dir();
+        let previous = std::env::var("CC_RUST_HOME").ok();
+        std::env::set_var("CC_RUST_HOME", &root);
+
+        let cwd = root.join("my_project");
+        std::fs::create_dir_all(&cwd).unwrap();
+
+        let global = memory_dir(MemoryScope::Global, &cwd).unwrap();
+        assert_eq!(global, root.join("memory"));
+
+        let project = memory_dir(MemoryScope::Project, &cwd).unwrap();
+        assert_eq!(project, cwd.join(".cc-rust").join("memory"));
+
+        let team = memory_dir(MemoryScope::Team, &cwd).unwrap();
+        let s = team.to_string_lossy().replace('\\', "/");
+        assert!(
+            s.ends_with("/memory/team"),
+            "unexpected team path: {}",
+            team.display()
+        );
+
+        let auto = memory_dir(MemoryScope::Auto, &cwd).unwrap();
+        assert_eq!(auto, root.join("auto_memory"));
+
+        match previous {
+            Some(v) => std::env::set_var("CC_RUST_HOME", v),
+            None => std::env::remove_var("CC_RUST_HOME"),
+        }
+        cleanup(&root);
+    }
+
+    /// Auto scope round-trip write/list/delete under a sandboxed
+    /// `CC_RUST_HOME` so the real auto_memory/ is untouched.
+    #[test]
+    #[serial_test::serial]
+    fn test_auto_scope_roundtrip() {
+        let root = make_temp_dir();
+        let previous = std::env::var("CC_RUST_HOME").ok();
+        std::env::set_var("CC_RUST_HOME", &root);
+
+        let cwd = root.join("scratch");
+        std::fs::create_dir_all(&cwd).unwrap();
+
+        write_memory("auto-key", "captured note", "auto", MemoryScope::Auto, &cwd).unwrap();
+        let all = list_memories(MemoryScope::Auto, &cwd).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].key, "auto-key");
+        assert!(delete_memory("auto-key", MemoryScope::Auto, &cwd).unwrap());
+
+        match previous {
+            Some(v) => std::env::set_var("CC_RUST_HOME", v),
+            None => std::env::remove_var("CC_RUST_HOME"),
+        }
+        cleanup(&root);
+    }
+
+    #[test]
+    fn test_scope_as_str_labels() {
+        assert_eq!(MemoryScope::Global.as_str(), "global");
+        assert_eq!(MemoryScope::Project.as_str(), "project");
+        assert_eq!(MemoryScope::Team.as_str(), "team");
+        assert_eq!(MemoryScope::Auto.as_str(), "auto");
     }
 }
