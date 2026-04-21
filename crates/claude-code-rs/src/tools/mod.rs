@@ -32,8 +32,6 @@ pub mod registry;
 pub mod ask_user;
 pub mod skill;
 
-// Agent sub-domain (already grouped).
-pub mod agent;
 // Background agent types (used by Agent tool + query loop + event loop).
 pub mod background_agents;
 

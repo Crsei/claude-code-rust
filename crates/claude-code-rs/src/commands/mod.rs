@@ -554,6 +554,40 @@ pub fn parse_command_input(input: &str) -> Option<(usize, String)> {
     find_command(without_slash).map(|idx| (idx, args))
 }
 
+// ---------------------------------------------------------------------------
+// CommandDispatcher trait implementation
+// ---------------------------------------------------------------------------
+
+/// Concrete [`cc_types::commands::CommandDispatcher`] for the full command
+/// registry.  Used to inject command parsing into the engine without the
+/// engine importing `commands::` directly (see issue #74, Phase 5c).
+pub struct DefaultCommandDispatcher;
+
+impl DefaultCommandDispatcher {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for DefaultCommandDispatcher {
+    fn default() -> Self {
+        Self
+    }
+}
+
+impl cc_types::commands::CommandDispatcher for DefaultCommandDispatcher {
+    fn parse_command_input(&self, input: &str) -> Option<cc_types::commands::ParsedCommand> {
+        parse_command_input(input).map(|(index, args)| cc_types::commands::ParsedCommand {
+            index,
+            args,
+        })
+    }
+
+    fn command_name(&self, index: usize) -> Option<String> {
+        get_all_commands().get(index).map(|cmd| cmd.name.clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

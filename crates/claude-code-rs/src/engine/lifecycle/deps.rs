@@ -47,6 +47,12 @@ pub(crate) struct QueryEngineDeps {
     pub(crate) bg_agent_tx: Option<crate::ipc::agent_channel::AgentSender>,
     /// Shared buffer of completed background agents.
     pub(crate) pending_bg_results: crate::tools::background_agents::PendingBackgroundResults,
+    /// Hook runner — used via the `HookRunner` trait from `cc-types::hooks` so
+    /// the engine has no direct dependency on `crate::tools::hooks`.
+    pub(crate) hook_runner: Arc<dyn cc_types::hooks::HookRunner>,
+    /// Command dispatcher — forwarded into `ToolUseContext` for tools that
+    /// spawn child engines (e.g. Agent).
+    pub(crate) command_dispatcher: Arc<dyn cc_types::commands::CommandDispatcher>,
 }
 
 #[async_trait::async_trait]
@@ -310,10 +316,12 @@ impl QueryDeps for QueryEngineDeps {
         parent_message: &crate::types::message::AssistantMessage,
         _on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolExecResult> {
-        use crate::tools::hooks::{
-            self, PermissionOverride, PostToolHookResult, PreToolHookResult,
-        };
+        use cc_types::hooks::{PermissionOverride, PostToolHookResult, PreToolHookResult};
         use crate::types::tool::PermissionResult;
+
+        // Hook dispatcher trait object — decouples the engine from the concrete
+        // `crate::tools::hooks` impl (see issue #74, Phase 5b).
+        let hooks = self.hook_runner.as_ref();
 
         let tool = tools
             .iter()
@@ -369,17 +377,21 @@ impl QueryDeps for QueryEngineDeps {
             permission_callback: self.permission_callback.clone(),
             ask_user_callback: self.state.read().ask_user_callback.clone(),
             bg_agent_tx: self.bg_agent_tx.clone(),
+            hook_runner: self.hook_runner.clone(),
+            command_dispatcher: self.command_dispatcher.clone(),
         };
 
         // ── Load hook configs from AppState ────────────────────────
         let hooks_map = self.state.read().app_state.hooks.clone();
-        let pre_configs = hooks::load_hook_configs(&hooks_map, "PreToolUse");
-        let post_configs = hooks::load_hook_configs(&hooks_map, "PostToolUse");
-        let failure_configs = hooks::load_hook_configs(&hooks_map, "PostToolUseFailure");
+        let pre_configs = hooks.load_hook_configs(&hooks_map, "PreToolUse");
+        let post_configs = hooks.load_hook_configs(&hooks_map, "PostToolUse");
+        let failure_configs = hooks.load_hook_configs(&hooks_map, "PostToolUseFailure");
 
         // ── Pre-tool hooks ─────────────────────────────────────────
         let (effective_input, permission_override) =
-            match hooks::run_pre_tool_hooks(&request.tool_name, &request.input, &pre_configs).await
+            match hooks
+                .run_pre_tool_hooks(&request.tool_name, &request.input, &pre_configs)
+                .await
             {
                 Ok(PreToolHookResult::Continue {
                     updated_input,
@@ -411,14 +423,15 @@ impl QueryDeps for QueryEngineDeps {
             match override_decision {
                 PermissionOverride::Deny { reason } => {
                     // Fire PermissionDenied hook
-                    let deny_configs = hooks::load_hook_configs(&hooks_map, "PermissionDenied");
+                    let deny_configs = hooks.load_hook_configs(&hooks_map, "PermissionDenied");
                     if !deny_configs.is_empty() {
                         let payload = serde_json::json!({
                             "tool_name": request.tool_name,
                             "tool_input": request.input,
                             "reason": format!("Permission denied by hook: {}", reason),
                         });
-                        let _ = hooks::run_event_hooks("PermissionDenied", &payload, &deny_configs)
+                        let _ = hooks
+                            .run_event_hooks("PermissionDenied", &payload, &deny_configs)
                             .await;
                     }
 
@@ -467,14 +480,15 @@ impl QueryDeps for QueryEngineDeps {
                         );
                     }
                     // Fire PermissionDenied hook
-                    let deny_configs = hooks::load_hook_configs(&hooks_map, "PermissionDenied");
+                    let deny_configs = hooks.load_hook_configs(&hooks_map, "PermissionDenied");
                     if !deny_configs.is_empty() {
                         let payload = serde_json::json!({
                             "tool_name": request.tool_name,
                             "tool_input": request.input,
                             "reason": format!("Permission denied: {}", message),
                         });
-                        let _ = hooks::run_event_hooks("PermissionDenied", &payload, &deny_configs)
+                        let _ = hooks
+                            .run_event_hooks("PermissionDenied", &payload, &deny_configs)
                             .await;
                     }
 
@@ -509,16 +523,16 @@ impl QueryDeps for QueryEngineDeps {
                     // Fire PermissionRequest hook before interactive prompt
                     let mut hook_allowed = false;
                     let perm_req_configs =
-                        hooks::load_hook_configs(&hooks_map, "PermissionRequest");
+                        hooks.load_hook_configs(&hooks_map, "PermissionRequest");
                     if !perm_req_configs.is_empty() {
                         let payload = serde_json::json!({
                             "tool_name": request.tool_name,
                             "tool_input": request.input,
                             "message": message,
                         });
-                        if let Ok(output) =
-                            hooks::run_event_hooks("PermissionRequest", &payload, &perm_req_configs)
-                                .await
+                        if let Ok(output) = hooks
+                            .run_event_hooks("PermissionRequest", &payload, &perm_req_configs)
+                            .await
                         {
                             // If hook provides a permission decision, use it
                             if let Some(ref decision) = output.permission_decision {
@@ -533,22 +547,21 @@ impl QueryDeps for QueryEngineDeps {
                                     }
                                     "deny" => {
                                         // Fire PermissionDenied hook
-                                        let deny_configs = hooks::load_hook_configs(
-                                            &hooks_map,
-                                            "PermissionDenied",
-                                        );
+                                        let deny_configs = hooks
+                                            .load_hook_configs(&hooks_map, "PermissionDenied");
                                         if !deny_configs.is_empty() {
                                             let deny_payload = serde_json::json!({
                                                 "tool_name": request.tool_name,
                                                 "tool_input": request.input,
                                                 "reason": "Permission denied by PermissionRequest hook",
                                             });
-                                            let _ = hooks::run_event_hooks(
-                                                "PermissionDenied",
-                                                &deny_payload,
-                                                &deny_configs,
-                                            )
-                                            .await;
+                                            let _ = hooks
+                                                .run_event_hooks(
+                                                    "PermissionDenied",
+                                                    &deny_payload,
+                                                    &deny_configs,
+                                                )
+                                                .await;
                                         }
 
                                         return Ok(ToolExecResult {
@@ -638,20 +651,21 @@ impl QueryDeps for QueryEngineDeps {
                                     }
 
                                     // Fire PermissionDenied hook (user chose deny)
-                                    let deny_configs =
-                                        hooks::load_hook_configs(&hooks_map, "PermissionDenied");
+                                    let deny_configs = hooks
+                                        .load_hook_configs(&hooks_map, "PermissionDenied");
                                     if !deny_configs.is_empty() {
                                         let payload = serde_json::json!({
                                             "tool_name": request.tool_name,
                                             "tool_input": request.input,
                                             "reason": "Permission denied by user",
                                         });
-                                        let _ = hooks::run_event_hooks(
-                                            "PermissionDenied",
-                                            &payload,
-                                            &deny_configs,
-                                        )
-                                        .await;
+                                        let _ = hooks
+                                            .run_event_hooks(
+                                                "PermissionDenied",
+                                                &payload,
+                                                &deny_configs,
+                                            )
+                                            .await;
                                     }
 
                                     return Ok(ToolExecResult {
@@ -669,19 +683,20 @@ impl QueryDeps for QueryEngineDeps {
                         } else {
                             // Fire PermissionDenied hook (no callback available)
                             let deny_configs =
-                                hooks::load_hook_configs(&hooks_map, "PermissionDenied");
+                                hooks.load_hook_configs(&hooks_map, "PermissionDenied");
                             if !deny_configs.is_empty() {
                                 let payload = serde_json::json!({
                                     "tool_name": request.tool_name,
                                     "tool_input": request.input,
                                     "reason": format!("Permission required (no callback): {}", message),
                                 });
-                                let _ = hooks::run_event_hooks(
-                                    "PermissionDenied",
-                                    &payload,
-                                    &deny_configs,
-                                )
-                                .await;
+                                let _ = hooks
+                                    .run_event_hooks(
+                                        "PermissionDenied",
+                                        &payload,
+                                        &deny_configs,
+                                    )
+                                    .await;
                             }
 
                             return Ok(ToolExecResult {
@@ -769,11 +784,11 @@ impl QueryDeps for QueryEngineDeps {
 
                 // Run post-tool hooks on success
                 if !post_configs.is_empty() {
-                    if let Ok(PostToolHookResult::StopContinuation { message }) =
-                        hooks::run_post_tool_hooks(
+                    if let Ok(PostToolHookResult::StopContinuation { message }) = hooks
+                        .run_post_tool_hooks(
                             &request.tool_name,
                             &effective_input,
-                            &result,
+                            &result.data,
                             &post_configs,
                         )
                         .await
@@ -817,13 +832,14 @@ impl QueryDeps for QueryEngineDeps {
 
                 // Run post-failure hooks on error
                 if !failure_configs.is_empty() {
-                    let _ = hooks::run_post_tool_failure_hooks(
-                        &request.tool_name,
-                        &request.input,
-                        &e.to_string(),
-                        &failure_configs,
-                    )
-                    .await;
+                    let _ = hooks
+                        .run_post_tool_failure_hooks(
+                            &request.tool_name,
+                            &request.input,
+                            &e.to_string(),
+                            &failure_configs,
+                        )
+                        .await;
                 }
 
                 Ok(ToolExecResult {

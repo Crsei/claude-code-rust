@@ -5,7 +5,6 @@ use tracing::warn;
 
 use crate::types::tool::Tools;
 
-use super::agent::AgentTool;
 use super::ask_user::AskUserQuestionTool;
 use super::brief::BriefTool;
 use super::config_tool::ConfigTool;
@@ -48,7 +47,7 @@ fn base_tools() -> Tools {
     // Single-tool / small-cluster modules (not yet a sub-domain).
     tools.extend([
         Arc::new(AskUserQuestionTool) as _,
-        Arc::new(AgentTool) as _,
+        Arc::new(crate::engine::agent::AgentTool) as _,
         Arc::new(SkillTool) as _,
         Arc::new(ConfigTool) as _,
         Arc::new(StructuredOutputTool) as _,

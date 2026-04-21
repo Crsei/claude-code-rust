@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod codex_exec;
 pub mod effort;
 pub mod input_processing;

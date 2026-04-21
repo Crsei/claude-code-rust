@@ -135,11 +135,13 @@ impl Tool for AgentTool {
         // Load hook configs once (used by both background and synchronous paths)
         let start_configs = {
             let app_state = (ctx.get_app_state)();
-            crate::tools::hooks::load_hook_configs(&app_state.hooks, "SubagentStart")
+            ctx.hook_runner
+                .load_hook_configs(&app_state.hooks, "SubagentStart")
         };
         let stop_configs = {
             let app_state = (ctx.get_app_state)();
-            crate::tools::hooks::load_hook_configs(&app_state.hooks, "SubagentStop")
+            ctx.hook_runner
+                .load_hook_configs(&app_state.hooks, "SubagentStop")
         };
 
         // -- Background path
@@ -190,9 +192,10 @@ impl Tool for AgentTool {
                     "depth": current_depth + 1,
                     "background": true,
                 });
-                let _ =
-                    crate::tools::hooks::run_event_hooks("SubagentStart", &payload, &start_configs)
-                        .await;
+                let _ = ctx
+                    .hook_runner
+                    .run_event_hooks("SubagentStart", &payload, &start_configs)
+                    .await;
             }
 
             // Build child config now (before move into spawn)
@@ -281,12 +284,16 @@ impl Tool for AgentTool {
             let spawn_prompt = params.prompt.clone();
             let spawn_agent_model = agent_model.clone();
             let spawn_stop_configs = stop_configs.clone();
+            let spawn_hook_runner = ctx.hook_runner.clone();
+            let spawn_command_dispatcher = ctx.command_dispatcher.clone();
 
             tokio::spawn(async move {
                 let started = std::time::Instant::now();
                 info!(agent_id = %spawn_agent_id, description = %spawn_description, "background agent started");
 
-                let child_engine = QueryEngine::new(child_config);
+                let mut child_engine = QueryEngine::new(child_config);
+                child_engine.set_hook_runner(spawn_hook_runner.clone());
+                child_engine.set_command_dispatcher(spawn_command_dispatcher);
                 let stream = child_engine
                     .submit_message(&spawn_prompt, QuerySource::Agent(spawn_agent_id.clone()));
                 let mut stream = std::pin::pin!(stream);
@@ -363,12 +370,9 @@ impl Tool for AgentTool {
                         "is_error": had_error,
                         "background": true,
                     });
-                    let _ = crate::tools::hooks::run_event_hooks(
-                        "SubagentStop",
-                        &payload,
-                        &spawn_stop_configs,
-                    )
-                    .await;
+                    let _ = spawn_hook_runner
+                        .run_event_hooks("SubagentStop", &payload, &spawn_stop_configs)
+                        .await;
                 }
 
                 let result_preview = if result_text.len() > 200 {
