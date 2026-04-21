@@ -1,0 +1,11 @@
+[package]
+name = "cc-types"
+version = "0.1.0"
+edition = "2021"
+description = "Pure leaf types for cc-rust: message, state, transitions (no runtime deps on root crate)"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
