@@ -122,6 +122,7 @@ parking_lot = "0.12"
 # 内部 crates (workspace split)
 cc-keybindings = { path = "crates/cc-keybindings" }
 cc-observability = { path = "crates/cc-observability" }
+cc-types = { path = "crates/cc-types" }
 
 # Daemon HTTP server
 axum = { version = "0.8", features = ["ws"] }
