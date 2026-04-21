@@ -74,6 +74,10 @@ pub enum FrontendMessage {
     SkillCommand {
         command: super::subsystem_events::SkillCommand,
     },
+    /// IDE-integration lifecycle command.
+    IdeCommand {
+        command: super::subsystem_events::IdeCommand,
+    },
     /// Query all subsystem statuses.
     QuerySubsystemStatus,
 
@@ -232,6 +236,10 @@ pub enum BackendMessage {
     /// Skill subsystem event.
     SkillEvent {
         event: super::subsystem_events::SkillEvent,
+    },
+    /// IDE-integration subsystem event.
+    IdeEvent {
+        event: super::subsystem_events::IdeEvent,
     },
     /// Aggregated subsystem status snapshot.
     SubsystemStatus {
