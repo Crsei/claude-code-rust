@@ -17,7 +17,12 @@ import { SubsystemStatus } from './SubsystemStatus.js'
 import { Suggestions } from './Suggestions.js'
 import { TeamPanel } from './TeamPanel.js'
 import { WelcomeScreen } from './WelcomeScreen.js'
-import { notifyBackendResize, repaintAfterResize } from './resize-sync.js'
+import { registerOpaqueFrameClear } from './frame-clear.js'
+import {
+  ensureOpaqueRendererBackground,
+  notifyBackendResize,
+  repaintAfterResize,
+} from './resize-sync.js'
 
 type ActivePane = 'messages' | 'input'
 
@@ -76,6 +81,12 @@ export function App() {
   useEffect(() => {
     notifyBackendResize(backend, termWidth, termHeight)
   }, [backend, termHeight, termWidth])
+
+  useEffect(() => {
+    ensureOpaqueRendererBackground(renderer)
+  }, [renderer])
+
+  useEffect(() => registerOpaqueFrameClear(renderer), [renderer])
 
   useOnResize((width, height) => {
     notifyBackendResize(backend, width, height)
