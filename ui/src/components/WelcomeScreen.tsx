@@ -1,6 +1,7 @@
 import React from 'react'
 import { c } from '../theme.js'
 import { useAppState } from '../store/app-store.js'
+import { FilePathLink } from './FilePathLink.js'
 import { Spinner } from './Spinner.js'
 
 const LOGO = `
@@ -23,10 +24,10 @@ export function WelcomeScreen() {
             <span fg={c.dim}>Model: </span>
             <strong>{model}</strong>
           </text>
-          <text>
-            <span fg={c.dim}>  cwd: </span>
-            {cwd}
-          </text>
+          <box flexDirection="row">
+            <text fg={c.dim}>  cwd: </text>
+            <FilePathLink filePath={cwd} />
+          </box>
           {sessionId && (
             <text>
               <span fg={c.dim}>  Session: </span>
