@@ -86,6 +86,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'AGENT_SETTINGS_CHANGED':
     case 'AGENT_SETTINGS_ERROR':
     case 'AGENT_SETTINGS_CLEAR_NOTICE':
+    case 'AGENT_SETTINGS_TOOLS':
+    case 'AGENT_SETTINGS_EDITOR_OPENED':
+    case 'AGENT_SETTINGS_GENERATE_STARTED':
+    case 'AGENT_SETTINGS_GENERATED':
+    case 'AGENT_SETTINGS_CLEAR_GENERATED':
       return reduceAgentSettings(state, action)
 
     case 'PUSH_HISTORY':

@@ -4,54 +4,44 @@
 //! [`super::subsystem_handlers`]' MCP config editor but for agent-definition
 //! markdown files (`{scope}/agents/<name>.md`).
 //!
-//! File format: YAML frontmatter + markdown body.
+//! File format: YAML frontmatter + markdown body. Full Build parity with
+//! upstream [`AgentDefinition`][upstream] covers these frontmatter keys:
+//! `name`, `description`, `tools`, `disallowedTools`, `model`, `color`,
+//! `permissionMode`, `memory`, `maxTurns`, `effort`, `background`,
+//! `isolation`, `skills`, `hooks`, `mcpServers`, `initialPrompt`.
 //!
 //! ```text
 //! ---
 //! name: reviewer
-//! description: Reviews code against the plan
+//! description: "Reviews code against the plan"
 //! tools: Read, Grep
 //! model: sonnet
 //! color: blue
+//! permissionMode: acceptEdits
+//! memory: project
 //! ---
 //!
 //! You are a thorough reviewer. …
 //! ```
 //!
 //! Sources:
-//!   * `Builtin`  — engine-provided (general-purpose, Explore, Plan, code-reviewer), read-only
-//!   * `User`     — `~/.cc-rust/agents/*.md`, editable
-//!   * `Project`  — `{cwd}/.cc-rust/agents/*.md`, editable
-//!   * `Plugin`   — contributed by plugins, read-only (future hook; none registered today)
+//!   * `Builtin` — engine-provided, loaded from [`super::builtin_agents`]
+//!   * `User`    — `~/.cc-rust/agents/*.md`, editable
+//!   * `Project` — `{cwd}/.cc-rust/agents/*.md`, editable
+//!   * `Plugin`  — contributed by plugins, read-only (future hook)
+//!
+//! [upstream]: https://github.com/anthropics/claude-code/blob/main/src/tools/AgentTool/loadAgentsDir.ts
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::builtin_agents::builtin_agent_entries;
 use super::protocol::BackendMessage;
 use super::subsystem_events::{AgentSettingsCommand, AgentSettingsEvent};
-use super::subsystem_types::{AgentDefinitionEntry, AgentDefinitionSource};
-
-/// Built-in subagent types the engine honours out of the box. Kept in sync
-/// with [`crate::commands::agents_cmd::BUILTIN_SUBAGENTS`] — duplicated here
-/// rather than imported to avoid a cyclic dependency with the command layer.
-const BUILTIN_AGENTS: &[(&str, &str)] = &[
-    (
-        "general-purpose",
-        "Default agent for multi-step research and coding tasks",
-    ),
-    (
-        "Explore",
-        "Fast codebase exploration — globbing, grepping, and file reads",
-    ),
-    (
-        "Plan",
-        "Software architect — produces an implementation plan without editing code",
-    ),
-    (
-        "code-reviewer",
-        "Reviews a completed change against the plan and coding standards",
-    ),
-];
+use super::subsystem_types::{
+    AgentDefinitionEntry, AgentDefinitionSource, AgentMemoryScope, AgentPermissionMode,
+    AgentToolInfo,
+};
 
 // ---------------------------------------------------------------------------
 // Public handler
@@ -94,6 +84,49 @@ pub fn handle(cmd: AgentSettingsCommand) -> Vec<BackendMessage> {
                 }
             }
         }
+        AgentSettingsCommand::QueryTools => {
+            let tools = available_tools();
+            vec![BackendMessage::AgentSettingsEvent {
+                event: AgentSettingsEvent::ToolList { tools },
+            }]
+        }
+        AgentSettingsCommand::OpenInEditor { file_path } => {
+            match open_in_editor(&file_path) {
+                Ok(()) => vec![BackendMessage::AgentSettingsEvent {
+                    event: AgentSettingsEvent::EditorOpened { file_path },
+                }],
+                Err(error) => {
+                    tracing::warn!(%file_path, %error, "editor launch failed");
+                    vec![BackendMessage::AgentSettingsEvent {
+                        event: AgentSettingsEvent::Error {
+                            name: file_path,
+                            error,
+                        },
+                    }]
+                }
+            }
+        }
+        AgentSettingsCommand::Generate {
+            user_prompt,
+            mut existing_names,
+        } => {
+            // Preseed with built-in names so the model can't pick an
+            // identifier that would collide with an engine default.
+            for name in super::builtin_agents::builtin_agent_names() {
+                if !existing_names.contains(&name) {
+                    existing_names.push(name);
+                }
+            }
+            // Dispatch the generation asynchronously so the handler returns
+            // quickly with `GenerateStarted`. The spawned task posts
+            // `Generated` / `Error` onto the event bus when the model
+            // returns (see [`super::runtime::HeadlessRuntime::run`]).
+            let events = vec![BackendMessage::AgentSettingsEvent {
+                event: AgentSettingsEvent::GenerateStarted,
+            }];
+            super::agent_settings_generate::spawn_generation(user_prompt, existing_names);
+            events
+        }
     }
 }
 
@@ -103,19 +136,7 @@ pub fn handle(cmd: AgentSettingsCommand) -> Vec<BackendMessage> {
 
 /// Return every agent the UI should know about: built-ins + user + project.
 pub fn list_all_agents(cwd: &Path) -> Vec<AgentDefinitionEntry> {
-    let mut out: Vec<AgentDefinitionEntry> = BUILTIN_AGENTS
-        .iter()
-        .map(|(name, desc)| AgentDefinitionEntry {
-            name: (*name).to_string(),
-            description: (*desc).to_string(),
-            system_prompt: String::new(),
-            tools: vec![],
-            model: None,
-            color: None,
-            source: AgentDefinitionSource::Builtin,
-            file_path: None,
-        })
-        .collect();
+    let mut out: Vec<AgentDefinitionEntry> = builtin_agent_entries();
 
     let user_dir = cc_config::paths::data_root().join("agents");
     out.extend(load_agents_from_dir(&user_dir, AgentDefinitionSource::User));
@@ -158,50 +179,82 @@ fn load_agents_from_dir(dir: &Path, source: AgentDefinitionSource) -> Vec<AgentD
 // ---------------------------------------------------------------------------
 
 /// Parse a single agent markdown file. Returns `None` if the file is
-/// malformed.
+/// malformed beyond recovery (no name resolvable).
 pub fn parse_agent_file(
     path: &Path,
     content: &str,
     source: AgentDefinitionSource,
 ) -> Option<AgentDefinitionEntry> {
     let (fm, body) = parse_frontmatter(content);
-    let name = fm
-        .iter()
-        .find(|(k, _)| k == "name")
-        .map(|(_, v)| v.clone())
-        .or_else(|| {
-            path.file_stem()
-                .and_then(|s| s.to_str())
-                .map(|s| s.to_string())
-        })?;
-    let description = fm
-        .iter()
-        .find(|(k, _)| k == "description")
-        .map(|(_, v)| v.clone())
+    let file_stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_string());
+    let name = fm_get(&fm, "name").or_else(|| file_stem.clone())?;
+    let description = fm_get(&fm, "description").unwrap_or_default();
+    let tools = normalize_tools(
+        fm_get(&fm, "tools")
+            .map(|v| split_list(&v))
+            .unwrap_or_default(),
+    );
+    let disallowed_tools = fm_get(&fm, "disallowedTools")
+        .or_else(|| fm_get(&fm, "disallowed_tools"))
+        .map(|v| split_list(&v))
         .unwrap_or_default();
-    let tools = fm
-        .iter()
-        .find(|(k, _)| k == "tools")
-        .map(|(_, v)| split_list(v))
+    let model = fm_get(&fm, "model").filter(|s| !s.is_empty());
+    let color = fm_get(&fm, "color").filter(|s| !s.is_empty());
+    let permission_mode = fm_get(&fm, "permissionMode")
+        .or_else(|| fm_get(&fm, "permission_mode"))
+        .and_then(parse_permission_mode);
+    let memory = fm_get(&fm, "memory").and_then(parse_memory_scope);
+    let max_turns = fm_get(&fm, "maxTurns")
+        .or_else(|| fm_get(&fm, "max_turns"))
+        .and_then(|v| v.parse::<u32>().ok());
+    let effort = fm_get(&fm, "effort").filter(|s| !s.is_empty());
+    let background = fm_get(&fm, "background")
+        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "true" | "yes" | "1"))
+        .unwrap_or(false);
+    let isolation = fm_get(&fm, "isolation").filter(|s| !s.is_empty());
+    let skills = fm_get(&fm, "skills")
+        .map(|v| split_list(&v))
         .unwrap_or_default();
-    let model = fm
-        .iter()
-        .find(|(k, _)| k == "model")
-        .map(|(_, v)| v.clone())
+    let initial_prompt = fm_get(&fm, "initialPrompt")
+        .or_else(|| fm_get(&fm, "initial_prompt"))
         .filter(|s| !s.is_empty());
-    let color = fm
-        .iter()
-        .find(|(k, _)| k == "color")
-        .map(|(_, v)| v.clone())
-        .filter(|s| !s.is_empty());
+
+    // Hooks and mcpServers may be multiline JSON blocks; our minimal parser
+    // only exposes single-line values. We accept them as raw JSON strings in
+    // the frontmatter or ignore if missing — editors can reshape later.
+    let hooks = fm_get(&fm, "hooks")
+        .and_then(|v| serde_json::from_str(&v).ok())
+        .unwrap_or(serde_json::Value::Null);
+    let mcp_servers = fm_get(&fm, "mcpServers")
+        .or_else(|| fm_get(&fm, "mcp_servers"))
+        .and_then(|v| serde_json::from_str::<serde_json::Value>(&v).ok())
+        .and_then(|v| v.as_array().cloned())
+        .unwrap_or_default();
+
+    let filename = file_stem.filter(|s| s != &name);
 
     Some(AgentDefinitionEntry {
         name,
         description,
         system_prompt: body.trim_start_matches('\n').to_string(),
         tools,
+        disallowed_tools,
         model,
         color,
+        permission_mode,
+        memory,
+        max_turns,
+        effort,
+        background,
+        isolation,
+        skills,
+        hooks,
+        mcp_servers,
+        initial_prompt,
+        filename,
         source,
         file_path: Some(path.to_string_lossy().to_string()),
     })
@@ -214,12 +267,18 @@ fn render_agent_file(entry: &AgentDefinitionEntry) -> String {
     out.push_str(&format!("name: {}\n", entry.name));
     if !entry.description.is_empty() {
         out.push_str(&format!(
-            "description: {}\n",
-            one_line(&entry.description)
+            "description: \"{}\"\n",
+            yaml_escape(&entry.description)
         ));
     }
     if !entry.tools.is_empty() {
         out.push_str(&format!("tools: {}\n", entry.tools.join(", ")));
+    }
+    if !entry.disallowed_tools.is_empty() {
+        out.push_str(&format!(
+            "disallowedTools: {}\n",
+            entry.disallowed_tools.join(", ")
+        ));
     }
     if let Some(model) = &entry.model {
         if !model.is_empty() {
@@ -231,6 +290,48 @@ fn render_agent_file(entry: &AgentDefinitionEntry) -> String {
             out.push_str(&format!("color: {}\n", color));
         }
     }
+    if let Some(mode) = entry.permission_mode {
+        out.push_str(&format!("permissionMode: {}\n", permission_mode_str(mode)));
+    }
+    if let Some(scope) = entry.memory {
+        out.push_str(&format!("memory: {}\n", memory_scope_str(scope)));
+    }
+    if let Some(mt) = entry.max_turns {
+        out.push_str(&format!("maxTurns: {}\n", mt));
+    }
+    if let Some(effort) = &entry.effort {
+        if !effort.is_empty() {
+            out.push_str(&format!("effort: {}\n", effort));
+        }
+    }
+    if entry.background {
+        out.push_str("background: true\n");
+    }
+    if let Some(iso) = &entry.isolation {
+        if !iso.is_empty() {
+            out.push_str(&format!("isolation: {}\n", iso));
+        }
+    }
+    if !entry.skills.is_empty() {
+        out.push_str(&format!("skills: {}\n", entry.skills.join(", ")));
+    }
+    if !entry.hooks.is_null() {
+        out.push_str(&format!(
+            "hooks: {}\n",
+            serde_json::to_string(&entry.hooks).unwrap_or_else(|_| "null".into())
+        ));
+    }
+    if !entry.mcp_servers.is_empty() {
+        out.push_str(&format!(
+            "mcpServers: {}\n",
+            serde_json::to_string(&entry.mcp_servers).unwrap_or_else(|_| "[]".into())
+        ));
+    }
+    if let Some(ip) = &entry.initial_prompt {
+        if !ip.is_empty() {
+            out.push_str(&format!("initialPrompt: \"{}\"\n", yaml_escape(ip)));
+        }
+    }
     out.push_str("---\n\n");
     out.push_str(entry.system_prompt.trim_start_matches('\n'));
     if !out.ends_with('\n') {
@@ -239,10 +340,8 @@ fn render_agent_file(entry: &AgentDefinitionEntry) -> String {
     out
 }
 
-/// Minimal YAML-frontmatter parser. Matches the permissive shape used by
-/// `cc_skills::loader::parse_frontmatter` — we intentionally reimplement
-/// locally to avoid dragging a dependency on the skills crate and to return
-/// the raw key list (preserving case for `name` etc.).
+/// Minimal YAML-frontmatter parser (single-line `key: value` pairs plus
+/// optional leading/trailing `---`). Case-preserving.
 fn parse_frontmatter(content: &str) -> (Vec<(String, String)>, String) {
     let trimmed = content.trim_start();
     if !trimmed.starts_with("---") {
@@ -275,6 +374,12 @@ fn parse_frontmatter(content: &str) -> (Vec<(String, String)>, String) {
     (out, body.to_string())
 }
 
+fn fm_get(fm: &[(String, String)], key: &str) -> Option<String> {
+    fm.iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v.clone())
+}
+
 fn split_list(value: &str) -> Vec<String> {
     value
         .split([',', ' '])
@@ -283,8 +388,59 @@ fn split_list(value: &str) -> Vec<String> {
         .collect()
 }
 
-fn one_line(s: &str) -> String {
-    s.replace('\n', " ").trim().to_string()
+/// Normalize the `tools` list: `["*"]` becomes `[]` (meaning "all tools"), so
+/// the rest of the code only has to check for an empty vec.
+fn normalize_tools(tools: Vec<String>) -> Vec<String> {
+    if tools.len() == 1 && tools[0] == "*" {
+        vec![]
+    } else {
+        tools
+    }
+}
+
+fn parse_permission_mode(value: String) -> Option<AgentPermissionMode> {
+    match value.as_str() {
+        "default" => Some(AgentPermissionMode::Default),
+        "acceptEdits" | "accept_edits" => Some(AgentPermissionMode::AcceptEdits),
+        "bypassPermissions" | "bypass_permissions" => Some(AgentPermissionMode::BypassPermissions),
+        "plan" => Some(AgentPermissionMode::Plan),
+        _ => None,
+    }
+}
+
+fn permission_mode_str(mode: AgentPermissionMode) -> &'static str {
+    match mode {
+        AgentPermissionMode::Default => "default",
+        AgentPermissionMode::AcceptEdits => "acceptEdits",
+        AgentPermissionMode::BypassPermissions => "bypassPermissions",
+        AgentPermissionMode::Plan => "plan",
+    }
+}
+
+fn parse_memory_scope(value: String) -> Option<AgentMemoryScope> {
+    match value.as_str() {
+        "user" => Some(AgentMemoryScope::User),
+        "project" => Some(AgentMemoryScope::Project),
+        "local" => Some(AgentMemoryScope::Local),
+        _ => None,
+    }
+}
+
+fn memory_scope_str(scope: AgentMemoryScope) -> &'static str {
+    match scope {
+        AgentMemoryScope::User => "user",
+        AgentMemoryScope::Project => "project",
+        AgentMemoryScope::Local => "local",
+    }
+}
+
+/// Escape a string for use inside a double-quoted YAML value. Matches the
+/// upstream `formatAgentAsMarkdown` encoding (backslash first, then quotes
+/// and newlines) so a round-trip through the editor produces identical YAML.
+fn yaml_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\\\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -293,7 +449,7 @@ fn one_line(s: &str) -> String {
 
 fn upsert_agent(
     cwd: &Path,
-    entry: AgentDefinitionEntry,
+    mut entry: AgentDefinitionEntry,
 ) -> Result<AgentDefinitionEntry, (String, String)> {
     if !entry.source.is_editable() {
         return Err((
@@ -305,6 +461,7 @@ fn upsert_agent(
         ));
     }
     validate_name(&entry.name).map_err(|e| (entry.name.clone(), e))?;
+    entry.tools = normalize_tools(entry.tools);
 
     let dir = agents_dir_for_source(cwd, &entry.source);
     fs::create_dir_all(&dir).map_err(|e| {
@@ -335,9 +492,9 @@ fn upsert_agent(
         )
     })?;
 
-    let mut saved = entry;
-    saved.file_path = Some(path.to_string_lossy().to_string());
-    Ok(saved)
+    entry.file_path = Some(path.to_string_lossy().to_string());
+    entry.filename = None;
+    Ok(entry)
 }
 
 fn delete_agent(
@@ -367,16 +524,14 @@ fn agents_dir_for_source(cwd: &Path, source: &AgentDefinitionSource) -> PathBuf 
     match source {
         AgentDefinitionSource::User => cc_config::paths::data_root().join("agents"),
         AgentDefinitionSource::Project => cwd.join(".cc-rust").join("agents"),
-        // Read-only scopes are rejected earlier, but return something
-        // harmless just in case.
+        // Read-only scopes are rejected earlier, but return something harmless.
         AgentDefinitionSource::Builtin | AgentDefinitionSource::Plugin { .. } => cwd.join(""),
     }
 }
 
 /// Agent names become filenames on disk — reject anything that would escape
-/// the directory or produce an ambiguous path. This is stricter than the
-/// upstream TS loader; the extra caution is worth it because writes happen
-/// without a confirmation prompt.
+/// the directory or produce an ambiguous path. Matches upstream
+/// `validateAgentType` regex plus a length cap.
 fn validate_name(name: &str) -> Result<(), String> {
     if name.is_empty() {
         return Err("agent name must not be empty".to_string());
@@ -396,6 +551,178 @@ fn validate_name(name: &str) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
+// Available tools — categorized for the ToolSelector UI
+// ---------------------------------------------------------------------------
+
+/// Return the flat list of tools agents can be restricted to, tagged with a
+/// bucket category for the `ToolSelector` UI. Matches the bucket mapping
+/// from upstream `components/agents/ToolSelector.tsx`:
+///   * read_only — Glob, Grep, Read, WebFetch, WebSearch, TodoWrite, ExitPlanMode
+///   * edit      — Edit, Write, NotebookEdit
+///   * execution — Bash
+///   * other     — Agent (Task), Skill, LSP, MCP lifecycle, etc.
+///
+/// MCP-provided tools are appended with category `"mcp"` and their
+/// originating server recorded in `mcp_server`.
+pub fn available_tools() -> Vec<AgentToolInfo> {
+    // Base list matches `crate::tools::registry::tool_names()` — duplicated
+    // here so the IPC doesn't depend on the tool registry's lazy_static at
+    // call time. The registry is the source of truth at runtime; if it
+    // diverges, add a doctest or a cross-check (see tests below).
+    const READ_ONLY: &[&str] = &[
+        "Glob",
+        "Grep",
+        "Read",
+        "TodoWrite",
+        "WebFetch",
+        "WebSearch",
+        "ExitPlanMode",
+        "Thinking",
+    ];
+    const EDIT: &[&str] = &["Edit", "Write", "NotebookEdit"];
+    const EXECUTION: &[&str] = &["Bash"];
+    const OTHER: &[&str] = &[
+        "Agent",
+        "Skill",
+        "ToolSearch",
+        "LSP",
+        "Sleep",
+        "Brief",
+        "AskUserQuestion",
+        "Monitor",
+        "SendMessage",
+        "TeamSpawn",
+    ];
+
+    let mut out: Vec<AgentToolInfo> = Vec::new();
+    for name in READ_ONLY {
+        out.push(AgentToolInfo {
+            name: (*name).to_string(),
+            category: "read_only".into(),
+            description: None,
+            mcp_server: None,
+        });
+    }
+    for name in EDIT {
+        out.push(AgentToolInfo {
+            name: (*name).to_string(),
+            category: "edit".into(),
+            description: None,
+            mcp_server: None,
+        });
+    }
+    for name in EXECUTION {
+        out.push(AgentToolInfo {
+            name: (*name).to_string(),
+            category: "execution".into(),
+            description: None,
+            mcp_server: None,
+        });
+    }
+    for name in OTHER {
+        out.push(AgentToolInfo {
+            name: (*name).to_string(),
+            category: "other".into(),
+            description: None,
+            mcp_server: None,
+        });
+    }
+
+    // MCP tools — pull from the subsystem snapshot so the editor can restrict
+    // agents to specific MCP servers. Names are pre-prefixed with
+    // `mcp__{server}__{tool}` to match how they appear at tool-use time.
+    let mcp_servers = super::subsystem_handlers::build_mcp_server_info_list();
+    for server in mcp_servers {
+        out.push(AgentToolInfo {
+            name: format!("mcp__{}__*", server.name),
+            category: "mcp".into(),
+            description: Some(format!(
+                "{} tools ({} registered)",
+                server.name, server.tools_count
+            )),
+            mcp_server: Some(server.name),
+        });
+    }
+
+    out
+}
+
+// ---------------------------------------------------------------------------
+// External editor launch
+// ---------------------------------------------------------------------------
+
+/// Spawn `$EDITOR` (or the platform default) against the given path and wait
+/// for it to return. Matches the upstream `editFileInEditor` semantics: the
+/// editor blocks while the user edits, and we return when it exits.
+///
+/// On Windows the fallback is `notepad`; elsewhere `vi`. We explicitly refuse
+/// paths outside the editable agent directories so a malicious IPC payload
+/// cannot trigger an editor on arbitrary system files.
+fn open_in_editor(file_path: &str) -> Result<(), String> {
+    let path = PathBuf::from(file_path);
+    if !path.is_absolute() {
+        return Err("file path must be absolute".into());
+    }
+    if !is_inside_agents_dir(&path) {
+        return Err("path is outside any known agents directory".into());
+    }
+
+    let editor = std::env::var("VISUAL")
+        .or_else(|_| std::env::var("EDITOR"))
+        .unwrap_or_else(|_| default_editor().into());
+
+    // Split on spaces to honour "code --wait" style settings.
+    let mut parts = editor.split_whitespace();
+    let program = parts.next().ok_or_else(|| "empty EDITOR".to_string())?;
+    let args: Vec<&str> = parts.collect();
+
+    let status = std::process::Command::new(program)
+        .args(&args)
+        .arg(&path)
+        .status()
+        .map_err(|e| format!("failed to spawn editor `{}`: {}", program, e))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "editor `{}` exited with status {}",
+            program, status
+        ))
+    }
+}
+
+fn default_editor() -> &'static str {
+    if cfg!(windows) {
+        "notepad"
+    } else {
+        "vi"
+    }
+}
+
+fn is_inside_agents_dir(path: &Path) -> bool {
+    let user_dir = cc_config::paths::data_root().join("agents");
+    let Ok(user_dir) = user_dir.canonicalize() else {
+        return path_prefixed_by(path, &user_dir);
+    };
+    if path_prefixed_by(path, &user_dir) {
+        return true;
+    }
+    // Project dir is cwd-relative; canonicalize to catch symlinks.
+    let Ok(cwd) = std::env::current_dir() else {
+        return false;
+    };
+    let project_dir = cwd.join(".cc-rust").join("agents");
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    path_prefixed_by(path, &project_dir)
+}
+
+fn path_prefixed_by(path: &Path, prefix: &Path) -> bool {
+    let resolved = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    resolved.starts_with(prefix)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -410,8 +737,20 @@ mod tests {
             description: format!("Agent {} description", name),
             system_prompt: "You are a helpful agent.\n\nDo your best work.\n".to_string(),
             tools: vec!["Read".to_string(), "Grep".to_string()],
+            disallowed_tools: vec![],
             model: Some("sonnet".to_string()),
             color: Some("blue".to_string()),
+            permission_mode: Some(AgentPermissionMode::AcceptEdits),
+            memory: Some(AgentMemoryScope::Project),
+            max_turns: Some(10),
+            effort: Some("medium".to_string()),
+            background: false,
+            isolation: None,
+            skills: vec![],
+            hooks: serde_json::Value::Null,
+            mcp_servers: vec![],
+            initial_prompt: None,
+            filename: None,
             source,
             file_path: None,
         }
@@ -451,6 +790,10 @@ mod tests {
         assert_eq!(back.tools, vec!["Read".to_string(), "Grep".to_string()]);
         assert_eq!(back.model.as_deref(), Some("sonnet"));
         assert_eq!(back.color.as_deref(), Some("blue"));
+        assert_eq!(back.permission_mode, Some(AgentPermissionMode::AcceptEdits));
+        assert_eq!(back.memory, Some(AgentMemoryScope::Project));
+        assert_eq!(back.max_turns, Some(10));
+        assert_eq!(back.effort.as_deref(), Some("medium"));
         assert!(back.system_prompt.contains("You are a helpful agent."));
     }
 
@@ -484,8 +827,8 @@ mod tests {
     }
 
     #[test]
-    fn parse_agent_file_extracts_frontmatter_and_body() {
-        let raw = "---\nname: foo\ndescription: A foo agent\ntools: Read, Bash\nmodel: opus\ncolor: red\n---\n\nBody text here.\n";
+    fn parse_agent_file_extracts_all_frontmatter_fields() {
+        let raw = "---\nname: foo\ndescription: \"A foo agent\"\ntools: Read, Bash\nmodel: opus\ncolor: red\npermissionMode: plan\nmemory: user\nmaxTurns: 20\neffort: high\nbackground: true\nisolation: worktree\nskills: simplify, loop\n---\n\nBody text here.\n";
         let parsed = parse_agent_file(
             &PathBuf::from("/tmp/foo.md"),
             raw,
@@ -497,7 +840,39 @@ mod tests {
         assert_eq!(parsed.tools, vec!["Read".to_string(), "Bash".to_string()]);
         assert_eq!(parsed.model.as_deref(), Some("opus"));
         assert_eq!(parsed.color.as_deref(), Some("red"));
+        assert_eq!(parsed.permission_mode, Some(AgentPermissionMode::Plan));
+        assert_eq!(parsed.memory, Some(AgentMemoryScope::User));
+        assert_eq!(parsed.max_turns, Some(20));
+        assert_eq!(parsed.effort.as_deref(), Some("high"));
+        assert!(parsed.background);
+        assert_eq!(parsed.isolation.as_deref(), Some("worktree"));
+        assert_eq!(parsed.skills, vec!["simplify".to_string(), "loop".to_string()]);
         assert!(parsed.system_prompt.starts_with("Body text here."));
+    }
+
+    #[test]
+    fn tools_wildcard_is_normalized_to_empty() {
+        let raw = "---\nname: any\ntools: \"*\"\n---\nBody\n";
+        let parsed = parse_agent_file(
+            &PathBuf::from("/tmp/any.md"),
+            raw,
+            AgentDefinitionSource::User,
+        )
+        .expect("should parse");
+        assert!(parsed.tools.is_empty(), "`*` should normalize to empty");
+    }
+
+    #[test]
+    fn filename_populated_when_file_stem_differs_from_name() {
+        let raw = "---\nname: canonical-name\n---\nBody\n";
+        let parsed = parse_agent_file(
+            &PathBuf::from("/tmp/on-disk-name.md"),
+            raw,
+            AgentDefinitionSource::User,
+        )
+        .expect("should parse");
+        assert_eq!(parsed.name, "canonical-name");
+        assert_eq!(parsed.filename.as_deref(), Some("on-disk-name"));
     }
 
     #[test]
@@ -505,14 +880,16 @@ mod tests {
         let tmp = tempdir().unwrap();
         let list = list_all_agents(tmp.path());
         let names: Vec<&str> = list.iter().map(|e| e.name.as_str()).collect();
+        // Match the registry defined in builtin_agents.rs
         assert!(names.contains(&"general-purpose"));
         assert!(names.contains(&"Explore"));
         assert!(names.contains(&"Plan"));
         assert!(names.contains(&"code-reviewer"));
+        assert!(names.contains(&"statusline-setup"));
     }
 
     #[test]
-    fn render_agent_file_roundtrips() {
+    fn render_agent_file_includes_all_populated_fields() {
         let entry = make_entry("rtrip", AgentDefinitionSource::User);
         let rendered = render_agent_file(&entry);
         assert!(rendered.starts_with("---\n"));
@@ -520,6 +897,10 @@ mod tests {
         assert!(rendered.contains("tools: Read, Grep"));
         assert!(rendered.contains("model: sonnet"));
         assert!(rendered.contains("color: blue"));
+        assert!(rendered.contains("permissionMode: acceptEdits"));
+        assert!(rendered.contains("memory: project"));
+        assert!(rendered.contains("maxTurns: 10"));
+        assert!(rendered.contains("effort: medium"));
         assert!(rendered.contains("You are a helpful agent."));
     }
 
@@ -529,5 +910,53 @@ mod tests {
         assert!(AgentDefinitionSource::User.is_editable());
         assert!(AgentDefinitionSource::Project.is_editable());
         assert!(!AgentDefinitionSource::Plugin { id: "p".into() }.is_editable());
+    }
+
+    #[test]
+    fn available_tools_covers_every_bucket() {
+        let tools = available_tools();
+        let cats: std::collections::HashSet<_> =
+            tools.iter().map(|t| t.category.as_str()).collect();
+        assert!(cats.contains("read_only"));
+        assert!(cats.contains("edit"));
+        assert!(cats.contains("execution"));
+        // `other` is always populated; `mcp` only appears when servers are
+        // configured, so skip it.
+        assert!(cats.contains("other"));
+        assert!(tools.iter().any(|t| t.name == "Read"));
+        assert!(tools.iter().any(|t| t.name == "Bash"));
+    }
+
+    #[test]
+    fn open_in_editor_rejects_paths_outside_agents_dirs() {
+        let err = open_in_editor("/etc/passwd").unwrap_err();
+        assert!(err.contains("outside") || err.contains("absolute"));
+    }
+
+    #[test]
+    fn open_in_editor_rejects_relative_paths() {
+        let err = open_in_editor("foo.md").unwrap_err();
+        assert!(err.contains("absolute"));
+    }
+
+    #[test]
+    fn yaml_escape_matches_upstream_rules() {
+        assert_eq!(yaml_escape("hello"), "hello");
+        assert_eq!(yaml_escape("a \"b\" c"), "a \\\"b\\\" c");
+        assert_eq!(yaml_escape("multi\nline"), "multi\\\\nline");
+        assert_eq!(yaml_escape("back\\slash"), "back\\\\slash");
+    }
+
+    #[test]
+    fn permission_mode_round_trips_through_string() {
+        for mode in [
+            AgentPermissionMode::Default,
+            AgentPermissionMode::AcceptEdits,
+            AgentPermissionMode::BypassPermissions,
+            AgentPermissionMode::Plan,
+        ] {
+            let s = permission_mode_str(mode);
+            assert_eq!(parse_permission_mode(s.to_string()), Some(mode));
+        }
     }
 }
