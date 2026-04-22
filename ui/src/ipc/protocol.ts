@@ -159,6 +159,33 @@ export interface SkillInfo {
   model_invocable: boolean
 }
 
+// ---------------------------------------------------------------------------
+// Agent-definition settings (mirror Rust `AgentDefinitionEntry` /
+// `AgentDefinitionSource` in `ipc/subsystem_types.rs`)
+// ---------------------------------------------------------------------------
+
+export type AgentDefinitionSource =
+  | { kind: 'builtin' }
+  | { kind: 'user' }
+  | { kind: 'project' }
+  | { kind: 'plugin'; id: string }
+
+export interface AgentDefinitionEntry {
+  name: string
+  description: string
+  system_prompt: string
+  tools: string[]
+  model?: string
+  color?: string
+  source: AgentDefinitionSource
+  file_path?: string
+}
+
+export type AgentSettingsEvent =
+  | { kind: 'list'; entries: AgentDefinitionEntry[] }
+  | { kind: 'changed'; name: string; entry?: AgentDefinitionEntry }
+  | { kind: 'error'; name: string; error: string }
+
 export interface SubsystemStatusSnapshot {
   lsp: LspServerInfo[]
   mcp: McpServerStatusInfo[]
@@ -336,6 +363,13 @@ export type FrontendMessage =
         | { kind: 'reconnect' }
         | { kind: 'query_status' }
     }
+  | {
+      type: 'agent_settings_command'
+      command:
+        | { kind: 'query_list' }
+        | { kind: 'upsert'; entry: AgentDefinitionEntry }
+        | { kind: 'delete'; name: string; source: AgentDefinitionSource }
+    }
   | { type: 'query_subsystem_status' }
 
 // ---------------------------------------------------------------------------
@@ -410,4 +444,5 @@ export type BackendMessage =
   | { type: 'plugin_event'; event: PluginEvent }
   | { type: 'skill_event'; event: SkillEvent }
   | { type: 'ide_event'; event: IdeEvent }
+  | { type: 'agent_settings_event'; event: AgentSettingsEvent }
   | { type: 'subsystem_status'; status: SubsystemStatusSnapshot }
