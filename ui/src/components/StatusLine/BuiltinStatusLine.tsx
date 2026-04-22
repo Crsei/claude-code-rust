@@ -1,9 +1,35 @@
 import React from 'react'
-import type { ViewMode } from '../keybindings.js'
-import { c } from '../theme.js'
-import type { Usage } from '../store/app-store.js'
-import { useAppState } from '../store/app-store.js'
-import { formatCost, formatTokens } from '../utils.js'
+import type { ViewMode } from '../../keybindings.js'
+import { c } from '../../theme.js'
+import { useAppState } from '../../store/app-store.js'
+import type { Usage } from '../../store/app-store.js'
+import { formatCost, formatTokens } from '../../utils.js'
+import {
+  countActiveTeams,
+  countConnectedMcp,
+  countRunningAgents,
+  countRunningLsp,
+  cwdShortName,
+  statusLineError,
+} from './status-line-state.js'
+
+/**
+ * Built-in statusline body shown across the top of the live
+ * conversation pane. Lite-native counterpart of the sample tree's
+ * `BuiltinStatusLine`
+ * (`ui/examples/upstream-patterns/src/components/BuiltinStatusLine.tsx`),
+ * but derived from the current Lite store rather than a cost-tracker
+ * global or rate-limit API.
+ *
+ * Fields shown:
+ * - `cwd` short name
+ * - transcript / vim indicators when active
+ * - active `model`
+ * - live counters: running agents, active teams, connected MCP, running LSP
+ * - usage tokens + cost from the store's `Usage`
+ * - an error pill when the most recent custom statusline run reported
+ *   an error (sourced from the shared `CustomStatusLineState`)
+ */
 
 interface Props {
   cwd: string
@@ -13,15 +39,20 @@ interface Props {
   viewMode?: ViewMode
 }
 
-export function Header({ cwd, model, usage, vimMode, viewMode = 'prompt' }: Props) {
-  const dir = cwd.replace(/\\/g, '/').split('/').pop() || cwd
-  const { agentTree, subsystems, teams } = useAppState()
-
-  // Count running agents across the tree
-  const runningAgents = countRunning(agentTree)
-  const activeTeams = Object.values(teams).filter(t => t.members.some(m => m.is_active)).length
-  const connectedMcp = subsystems.mcp.filter(m => m.state === 'connected').length
-  const runningLsp = subsystems.lsp.filter(l => l.state === 'running').length
+export function BuiltinStatusLine({
+  cwd,
+  model,
+  usage,
+  vimMode,
+  viewMode = 'prompt',
+}: Props) {
+  const { agentTree, subsystems, teams, customStatusLine } = useAppState()
+  const runningAgents = countRunningAgents(agentTree)
+  const activeTeams = countActiveTeams(teams)
+  const connectedMcp = countConnectedMcp(subsystems)
+  const runningLsp = countRunningLsp(subsystems)
+  const customError = statusLineError(customStatusLine)
+  const dir = cwdShortName(cwd)
 
   return (
     <box
@@ -72,6 +103,12 @@ export function Header({ cwd, model, usage, vimMode, viewMode = 'prompt' }: Prop
           {connectedMcp > 0 && <text fg="#CBA6F7">MCP:{connectedMcp}</text>}
         </>
       )}
+      {customError && (
+        <>
+          <text fg={c.dim}> | </text>
+          <text fg="#F38BA8">statusline: {customError}</text>
+        </>
+      )}
       <box flexGrow={1} />
       <text fg={c.dim}>Tokens: </text>
       <text>{formatTokens(usage.inputTokens + usage.outputTokens)}</text>
@@ -79,13 +116,4 @@ export function Header({ cwd, model, usage, vimMode, viewMode = 'prompt' }: Prop
       <text fg={c.success}>{formatCost(usage.costUsd)}</text>
     </box>
   )
-}
-
-function countRunning(nodes: Array<{ state: string; children: any[] }>): number {
-  let n = 0
-  for (const node of nodes) {
-    if (node.state === 'running') n++
-    n += countRunning(node.children)
-  }
-  return n
 }

@@ -41,5 +41,15 @@ export function reduceSubsystems(state: AppState, action: SubsystemAction): AppS
 
     case 'SKILLS_LOADED':
       return state // informational only — real data arrives via SUBSYSTEM_STATUS
+
+    case 'CUSTOM_STATUS_LINE_UPDATE':
+      return {
+        ...state,
+        customStatusLine: {
+          lines: action.lines,
+          error: action.error,
+          updatedAt: action.updatedAt,
+        },
+      }
   }
 }

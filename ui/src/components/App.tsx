@@ -7,10 +7,10 @@ import { shortcutLabel, transcriptTitle } from '../keybindings.js'
 import { useAppDispatch, useAppState } from '../store/app-store.js'
 import { conversationToRawMessage } from '../store/message-model.js'
 import { AgentTreePanel } from './AgentTreePanel.js'
-import { Header } from './Header.js'
 import { InputPrompt } from './InputPrompt.js'
 import { MessageList } from './MessageList.js'
 import { PermissionRequestDialog } from './permissions/index.js'
+import { StatusLine } from './StatusLine/index.js'
 import { SubsystemStatus } from './SubsystemStatus.js'
 import { Suggestions } from './Suggestions.js'
 import { TeamPanel } from './TeamPanel.js'
@@ -250,6 +250,14 @@ export function App() {
         case 'subsystem_status':
           dispatch({ type: 'SUBSYSTEM_STATUS', lsp: msg.status.lsp, mcp: msg.status.mcp, plugins: msg.status.plugins, skills: msg.status.skills })
           break
+        case 'status_line_update':
+          dispatch({
+            type: 'CUSTOM_STATUS_LINE_UPDATE',
+            lines: msg.lines,
+            error: msg.error,
+            updatedAt: Date.now(),
+          })
+          break
       }
     }
 
@@ -308,7 +316,7 @@ export function App() {
   return (
     <box flexDirection="column" height="100%">
       {!isWelcome && (
-        <Header
+        <StatusLine
           cwd={state.cwd}
           model={state.model}
           usage={state.usage}
