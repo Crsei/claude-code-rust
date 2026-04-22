@@ -1,7 +1,9 @@
 # Claude Code Rust 重写计划
 
-> 最后更新: 2026-04-02
-> 已完成模块: [`COMPLETED_FULL.md`](archive/COMPLETED_FULL.md) (完整实现) | [`COMPLETED_SIMPLIFIED.md`](archive/COMPLETED_SIMPLIFIED.md) (大幅简化)
+> **阶段 (2026-04-22)**：已进入**全量构建 (Full Build)**。原 Lite 缩减清单重新解读为"待补齐 TODO"，详见 [`../CLAUDE.md`](../CLAUDE.md) 顶部"当前阶段"说明。
+>
+> 最后更新: 2026-04-02（历史部分仍按当时状态）
+> 已完成模块: [`COMPLETED_FULL.md`](archive/COMPLETED_FULL.md) (完整实现) | [`COMPLETED_SIMPLIFIED.md`](archive/COMPLETED_SIMPLIFIED.md) (进入全量构建后视作待补齐清单)
 > 当前仍未补齐的注意事项、设计限制与缩减实现汇总见 [`IMPLEMENTATION_GAPS.md`](IMPLEMENTATION_GAPS.md)
 
 ## 原始项目概况

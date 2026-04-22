@@ -1,6 +1,8 @@
 # cc-rust 工作状态总览
 
-> 更新日期: 2026-04-11 | 分支: `rust-lite`
+> 更新日期: 2026-04-22 | 分支: `rust-lite`（历史名称，当前阶段：**全量构建 / Full Build**）
+>
+> **阶段说明**：本仓库已从 "rust-lite 精简版" 切换到**全量构建**。§3 原"显式延期 (Deferred)"清单不再默认等于"不做"，触及这些条目的新工作默认按上游完整实现对齐，除非重新评估后登记到 [`IMPLEMENTATION_GAPS.md`](IMPLEMENTATION_GAPS.md) §7 "Intentional 裁剪"。详细规则见 [`../CLAUDE.md`](../CLAUDE.md) 顶部"当前阶段"说明。
 >
 > 本文档合并了原 `UNIMPLEMENTED_CHECKLIST.md`、`sdk-work-tracker.md`、`unfinished-features.md`
 > 三份文档，作为唯一的状态跟踪入口。
@@ -124,22 +126,29 @@
 
 ---
 
-## 3. 显式延期 (Deferred)
+## 3. 历史 Deferred 清单（进入全量构建后需逐项重评）
 
-以下功能在设计上明确不在 `rust-lite` 范围内。
+> **状态反转**：以下条目历史上登记为"`rust-lite` 范围外"。进入全量构建阶段后，它们**不再自动等于"不实现"**。规则：
+>
+> - **默认行为**：触及任一条目的新工作按上游完整版对齐。
+> - **如要继续延期**：在 [`IMPLEMENTATION_GAPS.md`](IMPLEMENTATION_GAPS.md) §7 "Intentional 裁剪"里登记理由与复审条件，再从本节删除。
+> - **Ant-only 内部工具**：继续不实现的可信度高；仍需迁移到 §7 以正式化。
+> - **远程控制 / 服务端扩展 / 多端集成**：按路线图重评，默认进入 TODO 队列。
 
-### 延期命令
+保留作为历史对照 →
+
+### 历史延期命令（需重评）
 
 `/remote-control`, `/web-setup`, `/chrome`, `/desktop`, `/mobile`,
 `/remote-env`, `/release-notes`, `/stickers`, `/terminal-setup`, `/usage`
 
-### 延期工具
+### 历史延期工具（需重评）
 
 `RemoteTrigger`, `CronCreate/Delete/List`, `WebBrowser`, `McpAuthTool`,
 `Monitor`, `ListPeers`, `Workflow`, `TerminalCapture`, `SubscribePR`,
 `PushNotification`, `SendUserFile`, `SuggestBackgroundPR`
 
-### 延期模块
+### 历史延期模块（需重评）
 
 | 模块 | 说明 |
 |------|------|
@@ -151,7 +160,7 @@
 | `services/analytics/` | 遥测管道 |
 | Desktop / Mobile 集成 | — |
 
-### 内部 / Ant-Only 命令 (不实现)
+### 内部 / Ant-Only 命令（建议保留延期，但仍需正式登记到 Intentional 裁剪）
 
 `/agents-platform`, `/ant-trace`, `/autofix-pr`, `/backfill-sessions`,
 `/break-cache`, `/bridge-kick`, `/bughunter`, `/ctx-viz`,
@@ -160,7 +169,7 @@
 `/perf-issue`, `/reset-limits`, `/share`, `/summary`,
 `/teleport`, `/heapdump`
 
-### 内部工具 (不实现)
+### 内部工具（建议保留延期，但仍需正式登记到 Intentional 裁剪）
 
 `CtxInspect`, `OverflowTest`, `VerifyPlanExecution`, `Tungsten`
 
