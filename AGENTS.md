@@ -27,14 +27,9 @@ cargo build --release
 # 当前终端 UI (OpenTUI)
 cd ui && bun install && bun run dev
 
-# ink-terminal 实验 UI
-cd ink-ui && bun install && bun run dev
-
 # Web UI 资源（用于 --web）
 cd web-ui && npm install && npm run build
 
-# 修改 ink-terminal submodule 时再同步
-git submodule update --init --recursive
 ```
 
 ## Project Structure
@@ -74,10 +69,6 @@ rust/
 │   ├── subagent-dashboard/  Subagent 调试面板
 │   └── run.sh               启动脚本
 │
-├── ink-ui/                  ink-terminal 实验前端
-│   ├── ink-terminal/        渲染库源码 (git submodule → Crsei/ink-terminal)
-│   └── src/                 实验 UI 源码
-│
 ├── web-ui/                  Web Chat UI 前端资源
 │
 ├── docs/
@@ -86,31 +77,21 @@ rust/
 │   ├── KNOWN_ISSUES.md      用户可感知问题跟踪
 │   └── archive/             已完成功能的历史设计 / 计划 / 变更记录
 └── architecture/
-    └── ink-terminal-frontend.md  IPC 架构设计文档
+    └── ink-terminal-frontend.md  终端前端演进历史说明
 ```
 
 ### Frontends
 
 - `ui/` 是当前默认终端 UI，基于 `@opentui/core` + `@opentui/react`
-- `ink-ui/` 是独立的 ink-terminal 实验前端
-- `ui/ink-terminal/` 仍作为 submodule 保留，主要服务于 ink-terminal 相关实验与复用代码
-
-ink-terminal 修改流程：
-```bash
-cd ink-ui/ink-terminal
-# 修改源码 → 提交推送
-git add . && git commit -m "fix: ..." && git push
-# 回主项目更新 submodule 引用
-cd ../..
-git add ink-ui/ink-terminal && git commit -m "chore: bump ink-terminal"
-```
+- `ink-ui/` 已退役，不再维护
+- `ui/ink-terminal/` 已不再作为当前前端依赖保留
 
 ### IPC 架构
 
 终端前端通过 `--headless` 模式与 Rust 后端通信:
 - Rust 端: `src/ipc/protocol.rs` (协议类型) + `src/ipc/headless.rs` (事件循环)
 - TS 端: `ui/src/ipc/client.ts` (spawn + JSONL) + `ui/src/ipc/protocol.ts`
-- 详见: `architecture/ink-terminal-frontend.md`
+- 详见: `architecture/ink-terminal-frontend.md`（历史演进说明）
 
 ### 已移除的模块 (完整版有)
 

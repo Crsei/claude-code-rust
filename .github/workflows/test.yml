@@ -55,7 +55,7 @@ jobs:
               done
             '
 
-  # ── ink-terminal UI tests (Bun) ───────────────────────────
+  # ── OpenTUI UI tests (Bun) ────────────────────────────────
   test-ui:
     runs-on: ubuntu-latest
     steps:
