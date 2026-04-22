@@ -1,10 +1,19 @@
-# AGENTS.md — cc-rust (Lite)
+# AGENTS.md — cc-rust (全量构建 / Full Build)
 
-This file provides guidance to Codex when working with the Rust Lite version in `rust/`.
+This file provides guidance to Codex when working with the Rust port in `rust/`.
 
-## 分支说明
+## 当前阶段：全量构建（Full Build）
 
-本分支 (`rust-lite`) 是完整版 (`master`) 的精简版，保留最小可用核心 + Skills 系统。
+> **重要**：本分支历史上曾标记为 `rust-lite`（完整版的精简版）。现已进入**全量构建阶段**，目标是与上游完整版 (`master` / TypeScript `cc/src/`) 行为对齐。
+>
+> 书写与审阅规则：
+> - **不再按 Lite 缩减**。新代码应覆盖上游对应模块的完整行为，不要以"精简版"为由省略分支、截断、错误恢复、沙箱、UI 细节等。
+> - **已有的缩减实现视为 TODO**，不是既定边界。清单见 [`docs/IMPLEMENTATION_GAPS.md`](docs/IMPLEMENTATION_GAPS.md) §2 与 [`docs/archive/COMPLETED_SIMPLIFIED.md`](docs/archive/COMPLETED_SIMPLIFIED.md)；补齐后迁移到 [`docs/archive/COMPLETED_FULL.md`](docs/archive/COMPLETED_FULL.md)。
+> - **历史 `Deferred` 清单需重评**。[`docs/WORK_STATUS.md`](docs/WORK_STATUS.md) §3 不再默认等于"不做"；触及这些条目时按上游完整实现对齐，除非另有书面确认。
+> - **上游参考**：对照行为时读 `F:\AIclassmanager\cc\src\**`（TypeScript 原版）或 `F:\AIclassmanager\cc\claude-code-bun\**`（Bun 版）。
+> - **如确需保留某项缩减**，在 PR 描述中显式说明，并在文档标注为"故意保留"（Intentional），而不是沉默继续按简化版写。
+
+历史名称 `rust-lite` 仍保留在分支名与部分文档链接中，仅作为版本标识，不再承担"按精简版维护"的语义。
 
 ## Path Isolation (Critical)
 
