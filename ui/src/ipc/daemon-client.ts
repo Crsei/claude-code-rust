@@ -1,5 +1,5 @@
 /**
- * DaemonClient -- HTTP/SSE transport for connecting ink-terminal to the
+ * DaemonClient -- HTTP/SSE transport for connecting the terminal frontend to the
  * KAIROS daemon.
  *
  * Unlike {@link RustBackend} (JSONL over stdio), this client communicates

@@ -148,14 +148,14 @@ claude-code-rs "帮我重构这个函数"
 
 ## 运行模式
 
-### ink-terminal UI (推荐)
+### OpenTUI UI (推荐)
 
 ```bash
 cd ui
 ./run.sh
 ```
 
-基于 ink-terminal (React 19) 的新前端，通过 IPC 与 Rust 后端通信：
+基于 OpenTUI (`@opentui/core` + `@opentui/react`) 的终端前端，通过 IPC 与 Rust 后端通信：
 
 - **60fps 渲染**，double-buffering + 同步更新
 - **流式 Markdown** — `<Markdown streaming>` 组件实时渲染
@@ -164,7 +164,7 @@ cd ui
 - **权限弹窗** — 工具调用时自动弹出，支持 y/n/a 快捷键
 - **Flexbox 布局** — 自适应终端尺寸
 
-前端依赖: Bun/Node.js 20+, `bun install` 安装 ink-terminal。
+前端依赖: Bun/Node.js 20+, 在 `ui/` 目录执行 `bun install`。
 
 环境变量:
 - `CC_RUST_BINARY` — 指定 Rust 二进制路径 (不设则自动查找 target/ 下)

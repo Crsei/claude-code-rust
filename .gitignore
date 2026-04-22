@@ -42,19 +42,12 @@ sdk/typescript/dist/
 sdk/typescript/package-lock.json
 .worktrees
 
-# ink-terminal frontend
+# terminal frontend
 ui/node_modules/
 ui/dist/
 ui/bun.lockb
 ui/bun.lock
 ui/package-lock.json
-
-# ink-terminal library (workspace package)
-ui/ink-terminal/node_modules/
-ui/ink-terminal/dist/
-ui/ink-terminal/bun.lockb
-ui/ink-terminal/bun.lock
-ui/ink-terminal/package-lock.json
 
 # web-ui frontend (React SPA embedded via rust-embed)
 web-ui/node_modules/
@@ -63,8 +56,6 @@ web-ui/bun.lockb
 web-ui/bun.lock
 web-ui/package-lock.json
 web-ui/tsconfig.tsbuildinfo
-
-ink-ui/
 
 # Global data dir junction
 .cc-rust

@@ -30,8 +30,7 @@ for the canonical path reference and fallback behavior.
 # Rust 后端
 cargo build --release
 
-# ink-terminal 前端 (含 submodule)
-git submodule update --init --recursive
+# 当前终端 UI (OpenTUI)
 cd ui && bun install && bun run dev
 ```
 
@@ -72,8 +71,7 @@ rust/
 │   ├── utils/               工具函数
 │   └── shutdown.rs          优雅关闭
 │
-├── ui/                      ink-terminal 前端 (bun workspace root)
-│   ├── ink-terminal/        渲染库源码 (git submodule → Crsei/ink-terminal)
+├── ui/                      OpenTUI 前端
 │   ├── src/
 │   │   ├── components/      14 个 React 组件
 │   │   ├── ipc/             IPC 客户端 + 协议类型 (与 Rust 端一致)
@@ -84,31 +82,20 @@ rust/
 │   │   ├── index.ts         HTTP server 入口 (Bun.serve, 密钥认证)
 │   │   ├── db.ts            SQLite 数据层 (bun:sqlite, WAL, 事务)
 │   │   └── routes.ts        GET/PUT 端点 (ETag, 304, 412, 413)
-│   ├── package.json         workspaces: ["ink-terminal"]
 │   └── run.sh               启动脚本
 │
 ├── docs/
 │   ├── KNOWN_ISSUES.md      已知 UI/UX 问题跟踪
 │   └── ...
 └── architecture/
-    └── ink-terminal-frontend.md  IPC 架构设计文档
+    └── ink-terminal-frontend.md  终端前端演进历史说明
 ```
 
-### Monorepo (ui/)
+### Terminal Frontend
 
-`ui/` 是 bun workspace root，包含两个包：
-- `cc-rust-ui` (ui/) — 应用层，`import { Box } from 'ink-terminal'`
-- `ink-terminal` (ui/ink-terminal/) — 渲染库，作为 **git submodule** 管理
+`ui/` 是当前默认终端前端，基于 `@opentui/core` + `@opentui/react`。
 
-ink-terminal 修改流程：
-```bash
-cd ui/ink-terminal
-# 修改源码 → 提交推送
-git add . && git commit -m "fix: ..." && git push
-# 回主项目更新 submodule 引用
-cd ../..
-git add ui/ink-terminal && git commit -m "chore: bump ink-terminal"
-```
+`ink-ui/` / `ui/ink-terminal/` 路线已退役，不再作为当前仓库主线依赖保留。
 
 ### IPC 架构
 
@@ -117,7 +104,7 @@ git add ui/ink-terminal && git commit -m "chore: bump ink-terminal"
 **Headless 模式** (`--headless`): JSONL over stdio
 - Rust 端: `src/ipc/protocol.rs` (协议类型) + `src/ipc/headless.rs` (事件循环, `tokio::select!` 多路复用)
 - TS 端: `ui/src/ipc/client.ts` (spawn + JSONL) + `ui/src/ipc/protocol.ts`
-- 详见: `architecture/ink-terminal-frontend.md`
+- 详见: `architecture/ink-terminal-frontend.md`（历史演进说明）
 
 **Daemon 模式** (`--daemon`, KAIROS): HTTP/SSE over localhost
 - Rust 端: `src/daemon/server.rs` (axum HTTP) + `src/daemon/sse.rs` (SSE 事件流) + `src/daemon/routes.rs` (12 个端点)

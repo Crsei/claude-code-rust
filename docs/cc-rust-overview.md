@@ -29,7 +29,7 @@ cc-rust（Lite）以 Rust 为核心实现语言，目标在于提供高效、可
 - 技能系统：内置技能集与用户自定义技能的加载、注册、执行与记忆。
 - 压缩管线：上下文压缩与缓存策略，确保对话历史在可控范围内保持高效、可预测的成本。
 - 配置与权限：权限模型、配置管理、会话持久化、键/证书管理等关键能力。
-- IPC 与前端：前端通过 headless 模式与 Rust 后端以 JSONL 协议通信，界面（ ink-terminal）以 Bun/JavaScript 实现，形成清晰的前后端分离。
+- IPC 与前端：前端通过 headless 模式与 Rust 后端以 JSONL 协议通信，当前终端界面（OpenTUI）以 Bun/JavaScript 实现，形成清晰的前后端分离。
 
 2.2 关键数据流
 - 请求进入：前端或外部客户端发起对话请求，进入 Rust 的入口点 main.rs，进入 QueryEngine 的消息处理循环。
@@ -61,12 +61,12 @@ Lite 版本聚焦于核心能力，但预留扩展点，用于未来拓展技能
 
 4.1 依赖与环境
 - 后端：Rust 编译器及相关工具链，目标：release 构建。
-- 前端：ink-terminal 作为 UI，bun/Node 环境，依赖于子模块 ink-terminal。
+- 前端：OpenTUI 作为当前 UI，运行于 bun/Node 环境。
 - 数据目录：遵循 Path Isolation 规定，避免跨环境污染。
 
 4.2 构建步骤
 - 后端构建：cargo build --release
-- 前端构建：以 ui/ink-terminal 为子模块，进入 ui 目录执行 bun install 与 bun run dev，启动前端开发环境。
+- 前端构建：进入 `ui/` 目录执行 `bun install` 与 `bun run dev`，启动 OpenTUI 前端开发环境。
 - 启动顺序：先启动后端（headless 模式可用于无 UI 的自动化场景），再启动前端 UI，前后端通过 headless IPC 进行通信。
 
 4.3 运行与调试
@@ -101,12 +101,12 @@ Lite 版本聚焦于核心能力，但预留扩展点，用于未来拓展技能
 - shutdown.rs：优雅关机实现，确保热更新及资源清理。
 
 5.2 前端（ui/）与 IPC
-- ink-terminal：渲染库，定义 UI 组件、输入框、消息列表等，使用 Rust 与前端渲染分离。
+- OpenTUI：当前终端渲染库，定义 UI 组件、输入框、消息列表等，通过 headless IPC 与 Rust 后端解耦。
 - ui/src/ipc/client.ts：IPC 客户端，负责启动后端进程、发送/接收 JSONL 协议消息。
 - ui/src/ipc/protocol.ts：协议定义，确保前后端对消息格式的统一理解。
 
 5.3 架构与数据流在架构文档中的对应关系
-- architecture/ink-terminal-frontend.md 提供了前后端 IPC 架构设计的高层说明。
+- architecture/ink-terminal-frontend.md 保留为终端前端演进历史说明。
 - 重要的跨模块契约文档应存储在 docs/ 目录的相关文档中，确保新人能快速上手。
 
 5.4 新增服务模块与生态扩展
@@ -197,7 +197,7 @@ Lite 版本聚焦于核心能力，但预留扩展点，用于未来拓展技能
 
 13. 附录、术语与参考
 
-- 术语表：QueryEngine、上下文、记忆、技能、工具、IPC、headless、TUI、ink-terminal、键值对等。
+- 术语表：QueryEngine、上下文、记忆、技能、工具、IPC、headless、TUI、OpenTUI、键值对等。
 - 参考文献与文档：architecture/ink-terminal-frontend.md、CLAUDE.md（cc-rust 相关版本说明）等。
 
 结束语

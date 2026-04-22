@@ -18,8 +18,8 @@
 //!
 //! # TODO
 //! - The selector is currently a formatted listing; a real interactive TUI
-//!   picker is a future improvement that belongs in the ink-terminal
-//!   frontend, not here.
+//!   picker is a future improvement that belongs in the terminal frontend,
+//!   not here.
 //! - The `auto` toggle only persists `auto_memory_enabled`; the actual
 //!   capture hook is a separate change.
 
@@ -209,7 +209,7 @@ fn edit_memory(cwd: &Path) -> Result<CommandResult> {
 ///   [g] open global memory dir — <path>
 ///   [p] open project memory dir— <path>
 ///
-/// The true interactive TUI picker belongs in the ink-terminal frontend;
+/// The true interactive TUI picker belongs in the terminal frontend;
 /// see the module-level TODO.
 fn selector(ctx: &CommandContext) -> Result<CommandResult> {
     let cwd = &ctx.cwd;

@@ -11,7 +11,7 @@
 | 镜像 | Dockerfile | 说明 |
 |------|-----------|------|
 | `cc-rust-test` | `Dockerfile.ci` | Rust 后端 + 118 个 e2e 测试 |
-| `cc-rust-ui-test` | `ui/Dockerfile.test` | ink-terminal UI + 234 个单元测试 |
+| `cc-rust-ui-test` | `ui/Dockerfile.test` | OpenTUI UI + 234 个单元测试 |
 
 ### 运行命令
 
@@ -32,7 +32,7 @@ docker run --rm --env-file .env cc-rust-test \
 docker compose -f docker-compose.test.yml run --rm test-offline
 docker compose -f docker-compose.test.yml run --rm test-live
 
-# ── ink-terminal UI 测试 ─────────────────────────────────
+# ── OpenTUI UI 测试 ──────────────────────────────────────
 # 构建（含 Rust 编译 + Bun 安装）
 docker build -t cc-rust-ui-test -f ui/Dockerfile.test .
 
@@ -57,7 +57,7 @@ e2e_tools:          29 passed
 === Done: 8 suites passed, 0 failed ===
 ```
 
-**ink-terminal UI（`cc-rust-ui-test`）：**
+**OpenTUI UI（`cc-rust-ui-test`）：**
 
 ```
 234 pass, 0 fail, 602 expect() calls across 11 files [267ms]
@@ -626,7 +626,7 @@ docker run --rm \
 | .dockerignore | ✅ 完成 | 排除 target/、logs/、node_modules/ |
 | docker-compose.test.yml | ✅ 完成 | test-offline（无网络）+ test-live（`env_file: .env`） |
 | Rust 后端验证 | ✅ 完成 | 8/8 测试套件，118 offline tests green |
-| ink-terminal UI 验证 | ✅ 完成 | 234 tests green（parser、keypress、screen、reducer 等） |
+| OpenTUI UI 验证 | ✅ 完成 | 234 tests green（parser、keypress、screen、reducer 等） |
 | GitHub Actions CI | 📋 待做 | `.github/workflows/test.yml` |
 | cross 交叉编译 | 📋 待做 | `cross test --target x86_64-unknown-linux-gnu` |
 | BuildKit 缓存 | 📋 待做 | `--mount=type=cache` 优化编译时间 |
@@ -716,7 +716,7 @@ docker run --rm \
 |------|------|
 | Linux 容器能编译 cc-rust 吗？ | **能**。rustls-tls 无系统依赖，keyring 自动降级 |
 | 容器里能跑 PTY 测试吗？ | **能**。`/dev/ptmx` 默认存在，`portable-pty` 自行创建 PTY |
-| ink-terminal UI 能在 Docker 中测试吗？ | **能**。`oven/bun:latest` + Rust 二进制，234 测试已验证 |
+| OpenTUI UI 能在 Docker 中测试吗？ | **能**。`oven/bun:latest` + Rust 二进制，234 测试已验证 |
 | 需要 Windows 容器吗？ | **不需要**。Linux 容器覆盖核心逻辑，Windows 测试在本机跑 |
 | 需要 rust:latest 而非固定版本？ | **是**。依赖需 1.88+（globset edition2024, time-core） |
 | tester 必须用 trixie 不能用 bookworm？ | **是**。`rust:latest` 编译产物依赖 glibc 2.39+ |

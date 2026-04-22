@@ -1,5 +1,5 @@
 # ============================================================
-# ink-terminal UI test image
+# OpenTUI UI test image
 #
 # Tests the TypeScript UI layer:
 #   Layer 1: Unit tests (store, reducer, protocol) — bun:test
@@ -30,7 +30,6 @@ WORKDIR /app/ui
 
 # Install dependencies
 COPY ui/package.json ui/bun.lock* ./
-COPY ui/ink-terminal/ ./ink-terminal/
 RUN bun install
 
 # Copy UI source

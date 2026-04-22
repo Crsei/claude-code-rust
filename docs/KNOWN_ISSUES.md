@@ -28,7 +28,7 @@ Each issue includes a description, reproduction steps, and current status.
   terminals don't reserve 16 rows when they only need 8 / 12
 
 **Still open (TS/OpenTUI side)**:
-The ink-terminal rendering layer may not be re-measuring
+The OpenTUI rendering layer may not be re-measuring
 `process.stdout.columns` / `process.stdout.rows` on resize events, or
 components are not subscribing to terminal dimension changes.
 
@@ -50,7 +50,7 @@ components are not subscribing to terminal dimension changes.
 **Expected behavior**: The composer should always render inside a stable bordered container, and the busy indicator should be repainted inside that same container so footer state changes do not leave stale rows behind.
 
 **Fix**:
-1. Rebuilt the composer with an `ink-terminal` bordered `Box`
+1. Rebuilt the composer with a bordered terminal `Box`
 2. Moved idle and busy rendering into the same composer component
 3. Cleared frontend streaming state more aggressively on `stream_end` and `error`
 
@@ -72,7 +72,7 @@ components are not subscribing to terminal dimension changes.
 2. Added keyboard scrolling: `PageUp`, `PageDown`, `Ctrl+↑`, `Ctrl+↓`, `Ctrl+Home`, `Ctrl+End`.
 3. Added a footer hint in the message area showing scroll position and whether more content exists above/below.
 4. Routed wheel behavior by click focus: click message area => wheel scrolls conversation; click composer => wheel navigates input history.
-5. Rebuilt the composer UI using the `ink-terminal/examples/alternate-screen.tsx` style (explicit bordered input row + status row) to ensure the input box is always visible.
+5. Rebuilt the composer UI using an explicit bordered input row + status row layout to ensure the input box is always visible.
 6. Reduced long-response rendering pressure: removed scroll metric polling and switched streaming-phase rendering to plain text; final assistant message still renders via Markdown.
 7. Enforced responsive wrapping for long single-line output by constraining message/tool blocks to `width: 100%`, enabling explicit text wrapping, and subscribing message virtualization to terminal `resize` updates.
 
@@ -273,8 +273,7 @@ components are not subscribing to terminal dimension changes.
 **Related files**:
 - `ui/src/components/MessageBubble.tsx`
 - `ui/src/theme.ts`
-- `ui/ink-terminal/src/markdown/format-token.ts`
-- `ui/ink-terminal/src/markdown/__tests__/format-token.test.ts`
+- Historical note: the old `ui/ink-terminal` markdown implementation is no longer part of the maintained frontend path.
 
 ## 15. Headless AskUserQuestion left an orphaned tool call and broke the next model request
 
