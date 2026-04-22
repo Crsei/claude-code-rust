@@ -4,6 +4,7 @@ import type { KeyEvent } from '@opentui/core'
 import { messageScrollHint, matchesShortcut, shortcutLabel, type ViewMode } from '../keybindings.js'
 import { useAppState } from '../store/app-store.js'
 import { buildRenderItems } from '../store/message-model.js'
+import { c } from '../theme.js'
 import { MessageBubble } from './MessageBubble.js'
 
 interface MessageListProps {
@@ -104,6 +105,7 @@ export function MessageList({
       border
       borderStyle="rounded"
       borderColor="#45475A"
+      backgroundColor={c.bg}
       title={title}
       titleAlignment="left"
       onMouseDown={() => onActivate?.()}
@@ -111,7 +113,18 @@ export function MessageList({
       <box paddingX={1}>
         <text fg="#666666">{messageScrollHint(keybindingConfig)}</text>
       </box>
-      <scrollbox ref={scrollRef} focused={isActive} flexGrow={1} width="100%">
+      <scrollbox
+        ref={scrollRef}
+        focused={isActive}
+        flexGrow={1}
+        width="100%"
+        style={{
+          rootOptions: { backgroundColor: c.bg },
+          wrapperOptions: { backgroundColor: c.bg },
+          viewportOptions: { backgroundColor: c.bg },
+          contentOptions: { backgroundColor: c.bg },
+        }}
+      >
         {items.map(item => (
           <box key={item.id} width="100%">
             <MessageBubble item={item} viewMode={viewMode} />

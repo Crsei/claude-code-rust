@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { useTerminalDimensions } from '@opentui/react'
+import { useOnResize, useRenderer, useTerminalDimensions } from '@opentui/react'
 import { useBackend } from '../ipc/context.js'
 import type { BackendMessage, FrontendContentBlock } from '../ipc/protocol.js'
 import type { KeybindingConfig } from '../keybindings.js'
 import { shortcutLabel, transcriptTitle } from '../keybindings.js'
 import { useAppDispatch, useAppState } from '../store/app-store.js'
 import { conversationToRawMessage } from '../store/message-model.js'
+import { c } from '../theme.js'
 import { AgentTreePanel } from './AgentTreePanel.js'
 import { InputPrompt } from './InputPrompt.js'
 import { MessageList } from './MessageList.js'
@@ -15,6 +16,7 @@ import { SubsystemStatus } from './SubsystemStatus.js'
 import { Suggestions } from './Suggestions.js'
 import { TeamPanel } from './TeamPanel.js'
 import { WelcomeScreen } from './WelcomeScreen.js'
+import { notifyBackendResize, repaintAfterResize } from './resize-sync.js'
 
 type ActivePane = 'messages' | 'input'
 
@@ -63,11 +65,21 @@ export function App() {
   const backend = useBackend()
   const state = useAppState()
   const dispatch = useAppDispatch()
+  const renderer = useRenderer()
   const [activePane, setActivePane] = useState<ActivePane>('input')
   const [inputStatus, setInputStatus] = useState('')
   const lastPromptPaneRef = useRef<ActivePane>('input')
-  const { width: termWidth } = useTerminalDimensions()
+  const { width: termWidth, height: termHeight } = useTerminalDimensions()
   const welcomePromptWidth = Math.min(84, Math.max(40, termWidth - 8))
+
+  useEffect(() => {
+    notifyBackendResize(backend, termWidth, termHeight)
+  }, [backend, termHeight, termWidth])
+
+  useOnResize((width, height) => {
+    notifyBackendResize(backend, width, height)
+    repaintAfterResize(renderer)
+  })
 
   useEffect(() => {
     const handler = (msg: BackendMessage) => {
@@ -314,7 +326,7 @@ export function App() {
     : `${inputStatus || composerHint(false, state.keybindingConfig)}${queueSuffix}`
 
   return (
-    <box flexDirection="column" height="100%">
+    <box flexDirection="column" width="100%" height="100%" backgroundColor={c.bg}>
       {!isWelcome && (
         <StatusLine
           cwd={state.cwd}
@@ -325,7 +337,14 @@ export function App() {
         />
       )}
       {isWelcome ? (
-        <box flexGrow={1} flexDirection="column" alignItems="center" justifyContent="center">
+        <box
+          flexGrow={1}
+          flexDirection="column"
+          alignItems="center"
+          justifyContent="center"
+          width="100%"
+          backgroundColor={c.bg}
+        >
           <WelcomeScreen />
           <box
             marginTop={1}
@@ -333,8 +352,9 @@ export function App() {
             border
             borderStyle="rounded"
             borderColor="#45475A"
+            backgroundColor={c.bg}
             paddingX={1}
-            title={composerHint(false)}
+            title={composerHint(false, state.keybindingConfig)}
             titleAlignment="right"
           >
             <InputPrompt isActive onActivate={() => setActivePane('input')} viewMode="prompt" />
@@ -346,7 +366,7 @@ export function App() {
           </box>
         </box>
       ) : (
-        <box flexGrow={1} flexDirection="column">
+        <box flexGrow={1} flexDirection="column" backgroundColor={c.bg}>
           <box flexGrow={1}>
             <MessageList
               isActive={isTranscript || activePane === 'messages'}
@@ -364,6 +384,7 @@ export function App() {
             border
             borderStyle="rounded"
             borderColor="#45475A"
+            backgroundColor={c.bg}
             paddingX={1}
             title={inputTitle}
             titleAlignment="right"

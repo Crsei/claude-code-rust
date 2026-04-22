@@ -317,6 +317,26 @@ components are not subscribing to terminal dimension changes.
 
 ---
 
+## 17. Maximizing then restoring the terminal can leave white horizontal artifacts
+
+**Status**: Open (2026-04-22, TS/OpenTUI frontend)
+
+**Description**: On Windows terminals using the OpenTUI frontend, toggling the terminal window between normal size and maximized/fullscreen can leave white horizontal rows across the alternate-screen UI. The app content continues to work, but the stale rows remain visible after the resize finishes.
+
+**Expected behavior**: Entering or leaving a maximized/fullscreen terminal window should trigger a complete repaint of the alternate-screen surface, without leftover rows from the previous frame.
+
+**Evidence so far**:
+1. The issue does not reproduce on initial startup, so it is tied to resize handling rather than first paint.
+2. OpenTUI's `processResize()` path resizes the renderer and schedules a redraw, but does not explicitly clear the terminal surface in the normal alternate-screen path.
+3. The TS frontend now forwards resize events to the backend, but fullscreen/maximize transitions may still need an explicit native clear + immediate rerender to avoid stale rows.
+
+**Related files**:
+- `ui/src/components/App.tsx`
+- `ui/src/components/resize-sync.ts`
+- `ui/node_modules/@opentui/core/index-kgg0v67t.js` — `processResize()`, `clearTerminal()`
+
+---
+
 ## Browser MCP rendering path not exercised against a real server
 
 **Status**: Open (2026-04-18)
