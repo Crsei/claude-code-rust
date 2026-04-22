@@ -38,7 +38,13 @@ const KNOWN_SYSTEM_LEVELS: ReadonlySet<SystemLevel> = new Set<SystemLevel>([
   'debug',
 ])
 
-function systemLevelFromRaw(level: string | undefined): SystemLevel {
+/**
+ * Normalize a free-form level string (from `RawMessage.level`) into the
+ * closed `SystemLevel` set. Unknown values fall back to `'info'`. Exported
+ * so message leaf components can share the mapping without re-running
+ * the full adapter.
+ */
+export function systemLevelFromRaw(level: string | undefined): SystemLevel {
   if (!level) {
     return 'info'
   }

@@ -1,22 +1,33 @@
 import React from 'react'
-import { shortcutLabel } from '../keybindings.js'
-import { c } from '../theme.js'
-import type { ToolGroupRenderItem } from '../store/message-model.js'
-import { useAppState } from '../store/app-store.js'
+import { shortcutLabel } from '../../keybindings.js'
+import { c } from '../../theme.js'
+import type { ToolGroupRenderItem } from '../../store/message-model.js'
+import { useAppState } from '../../store/app-store.js'
+import type { ToolStatus } from '../../view-model/types.js'
 
-interface Props {
+/**
+ * Lite-native port of the sample tree's `GroupedToolUseContent`
+ * (`ui/examples/upstream-patterns/src/components/messages/GroupedToolUseContent.tsx`),
+ * re-hosted on top of the Lite render pipeline's `ToolGroupRenderItem`
+ * shape.
+ *
+ * The colour map is keyed by `ToolStatus` from the view-model layer so
+ * it stays aligned with the adapter's status classification.
+ */
+
+type Props = {
   item: ToolGroupRenderItem
 }
 
-const STATUS_COLORS = {
+const STATUS_COLORS: Record<ToolStatus, string> = {
   pending: c.dim,
   running: c.info,
   success: c.success,
   error: c.error,
   cancelled: c.warning,
-} as const
+}
 
-export function ToolGroup({ item }: Props) {
+export function ToolGroupMessage({ item }: Props) {
   const { keybindingConfig } = useAppState()
   const color = STATUS_COLORS[item.status]
   const expandHint = `${shortcutLabel('app:toggleTranscript', { context: 'Global', config: keybindingConfig })} to expand`
