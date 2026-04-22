@@ -78,7 +78,7 @@ const server = Bun.serve({
   },
 })
 
-console.log(`[subagent-dashboard] listening on http://127.0.0.1:${server.port}`)
+console.log(`[subagent-dashboard] listening on http://placeholder.invalid:${server.port}`)
 
 const shutdown = () => {
   clearInterval(heartbeat)
