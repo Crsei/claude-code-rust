@@ -43,6 +43,26 @@ cargo build --release
 cd ui && bun install && bun run dev
 ```
 
+### 构建前资源检查（多 worktree 并行开发）
+
+- 在执行任何 `cargo build` / `cargo check` / `cargo test` / `cargo clippy` 之前，先检查整机内存占用与当前 `rust-analyzer` 进程数。
+- 多个 worktree 并行开发时，全机**最多只能同时运行 2 个 `rust-analyzer`**。如果准备打开第 3 个 Rust worktree，必须先关闭一个已有 worktree 的编辑器 / LSP，或显式停掉对应 `rust-analyzer`。
+- 如果当前内存压力已经偏高，不要继续叠加新的 `cargo` 编译任务；先释放内存，再开始构建、测试或 `clippy`。
+- Windows / PowerShell 下优先用下面的命令做快速检查：
+
+```powershell
+Get-CimInstance Win32_OperatingSystem |
+  Select-Object @{Name='TotalGB';Expression={[math]::Round($_.TotalVisibleMemorySize / 1MB, 1)}},
+                @{Name='FreeGB';Expression={[math]::Round($_.FreePhysicalMemory / 1MB, 1)}}
+
+Get-Process rust-analyzer -ErrorAction SilentlyContinue |
+  Select-Object Id, ProcessName,
+                @{Name='WorkingSetGB';Expression={[math]::Round($_.WorkingSet64 / 1GB, 2)}},
+                Path
+```
+
+如果发现 `rust-analyzer` 已经达到 2 个，默认先不要再开新的 Rust worktree IDE 会话，也不要在新的 worktree 里直接跑 `cargo`，先回收已有工作树的 LSP / 内存占用。
+
 ### 全局快捷启动
 
 在 PowerShell `$PROFILE` 中添加：
@@ -215,4 +235,5 @@ OAuth 登录流程 (`/login 2|3` + `/login-code`):
 ### 注意事项
 
 - 每次写完代码，编译过后查看有没有 warning，解决 warning（必须保证未使用的都在代码中起作用），然后构建相应的 e2e test
+- 运行任何 `cargo` 相关命令前，先检查内存占用和 `rust-analyzer` 数量；多 worktree 并行时全机最多 2 个 `rust-analyzer`
 - UI 已知问题记录在 `docs/KNOWN_ISSUES.md`，用户反馈的问题追加到该文件
