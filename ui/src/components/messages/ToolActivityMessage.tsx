@@ -1,26 +1,38 @@
 import React from 'react'
-import type { ViewMode } from '../keybindings.js'
-import { c } from '../theme.js'
-import type { ToolActivityRenderItem } from '../store/message-model.js'
+import type { ViewMode } from '../../keybindings.js'
+import { c } from '../../theme.js'
+import type { ToolActivityRenderItem } from '../../store/message-model.js'
+import type { ToolStatus } from '../../view-model/types.js'
 
-interface Props {
+/**
+ * Lite-native port of the sample tree's `AssistantToolUseMessage` +
+ * `UserToolResultMessage` pair, collapsed into one leaf that reads the
+ * current render item's merged `status` / `outputSummary`. See:
+ * - `ui/examples/upstream-patterns/src/components/messages/AssistantToolUseMessage.tsx`
+ * - `ui/examples/upstream-patterns/src/components/messages/UserToolResultMessage/`
+ *
+ * The status-style table uses `ToolStatus` from the view-model layer
+ * (Issue 01 adapter), so the closed set here stays in sync with the
+ * adapter's `classifyToolStatus` output.
+ */
+
+type Props = {
   item: ToolActivityRenderItem
   viewMode: ViewMode
 }
 
-const STATUS_STYLES = {
+const STATUS_STYLES: Record<ToolStatus, { label: string; color: string }> = {
   pending: { label: 'PENDING', color: c.dim },
   running: { label: 'RUN', color: c.info },
   success: { label: 'OK', color: c.success },
   error: { label: 'ERROR', color: c.error },
   cancelled: { label: 'CANCELLED', color: c.warning },
-} as const
+}
 
 function extractAskUserQuestion(item: ToolActivityRenderItem): string | undefined {
   if (item.name !== 'AskUserQuestion') {
     return undefined
   }
-
   const question = item.input?.question
   return typeof question === 'string' && question.trim() ? question.trim() : undefined
 }
@@ -45,7 +57,7 @@ function AskUserQuestionCallout({ question }: { question: string }) {
   )
 }
 
-export function ToolActivity({ item, viewMode }: Props) {
+export function ToolActivityMessage({ item, viewMode }: Props) {
   const status = STATUS_STYLES[item.status]
   const question = extractAskUserQuestion(item)
   const detail = item.outputSummary

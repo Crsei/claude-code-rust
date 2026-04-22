@@ -10,6 +10,7 @@ export {
   assistantSegmentId,
   mapConversationMessageToViewModels,
   mapRawMessageToViewModels,
+  systemLevelFromRaw,
 } from './messages.js'
 export {
   categorizePermissionTool,
