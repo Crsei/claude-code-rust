@@ -38,6 +38,20 @@ pub enum LspEvent {
     },
     /// Full list of LSP servers (response to `QueryStatus`).
     ServerList { servers: Vec<LspServerInfo> },
+    /// Ask the frontend to show the "install suggested LSP" prompt.
+    ///
+    /// Mirrors upstream `LspRecommendationMenu`. The frontend replies via
+    /// [`LspCommand::RecommendationResponse`].
+    RecommendationRequest {
+        #[serde(flatten)]
+        payload: LspRecommendationPayload,
+    },
+    /// Current persisted settings for recommendation prompts (response to
+    /// [`LspCommand::QuerySettings`]). Lets the frontend show "muted
+    /// plugins" or "all disabled" state in an LSP settings view.
+    SettingsSnapshot {
+        settings: LspRecommendationSettings,
+    },
 }
 
 /// Events emitted by the MCP subsystem.
@@ -193,6 +207,26 @@ pub enum LspCommand {
     StopServer { language_id: String },
     RestartServer { language_id: String },
     QueryStatus,
+    /// Return the currently-persisted recommendation settings as an
+    /// [`LspEvent::SettingsSnapshot`].
+    QuerySettings,
+    /// User's reply to an [`LspEvent::RecommendationRequest`]. `decision`
+    /// is one of `"yes"`, `"no"`, `"never"`, `"disable"`. `never` mutes
+    /// future prompts for the named plugin; `disable` turns the whole
+    /// prompt off. Both persist to the user-level `settings.json`.
+    RecommendationResponse {
+        request_id: String,
+        plugin_name: String,
+        decision: String,
+    },
+    /// Clear a previously-muted plugin from the "never recommend" list.
+    /// Used by an LSP settings view to let the user undo a past
+    /// `"never for X"` choice.
+    UnmutePlugin { plugin_name: String },
+    /// Explicit toggle for the global "disable all recommendations"
+    /// switch, so a settings view can flip it without having to
+    /// synthesize a fake response.
+    SetRecommendationsDisabled { disabled: bool },
 }
 
 /// Commands the frontend can send to the MCP subsystem.
@@ -412,6 +446,84 @@ mod tests {
         let value = serde_json::to_value(&event).expect("serialize");
         assert_eq!(value["kind"], "server_list");
         assert_eq!(value["servers"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn lsp_event_recommendation_request_serializes_flat() {
+        let event = LspEvent::RecommendationRequest {
+            payload: LspRecommendationPayload {
+                request_id: "req-1".into(),
+                plugin_name: "rust-analyzer".into(),
+                plugin_description: Some("Rust language server".into()),
+                file_extension: ".rs".into(),
+                language_id: Some("rust".into()),
+            },
+        };
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(value["kind"], "recommendation_request");
+        // `#[serde(flatten)]` means payload fields sit next to `kind`.
+        assert_eq!(value["request_id"], "req-1");
+        assert_eq!(value["plugin_name"], "rust-analyzer");
+        assert_eq!(value["file_extension"], ".rs");
+    }
+
+    #[test]
+    fn lsp_event_settings_snapshot_serializes() {
+        let event = LspEvent::SettingsSnapshot {
+            settings: LspRecommendationSettings {
+                disabled: false,
+                muted_plugins: vec!["pyright".into()],
+            },
+        };
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(value["kind"], "settings_snapshot");
+        assert_eq!(value["settings"]["disabled"], false);
+        assert_eq!(value["settings"]["muted_plugins"][0], "pyright");
+    }
+
+    #[test]
+    fn lsp_command_recommendation_response_deserializes() {
+        let json = r#"{
+            "kind":"recommendation_response",
+            "request_id":"req-1",
+            "plugin_name":"rust-analyzer",
+            "decision":"never"
+        }"#;
+        let cmd: LspCommand = serde_json::from_str(json).expect("deserialize");
+        match cmd {
+            LspCommand::RecommendationResponse {
+                request_id,
+                plugin_name,
+                decision,
+            } => {
+                assert_eq!(request_id, "req-1");
+                assert_eq!(plugin_name, "rust-analyzer");
+                assert_eq!(decision, "never");
+            }
+            other => panic!("unexpected variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn lsp_command_unmute_plugin_deserializes() {
+        let json = r#"{"kind":"unmute_plugin","plugin_name":"pyright"}"#;
+        let cmd: LspCommand = serde_json::from_str(json).unwrap();
+        match cmd {
+            LspCommand::UnmutePlugin { plugin_name } => {
+                assert_eq!(plugin_name, "pyright");
+            }
+            other => panic!("unexpected variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn lsp_command_set_recommendations_disabled_deserializes() {
+        let json = r#"{"kind":"set_recommendations_disabled","disabled":true}"#;
+        let cmd: LspCommand = serde_json::from_str(json).unwrap();
+        assert!(matches!(
+            cmd,
+            LspCommand::SetRecommendationsDisabled { disabled: true }
+        ));
     }
 
     #[test]
