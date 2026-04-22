@@ -18,10 +18,10 @@ export function StreamingMessage({ item }: Props) {
   return (
     <box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
       {item.thinking && <ThinkingPreview content={item.thinking} />}
-      <box paddingLeft={1} flexDirection="column" width="100%" selectable>
+      <box paddingLeft={1} flexDirection="column" width="100%" selectable backgroundColor={c.bg}>
         {item.content
-          ? <markdown content={item.content} streaming />
-          : <text fg={c.dim}>...</text>}
+          ? <markdown content={item.content} streaming bg={c.bg} />
+          : <text fg={c.dim} bg={c.bg}>...</text>}
       </box>
     </box>
   )

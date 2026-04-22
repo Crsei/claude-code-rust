@@ -497,10 +497,10 @@ export function InputPrompt({
 
   return (
     <box flexDirection="column" onMouseDown={() => activateInput()}>
-      <box flexDirection="row" paddingX={1}>
+      <box flexDirection="row" paddingX={1} backgroundColor={c.bg}>
         <text>
           <strong>
-            <span fg={inputActive ? c.accent : c.dim}>{'> '}</span>
+            <span fg={inputActive ? c.accent : c.dim} bg={c.bg}>{'> '}</span>
           </strong>
         </text>
         <ComposerBuffer

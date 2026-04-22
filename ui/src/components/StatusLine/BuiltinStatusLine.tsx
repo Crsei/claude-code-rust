@@ -61,59 +61,60 @@ export function BuiltinStatusLine({
       border={['bottom']}
       borderStyle="single"
       borderColor="#45475A"
+      backgroundColor={c.bg}
     >
-      <text fg={c.accent}>{dir}</text>
-      <text fg={c.dim}> | </text>
+      <text fg={c.accent} bg={c.bg}>{dir}</text>
+      <text fg={c.dim} bg={c.bg}> | </text>
       {viewMode === 'transcript' && (
         <>
-          <text fg={c.info}>
-            <strong>[TRANSCRIPT]</strong>
+          <text fg={c.info} bg={c.bg}>
+            <strong><span bg={c.bg}>[TRANSCRIPT]</span></strong>
           </text>
-          <text fg={c.dim}> | </text>
+          <text fg={c.dim} bg={c.bg}> | </text>
         </>
       )}
       {vimMode && (
         <>
-          <text>
+          <text bg={c.bg}>
             <strong>
-              <span fg={c.warning}>[{vimMode}]</span>
+              <span fg={c.warning} bg={c.bg}>[{vimMode}]</span>
             </strong>
           </text>
-          <text fg={c.dim}> | </text>
+          <text fg={c.dim} bg={c.bg}> | </text>
         </>
       )}
-      <text>{model}</text>
+      <text bg={c.bg}>{model}</text>
       {runningAgents > 0 && (
         <>
-          <text fg={c.dim}> | </text>
-          <text fg="#A6E3A1">{runningAgents} agent{runningAgents > 1 ? 's' : ''}</text>
+          <text fg={c.dim} bg={c.bg}> | </text>
+          <text fg="#A6E3A1" bg={c.bg}>{runningAgents} agent{runningAgents > 1 ? 's' : ''}</text>
         </>
       )}
       {activeTeams > 0 && (
         <>
-          <text fg={c.dim}> | </text>
-          <text fg="#CBA6F7">{activeTeams} team{activeTeams > 1 ? 's' : ''}</text>
+          <text fg={c.dim} bg={c.bg}> | </text>
+          <text fg="#CBA6F7" bg={c.bg}>{activeTeams} team{activeTeams > 1 ? 's' : ''}</text>
         </>
       )}
       {(connectedMcp > 0 || runningLsp > 0) && (
         <>
-          <text fg={c.dim}> | </text>
-          {runningLsp > 0 && <text fg="#89B4FA">LSP:{runningLsp}</text>}
-          {runningLsp > 0 && connectedMcp > 0 && <text fg={c.dim}>/</text>}
-          {connectedMcp > 0 && <text fg="#CBA6F7">MCP:{connectedMcp}</text>}
+          <text fg={c.dim} bg={c.bg}> | </text>
+          {runningLsp > 0 && <text fg="#89B4FA" bg={c.bg}>LSP:{runningLsp}</text>}
+          {runningLsp > 0 && connectedMcp > 0 && <text fg={c.dim} bg={c.bg}>/</text>}
+          {connectedMcp > 0 && <text fg="#CBA6F7" bg={c.bg}>MCP:{connectedMcp}</text>}
         </>
       )}
       {customError && (
         <>
-          <text fg={c.dim}> | </text>
-          <text fg="#F38BA8">statusline: {customError}</text>
+          <text fg={c.dim} bg={c.bg}> | </text>
+          <text fg="#F38BA8" bg={c.bg}>statusline: {customError}</text>
         </>
       )}
       <box flexGrow={1} />
-      <text fg={c.dim}>Tokens: </text>
-      <text>{formatTokens(usage.inputTokens + usage.outputTokens)}</text>
-      <text fg={c.dim}> | Cost: </text>
-      <text fg={c.success}>{formatCost(usage.costUsd)}</text>
+      <text fg={c.dim} bg={c.bg}>Tokens: </text>
+      <text bg={c.bg}>{formatTokens(usage.inputTokens + usage.outputTokens)}</text>
+      <text fg={c.dim} bg={c.bg}> | Cost: </text>
+      <text fg={c.success} bg={c.bg}>{formatCost(usage.costUsd)}</text>
     </box>
   )
 }

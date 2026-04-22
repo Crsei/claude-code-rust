@@ -26,7 +26,7 @@ export function UserTextMessage({ item }: Props) {
         paddingRight={1}
         selectable
       >
-        <markdown content={item.content} />
+        <markdown content={item.content} bg={c.userBubbleBg} />
       </box>
     </box>
   )

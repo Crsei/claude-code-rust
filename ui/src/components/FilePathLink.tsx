@@ -33,9 +33,11 @@ type Props = {
   label?: string
   /** Foreground color override. Defaults to the Lite info accent. */
   fg?: string
+  /** Background color override. Defaults to the app background. */
+  bg?: string
 }
 
-export function FilePathLink({ filePath, label, fg = c.info }: Props) {
+export function FilePathLink({ filePath, label, fg = c.info, bg = c.bg }: Props) {
   const display = label ?? filePath
-  return <text fg={fg}>{osc8Link(fileUrl(filePath), display)}</text>
+  return <text fg={fg} bg={bg}>{osc8Link(fileUrl(filePath), display)}</text>
 }
