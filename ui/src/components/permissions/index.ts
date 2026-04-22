@@ -1,10 +1,25 @@
 /**
- * Placeholder barrel for the permission UX migration slice.
+ * Barrel for the Lite-native permission UI family (Issue 04).
  *
- * New permission components should consume
- * `PermissionRequestViewModel` from `ui/src/view-model` via
- * `mapPermissionRequestToViewModel` in `ui/src/adapters/permissions.ts`.
+ * Consumers should import `PermissionRequestDialog` — a category-aware
+ * dialog that runs the incoming `PermissionRequest` through the Issue
+ * 01 adapter and picks a body variant (`BashPermissionRequest`,
+ * `FileEditPermissionRequest`, `FileWritePermissionRequest`,
+ * `WebFetchPermissionRequest`, `FallbackPermissionRequest`) from this
+ * module.
  *
- * No active exports yet — see Issue 04 (permission and tooling UX slice).
+ * Individual variants are exported too so higher-level features
+ * (e.g. an inline planning approval prompt) can reuse them without
+ * going through the dialog frame.
  */
-export {}
+export { BashPermissionRequest } from './BashPermissionRequest.js'
+export { FallbackPermissionRequest } from './FallbackPermissionRequest.js'
+export { FileEditPermissionRequest } from './FileEditPermissionRequest.js'
+export { FileWritePermissionRequest } from './FileWritePermissionRequest.js'
+export { PermissionDialogFrame } from './PermissionDialogFrame.js'
+export {
+  PermissionPromptOptions,
+  resolveHotkey,
+} from './PermissionPromptOptions.js'
+export { PermissionRequestDialog } from './PermissionRequestDialog.js'
+export { WebFetchPermissionRequest } from './WebFetchPermissionRequest.js'

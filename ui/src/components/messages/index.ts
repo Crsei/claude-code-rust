@@ -9,6 +9,7 @@
  * sample tree's monolithic `Message`/`MessageRow` runtime.
  */
 export { AssistantTextMessage } from './AssistantTextMessage.js'
+export { FileEditToolPreview, isFileEditToolName } from './FileEditToolPreview.js'
 export { StreamingMessage } from './StreamingMessage.js'
 export { SystemMessage } from './SystemMessage.js'
 export { ThinkingPreview } from './ThinkingPreview.js'

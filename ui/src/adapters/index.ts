@@ -7,6 +7,11 @@ export {
   normalizeToolResultBlocks,
 } from './content-blocks.js'
 export {
+  extractFileEditContext,
+  type FileEditContext,
+  type FileEditEntry,
+} from './file-edit.js'
+export {
   assistantSegmentId,
   mapConversationMessageToViewModels,
   mapRawMessageToViewModels,

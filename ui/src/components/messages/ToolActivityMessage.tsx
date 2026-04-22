@@ -3,6 +3,7 @@ import type { ViewMode } from '../../keybindings.js'
 import { c } from '../../theme.js'
 import type { ToolActivityRenderItem } from '../../store/message-model.js'
 import type { ToolStatus } from '../../view-model/types.js'
+import { FileEditToolPreview, isFileEditToolName } from './FileEditToolPreview.js'
 
 /**
  * Lite-native port of the sample tree's `AssistantToolUseMessage` +
@@ -60,6 +61,7 @@ function AskUserQuestionCallout({ question }: { question: string }) {
 export function ToolActivityMessage({ item, viewMode }: Props) {
   const status = STATUS_STYLES[item.status]
   const question = extractAskUserQuestion(item)
+  const showEditPreview = isFileEditToolName(item.name)
   const detail = item.outputSummary
     ? `${item.inputSummary} -> ${item.outputSummary}`
     : item.inputSummary || '(no input summary)'
@@ -74,12 +76,17 @@ export function ToolActivityMessage({ item, viewMode }: Props) {
           <text fg={c.warning}>
             <strong>{item.name}</strong>
           </text>
-          {!question && (
+          {!question && !showEditPreview && (
             <text fg={item.isError ? c.error : c.dim} selectable>
               {detail}
             </text>
           )}
         </box>
+        {showEditPreview && (
+          <box paddingLeft={2} width="100%">
+            <FileEditToolPreview toolName={item.name} input={item.input} />
+          </box>
+        )}
         {question && (
           <box paddingLeft={2} paddingTop={1} width="100%">
             <AskUserQuestionCallout question={question} />
@@ -114,6 +121,9 @@ export function ToolActivityMessage({ item, viewMode }: Props) {
           {question
             ? <AskUserQuestionCallout question={question} />
             : <text selectable>{item.inputDetail || item.inputSummary || '(no input summary)'}</text>}
+          {showEditPreview && (
+            <FileEditToolPreview toolName={item.name} input={item.input} />
+          )}
           <text fg={c.dim}>Result</text>
           <text selectable fg={item.isError ? c.error : c.text}>
             {item.outputSummary || '(waiting for result)'}
