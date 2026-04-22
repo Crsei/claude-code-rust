@@ -1,11 +1,18 @@
 /**
- * Placeholder barrel for the message-presentation migration slice.
+ * Barrel for the Lite-native message leaf components.
  *
- * Components landing here should consume the normalized view-model types
- * from `ui/src/view-model` via the adapter in `ui/src/adapters/messages.ts`,
- * not the raw `FrontendContentBlock` / `RawMessage` shapes.
- *
- * No active exports yet — see Issue 03 (message presentation slice) for
- * the first real component.
+ * Each leaf renders exactly one discriminant of the pipeline's
+ * `RenderItem` shape (from `ui/src/store/message-model.ts`) and consumes
+ * the Issue 01 adapter layer where normalization is useful
+ * (`systemLevelFromRaw`, `ToolStatus`). The leaves are designed to be
+ * composed by a thin dispatcher (`MessageBubble`) rather than by the
+ * sample tree's monolithic `Message`/`MessageRow` runtime.
  */
-export {}
+export { AssistantTextMessage } from './AssistantTextMessage.js'
+export { StreamingMessage } from './StreamingMessage.js'
+export { SystemMessage } from './SystemMessage.js'
+export { ThinkingPreview } from './ThinkingPreview.js'
+export { ToolActivityMessage } from './ToolActivityMessage.js'
+export { ToolGroupMessage } from './ToolGroupMessage.js'
+export { ToolResultOrphanMessage } from './ToolResultOrphanMessage.js'
+export { UserTextMessage } from './UserTextMessage.js'
