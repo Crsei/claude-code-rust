@@ -13,6 +13,7 @@ type ResizeRenderer = {
   currentRenderBuffer: ClearableBuffer
   nextRenderBuffer: ClearableBuffer
   intermediateRender(): void
+  setBackgroundColor(color: RGBA): void
   rendererPtr?: unknown
   lib?: {
     clearTerminal?(rendererPtr: unknown): void
@@ -34,7 +35,12 @@ export function clearTerminalBuffers(renderer: ResizeRenderer): void {
   clearBuffer(renderer.nextRenderBuffer)
 }
 
+export function ensureOpaqueRendererBackground(renderer: ResizeRenderer): void {
+  renderer.setBackgroundColor(TERMINAL_BG)
+}
+
 export function repaintAfterResize(renderer: ResizeRenderer): void {
+  ensureOpaqueRendererBackground(renderer)
   clearTerminalSurface(renderer)
   clearTerminalBuffers(renderer)
   renderer.intermediateRender()
