@@ -39,10 +39,10 @@ export function ComposerBuffer({
 
   if (isReadOnly) {
     if (text.length > 0) {
-      return <text fg={c.dim}>{pasteCompact ? formatPasteSize(text) : text}</text>
+      return <text fg={c.dim} bg={c.bg}>{pasteCompact ? formatPasteSize(text) : text}</text>
     }
     return (
-      <text fg={c.dim}>
+      <text fg={c.dim} bg={c.bg}>
         Transcript mode. {shortcutLabel('app:toggleTranscript', { context: 'Global', config: keybindingConfig })} prompt.{' '}
         {shortcutLabel('transcript:exit', { context: 'Transcript', config: keybindingConfig })} exit.
       </text>
@@ -50,24 +50,24 @@ export function ComposerBuffer({
   }
 
   if (pasteCompact) {
-    return <text fg={c.warningBright}>{formatPasteSize(text)}</text>
+    return <text fg={c.warningBright} bg={c.bg}>{formatPasteSize(text)}</text>
   }
 
   if (text.length === 0) {
     return (
-      <text>
+      <text bg={c.bg}>
         <span fg={c.bg} bg={isActive ? c.text : c.dim}> </span>
-        <span fg="#45475A">{promptPlaceholder(isBusy)}</span>
+        <span fg="#45475A" bg={c.bg}>{promptPlaceholder(isBusy)}</span>
       </text>
     )
   }
 
   const { before, cursorChar, after } = splitBufferAtCursor(text, cursorPos)
   return (
-    <text fg={isBusy ? c.dim : undefined}>
-      {before}
+    <text fg={isBusy ? c.dim : undefined} bg={c.bg}>
+      <span bg={c.bg}>{before}</span>
       <span fg={c.bg} bg={isActive ? c.text : c.dim}>{cursorChar}</span>
-      {after}
+      <span bg={c.bg}>{after}</span>
     </text>
   )
 }

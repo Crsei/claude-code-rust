@@ -44,13 +44,13 @@ export function SystemMessage({ item }: Props) {
   return (
     <box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
       {level === 'question' ? (
-        <box border={['left']} borderColor={c.warning} paddingLeft={1}>
-          <text selectable fg={color}>
+        <box border={['left']} borderColor={c.warning} paddingLeft={1} backgroundColor={c.bg}>
+          <text selectable fg={color} bg={c.bg}>
             {prefix} {item.content}
           </text>
         </box>
       ) : (
-        <text selectable fg={color}>
+        <text selectable fg={color} bg={c.bg}>
           {prefix} {item.content}
         </text>
       )}

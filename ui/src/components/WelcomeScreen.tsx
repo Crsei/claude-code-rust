@@ -16,22 +16,22 @@ export function WelcomeScreen() {
   const connected = !!model
 
   return (
-    <box flexDirection="column" alignItems="center">
-      <text><strong><span fg={c.accent}>{LOGO}</span></strong></text>
+    <box flexDirection="column" alignItems="center" backgroundColor={c.bg}>
+      <text bg={c.bg}><strong><span fg={c.accent} bg={c.bg}>{LOGO}</span></strong></text>
       {connected ? (
-        <box flexDirection="column" gap={0} paddingX={2}>
-          <text>
-            <span fg={c.dim}>Model: </span>
-            <strong>{model}</strong>
+        <box flexDirection="column" gap={0} paddingX={2} backgroundColor={c.bg}>
+          <text bg={c.bg}>
+            <span fg={c.dim} bg={c.bg}>Model: </span>
+            <strong><span bg={c.bg}>{model}</span></strong>
           </text>
-          <box flexDirection="row">
-            <text fg={c.dim}>  cwd: </text>
+          <box flexDirection="row" backgroundColor={c.bg}>
+            <text fg={c.dim} bg={c.bg}>  cwd: </text>
             <FilePathLink filePath={cwd} />
           </box>
           {sessionId && (
-            <text>
-              <span fg={c.dim}>  Session: </span>
-              <span fg={c.dim}>{sessionId.slice(0, 8)}</span>
+            <text bg={c.bg}>
+              <span fg={c.dim} bg={c.bg}>  Session: </span>
+              <span fg={c.dim} bg={c.bg}>{sessionId.slice(0, 8)}</span>
             </text>
           )}
         </box>
