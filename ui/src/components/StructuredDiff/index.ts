@@ -1,12 +1,19 @@
 /**
- * Placeholder barrel for the structured-diff migration slice.
+ * Barrel for the Lite-native structured diff helpers.
  *
- * The existing active DiffView lives at
- * `ui/src/components/DiffView.tsx`. New diff renderers adapted from the
- * sample tree (`ui/examples/upstream-patterns/src/components/StructuredDiff/`)
- * should be added here once they consume the normalized tool-result view
- * model shape.
+ * Exports a pure hunk parser (`parseUnifiedDiff`), a simple
+ * `old_string` / `new_string` hunk builder (`hunkFromEdit`), and the
+ * `<StructuredDiff>` renderer that turns `DiffHunk[]` into OpenTUI JSX.
  *
- * No active exports yet — see Issues 03/04.
+ * Consumers are the new `permissions/` dialog family and the richer
+ * file-edit tool-result rendering — both added for Issue 04.
  */
-export {}
+export {
+  hunkFromEdit,
+  hunkGutterWidth,
+  parseUnifiedDiff,
+  type DiffHunk,
+  type DiffLine,
+  type DiffLineKind,
+} from './hunks.js'
+export { StructuredDiff } from './StructuredDiff.js'

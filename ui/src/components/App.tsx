@@ -10,7 +10,7 @@ import { AgentTreePanel } from './AgentTreePanel.js'
 import { Header } from './Header.js'
 import { InputPrompt } from './InputPrompt.js'
 import { MessageList } from './MessageList.js'
-import { PermissionDialog } from './PermissionDialog.js'
+import { PermissionRequestDialog } from './permissions/index.js'
 import { SubsystemStatus } from './SubsystemStatus.js'
 import { Suggestions } from './Suggestions.js'
 import { TeamPanel } from './TeamPanel.js'
@@ -370,7 +370,7 @@ export function App() {
           </box>
         </box>
       )}
-      {state.permissionRequest && <PermissionDialog request={state.permissionRequest} />}
+      {state.permissionRequest && <PermissionRequestDialog request={state.permissionRequest} />}
     </box>
   )
 }
