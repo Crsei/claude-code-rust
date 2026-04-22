@@ -84,7 +84,7 @@ const server = Bun.serve({
   },
 });
 
-console.log(`team-memory-server listening on http://127.0.0.1:${server.port}`);
+console.log(`team-memory-server listening on http://placeholder.invalid:${server.port}`);
 
 if (repo && teamMemPath) {
   mkdirSync(teamMemPath, { recursive: true });
