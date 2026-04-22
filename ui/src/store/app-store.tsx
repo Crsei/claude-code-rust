@@ -78,6 +78,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'PLUGIN_STATUS':
     case 'SKILLS_LOADED':
     case 'CUSTOM_STATUS_LINE_UPDATE':
+    case 'LSP_RECOMMENDATION_REQUEST':
+    case 'LSP_RECOMMENDATION_DISMISS':
+    case 'LSP_RECOMMENDATION_SETTINGS':
       return reduceSubsystems(state, action)
 
     case 'AGENT_SETTINGS_OPEN':

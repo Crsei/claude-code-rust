@@ -62,6 +62,47 @@ pub struct LspServerInfo {
     pub error: Option<String>,
 }
 
+/// Payload describing an LSP plugin recommendation prompt.
+///
+/// Emitted when the backend detects a file whose extension is served by
+/// a not-yet-installed LSP plugin (mirrors upstream `LspRecommendationMenu`
+/// at `ui/examples/upstream-patterns/src/components/LspRecommendation/`).
+/// The frontend shows a dialog and replies via
+/// [`LspCommand::RecommendationResponse`] with one of `yes` / `no` /
+/// `never` / `disable`.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LspRecommendationPayload {
+    /// Stable identifier the frontend echoes back in the response so the
+    /// backend can correlate multiple in-flight prompts.
+    pub request_id: String,
+    /// Plugin identifier (e.g. `"rust-analyzer"`).
+    pub plugin_name: String,
+    /// Optional longer description shown under the plugin name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin_description: Option<String>,
+    /// File extension (including the leading dot) that triggered the prompt.
+    pub file_extension: String,
+    /// Optional language id — provided when the backend wants the frontend
+    /// to display a more specific label than `file_extension` alone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language_id: Option<String>,
+}
+
+/// Snapshot of the "never recommend" / "disable all" preferences used by
+/// the LSP recommendation prompt. Persisted under the user-level
+/// `settings.json` and echoed back to the frontend when the settings
+/// view asks for them.
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct LspRecommendationSettings {
+    /// When `true`, the backend MUST NOT emit any further
+    /// `LspEvent::RecommendationRequest` events.
+    #[serde(default)]
+    pub disabled: bool,
+    /// Plugin names the user explicitly muted via "never for X".
+    #[serde(default)]
+    pub muted_plugins: Vec<String>,
+}
+
 // ---------------------------------------------------------------------------
 // MCP types
 // ---------------------------------------------------------------------------
