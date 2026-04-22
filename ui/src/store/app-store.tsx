@@ -17,6 +17,7 @@ export type {
   AppAction,
   AppState,
   BackgroundAgent,
+  CustomStatusLineState,
   PendingQuestion,
   PermissionRequest,
   QueuedSubmission,
@@ -75,6 +76,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'MCP_SERVER_STATE':
     case 'PLUGIN_STATUS':
     case 'SKILLS_LOADED':
+    case 'CUSTOM_STATUS_LINE_UPDATE':
       return reduceSubsystems(state, action)
 
     case 'PUSH_HISTORY':
