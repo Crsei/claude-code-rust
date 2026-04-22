@@ -1,11 +1,80 @@
 # Frontend Refactor Notes
 
-Date: 2026-04-21
+Date: 2026-04-21 (original) · updated 2026-04-22 (Issue 07 landing)
 Scope: `ui/`
 
 ## Purpose
 
 This note records how the newly imported upstream-style frontend files should be handled during the staged refactor of the current OpenTUI Lite frontend.
+
+## Migration status (2026-04-22)
+
+The staged migration plan covered by issues #90 → #96 has shipped.
+The adopted architecture is described in
+[ui/docs/ui-frontend-architecture.md](/F:/AIclassmanager/cc/rust/ui/docs/ui-frontend-architecture.md)
+and deferred upstream panels — with explicit protocol blockers — are
+enumerated in
+[ui/docs/ui-panels-deferred.md](/F:/AIclassmanager/cc/rust/ui/docs/ui-panels-deferred.md).
+
+Active-frontend additions that landed:
+
+- `ui/src/view-model/` + `ui/src/adapters/` — normalized cross-slice
+  types + IPC mappers (Issue 01 / #90).
+- `ui/src/components/FilePathLink.tsx`, `OrderedList.tsx`,
+  `PressEnterToContinue.tsx`, `TagTabs.tsx`,
+  `ValidationErrorsList.tsx`, `string-width.ts` — primitive re-hosts
+  (Issue 02 / #91).
+- `ui/src/components/messages/` — per-type message leaves.
+  `MessageBubble` is a thin dispatcher (Issue 03 / #92).
+- `ui/src/components/permissions/` — category-aware dialog family;
+  `ui/src/components/StructuredDiff/` — pure hunk parser + renderer
+  (Issue 04 / #93).
+- `ui/src/components/panels/` — per-subsystem cards consumed by
+  `SubsystemStatus.tsx` and `TeamPanel.tsx` (Issue 05 / #94).
+- `ui/src/components/PromptInput/` — composer submodules;
+  `InputPrompt.tsx` composes them (Issue 06 / #95).
+- `ui/src/components/StatusLine/` — built-in statusline derived from
+  the store plus optional user-configured `status_line_update`
+  overlay (Issue 07 / #96).
+
+Removed interim scaffolding:
+
+- Empty placeholder barrels `ui/src/components/mcp/index.ts`,
+  `shell/index.ts`, `teams/index.ts` — the real work landed under
+  `ui/src/components/panels/` (Issue 05) and `messages/` (Issue 03).
+- `ui/src/components/PermissionDialog.tsx` — monolithic dialog,
+  replaced by `permissions/PermissionRequestDialog`.
+- `ui/src/components/Header.tsx` — replaced by `StatusLine/`.
+- `ui/src/components/ThinkingBlock.tsx`, `ToolActivity.tsx`,
+  `ToolGroup.tsx` — replaced by / renamed into `messages/`.
+- `ui/src/components/input-prompt-{hooks,keys,utils}.ts` — relocated
+  into `PromptInput/` (git-rename preserves blame).
+
+Classification summary against the original A / B / C lists below:
+
+- **Class A → adopted**: `FilePathLink`, `PressEnterToContinue`,
+  `TagTabs`, `ValidationErrorsList`; the Lite `Spinner.tsx` already
+  covers the `spinner/` slot.
+- **Class B → adopted (partially)**: `StructuredDiff.tsx`,
+  `StructuredDiffList.tsx` (local pure parser + renderer), all
+  `permissions/` category variants, `mcp/`, `LspRecommendation/`,
+  `teams/`, `shell/` adopted as operational cards under
+  `components/panels/`. Richer MCP elicitation, LSP recommendation,
+  and shell-progress paths stay deferred — see
+  `ui-panels-deferred.md` for the protocol blockers.
+  `FileEditToolDiff.tsx` / `FileEditToolUpdatedMessage.tsx` are
+  adopted at the "show diff alongside tool activity" level via
+  `messages/FileEditToolPreview`.
+- **Class C → intentionally skipped**: `BaseTextInput.tsx`,
+  `VimTextInput.tsx`, `TextInput.tsx`, `VirtualMessageList.tsx`,
+  `ModelPicker.tsx`, `ThinkingToggle.tsx`, full `PromptInput/**`
+  runtime. The Lite `InputPrompt.tsx` keeps the OpenTUI keyboard
+  path and uses focused `PromptInput/` submodules for decomposition
+  rather than porting the upstream runtime wholesale.
+
+The A / B / C tables below stay for historical reference — they
+describe the source set we inherited, not the current active source
+tree.
 
 The active frontend remains:
 - [ui/src/main.tsx](/F:/AIclassmanager/cc/rust/ui/src/main.tsx:1)
