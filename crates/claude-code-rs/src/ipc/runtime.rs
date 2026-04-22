@@ -272,6 +272,9 @@ impl HeadlessRuntime {
                         super::subsystem_events::SubsystemEvent::Ide(e) => {
                             BackendMessage::IdeEvent { event: e }
                         }
+                        super::subsystem_events::SubsystemEvent::AgentSettings(e) => {
+                            BackendMessage::AgentSettingsEvent { event: e }
+                        }
                     };
                     let _ = self.sink.send(&msg);
                 }
