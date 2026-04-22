@@ -3,6 +3,8 @@ import type {
   AgentNode,
   AgentToolInfo,
   FrontendContentBlock,
+  LspRecommendationPayload,
+  LspRecommendationSettings,
   LspServerInfo,
   McpServerStatusInfo,
   PluginInfo,
@@ -65,6 +67,17 @@ export interface SubsystemState {
   plugins: PluginInfo[]
   skills: SkillInfo[]
   lastUpdated: number
+}
+
+/**
+ * Transient state for the LSP plugin recommendation prompt.
+ * `request` is populated while the dialog is visible; `settings` mirrors
+ * the persisted "never/disable" choices so an LSP settings view can
+ * render them without re-querying the backend.
+ */
+export interface LspRecommendationState {
+  request: LspRecommendationPayload | null
+  settings: LspRecommendationSettings
 }
 
 /**
@@ -132,6 +145,7 @@ export interface AppState {
   agentStreams: Record<string, AgentStreamState>
   teams: Record<string, TeamState>
   subsystems: SubsystemState
+  lspRecommendation: LspRecommendationState
   customStatusLine: CustomStatusLineState | null
   agentSettings: AgentSettingsState
 }
@@ -163,6 +177,7 @@ export const initialState: AppState = {
   agentStreams: {},
   teams: {},
   subsystems: { lsp: [], mcp: [], plugins: [], skills: [], lastUpdated: 0 },
+  lspRecommendation: { request: null, settings: { disabled: false, muted_plugins: [] } },
   customStatusLine: null,
   agentSettings: {
     entries: [],
@@ -257,6 +272,9 @@ export type SubsystemAction =
   | { type: 'PLUGIN_STATUS'; pluginId: string; name: string; status: string; error?: string }
   | { type: 'SKILLS_LOADED'; count: number }
   | { type: 'CUSTOM_STATUS_LINE_UPDATE'; lines: string[]; error?: string; updatedAt: number }
+  | { type: 'LSP_RECOMMENDATION_REQUEST'; payload: LspRecommendationPayload }
+  | { type: 'LSP_RECOMMENDATION_DISMISS' }
+  | { type: 'LSP_RECOMMENDATION_SETTINGS'; settings: LspRecommendationSettings }
 
 export type AgentSettingsAction =
   | { type: 'AGENT_SETTINGS_OPEN' }
