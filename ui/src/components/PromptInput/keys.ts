@@ -1,6 +1,6 @@
 import type { KeyEvent } from '@opentui/core'
-import type { KeyLike } from '../keybindings.js'
-import { isPlainTextInput } from './input-prompt-utils.js'
+import type { KeyLike } from '../../keybindings.js'
+import { isPlainTextInput } from './utils.js'
 
 export type ShortcutKey = KeyLike & {
   backspace?: boolean

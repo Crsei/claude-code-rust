@@ -1,4 +1,4 @@
-import { truncate } from '../utils.js'
+import { truncate } from '../../utils.js'
 
 const PASTE_DETECT_CHARS = 100
 

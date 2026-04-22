@@ -6,7 +6,7 @@ import {
   isPlainTextInput,
   promptPlaceholder,
   summarizeQueuedSubmissions,
-} from '../input-prompt-utils.js'
+} from '../PromptInput/utils.js'
 
 describe('isPasteInput', () => {
   test('single char is not paste', () => {
