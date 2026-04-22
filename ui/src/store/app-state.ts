@@ -1,6 +1,7 @@
 import type {
   AgentDefinitionEntry,
   AgentNode,
+  AgentToolInfo,
   FrontendContentBlock,
   LspServerInfo,
   McpServerStatusInfo,
@@ -83,6 +84,12 @@ export interface CustomStatusLineState {
  * State for the `/agents` settings dialog. `entries` is the full list
  * returned by the backend's `AgentSettingsEvent::List`; `lastError` surfaces
  * the most recent `error` event so the dialog can show an inline message.
+ *
+ * `availableTools` caches the last categorized tool-list response — the
+ * `ToolSelector` step uses it and only re-queries when stale. `generating`
+ * is `true` between `GenerateStarted` and `Generated`/`Error` so the
+ * wizard's `GenerateStep` can show a spinner, and `lastGenerated` carries
+ * the AI-produced draft back into the wizard's subsequent steps.
  */
 export interface AgentSettingsState {
   entries: AgentDefinitionEntry[]
@@ -90,6 +97,12 @@ export interface AgentSettingsState {
   lastError: string | null
   lastMessage: string | null
   lastUpdated: number
+  availableTools: AgentToolInfo[]
+  toolsLoadedAt: number
+  generating: boolean
+  lastGenerated:
+    | { identifier: string; whenToUse: string; systemPrompt: string }
+    | null
 }
 
 export interface AppState {
@@ -157,6 +170,10 @@ export const initialState: AppState = {
     lastError: null,
     lastMessage: null,
     lastUpdated: 0,
+    availableTools: [],
+    toolsLoadedAt: 0,
+    generating: false,
+    lastGenerated: null,
   },
 }
 
@@ -248,6 +265,16 @@ export type AgentSettingsAction =
   | { type: 'AGENT_SETTINGS_CHANGED'; name: string; entry?: AgentDefinitionEntry }
   | { type: 'AGENT_SETTINGS_ERROR'; name: string; error: string }
   | { type: 'AGENT_SETTINGS_CLEAR_NOTICE' }
+  | { type: 'AGENT_SETTINGS_TOOLS'; tools: AgentToolInfo[] }
+  | { type: 'AGENT_SETTINGS_EDITOR_OPENED'; filePath: string }
+  | { type: 'AGENT_SETTINGS_GENERATE_STARTED' }
+  | {
+      type: 'AGENT_SETTINGS_GENERATED'
+      identifier: string
+      whenToUse: string
+      systemPrompt: string
+    }
+  | { type: 'AGENT_SETTINGS_CLEAR_GENERATED' }
 
 export type InputAction =
   | { type: 'PUSH_HISTORY'; text: string }

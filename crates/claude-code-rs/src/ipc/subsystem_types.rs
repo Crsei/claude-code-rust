@@ -316,6 +316,26 @@ impl AgentDefinitionSource {
     }
 }
 
+/// Permission mode an agent should run under, matching the upstream
+/// `PermissionMode` enum in `utils/permissions/PermissionMode.ts`.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AgentPermissionMode {
+    Default,
+    AcceptEdits,
+    BypassPermissions,
+    Plan,
+}
+
+/// Memory scope for agent auto-memory — matches upstream `AgentMemoryScope`.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentMemoryScope {
+    User,
+    Project,
+    Local,
+}
+
 /// Full editable agent definition — round-trips between the frontend editor
 /// and an on-disk markdown file (`{scope}/agents/<name>.md`) with YAML
 /// frontmatter.
@@ -323,6 +343,11 @@ impl AgentDefinitionSource {
 /// Parallel to `McpServerConfigEntry`: the frontend treats this as the source
 /// of truth for a single agent and persists changes by sending an
 /// `AgentSettingsCommand::Upsert { entry }`.
+///
+/// Fields mirror the upstream `AgentDefinition` in
+/// `src/tools/AgentTool/loadAgentsDir.ts` (Full Build alignment). Fields that
+/// only make sense after the agent is loaded (`filename` / `file_path`) are
+/// informational — editors should not fabricate them.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AgentDefinitionEntry {
     /// Unique agent name / type (matches the filename without extension).
@@ -332,19 +357,89 @@ pub struct AgentDefinitionEntry {
     /// Markdown system prompt body.
     pub system_prompt: String,
     /// Tool allow-list. Empty means "inherit all tools" (no restriction).
+    ///
+    /// `["*"]` is accepted at parse time but normalized to `[]` so the
+    /// "all tools" contract lives in one place.
     #[serde(default)]
     pub tools: Vec<String>,
-    /// Optional model override (e.g. `"sonnet"`, `"opus"`, or a full ID).
+    /// Tool deny-list applied on top of `tools`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disallowed_tools: Vec<String>,
+    /// Optional model override (e.g. `"sonnet"`, `"opus"`, `"inherit"`, or a
+    /// full ID).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// Optional display color (named: red, orange, yellow, green, blue, purple, pink, cyan).
+    /// Optional display color (named: red, orange, yellow, green, blue,
+    /// purple, pink, cyan, automatic).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    /// Permission mode to run under.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<AgentPermissionMode>,
+    /// Memory scope — where the auto-memory writes land.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory: Option<AgentMemoryScope>,
+    /// Max turns for the sub-engine (uint for serialization sanity).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_turns: Option<u32>,
+    /// Effort tier when the agent is invoked ("low" | "medium" | "high" |
+    /// numeric). Carried verbatim to survive engine updates that extend the
+    /// set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    /// Run the agent in the background by default.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub background: bool,
+    /// Isolation mode (`"worktree"` or platform-specific extras). Stored as
+    /// a string to keep forward-compatibility with upstream additions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub isolation: Option<String>,
+    /// Skill names this agent should load when spawned.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<String>,
+    /// Hooks settings (opaque JSON — mirrors the upstream `HooksSettings`
+    /// shape, which is extensible). Editors round-trip it verbatim.
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+    pub hooks: serde_json::Value,
+    /// MCP server specs — either references by name (`String`) or inline
+    /// configs (`{name: config}`). Opaque JSON for forward-compat.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_servers: Vec<serde_json::Value>,
+    /// Optional initial prompt seeded into the sub-engine's first turn.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initial_prompt: Option<String>,
+    /// On-disk filename (without extension) when it differs from `name`. This
+    /// mirrors the upstream `AgentDefinition.filename` used to resolve
+    /// `getActualAgentFilePath`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
     /// Where this definition lives.
     pub source: AgentDefinitionSource,
     /// Absolute path to the backing file, when known. `None` for built-ins.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_path: Option<String>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// Brief description of a tool available to agents — used to populate the
+/// frontend's `ToolSelector` categorized list.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AgentToolInfo {
+    /// Tool name as registered with the engine (e.g. `"Read"`, `"Bash"`).
+    pub name: String,
+    /// Bucket this tool belongs in — keeps the frontend categorisation data
+    /// in one place. One of: `"read_only"`, `"edit"`, `"execution"`,
+    /// `"mcp"`, `"other"`.
+    pub category: String,
+    /// Optional short description.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// MCP server name when this tool comes from an MCP connection.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_server: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
