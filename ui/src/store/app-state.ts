@@ -1,4 +1,5 @@
 import type {
+  AgentDefinitionEntry,
   AgentNode,
   FrontendContentBlock,
   LspServerInfo,
@@ -78,6 +79,19 @@ export interface CustomStatusLineState {
   updatedAt: number
 }
 
+/**
+ * State for the `/agents` settings dialog. `entries` is the full list
+ * returned by the backend's `AgentSettingsEvent::List`; `lastError` surfaces
+ * the most recent `error` event so the dialog can show an inline message.
+ */
+export interface AgentSettingsState {
+  entries: AgentDefinitionEntry[]
+  open: boolean
+  lastError: string | null
+  lastMessage: string | null
+  lastUpdated: number
+}
+
 export interface AppState {
   messages: RawMessage[]
   streamingText: string
@@ -106,6 +120,7 @@ export interface AppState {
   teams: Record<string, TeamState>
   subsystems: SubsystemState
   customStatusLine: CustomStatusLineState | null
+  agentSettings: AgentSettingsState
 }
 
 export const initialState: AppState = {
@@ -136,6 +151,13 @@ export const initialState: AppState = {
   teams: {},
   subsystems: { lsp: [], mcp: [], plugins: [], skills: [], lastUpdated: 0 },
   customStatusLine: null,
+  agentSettings: {
+    entries: [],
+    open: false,
+    lastError: null,
+    lastMessage: null,
+    lastUpdated: 0,
+  },
 }
 
 export type CoreAction =
@@ -219,6 +241,14 @@ export type SubsystemAction =
   | { type: 'SKILLS_LOADED'; count: number }
   | { type: 'CUSTOM_STATUS_LINE_UPDATE'; lines: string[]; error?: string; updatedAt: number }
 
+export type AgentSettingsAction =
+  | { type: 'AGENT_SETTINGS_OPEN' }
+  | { type: 'AGENT_SETTINGS_CLOSE' }
+  | { type: 'AGENT_SETTINGS_LIST'; entries: AgentDefinitionEntry[] }
+  | { type: 'AGENT_SETTINGS_CHANGED'; name: string; entry?: AgentDefinitionEntry }
+  | { type: 'AGENT_SETTINGS_ERROR'; name: string; error: string }
+  | { type: 'AGENT_SETTINGS_CLEAR_NOTICE' }
+
 export type InputAction =
   | { type: 'PUSH_HISTORY'; text: string }
   | { type: 'SET_HISTORY_INDEX'; index: number }
@@ -238,4 +268,5 @@ export type AppAction =
   | AgentTreeAction
   | TeamAction
   | SubsystemAction
+  | AgentSettingsAction
   | InputAction
