@@ -10,6 +10,7 @@ import { c } from '../theme.js'
 import { AgentsDialog } from './agent-settings/index.js'
 import { AgentTreePanel } from './AgentTreePanel.js'
 import { InputPrompt } from './InputPrompt.js'
+import { LspRecommendationDialog } from './LspRecommendationDialog.js'
 import { MessageList } from './MessageList.js'
 import { PermissionRequestDialog } from './permissions/index.js'
 import { StatusLine } from './StatusLine/index.js'
@@ -240,11 +241,23 @@ export function App() {
         }
 
         // ── Subsystem events ──────────────────────────────────
-        case 'lsp_event':
-          if (msg.event.kind === 'server_state_changed') {
-            dispatch({ type: 'LSP_SERVER_STATE', languageId: msg.event.language_id, state: msg.event.state, error: msg.event.error })
+        case 'lsp_event': {
+          const evt = msg.event
+          switch (evt.kind) {
+            case 'server_state_changed':
+              dispatch({ type: 'LSP_SERVER_STATE', languageId: evt.language_id, state: evt.state, error: evt.error })
+              break
+            case 'recommendation_request': {
+              const { kind: _kind, ...payload } = evt
+              dispatch({ type: 'LSP_RECOMMENDATION_REQUEST', payload })
+              break
+            }
+            case 'settings_snapshot':
+              dispatch({ type: 'LSP_RECOMMENDATION_SETTINGS', settings: evt.settings })
+              break
           }
           break
+        }
         case 'mcp_event':
           if (msg.event.kind === 'server_state_changed') {
             dispatch({ type: 'MCP_SERVER_STATE', serverName: msg.event.server_name, state: msg.event.state, error: msg.event.error })
@@ -433,6 +446,9 @@ export function App() {
         </box>
       )}
       {state.permissionRequest && <PermissionRequestDialog request={state.permissionRequest} />}
+      {!state.permissionRequest && state.lspRecommendation.request && (
+        <LspRecommendationDialog payload={state.lspRecommendation.request} />
+      )}
       <AgentsDialog />
     </box>
   )

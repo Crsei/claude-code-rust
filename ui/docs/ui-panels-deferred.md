@@ -48,13 +48,17 @@ Per-server reconnect workflow with retry backoff visualization.
 
 ### `ui/examples/upstream-patterns/src/components/LspRecommendation/LspRecommendationMenu.tsx`
 
-"Install suggested LSPs" flow reached from a menu hint.
+**Ported.** Lives at
+`ui/src/components/LspRecommendationDialog.tsx` and renders inside
+`App.tsx` when the backend emits `LspEvent::RecommendationRequest`.
+Persistence of the "never for X" / "disable all" choices goes through
+new `LspCommand::RecommendationResponse` / `UnmutePlugin` /
+`SetRecommendationsDisabled` commands and is stored under the
+`lspRecommendations` key in the user-level `settings.json`.
 
-- **Blocker**: `LspServerInfo` does not include a `recommended`
-  bucket or an install action channel.
-- **Unblock path**: teach the Rust LSP manager to publish a
-  `recommended_languages` snapshot alongside the active list, and add
-  an `lsp_install_request` IPC message.
+Install path itself is still a TODO — today the backend just
+acknowledges `yes` with an info message. Hook it up to the `/lsp`
+install flow when that lands.
 
 ### `ui/examples/upstream-patterns/src/components/DiagnosticsDisplay.tsx`
 

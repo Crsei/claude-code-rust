@@ -65,7 +65,164 @@ pub fn handle_lsp_command(cmd: super::subsystem_events::LspCommand) -> Vec<Backe
                 event: LspEvent::ServerList { servers },
             }]
         }
+        LspCommand::QuerySettings => {
+            let settings = load_lsp_recommendation_settings();
+            vec![BackendMessage::LspEvent {
+                event: LspEvent::SettingsSnapshot { settings },
+            }]
+        }
+        LspCommand::RecommendationResponse {
+            request_id,
+            plugin_name,
+            decision,
+        } => {
+            tracing::info!(
+                request_id = %request_id,
+                plugin_name = %plugin_name,
+                decision = %decision,
+                "LSP recommendation response"
+            );
+            let (settings, info_text) = apply_recommendation_decision(&plugin_name, &decision);
+            let mut msgs = Vec::with_capacity(2);
+            msgs.push(BackendMessage::LspEvent {
+                event: LspEvent::SettingsSnapshot { settings },
+            });
+            if let Some(text) = info_text {
+                msgs.push(BackendMessage::SystemInfo {
+                    text,
+                    level: "info".to_string(),
+                });
+            }
+            msgs
+        }
+        LspCommand::UnmutePlugin { plugin_name } => {
+            let settings = unmute_lsp_plugin(&plugin_name);
+            vec![BackendMessage::LspEvent {
+                event: LspEvent::SettingsSnapshot { settings },
+            }]
+        }
+        LspCommand::SetRecommendationsDisabled { disabled } => {
+            let settings = set_lsp_recommendations_disabled(disabled);
+            vec![BackendMessage::LspEvent {
+                event: LspEvent::SettingsSnapshot { settings },
+            }]
+        }
     }
+}
+
+// ---------------------------------------------------------------------------
+// LSP recommendation settings persistence
+// ---------------------------------------------------------------------------
+
+/// Key inside the user-level `settings.json` object that holds the
+/// `LspRecommendationSettings` payload.
+const LSP_RECOMMENDATIONS_KEY: &str = "lspRecommendations";
+
+/// Read the `lspRecommendations` block from the user settings file.
+///
+/// Returns a `Default` value when the file is missing, the key is
+/// absent, or the stored value fails to deserialize — a corrupt entry
+/// should never brick the prompt pipeline.
+pub fn load_lsp_recommendation_settings() -> LspRecommendationSettings {
+    let path = cc_config::settings::user_settings_path();
+    let Ok(value) = read_settings_value(&path) else {
+        return LspRecommendationSettings::default();
+    };
+    value
+        .get(LSP_RECOMMENDATIONS_KEY)
+        .and_then(|v| serde_json::from_value::<LspRecommendationSettings>(v.clone()).ok())
+        .unwrap_or_default()
+}
+
+/// Persist `settings` under the `lspRecommendations` key, preserving every
+/// other field in the user settings file.
+fn save_lsp_recommendation_settings(settings: &LspRecommendationSettings) {
+    let path = cc_config::settings::user_settings_path();
+    let mut value = read_settings_value(&path).unwrap_or_else(|err| {
+        tracing::warn!(error = %err, "LSP recommendations: read user settings failed; overwriting with fresh object");
+        serde_json::Value::Object(serde_json::Map::new())
+    });
+    if !value.is_object() {
+        value = serde_json::Value::Object(serde_json::Map::new());
+    }
+    let encoded = match serde_json::to_value(settings) {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(error = %err, "LSP recommendations: serialize failed");
+            return;
+        }
+    };
+    value
+        .as_object_mut()
+        .expect("value is object")
+        .insert(LSP_RECOMMENDATIONS_KEY.to_string(), encoded);
+    if let Err(err) = write_settings_value(&path, &value) {
+        tracing::warn!(error = %err, "LSP recommendations: write user settings failed");
+    }
+}
+
+/// Apply a user decision from an [`LspEvent::RecommendationRequest`] prompt.
+///
+/// Returns the updated settings snapshot plus an optional info-level
+/// message the frontend can surface in its system log. `yes` / `no` do
+/// not mutate persistent state — the install itself is carried out
+/// elsewhere (or postponed to the next session); only `never` and
+/// `disable` are sticky.
+fn apply_recommendation_decision(
+    plugin_name: &str,
+    decision: &str,
+) -> (LspRecommendationSettings, Option<String>) {
+    let mut settings = load_lsp_recommendation_settings();
+    let info = match decision {
+        "yes" => Some(format!(
+            "Install of LSP plugin '{}' is not yet wired up — track in /lsp when the install path lands.",
+            plugin_name
+        )),
+        "no" => None,
+        "never" => {
+            if !settings.muted_plugins.iter().any(|p| p == plugin_name) {
+                settings.muted_plugins.push(plugin_name.to_string());
+                save_lsp_recommendation_settings(&settings);
+            }
+            Some(format!(
+                "Muted LSP recommendation for '{}'. Run /lsp to undo.",
+                plugin_name
+            ))
+        }
+        "disable" => {
+            if !settings.disabled {
+                settings.disabled = true;
+                save_lsp_recommendation_settings(&settings);
+            }
+            Some("Disabled all LSP plugin recommendations. Run /lsp to re-enable.".to_string())
+        }
+        other => {
+            tracing::warn!(decision = %other, "LSP recommendations: unknown decision value");
+            None
+        }
+    };
+    (settings, info)
+}
+
+/// Remove `plugin_name` from the muted list and persist the result.
+fn unmute_lsp_plugin(plugin_name: &str) -> LspRecommendationSettings {
+    let mut settings = load_lsp_recommendation_settings();
+    let before = settings.muted_plugins.len();
+    settings.muted_plugins.retain(|p| p != plugin_name);
+    if settings.muted_plugins.len() != before {
+        save_lsp_recommendation_settings(&settings);
+    }
+    settings
+}
+
+/// Flip the global "disable all recommendations" switch.
+fn set_lsp_recommendations_disabled(disabled: bool) -> LspRecommendationSettings {
+    let mut settings = load_lsp_recommendation_settings();
+    if settings.disabled != disabled {
+        settings.disabled = disabled;
+        save_lsp_recommendation_settings(&settings);
+    }
+    settings
 }
 
 /// Handle an MCP subsystem command from the frontend.
@@ -843,6 +1000,32 @@ mod tests {
         });
         assert_eq!(msgs.len(), 1);
         assert!(matches!(&msgs[0], BackendMessage::SystemInfo { .. }));
+    }
+
+    #[test]
+    fn apply_recommendation_decision_no_is_noop() {
+        // `no` should not emit a system-info message or mutate persistence.
+        let (_settings, info) = apply_recommendation_decision("foo-ls", "no");
+        assert!(info.is_none(), "'no' should not produce an info message");
+    }
+
+    #[test]
+    fn apply_recommendation_decision_unknown_is_warned_but_silent() {
+        // Unknown decisions shouldn't blow up or leak into the UI.
+        let (_settings, info) = apply_recommendation_decision("foo-ls", "banana");
+        assert!(info.is_none());
+    }
+
+    #[test]
+    fn apply_recommendation_decision_yes_emits_placeholder_info() {
+        // Until the install path is wired up, `yes` returns the placeholder
+        // info text. When the real install lands this test should be
+        // replaced — the point here is that `yes` *does* surface a message
+        // so the user knows something happened.
+        let (_settings, info) = apply_recommendation_decision("rust-analyzer", "yes");
+        assert!(info.is_some());
+        let text = info.unwrap();
+        assert!(text.contains("rust-analyzer"));
     }
 
     #[test]

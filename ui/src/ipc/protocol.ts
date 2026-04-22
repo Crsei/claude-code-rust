@@ -87,6 +87,39 @@ export interface LspServerInfo {
   error?: string
 }
 
+/**
+ * Payload for an LSP plugin recommendation prompt. Mirrors Rust
+ * `LspRecommendationPayload` — `request_id` correlates the frontend's
+ * reply back to the originating backend request, and `plugin_name` +
+ * `file_extension` populate the upstream `LspRecommendationMenu`
+ * template.
+ */
+export interface LspRecommendationPayload {
+  request_id: string
+  plugin_name: string
+  plugin_description?: string
+  file_extension: string
+  language_id?: string
+}
+
+/**
+ * Snapshot of persisted "never recommend" / "disable all" preferences
+ * the backend replies with after every
+ * `LspCommand::recommendation_response` and also in response to
+ * `LspCommand::query_settings`. Used by an LSP settings view.
+ */
+export interface LspRecommendationSettings {
+  disabled: boolean
+  muted_plugins: string[]
+}
+
+/**
+ * Decision values the frontend sends in
+ * `LspCommand::recommendation_response`. Matches the upstream
+ * `LspRecommendationMenu` option keys.
+ */
+export type LspRecommendationDecision = 'yes' | 'no' | 'never' | 'disable'
+
 export interface McpToolInfo { name: string; description?: string }
 export interface McpResourceInfo { uri: string; name?: string; mime_type?: string }
 export interface McpServerStatusInfo {
@@ -327,6 +360,13 @@ export type LspEvent =
   | { kind: 'server_state_changed'; language_id: string; state: string; error?: string }
   | { kind: 'diagnostics_published'; uri: string; diagnostics: LspDiagnostic[] }
   | { kind: 'server_list'; servers: LspServerInfo[] }
+  /**
+   * Recommendation prompt — payload fields are flattened alongside
+   * `kind` because Rust emits it with `#[serde(flatten)]`.
+   */
+  | ({ kind: 'recommendation_request' } & LspRecommendationPayload)
+  /** Reply carrying the persisted recommendation settings. */
+  | { kind: 'settings_snapshot'; settings: LspRecommendationSettings }
 
 export type McpEvent =
   | { kind: 'server_state_changed'; server_name: string; state: string; error?: string }
@@ -374,7 +414,21 @@ export type FrontendMessage =
   | { type: 'agent_command'; command: { kind: 'abort_agent'; agent_id: string } | { kind: 'query_active_agents' } | { kind: 'query_agent_output'; agent_id: string } }
   | { type: 'team_command'; command: { kind: 'inject_message'; team_name: string; to: string; text: string } | { kind: 'query_team_status'; team_name: string } }
   // Subsystem commands
-  | { type: 'lsp_command'; command: { kind: 'start_server' | 'stop_server' | 'restart_server'; language_id: string } | { kind: 'query_status' } }
+  | {
+      type: 'lsp_command'
+      command:
+        | { kind: 'start_server' | 'stop_server' | 'restart_server'; language_id: string }
+        | { kind: 'query_status' }
+        | { kind: 'query_settings' }
+        | {
+            kind: 'recommendation_response'
+            request_id: string
+            plugin_name: string
+            decision: LspRecommendationDecision
+          }
+        | { kind: 'unmute_plugin'; plugin_name: string }
+        | { kind: 'set_recommendations_disabled'; disabled: boolean }
+    }
   | {
       type: 'mcp_command'
       command:

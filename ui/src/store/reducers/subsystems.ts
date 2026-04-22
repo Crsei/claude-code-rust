@@ -51,5 +51,32 @@ export function reduceSubsystems(state: AppState, action: SubsystemAction): AppS
           updatedAt: action.updatedAt,
         },
       }
+
+    case 'LSP_RECOMMENDATION_REQUEST':
+      return {
+        ...state,
+        lspRecommendation: {
+          ...state.lspRecommendation,
+          request: action.payload,
+        },
+      }
+
+    case 'LSP_RECOMMENDATION_DISMISS':
+      return {
+        ...state,
+        lspRecommendation: {
+          ...state.lspRecommendation,
+          request: null,
+        },
+      }
+
+    case 'LSP_RECOMMENDATION_SETTINGS':
+      return {
+        ...state,
+        lspRecommendation: {
+          ...state.lspRecommendation,
+          settings: action.settings,
+        },
+      }
   }
 }
