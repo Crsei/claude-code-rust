@@ -6,6 +6,7 @@ import type { KeybindingConfig } from '../keybindings.js'
 import { shortcutLabel, transcriptTitle } from '../keybindings.js'
 import { useAppDispatch, useAppState } from '../store/app-store.js'
 import { conversationToRawMessage } from '../store/message-model.js'
+import { AgentsDialog } from './agent-settings/index.js'
 import { AgentTreePanel } from './AgentTreePanel.js'
 import { InputPrompt } from './InputPrompt.js'
 import { MessageList } from './MessageList.js'
@@ -250,6 +251,21 @@ export function App() {
         case 'subsystem_status':
           dispatch({ type: 'SUBSYSTEM_STATUS', lsp: msg.status.lsp, mcp: msg.status.mcp, plugins: msg.status.plugins, skills: msg.status.skills })
           break
+        case 'agent_settings_event': {
+          const evt = msg.event
+          switch (evt.kind) {
+            case 'list':
+              dispatch({ type: 'AGENT_SETTINGS_LIST', entries: evt.entries })
+              break
+            case 'changed':
+              dispatch({ type: 'AGENT_SETTINGS_CHANGED', name: evt.name, entry: evt.entry })
+              break
+            case 'error':
+              dispatch({ type: 'AGENT_SETTINGS_ERROR', name: evt.name, error: evt.error })
+              break
+          }
+          break
+        }
         case 'status_line_update':
           dispatch({
             type: 'CUSTOM_STATUS_LINE_UPDATE',
@@ -379,6 +395,7 @@ export function App() {
         </box>
       )}
       {state.permissionRequest && <PermissionRequestDialog request={state.permissionRequest} />}
+      <AgentsDialog />
     </box>
   )
 }

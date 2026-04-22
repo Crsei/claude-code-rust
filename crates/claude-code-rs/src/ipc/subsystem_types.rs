@@ -276,6 +276,78 @@ pub struct SkillInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Agent-definition types (Rust issue #34, UI settings editor)
+// ---------------------------------------------------------------------------
+
+/// Source/scope where an agent definition lives.
+///
+/// The first three variants (`Builtin`, `User`, `Project`) describe where the
+/// definition was loaded from. `Builtin` and `Plugin` are read-only — attempts
+/// to upsert/delete them are rejected by the handler with
+/// `AgentSettingsEvent::Error`.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AgentDefinitionSource {
+    /// Engine-provided subagent types (general-purpose, Explore, Plan, code-reviewer).
+    Builtin,
+    /// Global user scope (`~/.cc-rust/agents/*.md`).
+    User,
+    /// Current project scope (`{cwd}/.cc-rust/agents/*.md`).
+    Project,
+    /// Contributed by a plugin (read-only).
+    Plugin { id: String },
+}
+
+impl AgentDefinitionSource {
+    /// True when this source can be edited directly via the filesystem.
+    pub fn is_editable(&self) -> bool {
+        matches!(self, AgentDefinitionSource::User | AgentDefinitionSource::Project)
+    }
+
+    /// Short label used in error messages and lists.
+    pub fn label(&self) -> String {
+        match self {
+            AgentDefinitionSource::Builtin => "built-in".to_string(),
+            AgentDefinitionSource::User => "user".to_string(),
+            AgentDefinitionSource::Project => "project".to_string(),
+            AgentDefinitionSource::Plugin { id } if id.is_empty() => "plugin".to_string(),
+            AgentDefinitionSource::Plugin { id } => format!("plugin:{}", id),
+        }
+    }
+}
+
+/// Full editable agent definition — round-trips between the frontend editor
+/// and an on-disk markdown file (`{scope}/agents/<name>.md`) with YAML
+/// frontmatter.
+///
+/// Parallel to `McpServerConfigEntry`: the frontend treats this as the source
+/// of truth for a single agent and persists changes by sending an
+/// `AgentSettingsCommand::Upsert { entry }`.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AgentDefinitionEntry {
+    /// Unique agent name / type (matches the filename without extension).
+    pub name: String,
+    /// One-line description — told to the orchestrator for "when to use".
+    pub description: String,
+    /// Markdown system prompt body.
+    pub system_prompt: String,
+    /// Tool allow-list. Empty means "inherit all tools" (no restriction).
+    #[serde(default)]
+    pub tools: Vec<String>,
+    /// Optional model override (e.g. `"sonnet"`, `"opus"`, or a full ID).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Optional display color (named: red, orange, yellow, green, blue, purple, pink, cyan).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// Where this definition lives.
+    pub source: AgentDefinitionSource,
+    /// Absolute path to the backing file, when known. `None` for built-ins.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_path: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
 // Aggregated snapshot
 // ---------------------------------------------------------------------------
 

@@ -145,6 +145,25 @@ pub enum SkillEvent {
     SkillList { skills: Vec<SkillInfo> },
 }
 
+/// Events emitted by the agent-definition settings subsystem.
+///
+/// Distinct from `AgentEvent` (runtime agent lifecycle) — these drive the
+/// `/agents` settings dialog.
+#[derive(Serialize, Debug, Clone)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AgentSettingsEvent {
+    /// Full list of agent definitions (response to `QueryList`).
+    List { entries: Vec<AgentDefinitionEntry> },
+    /// An agent was upserted (entry present) or removed (entry `None`).
+    Changed {
+        name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        entry: Option<AgentDefinitionEntry>,
+    },
+    /// Validation or persistence failure.
+    Error { name: String, error: String },
+}
+
 // ===========================================================================
 // Command enums (Frontend → Backend)
 // ===========================================================================
@@ -229,6 +248,25 @@ pub enum SkillCommand {
     QueryStatus,
 }
 
+/// Commands the frontend can send to manage agent definitions.
+///
+/// Backs the `/agents` settings dialog; sibling to `McpCommand` for server
+/// configs. `Builtin` and `Plugin` sources are read-only — upsert/delete calls
+/// against those scopes must be rejected with `AgentSettingsEvent::Error`.
+#[derive(Deserialize, Debug)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AgentSettingsCommand {
+    /// Return every known agent definition across all sources.
+    QueryList,
+    /// Create or replace an agent definition in its scope.
+    Upsert { entry: AgentDefinitionEntry },
+    /// Delete an agent definition from the given scope.
+    Delete {
+        name: String,
+        source: AgentDefinitionSource,
+    },
+}
+
 // ===========================================================================
 // Unified event wrapper
 // ===========================================================================
@@ -241,6 +279,7 @@ pub enum SubsystemEvent {
     Plugin(PluginEvent),
     Skill(SkillEvent),
     Ide(IdeEvent),
+    AgentSettings(AgentSettingsEvent),
 }
 
 // ===========================================================================
@@ -770,6 +809,7 @@ mod tests {
         let _mcp = SubsystemEvent::Mcp(McpEvent::ServerList { servers: vec![] });
         let _plugin = SubsystemEvent::Plugin(PluginEvent::PluginList { plugins: vec![] });
         let _skill = SubsystemEvent::Skill(SkillEvent::SkillList { skills: vec![] });
+        let _agents = SubsystemEvent::AgentSettings(AgentSettingsEvent::List { entries: vec![] });
     }
 
     #[test]
