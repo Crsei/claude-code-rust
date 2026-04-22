@@ -4,6 +4,7 @@ import {
   type AppAction,
   type AppState,
 } from './app-state.js'
+import { reduceAgentSettings } from './reducers/agent-settings.js'
 import { reduceAgentTree } from './reducers/agent-tree.js'
 import { reduceBackgroundAgents } from './reducers/background-agents.js'
 import { reduceCore } from './reducers/core.js'
@@ -78,6 +79,14 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'SKILLS_LOADED':
     case 'CUSTOM_STATUS_LINE_UPDATE':
       return reduceSubsystems(state, action)
+
+    case 'AGENT_SETTINGS_OPEN':
+    case 'AGENT_SETTINGS_CLOSE':
+    case 'AGENT_SETTINGS_LIST':
+    case 'AGENT_SETTINGS_CHANGED':
+    case 'AGENT_SETTINGS_ERROR':
+    case 'AGENT_SETTINGS_CLEAR_NOTICE':
+      return reduceAgentSettings(state, action)
 
     case 'PUSH_HISTORY':
     case 'SET_HISTORY_INDEX':
