@@ -275,6 +275,23 @@ export function App() {
             case 'error':
               dispatch({ type: 'AGENT_SETTINGS_ERROR', name: evt.name, error: evt.error })
               break
+            case 'tool_list':
+              dispatch({ type: 'AGENT_SETTINGS_TOOLS', tools: evt.tools })
+              break
+            case 'editor_opened':
+              dispatch({ type: 'AGENT_SETTINGS_EDITOR_OPENED', filePath: evt.file_path })
+              break
+            case 'generate_started':
+              dispatch({ type: 'AGENT_SETTINGS_GENERATE_STARTED' })
+              break
+            case 'generated':
+              dispatch({
+                type: 'AGENT_SETTINGS_GENERATED',
+                identifier: evt.identifier,
+                whenToUse: evt.when_to_use,
+                systemPrompt: evt.system_prompt,
+              })
+              break
           }
           break
         }

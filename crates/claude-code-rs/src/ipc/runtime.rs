@@ -74,6 +74,7 @@ impl HeadlessRuntime {
         crate::lsp_service::set_event_sender(event_bus.sender());
         crate::plugins::set_event_sender(event_bus.sender());
         crate::ide::set_event_sender(event_bus.sender());
+        super::agent_settings_generate::set_event_sender(event_bus.sender());
         // cc-skills lives in its own crate and no longer knows about
         // `SubsystemEvent`. Adapt its minimal event enum into ours here.
         let skills_tx = event_bus.sender();

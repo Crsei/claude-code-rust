@@ -69,6 +69,62 @@ export function AgentDetailView({ entry }: AgentDetailViewProps) {
         </box>
       ) : null}
 
+      {entry.permission_mode ? (
+        <text>
+          <strong>Permission mode</strong>
+          <span fg={c.dim}>{': '}</span>
+          <span fg={c.text}>{entry.permission_mode}</span>
+        </text>
+      ) : null}
+
+      {entry.memory ? (
+        <text>
+          <strong>Memory</strong>
+          <span fg={c.dim}>{': '}</span>
+          <span fg={c.text}>{entry.memory}</span>
+        </text>
+      ) : null}
+
+      {entry.max_turns !== undefined ? (
+        <text>
+          <strong>Max turns</strong>
+          <span fg={c.dim}>{': '}</span>
+          <span fg={c.text}>{String(entry.max_turns)}</span>
+        </text>
+      ) : null}
+
+      {entry.effort ? (
+        <text>
+          <strong>Effort</strong>
+          <span fg={c.dim}>{': '}</span>
+          <span fg={c.text}>{entry.effort}</span>
+        </text>
+      ) : null}
+
+      {entry.background ? (
+        <text>
+          <strong>Background</strong>
+          <span fg={c.dim}>{': '}</span>
+          <span fg={c.text}>yes</span>
+        </text>
+      ) : null}
+
+      {entry.isolation ? (
+        <text>
+          <strong>Isolation</strong>
+          <span fg={c.dim}>{': '}</span>
+          <span fg={c.text}>{entry.isolation}</span>
+        </text>
+      ) : null}
+
+      {entry.skills && entry.skills.length > 0 ? (
+        <text>
+          <strong>Skills</strong>
+          <span fg={c.dim}>{': '}</span>
+          <span fg={c.text}>{entry.skills.join(', ')}</span>
+        </text>
+      ) : null}
+
       {entry.system_prompt ? (
         <box marginTop={1} flexDirection="column">
           <text>
