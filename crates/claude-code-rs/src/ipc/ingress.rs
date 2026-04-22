@@ -129,6 +129,11 @@ pub(crate) async fn dispatch(
             let msgs = super::subsystem_handlers::handle_ide_command(command);
             let _ = sink.send_many(msgs);
         }
+        FrontendMessage::AgentSettingsCommand { command } => {
+            debug!("headless: AgentSettings command: {:?}", command);
+            let msgs = super::agent_settings::handle(command);
+            let _ = sink.send_many(msgs);
+        }
         FrontendMessage::QuerySubsystemStatus => {
             debug!("headless: subsystem status query");
             let status = super::subsystem_handlers::build_subsystem_status_snapshot();

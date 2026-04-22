@@ -64,6 +64,17 @@ export function useComposerSubmit({
     if (isBusyRef.current) {
       return
     }
+    // Client-side-only commands that open UI dialogs without contacting
+    // the backend. Each one has a corresponding store action; add new
+    // entries here when introducing another UI-driven modal.
+    const trimmed = raw.trim()
+    const head = trimmed.split(/\s+/)[0] ?? ''
+    if (head === '/agents-ui' || head === '/au') {
+      dispatch({ type: 'PUSH_HISTORY', text: raw })
+      dispatch({ type: 'AGENT_SETTINGS_OPEN' })
+      reset()
+      return
+    }
     const id = `user-${Date.now()}`
     dispatch({ type: 'ADD_COMMAND_MESSAGE', id, text: raw })
     dispatch({ type: 'PUSH_HISTORY', text: raw })

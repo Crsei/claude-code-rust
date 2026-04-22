@@ -32,6 +32,7 @@ export const COMMANDS: CommandDef[] = [
   { name: 'skills',           aliases: [],                      description: 'List available skills',            kind: 'display' },
   { name: 'diff',             aliases: [],                      description: 'Show git diff of current changes', kind: 'display' },
   { name: 'mcp',              aliases: [],                      description: 'MCP server management',           kind: 'display' },
+  { name: 'agents-ui',        aliases: ['au'],                  description: 'Open the agents settings dialog', kind: 'action' },
   { name: 'assistant',        aliases: ['kairos'],              description: 'View assistant mode status',       kind: 'display' },
   { name: 'daemon',           aliases: [],                      description: 'View/control daemon process',      kind: 'display' },
   { name: 'channels',         aliases: [],                      description: 'View connected channels',          kind: 'display' },

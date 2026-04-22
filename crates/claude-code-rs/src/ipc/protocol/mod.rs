@@ -78,6 +78,10 @@ pub enum FrontendMessage {
     IdeCommand {
         command: super::subsystem_events::IdeCommand,
     },
+    /// Agent-definition settings command (backs the `/agents` editor UI).
+    AgentSettingsCommand {
+        command: super::subsystem_events::AgentSettingsCommand,
+    },
     /// Query all subsystem statuses.
     QuerySubsystemStatus,
 
@@ -240,6 +244,10 @@ pub enum BackendMessage {
     /// IDE-integration subsystem event.
     IdeEvent {
         event: super::subsystem_events::IdeEvent,
+    },
+    /// Agent-definition settings event.
+    AgentSettingsEvent {
+        event: super::subsystem_events::AgentSettingsEvent,
     },
     /// Aggregated subsystem status snapshot.
     SubsystemStatus {
