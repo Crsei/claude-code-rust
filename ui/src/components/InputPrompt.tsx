@@ -3,7 +3,6 @@ import { useKeyboard, useRenderer } from '@opentui/react'
 import type { KeyEvent } from '@opentui/core'
 import {
   matchesShortcut,
-  shortcutLabel,
   type ViewMode,
 } from '../keybindings.js'
 import { c } from '../theme.js'
@@ -11,25 +10,21 @@ import { useBackend } from '../ipc/context.js'
 import { useAppDispatch, useAppState } from '../store/app-store.js'
 import { matchCommands, type CommandDef } from '../commands.js'
 import { VimState } from '../vim/index.js'
-import { CommandHint } from './CommandHint.js'
 import {
-  formatPasteSize,
-  promptPlaceholder,
-  summarizeQueuedSubmissions,
-} from './input-prompt-utils.js'
-import {
+  ComposerBuffer,
+  ModeIndicator,
+  QueuedSubmissions,
+  SlashCommandHints,
+  buildBusyStatus,
+  deriveExternalStatus,
   extractInput,
-  formatWorkedDuration,
   toShortcutKey,
-} from './input-prompt-keys.js'
-import {
   useBusyTimer,
   useComposerState,
+  useComposerSubmit,
   useInputHistoryNav,
   usePasteHandler,
-} from './input-prompt-hooks.js'
-
-const PASTE_COMPACT_CHARS = 200
+} from './PromptInput/index.js'
 
 interface InputPromptProps {
   isActive?: boolean
@@ -59,7 +54,6 @@ export function InputPrompt({
     keybindingConfig,
     vimEnabled,
     queuedSubmissions,
-    pendingQuestion,
   } = useAppState()
   const dispatch = useAppDispatch()
   const renderer = useRenderer()
@@ -107,6 +101,25 @@ export function InputPrompt({
     resetBuffer()
     clearSubMode()
   }, [clearSubMode, resetBuffer])
+
+  const prefillInput = useCallback((nextText: string) => {
+    setText(nextText)
+    setCursorPos(nextText.length)
+  }, [setCursorPos, setText])
+
+  const openSubMode = useCallback(
+    (cmd: CommandDef, options: string[]) => {
+      setSubMode({ cmd, options })
+      setSubIndex(0)
+    },
+    [],
+  )
+
+  const { submit, sendCommand, activateCommand } = useComposerSubmit({
+    reset: resetComposer,
+    openSubMode,
+    prefillInput,
+  })
 
   const slashPrefix = viewMode === 'prompt' && text.startsWith('/') && !text.includes(' ') && !subMode
   const cmdPartial = slashPrefix ? text.slice(1) : ''
@@ -160,89 +173,6 @@ export function InputPrompt({
     text.length,
     viewMode,
   ])
-
-  const sendCommand = useCallback((raw: string) => {
-    if (isBusyRef.current) {
-      return
-    }
-    const id = `user-${Date.now()}`
-    dispatch({ type: 'ADD_COMMAND_MESSAGE', id, text: raw })
-    dispatch({ type: 'PUSH_HISTORY', text: raw })
-    backend.send({ type: 'slash_command', raw })
-    resetComposer()
-  }, [backend, dispatch, resetComposer])
-
-  const queuePrompt = useCallback((raw: string) => {
-    const trimmed = raw.trim()
-    if (!trimmed || trimmed.startsWith('/')) {
-      return false
-    }
-
-    const id = `queued-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    dispatch({
-      type: 'QUEUE_SUBMISSION',
-      submission: {
-        id,
-        kind: 'prompt',
-        text: trimmed,
-        queuedAt: Date.now(),
-      },
-    })
-    dispatch({ type: 'PUSH_HISTORY', text: trimmed })
-    resetComposer()
-    return true
-  }, [dispatch, resetComposer])
-
-  const submit = useCallback(() => {
-    if (isBusyRef.current && !pendingQuestion) {
-      queuePrompt(text)
-      return
-    }
-    const trimmed = text.trim()
-    if (!trimmed) {
-      return
-    }
-
-    if (pendingQuestion) {
-      dispatch({ type: 'ADD_USER_MESSAGE', id: `answer-${pendingQuestion.id}`, text: trimmed })
-      dispatch({ type: 'PUSH_HISTORY', text: trimmed })
-      backend.send({ type: 'question_response', id: pendingQuestion.id, text: trimmed })
-      dispatch({ type: 'QUESTION_DISMISS' })
-      resetComposer()
-      return
-    }
-
-    if (trimmed.startsWith('/')) {
-      sendCommand(trimmed)
-      return
-    }
-
-    const id = `user-${Date.now()}`
-    dispatch({ type: 'ADD_USER_MESSAGE', id, text: trimmed })
-    dispatch({ type: 'PUSH_HISTORY', text: trimmed })
-    backend.send({ type: 'submit_prompt', text: trimmed, id })
-    resetComposer()
-  }, [backend, dispatch, pendingQuestion, queuePrompt, resetComposer, sendCommand, text])
-
-  const activateCommand = useCallback((cmd: CommandDef) => {
-    if (cmd.kind === 'select' && cmd.options && cmd.options.length > 0) {
-      const nextText = `/${cmd.name} `
-      setText(nextText)
-      setCursorPos(nextText.length)
-      setSubMode({ cmd, options: cmd.options })
-      setSubIndex(0)
-      return
-    }
-
-    if (cmd.kind === 'input') {
-      const nextText = `/${cmd.name} `
-      setText(nextText)
-      setCursorPos(nextText.length)
-      return
-    }
-
-    sendCommand(`/${cmd.name}`)
-  }, [sendCommand, setCursorPos, setText])
 
   const { navigateUp: navigateHistoryUp, navigateDown: navigateHistoryDown } = useInputHistoryNav({
     setText,
@@ -362,7 +292,7 @@ export function InputPrompt({
           break
         case 'submit':
           if (!isBusyRef.current) {
-            submit()
+            submit(text)
           }
           return
         case 'switch_mode':
@@ -447,14 +377,14 @@ export function InputPrompt({
         if (command && cmdPartial) {
           activateCommand(command)
         } else {
-          submit()
+          submit(text)
         }
         return
       }
     }
 
     if (matchesShortcut('chat:submit', input, key, name, { context: 'Chat', config: keybindingConfig })) {
-      submit()
+      submit(text)
       return
     }
 
@@ -549,25 +479,20 @@ export function InputPrompt({
     }
   })
 
-  const showPasteCompact = isPasted && text.length >= PASTE_COMPACT_CHARS
-  const queuedPreview = queuedSubmissions.length > 0
-    ? summarizeQueuedSubmissions(queuedSubmissions)
-    : ''
-  const before = text.slice(0, cursorPos)
-  const cursorChar = cursorPos < text.length ? text[cursorPos] : ' '
-  const after = cursorPos < text.length ? text.slice(cursorPos + 1) : ''
   const workedMs = isBusy && busyStartedAtRef.current !== null
     ? Math.max(0, time - busyStartedAtRef.current)
     : lastWorkedMs
-  const showWorked = isBusy || lastWorkedMs > 0
-  const modeTag = isStreaming ? 'reasoning' : isWaiting ? 'thinking' : ''
-  const workedTag = showWorked
-    ? `${modeTag ? `${modeTag} ` : ''}${formatWorkedDuration(workedMs)}`
-    : ''
+  const { workedTag } = buildBusyStatus({
+    isStreaming,
+    isWaiting,
+    isBusy,
+    lastWorkedMs,
+    workedMs,
+  })
   const showInlineStatus = !onStatusChange && viewMode === 'prompt'
 
   useEffect(() => {
-    onStatusChange?.(viewMode === 'prompt' && workedTag ? `* ${workedTag}` : '')
+    onStatusChange?.(deriveExternalStatus(viewMode, workedTag))
   }, [onStatusChange, viewMode, workedTag])
 
   return (
@@ -578,51 +503,28 @@ export function InputPrompt({
             <span fg={inputActive ? c.accent : c.dim}>{'> '}</span>
           </strong>
         </text>
-        {isReadOnly ? (
-          text.length > 0 ? (
-            <text fg={c.dim}>{showPasteCompact ? formatPasteSize(text) : text}</text>
-          ) : (
-            <text fg={c.dim}>
-              Transcript mode. {shortcutLabel('app:toggleTranscript', { context: 'Global', config: keybindingConfig })} prompt. {shortcutLabel('transcript:exit', { context: 'Transcript', config: keybindingConfig })} exit.
-            </text>
-          )
-        ) : showPasteCompact ? (
-          <text fg={c.warningBright}>{formatPasteSize(text)}</text>
-        ) : text.length === 0 ? (
-          <text>
-            <span fg={c.bg} bg={inputActive ? c.text : c.dim}> </span>
-            <span fg="#45475A">{promptPlaceholder(isBusy)}</span>
-          </text>
-        ) : (
-          <text fg={isBusy ? c.dim : undefined}>
-            {before}
-            <span fg={c.bg} bg={inputActive ? c.text : c.dim}>{cursorChar}</span>
-            {after}
-          </text>
-        )}
-        {showInlineStatus && workedTag ? (
-          <text fg={c.dim}>  * {workedTag}</text>
-        ) : null}
+        <ComposerBuffer
+          text={text}
+          cursorPos={cursorPos}
+          isActive={inputActive}
+          isReadOnly={isReadOnly}
+          isBusy={isBusy}
+          isPasted={isPasted}
+          keybindingConfig={keybindingConfig}
+        />
+        {showInlineStatus && <ModeIndicator workedTag={workedTag} />}
       </box>
 
-      {showHint && !subMode && (
-        <CommandHint matches={cmdMatches} selectedIndex={hintIndex} partial={cmdPartial} />
-      )}
-      {showHint && subMode && (
-        <CommandHint
-          matches={[]}
-          selectedIndex={0}
-          partial=""
-          subOptions={subMode.options}
-          subSelectedIndex={subIndex}
-        />
-      )}
-      {viewMode === 'prompt' && queuedSubmissions.length > 0 && (
-        <box paddingLeft={3}>
-          <text fg={c.dim}>
-            Queued {queuedSubmissions.length}: {queuedPreview}
-          </text>
-        </box>
+      <SlashCommandHints
+        visible={showHint}
+        matches={cmdMatches}
+        hintIndex={hintIndex}
+        partial={cmdPartial}
+        subMode={subMode}
+        subIndex={subIndex}
+      />
+      {viewMode === 'prompt' && (
+        <QueuedSubmissions submissions={queuedSubmissions} />
       )}
     </box>
   )

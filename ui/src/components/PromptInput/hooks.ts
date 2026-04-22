@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PasteEvent } from '@opentui/core'
 import { useRenderer } from '@opentui/react'
-import { useAppDispatch, useAppState } from '../store/app-store.js'
-import type { ViewMode } from '../keybindings.js'
-import { insertAtCursor, isPasteInput } from './input-prompt-utils.js'
+import { useAppDispatch, useAppState } from '../../store/app-store.js'
+import type { ViewMode } from '../../keybindings.js'
+import { insertAtCursor, isPasteInput } from './utils.js'
 
 /**
  * Composer state: text buffer, cursor, undo stack, paste indicator.
