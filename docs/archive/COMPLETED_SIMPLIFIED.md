@@ -1,7 +1,12 @@
-# 已完成模块 — 大幅简化实现
+# 已完成模块 — 大幅简化实现（进入全量构建后视作待补齐清单）
 
+> **阶段切换 (2026-04-22)**：本仓库已从 "rust-lite 精简版" 切换到**全量构建 (Full Build)**。
+> 原先本文登记的"已接受的缩减实现"一律**重新解读为"全量构建阶段待补齐的 TODO"**。
+> 不要再把本文里的 "TS 独有（未移植）" 列表当作"不做"的白名单——它是补齐工单的参考清单。
+> 规则与补齐流程见 [`../../CLAUDE.md`](../../CLAUDE.md) 顶部"当前阶段"说明，以及 [`../IMPLEMENTATION_GAPS.md`](../IMPLEMENTATION_GAPS.md) §2 与 §7。
+>
 > 最后更新: 2026-04-02 (Phase 14B-3/14C/14D: 30 新命令 + 9 新工具 + path_validation + config validation)
-> 此文档记录已标记 ✅ 但相比 TypeScript 原版有显著功能缩减的模块。
+> 此文档原意是记录已标记 ✅ 但相比 TypeScript 原版有显著功能缩减的模块；在全量构建阶段，缩减部分应被逐项补齐。
 > 完整实现见 [`COMPLETED_FULL.md`](COMPLETED_FULL.md)。
 > 详细简化率分析见 [`MODULE_SIMPLIFICATION.md`](MODULE_SIMPLIFICATION.md)。
 > 剩余工作见 [`REWRITE_PLAN.md`](../REWRITE_PLAN.md)。
