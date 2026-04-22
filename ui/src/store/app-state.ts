@@ -65,6 +65,19 @@ export interface SubsystemState {
   lastUpdated: number
 }
 
+/**
+ * Latest `status_line_update` payload forwarded from the backend. When
+ * the user has configured a custom statusline command, the Rust side
+ * runs it on a cadence and ships the rendered stdout here as `lines`.
+ * The built-in statusline is always available as a fallback;
+ * `customStatusLine` is additive, not a replacement.
+ */
+export interface CustomStatusLineState {
+  lines: string[]
+  error?: string
+  updatedAt: number
+}
+
 export interface AppState {
   messages: RawMessage[]
   streamingText: string
@@ -92,6 +105,7 @@ export interface AppState {
   agentStreams: Record<string, AgentStreamState>
   teams: Record<string, TeamState>
   subsystems: SubsystemState
+  customStatusLine: CustomStatusLineState | null
 }
 
 export const initialState: AppState = {
@@ -121,6 +135,7 @@ export const initialState: AppState = {
   agentStreams: {},
   teams: {},
   subsystems: { lsp: [], mcp: [], plugins: [], skills: [], lastUpdated: 0 },
+  customStatusLine: null,
 }
 
 export type CoreAction =
@@ -202,6 +217,7 @@ export type SubsystemAction =
   | { type: 'MCP_SERVER_STATE'; serverName: string; state: string; error?: string }
   | { type: 'PLUGIN_STATUS'; pluginId: string; name: string; status: string; error?: string }
   | { type: 'SKILLS_LOADED'; count: number }
+  | { type: 'CUSTOM_STATUS_LINE_UPDATE'; lines: string[]; error?: string; updatedAt: number }
 
 export type InputAction =
   | { type: 'PUSH_HISTORY'; text: string }
