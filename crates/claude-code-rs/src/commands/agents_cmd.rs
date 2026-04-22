@@ -131,14 +131,13 @@ struct AgentEntry {
 fn collect_agents(ctx: &CommandContext) -> Vec<AgentEntry> {
     let mut out = Vec::new();
 
-    // 1. Built-in subagent types. The Rust engine currently accepts any
-    //    `subagent_type` string, but the system prompt advertises this
-    //    fixed palette. Surface them so users know what the model can ask
-    //    for without needing to grep the prompt.
-    for (name, desc) in BUILTIN_SUBAGENTS {
+    // 1. Built-in subagent types. Sourced from the single registry in
+    //    `ipc::builtin_agents` so the text browser and the `/agents-ui`
+    //    dialog can't drift from each other.
+    for entry in crate::ipc::builtin_agents::builtin_agent_entries() {
         out.push(AgentEntry {
-            name: (*name).to_string(),
-            description: (*desc).to_string(),
+            name: entry.name,
+            description: entry.description,
             source: AgentSource::Builtin,
             path: None,
             active: true,
@@ -212,27 +211,9 @@ fn load_team_members(team_ctx: &crate::teams::types::TeamContext) -> Vec<AgentEn
         .collect()
 }
 
-/// Built-in subagent types the engine supports out of the box. Keep this
-/// list in sync with the docstrings in `src/tools/agent/mod.rs` and the
-/// system prompt copy.
-const BUILTIN_SUBAGENTS: &[(&str, &str)] = &[
-    (
-        "general-purpose",
-        "Default agent for multi-step research and coding tasks",
-    ),
-    (
-        "Explore",
-        "Fast codebase exploration — globbing, grepping, and file reads",
-    ),
-    (
-        "Plan",
-        "Software architect — produces an implementation plan without editing code",
-    ),
-    (
-        "code-reviewer",
-        "Reviews a completed change against the plan and coding standards",
-    ),
-];
+// Built-in subagent types — the single source of truth lives in
+// [`crate::ipc::builtin_agents`] so the settings dialog and this text
+// browser cannot drift.
 
 // ---------------------------------------------------------------------------
 // Rendering
@@ -353,6 +334,18 @@ fn render_agent_detail(agents: &[AgentEntry], name: &str) -> String {
                 &entry.description
             }
         ));
+        // Built-in agents have a canonical system prompt — quote it so
+        // `/agents show <name>` is useful for introspection.
+        if matches!(entry.source, AgentSource::Builtin) {
+            if let Some(prompt) = crate::ipc::builtin_agents::builtin_agent_prompt(&entry.name) {
+                out.push_str("\n  System prompt:\n");
+                for line in prompt.lines() {
+                    out.push_str("    ");
+                    out.push_str(line);
+                    out.push('\n');
+                }
+            }
+        }
     }
     out
 }

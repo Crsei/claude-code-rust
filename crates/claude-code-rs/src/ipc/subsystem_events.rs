@@ -162,6 +162,23 @@ pub enum AgentSettingsEvent {
     },
     /// Validation or persistence failure.
     Error { name: String, error: String },
+    /// Categorized list of tools the frontend `ToolSelector` can show
+    /// (response to `QueryTools`). Matches upstream `getToolBuckets()`.
+    ToolList { tools: Vec<AgentToolInfo> },
+    /// An external editor was launched and returned. The frontend should
+    /// refresh the list afterwards — edits in the editor won't be reflected
+    /// in the current snapshot until `QueryList` fires again.
+    EditorOpened { file_path: String },
+    /// Streamed progress marker for an AI-assisted generation run. The
+    /// frontend shows "Generating…" between `GenerateStarted` and
+    /// `Generated`/`Error`.
+    GenerateStarted,
+    /// An AI-generated agent definition (response to `Generate`).
+    Generated {
+        identifier: String,
+        when_to_use: String,
+        system_prompt: String,
+    },
 }
 
 // ===========================================================================
@@ -264,6 +281,21 @@ pub enum AgentSettingsCommand {
     Delete {
         name: String,
         source: AgentDefinitionSource,
+    },
+    /// Return the categorized tool list used by the `ToolSelector` UI.
+    QueryTools,
+    /// Launch `$EDITOR` against `file_path` — path must resolve inside an
+    /// editable agents directory or the backend rejects it.
+    OpenInEditor { file_path: String },
+    /// Ask the model to generate a fresh agent definition from a
+    /// user-supplied description. Mirrors upstream `generateAgent()`.
+    Generate {
+        /// Freeform description the user typed ("Help me write unit tests…").
+        user_prompt: String,
+        /// Names already in use — passed to the model so it picks a unique
+        /// identifier. The frontend assembles this from the current list.
+        #[serde(default)]
+        existing_names: Vec<String>,
     },
 }
 

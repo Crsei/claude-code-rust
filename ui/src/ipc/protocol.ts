@@ -170,21 +170,60 @@ export type AgentDefinitionSource =
   | { kind: 'project' }
   | { kind: 'plugin'; id: string }
 
+/** Matches Rust `AgentPermissionMode` (camelCase). */
+export type AgentPermissionMode =
+  | 'default'
+  | 'acceptEdits'
+  | 'bypassPermissions'
+  | 'plan'
+
+/** Matches Rust `AgentMemoryScope` (lowercase). */
+export type AgentMemoryScope = 'user' | 'project' | 'local'
+
 export interface AgentDefinitionEntry {
   name: string
   description: string
   system_prompt: string
   tools: string[]
+  disallowed_tools?: string[]
   model?: string
   color?: string
+  permission_mode?: AgentPermissionMode
+  memory?: AgentMemoryScope
+  max_turns?: number
+  effort?: string
+  background?: boolean
+  isolation?: string
+  skills?: string[]
+  hooks?: unknown
+  mcp_servers?: unknown[]
+  initial_prompt?: string
+  filename?: string
   source: AgentDefinitionSource
   file_path?: string
+}
+
+export interface AgentToolInfo {
+  name: string
+  /** `"read_only" | "edit" | "execution" | "mcp" | "other"`. */
+  category: string
+  description?: string
+  mcp_server?: string
 }
 
 export type AgentSettingsEvent =
   | { kind: 'list'; entries: AgentDefinitionEntry[] }
   | { kind: 'changed'; name: string; entry?: AgentDefinitionEntry }
   | { kind: 'error'; name: string; error: string }
+  | { kind: 'tool_list'; tools: AgentToolInfo[] }
+  | { kind: 'editor_opened'; file_path: string }
+  | { kind: 'generate_started' }
+  | {
+      kind: 'generated'
+      identifier: string
+      when_to_use: string
+      system_prompt: string
+    }
 
 export interface SubsystemStatusSnapshot {
   lsp: LspServerInfo[]
@@ -369,6 +408,9 @@ export type FrontendMessage =
         | { kind: 'query_list' }
         | { kind: 'upsert'; entry: AgentDefinitionEntry }
         | { kind: 'delete'; name: string; source: AgentDefinitionSource }
+        | { kind: 'query_tools' }
+        | { kind: 'open_in_editor'; file_path: string }
+        | { kind: 'generate'; user_prompt: string; existing_names?: string[] }
     }
   | { type: 'query_subsystem_status' }
 

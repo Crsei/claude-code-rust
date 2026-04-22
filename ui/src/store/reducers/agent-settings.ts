@@ -80,6 +80,61 @@ export function reduceAgentSettings(state: AppState, action: AgentSettingsAction
           lastMessage: null,
         },
       }
+
+    case 'AGENT_SETTINGS_TOOLS':
+      return {
+        ...state,
+        agentSettings: {
+          ...state.agentSettings,
+          availableTools: action.tools,
+          toolsLoadedAt: Date.now(),
+        },
+      }
+
+    case 'AGENT_SETTINGS_EDITOR_OPENED':
+      return {
+        ...state,
+        agentSettings: {
+          ...state.agentSettings,
+          lastMessage: `Opened ${action.filePath} in editor — reopen the dialog to see edits.`,
+          lastError: null,
+        },
+      }
+
+    case 'AGENT_SETTINGS_GENERATE_STARTED':
+      return {
+        ...state,
+        agentSettings: {
+          ...state.agentSettings,
+          generating: true,
+          lastError: null,
+          lastGenerated: null,
+        },
+      }
+
+    case 'AGENT_SETTINGS_GENERATED':
+      return {
+        ...state,
+        agentSettings: {
+          ...state.agentSettings,
+          generating: false,
+          lastGenerated: {
+            identifier: action.identifier,
+            whenToUse: action.whenToUse,
+            systemPrompt: action.systemPrompt,
+          },
+        },
+      }
+
+    case 'AGENT_SETTINGS_CLEAR_GENERATED':
+      return {
+        ...state,
+        agentSettings: {
+          ...state.agentSettings,
+          lastGenerated: null,
+          generating: false,
+        },
+      }
   }
 }
 
