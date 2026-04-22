@@ -1,103 +1,57 @@
 import React from 'react'
 import { useAppState } from '../store/app-store.js'
+import type {
+  LspServerInfo,
+  McpServerStatusInfo,
+  PluginInfo,
+  SkillInfo,
+} from '../ipc/protocol.js'
+import { LspServerCard, McpServerCard, PluginRow } from './panels/index.js'
 
-// ---------------------------------------------------------------------------
-// State color mapping
-// ---------------------------------------------------------------------------
+/**
+ * Overview of the currently-connected subsystems (MCP, LSP, plugins,
+ * skills). Each subsystem-specific card now lives under
+ * `./panels/`, and this component stays responsible for outer chrome
+ * and section headers.
+ */
 
-const stateColors: Record<string, string> = {
-  running: '#A6E3A1',
-  connected: '#A6E3A1',
-  installed: '#A6E3A1',
-  starting: '#F9E2AF',
-  connecting: '#F9E2AF',
-  stopped: '#6C7086',
-  disconnected: '#6C7086',
-  disabled: '#6C7086',
-  not_installed: '#6C7086',
-  error: '#F38BA8',
-}
-
-function stateColor(state: string): string {
-  return stateColors[state] ?? '#6C7086'
-}
-
-// ---------------------------------------------------------------------------
-// LSP section
-// ---------------------------------------------------------------------------
-
-function LspSection({ servers }: { servers: Array<{ language_id: string; state: string; open_files_count: number; error?: string }> }) {
+function LspSection({ servers }: { servers: LspServerInfo[] }) {
   if (servers.length === 0) return null
   return (
     <box flexDirection="column">
       <text><span fg="#89B4FA">LSP</span></text>
       {servers.map(s => (
-        <text key={s.language_id}>
-          {'  '}
-          <span fg={stateColor(s.state)}>{s.state}</span>
-          {' '}
-          <span fg="#CDD6F4">{s.language_id}</span>
-          <span fg="#6C7086"> ({s.open_files_count} files)</span>
-          {s.error && <span fg="#F38BA8"> {s.error}</span>}
-        </text>
+        <LspServerCard key={s.language_id} server={s} />
       ))}
     </box>
   )
 }
 
-// ---------------------------------------------------------------------------
-// MCP section
-// ---------------------------------------------------------------------------
-
-function McpSection({ servers }: { servers: Array<{ name: string; state: string; transport: string; tools_count: number; resources_count: number; error?: string }> }) {
+function McpSection({ servers }: { servers: McpServerStatusInfo[] }) {
   if (servers.length === 0) return null
   return (
     <box flexDirection="column">
       <text><span fg="#CBA6F7">MCP</span></text>
       {servers.map(s => (
-        <text key={s.name}>
-          {'  '}
-          <span fg={stateColor(s.state)}>{s.state}</span>
-          {' '}
-          <span fg="#CDD6F4">{s.name}</span>
-          <span fg="#6C7086"> [{s.transport}] {s.tools_count}T/{s.resources_count}R</span>
-          {s.error && <span fg="#F38BA8"> {s.error}</span>}
-        </text>
+        <McpServerCard key={s.name} server={s} />
       ))}
     </box>
   )
 }
 
-// ---------------------------------------------------------------------------
-// Plugin section
-// ---------------------------------------------------------------------------
-
-function PluginSection({ plugins }: { plugins: Array<{ id: string; name: string; status: string; contributed_tools: string[]; error?: string }> }) {
+function PluginSection({ plugins }: { plugins: PluginInfo[] }) {
   if (plugins.length === 0) return null
   return (
     <box flexDirection="column">
       <text><span fg="#FAB387">Plugins</span></text>
       {plugins.map(p => (
-        <text key={p.id}>
-          {'  '}
-          <span fg={stateColor(p.status)}>{p.status}</span>
-          {' '}
-          <span fg="#CDD6F4">{p.name}</span>
-          {p.contributed_tools.length > 0 && (
-            <span fg="#6C7086"> ({p.contributed_tools.length} tools)</span>
-          )}
-          {p.error && <span fg="#F38BA8"> {p.error}</span>}
-        </text>
+        <PluginRow key={p.id} plugin={p} />
       ))}
     </box>
   )
 }
 
-// ---------------------------------------------------------------------------
-// Skill section
-// ---------------------------------------------------------------------------
-
-function SkillSection({ skills }: { skills: Array<{ name: string; source: string; user_invocable: boolean }> }) {
+function SkillSection({ skills }: { skills: SkillInfo[] }) {
   if (skills.length === 0) return null
   const invocable = skills.filter(s => s.user_invocable)
   return (
@@ -109,10 +63,6 @@ function SkillSection({ skills }: { skills: Array<{ name: string; source: string
     </box>
   )
 }
-
-// ---------------------------------------------------------------------------
-// Combined panel
-// ---------------------------------------------------------------------------
 
 export function SubsystemStatus() {
   const { subsystems } = useAppState()
