@@ -1,8 +1,10 @@
 import React from 'react'
 import type { ViewMode } from '../../keybindings.js'
+import { useAppState } from '../../store/app-store.js'
 import { c } from '../../theme.js'
 import type { ToolActivityRenderItem } from '../../store/message-model.js'
 import type { ToolStatus } from '../../view-model/types.js'
+import { ShellProgressMessage } from '../shell/index.js'
 import { FileEditToolPreview, isFileEditToolName } from './FileEditToolPreview.js'
 
 /**
@@ -70,6 +72,10 @@ export function ToolActivityMessage({ item, viewMode }: Props) {
   const status = STATUS_STYLES[item.status]
   const question = extractAskUserQuestion(item)
   const showEditPreview = isFileEditToolName(item.name)
+  const { shellProgress } = useAppState()
+  const bashProgress =
+    item.name === 'Bash' ? shellProgress[item.toolUseId] : undefined
+  const showShellProgress = Boolean(bashProgress)
 
   if (viewMode === 'prompt') {
     return (
@@ -87,7 +93,20 @@ export function ToolActivityMessage({ item, viewMode }: Props) {
             </text>
           )}
         </box>
-        {item.outputSummary && !question && !showEditPreview && (
+        {showShellProgress && bashProgress && (
+          <box paddingLeft={3} width="100%">
+            <ShellProgressMessage
+              output={bashProgress.output}
+              fullOutput={bashProgress.fullOutput}
+              elapsedTimeSeconds={bashProgress.elapsedSeconds}
+              totalLines={bashProgress.totalLines}
+              totalBytes={bashProgress.totalBytes}
+              timeoutMs={bashProgress.timeoutMs}
+              verbose={false}
+            />
+          </box>
+        )}
+        {item.outputSummary && !question && !showEditPreview && !showShellProgress && (
           <box paddingLeft={3} width="100%" flexDirection="row">
             <text fg={c.dim}>{'\u23BF '}</text>
             <text selectable fg={item.isError ? c.error : c.dim}>
@@ -138,10 +157,27 @@ export function ToolActivityMessage({ item, viewMode }: Props) {
           {showEditPreview && (
             <FileEditToolPreview toolName={item.name} input={item.input} />
           )}
-          <text fg={c.dim}>Result</text>
-          <text selectable fg={item.isError ? c.error : c.text}>
-            {item.outputSummary || '(waiting for result)'}
-          </text>
+          {showShellProgress && bashProgress ? (
+            <>
+              <text fg={c.dim}>Progress</text>
+              <ShellProgressMessage
+                output={bashProgress.output}
+                fullOutput={bashProgress.fullOutput}
+                elapsedTimeSeconds={bashProgress.elapsedSeconds}
+                totalLines={bashProgress.totalLines}
+                totalBytes={bashProgress.totalBytes}
+                timeoutMs={bashProgress.timeoutMs}
+                verbose={true}
+              />
+            </>
+          ) : (
+            <>
+              <text fg={c.dim}>Result</text>
+              <text selectable fg={item.isError ? c.error : c.text}>
+                {item.outputSummary || '(waiting for result)'}
+              </text>
+            </>
+          )}
         </box>
       </box>
     </box>

@@ -153,6 +153,18 @@ export function App() {
           }
           break
         }
+        case 'tool_progress':
+          dispatch({
+            type: 'TOOL_PROGRESS',
+            toolUseId: msg.tool_use_id,
+            tool: msg.tool,
+            output: msg.output,
+            elapsedSeconds: msg.elapsed_seconds,
+            totalLines: msg.total_lines,
+            totalBytes: msg.total_bytes,
+            timeoutMs: msg.timeout_ms,
+          })
+          break
         case 'permission_request':
           dispatch({
             type: 'PERMISSION_REQUEST',

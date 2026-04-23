@@ -58,6 +58,52 @@ pub fn install_permission_callback(
     engine.set_permission_callback(callback);
 }
 
+/// Install the `ToolProgress` callback on the engine.
+///
+/// Whenever a tool emits a [`ToolProgress`](crate::types::tool::ToolProgress)
+/// event — typically the Bash tool streaming its stdout tail — the callback
+/// pulls the relevant fields out of the attached `data` JSON and sends a
+/// [`BackendMessage::ToolProgress`] to the frontend.
+///
+/// Missing fields are tolerated: only `tool_use_id` is required to drive UI
+/// routing; everything else is optional and the frontend falls back to its
+/// empty-state rendering.
+pub fn install_tool_progress_callback(engine: &QueryEngine, sink: FrontendSink) {
+    let callback = Arc::new(
+        move |progress: crate::types::tool::ToolProgress| {
+            let data = &progress.data;
+            let tool = data
+                .get("tool")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let output = data
+                .get("output")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let elapsed_seconds = data
+                .get("elapsed_seconds")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let total_lines = data.get("total_lines").and_then(|v| v.as_u64());
+            let total_bytes = data.get("total_bytes").and_then(|v| v.as_u64());
+            let timeout_ms = data.get("timeout_ms").and_then(|v| v.as_u64());
+
+            let _ = sink.send(&BackendMessage::ToolProgress {
+                tool_use_id: progress.tool_use_id,
+                tool,
+                output,
+                elapsed_seconds,
+                total_lines,
+                total_bytes,
+                timeout_ms,
+            });
+        },
+    );
+    engine.set_tool_progress_callback(callback);
+}
+
 /// Install the AskUserQuestion callback on the engine.
 ///
 /// When the engine asks a question, a `QuestionRequest` message is sent to the
