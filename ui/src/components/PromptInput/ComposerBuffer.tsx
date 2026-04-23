@@ -24,6 +24,14 @@ type Props = {
   isBusy: boolean
   isPasted: boolean
   keybindingConfig: KeybindingConfig | null
+  /**
+   * Optional caller-provided placeholder shown when the buffer is empty
+   * and the backend is idle. `usePromptInputPlaceholder` surfaces the
+   * rotating onboarding hints / queued-message hint through this prop so
+   * the static `promptPlaceholder(isBusy)` only fires as a last-resort
+   * fallback.
+   */
+  placeholder?: string
 }
 
 export function ComposerBuffer({
@@ -34,6 +42,7 @@ export function ComposerBuffer({
   isBusy,
   isPasted,
   keybindingConfig,
+  placeholder,
 }: Props) {
   const pasteCompact = shouldRenderPasteCompact(isPasted, text.length)
 
@@ -54,10 +63,17 @@ export function ComposerBuffer({
   }
 
   if (text.length === 0) {
+    // `placeholder` is the dynamic (rotating / queued-aware) copy from
+    // `usePromptInputPlaceholder`. When the caller doesn't supply one —
+    // or when busy — fall back to the static `promptPlaceholder` so we
+    // always render *something* under the cursor.
+    const activePlaceholder = isBusy || !placeholder
+      ? promptPlaceholder(isBusy)
+      : ` ${placeholder}`
     return (
       <text bg={c.bg}>
         <span fg={c.bg} bg={isActive ? c.text : c.dim}> </span>
-        <span fg="#45475A" bg={c.bg}>{promptPlaceholder(isBusy)}</span>
+        <span fg="#45475A" bg={c.bg}>{activePlaceholder}</span>
       </text>
     )
   }
