@@ -22,3 +22,13 @@ export function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text
   return text.slice(0, maxLen - 1) + '\u2026'
 }
+
+/**
+ * Format an integer count with thousands separators. Mirrors the
+ * upstream `formatNumber` helper (`ui/examples/upstream-patterns/src/
+ * utils/format.ts`) used by progress line / coordinator panels.
+ */
+export function formatNumber(count: number): string {
+  if (!Number.isFinite(count)) return '0'
+  return Math.round(count).toLocaleString('en-US')
+}
