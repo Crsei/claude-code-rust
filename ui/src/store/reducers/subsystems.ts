@@ -78,5 +78,44 @@ export function reduceSubsystems(state: AppState, action: SubsystemAction): AppS
           settings: action.settings,
         },
       }
+
+    case 'LSP_DIAGNOSTICS_PUBLISHED': {
+      const next = { ...state.diagnostics.byUri }
+      if (action.diagnostics.length === 0) {
+        // Empty list = LSP wants to clear the document; drop the key so
+        // aggregate counts in `DiagnosticsDisplay` stay accurate.
+        delete next[action.uri]
+      } else {
+        next[action.uri] = action.diagnostics
+      }
+      return {
+        ...state,
+        diagnostics: { byUri: next, lastUpdated: Date.now() },
+      }
+    }
+
+    case 'LSP_DIAGNOSTICS_CLEAR':
+      return {
+        ...state,
+        diagnostics: { byUri: {}, lastUpdated: Date.now() },
+      }
+
+    case 'IDE_CONNECTION_CHANGED':
+      return {
+        ...state,
+        ide: {
+          ...state.ide,
+          connected: action.connected,
+          // Clear the selection when the IDE disconnects; the cached
+          // value would misrepresent the live state otherwise.
+          selection: action.connected ? state.ide.selection : null,
+        },
+      }
+
+    case 'IDE_SELECTION_CHANGED':
+      return {
+        ...state,
+        ide: { ...state.ide, selection: action.selection },
+      }
   }
 }

@@ -94,6 +94,36 @@ pub enum FrontendMessage {
     TeamCommand {
         command: super::agent_events::TeamCommand,
     },
+
+    /// Run a bounded ripgrep-backed file search across the workspace.
+    ///
+    /// Frontend-facing counterpart of the upstream
+    /// `ui/examples/upstream-patterns/src/utils/ripgrep.ts`
+    /// helper — cc-rust's frontend has no direct filesystem access, so
+    /// the backend runs `rg` on its behalf. The backend responds with a
+    /// single [`BackendMessage::FileSearchResult`] keyed on
+    /// `request_id`; long searches are truncated once
+    /// `max_results` is reached.
+    SearchFiles {
+        request_id: String,
+        pattern: String,
+        /// Search root — defaults to the engine's cwd when `None`.
+        #[serde(default)]
+        cwd: Option<String>,
+        /// Case-insensitive search. Defaults to `true` to match the
+        /// upstream dialog's `-i` flag.
+        #[serde(default = "default_true")]
+        case_insensitive: bool,
+        /// Upper bound on results returned in a single response. The
+        /// handler caps at 500 regardless of this value to keep the
+        /// payload reasonable.
+        #[serde(default)]
+        max_results: Option<usize>,
+    },
+}
+
+fn default_true() -> bool {
+    true
 }
 
 // ---------------------------------------------------------------------------
@@ -290,4 +320,31 @@ pub enum BackendMessage {
     TeamEvent {
         event: super::agent_events::TeamEvent,
     },
+
+    /// Response to a [`FrontendMessage::SearchFiles`] request.
+    ///
+    /// `request_id` echoes the client's id so the frontend can correlate
+    /// responses to in-flight requests. `truncated` is `true` when the
+    /// handler hit the result cap before ripgrep finished — the
+    /// frontend should surface a "+ more" indicator to the user.
+    FileSearchResult {
+        request_id: String,
+        matches: Vec<FileSearchMatch>,
+        truncated: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+}
+
+/// A single file-search hit. Matches the upstream
+/// `{ file, line, text }` shape from
+/// `ui/examples/upstream-patterns/src/components/GlobalSearchDialog.tsx`.
+#[derive(Serialize, Debug, Clone)]
+pub struct FileSearchMatch {
+    /// Path relative to the search root.
+    pub file: String,
+    /// 1-based line number.
+    pub line: u64,
+    /// Line text, trimmed of trailing whitespace.
+    pub text: String,
 }
