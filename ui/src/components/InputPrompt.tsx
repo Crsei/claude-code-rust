@@ -13,6 +13,7 @@ import { VimState } from '../vim/index.js'
 import {
   ComposerBuffer,
   ModeIndicator,
+  PromptInputFooter,
   QueuedSubmissions,
   SlashCommandHints,
   buildBusyStatus,
@@ -23,7 +24,9 @@ import {
   useComposerState,
   useComposerSubmit,
   useInputHistoryNav,
+  useMaybeTruncateInput,
   usePasteHandler,
+  usePromptInputPlaceholder,
 } from './PromptInput/index.js'
 
 interface InputPromptProps {
@@ -53,6 +56,7 @@ export function InputPrompt({
     historyIndex,
     keybindingConfig,
     vimEnabled,
+    vimMode,
     queuedSubmissions,
   } = useAppState()
   const dispatch = useAppDispatch()
@@ -101,6 +105,18 @@ export function InputPrompt({
     resetBuffer()
     clearSubMode()
   }, [clearSubMode, resetBuffer])
+
+  // Guard against pasting enough text to lag the renderer. The hook
+  // swaps the middle slice for a short `[...Truncated #N +L lines...]`
+  // placeholder in the buffer but keeps the full content in an internal
+  // ref so `rehydrate` can splice it back on submit.
+  useMaybeTruncateInput({ text, setText, setCursorPos })
+
+  const placeholder = usePromptInputPlaceholder({
+    text,
+    isBusy,
+    hasQueuedSubmissions: queuedSubmissions.length > 0,
+  })
 
   const prefillInput = useCallback((nextText: string) => {
     setText(nextText)
@@ -511,6 +527,7 @@ export function InputPrompt({
           isBusy={isBusy}
           isPasted={isPasted}
           keybindingConfig={keybindingConfig}
+          placeholder={placeholder}
         />
         {showInlineStatus && <ModeIndicator workedTag={workedTag} />}
       </box>
@@ -523,6 +540,15 @@ export function InputPrompt({
         subMode={subMode}
         subIndex={subIndex}
       />
+      {viewMode === 'prompt' && !isReadOnly && !showHint && (
+        <PromptInputFooter
+          vimMode={vimEnabled ? vimMode : undefined}
+          workedTag={workedTag}
+          queuedCount={queuedSubmissions.length}
+          isActive={inputActive}
+          keybindingConfig={keybindingConfig}
+        />
+      )}
       {viewMode === 'prompt' && (
         <QueuedSubmissions submissions={queuedSubmissions} />
       )}
