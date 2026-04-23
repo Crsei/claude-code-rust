@@ -16,4 +16,5 @@ export {
   type DiffLine,
   type DiffLineKind,
 } from './hunks.js'
-export { StructuredDiff } from './StructuredDiff.js'
+export { StructuredDiff } from '../StructuredDiff.js'
+export { StructuredDiffList } from '../StructuredDiffList.js'

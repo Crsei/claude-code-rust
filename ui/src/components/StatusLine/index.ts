@@ -11,7 +11,7 @@
  */
 export { BuiltinStatusLine } from './BuiltinStatusLine.js'
 export { CustomStatusLine } from './CustomStatusLine.js'
-export { StatusLine } from './StatusLine.js'
+export { StatusLine } from '../StatusLine.js'
 export {
   countActiveTeams,
   countConnectedMcp,
