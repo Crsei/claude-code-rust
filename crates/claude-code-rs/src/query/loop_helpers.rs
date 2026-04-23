@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::types::message::{AssistantMessage, ContentBlock, Message, MessageContent, UserMessage};
 use crate::types::state::QueryLoopState;
+use crate::types::tool::ToolProgress;
 use crate::types::transitions::{Continue, Terminal};
 
 use super::deps::{QueryDeps, ToolExecRequest, ToolExecResult};
@@ -110,6 +111,7 @@ pub(crate) async fn execute_tool_calls(
     tool_uses: &[(String, String, serde_json::Value)],
     tools: &crate::types::tool::Tools,
     parent_message: &AssistantMessage,
+    on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
 ) -> Vec<ToolExecResult> {
     let mut results = Vec::new();
 
@@ -157,6 +159,7 @@ pub(crate) async fn execute_tool_calls(
                 let parent = parent_message.clone();
                 let tools = tools.clone();
                 let batch_span = batch_span.clone();
+                let on_progress_clone = on_progress.clone();
                 let handle = tokio::spawn(async move {
                     let req = ToolExecRequest {
                         tool_use_id: id,
@@ -164,7 +167,7 @@ pub(crate) async fn execute_tool_calls(
                         input,
                         langfuse_batch_span: batch_span,
                     };
-                    deps.execute_tool(req, &tools, &parent, None).await
+                    deps.execute_tool(req, &tools, &parent, on_progress_clone).await
                 });
                 handles.push(handle);
             }
@@ -199,7 +202,10 @@ pub(crate) async fn execute_tool_calls(
                     input,
                     langfuse_batch_span: None,
                 };
-                match deps.execute_tool(req, tools, parent_message, None).await {
+                match deps
+                    .execute_tool(req, tools, parent_message, on_progress.clone())
+                    .await
+                {
                     Ok(result) => results.push(result),
                     Err(e) => {
                         warn!(error = %e, "tool execution error");
