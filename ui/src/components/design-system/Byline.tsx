@@ -17,7 +17,7 @@ type Props = {
 
 export function Byline({ children, separator = '\u00B7', separatorColor }: Props) {
   const items = Children.toArray(children).filter(
-    child => child !== null && child !== false && child !== undefined,
+    child => child !== null && child !== undefined,
   )
   const sepColor = separatorColor ?? c.dim
 

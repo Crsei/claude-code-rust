@@ -1,7 +1,7 @@
 import React from 'react'
 import { c } from '../../theme.js'
 import {
-  StructuredDiff,
+  StructuredDiffList,
   type DiffHunk,
 } from '../StructuredDiff/index.js'
 import { Divider } from '../design-system/Divider.js'
@@ -86,7 +86,7 @@ export function DiffDetailView({
         {hunks.length === 0 ? (
           <text fg={c.dim}>No diff content</text>
         ) : (
-          <StructuredDiff hunks={hunks} maxLinesPerHunk={maxLinesPerHunk} />
+          <StructuredDiffList hunks={hunks} maxLinesPerHunk={maxLinesPerHunk} />
         )}
       </box>
 

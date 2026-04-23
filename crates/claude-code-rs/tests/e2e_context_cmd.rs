@@ -7,12 +7,8 @@
 use std::fs;
 use std::path::Path;
 
-use cc_compact::context_analysis::{
-    analyze_context_usage, ContextAnalysis, ContextAnalysisInput,
-};
-use cc_types::message::{
-    AssistantMessage, ContentBlock, Message, MessageContent, UserMessage,
-};
+use cc_compact::context_analysis::{analyze_context_usage, ContextAnalysis, ContextAnalysisInput};
+use cc_types::message::{AssistantMessage, ContentBlock, Message, MessageContent, UserMessage};
 use uuid::Uuid;
 
 fn user(text: &str) -> Message {
@@ -54,7 +50,15 @@ fn report_includes_all_seven_canonical_categories() {
         ..Default::default()
     });
     let labels: Vec<&str> = report.categories.iter().map(|c| c.label.as_str()).collect();
-    for expected in ["messages", "system prompt", "skills", "files cached", "tools schema", "hook results", "free"] {
+    for expected in [
+        "messages",
+        "system prompt",
+        "skills",
+        "files cached",
+        "tools schema",
+        "hook results",
+        "free",
+    ] {
         assert!(labels.contains(&expected));
     }
 }
@@ -75,7 +79,12 @@ fn total_used_plus_free_never_exceeds_window() {
         cached_files_chars: 2_000,
         model: "claude-sonnet-4-20250514",
     });
-    let free = report.categories.iter().find(|c| c.label == "free").unwrap().tokens;
+    let free = report
+        .categories
+        .iter()
+        .find(|c| c.label == "free")
+        .unwrap()
+        .tokens;
     let capped = report.total_used.min(report.context_window);
     assert!(capped + free <= report.context_window);
     assert!(report.total_percent <= 100.0);
@@ -91,7 +100,11 @@ fn categories_sorted_descending_with_free_pinned_last() {
         ..Default::default()
     });
     assert_eq!(report.categories.last().unwrap().label, "free");
-    let non_free: Vec<_> = report.categories.iter().filter(|c| c.label != "free").collect();
+    let non_free: Vec<_> = report
+        .categories
+        .iter()
+        .filter(|c| c.label != "free")
+        .collect();
     for pair in non_free.windows(2) {
         assert!(pair[0].tokens >= pair[1].tokens);
     }
@@ -105,7 +118,16 @@ fn json_shape_is_stable_for_headless_callers() {
         ..Default::default()
     });
     let json = serde_json::to_value(&report).expect("serialise analysis");
-    for key in ["model", "context_window", "total_used", "total_percent", "compacted", "messages_in", "messages_out", "categories"] {
+    for key in [
+        "model",
+        "context_window",
+        "total_used",
+        "total_percent",
+        "compacted",
+        "messages_in",
+        "messages_out",
+        "categories",
+    ] {
         assert!(json.get(key).is_some());
     }
     for cat in json.get("categories").unwrap().as_array().unwrap() {
@@ -117,7 +139,9 @@ fn json_shape_is_stable_for_headless_callers() {
 
 fn command_file() -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src").join("commands").join("context.rs");
+        .join("src")
+        .join("commands")
+        .join("context.rs");
     fs::read_to_string(&path).expect("read commands/context.rs")
 }
 
@@ -138,7 +162,9 @@ fn context_handler_offers_json_subcommand() {
 #[test]
 fn context_command_is_still_registered() {
     let mod_rs = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src").join("commands").join("mod.rs");
+        .join("src")
+        .join("commands")
+        .join("mod.rs");
     let text = fs::read_to_string(&mod_rs).expect("read commands/mod.rs");
     assert!(text.contains("name: \"context\""));
     assert!(text.contains("context::ContextHandler"));

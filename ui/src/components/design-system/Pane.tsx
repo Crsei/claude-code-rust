@@ -21,10 +21,10 @@ type Props = {
   color?: PaneColor
   title?: string
   subtitle?: string
-  borderStyle?: 'single' | 'double' | 'rounded' | 'bold' | 'classic'
+  borderStyle?: 'single' | 'double' | 'rounded' | 'heavy'
   paddingX?: number
   paddingY?: number
-  width?: number | string
+  width?: number | 'auto' | `${number}%`
 }
 
 const COLOR_MAP: Record<PaneColor, string> = {
@@ -51,6 +51,7 @@ export function Pane({
   return (
     <box
       flexDirection="column"
+      border
       borderStyle={borderStyle}
       borderColor={borderColor}
       paddingX={paddingX}

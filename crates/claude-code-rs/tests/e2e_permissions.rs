@@ -56,6 +56,8 @@ fn permissions_from_user_settings_round_trip() {
 #[serial]
 fn schema_describes_permissions_subkeys() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
         .join("docs")
         .join("schemas")
         .join("settings.schema.json");

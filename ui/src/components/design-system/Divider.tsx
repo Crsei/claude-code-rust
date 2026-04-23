@@ -17,7 +17,7 @@ type Props = {
   /** Override rule color. Defaults to the muted theme colour. */
   color?: string
   /** Width in columns. Defaults to `100%`. */
-  width?: number | string
+  width?: number | 'auto' | `${number}%`
 }
 
 export function Divider({

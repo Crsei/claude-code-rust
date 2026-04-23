@@ -127,10 +127,10 @@ function FileStats({ file, isSelected }: { file: DiffFile; isSelected: boolean }
   }
   return (
     <text>
-      {file.linesAdded > 0 && <text fg={c.success}>+{file.linesAdded}</text>}
+      {file.linesAdded > 0 && <span fg={c.success}>+{file.linesAdded}</span>}
       {file.linesAdded > 0 && file.linesRemoved > 0 && ' '}
-      {file.linesRemoved > 0 && <text fg={c.error}>-{file.linesRemoved}</text>}
-      {file.isTruncated && <text fg={c.dim}> (truncated)</text>}
+      {file.linesRemoved > 0 && <span fg={c.error}>-{file.linesRemoved}</span>}
+      {file.isTruncated && <span fg={c.dim}> (truncated)</span>}
     </text>
   )
 }

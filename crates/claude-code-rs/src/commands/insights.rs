@@ -65,8 +65,7 @@ impl CommandHandler for InsightsHandler {
         let report = session_analytics::compute_insights(&filter)?;
         if report.session_count == 0 {
             return Ok(CommandResult::Output(
-                "No sessions match the current filter. Try /insights or /session list."
-                    .into(),
+                "No sessions match the current filter. Try /insights or /session list.".into(),
             ));
         }
         Ok(CommandResult::Output(session_analytics::format_report(

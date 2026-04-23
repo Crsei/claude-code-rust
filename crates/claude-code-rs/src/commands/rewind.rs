@@ -68,7 +68,12 @@ impl CommandHandler for RewindHandler {
                         matches.len()
                     )];
                     for m in matches.iter().take(10) {
-                        lines.push(format!("  {}. {} — {}", m.index, short_uuid(&m.uuid), m.preview));
+                        lines.push(format!(
+                            "  {}. {} — {}",
+                            m.index,
+                            short_uuid(&m.uuid),
+                            m.preview
+                        ));
                     }
                     Ok(CommandResult::Output(lines.join("\n")))
                 }
@@ -156,7 +161,11 @@ fn message_preview(content: &MessageContent) -> String {
             .collect::<Vec<_>>()
             .join(" "),
     };
-    let first = raw.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+    let first = raw
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("")
+        .trim();
     const MAX: usize = 72;
     let trimmed: String = first.chars().take(MAX).collect();
     if first.chars().count() > MAX {
@@ -192,10 +201,7 @@ fn format_turn_list(anchors: &[Anchor]) -> String {
     }
     lines.push(String::new());
     lines.push("Use /rewind <n> or /rewind --to <uuid-prefix> to rewind.".into());
-    lines.push(
-        "A backup of the pre-rewind session is written next to the session file."
-            .into(),
-    );
+    lines.push("A backup of the pre-rewind session is written next to the session file.".into());
     lines.join("\n")
 }
 
@@ -291,9 +297,7 @@ mod tests {
             uuid: Uuid::new_v4(),
             timestamp: 1_700_000_000_000,
             role: "assistant".into(),
-            content: vec![crate::types::message::ContentBlock::Text {
-                text: text.into(),
-            }],
+            content: vec![crate::types::message::ContentBlock::Text { text: text.into() }],
             usage: None,
             stop_reason: Some("end_turn".into()),
             is_api_error_message: false,

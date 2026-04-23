@@ -129,8 +129,8 @@ export function DiffDialog({
   const subtitle = stats ? (
     <text fg={c.dim}>
       {stats.filesCount} {pluralFile(stats.filesCount)} changed
-      {stats.linesAdded > 0 && <text fg={c.success}> +{stats.linesAdded}</text>}
-      {stats.linesRemoved > 0 && <text fg={c.error}> -{stats.linesRemoved}</text>}
+      {stats.linesAdded > 0 && <span fg={c.success}> +{stats.linesAdded}</span>}
+      {stats.linesRemoved > 0 && <span fg={c.error}> -{stats.linesRemoved}</span>}
     </text>
   ) : null
 
@@ -142,11 +142,11 @@ export function DiffDialog({
           const isSelected = i === sourceIndex
           return (
             <text key={source.label}>
-              {i > 0 ? <text fg={c.dim}> \u00B7 </text> : null}
+              {i > 0 ? <span fg={c.dim}> \u00B7 </span> : null}
               {isSelected ? (
-                <strong><text>{source.label}</text></strong>
+                <strong>{source.label}</strong>
               ) : (
-                <text fg={c.dim}>{source.label}</text>
+                <span fg={c.dim}>{source.label}</span>
               )}
             </text>
           )
@@ -186,7 +186,7 @@ export function DiffDialog({
       title={
         <text>
           {headerTitle}
-          {headerSubtitle && <text fg={c.dim}>{' '}{headerSubtitle}</text>}
+          {headerSubtitle && <span fg={c.dim}>{' '}{headerSubtitle}</span>}
         </text>
       }
       onCancel={() => onDone('Diff dialog dismissed')}

@@ -1,8 +1,8 @@
 #[cfg(feature = "telemetry")]
 use serde::Serialize;
-use serde_json::{Map, Value};
 #[cfg(any(test, feature = "telemetry"))]
 use serde_json::json;
+use serde_json::{Map, Value};
 
 const MAX_TEXT_LEN: usize = 40_000;
 const MAX_TOOL_OUTPUT_LEN: usize = 500;

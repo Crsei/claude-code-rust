@@ -124,6 +124,7 @@ export function HelpV2({
       right={2}
       bottom={2}
       flexDirection="column"
+      border
       borderStyle="rounded"
       borderColor={c.info}
       title={title}

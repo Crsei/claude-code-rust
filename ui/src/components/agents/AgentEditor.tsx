@@ -106,12 +106,13 @@ export function AgentEditor({
     const field = fields[focus]
     if (!field) return
     if (field.key === 'agentType' || field.key === 'description' || field.key === 'systemPrompt') {
+      const key = field.key
       if (name === 'backspace' || name === 'delete') {
-        setDraft(d => ({ ...d, [field.key]: String(d[field.key] ?? '').slice(0, -1) }))
+        setDraft(d => ({ ...d, [key]: String(d[key] ?? '').slice(0, -1) }))
         return
       }
       if (seq && seq.length === 1 && !event.ctrl && !event.meta) {
-        setDraft(d => ({ ...d, [field.key]: String(d[field.key] ?? '') + seq }))
+        setDraft(d => ({ ...d, [key]: String(d[key] ?? '') + seq }))
       }
     }
   })

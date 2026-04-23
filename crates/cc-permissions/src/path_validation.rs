@@ -180,7 +180,9 @@ fn normalize_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cc_types::permissions::{AdditionalWorkingDirectory, PermissionMode, ToolPermissionContext};
+    use cc_types::permissions::{
+        AdditionalWorkingDirectory, PermissionMode, ToolPermissionContext,
+    };
     use std::collections::HashMap;
 
     fn default_ctx() -> ToolPermissionContext {

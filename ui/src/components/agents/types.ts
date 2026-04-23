@@ -11,7 +11,7 @@
 import type { AgentDefinitionEntry } from '../../ipc/protocol.js'
 
 export const AGENT_PATHS = {
-  FOLDER_NAME: '.claude',
+  FOLDER_NAME: '.cc-rust',
   AGENTS_DIR: 'agents',
 } as const
 

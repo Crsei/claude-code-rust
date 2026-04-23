@@ -122,9 +122,9 @@ fn resize_accepted() {
     assert!(status.success(), "backend should survive resize");
 }
 
-/// `slash_command` should return a system_info warning (not yet supported).
+/// `slash_command` should execute known commands and return system_info.
 #[test]
-fn slash_command_returns_warning() {
+fn slash_command_returns_info() {
     let (mut child, mut stdin, mut stdout) = spawn_headless(&["-C", workspace()], true);
 
     let ready = read_line_json(&mut stdout, LINE_TIMEOUT);
@@ -141,13 +141,13 @@ fn slash_command_returns_warning() {
         "slash_command should produce system_info: {:?}",
         msg
     );
-    assert_eq!(msg["level"], "warning");
+    assert_eq!(msg["level"], "info");
     assert!(
         msg["text"]
             .as_str()
             .unwrap_or("")
-            .contains("not yet supported"),
-        "should mention not yet supported: {:?}",
+            .contains("Available commands"),
+        "should include the help output: {:?}",
         msg
     );
 

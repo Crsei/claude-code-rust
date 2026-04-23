@@ -105,11 +105,7 @@ impl Default for ShellHookRunner {
 
 #[async_trait]
 impl HookRunner for ShellHookRunner {
-    fn load_hook_configs(
-        &self,
-        hooks_value: &HooksMap,
-        event_name: &str,
-    ) -> Vec<HookEventConfig> {
+    fn load_hook_configs(&self, hooks_value: &HooksMap, event_name: &str) -> Vec<HookEventConfig> {
         load_hook_configs(hooks_value, event_name)
     }
 

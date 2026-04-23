@@ -270,9 +270,9 @@ mod tests {
         let json = make_auth_json("chatgpt", &token, Some("refresh-tok"));
         std::fs::write(&auth_path, json).unwrap();
 
-        // Point CODEX_HOME at the temp dir
-        let _guard = EnvGuard::set(CODEX_HOME_ENV, dir.path().to_str().unwrap());
-        let cred = read_codex_cli_credential().expect("should parse valid auth.json");
+        let cred = with_codex_home(dir.path(), || {
+            read_codex_cli_credential().expect("should parse valid auth.json")
+        });
         assert_eq!(cred.access_token, token);
         assert_eq!(cred.refresh_token.as_deref(), Some("refresh-tok"));
         assert_eq!(cred.client_id, CODEX_CLI_CLIENT_ID);
@@ -286,8 +286,9 @@ mod tests {
         let json = make_auth_json("api_key", "sk-test", None);
         std::fs::write(&auth_path, json).unwrap();
 
-        let _guard = EnvGuard::set(CODEX_HOME_ENV, dir.path().to_str().unwrap());
-        assert!(read_codex_cli_credential().is_none());
+        with_codex_home(dir.path(), || {
+            assert!(read_codex_cli_credential().is_none());
+        });
     }
 
     #[test]
@@ -296,8 +297,9 @@ mod tests {
         let auth_path = dir.path().join(CODEX_CLI_AUTH_FILE);
         std::fs::write(&auth_path, r#"{"auth_mode":"chatgpt"}"#).unwrap();
 
-        let _guard = EnvGuard::set(CODEX_HOME_ENV, dir.path().to_str().unwrap());
-        assert!(read_codex_cli_credential().is_none());
+        with_codex_home(dir.path(), || {
+            assert!(read_codex_cli_credential().is_none());
+        });
     }
 
     #[test]
@@ -307,8 +309,9 @@ mod tests {
         let json = make_auth_json("chatgpt", "", None);
         std::fs::write(&auth_path, json).unwrap();
 
-        let _guard = EnvGuard::set(CODEX_HOME_ENV, dir.path().to_str().unwrap());
-        assert!(read_codex_cli_credential().is_none());
+        with_codex_home(dir.path(), || {
+            assert!(read_codex_cli_credential().is_none());
+        });
     }
 
     // ---- codex_cli_auth_path ----
@@ -319,19 +322,27 @@ mod tests {
         let auth_path = dir.path().join(CODEX_CLI_AUTH_FILE);
         std::fs::write(&auth_path, "{}").unwrap();
 
-        let _guard = EnvGuard::set(CODEX_HOME_ENV, dir.path().to_str().unwrap());
-        let resolved = codex_cli_auth_path();
+        let resolved = with_codex_home(dir.path(), codex_cli_auth_path);
         assert_eq!(resolved, Some(auth_path));
     }
 
     #[test]
     fn test_codex_cli_auth_path_missing_file() {
         let dir = tempfile::TempDir::new().unwrap();
-        let _guard = EnvGuard::set(CODEX_HOME_ENV, dir.path().to_str().unwrap());
-        assert!(codex_cli_auth_path().is_none());
+        with_codex_home(dir.path(), || {
+            assert!(codex_cli_auth_path().is_none());
+        });
     }
 
     // ---- Test helper: RAII env var guard ----
+
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn with_codex_home<T>(path: &std::path::Path, f: impl FnOnce() -> T) -> T {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard::set(CODEX_HOME_ENV, path.to_str().unwrap());
+        f()
+    }
 
     struct EnvGuard {
         key: String,

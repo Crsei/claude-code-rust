@@ -25,8 +25,7 @@ use parking_lot::RwLock;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
-static CREDENTIALS_PATH: LazyLock<RwLock<Option<PathBuf>>> =
-    LazyLock::new(|| RwLock::new(None));
+static CREDENTIALS_PATH: LazyLock<RwLock<Option<PathBuf>>> = LazyLock::new(|| RwLock::new(None));
 
 /// Register the OAuth credentials file path. The host calls this once during
 /// process startup; if a caller reaches token I/O without it having run

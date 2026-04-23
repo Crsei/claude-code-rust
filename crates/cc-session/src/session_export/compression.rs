@@ -4,9 +4,7 @@ use std::collections::HashMap;
 
 use regex::Regex;
 
-use cc_types::message::{
-    ContentBlock, Message, MessageContent, SystemSubtype, ToolResultContent,
-};
+use cc_types::message::{ContentBlock, Message, MessageContent, SystemSubtype, ToolResultContent};
 
 use super::builders::tool_result_content_to_json;
 use super::format_ts_millis;

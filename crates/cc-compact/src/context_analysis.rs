@@ -47,15 +47,25 @@ pub fn analyze_context_usage(input: ContextAnalysisInput<'_>) -> ContextAnalysis
     let messages_in = input.messages.len();
     let mut compacted = false;
     let snipped = snip::snip_compact_if_needed(input.messages.to_vec(), DEFAULT_SNIP_MAX_TURNS);
-    if snipped.tokens_freed > 0 { compacted = true; }
+    if snipped.tokens_freed > 0 {
+        compacted = true;
+    }
     let micro = microcompact::microcompact_messages(snipped.messages);
-    if micro.tokens_freed > 0 { compacted = true; }
+    if micro.tokens_freed > 0 {
+        compacted = true;
+    }
     let effective = micro.messages;
     let messages_out = effective.len();
 
     let messages_tokens = tokens::estimate_messages_tokens(&effective);
-    let system_tokens = input.system_prompt.map(tokens::estimate_tokens).unwrap_or(0);
-    let skills_tokens = input.skills_manifest.map(tokens::estimate_tokens).unwrap_or(0);
+    let system_tokens = input
+        .system_prompt
+        .map(tokens::estimate_tokens)
+        .unwrap_or(0);
+    let skills_tokens = input
+        .skills_manifest
+        .map(tokens::estimate_tokens)
+        .unwrap_or(0);
     let tools_tokens = input.tools_schema.map(tokens::estimate_tokens).unwrap_or(0);
     let hooks_tokens = input.hook_results.map(tokens::estimate_tokens).unwrap_or(0);
     let files_tokens = if input.cached_files_chars == 0 {
@@ -107,7 +117,9 @@ fn row(label: &str, tokens: u64, window: u64) -> ContextCategory {
 }
 
 fn percent_of(n: u64, total: u64) -> f32 {
-    if total == 0 { return 0.0; }
+    if total == 0 {
+        return 0.0;
+    }
     ((n as f64 / total as f64) * 100.0) as f32
 }
 
@@ -172,15 +184,39 @@ mod tests {
             model: "claude-sonnet-4-20250514",
         });
         let labels: Vec<&str> = report.categories.iter().map(|c| c.label.as_str()).collect();
-        for expected in ["messages", "system prompt", "skills", "files cached", "tools schema", "hook results", "free"] {
+        for expected in [
+            "messages",
+            "system prompt",
+            "skills",
+            "files cached",
+            "tools schema",
+            "hook results",
+            "free",
+        ] {
             assert!(labels.contains(&expected));
         }
-        let files = report.categories.iter().find(|c| c.label == "files cached").unwrap();
+        let files = report
+            .categories
+            .iter()
+            .find(|c| c.label == "files cached")
+            .unwrap();
         assert_eq!(files.tokens, 100);
-        let non_free: u64 = report.categories.iter().filter(|c| c.label != "free").map(|c| c.tokens).sum();
+        let non_free: u64 = report
+            .categories
+            .iter()
+            .filter(|c| c.label != "free")
+            .map(|c| c.tokens)
+            .sum();
         assert_eq!(non_free, report.total_used);
-        let free_tokens = report.categories.iter().find(|c| c.label == "free").unwrap().tokens;
-        assert!(report.total_used.min(report.context_window) + free_tokens <= report.context_window);
+        let free_tokens = report
+            .categories
+            .iter()
+            .find(|c| c.label == "free")
+            .unwrap()
+            .tokens;
+        assert!(
+            report.total_used.min(report.context_window) + free_tokens <= report.context_window
+        );
     }
 
     #[test]
@@ -194,7 +230,11 @@ mod tests {
         });
         assert!(report.total_used > report.context_window);
         assert!(report.total_percent <= 100.0);
-        let free = report.categories.iter().find(|c| c.label == "free").unwrap();
+        let free = report
+            .categories
+            .iter()
+            .find(|c| c.label == "free")
+            .unwrap();
         assert_eq!(free.tokens, 0);
     }
 
@@ -209,7 +249,11 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(report.categories.last().unwrap().label, "free");
-        let non_free: Vec<&ContextCategory> = report.categories.iter().filter(|c| c.label != "free").collect();
+        let non_free: Vec<&ContextCategory> = report
+            .categories
+            .iter()
+            .filter(|c| c.label != "free")
+            .collect();
         for pair in non_free.windows(2) {
             assert!(pair[0].tokens >= pair[1].tokens);
         }
@@ -239,7 +283,15 @@ mod tests {
             ..Default::default()
         });
         let json = serde_json::to_value(&report).unwrap();
-        for k in ["model", "context_window", "total_used", "total_percent", "compacted", "messages_in", "messages_out"] {
+        for k in [
+            "model",
+            "context_window",
+            "total_used",
+            "total_percent",
+            "compacted",
+            "messages_in",
+            "messages_out",
+        ] {
             assert!(json.get(k).is_some());
         }
         let cats = json.get("categories").unwrap().as_array().unwrap();

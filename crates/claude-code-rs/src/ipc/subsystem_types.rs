@@ -347,7 +347,10 @@ pub enum AgentDefinitionSource {
 impl AgentDefinitionSource {
     /// True when this source can be edited directly via the filesystem.
     pub fn is_editable(&self) -> bool {
-        matches!(self, AgentDefinitionSource::User | AgentDefinitionSource::Project)
+        matches!(
+            self,
+            AgentDefinitionSource::User | AgentDefinitionSource::Project
+        )
     }
 
     /// Short label used in error messages and lists.
@@ -585,11 +588,11 @@ mod tests {
     fn config_scope_editable_flag() {
         assert!(ConfigScope::User.is_editable());
         assert!(ConfigScope::Project.is_editable());
-        assert!(!ConfigScope::Plugin {
-            id: "p".into()
+        assert!(!ConfigScope::Plugin { id: "p".into() }.is_editable());
+        assert!(!ConfigScope::Ide {
+            id: "vscode".into()
         }
         .is_editable());
-        assert!(!ConfigScope::Ide { id: "vscode".into() }.is_editable());
     }
 
     #[test]
@@ -598,7 +601,9 @@ mod tests {
             ConfigScope::User,
             ConfigScope::Project,
             ConfigScope::Plugin { id: "com.x".into() },
-            ConfigScope::Ide { id: "vscode".into() },
+            ConfigScope::Ide {
+                id: "vscode".into(),
+            },
         ];
         for scope in cases {
             let json = serde_json::to_string(&scope).expect("serialize scope");
@@ -637,7 +642,10 @@ mod tests {
         assert_eq!(back.name, "context7");
         assert_eq!(back.transport, "stdio");
         assert_eq!(back.command.as_deref(), Some("npx"));
-        assert_eq!(back.env.unwrap().get("NODE_ENV").cloned(), Some("production".into()));
+        assert_eq!(
+            back.env.unwrap().get("NODE_ENV").cloned(),
+            Some("production".into())
+        );
 
         let value = serde_json::to_value(&entry).unwrap();
         assert!(value.get("url").is_none(), "None url should be omitted");

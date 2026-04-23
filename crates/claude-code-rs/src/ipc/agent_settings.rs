@@ -71,41 +71,37 @@ pub fn handle(cmd: AgentSettingsCommand) -> Vec<BackendMessage> {
                 }]
             }
         },
-        AgentSettingsCommand::Delete { name, source } => {
-            match delete_agent(&cwd, &name, &source) {
-                Ok(()) => vec![BackendMessage::AgentSettingsEvent {
-                    event: AgentSettingsEvent::Changed { name, entry: None },
-                }],
-                Err(error) => {
-                    tracing::warn!(agent = %name, %error, "agent delete rejected");
-                    vec![BackendMessage::AgentSettingsEvent {
-                        event: AgentSettingsEvent::Error { name, error },
-                    }]
-                }
+        AgentSettingsCommand::Delete { name, source } => match delete_agent(&cwd, &name, &source) {
+            Ok(()) => vec![BackendMessage::AgentSettingsEvent {
+                event: AgentSettingsEvent::Changed { name, entry: None },
+            }],
+            Err(error) => {
+                tracing::warn!(agent = %name, %error, "agent delete rejected");
+                vec![BackendMessage::AgentSettingsEvent {
+                    event: AgentSettingsEvent::Error { name, error },
+                }]
             }
-        }
+        },
         AgentSettingsCommand::QueryTools => {
             let tools = available_tools();
             vec![BackendMessage::AgentSettingsEvent {
                 event: AgentSettingsEvent::ToolList { tools },
             }]
         }
-        AgentSettingsCommand::OpenInEditor { file_path } => {
-            match open_in_editor(&file_path) {
-                Ok(()) => vec![BackendMessage::AgentSettingsEvent {
-                    event: AgentSettingsEvent::EditorOpened { file_path },
-                }],
-                Err(error) => {
-                    tracing::warn!(%file_path, %error, "editor launch failed");
-                    vec![BackendMessage::AgentSettingsEvent {
-                        event: AgentSettingsEvent::Error {
-                            name: file_path,
-                            error,
-                        },
-                    }]
-                }
+        AgentSettingsCommand::OpenInEditor { file_path } => match open_in_editor(&file_path) {
+            Ok(()) => vec![BackendMessage::AgentSettingsEvent {
+                event: AgentSettingsEvent::EditorOpened { file_path },
+            }],
+            Err(error) => {
+                tracing::warn!(%file_path, %error, "editor launch failed");
+                vec![BackendMessage::AgentSettingsEvent {
+                    event: AgentSettingsEvent::Error {
+                        name: file_path,
+                        error,
+                    },
+                }]
             }
-        }
+        },
         AgentSettingsCommand::Generate {
             user_prompt,
             mut existing_names,
@@ -375,9 +371,7 @@ fn parse_frontmatter(content: &str) -> (Vec<(String, String)>, String) {
 }
 
 fn fm_get(fm: &[(String, String)], key: &str) -> Option<String> {
-    fm.iter()
-        .find(|(k, _)| k == key)
-        .map(|(_, v)| v.clone())
+    fm.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone())
 }
 
 fn split_list(value: &str) -> Vec<String> {
@@ -497,11 +491,7 @@ fn upsert_agent(
     Ok(entry)
 }
 
-fn delete_agent(
-    cwd: &Path,
-    name: &str,
-    source: &AgentDefinitionSource,
-) -> Result<(), String> {
+fn delete_agent(cwd: &Path, name: &str, source: &AgentDefinitionSource) -> Result<(), String> {
     if !source.is_editable() {
         return Err(format!(
             "source `{}` is read-only — cannot delete agent",
@@ -543,9 +533,7 @@ fn validate_name(name: &str) -> Result<(), String> {
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
     if !ok {
-        return Err(
-            "agent name may only contain letters, digits, `-`, and `_`".to_string(),
-        );
+        return Err("agent name may only contain letters, digits, `-`, and `_`".to_string());
     }
     Ok(())
 }
@@ -811,18 +799,18 @@ mod tests {
         let entry = make_entry("temp", AgentDefinitionSource::Project);
         upsert_agent(tmp.path(), entry).unwrap();
 
-        let path = tmp
-            .path()
-            .join(".cc-rust")
-            .join("agents")
-            .join("temp.md");
+        let path = tmp.path().join(".cc-rust").join("agents").join("temp.md");
         assert!(path.exists());
 
         delete_agent(tmp.path(), "temp", &AgentDefinitionSource::Project).unwrap();
         assert!(!path.exists());
 
-        let err = delete_agent(tmp.path(), "general-purpose", &AgentDefinitionSource::Builtin)
-            .unwrap_err();
+        let err = delete_agent(
+            tmp.path(),
+            "general-purpose",
+            &AgentDefinitionSource::Builtin,
+        )
+        .unwrap_err();
         assert!(err.contains("read-only"));
     }
 
@@ -846,7 +834,10 @@ mod tests {
         assert_eq!(parsed.effort.as_deref(), Some("high"));
         assert!(parsed.background);
         assert_eq!(parsed.isolation.as_deref(), Some("worktree"));
-        assert_eq!(parsed.skills, vec!["simplify".to_string(), "loop".to_string()]);
+        assert_eq!(
+            parsed.skills,
+            vec!["simplify".to_string(), "loop".to_string()]
+        );
         assert!(parsed.system_prompt.starts_with("Body text here."));
     }
 

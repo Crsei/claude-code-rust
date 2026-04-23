@@ -27,7 +27,7 @@ type Props = {
   hideInputGuide?: boolean
   onCancel?: () => void
   children: ReactNode
-  width?: number | string
+  width?: number | 'auto' | `${number}%`
 }
 
 const COLOR_MAP = {
@@ -52,6 +52,14 @@ export function Dialog({
   width,
 }: Props) {
   const borderColor = COLOR_MAP[color]
+  const renderedTitle =
+    typeof title === 'string' || typeof title === 'number' ? (
+      <strong>
+        <text fg={borderColor}>{title}</text>
+      </strong>
+    ) : (
+      title
+    )
 
   const handleCancel = useCallback(() => {
     onCancel?.()
@@ -77,17 +85,14 @@ export function Dialog({
   return (
     <box
       flexDirection="column"
+      border={!hideBorder}
       borderStyle={hideBorder ? undefined : 'rounded'}
       borderColor={hideBorder ? undefined : borderColor}
       paddingX={hideBorder ? 0 : 2}
       paddingY={hideBorder ? 0 : 1}
       width={width}
     >
-      {title && (
-        <strong>
-          <text fg={borderColor}>{title}</text>
-        </strong>
-      )}
+      {renderedTitle}
       {subtitle && <text fg={c.dim}>{subtitle}</text>}
       {(title || subtitle) && <text></text>}
 

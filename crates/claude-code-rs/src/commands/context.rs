@@ -16,9 +16,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use cc_compact::context_analysis::{
-    analyze_context_usage, ContextAnalysis, ContextAnalysisInput,
-};
+use cc_compact::context_analysis::{analyze_context_usage, ContextAnalysis, ContextAnalysisInput};
 
 use super::{CommandContext, CommandHandler, CommandResult};
 
@@ -40,8 +38,12 @@ fn render_bar(percent: f32, width: usize) -> String {
     let filled = filled.min(width);
     let empty = width - filled;
     let mut bar = String::with_capacity(width);
-    for _ in 0..filled { bar.push('\u{2588}'); }
-    for _ in 0..empty { bar.push('\u{2591}'); }
+    for _ in 0..filled {
+        bar.push('\u{2588}');
+    }
+    for _ in 0..empty {
+        bar.push('\u{2591}');
+    }
     bar
 }
 
@@ -50,13 +52,20 @@ fn render_tui(report: &ContextAnalysis) -> String {
     lines.push("## Context Usage".into());
     lines.push(String::new());
     lines.push(format!("**Model:** {}", report.model));
-    lines.push(format!("**Window:** {} tokens", format_tokens(report.context_window)));
+    lines.push(format!(
+        "**Window:** {} tokens",
+        format_tokens(report.context_window)
+    ));
     lines.push(format!(
         "**Used:**   {} / {} ({:.1}%){}",
         format_tokens(report.total_used),
         format_tokens(report.context_window),
         report.total_percent,
-        if report.compacted { "  [compacted]" } else { "" },
+        if report.compacted {
+            "  [compacted]"
+        } else {
+            ""
+        },
     ));
     lines.push(format!(
         "**Messages:** {} in -> {} after pre-send pipeline",
@@ -66,7 +75,12 @@ fn render_tui(report: &ContextAnalysis) -> String {
     lines.push("### Breakdown".into());
     lines.push(String::new());
     let bar_width = 24;
-    let label_width = report.categories.iter().map(|c| c.label.len()).max().unwrap_or(0);
+    let label_width = report
+        .categories
+        .iter()
+        .map(|c| c.label.len())
+        .max()
+        .unwrap_or(0);
     for cat in &report.categories {
         lines.push(format!(
             "  {:<lw$}  {}  {:>7}  {:>5.1}%",
@@ -252,7 +266,11 @@ mod tests {
         assert_eq!(full.chars().filter(|c| *c == '\u{2588}').count(), 10);
         let half = render_bar(50.0, 10);
         let filled = half.chars().filter(|c| *c == '\u{2588}').count();
-        assert!(filled == 5, "expected 5 filled chars at 50%, got {}", filled);
+        assert!(
+            filled == 5,
+            "expected 5 filled chars at 50%, got {}",
+            filled
+        );
         let over = render_bar(999.0, 10);
         assert_eq!(over.chars().filter(|c| *c == '\u{2588}').count(), 10);
     }

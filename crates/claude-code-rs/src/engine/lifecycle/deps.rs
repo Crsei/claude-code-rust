@@ -50,8 +50,7 @@ pub(crate) struct QueryEngineDeps {
     /// hands it to `execute_tool_calls`. Tests can leave it unset; in
     /// headless mode the engine installs a closure that forwards each
     /// progress event to `FrontendSink`.
-    pub(crate) tool_progress_callback:
-        Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
+    pub(crate) tool_progress_callback: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
     /// Shared buffer of completed background agents.
     pub(crate) pending_bg_results: cc_types::background_agents::PendingBackgroundResults,
     /// Hook runner — used via the `HookRunner` trait from `cc-types::hooks` so
@@ -64,9 +63,7 @@ pub(crate) struct QueryEngineDeps {
 
 #[async_trait::async_trait]
 impl QueryDeps for QueryEngineDeps {
-    fn tool_progress_callback(
-        &self,
-    ) -> Option<Arc<dyn Fn(ToolProgress) + Send + Sync>> {
+    fn tool_progress_callback(&self) -> Option<Arc<dyn Fn(ToolProgress) + Send + Sync>> {
         self.tool_progress_callback.clone()
     }
 
@@ -352,8 +349,8 @@ impl QueryDeps for QueryEngineDeps {
         parent_message: &crate::types::message::AssistantMessage,
         on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolExecResult> {
-        use cc_types::hooks::{PermissionOverride, PostToolHookResult, PreToolHookResult};
         use crate::types::tool::PermissionResult;
+        use cc_types::hooks::{PermissionOverride, PostToolHookResult, PreToolHookResult};
 
         // Hook dispatcher trait object — decouples the engine from the concrete
         // `crate::tools::hooks` impl (see issue #74, Phase 5b).
@@ -424,35 +421,34 @@ impl QueryDeps for QueryEngineDeps {
         let failure_configs = hooks.load_hook_configs(&hooks_map, "PostToolUseFailure");
 
         // ── Pre-tool hooks ─────────────────────────────────────────
-        let (effective_input, permission_override) =
-            match hooks
-                .run_pre_tool_hooks(&request.tool_name, &request.input, &pre_configs)
-                .await
-            {
-                Ok(PreToolHookResult::Continue {
-                    updated_input,
-                    permission_override,
-                }) => (
-                    updated_input.unwrap_or_else(|| request.input.clone()),
-                    permission_override,
-                ),
-                Ok(PreToolHookResult::Stop { message }) => {
-                    return Ok(ToolExecResult {
-                        tool_use_id: request.tool_use_id,
-                        tool_name: request.tool_name,
-                        result: crate::types::tool::ToolResult {
-                            data: serde_json::json!(format!("Pre-tool hook stopped: {}", message)),
-                            new_messages: vec![],
-                            ..Default::default()
-                        },
-                        is_error: true,
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "pre-tool hook error, continuing");
-                    (request.input.clone(), None)
-                }
-            };
+        let (effective_input, permission_override) = match hooks
+            .run_pre_tool_hooks(&request.tool_name, &request.input, &pre_configs)
+            .await
+        {
+            Ok(PreToolHookResult::Continue {
+                updated_input,
+                permission_override,
+            }) => (
+                updated_input.unwrap_or_else(|| request.input.clone()),
+                permission_override,
+            ),
+            Ok(PreToolHookResult::Stop { message }) => {
+                return Ok(ToolExecResult {
+                    tool_use_id: request.tool_use_id,
+                    tool_name: request.tool_name,
+                    result: crate::types::tool::ToolResult {
+                        data: serde_json::json!(format!("Pre-tool hook stopped: {}", message)),
+                        new_messages: vec![],
+                        ..Default::default()
+                    },
+                    is_error: true,
+                });
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "pre-tool hook error, continuing");
+                (request.input.clone(), None)
+            }
+        };
 
         // ── Permission check (hook override first, then rule engine) ──
         if let Some(override_decision) = permission_override {
@@ -558,8 +554,7 @@ impl QueryDeps for QueryEngineDeps {
 
                     // Fire PermissionRequest hook before interactive prompt
                     let mut hook_allowed = false;
-                    let perm_req_configs =
-                        hooks.load_hook_configs(&hooks_map, "PermissionRequest");
+                    let perm_req_configs = hooks.load_hook_configs(&hooks_map, "PermissionRequest");
                     if !perm_req_configs.is_empty() {
                         let payload = serde_json::json!({
                             "tool_name": request.tool_name,
@@ -583,8 +578,8 @@ impl QueryDeps for QueryEngineDeps {
                                     }
                                     "deny" => {
                                         // Fire PermissionDenied hook
-                                        let deny_configs = hooks
-                                            .load_hook_configs(&hooks_map, "PermissionDenied");
+                                        let deny_configs =
+                                            hooks.load_hook_configs(&hooks_map, "PermissionDenied");
                                         if !deny_configs.is_empty() {
                                             let deny_payload = serde_json::json!({
                                                 "tool_name": request.tool_name,
@@ -687,8 +682,8 @@ impl QueryDeps for QueryEngineDeps {
                                     }
 
                                     // Fire PermissionDenied hook (user chose deny)
-                                    let deny_configs = hooks
-                                        .load_hook_configs(&hooks_map, "PermissionDenied");
+                                    let deny_configs =
+                                        hooks.load_hook_configs(&hooks_map, "PermissionDenied");
                                     if !deny_configs.is_empty() {
                                         let payload = serde_json::json!({
                                             "tool_name": request.tool_name,
@@ -727,11 +722,7 @@ impl QueryDeps for QueryEngineDeps {
                                     "reason": format!("Permission required (no callback): {}", message),
                                 });
                                 let _ = hooks
-                                    .run_event_hooks(
-                                        "PermissionDenied",
-                                        &payload,
-                                        &deny_configs,
-                                    )
+                                    .run_event_hooks("PermissionDenied", &payload, &deny_configs)
                                     .await;
                             }
 

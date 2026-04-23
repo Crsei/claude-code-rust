@@ -63,15 +63,16 @@ fn handle_select(rest: &[&str]) -> Result<CommandResult> {
                 &format!("Selected IDE: {}", id),
             )))
         }
-        Err(e) => Ok(CommandResult::Output(format!("Failed to select IDE: {}", e))),
+        Err(e) => Ok(CommandResult::Output(format!(
+            "Failed to select IDE: {}",
+            e
+        ))),
     }
 }
 
 fn handle_clear() -> Result<CommandResult> {
     match ide::clear_selection() {
-        Ok(()) => Ok(CommandResult::Output(
-            "Cleared IDE selection.".to_string(),
-        )),
+        Ok(()) => Ok(CommandResult::Output("Cleared IDE selection.".to_string())),
         Err(e) => Ok(CommandResult::Output(format!(
             "Failed to clear IDE selection: {}",
             e
@@ -315,7 +316,10 @@ mod tests {
 
         let handler = IdeHandler;
         let mut ctx = test_ctx();
-        let result = handler.execute("select nonexistent", &mut ctx).await.unwrap();
+        let result = handler
+            .execute("select nonexistent", &mut ctx)
+            .await
+            .unwrap();
         match result {
             CommandResult::Output(text) => {
                 assert!(

@@ -62,8 +62,10 @@ pub enum IntervalParseError {
     NonPositive(String),
     #[error("interval '{0}' is larger than the 1-year cap")]
     TooLarge(String),
-    #[error("cron expression '{0}' is only partially supported — only the minute stride \
-             ('*/N * * * *' or 'N * * * *') is honored right now")]
+    #[error(
+        "cron expression '{0}' is only partially supported — only the minute stride \
+             ('*/N * * * *' or 'N * * * *') is honored right now"
+    )]
     CronUnsupported(String),
 }
 
@@ -207,7 +209,10 @@ mod tests {
 
     #[test]
     fn rejects_empty() {
-        assert!(matches!(parse_interval("   "), Err(IntervalParseError::Empty)));
+        assert!(matches!(
+            parse_interval("   "),
+            Err(IntervalParseError::Empty)
+        ));
     }
 
     #[test]

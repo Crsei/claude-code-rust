@@ -141,11 +141,7 @@ pub trait HookRunner: Send + Sync {
     /// Load hook configurations for a specific event from the hooks settings.
     ///
     /// `event_name` is one of "PreToolUse", "PostToolUse", "Stop", etc.
-    fn load_hook_configs(
-        &self,
-        hooks_value: &HooksMap,
-        event_name: &str,
-    ) -> Vec<HookEventConfig>;
+    fn load_hook_configs(&self, hooks_value: &HooksMap, event_name: &str) -> Vec<HookEventConfig>;
 
     /// Run pre-tool hooks for a tool invocation.
     async fn run_pre_tool_hooks(

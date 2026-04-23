@@ -29,15 +29,15 @@ export function KeyboardShortcutHint({
 }: Props) {
   const fg = color ?? c.text
   const shortcutEl = bold ? (
-    <strong><text fg={fg}>{shortcut}</text></strong>
+    <strong><span fg={fg}>{shortcut}</span></strong>
   ) : (
-    <text fg={fg}>{shortcut}</text>
+    <span fg={fg}>{shortcut}</span>
   )
   return (
     <text>
       {shortcutEl}
       {action && (
-        <text fg={c.dim}>{' '}{action}</text>
+        <span fg={c.dim}>{' '}{action}</span>
       )}
     </text>
   )

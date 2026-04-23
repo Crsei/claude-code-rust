@@ -176,10 +176,11 @@ impl OnboardingStore {
             source: e,
         })?;
         let mut buf = String::new();
-        file.read_to_string(&mut buf).map_err(|e| OnboardingError::Io {
-            path: self.path.clone(),
-            source: e,
-        })?;
+        file.read_to_string(&mut buf)
+            .map_err(|e| OnboardingError::Io {
+                path: self.path.clone(),
+                source: e,
+            })?;
         if buf.trim().is_empty() {
             return Ok(OnboardingState::default());
         }

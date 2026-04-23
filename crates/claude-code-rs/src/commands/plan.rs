@@ -86,9 +86,7 @@ fn enter_and_show(ctx: &mut CommandContext) -> Result<CommandResult> {
 
     Ok(CommandResult::Output(match body {
         Some(content) if !content.trim().is_empty() => format!("{header}\n\n{content}"),
-        _ => format!(
-            "{header}\n\n(empty plan — use `/plan open` to draft one)"
-        ),
+        _ => format!("{header}\n\n(empty plan — use `/plan open` to draft one)"),
     }))
 }
 
@@ -280,9 +278,7 @@ mod tests {
         let result = PlanHandler.execute("open", &mut ctx).await.unwrap();
 
         // The plan file must exist now, seeded with the template header.
-        let body = fs::read_to_string(
-            cfg_paths::current_plan_file_path(tmp.path())
-        ).unwrap();
+        let body = fs::read_to_string(cfg_paths::current_plan_file_path(tmp.path())).unwrap();
         assert!(body.starts_with("# Plan"));
 
         // Output should describe the outcome (either "editor" or "no editor").

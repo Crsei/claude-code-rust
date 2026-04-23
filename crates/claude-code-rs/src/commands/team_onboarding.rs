@@ -137,7 +137,10 @@ fn append_project_overview(out: &mut String, cwd: &Path) {
         if let Ok(contents) = std::fs::read_to_string(&path) {
             let summary = first_sentences(&contents, 4);
             if !summary.trim().is_empty() {
-                out.push_str(&format!("From `{}`:\n\n", path.file_name().unwrap_or_default().to_string_lossy()));
+                out.push_str(&format!(
+                    "From `{}`:\n\n",
+                    path.file_name().unwrap_or_default().to_string_lossy()
+                ));
                 out.push_str(&quote_block(&summary));
                 out.push_str("\n\n");
             }
@@ -245,7 +248,10 @@ fn append_scheduling_section(out: &mut String) {
                 ));
             }
             if tasks.len() > 8 {
-                out.push_str(&format!("- … and {} more — see `/schedule list`.\n", tasks.len() - 8));
+                out.push_str(&format!(
+                    "- … and {} more — see `/schedule list`.\n",
+                    tasks.len() - 8
+                ));
             }
             out.push('\n');
         }
@@ -327,14 +333,26 @@ fn append_footer(out: &mut String) {
 const COMMON_COMMANDS: &[(&str, &str)] = &[
     ("/help", "list every slash command"),
     ("/context", "see how much of the context window is in use"),
-    ("/plan", "enter plan mode — drafts an implementation plan before coding"),
-    ("/commit", "build a conventional commit from the current diff"),
+    (
+        "/plan",
+        "enter plan mode — drafts an implementation plan before coding",
+    ),
+    (
+        "/commit",
+        "build a conventional commit from the current diff",
+    ),
     ("/review", "review a PR through the `gh` CLI"),
     ("/recap", "summarize the current session"),
     ("/schedule", "manage local cron tasks"),
-    ("/loop", "register a recurring prompt (with immediate first run)"),
+    (
+        "/loop",
+        "register a recurring prompt (with immediate first run)",
+    ),
     ("/team", "manage Agent Teams (create, spawn, kill)"),
-    ("/logout", "clear credentials + onboarding state for a clean hand-off"),
+    (
+        "/logout",
+        "clear credentials + onboarding state for a clean hand-off",
+    ),
 ];
 
 fn derive_project_name(cwd: &Path) -> String {

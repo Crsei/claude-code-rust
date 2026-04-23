@@ -1,6 +1,7 @@
 import React from 'react'
 import { c } from '../../theme.js'
 import type { StreamingRenderItem } from '../../store/message-model.js'
+import { defaultSyntaxStyle } from '../opentui-syntax.js'
 import { ThinkingPreview } from './ThinkingPreview.js'
 
 /**
@@ -25,9 +26,9 @@ export function StreamingMessage({ item }: Props) {
         <box minWidth={2} flexShrink={0}>
           <text fg={c.dim} bg={c.bg}>●</text>
         </box>
-        <box flexDirection="column" width="100%" selectable backgroundColor={c.bg}>
+        <box flexDirection="column" width="100%" backgroundColor={c.bg}>
           {item.content
-            ? <markdown content={item.content} streaming bg={c.bg} />
+            ? <markdown content={item.content} syntaxStyle={defaultSyntaxStyle} streaming bg={c.bg} />
             : <text fg={c.dim} bg={c.bg}>...</text>}
         </box>
       </box>

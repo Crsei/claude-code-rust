@@ -26,12 +26,12 @@ use crate::types::tool::Tool;
 // extract_browser_action, install_browser_servers,
 // browser_servers_snapshot, is_browser_server}` call site keeps
 // resolving unchanged.
+#[cfg(test)]
+use cc_browser::detection::clear_browser_servers_for_tests;
 pub use cc_browser::detection::{
     browser_servers_snapshot, extract_browser_action, install_browser_servers, is_browser_server,
     BROWSER_TOOL_BASENAMES, MCP_PREFIX,
 };
-#[cfg(test)]
-use cc_browser::detection::clear_browser_servers_for_tests;
 
 /// Metadata for a tool that was classified as a browser MCP tool.
 #[derive(Debug, Clone)]

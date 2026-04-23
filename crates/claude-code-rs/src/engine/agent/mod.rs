@@ -159,8 +159,8 @@ pub(crate) fn sdk_to_agent_event(
     agent_id: &str,
 ) -> Option<cc_types::agent_events::AgentEvent> {
     use crate::engine::sdk_types::SdkMessage;
-    use cc_types::agent_events::AgentEvent;
     use crate::types::message::{ContentBlock, StreamEvent, ToolResultContent};
+    use cc_types::agent_events::AgentEvent;
 
     match sdk_msg {
         SdkMessage::StreamEvent(evt) => match &evt.event {

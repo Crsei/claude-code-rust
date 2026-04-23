@@ -50,7 +50,10 @@ fn render_status(ctx: &CommandContext) -> String {
     }
 
     if let Some(settings_model) = ctx.app_state.settings.advisor_model.as_deref() {
-        lines.push(format!("  Persisted (settings.json::advisorModel): {}", settings_model));
+        lines.push(format!(
+            "  Persisted (settings.json::advisorModel): {}",
+            settings_model
+        ));
     } else {
         lines.push("  Persisted: (not set)".to_string());
     }
@@ -134,10 +137,7 @@ where
     Ok(CommandResult::Output(out.join("\n")))
 }
 
-fn clear_advisor_with_persist<F>(
-    ctx: &mut CommandContext,
-    persist: F,
-) -> Result<CommandResult>
+fn clear_advisor_with_persist<F>(ctx: &mut CommandContext, persist: F) -> Result<CommandResult>
 where
     F: FnOnce(&std::path::Path, Option<&str>) -> Result<std::path::PathBuf>,
 {
@@ -166,10 +166,7 @@ where
 ///
 /// Uses the atomic-write helper in `cc-config::settings`. Returns the path
 /// that was written so the caller can show it to the user.
-fn persist_advisor(
-    _cwd: &std::path::Path,
-    new_value: Option<&str>,
-) -> Result<std::path::PathBuf> {
+fn persist_advisor(_cwd: &std::path::Path, new_value: Option<&str>) -> Result<std::path::PathBuf> {
     use cc_config::settings::{load_global_config, write_user_settings};
     let mut raw = load_global_config()?;
     raw.advisor_model = new_value.map(|s| s.to_string());
@@ -222,10 +219,7 @@ mod tests {
     /// formatting code path exercises the Ok-branch without writing to
     /// disk. This keeps the command tests hermetic — no env vars, no
     /// files — so they can't race with other modules' settings tests.
-    fn noop_persist(
-        _cwd: &std::path::Path,
-        _v: Option<&str>,
-    ) -> Result<std::path::PathBuf> {
+    fn noop_persist(_cwd: &std::path::Path, _v: Option<&str>) -> Result<std::path::PathBuf> {
         Ok(std::path::PathBuf::from("/dev/null/fake-settings.json"))
     }
 

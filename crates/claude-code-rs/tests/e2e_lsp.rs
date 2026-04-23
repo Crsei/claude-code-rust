@@ -39,8 +39,8 @@ fn transport_module_exists() {
 
 #[test]
 fn conversions_module_exists() {
-    let source =
-        fs::read_to_string("src/lsp_service/conversions.rs").expect("should read conversions.rs");
+    let source = fs::read_to_string("src/lsp_service/conversions/mod.rs")
+        .expect("should read conversions/mod.rs");
     assert!(source.contains("parse_location_response"));
     assert!(source.contains("parse_hover_response"));
     assert!(source.contains("parse_document_symbols_response"));

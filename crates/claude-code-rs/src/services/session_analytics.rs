@@ -96,10 +96,7 @@ pub fn compute_insights(filter: &InsightsFilter) -> Result<InsightsReport> {
     };
 
     let total_scanned = raw.len();
-    let included: Vec<SessionInfo> = raw
-        .into_iter()
-        .filter(|s| passes(s, filter))
-        .collect();
+    let included: Vec<SessionInfo> = raw.into_iter().filter(|s| passes(s, filter)).collect();
 
     let mut report = InsightsReport {
         usage_included: filter.include_usage,
@@ -396,12 +393,7 @@ mod tests {
         }
     }
 
-    fn write_session(
-        id: &str,
-        cwd: &str,
-        last_modified: i64,
-        messages: Vec<SerializableMessage>,
-    ) {
+    fn write_session(id: &str, cwd: &str, last_modified: i64, messages: Vec<SerializableMessage>) {
         let file = SessionFile {
             session_id: id.into(),
             created_at: last_modified,

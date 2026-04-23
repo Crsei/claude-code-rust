@@ -328,8 +328,8 @@ fn bug_query_stop_hooks_is_placeholder() {
         "stop_hooks.rs should reference HookEventConfig type"
     );
     assert!(
-        source.contains("hooks::run_stop_hooks"),
-        "stop_hooks.rs should delegate to hooks::run_stop_hooks"
+        source.contains("runner.run_stop_hooks"),
+        "stop_hooks.rs should delegate to the HookRunner stop hook implementation"
     );
 
     // The call site in loop_impl.rs should load configs from AppState
@@ -350,20 +350,22 @@ fn bug_query_stop_hooks_is_placeholder() {
 /// The two paths serve different callers but both support hooks.
 #[test]
 fn both_execution_paths_have_hook_wiring() {
-    let execution_source =
-        fs::read_to_string("src/tools/execution.rs").expect("should read execution.rs");
+    let pipeline_source =
+        fs::read_to_string("src/tools/execution/pipeline.rs").expect("should read pipeline.rs");
+    let coordinator_source = fs::read_to_string("src/tools/execution/coordinator.rs")
+        .expect("should read coordinator.rs");
     let deps_source =
         fs::read_to_string("src/engine/lifecycle/deps.rs").expect("should read deps.rs");
 
-    // execution.rs correctly accepts hook_configs
+    // execution pipeline correctly accepts hook_configs
     assert!(
-        execution_source.contains("hook_configs: &[HookEventConfig]"),
-        "execution.rs should accept hook_configs parameter"
+        pipeline_source.contains("hook_configs: &[HookEventConfig]"),
+        "execution pipeline should accept hook_configs parameter"
     );
 
-    // execution.rs StreamingToolExecutor stores hook_configs
+    // StreamingToolExecutor stores hook_configs
     assert!(
-        execution_source.contains("hook_configs: Vec<HookEventConfig>"),
+        coordinator_source.contains("hook_configs: Vec<HookEventConfig>"),
         "StreamingToolExecutor should store hook_configs"
     );
 

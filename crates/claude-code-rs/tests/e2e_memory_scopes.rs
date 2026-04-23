@@ -129,8 +129,8 @@ fn auto_memory_enabled_roundtrips_through_settings_json() {
     raw.auto_memory_enabled = Some(true);
     settings::write_settings_file(&path, &raw).expect("write settings");
 
-    let loaded = settings::load_effective(&std::path::PathBuf::from(root.path()))
-        .expect("load effective");
+    let loaded =
+        settings::load_effective(&std::path::PathBuf::from(root.path())).expect("load effective");
     assert_eq!(
         loaded.effective.auto_memory_enabled,
         Some(true),

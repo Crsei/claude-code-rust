@@ -1,5 +1,6 @@
 import React from 'react'
 import { c } from '../theme.js'
+import { defaultSyntaxStyle } from './opentui-syntax.js'
 
 /**
  * OpenTUI port of the upstream
@@ -62,7 +63,11 @@ export function NotebookEditToolUseRejectedMessage({
       </box>
       {editMode !== 'delete' && newSource.length > 0 && (
         <box marginTop={1} flexDirection="column">
-          <code code={newSource} language={cellLanguage(cellType)} />
+          <code
+            content={newSource}
+            filetype={cellLanguage(cellType)}
+            syntaxStyle={defaultSyntaxStyle}
+          />
         </box>
       )}
     </box>

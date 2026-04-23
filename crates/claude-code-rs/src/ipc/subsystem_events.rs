@@ -49,9 +49,7 @@ pub enum LspEvent {
     /// Current persisted settings for recommendation prompts (response to
     /// [`LspCommand::QuerySettings`]). Lets the frontend show "muted
     /// plugins" or "all disabled" state in an LSP settings view.
-    SettingsSnapshot {
-        settings: LspRecommendationSettings,
-    },
+    SettingsSnapshot { settings: LspRecommendationSettings },
 }
 
 /// Events emitted by the MCP subsystem.
@@ -203,9 +201,15 @@ pub enum AgentSettingsEvent {
 #[derive(Deserialize, Debug)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LspCommand {
-    StartServer { language_id: String },
-    StopServer { language_id: String },
-    RestartServer { language_id: String },
+    StartServer {
+        language_id: String,
+    },
+    StopServer {
+        language_id: String,
+    },
+    RestartServer {
+        language_id: String,
+    },
     QueryStatus,
     /// Return the currently-persisted recommendation settings as an
     /// [`LspEvent::SettingsSnapshot`].
@@ -222,20 +226,30 @@ pub enum LspCommand {
     /// Clear a previously-muted plugin from the "never recommend" list.
     /// Used by an LSP settings view to let the user undo a past
     /// `"never for X"` choice.
-    UnmutePlugin { plugin_name: String },
+    UnmutePlugin {
+        plugin_name: String,
+    },
     /// Explicit toggle for the global "disable all recommendations"
     /// switch, so a settings view can flip it without having to
     /// synthesize a fake response.
-    SetRecommendationsDisabled { disabled: bool },
+    SetRecommendationsDisabled {
+        disabled: bool,
+    },
 }
 
 /// Commands the frontend can send to the MCP subsystem.
 #[derive(Deserialize, Debug)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum McpCommand {
-    ConnectServer { server_name: String },
-    DisconnectServer { server_name: String },
-    ReconnectServer { server_name: String },
+    ConnectServer {
+        server_name: String,
+    },
+    DisconnectServer {
+        server_name: String,
+    },
+    ReconnectServer {
+        server_name: String,
+    },
     QueryStatus,
     /// Request the full list of editable config entries
     /// (drives the `/mcp` editor view).
@@ -245,7 +259,9 @@ pub enum McpCommand {
     /// The entry's `scope` determines which settings file is written.
     /// Non-editable scopes (`Plugin`/`Ide`) must be rejected by the
     /// handler with a `ConfigError` event.
-    UpsertConfig { entry: McpServerConfigEntry },
+    UpsertConfig {
+        entry: McpServerConfigEntry,
+    },
     /// Remove a config entry from the given scope.
     RemoveConfig {
         server_name: String,
@@ -267,8 +283,12 @@ pub enum McpCommand {
 #[derive(Deserialize, Debug)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PluginCommand {
-    Enable { plugin_id: String },
-    Disable { plugin_id: String },
+    Enable {
+        plugin_id: String,
+    },
+    Disable {
+        plugin_id: String,
+    },
     QueryStatus,
     /// Hot-refresh the plugin registry — drives `/reload-plugins`.
     ///
@@ -640,10 +660,7 @@ mod tests {
         let value = serde_json::to_value(&event).unwrap();
         assert_eq!(value["kind"], "config_changed");
         assert_eq!(value["server_name"], "gone");
-        assert!(
-            value.get("entry").is_none(),
-            "None entry should be omitted"
-        );
+        assert!(value.get("entry").is_none(), "None entry should be omitted");
     }
 
     #[test]

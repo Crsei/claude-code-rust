@@ -210,8 +210,7 @@ fn normalize_message_content(msg: &mut Value) {
 /// consumer inspecting the `version` field knows the file has been surveyed.
 fn migrate_v3_to_v4(mut data: Value) -> Result<Value> {
     if let Some(obj) = data.as_object_mut() {
-        obj.entry("custom_title".to_string())
-            .or_insert(Value::Null);
+        obj.entry("custom_title".to_string()).or_insert(Value::Null);
         obj.insert("version".to_string(), Value::from(4u32));
     }
     Ok(data)

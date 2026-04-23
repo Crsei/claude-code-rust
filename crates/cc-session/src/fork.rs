@@ -24,9 +24,7 @@ use chrono::Utc;
 use tracing::{debug, info};
 
 use crate::storage;
-use crate::transcript::{
-    self, copy_transcript_entries, write_session_header, SessionHeader,
-};
+use crate::transcript::{self, copy_transcript_entries, write_session_header, SessionHeader};
 use cc_types::message::Message;
 
 // ---------------------------------------------------------------------------
@@ -117,12 +115,9 @@ pub fn fork_session(
     write_session_header(&header).context("Failed to write session_header for fork")?;
 
     // Copy the parent transcript up through the fork point.
-    let copied = copy_transcript_entries(
-        parent_session_id,
-        new_session_id,
-        derived_cursor.as_deref(),
-    )
-    .context("Failed to copy parent transcript entries into fork")?;
+    let copied =
+        copy_transcript_entries(parent_session_id, new_session_id, derived_cursor.as_deref())
+            .context("Failed to copy parent transcript entries into fork")?;
 
     // Persist a session file so /resume and /session list can find the
     // fork. We truncate messages to the cursor (inclusive) so the saved
@@ -289,12 +284,14 @@ mod tests {
 
         assert_eq!(outcome.new_session_id, new_id);
         assert_eq!(outcome.parent_session_id, "parent-abc");
-        assert_eq!(outcome.forked_at_uuid.as_deref(), Some(uuids[2].to_string().as_str()));
+        assert_eq!(
+            outcome.forked_at_uuid.as_deref(),
+            Some(uuids[2].to_string().as_str())
+        );
         assert_eq!(outcome.copied_entry_count, 3);
 
         // Verify transcript layout: header + 3 copied entries.
-        let content =
-            std::fs::read_to_string(transcript::get_transcript_file(new_id)).unwrap();
+        let content = std::fs::read_to_string(transcript::get_transcript_file(new_id)).unwrap();
         let lines: Vec<&str> = content.lines().filter(|l| !l.is_empty()).collect();
         assert_eq!(lines.len(), 4);
 
@@ -359,11 +356,7 @@ mod tests {
         let u0 = Uuid::new_v4();
         let u1 = Uuid::new_v4();
         let u2 = Uuid::new_v4();
-        let msgs = vec![
-            user("a", u0),
-            user("b", u1),
-            user("c", u2),
-        ];
+        let msgs = vec![user("a", u0), user("b", u1), user("c", u2)];
         let kept = messages_up_to_cursor(&msgs, &u1.to_string());
         assert_eq!(kept.len(), 2);
         assert_eq!(kept[1].uuid().to_string(), u1.to_string());

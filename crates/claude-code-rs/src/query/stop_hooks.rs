@@ -8,8 +8,8 @@
 ///   - 报告阻塞错误 (终止并标记为 hook 问题)
 use anyhow::Result;
 
-use cc_types::hooks::{HookEventConfig, HookRunner};
 use crate::types::message::{AssistantMessage, Message};
+use cc_types::hooks::{HookEventConfig, HookRunner};
 
 /// Stop hook 检查结果
 #[derive(Debug, Clone)]
@@ -162,9 +162,7 @@ mod tests {
     async fn test_stop_hooks_allow_by_default() {
         let msg = make_assistant_message(vec![]);
         let runner = cc_types::hooks::NoopHookRunner;
-        let result = run_stop_hooks(&runner, &msg, &[], None, &[])
-            .await
-            .unwrap();
+        let result = run_stop_hooks(&runner, &msg, &[], None, &[]).await.unwrap();
         assert!(matches!(result, StopHookResult::AllowStop));
     }
 }

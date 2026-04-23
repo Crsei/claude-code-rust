@@ -155,7 +155,11 @@ fn derive_auto_title_from_messages(messages: &[Message]) -> String {
                 .collect::<Vec<_>>()
                 .join("\n"),
         };
-        let first_line = text.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+        let first_line = text
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("")
+            .trim();
         if first_line.is_empty() {
             continue;
         }
@@ -292,7 +296,11 @@ mod tests {
         let result = RenameHandler.execute("--clear", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(text) => {
-                assert!(text.to_lowercase().contains("no custom title"), "got: {}", text);
+                assert!(
+                    text.to_lowercase().contains("no custom title"),
+                    "got: {}",
+                    text
+                );
             }
             _ => panic!("expected Output"),
         }

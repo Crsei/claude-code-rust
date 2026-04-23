@@ -415,10 +415,7 @@ pub fn needs_refresh() -> Option<String> {
 /// Returns `Ok(None)` when the plugin was not installed, and
 /// `Ok(Some(entry))` on success with the removed `PluginEntry` so callers
 /// can render a confirmation.
-pub fn uninstall_plugin(
-    plugin_id: &str,
-    purge_cache: bool,
-) -> anyhow::Result<Option<PluginEntry>> {
+pub fn uninstall_plugin(plugin_id: &str, purge_cache: bool) -> anyhow::Result<Option<PluginEntry>> {
     let mut installed = loader::load_installed_plugins();
     let Some(pos) = installed.iter().position(|p| p.id == plugin_id) else {
         return Ok(None);

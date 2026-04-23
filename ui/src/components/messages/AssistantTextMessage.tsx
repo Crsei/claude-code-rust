@@ -1,6 +1,7 @@
 import React from 'react'
 import type { AssistantTextRenderItem } from '../../store/message-model.js'
 import { c } from '../../theme.js'
+import { defaultSyntaxStyle } from '../opentui-syntax.js'
 import { ThinkingPreview } from './ThinkingPreview.js'
 
 /**
@@ -29,8 +30,8 @@ export function AssistantTextMessage({ item }: Props) {
         <box minWidth={2} flexShrink={0}>
           <text fg={c.text} bg={c.bg}>●</text>
         </box>
-        <box flexDirection="column" width="100%" selectable backgroundColor={c.bg}>
-          <markdown content={item.content} bg={c.bg} />
+        <box flexDirection="column" width="100%" backgroundColor={c.bg}>
+          <markdown content={item.content} syntaxStyle={defaultSyntaxStyle} bg={c.bg} />
         </box>
       </box>
     </box>

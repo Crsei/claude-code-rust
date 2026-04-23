@@ -13,8 +13,8 @@ use std::process::Command;
 
 fn workspace_root() -> PathBuf {
     // CARGO_MANIFEST_DIR = <workspace>/crates/claude-code-rs
-    let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR")
-        .expect("CARGO_MANIFEST_DIR must be set by cargo");
+    let manifest_dir =
+        std::env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set by cargo");
     let manifest_dir = PathBuf::from(manifest_dir);
     manifest_dir
         .parent() // <workspace>/crates

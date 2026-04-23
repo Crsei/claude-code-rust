@@ -87,9 +87,7 @@ impl LogoutReport {
     pub fn render(&self) -> String {
         let mut out = String::new();
 
-        if !self.was_authenticated
-            && matches!(self.onboarding_cleared, StepStatus::NoOp)
-        {
+        if !self.was_authenticated && matches!(self.onboarding_cleared, StepStatus::NoOp) {
             out.push_str(
                 "Not currently authenticated and no onboarding state — nothing to clear.\n",
             );

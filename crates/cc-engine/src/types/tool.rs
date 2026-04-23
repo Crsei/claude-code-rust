@@ -91,11 +91,11 @@ pub struct ToolProgress {
 // `ToolPermissionRulesBySource` is a pub alias — re-export it too so any
 // future consumer in the root crate can still reach it via the classic
 // `crate::types::tool::` path.
+#[allow(unused_imports)]
+pub use cc_types::permissions::ToolPermissionRulesBySource;
 pub use cc_types::permissions::{
     AdditionalWorkingDirectory, PermissionMode, ToolPermissionContext,
 };
-#[allow(unused_imports)]
-pub use cc_types::permissions::ToolPermissionRulesBySource;
 
 /// 文件状态缓存 (LRU, 追踪工具已读/已写的文件)
 #[derive(Debug, Clone, Default)]

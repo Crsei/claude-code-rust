@@ -41,7 +41,9 @@ pub(crate) fn dispatch_search(
     sink: &FrontendSink,
 ) {
     let sink = sink.clone();
-    let cap = max_results.unwrap_or(DEFAULT_MAX_RESULTS).min(DEFAULT_MAX_RESULTS);
+    let cap = max_results
+        .unwrap_or(DEFAULT_MAX_RESULTS)
+        .min(DEFAULT_MAX_RESULTS);
     tokio::task::spawn_blocking(move || {
         let search_root = resolve_cwd(cwd.as_deref());
         debug!(
@@ -133,11 +135,7 @@ fn try_ripgrep(
 /// Parse ripgrep output of the shape `path:line:text`. Windows paths
 /// contain a drive-letter colon, so we walk to the first `:<digits>:`
 /// boundary instead of splitting on the first colon.
-fn parse_ripgrep_output(
-    raw: &str,
-    search_root: &str,
-    cap: usize,
-) -> (Vec<FileSearchMatch>, bool) {
+fn parse_ripgrep_output(raw: &str, search_root: &str, cap: usize) -> (Vec<FileSearchMatch>, bool) {
     let mut matches = Vec::with_capacity(cap.min(256));
     let mut truncated = false;
     for line in raw.lines() {
@@ -145,7 +143,9 @@ fn parse_ripgrep_output(
             truncated = true;
             break;
         }
-        let Some(parsed) = split_rg_line(line) else { continue };
+        let Some(parsed) = split_rg_line(line) else {
+            continue;
+        };
         let rel = relativize(search_root, &parsed.file);
         matches.push(FileSearchMatch {
             file: rel,
@@ -185,7 +185,11 @@ fn split_rg_line(line: &str) -> Option<RgSplit<'_>> {
         if file.is_empty() {
             continue;
         }
-        return Some(RgSplit { file, line: line_num, text });
+        return Some(RgSplit {
+            file,
+            line: line_num,
+            text,
+        });
     }
     None
 }

@@ -1,6 +1,7 @@
 import React from 'react'
 import { c } from '../../theme.js'
 import type { UserTextRenderItem } from '../../store/message-model.js'
+import { defaultSyntaxStyle } from '../opentui-syntax.js'
 
 /**
  * OpenTUI port of upstream's `UserTextMessage` router
@@ -42,7 +43,6 @@ function UserCommandBubble({ text }: { text: string }) {
         backgroundColor={c.userBubbleBg}
         paddingLeft={1}
         paddingRight={1}
-        selectable
       >
         <text fg={c.dim} bg={c.userBubbleBg}>{'\u276F '}</text>
         <text fg={c.text} bg={c.userBubbleBg}>/{body}</text>
@@ -61,7 +61,6 @@ function UserBashBubble({ text }: { text: string }) {
         backgroundColor={c.userBubbleBg}
         paddingLeft={1}
         paddingRight={1}
-        selectable
       >
         <text fg={c.warning} bg={c.userBubbleBg}>{'! '}</text>
         <text fg={c.text} bg={c.userBubbleBg}>{body}</text>
@@ -80,7 +79,6 @@ function UserMemoryBubble({ text }: { text: string }) {
         backgroundColor={c.userBubbleBg}
         paddingLeft={1}
         paddingRight={1}
-        selectable
       >
         <text fg={c.accent} bg={c.userBubbleBg}>{'# '}</text>
         <text fg={c.text} bg={c.userBubbleBg}>{body}</text>
@@ -100,9 +98,8 @@ function UserPromptBubble({ text }: { text: string }) {
         backgroundColor={c.userBubbleBg}
         paddingLeft={1}
         paddingRight={1}
-        selectable
       >
-        <markdown content={text} bg={c.userBubbleBg} />
+        <markdown content={text} syntaxStyle={defaultSyntaxStyle} bg={c.userBubbleBg} />
       </box>
     </box>
   )

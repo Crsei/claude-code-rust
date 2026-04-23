@@ -219,7 +219,11 @@ impl Tool for SkillTool {
                     .into_iter()
                     .filter(|t| {
                         skill.frontmatter.allowed_tools.is_empty()
-                            || skill.frontmatter.allowed_tools.iter().any(|a| a == t.name())
+                            || skill
+                                .frontmatter
+                                .allowed_tools
+                                .iter()
+                                .any(|a| a == t.name())
                     })
                     .collect::<Vec<_>>();
                 let tool_count = tools.len();

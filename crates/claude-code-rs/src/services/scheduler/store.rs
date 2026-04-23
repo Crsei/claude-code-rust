@@ -41,10 +41,7 @@ pub enum SchedulerError {
     #[error("task '{0}' not found")]
     NotFound(String),
     #[error("could not acquire scheduler lock at {path} within {}ms", timeout_ms.as_millis())]
-    LockTimeout {
-        path: PathBuf,
-        timeout_ms: Duration,
-    },
+    LockTimeout { path: PathBuf, timeout_ms: Duration },
     #[error("remote-trigger tasks are not supported yet — see issue #60")]
     RemoteTriggerUnsupported,
 }
@@ -184,11 +181,7 @@ impl SchedulerStore {
     /// caller is responsible for firing them and calling `record_fired`.
     pub fn due_tasks(&self) -> Result<Vec<ScheduledTask>, SchedulerError> {
         let now = Utc::now();
-        Ok(self
-            .load()?
-            .into_iter()
-            .filter(|t| t.is_due(now))
-            .collect())
+        Ok(self.load()?.into_iter().filter(|t| t.is_due(now)).collect())
     }
 
     // -----------------------------------------------------------------
@@ -204,10 +197,11 @@ impl SchedulerStore {
             source: e,
         })?;
         let mut buf = String::new();
-        file.read_to_string(&mut buf).map_err(|e| SchedulerError::Io {
-            path: self.state_path.clone(),
-            source: e,
-        })?;
+        file.read_to_string(&mut buf)
+            .map_err(|e| SchedulerError::Io {
+                path: self.state_path.clone(),
+                source: e,
+            })?;
         if buf.trim().is_empty() {
             return Ok(StateFile::default());
         }

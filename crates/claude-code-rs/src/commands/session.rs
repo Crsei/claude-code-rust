@@ -68,7 +68,11 @@ fn format_session_table(
             .unwrap_or_else(|| "unknown".into());
 
         let label = if !session.title.is_empty() {
-            let prefix = if session.custom_title.is_some() { "★ " } else { "" };
+            let prefix = if session.custom_title.is_some() {
+                "★ "
+            } else {
+                ""
+            };
             let max = 60;
             let truncated: String = session.title.chars().take(max).collect();
             if session.title.chars().count() > max {

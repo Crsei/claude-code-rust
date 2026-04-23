@@ -46,9 +46,17 @@ pub enum AgentEvent {
         error: String,
         duration_ms: u64,
     },
-    Aborted { agent_id: String },
-    StreamDelta { agent_id: String, text: String },
-    ThinkingDelta { agent_id: String, thinking: String },
+    Aborted {
+        agent_id: String,
+    },
+    StreamDelta {
+        agent_id: String,
+        text: String,
+    },
+    ThinkingDelta {
+        agent_id: String,
+        thinking: String,
+    },
     ToolUse {
         agent_id: String,
         tool_use_id: String,
@@ -61,7 +69,9 @@ pub enum AgentEvent {
         output: String,
         is_error: bool,
     },
-    TreeSnapshot { roots: Vec<AgentNode> },
+    TreeSnapshot {
+        roots: Vec<AgentNode>,
+    },
 }
 
 // ===========================================================================
@@ -123,5 +133,7 @@ pub enum TeamCommand {
         to: String,
         text: String,
     },
-    QueryTeamStatus { team_name: String },
+    QueryTeamStatus {
+        team_name: String,
+    },
 }

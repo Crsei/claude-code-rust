@@ -18,7 +18,6 @@ use cc_types::message::Message;
 // Types
 // ---------------------------------------------------------------------------
 
-
 /// Session-level metadata written as the first line of a transcript file.
 ///
 /// Unlike regular message entries, `session_header` entries carry metadata
@@ -180,7 +179,10 @@ pub fn copy_transcript_entries(
         let rewritten =
             serde_json::to_string(&value).context("Failed to re-serialize transcript entry")?;
         writeln!(target_file, "{}", rewritten).with_context(|| {
-            format!("Failed to append to target transcript {}", target_path.display())
+            format!(
+                "Failed to append to target transcript {}",
+                target_path.display()
+            )
         })?;
         copied += 1;
 
@@ -423,8 +425,7 @@ mod tests {
         let copied = copy_transcript_entries("parent", "child", Some(uuids[2])).unwrap();
         assert_eq!(copied, 3);
 
-        let child_content =
-            std::fs::read_to_string(get_transcript_file("child")).unwrap();
+        let child_content = std::fs::read_to_string(get_transcript_file("child")).unwrap();
         let lines: Vec<&str> = child_content.lines().filter(|l| !l.is_empty()).collect();
         assert_eq!(lines.len(), 4);
 
@@ -454,8 +455,12 @@ mod tests {
         std::fs::write(&parent_path, format!("{}\n{}\n", header, msg)).unwrap();
 
         write_session_header(&SessionHeader {
-            timestamp: 1, session_id: "child2".into(), msg_type: "session_header".into(),
-            forked_from: Some("parent2".into()), forked_at_uuid: None, title: None,
+            timestamp: 1,
+            session_id: "child2".into(),
+            msg_type: "session_header".into(),
+            forked_from: Some("parent2".into()),
+            forked_at_uuid: None,
+            title: None,
         })
         .unwrap();
 

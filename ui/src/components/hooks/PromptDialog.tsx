@@ -73,6 +73,7 @@ export function PromptDialog({
       left={1}
       right={1}
       flexDirection="column"
+      border
       borderStyle="rounded"
       borderColor={c.warning}
       title={title}

@@ -18,8 +18,7 @@ fn repo_root() -> PathBuf {
 
 fn read_source(rel: &str) -> String {
     let path = repo_root().join(rel);
-    fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e))
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e))
 }
 
 #[test]
@@ -47,13 +46,7 @@ fn plan_command_is_registered_in_get_all_commands() {
 #[test]
 fn plan_handler_covers_expected_subcommands() {
     let src = read_source("crates/claude-code-rs/src/commands/plan.rs");
-    for token in [
-        "\"show\"",
-        "\"view\"",
-        "\"open\"",
-        "\"edit\"",
-        "\"path\"",
-    ] {
+    for token in ["\"show\"", "\"view\"", "\"open\"", "\"edit\"", "\"path\""] {
         assert!(
             src.contains(token),
             "/plan handler must dispatch on subcommand {}",

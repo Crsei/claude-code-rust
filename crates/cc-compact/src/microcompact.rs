@@ -1,8 +1,6 @@
 #![allow(unused)]
 
-use cc_types::message::{
-    ContentBlock, Message, MessageContent, ToolResultContent, UserMessage,
-};
+use cc_types::message::{ContentBlock, Message, MessageContent, ToolResultContent, UserMessage};
 
 /// Result of microcompaction.
 #[derive(Debug)]

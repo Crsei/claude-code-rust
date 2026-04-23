@@ -25,7 +25,7 @@ const OPTIONS: Array<{ value: MemoryScope; label: string; description: string }>
   {
     value: 'project',
     label: 'Project',
-    description: 'Persist learnings inside .claude/ memory for this repo.',
+    description: 'Persist learnings inside .cc-rust/ memory for this repo.',
   },
 ]
 
