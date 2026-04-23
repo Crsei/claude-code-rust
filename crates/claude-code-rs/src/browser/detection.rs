@@ -149,6 +149,7 @@ mod tests {
             headers: None,
             env: None,
             browser_mcp: Some(true),
+            disabled: None,
         }];
         let tools: Vec<Arc<dyn Tool>> = Vec::new();
         let servers = detect_browser_servers(&configs, &tools);

@@ -215,6 +215,7 @@ fn handle_add(rest: &[&str], ctx: &mut CommandContext) -> Result<CommandResult> 
         headers: None,
         env: (!flags.env.is_empty()).then(|| flags.env.clone()),
         browser_mcp: flags.browser,
+        disabled: None,
     };
     if entry.transport == "stdio" && entry.command.is_none() {
         return Ok(CommandResult::Output(
@@ -296,6 +297,7 @@ fn handle_edit(rest: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
         headers: current.headers.clone(),
         env,
         browser_mcp,
+        disabled: current.disabled,
     };
     persist_upsert(&ctx.cwd, entry).map(CommandResult::Output)
 }
@@ -611,6 +613,7 @@ fn entry_to_settings_value(entry: &McpServerConfigEntry) -> serde_json::Value {
         headers: entry.headers.clone(),
         env: entry.env.clone(),
         browser_mcp: entry.browser_mcp,
+        disabled: entry.disabled,
     };
     let mut v = serde_json::to_value(&cfg).unwrap_or(serde_json::Value::Null);
     if let Some(obj) = v.as_object_mut() {

@@ -156,6 +156,12 @@ pub struct McpServerConfig {
     /// engine falls back to a tool-name heuristic. See `src/browser/detection.rs`.
     #[serde(default, rename = "browserMcp")]
     pub browser_mcp: Option<bool>,
+    /// Soft-disable flag: when `Some(true)`, the discovery and manager layers
+    /// skip this server at connection time. Settings-edit UX flips this via
+    /// the `ToggleEnabled` IPC command without removing the entry entirely,
+    /// matching the upstream "Disable / Enable" menu option for every scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disabled: Option<bool>,
 }
 
 fn default_transport() -> String {

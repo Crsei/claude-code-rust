@@ -212,6 +212,11 @@ pub struct McpServerConfigEntry {
     /// Explicit browser-MCP marker (affects tooling heuristics).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub browser_mcp: Option<bool>,
+    /// Soft-disabled flag — matches upstream "Enabled / Disabled" column in
+    /// the MCP management dialog. Settings stay on disk; the manager skips
+    /// disabled entries at connection time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disabled: Option<bool>,
     /// Where this entry lives. Non-editable scopes (plugin/ide) are
     /// returned for display but reject `UpsertConfig` / `RemoveConfig`.
     pub scope: ConfigScope,
@@ -622,6 +627,7 @@ mod tests {
             headers: None,
             env: Some(HashMap::from([("NODE_ENV".into(), "production".into())])),
             browser_mcp: None,
+            disabled: None,
             scope: ConfigScope::User,
         };
 
@@ -649,6 +655,7 @@ mod tests {
             headers: Some(HashMap::from([("Authorization".into(), "Bearer x".into())])),
             env: None,
             browser_mcp: Some(true),
+            disabled: None,
             scope: ConfigScope::Project,
         };
         let value = serde_json::to_value(&entry).unwrap();

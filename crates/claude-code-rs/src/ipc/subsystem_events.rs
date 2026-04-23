@@ -251,6 +251,16 @@ pub enum McpCommand {
         server_name: String,
         scope: ConfigScope,
     },
+    /// Flip the `disabled` flag on an existing entry without removing it.
+    ///
+    /// When `scope` is `None` the backend picks the most specific editable
+    /// match (project → user). Non-editable scopes (`Plugin`/`Ide`) are
+    /// rejected with a `ConfigError` event.
+    ToggleEnabled {
+        server_name: String,
+        #[serde(default)]
+        scope: Option<ConfigScope>,
+    },
 }
 
 /// Commands the frontend can send to the plugin subsystem.
@@ -611,6 +621,7 @@ mod tests {
                 headers: None,
                 env: None,
                 browser_mcp: None,
+                disabled: None,
                 scope: ConfigScope::User,
             }],
         };

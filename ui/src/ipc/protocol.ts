@@ -156,6 +156,9 @@ export interface McpServerConfigEntry {
   headers?: Record<string, string>
   env?: Record<string, string>
   browser_mcp?: boolean
+  /** Soft-disable flag — settings stay on disk but the manager skips this
+   * entry at connection time. Flipped via the `toggle_enabled` command. */
+  disabled?: boolean
   scope: ConfigScope
 }
 
@@ -437,6 +440,10 @@ export type FrontendMessage =
         | { kind: 'query_config' }
         | { kind: 'upsert_config'; entry: McpServerConfigEntry }
         | { kind: 'remove_config'; server_name: string; scope: ConfigScope }
+        /** Flip the `disabled` flag on an existing entry. `scope` is optional —
+         * when omitted the backend auto-resolves project > user. Read-only
+         * scopes (plugin/ide) are rejected with a `config_error` event. */
+        | { kind: 'toggle_enabled'; server_name: string; scope?: ConfigScope }
     }
   | {
       type: 'plugin_command'

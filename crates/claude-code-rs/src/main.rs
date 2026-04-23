@@ -378,6 +378,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                         headers: None,
                         env: None,
                         browser_mcp: Some(true),
+                        disabled: None,
                     });
                     info!(
                         "MCP: registered first-party claude-in-chrome bridge (spawns --claude-in-chrome-mcp subprocess)"
