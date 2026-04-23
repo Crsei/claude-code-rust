@@ -3,7 +3,7 @@ import { extractFileEditContext } from '../../adapters/index.js'
 import { c } from '../../theme.js'
 import { FilePathLink } from '../FilePathLink.js'
 import {
-  StructuredDiff,
+  StructuredDiffList,
   hunkFromEdit,
   type DiffHunk,
 } from '../StructuredDiff/index.js'
@@ -55,7 +55,7 @@ export function FileEditToolPreview({
         <text fg={c.dim}>({editLabel})</text>
       </box>
       <box marginTop={1} paddingLeft={1} flexDirection="column">
-        <StructuredDiff hunks={hunks} maxLinesPerHunk={maxLinesPerHunk} hideHeader />
+        <StructuredDiffList hunks={hunks} maxLinesPerHunk={maxLinesPerHunk} hideHeader />
       </box>
     </box>
   )
