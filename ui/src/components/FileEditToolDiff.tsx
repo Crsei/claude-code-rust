@@ -4,7 +4,7 @@ import { extractFileEditContext } from '../adapters/index.js'
 import { c } from '../theme.js'
 import { FilePathLink } from './FilePathLink.js'
 import {
-  StructuredDiff,
+  StructuredDiffList,
   hunkFromEdit,
   type DiffHunk,
 } from './StructuredDiff/index.js'
@@ -91,7 +91,7 @@ export function FileEditToolDiff({
         border={['top', 'bottom']}
         borderColor={c.dim}
       >
-        <StructuredDiff
+        <StructuredDiffList
           hunks={hunks}
           maxLinesPerHunk={maxLinesPerHunk}
           hideHeader

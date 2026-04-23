@@ -1,28 +1,41 @@
 import React from 'react'
-import { c } from '../../theme.js'
-import { hunkGutterWidth, type DiffHunk, type DiffLine } from './hunks.js'
+import { c } from '../theme.js'
+import {
+  hunkGutterWidth,
+  type DiffHunk,
+  type DiffLine,
+} from './StructuredDiff/hunks.js'
 
 /**
- * Render a list of unified-diff hunks with theme colours and a
- * line-number gutter. Lite-native replacement for the sample tree's
- * `StructuredDiff` + `StructuredDiffList`
- * (`ui/examples/upstream-patterns/src/components/StructuredDiff.tsx`,
- * `ui/examples/upstream-patterns/src/components/StructuredDiffList.tsx`)
- * that avoids the Rust NAPI colouriser and the `diff` runtime.
+ * Render a single unified-diff hunk with theme colours and a line-number
+ * gutter.
+ * Lite-native replacement for
+ * `ui/examples/upstream-patterns/src/components/StructuredDiff.tsx` that
+ * drops the Rust NAPI colouriser and the `diff` runtime dependency.
  *
- * Renders each hunk with a header row (`@@ -a,b +c,d @@`) followed by
- * marker-tagged lines. Context lines are dimmed; adds are green;
- * removes are red.
+ * Renders a hunk with a header row (`@@ -a,b +c,d @@`) followed by marker-tagged
+ * lines. Context lines are dimmed; adds are green; removes are red.
+ * Use `<StructuredDiffList>` for lists of hunks separated by ellipses.
+ * This component handles exactly one hunk.
  */
 
 type Props = {
-  hunks: DiffHunk[]
-  /** When set, show at most this many lines per hunk (context + edits
-   * combined) so long hunks don't overflow the bubble. */
+  hunk: DiffHunk
+  /** When set, show at most this many lines (context + edits combined) so
+   * long hunks don't overflow the bubble. */
   maxLinesPerHunk?: number
-  /** When true, swallow the hunk header row. Used by callers that draw
-   * their own frame (e.g. the permission preview). */
+  /** When true, swallow the hunk header row. Used by callers that draw their
+   * own frame (for example permission previews). */
   hideHeader?: boolean
+  /** Ignored; accepted for API parity with the upstream renderer. */
+  width?: number
+  /** Ignored; accepted for API parity with the upstream renderer. */
+  dim?: boolean
+  /** Ignored; accepted for API parity with the upstream renderer. */
+  filePath?: string
+  firstLine?: string | null
+  fileContent?: string
+  skipHighlighting?: boolean
 }
 
 const MARKER: Record<DiffLine['kind'], string> = {
@@ -42,21 +55,19 @@ function padLeft(s: string, width: number): string {
   return ' '.repeat(width - s.length) + s
 }
 
-function Hunk({
+export function StructuredDiff({
   hunk,
   maxLinesPerHunk,
   hideHeader,
-}: {
-  hunk: DiffHunk
-  maxLinesPerHunk?: number
-  hideHeader?: boolean
-}) {
+}: Props): React.ReactNode {
   const gutter = hunkGutterWidth(hunk)
   let oldLine = hunk.oldStart
   let newLine = hunk.newStart
   const truncated =
     typeof maxLinesPerHunk === 'number' && hunk.lines.length > maxLinesPerHunk
-  const visible = truncated ? hunk.lines.slice(0, maxLinesPerHunk) : hunk.lines
+  const visible = truncated
+    ? hunk.lines.slice(0, maxLinesPerHunk)
+    : hunk.lines
   const hiddenCount = truncated ? hunk.lines.length - visible.length : 0
 
   return (
@@ -86,24 +97,8 @@ function Hunk({
         )
       })}
       {hiddenCount > 0 && (
-        <text fg={c.dim}>\u2026 +{hiddenCount} more lines</text>
+        <text fg={c.dim}>{`\u2026 +${hiddenCount} more lines`}</text>
       )}
-    </box>
-  )
-}
-
-export function StructuredDiff({ hunks, maxLinesPerHunk, hideHeader }: Props) {
-  if (hunks.length === 0) return null
-  return (
-    <box flexDirection="column">
-      {hunks.map((hunk, index) => (
-        <Hunk
-          key={index}
-          hunk={hunk}
-          maxLinesPerHunk={maxLinesPerHunk}
-          hideHeader={hideHeader}
-        />
-      ))}
     </box>
   )
 }

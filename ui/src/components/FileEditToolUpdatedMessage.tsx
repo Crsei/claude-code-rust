@@ -2,7 +2,7 @@ import React from 'react'
 import { c } from '../theme.js'
 import { FilePathLink } from './FilePathLink.js'
 import {
-  StructuredDiff,
+  StructuredDiffList,
   type DiffHunk,
   type DiffLine,
 } from './StructuredDiff/index.js'
@@ -116,7 +116,7 @@ export function FileEditToolUpdatedMessage({
         </text>
       )}
       <box marginTop={1} paddingLeft={1}>
-        <StructuredDiff
+        <StructuredDiffList
           hunks={hunks}
           maxLinesPerHunk={verbose ? undefined : maxLinesPerHunk}
         />

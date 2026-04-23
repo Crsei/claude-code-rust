@@ -3,7 +3,7 @@ import { c } from '../theme.js'
 import { FilePathLink } from './FilePathLink.js'
 import { HighlightedCode } from './HighlightedCode.js'
 import {
-  StructuredDiff,
+  StructuredDiffList,
   type DiffHunk,
 } from './StructuredDiff/index.js'
 
@@ -112,7 +112,7 @@ export function FileEditToolUseRejectedMessage({
         </text>
       )}
       <box marginTop={1} paddingLeft={3}>
-        <StructuredDiff
+        <StructuredDiffList
           hunks={hunks}
           maxLinesPerHunk={verbose ? undefined : MAX_LINES_TO_RENDER}
         />
