@@ -1,7 +1,7 @@
 import React from 'react'
 import { c } from '../../theme.js'
 import { FilePathLink } from '../FilePathLink.js'
-import { StructuredDiff, hunkFromEdit, type DiffHunk } from '../StructuredDiff/index.js'
+import { StructuredDiffList, hunkFromEdit, type DiffHunk } from '../StructuredDiff/index.js'
 import type { FileEditContext } from '../../adapters/index.js'
 
 /**
@@ -53,7 +53,7 @@ export function FileEditPermissionRequest({ context, fallbackCommand }: Props) {
         <text fg={c.dim}>({editLabel})</text>
       </box>
       <box marginTop={1} border={['left']} borderColor={c.warning} paddingLeft={1} paddingRight={1} flexDirection="column">
-        <StructuredDiff hunks={hunks} maxLinesPerHunk={MAX_LINES_PER_HUNK} hideHeader />
+        <StructuredDiffList hunks={hunks} maxLinesPerHunk={MAX_LINES_PER_HUNK} hideHeader />
       </box>
     </box>
   )
