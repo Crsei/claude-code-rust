@@ -6,7 +6,10 @@ import type {
   LspRecommendationPayload,
   LspRecommendationSettings,
   LspServerInfo,
+  McpResourceInfo,
+  McpServerConfigEntry,
   McpServerStatusInfo,
+  McpToolInfo,
   PluginInfo,
   SkillInfo,
   TeamMemberInfo,
@@ -94,6 +97,31 @@ export interface CustomStatusLineState {
 }
 
 /**
+ * State for the `/mcp` management dialog.
+ *
+ * Mirrors the upstream `MCPViewState` machine (`ui/examples/upstream-patterns/
+ * src/components/mcp/types.ts`) adapted to the IPC surface we already have:
+ *
+ * - `entries` — editable config list (`McpEvent::ConfigList`).
+ * - `status` — live connection state (`McpEvent::ServerList` or streamed
+ *   `McpEvent::ServerStateChanged`).
+ * - `toolsByServer` / `resourcesByServer` — populated by
+ *   `McpEvent::ToolsDiscovered` / `ResourcesDiscovered`.
+ * - `lastError` / `lastMessage` — inline feedback for the current view.
+ * - `open` toggles rendering of the `McpDialog`.
+ */
+export interface McpSettingsState {
+  open: boolean
+  entries: McpServerConfigEntry[]
+  status: McpServerStatusInfo[]
+  toolsByServer: Record<string, McpToolInfo[]>
+  resourcesByServer: Record<string, McpResourceInfo[]>
+  lastError: string | null
+  lastMessage: string | null
+  lastUpdated: number
+}
+
+/**
  * State for the `/agents` settings dialog. `entries` is the full list
  * returned by the backend's `AgentSettingsEvent::List`; `lastError` surfaces
  * the most recent `error` event so the dialog can show an inline message.
@@ -148,6 +176,7 @@ export interface AppState {
   lspRecommendation: LspRecommendationState
   customStatusLine: CustomStatusLineState | null
   agentSettings: AgentSettingsState
+  mcpSettings: McpSettingsState
 }
 
 export const initialState: AppState = {
@@ -189,6 +218,16 @@ export const initialState: AppState = {
     toolsLoadedAt: 0,
     generating: false,
     lastGenerated: null,
+  },
+  mcpSettings: {
+    open: false,
+    entries: [],
+    status: [],
+    toolsByServer: {},
+    resourcesByServer: {},
+    lastError: null,
+    lastMessage: null,
+    lastUpdated: 0,
   },
 }
 
@@ -276,6 +315,31 @@ export type SubsystemAction =
   | { type: 'LSP_RECOMMENDATION_DISMISS' }
   | { type: 'LSP_RECOMMENDATION_SETTINGS'; settings: LspRecommendationSettings }
 
+export type McpSettingsAction =
+  | { type: 'MCP_SETTINGS_OPEN' }
+  | { type: 'MCP_SETTINGS_CLOSE' }
+  | { type: 'MCP_SETTINGS_CONFIG_LIST'; entries: McpServerConfigEntry[] }
+  | {
+      type: 'MCP_SETTINGS_CONFIG_CHANGED'
+      serverName: string
+      entry?: McpServerConfigEntry
+    }
+  | { type: 'MCP_SETTINGS_CONFIG_ERROR'; serverName: string; error: string }
+  | { type: 'MCP_SETTINGS_SERVER_LIST'; servers: McpServerStatusInfo[] }
+  | {
+      type: 'MCP_SETTINGS_SERVER_STATE'
+      serverName: string
+      state: string
+      error?: string
+    }
+  | { type: 'MCP_SETTINGS_TOOLS_DISCOVERED'; serverName: string; tools: McpToolInfo[] }
+  | {
+      type: 'MCP_SETTINGS_RESOURCES_DISCOVERED'
+      serverName: string
+      resources: McpResourceInfo[]
+    }
+  | { type: 'MCP_SETTINGS_CLEAR_NOTICE' }
+
 export type AgentSettingsAction =
   | { type: 'AGENT_SETTINGS_OPEN' }
   | { type: 'AGENT_SETTINGS_CLOSE' }
@@ -314,4 +378,5 @@ export type AppAction =
   | TeamAction
   | SubsystemAction
   | AgentSettingsAction
+  | McpSettingsAction
   | InputAction

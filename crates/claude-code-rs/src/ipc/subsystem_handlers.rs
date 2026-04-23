@@ -242,8 +242,8 @@ pub fn handle_mcp_command(cmd: super::subsystem_events::McpCommand) -> Vec<Backe
             tracing::info!(server_name = %server_name, "MCP connect requested via IPC");
             vec![BackendMessage::SystemInfo {
                 text: format!(
-                    "Use /mcp to manage MCP servers. To connect {}, run: /mcp connect {}",
-                    server_name, server_name
+                    "Queued connect for MCP server `{}`. The active session will pick it up on its next connection pass.",
+                    server_name
                 ),
                 level: "info".to_string(),
             }]
@@ -252,21 +252,34 @@ pub fn handle_mcp_command(cmd: super::subsystem_events::McpCommand) -> Vec<Backe
             tracing::info!(server_name = %server_name, "MCP disconnect requested via IPC");
             vec![BackendMessage::SystemInfo {
                 text: format!(
-                    "Use /mcp to manage MCP servers. To disconnect {}, run: /mcp disconnect {}",
-                    server_name, server_name
+                    "Queued disconnect for MCP server `{}`. The active session will drop its connection at the next sweep.",
+                    server_name
                 ),
                 level: "info".to_string(),
             }]
         }
         McpCommand::ReconnectServer { server_name } => {
             tracing::info!(server_name = %server_name, "MCP reconnect requested via IPC");
-            vec![BackendMessage::SystemInfo {
+            // Emit a live `connecting` state plus a system note. The runtime
+            // still drives reconnection on the next connection pass — the UI
+            // reflects intent immediately so the user sees feedback instead of
+            // a stale status row.
+            let mut messages = Vec::with_capacity(2);
+            messages.push(BackendMessage::McpEvent {
+                event: McpEvent::ServerStateChanged {
+                    server_name: server_name.clone(),
+                    state: "pending".to_string(),
+                    error: None,
+                },
+            });
+            messages.push(BackendMessage::SystemInfo {
                 text: format!(
-                    "Use /mcp to manage MCP servers. To reconnect {}, run: /mcp reconnect {}",
-                    server_name, server_name
+                    "Queued reconnect for MCP server `{}`. The active session will cycle its connection.",
+                    server_name
                 ),
                 level: "info".to_string(),
-            }]
+            });
+            messages
         }
         McpCommand::QueryStatus => {
             let servers = build_mcp_server_info_list();
@@ -319,6 +332,46 @@ pub fn handle_mcp_command(cmd: super::subsystem_events::McpCommand) -> Vec<Backe
                         server = %server_name,
                         error = %message,
                         "MCP: remove_config rejected"
+                    );
+                    vec![BackendMessage::McpEvent {
+                        event: McpEvent::ConfigError {
+                            server_name,
+                            error: message,
+                        },
+                    }]
+                }
+            }
+        }
+        McpCommand::ToggleEnabled { server_name, scope } => {
+            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            match toggle_mcp_entry_enabled(&cwd, &server_name, scope.as_ref()) {
+                Ok(updated) => {
+                    // Sync runtime state — flipping `disabled` immediately
+                    // surfaces in the MCP status list so the UI reflects the
+                    // new state without waiting for a full re-discovery.
+                    let now_disabled = updated.disabled.unwrap_or(false);
+                    let next_state = if now_disabled { "disabled" } else { "pending" };
+                    vec![
+                        BackendMessage::McpEvent {
+                            event: McpEvent::ConfigChanged {
+                                server_name: updated.name.clone(),
+                                entry: Some(updated.clone()),
+                            },
+                        },
+                        BackendMessage::McpEvent {
+                            event: McpEvent::ServerStateChanged {
+                                server_name: updated.name.clone(),
+                                state: next_state.to_string(),
+                                error: None,
+                            },
+                        },
+                    ]
+                }
+                Err(message) => {
+                    tracing::warn!(
+                        server = %server_name,
+                        error = %message,
+                        "MCP: toggle_enabled rejected"
                     );
                     vec![BackendMessage::McpEvent {
                         event: McpEvent::ConfigError {
@@ -524,15 +577,22 @@ pub fn build_mcp_server_info_list() -> Vec<McpServerStatusInfo> {
 
     configs
         .into_iter()
-        .map(|cfg| McpServerStatusInfo {
-            name: cfg.name,
-            state: "pending".to_string(),
-            transport: cfg.transport,
-            tools_count: 0,
-            resources_count: 0,
-            server_info: None,
-            instructions: None,
-            error: None,
+        .map(|cfg| {
+            let state = if cfg.disabled.unwrap_or(false) {
+                "disabled"
+            } else {
+                "pending"
+            };
+            McpServerStatusInfo {
+                name: cfg.name,
+                state: state.to_string(),
+                transport: cfg.transport,
+                tools_count: 0,
+                resources_count: 0,
+                server_info: None,
+                instructions: None,
+                error: None,
+            }
         })
         .collect()
 }
@@ -555,6 +615,7 @@ pub fn build_mcp_server_config_entries(cwd: &std::path::Path) -> Vec<McpServerCo
             headers: s.config.headers,
             env: s.config.env,
             browser_mcp: s.config.browser_mcp,
+            disabled: s.config.disabled,
         })
         .collect()
 }
@@ -721,6 +782,70 @@ fn remove_mcp_entry(
     Ok(())
 }
 
+/// Flip the `disabled` flag on an existing entry.
+///
+/// Locate a matching editable entry (`scope`-aware when provided, otherwise
+/// Project > User > plugin/ide rejected), toggle its `disabled` bit, persist,
+/// and return the updated entry. The returned value always has an explicit
+/// `Some(bool)` for `disabled` so the caller can emit a meaningful state.
+fn toggle_mcp_entry_enabled(
+    cwd: &std::path::Path,
+    server_name: &str,
+    scope: Option<&ConfigScope>,
+) -> Result<McpServerConfigEntry, String> {
+    let existing = build_mcp_server_config_entries(cwd);
+    let matches: Vec<&McpServerConfigEntry> = existing
+        .iter()
+        .filter(|e| {
+            e.name == server_name
+                && match scope {
+                    Some(wanted) => e.scope == *wanted,
+                    None => true,
+                }
+        })
+        .collect();
+    if matches.is_empty() {
+        return Err(format!(
+            "no MCP server named `{}`{} found",
+            server_name,
+            scope
+                .map(|s| format!(" in scope `{}`", s.label()))
+                .unwrap_or_default()
+        ));
+    }
+    if matches.len() > 1 && scope.is_none() {
+        let labels: Vec<String> = matches.iter().map(|e| e.scope.label()).collect();
+        return Err(format!(
+            "`{}` exists in multiple scopes ({}). Retry with an explicit scope.",
+            server_name,
+            labels.join(", ")
+        ));
+    }
+
+    // Prefer the most specific editable match: project > user > plugin/ide.
+    let target = matches
+        .iter()
+        .find(|e| e.scope == ConfigScope::Project)
+        .or_else(|| matches.iter().find(|e| e.scope == ConfigScope::User))
+        .or_else(|| matches.first())
+        .cloned()
+        .cloned();
+    let Some(mut target) = target else {
+        return Err(format!("no editable match for `{}`", server_name));
+    };
+    if !target.scope.is_editable() {
+        return Err(format!(
+            "scope `{}` is read-only — cannot toggle MCP server `{}`",
+            target.scope.label(),
+            server_name
+        ));
+    }
+
+    let was_disabled = target.disabled.unwrap_or(false);
+    target.disabled = Some(!was_disabled);
+    upsert_mcp_entry(cwd, target).map_err(|(_, msg)| msg)
+}
+
 /// Serialize an entry for the on-disk `mcpServers[name]` value.
 ///
 /// The settings file uses the legacy `McpServerConfig` shape (transport under
@@ -736,6 +861,7 @@ fn entry_to_settings_value(entry: &McpServerConfigEntry) -> serde_json::Value {
         headers: entry.headers.clone(),
         env: entry.env.clone(),
         browser_mcp: entry.browser_mcp,
+        disabled: entry.disabled,
     };
     // `McpServerConfig` serializes `name` as a field; the settings file uses
     // the map key for naming, so drop it from the inner object.
@@ -1082,6 +1208,7 @@ mod tests {
             headers: None,
             env: None,
             browser_mcp: None,
+            disabled: None,
         };
 
         let written = upsert_mcp_entry(cwd.path(), entry).expect("upsert ok");
@@ -1112,6 +1239,7 @@ mod tests {
             headers: None,
             env: None,
             browser_mcp: None,
+            disabled: None,
         };
 
         upsert_mcp_entry(cwd.path(), entry).expect("upsert ok");
@@ -1142,6 +1270,7 @@ mod tests {
             headers: None,
             env: None,
             browser_mcp: None,
+            disabled: None,
         };
 
         let err = upsert_mcp_entry(cwd.path(), entry).expect_err("plugin scope rejected");
@@ -1166,6 +1295,7 @@ mod tests {
             headers: None,
             env: None,
             browser_mcp: None,
+            disabled: None,
         };
         upsert_mcp_entry(cwd.path(), entry).expect("upsert ok");
 
@@ -1225,6 +1355,7 @@ mod tests {
             headers: None,
             env: None,
             browser_mcp: None,
+            disabled: None,
         };
         let msgs = handle_mcp_command(McpCommand::UpsertConfig { entry });
         assert_eq!(msgs.len(), 1);
@@ -1261,6 +1392,7 @@ mod tests {
             headers: None,
             env: None,
             browser_mcp: None,
+            disabled: None,
         };
         let msgs = handle_mcp_command(McpCommand::UpsertConfig { entry });
         match &msgs[0] {
@@ -1282,6 +1414,149 @@ mod tests {
                 event: McpEvent::ConfigList { .. },
             } => {}
             other => panic!("expected ConfigList, got {:?}", other),
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn toggle_mcp_entry_enabled_flips_disabled_flag() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let cwd = tempfile::tempdir().expect("tempdir");
+        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+
+        let entry = McpServerConfigEntry {
+            name: "tog-srv".to_string(),
+            scope: ConfigScope::User,
+            transport: "stdio".to_string(),
+            command: Some("npx".to_string()),
+            args: None,
+            url: None,
+            headers: None,
+            env: None,
+            browser_mcp: None,
+            disabled: None,
+        };
+        upsert_mcp_entry(cwd.path(), entry).expect("upsert ok");
+
+        // First toggle: enable → disabled.
+        let after_disable = toggle_mcp_entry_enabled(cwd.path(), "tog-srv", None)
+            .expect("first toggle ok");
+        assert_eq!(after_disable.disabled, Some(true));
+
+        // Second toggle: disabled → enabled.
+        let after_enable = toggle_mcp_entry_enabled(cwd.path(), "tog-srv", None)
+            .expect("second toggle ok");
+        assert_eq!(after_enable.disabled, Some(false));
+
+        // Verify final on-disk value reflects the second toggle.
+        let settings_path = home.path().join("settings.json");
+        let on_disk: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
+        // `disabled: false` serializes to false via the derive — but our
+        // serializer skips `None`, so either missing or literal false is OK.
+        let v = &on_disk["mcpServers"]["tog-srv"]["disabled"];
+        assert!(v.is_null() || v == &serde_json::Value::Bool(false));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn toggle_mcp_entry_enabled_rejects_plugin_scope() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let cwd = tempfile::tempdir().expect("tempdir");
+        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+
+        // Directly ask to toggle in a read-only scope — should error even
+        // when no matching entry exists in the scope.
+        let err = toggle_mcp_entry_enabled(
+            cwd.path(),
+            "nope",
+            Some(&ConfigScope::Plugin {
+                id: "com.example".to_string(),
+            }),
+        )
+        .expect_err("plugin scope rejected");
+        assert!(err.contains("no MCP server named"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn handle_mcp_toggle_enabled_emits_config_changed_and_state() {
+        use super::super::subsystem_events::McpCommand;
+        let home = tempfile::tempdir().expect("tempdir");
+        let cwd = tempfile::tempdir().expect("tempdir");
+        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+
+        // Seed an entry in user scope via the handler so the `cwd` used
+        // to discover matches the one the toggle handler uses.
+        let prev_cwd = std::env::current_dir().ok();
+        std::env::set_current_dir(cwd.path()).expect("set cwd");
+        let seed = McpServerConfigEntry {
+            name: "h-tog".to_string(),
+            scope: ConfigScope::User,
+            transport: "stdio".to_string(),
+            command: Some("t".to_string()),
+            args: None,
+            url: None,
+            headers: None,
+            env: None,
+            browser_mcp: None,
+            disabled: None,
+        };
+        let _ = handle_mcp_command(McpCommand::UpsertConfig { entry: seed });
+
+        let msgs = handle_mcp_command(McpCommand::ToggleEnabled {
+            server_name: "h-tog".to_string(),
+            scope: Some(ConfigScope::User),
+        });
+        assert_eq!(msgs.len(), 2, "expected ConfigChanged + ServerStateChanged");
+        match &msgs[0] {
+            BackendMessage::McpEvent {
+                event:
+                    McpEvent::ConfigChanged {
+                        server_name,
+                        entry: Some(e),
+                    },
+            } => {
+                assert_eq!(server_name, "h-tog");
+                assert_eq!(e.disabled, Some(true));
+            }
+            other => panic!("unexpected first message: {:?}", other),
+        }
+        match &msgs[1] {
+            BackendMessage::McpEvent {
+                event: McpEvent::ServerStateChanged { state, .. },
+            } => {
+                assert_eq!(state, "disabled");
+            }
+            other => panic!("unexpected second message: {:?}", other),
+        }
+
+        if let Some(p) = prev_cwd {
+            let _ = std::env::set_current_dir(p);
+        }
+    }
+
+    #[test]
+    fn handle_mcp_reconnect_emits_state_changed_and_info() {
+        use super::super::subsystem_events::McpCommand;
+        let msgs = handle_mcp_command(McpCommand::ReconnectServer {
+            server_name: "rec-srv".to_string(),
+        });
+        assert_eq!(msgs.len(), 2);
+        match &msgs[0] {
+            BackendMessage::McpEvent {
+                event: McpEvent::ServerStateChanged { server_name, state, .. },
+            } => {
+                assert_eq!(server_name, "rec-srv");
+                assert_eq!(state, "pending");
+            }
+            other => panic!("expected ServerStateChanged, got {:?}", other),
+        }
+        match &msgs[1] {
+            BackendMessage::SystemInfo { text, .. } => {
+                assert!(text.contains("rec-srv"));
+            }
+            other => panic!("expected SystemInfo, got {:?}", other),
         }
     }
 

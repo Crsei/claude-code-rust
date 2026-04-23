@@ -31,7 +31,7 @@ export const COMMANDS: CommandDef[] = [
   { name: 'session',          aliases: [],                      description: 'Show session info or list sessions', kind: 'display' },
   { name: 'skills',           aliases: [],                      description: 'List available skills',            kind: 'display' },
   { name: 'diff',             aliases: [],                      description: 'Show git diff of current changes', kind: 'display' },
-  { name: 'mcp',              aliases: [],                      description: 'MCP server management',           kind: 'display' },
+  { name: 'mcp',              aliases: [],                      description: 'Open MCP server manager (subcommands: list, add, edit, …)', kind: 'display' },
   { name: 'agents-ui',        aliases: ['au'],                  description: 'Open the agents settings dialog', kind: 'action' },
   { name: 'assistant',        aliases: ['kairos'],              description: 'View assistant mode status',       kind: 'display' },
   { name: 'daemon',           aliases: [],                      description: 'View/control daemon process',      kind: 'display' },

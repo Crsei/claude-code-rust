@@ -32,6 +32,19 @@ impl McpManager {
     pub async fn connect_all(&mut self, configs: Vec<McpServerConfig>) -> Result<()> {
         for config in configs {
             let name = config.name.clone();
+            // Respect the soft-disable flag from settings. Keeping the entry
+            // out of `self.clients` means `list_tools`, `all_tools`, etc. all
+            // behave as if the server does not exist for this session, while
+            // the on-disk config is preserved for a later re-enable.
+            if config.disabled.unwrap_or(false) {
+                tracing::info!(server = %name, "MCP: server disabled in settings, skipping");
+                super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
+                    server_name: name,
+                    state: "disabled".to_string(),
+                    error: None,
+                });
+                continue;
+            }
             let mut client = McpClient::new(config);
 
             match client.connect().await {

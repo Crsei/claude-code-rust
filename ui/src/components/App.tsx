@@ -9,6 +9,7 @@ import { conversationToRawMessage } from '../store/message-model.js'
 import { c } from '../theme.js'
 import { AgentsDialog } from './agent-settings/index.js'
 import { AgentTreePanel } from './AgentTreePanel.js'
+import { McpDialog } from './mcp/index.js'
 import { InputPrompt } from './InputPrompt.js'
 import { LspRecommendationDialog } from './LspRecommendationDialog.js'
 import { MessageList } from './MessageList.js'
@@ -270,11 +271,74 @@ export function App() {
           }
           break
         }
-        case 'mcp_event':
-          if (msg.event.kind === 'server_state_changed') {
-            dispatch({ type: 'MCP_SERVER_STATE', serverName: msg.event.server_name, state: msg.event.state, error: msg.event.error })
+        case 'mcp_event': {
+          const mcpEvent = msg.event
+          switch (mcpEvent.kind) {
+            case 'server_state_changed':
+              dispatch({
+                type: 'MCP_SERVER_STATE',
+                serverName: mcpEvent.server_name,
+                state: mcpEvent.state,
+                error: mcpEvent.error,
+              })
+              dispatch({
+                type: 'MCP_SETTINGS_SERVER_STATE',
+                serverName: mcpEvent.server_name,
+                state: mcpEvent.state,
+                error: mcpEvent.error,
+              })
+              break
+            case 'server_list':
+              dispatch({
+                type: 'MCP_SETTINGS_SERVER_LIST',
+                servers: mcpEvent.servers,
+              })
+              break
+            case 'config_list':
+              dispatch({
+                type: 'MCP_SETTINGS_CONFIG_LIST',
+                entries: mcpEvent.entries,
+              })
+              break
+            case 'config_changed':
+              dispatch({
+                type: 'MCP_SETTINGS_CONFIG_CHANGED',
+                serverName: mcpEvent.server_name,
+                entry: mcpEvent.entry,
+              })
+              // Re-pull the full list so duplicates across scopes stay accurate.
+              backend.send({
+                type: 'mcp_command',
+                command: { kind: 'query_config' },
+              })
+              break
+            case 'config_error':
+              dispatch({
+                type: 'MCP_SETTINGS_CONFIG_ERROR',
+                serverName: mcpEvent.server_name,
+                error: mcpEvent.error,
+              })
+              break
+            case 'tools_discovered':
+              dispatch({
+                type: 'MCP_SETTINGS_TOOLS_DISCOVERED',
+                serverName: mcpEvent.server_name,
+                tools: mcpEvent.tools,
+              })
+              break
+            case 'resources_discovered':
+              dispatch({
+                type: 'MCP_SETTINGS_RESOURCES_DISCOVERED',
+                serverName: mcpEvent.server_name,
+                resources: mcpEvent.resources,
+              })
+              break
+            case 'channel_notification':
+              // Channel notifications belong to KAIROS, not the /mcp dialog.
+              break
           }
           break
+        }
         case 'plugin_event':
           if (msg.event.kind === 'status_changed') {
             dispatch({ type: 'PLUGIN_STATUS', pluginId: msg.event.plugin_id, name: msg.event.name, status: msg.event.status, error: msg.event.error })
@@ -463,6 +527,7 @@ export function App() {
         <LspRecommendationDialog payload={state.lspRecommendation.request} />
       )}
       <AgentsDialog />
+      <McpDialog />
     </box>
   )
 }

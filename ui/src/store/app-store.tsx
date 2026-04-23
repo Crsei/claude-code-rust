@@ -9,6 +9,7 @@ import { reduceAgentTree } from './reducers/agent-tree.js'
 import { reduceBackgroundAgents } from './reducers/background-agents.js'
 import { reduceCore } from './reducers/core.js'
 import { reduceInput } from './reducers/input.js'
+import { reduceMcpSettings } from './reducers/mcp-settings.js'
 import { reduceSubsystems } from './reducers/subsystems.js'
 import { reduceTeams } from './reducers/teams.js'
 import { reduceToolActivity } from './reducers/tool-activity.js'
@@ -19,6 +20,7 @@ export type {
   AppState,
   BackgroundAgent,
   CustomStatusLineState,
+  McpSettingsState,
   PendingQuestion,
   PermissionRequest,
   QueuedSubmission,
@@ -95,6 +97,18 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'AGENT_SETTINGS_GENERATED':
     case 'AGENT_SETTINGS_CLEAR_GENERATED':
       return reduceAgentSettings(state, action)
+
+    case 'MCP_SETTINGS_OPEN':
+    case 'MCP_SETTINGS_CLOSE':
+    case 'MCP_SETTINGS_CONFIG_LIST':
+    case 'MCP_SETTINGS_CONFIG_CHANGED':
+    case 'MCP_SETTINGS_CONFIG_ERROR':
+    case 'MCP_SETTINGS_SERVER_LIST':
+    case 'MCP_SETTINGS_SERVER_STATE':
+    case 'MCP_SETTINGS_TOOLS_DISCOVERED':
+    case 'MCP_SETTINGS_RESOURCES_DISCOVERED':
+    case 'MCP_SETTINGS_CLEAR_NOTICE':
+      return reduceMcpSettings(state, action)
 
     case 'PUSH_HISTORY':
     case 'SET_HISTORY_INDEX':

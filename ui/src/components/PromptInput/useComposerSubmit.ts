@@ -75,6 +75,14 @@ export function useComposerSubmit({
       reset()
       return
     }
+    // `/mcp` with no subcommand opens the dialog; `/mcp list` etc still fall
+    // through to the backend slash-command handler for the CLI text output.
+    if (head === '/mcp' && trimmed === '/mcp') {
+      dispatch({ type: 'PUSH_HISTORY', text: raw })
+      dispatch({ type: 'MCP_SETTINGS_OPEN' })
+      reset()
+      return
+    }
     const id = `user-${Date.now()}`
     dispatch({ type: 'ADD_COMMAND_MESSAGE', id, text: raw })
     dispatch({ type: 'PUSH_HISTORY', text: raw })
