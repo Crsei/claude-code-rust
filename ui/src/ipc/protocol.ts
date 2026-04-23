@@ -474,6 +474,21 @@ export type FrontendMessage =
         | { kind: 'generate'; user_prompt: string; existing_names?: string[] }
     }
   | { type: 'query_subsystem_status' }
+  /**
+   * Run a bounded ripgrep search over the workspace. The backend
+   * responds with a single `file_search_result` carrying up to
+   * `max_results` matches (capped at 500 server-side) and a
+   * `truncated` flag when the cap kicks in. `request_id` correlates
+   * the response back to the in-flight request.
+   */
+  | {
+      type: 'search_files'
+      request_id: string
+      pattern: string
+      cwd?: string
+      case_insensitive?: boolean
+      max_results?: number
+    }
 
 // ---------------------------------------------------------------------------
 // BackendMessage (Backend -> Frontend)
@@ -565,3 +580,23 @@ export type BackendMessage =
   | { type: 'ide_event'; event: IdeEvent }
   | { type: 'agent_settings_event'; event: AgentSettingsEvent }
   | { type: 'subsystem_status'; status: SubsystemStatusSnapshot }
+  /**
+   * Response to a `search_files` request. Mirrors Rust
+   * `BackendMessage::FileSearchResult` — `matches` is capped at 500
+   * entries server-side; check `truncated` to know whether to render a
+   * "+ more" indicator.
+   */
+  | {
+      type: 'file_search_result'
+      request_id: string
+      matches: FileSearchMatch[]
+      truncated: boolean
+      error?: string
+    }
+
+/** A single `file_search_result.matches` entry. */
+export interface FileSearchMatch {
+  file: string
+  line: number
+  text: string
+}

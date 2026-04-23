@@ -8,34 +8,30 @@ import {
 
 /**
  * Render a single unified-diff hunk with theme colours and a line-number
- * gutter. Lite-native replacement for the sample tree's `StructuredDiff`
- * (`ui/examples/upstream-patterns/src/components/StructuredDiff.tsx`) that
+ * gutter.
+ * Lite-native replacement for
+ * `ui/examples/upstream-patterns/src/components/StructuredDiff.tsx` that
  * drops the Rust NAPI colouriser and the `diff` runtime dependency.
  *
- * Renders a hunk with a header row (`@@ -a,b +c,d @@`) followed by
- * marker-tagged lines. Context lines are dimmed; adds are green; removes
- * are red. Use `<StructuredDiffList>` for lists of hunks separated by
- * ellipses — this component handles exactly one hunk, matching the
- * upstream split.
+ * Renders a hunk with a header row (`@@ -a,b +c,d @@`) followed by marker-tagged
+ * lines. Context lines are dimmed; adds are green; removes are red.
+ * Use `<StructuredDiffList>` for lists of hunks separated by ellipses.
+ * This component handles exactly one hunk.
  */
 
 type Props = {
   hunk: DiffHunk
   /** When set, show at most this many lines (context + edits combined) so
-   *  long hunks don't overflow the bubble. */
+   * long hunks don't overflow the bubble. */
   maxLinesPerHunk?: number
-  /** When true, swallow the hunk header row. Used by callers that draw
-   *  their own frame (e.g. the permission preview). */
+  /** When true, swallow the hunk header row. Used by callers that draw their
+   * own frame (for example permission previews). */
   hideHeader?: boolean
-  /** Ignored — accepted for API parity with the upstream renderer's NAPI
-   *  code path. The Lite renderer never depends on the terminal width. */
+  /** Ignored; accepted for API parity with the upstream renderer. */
   width?: number
-  /** Ignored — accepted for API parity with the upstream renderer. The
-   *  Lite renderer doesn't draw the whole hunk in a dim tone; context
-   *  rows are already dimmed. */
+  /** Ignored; accepted for API parity with the upstream renderer. */
   dim?: boolean
-  /** Ignored — the upstream signature carries these for the NAPI syntax
-   *  highlighter. Accepted so the shape stays drop-in compatible. */
+  /** Ignored; accepted for API parity with the upstream renderer. */
   filePath?: string
   firstLine?: string | null
   fileContent?: string
@@ -63,7 +59,7 @@ export function StructuredDiff({
   hunk,
   maxLinesPerHunk,
   hideHeader,
-}: Props): React.ReactElement {
+}: Props): React.ReactNode {
   const gutter = hunkGutterWidth(hunk)
   let oldLine = hunk.oldStart
   let newLine = hunk.newStart
