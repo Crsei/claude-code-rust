@@ -508,6 +508,22 @@ export type BackendMessage =
        */
       content_blocks?: ToolResultContentInfo[]
     }
+  /**
+   * Intermediate progress report for a long-running tool (typically Bash).
+   * Mirrors Rust `BackendMessage::ToolProgress`. Used by the shell UI to
+   * drive `ShellProgressMessage` — `output` is the tail-capped snapshot,
+   * `total_lines` / `total_bytes` are whole-stream counters.
+   */
+  | {
+      type: 'tool_progress'
+      tool_use_id: string
+      tool: string
+      output: string
+      elapsed_seconds: number
+      total_lines?: number
+      total_bytes?: number
+      timeout_ms?: number
+    }
   | { type: 'permission_request'; tool_use_id: string; tool: string; command: string; options: string[] }
   | { type: 'question_request'; id: string; text: string }
   | { type: 'system_info'; text: string; level: string }

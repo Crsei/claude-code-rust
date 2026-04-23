@@ -62,6 +62,7 @@ impl HeadlessRuntime {
             self.pending_questions.clone(),
             self.sink.clone(),
         );
+        super::callbacks::install_tool_progress_callback(&self.engine, self.sink.clone());
 
         // ── 1b. Background agent channel ─────────────────────────────
         let (agent_tx, mut agent_rx) = crate::ipc::agent_channel::agent_channel();

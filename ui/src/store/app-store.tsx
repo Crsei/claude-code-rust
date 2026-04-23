@@ -24,6 +24,7 @@ export type {
   PendingQuestion,
   PermissionRequest,
   QueuedSubmission,
+  ShellProgressState,
   SubsystemState,
   TeamState,
   Usage,
@@ -53,6 +54,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'TOOL_USE':
     case 'TOOL_RESULT':
+    case 'TOOL_PROGRESS':
       return reduceToolActivity(state, action)
 
     case 'BG_AGENT_STARTED':
