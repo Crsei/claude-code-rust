@@ -16,6 +16,7 @@ import { PermissionRequestDialog } from './permissions/index.js'
 import { StatusLine } from './StatusLine/index.js'
 import { SubsystemStatus } from './SubsystemStatus.js'
 import { Suggestions } from './Suggestions.js'
+import { BackgroundTaskStatus } from './tasks/index.js'
 import { TeamPanel } from './TeamPanel.js'
 import { WelcomeScreen } from './WelcomeScreen.js'
 import { registerOpaqueFrameClear } from './frame-clear.js'
@@ -435,6 +436,7 @@ export function App() {
           </box>
           <AgentTreePanel />
           <TeamPanel />
+          <BackgroundTaskStatus />
           <SubsystemStatus />
           <box
             width="100%"

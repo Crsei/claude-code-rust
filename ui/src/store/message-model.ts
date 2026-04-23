@@ -33,11 +33,27 @@ export type ToolActivityStatus =
   | 'error'
   | 'cancelled'
 
+/**
+ * Sub-kind for user input messages, inferred from the prompt prefix so the
+ * dispatcher can pick a layout without the backend adding extra metadata.
+ *
+ * - `prompt` — normal user prompt (markdown bubble)
+ * - `command` — slash command (`/foo bar`)
+ * - `bash` — bash shortcut (`!ls -la`)
+ * - `memory` — memory shortcut (`#remember something`)
+ */
+export type UserTextKind = 'prompt' | 'command' | 'bash' | 'memory'
+
 export interface UserTextRenderItem {
   type: 'user_text'
   id: string
   content: string
   timestamp: number
+  /**
+   * Heuristic kind used by `UserTextMessage` to pick a visual style. Older
+   * items produced before this field was added render as `'prompt'`.
+   */
+  kind?: UserTextKind
 }
 
 export interface AssistantTextRenderItem {
@@ -115,6 +131,31 @@ export type RenderItem =
 const GROUPABLE_TOOL_NAMES = new Set(['Read', 'Glob', 'Grep'])
 const MAX_GROUP_PREVIEW_LINES = 3
 
+/**
+ * Heuristic classifier for a user input segment — mirrors the upstream
+ * `UserTextMessage` router which splits by XML tags. Our IPC strips those
+ * tags, so we fall back to the leading character of the trimmed text
+ * (`/foo` → command, `!ls` → bash, `#note` → memory). Matches the prompt
+ * widget's own prefix conventions in `PromptInput.tsx`.
+ */
+export function classifyUserTextKind(text: string): UserTextKind {
+  const trimmed = text.trimStart()
+  if (!trimmed) {
+    return 'prompt'
+  }
+  const first = trimmed[0]
+  if (first === '/') {
+    return 'command'
+  }
+  if (first === '!') {
+    return 'bash'
+  }
+  if (first === '#') {
+    return 'memory'
+  }
+  return 'prompt'
+}
+
 export function conversationToRawMessage(message: ConversationMessage): RawMessage {
   return {
     id: message.id,
@@ -181,6 +222,7 @@ export function buildRenderItems(
       id: `${raw.id}:user:${segmentIndex}`,
       content: text,
       timestamp: raw.timestamp,
+      kind: classifyUserTextKind(text),
     })
   }
 
