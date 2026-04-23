@@ -11,8 +11,7 @@
 # Examples (ink-panel etc.)
 examples/
 !ui/examples/
-!ui/examples/upstream-patterns/
-!ui/examples/upstream-patterns/**
+ui/examples/upstream-patterns/
 
 # IDE
 .idea/

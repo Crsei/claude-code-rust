@@ -9,20 +9,17 @@ import { shouldRenderCustomStatusLine } from './StatusLine/status-line-state.js'
 /**
  * Orchestrator that composes the built-in statusline with the optional
  * user-configured custom statusline. Ported from
- * `ui/examples/upstream-patterns/src/components/StatusLine.tsx` — the
- * upstream relies on Ink's `ANSI` primitive and `useSettings`, the Rust
- * port instead reads the latest `status_line_update` snapshot from the
- * store and passes it to a `CustomStatusLine` leaf that knows how to
- * render it.
+ * `ui/examples/upstream-patterns/src/components/StatusLine.tsx`.
+ * The upstream relies on Ink's `ANSI` primitive and `useSettings`, while this
+ * Rust port reads the latest `status_line_update` snapshot from the store and
+ * passes it to `CustomStatusLine`, which renders it.
  *
- * The built-in statusline is always shown — the frontend derives it
- * directly from the Lite store so operators always have a baseline
- * context bar, even when `status_line_update` events aren't flowing.
- * When the backend has recently emitted a `status_line_update` with at
- * least one non-empty line and no error, the custom statusline is
- * rendered *below* the built-in row so both stay visible. The error
- * badge on the built-in row acts as the status indicator for the custom
- * runner itself.
+ * The built-in statusline is always shown so operators always have a baseline
+ * context bar, even when `status_line_update` events are not flowing. When the
+ * backend has emitted a recent `status_line_update` with at least one non-empty
+ * line and no error, the custom statusline renders below the built-in row so both
+ * remain visible. The built-in row's error badge is used to indicate custom
+ * statusline issues.
  */
 
 interface Props {

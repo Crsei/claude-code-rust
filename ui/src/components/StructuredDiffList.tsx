@@ -5,15 +5,8 @@ import { StructuredDiff } from './StructuredDiff.js'
 
 /**
  * Render a list of diff hunks with ellipsis separators between them.
- * Ports the upstream `StructuredDiffList`
- * (`ui/examples/upstream-patterns/src/components/StructuredDiffList.tsx`)
- * to OpenTUI — the only shape difference is that Ink's `NoSelect`
- * wrapper isn't necessary here (text selection is already native in
- * OpenTUI terminals).
- *
- * The upstream passes `dim`, `filePath`, `firstLine`, `fileContent`, and
- * `width` through to per-hunk highlighters; the Lite renderer ignores
- * them but accepts them for drop-in compatibility.
+ * Port of `ui/examples/upstream-patterns/src/components/StructuredDiffList.tsx`
+ * to OpenTUI.
  */
 
 type Props = {
@@ -22,7 +15,7 @@ type Props = {
   maxLinesPerHunk?: number
   /** Passed through to per-hunk rendering. */
   hideHeader?: boolean
-  /** API-compat parameters — see `StructuredDiff` for why these are accepted. */
+  /** Accepted for API compatibility. */
   dim?: boolean
   width?: number
   filePath?: string
@@ -39,10 +32,10 @@ export function StructuredDiffList({
   filePath,
   firstLine,
   fileContent,
-}: Props): React.ReactElement | null {
+}: Props): React.ReactNode {
   if (hunks.length === 0) return null
 
-  const children: React.ReactElement[] = []
+  const children: React.ReactNode[] = []
   hunks.forEach((hunk, index) => {
     if (index > 0) {
       children.push(
