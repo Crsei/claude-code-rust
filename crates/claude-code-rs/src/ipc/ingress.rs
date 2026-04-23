@@ -149,6 +149,27 @@ pub(crate) async fn dispatch(
             let msgs = super::agent_handlers::handle_team_command(command);
             let _ = sink.send_many(msgs);
         }
+
+        FrontendMessage::SearchFiles {
+            request_id,
+            pattern,
+            cwd,
+            case_insensitive,
+            max_results,
+        } => {
+            debug!(
+                "headless: search_files request_id={} pattern={:?}",
+                request_id, pattern
+            );
+            super::file_search::dispatch_search(
+                request_id,
+                pattern,
+                cwd,
+                case_insensitive,
+                max_results,
+                sink,
+            );
+        }
     }
 
     true // continue loop

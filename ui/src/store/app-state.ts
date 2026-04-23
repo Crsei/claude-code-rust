@@ -3,6 +3,7 @@ import type {
   AgentNode,
   AgentToolInfo,
   FrontendContentBlock,
+  LspDiagnostic,
   LspRecommendationPayload,
   LspRecommendationSettings,
   LspServerInfo,
@@ -94,6 +95,56 @@ export interface SubsystemState {
   plugins: PluginInfo[]
   skills: SkillInfo[]
   lastUpdated: number
+}
+
+/**
+ * Latest diagnostics snapshot per document URI. The Rust backend emits
+ * `LspEvent::DiagnosticsPublished { uri, diagnostics }` each time a
+ * language server replies with a `textDocument/publishDiagnostics`
+ * notification; we keep only the most recent list per URI so the
+ * `DiagnosticsDisplay` component can render either the full per-file
+ * breakdown (verbose mode) or the aggregate counts (default).
+ *
+ * The map is cleared when the document is removed from the LSP's
+ * tracking (empty `diagnostics` array overwrites the previous entry),
+ * so downstream counting remains accurate without extra plumbing.
+ */
+export interface DiagnosticsState {
+  byUri: Record<string, LspDiagnostic[]>
+  lastUpdated: number
+}
+
+/**
+ * Optional selection descriptor shipped by an IDE extension. Mirrors the
+ * upstream `IDESelection` payload `ui/examples/upstream-patterns/src/
+ * hooks/useIdeSelection.ts` reads. cc-rust's IDE integration currently
+ * forwards selection via MCP (`ide` server); we stash the latest value
+ * here so `IdeStatusIndicator` does not need to wire to MCP directly.
+ *
+ * A snapshot with `lineCount === 0` is treated as "file-only" — we render
+ * the filename badge instead of the line-range badge.
+ */
+export interface IdeSelectionSnapshot {
+  /** Absolute path of the file containing the selection. */
+  filePath?: string
+  /** Selected text, when the IDE provides it. */
+  text?: string
+  /** Number of selected lines (0 when the cursor is idle in the file). */
+  lineCount: number
+  /** Timestamp the snapshot was last refreshed, for debugging. */
+  updatedAt: number
+}
+
+/**
+ * IDE integration state. `connected` tracks whether any IDE integration
+ * (terminal-attached + MCP) is currently live so components can render
+ * IDE-aware chrome (e.g. status indicator) without inspecting MCP server
+ * lists. `selection` carries the most recent selection snapshot shipped
+ * by the IDE extension.
+ */
+export interface IdeState {
+  connected: boolean
+  selection: IdeSelectionSnapshot | null
 }
 
 /**
@@ -198,6 +249,8 @@ export interface AppState {
   agentStreams: Record<string, AgentStreamState>
   teams: Record<string, TeamState>
   subsystems: SubsystemState
+  diagnostics: DiagnosticsState
+  ide: IdeState
   lspRecommendation: LspRecommendationState
   customStatusLine: CustomStatusLineState | null
   agentSettings: AgentSettingsState
@@ -232,6 +285,8 @@ export const initialState: AppState = {
   agentStreams: {},
   teams: {},
   subsystems: { lsp: [], mcp: [], plugins: [], skills: [], lastUpdated: 0 },
+  diagnostics: { byUri: {}, lastUpdated: 0 },
+  ide: { connected: false, selection: null },
   lspRecommendation: { request: null, settings: { disabled: false, muted_plugins: [] } },
   customStatusLine: null,
   agentSettings: {
@@ -350,6 +405,10 @@ export type SubsystemAction =
   | { type: 'LSP_RECOMMENDATION_REQUEST'; payload: LspRecommendationPayload }
   | { type: 'LSP_RECOMMENDATION_DISMISS' }
   | { type: 'LSP_RECOMMENDATION_SETTINGS'; settings: LspRecommendationSettings }
+  | { type: 'LSP_DIAGNOSTICS_PUBLISHED'; uri: string; diagnostics: LspDiagnostic[] }
+  | { type: 'LSP_DIAGNOSTICS_CLEAR' }
+  | { type: 'IDE_CONNECTION_CHANGED'; connected: boolean }
+  | { type: 'IDE_SELECTION_CHANGED'; selection: IdeSelectionSnapshot | null }
 
 export type McpSettingsAction =
   | { type: 'MCP_SETTINGS_OPEN' }
