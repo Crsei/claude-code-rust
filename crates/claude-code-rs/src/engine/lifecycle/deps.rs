@@ -45,6 +45,13 @@ pub(crate) struct QueryEngineDeps {
     pub(crate) permission_callback: Option<crate::types::tool::PermissionCallback>,
     /// Background agent sender — forwarded into ToolUseContext.
     pub(crate) bg_agent_tx: Option<crate::ipc::agent_channel::AgentSender>,
+    /// Optional callback that receives every `ToolProgress` emitted by a
+    /// tool. The query loop pulls this via `tool_progress_callback()` and
+    /// hands it to `execute_tool_calls`. Tests can leave it unset; in
+    /// headless mode the engine installs a closure that forwards each
+    /// progress event to `FrontendSink`.
+    pub(crate) tool_progress_callback:
+        Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
     /// Shared buffer of completed background agents.
     pub(crate) pending_bg_results: cc_types::background_agents::PendingBackgroundResults,
     /// Hook runner — used via the `HookRunner` trait from `cc-types::hooks` so
@@ -57,6 +64,12 @@ pub(crate) struct QueryEngineDeps {
 
 #[async_trait::async_trait]
 impl QueryDeps for QueryEngineDeps {
+    fn tool_progress_callback(
+        &self,
+    ) -> Option<Arc<dyn Fn(ToolProgress) + Send + Sync>> {
+        self.tool_progress_callback.clone()
+    }
+
     async fn call_model(&self, mut params: ModelCallParams) -> Result<ModelResponse> {
         let client = self.api_client.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
@@ -337,7 +350,7 @@ impl QueryDeps for QueryEngineDeps {
         request: ToolExecRequest,
         tools: &Tools,
         parent_message: &crate::types::message::AssistantMessage,
-        _on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
+        on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolExecResult> {
         use cc_types::hooks::{PermissionOverride, PostToolHookResult, PreToolHookResult};
         use crate::types::tool::PermissionResult;
@@ -769,8 +782,30 @@ impl QueryDeps for QueryEngineDeps {
         }
         let tool_start = std::time::Instant::now();
 
+        // Adapt the `Arc` from `QueryDeps::execute_tool` into the `Box`
+        // the `Tool::call` contract expects. The wrapper also stamps the
+        // current `request.tool_use_id` onto each `ToolProgress` so
+        // downstream tools don't need to know it themselves.
+        let tool_use_id_for_progress = request.tool_use_id.clone();
+        let boxed_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>> =
+            on_progress.as_ref().map(|arc| {
+                let arc = arc.clone();
+                let tool_use_id = tool_use_id_for_progress.clone();
+                Box::new(move |mut p: ToolProgress| {
+                    if p.tool_use_id.is_empty() {
+                        p.tool_use_id = tool_use_id.clone();
+                    }
+                    arc(p)
+                }) as Box<dyn Fn(ToolProgress) + Send + Sync>
+            });
+
         match tool
-            .call(effective_input.clone(), &ctx, parent_message, None)
+            .call(
+                effective_input.clone(),
+                &ctx,
+                parent_message,
+                boxed_progress,
+            )
             .await
         {
             Ok(result) => {

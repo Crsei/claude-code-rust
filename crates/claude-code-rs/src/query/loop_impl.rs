@@ -538,6 +538,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     &tool_uses,
                     &tools,
                     &assistant_message,
+                    deps.tool_progress_callback(),
                 )
                 .await;
 

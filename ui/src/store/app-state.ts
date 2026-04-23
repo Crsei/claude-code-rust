@@ -40,6 +40,30 @@ export interface BackgroundAgent {
   durationMs?: number
 }
 
+/**
+ * Live-shell progress state for a Bash tool invocation. Populated by the
+ * `tool_progress` IPC event the Rust backend emits while a `BashTool`
+ * runs — see `crates/claude-code-rs/src/tools/exec/bash.rs`. Used by the
+ * `ShellProgressMessage` component to render a "Running… (12s)" tail
+ * view while the command is in-flight and the final output preview once
+ * it finishes.
+ */
+export interface ShellProgressState {
+  toolUseId: string
+  tool: string
+  /** Most-recent tail-capped output snapshot. */
+  output: string
+  /** Accumulated full output (what the UI shows in verbose mode). */
+  fullOutput: string
+  elapsedSeconds: number
+  totalLines?: number
+  totalBytes?: number
+  timeoutMs?: number
+  /** `true` once the corresponding `tool_result` arrives. */
+  completed: boolean
+  updatedAt: number
+}
+
 export interface PendingQuestion {
   id: string
   text: string
@@ -167,6 +191,7 @@ export interface AppState {
   vimMode: string
   keybindingConfig: KeybindingConfig | null
   backgroundAgents: BackgroundAgent[]
+  shellProgress: Record<string, ShellProgressState>
   queuedSubmissions: QueuedSubmission[]
   viewMode: ViewMode
   agentTree: AgentNode[]
@@ -200,6 +225,7 @@ export const initialState: AppState = {
   vimMode: 'NORMAL',
   keybindingConfig: null,
   backgroundAgents: [],
+  shellProgress: {},
   queuedSubmissions: [],
   viewMode: 'prompt',
   agentTree: [],
@@ -268,6 +294,16 @@ export type CoreAction =
 export type ToolActivityAction =
   | { type: 'TOOL_USE'; id: string; name: string; input: any }
   | { type: 'TOOL_RESULT'; toolUseId: string; output: string; isError: boolean }
+  | {
+      type: 'TOOL_PROGRESS'
+      toolUseId: string
+      tool: string
+      output: string
+      elapsedSeconds: number
+      totalLines?: number
+      totalBytes?: number
+      timeoutMs?: number
+    }
 
 export type BackgroundAgentAction =
   | { type: 'BG_AGENT_STARTED'; agentId: string; description: string }

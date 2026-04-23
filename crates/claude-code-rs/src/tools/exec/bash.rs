@@ -1,6 +1,11 @@
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
 use anyhow::Result;
 use async_trait::async_trait;
+use parking_lot::Mutex;
 use serde_json::{json, Value};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 use crate::permissions::dangerous::is_dangerous_command;
@@ -71,6 +76,54 @@ pub(crate) fn truncate_output(output: &str, max_chars: usize) -> String {
 
         // Reduce head_lines by half each iteration
         head_lines /= 2;
+    }
+}
+
+/// Snapshot for `ToolProgress::output` — carries the tail-capped
+/// rendering of the current stdout/stderr buffers plus whole-stream
+/// counters (lines/bytes) so the frontend can show `+N lines` / total
+/// bytes even when the output itself is truncated.
+struct ProgressSnapshot {
+    output: String,
+    total_lines: u64,
+    total_bytes: u64,
+}
+
+/// Build a `ProgressSnapshot` from the live stdout/stderr buffers.
+///
+/// The merge rule matches `call`'s final `combined` output: `stdout`
+/// first, then a separator newline, then `stderr`. Counters always
+/// reflect the full (pre-truncation) streams so the UI can show an
+/// accurate `~N lines`.
+fn build_progress_snapshot(
+    stdout_buf: &Arc<Mutex<String>>,
+    stderr_buf: &Arc<Mutex<String>>,
+    max_chars: usize,
+) -> ProgressSnapshot {
+    let stdout = stdout_buf.lock().clone();
+    let stderr = stderr_buf.lock().clone();
+
+    let mut combined = String::new();
+    if !stdout.is_empty() {
+        combined.push_str(&stdout);
+    }
+    if !stderr.is_empty() {
+        if !combined.is_empty() {
+            combined.push('\n');
+        }
+        combined.push_str(&stderr);
+    }
+
+    let total_bytes = combined.len() as u64;
+    let total_lines =
+        combined.lines().count() as u64 + if combined.ends_with('\n') { 0 } else { 0 };
+
+    let truncated = truncate_output(&combined, max_chars);
+
+    ProgressSnapshot {
+        output: truncated,
+        total_lines,
+        total_bytes,
     }
 }
 
@@ -242,7 +295,7 @@ impl Tool for BashTool {
         input: Value,
         ctx: &ToolUseContext,
         _parent_message: &AssistantMessage,
-        _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
+        on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
         let (command, timeout_ms, _description) = Self::parse_input(&input);
 
@@ -357,14 +410,143 @@ impl Tool for BashTool {
         tracing::debug!(sandbox = %sandbox_description, "bash tool exec");
 
         let timeout_duration = resolve_timeout(timeout_ms);
+        let timeout_millis = timeout_duration.as_millis() as u64;
 
-        let result = tokio::time::timeout(timeout_duration, cmd.output()).await;
+        // Ensure stdio is piped even on the unwrapped path so we can stream.
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+        cmd.kill_on_drop(true);
 
-        match result {
-            Ok(Ok(output)) => {
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                let exit_code = output.status.code().unwrap_or(-1);
+        // Spawn the child so we can stream stdout/stderr back as the
+        // command runs. The upstream Ink UI renders a "Running… (Xs)"
+        // ticker plus a tail of recent output driven by `ToolProgress`
+        // events — we emit those here via `on_progress`.
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                return Ok(ToolResult {
+                    data: json!({
+                        "error": format!("Failed to spawn command: {}", e)
+                    }),
+                    new_messages: vec![],
+                    ..Default::default()
+                });
+            }
+        };
+
+        let stdout_pipe = child.stdout.take();
+        let stderr_pipe = child.stderr.take();
+        let stdout_buf: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+        let stderr_buf: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+
+        let stdout_task = stdout_pipe.map(|pipe| {
+            let buf = stdout_buf.clone();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(pipe).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    let mut b = buf.lock();
+                    b.push_str(&line);
+                    b.push('\n');
+                }
+            })
+        });
+
+        let stderr_task = stderr_pipe.map(|pipe| {
+            let buf = stderr_buf.clone();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(pipe).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    let mut b = buf.lock();
+                    b.push_str(&line);
+                    b.push('\n');
+                }
+            })
+        });
+
+        // The outer `QueryEngineDeps::execute_tool` wrapper stamps the
+        // real `tool_use_id` onto every `ToolProgress` we emit, so the
+        // tool itself only needs to fill in `data`.
+        let start = Instant::now();
+        let progress_interval = Duration::from_millis(1000);
+        let max_chars = self.max_result_size_chars();
+
+        // Move the box into a shared `Arc` so both the tick task (below)
+        // and the post-exit emit reuse the same callback without raw
+        // pointer gymnastics.
+        let on_progress_arc: Option<
+            Arc<dyn Fn(ToolProgress) + Send + Sync>,
+        > = on_progress.map(Arc::from);
+
+        // Fire a ticker on a background task so the frontend sees
+        // `ToolProgress` updates roughly once a second while the command
+        // runs. The task is aborted as soon as the child exits.
+        let progress_handle = on_progress_arc.as_ref().map(|cb| {
+            let cb = cb.clone();
+            let stdout_buf = stdout_buf.clone();
+            let stderr_buf = stderr_buf.clone();
+            let start = start;
+            let timeout_ms = timeout_millis;
+            tokio::spawn(async move {
+                let mut ticker = tokio::time::interval(progress_interval);
+                ticker.set_missed_tick_behavior(
+                    tokio::time::MissedTickBehavior::Skip,
+                );
+                // Skip the immediate tick so we don't fire at t=0.
+                ticker.tick().await;
+                loop {
+                    ticker.tick().await;
+                    let elapsed_seconds = start.elapsed().as_secs();
+                    let snapshot = build_progress_snapshot(
+                        &stdout_buf,
+                        &stderr_buf,
+                        max_chars,
+                    );
+                    cb(ToolProgress {
+                        tool_use_id: String::new(),
+                        data: json!({
+                            "tool": "Bash",
+                            "output": snapshot.output,
+                            "elapsed_seconds": elapsed_seconds,
+                            "total_lines": snapshot.total_lines,
+                            "total_bytes": snapshot.total_bytes,
+                            "timeout_ms": timeout_ms,
+                        }),
+                    });
+                }
+            })
+        });
+
+        let exit_status =
+            match tokio::time::timeout(timeout_duration, child.wait()).await {
+                Ok(status) => status,
+                Err(_) => {
+                    let _ = child.start_kill();
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "timeout",
+                    ))
+                }
+            };
+
+        if let Some(handle) = progress_handle {
+            handle.abort();
+        }
+
+        // Ensure the reader tasks drain whatever was left after the child
+        // exited before we snapshot the buffers for the final result.
+        if let Some(handle) = stdout_task {
+            let _ = handle.await;
+        }
+        if let Some(handle) = stderr_task {
+            let _ = handle.await;
+        }
+
+        let stdout = stdout_buf.lock().clone();
+        let stderr = stderr_buf.lock().clone();
+
+        match exit_status {
+            Ok(status) => {
+                let exit_code = status.code().unwrap_or(-1);
 
                 let mut combined = String::new();
                 if !stdout.is_empty() {
@@ -377,9 +559,29 @@ impl Tool for BashTool {
                     combined.push_str(&stderr);
                 }
 
-                // Truncate if too large using head+tail strategy
-                let max_chars = self.max_result_size_chars();
                 combined = truncate_output(&combined, max_chars);
+
+                // Final progress tick — lets the UI flip from
+                // "Running…" to "Done" with the complete tail.
+                if let Some(ref cb) = on_progress_arc {
+                    let elapsed_seconds = start.elapsed().as_secs();
+                    let snapshot = build_progress_snapshot(
+                        &stdout_buf,
+                        &stderr_buf,
+                        max_chars,
+                    );
+                    cb(ToolProgress {
+                        tool_use_id: String::new(),
+                        data: json!({
+                            "tool": "Bash",
+                            "output": snapshot.output,
+                            "elapsed_seconds": elapsed_seconds,
+                            "total_lines": snapshot.total_lines,
+                            "total_bytes": snapshot.total_bytes,
+                            "timeout_ms": timeout_millis,
+                        }),
+                    });
+                }
 
                 Ok(ToolResult {
                     data: json!({
@@ -392,13 +594,18 @@ impl Tool for BashTool {
                     ..Default::default()
                 })
             }
-            Ok(Err(e)) => Ok(ToolResult {
-                data: json!({ "error": format!("Failed to execute command: {}", e) }),
+            Err(e) if e.kind() == std::io::ErrorKind::TimedOut => Ok(ToolResult {
+                data: json!({
+                    "error": format!(
+                        "Command timed out after {}ms",
+                        timeout_duration.as_millis()
+                    )
+                }),
                 new_messages: vec![],
                 ..Default::default()
             }),
-            Err(_) => Ok(ToolResult {
-                data: json!({ "error": format!("Command timed out after {}ms", timeout_duration.as_millis()) }),
+            Err(e) => Ok(ToolResult {
+                data: json!({ "error": format!("Failed to execute command: {}", e) }),
                 new_messages: vec![],
                 ..Default::default()
             }),

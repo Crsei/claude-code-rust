@@ -127,6 +127,17 @@ pub trait QueryDeps: Send + Sync {
         on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolExecResult>;
 
+    /// Optional progress callback passed to each `execute_tool` call.
+    /// Default: `None` so tests and lightweight impls stay unchanged.
+    /// Production impls that have a route to the frontend (e.g. the
+    /// engine when it was created with a sink) return `Some(…)` so the
+    /// Bash tool can emit `ToolProgress` updates while running.
+    fn tool_progress_callback(
+        &self,
+    ) -> Option<Arc<dyn Fn(ToolProgress) + Send + Sync>> {
+        None
+    }
+
     /// 获取当前 app state
     fn get_app_state(&self) -> AppState;
 
