@@ -280,6 +280,9 @@ export function App() {
             case 'settings_snapshot':
               dispatch({ type: 'LSP_RECOMMENDATION_SETTINGS', settings: evt.settings })
               break
+            case 'diagnostics_published':
+              dispatch({ type: 'LSP_DIAGNOSTICS_PUBLISHED', uri: evt.uri, diagnostics: evt.diagnostics })
+              break
           }
           break
         }
@@ -364,6 +367,26 @@ export function App() {
         case 'subsystem_status':
           dispatch({ type: 'SUBSYSTEM_STATUS', lsp: msg.status.lsp, mcp: msg.status.mcp, plugins: msg.status.plugins, skills: msg.status.skills })
           break
+        case 'ide_event': {
+          const evt = msg.event
+          switch (evt.kind) {
+            case 'connection_state_changed':
+              dispatch({ type: 'IDE_CONNECTION_CHANGED', connected: evt.state === 'connected' })
+              break
+            case 'selection_changed':
+              // `ide_id` alone is a connection hint; the richer IDE
+              // selection payload (file path, line range) arrives via
+              // MCP today, so we don't update `state.ide.selection`
+              // here. Leave the handler explicit so new events aren't
+              // silently dropped.
+              break
+            case 'ide_list':
+              // List snapshots feed a future `/ide` picker view; the
+              // current indicator only needs `connection_state_changed`.
+              break
+          }
+          break
+        }
         case 'agent_settings_event': {
           const evt = msg.event
           switch (evt.kind) {

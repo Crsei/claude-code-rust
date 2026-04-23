@@ -7,6 +7,7 @@ pub mod agent_tree;
 pub mod agent_types;
 pub mod builtin_agents;
 pub mod callbacks;
+pub mod file_search;
 pub mod headless;
 pub mod ingress;
 pub mod protocol;
