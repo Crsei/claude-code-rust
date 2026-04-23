@@ -186,8 +186,10 @@ mod tests {
         // The parent transcript must still be intact and unchanged.
         let parent_transcript =
             std::fs::read_to_string(transcript::get_transcript_file(parent_id)).unwrap();
-        let parent_lines: Vec<&str> =
-            parent_transcript.lines().filter(|l| !l.is_empty()).collect();
+        let parent_lines: Vec<&str> = parent_transcript
+            .lines()
+            .filter(|l| !l.is_empty())
+            .collect();
         assert_eq!(parent_lines.len(), 2);
     }
 
@@ -204,7 +206,10 @@ mod tests {
             session_id: SessionId::from_string("noop"),
         };
 
-        let result = BranchHandler.execute("feature/foo", &mut ctx).await.unwrap();
+        let result = BranchHandler
+            .execute("feature/foo", &mut ctx)
+            .await
+            .unwrap();
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("/gbranch"), "got: {}", text);

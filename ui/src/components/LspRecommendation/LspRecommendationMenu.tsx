@@ -114,6 +114,7 @@ export function LspRecommendationMenu({
   return (
     <box
       flexDirection="column"
+      border
       borderStyle="rounded"
       borderColor={c.warning}
       title="LSP Plugin Recommendation"

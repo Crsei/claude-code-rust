@@ -23,8 +23,8 @@ use tokio_util::sync::CancellationToken;
 
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::teams::types::{
-    BackendType, InProcessTeammateTaskState, TaskStatus, TeamContext, TeamMember,
-    TeammateIdentity, TeammateInfo, TeammateMessage,
+    BackendType, InProcessTeammateTaskState, TaskStatus, TeamContext, TeamMember, TeammateIdentity,
+    TeammateInfo, TeammateMessage,
 };
 use crate::teams::{constants, helpers, identity, in_process::InProcessBackend, mailbox, runner};
 
@@ -51,10 +51,7 @@ impl CommandHandler for TeamHandler {
             "leave" => leave(ctx),
             "delete" => delete(ctx, rest),
             "help" | "--help" | "-h" => help(),
-            other => format!(
-                "Unknown /team subcommand: '{}'. Try /team help.",
-                other
-            ),
+            other => format!("Unknown /team subcommand: '{}'. Try /team help.", other),
         };
 
         Ok(CommandResult::Output(output))
@@ -157,11 +154,7 @@ fn list_teams() -> String {
     let mut names: Vec<String> = match std::fs::read_dir(&teams_root) {
         Ok(entries) => entries
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.file_type()
-                    .map(|ft| ft.is_dir())
-                    .unwrap_or(false)
-            })
+            .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
             .filter_map(|e| e.file_name().into_string().ok())
             .filter(|n| helpers::team_exists(n))
             .collect(),
@@ -185,7 +178,10 @@ fn list_teams() -> String {
 fn create(ctx: &mut CommandContext, rest: &str) -> String {
     let mut parts = rest.splitn(2, char_is_whitespace);
     let name = parts.next().unwrap_or("").trim();
-    let description = parts.next().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let description = parts
+        .next()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
     if name.is_empty() {
         return "Usage: /team create <name> [description]".into();
     }

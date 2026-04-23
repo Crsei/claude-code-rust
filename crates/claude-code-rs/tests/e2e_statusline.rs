@@ -110,6 +110,8 @@ impl Drop for HeadlessSession {
 #[serial]
 fn schema_file_declares_extended_status_line_shape() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
         .join("docs")
         .join("schemas")
         .join("settings.schema.json");
@@ -251,6 +253,11 @@ fn headless_statusline_payload_surfaces_runtime_snapshot_fields() {
     .expect("write settings");
 
     let project = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = project
+        .ancestors()
+        .nth(2)
+        .expect("workspace root")
+        .to_path_buf();
 
     let mut session = HeadlessSession::spawn(&project, home.path());
     let _ready = session.read_until_type("ready");
@@ -286,7 +293,7 @@ fn headless_statusline_payload_surfaces_runtime_snapshot_fields() {
         .expect("workspace.projectDir");
     assert_eq!(
         normalize_path_for_assert(payload_project_dir),
-        normalize_path_for_assert(&project.to_string_lossy())
+        normalize_path_for_assert(&workspace_root.to_string_lossy())
     );
     assert!(
         payload

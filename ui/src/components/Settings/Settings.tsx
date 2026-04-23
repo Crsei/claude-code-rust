@@ -90,6 +90,7 @@ export function Settings({
   return (
     <box
       flexDirection="column"
+      border
       borderStyle="rounded"
       borderColor={c.accent}
       title="Settings"

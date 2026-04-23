@@ -220,10 +220,7 @@ fn show(store: &SchedulerStore, id_raw: &str) -> String {
                 Interval::from_seconds(t.interval_seconds).human(),
                 t.schedule
             ));
-            out.push_str(&format!(
-                "  Payload kind:  {}\n",
-                t.payload.kind_label()
-            ));
+            out.push_str(&format!("  Payload kind:  {}\n", t.payload.kind_label()));
             out.push_str(&format!("  Payload:       {}\n", t.payload.display()));
             out.push_str(&format!("  Created at:    {}\n", t.created_at.to_rfc3339()));
             out.push_str(&format!(
@@ -232,7 +229,10 @@ fn show(store: &SchedulerStore, id_raw: &str) -> String {
                     .map(|d| d.to_rfc3339())
                     .unwrap_or_else(|| "never".to_string())
             ));
-            out.push_str(&format!("  Next run at:   {}\n", t.next_run_at.to_rfc3339()));
+            out.push_str(&format!(
+                "  Next run at:   {}\n",
+                t.next_run_at.to_rfc3339()
+            ));
             out
         }
         Err(SchedulerError::NotFound(_)) => {
@@ -372,7 +372,11 @@ mod tests {
             .unwrap();
 
         let out = dispatch(&store, "due");
-        assert!(out.contains("task(s) due now"), "unexpected due output: {}", out);
+        assert!(
+            out.contains("task(s) due now"),
+            "unexpected due output: {}",
+            out
+        );
         assert!(out.contains("future thing"));
     }
 

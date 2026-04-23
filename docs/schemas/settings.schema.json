@@ -115,6 +115,7 @@
     "teammateMode": { "type": "boolean" },
     "claudeInChromeDefaultEnabled": { "type": "boolean" },
     "autoMemoryEnabled": { "type": "boolean" },
+    "advisorModel": { "type": "string" },
     "systemPrompt": { "type": "string" },
     "apiKey": { "type": "string" }
   }

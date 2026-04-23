@@ -114,11 +114,7 @@ where
 }
 
 fn ide_servers() -> Vec<McpServerConfig> {
-    IDE_HOOK
-        .lock()
-        .as_ref()
-        .map(|cb| cb())
-        .unwrap_or_default()
+    IDE_HOOK.lock().as_ref().map(|cb| cb()).unwrap_or_default()
 }
 
 /// Discover MCP server configurations from all supported sources.

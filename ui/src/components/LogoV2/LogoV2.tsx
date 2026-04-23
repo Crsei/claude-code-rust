@@ -214,6 +214,7 @@ export function LogoV2({ data }: { data: LogoV2ViewData }) {
       <>
         <box
           flexDirection="column"
+          border
           borderStyle="rounded"
           borderColor={c.accent}
           title="Claude Code"
@@ -253,6 +254,7 @@ export function LogoV2({ data }: { data: LogoV2ViewData }) {
     <>
       <box
         flexDirection="column"
+        border
         borderStyle="rounded"
         borderColor={c.accent}
         title={`Claude Code v${version}`}

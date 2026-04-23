@@ -243,10 +243,7 @@ pub fn clear_skills() {
 /// `user_skills_dir` is the path that used to be resolved internally via
 /// `crate::config::paths::skills_dir_global()`. The host passes it in so
 /// cc-skills stays decoupled from the root crate's path layer.
-pub fn init_skills(
-    user_skills_dir: &std::path::Path,
-    project_dir: Option<&std::path::Path>,
-) {
+pub fn init_skills(user_skills_dir: &std::path::Path, project_dir: Option<&std::path::Path>) {
     // 1. Register bundled skills
     bundled::register_bundled_skills();
 

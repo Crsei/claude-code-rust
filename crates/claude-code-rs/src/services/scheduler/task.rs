@@ -209,10 +209,7 @@ mod tests {
         task.mark_fired(fired_at);
 
         assert_eq!(task.last_run_at, Some(fired_at));
-        assert_eq!(
-            task.next_run_at,
-            fired_at + chrono::Duration::seconds(300)
-        );
+        assert_eq!(task.next_run_at, fired_at + chrono::Duration::seconds(300));
     }
 
     #[test]

@@ -86,7 +86,8 @@ fn print_mode_graceful_without_api() {
         .assert()
         .stdout(
             predicate::str::contains("no API client configured")
-                .or(predicate::str::contains("API error")),
+                .or(predicate::str::contains("API error"))
+                .or(predicate::str::contains("No API provider detected")),
         );
 }
 

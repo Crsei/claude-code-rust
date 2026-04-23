@@ -4,6 +4,7 @@ import { useAppState } from '../../store/app-store.js'
 import { c } from '../../theme.js'
 import type { ToolActivityRenderItem } from '../../store/message-model.js'
 import type { ToolStatus } from '../../view-model/types.js'
+import { defaultSyntaxStyle } from '../opentui-syntax.js'
 import { ShellProgressMessage } from '../shell/index.js'
 import { FileEditToolPreview, isFileEditToolName } from './FileEditToolPreview.js'
 
@@ -58,12 +59,11 @@ function AskUserQuestionCallout({ question }: { question: string }) {
       paddingRight={1}
       flexDirection="column"
       width="100%"
-      selectable
     >
       <text fg={c.warning}>
         <strong>Question</strong>
       </text>
-      <markdown content={question} />
+      <markdown content={question} syntaxStyle={defaultSyntaxStyle} />
     </box>
   )
 }

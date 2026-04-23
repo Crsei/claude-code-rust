@@ -124,10 +124,7 @@ pub async fn run_fork(params: ForkParams) -> Result<ForkOutcome> {
         auto_save_session: false,
         agent_context: Some(crate::types::config::AgentContext {
             agent_id: agent_id.clone(),
-            query_tracking: QueryChainTracking {
-                chain_id,
-                depth: 1,
-            },
+            query_tracking: QueryChainTracking { chain_id, depth: 1 },
             langfuse_session_id: String::new(),
             agent_type: Some("fork".to_string()),
         }),
@@ -137,8 +134,7 @@ pub async fn run_fork(params: ForkParams) -> Result<ForkOutcome> {
     child_engine.set_hook_runner(params.hook_runner);
     child_engine.set_command_dispatcher(params.command_dispatcher);
 
-    let stream =
-        child_engine.submit_message(&params.prompt, QuerySource::Agent(agent_id.clone()));
+    let stream = child_engine.submit_message(&params.prompt, QuerySource::Agent(agent_id.clone()));
     let (text, had_error) = collect_stream_result(stream, None).await;
     let duration_ms = started.elapsed().as_millis() as u64;
 

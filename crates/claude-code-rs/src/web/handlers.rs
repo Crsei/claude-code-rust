@@ -127,7 +127,12 @@ pub async fn chat_handler(
             .into_response();
     }
 
-    info!(message = %req.message, "POST /api/chat");
+    let requested_session = req.session_id.as_deref().unwrap_or("");
+    info!(
+        message = %req.message,
+        session_id = %requested_session,
+        "POST /api/chat"
+    );
 
     state.is_streaming.store(true, Ordering::SeqCst);
 
@@ -167,9 +172,10 @@ pub async fn chat_handler(
 /// POST /api/abort -- Abort the current generation.
 pub async fn abort_handler(
     State(state): State<WebState>,
-    Json(_req): Json<AbortRequest>,
+    Json(req): Json<AbortRequest>,
 ) -> impl IntoResponse {
-    info!("POST /api/abort");
+    let requested_session = req.session_id.as_deref().unwrap_or("");
+    info!(session_id = %requested_session, "POST /api/abort");
     state.engine().abort();
     state.is_streaming.store(false, Ordering::SeqCst);
     StatusCode::OK

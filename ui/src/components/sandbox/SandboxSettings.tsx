@@ -87,6 +87,7 @@ export function SandboxSettings({ onComplete, depCheck }: Props) {
   return (
     <box
       flexDirection="column"
+      border
       borderStyle="rounded"
       borderColor={c.accent}
       title="Sandbox:"

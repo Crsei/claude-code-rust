@@ -184,10 +184,7 @@ fn build_single_prompt(skill: &skills::SkillDefinition, scope: Option<&str>) -> 
 }
 
 fn format_single(outcome: ForkOutcome) -> String {
-    let header = format!(
-        "/simplify (single-agent fork, {} ms)",
-        outcome.duration_ms
-    );
+    let header = format!("/simplify (single-agent fork, {} ms)", outcome.duration_ms);
     if outcome.had_error {
         format!("{}\nerror: {}", header, outcome.text)
     } else {

@@ -263,16 +263,15 @@ fn system_prompt_contains_lsp_schema() {
         );
 }
 
-// NOTE: SendMessage tool is feature-gated — only appears when
-// CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS is set. Default: hidden.
+// SendMessage is part of the default runtime tool set.
 #[test]
-fn system_prompt_omits_send_message_by_default() {
+fn system_prompt_contains_send_message_by_default() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd);
     cmd.args(["--dump-system-prompt", "-C", workspace()])
         .assert()
         .success()
-        .stdout(predicate::str::contains("## SendMessage").not());
+        .stdout(predicate::str::contains("## SendMessage"));
 }
 
 // =========================================================================
@@ -327,7 +326,8 @@ fn print_mode_bash_tool_no_crash_without_api() {
         .assert()
         .stdout(
             predicate::str::contains("no API client configured")
-                .or(predicate::str::contains("API error")),
+                .or(predicate::str::contains("API error"))
+                .or(predicate::str::contains("No API provider detected")),
         );
 }
 
@@ -340,7 +340,8 @@ fn print_mode_read_tool_no_crash_without_api() {
         .assert()
         .stdout(
             predicate::str::contains("no API client configured")
-                .or(predicate::str::contains("API error")),
+                .or(predicate::str::contains("API error"))
+                .or(predicate::str::contains("No API provider detected")),
         );
 }
 

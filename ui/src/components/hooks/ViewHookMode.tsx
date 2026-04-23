@@ -70,6 +70,7 @@ export function ViewHookMode({
       right={2}
       bottom={2}
       flexDirection="column"
+      border
       borderStyle="rounded"
       borderColor={c.warning}
       title="Hook details"
@@ -105,6 +106,7 @@ export function ViewHookMode({
         <text fg={c.dim}>{getContentFieldLabel(selectedHook.config)}:</text>
         <box
           marginTop={0}
+          border
           borderStyle="single"
           borderColor={c.dim}
           paddingX={1}

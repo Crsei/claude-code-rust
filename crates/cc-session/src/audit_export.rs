@@ -23,8 +23,8 @@ use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use cc_bootstrap::PROCESS_STATE;
 use crate::storage::{self, SessionFile};
+use cc_bootstrap::PROCESS_STATE;
 use cc_types::message::{Message, MessageContent};
 
 // ---------------------------------------------------------------------------

@@ -66,10 +66,7 @@ fn format_report(report: &plugins::ReloadReport) -> String {
             out.push_str(&format!("  - {}: {}", id, err));
         }
         out.push('\n');
-        out.push_str(&format!(
-            "{} plugin(s) failed to load.",
-            report.error_count
-        ));
+        out.push_str(&format!("{} plugin(s) failed to load.", report.error_count));
     }
 
     out
@@ -217,7 +214,10 @@ mod tests {
         // hand-built report here. The e2e path that catches error-state
         // plugins is covered by refresh::tests.
         clear_plugins();
-        register_plugin(make_plugin("broken-test", PluginStatus::Error("boom".into())));
+        register_plugin(make_plugin(
+            "broken-test",
+            PluginStatus::Error("boom".into()),
+        ));
 
         // Exercise format_report as the handler would: gather errors and
         // assemble the report shape we expect reload_plugins() to produce.

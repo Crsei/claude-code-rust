@@ -176,8 +176,7 @@ pub fn current_plan_file_path(cwd: &Path) -> PathBuf {
     if project.exists() {
         return project;
     }
-    let has_project_marker =
-        cwd.join(".cc-rust").is_dir() || cwd.join("CLAUDE.md").is_file();
+    let has_project_marker = cwd.join(".cc-rust").is_dir() || cwd.join("CLAUDE.md").is_file();
     if has_project_marker {
         project
     } else {

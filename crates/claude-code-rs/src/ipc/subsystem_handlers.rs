@@ -533,10 +533,7 @@ pub fn handle_skill_command(cmd: super::subsystem_events::SkillCommand) -> Vec<B
         SkillCommand::Reload => {
             let cwd = std::env::current_dir().ok();
             crate::skills::clear_skills();
-            crate::skills::init_skills(
-                &crate::config::paths::skills_dir_global(),
-                cwd.as_deref(),
-            );
+            crate::skills::init_skills(&crate::config::paths::skills_dir_global(), cwd.as_deref());
             let count = crate::skills::get_all_skills().len();
             tracing::info!(count, "Skills reloaded via IPC");
             vec![BackendMessage::SkillEvent {
@@ -643,10 +640,7 @@ fn scope_from_discovery(scope: &DiscoveryScope) -> ConfigScope {
 /// write must land in the same place or the round-trip breaks. Callers
 /// that really want the ancestor-walking behaviour should stabilize their
 /// project root before invoking this.
-fn settings_path_for_scope(
-    cwd: &std::path::Path,
-    scope: &ConfigScope,
-) -> Result<PathBuf, String> {
+fn settings_path_for_scope(cwd: &std::path::Path, scope: &ConfigScope) -> Result<PathBuf, String> {
     match scope {
         ConfigScope::User => Ok(cc_config::settings::user_settings_path()),
         ConfigScope::Project => Ok(cwd.join(".cc-rust").join("settings.json")),
@@ -685,8 +679,14 @@ fn write_settings_value(path: &std::path::Path, value: &serde_json::Value) -> Re
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, pretty)
         .map_err(|e| format!("failed to write {}: {}", tmp.display(), e))?;
-    std::fs::rename(&tmp, path)
-        .map_err(|e| format!("failed to rename {} -> {}: {}", tmp.display(), path.display(), e))?;
+    std::fs::rename(&tmp, path).map_err(|e| {
+        format!(
+            "failed to rename {} -> {}: {}",
+            tmp.display(),
+            path.display(),
+            e
+        )
+    })?;
     Ok(())
 }
 
@@ -708,8 +708,7 @@ fn upsert_mcp_entry(
         ));
     }
 
-    let path = settings_path_for_scope(cwd, &entry.scope)
-        .map_err(|e| (entry.name.clone(), e))?;
+    let path = settings_path_for_scope(cwd, &entry.scope).map_err(|e| (entry.name.clone(), e))?;
 
     let mut settings = read_settings_value(&path).map_err(|e| (entry.name.clone(), e))?;
     if !settings.is_object() {
@@ -760,10 +759,7 @@ fn remove_mcp_entry(
         return Err(format!("{} is not a JSON object", path.display()));
     };
     let Some(servers) = obj.get_mut("mcpServers") else {
-        return Err(format!(
-            "{} has no `mcpServers` section",
-            path.display()
-        ));
+        return Err(format!("{} has no `mcpServers` section", path.display()));
     };
     let Some(servers_obj) = servers.as_object_mut() else {
         return Err(format!(
@@ -1215,7 +1211,10 @@ mod tests {
         assert_eq!(written.name, "ctx7");
 
         let settings_path = home.path().join("settings.json");
-        assert!(settings_path.exists(), "user settings.json should be created");
+        assert!(
+            settings_path.exists(),
+            "user settings.json should be created"
+        );
         let on_disk: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
         assert_eq!(on_disk["mcpServers"]["ctx7"]["command"], "npx");
@@ -1439,13 +1438,13 @@ mod tests {
         upsert_mcp_entry(cwd.path(), entry).expect("upsert ok");
 
         // First toggle: enable → disabled.
-        let after_disable = toggle_mcp_entry_enabled(cwd.path(), "tog-srv", None)
-            .expect("first toggle ok");
+        let after_disable =
+            toggle_mcp_entry_enabled(cwd.path(), "tog-srv", None).expect("first toggle ok");
         assert_eq!(after_disable.disabled, Some(true));
 
         // Second toggle: disabled → enabled.
-        let after_enable = toggle_mcp_entry_enabled(cwd.path(), "tog-srv", None)
-            .expect("second toggle ok");
+        let after_enable =
+            toggle_mcp_entry_enabled(cwd.path(), "tog-srv", None).expect("second toggle ok");
         assert_eq!(after_enable.disabled, Some(false));
 
         // Verify final on-disk value reflects the second toggle.
@@ -1545,7 +1544,10 @@ mod tests {
         assert_eq!(msgs.len(), 2);
         match &msgs[0] {
             BackendMessage::McpEvent {
-                event: McpEvent::ServerStateChanged { server_name, state, .. },
+                event:
+                    McpEvent::ServerStateChanged {
+                        server_name, state, ..
+                    },
             } => {
                 assert_eq!(server_name, "rec-srv");
                 assert_eq!(state, "pending");

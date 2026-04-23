@@ -3,6 +3,7 @@ import { useKeyboard } from '@opentui/react'
 import type { KeyEvent } from '@opentui/core'
 import { c } from '../../theme.js'
 import type { AgentDefinitionEntry } from '../../ipc/protocol.js'
+import { defaultSyntaxStyle } from '../opentui-syntax.js'
 import { getActualRelativeAgentFilePath } from './agentFileUtils.js'
 
 /**
@@ -38,7 +39,7 @@ export function AgentDetail({ agent, onBack }: Props) {
       <box flexDirection="column">
         <text>
           <strong>Description</strong>{' '}
-          <text fg={c.dim}>(tells Claude when to use this agent):</text>
+          <span fg={c.dim}>(tells Claude when to use this agent):</span>
         </text>
         <box marginLeft={2}>
           <text>{agent.description || ''}</text>
@@ -86,7 +87,7 @@ export function AgentDetail({ agent, onBack }: Props) {
         <>
           <text><strong>System prompt</strong>:</text>
           <box marginLeft={2} marginRight={2}>
-            <markdown content={agent.system_prompt} />
+            <markdown content={agent.system_prompt} syntaxStyle={defaultSyntaxStyle} />
           </box>
         </>
       )}

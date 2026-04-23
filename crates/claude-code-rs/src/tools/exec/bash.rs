@@ -473,9 +473,8 @@ impl Tool for BashTool {
         // Move the box into a shared `Arc` so both the tick task (below)
         // and the post-exit emit reuse the same callback without raw
         // pointer gymnastics.
-        let on_progress_arc: Option<
-            Arc<dyn Fn(ToolProgress) + Send + Sync>,
-        > = on_progress.map(Arc::from);
+        let on_progress_arc: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>> =
+            on_progress.map(Arc::from);
 
         // Fire a ticker on a background task so the frontend sees
         // `ToolProgress` updates roughly once a second while the command
@@ -488,19 +487,13 @@ impl Tool for BashTool {
             let timeout_ms = timeout_millis;
             tokio::spawn(async move {
                 let mut ticker = tokio::time::interval(progress_interval);
-                ticker.set_missed_tick_behavior(
-                    tokio::time::MissedTickBehavior::Skip,
-                );
+                ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 // Skip the immediate tick so we don't fire at t=0.
                 ticker.tick().await;
                 loop {
                     ticker.tick().await;
                     let elapsed_seconds = start.elapsed().as_secs();
-                    let snapshot = build_progress_snapshot(
-                        &stdout_buf,
-                        &stderr_buf,
-                        max_chars,
-                    );
+                    let snapshot = build_progress_snapshot(&stdout_buf, &stderr_buf, max_chars);
                     cb(ToolProgress {
                         tool_use_id: String::new(),
                         data: json!({
@@ -516,17 +509,13 @@ impl Tool for BashTool {
             })
         });
 
-        let exit_status =
-            match tokio::time::timeout(timeout_duration, child.wait()).await {
-                Ok(status) => status,
-                Err(_) => {
-                    let _ = child.start_kill();
-                    Err(std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        "timeout",
-                    ))
-                }
-            };
+        let exit_status = match tokio::time::timeout(timeout_duration, child.wait()).await {
+            Ok(status) => status,
+            Err(_) => {
+                let _ = child.start_kill();
+                Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout"))
+            }
+        };
 
         if let Some(handle) = progress_handle {
             handle.abort();
@@ -565,11 +554,7 @@ impl Tool for BashTool {
                 // "Running…" to "Done" with the complete tail.
                 if let Some(ref cb) = on_progress_arc {
                     let elapsed_seconds = start.elapsed().as_secs();
-                    let snapshot = build_progress_snapshot(
-                        &stdout_buf,
-                        &stderr_buf,
-                        max_chars,
-                    );
+                    let snapshot = build_progress_snapshot(&stdout_buf, &stderr_buf, max_chars);
                     cb(ToolProgress {
                         tool_use_id: String::new(),
                         data: json!({

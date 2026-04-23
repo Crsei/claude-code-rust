@@ -67,6 +67,7 @@ export function SelectEventMode({
       right={2}
       bottom={2}
       flexDirection="column"
+      border
       borderStyle="rounded"
       borderColor={c.warning}
       title={`Hooks \u00B7 ${subtitle}`}

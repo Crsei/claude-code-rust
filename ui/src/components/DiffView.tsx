@@ -1,4 +1,5 @@
 import React from 'react'
+import { defaultSyntaxStyle } from './opentui-syntax.js'
 
 interface Props {
   diff: string
@@ -6,8 +7,8 @@ interface Props {
 
 export function DiffView({ diff }: Props) {
   return (
-    <box flexDirection="column" borderStyle="rounded" borderColor="#666666" paddingX={1}>
-      <code code={diff} language="diff" />
+    <box flexDirection="column" border borderStyle="rounded" borderColor="#666666" paddingX={1}>
+      <code content={diff} filetype="diff" syntaxStyle={defaultSyntaxStyle} />
     </box>
   )
 }

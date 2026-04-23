@@ -17,8 +17,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::teams::types::{
-    BackendType, TaskStatus, TeamContext, TeamMember, TeammateIdentity, TeammateInfo,
-    InProcessTeammateTaskState,
+    BackendType, InProcessTeammateTaskState, TaskStatus, TeamContext, TeamMember, TeammateIdentity,
+    TeammateInfo,
 };
 use crate::teams::{constants, helpers, identity, in_process::InProcessBackend, runner};
 use crate::types::message::AssistantMessage;
@@ -106,7 +106,10 @@ impl Tool for TeamSpawnTool {
         }
         if name == constants::TEAM_LEAD_NAME {
             return ValidationResult::Error {
-                message: format!("'{}' is reserved for the team lead", constants::TEAM_LEAD_NAME),
+                message: format!(
+                    "'{}' is reserved for the team lead",
+                    constants::TEAM_LEAD_NAME
+                ),
                 error_code: 400,
             };
         }
@@ -149,7 +152,10 @@ impl Tool for TeamSpawnTool {
             _ => match app_state.team_context.as_ref() {
                 Some(tc) if !tc.team_name.is_empty() => (tc.team_name.clone(), false),
                 _ => {
-                    let base = format!("session-{}", &ctx.session_id.chars().take(8).collect::<String>());
+                    let base = format!(
+                        "session-{}",
+                        &ctx.session_id.chars().take(8).collect::<String>()
+                    );
                     let tf = helpers::create_team(
                         &base,
                         params.description.clone(),
@@ -166,11 +172,7 @@ impl Tool for TeamSpawnTool {
         let mut team_file = helpers::read_team_file(&team_name)?;
 
         // Reject duplicate member names.
-        if team_file
-            .members
-            .iter()
-            .any(|m| m.name == params.name)
-        {
+        if team_file.members.iter().any(|m| m.name == params.name) {
             return Ok(ToolResult {
                 data: json!({
                     "error": format!("teammate '{}' already exists in team '{}'", params.name, team_name),

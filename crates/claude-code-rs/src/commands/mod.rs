@@ -601,8 +601,8 @@ pub fn get_all_commands() -> Vec<Command> {
         Command {
             name: "schedule".into(),
             aliases: vec!["cron".into()],
-            description:
-                "Manage local cron tasks (add, list, pause, trigger, remove) (issue #60)".into(),
+            description: "Manage local cron tasks (add, list, pause, trigger, remove) (issue #60)"
+                .into(),
             handler: Box::new(schedule::ScheduleHandler),
         },
         // Team onboarding (issue #63).
@@ -668,10 +668,8 @@ impl Default for DefaultCommandDispatcher {
 
 impl cc_types::commands::CommandDispatcher for DefaultCommandDispatcher {
     fn parse_command_input(&self, input: &str) -> Option<cc_types::commands::ParsedCommand> {
-        parse_command_input(input).map(|(index, args)| cc_types::commands::ParsedCommand {
-            index,
-            args,
-        })
+        parse_command_input(input)
+            .map(|(index, args)| cc_types::commands::ParsedCommand { index, args })
     }
 
     fn command_name(&self, index: usize) -> Option<String> {

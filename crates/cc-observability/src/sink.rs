@@ -288,6 +288,10 @@ fn redact_value(value: &mut serde_json::Value, mode: &RedactionMode) {
 
 /// Check if a key name suggests sensitive content.
 fn is_sensitive_key(key: &str, mode: &RedactionMode) -> bool {
+    if *mode == RedactionMode::Off {
+        return false;
+    }
+
     // Always redact these (Default + Strict)
     let always_sensitive = [
         "api_key",

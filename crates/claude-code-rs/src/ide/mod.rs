@@ -184,7 +184,10 @@ fn is_installed(spec: &IdeSpec) -> bool {
         if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
             let base = PathBuf::from(local_app_data).join("Programs");
             let candidates: &[&str] = match spec.id {
-                "vscode" => &["Microsoft VS Code/Code.exe", "Microsoft VS Code Insiders/Code - Insiders.exe"],
+                "vscode" => &[
+                    "Microsoft VS Code/Code.exe",
+                    "Microsoft VS Code Insiders/Code - Insiders.exe",
+                ],
                 "cursor" => &["cursor/Cursor.exe"],
                 _ => &[],
             };
@@ -316,9 +319,9 @@ fn write_selection(id: Option<&str>) -> Result<()> {
         Err(_) => json!({}),
     };
 
-    let obj = value.as_object_mut().ok_or_else(|| {
-        anyhow::anyhow!("settings.json root is not a JSON object")
-    })?;
+    let obj = value
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("settings.json root is not a JSON object"))?;
 
     match id {
         Some(id) => {
@@ -332,8 +335,7 @@ fn write_selection(id: Option<&str>) -> Result<()> {
     let pretty = serde_json::to_string_pretty(&value)?;
     // Best-effort atomic-ish write (same pattern as cc_config::write_settings_file).
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, pretty)
-        .with_context(|| format!("write {}", tmp.display()))?;
+    std::fs::write(&tmp, pretty).with_context(|| format!("write {}", tmp.display()))?;
     std::fs::rename(&tmp, &path)
         .with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))?;
     Ok(())

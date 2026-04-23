@@ -389,14 +389,10 @@ pub fn truncate_session(session_id: &str, keep: usize) -> Result<usize> {
     }
 
     let backup_path = rewind_backup_path(session_id);
-    let original = serde_json::to_string_pretty(&file)
-        .context("Failed to serialize session for backup")?;
-    std::fs::write(&backup_path, original).with_context(|| {
-        format!(
-            "Failed to write rewind backup {}",
-            backup_path.display()
-        )
-    })?;
+    let original =
+        serde_json::to_string_pretty(&file).context("Failed to serialize session for backup")?;
+    std::fs::write(&backup_path, original)
+        .with_context(|| format!("Failed to write rewind backup {}", backup_path.display()))?;
 
     file.messages.truncate(keep);
     file.last_modified = Utc::now().timestamp();
@@ -594,7 +590,8 @@ fn serializable_to_messages(msgs: &[SerializableMessage]) -> Vec<Message> {
                             ) {
                                 Ok(cb) => MessageContent::Blocks(cb),
                                 Err(_) => MessageContent::Text(
-                                    blocks.iter()
+                                    blocks
+                                        .iter()
                                         .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
                                         .collect::<Vec<_>>()
                                         .join("\n"),
@@ -603,7 +600,8 @@ fn serializable_to_messages(msgs: &[SerializableMessage]) -> Vec<Message> {
                         }
                         // Backwards compat: old Debug format like Text("hello")
                         _ => MessageContent::Text(
-                            sm.data.get("content")
+                            sm.data
+                                .get("content")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("")
                                 .to_string(),
@@ -621,11 +619,19 @@ fn serializable_to_messages(msgs: &[SerializableMessage]) -> Vec<Message> {
                     uuid,
                     timestamp: sm.timestamp,
                     role: "assistant".into(),
-                    content: sm.data.get("content")
-                        .and_then(|v| serde_json::from_value::<Vec<cc_types::message::ContentBlock>>(v.clone()).ok())
+                    content: sm
+                        .data
+                        .get("content")
+                        .and_then(|v| {
+                            serde_json::from_value::<Vec<cc_types::message::ContentBlock>>(
+                                v.clone(),
+                            )
+                            .ok()
+                        })
                         .unwrap_or_default(),
-                    usage: sm.data.get("usage")
-                        .and_then(|v| serde_json::from_value::<cc_types::message::Usage>(v.clone()).ok()),
+                    usage: sm.data.get("usage").and_then(|v| {
+                        serde_json::from_value::<cc_types::message::Usage>(v.clone()).ok()
+                    }),
                     stop_reason: sm
                         .data
                         .get("stop_reason")
@@ -791,7 +797,10 @@ mod tests {
 
         write_fixture_session(
             "s1",
-            vec![user_sm("hello world", "00000000-0000-0000-0000-000000000001")],
+            vec![user_sm(
+                "hello world",
+                "00000000-0000-0000-0000-000000000001",
+            )],
             "/proj",
         )
         .unwrap();
@@ -870,11 +879,7 @@ mod tests {
         let backup_count = std::fs::read_dir(get_session_dir())
             .unwrap()
             .filter_map(Result::ok)
-            .filter(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .starts_with("s3.rewind-")
-            })
+            .filter(|e| e.file_name().to_string_lossy().starts_with("s3.rewind-"))
             .count();
         assert_eq!(backup_count, 1);
     }
@@ -897,11 +902,7 @@ mod tests {
         let backups: Vec<_> = std::fs::read_dir(get_session_dir())
             .unwrap()
             .filter_map(Result::ok)
-            .filter(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .starts_with("s4.rewind-")
-            })
+            .filter(|e| e.file_name().to_string_lossy().starts_with("s4.rewind-"))
             .collect();
         assert!(backups.is_empty(), "expected no backup when no truncation");
     }

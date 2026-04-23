@@ -142,7 +142,8 @@ fn print_mode_no_api_key_reports_error() {
         .assert()
         .stdout(
             predicate::str::contains("no API client configured")
-                .or(predicate::str::contains("API error")),
+                .or(predicate::str::contains("API error"))
+                .or(predicate::str::contains("No API provider detected")),
         );
 }
 

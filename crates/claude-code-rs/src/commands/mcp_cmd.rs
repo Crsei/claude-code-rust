@@ -22,9 +22,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::ipc::subsystem_handlers::{
-    build_mcp_server_config_entries, build_mcp_server_info_list,
-};
+use crate::ipc::subsystem_handlers::{build_mcp_server_config_entries, build_mcp_server_info_list};
 use crate::ipc::subsystem_types::{ConfigScope, McpServerConfigEntry};
 use crate::mcp::McpServerConfig;
 
@@ -157,7 +155,9 @@ fn handle_list(ctx: &CommandContext) -> Result<CommandResult> {
         );
     }
 
-    Ok(CommandResult::Output(lines.join("\n").trim_end().to_string()))
+    Ok(CommandResult::Output(
+        lines.join("\n").trim_end().to_string(),
+    ))
 }
 
 fn handle_status(_ctx: &CommandContext) -> Result<CommandResult> {
@@ -622,7 +622,6 @@ fn entry_to_settings_value(entry: &McpServerConfigEntry) -> serde_json::Value {
     v
 }
 
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -912,5 +911,4 @@ mod tests {
         let flags = parse_flags(&["--scope=bogus"]);
         assert!(flags.error.as_ref().unwrap().contains("invalid --scope"));
     }
-
 }

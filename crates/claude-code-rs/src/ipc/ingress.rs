@@ -358,8 +358,7 @@ async fn handle_slash_command(
         if cmd.name == "team" {
             if let Some(tc) = ctx.app_state.team_context.as_ref() {
                 if !tc.team_name.is_empty() {
-                    let events =
-                        super::agent_handlers::build_team_status_events(&tc.team_name);
+                    let events = super::agent_handlers::build_team_status_events(&tc.team_name);
                     let _ = sink.send_many(events);
                 }
             }

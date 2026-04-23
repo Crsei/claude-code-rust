@@ -239,7 +239,12 @@ fn set_paused(store: &SchedulerStore, id_raw: &str, paused: bool) -> String {
     match store.set_paused(&id, paused) {
         Ok(task) => {
             let verb = if paused { "paused" } else { "resumed" };
-            format!("{} /loop '{}' (id={}).", capitalize(verb), task.name, task.id)
+            format!(
+                "{} /loop '{}' (id={}).",
+                capitalize(verb),
+                task.name,
+                task.id
+            )
         }
         Err(SchedulerError::NotFound(_)) => format!(
             "No /loop task with id '{}' — run '/loop list' to see current loops.",

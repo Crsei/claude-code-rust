@@ -72,6 +72,7 @@ export function SelectHookMode({
         right={2}
         bottom={2}
         flexDirection="column"
+        border
         borderStyle="rounded"
         borderColor={c.warning}
         title={title}
@@ -101,6 +102,7 @@ export function SelectHookMode({
       right={2}
       bottom={2}
       flexDirection="column"
+      border
       borderStyle="rounded"
       borderColor={c.warning}
       title={title}

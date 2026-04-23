@@ -128,9 +128,9 @@ impl Filter {
 struct Row {
     id: String,
     version: String,
-    install_col: &'static str,  // "yes" / "no"
-    enabled_col: &'static str,  // "yes" / "no" / "error"
-    active_col: &'static str,   // "yes" / "no"
+    install_col: &'static str, // "yes" / "no"
+    enabled_col: &'static str, // "yes" / "no" / "error"
+    active_col: &'static str,  // "yes" / "no"
     error_detail: Option<String>,
     skills: Vec<String>,
     tools: Vec<String>,
@@ -143,7 +143,10 @@ fn handle_list(filter: Filter) -> CommandResult {
     if rows.is_empty() {
         let empty_msg = match filter {
             Filter::All => "No plugins registered.".to_string(),
-            other => format!("No plugins match filter '{}'.", other.label().to_lowercase()),
+            other => format!(
+                "No plugins match filter '{}'.",
+                other.label().to_lowercase()
+            ),
         };
         return CommandResult::Output(empty_msg);
     }
@@ -572,7 +575,11 @@ mod tests {
         match output {
             CommandResult::Output(text) => {
                 assert!(text.contains("alpha"), "text: {}", text);
-                assert!(!text.contains("beta"), "beta should not be listed: {}", text);
+                assert!(
+                    !text.contains("beta"),
+                    "beta should not be listed: {}",
+                    text
+                );
             }
             _ => panic!("expected Output"),
         }

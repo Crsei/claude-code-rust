@@ -8,7 +8,7 @@ import { locationLabelForSource } from '../../agentFileUtils.js'
 /**
  * Lite-native port of upstream's
  * `wizard-steps/LocationStep.tsx`. Asks whether the new agent should
- * live under project (`.claude/agents/`) or user (`~/.claude/agents/`)
+ * live under project (`.cc-rust/agents/`) or user (`~/.cc-rust/agents/`)
  * scope. Upstream exposes more sources (policy / local / flag) — the
  * Lite wizard only writes to user or project.
  */
@@ -23,12 +23,12 @@ const OPTIONS: Option[] = [
   {
     value: 'projectSettings',
     label: 'Project',
-    description: '.claude/agents/ (checked into the repo)',
+    description: '.cc-rust/agents/ (checked into the repo)',
   },
   {
     value: 'userSettings',
     label: 'User',
-    description: '~/.claude/agents/ (available across every project)',
+    description: '~/.cc-rust/agents/ (available across every project)',
   },
 ]
 

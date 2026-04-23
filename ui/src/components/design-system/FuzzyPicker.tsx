@@ -157,6 +157,7 @@ export function FuzzyPicker<T>({
   return (
     <box
       flexDirection="column"
+      border
       borderStyle="rounded"
       borderColor={c.accent}
       paddingX={2}

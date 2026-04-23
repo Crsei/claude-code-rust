@@ -1,5 +1,6 @@
 import React, { useRef } from 'react'
 import { c } from '../theme.js'
+import { defaultSyntaxStyle } from './opentui-syntax.js'
 
 /**
  * OpenTUI port of upstream `Markdown` / `StreamingMarkdown`
@@ -49,6 +50,7 @@ export function Markdown({ children, dimColor }: Props) {
     <box flexDirection="column" width="100%">
       <markdown
         content={body}
+        syntaxStyle={defaultSyntaxStyle}
         bg={c.bg}
         {...(dimColor ? { fg: c.dim } : {})}
       />
@@ -77,7 +79,7 @@ export function StreamingMarkdown({ children }: { children: string }) {
   if (!stripped.trim()) return null
   return (
     <box flexDirection="column" width="100%">
-      <markdown content={stripped} bg={c.bg} />
+      <markdown content={stripped} syntaxStyle={defaultSyntaxStyle} bg={c.bg} />
     </box>
   )
 }

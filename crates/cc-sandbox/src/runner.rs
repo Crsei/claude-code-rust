@@ -387,8 +387,7 @@ pub fn policy_from_app_state(
     use super::policy::SandboxPolicyBuilder;
 
     // Extract deny rules from the permission system for filesystem merging.
-    let deny_reads =
-        collect_permission_paths(&permission_context.always_deny_rules, &["Read"]);
+    let deny_reads = collect_permission_paths(&permission_context.always_deny_rules, &["Read"]);
     let deny_writes = collect_permission_paths(
         &permission_context.always_deny_rules,
         &["Edit", "Write", "MultiEdit", "NotebookEdit"],
@@ -586,12 +585,8 @@ mod tests {
         ctx.always_deny_rules = rules;
 
         let settings = cc_config::settings::SandboxSettings::default();
-        let policy = policy_from_app_state(
-            &ctx,
-            &settings,
-            std::path::PathBuf::from("/proj"),
-            false,
-        );
+        let policy =
+            policy_from_app_state(&ctx, &settings, std::path::PathBuf::from("/proj"), false);
         // Deny-write should have /etc/passwd
         let writes = policy.paths.deny_write_paths();
         assert!(writes.iter().any(|p| p.ends_with("passwd")));
@@ -634,12 +629,8 @@ mod tests {
         ctx.always_allow_rules = rules;
 
         let settings = cc_config::settings::SandboxSettings::default();
-        let policy = policy_from_app_state(
-            &ctx,
-            &settings,
-            std::path::PathBuf::from("/proj"),
-            false,
-        );
+        let policy =
+            policy_from_app_state(&ctx, &settings, std::path::PathBuf::from("/proj"), false);
         assert!(policy
             .paths
             .allow_read_paths()

@@ -12,7 +12,7 @@ type Props = {
   children?: ReactNode
   backgroundColor?: ColorLike
   borderColor?: ColorLike
-  borderStyle?: 'single' | 'double' | 'rounded' | 'bold' | 'classic'
+  borderStyle?: 'single' | 'double' | 'rounded' | 'heavy'
   padding?: number
   paddingX?: number
   paddingY?: number
@@ -25,8 +25,8 @@ type Props = {
   flexGrow?: number
   flexShrink?: number
   gap?: number
-  width?: number | string
-  height?: number | string
+  width?: number | 'auto' | `${number}%`
+  height?: number | 'auto' | `${number}%`
   /** When true, renders an outer border on all sides. */
   border?: boolean
 }

@@ -133,6 +133,7 @@ export function HooksConfigMenu({ snapshot, onExit }: Props) {
         right={2}
         bottom={2}
         flexDirection="column"
+        border
         borderStyle="rounded"
         borderColor={c.warning}
         title="Hook Configuration \u00B7 Disabled"

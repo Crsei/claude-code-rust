@@ -20,6 +20,8 @@ use serial_test::serial;
 #[serial]
 fn schema_file_is_valid_json() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
         .join("docs")
         .join("schemas")
         .join("settings.schema.json");

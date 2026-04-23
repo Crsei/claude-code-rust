@@ -167,7 +167,8 @@ pub(crate) async fn execute_tool_calls(
                         input,
                         langfuse_batch_span: batch_span,
                     };
-                    deps.execute_tool(req, &tools, &parent, on_progress_clone).await
+                    deps.execute_tool(req, &tools, &parent, on_progress_clone)
+                        .await
                 });
                 handles.push(handle);
             }

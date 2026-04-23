@@ -835,8 +835,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_selector_reflects_auto_state() {
-        let tmp = std::env::temp_dir()
-            .join(format!("cc_rust_mem_sel_test_{}", uuid::Uuid::new_v4()));
+        let tmp =
+            std::env::temp_dir().join(format!("cc_rust_mem_sel_test_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&tmp).unwrap();
 
         let handler = MemoryHandler;

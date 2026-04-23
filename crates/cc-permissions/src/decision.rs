@@ -149,8 +149,7 @@ use std::sync::LazyLock;
 
 type MessageCallback = Box<dyn Fn(&str) -> Option<String> + Send + Sync>;
 
-static CU_MESSAGE_CB: LazyLock<Mutex<Option<MessageCallback>>> =
-    LazyLock::new(|| Mutex::new(None));
+static CU_MESSAGE_CB: LazyLock<Mutex<Option<MessageCallback>>> = LazyLock::new(|| Mutex::new(None));
 static BROWSER_MESSAGE_CB: LazyLock<Mutex<Option<MessageCallback>>> =
     LazyLock::new(|| Mutex::new(None));
 

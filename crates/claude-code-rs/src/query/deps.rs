@@ -132,9 +132,7 @@ pub trait QueryDeps: Send + Sync {
     /// Production impls that have a route to the frontend (e.g. the
     /// engine when it was created with a sink) return `Some(…)` so the
     /// Bash tool can emit `ToolProgress` updates while running.
-    fn tool_progress_callback(
-        &self,
-    ) -> Option<Arc<dyn Fn(ToolProgress) + Send + Sync>> {
+    fn tool_progress_callback(&self) -> Option<Arc<dyn Fn(ToolProgress) + Send + Sync>> {
         None
     }
 

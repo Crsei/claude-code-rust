@@ -57,10 +57,10 @@ export function describeAgent(entry: AgentDefinitionEntry): string {
 export function locationLabelForSource(source: AgentSource): string {
   switch (source) {
     case 'userSettings':
-      return '~/.claude/agents/'
+      return '~/.cc-rust/agents/'
     case 'projectSettings':
     case 'localSettings':
-      return '.claude/agents/'
+      return '.cc-rust/agents/'
     case 'policySettings':
       return '(policy)'
     case 'flagSettings':

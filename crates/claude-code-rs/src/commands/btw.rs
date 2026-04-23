@@ -74,15 +74,11 @@ impl CommandHandler for BtwHandler {
 
         match run_fork(params).await {
             Ok(outcome) => {
-                let header = format!(
-                    "/btw (forked agent, {} ms)\n",
-                    outcome.duration_ms
-                );
+                let header = format!("/btw (forked agent, {} ms)\n", outcome.duration_ms);
                 if outcome.had_error {
                     Ok(CommandResult::Output(format!(
                         "{}error: {}",
-                        header,
-                        outcome.text
+                        header, outcome.text
                     )))
                 } else {
                     Ok(CommandResult::Output(format!(
