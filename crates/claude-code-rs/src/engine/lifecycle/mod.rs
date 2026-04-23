@@ -75,6 +75,12 @@ pub(crate) struct QueryEngineState {
     /// Sender for background agent completion channel.
     /// Set by headless/TUI mode; cloned into ToolUseContext.
     pub(crate) bg_agent_tx: Option<crate::ipc::agent_channel::AgentSender>,
+    /// Callback invoked on every [`ToolProgress`] emitted by a tool.
+    /// Set by headless/TUI mode; read by `QueryEngineDeps::tool_progress_callback`
+    /// and plumbed down to `execute_tool_calls` so tools (notably Bash) can
+    /// surface live output back to the frontend.
+    pub(crate) tool_progress_callback:
+        Option<Arc<dyn Fn(crate::types::tool::ToolProgress) + Send + Sync>>,
     /// If set, the engine is "sleeping" until this instant.
     /// The proactive tick loop skips ticks while `Instant::now() < sleep_until`.
     /// Cleared by `wake_up()` on user messages or external events.
@@ -161,6 +167,7 @@ impl QueryEngine {
                 permission_callback: None,
                 ask_user_callback: None,
                 bg_agent_tx: None,
+                tool_progress_callback: None,
                 sleep_until: None,
                 session_memory,
                 audit_ctx: AuditContext::noop("pending"),
@@ -220,6 +227,19 @@ impl QueryEngine {
     /// Set the background agent sender (called by headless/TUI at startup).
     pub fn set_bg_agent_tx(&self, tx: crate::ipc::agent_channel::AgentSender) {
         self.state.write().bg_agent_tx = Some(tx);
+    }
+
+    /// Install a `ToolProgress` callback.
+    ///
+    /// Headless/TUI mode wires this to a closure that serializes the
+    /// progress event into a `BackendMessage::ToolProgress` and sends it
+    /// through [`FrontendSink`]. The query loop reads the callback via
+    /// [`QueryEngineDeps::tool_progress_callback`] on every tool batch.
+    pub fn set_tool_progress_callback(
+        &self,
+        cb: Arc<dyn Fn(crate::types::tool::ToolProgress) + Send + Sync>,
+    ) {
+        self.state.write().tool_progress_callback = Some(cb);
     }
 
     // -- Sleep control -------------------------------------------------------

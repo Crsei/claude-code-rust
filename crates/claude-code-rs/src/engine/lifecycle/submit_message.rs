@@ -349,6 +349,7 @@ impl QueryEngine {
             // Create deps for the inner query loop
             let permission_callback = state_ref.read().permission_callback.clone();
             let bg_agent_tx = state_ref.read().bg_agent_tx.clone();
+            let tool_progress_callback = state_ref.read().tool_progress_callback.clone();
             let submit_audit_ctx = state_ref.read().audit_ctx.with_submit();
             let deps = Arc::new(QueryEngineDeps {
                 aborted: aborted_ref.clone(),
@@ -359,6 +360,7 @@ impl QueryEngine {
                 agent_context: config.agent_context.clone(),
                 permission_callback,
                 bg_agent_tx,
+                tool_progress_callback,
                 pending_bg_results: pending_bg_results.clone(),
                 hook_runner: hook_runner.clone(),
                 command_dispatcher: command_dispatcher.clone(),

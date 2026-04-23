@@ -151,6 +151,33 @@ pub enum BackendMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         content_blocks: Option<Vec<ToolResultContentInfo>>,
     },
+    /// Intermediate progress report from a long-running tool invocation.
+    ///
+    /// Primarily emitted by the Bash tool so the frontend can render a
+    /// live "Running… (12s)" indicator plus a tail of recent output.
+    /// `output` holds the tail-capped snapshot the UI should display;
+    /// `total_lines` / `total_bytes` are the full-stream counters so the
+    /// UI can show `+N lines` / `~N lines` and total bytes; `timeout_ms`
+    /// surfaces the configured timeout.
+    ToolProgress {
+        tool_use_id: String,
+        /// Tool name (e.g. `"Bash"`) — lets UI-side routing pick the
+        /// right progress renderer without a second lookup.
+        tool: String,
+        /// Tail-capped snapshot suitable for display.
+        output: String,
+        /// Whole-seconds elapsed since the tool started.
+        elapsed_seconds: u64,
+        /// Total output lines observed so far.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        total_lines: Option<u64>,
+        /// Total output bytes observed so far.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        total_bytes: Option<u64>,
+        /// Configured tool timeout in milliseconds (if any).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timeout_ms: Option<u64>,
+    },
     /// Ask the UI to show a permission dialog for a tool call.
     PermissionRequest {
         tool_use_id: String,
