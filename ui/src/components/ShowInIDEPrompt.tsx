@@ -1,191 +1,191 @@
-import React, { useState } from 'react'
+import { basename, relative } from 'path'
+import React from 'react'
 import { useKeyboard } from '@opentui/react'
-import type { KeyEvent } from '@opentui/core'
 import { c } from '../theme.js'
 
 /**
- * OpenTUI port of the upstream
+ * Ported from
  * `ui/examples/upstream-patterns/src/components/ShowInIDEPrompt.tsx`.
  *
- * Rendered when a file-edit permission request is being visualised in
- * an IDE diff view and the user must decide from the terminal. Mirrors
- * the upstream chrome (title with the IDE name, filename, option list,
- * symlink / save hints) using OpenTUI primitives.
+ * Shown while the IDE has the proposed file edit open in a save-to-apply
+ * flow. Accept / reject actions bubble back through `onChange`, and the
+ * caller owns the feedback strings for both outcomes. The upstream uses
+ * Ink's `Pane` + `Select` pair; here we use an OpenTUI box frame and a
+ * keyboard-driven two-option picker so accept/reject still work without
+ * a mouse.
+ *
+ * The `options` prop remains `PermissionOptionWithLabel[]` (the sample
+ * tree's type) so callers can wire this into the same permission-menu
+ * machinery. The Rust port doesn't model the `accept-once` vs
+ * `accept-always` distinction in the frontend — the backend drives that
+ * choice — so accepted clicks always fire `onChange` with whichever
+ * option the user is focusing.
  */
 
-export type PermissionOption = {
+export type PermissionOption =
+  | { type: 'reject' }
+  | { type: 'accept-once' }
+  | { type: 'accept-always' }
+
+export type PermissionOptionWithLabel = {
+  option: PermissionOption
   value: string
   label: string
-  hotkey?: string
-  /** Tagged union used by the parent flow to disambiguate accept vs
-   *  reject without re-parsing the label. */
-  option: { type: 'accept' | 'accept-once' | 'reject' | string }
+  description?: string
 }
 
 type Props<A> = {
   filePath: string
   input: A
-  onChange: (option: PermissionOption['option'], args: A, feedback?: string) => void
-  options: PermissionOption[]
+  onChange: (option: PermissionOption, args: A, feedback?: string) => void
+  options: PermissionOptionWithLabel[]
   ideName: string
   symlinkTarget?: string | null
-  rejectFeedback?: string
-  acceptFeedback?: string
-  setFocusedOption?: (value: string) => void
-  onInputModeToggle?: (value: string) => void
-  focusedOption?: string
-  yesInputMode?: boolean
-  noInputMode?: boolean
-  /** Prefix added to resolve `filePath` to a base name. */
+  rejectFeedback: string
+  acceptFeedback: string
+  setFocusedOption: (value: string) => void
+  onInputModeToggle: (value: string) => void
+  focusedOption: string
+  yesInputMode: boolean
+  noInputMode: boolean
+  /** Used to resolve relative symlink messages. Defaults to `process.cwd()`. */
   cwd?: string
-  /** When true, render a "Save file to continue…" hint. */
-  isVscodeTerminal?: boolean
-}
-
-function baseName(path: string): string {
-  const m = /[^/\\]+$/.exec(path)
-  return m ? m[0] : path
-}
-
-function symlinkWarning(cwd: string | undefined, target: string): string {
-  if (cwd && target.startsWith(cwd)) {
-    return `Symlink target: ${target}`
-  }
-  return `This will modify ${target} (outside working directory) via a symlink`
+  /** Defaults to `true` — upstream derives this from the terminal sniffer. */
+  showSaveHint?: boolean
 }
 
 export function ShowInIDEPrompt<A>({
-  filePath,
-  input,
   onChange,
   options,
+  input,
+  filePath,
   ideName,
   symlinkTarget,
-  rejectFeedback = '',
-  acceptFeedback = '',
+  rejectFeedback,
+  acceptFeedback,
   setFocusedOption,
+  onInputModeToggle,
   focusedOption,
-  yesInputMode = false,
-  noInputMode = false,
+  yesInputMode,
+  noInputMode,
   cwd,
-  isVscodeTerminal = false,
-}: Props<A>) {
-  const [selected, setSelected] = useState(() =>
-    Math.max(0, options.findIndex(o => o.value === focusedOption)),
-  )
-
-  const safeIndex = Math.max(
+  showSaveHint = true,
+}: Props<A>): React.ReactElement {
+  const focusIndex = Math.max(
     0,
-    Math.min(options.length - 1, Number.isNaN(selected) ? 0 : selected),
+    options.findIndex(opt => opt.value === focusedOption),
   )
 
-  const commit = (idx: number) => {
-    const opt = options[idx]
-    if (!opt) return
+  const selectOption = (opt: PermissionOptionWithLabel) => {
     if (opt.option.type === 'reject') {
       const trimmed = rejectFeedback.trim()
-      onChange(opt.option, input, trimmed || undefined)
+      onChange(opt.option, input, trimmed.length > 0 ? trimmed : undefined)
       return
     }
     if (opt.option.type === 'accept-once') {
       const trimmed = acceptFeedback.trim()
-      onChange(opt.option, input, trimmed || undefined)
+      onChange(opt.option, input, trimmed.length > 0 ? trimmed : undefined)
       return
     }
     onChange(opt.option, input)
   }
 
-  useKeyboard((event: KeyEvent) => {
+  useKeyboard(event => {
     if (event.eventType === 'release') return
     const name = event.name
-    const seq = event.sequence?.length === 1 ? event.sequence : undefined
-    const input = (seq ?? (name?.length === 1 ? name : '') ?? '').toLowerCase()
 
-    if (input) {
-      const match = options.findIndex(
-        o => o.hotkey && o.hotkey.toLowerCase() === input,
-      )
-      if (match >= 0) {
-        commit(match)
-        return
-      }
-    }
     if (name === 'escape') {
-      const rej = options.findIndex(o => o.option.type === 'reject')
-      commit(rej >= 0 ? rej : safeIndex)
+      onChange({ type: 'reject' }, input)
       return
     }
-    if (name === 'up' || input === 'k') {
-      const next = Math.max(0, safeIndex - 1)
-      setSelected(next)
-      setFocusedOption?.(options[next]!.value)
+
+    if (name === 'up') {
+      const prev =
+        options[(focusIndex - 1 + options.length) % options.length]!
+      setFocusedOption(prev.value)
       return
     }
-    if (name === 'down' || input === 'j') {
-      const next = Math.min(options.length - 1, safeIndex + 1)
-      setSelected(next)
-      setFocusedOption?.(options[next]!.value)
+    if (name === 'down') {
+      const next = options[(focusIndex + 1) % options.length]!
+      setFocusedOption(next.value)
+      return
+    }
+    if (name === 'tab') {
+      onInputModeToggle(options[focusIndex]!.value)
       return
     }
     if (name === 'return' || name === 'enter') {
-      commit(safeIndex)
+      const opt = options[focusIndex]
+      if (opt) selectOption(opt)
     }
   })
 
-  const focused = options[safeIndex]
+  const effectiveCwd = cwd ?? process.cwd()
+  const symlinkLine =
+    symlinkTarget
+      ? relative(effectiveCwd, symlinkTarget).startsWith('..')
+        ? `This will modify ${symlinkTarget} (outside working directory) via a symlink`
+        : `Symlink target: ${symlinkTarget}`
+      : null
+
   const showTabHint =
-    (focused?.value === 'yes' && !yesInputMode) ||
-    (focused?.value === 'no' && !noInputMode)
+    (focusedOption === 'yes' && !yesInputMode) ||
+    (focusedOption === 'no' && !noInputMode)
 
   return (
     <box
-      position="absolute"
-      bottom={3}
-      left={1}
-      right={1}
       flexDirection="column"
       borderStyle="rounded"
       borderColor={c.warning}
       paddingX={2}
       paddingY={1}
     >
-      <strong>
-        <text fg={c.warning}>Opened changes in {ideName} \u29C9</text>
-      </strong>
+      <text>
+        <strong>
+          <span fg={c.warning}>Opened changes in {ideName} \u29C9</span>
+        </strong>
+      </text>
 
-      {symlinkTarget && (
+      {symlinkLine && (
         <box marginTop={1}>
-          <text fg={c.warning}>{symlinkWarning(cwd, symlinkTarget)}</text>
+          <text fg={c.warning}>{symlinkLine}</text>
         </box>
       )}
 
-      {isVscodeTerminal && (
+      {showSaveHint && (
         <box marginTop={1}>
-          <text fg={c.dim}>Save file to continue…</text>
+          <text fg={c.dim}>Save file to continue\u2026</text>
         </box>
       )}
 
       <box marginTop={1} flexDirection="column">
         <text>
           Do you want to make this edit to{' '}
-          <strong>{baseName(filePath)}</strong>?
+          <strong>{basename(filePath)}</strong>?
         </text>
-        {options.map((opt, i) => {
-          const isSelected = i === safeIndex
-          return (
-            <box key={opt.value} flexDirection="row">
-              <text fg={isSelected ? c.bg : undefined} bg={isSelected ? c.textBright : undefined}>
-                <strong>{` ${opt.label} `}</strong>
-              </text>
-              {opt.hotkey && <text fg={c.dim}> ({opt.hotkey})</text>}
-            </box>
-          )
-        })}
+        <box marginTop={1} flexDirection="column">
+          {options.map((opt, i) => {
+            const isSelected = i === focusIndex
+            return (
+              <box key={opt.value} flexDirection="row">
+                <text
+                  fg={isSelected ? c.bg : c.text}
+                  bg={isSelected ? c.textBright : undefined}
+                >
+                  {` ${opt.label} `}
+                </text>
+                {opt.description ? (
+                  <text fg={c.dim}>{'  '}{opt.description}</text>
+                ) : null}
+              </box>
+            )
+          })}
+        </box>
       </box>
 
       <box marginTop={1}>
         <text fg={c.dim}>
-          Esc to cancel{showTabHint ? ' · Tab to amend' : ''}
+          Esc to cancel{showTabHint ? ' \u00b7 Tab to amend' : ''}
         </text>
       </box>
     </box>
