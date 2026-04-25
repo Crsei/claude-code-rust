@@ -8,6 +8,7 @@ use crate::keybindings::KeybindingRegistry;
 use crate::services::prompt_suggestion::PromptSuggestion;
 use crate::types::message::Message;
 
+use super::command_palette::CommandPalette;
 use super::messages::render_messages;
 use super::permissions::{PermissionChoice, PermissionDialog};
 use super::prompt_input::PromptInput;
@@ -65,6 +66,7 @@ pub struct App {
     history: Vec<String>,
     history_index: Option<usize>,
     saved_input: String,
+    command_palette: CommandPalette,
 
     // ── Prompt suggestions ───────────────────────────────────────────
     /// Next-prompt suggestions shown after an assistant turn completes.
@@ -150,6 +152,7 @@ impl App {
             history: Vec::new(),
             history_index: None,
             saved_input: String::new(),
+            command_palette: CommandPalette::new(),
             vscroll: VirtualScroll::new(),
             dirty: true,
             tick_counter: 0,
@@ -682,6 +685,26 @@ impl App {
             return AppAction::None;
         }
 
+        match (key.modifiers, key.code) {
+            (_, KeyCode::Esc) if self.command_palette.active() => {
+                self.command_palette.close();
+                return AppAction::None;
+            }
+            (_, KeyCode::Enter) if self.command_palette.active() => {
+                if let Some(command_input) = self.command_palette.selected_command_input() {
+                    self.prompt.input = command_input;
+                    self.prompt.cursor_position = self.prompt.input.len();
+                }
+                self.command_palette.close();
+                return AppAction::None;
+            }
+            (_, KeyCode::Up | KeyCode::Down) if self.command_palette.active() => {
+                self.command_palette.handle_key(key.code);
+                return AppAction::None;
+            }
+            _ => {}
+        }
+
         if let Some(action) = self.resolve_bound_action(&key) {
             if let Some(app_action) = self.dispatch_bound_action(&action) {
                 return app_action;
@@ -747,10 +770,12 @@ impl App {
 
             (_, KeyCode::Up) if self.prompt.is_active && !self.is_streaming => {
                 self.history_up();
+                self.sync_command_palette();
                 return AppAction::None;
             }
             (_, KeyCode::Down) if self.prompt.is_active && !self.is_streaming => {
                 self.history_down();
+                self.sync_command_palette();
                 return AppAction::None;
             }
 
@@ -762,14 +787,17 @@ impl App {
                 self.vim
                     .handle_key(key, &self.prompt.input, self.prompt.cursor_position);
             if let Some(app_action) = self.apply_vim_action(vim_action) {
+                self.sync_command_palette();
                 return app_action;
             }
         }
 
         if let Some(submitted) = self.prompt.handle_key(key) {
+            self.command_palette.close();
             return AppAction::Submit(submitted);
         }
 
+        self.sync_command_palette();
         AppAction::None
     }
 
@@ -806,25 +834,37 @@ impl App {
         } else {
             0
         };
+        let command_palette_height = self.command_palette.preferred_height();
+        let cwd_path = std::path::Path::new(&self.cwd);
+        let command_arg_help_height =
+            CommandPalette::argument_help_height(&self.prompt.input, cwd_path);
         let input_height = 1u16;
         let status_height = if custom_lines.is_empty() {
             1u16
         } else {
             custom_lines.len().min(STATUS_LINE_MAX_LINES) as u16
         };
-        let bottom_height = spinner_height + suggestion_height + input_height + status_height;
-        let min_message_height = if self.show_welcome {
-            // Size-aware minimum (issue #12): narrow terminals use shorter
-            // layouts, so reserving 16 lines always left narrow splits
-            // with no room for the messages pane.
-            welcome::welcome_height_for(size.width)
+        let bottom_height = spinner_height
+            + suggestion_height
+            + command_palette_height
+            + command_arg_help_height
+            + input_height
+            + status_height;
+        let max_content_height = size.height.saturating_sub(bottom_height);
+        let content_height = if self.show_welcome {
+            welcome::welcome_height_for(size.width).min(max_content_height)
         } else {
-            1
+            self.vscroll
+                .ensure_up_to_date(&self.messages, size.width, &self.theme);
+            self.vscroll
+                .total_visual_lines()
+                .min(max_content_height as usize) as u16
         };
 
         let chunks = Layout::vertical([
-            Constraint::Min(min_message_height),
+            Constraint::Length(content_height),
             Constraint::Length(bottom_height),
+            Constraint::Min(0),
         ])
         .split(size);
 
@@ -866,6 +906,8 @@ impl App {
         let bottom_chunks = Layout::vertical([
             Constraint::Length(if self.is_streaming { 1 } else { 0 }),
             Constraint::Length(if has_suggestions { 1 } else { 0 }),
+            Constraint::Length(command_palette_height),
+            Constraint::Length(command_arg_help_height),
             Constraint::Length(1),
             Constraint::Length(status_height),
         ])
@@ -880,10 +922,26 @@ impl App {
             self.render_suggestions(bottom_chunks[1], frame.buffer_mut());
         }
 
-        self.prompt
+        self.command_palette
             .render(bottom_chunks[2], frame.buffer_mut(), &self.theme);
 
-        self.render_status_bar(bottom_chunks[3], frame.buffer_mut(), &custom_lines);
+        CommandPalette::render_argument_help(
+            &self.prompt.input,
+            cwd_path,
+            bottom_chunks[3],
+            frame.buffer_mut(),
+            &self.theme,
+        );
+
+        let argument_hint = CommandPalette::argument_hint(&self.prompt.input, cwd_path);
+        self.prompt.render_with_hint(
+            bottom_chunks[4],
+            frame.buffer_mut(),
+            &self.theme,
+            argument_hint.as_deref(),
+        );
+
+        self.render_status_bar(bottom_chunks[5], frame.buffer_mut(), &custom_lines);
 
         if let Some(ref dialog) = self.permission_dialog {
             dialog.render(size, frame.buffer_mut(), &self.theme);
@@ -946,6 +1004,15 @@ impl App {
         self.prompt.input.clear();
         self.prompt.cursor_position = 0;
         Some(text)
+    }
+
+    fn sync_command_palette(&mut self) {
+        if self.prompt.is_active && !self.is_streaming {
+            self.command_palette
+                .sync_from_input(&self.prompt.input, std::path::Path::new(&self.cwd));
+        } else {
+            self.command_palette.close();
+        }
     }
 
     fn active_keybinding_contexts(&self) -> [crate::keybindings::context::Context; 2] {
@@ -1432,5 +1499,112 @@ impl App {
 impl Default for App {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::message::{MessageContent, UserMessage};
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    #[test]
+    fn render_places_prompt_after_compact_welcome() {
+        let mut app = App::new();
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+
+        terminal.draw(|frame| app.render(frame)).expect("draw");
+
+        let content = buffer_to_lines(terminal.backend().buffer(), 80, 24);
+        assert!(
+            content[8].trim_start().starts_with(">"),
+            "prompt should sit directly under the 8-line welcome panel"
+        );
+        assert!(
+            !content[22].trim_start().starts_with(">"),
+            "prompt should not be pinned to the bottom row"
+        );
+    }
+
+    #[test]
+    fn render_places_prompt_after_short_chat_content() {
+        let mut app = App::new();
+        app.add_message(Message::User(UserMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "user".to_string(),
+            content: MessageContent::Text("hello".to_string()),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        }));
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+
+        terminal.draw(|frame| app.render(frame)).expect("draw");
+
+        let content = buffer_to_lines(terminal.backend().buffer(), 80, 24);
+        assert!(content[0].contains("You: hello"));
+        assert!(
+            content[1].trim_start().starts_with(">"),
+            "prompt should follow the rendered chat content"
+        );
+        assert!(
+            !content[22].trim_start().starts_with(">"),
+            "prompt should not be pinned to the bottom row"
+        );
+    }
+
+    #[test]
+    fn slash_opens_command_palette_and_selection_keeps_argument_entry() {
+        let mut app = App::new();
+
+        assert_eq!(send_key(&mut app, KeyCode::Char('/')), AppAction::None);
+        assert!(app.command_palette.active());
+
+        assert_eq!(send_key(&mut app, KeyCode::Char('m')), AppAction::None);
+        assert_eq!(send_key(&mut app, KeyCode::Char('c')), AppAction::None);
+        assert_eq!(send_key(&mut app, KeyCode::Enter), AppAction::None);
+
+        assert_eq!(app.prompt.input, "/mcp ");
+        assert!(!app.command_palette.active());
+        assert!(
+            CommandPalette::argument_hint(&app.prompt.input, std::path::Path::new(&app.cwd))
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn argument_entry_renders_parameter_help_near_input() {
+        let mut app = App::new();
+        app.prompt.input = "/plugin ".to_string();
+        app.prompt.cursor_position = app.prompt.input.len();
+        let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
+
+        terminal.draw(|frame| app.render(frame)).expect("draw");
+
+        let content = buffer_to_lines(terminal.backend().buffer(), 100, 24).join("\n");
+        assert!(content.contains("/plugin arguments"));
+        assert!(content.contains(
+            "Usage: /plugin <list|installed|disabled|errors|status|enable|disable|uninstall> [id]"
+        ));
+        assert!(content.contains("file:///"));
+        assert!(content.contains("installed_plugins.json"));
+    }
+
+    fn send_key(app: &mut App, code: KeyCode) -> AppAction {
+        app.handle_key_event(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn buffer_to_lines(buf: &ratatui::buffer::Buffer, width: u16, height: u16) -> Vec<String> {
+        let mut lines = Vec::new();
+        for y in 0..height {
+            let mut line = String::new();
+            for x in 0..width {
+                line.push_str(buf[(x, y)].symbol());
+            }
+            lines.push(line);
+        }
+        lines
     }
 }

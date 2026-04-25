@@ -132,6 +132,17 @@ impl PromptInput {
     /// cursor indicator. The visible window scrolls horizontally when the
     /// cursor would move off-screen.
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
+        self.render_with_hint(area, buf, theme, None);
+    }
+
+    /// Render the prompt input widget with a dim inline hint after the text.
+    pub fn render_with_hint(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        theme: &Theme,
+        hint: Option<&str>,
+    ) {
         if area.height == 0 || area.width < 4 {
             return;
         }
@@ -180,6 +191,9 @@ impl PromptInput {
                     .bg(ratatui::style::Color::White),
             ));
             spans.push(Span::raw(after_cursor));
+            if let Some(hint) = hint.filter(|_| cursor_in_visible >= visible_text.len()) {
+                spans.push(Span::styled(format!(" {hint}"), theme.dim));
+            }
         } else {
             spans.push(Span::styled(visible_text, theme.dim));
         }
