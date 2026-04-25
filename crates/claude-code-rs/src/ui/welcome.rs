@@ -1,53 +1,25 @@
-//! Welcome screen -- ASCII art logo and startup info panel.
+//! Welcome screen -- compact startup info panel.
 //!
 //! Rendered once when the TUI starts, before any messages are displayed.
-//! Inspired by code-iris welcome screen but adapted for cc-rust.
 
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Alignment, Constraint, Layout, Rect};
+use ratatui::layout::{Alignment, Rect};
 use ratatui::prelude::Widget;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
-/// ASCII art logo — stylized "CC" monogram representing Claude Code.
-const LOGO: &str = r#"
-     ██████╗  ██████╗
-    ██╔════╝ ██╔════╝
-    ██║      ██║
-    ██║      ██║
-    ╚██████╗ ╚██████╗
-     ╚═════╝  ╚═════╝
-"#;
-
-/// Accent color — Claude purple.
 const ACCENT: Color = Color::Rgb(190, 140, 255);
-/// Accent dim — darker purple for secondary elements.
 const ACCENT_DIM: Color = Color::Rgb(120, 90, 180);
-/// Muted text color.
 const MUTED: Color = Color::Rgb(100, 100, 100);
-/// Light text.
 const LIGHT: Color = Color::Rgb(200, 200, 200);
+const PANEL_WIDTH: u16 = 64;
+const PANEL_HEIGHT: u16 = 8;
 
-/// Render the welcome screen into the given area.
+/// Render a small rectangular welcome summary.
 ///
-/// # Layout
-/// ```text
-/// ┌─ Claude Code (Rust) ──────────────────────────────────────┐
-/// │                                                           │
-/// │   ██████╗  ██████╗      Tips                              │
-/// │  ██╔════╝ ██╔════╝       Type a message and press Enter   │
-/// │  ██║      ██║             /help for commands               │
-/// │  ██║      ██║             Ctrl+C abort · Ctrl+D quit      │
-/// │  ╚██████╗ ╚██████╗      ──────────────────                │
-/// │   ╚═════╝  ╚═════╝      Keybindings                      │
-/// │                           Up/Down: history                 │
-/// │  claude-code-rs v0.x.x    PageUp/Down: scroll              │
-/// │  Model: claude-xxx                                         │
-/// │  Session: abcd1234                                         │
-/// │                                                           │
-/// └──────────────────────────────────────────────────────────-┘
-/// ```
+/// The panel intentionally avoids the old ASCII logo so the prompt can sit
+/// directly below a compact startup summary.
 pub fn render_welcome(
     area: Rect,
     buf: &mut Buffer,
@@ -56,8 +28,7 @@ pub fn render_welcome(
     session_id: &str,
     cwd: &str,
 ) {
-    if area.width < 20 || area.height < 8 {
-        // Terminal too small — render a minimal one-liner.
+    if area.width < 20 || area.height < PANEL_HEIGHT {
         let line = Line::from(vec![
             Span::styled(
                 "Claude Code ",
@@ -69,448 +40,99 @@ pub fn render_welcome(
         return;
     }
 
-    // Outer border
-    let title = Line::from(vec![
-        Span::styled(
-            " Claude Code ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("(Rust) ", Style::default().fg(ACCENT_DIM)),
-        Span::styled(format!("v{} ", version), Style::default().fg(MUTED)),
-    ]);
-
-    let outer = Block::default()
+    let panel = left_aligned_panel(area);
+    let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(ACCENT_DIM))
-        .title(title)
+        .title(Line::from(vec![Span::styled(
+            " Claude Code ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        )]))
         .title_alignment(Alignment::Left);
+    let inner = block.inner(panel);
+    block.render(panel, buf);
 
-    let inner = outer.inner(area);
-    outer.render(area, buf);
-
-    if inner.height < 6 || inner.width < 30 {
-        // Too small for two-column layout — render single column.
-        render_compact(inner, buf, version, model_name, session_id);
-        return;
-    }
-
-    // Narrow terminal (< 80 cols outer): single-column layout with tips at full width, no logo.
-    if area.width < 80 {
-        render_single_column(inner, buf, version, model_name, session_id, cwd);
-        return;
-    }
-
-    // Two-column layout
-    let columns =
-        Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)]).split(inner);
-
-    render_left_panel(columns[0], buf, version, model_name, session_id, cwd);
-    render_right_panel(columns[1], buf);
-}
-
-/// Left panel: logo + project info.
-fn render_left_panel(
-    area: Rect,
-    buf: &mut Buffer,
-    version: &str,
-    model_name: &str,
-    session_id: &str,
-    cwd: &str,
-) {
-    let logo_height = 8u16; // 1 blank + 6 logo lines + 1 blank
-    let info_height = 5u16;
-
-    let layout = Layout::vertical([
-        Constraint::Length(logo_height.min(area.height.saturating_sub(info_height))),
-        Constraint::Length(1), // spacer
-        Constraint::Min(info_height),
-    ])
-    .split(area);
-
-    // ── Logo ───────────────────────────────────────────────────
-    render_logo(layout[0], buf);
-
-    // ── Info lines ─────────────────────────────────────────────
-    let short_session = if session_id.len() > 8 {
-        &session_id[..8]
-    } else {
-        session_id
-    };
-
-    // Shorten model name for display
-    let display_model = model_name.strip_prefix("claude-").unwrap_or(model_name);
-
-    // Truncate cwd if too long
-    let max_cwd = (area.width as usize).saturating_sub(6);
-    let display_cwd = if cwd.len() > max_cwd && max_cwd > 4 {
-        format!("...{}", &cwd[cwd.len() - (max_cwd - 3)..])
-    } else {
-        cwd.to_string()
-    };
-
-    let info_lines = vec![
-        Line::from(vec![
-            Span::styled(
-                "  cc-rust",
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(format!(" v{}", version), Style::default().fg(MUTED)),
-        ]),
-        Line::from(vec![
-            Span::styled("  Model: ", Style::default().fg(MUTED)),
-            Span::styled(display_model, Style::default().fg(LIGHT)),
-        ]),
-        Line::from(vec![
-            Span::styled("  Session: ", Style::default().fg(MUTED)),
-            Span::styled(short_session, Style::default().fg(LIGHT)),
-        ]),
-        Line::from(vec![
-            Span::styled("  CWD: ", Style::default().fg(MUTED)),
-            Span::styled(display_cwd, Style::default().fg(MUTED)),
-        ]),
-    ];
-
-    let info = Paragraph::new(info_lines);
-    info.render(layout[2], buf);
-}
-
-/// Right panel: tips + keybindings.
-fn render_right_panel(area: Rect, buf: &mut Buffer) {
-    let layout = Layout::vertical([
-        Constraint::Length(6), // Tips
-        Constraint::Length(1), // Divider
-        Constraint::Min(4),    // Keybindings
-    ])
-    .split(area);
-
-    // ── Tips ───────────────────────────────────────────────────
-    let w = area.width as usize;
-    let tips = vec![
-        Line::from(Span::styled(
-            " Tips",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        )),
-        Line::from(Span::styled(
-            truncate_str("  Type a message and press Enter to send", w),
-            Style::default().fg(LIGHT),
-        )),
-        Line::from(Span::styled(
-            truncate_str("  Start with / for slash commands", w),
-            Style::default().fg(LIGHT),
-        )),
-        Line::from(Span::styled(
-            truncate_str("  /help to see all commands", w),
-            Style::default().fg(LIGHT),
-        )),
-        Line::from(Span::styled(
-            truncate_str("  Ctrl+O for transcript / focus view", w),
-            Style::default().fg(LIGHT),
-        )),
-    ];
-    let tips_widget = Paragraph::new(tips);
-    tips_widget.render(layout[0], buf);
-
-    // ── Divider ────────────────────────────────────────────────
-    let divider_width = layout[1].width as usize;
-    let divider = Line::from(Span::styled(
-        format!(" {}", "─".repeat(divider_width.saturating_sub(2))),
-        Style::default().fg(Color::Rgb(60, 60, 80)),
-    ));
-    buf.set_line(layout[1].x, layout[1].y, &divider, layout[1].width);
-
-    // ── Keybindings ────────────────────────────────────────────
-    let keybindings = vec![
-        Line::from(Span::styled(
-            " Keybindings",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        )),
-        Line::from(vec![
-            Span::styled(
-                "  Ctrl+C ",
-                Style::default()
-                    .fg(Color::Rgb(255, 200, 100))
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("abort / quit", Style::default().fg(LIGHT)),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Ctrl+D ",
-                Style::default()
-                    .fg(Color::Rgb(255, 200, 100))
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("quit", Style::default().fg(LIGHT)),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Up/Down ",
-                Style::default()
-                    .fg(Color::Rgb(255, 200, 100))
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("input history", Style::default().fg(LIGHT)),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  PgUp/PgDn ",
-                Style::default()
-                    .fg(Color::Rgb(255, 200, 100))
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("scroll messages", Style::default().fg(LIGHT)),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Ctrl+O ",
-                Style::default()
-                    .fg(Color::Rgb(255, 200, 100))
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("transcript / focus", Style::default().fg(LIGHT)),
-        ]),
-    ];
-    let kb_widget = Paragraph::new(keybindings);
-    kb_widget.render(layout[2], buf);
-}
-
-/// Single-column layout for narrow terminals (< 80 cols).
-/// Skips the ASCII logo but shows info + tips + keybindings at full width.
-fn render_single_column(
-    area: Rect,
-    buf: &mut Buffer,
-    version: &str,
-    model_name: &str,
-    session_id: &str,
-    cwd: &str,
-) {
     let short_session = if session_id.len() > 8 {
         &session_id[..8]
     } else {
         session_id
     };
     let display_model = model_name.strip_prefix("claude-").unwrap_or(model_name);
-    let max_cwd = (area.width as usize).saturating_sub(6);
-    let display_cwd = if cwd.len() > max_cwd && max_cwd > 4 {
-        format!("...{}", &cwd[cwd.len() - (max_cwd - 3)..])
-    } else {
-        cwd.to_string()
-    };
-
-    let w = area.width as usize;
-
-    let mut lines: Vec<Line> = vec![
-        Line::from(vec![
-            Span::styled(
-                "  cc-rust",
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(format!(" v{}", version), Style::default().fg(MUTED)),
-        ]),
-        Line::from(vec![
-            Span::styled("  Model: ", Style::default().fg(MUTED)),
-            Span::styled(display_model, Style::default().fg(LIGHT)),
-        ]),
-        Line::from(vec![
-            Span::styled("  Session: ", Style::default().fg(MUTED)),
-            Span::styled(short_session, Style::default().fg(LIGHT)),
-        ]),
-        Line::from(vec![
-            Span::styled("  CWD: ", Style::default().fg(MUTED)),
-            Span::styled(display_cwd, Style::default().fg(MUTED)),
-        ]),
-        Line::from(""),
-    ];
-
-    // Tips (truncated to fit)
-    lines.push(Line::from(Span::styled(
-        " Tips",
-        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-    )));
-    for tip in [
-        "  Type a message and press Enter to send",
-        "  Start with / for slash commands",
-        "  /help to see all commands",
-        "  Ctrl+O for transcript / focus view",
-    ] {
-        lines.push(Line::from(Span::styled(
-            truncate_str(tip, w),
-            Style::default().fg(LIGHT),
-        )));
-    }
-
-    // Divider
-    lines.push(Line::from(Span::styled(
-        format!(" {}", "─".repeat(w.saturating_sub(2))),
-        Style::default().fg(Color::Rgb(60, 60, 80)),
-    )));
-
-    // Keybindings
-    lines.push(Line::from(Span::styled(
-        " Keybindings",
-        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-    )));
-    let kb_items: &[(&str, &str)] = &[
-        ("  Ctrl+C ", "abort / quit"),
-        ("  Ctrl+D ", "quit"),
-        ("  Up/Down ", "input history"),
-        ("  PgUp/PgDn ", "scroll messages"),
-        ("  Ctrl+O ", "transcript / focus"),
-    ];
-    for &(key, desc) in kb_items {
-        let total_len = key.len() + desc.len();
-        if total_len <= w {
-            lines.push(Line::from(vec![
-                Span::styled(
-                    key,
-                    Style::default()
-                        .fg(Color::Rgb(255, 200, 100))
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(desc, Style::default().fg(LIGHT)),
-            ]));
-        } else {
-            // Truncate description
-            let avail = w.saturating_sub(key.len());
-            lines.push(Line::from(vec![
-                Span::styled(
-                    key,
-                    Style::default()
-                        .fg(Color::Rgb(255, 200, 100))
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(truncate_str(desc, avail), Style::default().fg(LIGHT)),
-            ]));
-        }
-    }
-
-    let p = Paragraph::new(lines);
-    p.render(area, buf);
-}
-
-/// Truncate a string to `max_width` characters, appending "..." if truncated.
-fn truncate_str(s: &str, max_width: usize) -> String {
-    if s.len() <= max_width {
-        s.to_string()
-    } else if max_width <= 3 {
-        ".".repeat(max_width)
-    } else {
-        format!("{}...", &s[..max_width - 3])
-    }
-}
-
-/// Render the ASCII art logo with colored characters.
-///
-/// Adjacent characters sharing the same color are merged into a single `Span`
-/// to avoid per-cell style resets, which reduces visible gaps between block
-/// characters on some terminals.
-fn render_logo(area: Rect, buf: &mut Buffer) {
-    let logo_lines: Vec<Line> = LOGO
-        .lines()
-        .filter(|l| !l.is_empty())
-        .map(|line| {
-            // Merge consecutive characters that share the same style color
-            // into a single Span to avoid per-cell style resets.
-            let mut spans: Vec<Span> = Vec::new();
-            let mut current_text = String::new();
-            let mut current_color: Option<Color> = None;
-
-            for c in line.chars() {
-                let color = match c {
-                    '█' => Some(ACCENT),
-                    '╗' | '╔' | '╝' | '╚' | '║' | '═' => Some(ACCENT_DIM),
-                    _ => None,
-                };
-
-                if color == current_color {
-                    current_text.push(c);
-                } else {
-                    // Flush the current run
-                    if !current_text.is_empty() {
-                        let style = match current_color {
-                            Some(col) => Style::default().fg(col),
-                            None => Style::default(),
-                        };
-                        spans.push(Span::styled(std::mem::take(&mut current_text), style));
-                    }
-                    current_color = color;
-                    current_text.push(c);
-                }
-            }
-            // Flush remaining
-            if !current_text.is_empty() {
-                let style = match current_color {
-                    Some(col) => Style::default().fg(col),
-                    None => Style::default(),
-                };
-                spans.push(Span::styled(current_text, style));
-            }
-
-            Line::from(spans)
-        })
-        .collect();
-
-    let logo = Paragraph::new(logo_lines).alignment(Alignment::Center);
-    logo.render(area, buf);
-}
-
-/// Compact single-column fallback for very small terminals.
-fn render_compact(area: Rect, buf: &mut Buffer, version: &str, model_name: &str, session_id: &str) {
-    let short_session = if session_id.len() > 8 {
-        &session_id[..8]
-    } else {
-        session_id
-    };
+    let max_value_width = inner.width.saturating_sub(9) as usize;
+    let display_cwd = truncate_start(cwd, max_value_width);
+    let tip = truncate_str("Enter to send, /help for commands", max_value_width);
 
     let lines = vec![
         Line::from(vec![
+            Span::styled("Version: ", Style::default().fg(MUTED)),
             Span::styled(
-                "Claude Code ",
+                format!("v{}", version),
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("(Rust) v{}", version), Style::default().fg(MUTED)),
         ]),
-        Line::from(""),
         Line::from(vec![
-            Span::styled("Model: ", Style::default().fg(MUTED)),
-            Span::styled(model_name, Style::default().fg(LIGHT)),
+            Span::styled("Model:   ", Style::default().fg(MUTED)),
+            Span::styled(display_model, Style::default().fg(LIGHT)),
         ]),
         Line::from(vec![
             Span::styled("Session: ", Style::default().fg(MUTED)),
             Span::styled(short_session, Style::default().fg(LIGHT)),
         ]),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Type a message and press Enter. /help for commands.",
-            Style::default().fg(LIGHT),
-        )),
+        Line::from(vec![
+            Span::styled("CWD:     ", Style::default().fg(MUTED)),
+            Span::styled(display_cwd, Style::default().fg(MUTED)),
+        ]),
+        Line::from(vec![
+            Span::styled("Tips:    ", Style::default().fg(MUTED)),
+            Span::styled(tip, Style::default().fg(LIGHT)),
+        ]),
     ];
 
-    let p = Paragraph::new(lines).wrap(Wrap { trim: false });
-    p.render(area, buf);
+    Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .render(inner, buf);
 }
 
-/// Preferred minimum height of the welcome screen at the given terminal
-/// width. Used by the main layout to decide how much vertical space to
-/// reserve before the bottom chrome (input / status line).
-///
-/// Narrow terminals fall back to shorter layouts, so forcing 16 lines
-/// everywhere caused content clipping at small sizes (issue #12 —
-/// "窄终端 welcome screen 截断"). The three tiers mirror the three
-/// render paths in this module:
-///
-/// | Width (outer) | Layout                  | Rows needed |
-/// |---------------|-------------------------|-------------|
-/// | `< 30`        | compact (inside border) | 8           |
-/// | `< 80`        | single-column           | 12          |
-/// | `>= 80`       | two-column + logo       | 16          |
-pub fn welcome_height_for(width: u16) -> u16 {
-    if width < 30 {
-        8
-    } else if width < 80 {
-        12
+fn left_aligned_panel(area: Rect) -> Rect {
+    let width = PANEL_WIDTH.min(area.width);
+    let height = PANEL_HEIGHT.min(area.height);
+    Rect {
+        x: area.x,
+        y: area.y,
+        width,
+        height,
+    }
+}
+
+fn truncate_start(s: &str, max_width: usize) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= max_width {
+        s.to_string()
+    } else if max_width <= 3 {
+        ".".repeat(max_width)
     } else {
-        16
+        let start = chars.len() - (max_width - 3);
+        format!("...{}", chars[start..].iter().collect::<String>())
+    }
+}
+
+fn truncate_str(s: &str, max_width: usize) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= max_width {
+        s.to_string()
+    } else if max_width <= 3 {
+        ".".repeat(max_width)
+    } else {
+        format!("{}...", chars[..max_width - 3].iter().collect::<String>())
+    }
+}
+
+/// Preferred minimum height of the welcome screen.
+pub fn welcome_height_for(width: u16) -> u16 {
+    if width < 20 {
+        1
+    } else {
+        PANEL_HEIGHT
     }
 }
 
@@ -531,7 +153,8 @@ mod tests {
             "abcd1234",
             "/tmp",
         );
-        // Should not panic, renders minimal one-liner.
+        let content = buf_to_string(&buf, area);
+        assert!(content.contains("Claude Code"));
     }
 
     #[test]
@@ -546,7 +169,30 @@ mod tests {
             "abcdef1234567890",
             "/home/user/project",
         );
-        // Should not panic. Verify logo area has content.
+        let content = buf_to_string(&buf, area);
+        assert!(content.contains("Version:"));
+        assert!(content.contains("Model:"));
+        assert!(content.contains("Session:"));
+        assert!(content.contains("CWD:"));
+        assert!(content.contains("Tips:"));
+        assert!(!content.contains('█'), "welcome should not render a logo");
+    }
+
+    #[test]
+    fn test_render_welcome_is_left_aligned() {
+        let area = Rect::new(4, 2, 80, 24);
+        let mut buf = Buffer::empty(area);
+        render_welcome(
+            area,
+            &mut buf,
+            "0.1.0",
+            "claude-sonnet-4",
+            "abcdef1234567890",
+            "/home/user/project",
+        );
+
+        assert_eq!(buf[(area.x, area.y)].symbol(), "┌");
+        assert_ne!(buf[(area.x + 8, area.y)].symbol(), "┌");
     }
 
     #[test]
@@ -554,63 +200,37 @@ mod tests {
         let area = Rect::new(0, 0, 40, 12);
         let mut buf = Buffer::empty(area);
         render_welcome(area, &mut buf, "0.1.0", "test-model", "sess1234", "/path");
-    }
-
-    #[test]
-    fn test_logo_lines() {
-        let lines: Vec<&str> = LOGO.lines().filter(|l| !l.is_empty()).collect();
-        assert!(lines.len() >= 6, "Logo should have at least 6 lines");
-    }
-
-    #[test]
-    fn test_render_welcome_narrow_terminal_single_column() {
-        // 60 cols — should trigger single-column layout (no logo).
-        let area = Rect::new(0, 0, 60, 20);
-        let mut buf = Buffer::empty(area);
-        render_welcome(
-            area,
-            &mut buf,
-            "0.1.0",
-            "claude-sonnet-4",
-            "abcdef1234567890",
-            "/home/user/project",
-        );
-        // Should not panic. Verify the logo block characters are NOT present
-        // (single-column mode skips the logo).
         let content = buf_to_string(&buf, area);
-        assert!(
-            !content.contains('█'),
-            "Narrow terminal (<80 cols) should not render ASCII logo"
-        );
-        // Tips should be present
-        assert!(
-            content.contains("Tips"),
-            "Tips section should be visible in narrow layout"
-        );
-        assert!(
-            content.contains("Keybindings"),
-            "Keybindings section should be visible in narrow layout"
-        );
+        assert!(content.contains("Version:"));
     }
 
     #[test]
-    fn test_render_welcome_at_80_cols_has_logo() {
-        // Exactly 80 cols — should use two-column layout with logo.
-        let area = Rect::new(0, 0, 80, 20);
-        let mut buf = Buffer::empty(area);
-        render_welcome(
-            area,
-            &mut buf,
-            "0.1.0",
-            "claude-sonnet-4",
-            "abcdef1234567890",
-            "/home/user/project",
-        );
-        let content = buf_to_string(&buf, area);
-        assert!(
-            content.contains('█'),
-            "80-col terminal should render ASCII logo"
-        );
+    fn test_welcome_height_is_compact() {
+        assert_eq!(welcome_height_for(15), 1);
+        assert_eq!(welcome_height_for(20), PANEL_HEIGHT);
+        assert_eq!(welcome_height_for(80), PANEL_HEIGHT);
+    }
+
+    #[test]
+    fn test_render_welcome_has_no_logo_at_any_width() {
+        for width in [60, 80, 120] {
+            let area = Rect::new(0, 0, width, 20);
+            let mut buf = Buffer::empty(area);
+            render_welcome(
+                area,
+                &mut buf,
+                "0.1.0",
+                "claude-sonnet-4",
+                "abcdef1234567890",
+                "/home/user/project",
+            );
+            let content = buf_to_string(&buf, area);
+            assert!(
+                !content.contains('█'),
+                "welcome should not render ASCII logo at {width} cols"
+            );
+            assert!(content.contains("Tips"));
+        }
     }
 
     #[test]
@@ -622,7 +242,6 @@ mod tests {
         assert_eq!(truncate_str("hello", 1), ".");
     }
 
-    /// Helper: extract buffer content as a String for assertion.
     fn buf_to_string(buf: &Buffer, area: Rect) -> String {
         let mut s = String::new();
         for y in area.y..area.y + area.height {

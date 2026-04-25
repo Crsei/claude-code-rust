@@ -1,6 +1,7 @@
 #[allow(dead_code)]
 pub mod app;
 pub mod browser;
+pub mod command_palette;
 #[allow(dead_code)]
 pub mod diff;
 #[allow(dead_code)]
