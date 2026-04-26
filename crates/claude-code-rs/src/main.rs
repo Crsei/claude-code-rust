@@ -452,7 +452,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     // B.4: Create AppState
     // Resolve model: CLI arg > config > provider default > hardcoded fallback
     let is_codex_backend = crate::engine::codex_exec::is_codex_backend(&backend);
-    let detected_client = crate::api::client::ApiClient::from_backend(Some(&backend));
+    let detected_client = crate::api::client::ApiClient::from_backend_result(Some(&backend))
+        .context("invalid API provider configuration")?;
     let provider_default_model = detected_client
         .as_ref()
         .map(|c| c.config().default_model.clone());

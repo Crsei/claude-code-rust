@@ -26,6 +26,27 @@ fn anthropic_config_custom_url() -> ApiClientConfig {
     }
 }
 
+fn save_env(keys: &'static [&'static str]) -> Vec<(&'static str, Option<String>)> {
+    keys.iter()
+        .map(|key| (*key, std::env::var(key).ok()))
+        .collect()
+}
+
+fn restore_env(saved: Vec<(&'static str, Option<String>)>) {
+    for (key, value) in saved {
+        match value {
+            Some(value) => std::env::set_var(key, value),
+            None => std::env::remove_var(key),
+        }
+    }
+}
+
+fn clear_env(keys: &[&str]) {
+    for key in keys {
+        std::env::remove_var(key);
+    }
+}
+
 // -----------------------------------------------------------------------
 // URL building
 // -----------------------------------------------------------------------
@@ -343,6 +364,9 @@ fn test_from_provider_info_google() {
 #[test]
 fn test_from_env_with_anthropic_key() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved_flags = save_env(&["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]);
+    clear_env(&["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]);
+
     // Temporarily set the env var for this test
     let key = "sk-ant-api03-test-from-env-key";
     std::env::set_var("ANTHROPIC_API_KEY", key);
@@ -363,11 +387,15 @@ fn test_from_env_with_anthropic_key() {
 
     // Clean up
     std::env::remove_var("ANTHROPIC_API_KEY");
+    restore_env(saved_flags);
 }
 
 #[test]
 fn test_from_env_no_keys() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved_flags = save_env(&["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]);
+    clear_env(&["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]);
+
     // Save and clear all provider keys
     let saved: Vec<_> = crate::api::providers::PROVIDERS
         .iter()
@@ -387,11 +415,15 @@ fn test_from_env_no_keys() {
     for (key, val) in saved {
         std::env::set_var(key, val);
     }
+    restore_env(saved_flags);
 }
 
 #[test]
 fn test_from_auth_with_env() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved_flags = save_env(&["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]);
+    clear_env(&["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]);
+
     let key = "sk-ant-api03-test-from-auth-key";
     std::env::set_var("ANTHROPIC_API_KEY", key);
 
@@ -400,6 +432,7 @@ fn test_from_auth_with_env() {
 
     // Clean up
     std::env::remove_var("ANTHROPIC_API_KEY");
+    restore_env(saved_flags);
 }
 
 #[test]
@@ -434,6 +467,12 @@ fn test_from_codex_auth_with_env() {
 #[test]
 fn test_from_env_prefers_bedrock_when_flag_set() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved_extra = save_env(&[
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "AWS_BEARER_TOKEN_BEDROCK",
+        "AWS_REGION",
+    ]);
     // Save + clear all provider keys so Anthropic-API-key detection doesn't shadow.
     let saved_keys: Vec<_> = crate::api::providers::PROVIDERS
         .iter()
@@ -453,17 +492,22 @@ fn test_from_env_prefers_bedrock_when_flag_set() {
         other => panic!("expected Bedrock provider, got {:?}", other),
     }
 
-    std::env::remove_var("CLAUDE_CODE_USE_BEDROCK");
-    std::env::remove_var("AWS_BEARER_TOKEN_BEDROCK");
-    std::env::remove_var("AWS_REGION");
     for (k, v) in saved_keys {
         std::env::set_var(k, v);
     }
+    restore_env(saved_extra);
 }
 
 #[test]
 fn test_from_env_prefers_vertex_when_flag_set() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved_extra = save_env(&[
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "ANTHROPIC_VERTEX_PROJECT_ID",
+        "CLAUDE_CODE_VERTEX_ACCESS_TOKEN",
+        "CLOUD_ML_REGION",
+    ]);
     let saved_keys: Vec<_> = crate::api::providers::PROVIDERS
         .iter()
         .filter_map(|p| std::env::var(p.env_key).ok().map(|v| (p.env_key, v)))
@@ -471,9 +515,6 @@ fn test_from_env_prefers_vertex_when_flag_set() {
     for p in crate::api::providers::PROVIDERS {
         std::env::remove_var(p.env_key);
     }
-    let saved_p_id = std::env::var("ANTHROPIC_VERTEX_PROJECT_ID").ok();
-    let saved_token = std::env::var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN").ok();
-    let saved_region = std::env::var("CLOUD_ML_REGION").ok();
 
     std::env::set_var("CLAUDE_CODE_USE_VERTEX", "true");
     std::env::set_var("ANTHROPIC_VERTEX_PROJECT_ID", "proj-42");
@@ -491,22 +532,10 @@ fn test_from_env_prefers_vertex_when_flag_set() {
         other => panic!("expected Vertex provider, got {:?}", other),
     }
 
-    std::env::remove_var("CLAUDE_CODE_USE_VERTEX");
-    std::env::remove_var("ANTHROPIC_VERTEX_PROJECT_ID");
-    std::env::remove_var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN");
-    std::env::remove_var("CLOUD_ML_REGION");
-    if let Some(v) = saved_p_id {
-        std::env::set_var("ANTHROPIC_VERTEX_PROJECT_ID", v);
-    }
-    if let Some(v) = saved_token {
-        std::env::set_var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN", v);
-    }
-    if let Some(v) = saved_region {
-        std::env::set_var("CLOUD_ML_REGION", v);
-    }
     for (k, v) in saved_keys {
         std::env::set_var(k, v);
     }
+    restore_env(saved_extra);
 }
 
 #[test]
@@ -521,8 +550,8 @@ fn test_from_bedrock_env_returns_none_without_auth() {
     std::env::remove_var("AWS_SECRET_ACCESS_KEY");
 
     assert!(
-        ApiClient::from_bedrock_env().is_none(),
-        "from_bedrock_env should yield None without AWS creds"
+        ApiClient::from_bedrock_env_result().is_err(),
+        "from_bedrock_env_result should reject missing AWS creds"
     );
 
     if let Some(v) = saved_bearer {
@@ -534,6 +563,70 @@ fn test_from_bedrock_env_returns_none_without_auth() {
     if let Some(v) = saved_sk {
         std::env::set_var("AWS_SECRET_ACCESS_KEY", v);
     }
+}
+
+#[test]
+fn test_from_env_result_errors_for_explicit_bedrock_without_auth() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved = save_env(&[
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "AWS_BEARER_TOKEN_BEDROCK",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "ANTHROPIC_API_KEY",
+    ]);
+    clear_env(&[
+        "CLAUDE_CODE_USE_VERTEX",
+        "AWS_BEARER_TOKEN_BEDROCK",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+    ]);
+    std::env::set_var("CLAUDE_CODE_USE_BEDROCK", "1");
+    std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-should-not-fallback");
+
+    let err = match ApiClient::from_env_result() {
+        Err(error) => error,
+        Ok(_) => panic!("Bedrock config must fail early"),
+    };
+    let msg = err.to_string();
+    assert!(msg.contains("CLAUDE_CODE_USE_BEDROCK"));
+    assert!(msg.contains("AWS_BEARER_TOKEN_BEDROCK"));
+
+    restore_env(saved);
+}
+
+#[test]
+fn test_from_env_result_errors_for_explicit_vertex_without_project() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved = save_env(&[
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "ANTHROPIC_VERTEX_PROJECT_ID",
+        "GOOGLE_CLOUD_PROJECT",
+        "GCLOUD_PROJECT",
+        "CLAUDE_CODE_VERTEX_ACCESS_TOKEN",
+        "ANTHROPIC_API_KEY",
+    ]);
+    clear_env(&[
+        "CLAUDE_CODE_USE_BEDROCK",
+        "ANTHROPIC_VERTEX_PROJECT_ID",
+        "GOOGLE_CLOUD_PROJECT",
+        "GCLOUD_PROJECT",
+    ]);
+    std::env::set_var("CLAUDE_CODE_USE_VERTEX", "1");
+    std::env::set_var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN", "vertex-token");
+    std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-should-not-fallback");
+
+    let err = match ApiClient::from_env_result() {
+        Err(error) => error,
+        Ok(_) => panic!("Vertex config must fail early"),
+    };
+    let msg = err.to_string();
+    assert!(msg.contains("CLAUDE_CODE_USE_VERTEX"));
+    assert!(msg.contains("ANTHROPIC_VERTEX_PROJECT_ID"));
+
+    restore_env(saved);
 }
 
 #[test]

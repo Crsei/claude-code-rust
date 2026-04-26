@@ -19,6 +19,57 @@ pub enum ProviderProtocol {
     Google,
 }
 
+/// Whether a provider returns native server-side streaming or cc-rust adapts
+/// a non-streaming response into the unified `StreamEvent` shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamingSupport {
+    Native,
+    Synthesized,
+    None,
+}
+
+/// Current implementation status for a provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderSupportStatus {
+    Supported,
+    Partial { reason: &'static str },
+    Unsupported { reason: &'static str },
+}
+
+impl ProviderSupportStatus {
+    pub fn is_usable(self) -> bool {
+        matches!(self, Self::Supported | Self::Partial { .. })
+    }
+
+    pub fn reason(self) -> Option<&'static str> {
+        match self {
+            Self::Supported => None,
+            Self::Partial { reason } => Some(reason),
+            Self::Unsupported { reason } => Some(reason),
+        }
+    }
+}
+
+/// Provider capability matrix used by startup validation and diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProviderCapabilities {
+    pub name: &'static str,
+    pub auth_sources: &'static [&'static str],
+    pub protocol: ProviderProtocol,
+    pub streaming: StreamingSupport,
+    pub tool_use: bool,
+    pub thinking: bool,
+    pub prompt_cache: bool,
+    pub advisor: bool,
+    pub status: ProviderSupportStatus,
+}
+
+impl ProviderCapabilities {
+    pub fn is_usable(self) -> bool {
+        self.status.is_usable()
+    }
+}
+
 /// Static metadata about a supported LLM provider.
 #[derive(Debug, Clone)]
 pub struct ProviderInfo {
@@ -36,6 +87,34 @@ pub struct ProviderInfo {
     /// Wire protocol (determines request/response format)
     pub protocol: ProviderProtocol,
 }
+
+const AUTH_ANTHROPIC: &[&str] = &[
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "OAuth/keychain",
+];
+const AUTH_AZURE: &[&str] = &["AZURE_API_KEY", "AZURE_BASE_URL"];
+const AUTH_OPENAI: &[&str] = &["OPENAI_API_KEY"];
+const AUTH_OPENAI_CODEX: &[&str] = &["OPENAI_CODEX_AUTH_TOKEN", "~/.codex/auth.json"];
+const AUTH_GOOGLE: &[&str] = &["GOOGLE_API_KEY"];
+const AUTH_OPENAI_COMPAT: &[&str] = &["provider-specific API key env var"];
+const AUTH_BEDROCK: &[&str] = &[
+    "AWS_BEARER_TOKEN_BEDROCK",
+    "AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY",
+];
+const AUTH_VERTEX: &[&str] = &[
+    "CLAUDE_CODE_VERTEX_ACCESS_TOKEN",
+    "GOOGLE_OAUTH_ACCESS_TOKEN",
+    "gcloud application-default access token",
+];
+const AUTH_FOUNDRY: &[&str] = &["CLAUDE_CODE_USE_FOUNDRY"];
+
+pub const BEDROCK_PARTIAL_REASON: &str =
+    "Bedrock uses the non-streaming invoke endpoint and synthesizes StreamEvent output; native AWS EventStream support is still pending";
+pub const VERTEX_PARTIAL_REASON: &str =
+    "Vertex supports OAuth access tokens and gcloud ADC fallback; direct service-account JWT exchange is still pending";
+pub const FOUNDRY_UNSUPPORTED_REASON: &str =
+    "Foundry provider selection is known from the reference project, but cc-rust has no Foundry request/auth adapter yet";
 
 /// All supported providers — ordered by detection priority.
 ///
@@ -184,6 +263,102 @@ pub static PROVIDERS: &[ProviderInfo] = &[
     },
 ];
 
+/// Return capabilities for a static `ProviderInfo` entry.
+pub fn capabilities_for_provider_info(info: &ProviderInfo) -> ProviderCapabilities {
+    let auth_sources = match info.name {
+        "anthropic" => AUTH_ANTHROPIC,
+        "azure" => AUTH_AZURE,
+        "openai" => AUTH_OPENAI,
+        "openai-codex" => AUTH_OPENAI_CODEX,
+        "google" => AUTH_GOOGLE,
+        _ => AUTH_OPENAI_COMPAT,
+    };
+
+    match info.protocol {
+        ProviderProtocol::Anthropic => ProviderCapabilities {
+            name: info.name,
+            auth_sources,
+            protocol: info.protocol,
+            streaming: StreamingSupport::Native,
+            tool_use: true,
+            thinking: true,
+            prompt_cache: true,
+            advisor: true,
+            status: ProviderSupportStatus::Supported,
+        },
+        ProviderProtocol::OpenAiCompat => ProviderCapabilities {
+            name: info.name,
+            auth_sources,
+            protocol: info.protocol,
+            streaming: StreamingSupport::Native,
+            tool_use: true,
+            thinking: false,
+            prompt_cache: false,
+            advisor: false,
+            status: ProviderSupportStatus::Supported,
+        },
+        ProviderProtocol::Google => ProviderCapabilities {
+            name: info.name,
+            auth_sources,
+            protocol: info.protocol,
+            streaming: StreamingSupport::Native,
+            tool_use: false,
+            thinking: false,
+            prompt_cache: false,
+            advisor: false,
+            status: ProviderSupportStatus::Supported,
+        },
+    }
+}
+
+/// Return capabilities by provider name, including env-flag providers that are
+/// not part of the API-key auto-detection list.
+pub fn capabilities_for_provider_name(name: &str) -> Option<ProviderCapabilities> {
+    let name = name.to_ascii_lowercase();
+    match name.as_str() {
+        "bedrock" => Some(ProviderCapabilities {
+            name: "bedrock",
+            auth_sources: AUTH_BEDROCK,
+            protocol: ProviderProtocol::Anthropic,
+            streaming: StreamingSupport::Synthesized,
+            tool_use: true,
+            thinking: true,
+            prompt_cache: false,
+            advisor: true,
+            status: ProviderSupportStatus::Partial {
+                reason: BEDROCK_PARTIAL_REASON,
+            },
+        }),
+        "vertex" => Some(ProviderCapabilities {
+            name: "vertex",
+            auth_sources: AUTH_VERTEX,
+            protocol: ProviderProtocol::Anthropic,
+            streaming: StreamingSupport::Native,
+            tool_use: true,
+            thinking: true,
+            prompt_cache: false,
+            advisor: true,
+            status: ProviderSupportStatus::Partial {
+                reason: VERTEX_PARTIAL_REASON,
+            },
+        }),
+        "foundry" => Some(ProviderCapabilities {
+            name: "foundry",
+            auth_sources: AUTH_FOUNDRY,
+            protocol: ProviderProtocol::Anthropic,
+            streaming: StreamingSupport::None,
+            tool_use: false,
+            thinking: false,
+            prompt_cache: false,
+            advisor: false,
+            status: ProviderSupportStatus::Unsupported {
+                reason: FOUNDRY_UNSUPPORTED_REASON,
+            },
+        }),
+        other => get_provider(other).map(capabilities_for_provider_info),
+    }
+}
+
 /// Return the first provider that has an API key set in the environment.
 pub fn detect_provider() -> Option<&'static ProviderInfo> {
     PROVIDERS.iter().find(|p| {
@@ -211,71 +386,6 @@ pub fn available_providers() -> Vec<&'static ProviderInfo> {
                 .unwrap_or(false)
         })
         .collect()
-}
-
-// ---------------------------------------------------------------------------
-// AWS Bedrock (interface only — not implemented)
-// ---------------------------------------------------------------------------
-
-#[allow(dead_code)]
-pub struct BedrockProvider {
-    pub region: String,
-    pub model_id: String,
-}
-
-#[allow(dead_code)]
-impl BedrockProvider {
-    pub fn new(region: &str, model_id: &str) -> Self {
-        Self {
-            region: region.to_string(),
-            model_id: model_id.to_string(),
-        }
-    }
-
-    pub fn endpoint_url(&self) -> String {
-        format!(
-            "https://bedrock-runtime.{}.amazonaws.com/model/{}/invoke-with-response-stream",
-            self.region, self.model_id
-        )
-    }
-
-    pub async fn sign_request(
-        &self,
-        _body: &[u8],
-    ) -> anyhow::Result<std::collections::HashMap<String, String>> {
-        anyhow::bail!("AWS Bedrock SigV4 signing is not implemented")
-    }
-}
-
-// ---------------------------------------------------------------------------
-// GCP Vertex AI (interface only — not implemented)
-// ---------------------------------------------------------------------------
-
-#[allow(dead_code)]
-pub struct VertexProvider {
-    pub project_id: String,
-    pub region: String,
-}
-
-#[allow(dead_code)]
-impl VertexProvider {
-    pub fn new(project_id: &str, region: &str) -> Self {
-        Self {
-            project_id: project_id.to_string(),
-            region: region.to_string(),
-        }
-    }
-
-    pub fn endpoint_url(&self, model: &str) -> String {
-        format!(
-            "https://{}-aiplatform.googleapis.com/v1/projects/{}/locations/{}/publishers/anthropic/models/{}:streamRawPredict",
-            self.region, self.project_id, self.region, model
-        )
-    }
-
-    pub async fn get_access_token(&self) -> anyhow::Result<String> {
-        anyhow::bail!("GCP Vertex AI authentication is not implemented")
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -326,6 +436,68 @@ mod tests {
         let p = get_provider("openai-codex").unwrap();
         assert_eq!(p.env_key, "OPENAI_CODEX_AUTH_TOKEN");
         assert_eq!(p.protocol, ProviderProtocol::OpenAiCompat);
+    }
+
+    #[test]
+    fn test_capabilities_for_anthropic() {
+        let caps = capabilities_for_provider_name("anthropic").unwrap();
+        assert_eq!(caps.streaming, StreamingSupport::Native);
+        assert!(caps.tool_use);
+        assert!(caps.thinking);
+        assert!(caps.prompt_cache);
+        assert!(caps.advisor);
+        assert!(caps.is_usable());
+    }
+
+    #[test]
+    fn test_capabilities_for_openai_compat() {
+        let caps = capabilities_for_provider_name("deepseek").unwrap();
+        assert_eq!(caps.protocol, ProviderProtocol::OpenAiCompat);
+        assert_eq!(caps.streaming, StreamingSupport::Native);
+        assert!(caps.tool_use);
+        assert!(!caps.thinking);
+        assert!(!caps.prompt_cache);
+        assert!(caps.is_usable());
+    }
+
+    #[test]
+    fn test_capabilities_for_bedrock_are_partial() {
+        let caps = capabilities_for_provider_name("bedrock").unwrap();
+        assert_eq!(caps.streaming, StreamingSupport::Synthesized);
+        assert!(caps.tool_use);
+        assert!(caps.thinking);
+        assert!(matches!(
+            caps.status,
+            ProviderSupportStatus::Partial { reason }
+                if reason.contains("AWS EventStream")
+        ));
+        assert!(caps.is_usable());
+    }
+
+    #[test]
+    fn test_capabilities_for_vertex_are_partial() {
+        let caps = capabilities_for_provider_name("vertex").unwrap();
+        assert_eq!(caps.streaming, StreamingSupport::Native);
+        assert!(caps.tool_use);
+        assert!(caps.thinking);
+        assert!(matches!(
+            caps.status,
+            ProviderSupportStatus::Partial { reason }
+                if reason.contains("service-account")
+        ));
+        assert!(caps.is_usable());
+    }
+
+    #[test]
+    fn test_capabilities_for_foundry_are_unsupported() {
+        let caps = capabilities_for_provider_name("foundry").unwrap();
+        assert_eq!(caps.streaming, StreamingSupport::None);
+        assert!(!caps.is_usable());
+        assert!(matches!(
+            caps.status,
+            ProviderSupportStatus::Unsupported { reason }
+                if reason.contains("no Foundry request/auth adapter")
+        ));
     }
 
     #[test]
