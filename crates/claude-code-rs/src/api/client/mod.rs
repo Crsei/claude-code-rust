@@ -2,7 +2,7 @@
 //! Anthropic Messages API (streaming + non-streaming).
 use std::pin::Pin;
 
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use futures::Stream;
 use serde_json::Value;
 
@@ -88,6 +88,38 @@ impl ApiProvider {
             ApiProvider::Google { .. } => "google",
             ApiProvider::Bedrock { .. } => "bedrock",
             ApiProvider::Vertex { .. } => "vertex",
+        }
+    }
+
+    pub fn capabilities(&self) -> crate::api::providers::ProviderCapabilities {
+        match self {
+            ApiProvider::Anthropic { .. } => {
+                crate::api::providers::capabilities_for_provider_name("anthropic")
+                    .expect("anthropic capability matrix entry must exist")
+            }
+            ApiProvider::Azure { .. } => {
+                crate::api::providers::capabilities_for_provider_name("azure")
+                    .expect("azure capability matrix entry must exist")
+            }
+            ApiProvider::OpenAiCompat { name, .. } => {
+                crate::api::providers::capabilities_for_provider_name(name).unwrap_or_else(|| {
+                    let info = crate::api::providers::get_provider("openai")
+                        .expect("openai capability matrix entry must exist");
+                    crate::api::providers::capabilities_for_provider_info(info)
+                })
+            }
+            ApiProvider::Google { .. } => {
+                crate::api::providers::capabilities_for_provider_name("google")
+                    .expect("google capability matrix entry must exist")
+            }
+            ApiProvider::Bedrock { .. } => {
+                crate::api::providers::capabilities_for_provider_name("bedrock")
+                    .expect("bedrock capability matrix entry must exist")
+            }
+            ApiProvider::Vertex { .. } => {
+                crate::api::providers::capabilities_for_provider_name("vertex")
+                    .expect("vertex capability matrix entry must exist")
+            }
         }
     }
 }
@@ -198,10 +230,104 @@ fn make_stream_provider(
     }
 }
 
+fn require_non_empty(value: &str, label: &str) -> Result<()> {
+    if value.trim().is_empty() {
+        bail!("{label} must not be empty");
+    }
+    Ok(())
+}
+
+fn validate_base_url(value: &str, label: &str) -> Result<()> {
+    require_non_empty(value, label)?;
+    let parsed = url::Url::parse(value).with_context(|| format!("{label} must be a URL"))?;
+    match parsed.scheme() {
+        "http" | "https" => Ok(()),
+        scheme => bail!("{label} must use http or https, got `{scheme}`"),
+    }
+}
+
+fn validate_provider_config(provider: &ApiProvider) -> Result<()> {
+    let capabilities = provider.capabilities();
+    if !capabilities.is_usable() {
+        let reason = capabilities
+            .status
+            .reason()
+            .unwrap_or("provider is unsupported");
+        bail!(
+            "API provider `{}` is not usable: {reason}",
+            capabilities.name
+        );
+    }
+
+    match provider {
+        ApiProvider::Anthropic { api_key, base_url } => {
+            require_non_empty(api_key, "ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN")?;
+            if let Some(base_url) = base_url {
+                validate_base_url(base_url, "ANTHROPIC_BASE_URL")?;
+            }
+        }
+        ApiProvider::Azure { endpoint, api_key } => {
+            require_non_empty(api_key, "AZURE_API_KEY")?;
+            validate_base_url(endpoint, "AZURE_BASE_URL")?;
+        }
+        ApiProvider::OpenAiCompat {
+            name,
+            api_key,
+            base_url,
+            default_model,
+        } => {
+            require_non_empty(name, "provider name")?;
+            require_non_empty(api_key, "provider API key")?;
+            validate_base_url(base_url, "provider base URL")?;
+            require_non_empty(default_model, "provider default model")?;
+        }
+        ApiProvider::Google { api_key, base_url } => {
+            require_non_empty(api_key, "GOOGLE_API_KEY")?;
+            validate_base_url(base_url, "Google base URL")?;
+        }
+        ApiProvider::Bedrock {
+            region,
+            auth,
+            base_url_override,
+        } => {
+            require_non_empty(region, "AWS_REGION or AWS_DEFAULT_REGION")?;
+            match auth {
+                crate::api::bedrock::BedrockAuth::BearerToken(token) => {
+                    require_non_empty(token, "AWS_BEARER_TOKEN_BEDROCK")?;
+                }
+                crate::api::bedrock::BedrockAuth::AwsCredentials(creds) => {
+                    require_non_empty(&creds.access_key_id, "AWS_ACCESS_KEY_ID")?;
+                    require_non_empty(&creds.secret_access_key, "AWS_SECRET_ACCESS_KEY")?;
+                }
+            }
+            if let Some(base_url) = base_url_override {
+                validate_base_url(base_url, "ANTHROPIC_BEDROCK_BASE_URL")?;
+            }
+        }
+        ApiProvider::Vertex {
+            project_id,
+            region,
+            access_token,
+        } => {
+            require_non_empty(
+                project_id,
+                "ANTHROPIC_VERTEX_PROJECT_ID or GOOGLE_CLOUD_PROJECT",
+            )?;
+            require_non_empty(region, "CLOUD_ML_REGION")?;
+            require_non_empty(&access_token.0, "Vertex OAuth access token")?;
+        }
+    }
+
+    Ok(())
+}
+
 impl ApiClient {
-    pub fn new(config: ApiClientConfig) -> Self {
+    pub fn try_new(config: ApiClientConfig) -> Result<Self> {
+        validate_provider_config(&config.provider)?;
+        require_non_empty(&config.default_model, "default model")?;
+
         let stream_provider = make_stream_provider(&config.provider);
-        Self {
+        Ok(Self {
             http: {
                 let mut builder = reqwest::Client::builder()
                     .timeout(std::time::Duration::from_secs(config.timeout_secs));
@@ -226,7 +352,11 @@ impl ApiClient {
             },
             stream_provider,
             config,
-        }
+        })
+    }
+
+    pub fn new(config: ApiClientConfig) -> Self {
+        Self::try_new(config).expect("invalid API client configuration")
     }
 
     /// Build the messages endpoint URL based on provider.
@@ -306,18 +436,21 @@ impl ApiClient {
     /// deployment-specific (e.g. `https://<resource>.openai.azure.com/openai/v1/`).
     ///
     /// Returns `None` if no provider is configured.
-    pub fn from_env() -> Option<Self> {
+    pub fn from_env_result() -> Result<Option<Self>> {
         // 1. CLAUDE_CODE_USE_BEDROCK / _VERTEX — third-party cloud providers
         //    checked BEFORE API-key providers, matching claude-code-bun.
         if is_env_truthy("CLAUDE_CODE_USE_BEDROCK") {
-            return Self::from_bedrock_env();
+            return Self::from_bedrock_env_result().map(Some);
         }
         if is_env_truthy("CLAUDE_CODE_USE_VERTEX") {
-            return Self::from_vertex_env();
+            return Self::from_vertex_env_result().map(Some);
         }
 
-        let info = crate::api::providers::detect_provider()?;
-        let api_key = std::env::var(info.env_key).ok()?;
+        let Some(info) = crate::api::providers::detect_provider() else {
+            return Ok(None);
+        };
+        let api_key = std::env::var(info.env_key)
+            .with_context(|| format!("{} was detected but could not be read", info.env_key))?;
 
         // Azure OpenAI: override the placeholder base_url with AZURE_BASE_URL
         if info.name == "azure" {
@@ -333,12 +466,13 @@ impl ApiClient {
                 base_url,
                 default_model: info.default_model.to_string(),
             };
-            return Some(Self::new(ApiClientConfig {
+            return Self::try_new(ApiClientConfig {
                 provider,
                 default_model: info.default_model.to_string(),
                 max_retries: 3,
                 timeout_secs: 120,
-            }));
+            })
+            .map(Some);
         }
 
         // OpenAI Codex: allow runtime base_url/model overrides.
@@ -360,15 +494,26 @@ impl ApiClient {
                 base_url,
                 default_model: default_model.clone(),
             };
-            return Some(Self::new(ApiClientConfig {
+            return Self::try_new(ApiClientConfig {
                 provider,
                 default_model,
                 max_retries: 3,
                 timeout_secs: 120,
-            }));
+            })
+            .map(Some);
         }
 
-        Some(Self::from_provider_info(info, &api_key))
+        Ok(Some(Self::from_provider_info(info, &api_key)))
+    }
+
+    pub fn from_env() -> Option<Self> {
+        match Self::from_env_result() {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::warn!(%error, "API provider environment rejected");
+                None
+            }
+        }
     }
 
     /// Construct an `ApiClient` for AWS Bedrock using environment variables.
@@ -380,8 +525,12 @@ impl ApiClient {
     /// - `ANTHROPIC_BEDROCK_BASE_URL` — override the default endpoint
     ///
     /// Returns `None` if neither auth mode is available.
-    pub fn from_bedrock_env() -> Option<Self> {
-        let auth = crate::api::bedrock::BedrockAuth::from_env()?;
+    pub fn from_bedrock_env_result() -> Result<Self> {
+        let auth = crate::api::bedrock::BedrockAuth::from_env().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Bedrock provider was requested with CLAUDE_CODE_USE_BEDROCK, but no Bedrock auth was found. Set AWS_BEARER_TOKEN_BEDROCK or AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY."
+            )
+        })?;
         let region = crate::api::bedrock::resolve_region();
         let base_url_override = std::env::var("ANTHROPIC_BEDROCK_BASE_URL")
             .ok()
@@ -390,7 +539,7 @@ impl ApiClient {
             .ok()
             .filter(|v| !v.is_empty())
             .unwrap_or_else(|| "claude-sonnet-4-5-20250929".to_string());
-        Some(Self::new(ApiClientConfig {
+        Self::try_new(ApiClientConfig {
             provider: ApiProvider::Bedrock {
                 region,
                 auth,
@@ -399,7 +548,7 @@ impl ApiClient {
             default_model,
             max_retries: 3,
             timeout_secs: 120,
-        }))
+        })
     }
 
     /// Construct an `ApiClient` for GCP Vertex AI using environment variables.
@@ -411,15 +560,23 @@ impl ApiClient {
     ///   (falls back to `gcloud auth application-default print-access-token` subprocess)
     ///
     /// Returns `None` if project ID or access token can't be resolved.
-    pub fn from_vertex_env() -> Option<Self> {
-        let project_id = crate::api::vertex::resolve_project_id()?;
+    pub fn from_vertex_env_result() -> Result<Self> {
+        let project_id = crate::api::vertex::resolve_project_id().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Vertex provider was requested with CLAUDE_CODE_USE_VERTEX, but no project id was found. Set ANTHROPIC_VERTEX_PROJECT_ID, GOOGLE_CLOUD_PROJECT, or GCLOUD_PROJECT."
+            )
+        })?;
         let region = crate::api::vertex::resolve_region();
-        let access_token = crate::api::vertex::VertexAccessToken::from_env_or_gcloud()?;
+        let access_token = crate::api::vertex::VertexAccessToken::from_env_or_gcloud().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Vertex provider was requested with CLAUDE_CODE_USE_VERTEX, but no OAuth access token was found. Set CLAUDE_CODE_VERTEX_ACCESS_TOKEN or GOOGLE_OAUTH_ACCESS_TOKEN, or run `gcloud auth application-default login`."
+            )
+        })?;
         let default_model = std::env::var("ANTHROPIC_MODEL")
             .ok()
             .filter(|v| !v.is_empty())
             .unwrap_or_else(|| "claude-sonnet-4-5-20250929".to_string());
-        Some(Self::new(ApiClientConfig {
+        Self::try_new(ApiClientConfig {
             provider: ApiProvider::Vertex {
                 project_id,
                 region,
@@ -428,7 +585,7 @@ impl ApiClient {
             default_model,
             max_retries: 3,
             timeout_secs: 120,
-        }))
+        })
     }
 
     /// Construct an `ApiClient` for the OpenAI Codex provider.
@@ -455,7 +612,7 @@ impl ApiClient {
             .filter(|v| !v.trim().is_empty())
             .unwrap_or_else(|| info.default_model.to_string());
 
-        Some(Self::new(ApiClientConfig {
+        Self::try_new(ApiClientConfig {
             provider: ApiProvider::OpenAiCompat {
                 name: info.name.to_string(),
                 api_key,
@@ -465,18 +622,29 @@ impl ApiClient {
             default_model,
             max_retries: 3,
             timeout_secs: 120,
-        }))
+        })
+        .ok()
     }
 
     /// Construct an `ApiClient` for a specific backend.
     ///
     /// - `codex` backend: force the OpenAI Codex auth path.
     /// - other backends: use the standard auth chain.
-    pub fn from_backend(backend: Option<&str>) -> Option<Self> {
+    pub fn from_backend_result(backend: Option<&str>) -> Result<Option<Self>> {
         if backend.is_some_and(crate::engine::codex_exec::is_codex_backend) {
-            return Self::from_codex_auth();
+            return Ok(Self::from_codex_auth());
         }
-        Self::from_auth()
+        Self::from_auth_result()
+    }
+
+    pub fn from_backend(backend: Option<&str>) -> Option<Self> {
+        match Self::from_backend_result(backend) {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::warn!(%error, "API backend configuration rejected");
+                None
+            }
+        }
     }
 
     /// Construct an `ApiClient` using the full auth resolution chain.
@@ -487,25 +655,39 @@ impl ApiClient {
     /// 3. API key from system keychain
     ///
     /// Returns `None` if no authentication is available.
-    pub fn from_auth() -> Option<Self> {
+    pub fn from_auth_result() -> Result<Option<Self>> {
         // 1. Try multi-provider env detection
-        if let Some(client) = Self::from_env() {
-            return Some(client);
+        if let Some(client) = Self::from_env_result()? {
+            return Ok(Some(client));
         }
 
         // 2. Fall back to auth::resolve_auth() (keychain, external token, OAuth)
         let auth = crate::auth::resolve_auth();
-        let api_key = auth
+        let Some(api_key) = auth
             .api_key()
             .or_else(|| auth.bearer_token())
-            .map(|s| s.to_string())?;
+            .map(|s| s.to_string())
+        else {
+            return Ok(None);
+        };
         let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
-        Some(Self::new(ApiClientConfig {
+        Self::try_new(ApiClientConfig {
             provider: ApiProvider::Anthropic { api_key, base_url },
             default_model: "claude-sonnet-4-20250514".to_string(),
             max_retries: 3,
             timeout_secs: 120,
-        }))
+        })
+        .map(Some)
+    }
+
+    pub fn from_auth() -> Option<Self> {
+        match Self::from_auth_result() {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::warn!(%error, "API auth configuration rejected");
+                None
+            }
+        }
     }
 
     /// Build the required HTTP headers for Anthropic-format providers.
