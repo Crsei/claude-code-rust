@@ -52,7 +52,7 @@ struct StreamingState {
 /// Events sent from engine tasks to the TUI main loop.
 enum EngineEvent {
     /// An SDK message from the engine stream.
-    Sdk(SdkMessage),
+    Sdk(Box<SdkMessage>),
     /// The engine query task has completed (stream exhausted).
     Done,
 }
@@ -322,7 +322,7 @@ pub async fn run_tui(
             Some(engine_event) = engine_rx.recv() => {
                 match engine_event {
                     EngineEvent::Sdk(sdk_msg) => {
-                        handle_sdk_message(&mut app, sdk_msg, &mut streaming_state);
+                        handle_sdk_message(&mut app, *sdk_msg, &mut streaming_state);
                     }
                     EngineEvent::Done => {
                         app.set_streaming(false);
@@ -371,7 +371,7 @@ fn spawn_engine_query(
         futures::pin_mut!(stream);
 
         while let Some(msg) = stream.next().await {
-            if tx.send(EngineEvent::Sdk(msg)).is_err() {
+            if tx.send(EngineEvent::Sdk(Box::new(msg))).is_err() {
                 break; // receiver dropped (app exited)
             }
         }

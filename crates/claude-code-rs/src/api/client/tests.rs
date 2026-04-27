@@ -271,8 +271,8 @@ fn test_build_headers_openai_compat_bearer() {
     let client = ApiClient::new(config);
     let headers = client.build_headers_map();
     assert_eq!(headers.get("Authorization").unwrap(), "Bearer sk-my-key");
-    assert!(headers.get("x-api-key").is_none());
-    assert!(headers.get("anthropic-version").is_none());
+    assert!(!headers.contains_key("x-api-key"));
+    assert!(!headers.contains_key("anthropic-version"));
 }
 
 #[test]
@@ -289,8 +289,8 @@ fn test_build_headers_google_no_auth_header() {
     let client = ApiClient::new(config);
     let headers = client.build_headers_map();
     assert_eq!(headers.get("content-type").unwrap(), "application/json");
-    assert!(headers.get("x-api-key").is_none());
-    assert!(headers.get("Authorization").is_none());
+    assert!(!headers.contains_key("x-api-key"));
+    assert!(!headers.contains_key("Authorization"));
 }
 
 #[test]
@@ -310,8 +310,8 @@ fn test_build_headers_bedrock_no_api_key() {
     // Generic header map deliberately does not include Bedrock auth — the
     // Bedrock provider sets Bearer/SigV4 headers per-request in its stream
     // implementation.
-    assert!(headers.get("x-api-key").is_none());
-    assert!(headers.get("authorization").is_none());
+    assert!(!headers.contains_key("x-api-key"));
+    assert!(!headers.contains_key("authorization"));
     assert_eq!(headers.get("content-type").unwrap(), "application/json");
 }
 

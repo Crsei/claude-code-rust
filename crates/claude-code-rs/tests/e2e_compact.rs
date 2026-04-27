@@ -73,7 +73,6 @@ mod pipeline_logic {
     #[test]
     fn compact_module_compiles() {
         // If we got here, the compact module compiled successfully.
-        assert!(true);
     }
 }
 

@@ -141,3 +141,9 @@ impl McpManager {
         }
     }
 }
+
+impl Default for McpManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}

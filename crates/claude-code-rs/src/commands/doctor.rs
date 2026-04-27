@@ -124,14 +124,15 @@ struct DoctorReport {
 
 impl DoctorReport {
     fn build(ctx: &CommandContext) -> Self {
-        let mut sections = Vec::new();
-        sections.push(build_install_section());
-        sections.push(build_auth_section());
-        sections.push(build_settings_section(&ctx.cwd, ctx));
-        sections.push(build_mcp_section(&ctx.cwd));
-        sections.push(build_keybindings_section(ctx));
-        sections.push(build_sandbox_section(ctx));
-        sections.push(build_terminal_section());
+        let sections = vec![
+            build_install_section(),
+            build_auth_section(),
+            build_settings_section(&ctx.cwd, ctx),
+            build_mcp_section(&ctx.cwd),
+            build_keybindings_section(ctx),
+            build_sandbox_section(ctx),
+            build_terminal_section(),
+        ];
         Self { sections }
     }
 
@@ -241,7 +242,7 @@ fn build_install_section() -> Section {
         "data root",
         if exists { Status::Ok } else { Status::Warn },
         if exists {
-            format!("{}", shorten_path(&root))
+            shorten_path(&root).to_string()
         } else {
             format!("not created yet ({})", shorten_path(&root))
         },

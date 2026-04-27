@@ -299,12 +299,10 @@ fn collect_diff_entries(diff: &Diff) -> Result<Vec<DiffEntry>> {
         // Count additions/deletions per file via patch
         let mut additions = 0usize;
         let mut deletions = 0usize;
-        if let Ok(patch) = git2::Patch::from_diff(diff, i) {
-            if let Some(patch) = patch {
-                let (_, adds, dels) = patch.line_stats().unwrap_or((0, 0, 0));
-                additions = adds;
-                deletions = dels;
-            }
+        if let Ok(Some(patch)) = git2::Patch::from_diff(diff, i) {
+            let (_, adds, dels) = patch.line_stats().unwrap_or((0, 0, 0));
+            additions = adds;
+            deletions = dels;
         }
 
         entries.push(DiffEntry {

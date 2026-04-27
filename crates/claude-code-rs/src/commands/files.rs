@@ -23,40 +23,34 @@ fn extract_referenced_files(messages: &[Message]) -> BTreeSet<String> {
     for msg in messages {
         if let Message::Assistant(a) = msg {
             for block in &a.content {
-                match block {
-                    ContentBlock::ToolUse { name, input, .. } => {
-                        // Extract file paths from common tool inputs.
-                        match name.as_str() {
-                            "Read" | "FileRead" | "file_read" => {
-                                if let Some(path) = input.get("file_path").and_then(|v| v.as_str())
-                                {
-                                    files.insert(path.to_string());
-                                }
+                if let ContentBlock::ToolUse { name, input, .. } = block {
+                    // Extract file paths from common tool inputs.
+                    match name.as_str() {
+                        "Read" | "FileRead" | "file_read" => {
+                            if let Some(path) = input.get("file_path").and_then(|v| v.as_str()) {
+                                files.insert(path.to_string());
                             }
-                            "Write" | "FileWrite" | "file_write" => {
-                                if let Some(path) = input.get("file_path").and_then(|v| v.as_str())
-                                {
-                                    files.insert(path.to_string());
-                                }
-                            }
-                            "Edit" | "FileEdit" | "file_edit" => {
-                                if let Some(path) = input.get("file_path").and_then(|v| v.as_str())
-                                {
-                                    files.insert(path.to_string());
-                                }
-                            }
-                            "Grep" | "grep" => {
-                                if let Some(path) = input.get("path").and_then(|v| v.as_str()) {
-                                    files.insert(path.to_string());
-                                }
-                            }
-                            "Bash" | "bash" => {
-                                // Best-effort: don't parse bash commands.
-                            }
-                            _ => {}
                         }
+                        "Write" | "FileWrite" | "file_write" => {
+                            if let Some(path) = input.get("file_path").and_then(|v| v.as_str()) {
+                                files.insert(path.to_string());
+                            }
+                        }
+                        "Edit" | "FileEdit" | "file_edit" => {
+                            if let Some(path) = input.get("file_path").and_then(|v| v.as_str()) {
+                                files.insert(path.to_string());
+                            }
+                        }
+                        "Grep" | "grep" => {
+                            if let Some(path) = input.get("path").and_then(|v| v.as_str()) {
+                                files.insert(path.to_string());
+                            }
+                        }
+                        "Bash" | "bash" => {
+                            // Best-effort: don't parse bash commands.
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
         }

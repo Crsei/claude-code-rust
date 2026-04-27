@@ -18,8 +18,10 @@ use crate::tools::hooks::{
 /// central decision flow expects.
 fn build_hook_decision(o: Option<&PermissionOverride>) -> Option<HookPermissionDecision> {
     let o = o?;
-    let mut h = HookPermissionDecision::default();
-    h.source = Some("PreToolUse".into());
+    let mut h = HookPermissionDecision {
+        source: Some("PreToolUse".into()),
+        ..Default::default()
+    };
     match o {
         PermissionOverride::Allow => h.allow = true,
         PermissionOverride::Deny { reason } => h.deny = Some(reason.clone()),
@@ -39,6 +41,7 @@ use super::{make_error_result, ToolExecutionResult};
 /// This is the central function that takes a tool_use block from the
 /// assistant's response and runs it through validation, hooks, permissions,
 /// execution, and result processing.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_tool_use(
     tool_use_id: &str,
     tool_name: &str,

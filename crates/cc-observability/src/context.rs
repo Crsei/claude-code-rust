@@ -40,6 +40,18 @@ pub struct AuditContext {
     sink: Option<AuditSink>,
 }
 
+/// Input fields for emitting an audit event.
+#[derive(Debug, Clone)]
+pub struct AuditEmitInput {
+    pub kind: EventKind,
+    pub stage: Stage,
+    pub level: AuditLevel,
+    pub outcome: Outcome,
+    pub duration_ms: Option<u64>,
+    pub data: Option<serde_json::Value>,
+    pub parent_event_id: Option<String>,
+}
+
 impl AuditContext {
     /// Create a root context for a session.
     pub fn new(session_id: impl Into<String>, source: impl Into<String>, sink: AuditSink) -> Self {
@@ -125,20 +137,19 @@ impl AuditContext {
         duration_ms: Option<u64>,
         data: Option<serde_json::Value>,
     ) {
-        self.emit_with_parent(kind, stage, level, outcome, duration_ms, data, None);
+        self.emit_event(AuditEmitInput {
+            kind,
+            stage,
+            level,
+            outcome,
+            duration_ms,
+            data,
+            parent_event_id: None,
+        });
     }
 
-    /// Emit an audit event with an explicit parent event ID.
-    pub fn emit_with_parent(
-        &self,
-        kind: EventKind,
-        stage: Stage,
-        level: AuditLevel,
-        outcome: Outcome,
-        duration_ms: Option<u64>,
-        data: Option<serde_json::Value>,
-        parent_event_id: Option<String>,
-    ) {
+    /// Emit an audit event from a structured input payload.
+    pub fn emit_event(&self, input: AuditEmitInput) {
         let sink = match &self.sink {
             Some(s) => s,
             None => return, // noop context
@@ -146,7 +157,7 @@ impl AuditContext {
 
         let event = AuditEvent {
             event_id: AuditEvent::new_event_id(),
-            parent_event_id,
+            parent_event_id: input.parent_event_id,
             ts: Utc::now(),
             session_id: self.session_id.clone(),
             submit_id: self.submit_id.clone(),
@@ -155,12 +166,12 @@ impl AuditContext {
             message_id: self.message_id.clone(),
             tool_use_id: self.tool_use_id.clone(),
             source: self.source.clone(),
-            kind,
-            stage,
-            level,
-            outcome,
-            duration_ms,
-            data,
+            kind: input.kind,
+            stage: input.stage,
+            level: input.level,
+            outcome: input.outcome,
+            duration_ms: input.duration_ms,
+            data: input.data,
         };
 
         sink.emit(event);

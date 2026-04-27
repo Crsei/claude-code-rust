@@ -125,8 +125,10 @@ fn auto_memory_enabled_roundtrips_through_settings_json() {
     let _g = CcRustHomeGuard::set(root.path());
 
     let path = settings::user_settings_path();
-    let mut raw = RawSettings::default();
-    raw.auto_memory_enabled = Some(true);
+    let raw = RawSettings {
+        auto_memory_enabled: Some(true),
+        ..Default::default()
+    };
     settings::write_settings_file(&path, &raw).expect("write settings");
 
     let loaded =

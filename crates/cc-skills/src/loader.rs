@@ -240,7 +240,7 @@ pub fn load_legacy_commands(dir: &Path, source: SkillSource) -> Vec<SkillDefinit
             if let Some(ext) = path.extension() {
                 if ext == "md" {
                     if let Some(skill) =
-                        load_skill_file(&path, &path.parent().unwrap_or(&path), &source)
+                        load_skill_file(&path, path.parent().unwrap_or(&path), &source)
                     {
                         skills.push(skill);
                     }

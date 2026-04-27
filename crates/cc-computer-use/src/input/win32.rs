@@ -159,7 +159,7 @@ Write-Output "$($pt.X) $($pt.Y)"
 "#;
 
     let output = run_powershell(ps_script).await?;
-    let mut parts = output.trim().split_whitespace();
+    let mut parts = output.split_whitespace();
     let x: i32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
     let y: i32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
     Ok(CursorPosition { x, y })

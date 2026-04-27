@@ -8,6 +8,9 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use serde_json::Value;
+
+type PendingRequest = oneshot::Sender<Result<Value>>;
+type PendingRequests = Arc<Mutex<HashMap<u64, PendingRequest>>>;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::{oneshot, Mutex};
 use tracing::{debug, info, warn};
@@ -104,7 +107,7 @@ pub(crate) async fn reader_loop(
 
 /// Dispatch a parsed JSON-RPC response to the corresponding pending request.
 pub(crate) async fn dispatch_response(
-    pending: &Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value>>>>>,
+    pending: &PendingRequests,
     server_name: &str,
     response: JsonRpcResponse,
 ) {

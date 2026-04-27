@@ -105,24 +105,27 @@ impl SandboxRunner for BubblewrapRunner {
         let (program, args, envs, cwd) = extract_command_parts(&mut inner);
 
         // Build the `bwrap` argv.
-        let mut bwrap_args: Vec<std::ffi::OsString> = Vec::new();
-        bwrap_args.push("--die-with-parent".into());
-        bwrap_args.push("--unshare-user-try".into());
-        bwrap_args.push("--unshare-ipc".into());
-        bwrap_args.push("--unshare-pid".into());
-        bwrap_args.push("--unshare-uts".into());
-        bwrap_args.push("--unshare-cgroup-try".into());
-        bwrap_args.push("--proc".into());
-        bwrap_args.push("/proc".into());
-        bwrap_args.push("--dev".into());
-        bwrap_args.push("/dev".into());
-        bwrap_args.push("--tmpfs".into());
-        bwrap_args.push("/tmp".into());
+        let mut bwrap_args: Vec<std::ffi::OsString> = vec![
+            "--die-with-parent".into(),
+            "--unshare-user-try".into(),
+            "--unshare-ipc".into(),
+            "--unshare-pid".into(),
+            "--unshare-uts".into(),
+            "--unshare-cgroup-try".into(),
+            "--proc".into(),
+            "/proc".into(),
+            "--dev".into(),
+            "/dev".into(),
+            "--tmpfs".into(),
+            "/tmp".into(),
+        ];
 
         // Bind / read-only — broad read access, matching the spec default.
-        bwrap_args.push("--ro-bind".into());
-        bwrap_args.push("/".into());
-        bwrap_args.push("/".into());
+        bwrap_args.extend([
+            std::ffi::OsString::from("--ro-bind"),
+            std::ffi::OsString::from("/"),
+            std::ffi::OsString::from("/"),
+        ]);
 
         // Bind workspace RW (or read-only when mode is ReadOnly)
         let bind_flag: std::ffi::OsString = if write_ok {
@@ -194,14 +197,14 @@ impl SandboxRunner for BubblewrapRunner {
 
 /// Extract the program, args, envs, and current_dir from a `tokio::process::Command`
 /// as owned data so the caller can rebuild it.
-fn extract_command_parts(
-    inner: &mut Command,
-) -> (
+type CommandParts = (
     std::ffi::OsString,
     Vec<std::ffi::OsString>,
     Vec<(std::ffi::OsString, Option<std::ffi::OsString>)>,
     Option<std::path::PathBuf>,
-) {
+);
+
+fn extract_command_parts(inner: &mut Command) -> CommandParts {
     let std_inner = inner.as_std();
     let program = std_inner.get_program().to_os_string();
     let args: Vec<std::ffi::OsString> = std_inner.get_args().map(|a| a.to_os_string()).collect();

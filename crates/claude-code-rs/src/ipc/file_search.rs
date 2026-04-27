@@ -146,7 +146,7 @@ fn parse_ripgrep_output(raw: &str, search_root: &str, cap: usize) -> (Vec<FileSe
         let Some(parsed) = split_rg_line(line) else {
             continue;
         };
-        let rel = relativize(search_root, &parsed.file);
+        let rel = relativize(search_root, parsed.file);
         matches.push(FileSearchMatch {
             file: rel,
             line: parsed.line,

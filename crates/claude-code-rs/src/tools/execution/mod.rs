@@ -5,9 +5,9 @@
 //! Pipeline stages:
 //!   1. Tool lookup (by name, then by alias fallback)
 //!   2. Abort check
-//!   3a. Input validation (schema + semantic)
-//!   3b. Input sanitization
-//!   3c. Security validation (plan mode gate, dangerous cmd, path boundary)
+//!      3a. Input validation (schema + semantic)
+//!      3b. Input sanitization
+//!      3c. Security validation (plan mode gate, dangerous cmd, path boundary)
 //!   4. Pre-tool hooks (can modify input, override permission, stop)
 //!   5. Permission check (hook override → rule engine → mode)
 //!   6. Tool execution (call with progress callback)

@@ -13,6 +13,7 @@ use super::{build_child_config, collect_stream_result, AgentInput, AgentTool};
 
 impl AgentTool {
     /// Run the agent without worktree isolation (normal mode).
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn run_agent_normal(
         &self,
         params: &AgentInput,
@@ -167,6 +168,7 @@ impl AgentTool {
     /// Consolidated dispatch: fires SubagentStart hook, runs the agent (worktree
     /// or normal), fires SubagentStop hook.  Used by both the synchronous path
     /// and as a fallback when `bg_agent_tx` is unavailable.
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn run_agent_dispatch(
         &self,
         use_worktree: bool,

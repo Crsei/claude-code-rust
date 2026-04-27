@@ -84,11 +84,9 @@ impl StreamAccumulator {
                 self.content_blocks[*index] = content_block.clone();
             }
             StreamEvent::ContentBlockDelta { index, delta } => {
-                if let Some(block) = self.content_blocks.get_mut(*index) {
-                    if let ContentBlock::Text { ref mut text } = block {
-                        if let Some(t) = delta.get("text").and_then(|v| v.as_str()) {
-                            text.push_str(t);
-                        }
+                if let Some(ContentBlock::Text { text }) = self.content_blocks.get_mut(*index) {
+                    if let Some(t) = delta.get("text").and_then(|v| v.as_str()) {
+                        text.push_str(t);
                     }
                 }
             }

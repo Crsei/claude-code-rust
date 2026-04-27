@@ -199,6 +199,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn status_when_disabled_mentions_cli_flag() {
         let _guard = test_lock();
         state::reset_for_tests();
@@ -216,6 +217,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn status_when_connected_shows_browser() {
         let _guard = test_lock();
         state::reset_for_tests();
@@ -254,6 +256,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn reconnect_from_disabled_reports_disabled() {
         let _guard = test_lock();
         state::reset_for_tests();

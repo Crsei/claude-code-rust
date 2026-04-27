@@ -219,7 +219,7 @@ mod tests {
         let total_used = parsed.get("total_used").unwrap().as_u64().unwrap();
         assert!(total_used > 0);
         let total_pct = parsed.get("total_percent").unwrap().as_f64().unwrap();
-        assert!(total_pct >= 0.0 && total_pct <= 100.0);
+        assert!((0.0..=100.0).contains(&total_pct));
         let cats = parsed.get("categories").unwrap().as_array().unwrap();
         assert!(!cats.is_empty());
     }

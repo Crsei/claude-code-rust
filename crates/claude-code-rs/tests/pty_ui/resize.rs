@@ -19,7 +19,10 @@ fn minimum_size() {
         "should not panic at 40x10, got:\n{}",
         output.text()
     );
-    assert!(output.raw.len() > 0, "should produce some output at 40x10");
+    assert!(
+        !output.raw.is_empty(),
+        "should produce some output at 40x10"
+    );
 }
 
 /// TUI should render at very wide terminal (300 cols) without panic.

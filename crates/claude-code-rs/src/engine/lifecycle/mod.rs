@@ -257,7 +257,7 @@ impl QueryEngine {
         let state = self.state.read();
         state
             .sleep_until
-            .map_or(false, |t| std::time::Instant::now() < t)
+            .is_some_and(|t| std::time::Instant::now() < t)
     }
 
     /// Wake the engine up, clearing any pending sleep.

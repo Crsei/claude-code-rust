@@ -100,16 +100,13 @@ fn identify_turn_starts(messages: &[Message]) -> Vec<usize> {
     let mut starts = Vec::new();
 
     for (i, msg) in messages.iter().enumerate() {
-        match msg {
-            Message::User(user) => {
-                // A turn starts at a user message that is NOT solely a tool result.
-                // If it has tool_use_result set, it's a continuation of the previous
-                // assistant's tool call, not a new turn.
-                if user.tool_use_result.is_none() {
-                    starts.push(i);
-                }
+        if let Message::User(user) = msg {
+            // A turn starts at a user message that is NOT solely a tool result.
+            // If it has tool_use_result set, it's a continuation of the previous
+            // assistant's tool call, not a new turn.
+            if user.tool_use_result.is_none() {
+                starts.push(i);
             }
-            _ => {}
         }
     }
 
@@ -132,10 +129,10 @@ fn estimate_message_chars(msg: &Message) -> usize {
         Message::User(u) => match &u.content {
             cc_types::message::MessageContent::Text(t) => t.len(),
             cc_types::message::MessageContent::Blocks(blocks) => {
-                blocks.iter().map(|b| content_block_chars(b)).sum()
+                blocks.iter().map(content_block_chars).sum()
             }
         },
-        Message::Assistant(a) => a.content.iter().map(|b| content_block_chars(b)).sum(),
+        Message::Assistant(a) => a.content.iter().map(content_block_chars).sum(),
         Message::System(s) => s.content.len(),
         Message::Progress(p) => p.data.to_string().len(),
         Message::Attachment(_) => 100, // rough estimate
@@ -150,7 +147,7 @@ fn content_block_chars(block: &ContentBlock) -> usize {
         ContentBlock::ToolResult { content, .. } => match content {
             cc_types::message::ToolResultContent::Text(t) => t.len(),
             cc_types::message::ToolResultContent::Blocks(bs) => {
-                bs.iter().map(|b| content_block_chars(b)).sum()
+                bs.iter().map(content_block_chars).sum()
             }
         },
         ContentBlock::Thinking { thinking, .. } => thinking.len(),

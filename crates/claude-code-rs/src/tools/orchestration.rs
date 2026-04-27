@@ -56,7 +56,7 @@ fn partition_tool_calls(
 
     for (id, name, input) in tool_uses {
         let tool = tools.iter().find(|t| t.name() == name);
-        let is_safe = tool.map_or(false, |t| t.is_concurrency_safe(input));
+        let is_safe = tool.is_some_and(|t| t.is_concurrency_safe(input));
 
         if is_safe {
             // Try to merge into the last concurrent batch

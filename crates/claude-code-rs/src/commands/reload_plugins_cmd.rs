@@ -184,6 +184,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn handler_smoke_test_clean_registry() {
         let _guard = REGISTRY_GUARD.lock();
 
@@ -242,6 +243,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn handler_single_plugin_smoke() {
         let _guard = REGISTRY_GUARD.lock();
 

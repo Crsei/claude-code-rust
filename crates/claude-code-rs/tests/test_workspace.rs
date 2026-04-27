@@ -1,10 +1,10 @@
-/// Cross-platform test workspace directory.
-///
-/// Include in integration test files with:
-///   #[path = "test_workspace.rs"] mod test_workspace;
-///   use test_workspace::workspace;
-///
-/// Or copy the `workspace()` function directly.
+// Cross-platform test workspace directory.
+//
+// Include in integration test files with:
+//   #[path = "test_workspace.rs"] mod test_workspace;
+//   use test_workspace::workspace;
+//
+// Or copy the `workspace()` function directly.
 
 /// Returns the test workspace path. Checks `E2E_WORKSPACE` env var first,
 /// then falls back to platform default. Creates the directory if needed.

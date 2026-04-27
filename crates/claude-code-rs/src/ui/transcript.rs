@@ -36,17 +36,12 @@ use crate::types::message::{Attachment, ContentBlock, Message, MessageContent, S
 
 /// The three view modes the TUI can be in. Cycling is `Prompt →
 /// Transcript → Focus → Prompt` via `Ctrl+O`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ViewMode {
+    #[default]
     Prompt,
     Transcript,
     Focus,
-}
-
-impl Default for ViewMode {
-    fn default() -> Self {
-        ViewMode::Prompt
-    }
 }
 
 impl ViewMode {
@@ -76,18 +71,13 @@ impl ViewMode {
 }
 
 /// Whether the transcript is waiting for search input.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TranscriptInputMode {
     /// Normal navigation: j/k, g/G, PgUp/PgDn, n/N, e, q, /.
+    #[default]
     Normal,
     /// Typing a search query after `/`.
     Search,
-}
-
-impl Default for TranscriptInputMode {
-    fn default() -> Self {
-        TranscriptInputMode::Normal
-    }
 }
 
 /// Per-match descriptor returned by [`search_messages`].
@@ -548,8 +538,10 @@ mod tests {
 
     #[test]
     fn clear_search_resets_all_search_fields() {
-        let mut st = TranscriptState::default();
-        st.query = "query".into();
+        let mut st = TranscriptState {
+            query: "query".into(),
+            ..Default::default()
+        };
         st.set_matches(vec![SearchMatch { message_index: 0 }]);
         st.input_mode = TranscriptInputMode::Search;
         st.clear_search();

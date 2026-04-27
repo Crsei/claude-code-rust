@@ -198,7 +198,7 @@ fn env_info_section(model: &str, cwd: &str) -> String {
     let platform = std::env::consts::OS;
     let is_git = crate::utils::git::is_git_repo(Path::new(cwd));
 
-    let shell = if cfg!(windows) { "bash" } else { "bash" };
+    let shell = "bash";
 
     let model_desc = format!(
         "You are powered by the model {}. The exact model ID is {}.",
@@ -423,7 +423,7 @@ pub fn build_system_prompt(
             }),
             uncached_section(
                 "mcp_instructions",
-                || mcp_instructions_section(),
+                mcp_instructions_section,
                 "MCP servers connect/disconnect between turns",
             ),
             cached_section("brief_mode", || {
@@ -475,7 +475,7 @@ pub fn build_system_prompt(
                         .to_string(),
                 )
             }),
-            cached_section("subsystem_status", || build_subsystem_status_reminder()),
+            cached_section("subsystem_status", build_subsystem_status_reminder),
         ];
 
         let resolved = prompt_sections::resolve_sections(&dynamic_sections);

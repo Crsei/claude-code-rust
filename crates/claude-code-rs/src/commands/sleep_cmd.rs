@@ -51,7 +51,7 @@ impl CommandHandler for SleepCmdHandler {
             }
         };
 
-        if secs < MIN_SLEEP_SECS || secs > MAX_SLEEP_SECS {
+        if !(MIN_SLEEP_SECS..=MAX_SLEEP_SECS).contains(&secs) {
             return Ok(CommandResult::Output(format!(
                 "Sleep duration must be between {} and {} seconds.",
                 MIN_SLEEP_SECS, MAX_SLEEP_SECS

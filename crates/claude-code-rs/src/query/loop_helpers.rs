@@ -20,6 +20,9 @@ pub(crate) const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT: usize = 3;
 /// Escalated max output tokens (8k -> 64k).
 pub(crate) const ESCALATED_MAX_TOKENS: usize = 64_000;
 
+type ToolUseTuple = (String, String, serde_json::Value);
+type ToolUseBatch = (bool, Vec<ToolUseTuple>);
+
 /// prompt_too_long recovery result.
 #[allow(unused)]
 pub(crate) enum PromptRecovery {
@@ -116,11 +119,11 @@ pub(crate) async fn execute_tool_calls(
     let mut results = Vec::new();
 
     // Partition: consecutive concurrency-safe tools -> one concurrent batch, rest serial
-    let mut batches: Vec<(bool, Vec<(String, String, serde_json::Value)>)> = Vec::new();
+    let mut batches: Vec<ToolUseBatch> = Vec::new();
 
     for (id, name, input) in tool_uses {
         let tool = tools.iter().find(|t| t.name() == name);
-        let is_safe = tool.map_or(false, |t| t.is_concurrency_safe(input));
+        let is_safe = tool.is_some_and(|t| t.is_concurrency_safe(input));
 
         if is_safe {
             if let Some(last) = batches.last_mut() {
@@ -134,8 +137,7 @@ pub(crate) async fn execute_tool_calls(
         batches.push((is_safe, vec![(id.clone(), name.clone(), input.clone())]));
     }
 
-    let mut batch_index = 0usize;
-    for (is_concurrent, batch) in batches {
+    for (batch_index, (is_concurrent, batch)) in batches.into_iter().enumerate() {
         let batch_tool_names = batch
             .iter()
             .map(|(_, name, _)| name.clone())
@@ -225,7 +227,6 @@ pub(crate) async fn execute_tool_calls(
             }
         }
         crate::services::langfuse::end_span(batch_span);
-        batch_index += 1;
     }
 
     results

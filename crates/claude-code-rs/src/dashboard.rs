@@ -123,6 +123,7 @@ pub fn event_log_path() -> Option<PathBuf> {
         .map(|id| crate::config::paths::runs_dir(id).join("subagent-events.ndjson"))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn emit_subagent_event(
     kind: &str,
     agent_id: &str,
@@ -178,7 +179,7 @@ fn append_event_to_path(path: &Path, event: &SubagentEvent) -> Result<()> {
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&path)
+        .open(path)
         .with_context(|| format!("failed to open event log: {}", path.display()))?;
 
     serde_json::to_writer(&mut file, event)

@@ -233,7 +233,7 @@ fn markdown_to_lines_inner(text: &str, theme: &Theme) -> Vec<Line<'static>> {
     // Remove trailing blank lines.
     while lines
         .last()
-        .map_or(false, |l| l.spans.is_empty() || line_is_empty(l))
+        .is_some_and(|l| l.spans.is_empty() || line_is_empty(l))
     {
         lines.pop();
     }

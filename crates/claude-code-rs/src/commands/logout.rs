@@ -49,20 +49,15 @@ pub struct LogoutReport {
     pub managed_settings_path: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum StepStatus {
     /// Nothing to do (state was already clean).
+    #[default]
     NoOp,
     /// The step successfully cleared state.
     Cleared,
     /// The step failed with the given error message.
     Failed(String),
-}
-
-impl Default for StepStatus {
-    fn default() -> Self {
-        StepStatus::NoOp
-    }
 }
 
 impl StepStatus {

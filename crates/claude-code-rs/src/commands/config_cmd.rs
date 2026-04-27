@@ -55,7 +55,7 @@ fn usage_text() -> &'static str {
 // ---------------------------------------------------------------------------
 
 fn handle_show(parts: &[&str], ctx: &CommandContext) -> Result<CommandResult> {
-    let raw_mode = parts.iter().any(|p| *p == "--raw");
+    let raw_mode = parts.contains(&"--raw");
     if raw_mode {
         return handle_show_raw(ctx);
     }

@@ -172,7 +172,7 @@ pub fn has_unterminated_quotes(command: &str) -> bool {
         i += 1;
     }
 
-    double_count % 2 != 0 || single_count % 2 != 0
+    !double_count.is_multiple_of(2) || !single_count.is_multiple_of(2)
 }
 
 /// Patterns to exclude bit-shift operators from heredoc detection.

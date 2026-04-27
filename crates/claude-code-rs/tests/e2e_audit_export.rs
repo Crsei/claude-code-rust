@@ -286,7 +286,7 @@ fn tamper_detection_catches_inserted_entry() {
     let rogue_chain = sha256_str(&format!("{}{}", c1, rogue_hash));
     // But the original entry #2's chain_hash was computed from c1, not rogue_chain
 
-    let _entries = vec![
+    let _entries = [
         serde_json::json!({
             "sequence": 0, "uuid": "u1", "timestamp": "t1", "type": "user",
             "hash": h1, "chain_hash": c1, "data": d1

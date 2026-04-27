@@ -196,7 +196,7 @@ fn format_single(outcome: ForkOutcome) -> String {
 fn format_multi(outcomes: &[Result<ForkOutcome>]) -> String {
     let mut out = String::from("/simplify (multi-agent review)\n");
     for (i, (angle, _)) in REVIEW_ANGLES.iter().enumerate() {
-        out.push_str("\n");
+        out.push('\n');
         out.push_str(&format!("━━━ {} ━━━\n", angle));
         match outcomes.get(i) {
             Some(Ok(outcome)) => {

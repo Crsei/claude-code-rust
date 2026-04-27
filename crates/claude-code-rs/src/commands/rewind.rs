@@ -82,7 +82,7 @@ impl CommandHandler for RewindHandler {
 
         // Numeric `<n>` form.
         match arg.parse::<usize>() {
-            Ok(n) if n == 0 => {
+            Ok(0) => {
                 ctx.messages.clear();
                 let _ = storage::truncate_session(ctx.session_id.as_str(), 0);
                 Ok(CommandResult::Output(

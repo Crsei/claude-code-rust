@@ -59,7 +59,7 @@ impl CommandHandler for BranchHandler {
         // follow-up change. For now, print a resume hint.
 
         let short = short_id(outcome.new_session_id.as_str());
-        let lines = vec![
+        let lines = [
             format!("Forked session -> {}.", outcome.new_session_id),
             format!("  parent:      {}", outcome.parent_session_id),
             format!(

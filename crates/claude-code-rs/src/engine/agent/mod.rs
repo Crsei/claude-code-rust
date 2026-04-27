@@ -170,13 +170,14 @@ pub(crate) fn sdk_to_agent_event(
                         agent_id: agent_id.to_string(),
                         text: text.to_string(),
                     })
-                } else if let Some(thinking) = delta.get("thinking").and_then(|v| v.as_str()) {
-                    Some(AgentEvent::ThinkingDelta {
-                        agent_id: agent_id.to_string(),
-                        thinking: thinking.to_string(),
-                    })
                 } else {
-                    None
+                    delta
+                        .get("thinking")
+                        .and_then(|v| v.as_str())
+                        .map(|thinking| AgentEvent::ThinkingDelta {
+                            agent_id: agent_id.to_string(),
+                            thinking: thinking.to_string(),
+                        })
                 }
             }
             _ => None,

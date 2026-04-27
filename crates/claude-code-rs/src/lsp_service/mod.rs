@@ -488,7 +488,7 @@ mod tests {
 
     #[test]
     fn test_server_state_variants() {
-        let states = vec![
+        let states = [
             ServerState::NotStarted,
             ServerState::Starting,
             ServerState::Running,

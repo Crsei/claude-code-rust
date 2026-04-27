@@ -143,7 +143,6 @@ mod tests {
 
     #[test]
     fn btw_system_append_is_nonempty_and_role_restricting() {
-        assert!(!BTW_SYSTEM_APPEND.is_empty());
         assert!(BTW_SYSTEM_APPEND.contains("side question"));
         assert!(BTW_SYSTEM_APPEND.contains("no tools"));
     }

@@ -93,7 +93,7 @@ impl Tool for FileWriteTool {
                 error_code: 1,
             };
         }
-        if !input.get("content").and_then(|v| v.as_str()).is_some() {
+        if input.get("content").and_then(|v| v.as_str()).is_none() {
             return ValidationResult::Error {
                 message: "content is required".to_string(),
                 error_code: 1,

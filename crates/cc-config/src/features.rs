@@ -49,7 +49,7 @@ pub struct FeatureFlags {
 impl FeatureFlags {
     /// Build flags from real environment variables.
     pub fn from_env() -> Self {
-        Self::from_iter(std::env::vars())
+        Self::from_env_iter(std::env::vars())
     }
 
     /// Build flags from an iterator of `(key, value)` pairs.
@@ -57,7 +57,7 @@ impl FeatureFlags {
     /// A variable is considered *enabled* when its value, after trimming and
     /// lowercasing, is `"1"` or `"true"`.  Anything else (including absence)
     /// is treated as disabled.
-    pub fn from_iter(iter: impl IntoIterator<Item = (String, String)>) -> Self {
+    pub fn from_env_iter(iter: impl IntoIterator<Item = (String, String)>) -> Self {
         use std::collections::HashMap;
         let env: HashMap<String, String> = iter.into_iter().collect();
 
@@ -163,7 +163,7 @@ mod tests {
 
     /// Helper: build flags from a slice of `(&str, &str)` pairs.
     fn flags(pairs: &[(&str, &str)]) -> FeatureFlags {
-        FeatureFlags::from_iter(pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())))
+        FeatureFlags::from_env_iter(pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())))
     }
 
     #[test]

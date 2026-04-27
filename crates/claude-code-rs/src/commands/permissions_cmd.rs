@@ -4,7 +4,7 @@
 //! Subcommands:
 //! - `/permissions`                              show effective rules + sources
 //! - `/permissions mode <m>`                     switch permission mode
-//!     where `<m>` ∈ default | auto | bypass | plan | acceptEdits | dontAsk
+//!   where `<m>` ∈ default | auto | bypass | plan | acceptEdits | dontAsk
 //! - `/permissions allow <rule>  [scope]`        add an always-allow rule
 //! - `/permissions deny  <rule>  [scope]`        add an always-deny rule
 //! - `/permissions ask   <rule>  [scope]`        add an always-ask rule

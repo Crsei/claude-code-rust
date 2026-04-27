@@ -84,7 +84,7 @@ pub fn list_exports() -> Result<Vec<PathBuf>> {
     let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.extension().map_or(false, |ext| ext == "md"))
+        .filter(|p| p.extension().is_some_and(|ext| ext == "md"))
         .collect();
     files.sort();
     Ok(files)
@@ -193,7 +193,7 @@ fn render_messages_markdown(session_id: &str, messages: &[Message], cwd: &str) -
                     total_cost += a.cost_usd;
                     md.push_str(&format!("\n<sub>Cost: ${:.4}</sub>\n", a.cost_usd));
                 }
-                md.push_str("\n");
+                md.push('\n');
             }
             Message::System(s) => {
                 if !s.content.is_empty() {
@@ -250,7 +250,7 @@ fn render_serialized_msg(msg: &SerializableMessage, md: &mut String) -> f64 {
                     md.push_str(&format!("\n<sub>Cost: ${:.4}</sub>\n", c));
                 }
             }
-            md.push_str("\n");
+            md.push('\n');
         }
         "system" => {
             if let Some(content) = msg.data.get("content").and_then(|v| v.as_str()) {

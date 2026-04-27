@@ -40,18 +40,13 @@ pub enum SkillSource {
 }
 
 /// Execution context for a skill.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SkillContext {
     /// Expand the skill prompt inline in the current conversation.
+    #[default]
     Inline,
     /// Run the skill in a forked sub-agent with isolated context.
     Fork,
-}
-
-impl Default for SkillContext {
-    fn default() -> Self {
-        Self::Inline
-    }
 }
 
 /// Parsed frontmatter fields from a SKILL.md file.
@@ -353,7 +348,7 @@ mod tests {
 
     #[test]
     fn test_skill_source_variants() {
-        let sources = vec![
+        let sources = [
             SkillSource::Bundled,
             SkillSource::User,
             SkillSource::Project,

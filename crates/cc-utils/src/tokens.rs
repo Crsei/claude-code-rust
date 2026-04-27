@@ -4,16 +4,8 @@ use cc_types::message::{ContentBlock, Message, MessageContent, ToolResultContent
 
 /// Get the context window size for a given model.
 /// Returns token count for the model's context window.
-fn get_context_window_size(model: &str) -> u64 {
-    if model.contains("opus") {
-        200_000
-    } else if model.contains("sonnet") {
-        200_000
-    } else if model.contains("haiku") {
-        200_000
-    } else {
-        200_000 // default
-    }
+fn get_context_window_size(_model: &str) -> u64 {
+    200_000
 }
 
 /// Average characters per token for English text.
@@ -35,7 +27,7 @@ pub fn estimate_tokens(text: &str) -> u64 {
 /// Estimate token count for a slice of messages.
 /// Accounts for per-message overhead and content within each message.
 pub fn estimate_messages_tokens(messages: &[Message]) -> u64 {
-    messages.iter().map(|m| estimate_message_tokens(m)).sum()
+    messages.iter().map(estimate_message_tokens).sum()
 }
 
 /// Estimate token count for a single message.
@@ -45,7 +37,7 @@ fn estimate_message_tokens(msg: &Message) -> u64 {
         Message::Assistant(assistant) => assistant
             .content
             .iter()
-            .map(|b| estimate_content_block_tokens(b))
+            .map(estimate_content_block_tokens)
             .sum(),
         Message::System(sys) => estimate_tokens(&sys.content),
         Message::Progress(prog) => estimate_tokens(&prog.data.to_string()),
@@ -59,10 +51,7 @@ fn estimate_message_tokens(msg: &Message) -> u64 {
 fn estimate_message_content_tokens(content: &MessageContent) -> u64 {
     match content {
         MessageContent::Text(text) => estimate_tokens(text),
-        MessageContent::Blocks(blocks) => blocks
-            .iter()
-            .map(|b| estimate_content_block_tokens(b))
-            .sum(),
+        MessageContent::Blocks(blocks) => blocks.iter().map(estimate_content_block_tokens).sum(),
     }
 }
 
@@ -96,10 +85,7 @@ fn estimate_content_block_tokens(block: &ContentBlock) -> u64 {
 fn estimate_tool_result_content_tokens(content: &ToolResultContent) -> u64 {
     match content {
         ToolResultContent::Text(text) => estimate_tokens(text),
-        ToolResultContent::Blocks(blocks) => blocks
-            .iter()
-            .map(|b| estimate_content_block_tokens(b))
-            .sum(),
+        ToolResultContent::Blocks(blocks) => blocks.iter().map(estimate_content_block_tokens).sum(),
     }
 }
 

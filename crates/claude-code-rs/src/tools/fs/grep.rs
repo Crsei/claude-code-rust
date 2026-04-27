@@ -243,7 +243,7 @@ impl Tool for GrepTool {
         let mut _match_count = 0;
 
         for entry in walker.build().flatten() {
-            if !entry.file_type().map_or(false, |ft| ft.is_file()) {
+            if !entry.file_type().is_some_and(|ft| ft.is_file()) {
                 continue;
             }
             let path = entry.path();
@@ -281,7 +281,7 @@ impl Tool for GrepTool {
                     "count" => {
                         results.push(format!("{}:{}", path_str, file_matches.len()));
                     }
-                    "content" | _ => {
+                    _ => {
                         for (line_num, line_content) in &file_matches {
                             let show_num = params.line_numbers.unwrap_or(true);
                             if show_num {

@@ -170,6 +170,7 @@ mod tests {
     }
 
     /// Build a minimal `SessionExport` for testing `format_export_summary`.
+    #[allow(clippy::too_many_arguments)]
     fn minimal_export(
         msg_count: usize,
         user: usize,

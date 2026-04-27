@@ -232,8 +232,10 @@ mod tests {
     #[tokio::test]
     async fn test_rate_limit_known_model() {
         let handler = RateLimitHandler;
-        let mut app_state = AppState::default();
-        app_state.main_loop_model = "claude-3-opus-20240229".into();
+        let app_state = AppState {
+            main_loop_model: "claude-3-opus-20240229".into(),
+            ..Default::default()
+        };
 
         let mut ctx = CommandContext {
             messages: Vec::new(),
@@ -255,8 +257,10 @@ mod tests {
     #[tokio::test]
     async fn test_rate_limit_unknown_model() {
         let handler = RateLimitHandler;
-        let mut app_state = AppState::default();
-        app_state.main_loop_model = "some-custom-model".into();
+        let app_state = AppState {
+            main_loop_model: "some-custom-model".into(),
+            ..Default::default()
+        };
 
         let mut ctx = CommandContext {
             messages: Vec::new(),
