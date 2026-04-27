@@ -7,6 +7,10 @@ use serde_json::{json, Value};
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
 
+use super::safe_write::{
+    safe_write_text, validate_write_request, SafeWriteOptions, DEFAULT_MAX_WRITE_BYTES,
+};
+
 /// FileWriteTool — Write content to a file
 ///
 /// Corresponds to TypeScript: tools/FileWriteTool
@@ -95,6 +99,17 @@ impl Tool for FileWriteTool {
                 error_code: 1,
             };
         }
+        let content = input.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        if let Err(e) = validate_write_request(
+            Path::new(file_path),
+            content.as_bytes(),
+            DEFAULT_MAX_WRITE_BYTES,
+        ) {
+            return ValidationResult::Error {
+                message: e.to_string(),
+                error_code: 1,
+            };
+        }
         ValidationResult::Ok
     }
 
@@ -115,63 +130,80 @@ impl Tool for FileWriteTool {
             });
         }
 
-        let path = Path::new(&file_path);
+        let file_path_for_write = file_path.clone();
+        let content_for_write = content.clone();
+        let safe_options = SafeWriteOptions {
+            session_id: Some(ctx.session_id.clone()),
+            ..Default::default()
+        };
 
-        // Create parent directories if needed
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                if let Err(e) = tokio::fs::create_dir_all(parent).await {
-                    return Ok(ToolResult {
-                        data: json!({ "error": format!("Failed to create directories: {}", e) }),
-                        new_messages: vec![],
-                        ..Default::default()
-                    });
-                }
-            }
-        }
-
-        // Write the file
-        match tokio::fs::write(&file_path, &content).await {
-            Ok(()) => {
-                let line_count = content.lines().count();
-                let byte_count = content.len();
-
-                // Fire FileChanged hook
-                {
-                    let app_state = (ctx.get_app_state)();
-                    let configs =
-                        crate::tools::hooks::load_hook_configs(&app_state.hooks, "FileChanged");
-                    if !configs.is_empty() {
-                        let payload = json!({
-                            "file_path": &file_path,
-                            "operation": "write",
-                            "byte_count": byte_count,
-                            "line_count": line_count,
-                        });
-                        let _ =
-                            crate::tools::hooks::run_event_hooks("FileChanged", &payload, &configs)
-                                .await;
-                    }
-                }
-
-                Ok(ToolResult {
-                    data: json!({
-                        "output": format!(
-                            "Successfully wrote {} bytes ({} lines) to {}",
-                            byte_count, line_count, file_path
-                        ),
-                        "path": file_path,
-                    }),
+        let report = match tokio::task::spawn_blocking(move || {
+            safe_write_text(file_path_for_write, &content_for_write, &safe_options)
+        })
+        .await
+        {
+            Ok(Ok(report)) => report,
+            Ok(Err(e)) => {
+                return Ok(ToolResult {
+                    data: json!({ "error": format!("Failed to write file safely: {}", e) }),
                     new_messages: vec![],
                     ..Default::default()
-                })
+                });
             }
-            Err(e) => Ok(ToolResult {
-                data: json!({ "error": format!("Failed to write file: {}", e) }),
-                new_messages: vec![],
-                ..Default::default()
-            }),
+            Err(e) => {
+                return Ok(ToolResult {
+                    data: json!({ "error": format!("Safe write task failed: {}", e) }),
+                    new_messages: vec![],
+                    ..Default::default()
+                });
+            }
+        };
+
+        let line_count = report.line_count;
+        let byte_count = report.bytes_written;
+
+        // Fire FileChanged hook
+        {
+            let app_state = (ctx.get_app_state)();
+            let configs = crate::tools::hooks::load_hook_configs(&app_state.hooks, "FileChanged");
+            if !configs.is_empty() {
+                let payload = json!({
+                    "file_path": &file_path,
+                    "operation": "write",
+                    "byte_count": byte_count,
+                    "line_count": line_count,
+                    "safe_write": {
+                        "atomic": true,
+                        "backup_path": report.backup_path.as_ref().map(|p| p.display().to_string()),
+                    },
+                });
+                let _ =
+                    crate::tools::hooks::run_event_hooks("FileChanged", &payload, &configs).await;
+            }
         }
+
+        Ok(ToolResult {
+            data: json!({
+                "output": format!(
+                    "Successfully wrote {} bytes ({} lines) to {}",
+                    byte_count, line_count, file_path
+                ),
+                "path": file_path,
+                "safe_write": {
+                    "atomic": true,
+                    "created": report.created,
+                    "backup_path": report.backup_path.as_ref().map(|p| p.display().to_string()),
+                    "bytes": report.bytes_written,
+                    "line_count": report.line_count,
+                    "permissions_preserved": report.permissions_preserved,
+                    "symlink_resolved": report.symlink_resolved,
+                    "requested_path": report.requested_path.display().to_string(),
+                    "target_path": report.target_path.display().to_string(),
+                },
+            }),
+            new_messages: vec![],
+            ..Default::default()
+        })
     }
 
     async fn prompt(&self) -> String {
@@ -192,7 +224,62 @@ Usage:\n\
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use crate::types::app_state::AppState;
+    use crate::types::message::ContentBlock;
+    use crate::types::tool::{FileStateCache, ToolUseOptions};
     use serde_json::json;
+    use uuid::Uuid;
+
+    fn test_context() -> ToolUseContext {
+        let app_state = AppState::default();
+        let (_tx, rx) = tokio::sync::watch::channel(false);
+
+        ToolUseContext {
+            options: ToolUseOptions {
+                debug: false,
+                main_loop_model: "test".to_string(),
+                verbose: false,
+                is_non_interactive_session: false,
+                custom_system_prompt: None,
+                append_system_prompt: None,
+                max_budget_usd: None,
+            },
+            abort_signal: rx,
+            read_file_state: FileStateCache {
+                entries: HashMap::new(),
+            },
+            get_app_state: Arc::new(move || app_state.clone()),
+            set_app_state: Arc::new(|_| {}),
+            session_id: "file-write-test-session".to_string(),
+            langfuse_session_id: "file-write-test-session".to_string(),
+            messages: vec![],
+            agent_id: None,
+            agent_type: None,
+            query_tracking: None,
+            permission_callback: None,
+            ask_user_callback: None,
+            bg_agent_tx: None,
+            hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
+            command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
+        }
+    }
+
+    fn parent_message() -> AssistantMessage {
+        AssistantMessage {
+            uuid: Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: Vec::<ContentBlock>::new(),
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        }
+    }
 
     #[test]
     fn test_name() {
@@ -268,5 +355,75 @@ mod tests {
         }
         tokio::fs::write(&nested, "hello").await.unwrap();
         assert!(nested.exists());
+    }
+
+    #[tokio::test]
+    async fn test_call_returns_backward_compatible_result_with_safe_write_diagnostics() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("output.txt");
+        let input = json!({
+            "file_path": file_path.display().to_string(),
+            "content": "line1\nline2",
+        });
+
+        let result = FileWriteTool::new()
+            .call(input, &test_context(), &parent_message(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            tokio::fs::read_to_string(&file_path).await.unwrap(),
+            "line1\nline2"
+        );
+        let expected_path = file_path.display().to_string();
+        assert_eq!(
+            result.data.get("path").and_then(|v| v.as_str()),
+            Some(expected_path.as_str())
+        );
+        assert!(result
+            .data
+            .get("output")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .contains("Successfully wrote"));
+
+        let safe_write = result
+            .data
+            .get("safe_write")
+            .expect("safe_write diagnostics");
+        assert_eq!(
+            safe_write.get("atomic").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            safe_write.get("created").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(safe_write.get("bytes").and_then(|v| v.as_u64()), Some(11));
+    }
+
+    #[tokio::test]
+    async fn test_validate_input_rejects_binary_and_oversized_content() {
+        let tool = FileWriteTool::new();
+        let ctx = test_context();
+
+        let binary = tool
+            .validate_input(
+                &json!({"file_path": "/tmp/binary.txt", "content": "abc\0def"}),
+                &ctx,
+            )
+            .await;
+        assert!(matches!(binary, ValidationResult::Error { .. }));
+
+        let oversized = tool
+            .validate_input(
+                &json!({
+                    "file_path": "/tmp/large.txt",
+                    "content": "x".repeat(DEFAULT_MAX_WRITE_BYTES + 1),
+                }),
+                &ctx,
+            )
+            .await;
+        assert!(matches!(oversized, ValidationResult::Error { .. }));
     }
 }
