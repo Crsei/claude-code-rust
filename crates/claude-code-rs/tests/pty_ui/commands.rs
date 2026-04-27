@@ -61,7 +61,7 @@ fn slash_exit_quits_gracefully() {
 
     // No panic, process exited. Output may contain a goodbye message.
     assert!(
-        output.raw.len() > 0,
+        !output.raw.is_empty(),
         "should have captured some output before exit"
     );
 }
@@ -149,7 +149,10 @@ fn slash_unknown_command_shows_error() {
     let output = session.finish(QUICK_TIMEOUT, "cmd_unknown");
 
     // At minimum, no panic
-    assert!(output.raw.len() > 0, "should not panic on unknown command");
+    assert!(
+        !output.raw.is_empty(),
+        "should not panic on unknown command"
+    );
 }
 
 /// 空斜杠 "/" 不崩溃
@@ -167,7 +170,7 @@ fn slash_empty_does_not_crash() {
     session.send_ctrl_c();
     let output = session.finish(QUICK_TIMEOUT, "cmd_empty_slash");
 
-    assert!(output.raw.len() > 0, "empty slash should not panic");
+    assert!(!output.raw.is_empty(), "empty slash should not panic");
 }
 
 /// /model 带参数切换模型
@@ -211,7 +214,7 @@ fn slash_clear_resets_conversation() {
     session.send_ctrl_c();
     let output = session.finish(QUICK_TIMEOUT, "cmd_clear");
 
-    assert!(output.raw.len() > 0, "/clear should not crash TUI");
+    assert!(!output.raw.is_empty(), "/clear should not crash TUI");
 }
 
 /// /context 显示上下文信息

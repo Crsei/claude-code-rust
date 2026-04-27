@@ -22,7 +22,7 @@ mod test_workspace;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -68,8 +68,8 @@ fn aggregated_write_lock() -> &'static Mutex<()> {
 fn write_aggregated_logs(
     dirs: &LogDirs,
     test_name: &str,
-    raw_path: &PathBuf,
-    log_path: &PathBuf,
+    raw_path: &Path,
+    log_path: &Path,
     raw: &[u8],
     plain: &[u8],
 ) {

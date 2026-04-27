@@ -33,13 +33,13 @@ impl Interval {
 
     pub fn human(self) -> String {
         let s = self.seconds;
-        if s % 86_400 == 0 && s >= 86_400 {
+        if s.is_multiple_of(86_400) && s >= 86_400 {
             return format!("{}d", s / 86_400);
         }
-        if s % 3_600 == 0 && s >= 3_600 {
+        if s.is_multiple_of(3_600) && s >= 3_600 {
             return format!("{}h", s / 3_600);
         }
-        if s % 60 == 0 && s >= 60 {
+        if s.is_multiple_of(60) && s >= 60 {
             return format!("{}m", s / 60);
         }
         format!("{}s", s)

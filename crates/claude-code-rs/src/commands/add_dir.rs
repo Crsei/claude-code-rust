@@ -4,7 +4,7 @@
 //! in the permission context, allowing tools to access files outside
 //! the primary working directory.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -60,7 +60,7 @@ impl CommandHandler for AddDirHandler {
                     .app_state
                     .tool_permission_context
                     .additional_working_directories;
-                for (_name, info) in dirs {
+                for info in dirs.values() {
                     let existing = PathBuf::from(&info.path);
                     if let Ok(existing_canon) = existing.canonicalize() {
                         if existing_canon == canonical {
@@ -123,7 +123,7 @@ fn resolve_dir_path(raw: &str, cwd: &std::path::Path) -> PathBuf {
 }
 
 /// Validate that a path exists and is a directory. Returns the canonical path.
-fn validate_directory(path: &PathBuf) -> std::result::Result<PathBuf, String> {
+fn validate_directory(path: &Path) -> std::result::Result<PathBuf, String> {
     match path.canonicalize() {
         Ok(canonical) => {
             if canonical.is_dir() {

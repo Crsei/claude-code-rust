@@ -812,7 +812,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
         return tokio::select! {
             result = daemon::server::serve_http(http_state, cli.port) => {
-                result.map(|()| ExitCode::SUCCESS).map_err(|e| e.into())
+                result.map(|()| ExitCode::SUCCESS)
             }
             _ = daemon::tick::tick_loop(tick_state), if tick_enabled => {
                 Ok(ExitCode::SUCCESS)

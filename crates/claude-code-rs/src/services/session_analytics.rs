@@ -208,7 +208,7 @@ fn accumulate_usage(messages: &[Message], report: &mut InsightsReport) {
 /// report artifact, etc.; this function deliberately has no side effects.
 pub fn format_report(report: &InsightsReport, label: &str) -> String {
     let mut lines = Vec::new();
-    lines.push(format!("{}", label));
+    lines.push(label.to_string());
     lines.push(String::new());
     lines.push(format!("  Sessions included:   {}", report.session_count));
     lines.push(format!("  Sessions filtered:   {}", report.filtered_out));

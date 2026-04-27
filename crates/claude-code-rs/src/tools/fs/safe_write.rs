@@ -633,7 +633,10 @@ mod tests {
             permissions.set_mode(mode | 0o200);
         }
         #[cfg(windows)]
-        permissions.set_readonly(false);
+        {
+            #[allow(clippy::permissions_set_readonly_false)]
+            permissions.set_readonly(false);
+        }
         fs::set_permissions(&file, permissions).unwrap();
         assert_eq!(fs::read_to_string(&file).unwrap(), "old");
     }

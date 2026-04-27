@@ -71,7 +71,7 @@ impl StreamingToolExecutor {
         tools: &Tools,
     ) {
         let tool = tools.iter().find(|t| t.name() == tool_name);
-        let is_safe = tool.map_or(false, |t| t.is_concurrency_safe(&input));
+        let is_safe = tool.is_some_and(|t| t.is_concurrency_safe(&input));
 
         self.tracked.push(TrackedTool {
             tool_use_id,

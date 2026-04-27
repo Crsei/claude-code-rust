@@ -140,14 +140,14 @@ impl HeadlessRuntime {
         // Wire the plugin-contributed MCP discovery hook. Plugins return
         // `crate::mcp::McpServerConfig`, which is re-exported from
         // `cc_mcp::McpServerConfig`, so they are the same type.
-        cc_mcp::discovery::set_plugin_hook(|| crate::plugins::discover_plugin_mcp_servers());
+        cc_mcp::discovery::set_plugin_hook(crate::plugins::discover_plugin_mcp_servers);
         // Scope-aware variant (issue #44) — preserves each server's owning
         // plugin id so `/mcp list` can attribute entries correctly.
         cc_mcp::discovery::set_scoped_plugin_hook(|| {
             crate::plugins::discover_plugin_mcp_servers_scoped()
         });
         // Wire the IDE-contributed MCP bridge hook (issue #41).
-        cc_mcp::discovery::set_ide_hook(|| crate::ide::selected_ide_mcp_config());
+        cc_mcp::discovery::set_ide_hook(crate::ide::selected_ide_mcp_config);
 
         // ── 2. Send Ready ────────────────────────────────────────────
         let app_state = self.engine.app_state();

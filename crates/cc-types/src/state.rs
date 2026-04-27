@@ -87,6 +87,12 @@ impl BudgetTracker {
     }
 }
 
+impl Default for BudgetTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Token 预算决策
 #[derive(Debug, Clone)]
 pub enum TokenBudgetDecision {

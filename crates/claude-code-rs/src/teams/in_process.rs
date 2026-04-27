@@ -171,7 +171,7 @@ impl TeammateExecutor for InProcessBackend {
 
     async fn spawn(&self, config: TeammateSpawnConfig) -> Result<TeammateSpawnResult> {
         let agent_id = identity::format_agent_id(&config.name, &config.team_name);
-        let task_id = format!("in_process_teammate_{}", uuid::Uuid::new_v4().to_string());
+        let task_id = format!("in_process_teammate_{}", uuid::Uuid::new_v4());
 
         let identity = TeammateIdentity {
             agent_id: agent_id.clone(),

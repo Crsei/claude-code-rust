@@ -190,10 +190,8 @@ impl App {
 
     pub fn add_message(&mut self, msg: Message) {
         // Dismiss welcome screen on first user or assistant message.
-        if self.show_welcome {
-            if matches!(msg, Message::User(_) | Message::Assistant(_)) {
-                self.show_welcome = false;
-            }
+        if self.show_welcome && matches!(msg, Message::User(_) | Message::Assistant(_)) {
+            self.show_welcome = false;
         }
         self.messages.push(msg);
         self.vscroll
@@ -258,7 +256,7 @@ impl App {
     /// every 5th tick (~80ms) to keep a pleasant animation speed.
     pub fn tick(&mut self) {
         self.tick_counter = self.tick_counter.wrapping_add(1);
-        if self.spinner_state.active && self.tick_counter % 5 == 0 {
+        if self.spinner_state.active && self.tick_counter.is_multiple_of(5) {
             self.spinner_state.tick();
             self.dirty = true;
         }
@@ -660,7 +658,7 @@ impl App {
     }
 
     pub fn push_history(&mut self, text: String) {
-        if self.history.last().map_or(true, |last| last != &text) {
+        if self.history.last() != Some(&text) {
             self.history.push(text);
         }
         self.history_index = None;

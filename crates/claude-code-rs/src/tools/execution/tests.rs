@@ -243,7 +243,7 @@ fn test_path_outside_cwd_blocked() {
     // Initialize ProcessState with a known cwd so the boundary check works
     {
         let mut ps = crate::bootstrap::PROCESS_STATE.write();
-        ps.original_cwd = std::path::PathBuf::from(std::env::current_dir().unwrap());
+        ps.original_cwd = std::env::current_dir().unwrap();
     }
 
     let ctx = make_ctx_with_mode(PermissionMode::Default);

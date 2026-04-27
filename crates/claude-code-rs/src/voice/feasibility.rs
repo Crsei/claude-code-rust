@@ -97,13 +97,10 @@ fn build_support_blocker(
     audio: &dyn AudioCaptureBackend,
     stt: &dyn TranscriptionClient,
 ) -> Option<FeasibilityReason> {
-    match audio.is_available() {
-        Err(AudioUnavailable::NotImplemented(reason)) => {
-            return Some(FeasibilityReason::AudioBackend(
-                AudioUnavailable::NotImplemented(reason),
-            ));
-        }
-        Err(_) | Ok(()) => {}
+    if let Err(AudioUnavailable::NotImplemented(reason)) = audio.is_available() {
+        return Some(FeasibilityReason::AudioBackend(
+            AudioUnavailable::NotImplemented(reason),
+        ));
     }
     match stt.is_available() {
         Err(SttUnavailable::NotImplemented(reason)) => Some(FeasibilityReason::SttBackend(

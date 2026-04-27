@@ -237,10 +237,12 @@ fn synthesize_stream_events(resp: InvokeResponse) -> Vec<StreamEvent> {
         }
     }
 
-    let mut end_usage = Usage::default();
-    end_usage.output_tokens = resp.usage.output_tokens;
-    end_usage.cache_creation_input_tokens = resp.usage.cache_creation_input_tokens;
-    end_usage.cache_read_input_tokens = resp.usage.cache_read_input_tokens;
+    let end_usage = Usage {
+        output_tokens: resp.usage.output_tokens,
+        cache_creation_input_tokens: resp.usage.cache_creation_input_tokens,
+        cache_read_input_tokens: resp.usage.cache_read_input_tokens,
+        ..Default::default()
+    };
     events.push(StreamEvent::MessageDelta {
         delta: MessageDelta {
             stop_reason: resp.stop_reason,

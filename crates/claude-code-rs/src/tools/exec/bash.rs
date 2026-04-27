@@ -115,8 +115,7 @@ fn build_progress_snapshot(
     }
 
     let total_bytes = combined.len() as u64;
-    let total_lines =
-        combined.lines().count() as u64 + if combined.ends_with('\n') { 0 } else { 0 };
+    let total_lines = combined.lines().count() as u64;
 
     let truncated = truncate_output(&combined, max_chars);
 
@@ -483,7 +482,6 @@ impl Tool for BashTool {
             let cb = cb.clone();
             let stdout_buf = stdout_buf.clone();
             let stderr_buf = stderr_buf.clone();
-            let start = start;
             let timeout_ms = timeout_millis;
             tokio::spawn(async move {
                 let mut ticker = tokio::time::interval(progress_interval);
@@ -708,7 +706,7 @@ Important:\n\
         if let Some(name) = input
             .and_then(|v| v.get("command"))
             .and_then(|v| v.as_str())
-            .and_then(|cmd| extract_command_name(cmd))
+            .and_then(extract_command_name)
         {
             format!("Bash({})", name)
         } else {

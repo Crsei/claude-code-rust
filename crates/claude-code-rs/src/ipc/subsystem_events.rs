@@ -163,6 +163,7 @@ pub enum SkillEvent {
 /// `/agents` settings dialog.
 #[derive(Serialize, Debug, Clone)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum AgentSettingsEvent {
     /// Full list of agent definitions (response to `QueryList`).
     List { entries: Vec<AgentDefinitionEntry> },
@@ -336,6 +337,7 @@ pub enum SkillCommand {
 /// against those scopes must be rejected with `AgentSettingsEvent::Error`.
 #[derive(Deserialize, Debug)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum AgentSettingsCommand {
     /// Return every known agent definition across all sources.
     QueryList,

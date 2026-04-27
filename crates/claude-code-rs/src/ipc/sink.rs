@@ -22,8 +22,7 @@ impl FrontendSink {
 
     /// Serialize and write a single message as a JSON line.
     pub fn send(&self, msg: &BackendMessage) -> io::Result<()> {
-        let json =
-            serde_json::to_string(msg).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string(msg).map_err(io::Error::other)?;
         let mut stdout = io::stdout().lock();
         writeln!(stdout, "{}", json)?;
         stdout.flush()
@@ -33,8 +32,7 @@ impl FrontendSink {
     pub fn send_many(&self, msgs: impl IntoIterator<Item = BackendMessage>) -> io::Result<()> {
         let mut stdout = io::stdout().lock();
         for msg in msgs {
-            let json =
-                serde_json::to_string(&msg).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            let json = serde_json::to_string(&msg).map_err(io::Error::other)?;
             writeln!(stdout, "{}", json)?;
         }
         stdout.flush()

@@ -32,7 +32,7 @@ pub fn is_path_within_allowed_directories(
     }
 
     // Check additional working directories
-    for (_name, dir_info) in &ctx.additional_working_directories {
+    for dir_info in ctx.additional_working_directories.values() {
         let dir_path = Path::new(&dir_info.path);
         if is_path_in_directory(path, dir_path) {
             return true;

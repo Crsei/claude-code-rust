@@ -303,14 +303,14 @@ fn spawn(ctx: &mut CommandContext, rest: &str) -> String {
         last_reported_tool_count: 0,
         last_reported_token_count: 0,
     });
-    let _ = runner::start_runner(runner::InProcessRunnerConfig {
+    std::mem::drop(runner::start_runner(runner::InProcessRunnerConfig {
         identity: ident,
         task_id: task_id.clone(),
         prompt: prompt.into(),
         model: None,
         cwd: cwd.clone(),
         cancellation: CancellationToken::new(),
-    });
+    }));
 
     // Update session team_context.
     if let Some(tc) = ctx.app_state.team_context.as_mut() {

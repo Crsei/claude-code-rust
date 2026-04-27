@@ -464,7 +464,7 @@ pub fn list_sessions() -> Result<Vec<SessionInfo>> {
         let entry = entry?;
         let path = entry.path();
 
-        if path.extension().map_or(true, |ext| ext != "json") {
+        if path.extension().is_none_or(|ext| ext != "json") {
             continue;
         }
 

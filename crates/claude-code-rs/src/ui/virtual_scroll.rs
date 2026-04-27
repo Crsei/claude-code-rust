@@ -84,8 +84,8 @@ impl VirtualScroll {
         let start = self.valid_up_to;
         let total = messages.len();
 
-        for i in start..total {
-            let lines = render_single_message(&messages[i], theme);
+        for (i, message) in messages.iter().enumerate().take(total).skip(start) {
+            let lines = render_single_message(message, theme);
             let mut h = lines.len();
             let mut visual_h = wrapped_line_height(&lines, width);
             // Separator blank line between messages (not after last)

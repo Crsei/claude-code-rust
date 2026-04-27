@@ -65,7 +65,7 @@ impl Tool for SleepTool {
                 message: "\"duration_seconds\" is required".to_string(),
                 error_code: 1,
             },
-            Some(d) if d < 1 || d > 3600 => ValidationResult::Error {
+            Some(d) if !(1..=3600).contains(&d) => ValidationResult::Error {
                 message: format!("\"duration_seconds\" must be between 1 and 3600, got {}", d),
                 error_code: 1,
             },
@@ -236,7 +236,7 @@ mod tests {
             },
             abort_signal: tokio::sync::watch::channel(false).1,
             read_file_state: FileStateCache::default(),
-            get_app_state: Arc::new(|| AppState::default()),
+            get_app_state: Arc::new(AppState::default),
             set_app_state: Arc::new(|_| {}),
             session_id: "test-session".to_string(),
             langfuse_session_id: "test-session".to_string(),

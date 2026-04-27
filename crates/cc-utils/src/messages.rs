@@ -193,7 +193,7 @@ pub fn summarize_message(message: &Message, max_preview: usize) -> (String, Stri
 
 /// Count total tokens across all messages (rough estimate).
 pub fn estimate_total_tokens(messages: &[Message]) -> u64 {
-    messages.iter().map(|m| estimate_tokens(m)).sum()
+    messages.iter().map(estimate_tokens).sum()
 }
 
 /// Count tool use blocks across all messages.

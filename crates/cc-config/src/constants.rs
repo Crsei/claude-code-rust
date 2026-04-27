@@ -73,11 +73,10 @@ pub fn marketing_name_for_model(model_id: &str) -> Option<&str> {
 pub fn knowledge_cutoff(model_id: &str) -> Option<&'static str> {
     if model_id.contains("claude-opus-4-6") || model_id.contains("claude-sonnet-4-6") {
         Some("May 2025")
-    } else if model_id.contains("claude-opus-4-5") || model_id.contains("claude-sonnet-4-5") {
-        Some("April 2025")
-    } else if model_id.contains("claude-sonnet-4") || model_id.contains("claude-opus-4") {
-        Some("April 2025")
-    } else if model_id.contains("claude-haiku-4-5") {
+    } else if model_id.contains("claude-sonnet-4")
+        || model_id.contains("claude-opus-4")
+        || model_id.contains("claude-haiku-4-5")
+    {
         Some("April 2025")
     } else {
         None

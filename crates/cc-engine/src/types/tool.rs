@@ -110,6 +110,9 @@ pub struct FileCacheEntry {
     pub last_read_timestamp: i64,
 }
 
+pub type AppStateUpdater = Box<dyn FnOnce(AppState) -> AppState>;
+pub type SetAppState = Arc<dyn Fn(AppStateUpdater) + Send + Sync>;
+
 /// 工具使用上下文 — 工具执行时的完整环境
 ///
 /// 对应 TypeScript: ToolUseContext
@@ -119,7 +122,7 @@ pub struct ToolUseContext {
     pub abort_signal: tokio::sync::watch::Receiver<bool>,
     pub read_file_state: FileStateCache,
     pub get_app_state: Arc<dyn Fn() -> AppState + Send + Sync>,
-    pub set_app_state: Arc<dyn Fn(Box<dyn FnOnce(AppState) -> AppState>) + Send + Sync>,
+    pub set_app_state: SetAppState,
     pub session_id: String,
     pub langfuse_session_id: String,
     pub messages: Vec<Message>,

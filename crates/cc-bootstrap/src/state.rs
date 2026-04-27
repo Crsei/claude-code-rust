@@ -6,8 +6,8 @@
 //! - DO NOT ADD MORE STATE HERE — BE JUDICIOUS WITH GLOBAL STATE
 //! - 只放真正需要全局访问的状态
 //! - 与 AppState 的区别:
-//!     AppState  = 会话级 UI/配置状态容器 (Arc<RwLock<AppState>>)
-//!     ProcessState = 进程级不可变身份 + 累计统计 (全局单例)
+//!   AppState  = 会话级 UI/配置状态容器 (Arc<RwLock<AppState>>)
+//!   ProcessState = 进程级不可变身份 + 累计统计 (全局单例)
 
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -207,16 +207,20 @@ mod tests {
 
     #[test]
     fn effective_model_override_wins() {
-        let mut state = ProcessState::default();
-        state.initial_main_loop_model = Some("sonnet".into());
-        state.main_loop_model_override = Some("opus".into());
+        let state = ProcessState {
+            initial_main_loop_model: Some("sonnet".into()),
+            main_loop_model_override: Some("opus".into()),
+            ..Default::default()
+        };
         assert_eq!(state.effective_model(), Some("opus"));
     }
 
     #[test]
     fn effective_model_falls_back_to_initial() {
-        let mut state = ProcessState::default();
-        state.initial_main_loop_model = Some("sonnet".into());
+        let state = ProcessState {
+            initial_main_loop_model: Some("sonnet".into()),
+            ..Default::default()
+        };
         assert_eq!(state.effective_model(), Some("sonnet"));
     }
 

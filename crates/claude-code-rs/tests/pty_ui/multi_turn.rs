@@ -74,7 +74,7 @@ fn clear_then_continue_input() {
 
     assert!(ok, "should produce response after /clear");
     assert!(
-        output.raw.len() > 0,
+        !output.raw.is_empty(),
         "/clear then continue should not crash"
     );
 }

@@ -1,6 +1,6 @@
 //! Git worktree execution for agent isolation.
 
-use std::path::PathBuf;
+use std::path::Path;
 
 use anyhow::Result;
 use serde_json::json;
@@ -21,6 +21,7 @@ impl AgentTool {
     ///
     /// Creates a temporary worktree + branch, points the child QueryEngine's
     /// cwd at it, runs the agent, and then cleans up if no changes were made.
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn run_in_worktree(
         &self,
         params: &AgentInput,
@@ -408,8 +409,8 @@ impl AgentTool {
 
     /// Remove a worktree and its branch after agent completes with no changes.
     async fn cleanup_worktree(
-        git_root: &PathBuf,
-        worktree_path: &PathBuf,
+        git_root: &Path,
+        worktree_path: &Path,
         branch_name: &str,
         agent_id: &str,
     ) {

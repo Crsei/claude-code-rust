@@ -124,7 +124,7 @@ fn spawn_shell_command(command: &str) -> Result<tokio::process::Child> {
             .stderr(Stdio::piped())
             .spawn()
         {
-            Ok(child) => return Ok(child),
+            Ok(child) => Ok(child),
             Err(_) => {
                 // Fall back to cmd /C
                 Command::new("cmd")
