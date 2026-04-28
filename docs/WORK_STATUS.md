@@ -32,17 +32,17 @@
 
 ### 1.3 Agent Teams / Coordinator Mode
 
-**收口状态**：in-process 闭环 + 用户面全量已落地。env var 不再是唯一开关，`/team create` 或 `TeamSpawn` 工具会在会话内即时解锁 team 功能。
+**收口状态**：in-process 闭环 + 用户面全量已落地。env var 不再是唯一开关，`/team create` 或 `TeamSpawn` 工具会在会话内即时解锁 team 功能。MVP-005 已明确 backend 策略：cc-rust 只支持 in-process；tmux/iTerm2 pane backend 记录为 intentional crop。
 
 | 子模块 | 文件 | 状态 |
 |--------|------|------|
-| in-process runner | `src/teams/runner.rs` | ✅ — 驱动子 QueryEngine，处理 mailbox 协议消息 |
+| in-process runner | `src/teams/runner.rs` | ✅ — 驱动子 QueryEngine，处理 mailbox 协议消息；首轮完成后保持 idle loop，后续 mailbox 普通消息会继续进入同一 teammate 会话 |
 | `SendMessage` 工具 | `src/tools/send_message.rs` | ✅ — 对话内消息路由；`is_enabled` 总返回 true，call 时检查 team_context |
 | `TeamSpawn` 工具 | `src/tools/team_spawn.rs` | ✅ — 对话内拉起 teammate，缺 team 时自动建 session 团队 |
 | `/team` 斜杠命令 | `src/commands/team_cmd.rs` | ✅ — `create / list / status / spawn / send / kill / leave / delete` |
 | Team Dashboard | `ui/src/components/TeamPanel.tsx` | ✅ — 订阅 `BackendMessage::TeamEvent`，展示成员/未读/最近消息 |
 | IPC QueryTeamStatus | `src/ipc/agent_handlers.rs` | ✅ — `build_team_status_events` 读盘后发 `StatusSnapshot` |
-| 终端后端 trait | `src/teams/backend.rs` | **保留类型、不实现** — `PaneBackend` trait 作为完整版接口占位；Tmux / iTerm2 不进入 rust-lite |
+| 终端后端 trait | `src/teams/backend.rs` | **Intentional crop** — `SUPPORTED_BACKENDS` 仅包含 `in-process`；`PaneBackend` trait 只保留为未来 parity 审查边界 |
 
 - 激活入口：`crate::teams::is_agent_teams_active(&app_state)` — env var 或 `team_context` 任一满足即启用
 - ingress 同步：`src/ipc/ingress.rs` 斜杠命令执行后把 `app_state.team_context` 同步回 engine

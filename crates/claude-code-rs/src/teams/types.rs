@@ -33,6 +33,19 @@ impl std::fmt::Display for BackendType {
     }
 }
 
+impl std::str::FromStr for BackendType {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "in-process" | "in_process" | "inprocess" => Ok(BackendType::InProcess),
+            "tmux" => Ok(BackendType::Tmux),
+            "iterm2" | "iterm" => Ok(BackendType::ITerm2),
+            other => Err(format!("unknown Agent Teams backend: {other}")),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // TeamFile — persisted team configuration
 // ---------------------------------------------------------------------------
@@ -205,6 +218,7 @@ pub struct InProcessTeammateTaskState {
     pub prompt: String,
     pub model: Option<String>,
     pub abort_handle: Option<tokio::task::AbortHandle>,
+    pub cancellation_token: Option<tokio_util::sync::CancellationToken>,
     pub awaiting_plan_approval: bool,
     pub permission_mode: PermissionMode,
     pub error: Option<String>,
@@ -249,6 +263,20 @@ mod tests {
         assert_eq!(json, "\"in-process\"");
         let parsed: BackendType = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, BackendType::InProcess);
+    }
+
+    #[test]
+    fn test_backend_type_from_str() {
+        assert_eq!(
+            "in-process".parse::<BackendType>().unwrap(),
+            BackendType::InProcess
+        );
+        assert_eq!("tmux".parse::<BackendType>().unwrap(), BackendType::Tmux);
+        assert_eq!(
+            "iterm2".parse::<BackendType>().unwrap(),
+            BackendType::ITerm2
+        );
+        assert!("external".parse::<BackendType>().is_err());
     }
 
     #[test]

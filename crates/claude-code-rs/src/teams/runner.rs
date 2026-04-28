@@ -44,10 +44,12 @@ pub struct InProcessRunnerConfig {
 /// `CancellationToken` controls the runner's lifecycle.
 pub fn start_runner(config: InProcessRunnerConfig) -> tokio::task::JoinHandle<()> {
     let agent_id = config.identity.agent_id.clone();
+    let task_id = config.task_id.clone();
 
     let handle = tokio::spawn(async move {
         if let Err(e) = run_teammate(config).await {
             warn!(agent_id = %agent_id, error = %e, "teammate runner exited with error");
+            InProcessBackend::mark_task_failed(&task_id, e.to_string());
         }
     });
 
@@ -115,80 +117,160 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
             crate::commands::DefaultCommandDispatcher::new(),
         ));
 
-        // Submit the initial prompt
-        {
-            use crate::engine::sdk_types::SdkMessage;
-            use futures::StreamExt;
+        let mut next_prompt = Some(config.prompt.clone());
 
-            let stream = engine.submit_message(
-                &config.prompt,
-                QuerySource::Agent(identity.agent_id.clone()),
-            );
-            let mut stream = std::pin::pin!(stream);
+        loop {
+            if let Some(prompt) = next_prompt.take() {
+                let should_stop = drive_engine_turn(
+                    &engine,
+                    &prompt,
+                    &identity,
+                    &agent_name,
+                    &team_name,
+                    &task_id,
+                    &cancellation,
+                )
+                .await?;
+                if should_stop {
+                    InProcessBackend::update_task_status(&task_id, TaskStatus::Stopped);
+                    break;
+                }
+            }
 
-            // Process stream while checking for cancellation and mailbox
+            let queued = InProcessBackend::take_pending_user_messages(&task_id);
+            if !queued.is_empty() {
+                next_prompt = Some(format_pending_messages(&queued));
+                continue;
+            }
+
+            InProcessBackend::set_task_idle(&task_id, true);
             let mut poll_interval = time::interval(Duration::from_millis(
                 super::constants::MAILBOX_POLL_INTERVAL_MS,
             ));
 
             loop {
                 tokio::select! {
-                    // Check cancellation
                     _ = cancellation.cancelled() => {
                         info!(agent_id = %identity.agent_id, "cancellation received");
-                        break;
+                        InProcessBackend::update_task_status(&task_id, TaskStatus::Stopped);
+                        return Ok(());
                     }
 
-                    // Process stream messages
-                    msg = stream.next() => {
-                        match msg {
-                            Some(SdkMessage::Result(_)) => {
-                                // Query completed — mark idle
-                                InProcessBackend::set_task_idle(&task_id, true);
-                                debug!(agent_id = %identity.agent_id, "query completed, marking idle");
-
-                                // Send idle notification to leader
-                                let _ = send_idle_notification(
-                                    &agent_name,
-                                    &team_name,
-                                    IdleReason::Available,
-                                    None,
-                                );
-                                break;
-                            }
-                            Some(_) => {
-                                // Still processing — ensure not marked idle
-                                InProcessBackend::set_task_idle(&task_id, false);
-                            }
-                            None => {
-                                // Stream ended
-                                break;
-                            }
-                        }
-                    }
-
-                    // Periodic mailbox check
                     _ = poll_interval.tick() => {
-                        if let Err(e) = process_mailbox(
+                        match process_mailbox(
                             &agent_name,
                             &team_name,
                             &identity.agent_id,
                             &task_id,
                         ) {
-                            warn!(error = %e, "mailbox processing error");
+                            Ok(actions) => {
+                                for message in actions.plain_messages {
+                                    InProcessBackend::push_pending_user_message(&task_id, message);
+                                }
+                                if actions.shutdown_requested {
+                                    InProcessBackend::update_task_status(&task_id, TaskStatus::Stopped);
+                                    return Ok(());
+                                }
+                                let queued = InProcessBackend::take_pending_user_messages(&task_id);
+                                if !queued.is_empty() {
+                                    next_prompt = Some(format_pending_messages(&queued));
+                                    break;
+                                }
+                            }
+                            Err(e) => warn!(error = %e, "mailbox processing error"),
                         }
                     }
                 }
             }
         }
 
-        // Cleanup
-        InProcessBackend::update_task_status(&task_id, TaskStatus::Completed);
         info!(agent_id = %identity.agent_id, "teammate runner finished");
+        Ok(())
     })
-    .await;
+    .await
+}
 
-    Ok(())
+async fn drive_engine_turn(
+    engine: &QueryEngine,
+    prompt: &str,
+    identity: &TeammateIdentity,
+    agent_name: &str,
+    team_name: &str,
+    task_id: &str,
+    cancellation: &tokio_util::sync::CancellationToken,
+) -> Result<bool> {
+    use crate::engine::sdk_types::SdkMessage;
+    use futures::StreamExt;
+
+    InProcessBackend::set_task_idle(task_id, false);
+
+    let stream = engine.submit_message(prompt, QuerySource::Agent(identity.agent_id.clone()));
+    let mut stream = std::pin::pin!(stream);
+    let mut poll_interval = time::interval(Duration::from_millis(
+        super::constants::MAILBOX_POLL_INTERVAL_MS,
+    ));
+
+    loop {
+        tokio::select! {
+            _ = cancellation.cancelled() => {
+                info!(agent_id = %identity.agent_id, "cancellation received");
+                return Ok(true);
+            }
+
+            msg = stream.next() => {
+                match msg {
+                    Some(SdkMessage::Result(_)) => {
+                        InProcessBackend::set_task_idle(task_id, true);
+                        debug!(agent_id = %identity.agent_id, "query completed, marking idle");
+
+                        let _ = send_idle_notification(
+                            agent_name,
+                            team_name,
+                            IdleReason::Available,
+                            None,
+                        );
+                        return Ok(false);
+                    }
+                    Some(_) => {
+                        InProcessBackend::set_task_idle(task_id, false);
+                    }
+                    None => {
+                        InProcessBackend::set_task_idle(task_id, true);
+                        return Ok(false);
+                    }
+                }
+            }
+
+            _ = poll_interval.tick() => {
+                let actions = process_mailbox(
+                    agent_name,
+                    team_name,
+                    &identity.agent_id,
+                    task_id,
+                )?;
+                for message in actions.plain_messages {
+                    InProcessBackend::push_pending_user_message(task_id, message);
+                }
+                if actions.shutdown_requested {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+}
+
+fn format_pending_messages(messages: &[String]) -> String {
+    if messages.len() == 1 {
+        return messages[0].clone();
+    }
+
+    let mut prompt = String::from("Team mailbox messages:\n");
+    for message in messages {
+        prompt.push_str("- ");
+        prompt.push_str(message);
+        prompt.push('\n');
+    }
+    prompt
 }
 
 // ---------------------------------------------------------------------------
@@ -196,19 +278,35 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// Process unread mailbox messages for this teammate.
-fn process_mailbox(agent_name: &str, team_name: &str, agent_id: &str, task_id: &str) -> Result<()> {
-    let messages = mailbox::read_unread_messages(agent_name, team_name)?;
+#[derive(Default)]
+struct MailboxActions {
+    shutdown_requested: bool,
+    plain_messages: Vec<String>,
+}
 
-    for (idx, msg) in messages.iter().enumerate() {
+fn process_mailbox(
+    agent_name: &str,
+    team_name: &str,
+    agent_id: &str,
+    task_id: &str,
+) -> Result<MailboxActions> {
+    let messages = mailbox::read_unread_messages(agent_name, team_name)?;
+    let mut actions = MailboxActions::default();
+
+    for msg in &messages {
         // Try to parse as protocol message
         if let Some(proto) = protocol::try_parse_protocol_message(&msg.text) {
-            handle_protocol_message(proto, agent_name, team_name, agent_id, task_id)?;
+            if handle_protocol_message(proto, agent_name, team_name, agent_id, task_id)? {
+                actions.shutdown_requested = true;
+            }
         } else {
-            // Plain text message — log for now (would inject into conversation)
             debug!(
                 from = %msg.from,
                 "received plain text message from teammate"
             );
+            actions
+                .plain_messages
+                .push(format!("Message from {}: {}", msg.from, msg.text));
         }
     }
 
@@ -217,7 +315,7 @@ fn process_mailbox(agent_name: &str, team_name: &str, agent_id: &str, task_id: &
         mailbox::mark_all_as_read(agent_name, team_name)?;
     }
 
-    Ok(())
+    Ok(actions)
 }
 
 /// Handle a structured protocol message.
@@ -227,7 +325,7 @@ fn handle_protocol_message(
     team_name: &str,
     agent_id: &str,
     task_id: &str,
-) -> Result<()> {
+) -> Result<bool> {
     match msg {
         ProtocolMessage::ShutdownRequest {
             request_id, reason, ..
@@ -264,6 +362,8 @@ fn handle_protocol_message(
 
             // Mark task as stopped
             InProcessBackend::update_task_status(task_id, TaskStatus::Stopped);
+            InProcessBackend::request_shutdown(task_id);
+            return Ok(true);
         }
 
         ProtocolMessage::PlanApprovalResponse {
@@ -292,7 +392,7 @@ fn handle_protocol_message(
         }
     }
 
-    Ok(())
+    Ok(false)
 }
 
 // ---------------------------------------------------------------------------
@@ -360,5 +460,20 @@ mod tests {
     fn test_idle_reason_serialize() {
         let json = serde_json::to_string(&IdleReason::Available).unwrap();
         assert_eq!(json, "\"available\"");
+    }
+
+    #[test]
+    fn pending_messages_are_formatted_for_next_turn() {
+        assert_eq!(
+            format_pending_messages(&["Message from lead: continue".into()]),
+            "Message from lead: continue"
+        );
+        let formatted = format_pending_messages(&[
+            "Message from lead: first".into(),
+            "Message from reviewer: second".into(),
+        ]);
+        assert!(formatted.starts_with("Team mailbox messages:"));
+        assert!(formatted.contains("- Message from lead: first"));
+        assert!(formatted.contains("- Message from reviewer: second"));
     }
 }

@@ -19,14 +19,13 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio_util::sync::CancellationToken;
 
 use super::{CommandContext, CommandHandler, CommandResult};
+use crate::teams::backend::TeammateExecutor;
 use crate::teams::types::{
-    BackendType, InProcessTeammateTaskState, TaskStatus, TeamContext, TeamMember, TeammateIdentity,
-    TeammateInfo, TeammateMessage,
+    BackendType, TeamContext, TeamMember, TeammateInfo, TeammateMessage, TeammateSpawnConfig,
 };
-use crate::teams::{constants, helpers, identity, in_process::InProcessBackend, mailbox, runner};
+use crate::teams::{backend, constants, helpers, identity, in_process::InProcessBackend, mailbox};
 
 // ---------------------------------------------------------------------------
 // Handler
@@ -45,11 +44,11 @@ impl CommandHandler for TeamHandler {
             "" | "status" => status(ctx),
             "list" => list_teams(),
             "create" => create(ctx, rest),
-            "spawn" => spawn(ctx, rest),
+            "spawn" => spawn(ctx, rest).await,
             "send" => send(ctx, rest),
             "kill" => kill(ctx, rest).await,
             "leave" => leave(ctx),
-            "delete" => delete(ctx, rest),
+            "delete" => delete(ctx, rest).await,
             "help" | "--help" | "-h" => help(),
             other => format!("Unknown /team subcommand: '{}'. Try /team help.", other),
         };
@@ -77,6 +76,8 @@ fn help() -> String {
         "  /team kill <name>         Force-kill a teammate",
         "  /team leave               Clear the active team context",
         "  /team delete <name>       Remove a team's data from disk",
+        "",
+        backend::strategy_summary(),
     ]
     .join("\n")
 }
@@ -142,6 +143,11 @@ fn status(ctx: &CommandContext) -> String {
 
     let running = InProcessBackend::running_task_count();
     lines.push(format!("  in-process running tasks: {}", running));
+    lines.push(format!(
+        "  in-process working: {}",
+        InProcessBackend::has_working_teammates()
+    ));
+    lines.push(format!("  {}", backend::strategy_summary()));
 
     lines.join("\n")
 }
@@ -220,7 +226,7 @@ fn create(ctx: &mut CommandContext, rest: &str) -> String {
     )
 }
 
-fn spawn(ctx: &mut CommandContext, rest: &str) -> String {
+async fn spawn(ctx: &mut CommandContext, rest: &str) -> String {
     let mut parts = rest.splitn(2, char_is_whitespace);
     let name = parts.next().unwrap_or("").trim();
     let prompt = parts.next().unwrap_or("").trim();
@@ -277,40 +283,38 @@ fn spawn(ctx: &mut CommandContext, rest: &str) -> String {
         return format!("Failed to update team file: {}", e);
     }
 
-    // Register + spawn runner.
-    let task_id = format!("in_process_teammate_{}", uuid::Uuid::new_v4());
-    let ident = TeammateIdentity {
-        agent_id: agent_id.clone(),
-        agent_name: name.into(),
-        team_name: team_name.clone(),
-        color: Some(color.clone()),
-        plan_mode_required: false,
-        parent_session_id: ctx.session_id.to_string(),
+    let backend = InProcessBackend::new();
+    let spawn_result = match backend
+        .spawn(TeammateSpawnConfig {
+            name: name.into(),
+            team_name: team_name.clone(),
+            color: Some(color.clone()),
+            plan_mode_required: false,
+            prompt: prompt.into(),
+            cwd: cwd.clone(),
+            model: None,
+            system_prompt: None,
+            system_prompt_mode: None,
+            worktree_path: None,
+            parent_session_id: ctx.session_id.to_string(),
+            permissions: vec![],
+            allow_permission_prompts: false,
+        })
+        .await
+    {
+        Ok(result) if result.success => result,
+        Ok(result) => {
+            let _ = helpers::set_member_active(&team_name, &agent_id, false);
+            return result
+                .error
+                .unwrap_or_else(|| format!("Failed to spawn '{}' in team '{}'", name, team_name));
+        }
+        Err(e) => {
+            let _ = helpers::set_member_active(&team_name, &agent_id, false);
+            return format!("Failed to spawn '{}': {}", name, e);
+        }
     };
-    InProcessBackend::register_task(InProcessTeammateTaskState {
-        id: task_id.clone(),
-        status: TaskStatus::Running,
-        identity: ident.clone(),
-        prompt: prompt.into(),
-        model: None,
-        abort_handle: None,
-        awaiting_plan_approval: false,
-        permission_mode: crate::types::tool::PermissionMode::Default,
-        error: None,
-        pending_user_messages: vec![],
-        is_idle: false,
-        shutdown_requested: false,
-        last_reported_tool_count: 0,
-        last_reported_token_count: 0,
-    });
-    std::mem::drop(runner::start_runner(runner::InProcessRunnerConfig {
-        identity: ident,
-        task_id: task_id.clone(),
-        prompt: prompt.into(),
-        model: None,
-        cwd: cwd.clone(),
-        cancellation: CancellationToken::new(),
-    }));
+    let task_id = spawn_result.task_id.unwrap_or_default();
 
     // Update session team_context.
     if let Some(tc) = ctx.app_state.team_context.as_mut() {
@@ -330,7 +334,7 @@ fn spawn(ctx: &mut CommandContext, rest: &str) -> String {
     }
 
     format!(
-        "Spawned '{}' in team '{}' (agent_id={}, task_id={}, color={}).",
+        "Spawned '{}' in team '{}' (agent_id={}, task_id={}, backend=in-process, color={}).",
         name, team_name, agent_id, task_id, color
     )
 }
@@ -375,10 +379,7 @@ async fn kill(ctx: &mut CommandContext, rest: &str) -> String {
     };
     let agent_id = identity::format_agent_id(name, &tc.team_name);
     let backend = InProcessBackend::new();
-    let killed = {
-        use crate::teams::backend::TeammateExecutor;
-        backend.kill(&agent_id).await
-    };
+    let killed = backend.kill(&agent_id).await;
     if killed {
         // Flip is_active in team file and remove from teammates map.
         let _ = helpers::set_member_active(&tc.team_name, &agent_id, false);
@@ -401,13 +402,21 @@ fn leave(ctx: &mut CommandContext) -> String {
     }
 }
 
-fn delete(ctx: &mut CommandContext, rest: &str) -> String {
+async fn delete(ctx: &mut CommandContext, rest: &str) -> String {
     let name = rest.trim();
     if name.is_empty() {
         return "Usage: /team delete <name>".into();
     }
     if !helpers::team_exists(name) {
         return format!("Team '{}' does not exist.", name);
+    }
+    if let Ok(team_file) = helpers::read_team_file(name) {
+        let backend = InProcessBackend::new();
+        for member in helpers::get_non_lead_members(&team_file) {
+            if member.backend_type.unwrap_or(BackendType::InProcess) == BackendType::InProcess {
+                let _ = backend.kill(&member.agent_id).await;
+            }
+        }
     }
     match helpers::cleanup_team_directories(name) {
         Ok(()) => {

@@ -178,6 +178,22 @@ fn handle_single_message(
     summary: Option<&str>,
     team_name: &str,
 ) -> Result<ToolResult> {
+    let team_file = helpers::read_team_file(team_name)?;
+    let Some(member) = team_file.members.iter().find(|m| m.name == recipient) else {
+        bail!(
+            "No active team member named '{}' exists in team '{}'",
+            recipient,
+            team_name
+        );
+    };
+    if member.is_active == Some(false) {
+        bail!(
+            "Team member '{}' in team '{}' is inactive",
+            recipient,
+            team_name
+        );
+    }
+
     let now = chrono::Utc::now();
     let message = TeammateMessage {
         from: sender.to_string(),
@@ -214,7 +230,7 @@ fn handle_broadcast(
     let recipients: Vec<String> = team_file
         .members
         .iter()
-        .filter(|m| m.name != sender)
+        .filter(|m| m.name != sender && m.is_active != Some(false))
         .map(|m| m.name.clone())
         .collect();
 

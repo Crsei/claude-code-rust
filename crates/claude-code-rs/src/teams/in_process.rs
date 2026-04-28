@@ -6,13 +6,10 @@
 //! Uses `tokio::task_local!` for context isolation and
 //! `CancellationToken` for lifecycle management.
 
-#![allow(unused)]
-
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -22,6 +19,7 @@ use super::constants::*;
 use super::identity;
 use super::mailbox;
 use super::protocol;
+use super::runner;
 use super::types::*;
 
 use crate::types::tool::PermissionMode;
@@ -97,13 +95,61 @@ impl InProcessBackend {
         }
     }
 
+    /// Attach the tokio abort handle after spawning the runner task.
+    pub fn set_abort_handle(task_id: &str, abort_handle: tokio::task::AbortHandle) {
+        let mut registry = TASK_REGISTRY.lock();
+        if let Some(state) = registry.get_mut(task_id) {
+            state.abort_handle = Some(abort_handle);
+        }
+    }
+
+    /// Queue a plain-text user message that arrived while the teammate was
+    /// already working. The runner drains this queue between turns.
+    pub fn push_pending_user_message(task_id: &str, message: String) {
+        let mut registry = TASK_REGISTRY.lock();
+        if let Some(state) = registry.get_mut(task_id) {
+            state.pending_user_messages.push(message);
+        }
+    }
+
+    /// Take all queued user messages for the next teammate turn.
+    pub fn take_pending_user_messages(task_id: &str) -> Vec<String> {
+        let mut registry = TASK_REGISTRY.lock();
+        registry
+            .get_mut(task_id)
+            .map(|state| std::mem::take(&mut state.pending_user_messages))
+            .unwrap_or_default()
+    }
+
+    /// Mark a task as shutdown-requested.
+    pub fn request_shutdown(task_id: &str) {
+        let mut registry = TASK_REGISTRY.lock();
+        if let Some(state) = registry.get_mut(task_id) {
+            state.shutdown_requested = true;
+        }
+    }
+
+    /// Mark a runner failure and stop the task unless it was already stopped.
+    pub fn mark_task_failed(task_id: &str, error: String) {
+        let mut registry = TASK_REGISTRY.lock();
+        if let Some(state) = registry.get_mut(task_id) {
+            if state.status == TaskStatus::Running {
+                state.status = TaskStatus::Stopped;
+            }
+            state.error = Some(error);
+            state.is_idle = true;
+        }
+    }
+
     /// Remove a task from the registry.
+    #[allow(dead_code)]
     pub fn remove_task(task_id: &str) {
         let mut registry = TASK_REGISTRY.lock();
         registry.remove(task_id);
     }
 
     /// Get all task IDs.
+    #[allow(dead_code)]
     pub fn all_task_ids() -> Vec<String> {
         let registry = TASK_REGISTRY.lock();
         registry.keys().cloned().collect()
@@ -190,6 +236,7 @@ impl TeammateExecutor for InProcessBackend {
             prompt: config.prompt.clone(),
             model: config.model.clone(),
             abort_handle: None,
+            cancellation_token: None,
             awaiting_plan_approval: false,
             permission_mode: PermissionMode::Default,
             error: None,
@@ -201,7 +248,23 @@ impl TeammateExecutor for InProcessBackend {
         };
 
         // Register task
+        let cancellation = CancellationToken::new();
+        let runner_config = runner::InProcessRunnerConfig {
+            identity: identity.clone(),
+            task_id: task_id.clone(),
+            prompt: config.prompt.clone(),
+            model: config.model.clone(),
+            cwd: config.cwd.clone(),
+            cancellation: cancellation.clone(),
+        };
+
+        let mut task_state = task_state;
+        task_state.cancellation_token = Some(cancellation);
         Self::register_task(task_state);
+        let handle = runner::start_runner(runner_config);
+        let abort_handle = handle.abort_handle();
+        Self::set_abort_handle(&task_id, abort_handle.clone());
+        std::mem::drop(handle);
 
         info!(
             agent_id = %agent_id,
@@ -213,7 +276,7 @@ impl TeammateExecutor for InProcessBackend {
             success: true,
             agent_id,
             error: None,
-            abort_handle: None,
+            abort_handle: Some(abort_handle),
             task_id: Some(task_id),
             pane_id: None,
         })
@@ -280,13 +343,7 @@ impl TeammateExecutor for InProcessBackend {
             return false;
         }
 
-        // Mark as shutdown requested
-        {
-            let mut registry = TASK_REGISTRY.lock();
-            if let Some(state) = registry.get_mut(&task_id) {
-                state.shutdown_requested = true;
-            }
-        }
+        Self::request_shutdown(&task_id);
 
         info!(agent_id, "shutdown request sent");
         true
@@ -298,18 +355,25 @@ impl TeammateExecutor for InProcessBackend {
             None => return false,
         };
 
-        let mut registry = TASK_REGISTRY.lock();
-        if let Some(state) = registry.get_mut(&task_id) {
-            // Abort the task if we have a handle
-            if let Some(ref handle) = state.abort_handle {
-                handle.abort();
-            }
+        let (abort_handle, cancellation_token) = {
+            let mut registry = TASK_REGISTRY.lock();
+            let Some(state) = registry.get_mut(&task_id) else {
+                return false;
+            };
             state.status = TaskStatus::Stopped;
-            info!(agent_id, "teammate force-killed");
-            true
-        } else {
-            false
+            state.shutdown_requested = true;
+            state.is_idle = true;
+            (state.abort_handle.clone(), state.cancellation_token.clone())
+        };
+
+        if let Some(token) = cancellation_token {
+            token.cancel();
         }
+        if let Some(handle) = abort_handle {
+            handle.abort();
+        }
+        info!(agent_id, "teammate force-killed");
+        true
     }
 
     async fn is_active(&self, agent_id: &str) -> bool {
@@ -373,6 +437,7 @@ mod tests {
         assert!(result.success);
         assert_eq!(result.agent_id, "test-worker@test-team");
         assert!(result.task_id.is_some());
+        assert!(result.abort_handle.is_some());
 
         assert!(backend.is_active("test-worker@test-team").await);
         assert_eq!(InProcessBackend::running_task_count(), 1);
@@ -421,5 +486,42 @@ mod tests {
         setup();
         let backend = InProcessBackend::new();
         assert!(!backend.kill("nonexistent@team").await);
+    }
+
+    #[test]
+    fn pending_messages_are_drained_once() {
+        setup();
+        InProcessBackend::register_task(InProcessTeammateTaskState {
+            id: "task-1".into(),
+            status: TaskStatus::Running,
+            identity: TeammateIdentity {
+                agent_id: "worker@team".into(),
+                agent_name: "worker".into(),
+                team_name: "team".into(),
+                color: None,
+                plan_mode_required: false,
+                parent_session_id: "session".into(),
+            },
+            prompt: "initial".into(),
+            model: None,
+            abort_handle: None,
+            cancellation_token: None,
+            awaiting_plan_approval: false,
+            permission_mode: PermissionMode::Default,
+            error: None,
+            pending_user_messages: vec![],
+            is_idle: false,
+            shutdown_requested: false,
+            last_reported_tool_count: 0,
+            last_reported_token_count: 0,
+        });
+
+        InProcessBackend::push_pending_user_message("task-1", "Message from lead: go".into());
+        assert_eq!(
+            InProcessBackend::take_pending_user_messages("task-1"),
+            vec!["Message from lead: go".to_string()]
+        );
+        assert!(InProcessBackend::take_pending_user_messages("task-1").is_empty());
+        setup();
     }
 }
