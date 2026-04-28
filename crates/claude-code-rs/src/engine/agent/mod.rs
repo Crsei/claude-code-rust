@@ -8,6 +8,7 @@
 
 mod dispatch;
 pub mod fork;
+pub(crate) mod supervisor;
 mod tool_impl;
 mod worktree;
 

@@ -13,6 +13,7 @@ pub fn handle_agent_command(cmd: AgentCommand) -> Vec<BackendMessage> {
     match cmd {
         AgentCommand::AbortAgent { agent_id } => {
             debug!(agent_id = %agent_id, "IPC: abort agent requested");
+            let task_id = crate::engine::agent::supervisor::cancel_agent(&agent_id);
             AGENT_TREE
                 .lock()
                 .update_state(&agent_id, "aborted", None, None, false);
@@ -26,7 +27,17 @@ pub fn handle_agent_command(cmd: AgentCommand) -> Vec<BackendMessage> {
             let snapshot = BackendMessage::AgentEvent {
                 event: AgentEvent::TreeSnapshot { roots },
             };
-            vec![aborted, snapshot]
+            let mut messages = vec![aborted, snapshot];
+            if let Some(task_id) = task_id {
+                messages.push(BackendMessage::SystemInfo {
+                    text: format!(
+                        "Cancellation requested for background agent task {}.",
+                        task_id
+                    ),
+                    level: "info".into(),
+                });
+            }
+            messages
         }
         AgentCommand::QueryActiveAgents => {
             let roots = AGENT_TREE.lock().build_snapshot();
@@ -36,10 +47,26 @@ pub fn handle_agent_command(cmd: AgentCommand) -> Vec<BackendMessage> {
         }
         AgentCommand::QueryAgentOutput { agent_id } => {
             debug!(agent_id = %agent_id, "IPC: query agent output");
-            vec![BackendMessage::SystemInfo {
-                text: format!("Agent output replay not yet implemented for {}", agent_id),
-                level: "info".into(),
-            }]
+            match crate::engine::agent::supervisor::output_for_agent(&agent_id) {
+                Some(task) => vec![BackendMessage::SystemInfo {
+                    text: if task.output.is_empty() {
+                        format!(
+                            "Agent {} is tracked as task {}, but has no retained output yet.",
+                            agent_id, task.id
+                        )
+                    } else {
+                        format!(
+                            "Agent {} output from task {}:\n{}",
+                            agent_id, task.id, task.output
+                        )
+                    },
+                    level: "info".into(),
+                }],
+                None => vec![BackendMessage::SystemInfo {
+                    text: format!("No retained output is available for agent {}.", agent_id),
+                    level: "warning".into(),
+                }],
+            }
         }
     }
 }

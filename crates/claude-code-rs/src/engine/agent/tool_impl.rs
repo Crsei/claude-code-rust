@@ -6,13 +6,10 @@ use serde_json::{json, Value};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::engine::lifecycle::QueryEngine;
-use crate::types::config::QuerySource;
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
-use crate::utils::bash::validate_working_directory;
 
-use super::{build_child_config, resolve_model_alias, AgentInput, AgentTool, MAX_AGENT_DEPTH};
+use super::{resolve_model_alias, AgentInput, AgentTool, MAX_AGENT_DEPTH};
 
 #[async_trait]
 impl Tool for AgentTool {
@@ -181,237 +178,29 @@ impl Tool for AgentTool {
                     .await;
             };
 
-            // Fire SubagentStart hook before spawn
-            if !start_configs.is_empty() {
-                let payload = json!({
-                    "agent_id": &agent_id,
-                    "prompt": &params.prompt,
-                    "description": description,
-                    "subagent_type": subagent_type,
-                    "model": &agent_model,
-                    "depth": current_depth + 1,
-                    "background": true,
-                });
-                let _ = ctx
-                    .hook_runner
-                    .run_event_hooks("SubagentStart", &payload, &start_configs)
-                    .await;
-            }
+            let bg_description = description.to_string();
+            let bg_subagent_type = subagent_type.to_string();
 
-            // Build child config now (before move into spawn)
-            if use_worktree {
-                warn!(agent_id = %agent_id, "background + worktree not yet combined — using normal cwd");
-                let _ = crate::dashboard::emit_subagent_event(
-                    "warning",
-                    &agent_id,
-                    ctx.agent_id.as_deref(),
-                    Some(description),
-                    Some(&agent_model),
-                    current_depth + 1,
-                    true,
-                    Some(json!({
-                        "message": "background + worktree not yet combined; using normal cwd",
-                    })),
-                );
-            }
-            let child_cwd = std::env::current_dir()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| ".".to_string());
-
-            // Validate working directory before spawning background agent
-            validate_working_directory(&child_cwd)?;
-
-            let child_config = build_child_config(
-                child_cwd,
+            let launch = super::supervisor::spawn_background_agent(
+                params,
                 ctx,
-                &agent_id,
-                params.subagent_type.as_deref(),
-                &agent_model,
-                &parent_model,
+                agent_id.clone(),
+                bg_description.clone(),
+                bg_subagent_type,
+                agent_model.clone(),
+                parent_model.clone(),
                 current_depth,
-            );
-
-            // Register in tree and emit Spawned event
-            {
-                let chain_id = ctx
-                    .query_tracking
-                    .as_ref()
-                    .map(|t| t.chain_id.clone())
-                    .unwrap_or_default();
-                let node = crate::ipc::agent_types::AgentNode {
-                    agent_id: agent_id.clone(),
-                    parent_agent_id: ctx.agent_id.clone(),
-                    description: description.to_string(),
-                    agent_type: params.subagent_type.clone(),
-                    model: Some(agent_model.clone()),
-                    state: "running".into(),
-                    is_background: true,
-                    depth: current_depth + 1,
-                    chain_id: chain_id.clone(),
-                    spawned_at: chrono::Utc::now().timestamp(),
-                    completed_at: None,
-                    duration_ms: None,
-                    result_preview: None,
-                    had_error: false,
-                    children: vec![],
-                };
-                crate::ipc::agent_tree::AGENT_TREE.lock().register(node);
-
-                let _ = bg_tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
-                    crate::ipc::agent_events::AgentEvent::Spawned {
-                        agent_id: agent_id.clone(),
-                        parent_agent_id: ctx.agent_id.clone(),
-                        description: description.to_string(),
-                        agent_type: params.subagent_type.clone(),
-                        model: Some(agent_model.clone()),
-                        is_background: true,
-                        depth: current_depth + 1,
-                        chain_id,
-                    },
-                ));
-
-                // Push tree snapshot
-                let roots = crate::ipc::agent_tree::AGENT_TREE.lock().build_snapshot();
-                let _ = bg_tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
-                    crate::ipc::agent_events::AgentEvent::TreeSnapshot { roots },
-                ));
-            }
-
-            // Capture owned values for the spawned task
-            let spawn_agent_id = agent_id.clone();
-            let spawn_description = description.to_string();
-            let spawn_parent_agent_id = ctx.agent_id.clone();
-            let spawn_prompt = params.prompt.clone();
-            let spawn_agent_model = agent_model.clone();
-            let spawn_stop_configs = stop_configs.clone();
-            let spawn_hook_runner = ctx.hook_runner.clone();
-            let spawn_command_dispatcher = ctx.command_dispatcher.clone();
-
-            tokio::spawn(async move {
-                let started = std::time::Instant::now();
-                info!(agent_id = %spawn_agent_id, description = %spawn_description, "background agent started");
-
-                let mut child_engine = QueryEngine::new(child_config);
-                child_engine.set_hook_runner(spawn_hook_runner.clone());
-                child_engine.set_command_dispatcher(spawn_command_dispatcher);
-                let stream = child_engine
-                    .submit_message(&spawn_prompt, QuerySource::Agent(spawn_agent_id.clone()));
-                let mut stream = std::pin::pin!(stream);
-                let mut result_text = String::new();
-                let mut had_error = false;
-
-                while let Some(msg) = futures::StreamExt::next(&mut stream).await {
-                    // Collect text (existing logic)
-                    match &msg {
-                        crate::engine::sdk_types::SdkMessage::Assistant(ref a) => {
-                            for block in &a.message.content {
-                                if let crate::types::message::ContentBlock::Text { text } = block {
-                                    if !result_text.is_empty() {
-                                        result_text.push('\n');
-                                    }
-                                    result_text.push_str(text);
-                                }
-                            }
-                        }
-                        crate::engine::sdk_types::SdkMessage::Result(ref r) => {
-                            if r.is_error {
-                                had_error = true;
-                                if !r.result.is_empty() {
-                                    result_text = r.result.clone();
-                                }
-                            } else if result_text.is_empty() && !r.result.is_empty() {
-                                result_text = r.result.clone();
-                            }
-                        }
-                        _ => {}
-                    }
-
-                    // Forward stream event to IPC
-                    if let Some(agent_event) = super::sdk_to_agent_event(&msg, &spawn_agent_id) {
-                        let _ = bg_tx
-                            .send(crate::ipc::agent_channel::AgentIpcEvent::Agent(agent_event));
-                    }
-                }
-
-                if result_text.is_empty() {
-                    result_text = "(Agent completed with no text output)".to_string();
-                }
-
-                let duration_ms = started.elapsed().as_millis() as u64;
-
-                info!(
-                    agent_id = %spawn_agent_id,
-                    duration_ms = duration_ms,
-                    result_len = result_text.len(),
-                    had_error = had_error,
-                    "background agent completed",
-                );
-
-                let _ = crate::dashboard::emit_subagent_event(
-                    "background_complete",
-                    &spawn_agent_id,
-                    spawn_parent_agent_id.as_deref(),
-                    Some(&spawn_description),
-                    Some(&spawn_agent_model),
-                    current_depth + 1,
-                    true,
-                    Some(json!({
-                        "duration_ms": duration_ms,
-                        "result_len": result_text.len(),
-                        "had_error": had_error,
-                    })),
-                );
-
-                // Fire SubagentStop hook
-                if !spawn_stop_configs.is_empty() {
-                    let payload = json!({
-                        "agent_id": &spawn_agent_id,
-                        "description": &spawn_description,
-                        "is_error": had_error,
-                        "background": true,
-                    });
-                    let _ = spawn_hook_runner
-                        .run_event_hooks("SubagentStop", &payload, &spawn_stop_configs)
-                        .await;
-                }
-
-                let result_preview = if result_text.len() > 200 {
-                    let end = result_text.floor_char_boundary(200);
-                    format!("{}...", &result_text[..end])
-                } else {
-                    result_text.clone()
-                };
-
-                // Update tree state before sending Completed
-                crate::ipc::agent_tree::AGENT_TREE.lock().update_state(
-                    &spawn_agent_id,
-                    if had_error { "error" } else { "completed" },
-                    Some(result_preview.clone()),
-                    Some(duration_ms),
-                    had_error,
-                );
-
-                let _ = bg_tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
-                    crate::ipc::agent_events::AgentEvent::Completed {
-                        agent_id: spawn_agent_id.clone(),
-                        result_preview,
-                        had_error,
-                        duration_ms,
-                        output_tokens: None,
-                    },
-                ));
-
-                // Push tree snapshot after Completed
-                let roots = crate::ipc::agent_tree::AGENT_TREE.lock().build_snapshot();
-                let _ = bg_tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
-                    crate::ipc::agent_events::AgentEvent::TreeSnapshot { roots },
-                ));
-            });
+                use_worktree,
+                bg_tx,
+                start_configs,
+                stop_configs,
+            )
+            .await?;
 
             return Ok(ToolResult {
                 data: json!(format!(
-                    "Agent '{}' launched in background (id: {}). You will be notified when it completes.",
-                    description, agent_id
+                    "Agent '{}' launched in background (id: {}, task: {}). You will be notified when it completes.",
+                    bg_description, agent_id, launch.task_id
                 )),
                 new_messages: vec![],
                 ..Default::default()
