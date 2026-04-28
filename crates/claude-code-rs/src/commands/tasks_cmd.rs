@@ -1,19 +1,9 @@
-//! `/tasks` slash command — background task list + detail controls.
+//! `/tasks` slash command: background task list + detail controls.
 //!
-//! Rust issue #54. Aggregates every task surface cc-rust already tracks
-//! today (tool-driven tasks in `tools::tasks::GLOBAL_STORE`, teammate
-//! runners in `teams::in_process::TASK_REGISTRY`) and renders them as a
-//! drill-down tree.
-//!
-//! Core acceptance criteria:
-//! * `list` shows every current task, grouped by kind;
-//! * `show <id>` drills in on one task, printing full prompt / error /
-//!   subject;
-//! * `stop <id>` asks the tool-side store to mark the task stopped.
-//!
-//! Remote-agent tasks are out of scope for the rust-lite branch (the
-//! `remote` module was removed); the framing here leaves room for that
-//! bucket without pulling it in.
+//! Aggregates tool-driven tasks from `tools::tasks::GLOBAL_STORE` and
+//! in-process teammate runners from `teams::in_process::TASK_REGISTRY`.
+//! Tool task metadata is durable across process restarts; runtime cancellation
+//! handles remain process-local and only exist while a supervisor is alive.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -41,19 +31,29 @@ impl CommandHandler for TasksHandler {
                 }
                 Ok(CommandResult::Output(render_detail(id)))
             }
-            "stop" | "kill" => {
+            "stop" | "kill" | "cancel" => {
                 let id = parts.next().unwrap_or("").trim();
                 if id.is_empty() {
                     return Ok(CommandResult::Output("Usage: /tasks stop <id>".to_string()));
                 }
                 Ok(CommandResult::Output(stop_task(id)))
             }
+            "delete" | "rm" => {
+                let id = parts.next().unwrap_or("").trim();
+                if id.is_empty() {
+                    return Ok(CommandResult::Output(
+                        "Usage: /tasks delete <id>".to_string(),
+                    ));
+                }
+                Ok(CommandResult::Output(delete_task(id)))
+            }
             other => Ok(CommandResult::Output(format!(
                 "Unknown /tasks subcommand '{}'.\n\n\
                  Usage:\n  \
-                 /tasks               — list current background tasks\n  \
-                 /tasks show <id>     — drill into one task\n  \
-                 /tasks stop <id>     — mark a tool task as stopped\n",
+                 /tasks               - list current background tasks\n  \
+                 /tasks show <id>     - drill into one task\n  \
+                 /tasks stop <id>     - cancel a tool task\n  \
+                 /tasks delete <id>   - delete a persisted tool task\n",
                 other
             ))),
         }
@@ -70,25 +70,33 @@ fn render_list() -> String {
 
     let mut roots: Vec<TreeNode> = Vec::new();
 
-    // Tool-backed tasks: shell, tool orchestration, whatever the TaskCreate
-    // tool registered.
     let mut tool_node = TreeNode::leaf(format!("Tool tasks ({})", tool_tasks.len()));
     if tool_tasks.is_empty() {
         tool_node.push_child(TreeNode::leaf("(none)"));
     } else {
         for task in &tool_tasks {
+            let detail = if task.output_truncated {
+                format!(
+                    "{} | output {} bytes, truncated",
+                    format_timestamp(task.created_at),
+                    task.output_bytes
+                )
+            } else {
+                format!(
+                    "{} | output {} bytes",
+                    format_timestamp(task.created_at),
+                    task.output_bytes
+                )
+            };
             tool_node.push_child(
                 TreeNode::leaf(format!("{}  {}", task.id, task.subject))
-                    .with_badge(format!("tool:{}", task.status.as_str()))
-                    .with_detail(format_timestamp(task.created_at)),
+                    .with_badge(format!("{}:{}", task.kind, task.status.as_str()))
+                    .with_detail(detail),
             );
         }
     }
     roots.push(tool_node);
 
-    // Team-backed tasks: in-process teammates registered through the Team
-    // spawning flow. These are runtime-only and only appear when the user
-    // is inside a team.
     let mut team_node = TreeNode::leaf(format!("Team tasks ({})", team_tasks.len()));
     if team_tasks.is_empty() {
         team_node.push_child(TreeNode::leaf("(none)"));
@@ -120,9 +128,9 @@ fn render_list() -> String {
     roots.push(team_node);
 
     let footer = "\
-Tool tasks persist across turns; team tasks live for the duration of the \
-parent team. Use `/tasks show <id>` for full output, or `/tasks stop <id>` \
-to mark a tool task as stopped.";
+Tool tasks persist across process restarts; team tasks live for the duration \
+of the parent team. Use `/tasks show <id>` for retained output, or \
+`/tasks stop <id>` to cancel a tool task.";
 
     render_with_footer("Background tasks", &roots, footer)
 }
@@ -146,11 +154,40 @@ fn render_detail(id: &str) -> String {
 fn render_tool_detail(task: &TaskEntry) -> String {
     let mut out = String::new();
     out.push_str(&format!("Tool task {}\n", task.id));
-    out.push_str(&"─".repeat(11 + task.id.len()));
+    out.push_str(&"-".repeat(11 + task.id.len()));
     out.push('\n');
     out.push_str(&format!("  Subject:     {}\n", task.subject));
     out.push_str(&format!("  Description: {}\n", task.description));
+    out.push_str(&format!("  Kind:        {}\n", task.kind));
     out.push_str(&format!("  Status:      {}\n", task.status.as_str()));
+    if let Some(previous) = task.previous_status {
+        out.push_str(&format!("  Previous:    {}\n", previous.as_str()));
+    }
+    if let Some(parent_id) = &task.parent_id {
+        out.push_str(&format!("  Parent:      {}\n", parent_id));
+    }
+    if let Some(agent_id) = &task.agent_id {
+        out.push_str(&format!("  Agent:       {}\n", agent_id));
+    }
+    if let Some(supervisor_id) = &task.supervisor_id {
+        out.push_str(&format!("  Supervisor:  {}\n", supervisor_id));
+    }
+    if let Some(isolation) = &task.isolation {
+        out.push_str(&format!("  Isolation:   {}\n", isolation));
+    }
+    if let Some(path) = &task.worktree_path {
+        out.push_str(&format!("  Worktree:    {}\n", path));
+    }
+    if let Some(branch) = &task.worktree_branch {
+        out.push_str(&format!("  Branch:      {}\n", branch));
+    }
+    if !task.depends_on.is_empty() {
+        out.push_str(&format!("  Depends on:  {}\n", task.depends_on.join(", ")));
+        let blocked = global_store().blocked_dependencies(task);
+        if !blocked.is_empty() {
+            out.push_str(&format!("  Blocked by:  {}\n", blocked.join(", ")));
+        }
+    }
     out.push_str(&format!(
         "  Created:     {}\n",
         format_timestamp(task.created_at)
@@ -159,19 +196,45 @@ fn render_tool_detail(task: &TaskEntry) -> String {
         "  Updated:     {}\n",
         format_timestamp(task.updated_at)
     ));
+    if let Some(recovered_at) = task.recovered_at {
+        out.push_str(&format!(
+            "  Recovered:   {}\n",
+            format_timestamp(recovered_at)
+        ));
+    }
+    if let Some(cancelled_at) = task.cancel_requested_at {
+        out.push_str(&format!(
+            "  Cancelled:   {}\n",
+            format_timestamp(cancelled_at)
+        ));
+    }
+    out.push_str(&format!(
+        "  Output:      {} bytes{}\n",
+        task.output_bytes,
+        if task.output_truncated {
+            " (retention truncated)"
+        } else {
+            ""
+        }
+    ));
     if task.output.is_empty() {
-        out.push_str("  Output:      (empty)\n");
+        out.push_str("  Retained log: (empty)\n");
     } else {
-        out.push_str("  Output:\n");
+        out.push_str("  Retained log:\n");
         for line in task.output.lines() {
             out.push_str(&format!("    {}\n", line));
         }
     }
     if matches!(
         task.status,
-        ToolTaskStatus::Pending | ToolTaskStatus::InProgress
+        ToolTaskStatus::Pending
+            | ToolTaskStatus::InProgress
+            | ToolTaskStatus::Interrupted
+            | ToolTaskStatus::Recoverable
     ) {
-        out.push_str("\nTip: `/tasks stop <id>` marks the task as stopped.\n");
+        out.push_str(
+            "\nTip: `/tasks stop <id>` cancels the task if a runtime handle is still active.\n",
+        );
     }
     out
 }
@@ -179,7 +242,7 @@ fn render_tool_detail(task: &TaskEntry) -> String {
 fn render_team_detail(task: &TeammateTaskSnapshot) -> String {
     let mut out = String::new();
     out.push_str(&format!("Team task {}\n", task.id));
-    out.push_str(&"─".repeat(11 + task.id.len()));
+    out.push_str(&"-".repeat(11 + task.id.len()));
     out.push('\n');
     out.push_str(&format!(
         "  Agent:    {} ({})\n",
@@ -212,8 +275,7 @@ fn render_team_detail(task: &TeammateTaskSnapshot) -> String {
         out.push_str(&format!("    {}\n", line));
     }
     out.push_str(
-        "\nTip: team tasks are controlled through `/team` — `/tasks stop` only \
-         applies to tool tasks.\n",
+        "\nTip: team tasks are controlled through `/team`; `/tasks stop` only applies to tool tasks.\n",
     );
     out
 }
@@ -221,7 +283,7 @@ fn render_team_detail(task: &TeammateTaskSnapshot) -> String {
 fn stop_task(id: &str) -> String {
     if let Some(entry) = global_store().stop(id) {
         return format!(
-            "Stopped tool task '{}' (was {}).",
+            "Cancelled tool task '{}' (now {}).",
             entry.subject,
             entry.status.as_str()
         );
@@ -231,13 +293,32 @@ fn stop_task(id: &str) -> String {
         .any(|t| t.id == id)
     {
         return format!(
-            "'{}' is a team task — use `/team kill <name>` to stop a teammate, \
+            "'{}' is a team task; use `/team kill <name>` to stop a teammate, \
              `/tasks stop` only applies to tool tasks.",
             id
         );
     }
     format!(
-        "No task with id '{}' — run `/tasks` to see the current list.",
+        "No task with id '{}'; run `/tasks` to see the current list.",
+        id
+    )
+}
+
+fn delete_task(id: &str) -> String {
+    if let Some(entry) = global_store().delete(id) {
+        return format!("Deleted persisted tool task '{}'.", entry.subject);
+    }
+    if InProcessBackend::task_snapshots()
+        .iter()
+        .any(|t| t.id == id)
+    {
+        return format!(
+            "'{}' is a team task; team tasks are runtime-only and cannot be deleted from persisted tool storage.",
+            id
+        );
+    }
+    format!(
+        "No persisted tool task with id '{}'; run `/tasks` to see the current list.",
         id
     )
 }
@@ -246,8 +327,6 @@ fn format_timestamp(ts: i64) -> String {
     match Local.timestamp_opt(ts, 0) {
         chrono::LocalResult::Single(dt) => dt.format("%Y-%m-%d %H:%M:%S").to_string(),
         _ => {
-            // Chrono can return `None` or `Ambiguous` on DST edges; fall
-            // back to the raw timestamp so we never crash the command.
             let as_local: DateTime<Local> = Local::now();
             format!("unknown (now ~{})", as_local.format("%Y-%m-%d %H:%M"))
         }
@@ -261,7 +340,7 @@ fn first_line(s: &str) -> String {
         return line.to_string();
     }
     let truncated: String = line.chars().take(MAX).collect();
-    format!("{}…", truncated)
+    format!("{}...", truncated)
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +411,17 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn delete_without_id_returns_usage() {
+        let handler = TasksHandler;
+        let mut ctx = make_ctx();
+        let result = handler.execute("delete", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(s) => assert!(s.contains("Usage: /tasks delete")),
+            _ => panic!("expected Output"),
+        }
+    }
+
+    #[tokio::test]
     async fn unknown_subcommand_shows_usage() {
         let handler = TasksHandler;
         let mut ctx = make_ctx();
@@ -346,7 +436,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stop_marks_tool_task_stopped() {
+    async fn stop_marks_tool_task_cancelled() {
         let store = global_store();
         let task = store.create("unit", "created-by-test");
         let handler = TasksHandler;
@@ -357,9 +447,9 @@ mod tests {
             .unwrap();
         match result {
             CommandResult::Output(s) => {
-                assert!(s.contains("Stopped tool task"));
+                assert!(s.contains("Cancelled tool task"));
                 let refreshed = store.get(&task.id).unwrap();
-                assert_eq!(refreshed.status, ToolTaskStatus::Stopped);
+                assert_eq!(refreshed.status, ToolTaskStatus::Cancelled);
             }
             _ => panic!("expected Output"),
         }
@@ -380,7 +470,28 @@ mod tests {
                 assert!(s.contains("Tool task"));
                 assert!(s.contains("detail-test"));
                 assert!(s.contains("detail description"));
+                assert!(s.contains("Kind:"));
                 assert!(s.contains("Status:"));
+                assert!(s.contains("Output:"));
+            }
+            _ => panic!("expected Output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn delete_removes_tool_task() {
+        let store = global_store();
+        let task = store.create("delete-test", "delete description");
+        let handler = TasksHandler;
+        let mut ctx = make_ctx();
+        let result = handler
+            .execute(&format!("delete {}", task.id), &mut ctx)
+            .await
+            .unwrap();
+        match result {
+            CommandResult::Output(s) => {
+                assert!(s.contains("Deleted persisted tool task"));
+                assert!(store.get(&task.id).is_none());
             }
             _ => panic!("expected Output"),
         }

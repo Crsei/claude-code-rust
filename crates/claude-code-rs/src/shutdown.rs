@@ -84,7 +84,13 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
         debug!("graceful_shutdown: abort signal sent");
     }
 
-    // Step 2: Flush transcript
+    // Step 2: Cancel supervised background agents and clean transient worktrees.
+    let cancelled = crate::engine::agent::supervisor::shutdown_all("graceful shutdown").await;
+    if cancelled > 0 {
+        debug!(cancelled, "graceful_shutdown: background agents cancelled");
+    }
+
+    // Step 3: Flush transcript
     let session_id = engine.session_id.as_str();
     if let Err(e) = transcript::flush_transcript(session_id) {
         warn!(error = %e, "failed to flush transcript during shutdown");
@@ -92,7 +98,7 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
         debug!("graceful_shutdown: transcript flushed");
     }
 
-    // Step 3: Persist session (save current messages)
+    // Step 4: Persist session (save current messages)
     let messages = engine.messages();
     if !messages.is_empty() {
         let cwd = engine.cwd();
@@ -103,10 +109,10 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
         }
     }
 
-    // Step 4: Reset terminal state
+    // Step 5: Reset terminal state
     graceful_shutdown_sync();
 
-    // Step 5: Emit session.end audit event and sync
+    // Step 6: Emit session.end audit event and sync
     {
         use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
         let ctx = engine.audit_context();
@@ -127,7 +133,7 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
         ctx.sync();
     }
 
-    // Step 6: Log final usage
+    // Step 7: Log final usage
     let usage = engine.usage();
     if usage.api_call_count > 0 {
         info!(

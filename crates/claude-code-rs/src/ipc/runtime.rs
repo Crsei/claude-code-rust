@@ -235,10 +235,15 @@ impl HeadlessRuntime {
                                         had_error: *had_error,
                                         duration_ms: *duration_ms,
                                     });
+                                    let result_text = crate::engine::agent::supervisor::output_for_agent(agent_id)
+                                        .map(|task| task.output)
+                                        .filter(|output| !output.is_empty())
+                                        .unwrap_or_else(|| result_preview.clone());
+
                                     pending_bg.push(crate::tools::background_agents::CompletedBackgroundAgent {
                                         agent_id: agent_id.clone(),
                                         description: desc,
-                                        result_text: result_preview.clone(),
+                                        result_text,
                                         had_error: *had_error,
                                         duration: std::time::Duration::from_millis(*duration_ms),
                                     });
@@ -281,6 +286,18 @@ impl HeadlessRuntime {
                     let _ = self.sink.send(&msg);
                 }
             }
+        }
+
+        let cancelled =
+            crate::engine::agent::supervisor::shutdown_all("headless runtime exit").await;
+        if cancelled > 0 {
+            let _ = self.sink.send(&BackendMessage::SystemInfo {
+                text: format!(
+                    "Cancelled {} background agent(s) during shutdown cleanup.",
+                    cancelled
+                ),
+                level: "info".to_string(),
+            });
         }
 
         Ok(())

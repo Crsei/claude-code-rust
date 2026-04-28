@@ -408,7 +408,7 @@ impl AgentTool {
     }
 
     /// Remove a worktree and its branch after agent completes with no changes.
-    async fn cleanup_worktree(
+    pub(super) async fn cleanup_worktree(
         git_root: &Path,
         worktree_path: &Path,
         branch_name: &str,
