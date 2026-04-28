@@ -2,14 +2,58 @@
 //!
 //! Corresponds to TypeScript: `utils/swarm/backends/types.ts`
 //!
-//! Each backend (in-process, tmux, iTerm2) implements this trait.
+//! cc-rust intentionally supports only the in-process backend. The pane
+//! backend traits remain as a typed boundary for parity review, but tmux and
+//! iTerm2 are not runtime-selectable backends in this port.
 
-#![allow(unused)]
-
-use anyhow::Result;
+use anyhow::{bail, Result};
 use async_trait::async_trait;
 
 use super::types::*;
+
+// ---------------------------------------------------------------------------
+// Backend strategy
+// ---------------------------------------------------------------------------
+
+/// Runtime-supported Agent Teams backends in cc-rust.
+///
+/// tmux/iTerm2 pane backends are an intentional product crop for MVP-005; keep
+/// the enum variants for persisted config compatibility and upstream parity
+/// review, but reject them before execution.
+pub const SUPPORTED_BACKENDS: &[BackendType] = &[BackendType::InProcess];
+
+/// The default and only executable backend.
+pub fn default_backend_type() -> BackendType {
+    BackendType::InProcess
+}
+
+/// Return true when the backend can be executed by this binary.
+pub fn is_backend_supported(backend_type: BackendType) -> bool {
+    SUPPORTED_BACKENDS.contains(&backend_type)
+}
+
+/// Human-readable backend strategy for commands, tools, and diagnostics.
+pub fn strategy_summary() -> &'static str {
+    "Agent Teams backend strategy: in-process is the only supported backend; tmux/iTerm2 pane backends are intentionally cropped in cc-rust."
+}
+
+/// Consistent message for unsupported pane backends.
+pub fn unsupported_backend_message(backend_type: BackendType) -> String {
+    format!(
+        "Agent Teams backend '{}' is not supported by cc-rust. Supported backend: in-process. tmux/iTerm2 pane backends are an intentional crop documented in docs/IMPLEMENTATION_GAPS.md §7.",
+        backend_type
+    )
+}
+
+/// Fail fast when persisted config or tool input asks for an unsupported
+/// backend.
+pub fn ensure_backend_supported(backend_type: BackendType) -> Result<()> {
+    if is_backend_supported(backend_type) {
+        Ok(())
+    } else {
+        bail!("{}", unsupported_backend_message(backend_type))
+    }
+}
 
 // ---------------------------------------------------------------------------
 // TeammateExecutor trait
@@ -20,6 +64,7 @@ use super::types::*;
 /// Implementations handle spawning, messaging, and lifecycle management
 /// of teammate agents.
 #[async_trait]
+#[allow(dead_code)]
 pub trait TeammateExecutor: Send + Sync {
     /// The backend type identifier.
     fn backend_type(&self) -> BackendType;
@@ -56,6 +101,7 @@ pub trait TeammateExecutor: Send + Sync {
 
 /// Result of creating a new terminal pane.
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct CreatePaneResult {
     pub pane_id: String,
     pub session_name: String,
@@ -63,6 +109,7 @@ pub struct CreatePaneResult {
 
 /// Extended trait for pane-based backends (tmux, iTerm2).
 #[async_trait]
+#[allow(dead_code)]
 pub trait PaneBackend: TeammateExecutor {
     /// Display name for the backend (e.g., "tmux", "iTerm2").
     fn display_name(&self) -> &str;
@@ -113,5 +160,14 @@ mod tests {
             session_name: "claude-swarm".into(),
         };
         assert_eq!(result.pane_id, "%3");
+    }
+
+    #[test]
+    fn in_process_is_the_only_supported_backend() {
+        assert_eq!(default_backend_type(), BackendType::InProcess);
+        assert!(is_backend_supported(BackendType::InProcess));
+        assert!(!is_backend_supported(BackendType::Tmux));
+        assert!(!is_backend_supported(BackendType::ITerm2));
+        assert!(ensure_backend_supported(BackendType::Tmux).is_err());
     }
 }

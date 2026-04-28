@@ -6,7 +6,7 @@
 //! multiple Teammate agents running in parallel. Communication happens via
 //! file-based mailbox IPC (`{data_root}/teams/{name}/inboxes/`).
 //!
-//! # What rust-lite implements
+//! # What cc-rust implements
 //!
 //! - `in_process` backend + `mailbox` + `protocol` + `runner` — the
 //!   "same-process multi-agent mailbox" loop. Teammates run as tokio
@@ -35,11 +35,13 @@
 //! [`is_agent_teams_active`] for the runtime check that also honors
 //! `AppState::team_context`.
 //!
-//! # Not implemented in rust-lite
+//! # Backend strategy
 //!
-//! - tmux / iTerm2 terminal backends — the [`backend::PaneBackend`]
-//!   trait stays as an interface placeholder for the full edition.
-//!   In-process teammates are the only supported execution surface.
+//! MVP-005 records tmux / iTerm2 terminal backends as an intentional crop.
+//! The [`backend::PaneBackend`] trait stays as a typed interface boundary for
+//! future parity review; [`backend::SUPPORTED_BACKENDS`] contains only
+//! `BackendType::InProcess`, and all runtime spawn paths use
+//! [`in_process::InProcessBackend`].
 
 pub mod backend;
 pub mod constants;

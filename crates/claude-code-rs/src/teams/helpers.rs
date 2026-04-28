@@ -107,7 +107,7 @@ pub fn create_team(
             worktree_path: None,
             session_id: None,
             subscriptions: vec![],
-            backend_type: None,
+            backend_type: Some(BackendType::InProcess),
             is_active: Some(true),
             mode: None,
         }],
@@ -333,6 +333,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_create_and_read_team() {
         let name = format!("test-{}", &uuid::Uuid::new_v4().to_string()[..8]);
         let tf = create_team(&name, Some("Test team".into()), None, "/tmp").unwrap();
@@ -347,6 +348,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_add_member() {
         let name = format!("test-{}", &uuid::Uuid::new_v4().to_string()[..8]);
         let tf = create_team(&name, None, None, "/tmp").unwrap();

@@ -13,14 +13,13 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tokio_util::sync::CancellationToken;
 use tracing::info;
 
+use crate::teams::backend::TeammateExecutor;
 use crate::teams::types::{
-    BackendType, InProcessTeammateTaskState, TaskStatus, TeamContext, TeamMember, TeammateIdentity,
-    TeammateInfo,
+    BackendType, TeamContext, TeamMember, TeammateInfo, TeammateSpawnConfig,
 };
-use crate::teams::{constants, helpers, identity, in_process::InProcessBackend, runner};
+use crate::teams::{backend, constants, helpers, identity, in_process::InProcessBackend};
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
 
@@ -45,6 +44,9 @@ struct TeamSpawnInput {
     /// Optional description for an implicitly-created team.
     #[serde(default)]
     description: Option<String>,
+    /// Optional backend. cc-rust supports only in-process.
+    #[serde(default)]
+    backend: Option<BackendType>,
 }
 
 #[async_trait]
@@ -84,6 +86,11 @@ impl Tool for TeamSpawnTool {
                 "description": {
                     "type": "string",
                     "description": "Optional description used only when an implicit team is created."
+                },
+                "backend": {
+                    "type": "string",
+                    "enum": ["in-process"],
+                    "description": "Execution backend. cc-rust intentionally supports only in-process Agent Teams."
                 }
             },
             "required": ["name", "prompt"]
@@ -120,6 +127,23 @@ impl Tool for TeamSpawnTool {
                 error_code: 400,
             };
         }
+        if let Some(raw_backend) = input.get("backend").and_then(|v| v.as_str()) {
+            match raw_backend.parse::<BackendType>() {
+                Ok(backend_type) if backend::is_backend_supported(backend_type) => {}
+                Ok(backend_type) => {
+                    return ValidationResult::Error {
+                        message: backend::unsupported_backend_message(backend_type),
+                        error_code: 400,
+                    };
+                }
+                Err(e) => {
+                    return ValidationResult::Error {
+                        message: e,
+                        error_code: 400,
+                    };
+                }
+            }
+        }
         ValidationResult::Ok
     }
 
@@ -131,6 +155,8 @@ impl Tool for TeamSpawnTool {
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
         let params: TeamSpawnInput = serde_json::from_value(input)?;
+        let backend_type = params.backend.unwrap_or_else(backend::default_backend_type);
+        backend::ensure_backend_supported(backend_type)?;
 
         let app_state = (ctx.get_app_state)();
         let cwd = ctx
@@ -210,42 +236,38 @@ impl Tool for TeamSpawnTool {
         team_file.members.push(new_member.clone());
         helpers::write_team_file(&team_name, &team_file)?;
 
-        // Register task state + spawn runner.
-        let task_id = format!("in_process_teammate_{}", uuid::Uuid::new_v4());
-        let teammate_identity = TeammateIdentity {
-            agent_id: agent_id.clone(),
-            agent_name: params.name.clone(),
-            team_name: team_name.clone(),
-            color: Some(color.clone()),
-            plan_mode_required: false,
-            parent_session_id: ctx.session_id.clone(),
-        };
-        InProcessBackend::register_task(InProcessTeammateTaskState {
-            id: task_id.clone(),
-            status: TaskStatus::Running,
-            identity: teammate_identity.clone(),
-            prompt: params.prompt.clone(),
-            model: params.model.clone(),
-            abort_handle: None,
-            awaiting_plan_approval: false,
-            permission_mode: crate::types::tool::PermissionMode::Default,
-            error: None,
-            pending_user_messages: vec![],
-            is_idle: false,
-            shutdown_requested: false,
-            last_reported_tool_count: 0,
-            last_reported_token_count: 0,
-        });
-
-        let cancel = CancellationToken::new();
-        let _handle = runner::start_runner(runner::InProcessRunnerConfig {
-            identity: teammate_identity.clone(),
-            task_id: task_id.clone(),
-            prompt: params.prompt.clone(),
-            model: params.model.clone(),
-            cwd: cwd.clone(),
-            cancellation: cancel,
-        });
+        let backend = InProcessBackend::new();
+        let spawn_result = backend
+            .spawn(TeammateSpawnConfig {
+                name: params.name.clone(),
+                team_name: team_name.clone(),
+                color: Some(color.clone()),
+                plan_mode_required: false,
+                prompt: params.prompt.clone(),
+                cwd: cwd.clone(),
+                model: params.model.clone(),
+                system_prompt: None,
+                system_prompt_mode: None,
+                worktree_path: None,
+                parent_session_id: ctx.session_id.clone(),
+                permissions: vec![],
+                allow_permission_prompts: false,
+            })
+            .await?;
+        if !spawn_result.success {
+            let _ = helpers::set_member_active(&team_name, &agent_id, false);
+            return Ok(ToolResult {
+                data: json!({
+                    "spawned": false,
+                    "error": spawn_result.error.unwrap_or_else(|| "failed to spawn teammate".into()),
+                    "team": team_name,
+                    "name": params.name,
+                }),
+                new_messages: vec![],
+                ..Default::default()
+            });
+        }
+        let task_id = spawn_result.task_id.unwrap_or_default();
 
         // Update app_state.team_context so the session has a live view.
         let tc_team_name = team_name.clone();
@@ -315,6 +337,7 @@ impl Tool for TeamSpawnTool {
                 "task_id": task_id,
                 "name": params.name,
                 "color": color,
+                "backend": backend_type.to_string(),
                 "implicitly_created_team": freshly_created,
             }),
             new_messages: vec![],
