@@ -1,20 +1,16 @@
-//! `/plan` command — plan-mode switch + plan file access (issue #46).
+//! `/plan` command: durable plan workflow controls.
 //!
 //! Subcommands:
-//!   (no args) or `show`/`view` — Enter plan mode, then print the plan file.
-//!   `open` / `edit`            — Open plan file in external editor.
-//!   `path`                     — Print the plan file path.
-//!
-//! The no-arg entrypoint mirrors the `pre_plan_mode` save/restore handshake
-//! used by `tools::plan_mode::EnterPlanModeTool`, so a subsequent `ExitPlanMode`
-//! restores whatever mode the user was in before.
-//!
-//! # TODO (IPC/daemon sync)
-//! `ipc::ingress::*` currently syncs only `additional_working_directories` and
-//! `team_context` back to the engine after a command. Mode transitions driven
-//! by `/plan` (like `/permissions mode`) only take effect in the TUI runtime
-//! via `sync_app_runtime_from_state`. Wiring the daemon ingress path is a
-//! follow-up.
+//!   (no args) or `show`/`view`  Enter plan mode, then print the plan file.
+//!   `enter [description]`       Enter plan mode with a short trace note.
+//!   `open` / `edit`             Open plan file in an external editor.
+//!   `path`                      Print the plan and workflow paths.
+//!   `status`                    Print workflow status and approval state.
+//!   `trace`                     Print workflow trace events.
+//!   `approve`                   Approve the current plan and exit plan mode.
+//!   `reject [feedback]`         Reject the current plan and stay in plan mode.
+//!   `link <task-id> [summary]`  Link implementation evidence to the plan.
+//!   `classify <prompt>`         Show whether the classifier would enter plan mode.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -23,6 +19,7 @@ use std::path::{Path, PathBuf};
 
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::config::paths as cfg_paths;
+use crate::plan_workflow::{self, PlanWorkflowRecord};
 use crate::types::tool::PermissionMode;
 use crate::ui::browser::{ensure_and_open, format_open_outcome};
 
@@ -34,64 +31,85 @@ pub struct PlanHandler;
 #[async_trait]
 impl CommandHandler for PlanHandler {
     async fn execute(&self, args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
-        let mut parts = args.trim().splitn(2, char::is_whitespace);
+        let trimmed = args.trim();
+        let mut parts = trimmed.splitn(2, char::is_whitespace);
         let sub = parts.next().unwrap_or("").trim();
+        let rest = parts.next().unwrap_or("").trim();
 
         match sub {
-            "" | "show" | "view" => enter_and_show(ctx),
+            "" | "show" | "view" => enter_and_show(ctx, None),
+            "enter" | "start" => enter_and_show(ctx, Some(rest)),
             "open" | "edit" => open_plan(&ctx.cwd),
             "path" => Ok(CommandResult::Output(format!(
-                "Plan file: {}",
-                cfg_paths::current_plan_file_path(&ctx.cwd).display()
+                "Plan file: {}\nWorkflow file: {}",
+                cfg_paths::current_plan_file_path(&ctx.cwd).display(),
+                cfg_paths::current_plan_workflow_file_path(&ctx.cwd).display()
             ))),
+            "status" => status(ctx),
+            "trace" => trace(ctx),
+            "approve" => approve(ctx),
+            "reject" => reject(ctx, rest),
+            "link" => link(ctx, rest),
+            "classify" => classify(ctx, rest),
             other => Ok(CommandResult::Output(format!(
                 "Unknown subcommand: `{}`\n\n\
                  Usage:\n\
-                 \x20 /plan              — Enter plan mode and show the plan file\n\
-                 \x20 /plan show|view    — Show the plan file (same as no-arg)\n\
-                 \x20 /plan open|edit    — Open plan file in $EDITOR\n\
-                 \x20 /plan path         — Print the plan file path",
+                 \x20 /plan                    Enter plan mode and show the plan file\n\
+                 \x20 /plan enter [desc]       Enter plan mode with trace context\n\
+                 \x20 /plan open|edit          Open plan file in $EDITOR\n\
+                 \x20 /plan path               Print plan and workflow paths\n\
+                 \x20 /plan status             Show workflow status\n\
+                 \x20 /plan trace              Show workflow trace\n\
+                 \x20 /plan approve            Approve plan and exit plan mode\n\
+                 \x20 /plan reject [feedback]  Reject plan\n\
+                 \x20 /plan link <id> [note]   Link implementation evidence\n\
+                 \x20 /plan classify <prompt>  Preview classifier entry",
                 other
             ))),
         }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Subcommand implementations
-// ---------------------------------------------------------------------------
-
-/// Enter plan mode (saving `pre_plan_mode`) and render the plan-file body.
-///
-/// Mirrors `tools::plan_mode::EnterPlanModeTool::call` so `/plan` and the
-/// tool-call path converge on the same state transition. Entering plan mode
-/// twice is idempotent: the second call preserves the original `pre_plan_mode`
-/// snapshot rather than overwriting it with `Plan`.
-fn enter_and_show(ctx: &mut CommandContext) -> Result<CommandResult> {
-    let perm = &mut ctx.app_state.tool_permission_context;
-    let was_in_plan = matches!(perm.mode, PermissionMode::Plan);
-    if !was_in_plan {
-        perm.pre_plan_mode = Some(perm.mode.clone());
-        perm.mode = PermissionMode::Plan;
-    }
+fn enter_and_show(ctx: &mut CommandContext, description: Option<&str>) -> Result<CommandResult> {
+    let was_in_plan = matches!(
+        ctx.app_state.tool_permission_context.mode,
+        PermissionMode::Plan
+    );
+    let existing = plan_workflow::load(&ctx.cwd)?;
+    let record = plan_workflow::enter_plan_mode_state(
+        &mut ctx.app_state,
+        &ctx.cwd,
+        existing,
+        "main",
+        "slash_command",
+        description,
+        None,
+    );
+    plan_workflow::persist(&ctx.cwd, &record)?;
 
     let path = cfg_paths::current_plan_file_path(&ctx.cwd);
     let body = read_plan_body(&path);
 
     let header = if was_in_plan {
-        format!("**Plan mode** (already active) — {}", path.display())
+        format!(
+            "**Plan mode** (already active) - {}\n{}",
+            path.display(),
+            plan_workflow::summarize(&record)
+        )
     } else {
-        format!("**Plan mode** (entered) — {}", path.display())
+        format!(
+            "**Plan mode** (entered) - {}\n{}",
+            path.display(),
+            plan_workflow::summarize(&record)
+        )
     };
 
     Ok(CommandResult::Output(match body {
         Some(content) if !content.trim().is_empty() => format!("{header}\n\n{content}"),
-        _ => format!("{header}\n\n(empty plan — use `/plan open` to draft one)"),
+        _ => format!("{header}\n\n(empty plan - use `/plan open` to draft one)"),
     }))
 }
 
-/// Ensure the plan file exists (seeded with `PLAN_TEMPLATE`) and hand off to
-/// `$VISUAL` / `$EDITOR`. Prints a readable outcome.
 fn open_plan(cwd: &Path) -> Result<CommandResult> {
     let path: PathBuf = cfg_paths::current_plan_file_path(cwd);
     if let Some(parent) = path.parent() {
@@ -101,9 +119,151 @@ fn open_plan(cwd: &Path) -> Result<CommandResult> {
     Ok(CommandResult::Output(format_open_outcome(&outcome, &path)))
 }
 
-/// Return `Some(body)` if the plan file exists and is readable; `None`
-/// otherwise. Read errors surface as `None` so the command degrades to the
-/// empty-plan message instead of failing.
+fn status(ctx: &mut CommandContext) -> Result<CommandResult> {
+    match current_record(ctx)? {
+        Some(record) => Ok(CommandResult::Output(format_record(&record))),
+        None => Ok(CommandResult::Output(
+            "No plan workflow exists yet. Use `/plan` to start one.".to_string(),
+        )),
+    }
+}
+
+fn trace(ctx: &mut CommandContext) -> Result<CommandResult> {
+    match current_record(ctx)? {
+        Some(record) if !record.trace.is_empty() => {
+            let lines = record
+                .trace
+                .iter()
+                .map(|event| {
+                    format!(
+                        "- {} [{:?}] {} ({})",
+                        event.at, event.kind, event.summary, event.source
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            Ok(CommandResult::Output(format!(
+                "Plan workflow trace: {}\n{}",
+                record.id, lines
+            )))
+        }
+        Some(record) => Ok(CommandResult::Output(format!(
+            "Plan workflow {} has no trace events.",
+            record.id
+        ))),
+        None => Ok(CommandResult::Output(
+            "No plan workflow exists yet. Use `/plan` to start one.".to_string(),
+        )),
+    }
+}
+
+fn approve(ctx: &mut CommandContext) -> Result<CommandResult> {
+    let plan_path = cfg_paths::current_plan_file_path(&ctx.cwd);
+    let plan_text = read_plan_body(&plan_path);
+    let existing = plan_workflow::load(&ctx.cwd)?;
+    let record = plan_workflow::approve_and_exit_state(
+        &mut ctx.app_state,
+        &ctx.cwd,
+        existing,
+        "main",
+        "slash_command",
+        plan_text,
+    );
+    plan_workflow::persist(&ctx.cwd, &record)?;
+    Ok(CommandResult::Output(format!(
+        "Plan approved. Normal operations restored.\n{}",
+        plan_workflow::summarize(&record)
+    )))
+}
+
+fn reject(ctx: &mut CommandContext, feedback: &str) -> Result<CommandResult> {
+    let existing = plan_workflow::load(&ctx.cwd)?;
+    let record = plan_workflow::reject_approval_state(
+        &mut ctx.app_state,
+        &ctx.cwd,
+        existing,
+        "main",
+        "slash_command",
+        (!feedback.trim().is_empty()).then(|| feedback.trim().to_string()),
+    );
+    plan_workflow::persist(&ctx.cwd, &record)?;
+    Ok(CommandResult::Output(format!(
+        "Plan rejected. Revise the plan and request approval again.\n{}",
+        plan_workflow::summarize(&record)
+    )))
+}
+
+fn link(ctx: &mut CommandContext, rest: &str) -> Result<CommandResult> {
+    let mut parts = rest.splitn(2, char::is_whitespace);
+    let task_id = parts.next().unwrap_or("").trim();
+    if task_id.is_empty() {
+        return Ok(CommandResult::Output(
+            "Usage: /plan link <task-id> [summary]".to_string(),
+        ));
+    }
+    let summary = parts
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let existing = plan_workflow::load(&ctx.cwd)?;
+    let record = plan_workflow::link_task_state(
+        &mut ctx.app_state,
+        &ctx.cwd,
+        existing,
+        "main",
+        "slash_command",
+        task_id.to_string(),
+        summary,
+    );
+    plan_workflow::persist(&ctx.cwd, &record)?;
+    Ok(CommandResult::Output(format!(
+        "Linked implementation evidence `{}`.\n{}",
+        task_id,
+        plan_workflow::summarize(&record)
+    )))
+}
+
+fn classify(ctx: &mut CommandContext, prompt: &str) -> Result<CommandResult> {
+    if prompt.trim().is_empty() {
+        return Ok(CommandResult::Output(
+            "Usage: /plan classify <prompt>".to_string(),
+        ));
+    }
+    let decision = plan_workflow::classify_plan_entry(prompt, &ctx.app_state);
+    Ok(CommandResult::Output(format!(
+        "Plan classifier: should_enter={}\nReason: {}\nMatched rule: {}",
+        decision.should_enter,
+        decision.reason,
+        decision.matched_rule.as_deref().unwrap_or("(none)")
+    )))
+}
+
+fn current_record(ctx: &CommandContext) -> Result<Option<PlanWorkflowRecord>> {
+    Ok(ctx
+        .app_state
+        .plan_workflow
+        .clone()
+        .or(plan_workflow::load(&ctx.cwd)?))
+}
+
+fn format_record(record: &PlanWorkflowRecord) -> String {
+    format!(
+        "Plan workflow: {}\nStatus: {:?}\nApproval: {:?}\nPlan file: {}\nOwner: {}\nLinked tasks: {}\nUpdated: {}",
+        record.id,
+        record.status,
+        record.approval_state,
+        record.file_path,
+        record.owner.as_deref().unwrap_or("(none)"),
+        if record.linked_task_ids.is_empty() {
+            "(none)".to_string()
+        } else {
+            record.linked_task_ids.join(", ")
+        },
+        record.updated_at,
+    )
+}
+
 fn read_plan_body(path: &Path) -> Option<String> {
     if !path.is_file() {
         return None;
@@ -111,16 +271,11 @@ fn read_plan_body(path: &Path) -> Option<String> {
     fs::read_to_string(path).ok()
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
-    use crate::types::tool::PermissionMode;
     use serial_test::serial;
     use std::env;
     use tempfile::tempdir;
@@ -184,6 +339,8 @@ mod tests {
             ctx.app_state.tool_permission_context.pre_plan_mode,
             Some(PermissionMode::Default)
         );
+        assert!(ctx.app_state.plan_workflow.is_some());
+        assert!(cfg_paths::current_plan_workflow_file_path(tmp.path()).is_file());
         match result {
             CommandResult::Output(s) => {
                 assert!(s.contains("Plan mode"));
@@ -201,8 +358,6 @@ mod tests {
 
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::AcceptEdits);
         PlanHandler.execute("", &mut ctx).await.unwrap();
-        // Second call: mode is already Plan — pre_plan_mode must keep the
-        // original AcceptEdits snapshot, not get overwritten by Plan.
         PlanHandler.execute("", &mut ctx).await.unwrap();
 
         assert_eq!(
@@ -210,6 +365,31 @@ mod tests {
             Some(PermissionMode::AcceptEdits),
             "second /plan invocation must not clobber pre_plan_mode"
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn approve_restores_prior_mode_and_records_approval() {
+        let tmp = tempdir().unwrap();
+        let _g = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+
+        let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::AcceptEdits);
+        PlanHandler.execute("", &mut ctx).await.unwrap();
+        let result = PlanHandler.execute("approve", &mut ctx).await.unwrap();
+
+        assert_eq!(
+            ctx.app_state.tool_permission_context.mode,
+            PermissionMode::AcceptEdits
+        );
+        let workflow = ctx.app_state.plan_workflow.as_ref().unwrap();
+        assert_eq!(
+            workflow.approval_state,
+            crate::types::plan_workflow::PlanApprovalState::Approved
+        );
+        match result {
+            CommandResult::Output(s) => assert!(s.contains("Plan approved")),
+            _ => panic!("expected Output"),
+        }
     }
 
     #[tokio::test]
@@ -260,7 +440,10 @@ mod tests {
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::Default);
         let result = PlanHandler.execute("path", &mut ctx).await.unwrap();
         match result {
-            CommandResult::Output(s) => assert!(s.contains("Plan file:")),
+            CommandResult::Output(s) => {
+                assert!(s.contains("Plan file:"));
+                assert!(s.contains("Workflow file:"));
+            }
             _ => panic!("expected Output"),
         }
     }
@@ -270,20 +453,34 @@ mod tests {
     async fn open_without_editor_creates_template_and_reports() {
         let tmp = tempdir().unwrap();
         let _g = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
-        // Force "no editor" path so the test is hermetic.
         let _v = EnvGuard::unset("VISUAL");
         let _e = EnvGuard::unset("EDITOR");
 
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::Default);
         let result = PlanHandler.execute("open", &mut ctx).await.unwrap();
 
-        // The plan file must exist now, seeded with the template header.
         let body = fs::read_to_string(cfg_paths::current_plan_file_path(tmp.path())).unwrap();
         assert!(body.starts_with("# Plan"));
 
-        // Output should describe the outcome (either "editor" or "no editor").
         match result {
             CommandResult::Output(s) => assert!(!s.is_empty()),
+            _ => panic!("expected Output"),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn classify_previews_explicit_entry() {
+        let tmp = tempdir().unwrap();
+        let _g = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+
+        let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::Default);
+        let result = PlanHandler
+            .execute("classify please plan first before editing", &mut ctx)
+            .await
+            .unwrap();
+        match result {
+            CommandResult::Output(s) => assert!(s.contains("should_enter=true")),
             _ => panic!("expected Output"),
         }
     }

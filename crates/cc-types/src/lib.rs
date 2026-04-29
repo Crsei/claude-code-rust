@@ -15,6 +15,7 @@ pub mod commands;
 pub mod hooks;
 pub mod message;
 pub mod permissions;
+pub mod plan_workflow;
 pub mod state;
 pub mod teams;
 pub mod transitions;

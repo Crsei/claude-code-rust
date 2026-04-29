@@ -97,6 +97,7 @@ pub fn handle_sdk_message(
                             is_error: *is_error,
                             content_blocks: content_infos,
                         });
+                        maybe_send_plan_workflow_from_tool_result(content, sink);
                     }
                 }
             }
@@ -192,6 +193,36 @@ pub fn handle_sdk_message(
             Ok(())
         }
     }
+}
+
+fn maybe_send_plan_workflow_from_tool_result(content: &ToolResultContent, sink: &FrontendSink) {
+    let ToolResultContent::Text(text) = content else {
+        return;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {
+        return;
+    };
+    let Some(record_value) = value.get("plan_workflow") else {
+        return;
+    };
+    let Ok(record) = serde_json::from_value::<crate::types::plan_workflow::PlanWorkflowRecord>(
+        record_value.clone(),
+    ) else {
+        return;
+    };
+
+    let event = match record.approval_state {
+        crate::types::plan_workflow::PlanApprovalState::Approved => "approval_approved",
+        crate::types::plan_workflow::PlanApprovalState::Rejected => "approval_rejected",
+        crate::types::plan_workflow::PlanApprovalState::Pending => "approval_requested",
+        crate::types::plan_workflow::PlanApprovalState::NotRequested => "updated",
+    };
+
+    let _ = sink.send(&BackendMessage::PlanWorkflowEvent {
+        event: event.to_string(),
+        summary: crate::plan_workflow::summarize(&record),
+        record,
+    });
 }
 
 // ---------------------------------------------------------------------------

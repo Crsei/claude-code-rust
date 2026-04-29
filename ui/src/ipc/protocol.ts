@@ -196,6 +196,57 @@ export interface SkillInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Plan workflow
+// ---------------------------------------------------------------------------
+
+export type PlanWorkflowStatus =
+  | 'draft'
+  | 'pending_approval'
+  | 'approved'
+  | 'rejected'
+  | 'implementing'
+  | 'completed'
+
+export type PlanApprovalState =
+  | 'not_requested'
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+
+export type PlanTraceKind =
+  | 'created'
+  | 'entered_plan_mode'
+  | 'classifier_entered'
+  | 'approval_requested'
+  | 'approval_approved'
+  | 'approval_rejected'
+  | 'implementation_linked'
+  | 'completed'
+
+export interface PlanWorkflowTraceEvent {
+  id: string
+  kind: PlanTraceKind
+  at: string
+  source: string
+  summary: string
+  data?: any
+}
+
+export interface PlanWorkflowRecord {
+  schema_version: number
+  id: string
+  file_path: string
+  status: PlanWorkflowStatus
+  approval_state: PlanApprovalState
+  owner?: string
+  created_at: string
+  updated_at: string
+  linked_task_ids: string[]
+  plan_text?: string
+  trace: PlanWorkflowTraceEvent[]
+}
+
+// ---------------------------------------------------------------------------
 // Agent-definition settings (mirror Rust `AgentDefinitionEntry` /
 // `AgentDefinitionSource` in `ipc/subsystem_types.rs`)
 // ---------------------------------------------------------------------------
@@ -501,6 +552,8 @@ export type BackendMessage =
       session_id: string
       model: string
       cwd: string
+      permission_mode: string
+      plan_workflow?: PlanWorkflowRecord | null
       editor_mode?: string | null
       view_mode?: 'prompt' | 'transcript' | null
       keybindings?: any
@@ -541,6 +594,7 @@ export type BackendMessage =
     }
   | { type: 'permission_request'; tool_use_id: string; tool: string; command: string; options: string[] }
   | { type: 'question_request'; id: string; text: string }
+  | { type: 'plan_workflow_event'; event: string; summary: string; record: PlanWorkflowRecord }
   | { type: 'system_info'; text: string; level: string }
   | { type: 'conversation_replaced'; messages: ConversationMessage[] }
   | { type: 'usage_update'; input_tokens: number; output_tokens: number; cost_usd: number }

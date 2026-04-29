@@ -12,6 +12,8 @@ export function reduceCore(state: AppState, action: CoreAction): AppState {
         model: action.model,
         sessionId: action.sessionId,
         cwd: action.cwd,
+        permissionMode: action.permissionMode ?? state.permissionMode,
+        planWorkflow: action.planWorkflow === undefined ? state.planWorkflow : action.planWorkflow,
         editorMode,
         vimEnabled: editorMode === 'vim',
         vimMode: editorMode === 'vim' ? 'NORMAL' : '',
@@ -120,6 +122,20 @@ export function reduceCore(state: AppState, action: CoreAction): AppState {
 
     case 'QUESTION_DISMISS':
       return { ...state, pendingQuestion: null }
+
+    case 'PLAN_WORKFLOW_EVENT':
+      return {
+        ...state,
+        planWorkflow: action.record,
+        permissionMode: action.record.status === 'draft' ? 'plan' : state.permissionMode,
+        messages: [...state.messages, {
+          id: `plan-${Date.now()}`,
+          role: 'system',
+          content: action.summary,
+          timestamp: Date.now(),
+          level: action.event.includes('rejected') ? 'warning' : 'info',
+        }],
+      }
 
     case 'SYSTEM_INFO':
       return {

@@ -17,8 +17,10 @@ use serde_json::{json, Value};
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
+use crate::commands::{self, CommandContext, CommandResult};
 use crate::engine::sdk_types::SdkMessage;
 use crate::types::config::QuerySource;
+use crate::types::plan_workflow::PlanWorkflowRecord;
 
 use super::state::{DaemonState, SseEvent};
 use super::team_memory_proxy;
@@ -54,6 +56,8 @@ pub struct StatusResponse {
     pub query_running: bool,
     pub clients_connected: usize,
     pub sleeping: bool,
+    pub permission_mode: String,
+    pub plan_workflow: Option<PlanWorkflowRecord>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -161,6 +165,29 @@ async fn submit(State(state): State<DaemonState>, Json(body): Json<SubmitRequest
     info!(message_id, text_len = text.len(), "submit received");
     super::memory_log::append_log_entry(&format!("user submit: {}", &text));
 
+    let classifier = crate::plan_workflow::classify_plan_entry(&text, &state.engine.app_state());
+    if classifier.should_enter {
+        match crate::plan_workflow::enter_engine_plan_mode(
+            &state.engine,
+            "daemon_classifier",
+            Some(&text),
+            Some(&classifier.reason),
+        ) {
+            Ok(record) => {
+                state.broadcast(SseEvent {
+                    id: String::new(),
+                    event_type: "plan_workflow_event".to_string(),
+                    data: crate::plan_workflow::event_payload(
+                        &record,
+                        "classifier_entered",
+                        &crate::plan_workflow::summarize(&record),
+                    ),
+                });
+            }
+            Err(err) => warn!(error = %err, "daemon plan classifier sync failed"),
+        }
+    }
+
     // Wake engine, set running flag, spawn async task.
     state.engine.wake_up();
     state.is_query_running.store(true, Ordering::SeqCst);
@@ -190,10 +217,85 @@ async fn abort(State(state): State<DaemonState>) -> Json<Value> {
     Json(json!({ "status": "ok" }))
 }
 
-/// `POST /api/command` -- execute a slash command (stub).
-async fn command(Json(body): Json<CommandRequest>) -> Json<Value> {
-    warn!(raw = body.raw, "command endpoint is a stub");
-    Json(json!({ "status": "stub", "raw": body.raw }))
+/// `POST /api/command` -- execute a slash command.
+async fn command(
+    State(state): State<DaemonState>,
+    Json(body): Json<CommandRequest>,
+) -> Json<Value> {
+    let raw = body.raw.trim().to_string();
+    let Some((cmd_idx, args)) = commands::parse_command_input(&raw) else {
+        return Json(json!({ "status": "error", "message": format!("unknown command: {raw}") }));
+    };
+
+    let all_commands = commands::get_all_commands();
+    let cmd = &all_commands[cmd_idx];
+    let original_app_state = state.engine.app_state();
+    let original_plan = original_app_state.plan_workflow.clone();
+    let original_mode = original_app_state.tool_permission_context.mode.clone();
+
+    let mut ctx = CommandContext {
+        messages: state.engine.messages(),
+        cwd: std::path::PathBuf::from(state.engine.cwd()),
+        app_state: original_app_state,
+        session_id: state.engine.session_id.clone(),
+    };
+
+    match cmd.handler.execute(&args, &mut ctx).await {
+        Ok(result) => {
+            let plan_changed = ctx.app_state.plan_workflow != original_plan
+                || ctx.app_state.tool_permission_context.mode != original_mode;
+            crate::plan_workflow::sync_command_app_state(&state.engine, &ctx.app_state);
+
+            if plan_changed {
+                if let Some(record) = ctx.app_state.plan_workflow.clone() {
+                    state.broadcast(SseEvent {
+                        id: String::new(),
+                        event_type: "plan_workflow_event".to_string(),
+                        data: crate::plan_workflow::event_payload(
+                            &record,
+                            "slash_command",
+                            &crate::plan_workflow::summarize(&record),
+                        ),
+                    });
+                }
+            }
+
+            match result {
+                CommandResult::Output(text) => {
+                    state.broadcast(SseEvent {
+                        id: String::new(),
+                        event_type: "system_info".to_string(),
+                        data: json!({ "text": text, "level": "info" }),
+                    });
+                    Json(json!({
+                        "status": "ok",
+                        "kind": "output",
+                        "permission_mode": state.engine.app_state().tool_permission_context.mode.as_str(),
+                        "plan_workflow": state.engine.app_state().plan_workflow,
+                    }))
+                }
+                CommandResult::Clear => {
+                    state.engine.clear_messages();
+                    Json(json!({ "status": "ok", "kind": "clear" }))
+                }
+                CommandResult::Exit(text) => {
+                    state.broadcast(SseEvent {
+                        id: String::new(),
+                        event_type: "system_info".to_string(),
+                        data: json!({ "text": text, "level": "info" }),
+                    });
+                    Json(json!({ "status": "ok", "kind": "exit" }))
+                }
+                CommandResult::Query(_) => Json(json!({
+                    "status": "ok",
+                    "kind": "query_not_started",
+                    "message": "daemon command endpoint does not start query command results yet"
+                })),
+                CommandResult::None => Json(json!({ "status": "ok", "kind": "none" })),
+            }
+        }
+        Err(err) => Json(json!({ "status": "error", "message": err.to_string() })),
+    }
 }
 
 /// `POST /api/permission` -- respond to a permission prompt (stub).
@@ -208,12 +310,15 @@ async fn permission(Json(body): Json<PermissionRequest>) -> Json<Value> {
 
 /// `GET /api/status` -- return daemon status.
 async fn status(State(state): State<DaemonState>) -> Json<StatusResponse> {
+    let app_state = state.engine.app_state();
     Json(StatusResponse {
         kairos_active: state.features.kairos,
         proactive: state.features.proactive,
         query_running: state.is_query_running.load(Ordering::SeqCst),
         clients_connected: state.clients.read().len(),
         sleeping: state.engine.is_sleeping(),
+        permission_mode: app_state.tool_permission_context.mode.as_str().to_string(),
+        plan_workflow: app_state.plan_workflow,
     })
 }
 

@@ -25,6 +25,8 @@ pub use base::{ConversationMessage, ToolResultContentInfo};
 
 use serde::{Deserialize, Serialize};
 
+use crate::types::plan_workflow::PlanWorkflowRecord;
+
 // ---------------------------------------------------------------------------
 // Frontend → Backend (deserialized from stdin)
 // ---------------------------------------------------------------------------
@@ -141,6 +143,9 @@ pub enum BackendMessage {
         session_id: String,
         model: String,
         cwd: String,
+        permission_mode: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        plan_workflow: Option<PlanWorkflowRecord>,
         #[serde(skip_serializing_if = "Option::is_none")]
         editor_mode: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -222,6 +227,12 @@ pub enum BackendMessage {
         id: String,
         /// The question text to display.
         text: String,
+    },
+    /// Durable plan workflow state changed.
+    PlanWorkflowEvent {
+        event: String,
+        summary: String,
+        record: PlanWorkflowRecord,
     },
     /// A system-level informational message.
     SystemInfo {

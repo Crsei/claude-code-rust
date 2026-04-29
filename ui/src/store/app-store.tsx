@@ -46,6 +46,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'PERMISSION_DISMISS':
     case 'QUESTION_REQUEST':
     case 'QUESTION_DISMISS':
+    case 'PLAN_WORKFLOW_EVENT':
     case 'SYSTEM_INFO':
     case 'USAGE_UPDATE':
     case 'SUGGESTIONS':

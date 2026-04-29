@@ -42,6 +42,12 @@ pub struct AppState {
     /// Hook configurations loaded from settings.json (merged config).
     /// Read by `tools::hooks::load_hook_configs()` and the hook execution pipeline.
     pub hooks: HashMap<String, serde_json::Value>,
+    /// Durable plan-mode workflow state.
+    ///
+    /// This is distinct from `tool_permission_context.mode == Plan`: the
+    /// permission mode gates tool execution, while this record tracks approval
+    /// state, plan artifact path, and implementation evidence.
+    pub plan_workflow: Option<cc_types::plan_workflow::PlanWorkflowRecord>,
     /// Whether KAIROS daemon mode is running
     pub kairos_active: bool,
     /// Whether output is routed through BriefTool only
@@ -88,6 +94,7 @@ impl Default for AppState {
             effort_value: None,
             team_context: None,
             hooks: HashMap::new(),
+            plan_workflow: None,
             kairos_active: false,
             is_brief_only: false,
             is_assistant_mode: false,

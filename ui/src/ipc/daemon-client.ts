@@ -102,6 +102,7 @@ export class DaemonClient extends EventEmitter {
       'assistant_message',
       'user_replay',
       'permission_request',
+      'plan_workflow_event',
       'system_info',
       'usage_update',
       'suggestions',

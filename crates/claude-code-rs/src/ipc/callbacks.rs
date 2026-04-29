@@ -29,18 +29,20 @@ pub type PendingQuestions = Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>
 /// `pending`.  The headless runtime completes the channel when it receives a
 /// `PermissionResponse` from the frontend.
 pub fn install_permission_callback(
-    engine: &QueryEngine,
+    engine: &Arc<QueryEngine>,
     pending: PendingPermissions,
     sink: FrontendSink,
 ) {
+    let engine_handle = engine.clone();
     let callback: crate::types::tool::PermissionCallback = Arc::new(
         move |tool_use_id: String, tool_name: String, description: String, options: Vec<String>| {
             let pending = pending.clone();
             let sink = sink.clone();
+            let engine = engine_handle.clone();
             Box::pin(async move {
                 let _ = sink.send(&BackendMessage::PermissionRequest {
                     tool_use_id: tool_use_id.clone(),
-                    tool: tool_name,
+                    tool: tool_name.clone(),
                     command: description,
                     options,
                 });
@@ -49,7 +51,37 @@ pub fn install_permission_callback(
                 pending.lock().insert(tool_use_id, tx);
 
                 match rx.await {
-                    Ok(decision) => decision,
+                    Ok(decision) => {
+                        if tool_name == "ExitPlanMode"
+                            && matches!(
+                                decision.to_ascii_lowercase().as_str(),
+                                "deny" | "reject" | "no"
+                            )
+                        {
+                            match crate::plan_workflow::reject_engine_plan(
+                                &engine,
+                                "permission",
+                                Some("User rejected ExitPlanMode approval.".to_string()),
+                            ) {
+                                Ok(record) => {
+                                    let _ = sink.send(&BackendMessage::PlanWorkflowEvent {
+                                        event: "approval_rejected".to_string(),
+                                        summary: crate::plan_workflow::summarize(&record),
+                                        record,
+                                    });
+                                }
+                                Err(err) => {
+                                    let _ = sink.send(&BackendMessage::SystemInfo {
+                                        text: format!(
+                                            "Plan approval was rejected, but workflow sync failed: {err}"
+                                        ),
+                                        level: "warning".to_string(),
+                                    });
+                                }
+                            }
+                        }
+                        decision
+                    }
                     Err(_) => "deny".to_string(),
                 }
             })

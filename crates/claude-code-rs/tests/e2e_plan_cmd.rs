@@ -46,7 +46,17 @@ fn plan_command_is_registered_in_get_all_commands() {
 #[test]
 fn plan_handler_covers_expected_subcommands() {
     let src = read_source("crates/claude-code-rs/src/commands/plan.rs");
-    for token in ["\"show\"", "\"view\"", "\"open\"", "\"edit\"", "\"path\""] {
+    for token in [
+        "\"show\"",
+        "\"view\"",
+        "\"open\"",
+        "\"edit\"",
+        "\"path\"",
+        "\"approve\"",
+        "\"reject\"",
+        "\"trace\"",
+        "\"classify\"",
+    ] {
         assert!(
             src.contains(token),
             "/plan handler must dispatch on subcommand {}",
@@ -57,14 +67,14 @@ fn plan_handler_covers_expected_subcommands() {
 
 #[test]
 fn plan_handler_uses_pre_plan_mode_handshake() {
-    let src = read_source("crates/claude-code-rs/src/commands/plan.rs");
+    let src = read_source("crates/claude-code-rs/src/plan_workflow.rs");
     assert!(
         src.contains("pre_plan_mode"),
-        "/plan handler must save pre_plan_mode so ExitPlanMode can restore"
+        "plan workflow service must save pre_plan_mode so ExitPlanMode can restore"
     );
     assert!(
         src.contains("PermissionMode::Plan"),
-        "/plan handler must set mode to PermissionMode::Plan"
+        "plan workflow service must set mode to PermissionMode::Plan"
     );
 }
 
@@ -75,6 +85,9 @@ fn plan_path_helpers_are_publicly_exposed() {
         "pub fn plan_file_path_project",
         "pub fn plan_file_path_global",
         "pub fn current_plan_file_path",
+        "pub fn plan_workflow_file_path_project",
+        "pub fn plan_workflow_file_path_global",
+        "pub fn current_plan_workflow_file_path",
     ] {
         assert!(
             src.contains(fn_name),

@@ -5,4 +5,4 @@
 // paths across the root crate keep compiling unchanged.
 
 pub use cc_engine::types::{app_state, config, tool};
-pub use cc_types::{message, state, transitions};
+pub use cc_types::{message, plan_workflow, state, transitions};
