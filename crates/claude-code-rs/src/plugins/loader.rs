@@ -262,6 +262,7 @@ mod tests {
                 description: None,
             }],
             mcp_servers: vec![],
+            lsp_servers: None,
             commands: vec![],
             dependencies: HashMap::new(),
             configuration: None,

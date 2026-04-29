@@ -123,3 +123,40 @@ describe('appReducer queued submissions', () => {
     expect(drained.queuedSubmissions.map(item => item.text)).toEqual(['second'])
   })
 })
+
+describe('appReducer LSP live editor state', () => {
+  test('stores completion results by request id', () => {
+    const next = appReducer(initialState, {
+      type: 'LSP_COMPLETION_RESULTS',
+      requestId: 'completion-1',
+      uri: 'file:///src/main.rs',
+      items: [{ label: 'println!', kind: 'Function' }],
+    })
+
+    expect(next.lspCompletions.byRequestId['completion-1']?.uri).toBe('file:///src/main.rs')
+    expect(next.lspCompletions.byRequestId['completion-1']?.items[0]?.label).toBe('println!')
+    expect(next.lspCompletions.lastError).toBeNull()
+  })
+
+  test('stores and clears live diagnostics by uri', () => {
+    const published = appReducer(initialState, {
+      type: 'LSP_DIAGNOSTICS_PUBLISHED',
+      uri: 'file:///src/main.rs',
+      diagnostics: [
+        {
+          range: { start_line: 2, start_character: 4, end_line: 2, end_character: 8 },
+          severity: 'error',
+          message: 'expected expression',
+        },
+      ],
+    })
+    const cleared = appReducer(published, {
+      type: 'LSP_DIAGNOSTICS_PUBLISHED',
+      uri: 'file:///src/main.rs',
+      diagnostics: [],
+    })
+
+    expect(published.diagnostics.byUri['file:///src/main.rs']).toHaveLength(1)
+    expect(cleared.diagnostics.byUri['file:///src/main.rs']).toBeUndefined()
+  })
+})

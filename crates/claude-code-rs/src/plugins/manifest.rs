@@ -49,6 +49,10 @@ pub struct PluginManifest {
     /// MCP server definitions.
     #[serde(default)]
     pub mcp_servers: Vec<McpServerContribution>,
+    /// LSP server definitions. Supports inline maps or file references,
+    /// mirroring the upstream `lspServers` plugin field.
+    #[serde(default, rename = "lspServers", alias = "lsp_servers")]
+    pub lsp_servers: Option<serde_json::Value>,
     /// Commands contributed by this plugin.
     #[serde(default)]
     pub commands: Vec<CommandContribution>,
@@ -249,6 +253,7 @@ mod tests {
             tools: vec![],
             skills: vec![],
             mcp_servers: vec![],
+            lsp_servers: None,
             commands: vec![],
             dependencies: HashMap::new(),
             configuration: None,
@@ -348,6 +353,13 @@ mod tests {
             args: vec!["-y".into(), "@mcp/server".into()],
             env: HashMap::new(),
         }];
+        m.lsp_servers = Some(serde_json::json!({
+            "demo-lsp": {
+                "languageId": "demo",
+                "extensions": ["demo"],
+                "command": "demo-ls"
+            }
+        }));
         m.dependencies
             .insert("other-plugin".into(), "^1.0.0".into());
 
@@ -357,6 +369,7 @@ mod tests {
         assert_eq!(back.tools.len(), 1);
         assert_eq!(back.skills.len(), 1);
         assert_eq!(back.mcp_servers.len(), 1);
+        assert!(back.lsp_servers.is_some());
         assert_eq!(back.dependencies.len(), 1);
         assert!(matches!(back.tools[0].runtime, Some(ToolRuntime::Stdio(_))));
     }

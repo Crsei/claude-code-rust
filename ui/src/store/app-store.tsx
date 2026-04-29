@@ -86,6 +86,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'LSP_RECOMMENDATION_REQUEST':
     case 'LSP_RECOMMENDATION_DISMISS':
     case 'LSP_RECOMMENDATION_SETTINGS':
+    case 'LSP_DIAGNOSTICS_PUBLISHED':
+    case 'LSP_DIAGNOSTICS_CLEAR':
+    case 'LSP_COMPLETION_RESULTS':
+    case 'LSP_COMMAND_ERROR':
+    case 'LSP_DOCUMENT_SYNCED':
       return reduceSubsystems(state, action)
 
     case 'AGENT_SETTINGS_OPEN':

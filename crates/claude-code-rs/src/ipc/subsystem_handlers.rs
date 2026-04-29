@@ -9,10 +9,13 @@
 //! each subsystem's in-memory state.  These are used by `QueryStatus` commands
 //! and the `SystemStatus` tool.
 
+use std::future::Future;
 use std::path::PathBuf;
 
 use super::protocol::BackendMessage;
-use super::subsystem_events::{IdeEvent, LspEvent, McpEvent, PluginEvent, SkillEvent};
+use super::subsystem_events::{
+    IdeEvent, LspEvent, McpEvent, PluginEvent, SkillEvent, SubsystemEvent,
+};
 use super::subsystem_types::*;
 use cc_mcp::discovery::DiscoveryScope;
 
@@ -22,48 +25,99 @@ use cc_mcp::discovery::DiscoveryScope;
 
 /// Handle an LSP subsystem command from the frontend.
 ///
-/// Lifecycle operations (start/stop/restart) are deferred to the `/lsp` slash
-/// command because `LSP_CLIENTS` is a private static.  `QueryStatus` builds a
-/// server list from the default configurations and returns it.
+/// Read-only snapshots are returned immediately. Live editor operations are
+/// scheduled onto the active Tokio runtime and report results through the LSP
+/// subsystem event bus, so the headless loop can keep processing stdin while
+/// language servers start, sync documents, or compute completions.
 pub fn handle_lsp_command(cmd: super::subsystem_events::LspCommand) -> Vec<BackendMessage> {
     use super::subsystem_events::LspCommand;
 
     match cmd {
         LspCommand::StartServer { language_id } => {
             tracing::info!(language_id = %language_id, "LSP start requested via IPC");
-            vec![BackendMessage::SystemInfo {
-                text: format!(
-                    "Use /lsp to manage LSP servers. To start the {} server, run: /lsp start {}",
-                    language_id, language_id
-                ),
-                level: "info".to_string(),
-            }]
+            spawn_lsp_task("start_server", None, async move {
+                crate::lsp_service::start_server(&language_id).await
+            })
         }
         LspCommand::StopServer { language_id } => {
             tracing::info!(language_id = %language_id, "LSP stop requested via IPC");
-            vec![BackendMessage::SystemInfo {
-                text: format!(
-                    "Use /lsp to manage LSP servers. To stop the {} server, run: /lsp stop {}",
-                    language_id, language_id
-                ),
-                level: "info".to_string(),
-            }]
+            spawn_lsp_task("stop_server", None, async move {
+                crate::lsp_service::stop_server(&language_id).await
+            })
         }
         LspCommand::RestartServer { language_id } => {
             tracing::info!(language_id = %language_id, "LSP restart requested via IPC");
-            vec![BackendMessage::SystemInfo {
-                text: format!(
-                    "Use /lsp to manage LSP servers. To restart the {} server, run: /lsp restart {}",
-                    language_id, language_id
-                ),
-                level: "info".to_string(),
-            }]
+            spawn_lsp_task("restart_server", None, async move {
+                crate::lsp_service::restart_server(&language_id).await
+            })
         }
         LspCommand::QueryStatus => {
             let servers = build_lsp_server_info_list();
             vec![BackendMessage::LspEvent {
                 event: LspEvent::ServerList { servers },
             }]
+        }
+        LspCommand::QueryDiagnostics { uri } => {
+            let entries = crate::lsp_service::diagnostics_snapshot(uri.as_deref())
+                .into_iter()
+                .map(|(uri, diagnostics)| LspDiagnosticSnapshotEntry { uri, diagnostics })
+                .collect();
+            vec![BackendMessage::LspEvent {
+                event: LspEvent::DiagnosticsSnapshot { entries },
+            }]
+        }
+        LspCommand::OpenDocument {
+            uri,
+            language_id,
+            text,
+        } => spawn_lsp_task("open_document", None, async move {
+            crate::lsp_service::open_document(&uri, language_id, text)
+                .await
+                .map(|_| ())
+        }),
+        LspCommand::ChangeDocument {
+            uri,
+            version,
+            text,
+            changes,
+        } => spawn_lsp_task("change_document", None, async move {
+            crate::lsp_service::change_document(&uri, text, changes, version)
+                .await
+                .map(|_| ())
+        }),
+        LspCommand::SaveDocument { uri, text } => {
+            spawn_lsp_task("save_document", None, async move {
+                crate::lsp_service::save_document(&uri, text)
+                    .await
+                    .map(|_| ())
+            })
+        }
+        LspCommand::CloseDocument { uri } => spawn_lsp_task("close_document", None, async move {
+            crate::lsp_service::close_document(&uri).await.map(|_| ())
+        }),
+        LspCommand::Completion {
+            request_id,
+            uri,
+            line,
+            character,
+            trigger_character,
+        } => {
+            let request_id_for_error = request_id.clone();
+            spawn_lsp_task("completion", Some(request_id_for_error), async move {
+                let items = crate::lsp_service::completion(
+                    &uri,
+                    line.saturating_sub(1),
+                    character.saturating_sub(1),
+                    trigger_character,
+                )
+                .await?;
+                crate::lsp_service::emit_event(SubsystemEvent::Lsp(LspEvent::CompletionResults {
+                    request_id,
+                    uri,
+                    items,
+                }));
+                Ok(())
+            })
         }
         LspCommand::QuerySettings => {
             let settings = load_lsp_recommendation_settings();
@@ -108,6 +162,40 @@ pub fn handle_lsp_command(cmd: super::subsystem_events::LspCommand) -> Vec<Backe
             }]
         }
     }
+}
+
+fn spawn_lsp_task<F>(
+    operation: &'static str,
+    request_id: Option<String>,
+    future: F,
+) -> Vec<BackendMessage>
+where
+    F: Future<Output = anyhow::Result<()>> + Send + 'static,
+{
+    let handle = match tokio::runtime::Handle::try_current() {
+        Ok(handle) => handle,
+        Err(err) => {
+            return vec![BackendMessage::SystemInfo {
+                text: format!("LSP {operation} could not run without an async runtime: {err}"),
+                level: "error".to_string(),
+            }];
+        }
+    };
+
+    handle.spawn(async move {
+        if let Err(err) = future.await {
+            tracing::warn!(operation, error = %err, "LSP IPC command failed");
+            crate::lsp_service::emit_event(SubsystemEvent::Lsp(LspEvent::CommandError {
+                request_id,
+                message: format!("{operation}: {err}"),
+            }));
+        }
+    });
+
+    vec![BackendMessage::SystemInfo {
+        text: format!("Queued LSP {operation}."),
+        level: "info".to_string(),
+    }]
 }
 
 // ---------------------------------------------------------------------------
@@ -555,16 +643,7 @@ pub fn handle_skill_command(cmd: super::subsystem_events::SkillCommand) -> Vec<B
 
 /// Build a list of LSP server info from the default server configurations.
 pub fn build_lsp_server_info_list() -> Vec<LspServerInfo> {
-    crate::lsp_service::default_server_configs()
-        .into_iter()
-        .map(|cfg| LspServerInfo {
-            language_id: cfg.language_id,
-            state: "not_started".to_string(),
-            extensions: cfg.extensions.iter().map(|e| format!(".{}", e)).collect(),
-            open_files_count: 0,
-            error: None,
-        })
-        .collect()
+    crate::lsp_service::server_info_snapshot()
 }
 
 /// Build a list of MCP server status info from discovered configurations.

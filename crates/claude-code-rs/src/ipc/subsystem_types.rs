@@ -62,6 +62,13 @@ pub struct LspServerInfo {
     pub error: Option<String>,
 }
 
+/// Cached diagnostics for a single document URI.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LspDiagnosticSnapshotEntry {
+    pub uri: String,
+    pub diagnostics: Vec<LspDiagnostic>,
+}
+
 /// Payload describing an LSP plugin recommendation prompt.
 ///
 /// Emitted when the backend detects a file whose extension is served by

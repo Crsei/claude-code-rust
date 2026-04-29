@@ -269,6 +269,54 @@ fn test_parse_hover_with_range() {
     assert_eq!(r.character, 5);
 }
 
+// -- Completion --------------------------------------------------------
+
+#[test]
+fn test_parse_completion_response_array() {
+    let json = json!([
+        {
+            "label": "println!",
+            "kind": 3,
+            "detail": "macro_rules! println",
+            "insertText": "println!($0)"
+        }
+    ]);
+    let result = parse_completion_response(json).unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].label, "println!");
+    assert_eq!(result[0].kind.as_deref(), Some("Function"));
+    assert_eq!(result[0].insert_text.as_deref(), Some("println!($0)"));
+}
+
+#[test]
+fn test_parse_completion_response_list() {
+    let json = json!({
+        "isIncomplete": false,
+        "items": [{
+            "label": "String",
+            "kind": 7,
+            "documentation": {
+                "kind": "markdown",
+                "value": "Owned UTF-8 string"
+            }
+        }]
+    });
+    let result = parse_completion_response(json).unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].label, "String");
+    assert_eq!(result[0].kind.as_deref(), Some("Class"));
+    assert_eq!(
+        result[0].documentation.as_deref(),
+        Some("Owned UTF-8 string")
+    );
+}
+
+#[test]
+fn test_parse_completion_response_null() {
+    let result = parse_completion_response(Value::Null).unwrap();
+    assert!(result.is_empty());
+}
+
 // -- Symbol kind -------------------------------------------------------
 
 #[test]

@@ -2,9 +2,9 @@
 //!
 //! Lifecycle: `start()` → initialize handshake → request/notify → file sync → `shutdown()`.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
@@ -13,6 +13,7 @@ use tokio::process::Command;
 use tracing::{debug, warn};
 
 use super::transport::{self, JsonRpcTransport};
+use super::types::{DocumentChange, DocumentSyncState};
 use super::LspServerConfig;
 
 // ---------------------------------------------------------------------------
@@ -28,7 +29,14 @@ pub struct LspClient {
     pub language_id: String,
     _root_uri: String,
     _initialized: bool,
-    open_files: HashSet<String>,
+    open_files: HashMap<String, OpenDocument>,
+}
+
+#[derive(Debug, Clone)]
+struct OpenDocument {
+    language_id: String,
+    version: i32,
+    text: String,
 }
 
 impl LspClient {
@@ -49,8 +57,13 @@ impl LspClient {
             "starting LSP server"
         );
 
-        let mut child = Command::new(&config.command)
-            .args(&config.args)
+        let mut command = Command::new(&config.command);
+        command.args(&config.args);
+        if !config.env.is_empty() {
+            command.envs(&config.env);
+        }
+        command.current_dir(root_path);
+        let mut child = command
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
@@ -81,6 +94,19 @@ impl LspClient {
             "rootUri": root_uri,
             "capabilities": {
                 "textDocument": {
+                    "synchronization": {
+                        "dynamicRegistration": false,
+                        "willSave": false,
+                        "willSaveWaitUntil": false,
+                        "didSave": true
+                    },
+                    "publishDiagnostics": {
+                        "relatedInformation": true,
+                        "tagSupport": { "valueSet": [1, 2] },
+                        "versionSupport": true,
+                        "codeDescriptionSupport": true,
+                        "dataSupport": false
+                    },
                     "definition": { "dynamicRegistration": false },
                     "implementation": { "dynamicRegistration": false },
                     "references": { "dynamicRegistration": false },
@@ -92,10 +118,25 @@ impl LspClient {
                         "dynamicRegistration": false,
                         "hierarchicalDocumentSymbolSupport": true
                     },
-                    "callHierarchy": { "dynamicRegistration": false }
+                    "callHierarchy": { "dynamicRegistration": false },
+                    "completion": {
+                        "dynamicRegistration": false,
+                        "completionItem": {
+                            "snippetSupport": true,
+                            "documentationFormat": ["markdown", "plaintext"],
+                            "deprecatedSupport": true,
+                            "preselectSupport": true,
+                            "tagSupport": { "valueSet": [1] }
+                        }
+                    }
                 },
                 "workspace": {
-                    "symbol": { "dynamicRegistration": false }
+                    "symbol": { "dynamicRegistration": false },
+                    "configuration": false,
+                    "workspaceFolders": false
+                },
+                "general": {
+                    "positionEncodings": ["utf-16"]
                 }
             },
             "initializationOptions": config.init_options.clone()
@@ -136,7 +177,7 @@ impl LspClient {
             language_id: config.language_id.clone(),
             _root_uri: root_uri,
             _initialized: true,
-            open_files: HashSet::new(),
+            open_files: HashMap::new(),
         })
     }
 
@@ -171,23 +212,15 @@ impl LspClient {
             let msg_id = match msg.get("id") {
                 Some(v) => v,
                 None => {
-                    let method_str = msg.get("method").and_then(|m| m.as_str()).unwrap_or("?");
-                    match method_str {
-                        "textDocument/publishDiagnostics" => {
-                            if let Some(params) = msg.get("params") {
-                                let event = parse_diagnostics_notification(params);
-                                crate::lsp_service::emit_event(
-                                    crate::ipc::subsystem_events::SubsystemEvent::Lsp(event),
-                                );
-                            }
-                        }
-                        _ => {
-                            debug!(method = method_str, "skipping server notification");
-                        }
-                    }
+                    self.handle_server_notification(&msg);
                     continue;
                 }
             };
+
+            if msg.get("method").is_some() {
+                self.handle_server_request(&msg).await?;
+                continue;
+            }
 
             // Check if this is the response we're waiting for.
             if msg_id.as_u64() == Some(id) {
@@ -226,7 +259,7 @@ impl LspClient {
     /// If the file was already opened, this is a no-op. The file contents are
     /// read from disk and the language ID is detected from the extension.
     pub async fn ensure_file_open(&mut self, uri: &str) -> Result<()> {
-        if self.open_files.contains(uri) {
+        if self.open_files.contains_key(uri) {
             return Ok(());
         }
 
@@ -237,23 +270,315 @@ impl LspClient {
 
         let language_id = detect_language(&path).unwrap_or_else(|| self.language_id.clone());
 
+        self.open_document(uri, Some(language_id), contents).await?;
+
+        Ok(())
+    }
+
+    /// Open a document on the server with caller-provided content.
+    pub async fn open_document(
+        &mut self,
+        uri: &str,
+        language_id: Option<String>,
+        text: String,
+    ) -> Result<DocumentSyncState> {
+        if let Some(existing) = self.open_files.get(uri) {
+            return Ok(DocumentSyncState {
+                uri: uri.to_string(),
+                language_id: existing.language_id.clone(),
+                version: existing.version,
+            });
+        }
+
+        let language_id = language_id.unwrap_or_else(|| {
+            uri_to_path(uri)
+                .ok()
+                .and_then(|path| detect_language(&path))
+                .unwrap_or_else(|| self.language_id.clone())
+        });
+
+        let version = 1;
         self.notify(
             "textDocument/didOpen",
             serde_json::json!({
                 "textDocument": {
                     "uri": uri,
                     "languageId": language_id,
-                    "version": 1,
-                    "text": contents
+                    "version": version,
+                    "text": text
                 }
             }),
         )
         .await
         .with_context(|| format!("failed to send didOpen for {uri}"))?;
 
-        self.open_files.insert(uri.to_string());
+        let state = DocumentSyncState {
+            uri: uri.to_string(),
+            language_id: language_id.clone(),
+            version,
+        };
+        self.open_files.insert(
+            uri.to_string(),
+            OpenDocument {
+                language_id,
+                version,
+                text,
+            },
+        );
         debug!(uri, "opened file on LSP server");
-        Ok(())
+        Ok(state)
+    }
+
+    /// Change an open document using either full-text or ranged incremental
+    /// updates. Ranged updates are sent as LSP `didChange` content changes.
+    pub async fn change_document(
+        &mut self,
+        uri: &str,
+        full_text: Option<String>,
+        changes: Vec<DocumentChange>,
+        version: Option<i32>,
+    ) -> Result<DocumentSyncState> {
+        if !self.open_files.contains_key(uri) {
+            let text = match full_text.clone() {
+                Some(text) => text,
+                None => {
+                    let path = uri_to_path(uri).context("cannot convert URI to file path")?;
+                    tokio::fs::read_to_string(&path)
+                        .await
+                        .with_context(|| format!("failed to read file for didOpen: {path}"))?
+                }
+            };
+            self.open_document(uri, None, text).await?;
+        }
+
+        let document = self
+            .open_files
+            .get(uri)
+            .cloned()
+            .with_context(|| format!("document was not opened: {uri}"))?;
+
+        let next_version = version.unwrap_or(document.version.saturating_add(1));
+        let (next_text, content_changes) = if let Some(text) = full_text {
+            (
+                text.clone(),
+                vec![serde_json::json!({
+                    "text": text
+                })],
+            )
+        } else {
+            let mut text = document.text.clone();
+            let mut content_changes = Vec::with_capacity(changes.len());
+            for change in changes {
+                apply_document_change(&mut text, &change)?;
+                let mut content_change = serde_json::json!({
+                    "range": {
+                        "start": {
+                            "line": change.range.start_line.saturating_sub(1),
+                            "character": change.range.start_character.saturating_sub(1)
+                        },
+                        "end": {
+                            "line": change.range.end_line.saturating_sub(1),
+                            "character": change.range.end_character.saturating_sub(1)
+                        }
+                    },
+                    "text": change.text
+                });
+                if let Some(range_length) = change.range_length {
+                    content_change["rangeLength"] = serde_json::json!(range_length);
+                }
+                content_changes.push(content_change);
+            }
+            (text, content_changes)
+        };
+
+        if content_changes.is_empty() {
+            return Ok(DocumentSyncState {
+                uri: uri.to_string(),
+                language_id: document.language_id,
+                version: document.version,
+            });
+        }
+
+        self.notify(
+            "textDocument/didChange",
+            serde_json::json!({
+                "textDocument": {
+                    "uri": uri,
+                    "version": next_version
+                },
+                "contentChanges": content_changes
+            }),
+        )
+        .await
+        .with_context(|| format!("failed to send didChange for {uri}"))?;
+
+        let state = DocumentSyncState {
+            uri: uri.to_string(),
+            language_id: document.language_id.clone(),
+            version: next_version,
+        };
+        self.open_files.insert(
+            uri.to_string(),
+            OpenDocument {
+                language_id: document.language_id,
+                version: next_version,
+                text: next_text,
+            },
+        );
+        crate::lsp_service::clear_delivered_diagnostics(uri);
+        debug!(uri, version = next_version, "changed file on LSP server");
+        Ok(state)
+    }
+
+    /// Notify the server that a live document has been saved.
+    pub async fn save_document(
+        &mut self,
+        uri: &str,
+        text: Option<String>,
+    ) -> Result<DocumentSyncState> {
+        if !self.open_files.contains_key(uri) {
+            let contents = if let Some(text) = text.clone() {
+                text
+            } else {
+                let path = uri_to_path(uri).context("cannot convert URI to file path")?;
+                tokio::fs::read_to_string(&path)
+                    .await
+                    .with_context(|| format!("failed to read file for didOpen: {path}"))?
+            };
+            self.open_document(uri, None, contents).await?;
+        }
+
+        if let Some(text) = text {
+            self.change_document(uri, Some(text), Vec::new(), None)
+                .await?;
+        }
+
+        let document = self
+            .open_files
+            .get(uri)
+            .cloned()
+            .with_context(|| format!("document was not opened: {uri}"))?;
+
+        self.notify(
+            "textDocument/didSave",
+            serde_json::json!({
+                "textDocument": { "uri": uri },
+                "text": document.text
+            }),
+        )
+        .await
+        .with_context(|| format!("failed to send didSave for {uri}"))?;
+
+        Ok(DocumentSyncState {
+            uri: uri.to_string(),
+            language_id: document.language_id,
+            version: document.version,
+        })
+    }
+
+    /// Close a document on the language server and stop tracking its version.
+    pub async fn close_document(&mut self, uri: &str) -> Result<Option<DocumentSyncState>> {
+        let Some(document) = self.open_files.remove(uri) else {
+            return Ok(None);
+        };
+
+        self.notify(
+            "textDocument/didClose",
+            serde_json::json!({
+                "textDocument": { "uri": uri }
+            }),
+        )
+        .await
+        .with_context(|| format!("failed to send didClose for {uri}"))?;
+
+        Ok(Some(DocumentSyncState {
+            uri: uri.to_string(),
+            language_id: document.language_id,
+            version: document.version,
+        }))
+    }
+
+    /// Best-effort notification drain used after document sync notifications.
+    ///
+    /// The current transport is request-oriented, so editor sync commands call
+    /// this to ingest passive publishDiagnostics notifications without waiting
+    /// for a later tool request.
+    pub async fn drain_notifications(&mut self, max_wait: Duration) -> Result<usize> {
+        let deadline = Instant::now() + max_wait;
+        let mut count = 0;
+        loop {
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                break;
+            };
+            if remaining.is_zero() {
+                break;
+            }
+            let wait = remaining.min(Duration::from_millis(75));
+            match self.transport.recv_timeout(wait).await {
+                Ok(msg) => {
+                    if msg.get("id").is_some() && msg.get("method").is_some() {
+                        self.handle_server_request(&msg).await?;
+                    } else {
+                        self.handle_server_notification(&msg);
+                    }
+                    count += 1;
+                }
+                Err(_) => break,
+            }
+        }
+        Ok(count)
+    }
+
+    pub fn open_files_count(&self) -> usize {
+        self.open_files.len()
+    }
+
+    fn handle_server_notification(&mut self, msg: &serde_json::Value) {
+        let method_str = msg.get("method").and_then(|m| m.as_str()).unwrap_or("?");
+        match method_str {
+            "textDocument/publishDiagnostics" => {
+                if let Some(params) = msg.get("params") {
+                    let event = parse_diagnostics_notification(params);
+                    crate::lsp_service::record_diagnostics_event(event);
+                }
+            }
+            "workspace/configuration" => {
+                debug!("received workspace/configuration request; response handling is not implemented on this transport");
+            }
+            _ => {
+                debug!(method = method_str, "skipping server notification");
+            }
+        }
+    }
+
+    async fn handle_server_request(&mut self, msg: &serde_json::Value) -> Result<()> {
+        let method = msg.get("method").and_then(|m| m.as_str()).unwrap_or("?");
+        let id = msg.get("id").cloned().unwrap_or(Value::Null);
+        let result = match method {
+            "workspace/configuration" => {
+                let len = msg
+                    .get("params")
+                    .and_then(|p| p.get("items"))
+                    .and_then(|items| items.as_array())
+                    .map(|items| items.len())
+                    .unwrap_or(0);
+                Value::Array(vec![Value::Null; len])
+            }
+            "client/registerCapability" | "client/unregisterCapability" => Value::Null,
+            _ => {
+                debug!(method, "replying null to unsupported LSP server request");
+                Value::Null
+            }
+        };
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": result
+        });
+        self.transport
+            .send(&response)
+            .await
+            .with_context(|| format!("failed to respond to LSP server request '{method}'"))
     }
 
     // -----------------------------------------------------------------------
@@ -398,6 +723,76 @@ fn detect_language(path: &str) -> Option<String> {
         _ => return None,
     };
     Some(lang.to_string())
+}
+
+fn apply_document_change(text: &mut String, change: &DocumentChange) -> Result<()> {
+    let start = byte_index_for_position(
+        text,
+        change.range.start_line.saturating_sub(1),
+        change.range.start_character.saturating_sub(1),
+    )?;
+    let end = byte_index_for_position(
+        text,
+        change.range.end_line.saturating_sub(1),
+        change.range.end_character.saturating_sub(1),
+    )?;
+
+    if start > end {
+        bail!("invalid document change range: start is after end");
+    }
+    text.replace_range(start..end, &change.text);
+    Ok(())
+}
+
+fn byte_index_for_position(text: &str, line: u32, utf16_character: u32) -> Result<usize> {
+    let mut current_line = 0u32;
+    let mut line_start = 0usize;
+
+    for (idx, ch) in text.char_indices() {
+        if current_line == line {
+            break;
+        }
+        if ch == '\n' {
+            current_line += 1;
+            line_start = idx + ch.len_utf8();
+        }
+    }
+
+    if current_line != line {
+        if current_line.saturating_add(1) == line && text.ends_with('\n') {
+            return Ok(text.len());
+        }
+        bail!("line {} is out of bounds", line + 1);
+    }
+
+    let line_text = &text[line_start..];
+    let line_end_offset = line_text.find('\n').unwrap_or(line_text.len());
+    let line_slice = &line_text[..line_end_offset];
+
+    let mut utf16_seen = 0u32;
+    for (offset, ch) in line_slice.char_indices() {
+        if utf16_seen == utf16_character {
+            return Ok(line_start + offset);
+        }
+        utf16_seen = utf16_seen.saturating_add(ch.len_utf16() as u32);
+        if utf16_seen > utf16_character {
+            bail!(
+                "character {} splits a UTF-16 code point on line {}",
+                utf16_character + 1,
+                line + 1
+            );
+        }
+    }
+
+    if utf16_seen == utf16_character {
+        Ok(line_start + line_slice.len())
+    } else {
+        bail!(
+            "character {} is out of bounds on line {}",
+            utf16_character + 1,
+            line + 1
+        )
+    }
 }
 
 /// Parse a `textDocument/publishDiagnostics` notification into an LspEvent.
@@ -651,5 +1046,31 @@ mod tests {
             }
             _ => panic!("expected DiagnosticsPublished"),
         }
+    }
+
+    #[test]
+    fn apply_document_change_replaces_ascii_range() {
+        let mut text = "fn main() {\n    let x = 1;\n}\n".to_string();
+        let change = DocumentChange {
+            range: super::super::types::SourceRange {
+                start_line: 2,
+                start_character: 9,
+                end_line: 2,
+                end_character: 10,
+            },
+            range_length: None,
+            text: "answer".to_string(),
+        };
+        apply_document_change(&mut text, &change).unwrap();
+        assert!(text.contains("let answer = 1;"));
+    }
+
+    #[test]
+    fn byte_index_for_position_counts_utf16_units() {
+        let text = "a😀b\n";
+        assert_eq!(byte_index_for_position(text, 0, 0).unwrap(), 0);
+        assert_eq!(byte_index_for_position(text, 0, 1).unwrap(), 1);
+        assert_eq!(byte_index_for_position(text, 0, 3).unwrap(), 5);
+        assert!(byte_index_for_position(text, 0, 2).is_err());
     }
 }

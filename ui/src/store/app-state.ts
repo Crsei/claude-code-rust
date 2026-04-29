@@ -3,6 +3,7 @@ import type {
   AgentNode,
   AgentToolInfo,
   FrontendContentBlock,
+  LspCompletionItem,
   LspDiagnostic,
   LspRecommendationPayload,
   LspRecommendationSettings,
@@ -112,6 +113,18 @@ export interface SubsystemState {
  */
 export interface DiagnosticsState {
   byUri: Record<string, LspDiagnostic[]>
+  lastUpdated: number
+}
+
+export interface LspCompletionRequestState {
+  uri: string
+  items: LspCompletionItem[]
+  updatedAt: number
+}
+
+export interface LspCompletionState {
+  byRequestId: Record<string, LspCompletionRequestState>
+  lastError: string | null
   lastUpdated: number
 }
 
@@ -253,6 +266,7 @@ export interface AppState {
   teams: Record<string, TeamState>
   subsystems: SubsystemState
   diagnostics: DiagnosticsState
+  lspCompletions: LspCompletionState
   ide: IdeState
   lspRecommendation: LspRecommendationState
   customStatusLine: CustomStatusLineState | null
@@ -291,6 +305,7 @@ export const initialState: AppState = {
   teams: {},
   subsystems: { lsp: [], mcp: [], plugins: [], skills: [], lastUpdated: 0 },
   diagnostics: { byUri: {}, lastUpdated: 0 },
+  lspCompletions: { byRequestId: {}, lastError: null, lastUpdated: 0 },
   ide: { connected: false, selection: null },
   lspRecommendation: { request: null, settings: { disabled: false, muted_plugins: [] } },
   customStatusLine: null,
@@ -415,6 +430,9 @@ export type SubsystemAction =
   | { type: 'LSP_RECOMMENDATION_SETTINGS'; settings: LspRecommendationSettings }
   | { type: 'LSP_DIAGNOSTICS_PUBLISHED'; uri: string; diagnostics: LspDiagnostic[] }
   | { type: 'LSP_DIAGNOSTICS_CLEAR' }
+  | { type: 'LSP_COMPLETION_RESULTS'; requestId: string; uri: string; items: LspCompletionItem[] }
+  | { type: 'LSP_COMMAND_ERROR'; requestId?: string; message: string }
+  | { type: 'LSP_DOCUMENT_SYNCED'; uri: string; languageId: string; version: number; changeKind: string }
   | { type: 'IDE_CONNECTION_CHANGED'; connected: boolean }
   | { type: 'IDE_SELECTION_CHANGED'; selection: IdeSelectionSnapshot | null }
 
