@@ -259,3 +259,17 @@ PlanMode、Worktree、Skill 完整实现真实逻辑。
 | 本地补充 (Phase 14A) | 10 | 5,270 | — |
 | 命令系统 (Phase 14B) | 21 | 2,905 | — |
 | **合计** | **88** | **~28,738** | **118+** |
+
+---
+
+## 2026-04-27 Full-Build Updates
+
+| Module | Files | Notes |
+| --- | --- | --- |
+| TaskTools persistence (MVP-003) | `crates/claude-code-rs/src/tools/tasks.rs`, `crates/claude-code-rs/src/commands/tasks_cmd.rs`, `crates/claude-code-rs/src/engine/agent/tool_impl.rs` | Versioned task records under the cc-rust data root, bounded output sidecars, restart interruption recovery, dependency/cancellation/recovery metadata, `/tasks` detail/cancel/delete, and background local-agent runtime cancellation tokens. |
+
+## 2026-04-29 Full-Build Updates
+
+| Module | Files | Notes |
+| --- | --- | --- |
+| Skill packages (MVP-010) | `crates/cc-skills/src/{lib.rs,loader.rs,bundled.rs}`, `crates/claude-code-rs/src/commands/skills_cmd.rs`, `crates/claude-code-rs/src/commands/reload_plugins_cmd.rs`, `crates/claude-code-rs/src/ipc/subsystem_handlers.rs`, `crates/claude-code-rs/src/main.rs`, `crates/claude-code-rs/src/mcp/tools.rs` | Versioned skill package metadata, frontmatter/layout diagnostics, dependency graph resolution, registry revisions, explicit reload invalidation, plugin skill reload integration, bundled skill versions, and MCP `skill://` resource ingestion. Remote skill marketplace/state loading and continuous file watching are intentional crops. |

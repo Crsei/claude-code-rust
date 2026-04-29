@@ -620,13 +620,41 @@ pub fn handle_skill_command(cmd: super::subsystem_events::SkillCommand) -> Vec<B
     match cmd {
         SkillCommand::Reload => {
             let cwd = std::env::current_dir().ok();
-            crate::skills::clear_skills();
-            crate::skills::init_skills(&crate::config::paths::skills_dir_global(), cwd.as_deref());
-            let count = crate::skills::get_all_skills().len();
-            tracing::info!(count, "Skills reloaded via IPC");
-            vec![BackendMessage::SkillEvent {
-                event: SkillEvent::SkillsLoaded { count },
-            }]
+            let plugin_skills = crate::plugins::discover_plugin_skills();
+            let report = crate::skills::reload_skills_with_extra(
+                &crate::config::paths::skills_dir_global(),
+                cwd.as_deref(),
+                plugin_skills,
+                crate::skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
+            );
+            tracing::info!(
+                count = report.loaded,
+                skipped = report.skipped,
+                revision = report.revision,
+                errors = report.error_count(),
+                warnings = report.warning_count(),
+                "Skills reloaded via IPC"
+            );
+            let mut messages = vec![BackendMessage::SkillEvent {
+                event: SkillEvent::SkillsLoaded {
+                    count: report.loaded,
+                },
+            }];
+            if report.error_count() > 0 || report.warning_count() > 0 {
+                messages.push(BackendMessage::SystemInfo {
+                    text: format!(
+                        "Skill reload completed with {} warning(s), {} error(s).",
+                        report.warning_count(),
+                        report.error_count()
+                    ),
+                    level: if report.error_count() > 0 {
+                        "warn".to_string()
+                    } else {
+                        "info".to_string()
+                    },
+                });
+            }
+            messages
         }
         SkillCommand::QueryStatus => {
             let skills = build_skill_info_list();

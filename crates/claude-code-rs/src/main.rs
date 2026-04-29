@@ -134,6 +134,41 @@ fn resolve_startup_model(
 
     crate::commands::model::resolve_model_alias(hardcoded_default)
 }
+
+fn log_skill_report(scope: &str, report: &skills::SkillLoadReport) {
+    info!(
+        scope,
+        loaded = report.loaded,
+        skipped = report.skipped,
+        revision = report.revision,
+        warnings = report.warning_count(),
+        errors = report.error_count(),
+        "skills loaded"
+    );
+
+    for diagnostic in &report.diagnostics {
+        match diagnostic.severity {
+            skills::SkillDiagnosticSeverity::Error => warn!(
+                scope,
+                code = %diagnostic.code,
+                skill = ?diagnostic.skill,
+                source = ?diagnostic.source,
+                path = ?diagnostic.path,
+                message = %diagnostic.message,
+                "skill load error"
+            ),
+            skills::SkillDiagnosticSeverity::Warning => debug!(
+                scope,
+                code = %diagnostic.code,
+                skill = ?diagnostic.skill,
+                source = ?diagnostic.source,
+                path = ?diagnostic.path,
+                message = %diagnostic.message,
+                "skill load warning"
+            ),
+        }
+    }
+}
 use crate::config::settings;
 use crate::engine::lifecycle::QueryEngine;
 use crate::startup::runtime_config::{
@@ -318,21 +353,20 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     plugins::init_plugins();
 
     // B.3c: Initialize skills (bundled/user/project + plugin)
-    skills::clear_skills();
-    skills::init_skills(
-        &crate::config::paths::skills_dir_global(),
-        Some(std::path::Path::new(&cwd)),
-    );
     let plugin_skills = plugins::discover_plugin_skills();
     if !plugin_skills.is_empty() {
         info!(
             count = plugin_skills.len(),
             "Skills: loading plugin-contributed skills"
         );
-        for skill in plugin_skills {
-            skills::register_skill(skill);
-        }
     }
+    let skill_report = skills::reload_skills_with_extra(
+        &crate::config::paths::skills_dir_global(),
+        Some(std::path::Path::new(&cwd)),
+        plugin_skills,
+        skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
+    );
+    log_skill_report("startup", &skill_report);
 
     // Start Chrome setup before registering the synthetic MCP bridge so the
     // manifest/shims are in place before the bridge begins serving requests.
@@ -413,6 +447,17 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                     "MCP: discovered tools, merging with base tools"
                 );
                 tools.extend(mcp_tools);
+            }
+
+            let (mcp_skills, mcp_skill_diagnostics) =
+                crate::mcp::tools::discover_mcp_skill_resources(&mgr).await;
+            if !mcp_skills.is_empty() || !mcp_skill_diagnostics.is_empty() {
+                let report = skills::register_skills_resolved_with_diagnostics(
+                    mcp_skills,
+                    mcp_skill_diagnostics,
+                    skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
+                );
+                log_skill_report("mcp", &report);
             }
         }
 
