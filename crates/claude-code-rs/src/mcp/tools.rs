@@ -19,6 +19,8 @@ use crate::types::tool::*;
 use super::manager::McpManager;
 use super::{McpToolDef, ToolCallContent};
 
+const MCP_SKILL_URI_PREFIX: &str = "skill://";
+
 // ---------------------------------------------------------------------------
 // McpToolWrapper
 // ---------------------------------------------------------------------------
@@ -298,6 +300,110 @@ pub fn mcp_tools_to_tools(
         .collect()
 }
 
+/// Discover skills exposed by connected MCP servers as `skill://` resources.
+///
+/// This mirrors the upstream MCP skill-builder bridge at a Rust boundary:
+/// MCP remains responsible for listing and reading resources, while the
+/// `cc-skills` loader owns frontmatter parsing and package validation.
+pub async fn discover_mcp_skill_resources(
+    manager: &McpManager,
+) -> (
+    Vec<crate::skills::SkillDefinition>,
+    Vec<crate::skills::SkillDiagnostic>,
+) {
+    let mut skills = Vec::new();
+    let mut diagnostics = Vec::new();
+
+    for (server_name, client) in &manager.clients {
+        for resource in client
+            .resources
+            .iter()
+            .filter(|r| r.uri.starts_with(MCP_SKILL_URI_PREFIX))
+        {
+            let raw_name = resource.uri.trim_start_matches(MCP_SKILL_URI_PREFIX);
+            let skill_name = format!(
+                "mcp__{}__{}",
+                normalize_mcp_skill_component(server_name),
+                normalize_mcp_skill_component(raw_name)
+            );
+
+            let read = match client.read_resource(&resource.uri).await {
+                Ok(read) => read,
+                Err(err) => {
+                    diagnostics.push(
+                        crate::skills::SkillDiagnostic::warning(
+                            "mcp-skill-read-failed",
+                            format!(
+                                "Failed to read MCP skill resource '{}' from '{}': {}",
+                                resource.uri, server_name, err
+                            ),
+                        )
+                        .with_skill(skill_name)
+                        .with_source(crate::skills::SkillSource::Mcp(server_name.clone())),
+                    );
+                    continue;
+                }
+            };
+
+            let text = read
+                .contents
+                .iter()
+                .filter_map(|content| content.text.as_deref())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            if text.trim().is_empty() {
+                diagnostics.push(
+                    crate::skills::SkillDiagnostic::warning(
+                        "mcp-skill-empty",
+                        format!(
+                            "MCP skill resource '{}' from '{}' returned no text content.",
+                            resource.uri, server_name
+                        ),
+                    )
+                    .with_skill(skill_name)
+                    .with_source(crate::skills::SkillSource::Mcp(server_name.clone())),
+                );
+                continue;
+            }
+
+            let (skill, parse_diagnostics) = crate::skills::loader::load_skill_from_content(
+                &text,
+                &skill_name,
+                crate::skills::SkillSource::Mcp(server_name.clone()),
+            );
+            skills.push(skill);
+            diagnostics.extend(parse_diagnostics);
+        }
+    }
+
+    (skills, diagnostics)
+}
+
+fn normalize_mcp_skill_component(value: &str) -> String {
+    let mut out = String::new();
+    let trimmed = value.trim_matches(['/', '\\', ' ', '\t', '\r', '\n']);
+
+    for ch in trimmed.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | ':' | '.') {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+
+    while out.contains("__") {
+        out = out.replace("__", "_");
+    }
+
+    let out = out.trim_matches('_').to_string();
+    if out.is_empty() {
+        "skill".to_string()
+    } else {
+        out
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -402,6 +508,13 @@ mod tests {
         assert_eq!(tools.len(), 2);
         assert_eq!(tools[0].name(), "tool_a");
         assert_eq!(tools[1].name(), "tool_b");
+    }
+
+    #[test]
+    fn test_normalize_mcp_skill_component() {
+        assert_eq!(normalize_mcp_skill_component("filesystem"), "filesystem");
+        assert_eq!(normalize_mcp_skill_component("/review/code"), "review_code");
+        assert_eq!(normalize_mcp_skill_component(""), "skill");
     }
 
     #[test]

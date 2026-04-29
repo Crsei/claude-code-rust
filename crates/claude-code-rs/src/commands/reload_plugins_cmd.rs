@@ -38,7 +38,14 @@ pub struct ReloadPluginsHandler;
 impl CommandHandler for ReloadPluginsHandler {
     async fn execute(&self, _args: &str, _ctx: &mut CommandContext) -> Result<CommandResult> {
         let report = plugins::reload_plugins();
-        Ok(CommandResult::Output(format_report(&report)))
+        let plugin_skills = plugins::discover_plugin_skills();
+        let skill_report = crate::skills::reload_skills_with_extra(
+            &crate::config::paths::skills_dir_global(),
+            Some(&_ctx.cwd),
+            plugin_skills,
+            crate::skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
+        );
+        Ok(CommandResult::Output(format_report(&report, &skill_report)))
     }
 }
 
@@ -54,7 +61,10 @@ impl CommandHandler for ReloadPluginsHandler {
 /// its own line prefixed with `"  - "`, followed by a trailing summary line
 /// of the form `"1 plugin(s) failed to load."` so the error count is obvious
 /// even if the per-plugin list is long.
-fn format_report(report: &plugins::ReloadReport) -> String {
+fn format_report(
+    report: &plugins::ReloadReport,
+    skill_report: &crate::skills::SkillLoadReport,
+) -> String {
     let mut out = format!(
         "Reloaded {} plugin(s) in {}ms.",
         report.count, report.duration_ms
@@ -67,6 +77,18 @@ fn format_report(report: &plugins::ReloadReport) -> String {
         }
         out.push('\n');
         out.push_str(&format!("{} plugin(s) failed to load.", report.error_count));
+    }
+
+    out.push_str(&format!(
+        "\nReloaded {} skill package(s) at revision {}.",
+        skill_report.loaded, skill_report.revision
+    ));
+    if skill_report.error_count() > 0 || skill_report.warning_count() > 0 {
+        out.push_str(&format!(
+            "\nSkill diagnostics: {} warning(s), {} error(s).",
+            skill_report.warning_count(),
+            skill_report.error_count()
+        ));
     }
 
     out
@@ -118,6 +140,15 @@ mod tests {
         }
     }
 
+    fn empty_skill_report() -> crate::skills::SkillLoadReport {
+        crate::skills::SkillLoadReport {
+            loaded: 0,
+            skipped: 0,
+            diagnostics: vec![],
+            revision: 0,
+        }
+    }
+
     // -----------------------------------------------------------------------
     // format_report: pure formatting -- no global state required.
     // -----------------------------------------------------------------------
@@ -130,8 +161,11 @@ mod tests {
             errors: vec![],
             duration_ms: 42,
         };
-        let out = format_report(&report);
-        assert_eq!(out, "Reloaded 3 plugin(s) in 42ms.");
+        let out = format_report(&report, &empty_skill_report());
+        assert_eq!(
+            out,
+            "Reloaded 3 plugin(s) in 42ms.\nReloaded 0 skill package(s) at revision 0."
+        );
     }
 
     #[test]
@@ -142,8 +176,11 @@ mod tests {
             errors: vec![],
             duration_ms: 7,
         };
-        let out = format_report(&report);
-        assert_eq!(out, "Reloaded 0 plugin(s) in 7ms.");
+        let out = format_report(&report, &empty_skill_report());
+        assert_eq!(
+            out,
+            "Reloaded 0 plugin(s) in 7ms.\nReloaded 0 skill package(s) at revision 0."
+        );
         assert!(!out.contains("failed"));
     }
 
@@ -155,7 +192,7 @@ mod tests {
             errors: vec![("broken@local".into(), "manifest parse failed".into())],
             duration_ms: 11,
         };
-        let out = format_report(&report);
+        let out = format_report(&report, &empty_skill_report());
 
         assert!(out.starts_with("Reloaded 2 plugin(s) in 11ms."));
         assert!(out.contains("  - broken@local: manifest parse failed"));
@@ -173,7 +210,7 @@ mod tests {
             ],
             duration_ms: 3,
         };
-        let out = format_report(&report);
+        let out = format_report(&report, &empty_skill_report());
         assert!(out.contains("  - a@local: err a"));
         assert!(out.contains("  - b@local: err b"));
         assert!(out.contains("2 plugin(s) failed to load."));
@@ -197,7 +234,7 @@ mod tests {
             CommandResult::Output(text) => {
                 assert!(text.starts_with("Reloaded "), "got: {}", text);
                 assert!(text.contains("plugin(s) in "), "got: {}", text);
-                assert!(text.ends_with("ms."), "got: {}", text);
+                assert!(text.contains("skill package(s)"), "got: {}", text);
             }
             _ => panic!("Expected CommandResult::Output"),
         }
@@ -234,7 +271,7 @@ mod tests {
             errors,
             duration_ms: 0,
         };
-        let out = format_report(&simulated);
+        let out = format_report(&simulated, &empty_skill_report());
 
         assert!(out.contains("  - broken-test: boom"));
         assert!(out.contains("1 plugin(s) failed to load."));

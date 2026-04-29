@@ -43,8 +43,8 @@ Evidence used in this pass:
 | MVP-006 | Plan mode | partial, deterministic-classifier, manual-linking | Plan mode now has a durable workflow record, approval state, IPC/daemon sync, classifier entry, and trace events; remaining gaps are full auto-mode classifier parity, unified team approval flow, and automatic implementation evidence tracking. | P1 required before launch | partial |
 | MVP-007 | Tool search | resolved former unscaled | ToolSearch now uses a deterministic retrieval index with query normalization, stable ranking, lazy schema hydration, and skill/plugin/MCP source coverage. | P2 hardening | resolved |
 | MVP-008 | LSP | partial, transport-reader | LSP now has live document sync, cached diagnostics, completion, and plugin/settings config discovery; diagnostics are still drained opportunistically instead of by a dedicated background reader. | P2 hardening | partial |
-| MVP-009 | WebFetch | happy-path, unscaled | WebFetch lacks JS rendering, cookie jar, proxy support, redirect limits, and content-type intelligence. | P1 required before launch | open |
-| MVP-010 | Skill system | temporary-api, unvalidated | Skill loading lacks dependency resolution, hot reload, versioning, full frontmatter validation, and MCP skill builder parity. | P2 hardening | open |
+| MVP-009 | WebFetch | partial, browser-observability | WebFetch now has explicit HTTP/browser modes, redirect limits, content-type dispatch, private-network policy, cookie/proxy gates, and headless browser rendering; browser redirect/JS navigation observability still needs hardening. | P1 required before launch | partial |
+| MVP-010 | Skill system | resolved local package scope, intentional remote crop | Skill loading now has package metadata, dependency/version validation, reload invalidation, diagnostics, and MCP `skill://` resource ingestion; remote skill marketplace/state loading and continuous file watching are intentional crops. | P2 hardening | resolved |
 | MVP-011 | OpenTUI frontend | UX, happy-path | Resize and narrow-terminal behavior still has open layout and repaint issues. | P2 hardening | open |
 | MVP-012 | IPC protocol | temporary-api | IPC uses unversioned JSON payload surfaces, making frontend/backend skew hard to detect. | P1 required before launch | open |
 | MVP-013 | Configuration/model metadata | hardcoded | Model aliases and metadata are duplicated across backend and UI surfaces instead of one canonical registry. | P2 hardening | open |
@@ -336,25 +336,36 @@ Verification before production:
 - Language-server fixture tests for Rust, TS, Python, Go, C/C++, and Java.
 - Incremental edit tests and diagnostic push tests.
 
-### MVP-009 WebFetch lacks browser-grade behavior
+### MVP-009 WebFetch browser-grade behavior partially implemented
 
 | Field | Value |
 | --- | --- |
 | Category | Network and external integration |
-| Type | happy-path, unscaled |
+| Type | partial, browser-observability |
 | Severity | P1 required before launch |
 | Evidence | `docs/IMPLEMENTATION_GAPS.md` §2, `docs/archive/COMPLETED_SIMPLIFIED.md` §2.6 |
 | Code path | `crates/claude-code-rs/src/tools/web_fetch.rs` |
+| Status | Partial implementation 2026-04-29 |
 
 Current MVP behavior:
 
-- HTTP GET, URL validation, HTML-to-text conversion, truncation, and caching exist.
-- Missing behavior includes JS rendering, cookies, proxy support, redirect limits, and content-type handling.
+- `mode: "http"` uses a dedicated HTTP adapter with manual redirect budget, sandbox/domain checks on each hop, private-network rejection by default, max-byte enforcement, safe-cache gating, content-type dispatch, JSON pretty text, HTML extraction, text handling, and binary rejection.
+- Cookie handling is opt-in through `allowCookies`; the HTTP adapter keeps a scoped in-process jar and disables cache for cookie-enabled fetches.
+- Proxy handling is opt-in through explicit `proxy` input or `sandbox.network.httpProxyPort` / `socksProxyPort`; ambient proxy environment variables are ignored for WebFetch.
+- `mode: "browser"` is explicit and uses a local Chromium-family binary in headless `--dump-dom` mode with an isolated temporary profile by default, or a cc-rust profile when cookies are explicitly enabled.
+- Risk-sensitive options (`mode: "browser"`, cookies, proxy, private-network access, and cleartext HTTP) force an additional WebFetch permission prompt.
 
 Production design:
 
-- Split simple HTTP fetch from browser-backed fetch.
-- Add cookie/proxy policy, redirect budget, content-type dispatch, and security boundaries for rendered pages.
+- Keep HTTP and browser adapters separate so rendered output is never silently substituted by simple HTTP output.
+- Harden browser mode with DevTools-level navigation telemetry or browser-MCP integration so server redirects, JS client-side navigations, final URL, status code, console/network errors, and blocked private-network attempts are observable.
+- Add a real browser-rendering smoke fixture in CI where a Chromium binary is available.
+
+Remaining MVP compromises:
+
+- Browser mode relies on Chromium `--dump-dom`; it can render JavaScript but does not expose HTTP status, final URL after redirects, or JS/client-side navigation chain.
+- Browser mode preflights the initial URL against sandbox/private-network policy, but it cannot yet intercept every subresource request or script-initiated navigation.
+- SOCKS proxy support is passed to reqwest/Chromium when configured, but it does not yet have a dedicated fixture in this pass.
 
 Revisit trigger:
 
@@ -362,22 +373,40 @@ Revisit trigger:
 
 Verification before production:
 
-- Fixtures for redirects, binary responses, HTML, JS-rendered content, cookies, proxy, and malicious URL cases.
+- Completed 2026-04-29: unit/local TCP fixtures for redirects, max redirects, HTML extraction, JSON, binary rejection, HTTP cookie jar, private-network rejection, cache behavior, browser argument construction, `cargo test -p claude-code-rs tools::web_fetch -- --nocapture`, `cargo check -p claude-code-rs --all-targets`, `cargo clippy -p claude-code-rs --all-targets -- -D warnings`, related system-prompt e2e, and release build.
+- Still needed before closing: browser-rendering smoke fixture with real Chromium, proxy fixture coverage, and DevTools/browser-MCP telemetry coverage for browser redirects, status, final URL, and JS navigation.
 
-### MVP-010 Skill system lacks package-management depth
+### MVP-010 Skill system package management resolved locally
 
 | Field | Value |
 | --- | --- |
 | Category | Extensibility |
-| Type | temporary-api, unvalidated |
+| Type | resolved local package scope, intentional remote crop |
 | Severity | P2 hardening |
+| Status | Resolved 2026-04-29 |
 | Evidence | `docs/IMPLEMENTATION_GAPS.md` §2, `docs/archive/COMPLETED_SIMPLIFIED.md` §2.1 |
-| Code paths | `crates/cc-skills/src/`, `crates/claude-code-rs/src/tools/skill.rs` |
+| Code paths | `crates/cc-skills/src/`, `crates/claude-code-rs/src/tools/skill.rs`, `crates/claude-code-rs/src/commands/skills_cmd.rs`, `crates/claude-code-rs/src/mcp/tools.rs`, `crates/claude-code-rs/src/ipc/subsystem_handlers.rs` |
 
-Current MVP behavior:
+Previous MVP behavior:
 
 - Skill lookup, argument replacement, inline context injection, and fallback context behavior exist.
 - Missing behavior includes dependency resolution, hot reload, version management, full frontmatter validation, and MCP skill builder parity.
+
+Implemented behavior:
+
+- `cc-skills` now models skills as packages with version, dependency, compatible app version, assets, entry docs, path filters, and source metadata.
+- Loader diagnostics report malformed frontmatter, unknown keys, invalid package paths, missing package assets/docs, incompatible app versions, missing dependencies, dependency version mismatches, duplicate skills, version conflicts, and dependency cycles.
+- Startup loads bundled, user, project, and plugin skill candidates through one resolver with deterministic dependency ordering and a registry revision.
+- `/skills reload`, IPC `SkillCommand::Reload`, and `/reload-plugins` rebuild the skill registry and expose warning/error counts.
+- Bundled skills carry version metadata before insertion.
+- MCP `skill://` resources from connected MCP servers are read and converted through the same skill loader.
+- `/skills` detail output now surfaces canonical name, version, dependencies, compatibility, path filters, assets, entry docs, and base directory.
+
+Intentional crops:
+
+- Remote skill search/state loading from the Bun `remoteSkillLoader.ts` and `remoteSkillState.ts` surfaces is not implemented in MVP-010. This is intentionally deferred to MVP-014 remote/service product scope.
+- Continuous filesystem watchers are not implemented. Explicit reload remains the supported invalidation mechanism for this pass.
+- `paths` frontmatter is parsed and visible, but automatic conditional activation based on touched files is not yet wired into tool/file-operation flows.
 
 Production design:
 
@@ -386,11 +415,12 @@ Production design:
 
 Revisit trigger:
 
-- User-installed skill ecosystem, plugin-distributed skills, or MCP-generated skills.
+- Product requirements for remote skill marketplaces, live file-watch reload, or automatic conditional path activation.
 
 Verification before production:
 
-- Dependency graph tests, malformed frontmatter tests, hot reload tests, and version conflict tests.
+- Completed 2026-04-29: `cargo test -p cc-skills -- --nocapture`, `cargo test -p claude-code-rs commands::skills_cmd -- --nocapture`, `cargo test -p claude-code-rs commands::reload_plugins_cmd -- --nocapture`, `cargo test -p claude-code-rs test_normalize_mcp_skill_component -- --nocapture`, `cargo check -p claude-code-rs --all-targets`, and `cargo clippy -p claude-code-rs --all-targets -- -D warnings`.
+- Still useful before remote-skill launch: remote service fixtures, marketplace state sync tests, file-watch lifecycle tests, and conditional path activation tests.
 
 ### MVP-011 OpenTUI frontend still has layout/repaint gaps
 
@@ -551,6 +581,7 @@ Verification before closing:
 | MVP-003 | Task tool state now uses a versioned disk repository with bounded output sidecars, restart interruption recovery, dependency fields, `/tasks` delete/cancel/detail support, and runtime cancellation token registration for background local agents. | 2026-04-27 | OpenTUI component replay test before UI release. |
 | MVP-004 | Background local agents now run under a supervisor with callback parity, worktree pre-spawn setup, cancellation handles, shutdown cleanup, task metadata correlation, and retained output lookup. | 2026-04-28 | End-to-end IPC permission Ask and forced-process-termination cleanup tests before external backend launch. |
 | MVP-007 | ToolSearch now has a deterministic retrieval index with query normalization, stable ranking, lazy schema hydration, source filters, and skill result invocation metadata. | 2026-04-29 | UI smoke coverage for result labels and explanations before relying on ToolSearch from the OpenTUI selector. |
+| MVP-010 | Skill packages now have schema metadata, validation diagnostics, dependency/version resolution, explicit reload invalidation, bundled version metadata, plugin reload integration, and MCP `skill://` ingestion. | 2026-04-29 | Remote marketplace state sync, continuous file-watch reload, and conditional path activation only if those product scopes are accepted. |
 | MVP-015 | Team Memory sync code exists despite stale docs. | 2026-04-26 | Build and end-to-end sync test before removing from gap docs. |
 
 ## 8. Open Design Questions
