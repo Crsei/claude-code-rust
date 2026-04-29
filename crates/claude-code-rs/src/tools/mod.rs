@@ -63,3 +63,6 @@ pub mod brief;
 
 // SystemStatus (agent subsystem observability).
 pub mod system_status;
+
+// Tool discovery / retrieval.
+pub mod tool_search;
