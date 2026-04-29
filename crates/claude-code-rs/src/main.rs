@@ -450,6 +450,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         tools.extend(cu_tools);
     }
 
+    crate::tools::tool_search::install_runtime_tool_catalog(&tools);
+
     // B.4: Create AppState
     // Resolve model: CLI arg > config > provider default > hardcoded fallback
     let is_codex_backend = crate::engine::codex_exec::is_codex_backend(&backend);

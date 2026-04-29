@@ -19,6 +19,7 @@ use super::tasks::{
     TaskCreateTool, TaskGetTool, TaskListTool, TaskOutputTool, TaskStopTool, TaskUpdateTool,
 };
 use super::team_spawn::TeamSpawnTool;
+use super::tool_search::ToolSearchTool;
 use super::web_fetch::WebFetchTool;
 use super::web_search::WebSearchTool;
 use super::worktree::{EnterWorktreeTool, ExitWorktreeTool};
@@ -69,6 +70,7 @@ fn base_tools() -> Tools {
         Arc::new(TeamSpawnTool) as _,
         Arc::new(BriefTool) as _,
         Arc::new(SystemStatusTool) as _,
+        Arc::new(ToolSearchTool) as _,
     ]);
 
     // Filter to only enabled tools.

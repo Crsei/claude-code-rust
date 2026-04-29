@@ -1,7 +1,7 @@
 ---
 doc_type: mvp-compromise-memory
 project: cc-rust
-last_updated: 2026-04-28
+last_updated: 2026-04-29
 owner: Codex
 status: active
 ---
@@ -20,6 +20,7 @@ Evidence used in this pass:
 - `docs/KNOWN_ISSUES.md`
 - `docs/archive/COMPLETED_SIMPLIFIED.md`
 - Targeted code checks under `crates/claude-code-rs/src/` and `ui/team-memory-server/`
+- MVP-007 implementation pass on `crates/claude-code-rs/src/tools/tool_search.rs`, `crates/claude-code-rs/src/tools/registry.rs`, and `crates/claude-code-rs/src/main.rs`
 
 ## 2. Current Context
 
@@ -40,7 +41,7 @@ Evidence used in this pass:
 | MVP-004 | Background agents | resolved | Background agents now run under a unified supervisor with worktree setup, permission callback propagation, cancellation, shutdown cleanup, and retained output lookup. | P1 required before launch | resolved |
 | MVP-005 | Agent Teams backend | temporary-api, unscaled | Teams use in-process mailbox execution only; tmux/iTerm2 backend remains an interface placeholder. | P2 hardening | open |
 | MVP-006 | Plan mode | partial, deterministic-classifier, manual-linking | Plan mode now has a durable workflow record, approval state, IPC/daemon sync, classifier entry, and trace events; remaining gaps are full auto-mode classifier parity, unified team approval flow, and automatic implementation evidence tracking. | P1 required before launch | partial |
-| MVP-007 | Tool search | unscaled | Tool search lacks TF-IDF ranking, full-text index, and deferred schema loading. | P2 hardening | open |
+| MVP-007 | Tool search | resolved former unscaled | ToolSearch now uses a deterministic retrieval index with query normalization, stable ranking, lazy schema hydration, and skill/plugin/MCP source coverage. | P2 hardening | resolved |
 | MVP-008 | LSP | happy-path | LSP lacks incremental `didChange`, passive `publishDiagnostics`, completion suggestions, and plugin-side config integration. | P2 hardening | open |
 | MVP-009 | WebFetch | happy-path, unscaled | WebFetch lacks JS rendering, cookie jar, proxy support, redirect limits, and content-type intelligence. | P1 required before launch | open |
 | MVP-010 | Skill system | temporary-api, unvalidated | Skill loading lacks dependency resolution, hot reload, versioning, full frontmatter validation, and MCP skill builder parity. | P2 hardening | open |
@@ -254,32 +255,40 @@ Verification before production:
 - Completed 2026-04-28: workflow record unit tests, `/plan` command tests, Enter/ExitPlanMode tool tests, IPC/e2e plan command coverage, `cargo check -p claude-code-rs --all-targets`, and OpenTUI `bun.cmd run build`.
 - Still needed before closing: full auto-mode classifier parity tests, team approval integration tests, daemon query-command execution coverage, and automatic implementation evidence trace tests.
 
-### MVP-007 Tool search is a lightweight matcher
+### MVP-007 Tool search ranking resolved
 
 | Field | Value |
 | --- | --- |
 | Category | Search and performance |
-| Type | unscaled |
+| Type | resolved former unscaled |
 | Severity | P2 hardening |
 | Evidence | `docs/IMPLEMENTATION_GAPS.md` §2, `docs/archive/COMPLETED_SIMPLIFIED.md` §2.3 |
 | Code path | `crates/claude-code-rs/src/tools/tool_search.rs` |
+| Status | Resolved 2026-04-29 |
 
-Current MVP behavior:
+Previous MVP behavior:
 
-- Exact `select:` and keyword fuzzy search exist.
-- TF-IDF ranking, full-text indexing, and deferred schema loading remain missing.
+- Exact `select:` and keyword fuzzy search existed only as the intended lightweight surface.
+- TF-IDF ranking, full-text indexing, and deferred schema loading remained missing.
 
-Production design:
+Implemented design:
 
-- Add indexed tool descriptions and schemas, with deterministic ranking and lazy schema hydration.
+- `ToolSearchTool` is registered as a real read-only tool and searches built-in tools, plugin tools, MCP tools, and model-invocable skills.
+- The search index normalizes casing, punctuation, camel-case names, action aliases, and plural forms before ranking.
+- Ranking combines exact/prefix/alias matches with weighted TF-IDF-style field scoring over names, aliases, categories, tags, and descriptions.
+- Result ordering is deterministic by score, source priority, display name, and registration ordinal.
+- Input schemas are loaded lazily only for `select:` lookups, `include_schema=true`, or schema-shaped queries where schema terms are needed for ranking.
+- Startup installs the fully merged runtime catalog after plugins, skills, MCP, and Computer Use tools are discovered; search also merges the current registry snapshot on each call.
 
 Revisit trigger:
 
+- UI or API behavior changes to use Anthropic `tool_reference` blocks instead of text/JSON search results.
 - Large plugin/tool catalogs, MCP-heavy sessions, or degraded tool selection quality.
 
 Verification before production:
 
-- Ranking regression fixtures and performance tests with large tool catalogs.
+- Completed 2026-04-29: ranking regression fixtures for exact/name/text search, disabled tools, plugin and MCP source filters, model-invocable skill results, `select:` schema hydration, schema-lazy ranking, and a 600-entry large-catalog lazy-schema regression.
+- Completed 2026-04-29: `cargo test -p claude-code-rs tools::tool_search -- --nocapture`.
 
 ### MVP-008 LSP lacks full live-editor parity
 
@@ -517,7 +526,6 @@ Verification before closing:
 | Risk | Why acceptable now | Revisit condition |
 | --- | --- | --- |
 | In-process Agent Teams backend only | Current code provides a usable closed-loop team model without terminal-pane complexity. | Users need visible tmux/iTerm panes or upstream parity becomes required. |
-| ToolSearch lightweight ranking | Small built-in tool catalogs still work with exact and fuzzy matching. | Tool/plugin catalog grows or tool selection quality regresses. |
 | OpenTUI layout gaps | Known issues are documented and not data-loss risks. | OpenTUI becomes the default production UI on all platforms. |
 
 ## 7. Resolved Or Possibly Resolved Shortcuts
@@ -526,6 +534,7 @@ Verification before closing:
 | --- | --- | --- | --- |
 | MVP-003 | Task tool state now uses a versioned disk repository with bounded output sidecars, restart interruption recovery, dependency fields, `/tasks` delete/cancel/detail support, and runtime cancellation token registration for background local agents. | 2026-04-27 | OpenTUI component replay test before UI release. |
 | MVP-004 | Background local agents now run under a supervisor with callback parity, worktree pre-spawn setup, cancellation handles, shutdown cleanup, task metadata correlation, and retained output lookup. | 2026-04-28 | End-to-end IPC permission Ask and forced-process-termination cleanup tests before external backend launch. |
+| MVP-007 | ToolSearch now has a deterministic retrieval index with query normalization, stable ranking, lazy schema hydration, source filters, and skill result invocation metadata. | 2026-04-29 | UI smoke coverage for result labels and explanations before relying on ToolSearch from the OpenTUI selector. |
 | MVP-015 | Team Memory sync code exists despite stale docs. | 2026-04-26 | Build and end-to-end sync test before removing from gap docs. |
 
 ## 8. Open Design Questions
