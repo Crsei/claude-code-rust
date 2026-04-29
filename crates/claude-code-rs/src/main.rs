@@ -63,6 +63,7 @@ use cc_auth as auth;
 use cc_skills as skills;
 
 // Plugin system
+mod plan_workflow;
 mod plugins;
 
 // MCP (Model Context Protocol) server layer
@@ -553,6 +554,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         effort_value: merged_config.effort_level.clone(),
         team_context: None,
         hooks: merged_config.hooks.clone(),
+        plan_workflow: None,
         kairos_active: false,
         is_brief_only: false,
         is_assistant_mode: false,

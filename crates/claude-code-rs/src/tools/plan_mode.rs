@@ -16,6 +16,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
@@ -82,13 +84,11 @@ impl Tool for EnterPlanModeTool {
         _parent: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        // Save current mode and switch to Plan
-        (ctx.set_app_state)(Box::new(|mut state| {
-            state.tool_permission_context.pre_plan_mode =
-                Some(state.tool_permission_context.mode.clone());
-            state.tool_permission_context.mode = PermissionMode::Plan;
-            state
-        }));
+        let record = mutate_plan_workflow(ctx, plan_cwd(), |state, cwd, existing| {
+            crate::plan_workflow::enter_plan_mode_state(
+                state, cwd, existing, "main", "tool", None, None,
+            )
+        })?;
 
         let instructions = concat!(
             "Entered plan mode. You should now focus on exploring the codebase ",
@@ -105,7 +105,10 @@ impl Tool for EnterPlanModeTool {
         );
 
         Ok(ToolResult {
-            data: json!({ "message": instructions }),
+            data: json!({
+                "message": instructions,
+                "plan_workflow": record,
+            }),
             new_messages: vec![],
             ..Default::default()
         })
@@ -176,10 +179,24 @@ impl Tool for ExitPlanModeTool {
         ValidationResult::Ok
     }
 
-    async fn check_permissions(&self, _input: &Value, _ctx: &ToolUseContext) -> PermissionResult {
-        // Require user confirmation to exit plan mode
-        PermissionResult::Ask {
-            message: "Exit plan mode and begin implementation?".to_string(),
+    async fn check_permissions(&self, input: &Value, ctx: &ToolUseContext) -> PermissionResult {
+        let plan = input
+            .get("plan")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+
+        match mutate_plan_workflow(ctx, plan_cwd(), move |state, cwd, existing| {
+            crate::plan_workflow::request_approval_state(state, cwd, existing, "main", "tool", plan)
+        }) {
+            Ok(record) => PermissionResult::Ask {
+                message: format!(
+                    "Approve plan {} and exit plan mode to begin implementation?",
+                    record.id
+                ),
+            },
+            Err(err) => PermissionResult::Deny {
+                message: format!("Unable to persist plan approval request: {err}"),
+            },
         }
     }
 
@@ -196,19 +213,23 @@ impl Tool for ExitPlanModeTool {
             .unwrap_or("")
             .to_string();
 
-        // Restore previous permission mode
-        (ctx.set_app_state)(Box::new(|mut state| {
-            let restore_mode = state
-                .tool_permission_context
-                .pre_plan_mode
-                .take()
-                .unwrap_or(PermissionMode::Default);
-            state.tool_permission_context.mode = restore_mode;
-            state
-        }));
+        let record = mutate_plan_workflow(ctx, plan_cwd(), {
+            let plan_for_record = (!plan.is_empty()).then(|| plan.clone());
+            move |state, cwd, existing| {
+                crate::plan_workflow::approve_and_exit_state(
+                    state,
+                    cwd,
+                    existing,
+                    "main",
+                    "tool",
+                    plan_for_record,
+                )
+            }
+        })?;
 
         let mut result = json!({
             "message": "Exited plan mode. Normal operations restored. You may now implement the plan.",
+            "plan_workflow": record,
         });
 
         if !plan.is_empty() {
@@ -234,6 +255,51 @@ impl Tool for ExitPlanModeTool {
     fn user_facing_name(&self, _input: Option<&Value>) -> String {
         String::new() // hidden from tool-use display
     }
+}
+
+fn plan_cwd() -> PathBuf {
+    let cwd = crate::bootstrap::state::original_cwd();
+    if !cwd.as_os_str().is_empty() {
+        return cwd;
+    }
+
+    let fallback = std::env::temp_dir().join("cc-rust-plan-workflow");
+    let _ = std::fs::create_dir_all(fallback.join(".cc-rust"));
+    fallback
+}
+
+fn mutate_plan_workflow<F>(
+    ctx: &ToolUseContext,
+    cwd: PathBuf,
+    f: F,
+) -> Result<crate::plan_workflow::PlanWorkflowRecord>
+where
+    F: FnOnce(
+            &mut crate::types::app_state::AppState,
+            &Path,
+            Option<crate::plan_workflow::PlanWorkflowRecord>,
+        ) -> crate::plan_workflow::PlanWorkflowRecord
+        + 'static,
+{
+    let existing = crate::plan_workflow::load(&cwd)?;
+    let slot: Arc<Mutex<Option<crate::plan_workflow::PlanWorkflowRecord>>> =
+        Arc::new(Mutex::new(None));
+    let slot_for_update = Arc::clone(&slot);
+    let persist_cwd = cwd.clone();
+
+    (ctx.set_app_state)(Box::new(move |mut state| {
+        let record = f(&mut state, &cwd, existing);
+        *slot_for_update.lock().expect("plan workflow slot poisoned") = Some(record);
+        state
+    }));
+
+    let record = slot
+        .lock()
+        .expect("plan workflow slot poisoned")
+        .clone()
+        .expect("plan workflow update should set record");
+    crate::plan_workflow::persist(&persist_cwd, &record)?;
+    Ok(record)
 }
 
 // ---------------------------------------------------------------------------

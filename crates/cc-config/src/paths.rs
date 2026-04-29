@@ -165,6 +165,16 @@ pub fn plan_file_path_global() -> PathBuf {
     data_root().join("plan.md")
 }
 
+/// `{cwd}/.cc-rust/plan-workflow.json` — project-scoped durable plan workflow.
+pub fn plan_workflow_file_path_project(cwd: &Path) -> PathBuf {
+    cwd.join(".cc-rust").join("plan-workflow.json")
+}
+
+/// `{data_root}/plan-workflow.json` — fallback global durable plan workflow.
+pub fn plan_workflow_file_path_global() -> PathBuf {
+    data_root().join("plan-workflow.json")
+}
+
 /// Resolve the plan file the current session should read/write.
 ///
 /// Priority:
@@ -181,6 +191,20 @@ pub fn current_plan_file_path(cwd: &Path) -> PathBuf {
         project
     } else {
         plan_file_path_global()
+    }
+}
+
+/// Resolve the workflow record path matching [`current_plan_file_path`].
+pub fn current_plan_workflow_file_path(cwd: &Path) -> PathBuf {
+    let project = plan_workflow_file_path_project(cwd);
+    if project.exists() {
+        return project;
+    }
+    let plan = current_plan_file_path(cwd);
+    if plan.starts_with(cwd.join(".cc-rust")) {
+        plan_workflow_file_path_project(cwd)
+    } else {
+        plan_workflow_file_path_global()
     }
 }
 
@@ -348,6 +372,18 @@ mod tests {
         assert_eq!(
             plan_file_path_global(),
             PathBuf::from("/tmp/cc-plan-global/plan.md")
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn plan_workflow_path_follows_current_plan_scope() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".cc-rust")).unwrap();
+        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/ignored");
+        assert_eq!(
+            current_plan_workflow_file_path(tmp.path()),
+            tmp.path().join(".cc-rust").join("plan-workflow.json")
         );
     }
 

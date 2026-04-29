@@ -46,6 +46,44 @@ pub(crate) async fn dispatch(
                 return true;
             }
 
+            let app_state = engine.app_state();
+            let classifier = crate::plan_workflow::classify_plan_entry(&text, &app_state);
+            if classifier.should_enter {
+                match crate::plan_workflow::enter_engine_plan_mode(
+                    engine,
+                    "classifier",
+                    Some(&text),
+                    Some(&classifier.reason),
+                ) {
+                    Ok(record) => {
+                        let summary = crate::plan_workflow::summarize(&record);
+                        let _ = sink.send(&BackendMessage::PlanWorkflowEvent {
+                            event: "classifier_entered".to_string(),
+                            summary: summary.clone(),
+                            record,
+                        });
+                        let _ = sink.send(&BackendMessage::SystemInfo {
+                            text: format!(
+                                "Plan mode entered by classifier: {}",
+                                classifier
+                                    .matched_rule
+                                    .as_deref()
+                                    .unwrap_or(classifier.reason.as_str())
+                            ),
+                            level: "info".to_string(),
+                        });
+                    }
+                    Err(err) => {
+                        let _ = sink.send(&BackendMessage::SystemInfo {
+                            text: format!(
+                                "Plan classifier matched, but workflow sync failed: {err}"
+                            ),
+                            level: "warning".to_string(),
+                        });
+                    }
+                }
+            }
+
             spawn_query_turn(
                 engine.clone(),
                 text,
@@ -327,11 +365,14 @@ async fn handle_slash_command(
     let all_commands = commands::get_all_commands();
     let cmd = &all_commands[cmd_idx];
     let original_messages = engine.messages();
+    let original_app_state = engine.app_state();
+    let original_plan = original_app_state.plan_workflow.clone();
+    let original_mode = original_app_state.tool_permission_context.mode.clone();
 
     let mut ctx = CommandContext {
         messages: original_messages.clone(),
         cwd: std::path::PathBuf::from(engine.cwd()),
-        app_state: engine.app_state(),
+        app_state: original_app_state,
         session_id: engine.session_id.clone(),
     };
 
@@ -341,16 +382,19 @@ async fn handle_slash_command(
     // Commands operate on a cloned snapshot; without this sync their edits
     // would be lost to the next tool invocation.
     if cmd_result.is_ok() {
-        let new_adl = ctx
-            .app_state
-            .tool_permission_context
-            .additional_working_directories
-            .clone();
-        let new_team_ctx = ctx.app_state.team_context.clone();
-        engine.update_app_state(|s| {
-            s.tool_permission_context.additional_working_directories = new_adl;
-            s.team_context = new_team_ctx;
-        });
+        let plan_changed = ctx.app_state.plan_workflow != original_plan
+            || ctx.app_state.tool_permission_context.mode != original_mode;
+        crate::plan_workflow::sync_command_app_state(engine, &ctx.app_state);
+
+        if plan_changed {
+            if let Some(record) = ctx.app_state.plan_workflow.clone() {
+                let _ = sink.send(&BackendMessage::PlanWorkflowEvent {
+                    event: "slash_command".to_string(),
+                    summary: crate::plan_workflow::summarize(&record),
+                    record,
+                });
+            }
+        }
 
         // If this was a /team command (or any command that mutated team_context),
         // push a fresh StatusSnapshot so the Team Dashboard reflects the change

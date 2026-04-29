@@ -46,7 +46,7 @@ export function BuiltinStatusLine({
   vimMode,
   viewMode = 'prompt',
 }: Props) {
-  const { agentTree, subsystems, teams, customStatusLine } = useAppState()
+  const { agentTree, subsystems, teams, customStatusLine, planWorkflow } = useAppState()
   const runningAgents = countRunningAgents(agentTree)
   const activeTeams = countActiveTeams(teams)
   const connectedMcp = countConnectedMcp(subsystems)
@@ -108,6 +108,12 @@ export function BuiltinStatusLine({
         <>
           <text fg={c.dim} bg={c.bg}> | </text>
           <text fg="#F38BA8" bg={c.bg}>statusline: {customError}</text>
+        </>
+      )}
+      {planWorkflow && planWorkflow.status !== 'completed' && (
+        <>
+          <text fg={c.dim} bg={c.bg}> | </text>
+          <text fg="#FAB387" bg={c.bg}>plan:{planWorkflow.status}/{planWorkflow.approval_state}</text>
         </>
       )}
       <box flexGrow={1} />

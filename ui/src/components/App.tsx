@@ -24,6 +24,7 @@ import { registerOpaqueFrameClear } from './frame-clear.js'
 import {
   ensureOpaqueRendererBackground,
   notifyBackendResize,
+  repaintAfterLayoutReplacement,
   repaintAfterResize,
 } from './resize-sync.js'
 
@@ -78,6 +79,7 @@ export function App() {
   const [activePane, setActivePane] = useState<ActivePane>('input')
   const [inputStatus, setInputStatus] = useState('')
   const lastPromptPaneRef = useRef<ActivePane>('input')
+  const previousWelcomeRef = useRef<boolean | null>(null)
   const { width: termWidth, height: termHeight } = useTerminalDimensions()
   const welcomePromptWidth = Math.min(84, Math.max(40, termWidth - 8))
 
@@ -105,6 +107,8 @@ export function App() {
             model: msg.model,
             sessionId: msg.session_id,
             cwd: msg.cwd,
+            permissionMode: msg.permission_mode,
+            planWorkflow: msg.plan_workflow,
             editorMode: (msg as BackendMessage & { editor_mode?: string | null }).editor_mode,
             viewMode: (msg as BackendMessage & { view_mode?: 'prompt' | 'transcript' | null }).view_mode,
             keybindings: (msg as BackendMessage & { keybindings?: KeybindingConfig | null }).keybindings,
@@ -179,6 +183,14 @@ export function App() {
           break
         case 'question_request':
           dispatch({ type: 'QUESTION_REQUEST', question: { id: msg.id, text: msg.text } })
+          break
+        case 'plan_workflow_event':
+          dispatch({
+            type: 'PLAN_WORKFLOW_EVENT',
+            event: msg.event,
+            summary: msg.summary,
+            record: msg.record,
+          })
           break
         case 'system_info':
           dispatch({ type: 'SYSTEM_INFO', text: msg.text, level: msg.level })
@@ -440,6 +452,14 @@ export function App() {
   const isBusy = state.isWaiting || state.isStreaming
   const isTranscript = state.viewMode === 'transcript'
   const queuedCount = state.queuedSubmissions.length
+
+  useEffect(() => {
+    const previousWelcome = previousWelcomeRef.current
+    previousWelcomeRef.current = isWelcome
+    if (previousWelcome !== null && previousWelcome !== isWelcome) {
+      repaintAfterLayoutReplacement(renderer)
+    }
+  }, [isWelcome, renderer])
 
   useEffect(() => {
     if (isWelcome) {

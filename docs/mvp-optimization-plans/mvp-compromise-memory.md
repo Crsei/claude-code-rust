@@ -39,7 +39,7 @@ Evidence used in this pass:
 | MVP-003 | Task tools | resolved | Task records now persist under the cc-rust data root with restart recovery, bounded output retention, dependencies, and runtime cancellation handles. | P1 required before launch | resolved |
 | MVP-004 | Background agents | resolved | Background agents now run under a unified supervisor with worktree setup, permission callback propagation, cancellation, shutdown cleanup, and retained output lookup. | P1 required before launch | resolved |
 | MVP-005 | Agent Teams backend | temporary-api, unscaled | Teams use in-process mailbox execution only; tmux/iTerm2 backend remains an interface placeholder. | P2 hardening | open |
-| MVP-006 | Plan mode | temporary-api, manual | Plan mode lacks classifier gate, team approval flow, full implementation tracking, and has an IPC/daemon sync TODO. | P1 required before launch | open |
+| MVP-006 | Plan mode | partial, deterministic-classifier, manual-linking | Plan mode now has a durable workflow record, approval state, IPC/daemon sync, classifier entry, and trace events; remaining gaps are full auto-mode classifier parity, unified team approval flow, and automatic implementation evidence tracking. | P1 required before launch | partial |
 | MVP-007 | Tool search | unscaled | Tool search lacks TF-IDF ranking, full-text index, and deferred schema loading. | P2 hardening | open |
 | MVP-008 | LSP | happy-path | LSP lacks incremental `didChange`, passive `publishDiagnostics`, completion suggestions, and plugin-side config integration. | P2 hardening | open |
 | MVP-009 | WebFetch | happy-path, unscaled | WebFetch lacks JS rendering, cookie jar, proxy support, redirect limits, and content-type intelligence. | P1 required before launch | open |
@@ -206,21 +206,38 @@ Verification before production:
 
 - Backend conformance tests, crash cleanup tests, and cross-platform terminal integration tests.
 
-### MVP-006 Plan mode is not full workflow orchestration
+### MVP-006 Plan mode workflow partially implemented
 
 | Field | Value |
 | --- | --- |
 | Category | Architecture and workflow |
-| Type | temporary-api, manual |
+| Type | partial, deterministic-classifier, manual-linking |
 | Severity | P1 required before launch |
-| Evidence | `docs/IMPLEMENTATION_GAPS.md` §2, `docs/archive/COMPLETED_SIMPLIFIED.md` §2.4 |
-| Code path | `crates/claude-code-rs/src/commands/plan.rs` |
+| Evidence | `docs/IMPLEMENTATION_GAPS.md` §2, `docs/archive/COMPLETED_SIMPLIFIED.md` §2.4, `docs/mvp-optimization-plans/MVP-006-plan-mode-workflow-plan.md` |
+| Status | Partial implementation 2026-04-28 |
+| Code paths | `crates/cc-types/src/plan_workflow.rs`, `crates/claude-code-rs/src/plan_workflow.rs`, `crates/claude-code-rs/src/commands/plan.rs`, `crates/claude-code-rs/src/tools/plan_mode.rs`, `crates/claude-code-rs/src/ipc/`, `crates/claude-code-rs/src/daemon/routes.rs`, `ui/src/ipc/protocol.ts`, `ui/src/store/` |
 
-Current MVP behavior:
+Previous MVP behavior:
 
 - Plan mode can enter/restore permission mode and read or open a plan file.
 - Code contains a TODO noting daemon ingress does not fully sync all mode transitions.
 - Missing documented parity includes auto-mode/classifier gate, team approval, plan persistence semantics, and implementation tracking.
+
+Implemented behavior:
+
+- Plan state is represented by a versioned `PlanWorkflowRecord` with status, approval state, owner, plan text, linked task ids, and trace events.
+- `/plan` now supports enter/show, status, trace, approve, reject, link, and classifier-preview commands.
+- `EnterPlanMode` and `ExitPlanMode` tools persist workflow state; `ExitPlanMode` records pending approval before asking and records approval before restoring the prior permission mode.
+- Headless IPC emits `Ready.permission_mode`, `Ready.plan_workflow`, and `plan_workflow_event`; slash-command and tool-result paths sync workflow state back to `QueryEngine`.
+- Daemon submit and command routes can enter/sync plan workflow state and broadcast `plan_workflow_event`.
+- OpenTUI protocol/store/status-line surfaces can receive and display the active plan workflow.
+
+Remaining MVP compromises:
+
+- Classifier entry is deterministic and explicit-phrase based; it is not the full upstream auto-mode or LLM classifier.
+- Implementation tracking is manual via `/plan link <task-id> [summary]`; commits, tests, and verification evidence are not linked automatically.
+- Team plan approval messages are not unified with the durable plan workflow yet.
+- Daemon `/api/command` syncs slash-command state but still does not run `CommandResult::Query` as a full query turn.
 
 Production design:
 
@@ -234,7 +251,8 @@ Revisit trigger:
 
 Verification before production:
 
-- IPC and TUI parity tests for entering/exiting plan mode, plan file lifecycle tests, and implementation trace tests.
+- Completed 2026-04-28: workflow record unit tests, `/plan` command tests, Enter/ExitPlanMode tool tests, IPC/e2e plan command coverage, `cargo check -p claude-code-rs --all-targets`, and OpenTUI `bun.cmd run build`.
+- Still needed before closing: full auto-mode classifier parity tests, team approval integration tests, daemon query-command execution coverage, and automatic implementation evidence trace tests.
 
 ### MVP-007 Tool search is a lightweight matcher
 

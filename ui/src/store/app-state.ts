@@ -12,6 +12,7 @@ import type {
   McpServerStatusInfo,
   McpToolInfo,
   PluginInfo,
+  PlanWorkflowRecord,
   SkillInfo,
   TeamMemberInfo,
 } from '../ipc/protocol.js'
@@ -232,6 +233,8 @@ export interface AppState {
   sessionId: string
   cwd: string
   usage: Usage
+  permissionMode: string
+  planWorkflow: PlanWorkflowRecord | null
   permissionRequest: PermissionRequest | null
   pendingQuestion: PendingQuestion | null
   suggestions: string[]
@@ -268,6 +271,8 @@ export const initialState: AppState = {
   sessionId: '',
   cwd: '',
   usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+  permissionMode: 'default',
+  planWorkflow: null,
   permissionRequest: null,
   pendingQuestion: null,
   suggestions: [],
@@ -318,6 +323,8 @@ export type CoreAction =
       model: string
       sessionId: string
       cwd: string
+      permissionMode?: string | null
+      planWorkflow?: PlanWorkflowRecord | null
       editorMode?: string | null
       viewMode?: ViewMode | null
       keybindings?: KeybindingConfig | null
@@ -341,6 +348,7 @@ export type CoreAction =
   | { type: 'PERMISSION_DISMISS' }
   | { type: 'QUESTION_REQUEST'; question: PendingQuestion }
   | { type: 'QUESTION_DISMISS' }
+  | { type: 'PLAN_WORKFLOW_EVENT'; event: string; summary: string; record: PlanWorkflowRecord }
   | { type: 'SYSTEM_INFO'; text: string; level: string }
   | { type: 'USAGE_UPDATE'; usage: Usage }
   | { type: 'SUGGESTIONS'; items: string[] }
