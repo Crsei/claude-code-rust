@@ -79,6 +79,34 @@ export interface LspDiagnostic {
   code?: string
 }
 
+export interface LspDiagnosticSnapshotEntry {
+  uri: string
+  diagnostics: LspDiagnostic[]
+}
+
+export interface LspSourceRange {
+  start_line: number
+  start_character: number
+  end_line: number
+  end_character: number
+}
+
+export interface LspDocumentChange {
+  range: LspSourceRange
+  range_length?: number
+  text: string
+}
+
+export interface LspCompletionItem {
+  label: string
+  kind?: string
+  detail?: string
+  documentation?: string
+  insert_text?: string
+  sort_text?: string
+  filter_text?: string
+}
+
 export interface LspServerInfo {
   language_id: string
   state: string
@@ -413,6 +441,10 @@ export type TeamEvent =
 export type LspEvent =
   | { kind: 'server_state_changed'; language_id: string; state: string; error?: string }
   | { kind: 'diagnostics_published'; uri: string; diagnostics: LspDiagnostic[] }
+  | { kind: 'diagnostics_snapshot'; entries: LspDiagnosticSnapshotEntry[] }
+  | { kind: 'document_synced'; uri: string; language_id: string; version: number; change_kind: string }
+  | { kind: 'completion_results'; request_id: string; uri: string; items: LspCompletionItem[] }
+  | { kind: 'command_error'; request_id?: string; message: string }
   | { kind: 'server_list'; servers: LspServerInfo[] }
   /**
    * Recommendation prompt — payload fields are flattened alongside
@@ -473,6 +505,19 @@ export type FrontendMessage =
       command:
         | { kind: 'start_server' | 'stop_server' | 'restart_server'; language_id: string }
         | { kind: 'query_status' }
+        | { kind: 'query_diagnostics'; uri?: string }
+        | { kind: 'open_document'; uri: string; language_id?: string; text: string }
+        | { kind: 'change_document'; uri: string; version?: number; text?: string; changes?: LspDocumentChange[] }
+        | { kind: 'save_document'; uri: string; text?: string }
+        | { kind: 'close_document'; uri: string }
+        | {
+            kind: 'completion'
+            request_id: string
+            uri: string
+            line: number
+            character: number
+            trigger_character?: string
+          }
         | { kind: 'query_settings' }
         | {
             kind: 'recommendation_response'

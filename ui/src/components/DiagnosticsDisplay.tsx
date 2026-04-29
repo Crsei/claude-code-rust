@@ -5,7 +5,7 @@ import { c } from '../theme.js'
 import { FilePathLink } from './FilePathLink.js'
 
 /**
- * Lite-native port of
+ * Native port of
  * `ui/examples/upstream-patterns/src/components/DiagnosticsDisplay.tsx`.
  *
  * Upstream reads an `Attachment` discriminant of type `diagnostics` that
@@ -134,8 +134,8 @@ export function DiagnosticsDisplay({
           </box>
           {group.diagnostics.map((diagnostic, index) => {
             const color = severityColor(diagnostic.severity)
-            const line = diagnostic.range.start_line + 1
-            const column = diagnostic.range.start_character + 1
+            const line = diagnostic.range.start_line
+            const column = diagnostic.range.start_character
             const tail = [
               diagnostic.code ? `[${diagnostic.code}]` : undefined,
               diagnostic.source ? `(${diagnostic.source})` : undefined,

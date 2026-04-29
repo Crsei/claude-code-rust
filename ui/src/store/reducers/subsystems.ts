@@ -100,6 +100,51 @@ export function reduceSubsystems(state: AppState, action: SubsystemAction): AppS
         diagnostics: { byUri: {}, lastUpdated: Date.now() },
       }
 
+    case 'LSP_COMPLETION_RESULTS':
+      return {
+        ...state,
+        lspCompletions: {
+          byRequestId: {
+            ...state.lspCompletions.byRequestId,
+            [action.requestId]: {
+              uri: action.uri,
+              items: action.items,
+              updatedAt: Date.now(),
+            },
+          },
+          lastError: null,
+          lastUpdated: Date.now(),
+        },
+      }
+
+    case 'LSP_COMMAND_ERROR':
+      return {
+        ...state,
+        lspCompletions: {
+          ...state.lspCompletions,
+          lastError: action.message,
+          lastUpdated: Date.now(),
+        },
+      }
+
+    case 'LSP_DOCUMENT_SYNCED':
+      return {
+        ...state,
+        subsystems: {
+          ...state.subsystems,
+          lsp: upsertBy(state.subsystems.lsp, 'language_id', action.languageId, s => ({
+            ...s,
+            state: action.changeKind === 'close' ? s.state : 'running',
+            extensions: s.extensions ?? [],
+            open_files_count:
+              action.changeKind === 'close'
+                ? Math.max(0, (s.open_files_count ?? 1) - 1)
+                : Math.max(1, s.open_files_count ?? 0),
+          })),
+          lastUpdated: Date.now(),
+        },
+      }
+
     case 'IDE_CONNECTION_CHANGED':
       return {
         ...state,

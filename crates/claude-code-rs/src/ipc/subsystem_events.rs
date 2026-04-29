@@ -14,6 +14,8 @@
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
+use crate::lsp_service::types::{CompletionItemInfo, DocumentChange};
+
 use super::subsystem_types::*;
 
 // ===========================================================================
@@ -35,6 +37,29 @@ pub enum LspEvent {
     DiagnosticsPublished {
         uri: String,
         diagnostics: Vec<LspDiagnostic>,
+    },
+    /// Cached diagnostics snapshot, returned by `QueryDiagnostics`.
+    DiagnosticsSnapshot {
+        entries: Vec<LspDiagnosticSnapshotEntry>,
+    },
+    /// A live editor document was synced to its language server.
+    DocumentSynced {
+        uri: String,
+        language_id: String,
+        version: i32,
+        change_kind: String,
+    },
+    /// Completion results for a live editor request.
+    CompletionResults {
+        request_id: String,
+        uri: String,
+        items: Vec<CompletionItemInfo>,
+    },
+    /// Async LSP command failure.
+    CommandError {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        request_id: Option<String>,
+        message: String,
     },
     /// Full list of LSP servers (response to `QueryStatus`).
     ServerList { servers: Vec<LspServerInfo> },
@@ -212,6 +237,49 @@ pub enum LspCommand {
         language_id: String,
     },
     QueryStatus,
+    /// Return the cached diagnostics for one URI or all tracked documents.
+    QueryDiagnostics {
+        #[serde(default)]
+        uri: Option<String>,
+    },
+    /// Open or replace a live editor document on the language server.
+    OpenDocument {
+        uri: String,
+        #[serde(default)]
+        language_id: Option<String>,
+        text: String,
+    },
+    /// Apply full-text or ranged changes to a live editor document.
+    ChangeDocument {
+        uri: String,
+        #[serde(default)]
+        version: Option<i32>,
+        #[serde(default)]
+        text: Option<String>,
+        #[serde(default)]
+        changes: Vec<DocumentChange>,
+    },
+    /// Notify the language server that a live document was saved.
+    SaveDocument {
+        uri: String,
+        #[serde(default)]
+        text: Option<String>,
+    },
+    /// Close a live editor document.
+    CloseDocument {
+        uri: String,
+    },
+    /// Request completion results at a live editor position.
+    Completion {
+        request_id: String,
+        uri: String,
+        /// 1-based line number, matching the rest of the public LSP surface.
+        line: u32,
+        /// 1-based UTF-16 character offset, matching the rest of the public LSP surface.
+        character: u32,
+        #[serde(default)]
+        trigger_character: Option<String>,
+    },
     /// Return the currently-persisted recommendation settings as an
     /// [`LspEvent::SettingsSnapshot`].
     QuerySettings,
@@ -462,6 +530,54 @@ mod tests {
         let value = serde_json::to_value(&event).expect("serialize");
         assert_eq!(value["kind"], "diagnostics_published");
         assert_eq!(value["diagnostics"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn lsp_event_diagnostics_snapshot_serializes() {
+        let event = LspEvent::DiagnosticsSnapshot {
+            entries: vec![LspDiagnosticSnapshotEntry {
+                uri: "file:///src/main.rs".to_string(),
+                diagnostics: vec![],
+            }],
+        };
+        let value = serde_json::to_value(&event).expect("serialize");
+        assert_eq!(value["kind"], "diagnostics_snapshot");
+        assert_eq!(value["entries"][0]["uri"], "file:///src/main.rs");
+    }
+
+    #[test]
+    fn lsp_event_document_synced_serializes() {
+        let event = LspEvent::DocumentSynced {
+            uri: "file:///src/main.rs".to_string(),
+            language_id: "rust".to_string(),
+            version: 2,
+            change_kind: "change".to_string(),
+        };
+        let value = serde_json::to_value(&event).expect("serialize");
+        assert_eq!(value["kind"], "document_synced");
+        assert_eq!(value["version"], 2);
+        assert_eq!(value["change_kind"], "change");
+    }
+
+    #[test]
+    fn lsp_event_completion_results_serializes() {
+        let event = LspEvent::CompletionResults {
+            request_id: "completion-1".to_string(),
+            uri: "file:///src/main.rs".to_string(),
+            items: vec![CompletionItemInfo {
+                label: "println!".to_string(),
+                kind: Some("Function".to_string()),
+                detail: None,
+                documentation: None,
+                insert_text: Some("println!($0)".to_string()),
+                sort_text: None,
+                filter_text: None,
+            }],
+        };
+        let value = serde_json::to_value(&event).expect("serialize");
+        assert_eq!(value["kind"], "completion_results");
+        assert_eq!(value["request_id"], "completion-1");
+        assert_eq!(value["items"][0]["label"], "println!");
     }
 
     #[test]
@@ -843,6 +959,79 @@ mod tests {
         let json = r#"{"kind":"query_status"}"#;
         let cmd: LspCommand = serde_json::from_str(json).expect("deserialize");
         assert!(matches!(cmd, LspCommand::QueryStatus));
+    }
+
+    #[test]
+    fn lsp_command_query_diagnostics_deserializes() {
+        let json = r#"{"kind":"query_diagnostics","uri":"file:///src/main.rs"}"#;
+        let cmd: LspCommand = serde_json::from_str(json).expect("deserialize");
+        match cmd {
+            LspCommand::QueryDiagnostics { uri } => {
+                assert_eq!(uri.as_deref(), Some("file:///src/main.rs"));
+            }
+            other => panic!("unexpected variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn lsp_command_change_document_deserializes() {
+        let json = r#"{
+            "kind":"change_document",
+            "uri":"file:///src/main.rs",
+            "version":3,
+            "changes":[{
+                "range":{
+                    "start_line":1,
+                    "start_character":4,
+                    "end_line":1,
+                    "end_character":4
+                },
+                "text":"pub "
+            }]
+        }"#;
+        let cmd: LspCommand = serde_json::from_str(json).expect("deserialize");
+        match cmd {
+            LspCommand::ChangeDocument {
+                uri,
+                version,
+                changes,
+                ..
+            } => {
+                assert_eq!(uri, "file:///src/main.rs");
+                assert_eq!(version, Some(3));
+                assert_eq!(changes.len(), 1);
+                assert_eq!(changes[0].range.start_character, 4);
+            }
+            other => panic!("unexpected variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn lsp_command_completion_deserializes() {
+        let json = r#"{
+            "kind":"completion",
+            "request_id":"c1",
+            "uri":"file:///src/main.rs",
+            "line":10,
+            "character":5,
+            "trigger_character":"."
+        }"#;
+        let cmd: LspCommand = serde_json::from_str(json).expect("deserialize");
+        match cmd {
+            LspCommand::Completion {
+                request_id,
+                line,
+                character,
+                trigger_character,
+                ..
+            } => {
+                assert_eq!(request_id, "c1");
+                assert_eq!(line, 10);
+                assert_eq!(character, 5);
+                assert_eq!(trigger_character.as_deref(), Some("."));
+            }
+            other => panic!("unexpected variant: {:?}", other),
+        }
     }
 
     #[test]

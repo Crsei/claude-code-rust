@@ -295,6 +295,26 @@ export function App() {
             case 'diagnostics_published':
               dispatch({ type: 'LSP_DIAGNOSTICS_PUBLISHED', uri: evt.uri, diagnostics: evt.diagnostics })
               break
+            case 'diagnostics_snapshot':
+              for (const entry of evt.entries) {
+                dispatch({ type: 'LSP_DIAGNOSTICS_PUBLISHED', uri: entry.uri, diagnostics: entry.diagnostics })
+              }
+              break
+            case 'document_synced':
+              dispatch({
+                type: 'LSP_DOCUMENT_SYNCED',
+                uri: evt.uri,
+                languageId: evt.language_id,
+                version: evt.version,
+                changeKind: evt.change_kind,
+              })
+              break
+            case 'completion_results':
+              dispatch({ type: 'LSP_COMPLETION_RESULTS', requestId: evt.request_id, uri: evt.uri, items: evt.items })
+              break
+            case 'command_error':
+              dispatch({ type: 'LSP_COMMAND_ERROR', requestId: evt.request_id, message: evt.message })
+              break
           }
           break
         }

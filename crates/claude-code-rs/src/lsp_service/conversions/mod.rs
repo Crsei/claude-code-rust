@@ -6,7 +6,7 @@
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
-use crate::lsp_service::types::{HoverInfo, SourceLocation, SymbolInfo};
+use crate::lsp_service::types::{CompletionItemInfo, HoverInfo, SourceLocation, SymbolInfo};
 
 // ---------------------------------------------------------------------------
 // URI helpers
@@ -179,6 +179,86 @@ pub fn parse_hover_response(value: Value) -> Result<HoverInfo> {
     let range = hover.range.as_ref().map(range_to_source_location);
 
     Ok(HoverInfo { contents, range })
+}
+
+// ---------------------------------------------------------------------------
+// Completion
+// ---------------------------------------------------------------------------
+
+fn completion_kind_str(kind: lsp_types::CompletionItemKind) -> &'static str {
+    match kind {
+        lsp_types::CompletionItemKind::TEXT => "Text",
+        lsp_types::CompletionItemKind::METHOD => "Method",
+        lsp_types::CompletionItemKind::FUNCTION => "Function",
+        lsp_types::CompletionItemKind::CONSTRUCTOR => "Constructor",
+        lsp_types::CompletionItemKind::FIELD => "Field",
+        lsp_types::CompletionItemKind::VARIABLE => "Variable",
+        lsp_types::CompletionItemKind::CLASS => "Class",
+        lsp_types::CompletionItemKind::INTERFACE => "Interface",
+        lsp_types::CompletionItemKind::MODULE => "Module",
+        lsp_types::CompletionItemKind::PROPERTY => "Property",
+        lsp_types::CompletionItemKind::UNIT => "Unit",
+        lsp_types::CompletionItemKind::VALUE => "Value",
+        lsp_types::CompletionItemKind::ENUM => "Enum",
+        lsp_types::CompletionItemKind::KEYWORD => "Keyword",
+        lsp_types::CompletionItemKind::SNIPPET => "Snippet",
+        lsp_types::CompletionItemKind::COLOR => "Color",
+        lsp_types::CompletionItemKind::FILE => "File",
+        lsp_types::CompletionItemKind::REFERENCE => "Reference",
+        lsp_types::CompletionItemKind::FOLDER => "Folder",
+        lsp_types::CompletionItemKind::ENUM_MEMBER => "EnumMember",
+        lsp_types::CompletionItemKind::CONSTANT => "Constant",
+        lsp_types::CompletionItemKind::STRUCT => "Struct",
+        lsp_types::CompletionItemKind::EVENT => "Event",
+        lsp_types::CompletionItemKind::OPERATOR => "Operator",
+        lsp_types::CompletionItemKind::TYPE_PARAMETER => "TypeParameter",
+        _ => "Unknown",
+    }
+}
+
+fn completion_documentation_to_text(doc: &lsp_types::Documentation) -> String {
+    match doc {
+        lsp_types::Documentation::String(s) => s.clone(),
+        lsp_types::Documentation::MarkupContent(markup) => markup.value.clone(),
+    }
+}
+
+fn completion_item_to_info(item: lsp_types::CompletionItem) -> CompletionItemInfo {
+    CompletionItemInfo {
+        label: item.label,
+        kind: item.kind.map(|kind| completion_kind_str(kind).to_string()),
+        detail: item.detail,
+        documentation: item
+            .documentation
+            .as_ref()
+            .map(completion_documentation_to_text),
+        insert_text: item.insert_text,
+        sort_text: item.sort_text,
+        filter_text: item.filter_text,
+    }
+}
+
+/// Parse a `textDocument/completion` response.
+///
+/// Handles `null`, `CompletionItem[]`, and `CompletionList`.
+pub fn parse_completion_response(value: Value) -> Result<Vec<CompletionItemInfo>> {
+    if value.is_null() {
+        return Ok(vec![]);
+    }
+
+    let response: lsp_types::CompletionResponse =
+        serde_json::from_value(value).context("Failed to parse completion response")?;
+
+    Ok(match response {
+        lsp_types::CompletionResponse::Array(items) => {
+            items.into_iter().map(completion_item_to_info).collect()
+        }
+        lsp_types::CompletionResponse::List(list) => list
+            .items
+            .into_iter()
+            .map(completion_item_to_info)
+            .collect(),
+    })
 }
 
 // ---------------------------------------------------------------------------

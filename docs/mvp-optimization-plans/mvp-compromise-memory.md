@@ -42,7 +42,7 @@ Evidence used in this pass:
 | MVP-005 | Agent Teams backend | temporary-api, unscaled | Teams use in-process mailbox execution only; tmux/iTerm2 backend remains an interface placeholder. | P2 hardening | open |
 | MVP-006 | Plan mode | partial, deterministic-classifier, manual-linking | Plan mode now has a durable workflow record, approval state, IPC/daemon sync, classifier entry, and trace events; remaining gaps are full auto-mode classifier parity, unified team approval flow, and automatic implementation evidence tracking. | P1 required before launch | partial |
 | MVP-007 | Tool search | resolved former unscaled | ToolSearch now uses a deterministic retrieval index with query normalization, stable ranking, lazy schema hydration, and skill/plugin/MCP source coverage. | P2 hardening | resolved |
-| MVP-008 | LSP | happy-path | LSP lacks incremental `didChange`, passive `publishDiagnostics`, completion suggestions, and plugin-side config integration. | P2 hardening | open |
+| MVP-008 | LSP | partial, transport-reader | LSP now has live document sync, cached diagnostics, completion, and plugin/settings config discovery; diagnostics are still drained opportunistically instead of by a dedicated background reader. | P2 hardening | partial |
 | MVP-009 | WebFetch | happy-path, unscaled | WebFetch lacks JS rendering, cookie jar, proxy support, redirect limits, and content-type intelligence. | P1 required before launch | open |
 | MVP-010 | Skill system | temporary-api, unvalidated | Skill loading lacks dependency resolution, hot reload, versioning, full frontmatter validation, and MCP skill builder parity. | P2 hardening | open |
 | MVP-011 | OpenTUI frontend | UX, happy-path | Resize and narrow-terminal behavior still has open layout and repaint issues. | P2 hardening | open |
@@ -290,26 +290,42 @@ Verification before production:
 - Completed 2026-04-29: ranking regression fixtures for exact/name/text search, disabled tools, plugin and MCP source filters, model-invocable skill results, `select:` schema hydration, schema-lazy ranking, and a 600-entry large-catalog lazy-schema regression.
 - Completed 2026-04-29: `cargo test -p claude-code-rs tools::tool_search -- --nocapture`.
 
-### MVP-008 LSP lacks full live-editor parity
+### MVP-008 LSP live-editor path partially implemented
 
 | Field | Value |
 | --- | --- |
 | Category | Developer tooling |
-| Type | happy-path |
+| Type | partial, transport-reader |
 | Severity | P2 hardening |
 | Evidence | `docs/IMPLEMENTATION_GAPS.md` §2, `docs/archive/COMPLETED_SIMPLIFIED.md` §2.5 |
-| Code paths | `crates/claude-code-rs/src/tools/lsp.rs`, `crates/claude-code-rs/src/lsp_service/` |
+| Status | Partial implementation 2026-04-29 |
+| Code paths | `crates/claude-code-rs/src/tools/lsp.rs`, `crates/claude-code-rs/src/lsp_service/`, `crates/claude-code-rs/src/ipc/`, `ui/src/ipc/protocol.ts`, `ui/src/store/` |
 
-Current MVP behavior:
+Previous MVP behavior:
 
 - Core JSON-RPC transport and nine LSP operations exist.
 - Incremental sync, passive diagnostics, completion suggestions, and plugin-side LSP config integration are still missing.
+
+Implemented behavior:
+
+- LSP clients now track open documents with versions and send `didOpen`, `didChange`, `didSave`, and `didClose`.
+- Incremental range edits are applied to cached text using UTF-16 LSP positions before being sent to the server.
+- `publishDiagnostics` notifications are parsed, cached per URI, emitted over IPC, and exposed through the LSP tool.
+- `textDocument/completion` responses are parsed and exposed through both tool calls and IPC completion-result events.
+- LSP server resolution now reads plugin `.lsp.json`, plugin manifest `lspServers`, settings `lspServers`, then built-in defaults.
+- OpenTUI protocol/store paths can send document sync/completion commands and cache diagnostics/completion results.
+
+Remaining MVP compromises:
+
+- Passive diagnostics are drained opportunistically after sync and request operations; a production transport should split reader/writer tasks and continuously route notifications, responses, and server requests.
+- Verification uses parser/protocol/config/reducer tests and build checks, not real language-server fixture tests across Rust, TypeScript, Python, Go, C/C++, and Java.
 
 Production design:
 
 - Maintain open document state and send `didChange` increments.
 - Subscribe to server diagnostics and expose them to UI/tool callers.
 - Centralize language server config across plugins and settings.
+- Move JSON-RPC reads to a background router so diagnostics do not depend on the next editor command or tool request.
 
 Revisit trigger:
 

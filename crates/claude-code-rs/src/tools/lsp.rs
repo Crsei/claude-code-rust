@@ -2,12 +2,13 @@
 //!
 //! Corresponds to TypeScript: tools/LSPTool/LSPTool.ts
 //!
-//! Provides nine code navigation operations through a unified interface:
+//! Provides code navigation and live-editor operations through a unified interface:
 //! - goToDefinition, goToImplementation
 //! - findReferences
 //! - hover
 //! - documentSymbol, workspaceSymbol
 //! - prepareCallHierarchy, incomingCalls, outgoingCalls
+//! - completion, diagnostics
 //!
 //! The tool converts 1-based editor coordinates to 0-based LSP protocol
 //! coordinates and formats results for the model.
@@ -39,6 +40,8 @@ pub enum LspOperation {
     PrepareCallHierarchy,
     IncomingCalls,
     OutgoingCalls,
+    Completion,
+    Diagnostics,
 }
 
 impl LspOperation {
@@ -54,6 +57,8 @@ impl LspOperation {
             "prepareCallHierarchy" => Some(Self::PrepareCallHierarchy),
             "incomingCalls" => Some(Self::IncomingCalls),
             "outgoingCalls" => Some(Self::OutgoingCalls),
+            "completion" => Some(Self::Completion),
+            "diagnostics" => Some(Self::Diagnostics),
             _ => None,
         }
     }
@@ -71,12 +76,24 @@ impl LspOperation {
             Self::PrepareCallHierarchy => "textDocument/prepareCallHierarchy",
             Self::IncomingCalls => "callHierarchy/incomingCalls",
             Self::OutgoingCalls => "callHierarchy/outgoingCalls",
+            Self::Completion => "textDocument/completion",
+            Self::Diagnostics => "textDocument/publishDiagnostics",
         }
     }
 
     /// Whether this operation requires file position (line + character).
     pub fn requires_position(&self) -> bool {
-        !matches!(self, Self::WorkspaceSymbol)
+        matches!(
+            self,
+            Self::GoToDefinition
+                | Self::GoToImplementation
+                | Self::FindReferences
+                | Self::Hover
+                | Self::PrepareCallHierarchy
+                | Self::IncomingCalls
+                | Self::OutgoingCalls
+                | Self::Completion
+        )
     }
 
     /// All valid operation names.
@@ -91,6 +108,8 @@ impl LspOperation {
             "prepareCallHierarchy",
             "incomingCalls",
             "outgoingCalls",
+            "completion",
+            "diagnostics",
         ]
     }
 }
@@ -104,7 +123,8 @@ impl LspOperation {
 // `tools::lsp <-> lsp_service` cycle). Re-exported here so existing
 // `crate::tools::lsp::{HoverInfo, SourceLocation, SymbolInfo}` call sites
 // keep compiling.
-pub use crate::lsp_service::types::{HoverInfo, SourceLocation, SymbolInfo};
+use crate::ipc::subsystem_types::LspDiagnostic;
+pub use crate::lsp_service::types::{CompletionItemInfo, HoverInfo, SourceLocation, SymbolInfo};
 
 // ---------------------------------------------------------------------------
 // Result formatting
@@ -154,6 +174,54 @@ fn format_hover(hover: &HoverInfo) -> String {
     hover.contents.clone()
 }
 
+fn format_completions(items: &[CompletionItemInfo]) -> String {
+    if items.is_empty() {
+        return "No completion items available.".to_string();
+    }
+
+    items
+        .iter()
+        .take(50)
+        .map(|item| {
+            let kind = item.kind.as_deref().unwrap_or("Item");
+            match item.detail.as_deref() {
+                Some(detail) if !detail.is_empty() => {
+                    format!("- {} `{}` - {}", kind, item.label, detail)
+                }
+                _ => format!("- {} `{}`", kind, item.label),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn format_diagnostics(diagnostics: &[LspDiagnostic]) -> String {
+    if diagnostics.is_empty() {
+        return "No diagnostics for this document.".to_string();
+    }
+
+    diagnostics
+        .iter()
+        .map(|diagnostic| {
+            let source = diagnostic
+                .source
+                .as_deref()
+                .filter(|source| !source.is_empty())
+                .map(|source| format!(" ({source})"))
+                .unwrap_or_default();
+            format!(
+                "- {}{} at line {}, col {}: {}",
+                diagnostic.severity,
+                source,
+                diagnostic.range.start_line,
+                diagnostic.range.start_character,
+                diagnostic.message
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 // ---------------------------------------------------------------------------
 // Tool implementation
 // ---------------------------------------------------------------------------
@@ -193,6 +261,10 @@ impl Tool for LspTool {
                 "character": {
                     "type": "number",
                     "description": "Column number (1-based, as shown in editors)."
+                },
+                "triggerCharacter": {
+                    "type": "string",
+                    "description": "Optional completion trigger character."
                 }
             },
             "required": ["operation", "filePath"]
@@ -282,6 +354,10 @@ impl Tool for LspTool {
             .and_then(|v| v.as_u64())
             .map(|c| c.saturating_sub(1) as u32)
             .unwrap_or(0);
+        let trigger_character = input
+            .get("triggerCharacter")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         // Resolve file path
         let resolved = resolve_file_path(file_path, ctx);
@@ -315,7 +391,7 @@ impl Tool for LspTool {
         }
 
         // ---- LSP execution ----
-        let result = execute_lsp_operation(op, &resolved, line, character).await;
+        let result = execute_lsp_operation(op, &resolved, line, character, trigger_character).await;
 
         match result {
             Ok(output) => Ok(ToolResult {
@@ -348,6 +424,8 @@ Supported operations:
 - prepareCallHierarchy: Get the call hierarchy for a function
 - incomingCalls: Find callers of a function
 - outgoingCalls: Find functions called by a function
+- completion: Get completion suggestions at a live editor position
+- diagnostics: Read cached diagnostics for a file
 
 All operations require filePath. Most require line and character (1-based).
 Requires LSP servers to be configured for the file type."#
@@ -392,6 +470,7 @@ async fn execute_lsp_operation(
     file_path: &Path,
     line: u32,
     character: u32,
+    trigger_character: Option<String>,
 ) -> Result<Value> {
     use crate::lsp_service;
 
@@ -499,6 +578,30 @@ async fn execute_lsp_operation(
                 "resultCount": calls.len(),
             }))
         }
+        LspOperation::Completion => {
+            let items = lsp_service::completion(&uri, line, character, trigger_character).await?;
+            Ok(json!({
+                "operation": "completion",
+                "filePath": file_path.display().to_string(),
+                "result": format_completions(&items),
+                "resultCount": items.len(),
+                "items": items,
+            }))
+        }
+        LspOperation::Diagnostics => {
+            let diagnostics = lsp_service::diagnostics_snapshot(Some(&uri))
+                .into_iter()
+                .next()
+                .map(|(_, diagnostics)| diagnostics)
+                .unwrap_or_default();
+            Ok(json!({
+                "operation": "diagnostics",
+                "filePath": file_path.display().to_string(),
+                "result": format_diagnostics(&diagnostics),
+                "resultCount": diagnostics.len(),
+                "diagnostics": diagnostics,
+            }))
+        }
     }
 }
 
@@ -546,21 +649,27 @@ mod tests {
             "textDocument/definition"
         );
         assert_eq!(LspOperation::WorkspaceSymbol.method(), "workspace/symbol");
+        assert_eq!(LspOperation::Completion.method(), "textDocument/completion");
     }
 
     #[test]
     fn test_requires_position() {
         assert!(LspOperation::GoToDefinition.requires_position());
         assert!(LspOperation::Hover.requires_position());
+        assert!(LspOperation::Completion.requires_position());
         assert!(!LspOperation::WorkspaceSymbol.requires_position());
+        assert!(!LspOperation::DocumentSymbol.requires_position());
+        assert!(!LspOperation::Diagnostics.requires_position());
     }
 
     #[test]
     fn test_all_names() {
         let names = LspOperation::all_names();
-        assert_eq!(names.len(), 9);
+        assert_eq!(names.len(), 11);
         assert!(names.contains(&"goToDefinition"));
         assert!(names.contains(&"outgoingCalls"));
+        assert!(names.contains(&"completion"));
+        assert!(names.contains(&"diagnostics"));
     }
 
     #[test]

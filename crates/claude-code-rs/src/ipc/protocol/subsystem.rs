@@ -23,6 +23,22 @@ mod tests {
     }
 
     #[test]
+    fn backend_lsp_completion_event_serializes() {
+        use crate::ipc::subsystem_events::LspEvent;
+        let msg = BackendMessage::LspEvent {
+            event: LspEvent::CompletionResults {
+                request_id: "c1".to_string(),
+                uri: "file:///src/main.rs".to_string(),
+                items: vec![],
+            },
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "lsp_event");
+        assert_eq!(json["event"]["kind"], "completion_results");
+        assert_eq!(json["event"]["request_id"], "c1");
+    }
+
+    #[test]
     fn backend_subsystem_status_serializes() {
         use crate::ipc::subsystem_types::SubsystemStatusSnapshot;
         let msg = BackendMessage::SubsystemStatus {
@@ -87,6 +103,29 @@ mod tests {
     fn frontend_lsp_command_deserializes() {
         let json =
             r#"{"type":"lsp_command","command":{"kind":"start_server","language_id":"rust"}}"#;
+        let msg: FrontendMessage = serde_json::from_str(json).unwrap();
+        assert!(matches!(msg, FrontendMessage::LspCommand { .. }));
+    }
+
+    #[test]
+    fn frontend_lsp_change_document_deserializes() {
+        let json = r#"{
+            "type":"lsp_command",
+            "command":{
+                "kind":"change_document",
+                "uri":"file:///src/main.rs",
+                "version":2,
+                "changes":[{
+                    "range":{
+                        "start_line":1,
+                        "start_character":1,
+                        "end_line":1,
+                        "end_character":1
+                    },
+                    "text":"pub "
+                }]
+            }
+        }"#;
         let msg: FrontendMessage = serde_json::from_str(json).unwrap();
         assert!(matches!(msg, FrontendMessage::LspCommand { .. }));
     }

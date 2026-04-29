@@ -7,10 +7,10 @@ import { stateColor } from './state-colors.js'
  * Richer rendering for a single LSP server, shown inside
  * `SubsystemStatus`.
  *
- * Lite-native counterpart of the sample tree's `DiagnosticsDisplay`
+ * Native counterpart of the sample tree's `DiagnosticsDisplay`
  * (`ui/examples/upstream-patterns/src/components/DiagnosticsDisplay.tsx`)
- * header row. Diagnostic payloads are not yet forwarded over IPC, so
- * this card stays focused on the fields that *are* forwarded:
+ * header row. Diagnostic payloads now flow through `DiagnosticsDisplay`;
+ * this card stays focused on server lifecycle fields:
  * `language_id`, `state`, `extensions`, `open_files_count`, `error`.
  *
  * Extension list is trimmed to the first four entries with an overflow
