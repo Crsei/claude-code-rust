@@ -1,6 +1,9 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::prelude::Widget;
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
+use ratatui::widgets::{Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::config::settings::StatusLineSettings;
@@ -63,6 +66,9 @@ pub struct App {
     session_cost_usd: f64,
     /// Whether the welcome screen is currently shown.
     show_welcome: bool,
+    /// Startup trust gate shown before the normal welcome panel.
+    workspace_trust_pending: bool,
+    workspace_trust_selection: usize,
     history: Vec<String>,
     history_index: Option<usize>,
     saved_input: String,
@@ -148,6 +154,8 @@ impl App {
             output_style: None,
             session_cost_usd: 0.0,
             show_welcome: true,
+            workspace_trust_pending: false,
+            workspace_trust_selection: 0,
             suggestions: None,
             history: Vec::new(),
             history_index: None,
@@ -279,6 +287,10 @@ impl App {
 
     pub fn set_cwd(&mut self, cwd: String) {
         self.cwd = cwd;
+        if !self.cwd.is_empty() {
+            self.workspace_trust_pending = true;
+            self.workspace_trust_selection = 0;
+        }
         self.dirty = true;
     }
 
@@ -675,6 +687,10 @@ impl App {
         // Any key press is likely to cause a visual change.
         self.dirty = true;
 
+        if self.workspace_trust_pending {
+            return self.handle_workspace_trust_key(key);
+        }
+
         if let Some(ref mut dialog) = self.permission_dialog {
             if let Some(choice) = dialog.handle_key(key) {
                 self.permission_dialog = None;
@@ -804,6 +820,16 @@ impl App {
     pub fn render(&mut self, frame: &mut Frame) {
         let size = frame.area();
         if size.width < 10 || size.height < 4 {
+            return;
+        }
+
+        if self.workspace_trust_pending {
+            render_workspace_trust_prompt(
+                size,
+                frame.buffer_mut(),
+                &self.cwd,
+                self.workspace_trust_selection,
+            );
             return;
         }
 
@@ -947,6 +973,34 @@ impl App {
     }
 
     // ── Private helpers ─────────────────────────────────────────────
+
+    fn handle_workspace_trust_key(&mut self, key: KeyEvent) -> AppAction {
+        match key.code {
+            KeyCode::Char('1') => {
+                self.workspace_trust_pending = false;
+            }
+            KeyCode::Char('2') | KeyCode::Esc => {
+                self.should_quit = true;
+                return AppAction::Quit;
+            }
+            KeyCode::Up => {
+                self.workspace_trust_selection = 0;
+            }
+            KeyCode::Down | KeyCode::Tab => {
+                self.workspace_trust_selection = 1;
+            }
+            KeyCode::Enter => {
+                if self.workspace_trust_selection == 0 {
+                    self.workspace_trust_pending = false;
+                } else {
+                    self.should_quit = true;
+                    return AppAction::Quit;
+                }
+            }
+            _ => {}
+        }
+        AppAction::None
+    }
 
     fn scroll_up(&mut self, lines: usize) {
         self.scroll_offset = self.scroll_offset.saturating_sub(lines);
@@ -1500,6 +1554,70 @@ impl Default for App {
     }
 }
 
+fn render_workspace_trust_prompt(
+    area: Rect,
+    buf: &mut ratatui::buffer::Buffer,
+    cwd: &str,
+    selected: usize,
+) {
+    let line_width = area.width.clamp(40, 120) as usize;
+    let separator = "─".repeat(line_width);
+    let yes_marker = if selected == 0 { "❯" } else { " " };
+    let no_marker = if selected == 1 { "❯" } else { " " };
+
+    let lines = vec![
+        Line::from(Span::styled(separator, Style::default().fg(Color::DarkGray))),
+        Line::from(""),
+        Line::from(Span::styled(
+            " Accessing workspace:",
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!(" {}", cwd),
+            Style::default().fg(Color::LightBlue),
+        )),
+        Line::from(""),
+        Line::from(
+            " Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source",
+        ),
+        Line::from(
+            " project, or work from your team). If not, take a moment to review what's in this folder first.",
+        ),
+        Line::from(""),
+        Line::from(" Claude Code'll be able to read, edit, and execute files here."),
+        Line::from(""),
+        Line::from(Span::styled(
+            " Security guide",
+            Style::default().fg(Color::LightBlue),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                format!(" {} ", yes_marker),
+                Style::default().fg(if selected == 0 { Color::Green } else { Color::White }),
+            ),
+            Span::raw("1. Yes, I trust this folder"),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                format!(" {} ", no_marker),
+                Style::default().fg(if selected == 1 { Color::Red } else { Color::White }),
+            ),
+            Span::raw("2. No, exit"),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            " Enter to confirm · Esc to cancel",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+
+    Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .render(area, buf);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1588,6 +1706,39 @@ mod tests {
         ));
         assert!(content.contains("file:///"));
         assert!(content.contains("installed_plugins.json"));
+    }
+
+    #[test]
+    fn render_workspace_trust_prompt_after_cwd_is_set() {
+        let mut app = App::new();
+        app.set_cwd("F:\\temp\\gomoku_subagent".to_string());
+        let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
+
+        terminal.draw(|frame| app.render(frame)).expect("draw");
+
+        let content = buffer_to_lines(terminal.backend().buffer(), 100, 24).join("\n");
+        assert!(content.contains("Accessing workspace:"));
+        assert!(content.contains("F:\\temp\\gomoku_subagent"));
+        assert!(content.contains("Yes, I trust this folder"));
+        assert!(content.contains("No, exit"));
+    }
+
+    #[test]
+    fn workspace_trust_prompt_accepts_or_exits() {
+        let mut app = App::new();
+        app.set_cwd("F:\\temp\\gomoku_subagent".to_string());
+
+        assert_eq!(send_key(&mut app, KeyCode::Enter), AppAction::None);
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+        terminal.draw(|frame| app.render(frame)).expect("draw");
+        let content = buffer_to_lines(terminal.backend().buffer(), 80, 24).join("\n");
+        assert!(content.contains("Claude Code"));
+        assert!(!content.contains("Quick safety check"));
+
+        let mut app = App::new();
+        app.set_cwd("F:\\temp\\gomoku_subagent".to_string());
+        assert_eq!(send_key(&mut app, KeyCode::Esc), AppAction::Quit);
+        assert!(app.should_quit());
     }
 
     fn send_key(app: &mut App, code: KeyCode) -> AppAction {
