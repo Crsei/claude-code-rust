@@ -62,3 +62,8 @@ web-ui/tsconfig.tsbuildinfo
 .claude/
 tests/message_suite/results/
 docs/architecture/
+ui/
+web-ui/
+sdk/
+.tmp/
+crates/claude-code-rs/logs/

@@ -602,16 +602,33 @@ description: 对指定文件进行代码审查
 
 ### 危险命令检测
 
-Bash 工具内置 16 种危险模式检测，包括:
+Bash / PowerShell 的“危险命令”硬拦截，当前覆盖范围是:
 
-- `rm -rf` / `rm -r` — 递归删除
-- `chmod 777` — 过于宽松的权限
-- `> /dev/sda` — 磁盘覆写
-- `mkfs` — 文件系统格式化
-- `curl | sh` / `wget | sh` — 远程代码执行
-- `shutdown` / `reboot` — 系统关机
-- `kill -9` — 强制终止进程
-- 以及更多...
+- 未闭合引号
+- 引号中的多行字符串
+- `rm -rf /`
+- `rm -rf ~`
+- `rm -rf /*`
+- `git push --force`
+- `git push -f`
+- `git reset --hard`
+- `dd if=...`
+- `mkfs*`
+- `chmod 777 /`
+- fork bomb (`:(){ :|:& };:`)
+- 写入块设备 (`> /dev/sd*`、`> /dev/nvme*`)
+- `curl | sh` / `curl | bash`
+- `wget | sh` / `wget | bash`
+- `curl | sudo sh` / `curl | sudo bash`
+- `wget | sudo sh` / `wget | sudo bash`
+- 覆写 `/etc/passwd`
+- 覆写 `/etc/shadow`
+
+补充说明:
+
+- 执行前的硬拦截发生在 `src/tools/execution/security.rs`，命中后直接返回 `Dangerous command blocked`
+- `BashTool::check_permissions()` 里也会做复合命令拆分，但那里返回的是 `Ask`，不是硬拒绝
+- 这套检测是固定 regex + 启发式检查，不是完整 shell 语法树分析
 
 这些命令即使在 Auto 模式下也会触发确认提示。
 

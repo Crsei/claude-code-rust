@@ -61,6 +61,40 @@ pub(crate) struct QueryEngineDeps {
     pub(crate) command_dispatcher: Arc<dyn cc_types::commands::CommandDispatcher>,
 }
 
+fn central_permission_result_for_tool(
+    tool_name: &str,
+    input: &mut serde_json::Value,
+    app_state: &AppState,
+    hook_decision: Option<&crate::permissions::decision::HookPermissionDecision>,
+) -> crate::types::tool::PermissionResult {
+    use crate::permissions::decision::{self, PermissionBehavior};
+
+    let decision = decision::has_permissions_to_use_tool_with_hook(
+        tool_name,
+        input,
+        &app_state.tool_permission_context,
+        hook_decision,
+        None,
+    );
+    let behavior = decision.behavior;
+    let message = decision.message;
+    if let Some(updated_input) = decision.updated_input {
+        *input = updated_input;
+    }
+
+    match behavior {
+        PermissionBehavior::Allow => crate::types::tool::PermissionResult::Allow {
+            updated_input: input.clone(),
+        },
+        PermissionBehavior::Deny => crate::types::tool::PermissionResult::Deny {
+            message: message.unwrap_or_else(|| "Permission blocked by policy.".to_string()),
+        },
+        PermissionBehavior::Ask => crate::types::tool::PermissionResult::Ask {
+            message: message.unwrap_or_else(|| format!("Allow tool '{}'?", tool_name)),
+        },
+    }
+}
+
 #[async_trait::async_trait]
 impl QueryDeps for QueryEngineDeps {
     fn tool_progress_callback(&self) -> Option<Arc<dyn Fn(ToolProgress) + Send + Sync>> {
@@ -421,7 +455,7 @@ impl QueryDeps for QueryEngineDeps {
         let failure_configs = hooks.load_hook_configs(&hooks_map, "PostToolUseFailure");
 
         // ── Pre-tool hooks ─────────────────────────────────────────
-        let (effective_input, permission_override) = match hooks
+        let (mut effective_input, permission_override) = match hooks
             .run_pre_tool_hooks(&request.tool_name, &request.input, &pre_configs)
             .await
         {
@@ -450,50 +484,68 @@ impl QueryDeps for QueryEngineDeps {
             }
         };
 
-        // ── Permission check (hook override first, then rule engine) ──
-        if let Some(override_decision) = permission_override {
-            match override_decision {
-                PermissionOverride::Deny { reason } => {
-                    // Fire PermissionDenied hook
-                    let deny_configs = hooks.load_hook_configs(&hooks_map, "PermissionDenied");
-                    if !deny_configs.is_empty() {
-                        let payload = serde_json::json!({
-                            "tool_name": request.tool_name,
-                            "tool_input": request.input,
-                            "reason": format!("Permission denied by hook: {}", reason),
-                        });
-                        let _ = hooks
-                            .run_event_hooks("PermissionDenied", &payload, &deny_configs)
-                            .await;
-                    }
-
-                    return Ok(ToolExecResult {
-                        tool_use_id: request.tool_use_id,
-                        tool_name: request.tool_name,
-                        result: crate::types::tool::ToolResult {
-                            data: serde_json::json!(format!(
-                                "Permission denied by hook: {}",
-                                reason
-                            )),
-                            new_messages: vec![],
-                            ..Default::default()
-                        },
-                        is_error: true,
-                    });
-                }
-                PermissionOverride::Allow => {
-                    tracing::debug!(
-                        tool = %request.tool_name,
-                        "permission allowed by hook override"
-                    );
-                }
+        // ── Permission check (tool-local checks first, then central rules/mode) ──
+        let hook_decision = match permission_override.as_ref() {
+            Some(PermissionOverride::Allow) => {
+                tracing::debug!(
+                    tool = %request.tool_name,
+                    "Permission allow requested by hook override"
+                );
+                Some(crate::permissions::decision::HookPermissionDecision {
+                    allow: true,
+                    source: Some("PreToolUse".to_string()),
+                    ..Default::default()
+                })
             }
-        } else {
-            // Normal permission check via the rule engine
+            Some(PermissionOverride::Deny { .. }) | None => None,
+        };
+
+        if let Some(PermissionOverride::Deny { reason }) = permission_override.as_ref() {
+            // Fire PermissionDenied hook
+            let deny_configs = hooks.load_hook_configs(&hooks_map, "PermissionDenied");
+            if !deny_configs.is_empty() {
+                let payload = serde_json::json!({
+                    "tool_name": request.tool_name,
+                    "tool_input": request.input,
+                    "reason": format!("Permission denied by hook: {}", reason),
+                });
+                let _ = hooks
+                    .run_event_hooks("PermissionDenied", &payload, &deny_configs)
+                    .await;
+            }
+
+            return Ok(ToolExecResult {
+                tool_use_id: request.tool_use_id,
+                tool_name: request.tool_name,
+                result: crate::types::tool::ToolResult {
+                    data: serde_json::json!(format!("Permission denied by hook: {}", reason)),
+                    new_messages: vec![],
+                    ..Default::default()
+                },
+                is_error: true,
+            });
+        }
+
+        {
+            // Normal permission check via tool-local checks and the central rule engine
             let perm_audit_ctx = self.audit_ctx.with_tool_use(&request.tool_use_id);
-            let perm_result = tool.check_permissions(&effective_input, &ctx).await;
+            let perm_result = match tool.check_permissions(&effective_input, &ctx).await {
+                PermissionResult::Allow { updated_input } => {
+                    effective_input = updated_input;
+                    let app_state = (ctx.get_app_state)();
+                    central_permission_result_for_tool(
+                        &request.tool_name,
+                        &mut effective_input,
+                        &app_state,
+                        hook_decision.as_ref(),
+                    )
+                }
+                other => other,
+            };
             match perm_result {
-                PermissionResult::Allow { .. } => { /* proceed */ }
+                PermissionResult::Allow { updated_input } => {
+                    effective_input = updated_input;
+                }
                 PermissionResult::Deny { message } => {
                     // Emit permission.resolved(denied) audit event
                     {
@@ -947,5 +999,63 @@ impl QueryDeps for QueryEngineDeps {
         self.api_client
             .as_ref()
             .map(|client| client.langfuse_provider_name().to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::tool::PermissionResult;
+    use serde_json::json;
+
+    #[test]
+    fn central_permission_default_mode_asks_for_bash_after_tool_allow() {
+        let app_state = AppState::default();
+        let mut input = json!({"command": "rm -rf F:/temp/gomoku_subagent/*"});
+
+        let result = central_permission_result_for_tool("Bash", &mut input, &app_state, None);
+
+        assert!(
+            matches!(result, PermissionResult::Ask { .. }),
+            "default mode must ask even when the tool-local check allowed the command"
+        );
+    }
+
+    #[test]
+    fn central_permission_allow_rule_still_allows_matching_bash_prefix() {
+        let mut app_state = AppState::default();
+        app_state
+            .tool_permission_context
+            .always_allow_rules
+            .insert("test".into(), vec!["Bash(prefix:git)".into()]);
+        let mut input = json!({"command": "git status"});
+
+        let result = central_permission_result_for_tool("Bash", &mut input, &app_state, None);
+
+        assert!(matches!(result, PermissionResult::Allow { .. }));
+    }
+
+    #[test]
+    fn central_permission_ask_rule_overrides_hook_allow() {
+        let mut app_state = AppState::default();
+        app_state
+            .tool_permission_context
+            .always_ask_rules
+            .insert("test".into(), vec!["Bash".into()]);
+        let mut input = json!({"command": "git status"});
+        let hook_decision = crate::permissions::decision::HookPermissionDecision {
+            allow: true,
+            source: Some("PreToolUse:test".into()),
+            ..Default::default()
+        };
+
+        let result = central_permission_result_for_tool(
+            "Bash",
+            &mut input,
+            &app_state,
+            Some(&hook_decision),
+        );
+
+        assert!(matches!(result, PermissionResult::Ask { .. }));
     }
 }

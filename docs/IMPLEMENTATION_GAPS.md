@@ -41,7 +41,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 
 | 模块 | 待补齐的行为（参考上游） |
 |------|----------|
-| BashTool | PowerShell 分支、sandbox、进程组管理、危险命令拒绝列表、heredoc 校验、Git 操作跟踪 |
+| BashTool | PowerShell 分支、sandbox、进程组管理、危险命令拒绝列表（Stage 3c.2 已落地；Bash/PowerShell 执行前硬拦，BashTool 内部仍保留 Ask 级子命令检测）、heredoc 校验、Git 操作跟踪 |
 | FileEditTool | diff 预览、冲突检测、文件锁检查、编辑历史、自动缩进修正 |
 | FileWriteTool | 临时文件后 rename 的安全写入、备份/恢复、大小限制、权限保持、二进制内容检查 |
 | FileReadTool | 符号链接解析、大文件智能分页、文件编码检测 |

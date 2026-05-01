@@ -21,7 +21,7 @@ use crossterm::{cursor, execute};
 use futures::StreamExt;
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
@@ -36,6 +36,7 @@ use crate::types::message::{
 };
 
 use super::app::{App, AppAction};
+use super::permissions::PermissionChoice;
 
 /// Tracks the partial assistant message being streamed.
 struct StreamingState {
@@ -53,6 +54,12 @@ struct StreamingState {
 enum EngineEvent {
     /// An SDK message from the engine stream.
     Sdk(Box<SdkMessage>),
+    /// A tool permission prompt that must be answered by the UI.
+    PermissionRequest {
+        tool_name: String,
+        description: String,
+        response_tx: oneshot::Sender<String>,
+    },
     /// The engine query task has completed (stream exhausted).
     Done,
 }
@@ -163,6 +170,8 @@ pub async fn run_tui(
 
     // ── Create channels ────────────────────────────────────────────
     let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<EngineEvent>();
+    install_tui_permission_callback(&engine, engine_tx.clone());
+    let mut pending_permission_response: Option<oneshot::Sender<String>> = None;
     let mut streaming_state = StreamingState {
         text: String::new(),
         active: false,
@@ -292,6 +301,12 @@ pub async fn run_tui(
                                 debug!("TUI: quit requested");
                                 break;
                             }
+                            AppAction::PermissionResponse(choice) => {
+                                if let Some(response_tx) = pending_permission_response.take() {
+                                    let _ = response_tx
+                                        .send(permission_choice_to_decision(choice).to_string());
+                                }
+                            }
                             AppAction::ExportTranscript(body) => {
                                 match export_to_editor(&body).await {
                                     Ok(path) => add_system_info(
@@ -324,6 +339,17 @@ pub async fn run_tui(
                     EngineEvent::Sdk(sdk_msg) => {
                         handle_sdk_message(&mut app, *sdk_msg, &mut streaming_state);
                     }
+                    EngineEvent::PermissionRequest {
+                        tool_name,
+                        description,
+                        response_tx,
+                    } => {
+                        if let Some(previous) = pending_permission_response.take() {
+                            let _ = previous.send("deny".to_string());
+                        }
+                        app.show_permission_dialog(&tool_name, "", &description);
+                        pending_permission_response = Some(response_tx);
+                    }
                     EngineEvent::Done => {
                         app.set_streaming(false);
                     }
@@ -353,6 +379,47 @@ pub async fn run_tui(
     terminal.show_cursor()?;
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Permission bridge
+// ---------------------------------------------------------------------------
+
+fn install_tui_permission_callback(
+    engine: &Arc<QueryEngine>,
+    tx: mpsc::UnboundedSender<EngineEvent>,
+) {
+    let callback: crate::types::tool::PermissionCallback = Arc::new(
+        move |_tool_use_id: String,
+              tool_name: String,
+              description: String,
+              _options: Vec<String>| {
+            let tx = tx.clone();
+            Box::pin(async move {
+                let (response_tx, response_rx) = oneshot::channel();
+                let event = EngineEvent::PermissionRequest {
+                    tool_name,
+                    description,
+                    response_tx,
+                };
+
+                if tx.send(event).is_err() {
+                    return "deny".to_string();
+                }
+
+                response_rx.await.unwrap_or_else(|_| "deny".to_string())
+            })
+        },
+    );
+    engine.set_permission_callback(callback);
+}
+
+fn permission_choice_to_decision(choice: PermissionChoice) -> &'static str {
+    match choice {
+        PermissionChoice::Allow => "allow",
+        PermissionChoice::Deny => "deny",
+        PermissionChoice::AlwaysAllow => "always_allow",
+    }
 }
 
 // ---------------------------------------------------------------------------
