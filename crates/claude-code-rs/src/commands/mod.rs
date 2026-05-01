@@ -172,7 +172,7 @@ pub enum CommandResult {
     Output(String),
     /// Messages to add to the conversation and then send to the model.
     Query(Vec<Message>),
-    /// Clear the conversation history.
+    /// Clear the visible conversation by starting a fresh session.
     Clear,
     /// Exit the REPL with a goodbye message.
     Exit(String),
@@ -187,7 +187,7 @@ pub enum CommandResult {
 
 /// Build the full list of available commands.
 pub fn get_all_commands() -> Vec<Command> {
-    vec![
+    let mut commands = vec![
         Command {
             name: "help".into(),
             aliases: vec!["h".into(), "?".into()],
@@ -353,7 +353,7 @@ pub fn get_all_commands() -> Vec<Command> {
         Command {
             name: "init".into(),
             aliases: vec![],
-            description: "Initialize project config (.cc-rust/settings.json)".into(),
+            description: "Initialize project config and CLAUDE.md".into(),
             handler: Box::new(init::InitHandler),
         },
         Command {
@@ -614,7 +614,18 @@ pub fn get_all_commands() -> Vec<Command> {
                     .into(),
             handler: Box::new(team_onboarding::TeamOnboardingHandler),
         },
-    ]
+    ];
+    sort_commands_for_display(&mut commands);
+    commands
+}
+
+fn sort_commands_for_display(commands: &mut [Command]) {
+    commands.sort_by(|a, b| match (a.name.as_str(), b.name.as_str()) {
+        ("init", "init") => std::cmp::Ordering::Equal,
+        ("init", _) => std::cmp::Ordering::Less,
+        (_, "init") => std::cmp::Ordering::Greater,
+        _ => a.name.cmp(&b.name),
+    });
 }
 
 /// Find a command by name or alias from user input.
@@ -713,6 +724,18 @@ mod tests {
         assert!(names.contains(&"schedule"));
         // Team onboarding (issue #63).
         assert!(names.contains(&"team-onboarding"));
+    }
+
+    #[test]
+    fn test_commands_sorted_with_init_first() {
+        let cmds = get_all_commands();
+        let names: Vec<&str> = cmds.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names.first().copied(), Some("init"));
+
+        let rest = &names[1..];
+        let mut sorted = rest.to_vec();
+        sorted.sort();
+        assert_eq!(rest, sorted.as_slice());
     }
 
     #[test]

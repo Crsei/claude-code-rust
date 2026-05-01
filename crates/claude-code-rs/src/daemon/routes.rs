@@ -237,7 +237,7 @@ async fn command(
         messages: state.engine.messages(),
         cwd: std::path::PathBuf::from(state.engine.cwd()),
         app_state: original_app_state,
-        session_id: state.engine.session_id.clone(),
+        session_id: state.engine.current_session_id(),
     };
 
     match cmd.handler.execute(&args, &mut ctx).await {
@@ -275,8 +275,12 @@ async fn command(
                     }))
                 }
                 CommandResult::Clear => {
-                    state.engine.clear_messages();
-                    Json(json!({ "status": "ok", "kind": "clear" }))
+                    let session_id = state.engine.start_new_session();
+                    Json(json!({
+                        "status": "ok",
+                        "kind": "clear",
+                        "session_id": session_id.to_string()
+                    }))
                 }
                 CommandResult::Exit(text) => {
                     state.broadcast(SseEvent {

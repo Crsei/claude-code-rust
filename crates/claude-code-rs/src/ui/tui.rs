@@ -117,7 +117,7 @@ pub async fn run_tui(
     let mut app = App::new();
     app.set_model_name(model_name.to_string());
     app.set_backend_name(engine.app_state().main_loop_backend.clone());
-    app.set_session_id(engine.session_id.to_string());
+    app.set_session_id(engine.current_session_id().to_string());
     app.set_cwd(engine.cwd().to_string());
 
     // Scriptable status line (issue #11) — seed from the effective
@@ -718,7 +718,7 @@ async fn try_execute_command(
         messages: original_messages.clone(),
         cwd: std::path::PathBuf::from(engine.cwd()),
         app_state: engine.app_state(),
-        session_id: engine.session_id.clone(),
+        session_id: engine.current_session_id(),
     };
 
     match cmd.handler.execute(&args, &mut ctx).await {
@@ -733,10 +733,10 @@ async fn try_execute_command(
                 Some(CmdAction::Handled)
             }
             CommandResult::Clear => {
-                // Clear conversation in the engine and the app
-                engine.clear_messages();
+                let new_session_id = engine.start_new_session();
                 app.clear_messages();
-                add_system_info(app, "Conversation cleared.");
+                app.set_session_id(new_session_id.to_string());
+                add_system_info(app, "Started a new session.");
                 Some(CmdAction::Handled)
             }
             CommandResult::Exit(msg) => Some(CmdAction::Quit(msg)),

@@ -105,6 +105,13 @@ fn handle_resume_by_id(target: &str, ctx: &mut CommandContext) -> Result<Command
 /// Load a session's messages into the command context.
 fn resume_session_by_id(session_id: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
     let messages = session_resume::resume_session(session_id)?;
+    if messages.is_empty() {
+        return Ok(CommandResult::Output(format!(
+            "Session {} has no saved conversation messages. Start a new prompt or use /session list to choose another session.",
+            session_id
+        )));
+    }
+
     let msg_count = messages.len();
     ctx.messages = messages;
 
@@ -120,6 +127,29 @@ mod tests {
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
     use std::path::PathBuf;
+    use tempfile::tempdir;
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &std::path::Path) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     fn test_ctx() -> CommandContext {
         CommandContext {
@@ -158,6 +188,29 @@ mod tests {
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("not found"));
+            }
+            _ => panic!("Expected Output result"),
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_resume_empty_session_is_friendly() {
+        let home = tempdir().unwrap();
+        let _guard = EnvGuard::set("CC_RUST_HOME", home.path());
+        let workspace = home.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        storage::save_session("empty-session", &[], workspace.to_str().unwrap()).unwrap();
+
+        let handler = ResumeHandler;
+        let mut ctx = test_ctx();
+        ctx.cwd = workspace;
+
+        let result = handler.execute("empty-session", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(text.contains("no saved conversation messages"));
+                assert!(ctx.messages.is_empty());
             }
             _ => panic!("Expected Output result"),
         }

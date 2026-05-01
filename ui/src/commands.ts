@@ -49,7 +49,7 @@ export const COMMANDS: CommandDef[] = [
   { name: 'export',           aliases: [],                      description: 'Export conversation to Markdown',   kind: 'action' },
   { name: 'audit-export',     aliases: ['audit'],               description: 'Export verifiable audit record',   kind: 'action' },
   { name: 'session-export',   aliases: ['sexport'],             description: 'Export structured JSON data',      kind: 'action' },
-  { name: 'init',             aliases: [],                      description: 'Initialize project config',        kind: 'action' },
+  { name: 'init',             aliases: [],                      description: 'Initialize project config and CLAUDE.md', kind: 'action' },
   { name: 'reload-plugins',   aliases: [],                      description: 'Hot-refresh the plugin registry',  kind: 'action' },
   { name: 'login',            aliases: [],                      description: 'Authenticate with Anthropic',      kind: 'action' },
   { name: 'logout',           aliases: [],                      description: 'Clear stored credentials',         kind: 'action' },
@@ -75,10 +75,16 @@ export const COMMANDS: CommandDef[] = [
   { name: 'add-dir',          aliases: [],                      description: 'Add a new working directory',      kind: 'input', argHint: '<path>' },
 ]
 
+function commandOrder(a: CommandDef, b: CommandDef): number {
+  if (a.name === 'init' && b.name !== 'init') return -1
+  if (b.name === 'init' && a.name !== 'init') return 1
+  return a.name.localeCompare(b.name)
+}
+
 /** Match commands against a partial input (without leading /) */
 export function matchCommands(partial: string): CommandDef[] {
   const q = partial.toLowerCase()
-  if (!q) return [...COMMANDS]
+  if (!q) return [...COMMANDS].sort(commandOrder)
 
   const results: Array<{ cmd: CommandDef; score: number }> = []
   for (const cmd of COMMANDS) {

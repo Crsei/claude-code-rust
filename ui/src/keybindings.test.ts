@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { matchCommands } from './commands.js'
 import {
   matchesShortcut,
   normalizeEditorMode,
@@ -98,5 +99,14 @@ describe('helpers', () => {
     expect(normalizeEditorMode('normal')).toBe('normal')
     expect(normalizeEditorMode('emacs')).toBe('normal')
     expect(normalizeEditorMode(null)).toBe('normal')
+  })
+})
+
+describe('slash command ordering', () => {
+  test('/init is first and the remaining empty-query commands are alphabetical', () => {
+    const names = matchCommands('').map(command => command.name)
+
+    expect(names[0]).toBe('init')
+    expect(names.slice(1)).toEqual([...names.slice(1)].sort((a, b) => a.localeCompare(b)))
   })
 })

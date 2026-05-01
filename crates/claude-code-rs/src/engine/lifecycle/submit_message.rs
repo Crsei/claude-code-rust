@@ -41,15 +41,15 @@ impl QueryEngine {
         prompt: &str,
         query_source: QuerySource,
     ) -> Pin<Box<dyn Stream<Item = SdkMessage> + Send>> {
+        let session_id = self.current_session_id();
         info!(
             prompt_len = prompt.len(),
             source = ?query_source,
-            session = %self.session_id,
+            session = %session_id,
             "submit_message: starting"
         );
 
         // Capture owned/cloned references for the async stream closure.
-        let session_id = self.session_id.clone();
         let config = self.config.clone();
         let prompt = prompt.to_string();
 

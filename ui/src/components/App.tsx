@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { useOnResize, useRenderer, useTerminalDimensions } from '@opentui/react'
+import { useKeyboard, useOnResize, useRenderer, useTerminalDimensions } from '@opentui/react'
 import { useBackend } from '../ipc/context.js'
 import type { BackendMessage, FrontendContentBlock } from '../ipc/protocol.js'
 import type { KeybindingConfig } from '../keybindings.js'
@@ -29,6 +29,7 @@ import {
 } from './resize-sync.js'
 
 type ActivePane = 'messages' | 'input'
+type KeyEvent = Parameters<Parameters<typeof useKeyboard>[0]>[0]
 
 function extractFromContent(
   content: FrontendContentBlock[] | string | null,
@@ -72,6 +73,45 @@ function composerHint(isTranscript: boolean, keybindingConfig: KeybindingConfig 
   ].join(' | ')
 }
 
+function WorkspaceTrustPrompt({
+  cwd,
+  selected,
+  width,
+}: {
+  cwd: string
+  selected: 0 | 1
+  width: number
+}) {
+  const line = '─'.repeat(Math.max(40, Math.min(120, width)))
+
+  return (
+    <box flexGrow={1} flexDirection="column" justifyContent="center" backgroundColor={c.bg} paddingX={2}>
+      <text fg={c.dim}>{line}</text>
+      <box marginTop={1} flexDirection="column">
+        <text fg={c.text}> Accessing workspace:</text>
+        <text fg={c.text}> </text>
+        <text fg="#89B4FA"> {cwd}</text>
+        <text fg={c.text}> </text>
+        <text fg={c.text}>
+          {' Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source'}
+        </text>
+        <text fg={c.text}>
+          {' project, or work from your team). If not, take a moment to review what\'s in this folder first.'}
+        </text>
+        <text fg={c.text}> </text>
+        <text fg={c.text}> Claude Code'll be able to read, edit, and execute files here.</text>
+        <text fg={c.text}> </text>
+        <text fg="#89B4FA"> Security guide</text>
+        <text fg={c.text}> </text>
+        <text fg={selected === 0 ? '#A6E3A1' : c.text}> {selected === 0 ? '❯' : ' '} 1. Yes, I trust this folder</text>
+        <text fg={selected === 1 ? '#F38BA8' : c.text}> {selected === 1 ? '❯' : ' '} 2. No, exit</text>
+        <text fg={c.text}> </text>
+        <text fg={c.dim}> Enter to confirm · Esc to cancel</text>
+      </box>
+    </box>
+  )
+}
+
 export function App() {
   const backend = useBackend()
   const state = useAppState()
@@ -79,6 +119,8 @@ export function App() {
   const renderer = useRenderer()
   const [activePane, setActivePane] = useState<ActivePane>('input')
   const [inputStatus, setInputStatus] = useState('')
+  const [workspaceTrustAccepted, setWorkspaceTrustAccepted] = useState(false)
+  const [workspaceTrustSelection, setWorkspaceTrustSelection] = useState<0 | 1>(0)
   const lastPromptPaneRef = useRef<ActivePane>('input')
   const previousWelcomeRef = useRef<boolean | null>(null)
   const { width: termWidth, height: termHeight } = useTerminalDimensions()
@@ -474,6 +516,48 @@ export function App() {
   const isBusy = state.isWaiting || state.isStreaming
   const isTranscript = state.viewMode === 'transcript'
   const queuedCount = state.queuedSubmissions.length
+  const needsWorkspaceTrust = Boolean(state.cwd && !workspaceTrustAccepted)
+
+  useKeyboard((event: KeyEvent) => {
+    if (!needsWorkspaceTrust || event.eventType === 'release') {
+      return
+    }
+
+    const name = event.name
+    const sequence = event.sequence ?? ''
+    const exit = () => {
+      backend.send({ type: 'quit' })
+      renderer.destroy()
+    }
+
+    if (sequence === '1') {
+      setWorkspaceTrustAccepted(true)
+      return
+    }
+    if (sequence === '2') {
+      exit()
+      return
+    }
+    if (name === 'up') {
+      setWorkspaceTrustSelection(0)
+      return
+    }
+    if (name === 'down' || name === 'tab') {
+      setWorkspaceTrustSelection(1)
+      return
+    }
+    if (name === 'return' || name === 'enter') {
+      if (workspaceTrustSelection === 0) {
+        setWorkspaceTrustAccepted(true)
+      } else {
+        exit()
+      }
+      return
+    }
+    if (name === 'escape') {
+      exit()
+    }
+  })
 
   useEffect(() => {
     const previousWelcome = previousWelcomeRef.current
@@ -505,7 +589,7 @@ export function App() {
   }, [state.viewMode])
 
   useEffect(() => {
-    if (isBusy || state.permissionRequest || queuedCount === 0) {
+    if (needsWorkspaceTrust || isBusy || state.permissionRequest || queuedCount === 0) {
       return
     }
 
@@ -517,7 +601,7 @@ export function App() {
     dispatch({ type: 'DEQUEUE_SUBMISSION' })
     dispatch({ type: 'ADD_USER_MESSAGE', id: next.id, text: next.text })
     backend.send({ type: 'submit_prompt', text: next.text, id: next.id })
-  }, [backend, dispatch, isBusy, queuedCount, state.permissionRequest, state.queuedSubmissions])
+  }, [backend, dispatch, isBusy, needsWorkspaceTrust, queuedCount, state.permissionRequest, state.queuedSubmissions])
 
   const queueSuffix = queuedCount > 0 ? ` | queued ${queuedCount}` : ''
   const inputTitle = isTranscript
@@ -526,85 +610,91 @@ export function App() {
 
   return (
     <box flexDirection="column" width="100%" height="100%" backgroundColor={c.bg}>
-      {!isWelcome && (
-        <StatusLine
-          cwd={state.cwd}
-          model={state.model}
-          usage={state.usage}
-          vimMode={state.vimEnabled ? state.vimMode : undefined}
-          viewMode={state.viewMode}
-        />
-      )}
-      {isWelcome ? (
-        <box
-          flexGrow={1}
-          flexDirection="column"
-          alignItems="center"
-          justifyContent="center"
-          width="100%"
-          backgroundColor={c.bg}
-        >
-          <WelcomeScreen />
-          <box
-            marginTop={1}
-            width={welcomePromptWidth}
-            border
-            borderStyle="rounded"
-            borderColor="#45475A"
-            backgroundColor={c.bg}
-            paddingX={1}
-            title={composerHint(false, state.keybindingConfig)}
-            titleAlignment="right"
-          >
-            <InputPrompt isActive onActivate={() => setActivePane('input')} viewMode="prompt" />
-          </box>
-          <box marginTop={1}>
-            <text fg="#45475A">
-              <em>{shortcutLabel('app:exit', { context: 'Global', config: state.keybindingConfig })} to quit</em>
-            </text>
-          </box>
-        </box>
+      {needsWorkspaceTrust ? (
+        <WorkspaceTrustPrompt cwd={state.cwd} selected={workspaceTrustSelection} width={termWidth} />
       ) : (
-        <box flexGrow={1} flexDirection="column" backgroundColor={c.bg}>
-          <box flexGrow={1}>
-            <MessageList
-              isActive={isTranscript || activePane === 'messages'}
-              onActivate={() => setActivePane('messages')}
+        <>
+          {!isWelcome && (
+            <StatusLine
+              cwd={state.cwd}
+              model={state.model}
+              usage={state.usage}
+              vimMode={state.vimEnabled ? state.vimMode : undefined}
               viewMode={state.viewMode}
-            >
-              {state.suggestions.length > 0 && !isBusy && state.viewMode === 'prompt' && <Suggestions />}
-            </MessageList>
-          </box>
-          <AgentTreePanel />
-          <TeamPanel />
-          <BackgroundTaskStatus />
-          <SubsystemStatus />
-          <box
-            width="100%"
-            border
-            borderStyle="rounded"
-            borderColor="#45475A"
-            backgroundColor={c.bg}
-            paddingX={1}
-            title={inputTitle}
-            titleAlignment="right"
-          >
-            <InputPrompt
-              isActive={!isTranscript && activePane === 'input'}
-              isReadOnly={isTranscript}
-              viewMode={state.viewMode}
-              onActivate={() => setActivePane('input')}
-              onStatusChange={setInputStatus}
             />
-          </box>
-        </box>
+          )}
+          {isWelcome ? (
+            <box
+              flexGrow={1}
+              flexDirection="column"
+              alignItems="center"
+              justifyContent="center"
+              width="100%"
+              backgroundColor={c.bg}
+            >
+              <WelcomeScreen />
+              <box
+                marginTop={1}
+                width={welcomePromptWidth}
+                border
+                borderStyle="rounded"
+                borderColor="#45475A"
+                backgroundColor={c.bg}
+                paddingX={1}
+                title={composerHint(false, state.keybindingConfig)}
+                titleAlignment="right"
+              >
+                <InputPrompt isActive onActivate={() => setActivePane('input')} viewMode="prompt" />
+              </box>
+              <box marginTop={1}>
+                <text fg="#45475A">
+                  <em>{shortcutLabel('app:exit', { context: 'Global', config: state.keybindingConfig })} to quit</em>
+                </text>
+              </box>
+            </box>
+          ) : (
+            <box flexGrow={1} flexDirection="column" backgroundColor={c.bg}>
+              <box flexGrow={1}>
+                <MessageList
+                  isActive={isTranscript || activePane === 'messages'}
+                  onActivate={() => setActivePane('messages')}
+                  viewMode={state.viewMode}
+                >
+                  {state.suggestions.length > 0 && !isBusy && state.viewMode === 'prompt' && <Suggestions />}
+                </MessageList>
+              </box>
+              <AgentTreePanel />
+              <TeamPanel />
+              <BackgroundTaskStatus />
+              <SubsystemStatus />
+              <box
+                width="100%"
+                border
+                borderStyle="rounded"
+                borderColor="#45475A"
+                backgroundColor={c.bg}
+                paddingX={1}
+                title={inputTitle}
+                titleAlignment="right"
+              >
+                <InputPrompt
+                  isActive={!isTranscript && activePane === 'input'}
+                  isReadOnly={isTranscript}
+                  viewMode={state.viewMode}
+                  onActivate={() => setActivePane('input')}
+                  onStatusChange={setInputStatus}
+                />
+              </box>
+            </box>
+          )}
+          {state.permissionRequest && <PermissionRequestDialog request={state.permissionRequest} />}
+          {!state.permissionRequest && state.lspRecommendation.request && (
+            <LspRecommendationDialog payload={state.lspRecommendation.request} />
+          )}
+          <AgentsDialog />
+          <McpDialog />
+        </>
       )}
-      {state.permissionRequest && <PermissionRequestDialog request={state.permissionRequest} />}
-      {!state.permissionRequest && state.lspRecommendation.request && (
-        <LspRecommendationDialog payload={state.lspRecommendation.request} />
-      )}
-      <AgentsDialog />
-      <McpDialog />
     </box>
   )
 }

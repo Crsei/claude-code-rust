@@ -157,7 +157,7 @@ impl HeadlessRuntime {
             .and_then(|path| std::fs::read_to_string(path).ok())
             .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
         self.sink.send(&BackendMessage::Ready {
-            session_id: self.engine.session_id.to_string(),
+            session_id: self.engine.current_session_id().to_string(),
             model,
             cwd: self.engine.cwd().to_string(),
             permission_mode: app_state.tool_permission_context.mode.as_str().to_string(),

@@ -204,7 +204,7 @@ pub async fn state_handler(State(state): State<WebState>) -> impl IntoResponse {
 
     Json(StateResponse {
         model: app_state.main_loop_model.clone(),
-        session_id: state.engine().session_id.to_string(),
+        session_id: state.engine().current_session_id().to_string(),
         tools: tool_names,
         permission_mode: permission_mode.to_string(),
         thinking_enabled: app_state.thinking_enabled,
@@ -357,7 +357,7 @@ pub async fn command_handler(
         messages,
         cwd,
         app_state: app_state.clone(),
-        session_id: state.engine().session_id.clone(),
+        session_id: state.engine().current_session_id(),
     };
 
     match cmd.handler.execute(&req.args, &mut ctx).await {
@@ -378,10 +378,13 @@ pub async fn command_handler(
                     response_type: "output".into(),
                     content: text,
                 }),
-                crate::commands::CommandResult::Clear => Json(CommandResponse {
-                    response_type: "clear".into(),
-                    content: "Conversation cleared".into(),
-                }),
+                crate::commands::CommandResult::Clear => {
+                    let session_id = state.engine().start_new_session();
+                    Json(CommandResponse {
+                        response_type: "clear".into(),
+                        content: format!("Started a new session: {}", session_id),
+                    })
+                }
                 crate::commands::CommandResult::Exit(msg) => Json(CommandResponse {
                     response_type: "output".into(),
                     content: msg,
@@ -519,7 +522,7 @@ pub async fn sessions_list_handler(State(state): State<WebState>) -> impl IntoRe
             root: ws_root.to_string_lossy().to_string(),
             name: ws_name,
         },
-        active_session_id: engine.session_id.to_string(),
+        active_session_id: engine.current_session_id().to_string(),
         sessions: summaries,
     })
 }
@@ -593,7 +596,7 @@ pub async fn session_new_handler(State(state): State<WebState>) -> impl IntoResp
     }
 
     let engine = rebuild_engine(&state, None);
-    let new_id = engine.session_id.to_string();
+    let new_id = engine.current_session_id().to_string();
     state.replace_engine(engine);
 
     info!(session_id = %new_id, "POST /api/sessions/new");
@@ -689,7 +692,9 @@ fn rebuild_engine_with_session_id(
     engine.set_hook_runner(current.hook_runner());
     engine.set_command_dispatcher(current.command_dispatcher());
     if let Some(id) = session_id {
-        engine.session_id = SessionId::from_string(id);
+        let id = SessionId::from_string(id);
+        engine.session_id = id.clone();
+        engine.set_current_session_id(id);
     }
     Arc::new(engine)
 }

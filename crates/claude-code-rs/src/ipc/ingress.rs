@@ -338,6 +338,27 @@ fn send_conversation_replaced(messages: &[Message], sink: &FrontendSink) {
     });
 }
 
+fn send_ready_snapshot(engine: &QueryEngine, sink: &FrontendSink) {
+    let app_state = engine.app_state();
+    let keybindings = app_state
+        .keybindings
+        .user_path()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+
+    let _ = sink.send(&BackendMessage::Ready {
+        session_id: engine.current_session_id().to_string(),
+        model: app_state.main_loop_model.clone(),
+        cwd: engine.cwd().to_string(),
+        permission_mode: app_state.tool_permission_context.mode.as_str().to_string(),
+        available_models: app_state.settings.available_models.clone(),
+        plan_workflow: app_state.plan_workflow.clone(),
+        editor_mode: app_state.settings.editor_mode.clone(),
+        view_mode: app_state.settings.view_mode.clone(),
+        keybindings,
+    });
+}
+
 /// Parse and execute a slash command, sending results as BackendMessages.
 async fn handle_slash_command(
     raw: &str,
@@ -373,7 +394,7 @@ async fn handle_slash_command(
         messages: original_messages.clone(),
         cwd: std::path::PathBuf::from(engine.cwd()),
         app_state: original_app_state,
-        session_id: engine.session_id.clone(),
+        session_id: engine.current_session_id(),
     };
 
     let cmd_result = cmd.handler.execute(&args, &mut ctx).await;
@@ -422,10 +443,11 @@ async fn handle_slash_command(
                 });
             }
             CommandResult::Clear => {
-                engine.clear_messages();
+                engine.start_new_session();
                 send_conversation_replaced(&[], sink);
+                send_ready_snapshot(engine, sink);
                 let _ = sink.send(&BackendMessage::SystemInfo {
-                    text: "Conversation cleared.".to_string(),
+                    text: "Started a new session.".to_string(),
                     level: "info".to_string(),
                 });
             }

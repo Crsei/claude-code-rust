@@ -3,7 +3,30 @@ mod tests {
     use crate::engine::lifecycle::*;
     use crate::engine::sdk_types::*;
     use crate::types::config::{QueryEngineConfig, QuerySource};
-    use crate::types::message::Usage;
+    use crate::types::message::{Message, MessageContent, Usage, UserMessage};
+    use tempfile::tempdir;
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &std::path::Path) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     fn make_config() -> QueryEngineConfig {
         QueryEngineConfig {
@@ -36,6 +59,54 @@ mod tests {
         assert_eq!(engine.total_turn_count(), 0);
         assert!(engine.usage().total_cost_usd == 0.0);
         assert!(!engine.session_id.as_str().is_empty());
+        assert_eq!(engine.current_session_id(), engine.session_id);
+    }
+
+    #[test]
+    fn test_start_new_session_rotates_active_id_and_clears_runtime_state() {
+        let engine = QueryEngine::new(make_config());
+        let original = engine.current_session_id();
+
+        let next = engine.start_new_session();
+
+        assert_ne!(next, original);
+        assert_eq!(engine.current_session_id(), next);
+        assert!(engine.messages().is_empty());
+        let usage = engine.usage();
+        assert_eq!(usage.total_input_tokens, 0);
+        assert_eq!(usage.total_output_tokens, 0);
+        assert_eq!(usage.total_cost_usd, 0.0);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_start_new_session_saves_previous_messages() {
+        let home = tempdir().unwrap();
+        let _guard = EnvGuard::set("CC_RUST_HOME", home.path());
+        let workspace = home.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+
+        let mut config = make_config();
+        config.cwd = workspace.to_string_lossy().to_string();
+        config.auto_save_session = true;
+        let engine = QueryEngine::new(config);
+        let previous = engine.current_session_id();
+        engine.replace_messages(vec![Message::User(UserMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 1,
+            role: "user".into(),
+            content: MessageContent::Text("old message".into()),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        })]);
+
+        let next = engine.start_new_session();
+
+        assert_ne!(previous, next);
+        assert!(engine.messages().is_empty());
+        let saved = crate::session::storage::load_session(previous.as_str()).unwrap();
+        assert_eq!(saved.len(), 1);
     }
 
     #[test]

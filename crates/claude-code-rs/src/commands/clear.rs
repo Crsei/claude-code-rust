@@ -1,4 +1,4 @@
-//! /clear command -- clears the conversation history.
+//! /clear command -- starts a fresh visible conversation session.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -11,8 +11,7 @@ pub struct ClearHandler;
 #[async_trait]
 impl CommandHandler for ClearHandler {
     async fn execute(&self, _args: &str, _ctx: &mut CommandContext) -> Result<CommandResult> {
-        // The actual clearing is signaled by returning CommandResult::Clear.
-        // The caller (REPL loop) is responsible for resetting the message list.
+        // The caller owns the live QueryEngine and rotates the active session.
         Ok(CommandResult::Clear)
     }
 }

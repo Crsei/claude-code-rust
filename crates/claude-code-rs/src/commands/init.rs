@@ -6,30 +6,53 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::utils::cwd::get_cwd;
 
 pub struct InitHandler;
 
+const CLAUDE_MD_TEMPLATE: &str = r#"# CLAUDE.md
+
+Project instructions for Claude Code.
+
+## Build And Test
+
+- Add project-specific commands here.
+
+## Project Notes
+
+- Add coding conventions, architecture notes, and review expectations here.
+"#;
+
 #[async_trait]
 impl CommandHandler for InitHandler {
-    async fn execute(&self, _args: &str, _ctx: &mut CommandContext) -> Result<CommandResult> {
-        let cwd = get_cwd();
-        let config_dir = cwd.join(".cc-rust");
+    async fn execute(&self, _args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
+        let config_dir = ctx.cwd.join(".cc-rust");
         let settings_file = config_dir.join("settings.json");
+        let claude_md = ctx.cwd.join("CLAUDE.md");
 
-        if settings_file.exists() {
+        if settings_file.exists() && claude_md.exists() {
             return Ok(CommandResult::Output(format!(
-                "Project already initialized. Config at: {}",
-                settings_file.display()
+                "Project already initialized. Config at: {}; instructions at: {}",
+                settings_file.display(),
+                claude_md.display()
             )));
         }
 
         fs::create_dir_all(&config_dir)?;
-        fs::write(&settings_file, r#"{"model": null, "theme": null}"#)?;
+        let mut created = Vec::new();
+
+        if !settings_file.exists() {
+            fs::write(&settings_file, r#"{"model": null, "theme": null}"#)?;
+            created.push(settings_file.display().to_string());
+        }
+
+        if !claude_md.exists() {
+            fs::write(&claude_md, CLAUDE_MD_TEMPLATE)?;
+            created.push(claude_md.display().to_string());
+        }
 
         Ok(CommandResult::Output(format!(
             "Project initialized. Created {}",
-            settings_file.display()
+            created.join(", ")
         )))
     }
 }
@@ -56,10 +79,9 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
 
-        crate::utils::cwd::set_cwd(&tmp.to_string_lossy());
-
         let handler = InitHandler;
         let mut ctx = test_ctx();
+        ctx.cwd = tmp.clone();
         let result = handler.execute("", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(text) => assert!(text.contains("initialized")),
@@ -67,7 +89,14 @@ mod tests {
         }
 
         let settings = tmp.join(".cc-rust").join("settings.json");
+        let claude_md = tmp.join("CLAUDE.md");
         assert!(settings.exists());
+        assert!(claude_md.exists());
+        assert!(fs::read_to_string(&claude_md)
+            .unwrap()
+            .contains("Project instructions"));
+
+        fs::write(&claude_md, "# Existing instructions\n").unwrap();
 
         // Second call should say already initialized
         let result2 = handler.execute("", &mut ctx).await.unwrap();
@@ -75,8 +104,11 @@ mod tests {
             CommandResult::Output(text) => assert!(text.contains("already")),
             _ => panic!("Expected Output"),
         }
+        assert_eq!(
+            fs::read_to_string(&claude_md).unwrap(),
+            "# Existing instructions\n"
+        );
 
         let _ = fs::remove_dir_all(&tmp);
-        crate::utils::cwd::reset_cwd();
     }
 }

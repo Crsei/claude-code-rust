@@ -69,8 +69,9 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
         let hooks_map = engine.app_state().hooks;
         let end_configs = crate::tools::hooks::load_hook_configs(&hooks_map, "SessionEnd");
         if !end_configs.is_empty() {
+            let session_id = engine.current_session_id();
             let payload = serde_json::json!({
-                "session_id": engine.session_id.as_str(),
+                "session_id": session_id.as_str(),
                 "exit_reason": "normal",
             });
             let _ =
@@ -91,8 +92,8 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
     }
 
     // Step 3: Flush transcript
-    let session_id = engine.session_id.as_str();
-    if let Err(e) = transcript::flush_transcript(session_id) {
+    let session_id = engine.current_session_id();
+    if let Err(e) = transcript::flush_transcript(session_id.as_str()) {
         warn!(error = %e, "failed to flush transcript during shutdown");
     } else {
         debug!("graceful_shutdown: transcript flushed");
@@ -102,7 +103,7 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
     let messages = engine.messages();
     if !messages.is_empty() {
         let cwd = engine.cwd();
-        if let Err(e) = crate::session::storage::save_session(session_id, &messages, cwd) {
+        if let Err(e) = crate::session::storage::save_session(session_id.as_str(), &messages, cwd) {
             warn!(error = %e, "failed to save session during shutdown");
         } else {
             debug!("graceful_shutdown: session saved");

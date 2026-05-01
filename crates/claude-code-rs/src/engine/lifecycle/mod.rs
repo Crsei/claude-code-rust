@@ -30,7 +30,7 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::bootstrap::SessionId;
 use crate::observability::AuditContext;
@@ -103,6 +103,12 @@ pub(crate) struct QueryEngineState {
 pub struct QueryEngine {
     /// Session identifier (UUID v4).
     pub session_id: SessionId,
+    /// Active session identifier used for new turns.
+    ///
+    /// `session_id` is kept for existing construction-time integrations. This
+    /// mutable slot lets `/clear` detach from the previous transcript without
+    /// rebuilding every `Arc<QueryEngine>` owner.
+    pub(crate) active_session_id: Arc<RwLock<SessionId>>,
     /// Immutable configuration snapshot.
     pub(crate) config: QueryEngineConfig,
 
@@ -137,6 +143,7 @@ impl QueryEngine {
     pub fn new(config: QueryEngineConfig) -> Self {
         let initial_messages = config.initial_messages.clone().unwrap_or_default();
         let tools = config.tools.clone();
+        let session_id = SessionId::new();
 
         // Initialize AppState with resolved model from config
         let mut app_state = AppState::default();
@@ -152,7 +159,8 @@ impl QueryEngine {
         }
 
         Self {
-            session_id: SessionId::new(),
+            session_id: session_id.clone(),
+            active_session_id: Arc::new(RwLock::new(session_id)),
             config,
             state: Arc::new(RwLock::new(QueryEngineState {
                 messages: initial_messages,
@@ -300,14 +308,51 @@ impl QueryEngine {
         self.state.read().messages.clone()
     }
 
+    /// Get the session id that new turns should use.
+    pub fn current_session_id(&self) -> SessionId {
+        self.active_session_id.read().clone()
+    }
+
+    /// Set the active session id for future turns.
+    pub fn set_current_session_id(&self, session_id: SessionId) {
+        *self.active_session_id.write() = session_id;
+        crate::bootstrap::PROCESS_STATE.write().session_id = self.current_session_id();
+    }
+
+    /// Clear runtime conversation state and start writing future turns to a
+    /// fresh session id.
+    pub fn start_new_session(&self) -> SessionId {
+        let previous_id = self.current_session_id();
+        let previous_messages = self.messages();
+        if self.config.auto_save_session && !previous_messages.is_empty() {
+            if let Err(err) = crate::session::storage::save_session(
+                previous_id.as_str(),
+                &previous_messages,
+                &self.config.cwd,
+            ) {
+                warn!(
+                    error = %err,
+                    session = %previous_id,
+                    "failed to save previous session before starting a new one"
+                );
+            }
+        }
+
+        let session_id = SessionId::new();
+        {
+            let mut state = self.state.write();
+            state.messages.clear();
+            state.usage = UsageTracking::default();
+            state.permission_denials.clear();
+            state.total_turn_count = 0;
+        }
+        self.set_current_session_id(session_id.clone());
+        session_id
+    }
+
     /// Replace the full conversation history.
     pub fn replace_messages(&self, messages: Vec<Message>) {
         self.state.write().messages = messages;
-    }
-
-    /// Clear the current conversation history.
-    pub fn clear_messages(&self) {
-        self.state.write().messages.clear();
     }
 
     /// Get a snapshot of usage tracking.
