@@ -77,6 +77,7 @@ fn flatten_content(content: Option<&Value>) -> String {
 /// instead of the legacy `max_tokens`.
 fn build_openai_request(request: &MessagesRequest, provider_name: &str) -> Value {
     let is_codex_provider = provider_name.eq_ignore_ascii_case(OPENAI_CODEX_PROVIDER_NAME);
+    let is_deepseek_provider = provider_name.eq_ignore_ascii_case("deepseek");
     let mut oai_messages: Vec<Value> = Vec::new();
 
     // System prompt → system message
@@ -97,6 +98,8 @@ fn build_openai_request(request: &MessagesRequest, provider_name: &str) -> Value
             // Check if assistant message contains tool_use blocks
             if let Some(Value::Array(blocks)) = content {
                 let mut text_parts: Vec<String> = Vec::new();
+                let mut reasoning_parts: Vec<String> = Vec::new();
+                let mut has_reasoning_content = false;
                 let mut tool_calls_out: Vec<Value> = Vec::new();
 
                 for block in blocks {
@@ -106,6 +109,12 @@ fn build_openai_request(request: &MessagesRequest, provider_name: &str) -> Value
                                 if !t.is_empty() {
                                     text_parts.push(t.to_string());
                                 }
+                            }
+                        }
+                        Some("thinking") => {
+                            if let Some(t) = block.get("thinking").and_then(|t| t.as_str()) {
+                                has_reasoning_content = true;
+                                reasoning_parts.push(t.to_string());
                             }
                         }
                         Some("tool_use") => {
@@ -134,12 +143,28 @@ fn build_openai_request(request: &MessagesRequest, provider_name: &str) -> Value
 
                 if tool_calls_out.is_empty() {
                     if !text_parts.is_empty() {
-                        oai_messages.push(json!({"role": "assistant", "content": content_val}));
+                        let mut assistant_msg =
+                            json!({"role": "assistant", "content": content_val});
+                        if is_deepseek_provider && has_reasoning_content {
+                            assistant_msg["reasoning_content"] = json!(reasoning_parts.join("\n"));
+                        }
+                        oai_messages.push(assistant_msg);
+                    } else if is_deepseek_provider && has_reasoning_content {
+                        oai_messages.push(json!({
+                            "role": "assistant",
+                            "content": "",
+                            "reasoning_content": reasoning_parts.join("\n"),
+                        }));
                     }
                 } else {
                     let mut assistant_msg = json!({"role": "assistant"});
                     if !text_parts.is_empty() {
                         assistant_msg["content"] = content_val;
+                    } else if is_deepseek_provider {
+                        assistant_msg["content"] = json!("");
+                    }
+                    if is_deepseek_provider && has_reasoning_content {
+                        assistant_msg["reasoning_content"] = json!(reasoning_parts.join("\n"));
                     }
                     assistant_msg["tool_calls"] = json!(tool_calls_out);
                     oai_messages.push(assistant_msg);
@@ -365,6 +390,7 @@ where
         let mut block_index: usize = 0;
         // Track whether we are inside a text content block.
         let mut _text_block_open = false;
+        let mut thinking_block_open = false;
         // Track active tool calls: index → (id, name, accumulated arguments).
         let mut tool_calls: std::collections::HashMap<u64, (String, String, String)> =
             std::collections::HashMap::new();
@@ -395,6 +421,9 @@ where
                         yield StreamEvent::ContentBlockStop { index: block_index };
                         _text_block_open = false;
                     }
+                    if thinking_block_open {
+                        yield StreamEvent::ContentBlockStop { index: block_index };
+                    }
                     if header_emitted {
                         yield StreamEvent::MessageDelta {
                             delta: MessageDelta { stop_reason: Some("end_turn".to_string()) },
@@ -424,9 +453,48 @@ where
                             None => continue,
                         };
 
+                        // ── Reasoning content delta ─────────────────────
+                        // DeepSeek thinking mode streams chain-of-thought in
+                        // delta.reasoning_content. Preserve it even when the
+                        // value is an empty string; tool-call turns must pass
+                        // the field back verbatim on the next request.
+                        if let Some(reasoning_content) =
+                            delta.get("reasoning_content").and_then(|c| c.as_str())
+                        {
+                            if _text_block_open {
+                                yield StreamEvent::ContentBlockStop { index: block_index };
+                                block_index += 1;
+                                _text_block_open = false;
+                            }
+                            if !thinking_block_open {
+                                yield StreamEvent::ContentBlockStart {
+                                    index: block_index,
+                                    content_block: ContentBlock::Thinking {
+                                        thinking: String::new(),
+                                        signature: None,
+                                    },
+                                };
+                                thinking_block_open = true;
+                            }
+                            if !reasoning_content.is_empty() {
+                                yield StreamEvent::ContentBlockDelta {
+                                    index: block_index,
+                                    delta: json!({
+                                        "type": "thinking_delta",
+                                        "thinking": reasoning_content,
+                                    }),
+                                };
+                            }
+                        }
+
                         // ── Text content delta ──────────────────────────
                         if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
                             if !content.is_empty() {
+                                if thinking_block_open {
+                                    yield StreamEvent::ContentBlockStop { index: block_index };
+                                    block_index += 1;
+                                    thinking_block_open = false;
+                                }
                                 if !_text_block_open {
                                     yield StreamEvent::ContentBlockStart {
                                         index: block_index,
@@ -489,6 +557,11 @@ where
                                 yield StreamEvent::ContentBlockStop { index: block_index };
                                 block_index += 1;
                                 _text_block_open = false;
+                            }
+                            if thinking_block_open {
+                                yield StreamEvent::ContentBlockStop { index: block_index };
+                                block_index += 1;
+                                thinking_block_open = false;
                             }
 
                             // Emit accumulated tool_calls as Anthropic-style ToolUse blocks
@@ -556,6 +629,9 @@ where
 
         // Stream ended without [DONE] or finish_reason — still close properly
         if _text_block_open {
+            yield StreamEvent::ContentBlockStop { index: block_index };
+        }
+        if thinking_block_open {
             yield StreamEvent::ContentBlockStop { index: block_index };
         }
         if header_emitted {
@@ -714,5 +790,151 @@ mod tests {
         let body = build_openai_request(&req, "openai");
         let messages = body["messages"].as_array().unwrap();
         assert_eq!(messages[0]["content"], "Hello\nWorld");
+    }
+
+    #[test]
+    fn test_build_deepseek_request_preserves_empty_reasoning_content_for_tool_call() {
+        let req = MessagesRequest {
+            model: "deepseek-v4-pro".to_string(),
+            messages: vec![json!({
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "thinking": "", "signature": null},
+                    {
+                        "type": "tool_use",
+                        "id": "call_empty_reasoning",
+                        "name": "Read",
+                        "input": {"file_path": "Cargo.toml"}
+                    },
+                ]
+            })],
+            system: None,
+            max_tokens: 1024,
+            tools: None,
+            stream: true,
+            thinking: Some(json!({"type": "enabled"})),
+            tool_choice: None,
+            advisor_model: None,
+        };
+
+        let body = build_openai_request(&req, "deepseek");
+        let messages = body["messages"].as_array().unwrap();
+        let assistant = messages[0].as_object().unwrap();
+
+        assert!(assistant.contains_key("reasoning_content"));
+        assert_eq!(assistant["reasoning_content"], "");
+        assert_eq!(assistant["content"], "");
+        assert_eq!(assistant["tool_calls"][0]["id"], "call_empty_reasoning");
+    }
+
+    #[test]
+    fn test_build_openai_request_does_not_send_deepseek_reasoning_to_other_providers() {
+        let req = MessagesRequest {
+            model: "gpt-4o".to_string(),
+            messages: vec![json!({
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "thinking": "", "signature": null},
+                    {
+                        "type": "tool_use",
+                        "id": "call_1",
+                        "name": "Read",
+                        "input": {"file_path": "Cargo.toml"}
+                    },
+                ]
+            })],
+            system: None,
+            max_tokens: 1024,
+            tools: None,
+            stream: true,
+            thinking: None,
+            tool_choice: None,
+            advisor_model: None,
+        };
+
+        let body = build_openai_request(&req, "openai");
+        let messages = body["messages"].as_array().unwrap();
+        let assistant = messages[0].as_object().unwrap();
+
+        assert!(!assistant.contains_key("reasoning_content"));
+        assert!(!assistant.contains_key("content"));
+        assert_eq!(assistant["tool_calls"][0]["id"], "call_1");
+    }
+
+    #[tokio::test]
+    async fn test_parse_deepseek_empty_reasoning_content_tool_call() {
+        use futures::StreamExt;
+
+        let chunks = vec![
+            format!(
+                "data: {}\n\n",
+                json!({
+                    "choices": [{
+                        "delta": {
+                            "role": "assistant",
+                            "reasoning_content": "",
+                        }
+                    }]
+                })
+            ),
+            format!(
+                "data: {}\n\n",
+                json!({
+                    "choices": [{
+                        "delta": {
+                            "tool_calls": [{
+                                "index": 0,
+                                "id": "call_empty_reasoning",
+                                "type": "function",
+                                "function": {
+                                    "name": "Read",
+                                    "arguments": "{\"file_path\":\"Cargo.toml\"}",
+                                }
+                            }]
+                        }
+                    }]
+                })
+            ),
+            format!(
+                "data: {}\n\n",
+                json!({
+                    "choices": [{
+                        "delta": {},
+                        "finish_reason": "tool_calls",
+                    }],
+                    "usage": {
+                        "prompt_tokens": 2,
+                        "completion_tokens": 3,
+                    }
+                })
+            ),
+            "data: [DONE]\n\n".to_string(),
+        ];
+        let byte_stream = futures::stream::iter(
+            chunks
+                .into_iter()
+                .map(|chunk| Ok::<bytes::Bytes, reqwest::Error>(bytes::Bytes::from(chunk))),
+        );
+        let mut stream = std::pin::pin!(parse_openai_sse_byte_stream(byte_stream));
+        let mut accumulator = crate::api::streaming::StreamAccumulator::new();
+
+        while let Some(event) = stream.next().await {
+            accumulator.process_event(&event.unwrap());
+        }
+
+        let message = accumulator.build("deepseek-v4-pro");
+        assert_eq!(message.content.len(), 2);
+        match &message.content[0] {
+            ContentBlock::Thinking { thinking, .. } => assert_eq!(thinking, ""),
+            other => panic!("expected empty thinking block, got {:?}", other),
+        }
+        match &message.content[1] {
+            ContentBlock::ToolUse { id, name, input } => {
+                assert_eq!(id, "call_empty_reasoning");
+                assert_eq!(name, "Read");
+                assert_eq!(input["file_path"], "Cargo.toml");
+            }
+            other => panic!("expected tool use block, got {:?}", other),
+        }
     }
 }
