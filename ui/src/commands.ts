@@ -16,6 +16,8 @@ export interface CommandDef {
   options?: string[]
   /** Hint for what argument is expected (for 'input' kind) */
   argHint?: string
+  /** Concrete usage fragment shown in autocomplete. */
+  usage?: string
 }
 
 export const COMMANDS: CommandDef[] = [
@@ -28,15 +30,15 @@ export const COMMANDS: CommandDef[] = [
   { name: 'context',          aliases: ['ctx'],                 description: 'Show context usage information',   kind: 'display' },
   { name: 'extra-usage',      aliases: ['eu'],                  description: 'Extended token usage analysis',    kind: 'display' },
   { name: 'rate-limit-options', aliases: ['rlo', 'rate-limit'], description: 'Show rate limit info',             kind: 'display' },
-  { name: 'session',          aliases: [],                      description: 'Show session info or list sessions', kind: 'display' },
+  { name: 'session',          aliases: [],                      description: 'Show session info or list sessions', kind: 'display', usage: 'list|show <id>' },
   { name: 'skills',           aliases: [],                      description: 'List available skills',            kind: 'display' },
   { name: 'diff',             aliases: [],                      description: 'Show git diff of current changes', kind: 'display' },
-  { name: 'mcp',              aliases: [],                      description: 'Open MCP server manager (subcommands: list, add, edit, …)', kind: 'display' },
+  { name: 'mcp',              aliases: [],                      description: 'Open MCP server manager', kind: 'display', usage: 'list|add|edit|remove' },
   { name: 'agents-ui',        aliases: ['au'],                  description: 'Open the agents settings dialog', kind: 'action' },
   { name: 'assistant',        aliases: ['kairos'],              description: 'View assistant mode status',       kind: 'display' },
   { name: 'daemon',           aliases: [],                      description: 'View/control daemon process',      kind: 'display' },
   { name: 'channels',         aliases: [],                      description: 'View connected channels',          kind: 'display' },
-  { name: 'permissions',      aliases: ['perms'],               description: 'View or modify tool permissions',  kind: 'display' },
+  { name: 'permissions',      aliases: ['perms'],               description: 'View or modify tool permissions',  kind: 'display', usage: 'mode <default|auto|bypass|plan|acceptEdits|dontAsk>' },
 
   // ── Action ──
   { name: 'clear',            aliases: [],                      description: 'Clear conversation history',       kind: 'action' },
@@ -60,16 +62,16 @@ export const COMMANDS: CommandDef[] = [
   { name: 'brief',            aliases: [],                      description: 'Toggle Brief output mode',         kind: 'toggle' },
 
   // ── Select ──
-  { name: 'effort',           aliases: [],                      description: 'Set thinking effort level',        kind: 'select', options: ['low', 'medium', 'high'] },
-  { name: 'model',            aliases: [],                      description: 'Show or switch the active model',  kind: 'select', options: ['sonnet', 'opus', 'haiku'] },
-  { name: 'branch',           aliases: ['br'],                  description: 'Show or switch git branches',      kind: 'select' },
-  { name: 'config',           aliases: ['settings'],            description: 'Show or modify configuration',     kind: 'select' },
-  { name: 'notify',           aliases: [],                      description: 'Push notification settings',       kind: 'select', options: ['on', 'off'] },
+  { name: 'effort',           aliases: [],                      description: 'Set thinking effort level',        kind: 'select', options: ['max', 'high', 'medium', 'low'], usage: 'max|high|medium|low' },
+  { name: 'model',            aliases: [],                      description: 'Show or switch the active model',  kind: 'input', argHint: '<model-id>', usage: '<model-id>' },
+  { name: 'branch',           aliases: ['br'],                  description: 'Show or switch git branches',      kind: 'input', argHint: '<branch>', usage: '<branch>' },
+  { name: 'config',           aliases: ['settings'],            description: 'Show or modify configuration',     kind: 'input', argHint: '<key> [value]', usage: '<key> <value>' },
+  { name: 'notify',           aliases: [],                      description: 'Push notification settings',       kind: 'select', options: ['on', 'off'], usage: 'on|off' },
 
   // ── Input (free-form arg) ──
   { name: 'login-code',       aliases: [],                      description: 'Complete OAuth login with code',   kind: 'input', argHint: '<code>' },
   { name: 'model-add',        aliases: ['ma'],                  description: 'Add a model with pricing to .env', kind: 'input', argHint: '<name> <input_price> <output_price>' },
-  { name: 'sleep',            aliases: [],                      description: 'Set proactive sleep duration',     kind: 'input', argHint: '<duration>' },
+  { name: 'sleep',            aliases: [],                      description: 'Set proactive sleep duration',     kind: 'input', argHint: '<duration>', usage: '30s|5m|1h' },
   { name: 'add-dir',          aliases: [],                      description: 'Add a new working directory',      kind: 'input', argHint: '<path>' },
 ]
 

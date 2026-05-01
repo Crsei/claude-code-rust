@@ -52,6 +52,7 @@ export function InputPrompt({
   const {
     isStreaming,
     isWaiting,
+    availableModels,
     inputHistory,
     historyIndex,
     keybindingConfig,
@@ -143,6 +144,24 @@ export function InputPrompt({
     () => (slashPrefix ? matchCommands(cmdPartial) : []),
     [cmdPartial, slashPrefix],
   )
+  const displayCmdMatches = useMemo(
+    () =>
+      cmdMatches.map(cmd => {
+        if (cmd.name !== 'model') {
+          return cmd
+        }
+        const options = availableModels.map(model => model.trim()).filter(Boolean)
+        if (options.length === 0) {
+          return cmd
+        }
+        return {
+          ...cmd,
+          kind: 'select' as const,
+          options,
+        }
+      }),
+    [availableModels, cmdMatches],
+  )
 
   useEffect(() => {
     setHintIndex(0)
@@ -232,6 +251,11 @@ export function InputPrompt({
       return
     }
 
+    if (matchesShortcut('chat:thinkingToggle', input, key, name, { context: 'Chat', config: keybindingConfig })) {
+      dispatch({ type: 'TOGGLE_THINKING_CONTENT' })
+      return
+    }
+
     if (viewMode === 'transcript') {
       if (matchesShortcut('transcript:exit', input, key, name, { context: 'Transcript', config: keybindingConfig })) {
         dispatch({ type: 'SET_VIEW_MODE', viewMode: 'prompt' })
@@ -245,6 +269,16 @@ export function InputPrompt({
 
     if (subMode) {
       const options = subMode.options
+
+      if (key.wheelUp && !key.ctrl && !key.meta) {
+        setSubIndex(index => (index - 1 + options.length) % options.length)
+        return
+      }
+
+      if (key.wheelDown && !key.ctrl && !key.meta) {
+        setSubIndex(index => (index + 1) % options.length)
+        return
+      }
 
       if (matchesShortcut('select:previous', '', key, name, { context: 'Select', config: keybindingConfig })) {
         setSubIndex(index => (index - 1 + options.length) % options.length)
@@ -285,16 +319,6 @@ export function InputPrompt({
           sendCommand(`/${subMode.cmd.name} ${options[match]}`)
         }
       }
-      return
-    }
-
-    if (key.wheelUp && !key.ctrl && !key.meta) {
-      navigateHistoryUp()
-      return
-    }
-
-    if (key.wheelDown && !key.ctrl && !key.meta) {
-      navigateHistoryDown()
       return
     }
 
@@ -360,12 +384,22 @@ export function InputPrompt({
       }
     }
 
-    if (showHint && slashPrefix && cmdMatches.length > 0) {
+    if (showHint && slashPrefix && displayCmdMatches.length > 0) {
+      if (key.wheelUp && !key.ctrl && !key.meta) {
+        setHintIndex(index => (index - 1 + displayCmdMatches.length) % displayCmdMatches.length)
+        return
+      }
+
+      if (key.wheelDown && !key.ctrl && !key.meta) {
+        setHintIndex(index => (index + 1) % displayCmdMatches.length)
+        return
+      }
+
       if (
         matchesShortcut('autocomplete:accept', input, key, name, { context: 'Autocomplete', config: keybindingConfig })
         || input === ' '
       ) {
-        const command = cmdMatches[hintIndex]
+        const command = displayCmdMatches[hintIndex]
         if (command) activateCommand(command)
         return
       }
@@ -375,7 +409,7 @@ export function InputPrompt({
         && !key.ctrl
         && !key.meta
       ) {
-        setHintIndex(index => (index - 1 + cmdMatches.length) % cmdMatches.length)
+        setHintIndex(index => (index - 1 + displayCmdMatches.length) % displayCmdMatches.length)
         return
       }
 
@@ -384,12 +418,12 @@ export function InputPrompt({
         && !key.ctrl
         && !key.meta
       ) {
-        setHintIndex(index => (index + 1) % cmdMatches.length)
+        setHintIndex(index => (index + 1) % displayCmdMatches.length)
         return
       }
 
       if (matchesShortcut('select:accept', input, key, name, { context: 'Select', config: keybindingConfig })) {
-        const command = cmdMatches[hintIndex]
+        const command = displayCmdMatches[hintIndex]
         if (command && cmdPartial) {
           activateCommand(command)
         } else {
@@ -397,6 +431,16 @@ export function InputPrompt({
         }
         return
       }
+    }
+
+    if (key.wheelUp && !key.ctrl && !key.meta) {
+      navigateHistoryUp()
+      return
+    }
+
+    if (key.wheelDown && !key.ctrl && !key.meta) {
+      navigateHistoryDown()
+      return
     }
 
     if (matchesShortcut('chat:submit', input, key, name, { context: 'Chat', config: keybindingConfig })) {
@@ -534,7 +578,7 @@ export function InputPrompt({
 
       <SlashCommandHints
         visible={showHint}
-        matches={cmdMatches}
+        matches={displayCmdMatches}
         hintIndex={hintIndex}
         partial={cmdPartial}
         subMode={subMode}

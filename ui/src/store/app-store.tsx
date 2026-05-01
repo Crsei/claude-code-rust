@@ -128,6 +128,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'DEQUEUE_SUBMISSION':
     case 'SET_VIEW_MODE':
     case 'TOGGLE_VIEW_MODE':
+    case 'TOGGLE_THINKING_CONTENT':
       return reduceInput(state, action)
 
     default:

@@ -78,26 +78,21 @@ impl CommandHandler for ModelHandler {
         let target = args.trim();
         let available = ctx.app_state.settings.available_models.clone();
 
-        // No arguments: show the current model, aliases, and any restriction.
+        // No arguments: show the current model and configured model list.
         if target.is_empty() {
             let mut lines = Vec::new();
             lines.push(format!("Current model: {}", ctx.app_state.main_loop_model));
             lines.push(String::new());
-            lines.push("Aliases:".into());
-            for (alias, full) in MODEL_ALIASES {
-                lines.push(format!("  {} -> {}", alias, full));
-            }
-            lines.push(String::new());
             if available.is_empty() {
-                lines.push("availableModels: (not restricted)".into());
+                lines.push("Configured models: (not set; any model id is accepted)".into());
             } else {
-                lines.push("availableModels (allowed):".into());
+                lines.push("Configured models:".into());
                 for m in &available {
                     lines.push(format!("  - {}", m));
                 }
             }
             lines.push(String::new());
-            lines.push("Usage: /model <model-id or alias>".into());
+            lines.push("Usage: /model <model-id>".into());
             return Ok(CommandResult::Output(lines.join("\n")));
         }
 
@@ -141,6 +136,9 @@ mod tests {
             CommandResult::Output(text) => {
                 assert!(text.contains("Current model:"));
                 assert!(text.contains(&ctx.app_state.main_loop_model));
+                assert!(!text.contains("opus ->"));
+                assert!(!text.contains("sonnet ->"));
+                assert!(!text.contains("haiku ->"));
             }
             _ => panic!("Expected Output result"),
         }
@@ -258,7 +256,7 @@ mod tests {
         let result = handler.execute("", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(text) => {
-                assert!(text.contains("availableModels (allowed)"));
+                assert!(text.contains("Configured models"));
                 assert!(text.contains("- alpha"));
                 assert!(text.contains("- beta"));
             }

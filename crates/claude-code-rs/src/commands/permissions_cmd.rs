@@ -21,6 +21,7 @@ use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::config::settings;
+use crate::plan_workflow;
 use crate::types::tool::PermissionMode;
 
 #[derive(Debug, Clone, Copy)]
@@ -245,6 +246,26 @@ fn handle_mode(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult
         ));
     }
 
+    if matches!(requested, PermissionMode::Plan) {
+        let existing = plan_workflow::load(&ctx.cwd)?;
+        let record = plan_workflow::enter_plan_mode_state(
+            &mut ctx.app_state,
+            &ctx.cwd,
+            existing,
+            "main",
+            "permissions_command",
+            Some("entered via /permissions mode plan"),
+            None,
+        );
+        plan_workflow::persist(&ctx.cwd, &record)?;
+        return Ok(CommandResult::Output(format!(
+            "Permission mode set to: {}\n{}",
+            requested.as_str(),
+            plan_workflow::summarize(&record),
+        )));
+    }
+
+    ctx.app_state.tool_permission_context.pre_plan_mode = None;
     ctx.app_state.tool_permission_context.mode = requested.clone();
     Ok(CommandResult::Output(format!(
         "Permission mode set to: {}",
@@ -440,6 +461,41 @@ mod tests {
             ctx.app_state.tool_permission_context.mode,
             PermissionMode::DontAsk
         );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_permissions_mode_plan_records_workflow_at_workspace_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let project_root = dir.path().join("workspace");
+        let nested = project_root.join("src").join("nested");
+        std::fs::create_dir_all(project_root.join(".cc-rust")).unwrap();
+        std::fs::create_dir_all(&nested).unwrap();
+        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+
+        let handler = PermissionsHandler;
+        let mut ctx = test_ctx_with_cwd(nested.clone());
+        ctx.app_state.tool_permission_context.mode = PermissionMode::AcceptEdits;
+        let result = handler.execute("mode plan", &mut ctx).await.unwrap();
+        let CommandResult::Output(text) = result else {
+            panic!("expected output")
+        };
+
+        assert!(text.contains("Permission mode set to: plan"));
+        assert_eq!(
+            ctx.app_state.tool_permission_context.mode,
+            PermissionMode::Plan
+        );
+        assert_eq!(
+            ctx.app_state.tool_permission_context.pre_plan_mode,
+            Some(PermissionMode::AcceptEdits)
+        );
+        assert!(project_root
+            .join(".cc-rust")
+            .join("plan-workflow.json")
+            .is_file());
+        assert!(!nested.join(".cc-rust").join("plan-workflow.json").exists());
     }
 
     #[tokio::test]

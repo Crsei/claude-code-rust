@@ -66,6 +66,7 @@ function composerHint(isTranscript: boolean, keybindingConfig: KeybindingConfig 
 
   return [
     `${shortcutLabel('app:toggleTranscript', { context: 'Global', config: keybindingConfig })} transcript`,
+    `${shortcutLabel('chat:thinkingToggle', { context: 'Chat', config: keybindingConfig })} thinking`,
     `${shortcutLabel('app:toggleVim', { context: 'Global', config: keybindingConfig })} vim`,
     `${shortcutLabel('app:exit', { context: 'Global', config: keybindingConfig })} quit`,
   ].join(' | ')
@@ -112,6 +113,7 @@ export function App() {
             editorMode: (msg as BackendMessage & { editor_mode?: string | null }).editor_mode,
             viewMode: (msg as BackendMessage & { view_mode?: 'prompt' | 'transcript' | null }).view_mode,
             keybindings: (msg as BackendMessage & { keybindings?: KeybindingConfig | null }).keybindings,
+            availableModels: (msg as BackendMessage & { available_models?: string[] | null }).available_models ?? null,
           })
           break
         case 'stream_start':

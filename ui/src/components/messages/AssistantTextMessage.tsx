@@ -25,7 +25,7 @@ type Props = {
 export function AssistantTextMessage({ item }: Props) {
   return (
     <box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
-      {item.thinking && <ThinkingPreview content={item.thinking} />}
+      {item.thinking && <ThinkingPreview content={item.thinking} durationMs={item.thinkingDurationMs} />}
       <box flexDirection="row" width="100%">
         <box minWidth={2} flexShrink={0}>
           <text fg={c.text} bg={c.bg}>●</text>

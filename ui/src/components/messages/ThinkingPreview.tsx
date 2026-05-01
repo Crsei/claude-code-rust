@@ -1,42 +1,43 @@
 import React from 'react'
+import { useAppState } from '../../store/app-store.js'
 import { c } from '../../theme.js'
+import { formatWorkedDuration } from '../PromptInput/keys.js'
 
 /**
- * Thinking-content header shown above assistant / streaming text when the
- * underlying segment carries extended-thinking output. OpenTUI sibling of
- * upstream `AssistantThinkingMessage`
- * (`ui/examples/upstream-patterns/src/components/messages/AssistantThinkingMessage.tsx`).
+ * Thinking header shown above assistant / streaming text when a segment
+ * carries extended-thinking output.
  *
- * Mirrors upstream's `∴ Thinking…` label style (dim italic) and indents the
- * preview under it. Long thinking is truncated with an ellipsis — we keep
- * the full text in-store so the transcript view can still expand it.
+ * The default view hides the reasoning body and shows only elapsed thinking
+ * time. The user can toggle the stored reasoning text with the configured
+ * `chat:thinkingToggle` shortcut.
  */
-
-const PREVIEW_LIMIT = 100
-
 type Props = {
   content: string
+  durationMs?: number
 }
 
-export function ThinkingPreview({ content }: Props) {
+export function ThinkingPreview({ content, durationMs }: Props) {
+  const { showThinkingContent } = useAppState()
   const trimmed = content.trim()
   if (!trimmed) {
     return null
   }
-  const preview = trimmed.length > PREVIEW_LIMIT
-    ? `${trimmed.slice(0, PREVIEW_LIMIT)}\u2026`
-    : trimmed
+  const duration = typeof durationMs === 'number'
+    ? ` ${formatWorkedDuration(durationMs)}`
+    : ''
 
   return (
     <box flexDirection="column" paddingX={1} marginBottom={1}>
       <text fg={c.dim}>
-        <em>{'\u2234 Thinking\u2026'}</em>
+        <em>{`\u2234 Thinking${duration}`}</em>
       </text>
-      <box paddingLeft={2}>
-        <text fg={c.dim}>
-          <em>{preview}</em>
-        </text>
-      </box>
+      {showThinkingContent && (
+        <box paddingLeft={2}>
+          <text fg={c.dim}>
+            <em>{trimmed}</em>
+          </text>
+        </box>
+      )}
     </box>
   )
 }

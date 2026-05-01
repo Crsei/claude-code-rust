@@ -599,6 +599,7 @@ export type BackendMessage =
       cwd: string
       permission_mode: string
       plan_workflow?: PlanWorkflowRecord | null
+      available_models?: string[]
       editor_mode?: string | null
       view_mode?: 'prompt' | 'transcript' | null
       keybindings?: any

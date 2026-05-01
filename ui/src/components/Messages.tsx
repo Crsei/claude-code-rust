@@ -36,6 +36,7 @@ export type MessagesProps = {
   /** Live streaming text for the current turn, if any. */
   streamingText?: string
   streamingThinking?: string
+  streamingThinkingDurationMs?: number
   /** Whether the conversation is currently streaming or waiting. Drives
    *  the `'running'` state on in-flight tool activities. */
   isBusy?: boolean
@@ -48,6 +49,7 @@ export function Messages({
   viewMode,
   streamingText,
   streamingThinking,
+  streamingThinkingDurationMs,
   isBusy,
   columns,
 }: MessagesProps) {
@@ -58,8 +60,9 @@ export function Messages({
         isBusy: !!isBusy,
         streamingText,
         streamingThinking,
+        streamingThinkingDurationMs,
       }),
-    [isBusy, messages, streamingText, streamingThinking, viewMode],
+    [isBusy, messages, streamingText, streamingThinking, streamingThinkingDurationMs, viewMode],
   )
 
   if (items.length === 0) {

@@ -240,9 +240,13 @@ export interface AppState {
   streamingText: string
   streamingThinking: string
   streamingMessageId: string | null
+  thinkingStartedAt: number | null
+  lastThinkingDurationMs: number | null
   isStreaming: boolean
   isWaiting: boolean
   model: string
+  availableModels: string[]
+  showThinkingContent: boolean
   sessionId: string
   cwd: string
   usage: Usage
@@ -279,9 +283,13 @@ export const initialState: AppState = {
   streamingText: '',
   streamingThinking: '',
   streamingMessageId: null,
+  thinkingStartedAt: null,
+  lastThinkingDurationMs: null,
   isStreaming: false,
   isWaiting: false,
   model: '',
+  availableModels: [],
+  showThinkingContent: false,
   sessionId: '',
   cwd: '',
   usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
@@ -343,6 +351,7 @@ export type CoreAction =
       editorMode?: string | null
       viewMode?: ViewMode | null
       keybindings?: KeybindingConfig | null
+      availableModels?: string[] | null
     }
   | { type: 'REPLACE_MESSAGES'; messages: RawMessage[] }
   | { type: 'ADD_USER_MESSAGE'; id: string; text: string }
@@ -490,6 +499,7 @@ export type InputAction =
   | { type: 'DEQUEUE_SUBMISSION' }
   | { type: 'SET_VIEW_MODE'; viewMode: ViewMode }
   | { type: 'TOGGLE_VIEW_MODE' }
+  | { type: 'TOGGLE_THINKING_CONTENT' }
 
 export type AppAction =
   | CoreAction

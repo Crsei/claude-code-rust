@@ -19,6 +19,7 @@ export interface RawMessage {
   contentBlocks?: FrontendContentBlock[]
   costUsd?: number
   thinking?: string
+  thinkingDurationMs?: number
   level?: string
   toolName?: string
   toolInput?: any
@@ -61,6 +62,7 @@ export interface AssistantTextRenderItem {
   id: string
   content: string
   thinking?: string
+  thinkingDurationMs?: number
   timestamp: number
   costUsd?: number
 }
@@ -116,6 +118,7 @@ export interface StreamingRenderItem {
   id: string
   content: string
   thinking?: string
+  thinkingDurationMs?: number
   timestamp: number
 }
 
@@ -176,6 +179,7 @@ export function buildRenderItems(
     isBusy: boolean
     streamingText?: string
     streamingThinking?: string
+    streamingThinkingDurationMs?: number
   },
 ): RenderItem[] {
   const items: RenderItem[] = []
@@ -199,6 +203,7 @@ export function buildRenderItems(
     segmentIndex: number,
     text: string,
     thinking?: string,
+    thinkingDurationMs?: number,
   ) => {
     if (!text && !thinking) {
       return
@@ -208,6 +213,7 @@ export function buildRenderItems(
       id: `${raw.id}:assistant:${segmentIndex}`,
       content: text,
       thinking,
+      thinkingDurationMs,
       timestamp: raw.timestamp,
       costUsd: raw.costUsd,
     })
@@ -330,6 +336,7 @@ export function buildRenderItems(
               segmentIndex++,
               textParts.join('\n').trim(),
               joinParts(thinkingParts),
+              raw.thinkingDurationMs,
             )
             textParts = []
             thinkingParts = []
@@ -359,7 +366,7 @@ export function buildRenderItems(
           break
         }
 
-        pushAssistantSegment(raw, 0, raw.content, raw.thinking)
+        pushAssistantSegment(raw, 0, raw.content, raw.thinking, raw.thinkingDurationMs)
         break
       case 'user':
         if (raw.contentBlocks?.length) {
@@ -435,6 +442,7 @@ export function buildRenderItems(
       id: 'streaming-partial',
       content: options.streamingText ?? '',
       thinking: options.streamingThinking || undefined,
+      thinkingDurationMs: options.streamingThinkingDurationMs,
       timestamp: Date.now(),
     })
   }

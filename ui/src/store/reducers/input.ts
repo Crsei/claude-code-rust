@@ -54,5 +54,11 @@ export function reduceInput(state: AppState, action: InputAction): AppState {
         ...state,
         viewMode: state.viewMode === 'prompt' ? 'transcript' : 'prompt',
       }
+
+    case 'TOGGLE_THINKING_CONTENT':
+      return {
+        ...state,
+        showThinkingContent: !state.showThinkingContent,
+      }
   }
 }

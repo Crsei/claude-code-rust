@@ -46,6 +46,10 @@ export function repaintAfterResize(renderer: ResizeRenderer): void {
   renderer.intermediateRender()
 }
 
+export function repaintAfterLayoutReplacement(renderer: ResizeRenderer): void {
+  repaintAfterResize(renderer)
+}
+
 function clearBuffer(buffer: ClearableBuffer): void {
   buffer.clear(TERMINAL_BG)
 }

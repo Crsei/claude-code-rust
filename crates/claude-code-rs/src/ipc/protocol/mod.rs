@@ -144,6 +144,7 @@ pub enum BackendMessage {
         model: String,
         cwd: String,
         permission_mode: String,
+        available_models: Vec<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         plan_workflow: Option<PlanWorkflowRecord>,
         #[serde(skip_serializing_if = "Option::is_none")]

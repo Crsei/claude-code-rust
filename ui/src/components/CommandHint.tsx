@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React from 'react'
 import { shortcutLabel } from '../keybindings.js'
 import { c } from '../theme.js'
 import { KIND_COLORS, type CommandDef } from '../commands.js'
@@ -21,17 +21,19 @@ export function CommandHint({
   subOptions,
   subSelectedIndex,
 }: Props) {
-  const scrollRef = useRef<any>(null)
   const { keybindingConfig } = useAppState()
 
-  useEffect(() => {
-    scrollRef.current?.scrollChildIntoView?.(`cmd-${selectedIndex}`)
-  }, [selectedIndex])
-
   if (subOptions && subOptions.length > 0) {
+    const { start, end } = visibleWindow(subOptions.length, subSelectedIndex ?? 0)
+    const visibleOptions = subOptions.slice(start, end)
+    const countLabel = subOptions.length > MAX_VISIBLE
+      ? `${start + 1}-${end} of ${subOptions.length} options`
+      : `${subOptions.length} options`
+
     return (
-      <box flexDirection="column" paddingLeft={3}>
-        {subOptions.map((option, index) => {
+      <box flexDirection="column" paddingLeft={3} flexShrink={0}>
+        {visibleOptions.map((option, offset) => {
+          const index = start + offset
           const selected = index === (subSelectedIndex ?? 0)
           return (
             <box key={option} flexDirection="row" gap={1}>
@@ -43,7 +45,7 @@ export function CommandHint({
         })}
         <box paddingLeft={1}>
           <text fg={c.muted}>
-            Up/Down navigate  {shortcutLabel('select:accept', { context: 'Select', config: keybindingConfig })} confirm  {shortcutLabel('select:cancel', { context: 'Select', config: keybindingConfig })} cancel
+            {countLabel}  Up/Down navigate  {shortcutLabel('select:accept', { context: 'Select', config: keybindingConfig })} confirm  {shortcutLabel('select:cancel', { context: 'Select', config: keybindingConfig })} cancel
           </text>
         </box>
       </box>
@@ -60,10 +62,13 @@ export function CommandHint({
     )
   }
 
-  const list = matches.map((cmd, index) => {
+  const { start, end } = visibleWindow(matches.length, selectedIndex)
+  const list = matches.slice(start, end).map((cmd, offset) => {
+    const index = start + offset
     const selected = index === selectedIndex
     const highlight = highlightMatch(cmd.name, partial)
     const color = KIND_COLORS[cmd.kind]
+    const usage = usageForCommand(cmd)
 
     return (
       <box key={cmd.name} id={`cmd-${index}`} flexDirection="row" gap={1}>
@@ -79,33 +84,55 @@ export function CommandHint({
         {cmd.aliases.length > 0 && (
           <text fg={c.muted}>({cmd.aliases.map(alias => `/${alias}`).join(', ')})</text>
         )}
-        {cmd.kind === 'select' && cmd.options && (
-          <text fg={c.muted}>[{cmd.options.join('|')}]</text>
-        )}
-        {cmd.kind === 'input' && cmd.argHint && (
-          <text fg={c.muted}>{cmd.argHint}</text>
-        )}
+        {usage && <text fg={c.muted}>{usage}</text>}
         <text fg={c.dim}>{cmd.description}</text>
       </box>
     )
   })
 
-  const needsScroll = matches.length > MAX_VISIBLE
+  const countLabel = matches.length > MAX_VISIBLE
+    ? `${start + 1}-${end} of ${matches.length} commands`
+    : `${matches.length} commands`
 
   return (
-    <box flexDirection="column" paddingLeft={3}>
-      {needsScroll ? (
-        <scrollbox ref={scrollRef} height={MAX_VISIBLE} focused={false}>
-          {list}
-        </scrollbox>
-      ) : list}
+    <box flexDirection="column" paddingLeft={3} flexShrink={0}>
+      {list}
       <box paddingLeft={1}>
         <text fg={c.muted}>
-          {matches.length} commands  {shortcutLabel('autocomplete:accept', { context: 'Autocomplete', config: keybindingConfig })} complete  Up/Down navigate  {shortcutLabel('select:accept', { context: 'Select', config: keybindingConfig })} run
+          {countLabel}  {shortcutLabel('autocomplete:accept', { context: 'Autocomplete', config: keybindingConfig })} complete  Up/Down navigate  {shortcutLabel('select:accept', { context: 'Select', config: keybindingConfig })} run
         </text>
       </box>
     </box>
   )
+}
+
+export function visibleWindow(
+  total: number,
+  selectedIndex: number,
+  maxVisible = MAX_VISIBLE,
+): { start: number; end: number } {
+  if (total <= 0 || maxVisible <= 0) {
+    return { start: 0, end: 0 }
+  }
+
+  const size = Math.min(total, maxVisible)
+  const selected = Math.min(Math.max(selectedIndex, 0), total - 1)
+  const centeredStart = selected - Math.floor(size / 2)
+  const start = Math.min(Math.max(centeredStart, 0), total - size)
+  return { start, end: start + size }
+}
+
+function usageForCommand(cmd: CommandDef): string | undefined {
+  if (cmd.usage?.trim()) {
+    return cmd.usage.trim()
+  }
+  if (cmd.kind === 'select' && cmd.options?.length) {
+    return cmd.options.join('|')
+  }
+  if (cmd.kind === 'input' && cmd.argHint?.trim()) {
+    return cmd.argHint.trim()
+  }
+  return undefined
 }
 
 function highlightMatch(

@@ -12,6 +12,7 @@ export function reduceCore(state: AppState, action: CoreAction): AppState {
         model: action.model,
         sessionId: action.sessionId,
         cwd: action.cwd,
+        availableModels: action.availableModels ?? state.availableModels,
         permissionMode: action.permissionMode ?? state.permissionMode,
         planWorkflow: action.planWorkflow === undefined ? state.planWorkflow : action.planWorkflow,
         editorMode,
@@ -30,6 +31,8 @@ export function reduceCore(state: AppState, action: CoreAction): AppState {
         streamingText: '',
         streamingThinking: '',
         streamingMessageId: null,
+        thinkingStartedAt: null,
+        lastThinkingDurationMs: null,
         messages: action.messages,
       }
 
@@ -64,25 +67,24 @@ export function reduceCore(state: AppState, action: CoreAction): AppState {
         streamingText: '',
         streamingThinking: '',
         streamingMessageId: action.messageId,
+        thinkingStartedAt: null,
+        lastThinkingDurationMs: null,
       }
 
     case 'STREAM_DELTA':
       return { ...state, streamingText: state.streamingText + action.text }
 
     case 'THINKING_DELTA':
-      return { ...state, streamingThinking: state.streamingThinking + action.thinking }
-
-    case 'STREAM_END':
       return {
         ...state,
-        isStreaming: false,
-        isWaiting: false,
-        streamingText: '',
-        streamingThinking: '',
-        streamingMessageId: null,
+        streamingThinking: state.streamingThinking + action.thinking,
+        thinkingStartedAt: state.thinkingStartedAt ?? Date.now(),
       }
 
-    case 'ASSISTANT_MESSAGE':
+    case 'STREAM_END': {
+      const thinkingDurationMs = state.thinkingStartedAt !== null && state.streamingThinking.trim()
+        ? Date.now() - state.thinkingStartedAt
+        : state.lastThinkingDurationMs
       return {
         ...state,
         isStreaming: false,
@@ -90,6 +92,26 @@ export function reduceCore(state: AppState, action: CoreAction): AppState {
         streamingText: '',
         streamingThinking: '',
         streamingMessageId: null,
+        thinkingStartedAt: null,
+        lastThinkingDurationMs: thinkingDurationMs,
+      }
+    }
+
+    case 'ASSISTANT_MESSAGE': {
+      const thinkingDurationMs = action.thinking
+        ? state.thinkingStartedAt !== null
+          ? Date.now() - state.thinkingStartedAt
+          : state.lastThinkingDurationMs ?? undefined
+        : undefined
+      return {
+        ...state,
+        isStreaming: false,
+        isWaiting: false,
+        streamingText: '',
+        streamingThinking: '',
+        streamingMessageId: null,
+        thinkingStartedAt: null,
+        lastThinkingDurationMs: null,
         messages: [...state.messages, {
           id: action.id,
           role: 'assistant',
@@ -98,8 +120,10 @@ export function reduceCore(state: AppState, action: CoreAction): AppState {
           contentBlocks: action.contentBlocks,
           costUsd: action.costUsd,
           thinking: action.thinking,
+          thinkingDurationMs,
         }],
       }
+    }
 
     case 'PERMISSION_REQUEST':
       return { ...state, permissionRequest: action.request }
@@ -163,6 +187,8 @@ export function reduceCore(state: AppState, action: CoreAction): AppState {
         streamingText: '',
         streamingThinking: '',
         streamingMessageId: null,
+        thinkingStartedAt: null,
+        lastThinkingDurationMs: null,
         messages: [...state.messages, {
           id: `err-${Date.now()}`,
           role: 'system',

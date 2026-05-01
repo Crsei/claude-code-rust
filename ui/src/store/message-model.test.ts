@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { visibleWindow } from '../components/CommandHint.js'
 import { buildRenderItems, type RawMessage } from './message-model.js'
 
 function toolUse(id: string, name: string, input: any, timestamp: number): RawMessage {
@@ -154,5 +155,43 @@ describe('buildRenderItems', () => {
       expect(items[0].inputDetail).not.toContain('{"question"')
       expect(items[0].inputSummary).not.toContain('{"question"')
     }
+  })
+
+  test('carries thinking duration to assistant and streaming render items', () => {
+    const items = buildRenderItems([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'done',
+        thinking: 'working it out',
+        thinkingDurationMs: 2400,
+        timestamp: 1,
+      },
+    ], {
+      viewMode: 'prompt',
+      isBusy: false,
+      streamingThinking: 'still thinking',
+      streamingThinkingDurationMs: 1100,
+    })
+
+    const assistant = items.find(item => item.type === 'assistant_text')
+    expect(assistant?.type).toBe('assistant_text')
+    if (assistant?.type === 'assistant_text') {
+      expect(assistant.thinkingDurationMs).toBe(2400)
+    }
+
+    const streaming = items.find(item => item.type === 'streaming')
+    expect(streaming?.type).toBe('streaming')
+    if (streaming?.type === 'streaming') {
+      expect(streaming.thinkingDurationMs).toBe(1100)
+    }
+  })
+})
+
+describe('visibleWindow', () => {
+  test('keeps selected command visible after scrolling past the first page', () => {
+    expect(visibleWindow(30, 0, 10)).toEqual({ start: 0, end: 10 })
+    expect(visibleWindow(30, 14, 10)).toEqual({ start: 9, end: 19 })
+    expect(visibleWindow(30, 29, 10)).toEqual({ start: 20, end: 30 })
   })
 })

@@ -178,17 +178,12 @@ pub fn plan_workflow_file_path_global() -> PathBuf {
 /// Resolve the plan file the current session should read/write.
 ///
 /// Priority:
-///   1. If `{cwd}/.cc-rust/plan.md` already exists → use it (idempotent).
-///   2. Else if `{cwd}/.cc-rust/` or `{cwd}/CLAUDE.md` is present → project path.
-///   3. Else → global `{data_root}/plan.md`.
+///   1. If `cwd` or an ancestor has a project `.cc-rust/` or `CLAUDE.md`,
+///      use that workspace's `.cc-rust/plan.md`.
+///   2. Else use global `{data_root}/plan.md`.
 pub fn current_plan_file_path(cwd: &Path) -> PathBuf {
-    let project = plan_file_path_project(cwd);
-    if project.exists() {
-        return project;
-    }
-    let has_project_marker = cwd.join(".cc-rust").is_dir() || cwd.join("CLAUDE.md").is_file();
-    if has_project_marker {
-        project
+    if let Some(root) = find_plan_project_root(cwd) {
+        plan_file_path_project(&root)
     } else {
         plan_file_path_global()
     }
@@ -196,16 +191,33 @@ pub fn current_plan_file_path(cwd: &Path) -> PathBuf {
 
 /// Resolve the workflow record path matching [`current_plan_file_path`].
 pub fn current_plan_workflow_file_path(cwd: &Path) -> PathBuf {
-    let project = plan_workflow_file_path_project(cwd);
-    if project.exists() {
-        return project;
-    }
-    let plan = current_plan_file_path(cwd);
-    if plan.starts_with(cwd.join(".cc-rust")) {
-        plan_workflow_file_path_project(cwd)
+    if let Some(root) = find_plan_project_root(cwd) {
+        plan_workflow_file_path_project(&root)
     } else {
         plan_workflow_file_path_global()
     }
+}
+
+fn find_plan_project_root(cwd: &Path) -> Option<PathBuf> {
+    cwd.ancestors()
+        .find(|candidate| has_project_plan_marker(candidate))
+        .map(Path::to_path_buf)
+}
+
+fn has_project_plan_marker(candidate: &Path) -> bool {
+    if candidate.join("CLAUDE.md").is_file() {
+        return true;
+    }
+
+    let marker = candidate.join(".cc-rust");
+    marker.is_dir() && !is_global_cc_rust_dir(&marker)
+}
+
+fn is_global_cc_rust_dir(path: &Path) -> bool {
+    path == data_root()
+        || dirs::home_dir()
+            .map(|home| path == home.join(".cc-rust"))
+            .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -395,6 +407,38 @@ mod tests {
         let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/should-not-be-used");
         assert_eq!(
             current_plan_file_path(tmp.path()),
+            tmp.path().join(".cc-rust").join("plan.md")
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn current_plan_uses_workspace_root_from_nested_cwd() {
+        let tmp = tempfile::tempdir().unwrap();
+        let nested = tmp.path().join("a").join("b");
+        std::fs::create_dir_all(tmp.path().join(".cc-rust")).unwrap();
+        std::fs::create_dir_all(&nested).unwrap();
+        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/should-not-be-used");
+        assert_eq!(
+            current_plan_file_path(&nested),
+            tmp.path().join(".cc-rust").join("plan.md")
+        );
+        assert_eq!(
+            current_plan_workflow_file_path(&nested),
+            tmp.path().join(".cc-rust").join("plan-workflow.json")
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn current_plan_uses_claude_md_ancestor_as_workspace_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let nested = tmp.path().join("src").join("module");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(tmp.path().join("CLAUDE.md"), "# instructions\n").unwrap();
+        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/should-not-be-used");
+        assert_eq!(
+            current_plan_file_path(&nested),
             tmp.path().join(".cc-rust").join("plan.md")
         );
     }

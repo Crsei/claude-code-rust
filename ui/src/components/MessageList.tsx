@@ -36,7 +36,15 @@ export function MessageList({
   viewMode,
 }: MessageListProps) {
   const scrollRef = useRef<any>(null)
-  const { keybindingConfig, messages, isStreaming, isWaiting, streamingText, streamingThinking } = useAppState()
+  const {
+    keybindingConfig,
+    messages,
+    isStreaming,
+    isWaiting,
+    streamingText,
+    streamingThinking,
+    thinkingStartedAt,
+  } = useAppState()
 
   const items = useMemo(
     () => buildRenderItems(messages, {
@@ -44,8 +52,9 @@ export function MessageList({
       isBusy: isStreaming || isWaiting,
       streamingText,
       streamingThinking,
+      streamingThinkingDurationMs: thinkingStartedAt !== null ? Date.now() - thinkingStartedAt : undefined,
     }),
-    [isStreaming, isWaiting, messages, streamingText, streamingThinking, viewMode],
+    [isStreaming, isWaiting, messages, streamingText, streamingThinking, thinkingStartedAt, viewMode],
   )
 
   const itemCount = items.length

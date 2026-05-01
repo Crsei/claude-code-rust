@@ -161,6 +161,7 @@ impl HeadlessRuntime {
             model,
             cwd: self.engine.cwd().to_string(),
             permission_mode: app_state.tool_permission_context.mode.as_str().to_string(),
+            available_models: app_state.settings.available_models.clone(),
             plan_workflow: app_state.plan_workflow.clone(),
             editor_mode: app_state.settings.editor_mode.clone(),
             view_mode: app_state.settings.view_mode.clone(),

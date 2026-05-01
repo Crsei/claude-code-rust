@@ -540,6 +540,13 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         &hardcoded_default,
         &merged_config.available_models,
     );
+    let persisted_plan_workflow = match crate::plan_workflow::load(std::path::Path::new(&cwd)) {
+        Ok(record) => record,
+        Err(e) => {
+            warn!(error = %e, "failed to load persisted plan workflow");
+            None
+        }
+    };
 
     // Mark CLI overrides (model / verbose) in the source map so /config show
     // reports them correctly.
@@ -601,7 +608,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         effort_value: merged_config.effort_level.clone(),
         team_context: None,
         hooks: merged_config.hooks.clone(),
-        plan_workflow: None,
+        plan_workflow: persisted_plan_workflow,
         kairos_active: false,
         is_brief_only: false,
         is_assistant_mode: false,
