@@ -70,6 +70,16 @@ impl PtySession {
     /// If `strip_keys` is true, all API key env vars are cleared so the binary
     /// runs in offline mode (useful for UI-only tests).
     pub fn spawn(args: &[&str], cols: u16, rows: u16, strip_keys: bool) -> Self {
+        Self::spawn_with_env(args, cols, rows, strip_keys, &[])
+    }
+
+    pub fn spawn_with_env(
+        args: &[&str],
+        cols: u16,
+        rows: u16,
+        strip_keys: bool,
+        envs: &[(&str, &str)],
+    ) -> Self {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -92,6 +102,10 @@ impl PtySession {
             cmd.env("OPENROUTER_API_KEY", "");
             cmd.env("GOOGLE_API_KEY", "");
             cmd.env("DEEPSEEK_API_KEY", "");
+        }
+
+        for (key, value) in envs {
+            cmd.env(key, value);
         }
 
         let child = pair.slave.spawn_command(cmd).expect("spawn in pty");

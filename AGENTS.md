@@ -102,3 +102,4 @@ ApiClient::from_backend()
 - 每次写完代码，编译过后查有没有 warning，解决 warning（必须保证未使用的都在代码中起作用），然后构建相应的 e2e test
 - Rust TUI 已知问题记录在 `docs/KNOWN_ISSUES.md`，用户反馈的问题追加到该文件
 - Codex backend 当前行为看 `docs/codex-backend.md`；历史调研笔记已归档到 `docs/archive/implemented/codex-agent.md`
+- 注意目前阶段修改UI代码只修改rust/src/ui端的代码

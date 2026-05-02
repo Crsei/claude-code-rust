@@ -5,6 +5,9 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
 use ratatui::Frame;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
 use crate::config::settings::StatusLineSettings;
 use crate::keybindings::KeybindingRegistry;
@@ -31,6 +34,67 @@ use crate::voice::{VoiceController, VoiceEvent};
 /// allowed to take up. Arbitrary but small so a runaway script can't
 /// eat the messages pane.
 const STATUS_LINE_MAX_LINES: usize = 3;
+const TRUSTED_WORKSPACES_FILE: &str = "trusted-workspaces.json";
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct TrustedWorkspaces {
+    #[serde(default)]
+    workspaces: BTreeSet<String>,
+}
+
+fn trusted_workspaces_path() -> PathBuf {
+    crate::config::paths::data_root().join(TRUSTED_WORKSPACES_FILE)
+}
+
+fn normalize_workspace_path(path: &Path) -> String {
+    let resolved = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut normalized = resolved.to_string_lossy().replace('\\', "/");
+    while normalized.len() > 1 && normalized.ends_with('/') && !normalized.ends_with(":/") {
+        normalized.pop();
+    }
+    if cfg!(windows) {
+        normalized.make_ascii_lowercase();
+    }
+    normalized
+}
+
+fn load_trusted_workspaces() -> TrustedWorkspaces {
+    let path = trusted_workspaces_path();
+    let Ok(bytes) = std::fs::read(path) else {
+        return TrustedWorkspaces::default();
+    };
+    serde_json::from_slice(&bytes).unwrap_or_default()
+}
+
+fn is_workspace_trusted(cwd: &str) -> bool {
+    if cwd.trim().is_empty() {
+        return false;
+    }
+    let normalized = normalize_workspace_path(Path::new(cwd));
+    load_trusted_workspaces().workspaces.contains(&normalized)
+}
+
+fn remember_trusted_workspace(cwd: &str) {
+    if cwd.trim().is_empty() {
+        return;
+    }
+
+    let mut trusted = load_trusted_workspaces();
+    if !trusted
+        .workspaces
+        .insert(normalize_workspace_path(Path::new(cwd)))
+    {
+        return;
+    }
+
+    let path = trusted_workspaces_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(bytes) = serde_json::to_vec_pretty(&trusted) {
+        let _ = std::fs::write(path, bytes);
+    }
+}
 
 /// Actions produced by the app in response to user input.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -287,10 +351,8 @@ impl App {
 
     pub fn set_cwd(&mut self, cwd: String) {
         self.cwd = cwd;
-        if !self.cwd.is_empty() {
-            self.workspace_trust_pending = true;
-            self.workspace_trust_selection = 0;
-        }
+        self.workspace_trust_pending = !self.cwd.is_empty() && !is_workspace_trusted(&self.cwd);
+        self.workspace_trust_selection = 0;
         self.dirty = true;
     }
 
@@ -712,7 +774,9 @@ impl App {
                 self.command_palette.close();
                 return AppAction::None;
             }
-            (_, KeyCode::Up | KeyCode::Down) if self.command_palette.active() => {
+            (_, KeyCode::Up | KeyCode::Down | KeyCode::PageUp | KeyCode::PageDown)
+                if self.command_palette.active() =>
+            {
                 self.command_palette.handle_key(key.code);
                 return AppAction::None;
             }
@@ -930,9 +994,9 @@ impl App {
         let bottom_chunks = Layout::vertical([
             Constraint::Length(if self.is_streaming { 1 } else { 0 }),
             Constraint::Length(if has_suggestions { 1 } else { 0 }),
+            Constraint::Length(1),
             Constraint::Length(command_palette_height),
             Constraint::Length(command_arg_help_height),
-            Constraint::Length(1),
             Constraint::Length(status_height),
         ])
         .split(bottom_area);
@@ -946,23 +1010,23 @@ impl App {
             self.render_suggestions(bottom_chunks[1], frame.buffer_mut());
         }
 
+        let argument_hint = CommandPalette::argument_hint(&self.prompt.input, cwd_path);
+        self.prompt.render_with_hint(
+            bottom_chunks[2],
+            frame.buffer_mut(),
+            &self.theme,
+            argument_hint.as_deref(),
+        );
+
         self.command_palette
-            .render(bottom_chunks[2], frame.buffer_mut(), &self.theme);
+            .render(bottom_chunks[3], frame.buffer_mut(), &self.theme);
 
         CommandPalette::render_argument_help(
             &self.prompt.input,
             cwd_path,
-            bottom_chunks[3],
-            frame.buffer_mut(),
-            &self.theme,
-        );
-
-        let argument_hint = CommandPalette::argument_hint(&self.prompt.input, cwd_path);
-        self.prompt.render_with_hint(
             bottom_chunks[4],
             frame.buffer_mut(),
             &self.theme,
-            argument_hint.as_deref(),
         );
 
         self.render_status_bar(bottom_chunks[5], frame.buffer_mut(), &custom_lines);
@@ -977,7 +1041,7 @@ impl App {
     fn handle_workspace_trust_key(&mut self, key: KeyEvent) -> AppAction {
         match key.code {
             KeyCode::Char('1') => {
-                self.workspace_trust_pending = false;
+                self.accept_workspace_trust();
             }
             KeyCode::Char('2') | KeyCode::Esc => {
                 self.should_quit = true;
@@ -991,7 +1055,7 @@ impl App {
             }
             KeyCode::Enter => {
                 if self.workspace_trust_selection == 0 {
-                    self.workspace_trust_pending = false;
+                    self.accept_workspace_trust();
                 } else {
                     self.should_quit = true;
                     return AppAction::Quit;
@@ -1000,6 +1064,12 @@ impl App {
             _ => {}
         }
         AppAction::None
+    }
+
+    fn accept_workspace_trust(&mut self) {
+        remember_trusted_workspace(&self.cwd);
+        self.workspace_trust_pending = false;
+        self.dirty = true;
     }
 
     fn scroll_up(&mut self, lines: usize) {
@@ -1624,6 +1694,31 @@ mod tests {
     use crate::types::message::{MessageContent, UserMessage};
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
+    use serial_test::serial;
+    use std::path::Path;
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn set_path(key: &'static str, value: &Path) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = self.previous.as_ref() {
+                std::env::set_var(self.key, previous);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
 
     #[test]
     fn render_places_prompt_after_compact_welcome() {
@@ -1691,6 +1786,32 @@ mod tests {
     }
 
     #[test]
+    fn command_palette_renders_below_prompt_input() {
+        let mut app = App::new();
+        app.prompt.input = "/".to_string();
+        app.prompt.cursor_position = app.prompt.input.len();
+        app.sync_command_palette();
+        let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
+
+        terminal.draw(|frame| app.render(frame)).expect("draw");
+
+        let content = buffer_to_lines(terminal.backend().buffer(), 100, 24);
+        let prompt_row = content
+            .iter()
+            .position(|line| line.trim_start().starts_with("> /"))
+            .expect("prompt row");
+        let commands_row = content
+            .iter()
+            .position(|line| line.contains(" Commands "))
+            .expect("commands row");
+        assert!(
+            commands_row > prompt_row,
+            "commands palette should render below the prompt input"
+        );
+    }
+
+    #[test]
+    #[serial]
     fn argument_entry_renders_parameter_help_near_input() {
         let mut app = App::new();
         app.prompt.input = "/plugin ".to_string();
@@ -1709,34 +1830,55 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn render_workspace_trust_prompt_after_cwd_is_set() {
+        let home = tempfile::tempdir().expect("cc-rust home");
+        let _home_guard = EnvGuard::set_path("CC_RUST_HOME", home.path());
+        let workspace = tempfile::tempdir().expect("workspace");
+        let cwd = workspace.path().display().to_string();
+
         let mut app = App::new();
-        app.set_cwd("F:\\temp\\gomoku_subagent".to_string());
+        app.set_cwd(cwd);
         let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
 
         terminal.draw(|frame| app.render(frame)).expect("draw");
 
         let content = buffer_to_lines(terminal.backend().buffer(), 100, 24).join("\n");
         assert!(content.contains("Accessing workspace:"));
-        assert!(content.contains("F:\\temp\\gomoku_subagent"));
         assert!(content.contains("Yes, I trust this folder"));
         assert!(content.contains("No, exit"));
     }
 
     #[test]
-    fn workspace_trust_prompt_accepts_or_exits() {
+    #[serial]
+    fn workspace_trust_prompt_accepts_persists_and_exits() {
+        let home = tempfile::tempdir().expect("cc-rust home");
+        let _home_guard = EnvGuard::set_path("CC_RUST_HOME", home.path());
+        let workspace = tempfile::tempdir().expect("workspace");
+        let cwd = workspace.path().display().to_string();
+
         let mut app = App::new();
-        app.set_cwd("F:\\temp\\gomoku_subagent".to_string());
+        app.set_cwd(cwd.clone());
+        assert!(app.workspace_trust_pending);
 
         assert_eq!(send_key(&mut app, KeyCode::Enter), AppAction::None);
+        assert!(!app.workspace_trust_pending);
+        assert!(trusted_workspaces_path().exists());
+
+        let mut reopened = App::new();
+        reopened.set_cwd(cwd);
+        assert!(!reopened.workspace_trust_pending);
+
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
-        terminal.draw(|frame| app.render(frame)).expect("draw");
+        terminal.draw(|frame| reopened.render(frame)).expect("draw");
         let content = buffer_to_lines(terminal.backend().buffer(), 80, 24).join("\n");
         assert!(content.contains("Claude Code"));
         assert!(!content.contains("Quick safety check"));
 
+        let other_workspace = tempfile::tempdir().expect("other workspace");
         let mut app = App::new();
-        app.set_cwd("F:\\temp\\gomoku_subagent".to_string());
+        app.set_cwd(other_workspace.path().display().to_string());
+        assert!(app.workspace_trust_pending);
         assert_eq!(send_key(&mut app, KeyCode::Esc), AppAction::Quit);
         assert!(app.should_quit());
     }

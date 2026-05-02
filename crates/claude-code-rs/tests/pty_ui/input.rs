@@ -31,6 +31,62 @@ fn typed_text_appears() {
     );
 }
 
+#[test]
+fn slash_palette_renders_below_input() {
+    let home = tempfile::tempdir().expect("cc-rust home");
+    let home_path = home.path().to_str().expect("utf-8 temp path");
+    let session = PtySession::spawn_with_env(
+        default_args(),
+        120,
+        40,
+        true,
+        &[("CC_RUST_HOME", home_path)],
+    );
+    std::thread::sleep(RENDER_WAIT);
+
+    // First run in a workspace can show the trust gate before the prompt.
+    session.send_raw(b"\r");
+    std::thread::sleep(Duration::from_millis(500));
+
+    session.send_raw(b"/");
+    let mut screen = String::new();
+    for _ in 0..20 {
+        screen = session.current_screen();
+        if screen.contains(" Commands ")
+            && screen
+                .lines()
+                .any(|line| line.trim_start().starts_with(">"))
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    let lines: Vec<&str> = screen.lines().collect();
+    let prompt_row = lines
+        .iter()
+        .position(|line| line.trim_start().starts_with(">"));
+    let commands_row = lines.iter().position(|line| line.contains(" Commands "));
+
+    session.send_ctrl_c();
+    std::thread::sleep(Duration::from_millis(300));
+    session.send_ctrl_c();
+    let output = session.finish(QUICK_TIMEOUT, "input_slash_palette_below");
+
+    let prompt_row = prompt_row.unwrap_or_else(|| panic!("prompt row missing, screen:\n{screen}"));
+    let commands_row =
+        commands_row.unwrap_or_else(|| panic!("commands palette missing, screen:\n{screen}"));
+    assert!(
+        commands_row > prompt_row,
+        "commands palette should render below prompt input, screen:\n{}",
+        screen
+    );
+    assert!(
+        !output.contains("panicked"),
+        "slash palette should not crash"
+    );
+}
+
 /// Ctrl+D should exit the TUI cleanly.
 #[test]
 fn ctrl_d_exits() {

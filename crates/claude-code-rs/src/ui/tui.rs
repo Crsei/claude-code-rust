@@ -40,10 +40,40 @@ use super::permissions::PermissionChoice;
 
 /// Tracks the partial assistant message being streamed.
 struct StreamingState {
-    /// Accumulated text content from content_block_delta events.
-    text: String,
+    /// Accumulated content blocks from streaming events.
+    blocks: Vec<ContentBlock>,
     /// Whether we are inside a content block.
     active: bool,
+}
+
+impl StreamingState {
+    fn new() -> Self {
+        Self {
+            blocks: Vec::new(),
+            active: false,
+        }
+    }
+
+    fn clear(&mut self) {
+        self.blocks.clear();
+        self.active = false;
+    }
+
+    fn is_partial(&self) -> bool {
+        self.active || !self.blocks.is_empty()
+    }
+
+    fn ensure_block(&mut self, index: usize, fallback: ContentBlock) -> &mut ContentBlock {
+        while self.blocks.len() <= index {
+            self.blocks.push(ContentBlock::Text {
+                text: String::new(),
+            });
+        }
+        if matches!(self.blocks[index], ContentBlock::Text { ref text } if text.is_empty()) {
+            self.blocks[index] = fallback;
+        }
+        &mut self.blocks[index]
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -172,10 +202,7 @@ pub async fn run_tui(
     let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<EngineEvent>();
     install_tui_permission_callback(&engine, engine_tx.clone());
     let mut pending_permission_response: Option<oneshot::Sender<String>> = None;
-    let mut streaming_state = StreamingState {
-        text: String::new(),
-        active: false,
-    };
+    let mut streaming_state = StreamingState::new();
 
     // ── Spawn terminal event reader thread ─────────────────────────
     //
@@ -460,18 +487,62 @@ fn handle_sdk_message(app: &mut App, msg: SdkMessage, ss: &mut StreamingState) {
 
         SdkMessage::StreamEvent(sdk_stream) => {
             match sdk_stream.event {
-                StreamEvent::ContentBlockStart { .. } => {
-                    if !ss.active {
+                StreamEvent::ContentBlockStart {
+                    index,
+                    content_block,
+                } => {
+                    let is_new_message = !ss.active;
+                    if is_new_message {
                         // First content block — start a new streaming message
-                        ss.text.clear();
+                        ss.blocks.clear();
                         ss.active = true;
-                        app.add_message(make_partial_assistant(""));
+                    }
+                    while ss.blocks.len() <= index {
+                        ss.blocks.push(ContentBlock::Text {
+                            text: String::new(),
+                        });
+                    }
+                    ss.blocks[index] = content_block;
+                    if is_new_message {
+                        app.add_message(make_partial_assistant(&ss.blocks));
+                    } else {
+                        app.replace_last_message(make_partial_assistant(&ss.blocks));
                     }
                 }
-                StreamEvent::ContentBlockDelta { ref delta, .. } => {
+                StreamEvent::ContentBlockDelta { index, ref delta } => {
+                    let is_new_message = !ss.active && ss.blocks.is_empty();
+                    if is_new_message {
+                        ss.active = true;
+                    }
                     if let Some(t) = delta.get("text").and_then(|v| v.as_str()) {
-                        ss.text.push_str(t);
-                        app.replace_last_message(make_partial_assistant(&ss.text));
+                        if let ContentBlock::Text { text } = ss.ensure_block(
+                            index,
+                            ContentBlock::Text {
+                                text: String::new(),
+                            },
+                        ) {
+                            text.push_str(t);
+                        }
+                        if is_new_message {
+                            app.add_message(make_partial_assistant(&ss.blocks));
+                        } else {
+                            app.replace_last_message(make_partial_assistant(&ss.blocks));
+                        }
+                    } else if let Some(t) = delta.get("thinking").and_then(|v| v.as_str()) {
+                        if let ContentBlock::Thinking { thinking, .. } = ss.ensure_block(
+                            index,
+                            ContentBlock::Thinking {
+                                thinking: String::new(),
+                                signature: None,
+                            },
+                        ) {
+                            thinking.push_str(t);
+                        }
+                        if is_new_message {
+                            app.add_message(make_partial_assistant(&ss.blocks));
+                        } else {
+                            app.replace_last_message(make_partial_assistant(&ss.blocks));
+                        }
                     }
                 }
                 StreamEvent::MessageStop => {
@@ -484,10 +555,9 @@ fn handle_sdk_message(app: &mut App, msg: SdkMessage, ss: &mut StreamingState) {
 
         SdkMessage::Assistant(assistant) => {
             // Replace the partial streaming message with the final one.
-            if ss.active || !ss.text.is_empty() {
+            if ss.is_partial() {
                 app.replace_last_message(Message::Assistant(assistant.message));
-                ss.text.clear();
-                ss.active = false;
+                ss.clear();
             } else {
                 app.add_message(Message::Assistant(assistant.message));
             }
@@ -515,8 +585,7 @@ fn handle_sdk_message(app: &mut App, msg: SdkMessage, ss: &mut StreamingState) {
 
         SdkMessage::Result(result) => {
             // Finalize any leftover streaming state
-            ss.text.clear();
-            ss.active = false;
+            ss.clear();
 
             app.set_streaming(false);
             app.update_session_cost(result.total_cost_usd);
@@ -576,14 +645,12 @@ fn handle_sdk_message(app: &mut App, msg: SdkMessage, ss: &mut StreamingState) {
 }
 
 /// Build a partial assistant message for streaming display.
-fn make_partial_assistant(text: &str) -> Message {
+fn make_partial_assistant(blocks: &[ContentBlock]) -> Message {
     Message::Assistant(AssistantMessage {
         uuid: uuid::Uuid::new_v4(),
         timestamp: now_ts(),
         role: "assistant".to_string(),
-        content: vec![ContentBlock::Text {
-            text: text.to_string(),
-        }],
+        content: blocks.to_vec(),
         usage: None,
         stop_reason: None,
         is_api_error_message: false,
@@ -882,4 +949,95 @@ fn add_system_error(app: &mut App, text: &str) {
         },
         content: text.to_string(),
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::sdk_types::SdkStreamEvent;
+    use serde_json::json;
+
+    fn stream_event(event: StreamEvent) -> SdkMessage {
+        SdkMessage::StreamEvent(SdkStreamEvent {
+            event,
+            session_id: "test-session".to_string(),
+            uuid: uuid::Uuid::new_v4(),
+        })
+    }
+
+    fn last_assistant_blocks(app: &App) -> &[ContentBlock] {
+        match app.messages().last().expect("message exists") {
+            Message::Assistant(assistant) => &assistant.content,
+            other => panic!("expected assistant message, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn tui_streaming_preserves_empty_thinking_block_without_replacing_user_prompt() {
+        let mut app = App::new();
+        app.add_message(create_user_message("run a tool"));
+        let mut state = StreamingState::new();
+
+        handle_sdk_message(
+            &mut app,
+            stream_event(StreamEvent::ContentBlockStart {
+                index: 0,
+                content_block: ContentBlock::Thinking {
+                    thinking: String::new(),
+                    signature: None,
+                },
+            }),
+            &mut state,
+        );
+
+        assert_eq!(app.messages().len(), 2);
+        assert!(matches!(app.messages()[0], Message::User(_)));
+        match &last_assistant_blocks(&app)[0] {
+            ContentBlock::Thinking { thinking, .. } => assert_eq!(thinking, ""),
+            other => panic!("expected empty thinking block, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn tui_streaming_keeps_tool_use_after_empty_thinking_block() {
+        let mut app = App::new();
+        app.add_message(create_user_message("read cargo"));
+        let mut state = StreamingState::new();
+
+        handle_sdk_message(
+            &mut app,
+            stream_event(StreamEvent::ContentBlockStart {
+                index: 0,
+                content_block: ContentBlock::Thinking {
+                    thinking: String::new(),
+                    signature: None,
+                },
+            }),
+            &mut state,
+        );
+        handle_sdk_message(
+            &mut app,
+            stream_event(StreamEvent::ContentBlockStart {
+                index: 1,
+                content_block: ContentBlock::ToolUse {
+                    id: "call_empty_reasoning".to_string(),
+                    name: "Read".to_string(),
+                    input: json!({"file_path": "Cargo.toml"}),
+                },
+            }),
+            &mut state,
+        );
+
+        let blocks = last_assistant_blocks(&app);
+        assert_eq!(blocks.len(), 2);
+        assert!(matches!(blocks[0], ContentBlock::Thinking { .. }));
+        match &blocks[1] {
+            ContentBlock::ToolUse { id, name, input } => {
+                assert_eq!(id, "call_empty_reasoning");
+                assert_eq!(name, "Read");
+                assert_eq!(input["file_path"], "Cargo.toml");
+            }
+            other => panic!("expected tool use block, got {:?}", other),
+        }
+    }
 }
