@@ -57,7 +57,7 @@ rust/
 │   ├── daemon/              daemon + Team Memory 代理
 │   ├── web/                 Web 模式静态资源与路由支持
 │   ├── services/            tool_use_summary / session_memory / prompt_suggestion / lsp_lifecycle
-│   ├── ui/                  Rust TUI (ratatui + crossterm)
+│   ├── crates/claude-code-rs/src/ui/  Rust TUI (ratatui + crossterm)
 │   ├── utils/               工具函数
 │   └── shutdown.rs          优雅关闭
 └── docs/
@@ -71,7 +71,7 @@ rust/
 
 Rust TUI 通过 `--headless` 模式与 Rust 后端通信:
 - Rust 端: `src/ipc/protocol.rs` (协议类型) + `src/ipc/headless.rs` (事件循环)
-- 这里仅指 `src/ui/` 中的 Rust TUI；不要再引入其他非 Rust TUI 的表述
+- 这里仅指 `crates/claude-code-rs/src/ui/` 中的 Rust TUI；不要再引入其他非 Rust TUI 的表述
 
 ### 已移除的模块 (完整版有)
 
@@ -102,4 +102,5 @@ ApiClient::from_backend()
 - 每次写完代码，编译过后查有没有 warning，解决 warning（必须保证未使用的都在代码中起作用），然后构建相应的 e2e test
 - Rust TUI 已知问题记录在 `docs/KNOWN_ISSUES.md`，用户反馈的问题追加到该文件
 - Codex backend 当前行为看 `docs/codex-backend.md`；历史调研笔记已归档到 `docs/archive/implemented/codex-agent.md`
-- 注意目前阶段修改UI代码只修改rust/src/ui端的代码
+- 注意目前阶段修改 UI 代码只修改 `crates/claude-code-rs/src/ui/` 端的代码
+- Windows 环境下如果 `omx explore` 的只读 harness 不可用，直接用 PowerShell + `rg` 做等价只读定位，不要把它当成仓库问题
