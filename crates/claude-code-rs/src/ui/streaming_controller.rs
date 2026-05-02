@@ -1,21 +1,56 @@
-//! Placeholder: streaming controller.
-//!
-//! Purpose:
-//! - Isolate partial assistant output, thinking deltas, tool-call deltas,
-//!   final-message replacement, and commit timing from `tui.rs`.
-//! - Keep streaming state deterministic for tests and transcript replay.
-//!
-//! Reference paths:
-//! - docs/ui-parity-update-plan.md
-//! - crates/claude-code-rs/src/ui/tui.rs
-//! - crates/claude-code-rs/src/ui/messages.rs
-//! - ui/src/components/messages/StreamingMessage.tsx
-//! - ui/src/store/message-model.ts
-//! - F:/AIclassmanager/cc/codex/codex-rs/tui/src/streaming/mod.rs
-//! - F:/AIclassmanager/cc/codex/codex-rs/tui/src/streaming/controller.rs
-//! - F:/AIclassmanager/cc/codex/codex-rs/tui/src/streaming/commit_tick.rs
-//!
-//! Implementation note:
-//! - The first version should preserve existing `StreamingState` behavior
-//!   exactly, then add chunking and commit ticks.
+//! Deterministic streaming controller.
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamingDelta {
+    Assistant(String),
+    Thinking(String),
+    ToolCall(String),
+    Final(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StreamingController {
+    assistant: String,
+    thinking: String,
+    tool_call: Option<String>,
+    committed_chars: usize,
+    complete: bool,
+}
+
+impl StreamingController {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn apply(&mut self, delta: StreamingDelta) {
+        match delta {
+            StreamingDelta::Assistant(text) => self.assistant.push_str(&text),
+            StreamingDelta::Thinking(text) => self.thinking.push_str(&text),
+            StreamingDelta::ToolCall(text) => self.tool_call = Some(text),
+            StreamingDelta::Final(text) => {
+                self.assistant = text;
+                self.complete = true;
+            }
+        }
+    }
+
+    pub fn commit_visible(&mut self) -> &str {
+        self.committed_chars = self.assistant.chars().count();
+        &self.assistant
+    }
+
+    pub fn render_lines(&self) -> Vec<String> {
+        let mut lines = vec![format!(
+            "stream complete={} committed={}",
+            self.complete, self.committed_chars
+        )];
+        if !self.thinking.is_empty() {
+            lines.push(format!("thinking: {}", self.thinking));
+        }
+        if let Some(tool) = &self.tool_call {
+            lines.push(format!("tool-delta: {tool}"));
+        }
+        lines.push(format!("assistant: {}", self.assistant));
+        lines
+    }
+}

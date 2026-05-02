@@ -709,8 +709,16 @@ fn file_uri(path: &Path) -> String {
 }
 
 fn display_path(path: &Path, cwd: &Path) -> String {
-    if let Ok(relative) = path.strip_prefix(cwd) {
-        return format!("./{}", normalize_path(relative));
+    if !cwd.as_os_str().is_empty() && cwd != Path::new(".") {
+        if let Ok(relative) = path.strip_prefix(cwd) {
+            return format!("./{}", normalize_path(relative));
+        }
+    }
+
+    if let Ok(current_dir) = std::env::current_dir() {
+        if let Ok(relative) = path.strip_prefix(&current_dir) {
+            return format!("./{}", normalize_path(relative));
+        }
     }
 
     let data_root = cc_config::paths::data_root();

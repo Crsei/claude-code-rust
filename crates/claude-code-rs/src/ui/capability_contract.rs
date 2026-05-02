@@ -1,20 +1,98 @@
-//! Placeholder: UI capability contract.
-//!
-//! Purpose:
-//! - Define the canonical mapping between backend events, frontend commands,
-//!   and visible terminal UI surfaces.
-//! - Use this before wiring new UI panels so `ui/src` and the Rust TUI do not
-//!   drift into incompatible event semantics.
-//!
-//! Reference paths:
-//! - docs/ui-parity-update-plan.md
-//! - ui/src/ipc/protocol.ts
-//! - ui/src/store/app-state.ts
-//! - ui/src/store/app-store.tsx
-//! - crates/claude-code-rs/src/ui/tui.rs
-//! - crates/claude-code-rs/src/ui/app.rs
-//!
-//! Implementation note:
-//! - Keep this file as comments only until the contract is expressed as Rust
-//!   types and covered by IPC contract tests.
+//! Rust-side UI capability contract.
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BackendEventKind {
+    AssistantDelta,
+    ToolProgress,
+    PermissionRequest,
+    SubsystemStatus,
+    AgentUpdate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrontendCommandKind {
+    SubmitPrompt,
+    Abort,
+    ApprovalResponse,
+    OpenPanel,
+    SelectItem,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiSurface {
+    Transcript,
+    BottomPane,
+    ApprovalOverlay,
+    StatusWidget,
+    FeaturePanel,
+    SelectionSurface,
+    ToolActivity,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapabilityMapping {
+    pub event: BackendEventKind,
+    pub command: Option<FrontendCommandKind>,
+    pub surface: UiSurface,
+    pub guarantee: &'static str,
+}
+
+pub fn default_contract() -> Vec<CapabilityMapping> {
+    vec![
+        CapabilityMapping {
+            event: BackendEventKind::AssistantDelta,
+            command: Some(FrontendCommandKind::SubmitPrompt),
+            surface: UiSurface::Transcript,
+            guarantee: "streamed text is visible and replayable",
+        },
+        CapabilityMapping {
+            event: BackendEventKind::ToolProgress,
+            command: Some(FrontendCommandKind::Abort),
+            surface: UiSurface::ToolActivity,
+            guarantee: "running tools expose compact and detailed status",
+        },
+        CapabilityMapping {
+            event: BackendEventKind::PermissionRequest,
+            command: Some(FrontendCommandKind::ApprovalResponse),
+            surface: UiSurface::ApprovalOverlay,
+            guarantee: "missing response defaults to deny",
+        },
+        CapabilityMapping {
+            event: BackendEventKind::SubsystemStatus,
+            command: Some(FrontendCommandKind::OpenPanel),
+            surface: UiSurface::FeaturePanel,
+            guarantee: "subsystem health has a visible entry point",
+        },
+        CapabilityMapping {
+            event: BackendEventKind::AgentUpdate,
+            command: Some(FrontendCommandKind::SelectItem),
+            surface: UiSurface::SelectionSurface,
+            guarantee: "agent choices remain keyboard reachable",
+        },
+    ]
+}
+
+pub fn surface_for_event(event: BackendEventKind) -> UiSurface {
+    default_contract()
+        .into_iter()
+        .find(|mapping| mapping.event == event)
+        .map(|mapping| mapping.surface)
+        .unwrap_or(UiSurface::StatusWidget)
+}
+
+pub fn render_contract_table() -> String {
+    let mut rows = vec!["event | command | surface | guarantee".to_string()];
+    for mapping in default_contract() {
+        rows.push(format!(
+            "{:?} | {} | {:?} | {}",
+            mapping.event,
+            mapping
+                .command
+                .map(|command| format!("{command:?}"))
+                .unwrap_or_else(|| "-".to_string()),
+            mapping.surface,
+            mapping.guarantee
+        ));
+    }
+    rows.join("\n")
+}

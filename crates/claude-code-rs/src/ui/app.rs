@@ -1825,8 +1825,13 @@ mod tests {
         assert!(content.contains(
             "Usage: /plugin <list|installed|disabled|errors|status|enable|disable|uninstall> [id]"
         ));
-        assert!(content.contains("file:///"));
         assert!(content.contains("installed_plugins.json"));
+        assert!(
+            content.contains("~/.cc-rust")
+                || content.contains("$CC_RUST_HOME")
+                || content.contains("file:///"),
+            "expected an editable plugin path, got:\n{content}"
+        );
     }
 
     #[test]

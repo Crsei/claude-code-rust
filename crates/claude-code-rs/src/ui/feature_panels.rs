@@ -1,28 +1,81 @@
-//! Placeholder: full-build feature panels.
-//!
-//! Purpose:
-//! - Collect UI entry points for MCP, agents, teams, LSP diagnostics and
-//!   recommendations, settings, sandbox, plugins, skills, background tasks,
-//!   and subsystem status.
-//! - Ensure every implemented backend feature has an accessible terminal UI
-//!   path before experience-polish work begins.
-//!
-//! Reference paths:
-//! - docs/ui-parity-update-plan.md
-//! - ui/src/components/mcp
-//! - ui/src/components/agents
-//! - ui/src/components/agent-settings
-//! - ui/src/components/TeamPanel.tsx
-//! - ui/src/components/AgentTreePanel.tsx
-//! - ui/src/components/LspRecommendationDialog.tsx
-//! - ui/src/components/Settings
-//! - ui/src/components/sandbox
-//! - ui/src/components/panels
-//! - F:/AIclassmanager/cc/codex/codex-rs/tui/src/chatwidget/plugins.rs
-//! - F:/AIclassmanager/cc/codex/codex-rs/tui/src/chatwidget/skills.rs
-//! - F:/AIclassmanager/cc/codex/codex-rs/tui/src/multi_agents.rs
-//!
-//! Implementation note:
-//! - Prefer thin panels backed by shared state snapshots over panels that call
-//!   backend services directly.
+//! Full-build feature panel registry.
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeaturePanelKind {
+    Mcp,
+    Agents,
+    Teams,
+    Lsp,
+    Settings,
+    Sandbox,
+    Plugins,
+    Skills,
+    Tasks,
+}
+
+impl FeaturePanelKind {
+    pub fn title(self) -> &'static str {
+        match self {
+            FeaturePanelKind::Mcp => "MCP",
+            FeaturePanelKind::Agents => "Agents",
+            FeaturePanelKind::Teams => "Teams",
+            FeaturePanelKind::Lsp => "LSP",
+            FeaturePanelKind::Settings => "Settings",
+            FeaturePanelKind::Sandbox => "Sandbox",
+            FeaturePanelKind::Plugins => "Plugins",
+            FeaturePanelKind::Skills => "Skills",
+            FeaturePanelKind::Tasks => "Tasks",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PanelState {
+    Ready,
+    NeedsConfig,
+    Running,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeaturePanel {
+    pub kind: FeaturePanelKind,
+    pub state: PanelState,
+    pub badge: usize,
+}
+
+pub fn default_panels() -> Vec<FeaturePanel> {
+    [
+        FeaturePanelKind::Mcp,
+        FeaturePanelKind::Agents,
+        FeaturePanelKind::Teams,
+        FeaturePanelKind::Lsp,
+        FeaturePanelKind::Settings,
+        FeaturePanelKind::Sandbox,
+        FeaturePanelKind::Plugins,
+        FeaturePanelKind::Skills,
+        FeaturePanelKind::Tasks,
+    ]
+    .into_iter()
+    .map(|kind| FeaturePanel {
+        kind,
+        state: PanelState::Ready,
+        badge: 0,
+    })
+    .collect()
+}
+
+pub fn render_panel_index(panels: &[FeaturePanel]) -> String {
+    panels
+        .iter()
+        .map(|panel| {
+            let badge = if panel.badge == 0 {
+                String::new()
+            } else {
+                format!(" ({})", panel.badge)
+            };
+            format!("{:<9} {:?}{}", panel.kind.title(), panel.state, badge)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}

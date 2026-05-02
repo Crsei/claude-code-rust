@@ -1,20 +1,48 @@
-//! Placeholder: rich status and account surfaces.
-//!
-//! Purpose:
-//! - Expand from a simple status bar/status-line payload into structured
-//!   visible status for model, cwd, git/worktree, permission mode, sandbox,
-//!   usage, rate limits, cost, running tools, active agents, and subsystems.
-//!
-//! Reference paths:
-//! - docs/ui-parity-update-plan.md
-//! - crates/claude-code-rs/src/ui/status_line_resolver.rs
-//! - crates/claude-code-rs/src/ui/app.rs
-//! - ui/src/components/StatusLine
-//! - ui/src/components/StatusLine.tsx
-//! - ui/src/components/SubsystemStatus.tsx
-//! - F:/AIclassmanager/cc/codex/codex-rs/tui/src/status
-//! - F:/AIclassmanager/cc/codex/codex-rs/tui/src/status_indicator_widget.rs
-//!
-//! Implementation note:
-//! - Keep custom status-line execution separate from built-in status rendering.
+//! Built-in rich status widget.
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct StatusSnapshot {
+    pub model: String,
+    pub cwd: String,
+    pub permission_mode: String,
+    pub sandbox: String,
+    pub cost_usd: f64,
+    pub running_tools: usize,
+    pub active_agents: usize,
+    pub subsystems_ok: bool,
+}
+
+impl StatusSnapshot {
+    pub fn render_line(&self) -> String {
+        format!(
+            "{} | {} | perm={} | sandbox={} | tools={} | agents={} | ${:.4}",
+            self.model,
+            self.cwd,
+            self.permission_mode,
+            self.sandbox,
+            self.running_tools,
+            self.active_agents,
+            self.cost_usd
+        )
+    }
+
+    pub fn render_details(&self) -> String {
+        [
+            format!("model: {}", self.model),
+            format!("cwd: {}", self.cwd),
+            format!("permission: {}", self.permission_mode),
+            format!("sandbox: {}", self.sandbox),
+            format!("running tools: {}", self.running_tools),
+            format!("active agents: {}", self.active_agents),
+            format!(
+                "subsystems: {}",
+                if self.subsystems_ok {
+                    "ok"
+                } else {
+                    "attention"
+                }
+            ),
+        ]
+        .join("\n")
+    }
+}

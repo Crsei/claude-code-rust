@@ -1,22 +1,70 @@
-//! Placeholder: bottom pane container.
-//!
-//! Purpose:
-//! - Own the prompt composer plus a stack of temporary views such as command
-//!   popups, selection lists, approval overlays, MCP elicitation, and
-//!   request-user-input prompts.
-//! - Move focused input routing out of `App` while leaving process-level
-//!   decisions such as quit and interrupt at the parent level.
-//!
-//! Reference paths:
-//! - docs/ui-parity-update-plan.md
-//! - crates/claude-code-rs/src/ui/prompt_input.rs
-//! - crates/claude-code-rs/src/ui/permissions.rs
-//! - F:/AIclassmanager/cc/codex/codex-rs/tui/src/bottom_pane/mod.rs
-//! - F:/AIclassmanager/cc/codex/codex-rs/tui/src/bottom_pane/bottom_pane_view.rs
-//! - ui/src/components/PromptInput
-//! - ui/src/components/permissions
-//!
-//! Implementation note:
-//! - Start with a view-stack trait and one approval view before moving the
-//!   composer into this module.
+//! Bottom pane container and view stack.
 
+use super::approval_overlay::ApprovalOverlay;
+use super::chat_composer::ChatComposerState;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BottomPaneView {
+    Composer,
+    Approval(ApprovalOverlay),
+    Selection { title: String, count: usize },
+    Status { message: String },
+}
+
+impl BottomPaneView {
+    pub fn name(&self) -> &'static str {
+        match self {
+            BottomPaneView::Composer => "composer",
+            BottomPaneView::Approval(_) => "approval",
+            BottomPaneView::Selection { .. } => "selection",
+            BottomPaneView::Status { .. } => "status",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BottomPane {
+    pub composer: ChatComposerState,
+    stack: Vec<BottomPaneView>,
+}
+
+impl BottomPane {
+    pub fn new(composer: ChatComposerState) -> Self {
+        Self {
+            composer,
+            stack: vec![BottomPaneView::Composer],
+        }
+    }
+
+    pub fn push(&mut self, view: BottomPaneView) {
+        self.stack.push(view);
+    }
+
+    pub fn pop(&mut self) -> Option<BottomPaneView> {
+        if self.stack.len() <= 1 {
+            return None;
+        }
+        self.stack.pop()
+    }
+
+    pub fn focused_view(&self) -> &BottomPaneView {
+        self.stack.last().unwrap_or(&BottomPaneView::Composer)
+    }
+
+    pub fn render_lines(&self, width: usize) -> Vec<String> {
+        let mut lines = vec![format!(
+            "bottom-pane focus={} depth={}",
+            self.focused_view().name(),
+            self.stack.len()
+        )];
+        match self.focused_view() {
+            BottomPaneView::Composer => lines.extend(self.composer.render_lines(width)),
+            BottomPaneView::Approval(overlay) => lines.extend(overlay.render_lines(width)),
+            BottomPaneView::Selection { title, count } => {
+                lines.push(format!("select: {title} ({count} items)"));
+            }
+            BottomPaneView::Status { message } => lines.push(format!("status: {message}")),
+        }
+        lines
+    }
+}

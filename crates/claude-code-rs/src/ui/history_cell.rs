@@ -1,22 +1,76 @@
-//! Placeholder: typed chat history cells.
-//!
-//! Purpose:
-//! - Move from direct message-to-lines rendering toward typed cells for user,
-//!   assistant, system, tool activity, progress, approval, diff, markdown,
-//!   status, and collaboration events.
-//! - Enable prompt-view grouping while keeping transcript-view detail.
-//!
-//! Reference paths:
-//! - docs/ui-parity-update-plan.md
-//! - crates/claude-code-rs/src/ui/messages.rs
-//! - crates/claude-code-rs/src/ui/transcript.rs
-//! - ui/src/store/message-model.ts
-//! - ui/src/components/messages
-//! - ui/src/components/tasks
-//! - F:/AIclassmanager/cc/codex/codex-rs/tui/src/history_cell.rs
-//! - F:/AIclassmanager/cc/codex/codex-rs/tui/src/exec_cell.rs
-//!
-//! Implementation note:
-//! - Add cells behind the existing renderer first, then switch rendering one
-//!   cell type at a time.
+//! Typed chat history cells.
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HistoryCell {
+    User(String),
+    Assistant(String),
+    System(String),
+    Tool {
+        name: String,
+        summary: String,
+    },
+    Diff {
+        path: String,
+        added: usize,
+        removed: usize,
+    },
+    Status(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryRenderMode {
+    Prompt,
+    Transcript,
+}
+
+impl HistoryCell {
+    pub fn role(&self) -> &'static str {
+        match self {
+            HistoryCell::User(_) => "user",
+            HistoryCell::Assistant(_) => "assistant",
+            HistoryCell::System(_) => "system",
+            HistoryCell::Tool { .. } => "tool",
+            HistoryCell::Diff { .. } => "diff",
+            HistoryCell::Status(_) => "status",
+        }
+    }
+
+    pub fn render(&self, mode: HistoryRenderMode) -> String {
+        match (self, mode) {
+            (HistoryCell::User(text), _) => format!("> {text}"),
+            (HistoryCell::Assistant(text), HistoryRenderMode::Prompt) => text.clone(),
+            (HistoryCell::Assistant(text), HistoryRenderMode::Transcript) => {
+                format!("assistant: {text}")
+            }
+            (HistoryCell::System(text), HistoryRenderMode::Prompt) => format!("sys: {text}"),
+            (HistoryCell::System(text), HistoryRenderMode::Transcript) => {
+                format!("system: {text}")
+            }
+            (HistoryCell::Tool { name, summary }, HistoryRenderMode::Prompt) => {
+                format!("tool {name}: {summary}")
+            }
+            (HistoryCell::Tool { name, summary }, HistoryRenderMode::Transcript) => {
+                format!("tool-call {name}\n  {summary}")
+            }
+            (
+                HistoryCell::Diff {
+                    path,
+                    added,
+                    removed,
+                },
+                _,
+            ) => {
+                format!("diff {path} +{added} -{removed}")
+            }
+            (HistoryCell::Status(text), _) => format!("status: {text}"),
+        }
+    }
+}
+
+pub fn render_history(cells: &[HistoryCell], mode: HistoryRenderMode) -> String {
+    cells
+        .iter()
+        .map(|cell| cell.render(mode))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
