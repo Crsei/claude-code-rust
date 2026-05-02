@@ -287,7 +287,7 @@ pub fn get_all_commands() -> Vec<Command> {
         Command {
             name: "plan".into(),
             aliases: vec![],
-            description: "Enter plan mode and show/edit the plan file (issue #46)".into(),
+            description: "Enter plan mode and show or edit the plan file".into(),
             handler: Box::new(plan::PlanHandler),
         },
         Command {
@@ -317,13 +317,13 @@ pub fn get_all_commands() -> Vec<Command> {
         Command {
             name: "branch".into(),
             aliases: vec!["br".into()],
-            description: "Fork the current conversation (transcript-level branch)".into(),
+            description: "Fork the current conversation into a new branch".into(),
             handler: Box::new(branch::BranchHandler),
         },
         Command {
             name: "gbranch".into(),
             aliases: vec!["gitbranch".into()],
-            description: "Show or switch git branches (moved from /branch, issue #36)".into(),
+            description: "Show or switch git branches".into(),
             handler: Box::new(gbranch::GitBranchHandler),
         },
         Command {
@@ -413,7 +413,7 @@ pub fn get_all_commands() -> Vec<Command> {
         Command {
             name: "ide".into(),
             aliases: vec![],
-            description: "IDE integration: detect, select, reconnect MCP bridge (issue #41)".into(),
+            description: "Detect, select, or reconnect the IDE MCP bridge".into(),
             handler: Box::new(ide_cmd::IdeHandler),
         },
         Command {
@@ -431,7 +431,7 @@ pub fn get_all_commands() -> Vec<Command> {
         Command {
             name: "reload-plugins".into(),
             aliases: vec![],
-            description: "Hot-refresh the plugin registry (issue #49)".into(),
+            description: "Hot-refresh the plugin registry".into(),
             handler: Box::new(reload_plugins_cmd::ReloadPluginsHandler),
         },
         Command {
@@ -573,45 +573,39 @@ pub fn get_all_commands() -> Vec<Command> {
         Command {
             name: "btw".into(),
             aliases: vec![],
-            description: "Ask a side question in a forked agent (issue #37)".into(),
+            description: "Ask a side question in a forked agent".into(),
             handler: Box::new(btw::BtwHandler),
         },
         Command {
             name: "simplify".into(),
             aliases: vec![],
-            description: "Multi-agent simplify review of recently changed code (issue #62)".into(),
+            description: "Run a multi-agent simplification review of recent changes".into(),
             handler: Box::new(simplify::SimplifyHandler),
         },
         Command {
             name: "advisor".into(),
             aliases: vec![],
-            description: "Show, set, or clear the advisor model (issue #33)".into(),
+            description: "Show, set, or clear the advisor model".into(),
             handler: Box::new(advisor::AdvisorHandler),
         },
         // Scheduling / automation (issues #58, #60).
         Command {
             name: "loop".into(),
             aliases: vec![],
-            description:
-                "Register a recurring local task (prompt or slash command) and run it once \
-                 (issue #58)"
-                    .into(),
+            description: "Register a recurring local task or slash command and run it once".into(),
             handler: Box::new(loop_cmd::LoopHandler),
         },
         Command {
             name: "schedule".into(),
             aliases: vec!["cron".into()],
-            description: "Manage local cron tasks (add, list, pause, trigger, remove) (issue #60)"
-                .into(),
+            description: "Manage local cron tasks (add, list, pause, trigger, remove)".into(),
             handler: Box::new(schedule::ScheduleHandler),
         },
         // Team onboarding (issue #63).
         Command {
             name: "team-onboarding".into(),
             aliases: vec!["teamonboarding".into()],
-            description:
-                "Generate a teammate onboarding guide from real project/team state (issue #63)"
-                    .into(),
+            description: "Generate a teammate onboarding guide from project and team state".into(),
             handler: Box::new(team_onboarding::TeamOnboardingHandler),
         },
     ];

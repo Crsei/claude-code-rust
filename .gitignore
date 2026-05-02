@@ -63,6 +63,11 @@ web-ui/tsconfig.tsbuildinfo
 tests/message_suite/results/
 docs/architecture/
 ui/
+!crates/claude-code-rs/src/ui/
+crates/claude-code-rs/src/ui/*
+!crates/claude-code-rs/src/ui/*.rs
+!crates/claude-code-rs/src/ui/snapshots/
+!crates/claude-code-rs/src/ui/snapshots/*.snap
 web-ui/
 sdk/
 .tmp/

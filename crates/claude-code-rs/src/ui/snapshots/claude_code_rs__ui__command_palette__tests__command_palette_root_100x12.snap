@@ -1,0 +1,16 @@
+---
+source: crates/claude-code-rs/src/ui/command_palette.rs
+expression: "render_palette_snapshot(\"/\", &cwd, 100, 12, &[])"
+---
+"┌ Commands ────────────────────────────────────────────────────────────────────────────────────────┐"
+"│/init                Initialize project config and CLAUDE.md                                      │"
+"│/add-dir             Add a new working directory                                                  │"
+"│/advisor             Show, set, or clear the advisor model                                        │"
+"│/agents              Browse agent definitions with source + override visibility                   │"
+"│/assistant          (kairos)  View assistant mode status                                          │"
+"│/audit-export       (audit)  Export session as verifiable audit record (.audit.json)              │"
+"│                                                                                                  │"
+"│Usage: /init                                                                                      │"
+"│Example: /init                                                                                    │"
+"│Enter selects the command; type arguments after the inserted space.                               │"
+"└──────────────────────────────────────────────────────────────────────────────────────────────────┘"

@@ -1,0 +1,429 @@
+---
+source: crates/claude-code-rs/src/ui/command_palette.rs
+expression: normalize_snapshot_text(rendered)
+---
+## /init
+┌ /init arguments ───────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /init                                                                                                │
+│Example: /init                                                                                              │
+│About: Initialize project config and CLAUDE.md                                                              │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /add-dir
+┌ /add-dir arguments ────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /add-dir <path>                                                                                      │
+│Example: /add-dir ../shared                                                                                 │
+│About: Add a new working directory                                                                          │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /advisor
+┌ /advisor arguments ────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /advisor <model|clear|off>                                                                           │
+│Example: /advisor sonnet                                                                                    │
+│About: Show, set, or clear the advisor model                                                                │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /agents
+┌ /agents arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /agents <list|show> [name]                                                                           │
+│Example: /agents                                                                                            │
+│About: Browse agent definitions with source + override visibility                                           │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /assistant
+┌ /assistant arguments ──────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /assistant                                                                                           │
+│Example: /assistant                                                                                         │
+│About: View assistant mode status                                                                           │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /audit-export
+┌ /audit-export arguments ───────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /audit-export                                                                                        │
+│Example: /audit-export                                                                                      │
+│About: Export session as verifiable audit record (.audit.json)                                              │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /branch
+┌ /branch arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /branch [title]                                                                                      │
+│Example: /branch                                                                                            │
+│About: Fork the current conversation into a new branch                                                      │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /brief
+┌ /brief arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /brief [on|off|status]                                                                               │
+│Example: /brief on                                                                                          │
+│About: Toggle Brief output mode (KAIROS)                                                                    │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /btw
+┌ /btw arguments ────────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /btw <question>                                                                                      │
+│Example: /btw explain the last error                                                                        │
+│About: Ask a side question in a forked agent                                                                │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /channels
+┌ /channels arguments ───────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /channels [list|status]                                                                              │
+│Example: /channels status                                                                                   │
+│About: View connected channels                                                                              │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /chrome
+┌ /chrome arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /chrome [status|reconnect|help]                                                                      │
+│Example: /chrome reconnect                                                                                  │
+│About: Claude in Chrome (first-party integration) status + reconnect                                        │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /clear
+┌ /clear arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /clear                                                                                               │
+│Example: /clear                                                                                             │
+│About: Clear the conversation history                                                                       │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /commit
+┌ /commit arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /commit [message]                                                                                    │
+│Example: /commit fix command palette layout                                                                 │
+│About: Create a git commit from current changes                                                             │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /compact
+┌ /compact arguments ────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /compact [instructions]                                                                              │
+│Example: /compact focus on UI fixes                                                                         │
+│About: Compact conversation to reduce token usage                                                           │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /config
+┌ /config arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /config <show|sources|schema|set|reset> [key] [value]                                                │
+│Example: /config set model claude-sonnet-4                                                                  │
+│About: Show or modify configuration settings                                                                │
+│Edit: user: ~/.cc-rust/settings.json | project: ./.cc-rust/settings.json                                    │
+│                                                                                                            │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /context
+┌ /context arguments ────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /context [json|raw|tui|full]                                                                         │
+│Example: /context json                                                                                      │
+│About: Show context usage information                                                                       │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /copy
+┌ /copy arguments ───────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /copy                                                                                                │
+│Example: /copy                                                                                              │
+│About: Copy the last assistant response to clipboard                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /cost
+┌ /cost arguments ───────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /cost                                                                                                │
+│Example: /cost                                                                                              │
+│About: Show token usage and cost for the current session                                                    │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /daemon
+┌ /daemon arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /daemon [status|stop]                                                                                │
+│Example: /daemon status                                                                                     │
+│About: View/control daemon process                                                                          │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /diff
+┌ /diff arguments ───────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /diff                                                                                                │
+│Example: /diff                                                                                              │
+│About: Show git diff of current changes                                                                     │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /doctor
+┌ /doctor arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /doctor [all|auth|settings|mcp|terminal]                                                             │
+│Example: /doctor                                                                                            │
+│About: Aggregated diagnostics (install, auth, settings, MCP, terminal)                                      │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /dream
+┌ /dream arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /dream [--days N]                                                                                    │
+│Example: /dream --days 7                                                                                    │
+│About: Distill daily logs into memory                                                                       │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /effort
+┌ /effort arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /effort <low|medium|high>                                                                            │
+│Example: /effort medium                                                                                     │
+│About: Set the thinking effort level (low/medium/high)                                                      │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /exit
+┌ /exit arguments ───────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /exit                                                                                                │
+│Example: /exit                                                                                              │
+│About: Exit the REPL                                                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /export
+┌ /export arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /export [path]                                                                                       │
+│Example: /export session.md                                                                                 │
+│About: Export conversation to Markdown (.md)                                                                │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /extra-usage
+┌ /extra-usage arguments ────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /extra-usage                                                                                         │
+│Example: /extra-usage                                                                                       │
+│About: Show extended token usage and cost analysis                                                          │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /fast
+┌ /fast arguments ───────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /fast [on|off|status]                                                                                │
+│Example: /fast on                                                                                           │
+│About: Toggle fast mode on/off                                                                              │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /files
+┌ /files arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /files                                                                                               │
+│Example: /files                                                                                             │
+│About: List files referenced in the current conversation                                                    │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /gbranch
+┌ /gbranch arguments ────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /gbranch [branch-name]                                                                               │
+│Example: /gbranch feature/ui-fix                                                                            │
+│About: Show or switch git branches                                                                          │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /help
+┌ /help arguments ───────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /help [command]                                                                                      │
+│Example: /help mcp                                                                                          │
+│About: Show available commands and their descriptions                                                       │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /hooks
+┌ /hooks arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /hooks <list|path|open> [event|layer]                                                                │
+│Example: /hooks list PreToolUse                                                                             │
+│About: Read-only merged hook tree (managed + user + project + local)                                        │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /ide
+┌ /ide arguments ────────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /ide [detect|status|select|clear|reconnect]                                                          │
+│Example: /ide status                                                                                        │
+│About: Detect, select, or reconnect the IDE MCP bridge                                                      │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /insights
+┌ /insights arguments ───────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /insights [fast|full]                                                                                │
+│Example: /insights                                                                                          │
+│About: Session history analytics (cross-session statistics)                                                 │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /keybindings
+┌ /keybindings arguments ────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /keybindings [open|status|list|reload|path]                                                          │
+│Example: /keybindings                                                                                       │
+│About: View, edit, or reload keybindings.json                                                               │
+│Edit: user: ~/.cc-rust/keybindings.json                                                                     │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /login
+┌ /login arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /login [anthropic|codex|api-key]                                                                     │
+│Example: /login                                                                                             │
+│About: Authenticate (API key, Anthropic OAuth, OpenAI Codex OAuth)                                          │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /login-code
+┌ /login-code arguments ─────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /login-code <authorization-code>                                                                     │
+│Example: /login-code abc123                                                                                 │
+│About: Complete OAuth login with authorization code                                                         │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /logout
+┌ /logout arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /logout                                                                                              │
+│Example: /logout                                                                                            │
+│About: Clear stored authentication credentials                                                              │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /loop
+┌ /loop arguments ───────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /loop <interval|list|remove|trigger|pause|resume> ...                                                │
+│Example: /loop 5m /status                                                                                   │
+│About: Register a recurring local task or slash command and run it once                                     │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /mcp
+┌ /mcp arguments ────────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /mcp <list|status|add|edit|remove|connect|disconnect|reconnect>                                      │
+│Example: /mcp add ctx7 --command=npx --arg=-y --arg=@upstash/context7-mcp                                   │
+│About: MCP server management (list, status, add, edit, remove, connect)                                     │
+│Edit: user: ~/.cc-rust/settings.json | project: ./.cc-rust/settings.json                                    │
+│      local: ./.cc-rust/settings.local.json                                                                 │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /memory
+┌ /memory arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /memory <show|edit|add> [text]                                                                       │
+│Example: /memory                                                                                            │
+│About: View and manage CLAUDE.md project instructions                                                       │
+│Edit: project: ./CLAUDE.md | global: ~/.cc-rust/memory                                                      │
+│                                                                                                            │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /model
+┌ /model arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /model [model-id|alias]                                                                              │
+│Example: /model sonnet                                                                                      │
+│About: Show or switch the active model                                                                      │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /model-add
+┌ /model-add arguments ──────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /model-add <name> [input_price output_price]                                                         │
+│Example: /model-add gpt-4o 2.50 10.00                                                                       │
+│About: Add a model with token pricing to .env                                                               │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /notify
+┌ /notify arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /notify [status|test|on|off]                                                                         │
+│Example: /notify status                                                                                     │
+│About: Push notification settings                                                                           │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /permissions
+┌ /permissions arguments ────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /permissions [mode|allow|ask|deny|session-grant|clear-session-grants|reset] ...                      │
+│Example: /permissions                                                                                       │
+│About: View or modify tool permission settings                                                              │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /plan
+┌ /plan arguments ───────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /plan <enter|show|status|approve|reject|link|classify> ...                                           │
+│Example: /plan enter refactor command palette                                                               │
+│About: Enter plan mode and show or edit the plan file                                                       │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /plugin
+┌ /plugin arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /plugin <list|installed|disabled|errors|status|enable|disable|uninstall> [id]                        │
+│Example: /plugin enable <plugin-id>                                                                         │
+│About: Plugin management (list, status, enable, disable)                                                    │
+│Edit: installed: ~/.cc-rust/plugins/installed_plugins.json | cache: ~/.cc-rust/plugins/cache                │
+│                                                                                                            │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /rate-limit-options
+┌ /rate-limit-options arguments ─────────────────────────────────────────────────────────────────────────────┐
+│Usage: /rate-limit-options                                                                                  │
+│Example: /rate-limit-options                                                                                │
+│About: Show rate limit information for the current model                                                    │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /recap
+┌ /recap arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /recap [short|long]                                                                                  │
+│Example: /recap short                                                                                       │
+│About: Summarize the current session (short | long)                                                         │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /reload-plugins
+┌ /reload-plugins arguments ─────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /reload-plugins                                                                                      │
+│Example: /reload-plugins                                                                                    │
+│About: Hot-refresh the plugin registry                                                                      │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /rename
+┌ /rename arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /rename [title|clear]                                                                                │
+│Example: /rename UI command fixes                                                                           │
+│About: Set or clear the custom title for the current session                                                │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /resume
+┌ /resume arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /resume <session-id|recent>                                                                          │
+│Example: /resume recent                                                                                     │
+│About: Resume a previous session                                                                            │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /review
+┌ /review arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /review <pr-number|url|branch>                                                                       │
+│Example: /review 123                                                                                        │
+│About: Review a pull request using a local gh pr workflow                                                   │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /rewind
+┌ /rewind arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /rewind <turn|message-id>                                                                            │
+│Example: /rewind 2                                                                                          │
+│About: Rewind the conversation to an earlier user turn                                                      │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /sandbox
+┌ /sandbox arguments ────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /sandbox <status|mode|network|paths> ...                                                             │
+│Example: /sandbox mode workspace                                                                            │
+│About: View or toggle sandbox + network access settings                                                     │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /schedule
+┌ /schedule arguments ───────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /schedule <add|list|pause|trigger|remove> ...                                                        │
+│Example: /schedule add 30m /status                                                                          │
+│About: Manage local cron tasks (add, list, pause, trigger, remove)                                          │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /security-review
+┌ /security-review arguments ────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /security-review [scope]                                                                             │
+│Example: /security-review crates/claude-code-rs/src/ui                                                      │
+│About: Run a focused security review of the current branch diff                                             │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /session
+┌ /session arguments ────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /session [list|list all]                                                                             │
+│Example: /session list                                                                                      │
+│About: Show current session info or list saved sessions                                                     │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /session-export
+┌ /session-export arguments ─────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /session-export <list|session-id|path>                                                               │
+│Example: /session-export list                                                                               │
+│About: Export session as structured JSON data package (.session.json)                                       │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /simplify
+┌ /simplify arguments ───────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /simplify [--single|-1] [scope]                                                                      │
+│Example: /simplify --single crates/claude-code-rs/src/ui                                                    │
+│About: Run a multi-agent simplification review of recent changes                                            │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /skills
+┌ /skills arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /skills [name]                                                                                       │
+│Example: /skills                                                                                            │
+│About: List available skills                                                                                │
+│Edit: user: ~/.cc-rust/skills | project: ./.cc-rust/skills                                                  │
+│                                                                                                            │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /sleep
+┌ /sleep arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /sleep <seconds>                                                                                     │
+│Example: /sleep 60                                                                                          │
+│About: Set proactive sleep duration                                                                         │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /status
+┌ /status arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /status                                                                                              │
+│Example: /status                                                                                            │
+│About: Show session status                                                                                  │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /statusline
+┌ /statusline arguments ─────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /statusline <status|set|clear|enable|disable|test|payload|refresh|timeout|padding> ...               │
+│Example: /statusline show                                                                                   │
+│About: View, edit, or test the scriptable status line                                                       │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /tasks
+┌ /tasks arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /tasks <list|show|stop|delete> [id]                                                                  │
+│Example: /tasks                                                                                             │
+│About: List and drill into background tasks (tool + team)                                                   │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /team
+┌ /team arguments ───────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /team <status|list|create|spawn|send|kill|leave|delete> ...                                          │
+│Example: /team create ui-fix                                                                                │
+│About: Manage Agent Teams (create, list, spawn, send, kill, leave, delete)                                  │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /team-onboarding
+┌ /team-onboarding arguments ────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /team-onboarding [team-name]                                                                         │
+│Example: /team-onboarding                                                                                   │
+│About: Generate a teammate onboarding guide from project and team state                                     │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /terminal-setup
+┌ /terminal-setup arguments ─────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /terminal-setup [env|tips|all]                                                                       │
+│Example: /terminal-setup tips                                                                               │
+│About: Diagnose terminal env + print Shift+Enter / tmux / notification tips                                 │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /version
+┌ /version arguments ────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /version                                                                                             │
+│Example: /version                                                                                           │
+│About: Show the current version                                                                             │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /voice
+┌ /voice arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /voice [status|on|off|toggle|diagnose]                                                               │
+│Example: /voice status                                                                                      │
+│About: Inspect compatibility-only voice settings (runtime voice unsupported)                                │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

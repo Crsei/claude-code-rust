@@ -1,0 +1,16 @@
+---
+source: crates/claude-code-rs/src/ui/command_palette.rs
+expression: "render_palette_snapshot(\"/plugin\", &cwd, 100, 12, &[])"
+---
+"┌ Commands ────────────────────────────────────────────────────────────────────────────────────────┐"
+"│/plugin              Plugin management (list, status, enable, disable)                            │"
+"│/reload-plugins      Hot-refresh the plugin registry                                              │"
+"│/login-code          Complete OAuth login with authorization code                                 │"
+"│                                                                                                  │"
+"│Usage: /plugin <list|installed|disabled|errors|status|enable|disable|uninstall> [id]              │"
+"│Example: /plugin enable <plugin-id>                                                               │"
+"│Edit: installed: ~/.cc-rust/plugins/installed_plugins.json | cache: ~/.cc-rust/plugins/cache      │"
+"│                                                                                                  │"
+"│                                                                                                  │"
+"│                                                                                                  │"
+"└──────────────────────────────────────────────────────────────────────────────────────────────────┘"
