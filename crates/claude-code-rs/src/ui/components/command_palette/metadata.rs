@@ -1,0 +1,281 @@
+use std::path::Path;
+
+use crate::config::{self as cc_config, paths as cfg_paths};
+
+use super::edit_targets::EditTarget;
+
+pub(super) struct CommandMeta {
+    pub(super) usage: String,
+    pub(super) examples: Vec<String>,
+    pub(super) edit_targets: Vec<EditTarget>,
+}
+
+fn simple_meta(usage: &str, examples: &[&str]) -> CommandMeta {
+    CommandMeta {
+        usage: usage.to_string(),
+        examples: examples
+            .iter()
+            .map(|example| (*example).to_string())
+            .collect(),
+        edit_targets: Vec::new(),
+    }
+}
+
+pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
+    match name {
+        "add-dir" => simple_meta("/add-dir <path>", &["/add-dir ../shared"]),
+        "advisor" => simple_meta(
+            "/advisor <model|clear|off>",
+            &["/advisor sonnet", "/advisor clear"],
+        ),
+        "agents" => simple_meta(
+            "/agents <list|show> [name]",
+            &["/agents", "/agents show executor"],
+        ),
+        "assistant" => simple_meta("/assistant", &["/assistant"]),
+        "audit-export" => simple_meta("/audit-export", &["/audit-export"]),
+        "branch" => simple_meta(
+            "/branch [title]",
+            &["/branch", "/branch try alternate approach"],
+        ),
+        "brief" => simple_meta("/brief [on|off|status]", &["/brief on"]),
+        "btw" => simple_meta("/btw <question>", &["/btw explain the last error"]),
+        "channels" => simple_meta("/channels [list|status]", &["/channels status"]),
+        "chrome" => simple_meta("/chrome [status|reconnect|help]", &["/chrome reconnect"]),
+        "clear" => simple_meta("/clear", &["/clear"]),
+        "commit" => simple_meta("/commit [message]", &["/commit fix command palette layout"]),
+        "compact" => simple_meta("/compact [instructions]", &["/compact focus on UI fixes"]),
+        "context" => simple_meta("/context [json|raw|tui|full]", &["/context json"]),
+        "copy" => simple_meta("/copy", &["/copy"]),
+        "cost" => simple_meta("/cost", &["/cost"]),
+        "daemon" => simple_meta("/daemon [status|stop]", &["/daemon status"]),
+        "diff" => simple_meta("/diff", &["/diff"]),
+        "doctor" => simple_meta("/doctor [all|auth|settings|mcp|terminal]", &["/doctor"]),
+        "dream" => simple_meta("/dream [--days N]", &["/dream --days 7"]),
+        "effort" => simple_meta("/effort <low|medium|high>", &["/effort medium"]),
+        "exit" => simple_meta("/exit", &["/exit"]),
+        "export" => simple_meta("/export [path]", &["/export session.md"]),
+        "extra-usage" => simple_meta("/extra-usage", &["/extra-usage"]),
+        "fast" => simple_meta("/fast [on|off|status]", &["/fast on"]),
+        "files" => simple_meta("/files", &["/files"]),
+        "gbranch" => simple_meta("/gbranch [branch-name]", &["/gbranch feature/ui-fix"]),
+        "help" => simple_meta("/help [command]", &["/help mcp"]),
+        "hooks" => CommandMeta {
+            usage: "/hooks <list|path|open> [event|layer]".to_string(),
+            examples: vec!["/hooks list PreToolUse".to_string(), "/hooks open project".to_string()],
+            edit_targets: vec![
+                EditTarget::new(
+                    "managed",
+                    cc_config::settings::managed_settings_path(),
+                    cwd,
+                    "open managed",
+                ),
+                EditTarget::new(
+                    "user",
+                    cc_config::settings::user_settings_path(),
+                    cwd,
+                    "open user",
+                ),
+                EditTarget::new(
+                    "project",
+                    cc_config::settings::project_settings_path(cwd),
+                    cwd,
+                    "open project",
+                ),
+                EditTarget::new(
+                    "local",
+                    cc_config::settings::local_settings_path(cwd),
+                    cwd,
+                    "open local",
+                ),
+            ],
+        },
+        "ide" => simple_meta(
+            "/ide [detect|status|select|clear|reconnect]",
+            &["/ide status"],
+        ),
+        "init" => simple_meta("/init", &["/init"]),
+        "insights" => simple_meta("/insights [fast|full]", &["/insights"]),
+        "login" => simple_meta(
+            "/login [anthropic|codex|api-key]",
+            &["/login", "/login codex"],
+        ),
+        "login-code" => simple_meta("/login-code <authorization-code>", &["/login-code abc123"]),
+        "logout" => simple_meta("/logout", &["/logout"]),
+        "loop" => simple_meta(
+            "/loop <interval|list|remove|trigger|pause|resume> ...",
+            &["/loop 5m /status"],
+        ),
+        "mcp" => CommandMeta {
+            usage: "/mcp <list|status|add|edit|remove|connect|disconnect|reconnect>".to_string(),
+            examples: vec![
+                "/mcp add ctx7 --command=npx --arg=-y --arg=@upstash/context7-mcp".to_string(),
+            ],
+            edit_targets: vec![
+                EditTarget::new(
+                    "user",
+                    cc_config::settings::user_settings_path(),
+                    cwd,
+                    "edit user",
+                ),
+                EditTarget::new(
+                    "project",
+                    cc_config::settings::project_settings_path(cwd),
+                    cwd,
+                    "edit project",
+                ),
+                EditTarget::new(
+                    "local",
+                    cc_config::settings::local_settings_path(cwd),
+                    cwd,
+                    "edit local",
+                ),
+            ],
+        },
+        "model" => simple_meta("/model [model-id|alias]", &["/model sonnet"]),
+        "model-add" => simple_meta(
+            "/model-add <name> [input_price output_price]",
+            &["/model-add gpt-4o 2.50 10.00"],
+        ),
+        "notify" => simple_meta("/notify [status|test|on|off]", &["/notify status"]),
+        "permissions" => simple_meta(
+            "/permissions [mode|allow|ask|deny|session-grant|clear-session-grants|reset] ...",
+            &["/permissions", "/permissions mode plan"],
+        ),
+        "plan" => CommandMeta {
+            usage: "/plan <enter|show|status|approve|reject|link|classify> ...".to_string(),
+            examples: vec!["/plan enter refactor command palette".to_string()],
+            edit_targets: vec![EditTarget::new(
+                "current",
+                cfg_paths::current_plan_file_path(cwd),
+                cwd,
+                "open",
+            )],
+        },
+        "plugin" => CommandMeta {
+            usage: "/plugin <list|installed|disabled|errors|status|enable|disable|uninstall> [id]"
+                .to_string(),
+            examples: vec!["/plugin enable <plugin-id>".to_string()],
+            edit_targets: vec![
+                EditTarget::new(
+                    "installed",
+                    cc_config::paths::plugins_dir().join("installed_plugins.json"),
+                    cwd,
+                    "",
+                ),
+                EditTarget::new(
+                    "cache",
+                    cc_config::paths::plugins_dir().join("cache"),
+                    cwd,
+                    "",
+                ),
+            ],
+        },
+        "rate-limit-options" => simple_meta("/rate-limit-options", &["/rate-limit-options"]),
+        "recap" => simple_meta("/recap [short|long]", &["/recap short"]),
+        "reload-plugins" => simple_meta("/reload-plugins", &["/reload-plugins"]),
+        "rename" => simple_meta("/rename [title|clear]", &["/rename UI command fixes"]),
+        "resume" => simple_meta("/resume <session-id|recent>", &["/resume recent"]),
+        "review" => simple_meta("/review <pr-number|url|branch>", &["/review 123"]),
+        "rewind" => simple_meta("/rewind <turn|message-id>", &["/rewind 2"]),
+        "sandbox" => simple_meta(
+            "/sandbox <status|mode|network|paths> ...",
+            &["/sandbox mode workspace", "/sandbox network off"],
+        ),
+        "schedule" => simple_meta(
+            "/schedule <add|list|pause|trigger|remove> ...",
+            &["/schedule add 30m /status"],
+        ),
+        "security-review" => simple_meta(
+            "/security-review [scope]",
+            &["/security-review crates/claude-code-rs/src/ui"],
+        ),
+        "session" => simple_meta("/session [list|list all]", &["/session list"]),
+        "session-export" => simple_meta(
+            "/session-export <list|session-id|path>",
+            &["/session-export list"],
+        ),
+        "simplify" => simple_meta(
+            "/simplify [--single|-1] [scope]",
+            &["/simplify --single crates/claude-code-rs/src/ui"],
+        ),
+        "skills" => CommandMeta {
+            usage: "/skills [name]".to_string(),
+            examples: vec!["/skills".to_string()],
+            edit_targets: vec![
+                EditTarget::new("user", cc_config::paths::skills_dir_global(), cwd, ""),
+                EditTarget::new(
+                    "project",
+                    cwd.join(".cc-rust").join("skills"),
+                    cwd,
+                    "",
+                ),
+            ],
+        },
+        "sleep" => simple_meta("/sleep <seconds>", &["/sleep 60"]),
+        "status" => simple_meta("/status", &["/status"]),
+        "statusline" => simple_meta(
+            "/statusline <status|set|clear|enable|disable|test|payload|refresh|timeout|padding> ...",
+            &["/statusline show"],
+        ),
+        "tasks" => simple_meta(
+            "/tasks <list|show|stop|delete> [id]",
+            &["/tasks", "/tasks show task-123"],
+        ),
+        "team" => simple_meta(
+            "/team <status|list|create|spawn|send|kill|leave|delete> ...",
+            &["/team create ui-fix", "/team status"],
+        ),
+        "team-onboarding" => simple_meta("/team-onboarding [team-name]", &["/team-onboarding"]),
+        "terminal-setup" => simple_meta(
+            "/terminal-setup [env|tips|all]",
+            &["/terminal-setup tips"],
+        ),
+        "version" => simple_meta("/version", &["/version"]),
+        "voice" => simple_meta(
+            "/voice [status|on|off|toggle|diagnose]",
+            &["/voice status"],
+        ),
+        "keybindings" => CommandMeta {
+            usage: "/keybindings [open|status|list|reload|path]".to_string(),
+            examples: vec!["/keybindings".to_string()],
+            edit_targets: vec![EditTarget::new(
+                "user",
+                cc_config::paths::keybindings_path(),
+                cwd,
+                "open",
+            )],
+        },
+        "config" => CommandMeta {
+            usage: "/config <show|sources|schema|set|reset> [key] [value]".to_string(),
+            examples: vec!["/config set model claude-sonnet-4".to_string()],
+            edit_targets: vec![
+                EditTarget::new("user", cc_config::settings::user_settings_path(), cwd, "--user"),
+                EditTarget::new(
+                    "project",
+                    cc_config::settings::project_settings_path(cwd),
+                    cwd,
+                    "--project",
+                ),
+            ],
+        },
+        "memory" => CommandMeta {
+            usage: "/memory <show|edit|add> [text]".to_string(),
+            examples: vec!["/memory".to_string()],
+            edit_targets: vec![
+                EditTarget::new("project", cwd.join("CLAUDE.md"), cwd, "open project"),
+                EditTarget::new(
+                    "global",
+                    cc_config::paths::memory_dir_global(),
+                    cwd,
+                    "open global",
+                ),
+            ],
+        },
+        other => CommandMeta {
+            usage: format!("/{other}"),
+            examples: vec![format!("/{other}")],
+            edit_targets: Vec::new(),
+        },
+    }
+}

@@ -42,7 +42,7 @@ pub mod chat_composer;
 #[allow(dead_code)]
 #[path = "components/chatwidget.rs"]
 pub mod chatwidget;
-#[path = "components/command_palette.rs"]
+#[path = "components/command_palette/mod.rs"]
 pub mod command_palette;
 #[path = "components/command_surface/mod.rs"]
 pub mod command_surface;
