@@ -51,6 +51,15 @@ impl SelectionSurface {
         }
     }
 
+    pub fn move_prev(&mut self) {
+        let visible = self.visible_indices();
+        if visible.is_empty() {
+            self.selected = 0;
+        } else {
+            self.selected = self.selected.saturating_sub(1).min(visible.len() - 1);
+        }
+    }
+
     pub fn selected_item(&self) -> Option<&SelectionItem> {
         let visible = self.visible_indices();
         visible

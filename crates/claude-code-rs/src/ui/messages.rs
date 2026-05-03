@@ -21,6 +21,7 @@ pub fn render_messages(
     area: Rect,
     buf: &mut Buffer,
     theme: &Theme,
+    streaming: bool,
     scroll: usize,
     vscroll: &VirtualScroll,
 ) {
@@ -39,7 +40,15 @@ pub fn render_messages(
     let mut y = 0usize; // current row in the viewport
 
     for idx in start..end.min(messages.len()) {
-        let msg_lines = render_single_message_wrapped(&messages[idx], theme, area.width);
+        let mut msg_lines = render_single_message_wrapped(&messages[idx], theme, area.width);
+        if streaming
+            && idx == messages.len().saturating_sub(1)
+            && matches!(&messages[idx], Message::Assistant(_))
+        {
+            if let Some(last_line) = msg_lines.last_mut() {
+                last_line.spans.push(Span::styled(" ▌", theme.dim));
+            }
+        }
 
         // Separator blank line (between messages, not after last)
         let has_sep = idx < messages.len() - 1;

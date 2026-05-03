@@ -2,6 +2,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use similar::{ChangeTag, TextDiff};
+use unicode_width::UnicodeWidthChar;
 
 use super::theme::Theme;
 
@@ -45,6 +46,8 @@ pub fn render_diff(old: &str, new: &str, area: Rect, buf: &mut Buffer, theme: &T
 
     // Render a header line if there is room.
     let mut y_offset: u16 = 0;
+    let mut old_line_no = 1usize;
+    let mut new_line_no = 1usize;
 
     if !diff_lines.is_empty() {
         // Count additions and deletions for the header.
@@ -62,28 +65,54 @@ pub fn render_diff(old: &str, new: &str, area: Rect, buf: &mut Buffer, theme: &T
         y_offset += 1;
     }
 
-    for diff_line in diff_lines.iter().take(max_lines.saturating_sub(1)) {
+    let max_body_lines = max_lines.saturating_sub(1);
+    for diff_line in diff_lines.iter().take(max_body_lines) {
         if y_offset >= area.height {
             break;
         }
 
-        let (prefix, style) = match diff_line.tag {
-            ChangeTag::Insert => ("+", theme.diff_add),
-            ChangeTag::Delete => ("-", theme.diff_remove),
-            ChangeTag::Equal => (" ", theme.diff_context),
+        let (prefix, style, line_no_spans) = match diff_line.tag {
+            ChangeTag::Insert => {
+                let spans = vec![
+                    Span::styled(format!("{:>4}", ""), theme.dim),
+                    Span::styled(format!("{:>4}", new_line_no), theme.dim),
+                ];
+                new_line_no += 1;
+                ("+", theme.diff_add, spans)
+            }
+            ChangeTag::Delete => {
+                let spans = vec![
+                    Span::styled(format!("{:>4}", old_line_no), theme.dim),
+                    Span::styled(format!("{:>4}", ""), theme.dim),
+                ];
+                old_line_no += 1;
+                ("-", theme.diff_remove, spans)
+            }
+            ChangeTag::Equal => {
+                let spans = vec![
+                    Span::styled(format!("{:>4}", old_line_no), theme.dim),
+                    Span::styled(format!("{:>4}", new_line_no), theme.dim),
+                ];
+                old_line_no += 1;
+                new_line_no += 1;
+                (" ", theme.diff_context, spans)
+            }
         };
 
-        // Truncate content to fit within the available width (minus prefix).
-        let content = if diff_line.content.len() > max_width.saturating_sub(2) {
-            &diff_line.content[..max_width.saturating_sub(2)]
-        } else {
-            &diff_line.content
-        };
+        // Truncate content to fit within the available width without
+        // splitting multi-byte characters.
+        let prefix_width = 12usize;
+        let content_width = max_width.saturating_sub(prefix_width);
+        let content = truncate_visible(&diff_line.content, content_width);
 
         let line = Line::from(vec![
+            line_no_spans[0].clone(),
+            Span::raw(" "),
+            line_no_spans[1].clone(),
+            Span::raw(" "),
             Span::styled(prefix.to_string(), style),
             Span::styled(" ".to_string(), style),
-            Span::styled(content.to_string(), style),
+            Span::styled(content, style),
         ]);
 
         buf.set_line(area.x, area.y + y_offset, &line, area.width);
@@ -99,4 +128,22 @@ pub fn render_diff(old: &str, new: &str, area: Rect, buf: &mut Buffer, theme: &T
         let notice_line = Line::from(Span::styled(notice, theme.dim));
         buf.set_line(area.x, area.y + y_offset, &notice_line, area.width);
     }
+}
+
+fn truncate_visible(text: &str, max_width: usize) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+
+    let mut width = 0usize;
+    let mut out = String::new();
+    for ch in text.chars() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if width + ch_width > max_width {
+            break;
+        }
+        out.push(ch);
+        width += ch_width;
+    }
+    out
 }

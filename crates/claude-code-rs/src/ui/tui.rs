@@ -289,6 +289,7 @@ pub async fn run_tui(
                                         }
                                         CmdAction::Query(msgs) => {
                                             // Command wants to send messages to the model
+                                            let prompt = query_prompt_text(&msgs);
                                             for m in msgs {
                                                 app.add_message(m);
                                             }
@@ -296,7 +297,11 @@ pub async fn run_tui(
                                             engine.reset_abort();
                                             spawn_engine_query(
                                                 engine.clone(),
-                                                text,
+                                                if prompt.trim().is_empty() {
+                                                    text
+                                                } else {
+                                                    prompt
+                                                },
                                                 engine_tx.clone(),
                                             );
                                         }
@@ -951,6 +956,48 @@ fn add_system_error(app: &mut App, text: &str) {
     }));
 }
 
+fn query_prompt_text(messages: &[Message]) -> String {
+    let mut parts = Vec::new();
+
+    for msg in messages {
+        let text = match msg {
+            Message::User(user) => message_content_text(&user.content),
+            Message::Assistant(assistant) => assistant
+                .content
+                .iter()
+                .filter_map(|block| match block {
+                    ContentBlock::Text { text } => Some(text.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+            Message::System(system) => system.content.clone(),
+            Message::Progress(progress) => progress.data.to_string(),
+            Message::Attachment(attachment) => format!("{:?}", attachment.attachment),
+        };
+
+        if !text.trim().is_empty() {
+            parts.push(text);
+        }
+    }
+
+    parts.join("\n\n")
+}
+
+fn message_content_text(content: &MessageContent) -> String {
+    match content {
+        MessageContent::Text(text) => text.clone(),
+        MessageContent::Blocks(blocks) => blocks
+            .iter()
+            .filter_map(|block| match block {
+                ContentBlock::Text { text } => Some(text.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -970,6 +1017,49 @@ mod tests {
             Message::Assistant(assistant) => &assistant.content,
             other => panic!("expected assistant message, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn query_prompt_text_uses_returned_user_message_content() {
+        let msgs = vec![Message::User(UserMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: now_ts(),
+            role: "user".to_string(),
+            content: MessageContent::Text("Please recap the session".to_string()),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        })];
+
+        assert_eq!(
+            query_prompt_text(&msgs),
+            "Please recap the session".to_string()
+        );
+    }
+
+    #[test]
+    fn query_prompt_text_joins_multiple_messages_with_spacing() {
+        let msgs = vec![
+            Message::User(UserMessage {
+                uuid: uuid::Uuid::new_v4(),
+                timestamp: now_ts(),
+                role: "user".to_string(),
+                content: MessageContent::Text("First".to_string()),
+                is_meta: false,
+                tool_use_result: None,
+                source_tool_assistant_uuid: None,
+            }),
+            Message::System(SystemMessage {
+                uuid: uuid::Uuid::new_v4(),
+                timestamp: now_ts(),
+                subtype: SystemSubtype::Informational {
+                    level: InfoLevel::Info,
+                },
+                content: "Second".to_string(),
+            }),
+        ];
+
+        assert_eq!(query_prompt_text(&msgs), "First\n\nSecond".to_string());
     }
 
     #[test]

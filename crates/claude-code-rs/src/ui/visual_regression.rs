@@ -1,18 +1,30 @@
 //! Snapshot targets for the foundational Rust TUI surfaces.
 
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
+
 use super::approval_overlay::{ApprovalChoice, ApprovalKind, ApprovalOverlay};
 use super::bottom_pane::{BottomPane, BottomPaneView};
 use super::capability_contract::{render_contract_table, surface_for_event, BackendEventKind};
 use super::chat_composer::ChatComposerState;
+use super::command_palette::CommandPalette;
+use super::diff::render_diff;
 use super::event_router::{render_route_trace, EngineEvent, RouteContext, TerminalEvent, UiEvent};
 use super::feature_panels::{default_panels, render_panel_index, PanelState};
 use super::frame_requester::{FrameReason, FrameRequester};
 use super::history_cell::{render_history, HistoryCell, HistoryRenderMode};
+use super::markdown::markdown_to_lines;
+use super::messages::render_messages;
+use super::permissions::PermissionDialog;
 use super::selection_surface::{SelectionItem, SelectionSurface};
 use super::status_widget::StatusSnapshot;
 use super::streaming_controller::{StreamingController, StreamingDelta};
 use super::terminal_integration::{render_policy, TerminalEnvironment};
+use super::theme::Theme;
 use super::tool_activity::{render_grouped_activity, ToolActivity, ToolState};
+use super::virtual_scroll::VirtualScroll;
+use crate::types::message::{AssistantMessage, ContentBlock, Message, MessageContent, UserMessage};
+use uuid::Uuid;
 
 pub fn render_foundation_snapshot() -> String {
     let mut sections = Vec::new();
@@ -186,6 +198,166 @@ fn section(name: &str, body: impl AsRef<str>) -> String {
     format!("## {name}\n{}", body.as_ref())
 }
 
+fn render_permission_dialog(dialog: PermissionDialog, width: u16, height: u16) -> String {
+    let area = Rect::new(0, 0, width, height);
+    let mut buf = Buffer::empty(area);
+    dialog.render(area, &mut buf, &Theme::default());
+    normalize_snapshot_text(buffer_text(&buf, area))
+}
+
+fn render_command_palette_snapshot(palette: &CommandPalette, width: u16, height: u16) -> String {
+    let area = Rect::new(0, 0, width, height);
+    let mut buf = Buffer::empty(area);
+    palette.render(area, &mut buf, &Theme::default());
+    normalize_snapshot_text(buffer_text(&buf, area))
+}
+
+fn render_markdown_snapshot() -> String {
+    let lines = markdown_to_lines(
+        "# Heading\n\nVisit [docs](https://example.com) for the current state.\n\n- first\n- second",
+        &Theme::default(),
+    );
+    lines
+        .into_iter()
+        .map(|line| {
+            line.spans
+                .into_iter()
+                .map(|span| span.content)
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn render_streaming_message_snapshot() -> String {
+    let messages = vec![
+        Message::User(UserMessage {
+            uuid: Uuid::new_v4(),
+            timestamp: 0,
+            role: "user".to_string(),
+            content: MessageContent::Text("show me the latest status".to_string()),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        }),
+        Message::Assistant(AssistantMessage {
+            uuid: Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: vec![ContentBlock::Text {
+                text: "# Progress\n\nVisit [docs](https://example.com) for details.".to_string(),
+            }],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0314,
+        }),
+    ];
+
+    let area = Rect::new(0, 0, 96, 8);
+    let mut buf = Buffer::empty(area);
+    let mut vscroll = VirtualScroll::new();
+    vscroll.ensure_up_to_date(&messages, area.width, &Theme::default());
+    render_messages(
+        &messages,
+        area,
+        &mut buf,
+        &Theme::default(),
+        true,
+        0,
+        &vscroll,
+    );
+    normalize_snapshot_text(buffer_text(&buf, area))
+}
+
+fn render_diff_snapshot() -> String {
+    let area = Rect::new(0, 0, 88, 8);
+    let mut buf = Buffer::empty(area);
+    let old = "alpha\nbeta\nA very long line: cafe deja vu";
+    let new = "alpha\nbeta updated\nA very long line: cafe deja vu and more text";
+    render_diff(old, new, area, &mut buf, &Theme::default());
+    normalize_snapshot_text(buffer_text(&buf, area))
+}
+
+fn snapshot_cwd() -> std::path::PathBuf {
+    std::path::PathBuf::from("C:\\cc-rust-snapshot")
+}
+
+fn buffer_text(buf: &Buffer, area: Rect) -> String {
+    let mut lines = Vec::new();
+    for y in area.y..area.y + area.height {
+        let mut line = String::new();
+        for x in area.x..area.x + area.width {
+            line.push_str(buf[(x, y)].symbol());
+        }
+        lines.push(line.trim_end().to_string());
+    }
+    lines.join("\n")
+}
+
+fn normalize_snapshot_text(mut text: String) -> String {
+    for raw_home in [std::env::var_os("USERPROFILE"), std::env::var_os("HOME")]
+        .into_iter()
+        .flatten()
+    {
+        let home = std::path::PathBuf::from(raw_home)
+            .to_string_lossy()
+            .replace('\\', "/");
+        text = text.replace(&home, "<HOME>");
+        text = text.replace(&home.replace(' ', "%20"), "<HOME>");
+    }
+
+    text.replace("$CC_RUST_HOME", "~/.cc-rust")
+}
+
+fn render_interactive_ui_surfaces() -> String {
+    let mut sections = Vec::new();
+
+    sections.push(section(
+        "permission/bash",
+        render_permission_dialog(
+            PermissionDialog::new(
+                "Bash",
+                "cargo test -p claude-code-rs",
+                "Run a build check before merging.",
+            ),
+            72,
+            13,
+        ),
+    ));
+    sections.push(section(
+        "permission/file-edit",
+        render_permission_dialog(
+            PermissionDialog::new(
+                "Write",
+                "src/ui/command_palette.rs",
+                "Edit the command palette picker flow.",
+            ),
+            72,
+            13,
+        ),
+    ));
+
+    let cwd = snapshot_cwd();
+    let mut palette = CommandPalette::new();
+    palette.sync_from_input("/mcp", &cwd);
+    let _ = palette.open_edit_target_picker();
+    sections.push(section(
+        "command-palette-picker",
+        render_command_palette_snapshot(&palette, 100, 14),
+    ));
+
+    sections.push(section("markdown", render_markdown_snapshot()));
+    sections.push(section(
+        "streaming-message",
+        render_streaming_message_snapshot(),
+    ));
+    sections.push(section("diff", render_diff_snapshot()));
+
+    sections.join("\n\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,5 +365,10 @@ mod tests {
     #[test]
     fn snapshot_foundational_ui_surfaces() {
         insta::assert_snapshot!("foundational_ui_surfaces", render_foundation_snapshot());
+    }
+
+    #[test]
+    fn snapshot_interactive_ui_surfaces() {
+        insta::assert_snapshot!("interactive_ui_surfaces", render_interactive_ui_surfaces());
     }
 }

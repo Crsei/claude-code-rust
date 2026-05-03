@@ -6,6 +6,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
+use super::approval_overlay::ApprovalKind;
 use super::theme::Theme;
 
 /// The user's response to a permission prompt.
@@ -19,11 +20,7 @@ pub enum PermissionChoice {
     AlwaysAllow,
 }
 
-/// Number of choices in the dialog.
-const NUM_CHOICES: usize = 3;
-
-/// Labels for each choice, in order.
-const CHOICE_LABELS: [&str; NUM_CHOICES] = ["Allow", "Deny", "Always Allow"];
+const DEFAULT_OPTIONS: [&str; 3] = ["Allow", "Deny", "Always Allow"];
 
 /// An overlay dialog that asks the user whether to permit a tool invocation.
 pub struct PermissionDialog {
@@ -33,16 +30,23 @@ pub struct PermissionDialog {
     pub tool_input: String,
     /// Human-readable description of what the tool wants to do.
     pub message: String,
-    /// Currently highlighted choice (0 = Allow, 1 = Deny, 2 = Always Allow).
+    /// Current permission category inferred from the tool name.
+    kind: ApprovalKind,
+    /// Button labels shown at the bottom of the dialog.
+    options: Vec<String>,
+    /// Currently highlighted choice.
     pub selected: usize,
 }
 
 impl PermissionDialog {
     pub fn new(tool_name: &str, input: &str, message: &str) -> Self {
+        let kind = approval_kind(tool_name, input, message);
         Self {
             tool_name: tool_name.to_string(),
             tool_input: input.to_string(),
             message: message.to_string(),
+            kind,
+            options: default_options(),
             selected: 0,
         }
     }
@@ -50,35 +54,35 @@ impl PermissionDialog {
     /// Handle a key event. Returns `Some(choice)` when the user confirms a
     /// selection with Enter, or makes a direct choice via a keyboard shortcut.
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<PermissionChoice> {
+        let choice_count = self.options.len().max(DEFAULT_OPTIONS.len());
+
         match (key.modifiers, key.code) {
-            // ── Navigation ──────────────────────────────────────────
+            // Navigation
             (_, KeyCode::Left) | (_, KeyCode::Char('h')) => {
-                if self.selected > 0 {
-                    self.selected -= 1;
-                }
+                self.selected = self.selected.saturating_sub(1);
             }
             (_, KeyCode::Right) | (_, KeyCode::Char('l')) => {
-                if self.selected < NUM_CHOICES - 1 {
+                if self.selected + 1 < choice_count {
                     self.selected += 1;
                 }
             }
             (_, KeyCode::Tab) => {
-                self.selected = (self.selected + 1) % NUM_CHOICES;
+                self.selected = (self.selected + 1) % choice_count;
             }
             (KeyModifiers::SHIFT, KeyCode::BackTab) => {
                 self.selected = if self.selected == 0 {
-                    NUM_CHOICES - 1
+                    choice_count - 1
                 } else {
                     self.selected - 1
                 };
             }
 
-            // ── Confirm ─────────────────────────────────────────────
+            // Confirm
             (_, KeyCode::Enter) => {
-                return Some(self.choice());
+                return Some(self.choice_for_selected());
             }
 
-            // ── Quick keys ──────────────────────────────────────────
+            // Quick keys
             (_, KeyCode::Char('y')) | (_, KeyCode::Char('Y')) => {
                 return Some(PermissionChoice::Allow);
             }
@@ -99,19 +103,16 @@ impl PermissionDialog {
 
     /// Render the permission dialog as a centered overlay.
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
-        // Compute a centered dialog area (60% width, capped height).
-        let dialog_width = (area.width * 60 / 100).max(40).min(area.width);
-        let dialog_height = 12u16.min(area.height);
+        let dialog_width = (area.width * 68 / 100).max(48).min(area.width);
+        let dialog_height = 13u16.min(area.height).max(8);
         let x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
         let y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
         let dialog_area = Rect::new(x, y, dialog_width, dialog_height);
 
-        // Clear the background behind the dialog.
         Clear.render_ref(dialog_area, buf);
 
-        // Draw the outer border.
         let block = Block::default()
-            .title(" Permission Required ")
+            .title(format!(" Permission Required - {} ", self.kind.title()))
             .borders(Borders::ALL)
             .border_style(theme.warning)
             .style(Style::default());
@@ -122,55 +123,72 @@ impl PermissionDialog {
             return;
         }
 
-        // Split inner area into: tool info, message, buttons.
         let chunks = Layout::vertical([
-            Constraint::Length(2), // tool name + input
-            Constraint::Min(2),    // message
-            Constraint::Length(2), // button row
+            Constraint::Length(2), // tool info
+            Constraint::Min(2),    // request body
+            Constraint::Length(2), // buttons + hint
         ])
         .split(inner);
 
-        // ── Tool info ───────────────────────────────────────────────
         let tool_info = vec![
             Line::from(vec![
                 Span::styled("Tool: ", theme.dim),
                 Span::styled(self.tool_name.clone(), theme.tool_name),
             ]),
             Line::from(vec![
-                Span::styled("Input: ", theme.dim),
+                Span::styled("Kind: ", theme.dim),
                 Span::styled(
-                    truncate_str(&self.tool_input, chunks[0].width as usize - 8),
-                    theme.dim,
+                    self.kind.title().trim_end_matches('?').to_string(),
+                    theme.info,
                 ),
             ]),
         ];
-        let tool_para = Paragraph::new(tool_info);
-        tool_para.render_ref(chunks[0], buf);
+        Paragraph::new(tool_info).render_ref(chunks[0], buf);
 
-        // ── Message ─────────────────────────────────────────────────
-        let msg_para = Paragraph::new(self.message.clone())
-            .style(theme.warning)
-            .wrap(Wrap { trim: true });
-        msg_para.render_ref(chunks[1], buf);
+        let request_block = Block::default()
+            .borders(Borders::LEFT)
+            .border_style(theme.warning);
+        let request_inner = request_block.inner(chunks[1]);
+        request_block.render_ref(chunks[1], buf);
+        if request_inner.height > 0 && request_inner.width > 0 {
+            let body_label = body_label_for_kind(&self.kind);
+            let body_text = self.body_text();
+            let mut body_lines = vec![Line::from(vec![
+                Span::styled(format!("{body_label}: "), theme.dim),
+                Span::styled(
+                    truncate_str(&body_text, request_inner.width as usize),
+                    theme.warning,
+                ),
+            ])];
 
-        // ── Buttons ─────────────────────────────────────────────────
-        let button_spans: Vec<Span> = CHOICE_LABELS
+            if !self.message.trim().is_empty() && self.message.trim() != body_text.trim() {
+                body_lines.push(Line::from(vec![Span::styled(
+                    truncate_str(&self.message, request_inner.width as usize),
+                    theme.dim,
+                )]));
+            }
+
+            Paragraph::new(body_lines)
+                .wrap(Wrap { trim: true })
+                .render_ref(request_inner, buf);
+        }
+
+        let labels = self.normalized_options();
+        let button_spans: Vec<Span> = labels
             .iter()
             .enumerate()
-            .flat_map(|(i, label)| {
-                let style = if i == self.selected {
+            .flat_map(|(idx, label)| {
+                let style = if idx == self.selected {
                     theme.selected
                 } else {
                     theme.unselected
                 };
-                let shortcut = match i {
-                    0 => "(y)",
-                    1 => "(n)",
-                    2 => "(a)",
-                    _ => "",
-                };
-                let mut spans = vec![Span::styled(format!(" {} {} ", label, shortcut), style)];
-                if i < NUM_CHOICES - 1 {
+                let shortcut = shortcut_for_label(label);
+                let mut spans = vec![Span::styled(format!(" {} ", label), style)];
+                if let Some(shortcut) = shortcut {
+                    spans.push(Span::styled(format!("({shortcut})"), theme.dim));
+                }
+                if idx + 1 < labels.len() {
                     spans.push(Span::raw("  "));
                 }
                 spans
@@ -178,26 +196,122 @@ impl PermissionDialog {
             .collect();
 
         let button_line = Line::from(button_spans);
-        // Render the buttons centered in their area.
-        let buttons_y = chunks[2].y + (chunks[2].height.saturating_sub(1)) / 2;
-        buf.set_line(chunks[2].x + 1, buttons_y, &button_line, chunks[2].width);
+        let button_y = chunks[2].y + (chunks[2].height.saturating_sub(2)) / 2;
+        buf.set_line(chunks[2].x + 1, button_y, &button_line, chunks[2].width);
+
+        let hint = Line::from(vec![Span::styled(
+            "Arrow keys or hotkeys. Enter confirms. Esc denies.",
+            theme.dim,
+        )]);
+        buf.set_line(
+            chunks[2].x + 1,
+            chunks[2].y + chunks[2].height.saturating_sub(1),
+            &hint,
+            chunks[2].width,
+        );
     }
 
-    // ── Private ─────────────────────────────────────────────────────
-
-    fn choice(&self) -> PermissionChoice {
-        match self.selected {
-            0 => PermissionChoice::Allow,
-            1 => PermissionChoice::Deny,
-            2 => PermissionChoice::AlwaysAllow,
-            _ => PermissionChoice::Allow,
+    fn body_text(&self) -> String {
+        if !self.tool_input.trim().is_empty() {
+            self.tool_input.clone()
+        } else if !self.message.trim().is_empty() {
+            self.message.clone()
+        } else {
+            "(no details supplied)".to_string()
         }
+    }
+
+    fn normalized_options(&self) -> Vec<String> {
+        if self.options.is_empty() {
+            default_options()
+        } else {
+            self.options.clone()
+        }
+    }
+
+    fn choice_for_selected(&self) -> PermissionChoice {
+        let labels = self.normalized_options();
+        labels
+            .get(self.selected.min(labels.len().saturating_sub(1)))
+            .map(|label| choice_for_label(label).unwrap_or(PermissionChoice::Allow))
+            .unwrap_or(PermissionChoice::Allow)
     }
 }
 
-/// Helper to render a ratatui widget via its `render_ref` method on a `WidgetRef`
-/// or via direct buffer writes. We use a small extension trait here so that
-/// standard ratatui widgets (Block, Paragraph, Clear) can be used uniformly.
+fn approval_kind(tool_name: &str, input: &str, message: &str) -> ApprovalKind {
+    let joined = format!("{tool_name} {input} {message}").to_ascii_lowercase();
+    let subject = if !input.trim().is_empty() {
+        input.trim().to_string()
+    } else if !message.trim().is_empty() {
+        message.trim().to_string()
+    } else {
+        tool_name.to_string()
+    };
+
+    if joined.contains("bash")
+        || joined.contains("shell")
+        || joined.contains("terminal")
+        || joined.contains("powershell")
+    {
+        ApprovalKind::Bash { command: subject }
+    } else if joined.contains("write") || joined.contains("edit") || joined.contains("patch") {
+        ApprovalKind::FileEdit { path: subject }
+    } else if joined.contains("fetch") || joined.contains("web") || joined.contains("url") {
+        ApprovalKind::WebFetch { url: subject }
+    } else if joined.contains("mcp") {
+        ApprovalKind::Mcp {
+            server: tool_name.to_string(),
+            action: subject,
+        }
+    } else if joined.contains("ask") || joined.contains("question") {
+        ApprovalKind::UserInput { prompt: subject }
+    } else {
+        ApprovalKind::Fallback { summary: subject }
+    }
+}
+
+fn body_label_for_kind(kind: &ApprovalKind) -> &'static str {
+    match kind {
+        ApprovalKind::Bash { .. } => "Command",
+        ApprovalKind::FileEdit { .. } => "File",
+        ApprovalKind::WebFetch { .. } => "URL",
+        ApprovalKind::Mcp { .. } => "Action",
+        ApprovalKind::UserInput { .. } => "Prompt",
+        ApprovalKind::Fallback { .. } => "Details",
+    }
+}
+
+fn default_options() -> Vec<String> {
+    DEFAULT_OPTIONS
+        .iter()
+        .map(|value| (*value).to_string())
+        .collect()
+}
+
+fn choice_for_label(label: &str) -> Option<PermissionChoice> {
+    let lower = label.to_ascii_lowercase();
+    if lower.contains("always") {
+        Some(PermissionChoice::AlwaysAllow)
+    } else if lower.contains("allow") && !lower.contains("always") {
+        Some(PermissionChoice::Allow)
+    } else if lower.contains("deny") || lower.contains("reject") || lower == "no" {
+        Some(PermissionChoice::Deny)
+    } else {
+        None
+    }
+}
+
+fn shortcut_for_label(label: &str) -> Option<&'static str> {
+    match choice_for_label(label) {
+        Some(PermissionChoice::Allow) => Some("y"),
+        Some(PermissionChoice::Deny) => Some("n"),
+        Some(PermissionChoice::AlwaysAllow) => Some("a"),
+        None => None,
+    }
+}
+
+// ── Helper rendering traits ───────────────────────────────────────────────
+
 trait RenderRef {
     fn render_ref(&self, area: Rect, buf: &mut Buffer);
 }

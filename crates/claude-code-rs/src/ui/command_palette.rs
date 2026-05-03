@@ -8,13 +8,16 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 
 use crate::commands;
+use crate::config::{self as cc_config, paths as cfg_paths};
 
+use super::selection_surface::{SelectionItem, SelectionSurface};
 use super::theme::Theme;
 
 const MAX_ROWS: usize = 6;
 const DETAIL_ROWS: u16 = 4;
 const ARG_HELP_BASE_HEIGHT: u16 = 5;
 const MAX_EDIT_ROWS: usize = 2;
+const MAX_EDIT_TARGET_ROWS: usize = 4;
 
 #[derive(Debug, Clone)]
 pub struct CommandPalette {
@@ -22,6 +25,7 @@ pub struct CommandPalette {
     query: String,
     selected: usize,
     filtered: Vec<CommandItem>,
+    edit_target_picker: Option<SelectionSurface>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +42,7 @@ struct CommandItem {
 struct EditTarget {
     label: String,
     display: String,
+    insert: String,
 }
 
 impl CommandPalette {
@@ -47,6 +52,7 @@ impl CommandPalette {
             query: String::new(),
             selected: 0,
             filtered: Vec::new(),
+            edit_target_picker: None,
         }
     }
 
@@ -69,6 +75,7 @@ impl CommandPalette {
         self.query = without_slash.to_string();
         self.filtered = filtered_commands(&self.query, cwd);
         self.selected = self.selected.min(self.filtered.len().saturating_sub(1));
+        self.edit_target_picker = None;
     }
 
     pub fn close(&mut self) {
@@ -76,6 +83,7 @@ impl CommandPalette {
         self.query.clear();
         self.selected = 0;
         self.filtered.clear();
+        self.edit_target_picker = None;
     }
 
     pub fn handle_key(&mut self, code: KeyCode) -> bool {
@@ -118,13 +126,95 @@ impl CommandPalette {
             .map(|cmd| format!("/{} ", cmd.name))
     }
 
+    pub fn selected_command_has_edit_targets(&self) -> bool {
+        self.filtered
+            .get(self.selected)
+            .is_some_and(has_edit_target_picker)
+    }
+
+    pub fn edit_target_picker_active(&self) -> bool {
+        self.edit_target_picker.is_some()
+    }
+
+    pub fn open_edit_target_picker(&mut self) -> bool {
+        let Some(cmd) = self.filtered.get(self.selected) else {
+            return false;
+        };
+
+        let items: Vec<SelectionItem> = cmd
+            .edit_targets
+            .iter()
+            .filter(|target| !target.insert.is_empty())
+            .map(|target| {
+                let mut item = SelectionItem::new(target.insert.clone(), target.label.clone());
+                item.description = target.display.clone();
+                item
+            })
+            .collect();
+
+        if items.is_empty() {
+            return false;
+        }
+
+        self.edit_target_picker = Some(SelectionSurface::new(
+            format!("Edit targets for /{}", cmd.name),
+            items,
+        ));
+        true
+    }
+
+    pub fn close_edit_target_picker(&mut self) {
+        self.edit_target_picker = None;
+    }
+
+    pub fn handle_edit_target_key(&mut self, code: KeyCode) -> bool {
+        let Some(picker) = self.edit_target_picker.as_mut() else {
+            return false;
+        };
+
+        match code {
+            KeyCode::Up | KeyCode::Left => {
+                picker.move_prev();
+                true
+            }
+            KeyCode::Down | KeyCode::Right | KeyCode::Tab | KeyCode::BackTab => {
+                picker.move_next();
+                true
+            }
+            KeyCode::PageUp => {
+                picker.move_prev();
+                true
+            }
+            KeyCode::PageDown => {
+                picker.move_next();
+                true
+            }
+            KeyCode::Esc => {
+                self.close_edit_target_picker();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub fn selected_edit_target_input(&self) -> Option<String> {
+        self.edit_target_picker
+            .as_ref()
+            .and_then(|picker| picker.selected_item())
+            .map(|item| item.id.clone())
+    }
+
     pub fn argument_hint(input: &str, cwd: &Path) -> Option<String> {
         command_from_argument_input(input, cwd).map(|item| item.usage)
     }
 
     pub fn argument_help_height(input: &str, cwd: &Path) -> u16 {
         command_from_argument_input(input, cwd)
-            .map(|item| ARG_HELP_BASE_HEIGHT + argument_edit_row_count(&item) as u16)
+            .map(|item| {
+                ARG_HELP_BASE_HEIGHT
+                    + argument_edit_row_count(&item) as u16
+                    + has_edit_target_picker(&item) as u16
+            })
             .unwrap_or(0)
     }
 
@@ -143,7 +233,12 @@ impl CommandPalette {
         } else {
             list_rows
         } as u16;
-        (list_rows + DETAIL_ROWS + 2).min(12)
+        let picker_rows = self
+            .edit_target_picker
+            .as_ref()
+            .map(|picker| picker.render_lines(MAX_EDIT_TARGET_ROWS).len() as u16)
+            .unwrap_or(0);
+        (list_rows + DETAIL_ROWS + 2 + picker_rows).min(16)
     }
 
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
@@ -153,7 +248,11 @@ impl CommandPalette {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Commands ")
+            .title(if self.edit_target_picker.is_some() {
+                " Commands - Edit targets "
+            } else {
+                " Commands "
+            })
             .border_style(theme.dim);
         let inner = block.inner(area);
         block.render(area, buf);
@@ -168,8 +267,15 @@ impl CommandPalette {
         let detail_rows = selected_item
             .map(|item| palette_detail_rows(item, inner.width as usize))
             .unwrap_or(DETAIL_ROWS);
+        let picker_rows = self
+            .edit_target_picker
+            .as_ref()
+            .map(|picker| picker.render_lines(MAX_EDIT_TARGET_ROWS).len())
+            .unwrap_or(0);
+        let detail_and_picker_rows =
+            detail_rows as usize + picker_rows + usize::from(picker_rows > 0);
         let visible_rows = (inner.height as usize)
-            .saturating_sub(detail_rows as usize)
+            .saturating_sub(detail_and_picker_rows)
             .min(MAX_ROWS);
         let mut lines = Vec::new();
         let visible_start = visible_window_start(self.filtered.len(), self.selected, visible_rows);
@@ -226,12 +332,27 @@ impl CommandPalette {
                         Span::styled(text, theme.info),
                     ]));
                 }
+                if has_edit_target_picker(selected) {
+                    lines.push(Line::from(vec![
+                        Span::styled("Hint: ", theme.dim),
+                        Span::styled("Press Ctrl+E to choose a target in-terminal.", theme.info),
+                    ]));
+                }
             } else {
                 lines.push(Line::from(Span::styled(
                     "Enter selects the command; type arguments after the inserted space.",
                     theme.dim,
                 )));
             }
+        }
+
+        if let Some(picker) = &self.edit_target_picker {
+            lines.push(Line::default());
+            lines.push(Line::from(vec![
+                Span::styled("Target picker: ", theme.dim),
+                Span::styled("Ctrl+E closes the picker", theme.dim),
+            ]));
+            lines.extend(render_picker_lines(picker, MAX_EDIT_TARGET_ROWS, theme));
         }
 
         Paragraph::new(lines).render(inner, buf);
@@ -301,6 +422,16 @@ impl CommandPalette {
                     Span::styled(text, theme.link),
                 ]);
                 set_inner_line(buf, inner, row_idx as u16, &edit_line);
+            }
+            if has_edit_target_picker(&item) {
+                let hint = Line::from(vec![
+                    Span::styled("Hint: ", theme.dim),
+                    Span::styled("Press Ctrl+E to pick a target.", theme.info),
+                ]);
+                let row_idx = 3 + item.edit_targets.len().min(MAX_EDIT_ROWS);
+                if (row_idx as u16) < inner.height {
+                    set_inner_line(buf, inner, row_idx as u16, &hint);
+                }
             }
         }
     }
@@ -421,6 +552,12 @@ fn palette_detail_rows(item: &CommandItem, width: usize) -> u16 {
     3 + edit_rows as u16
 }
 
+fn has_edit_target_picker(item: &CommandItem) -> bool {
+    item.edit_targets
+        .iter()
+        .any(|target| !target.insert.is_empty())
+}
+
 struct CommandMeta {
     usage: String,
     examples: Vec<String>,
@@ -428,11 +565,12 @@ struct CommandMeta {
 }
 
 impl EditTarget {
-    fn new(label: &str, path: PathBuf, cwd: &Path) -> Self {
+    fn new(label: &str, path: PathBuf, cwd: &Path, insert: &str) -> Self {
         let display = display_path(&path, cwd);
         Self {
             label: label.to_string(),
             display,
+            insert: insert.to_string(),
         }
     }
 }
@@ -487,10 +625,36 @@ fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         "files" => simple_meta("/files", &["/files"]),
         "gbranch" => simple_meta("/gbranch [branch-name]", &["/gbranch feature/ui-fix"]),
         "help" => simple_meta("/help [command]", &["/help mcp"]),
-        "hooks" => simple_meta(
-            "/hooks <list|path|open> [event|layer]",
-            &["/hooks list PreToolUse", "/hooks open project"],
-        ),
+        "hooks" => CommandMeta {
+            usage: "/hooks <list|path|open> [event|layer]".to_string(),
+            examples: vec!["/hooks list PreToolUse".to_string(), "/hooks open project".to_string()],
+            edit_targets: vec![
+                EditTarget::new(
+                    "managed",
+                    cc_config::settings::managed_settings_path(),
+                    cwd,
+                    "open managed",
+                ),
+                EditTarget::new(
+                    "user",
+                    cc_config::settings::user_settings_path(),
+                    cwd,
+                    "open user",
+                ),
+                EditTarget::new(
+                    "project",
+                    cc_config::settings::project_settings_path(cwd),
+                    cwd,
+                    "open project",
+                ),
+                EditTarget::new(
+                    "local",
+                    cc_config::settings::local_settings_path(cwd),
+                    cwd,
+                    "open local",
+                ),
+            ],
+        },
         "ide" => simple_meta(
             "/ide [detect|status|select|clear|reconnect]",
             &["/ide status"],
@@ -513,9 +677,24 @@ fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
                 "/mcp add ctx7 --command=npx --arg=-y --arg=@upstash/context7-mcp".to_string(),
             ],
             edit_targets: vec![
-                EditTarget::new("user", cc_config::settings::user_settings_path(), cwd),
-                EditTarget::new("project", cc_config::settings::project_settings_path(cwd), cwd),
-                EditTarget::new("local", cc_config::settings::local_settings_path(cwd), cwd),
+                EditTarget::new(
+                    "user",
+                    cc_config::settings::user_settings_path(),
+                    cwd,
+                    "edit user",
+                ),
+                EditTarget::new(
+                    "project",
+                    cc_config::settings::project_settings_path(cwd),
+                    cwd,
+                    "edit project",
+                ),
+                EditTarget::new(
+                    "local",
+                    cc_config::settings::local_settings_path(cwd),
+                    cwd,
+                    "edit local",
+                ),
             ],
         },
         "model" => simple_meta("/model [model-id|alias]", &["/model sonnet"]),
@@ -528,10 +707,16 @@ fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
             "/permissions [mode|allow|ask|deny|session-grant|clear-session-grants|reset] ...",
             &["/permissions", "/permissions mode plan"],
         ),
-        "plan" => simple_meta(
-            "/plan <enter|show|status|approve|reject|link|classify> ...",
-            &["/plan enter refactor command palette"],
-        ),
+        "plan" => CommandMeta {
+            usage: "/plan <enter|show|status|approve|reject|link|classify> ...".to_string(),
+            examples: vec!["/plan enter refactor command palette".to_string()],
+            edit_targets: vec![EditTarget::new(
+                "current",
+                cfg_paths::current_plan_file_path(cwd),
+                cwd,
+                "open",
+            )],
+        },
         "plugin" => CommandMeta {
             usage: "/plugin <list|installed|disabled|errors|status|enable|disable|uninstall> [id]"
                 .to_string(),
@@ -541,8 +726,14 @@ fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
                     "installed",
                     cc_config::paths::plugins_dir().join("installed_plugins.json"),
                     cwd,
+                    "",
                 ),
-                EditTarget::new("cache", cc_config::paths::plugins_dir().join("cache"), cwd),
+                EditTarget::new(
+                    "cache",
+                    cc_config::paths::plugins_dir().join("cache"),
+                    cwd,
+                    "",
+                ),
             ],
         },
         "rate-limit-options" => simple_meta("/rate-limit-options", &["/rate-limit-options"]),
@@ -577,8 +768,13 @@ fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
             usage: "/skills [name]".to_string(),
             examples: vec!["/skills".to_string()],
             edit_targets: vec![
-                EditTarget::new("user", cc_config::paths::skills_dir_global(), cwd),
-                EditTarget::new("project", cwd.join(".cc-rust").join("skills"), cwd),
+                EditTarget::new("user", cc_config::paths::skills_dir_global(), cwd, ""),
+                EditTarget::new(
+                    "project",
+                    cwd.join(".cc-rust").join("skills"),
+                    cwd,
+                    "",
+                ),
             ],
         },
         "sleep" => simple_meta("/sleep <seconds>", &["/sleep 60"]),
@@ -612,22 +808,33 @@ fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
                 "user",
                 cc_config::paths::keybindings_path(),
                 cwd,
+                "open",
             )],
         },
         "config" => CommandMeta {
             usage: "/config <show|sources|schema|set|reset> [key] [value]".to_string(),
             examples: vec!["/config set model claude-sonnet-4".to_string()],
             edit_targets: vec![
-                EditTarget::new("user", cc_config::settings::user_settings_path(), cwd),
-                EditTarget::new("project", cc_config::settings::project_settings_path(cwd), cwd),
+                EditTarget::new("user", cc_config::settings::user_settings_path(), cwd, "--user"),
+                EditTarget::new(
+                    "project",
+                    cc_config::settings::project_settings_path(cwd),
+                    cwd,
+                    "--project",
+                ),
             ],
         },
         "memory" => CommandMeta {
             usage: "/memory <show|edit|add> [text]".to_string(),
             examples: vec!["/memory".to_string()],
             edit_targets: vec![
-                EditTarget::new("project", cwd.join("CLAUDE.md"), cwd),
-                EditTarget::new("global", cc_config::paths::memory_dir_global(), cwd),
+                EditTarget::new("project", cwd.join("CLAUDE.md"), cwd, "open project"),
+                EditTarget::new(
+                    "global",
+                    cc_config::paths::memory_dir_global(),
+                    cwd,
+                    "open global",
+                ),
             ],
         },
         other => CommandMeta {
@@ -695,6 +902,28 @@ fn edit_target_lines(targets: &[EditTarget], max_width: usize, max_lines: usize)
     }
 
     lines
+}
+
+fn render_picker_lines(
+    picker: &SelectionSurface,
+    max_rows: usize,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
+    picker
+        .render_lines(max_rows)
+        .into_iter()
+        .enumerate()
+        .map(|(idx, text)| {
+            let style = if idx == 0 {
+                theme.dim
+            } else if text.starts_with('>') {
+                theme.selected
+            } else {
+                theme.unselected
+            };
+            Line::from(Span::styled(text, style))
+        })
+        .collect()
 }
 
 fn file_uri(path: &Path) -> String {
@@ -791,7 +1020,7 @@ mod tests {
         );
         assert_eq!(
             CommandPalette::argument_help_height("/mcp ", Path::new("/repo")),
-            ARG_HELP_BASE_HEIGHT + MAX_EDIT_ROWS as u16
+            ARG_HELP_BASE_HEIGHT + MAX_EDIT_ROWS as u16 + 1
         );
     }
 
@@ -971,6 +1200,7 @@ mod tests {
             text = text.replace(&home.replace(' ', "%20"), "<HOME>");
         }
 
+        text = text.replace("$CC_RUST_HOME", "~/.cc-rust");
         text.replace("C:/cc-rust-snapshot", "<WORKSPACE>")
     }
 

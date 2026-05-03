@@ -761,26 +761,72 @@ impl App {
             return AppAction::None;
         }
 
-        match (key.modifiers, key.code) {
-            (_, KeyCode::Esc) if self.command_palette.active() => {
-                self.command_palette.close();
-                return AppAction::None;
-            }
-            (_, KeyCode::Enter) if self.command_palette.active() => {
-                if let Some(command_input) = self.command_palette.selected_command_input() {
-                    self.prompt.input = command_input;
-                    self.prompt.cursor_position = self.prompt.input.len();
+        if self.command_palette.active() {
+            if self.command_palette.edit_target_picker_active() {
+                match (key.modifiers, key.code) {
+                    (_, KeyCode::Esc) | (KeyModifiers::CONTROL, KeyCode::Char('e')) => {
+                        self.command_palette.close_edit_target_picker();
+                        return AppAction::None;
+                    }
+                    (_, KeyCode::Enter) => {
+                        if let Some(insert_text) = self.command_palette.selected_edit_target_input()
+                        {
+                            let needs_separator = self
+                                .prompt
+                                .input
+                                .get(..self.prompt.cursor_position)
+                                .and_then(|prefix| prefix.chars().last())
+                                .is_some_and(|ch| !ch.is_whitespace());
+                            if needs_separator {
+                                self.prompt.insert_str(" ");
+                            }
+                            self.prompt.insert_str(&insert_text);
+                            self.sync_command_palette();
+                        }
+                        self.command_palette.close_edit_target_picker();
+                        return AppAction::None;
+                    }
+                    (_, KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right)
+                    | (_, KeyCode::PageUp)
+                    | (_, KeyCode::PageDown)
+                    | (_, KeyCode::Tab)
+                    | (_, KeyCode::BackTab) => {
+                        self.command_palette.handle_edit_target_key(key.code);
+                        return AppAction::None;
+                    }
+                    _ => {
+                        self.command_palette.handle_edit_target_key(key.code);
+                        return AppAction::None;
+                    }
                 }
-                self.command_palette.close();
-                return AppAction::None;
             }
-            (_, KeyCode::Up | KeyCode::Down | KeyCode::PageUp | KeyCode::PageDown)
-                if self.command_palette.active() =>
-            {
-                self.command_palette.handle_key(key.code);
-                return AppAction::None;
+
+            match (key.modifiers, key.code) {
+                (_, KeyCode::Esc) => {
+                    self.command_palette.close();
+                    return AppAction::None;
+                }
+                (KeyModifiers::CONTROL, KeyCode::Char('e'))
+                    if self.command_palette.selected_command_has_edit_targets() =>
+                {
+                    if self.command_palette.open_edit_target_picker() {
+                        return AppAction::None;
+                    }
+                }
+                (_, KeyCode::Enter) => {
+                    if let Some(command_input) = self.command_palette.selected_command_input() {
+                        self.prompt.input = command_input;
+                        self.prompt.cursor_position = self.prompt.input.len();
+                    }
+                    self.command_palette.close();
+                    return AppAction::None;
+                }
+                (_, KeyCode::Up | KeyCode::Down | KeyCode::PageUp | KeyCode::PageDown) => {
+                    self.command_palette.handle_key(key.code);
+                    return AppAction::None;
+                }
+                _ => {}
             }
-            _ => {}
         }
 
         if let Some(action) = self.resolve_bound_action(&key) {
@@ -984,6 +1030,7 @@ impl App {
                 message_area,
                 frame.buffer_mut(),
                 &self.theme,
+                self.is_streaming,
                 self.scroll_offset,
                 &self.vscroll,
             );
@@ -1511,6 +1558,7 @@ impl App {
             body_area,
             frame.buffer_mut(),
             &self.theme,
+            self.is_streaming,
             self.transcript_state.scroll_offset,
             &self.vscroll,
         );
@@ -1786,6 +1834,42 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_e_opens_edit_target_picker_for_supported_commands() {
+        let mut app = App::new();
+        app.prompt.input = "/mcp".to_string();
+        app.prompt.cursor_position = app.prompt.input.len();
+        app.sync_command_palette();
+
+        assert_eq!(
+            send_key_with_modifiers(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL),
+            AppAction::None
+        );
+        assert!(app.command_palette.active());
+        assert!(app.command_palette.edit_target_picker_active());
+        assert_eq!(
+            app.command_palette.selected_edit_target_input().as_deref(),
+            Some("edit user")
+        );
+    }
+
+    #[test]
+    fn picker_enter_inserts_selected_target_into_prompt() {
+        let mut app = App::new();
+        app.prompt.input = "/mcp".to_string();
+        app.prompt.cursor_position = app.prompt.input.len();
+        app.sync_command_palette();
+
+        assert_eq!(
+            send_key_with_modifiers(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL),
+            AppAction::None
+        );
+        assert_eq!(send_key(&mut app, KeyCode::Enter), AppAction::None);
+
+        assert_eq!(app.prompt.input, "/mcp edit user");
+        assert!(!app.command_palette.edit_target_picker_active());
+    }
+
+    #[test]
     fn command_palette_renders_below_prompt_input() {
         let mut app = App::new();
         app.prompt.input = "/".to_string();
@@ -1890,6 +1974,10 @@ mod tests {
 
     fn send_key(app: &mut App, code: KeyCode) -> AppAction {
         app.handle_key_event(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn send_key_with_modifiers(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> AppAction {
+        app.handle_key_event(KeyEvent::new(code, modifiers))
     }
 
     fn buffer_to_lines(buf: &ratatui::buffer::Buffer, width: u16, height: u16) -> Vec<String> {

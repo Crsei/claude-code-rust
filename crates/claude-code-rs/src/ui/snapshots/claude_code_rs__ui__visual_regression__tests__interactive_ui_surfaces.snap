@@ -1,0 +1,76 @@
+---
+source: crates/claude-code-rs/src/ui/visual_regression.rs
+assertion_line: 299
+expression: render_interactive_ui_surfaces()
+---
+## permission/bash
+            ┌ Permission Required - Run command? ──────────┐
+            │Tool: Bash                                    │
+            │Kind: Run command                             │
+            ││Command: cargo test -p claude-code-rs        │
+            ││Run a build check before merging.            │
+            ││                                             │
+            ││                                             │
+            ││                                             │
+            ││                                             │
+            ││                                             │
+            │  Allow (y)   Deny (n)   Always Allow (a)     │
+            │ Arrow keys or hotkeys. Enter confirms. Esc den
+            └──────────────────────────────────────────────┘
+
+## permission/file-edit
+            ┌ Permission Required - Edit file? ────────────┐
+            │Tool: Write                                   │
+            │Kind: Edit file                               │
+            ││File: src/ui/command_palette.rs              │
+            ││Edit the command palette picker flow.        │
+            ││                                             │
+            ││                                             │
+            ││                                             │
+            ││                                             │
+            ││                                             │
+            │  Allow (y)   Deny (n)   Always Allow (a)     │
+            │ Arrow keys or hotkeys. Enter confirms. Esc den
+            └──────────────────────────────────────────────┘
+
+## command-palette-picker
+┌ Commands - Edit targets ─────────────────────────────────────────────────────────────────────────┐
+│/mcp                 MCP server management (list, status, add, edit, remove, connect)             │
+│/doctor             (diagnostics)  Aggregated diagnostics (install, auth, settings, MCP, terminal)│
+│                                                                                                  │
+│Usage: /mcp <list|status|add|edit|remove|connect|disconnect|reconnect>                            │
+│Example: /mcp add ctx7 --command=npx --arg=-y --arg=@upstash/context7-mcp                         │
+│Edit: user: ~/.cc-rust/settings.json | project: ./.cc-rust/settings.json                          │
+│      local: ./.cc-rust/settings.local.json                                                       │
+│Hint: Press Ctrl+E to choose a target in-terminal.                                                │
+│                                                                                                  │
+│Target picker: Ctrl+E closes the picker                                                           │
+│Edit targets for /mcp filter=''                                                                   │
+│> user - ~/.cc-rust/settings.json                                                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+## markdown
+Heading
+
+Visit docs for the current state.
+
+- first
+- second
+
+## streaming-message
+You: show me the latest status
+
+Claude: Progress
+
+        Visit docs for details.
+        ($0.0314) ▌
+
+
+
+## diff
+--- diff: +2 -2 lines ---
+   1    1   alpha
+   2      - beta
+   3      - A very long line: cafe deja vu
+        2 + beta updated
+        3 + A very long line: cafe deja vu and more text

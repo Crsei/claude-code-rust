@@ -161,17 +161,10 @@ fn markdown_to_lines_inner(text: &str, theme: &Theme) -> Vec<Line<'static>> {
             }
 
             // ── Links ───────────────────────────────────────────────
-            Event::Start(Tag::Link { dest_url, .. }) => {
+            Event::Start(Tag::Link { .. }) => {
                 style_stack.push(theme.link);
-                style_stack.push(Style::default());
-                current_spans.push(Span::styled("", Style::default()));
-                current_spans.pop();
-                current_spans.push(Span::raw("["));
-                let _ = dest_url;
-                style_stack.pop();
             }
             Event::End(TagEnd::Link) => {
-                current_spans.push(Span::raw("]"));
                 style_stack.pop();
             }
 
