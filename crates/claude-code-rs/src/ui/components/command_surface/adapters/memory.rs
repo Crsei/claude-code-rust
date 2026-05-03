@@ -1,0 +1,70 @@
+use std::path::{Path, PathBuf};
+
+use crate::ui::command_surface::CommandSurfaceOutcome;
+use crate::ui::memory::memory_file_selector::{
+    MemoryFileKind, MemoryFileOption, MemoryFileSelectorState,
+};
+pub(crate) fn selected_memory_open_command(
+    state: &MemoryFileSelectorState,
+) -> CommandSurfaceOutcome {
+    let Some(option) = state.options.get(state.selected_index) else {
+        return CommandSurfaceOutcome::None;
+    };
+    if option.kind != MemoryFileKind::Folder {
+        return CommandSurfaceOutcome::Submit("/memory edit".to_string());
+    }
+
+    let description = option.description.to_ascii_lowercase();
+    let scope = if description.contains("auto") {
+        "auto"
+    } else if description.contains("team") {
+        "team"
+    } else if description.contains("global") {
+        "global"
+    } else {
+        "project"
+    };
+    CommandSurfaceOutcome::Submit(format!("/memory open {scope}"))
+}
+
+pub(crate) fn memory_options(cwd: &Path, home: &Path) -> Vec<MemoryFileOption> {
+    let mut options = vec![
+        file_option(home.join("CLAUDE.md"), MemoryFileKind::User),
+        file_option(cwd.join("CLAUDE.md"), MemoryFileKind::Project),
+    ];
+    for path in crate::config::claude_md::find_claude_md_files(cwd) {
+        if path != cwd.join("CLAUDE.md") {
+            options.push(file_option(path, MemoryFileKind::Nested));
+        }
+    }
+    options.extend([
+        MemoryFileOption::new(
+            crate::config::paths::auto_memory_dir(),
+            MemoryFileKind::Folder,
+        )
+        .with_description("auto-memory folder"),
+        MemoryFileOption::new(
+            crate::config::paths::team_memory_dir(cwd),
+            MemoryFileKind::Folder,
+        )
+        .with_description("team-memory folder"),
+        MemoryFileOption::new(
+            crate::config::paths::memory_dir_global(),
+            MemoryFileKind::Folder,
+        )
+        .with_description("global memory folder"),
+        MemoryFileOption::new(cwd.join(".cc-rust").join("memory"), MemoryFileKind::Folder)
+            .with_description("project memory folder"),
+    ]);
+    options
+}
+
+pub(crate) fn file_option(path: PathBuf, kind: MemoryFileKind) -> MemoryFileOption {
+    let exists = path.exists();
+    let option = MemoryFileOption::new(path, kind);
+    if exists {
+        option
+    } else {
+        option.missing()
+    }
+}
