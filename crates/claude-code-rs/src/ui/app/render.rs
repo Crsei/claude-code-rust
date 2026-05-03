@@ -1,0 +1,530 @@
+use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::prelude::Widget;
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+use ratatui::Frame;
+
+use super::App;
+use crate::ui::command_palette::CommandPalette;
+use crate::ui::command_surface::CommandSurface;
+use crate::ui::messages::render_messages;
+use crate::ui::theme::Theme;
+use crate::ui::transcript::{self, TranscriptInputMode, ViewMode};
+use crate::ui::welcome;
+
+/// Upper cap on the number of stdout lines the status-line runner is
+/// allowed to take up. Arbitrary but small so a runaway script can't
+/// eat the messages pane.
+const STATUS_LINE_MAX_LINES: usize = 3;
+
+impl App {
+    pub fn render(&mut self, frame: &mut Frame) {
+        let size = frame.area();
+        if size.width < 10 || size.height < 4 {
+            return;
+        }
+
+        if self.workspace_trust_pending {
+            render_workspace_trust_prompt(
+                size,
+                frame.buffer_mut(),
+                &self.cwd,
+                self.workspace_trust_selection,
+            );
+            return;
+        }
+
+        // Transcript / focus modes have a different chrome; dispatch
+        // before we compute the prompt-mode layout.
+        if self.view_mode.is_transcript_like() {
+            self.render_transcript(frame, size);
+            return;
+        }
+
+        // Kick the status-line runner before computing layout so this
+        // frame already has a chance to show a refreshed output. The
+        // runner throttles refreshes internally.
+        self.trigger_status_refresh();
+        let status_output = self.status_line_runner.latest();
+        let custom_lines: Vec<String> =
+            if status_output.is_usable() && self.status_line_settings.is_command_mode() {
+                status_output.lines(STATUS_LINE_MAX_LINES)
+            } else {
+                Vec::new()
+            };
+
+        let spinner_height = if self.is_streaming { 1u16 } else { 0 };
+        let suggestion_height = if !self.is_streaming && self.suggestions.is_some() {
+            1u16
+        } else {
+            0
+        };
+        let command_palette_height = self.command_palette.preferred_height();
+        let cwd_path = std::path::Path::new(&self.cwd);
+        let command_arg_help_height =
+            CommandPalette::argument_help_height(&self.prompt.input, cwd_path);
+        let input_height = 1u16;
+        let status_height = if custom_lines.is_empty() {
+            1u16
+        } else {
+            custom_lines.len().min(STATUS_LINE_MAX_LINES) as u16
+        };
+        let bottom_height = spinner_height
+            + suggestion_height
+            + command_palette_height
+            + command_arg_help_height
+            + input_height
+            + status_height;
+        let max_content_height = size.height.saturating_sub(bottom_height);
+        let content_height = if self.show_welcome {
+            welcome::welcome_height_for(size.width).min(max_content_height)
+        } else {
+            self.vscroll
+                .ensure_up_to_date(&self.messages, size.width, &self.theme);
+            self.vscroll
+                .total_visual_lines()
+                .min(max_content_height as usize) as u16
+        };
+
+        let chunks = Layout::vertical([
+            Constraint::Length(content_height),
+            Constraint::Length(bottom_height),
+            Constraint::Min(0),
+        ])
+        .split(size);
+
+        let message_area = chunks[0];
+        let bottom_area = chunks[1];
+
+        if self.show_welcome {
+            // Welcome screen
+            welcome::render_welcome(
+                message_area,
+                frame.buffer_mut(),
+                env!("CARGO_PKG_VERSION"),
+                &self.model_name,
+                &self.session_id,
+                &self.cwd,
+            );
+        } else {
+            // Messages (virtual scroll)
+            self.vscroll
+                .ensure_up_to_date(&self.messages, message_area.width, &self.theme);
+            let total = self.vscroll.total_visual_lines();
+            let max_scroll = total.saturating_sub(message_area.height as usize);
+            if self.scroll_offset > max_scroll {
+                self.scroll_offset = max_scroll;
+            }
+
+            render_messages(
+                &self.messages,
+                message_area,
+                frame.buffer_mut(),
+                &self.theme,
+                self.is_streaming,
+                self.scroll_offset,
+                &self.vscroll,
+            );
+        }
+
+        // Bottom area: spinner + suggestions + input + status
+        let has_suggestions = !self.is_streaming && self.suggestions.is_some();
+        let bottom_chunks = Layout::vertical([
+            Constraint::Length(if self.is_streaming { 1 } else { 0 }),
+            Constraint::Length(if has_suggestions { 1 } else { 0 }),
+            Constraint::Length(1),
+            Constraint::Length(command_palette_height),
+            Constraint::Length(command_arg_help_height),
+            Constraint::Length(status_height),
+        ])
+        .split(bottom_area);
+
+        if self.is_streaming && bottom_chunks[0].height > 0 {
+            self.spinner_state
+                .render(bottom_chunks[0], frame.buffer_mut(), &self.theme);
+        }
+
+        if has_suggestions {
+            self.render_suggestions(bottom_chunks[1], frame.buffer_mut());
+        }
+
+        let argument_hint = CommandPalette::argument_hint(&self.prompt.input, cwd_path);
+        self.prompt.render_with_hint(
+            bottom_chunks[2],
+            frame.buffer_mut(),
+            &self.theme,
+            argument_hint.as_deref(),
+        );
+
+        self.command_palette
+            .render(bottom_chunks[3], frame.buffer_mut(), &self.theme);
+
+        CommandPalette::render_argument_help(
+            &self.prompt.input,
+            cwd_path,
+            bottom_chunks[4],
+            frame.buffer_mut(),
+            &self.theme,
+        );
+
+        self.render_status_bar(bottom_chunks[5], frame.buffer_mut(), &custom_lines);
+
+        if let Some(ref surface) = self.command_surface {
+            render_command_surface_overlay(surface, size, frame.buffer_mut(), &self.theme);
+        }
+
+        if let Some(ref dialog) = self.permission_dialog {
+            dialog.render(size, frame.buffer_mut(), &self.theme);
+        }
+    }
+
+    fn render_suggestions(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        if area.height == 0 {
+            return;
+        }
+        if let Some(suggestions) = &self.suggestions {
+            let hint: String = suggestions
+                .iter()
+                .take(3)
+                .enumerate()
+                .map(|(i, s)| format!("[{}{}] {}", s.category.icon(), i + 1, s.text))
+                .collect::<Vec<_>>()
+                .join("  ");
+            let line = Line::from(Span::styled(
+                hint,
+                ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+            ));
+            buf.set_line(area.x, area.y, &line, area.width);
+        }
+    }
+
+    fn render_status_bar(
+        &self,
+        area: Rect,
+        buf: &mut ratatui::buffer::Buffer,
+        custom_lines: &[String],
+    ) {
+        if area.height == 0 {
+            return;
+        }
+
+        // 1. Custom scriptable status-line (issue #11); when present, take
+        //    full priority over the built-in footer. Padding from settings.
+        if !custom_lines.is_empty() {
+            let padding = self.status_line_settings.padding.unwrap_or(0) as usize;
+            let pad_str: String = " ".repeat(padding);
+            for (i, text) in custom_lines.iter().enumerate() {
+                if (i as u16) >= area.height {
+                    break;
+                }
+                let line = Line::from(vec![Span::styled(
+                    format!("{}{}", pad_str, text),
+                    self.theme.dim,
+                )]);
+                buf.set_line(area.x, area.y + i as u16, &line, area.width);
+            }
+            return;
+        }
+
+        // 2. Built-in default footer; also the fallback when the runner
+        //    errors or the script is disabled.
+        let msg_count = self.messages.len();
+        let mode = if self.is_streaming {
+            "streaming"
+        } else {
+            "ready"
+        };
+
+        let mut parts = Vec::new();
+        if !self.model_name.is_empty() {
+            let short_model = self
+                .model_name
+                .strip_prefix("claude-")
+                .unwrap_or(&self.model_name);
+            let short_model = short_model.split('-').take(2).collect::<Vec<_>>().join("-");
+            parts.push(short_model);
+        }
+        parts.push(format!("{} msgs", msg_count));
+        if self.session_cost_usd > 0.0 {
+            parts.push(format!("${:.4}", self.session_cost_usd));
+        }
+        if self.vim.enabled {
+            parts.push(format!("vim:{}", self.vim.mode.indicator()));
+        }
+        parts.push(mode.to_string());
+        parts.push(format!(
+            "Ctrl+C {}",
+            if self.is_streaming { "abort" } else { "quit" }
+        ));
+
+        // If the runner reported an error, surface a quiet marker so the
+        // user knows to run `/statusline status` to see why.
+        let latest = self.status_line_runner.latest();
+        if latest.error.is_some() && self.status_line_settings.is_command_mode() {
+            parts.push("statusline:err".to_string());
+        }
+
+        // Voice push-to-talk status (issue #13). Shown as the tail entry
+        // so it's the most prominent thing while recording.
+        if self.voice_enabled && !self.voice_supported {
+            parts.push("voice:unsupported".to_string());
+        } else if let Some(v) = &self.voice {
+            if let Some(label) = v.status_line() {
+                parts.push(label);
+            }
+        }
+
+        let status_text = format!(" {}", parts.join(" | "));
+        let line = Line::from(vec![Span::styled(status_text, self.theme.dim)]);
+        buf.set_line(area.x, area.y, &line, area.width);
+    }
+
+    // Transcript rendering (issue #12)
+
+    fn render_transcript(&mut self, frame: &mut Frame, size: Rect) {
+        if matches!(self.view_mode, ViewMode::Focus) {
+            self.render_focus_view(frame, size);
+            return;
+        }
+
+        // Focus mode hides all chrome and uses the full height for body;
+        // Transcript mode reserves 1 line for header + 1 for footer.
+        let chrome = 1u16;
+        let header_height = chrome;
+        let footer_height = chrome;
+        let body_height = size.height.saturating_sub(header_height + footer_height);
+
+        let rows = Layout::vertical([
+            Constraint::Length(header_height),
+            Constraint::Length(body_height),
+            Constraint::Length(footer_height),
+        ])
+        .split(size);
+
+        let body_area = rows[1];
+
+        // Ensure the virtual-scroll cache matches the body width. Sharing
+        // `vscroll` with prompt mode is fine because both invalidate on
+        // width change.
+        self.vscroll
+            .ensure_up_to_date(&self.messages, body_area.width, &self.theme);
+        let total = self.vscroll.total_visual_lines();
+        let max_scroll = total.saturating_sub(body_area.height as usize);
+        if self.transcript_state.scroll_offset > max_scroll {
+            self.transcript_state.scroll_offset = max_scroll;
+        }
+
+        render_messages(
+            &self.messages,
+            body_area,
+            frame.buffer_mut(),
+            &self.theme,
+            self.is_streaming,
+            self.transcript_state.scroll_offset,
+            &self.vscroll,
+        );
+
+        if header_height > 0 {
+            self.render_transcript_header(rows[0], frame.buffer_mut());
+        }
+        if footer_height > 0 {
+            self.render_transcript_footer(rows[2], frame.buffer_mut());
+        }
+    }
+
+    fn render_focus_view(&mut self, frame: &mut Frame, size: Rect) {
+        let focus = transcript::build_focus_view(&self.messages);
+        let mut lines = Vec::new();
+
+        if let Some(prompt) = focus.prompt {
+            lines.push(Line::from(vec![Span::styled(
+                "Prompt",
+                self.theme.assistant_name,
+            )]));
+            for body_line in prompt.body.lines() {
+                lines.push(Line::from(body_line.to_string()));
+            }
+        }
+
+        if let Some(summary) = focus.tool_summary {
+            if !lines.is_empty() {
+                lines.push(Line::default());
+            }
+            lines.push(Line::from(vec![Span::styled(
+                "Tool Summary",
+                self.theme.tool_name,
+            )]));
+            for body_line in summary.lines() {
+                lines.push(Line::from(body_line.to_string()));
+            }
+        }
+
+        if let Some(response) = focus.response {
+            if !lines.is_empty() {
+                lines.push(Line::default());
+            }
+            lines.push(Line::from(vec![Span::styled(
+                "Response",
+                self.theme.user_name,
+            )]));
+            for body_line in response.body.lines() {
+                lines.push(Line::from(body_line.to_string()));
+            }
+        }
+
+        if lines.is_empty() {
+            lines.push(Line::from(vec![Span::styled(
+                "No focused transcript content yet.",
+                self.theme.dim,
+            )]));
+        }
+
+        for (row, line) in lines.iter().enumerate().take(size.height as usize) {
+            frame
+                .buffer_mut()
+                .set_line(size.x, size.y + row as u16, line, size.width);
+        }
+    }
+
+    fn render_transcript_header(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        let total = self.messages.len();
+        let mut parts = vec![format!(
+            "\u{2500}\u{2500} {} \u{00b7} {} messages",
+            self.view_mode.label(),
+            total
+        )];
+        if matches!(
+            self.transcript_state.input_mode,
+            TranscriptInputMode::Search
+        ) {
+            parts.push(format!("search: \"{}\"", self.transcript_state.query));
+        } else if !self.transcript_state.query.is_empty() {
+            let total = self.transcript_state.matches.len();
+            let idx = self.transcript_state.focused.map(|i| i + 1).unwrap_or(0);
+            parts.push(format!(
+                "search: \"{}\" ({}/{})",
+                self.transcript_state.query, idx, total
+            ));
+        }
+        let text = parts.join(" \u{00b7} ");
+        let line = Line::from(vec![Span::styled(text, self.theme.dim)]);
+        buf.set_line(area.x, area.y, &line, area.width);
+    }
+
+    fn render_transcript_footer(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        let text = match self.transcript_state.input_mode {
+            TranscriptInputMode::Search => {
+                " [Enter] commit \u{00b7} [Esc] cancel \u{00b7} type to extend query".to_string()
+            }
+            TranscriptInputMode::Normal => concat!(
+                " [Esc/q] prompt \u{00b7} [Ctrl+O] cycle \u{00b7} [/] search ",
+                "\u{00b7} [n]/[N] next/prev \u{00b7} [e] editor ",
+                "\u{00b7} [g]/[G] top/bottom"
+            )
+            .to_string(),
+        };
+        let line = Line::from(vec![Span::styled(text, self.theme.dim)]);
+        buf.set_line(area.x, area.y, &line, area.width);
+    }
+}
+fn render_workspace_trust_prompt(
+    area: Rect,
+    buf: &mut ratatui::buffer::Buffer,
+    cwd: &str,
+    selected: usize,
+) {
+    let line_width = area.width.clamp(40, 120) as usize;
+    let separator = "\u{2500}".repeat(line_width);
+    let yes_marker = if selected == 0 { "\u{276f}" } else { " " };
+    let no_marker = if selected == 1 { "\u{276f}" } else { " " };
+
+    let lines = vec![
+        Line::from(Span::styled(separator, Style::default().fg(Color::DarkGray))),
+        Line::from(""),
+        Line::from(Span::styled(
+            " Accessing workspace:",
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!(" {}", cwd),
+            Style::default().fg(Color::LightBlue),
+        )),
+        Line::from(""),
+        Line::from(
+            " Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source",
+        ),
+        Line::from(
+            " project, or work from your team). If not, take a moment to review what's in this folder first.",
+        ),
+        Line::from(""),
+        Line::from(" Claude Code'll be able to read, edit, and execute files here."),
+        Line::from(""),
+        Line::from(Span::styled(
+            " Security guide",
+            Style::default().fg(Color::LightBlue),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                format!(" {} ", yes_marker),
+                Style::default().fg(if selected == 0 { Color::Green } else { Color::White }),
+            ),
+            Span::raw("1. Yes, I trust this folder"),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                format!(" {} ", no_marker),
+                Style::default().fg(if selected == 1 { Color::Red } else { Color::White }),
+            ),
+            Span::raw("2. No, exit"),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            " Enter to confirm \u{00b7} Esc to cancel",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+
+    Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .render(area, buf);
+}
+
+fn render_command_surface_overlay(
+    surface: &CommandSurface,
+    area: Rect,
+    buf: &mut ratatui::buffer::Buffer,
+    theme: &Theme,
+) {
+    if area.width < 8 || area.height < 5 {
+        return;
+    }
+
+    let text = surface.render();
+    let line_count = text.lines().count() as u16;
+    let width = area.width.saturating_sub(4).clamp(8, 96);
+    let height = line_count
+        .saturating_add(2)
+        .min(area.height.saturating_sub(2))
+        .max(3);
+    let overlay = Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    };
+
+    Clear.render(overlay, buf);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" {} ", surface.title()))
+        .border_style(theme.dim);
+    let inner = block.inner(overlay);
+    block.render(overlay, buf);
+    Paragraph::new(text)
+        .style(Style::default().fg(Color::White))
+        .wrap(Wrap { trim: false })
+        .render(inner, buf);
+}

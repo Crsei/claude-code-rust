@@ -1,0 +1,568 @@
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
+
+use crate::ui::command_surface::CommandSurfaceOutcome;
+use crate::ui::transcript::ViewMode;
+use crate::ui::vim::VimAction;
+
+use super::{App, AppAction};
+
+impl App {
+    pub fn handle_key_event(&mut self, key: KeyEvent) -> AppAction {
+        if key.kind != KeyEventKind::Press {
+            return AppAction::None;
+        }
+
+        // Any key press is likely to cause a visual change.
+        self.dirty = true;
+
+        if self.workspace_trust_pending {
+            return self.handle_workspace_trust_key(key);
+        }
+
+        if let Some(ref mut dialog) = self.permission_dialog {
+            if let Some(choice) = dialog.handle_key(key) {
+                self.permission_dialog = None;
+                return AppAction::PermissionResponse(choice);
+            }
+            return AppAction::None;
+        }
+
+        if self.command_surface.is_some() {
+            return self.handle_command_surface_key(key);
+        }
+
+        if self.command_palette.active() {
+            if self.command_palette.edit_target_picker_active() {
+                match (key.modifiers, key.code) {
+                    (_, KeyCode::Esc) | (KeyModifiers::CONTROL, KeyCode::Char('e')) => {
+                        self.command_palette.close_edit_target_picker();
+                        return AppAction::None;
+                    }
+                    (_, KeyCode::Enter) => {
+                        if let Some(insert_text) = self.command_palette.selected_edit_target_input()
+                        {
+                            let needs_separator = self
+                                .prompt
+                                .input
+                                .get(..self.prompt.cursor_position)
+                                .and_then(|prefix| prefix.chars().last())
+                                .is_some_and(|ch| !ch.is_whitespace());
+                            if needs_separator {
+                                self.prompt.insert_str(" ");
+                            }
+                            self.prompt.insert_str(&insert_text);
+                            self.sync_command_palette();
+                        }
+                        self.command_palette.close_edit_target_picker();
+                        return AppAction::None;
+                    }
+                    (_, KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right)
+                    | (_, KeyCode::PageUp)
+                    | (_, KeyCode::PageDown)
+                    | (_, KeyCode::Tab)
+                    | (_, KeyCode::BackTab) => {
+                        self.command_palette.handle_edit_target_key(key.code);
+                        return AppAction::None;
+                    }
+                    _ => {
+                        self.command_palette.handle_edit_target_key(key.code);
+                        return AppAction::None;
+                    }
+                }
+            }
+
+            match (key.modifiers, key.code) {
+                (_, KeyCode::Esc) => {
+                    self.command_palette.close();
+                    return AppAction::None;
+                }
+                (KeyModifiers::CONTROL, KeyCode::Char('e'))
+                    if self.command_palette.selected_command_has_edit_targets() =>
+                {
+                    if self.command_palette.open_edit_target_picker() {
+                        return AppAction::None;
+                    }
+                }
+                (_, KeyCode::Enter) => {
+                    if let Some(command_input) = self.command_palette.selected_command_input() {
+                        self.prompt.input = command_input;
+                        self.prompt.cursor_position = self.prompt.input.len();
+                    }
+                    self.command_palette.close();
+                    return AppAction::None;
+                }
+                (_, KeyCode::Up | KeyCode::Down | KeyCode::PageUp | KeyCode::PageDown) => {
+                    self.command_palette.handle_key(key.code);
+                    return AppAction::None;
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(action) = self.resolve_bound_action(&key) {
+            if let Some(app_action) = self.dispatch_bound_action(&action) {
+                return app_action;
+            }
+        } else if !self.pending_chord.is_empty() {
+            return AppAction::None;
+        }
+
+        // Ctrl+C / Ctrl+D retain their "abort or quit" semantics even in
+        // transcript / focus modes; the user always needs a way out.
+        match (key.modifiers, key.code) {
+            (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
+                if self.is_streaming {
+                    return AppAction::Abort;
+                } else {
+                    self.should_quit = true;
+                    return AppAction::Quit;
+                }
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('d'))
+                if self.view_mode == ViewMode::Prompt
+                    && (self.prompt.is_active || !self.is_streaming) =>
+            {
+                self.should_quit = true;
+                return AppAction::Quit;
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('o')) => {
+                // Cycle `Prompt -> Transcript -> Focus -> Prompt`.
+                self.cycle_view_mode();
+                return AppAction::None;
+            }
+            _ => {}
+        }
+
+        // Transcript / focus modes take over all remaining keystrokes.
+        if self.view_mode.is_transcript_like() {
+            return self.handle_transcript_key(key);
+        }
+
+        match (key.modifiers, key.code) {
+            (_, KeyCode::PageUp) | (KeyModifiers::SHIFT, KeyCode::Up) => {
+                let step = self.terminal_env.scroll_speed as usize;
+                self.scroll_up(step);
+                return AppAction::ScrollUp;
+            }
+            (_, KeyCode::PageDown) | (KeyModifiers::SHIFT, KeyCode::Down) => {
+                let step = self.terminal_env.scroll_speed as usize;
+                self.scroll_down(step);
+                return AppAction::ScrollDown;
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('u')) if !self.prompt.is_active => {
+                let step = (self.terminal_env.scroll_speed as usize).saturating_mul(2);
+                self.scroll_up(step);
+                return AppAction::ScrollUp;
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('d'))
+                if !self.prompt.is_active && self.is_streaming =>
+            {
+                let step = (self.terminal_env.scroll_speed as usize).saturating_mul(2);
+                self.scroll_down(step);
+                return AppAction::ScrollDown;
+            }
+
+            (_, KeyCode::Up) if self.prompt.is_active && !self.is_streaming => {
+                self.history_up();
+                self.sync_command_palette();
+                return AppAction::None;
+            }
+            (_, KeyCode::Down) if self.prompt.is_active && !self.is_streaming => {
+                self.history_down();
+                self.sync_command_palette();
+                return AppAction::None;
+            }
+
+            _ => {}
+        }
+
+        if self.vim.enabled && self.prompt.is_active {
+            let vim_action =
+                self.vim
+                    .handle_key(key, &self.prompt.input, self.prompt.cursor_position);
+            if let Some(app_action) = self.apply_vim_action(vim_action) {
+                self.sync_command_palette();
+                return app_action;
+            }
+        }
+
+        if let Some(submitted) = self.prompt.handle_key(key) {
+            self.command_palette.close();
+            return AppAction::Submit(submitted);
+        }
+
+        self.sync_command_palette();
+        AppAction::None
+    }
+
+    fn handle_command_surface_key(&mut self, key: KeyEvent) -> AppAction {
+        let Some(surface) = self.command_surface.as_mut() else {
+            return AppAction::None;
+        };
+
+        match surface.handle_key(key) {
+            CommandSurfaceOutcome::None => AppAction::None,
+            CommandSurfaceOutcome::Close => {
+                self.command_surface = None;
+                AppAction::None
+            }
+            CommandSurfaceOutcome::FillPrompt(text) => {
+                self.command_surface = None;
+                self.prompt.input = text;
+                self.prompt.cursor_position = self.prompt.input.len();
+                self.prompt.is_active = true;
+                self.sync_command_palette();
+                AppAction::None
+            }
+            CommandSurfaceOutcome::Submit(text) => {
+                self.command_surface = None;
+                AppAction::Submit(text)
+            }
+            CommandSurfaceOutcome::LspRecommendationResponse {
+                request_id,
+                plugin_name,
+                decision,
+                install_prompt,
+            } => {
+                self.command_surface = None;
+                if let Some(text) = install_prompt {
+                    self.prompt.input = text;
+                    self.prompt.cursor_position = self.prompt.input.len();
+                    self.prompt.is_active = true;
+                    self.sync_command_palette();
+                }
+                AppAction::LspRecommendationResponse {
+                    request_id,
+                    plugin_name,
+                    decision,
+                }
+            }
+        }
+    }
+
+    pub fn handle_mouse_event(&mut self, mouse: MouseEvent) -> AppAction {
+        match mouse.kind {
+            MouseEventKind::ScrollUp => {
+                if self.view_mode.is_transcript_like() {
+                    self.scroll_transcript_up(1);
+                } else {
+                    self.scroll_up(1);
+                }
+                AppAction::ScrollUp
+            }
+            MouseEventKind::ScrollDown => {
+                if self.view_mode.is_transcript_like() {
+                    self.scroll_transcript_down(1);
+                } else {
+                    self.scroll_down(1);
+                }
+                AppAction::ScrollDown
+            }
+            _ => AppAction::None,
+        }
+    }
+
+    pub(super) fn scroll_up(&mut self, lines: usize) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(lines);
+        self.dirty = true;
+    }
+
+    pub(super) fn scroll_down(&mut self, lines: usize) {
+        self.scroll_offset = self.scroll_offset.saturating_add(lines);
+        self.dirty = true;
+    }
+
+    pub(super) fn scroll_to_bottom_deferred(&mut self) {
+        self.scroll_offset = usize::MAX;
+    }
+
+    pub(super) fn history_up(&mut self) {
+        if self.history.is_empty() {
+            return;
+        }
+        if self.history_index.is_none() {
+            self.saved_input = self.prompt.input.clone();
+            self.history_index = Some(self.history.len() - 1);
+        } else if let Some(idx) = self.history_index {
+            if idx > 0 {
+                self.history_index = Some(idx - 1);
+            } else {
+                return;
+            }
+        }
+        if let Some(idx) = self.history_index {
+            self.prompt.input = self.history[idx].clone();
+            self.prompt.cursor_position = self.prompt.input.len();
+        }
+    }
+
+    pub(super) fn history_down(&mut self) {
+        if let Some(idx) = self.history_index {
+            if idx < self.history.len() - 1 {
+                self.history_index = Some(idx + 1);
+                self.prompt.input = self.history[idx + 1].clone();
+                self.prompt.cursor_position = self.prompt.input.len();
+            } else {
+                self.history_index = None;
+                self.prompt.input = self.saved_input.clone();
+                self.prompt.cursor_position = self.prompt.input.len();
+            }
+        }
+    }
+
+    pub(super) fn take_prompt_submission(&mut self) -> Option<String> {
+        let text = self.prompt.input.trim().to_string();
+        if text.is_empty() {
+            return None;
+        }
+        self.prompt.input.clear();
+        self.prompt.cursor_position = 0;
+        Some(text)
+    }
+
+    pub(super) fn sync_command_palette(&mut self) {
+        if self.prompt.is_active && !self.is_streaming {
+            self.command_palette
+                .sync_from_input(&self.prompt.input, std::path::Path::new(&self.cwd));
+        } else {
+            self.command_palette.close();
+        }
+    }
+
+    pub(super) fn active_keybinding_contexts(&self) -> [crate::keybindings::context::Context; 2] {
+        if self.view_mode.is_transcript_like() {
+            [
+                crate::keybindings::context::Context::Transcript,
+                crate::keybindings::context::Context::Scroll,
+            ]
+        } else {
+            [
+                crate::keybindings::context::Context::Chat,
+                crate::keybindings::context::Context::Scroll,
+            ]
+        }
+    }
+
+    pub(super) fn resolve_bound_action(
+        &mut self,
+        key: &KeyEvent,
+    ) -> Option<crate::keybindings::action::Action> {
+        use crate::keybindings::keystroke::{Chord, Keystroke};
+        use crate::keybindings::registry::Resolution;
+
+        let stroke = Keystroke::from_event(key)?;
+
+        if !self.pending_chord.is_empty() {
+            self.pending_chord.push(stroke.clone());
+            let chord = Chord(self.pending_chord.clone());
+            for context in self.active_keybinding_contexts() {
+                match self.keybindings.resolve_chord(context, &chord) {
+                    Resolution::Action(action) => {
+                        self.pending_chord.clear();
+                        return Some(action);
+                    }
+                    Resolution::Pending => return None,
+                    Resolution::None => {}
+                }
+            }
+            self.pending_chord.clear();
+        }
+
+        for context in self.active_keybinding_contexts() {
+            match self.keybindings.resolve_single(context, &stroke) {
+                Resolution::Action(action) => return Some(action),
+                Resolution::Pending => {
+                    self.pending_chord = vec![stroke.clone()];
+                    return None;
+                }
+                Resolution::None => {}
+            }
+        }
+
+        None
+    }
+
+    pub(super) fn dispatch_bound_action(
+        &mut self,
+        action: &crate::keybindings::action::Action,
+    ) -> Option<AppAction> {
+        match action.as_str() {
+            "app:interrupt" => {
+                if self.is_streaming {
+                    return Some(AppAction::Abort);
+                }
+                self.should_quit = true;
+                return Some(AppAction::Quit);
+            }
+            "app:exit" => {
+                if self.view_mode == ViewMode::Prompt
+                    && (self.prompt.is_active || !self.is_streaming)
+                {
+                    self.should_quit = true;
+                    return Some(AppAction::Quit);
+                }
+                return Some(AppAction::None);
+            }
+            "app:toggleTranscript" => {
+                self.cycle_view_mode();
+                return Some(AppAction::None);
+            }
+            "app:toggleVim" => {
+                self.vim.toggle();
+                self.dirty = true;
+                return Some(AppAction::None);
+            }
+            "app:redraw" => {
+                self.mark_dirty();
+                return Some(AppAction::None);
+            }
+            "history:previous" => {
+                if self.view_mode == ViewMode::Prompt && self.prompt.is_active && !self.is_streaming
+                {
+                    self.history_up();
+                    return Some(AppAction::None);
+                }
+                return None;
+            }
+            "history:next" => {
+                if self.view_mode == ViewMode::Prompt && self.prompt.is_active && !self.is_streaming
+                {
+                    self.history_down();
+                    return Some(AppAction::None);
+                }
+                return None;
+            }
+            "chat:clearInput" => {
+                self.prompt.input.clear();
+                self.prompt.cursor_position = 0;
+                self.dirty = true;
+                return Some(AppAction::None);
+            }
+            "chat:submit" => {
+                return Some(
+                    self.take_prompt_submission()
+                        .map_or(AppAction::None, AppAction::Submit),
+                )
+            }
+            "voice:pushToTalk" => {
+                if self.is_voice_ready() {
+                    match self
+                        .voice
+                        .as_ref()
+                        .map(|voice| voice.state())
+                        .unwrap_or(crate::voice::VoiceState::Idle)
+                    {
+                        crate::voice::VoiceState::Idle | crate::voice::VoiceState::Error(_) => {
+                            self.begin_push_to_talk();
+                        }
+                        crate::voice::VoiceState::Recording => self.end_push_to_talk(),
+                        crate::voice::VoiceState::Transcribing => {}
+                    }
+                }
+                return Some(AppAction::None);
+            }
+            "transcript:exit" => {
+                self.transcript_state.clear_search();
+                self.view_mode = ViewMode::Prompt;
+                self.dirty = true;
+                return Some(AppAction::None);
+            }
+            "scroll:pageUp" => {
+                let step = self.terminal_env.scroll_speed.max(5) as usize;
+                if self.view_mode.is_transcript_like() {
+                    self.scroll_transcript_up(step);
+                } else {
+                    self.scroll_up(step);
+                }
+                return Some(AppAction::ScrollUp);
+            }
+            "scroll:pageDown" => {
+                let step = self.terminal_env.scroll_speed.max(5) as usize;
+                if self.view_mode.is_transcript_like() {
+                    self.scroll_transcript_down(step);
+                } else {
+                    self.scroll_down(step);
+                }
+                return Some(AppAction::ScrollDown);
+            }
+            "scroll:lineUp" => {
+                if self.view_mode.is_transcript_like() {
+                    self.scroll_transcript_up(1);
+                } else {
+                    self.scroll_up(1);
+                }
+                return Some(AppAction::ScrollUp);
+            }
+            "scroll:lineDown" => {
+                if self.view_mode.is_transcript_like() {
+                    self.scroll_transcript_down(1);
+                } else {
+                    self.scroll_down(1);
+                }
+                return Some(AppAction::ScrollDown);
+            }
+            "scroll:top" => {
+                if self.view_mode.is_transcript_like() {
+                    self.transcript_state.scroll_offset = 0;
+                } else {
+                    self.scroll_offset = 0;
+                }
+                self.dirty = true;
+                return Some(AppAction::None);
+            }
+            "scroll:bottom" => {
+                if self.view_mode.is_transcript_like() {
+                    self.transcript_state.scroll_offset = usize::MAX;
+                } else {
+                    self.scroll_offset = usize::MAX;
+                }
+                self.dirty = true;
+                return Some(AppAction::None);
+            }
+            _ => {}
+        }
+
+        None
+    }
+
+    pub(super) fn apply_vim_action(&mut self, action: VimAction) -> Option<AppAction> {
+        match action {
+            VimAction::None => Some(AppAction::None),
+            VimAction::InsertChar(c) => {
+                self.prompt.insert_str(&c.to_string());
+                Some(AppAction::None)
+            }
+            VimAction::Delete { start, end } => {
+                if start <= end && end <= self.prompt.input.len() {
+                    self.prompt.input.drain(start..end);
+                    self.prompt.cursor_position = start.min(self.prompt.input.len());
+                }
+                Some(AppAction::None)
+            }
+            VimAction::MoveCursor(pos) => {
+                self.prompt.cursor_position = pos.min(self.prompt.input.len());
+                Some(AppAction::None)
+            }
+            VimAction::Yank { .. } | VimAction::YankLine | VimAction::Undo => Some(AppAction::None),
+            VimAction::Paste(text) => {
+                self.prompt.insert_str(&text);
+                Some(AppAction::None)
+            }
+            VimAction::DeleteLine => {
+                self.prompt.input.clear();
+                self.prompt.cursor_position = 0;
+                Some(AppAction::None)
+            }
+            VimAction::Submit => Some(
+                self.take_prompt_submission()
+                    .map_or(AppAction::None, AppAction::Submit),
+            ),
+            VimAction::SwitchMode(_) => Some(AppAction::None),
+            VimAction::Passthrough(key) => Some(
+                self.prompt
+                    .handle_key(key)
+                    .map_or(AppAction::None, AppAction::Submit),
+            ),
+        }
+    }
+}
