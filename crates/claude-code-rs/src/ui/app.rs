@@ -9,6 +9,31 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+#[allow(dead_code)]
+#[path = "app/agent_navigation.rs"]
+pub mod agent_navigation;
+#[allow(dead_code)]
+#[path = "app/app_backtrack.rs"]
+pub mod app_backtrack;
+#[allow(dead_code)]
+#[path = "app/app_command.rs"]
+pub mod app_command;
+#[allow(dead_code)]
+#[path = "app/app_event.rs"]
+pub mod app_event;
+#[allow(dead_code)]
+#[path = "app/app_event_sender.rs"]
+pub mod app_event_sender;
+#[allow(dead_code)]
+#[path = "app/app_server_adapter.rs"]
+pub mod app_server_adapter;
+#[allow(dead_code)]
+#[path = "app/app_server_requests.rs"]
+pub mod app_server_requests;
+#[allow(dead_code)]
+#[path = "app/loaded_threads.rs"]
+pub mod loaded_threads;
+
 use crate::config::settings::StatusLineSettings;
 use crate::keybindings::KeybindingRegistry;
 use crate::services::prompt_suggestion::PromptSuggestion;
