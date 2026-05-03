@@ -1,9 +1,9 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::prelude::Widget;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -40,6 +40,7 @@ use crate::services::prompt_suggestion::PromptSuggestion;
 use crate::types::message::Message;
 
 use super::command_palette::CommandPalette;
+use super::command_surface::{CommandSurface, CommandSurfaceOutcome};
 use super::messages::render_messages;
 use super::permissions::{PermissionChoice, PermissionDialog};
 use super::prompt_input::PromptInput;
@@ -131,6 +132,11 @@ pub enum AppAction {
     ScrollUp,
     ScrollDown,
     PermissionResponse(PermissionChoice),
+    LspRecommendationResponse {
+        request_id: String,
+        plugin_name: String,
+        decision: String,
+    },
     /// Transcript mode requested an export to `$EDITOR`. Carries the
     /// pre-rendered markdown body — the caller writes it to disk and
     /// spawns the editor so `App` stays free of IO.
@@ -162,6 +168,7 @@ pub struct App {
     history_index: Option<usize>,
     saved_input: String,
     command_palette: CommandPalette,
+    command_surface: Option<CommandSurface>,
 
     // ── Prompt suggestions ───────────────────────────────────────────
     /// Next-prompt suggestions shown after an assistant turn completes.
@@ -250,6 +257,7 @@ impl App {
             history_index: None,
             saved_input: String::new(),
             command_palette: CommandPalette::new(),
+            command_surface: None,
             vscroll: VirtualScroll::new(),
             dirty: true,
             tick_counter: 0,
@@ -559,7 +567,18 @@ impl App {
         self.dirty = true;
     }
 
-    /// Current transcript state — exposed read-only so tests can assert
+    /// Open a modal slash-command surface above the normal prompt.
+    pub fn open_command_surface(&mut self, surface: CommandSurface) {
+        self.command_surface = Some(surface);
+        self.command_palette.close();
+        self.dirty = true;
+    }
+
+    pub fn command_surface_active(&self) -> bool {
+        self.command_surface.is_some()
+    }
+
+    /// Current transcript state exposed read-only so tests can assert
     /// search invariants without going through the render path.
     pub fn transcript_state(&self) -> &TranscriptState {
         &self.transcript_state
@@ -786,6 +805,10 @@ impl App {
             return AppAction::None;
         }
 
+        if self.command_surface.is_some() {
+            return self.handle_command_surface_key(key);
+        }
+
         if self.command_palette.active() {
             if self.command_palette.edit_target_picker_active() {
                 match (key.modifiers, key.code) {
@@ -950,6 +973,73 @@ impl App {
         AppAction::None
     }
 
+    fn handle_command_surface_key(&mut self, key: KeyEvent) -> AppAction {
+        let Some(surface) = self.command_surface.as_mut() else {
+            return AppAction::None;
+        };
+
+        match surface.handle_key(key) {
+            CommandSurfaceOutcome::None => AppAction::None,
+            CommandSurfaceOutcome::Close => {
+                self.command_surface = None;
+                AppAction::None
+            }
+            CommandSurfaceOutcome::FillPrompt(text) => {
+                self.command_surface = None;
+                self.prompt.input = text;
+                self.prompt.cursor_position = self.prompt.input.len();
+                self.prompt.is_active = true;
+                self.sync_command_palette();
+                AppAction::None
+            }
+            CommandSurfaceOutcome::Submit(text) => {
+                self.command_surface = None;
+                AppAction::Submit(text)
+            }
+            CommandSurfaceOutcome::LspRecommendationResponse {
+                request_id,
+                plugin_name,
+                decision,
+                install_prompt,
+            } => {
+                self.command_surface = None;
+                if let Some(text) = install_prompt {
+                    self.prompt.input = text;
+                    self.prompt.cursor_position = self.prompt.input.len();
+                    self.prompt.is_active = true;
+                    self.sync_command_palette();
+                }
+                AppAction::LspRecommendationResponse {
+                    request_id,
+                    plugin_name,
+                    decision,
+                }
+            }
+        }
+    }
+
+    pub fn handle_mouse_event(&mut self, mouse: MouseEvent) -> AppAction {
+        match mouse.kind {
+            MouseEventKind::ScrollUp => {
+                if self.view_mode.is_transcript_like() {
+                    self.scroll_transcript_up(1);
+                } else {
+                    self.scroll_up(1);
+                }
+                AppAction::ScrollUp
+            }
+            MouseEventKind::ScrollDown => {
+                if self.view_mode.is_transcript_like() {
+                    self.scroll_transcript_down(1);
+                } else {
+                    self.scroll_down(1);
+                }
+                AppAction::ScrollDown
+            }
+            _ => AppAction::None,
+        }
+    }
+
     // ── Rendering ───────────────────────────────────────────────────
 
     pub fn render(&mut self, frame: &mut Frame) {
@@ -1103,6 +1193,10 @@ impl App {
 
         self.render_status_bar(bottom_chunks[5], frame.buffer_mut(), &custom_lines);
 
+        if let Some(ref surface) = self.command_surface {
+            render_command_surface_overlay(surface, size, frame.buffer_mut(), &self.theme);
+        }
+
         if let Some(ref dialog) = self.permission_dialog {
             dialog.render(size, frame.buffer_mut(), &self.theme);
         }
@@ -1146,10 +1240,12 @@ impl App {
 
     fn scroll_up(&mut self, lines: usize) {
         self.scroll_offset = self.scroll_offset.saturating_sub(lines);
+        self.dirty = true;
     }
 
     fn scroll_down(&mut self, lines: usize) {
         self.scroll_offset = self.scroll_offset.saturating_add(lines);
+        self.dirty = true;
     }
 
     fn scroll_to_bottom_deferred(&mut self) {
@@ -1297,16 +1393,20 @@ impl App {
                 return Some(AppAction::None);
             }
             "history:previous" => {
-                if self.prompt.is_active && !self.is_streaming {
+                if self.view_mode == ViewMode::Prompt && self.prompt.is_active && !self.is_streaming
+                {
                     self.history_up();
+                    return Some(AppAction::None);
                 }
-                return Some(AppAction::None);
+                return None;
             }
             "history:next" => {
-                if self.prompt.is_active && !self.is_streaming {
+                if self.view_mode == ViewMode::Prompt && self.prompt.is_active && !self.is_streaming
+                {
                     self.history_down();
+                    return Some(AppAction::None);
                 }
-                return Some(AppAction::None);
+                return None;
             }
             "chat:clearInput" => {
                 self.prompt.input.clear();
@@ -1761,6 +1861,43 @@ fn render_workspace_trust_prompt(
         .render(area, buf);
 }
 
+fn render_command_surface_overlay(
+    surface: &CommandSurface,
+    area: Rect,
+    buf: &mut ratatui::buffer::Buffer,
+    theme: &Theme,
+) {
+    if area.width < 8 || area.height < 5 {
+        return;
+    }
+
+    let text = surface.render();
+    let line_count = text.lines().count() as u16;
+    let width = area.width.saturating_sub(4).clamp(8, 96);
+    let height = line_count
+        .saturating_add(2)
+        .min(area.height.saturating_sub(2))
+        .max(3);
+    let overlay = Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    };
+
+    Clear.render(overlay, buf);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" {} ", surface.title()))
+        .border_style(theme.dim);
+    let inner = block.inner(overlay);
+    block.render(overlay, buf);
+    Paragraph::new(text)
+        .style(Style::default().fg(Color::White))
+        .wrap(Wrap { trim: false })
+        .render(inner, buf);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1997,12 +2134,137 @@ mod tests {
         assert!(app.should_quit());
     }
 
+    #[test]
+    fn mouse_wheel_scrolls_prompt_messages() {
+        let mut app = App::new();
+        app.scroll_offset = 10;
+        app.dirty = false;
+
+        assert_eq!(
+            send_mouse(&mut app, MouseEventKind::ScrollUp),
+            AppAction::ScrollUp
+        );
+        assert_eq!(app.scroll_offset, 9);
+        assert!(app.dirty);
+
+        app.dirty = false;
+        assert_eq!(
+            send_mouse(&mut app, MouseEventKind::ScrollDown),
+            AppAction::ScrollDown
+        );
+        assert_eq!(app.scroll_offset, 10);
+        assert!(app.dirty);
+    }
+
+    #[test]
+    fn mouse_wheel_scrolls_transcript_view() {
+        let mut app = App::new();
+        app.view_mode = ViewMode::Transcript;
+        app.transcript_state.scroll_offset = 10;
+
+        assert_eq!(
+            send_mouse(&mut app, MouseEventKind::ScrollUp),
+            AppAction::ScrollUp
+        );
+        assert_eq!(app.transcript_state.scroll_offset, 9);
+
+        assert_eq!(
+            send_mouse(&mut app, MouseEventKind::ScrollDown),
+            AppAction::ScrollDown
+        );
+        assert_eq!(app.transcript_state.scroll_offset, 10);
+    }
+
+    #[test]
+    fn transcript_arrow_keys_scroll_instead_of_history_fallback() {
+        let mut app = App::new();
+        app.view_mode = ViewMode::Transcript;
+        app.transcript_state.scroll_offset = 10;
+
+        assert_eq!(send_key(&mut app, KeyCode::Up), AppAction::None);
+        assert_eq!(app.transcript_state.scroll_offset, 9);
+
+        assert_eq!(send_key(&mut app, KeyCode::Down), AppAction::None);
+        assert_eq!(app.transcript_state.scroll_offset, 10);
+    }
+
+    #[test]
+    fn prompt_arrow_keys_still_drive_history() {
+        let mut app = App::new();
+        app.push_history("first".to_string());
+        app.push_history("second".to_string());
+
+        assert_eq!(send_key(&mut app, KeyCode::Up), AppAction::None);
+        assert_eq!(app.prompt.input, "second");
+
+        assert_eq!(send_key(&mut app, KeyCode::Up), AppAction::None);
+        assert_eq!(app.prompt.input, "first");
+
+        assert_eq!(send_key(&mut app, KeyCode::Down), AppAction::None);
+        assert_eq!(app.prompt.input, "second");
+    }
+
+    #[test]
+    fn command_surface_handles_selection_before_prompt_input() {
+        let mut app = App::new();
+        app.open_command_surface(CommandSurface::lsp_recommendation(
+            lsp_recommendation_payload(None),
+        ));
+
+        assert_eq!(
+            send_key(&mut app, KeyCode::Enter),
+            AppAction::LspRecommendationResponse {
+                request_id: "req-1".to_string(),
+                plugin_name: "rust-analyzer".to_string(),
+                decision: "yes".to_string(),
+            }
+        );
+        assert_eq!(app.prompt.input, "/plugin install rust-analyzer ");
+        assert!(!app.command_surface_active());
+    }
+
+    #[test]
+    fn command_surface_renders_as_overlay() {
+        let mut app = App::new();
+        app.open_command_surface(CommandSurface::lsp_recommendation(
+            lsp_recommendation_payload(Some("Rust language server".to_string())),
+        ));
+        let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
+
+        terminal.draw(|frame| app.render(frame)).expect("draw");
+
+        let content = buffer_to_lines(terminal.backend().buffer(), 100, 24).join("\n");
+        assert!(content.contains("LSP Plugin Recommendation"));
+        assert!(content.contains("Yes, install rust-analyzer"));
+    }
+
     fn send_key(app: &mut App, code: KeyCode) -> AppAction {
         app.handle_key_event(KeyEvent::new(code, KeyModifiers::NONE))
     }
 
+    fn lsp_recommendation_payload(
+        plugin_description: Option<String>,
+    ) -> crate::ipc::subsystem_types::LspRecommendationPayload {
+        crate::ipc::subsystem_types::LspRecommendationPayload {
+            request_id: "req-1".to_string(),
+            plugin_name: "rust-analyzer".to_string(),
+            plugin_description,
+            file_extension: ".rs".to_string(),
+            language_id: Some("rust".to_string()),
+        }
+    }
+
     fn send_key_with_modifiers(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> AppAction {
         app.handle_key_event(KeyEvent::new(code, modifiers))
+    }
+
+    fn send_mouse(app: &mut App, kind: MouseEventKind) -> AppAction {
+        app.handle_mouse_event(MouseEvent {
+            kind,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        })
     }
 
     fn buffer_to_lines(buf: &ratatui::buffer::Buffer, width: u16, height: u16) -> Vec<String> {

@@ -87,6 +87,68 @@ fn slash_palette_renders_below_input() {
     );
 }
 
+#[test]
+fn slash_agents_twice_keeps_surface_off_top_row() {
+    let home = tempfile::tempdir().expect("cc-rust home");
+    let home_path = home.path().to_str().expect("utf-8 temp path");
+    let session = PtySession::spawn_with_env(
+        default_args(),
+        120,
+        24,
+        true,
+        &[("CC_RUST_HOME", home_path)],
+    );
+    std::thread::sleep(RENDER_WAIT);
+
+    // First run in a workspace can show the trust gate before the prompt.
+    session.send_raw(b"\r");
+    std::thread::sleep(Duration::from_millis(500));
+
+    for attempt in 0..2 {
+        // The first Enter accepts the command-palette argument help; the
+        // second Enter submits the slash command and opens the surface.
+        session.send_raw(b"/agents\r\r");
+
+        let mut screen = String::new();
+        for _ in 0..30 {
+            screen = session.current_screen();
+            if screen.lines().any(|line| line.contains(" Agents ")) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+
+        session.snapshot(&format!("input_agents_surface_attempt_{}", attempt + 1));
+
+        let rows: Vec<&str> = screen.lines().collect();
+        let surface_row = rows
+            .iter()
+            .position(|line| line.contains(" Agents "))
+            .unwrap_or_else(|| {
+                panic!("agents surface missing after attempt {attempt}, screen:\n{screen}")
+            });
+        assert!(
+            surface_row > 0,
+            "agents surface should not occupy terminal top row after attempt {}, screen:\n{}",
+            attempt + 1,
+            screen
+        );
+
+        session.send_escape();
+        std::thread::sleep(Duration::from_millis(250));
+    }
+
+    session.send_ctrl_c();
+    std::thread::sleep(Duration::from_millis(300));
+    session.send_ctrl_c();
+    let output = session.finish(QUICK_TIMEOUT, "input_agents_surface_twice");
+
+    assert!(
+        !output.contains("panicked"),
+        "opening /agents twice should not crash"
+    );
+}
+
 /// Ctrl+D should exit the TUI cleanly.
 #[test]
 fn ctrl_d_exits() {

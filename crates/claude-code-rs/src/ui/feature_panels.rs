@@ -1,5 +1,9 @@
 //! Full-build feature panel registry.
 
+use crossterm::event::KeyEvent;
+
+use super::form_navigation::{FormOption, FormTab, TabbedFormEvent, TabbedFormState};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeaturePanelKind {
     Mcp,
@@ -29,6 +33,25 @@ impl FeaturePanelKind {
     }
 }
 
+impl std::str::FromStr for FeaturePanelKind {
+    type Err = ();
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "mcp" => Ok(FeaturePanelKind::Mcp),
+            "agents" => Ok(FeaturePanelKind::Agents),
+            "teams" => Ok(FeaturePanelKind::Teams),
+            "lsp" => Ok(FeaturePanelKind::Lsp),
+            "settings" => Ok(FeaturePanelKind::Settings),
+            "sandbox" => Ok(FeaturePanelKind::Sandbox),
+            "plugins" => Ok(FeaturePanelKind::Plugins),
+            "skills" => Ok(FeaturePanelKind::Skills),
+            "tasks" => Ok(FeaturePanelKind::Tasks),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanelState {
     Ready,
@@ -42,6 +65,39 @@ pub struct FeaturePanel {
     pub kind: FeaturePanelKind,
     pub state: PanelState,
     pub badge: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeaturePanelFormState {
+    form: TabbedFormState,
+}
+
+impl FeaturePanelFormState {
+    pub fn new(panels: Vec<FeaturePanel>) -> Self {
+        Self {
+            form: TabbedFormState::new(
+                "Feature panels",
+                panels.iter().map(feature_panel_tab).collect(),
+            ),
+        }
+    }
+
+    pub fn handle_key(&mut self, key: KeyEvent) -> TabbedFormEvent {
+        self.form.handle_key(key)
+    }
+
+    pub fn selected_panel_action(&self) -> Option<(FeaturePanelKind, String)> {
+        let tab = self.form.active_tab()?;
+        let option = self.form.selected_option()?;
+        if !option.enabled {
+            return None;
+        }
+        Some((tab.id.parse().ok()?, option.id.clone()))
+    }
+
+    pub fn render(&self) -> String {
+        self.form.render_lines().join("\n")
+    }
 }
 
 pub fn default_panels() -> Vec<FeaturePanel> {
@@ -78,4 +134,84 @@ pub fn render_panel_index(panels: &[FeaturePanel]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn feature_panel_tab(panel: &FeaturePanel) -> FormTab {
+    let status = format!("{:?}", panel.state);
+    let badge = if panel.badge == 0 {
+        "no pending items".to_string()
+    } else {
+        format!("{} pending item(s)", panel.badge)
+    };
+
+    let configure = FormOption::new("configure", "Configure")
+        .with_description("available when this panel needs setup");
+    let configure = if panel.state == PanelState::NeedsConfig {
+        configure
+    } else {
+        configure.disabled()
+    };
+
+    FormTab::new(
+        panel_kind_id(panel.kind),
+        panel.kind.title(),
+        vec![
+            FormOption::new("open", format!("Open {}", panel.kind.title()))
+                .with_description(format!("status={status}; {badge}")),
+            configure,
+        ],
+    )
+}
+
+fn panel_kind_id(kind: FeaturePanelKind) -> &'static str {
+    match kind {
+        FeaturePanelKind::Mcp => "mcp",
+        FeaturePanelKind::Agents => "agents",
+        FeaturePanelKind::Teams => "teams",
+        FeaturePanelKind::Lsp => "lsp",
+        FeaturePanelKind::Settings => "settings",
+        FeaturePanelKind::Sandbox => "sandbox",
+        FeaturePanelKind::Plugins => "plugins",
+        FeaturePanelKind::Skills => "skills",
+        FeaturePanelKind::Tasks => "tasks",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    #[test]
+    fn feature_panel_form_uses_tab_and_selection_keys() {
+        let mut panels = default_panels();
+        panels[3].state = PanelState::NeedsConfig;
+        let mut form = FeaturePanelFormState::new(panels);
+
+        assert_eq!(
+            form.handle_key(key(KeyCode::Right)),
+            TabbedFormEvent::TabChanged {
+                tab_index: 1,
+                tab_id: "agents".to_string(),
+            }
+        );
+        form.handle_key(key(KeyCode::Right));
+        form.handle_key(key(KeyCode::Right));
+        form.handle_key(key(KeyCode::Down));
+
+        assert_eq!(
+            form.selected_panel_action(),
+            Some((FeaturePanelKind::Lsp, "configure".to_string()))
+        );
+        assert_eq!(form.handle_key(key(KeyCode::Esc)), TabbedFormEvent::Closed);
+    }
 }

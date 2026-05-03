@@ -8,7 +8,7 @@ pub enum DiffDialogMode {
     Detail,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiffSource {
     pub label: String,
     pub data: DiffData,

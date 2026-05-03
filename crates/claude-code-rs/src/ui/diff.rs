@@ -21,7 +21,7 @@ use super::theme::Theme;
 pub const MAX_VISIBLE_FILES: usize = 5;
 
 /// Public metadata for one diffed file.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiffFile {
     pub path: String,
     pub lines_added: usize,
@@ -56,7 +56,7 @@ impl DiffFile {
 }
 
 /// Aggregate diff stats displayed in dialog headings.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiffStats {
     pub files_count: usize,
     pub lines_added: usize,
@@ -74,7 +74,7 @@ impl DiffStats {
 }
 
 /// Parsed diff payload for the diff dialog surfaces.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiffData {
     pub stats: Option<DiffStats>,
     pub files: Vec<DiffFile>,

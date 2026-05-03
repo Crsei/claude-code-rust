@@ -39,6 +39,30 @@ impl AgentsMenuState {
         }
         lines.join("\n")
     }
+
+    pub fn move_next(&mut self) {
+        if self.counts.is_empty() {
+            return;
+        }
+        self.selected_index = (self.selected_index + 1) % self.counts.len();
+    }
+
+    pub fn move_prev(&mut self) {
+        if self.counts.is_empty() {
+            return;
+        }
+        self.selected_index = if self.selected_index == 0 {
+            self.counts.len() - 1
+        } else {
+            self.selected_index - 1
+        };
+    }
+
+    pub fn selected_filter(&self) -> Option<AgentSourceFilter> {
+        self.counts
+            .get(self.selected_index)
+            .map(|(filter, _)| *filter)
+    }
 }
 
 fn label_for_filter(filter: AgentSourceFilter) -> &'static str {

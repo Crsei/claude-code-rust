@@ -12,7 +12,7 @@ use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crossterm::event::{self, Event};
+use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event};
 use crossterm::terminal::{
     self, BeginSynchronizedUpdate, EndSynchronizedUpdate, EnterAlternateScreen,
     LeaveAlternateScreen,
@@ -25,9 +25,12 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
+use super::command_surface::CommandSurface;
 use crate::commands::{self, CommandContext, CommandResult};
 use crate::engine::lifecycle::QueryEngine;
 use crate::engine::sdk_types::SdkMessage;
+use crate::ipc::protocol::BackendMessage;
+use crate::ipc::subsystem_events::{LspCommand, LspEvent, SubsystemEvent, SubsystemEventBus};
 use crate::services::prompt_suggestion::PromptSuggestionService;
 use crate::types::config::QuerySource;
 use crate::types::message::{
@@ -98,18 +101,31 @@ enum EngineEvent {
 // Terminal guard -- ensures terminal cleanup even on panic
 // ---------------------------------------------------------------------------
 
-struct TerminalGuard;
+struct TerminalGuard {
+    mouse_capture_enabled: bool,
+}
 
 impl TerminalGuard {
-    fn new() -> Self {
-        Self
+    fn new(mouse_capture_enabled: bool) -> Self {
+        Self {
+            mouse_capture_enabled,
+        }
     }
 }
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = terminal::disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen, cursor::Show);
+        if self.mouse_capture_enabled {
+            let _ = execute!(
+                io::stdout(),
+                DisableMouseCapture,
+                LeaveAlternateScreen,
+                cursor::Show
+            );
+        } else {
+            let _ = execute!(io::stdout(), LeaveAlternateScreen, cursor::Show);
+        }
     }
 }
 
@@ -134,14 +150,26 @@ pub async fn run_tui(
     shutdown_token: CancellationToken,
 ) -> anyhow::Result<()> {
     // ── Setup terminal ─────────────────────────────────────────────
+    let terminal_env = super::terminal_env::TerminalEnvConfig::from_env();
+    let mouse_capture_enabled = !terminal_env.disable_mouse;
+
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
+    if mouse_capture_enabled {
+        execute!(
+            stdout,
+            EnterAlternateScreen,
+            EnableMouseCapture,
+            cursor::Hide
+        )?;
+    } else {
+        execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
+    }
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     // Terminal guard ensures cleanup even on early return / panic.
-    let _guard = TerminalGuard::new();
+    let _guard = TerminalGuard::new(mouse_capture_enabled);
 
     // ── Create the App ─────────────────────────────────────────────
     let mut app = App::new();
@@ -170,7 +198,6 @@ pub async fn run_tui(
     // Terminal env config (issue #12) — `CLAUDE_CODE_NO_FLICKER`,
     // `CLAUDE_CODE_DISABLE_MOUSE`, `CLAUDE_CODE_SCROLL_SPEED`. Cached
     // for the duration of the session.
-    let terminal_env = super::terminal_env::TerminalEnvConfig::from_env();
     app.set_terminal_env(terminal_env);
 
     // Voice dictation (issue #13) — build a controller from the null
@@ -203,6 +230,10 @@ pub async fn run_tui(
     install_tui_permission_callback(&engine, engine_tx.clone());
     let mut pending_permission_response: Option<oneshot::Sender<String>> = None;
     let mut streaming_state = StreamingState::new();
+
+    let subsystem_bus = SubsystemEventBus::new();
+    let mut subsystem_rx = subsystem_bus.subscribe();
+    crate::lsp_service::set_event_sender(subsystem_bus.sender());
 
     // ── Spawn terminal event reader thread ─────────────────────────
     //
@@ -339,6 +370,18 @@ pub async fn run_tui(
                                         .send(permission_choice_to_decision(choice).to_string());
                                 }
                             }
+                            AppAction::LspRecommendationResponse {
+                                request_id,
+                                plugin_name,
+                                decision,
+                            } => {
+                                handle_lsp_recommendation_response(
+                                    &mut app,
+                                    request_id,
+                                    plugin_name,
+                                    decision,
+                                );
+                            }
                             AppAction::ExportTranscript(body) => {
                                 match export_to_editor(&body).await {
                                     Ok(path) => add_system_info(
@@ -360,6 +403,9 @@ pub async fn run_tui(
                     }
                     Event::Resize(_, _) => {
                         app.mark_dirty();
+                    }
+                    Event::Mouse(mouse) => {
+                        let _ = app.handle_mouse_event(mouse);
                     }
                     _ => {}
                 }
@@ -388,6 +434,16 @@ pub async fn run_tui(
                 }
             }
 
+            subsystem_event = subsystem_rx.recv() => {
+                match subsystem_event {
+                    Ok(event) => handle_subsystem_event(&mut app, event),
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        add_system_error(&mut app, "A subsystem UI event was dropped because the TUI fell behind.");
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {}
+                }
+            }
+
             // Tick timer (spinner animation, ~80ms)
             _ = tick_interval.tick() => {
                 app.tick();
@@ -407,7 +463,16 @@ pub async fn run_tui(
     // (TerminalGuard::drop also handles this, but explicit cleanup is
     // cleaner for the normal exit path.)
     terminal::disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show)?;
+    if mouse_capture_enabled {
+        execute!(
+            terminal.backend_mut(),
+            DisableMouseCapture,
+            LeaveAlternateScreen,
+            cursor::Show
+        )?;
+    } else {
+        execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show)?;
+    }
     terminal.show_cursor()?;
 
     Ok(())
@@ -793,6 +858,13 @@ async fn try_execute_command(
         session_id: engine.current_session_id(),
     };
 
+    if let Some(surface) =
+        CommandSurface::for_slash_command(&cmd.name, &args, &ctx.app_state, &ctx.cwd)
+    {
+        app.open_command_surface(surface);
+        return Some(CmdAction::Handled);
+    }
+
     match cmd.handler.execute(&args, &mut ctx).await {
         Ok(result) => match result {
             CommandResult::Output(text) => {
@@ -872,14 +944,59 @@ fn sync_app_runtime_from_state(
     );
 }
 
+fn handle_subsystem_event(app: &mut App, event: SubsystemEvent) {
+    match event {
+        SubsystemEvent::Lsp(LspEvent::RecommendationRequest { payload }) => {
+            app.open_command_surface(CommandSurface::lsp_recommendation(payload));
+        }
+        SubsystemEvent::Lsp(LspEvent::CommandError { message, .. }) => {
+            add_system_error(app, &message);
+        }
+        _ => {}
+    }
+}
+
+fn handle_lsp_recommendation_response(
+    app: &mut App,
+    request_id: String,
+    plugin_name: String,
+    decision: String,
+) {
+    let messages =
+        crate::ipc::subsystem_handlers::handle_lsp_command(LspCommand::RecommendationResponse {
+            request_id,
+            plugin_name,
+            decision,
+        });
+    handle_backend_messages(app, messages);
+}
+
+fn handle_backend_messages(app: &mut App, messages: Vec<BackendMessage>) {
+    for message in messages {
+        if let BackendMessage::SystemInfo { text, level } = message {
+            add_system_message(app, &text, info_level_from_str(&level));
+        }
+    }
+}
+
+fn info_level_from_str(level: &str) -> InfoLevel {
+    match level {
+        "error" => InfoLevel::Error,
+        "warning" => InfoLevel::Warning,
+        _ => InfoLevel::Info,
+    }
+}
+
 /// Add an informational system message to the app.
 fn add_system_info(app: &mut App, text: &str) {
+    add_system_message(app, text, InfoLevel::Info);
+}
+
+fn add_system_message(app: &mut App, text: &str, level: InfoLevel) {
     app.add_message(Message::System(SystemMessage {
         uuid: uuid::Uuid::new_v4(),
         timestamp: now_ts(),
-        subtype: SystemSubtype::Informational {
-            level: InfoLevel::Info,
-        },
+        subtype: SystemSubtype::Informational { level },
         content: text.to_string(),
     }));
 }
@@ -946,14 +1063,7 @@ async fn export_to_editor(body: &str) -> anyhow::Result<std::path::PathBuf> {
 
 /// Add an error system message to the app.
 fn add_system_error(app: &mut App, text: &str) {
-    app.add_message(Message::System(SystemMessage {
-        uuid: uuid::Uuid::new_v4(),
-        timestamp: now_ts(),
-        subtype: SystemSubtype::Informational {
-            level: InfoLevel::Error,
-        },
-        content: text.to_string(),
-    }));
+    add_system_message(app, text, InfoLevel::Error);
 }
 
 fn query_prompt_text(messages: &[Message]) -> String {
@@ -1129,5 +1239,25 @@ mod tests {
             }
             other => panic!("expected tool use block, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn lsp_recommendation_event_opens_command_surface() {
+        let mut app = App::new();
+
+        handle_subsystem_event(
+            &mut app,
+            SubsystemEvent::Lsp(LspEvent::RecommendationRequest {
+                payload: crate::ipc::subsystem_types::LspRecommendationPayload {
+                    request_id: "req-1".to_string(),
+                    plugin_name: "rust-analyzer".to_string(),
+                    plugin_description: Some("Rust language server".to_string()),
+                    file_extension: ".rs".to_string(),
+                    language_id: Some("rust".to_string()),
+                },
+            }),
+        );
+
+        assert!(app.command_surface_active());
     }
 }

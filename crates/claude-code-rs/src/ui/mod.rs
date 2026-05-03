@@ -20,6 +20,7 @@ pub mod clipboard_paste;
 #[allow(dead_code)]
 pub mod clipboard_text;
 pub mod command_palette;
+pub mod command_surface;
 #[allow(dead_code)]
 pub mod custom_terminal;
 #[allow(dead_code)]
@@ -34,6 +35,7 @@ pub mod event_router;
 pub mod feature_panels;
 #[allow(dead_code)]
 pub mod file_search;
+pub mod form_navigation;
 #[allow(dead_code)]
 pub mod frame_requester;
 #[allow(dead_code)]

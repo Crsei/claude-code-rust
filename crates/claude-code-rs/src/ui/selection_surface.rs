@@ -1,5 +1,7 @@
 //! Reusable selection, command, and picker surface.
 
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectionItem {
     pub id: String,
@@ -17,6 +19,13 @@ impl SelectionItem {
             enabled: true,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SelectionSurfaceEvent {
+    None,
+    Selected(String),
+    Closed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +66,30 @@ impl SelectionSurface {
             self.selected = 0;
         } else {
             self.selected = self.selected.saturating_sub(1).min(visible.len() - 1);
+        }
+    }
+
+    pub fn handle_key(&mut self, key: KeyEvent) -> SelectionSurfaceEvent {
+        if key.kind != KeyEventKind::Press {
+            return SelectionSurfaceEvent::None;
+        }
+
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.move_prev();
+                SelectionSurfaceEvent::None
+            }
+            KeyCode::Down | KeyCode::Tab | KeyCode::Char('j') => {
+                self.move_next();
+                SelectionSurfaceEvent::None
+            }
+            KeyCode::Enter => self
+                .selected_item()
+                .filter(|item| item.enabled)
+                .map(|item| SelectionSurfaceEvent::Selected(item.id.clone()))
+                .unwrap_or(SelectionSurfaceEvent::None),
+            KeyCode::Esc => SelectionSurfaceEvent::Closed,
+            _ => SelectionSurfaceEvent::None,
         }
     }
 
@@ -101,5 +134,72 @@ impl SelectionSurface {
                 }
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyEventState, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    fn picker() -> SelectionSurface {
+        SelectionSurface::new(
+            "Commands",
+            vec![
+                SelectionItem::new("status", "/status"),
+                SelectionItem::new("config", "/config"),
+                SelectionItem {
+                    enabled: false,
+                    ..SelectionItem::new("disabled", "/disabled")
+                },
+            ],
+        )
+    }
+
+    #[test]
+    fn up_down_navigate_and_enter_selects() {
+        let mut surface = picker();
+
+        surface.handle_key(key(KeyCode::Down));
+        assert_eq!(
+            surface.selected_item().map(|item| item.id.as_str()),
+            Some("config")
+        );
+
+        assert_eq!(
+            surface.handle_key(key(KeyCode::Enter)),
+            SelectionSurfaceEvent::Selected("config".to_string())
+        );
+
+        surface.handle_key(key(KeyCode::Up));
+        assert_eq!(
+            surface.selected_item().map(|item| item.id.as_str()),
+            Some("status")
+        );
+    }
+
+    #[test]
+    fn esc_closes_and_disabled_items_do_not_submit() {
+        let mut surface = picker();
+        surface.handle_key(key(KeyCode::Down));
+        surface.handle_key(key(KeyCode::Down));
+
+        assert_eq!(
+            surface.handle_key(key(KeyCode::Enter)),
+            SelectionSurfaceEvent::None
+        );
+        assert_eq!(
+            surface.handle_key(key(KeyCode::Esc)),
+            SelectionSurfaceEvent::Closed
+        );
     }
 }

@@ -41,6 +41,41 @@ components are not subscribing to terminal dimension changes.
 
 *Add new issues below this line.*
 
+## 19. Rust TUI terminal scrolling did not receive wheel events
+
+**Status**: Fixed (2026-05-03)
+
+**Description**: The Rust TUI entered the alternate screen without enabling mouse capture and ignored `Event::Mouse`, so real terminal wheel input did not reach prompt or transcript scrolling. Transcript Up/Down keys could also be consumed by prompt-history fallback before transcript scrolling handled them.
+
+**Fix**:
+1. Enabled crossterm mouse capture unless `CLAUDE_CODE_DISABLE_MOUSE=1` is set, and disabled capture during terminal cleanup.
+2. Routed mouse wheel events through `App::handle_mouse_event` to prompt-message scrolling or transcript scrolling based on the active view mode.
+3. Let transcript/focus Up/Down keys fall through to transcript navigation instead of prompt history fallback.
+4. Added unit coverage for wheel/key scroll dispatch and a ConPTY snapshot regression that opens `/agents` twice and asserts the modal surface does not occupy the terminal top row.
+
+**Related files**:
+- `crates/claude-code-rs/src/ui/tui.rs`
+- `crates/claude-code-rs/src/ui/app.rs`
+- `crates/claude-code-rs/src/ui/terminal_env.rs`
+- `crates/claude-code-rs/src/commands/terminal_setup.rs`
+- `crates/claude-code-rs/tests/pty_ui/input.rs`
+
+## 18. Rust TUI subsystem setting modules had no selectable surfaces
+
+**Status**: Fixed (2026-05-03)
+
+**Description**: The Rust TUI had renderer/state modules for agents, hooks, LSP recommendations, MCP, and memory, but the integrated TUI did not route users into selectable operation surfaces for those areas.
+
+**Fix**:
+1. Added modal command surfaces for `/agents`, `/hooks`, `/mcp`, and `/memory`.
+2. Added keyboard navigation for the existing agents/hooks/MCP/memory/LSP recommendation state modules.
+3. Wired LSP `RecommendationRequest` subsystem events to an in-TUI recommendation overlay and response path.
+
+**Related files**:
+- `crates/claude-code-rs/src/ui/command_surface.rs`
+- `crates/claude-code-rs/src/ui/app.rs`
+- `crates/claude-code-rs/src/ui/tui.rs`
+
 ## 2. Composer lacked a frame and busy indicator could ghost in the footer
 
 **Status**: Fixed (2026-04-08)

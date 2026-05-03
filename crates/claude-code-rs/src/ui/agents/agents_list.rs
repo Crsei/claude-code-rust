@@ -45,6 +45,28 @@ impl AgentsListState {
         self.selected_index = next.saturating_sub(usize::from(self.show_create_new));
     }
 
+    pub fn move_prev(&mut self) {
+        let total = self.visible_agents().len() + usize::from(self.show_create_new);
+        if total == 0 {
+            return;
+        }
+        let current = if self.create_new_selected {
+            0
+        } else {
+            self.selected_index + usize::from(self.show_create_new)
+        };
+        let previous = if current == 0 { total - 1 } else { current - 1 };
+        self.create_new_selected = self.show_create_new && previous == 0;
+        self.selected_index = previous.saturating_sub(usize::from(self.show_create_new));
+    }
+
+    pub fn selected_agent(&self) -> Option<AgentDefinition> {
+        if self.create_new_selected {
+            return None;
+        }
+        self.visible_agents().get(self.selected_index).cloned()
+    }
+
     pub fn render(&self) -> String {
         let mut lines = vec![get_agent_source_display_name(self.source)];
         if self.show_create_new {

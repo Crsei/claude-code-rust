@@ -66,6 +66,24 @@ impl MemoryFileSelectorState {
             .map(|option| option.path.as_path())
     }
 
+    pub fn move_next(&mut self) {
+        if self.options.is_empty() {
+            return;
+        }
+        self.selected_index = (self.selected_index + 1) % self.options.len();
+    }
+
+    pub fn move_prev(&mut self) {
+        if self.options.is_empty() {
+            return;
+        }
+        self.selected_index = if self.selected_index == 0 {
+            self.options.len() - 1
+        } else {
+            self.selected_index - 1
+        };
+    }
+
     pub fn render(&self, cwd: &Path, home: &Path) -> String {
         self.options
             .iter()

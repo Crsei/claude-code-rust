@@ -8,10 +8,8 @@
 //! |                             | `0` turns them off. Default is on (we already use  |
 //! |                             | them) so this is a way to opt out on terminals     |
 //! |                             | that behave badly.                                 |
-//! | `CLAUDE_CODE_DISABLE_MOUSE` | Parsed and surfaced in diagnostics, but the current|
-//! |                             | Rust TUI does not toggle mouse capture yet. This   |
-//! |                             | remains a forward-compatibility flag for future    |
-//! |                             | mouse support.                                     |
+//! | `CLAUDE_CODE_DISABLE_MOUSE` | `1` keeps native terminal mouse handling enabled   |
+//! |                             | by skipping TUI mouse capture.                     |
 //! | `CLAUDE_CODE_SCROLL_SPEED`  | Lines per PageUp / PageDown scroll step. Integer,  |
 //! |                             | clamped to `[1, 50]`. Default: 5.                  |
 //!
@@ -44,10 +42,9 @@ impl Default for TerminalEnvConfig {
 }
 
 impl TerminalEnvConfig {
-    /// The current TUI does not enable or disable mouse capture based on
-    /// `CLAUDE_CODE_DISABLE_MOUSE`; the flag is parsed for diagnostics and
-    /// future compatibility only.
-    pub const DISABLE_MOUSE_RUNTIME_SUPPORTED: bool = false;
+    /// The TUI runner honors `CLAUDE_CODE_DISABLE_MOUSE` when deciding
+    /// whether to enable crossterm mouse capture.
+    pub const DISABLE_MOUSE_RUNTIME_SUPPORTED: bool = true;
     /// Default scroll speed when no override is set. Exposed publicly
     /// so `/terminal-setup` / tests can surface the same number that
     /// `Default::default()` seeds.

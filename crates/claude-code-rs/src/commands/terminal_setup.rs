@@ -268,7 +268,7 @@ fn render_env(p: &EnvProbe) -> String {
             if effective.disable_mouse {
                 "disabled by env flag"
             } else {
-                "enabled unless future runtime disables it"
+                "enabled for wheel events"
             }
         } else {
             "not implemented in current runtime (env is diagnostic-only)"
@@ -493,9 +493,9 @@ mod tests {
     }
 
     #[test]
-    fn env_table_marks_disable_mouse_as_diagnostic_only() {
+    fn env_table_reports_disable_mouse_runtime_effect() {
         let p = EnvProbe::from_iter(vec![("CLAUDE_CODE_DISABLE_MOUSE", "1")]);
         let out = render_env(&p);
-        assert!(out.contains("not implemented in current runtime"));
+        assert!(out.contains("disabled by env flag"));
     }
 }
