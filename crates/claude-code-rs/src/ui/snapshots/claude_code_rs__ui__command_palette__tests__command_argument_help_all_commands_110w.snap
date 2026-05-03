@@ -1,6 +1,6 @@
 ---
 source: crates/claude-code-rs/src/ui/command_palette.rs
-assertion_line: 1165
+assertion_line: 1160
 expression: normalize_snapshot_text(rendered)
 ---
 ## /init

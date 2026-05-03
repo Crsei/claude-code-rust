@@ -1,0 +1,425 @@
+---
+source: crates/claude-code-rs/src/ui/permissions.rs
+expression: rendered
+---
+## utils-request
+Permission required
+tool: bash
+request: cargo test
+worker: executor
+risk: shell command
+details:
+  - cwd: F:/repo
+options:
+> Allow [allow] - run this tool once (this request)
+  Deny [deny] - block this tool call (this request)
+  Always allow [always allow] - save a reusable allow rule (project)
+
+## utils-options
+  Allow [allow] - run this tool once (this request)
+> Deny [deny] - block this tool call (this request)
+  Always allow [always allow] - save a reusable allow rule (project)
+
+## utils-key-values
+Rows
+  tool: bash
+  decision: allow
+
+## utils-bullets
+Notes
+  - first
+  - second
+
+## utils-truncate
+abc...mnop
+
+## utils-normalize
+a|b
+
+## utils-command-preview
+cargo test && cargo fmt
+
+## utils-risk
+destructive filesystem command
+
+## utils-path-action
+edit src/main.rs
+
+## permission-request
+Permission required
+tool: read
+request: src/lib.rs
+options:
+> Allow [allow] - run this tool once (this request)
+  Deny [deny] - block this tool call (this request)
+  Always allow [always allow] - save a reusable allow rule (project)
+
+## permission-prompt
+Allow this action?
+  Allow [allow] - run this tool once (this request)
+  Deny [deny] - block this tool call (this request)
+> Always allow [always allow] - save a reusable allow rule (project)
+Enter confirms, Esc denies
+
+## permission-title
+High-risk permission: bash -> cargo test
+
+## permission-explanation
+Why approval is needed: writes project files
+Effects
+  - updates lockfile
+
+## permission-rule-explanation
+Rule: always allow Bash(cargo*) in project scope
+
+## permission-debug
+Permission decision
+  tool: bash
+  matcher: Bash(cargo*)
+  source: project
+  matched rule: allow Bash(cargo*)
+
+## permission-dialog
+Permission required
+tool: bash
+request: cargo test
+worker: executor
+risk: shell command
+details:
+  - cwd: F:/repo
+options:
+> Allow [allow] - run this tool once (this request)
+  Deny [deny] - block this tool call (this request)
+  Always allow [always allow] - save a reusable allow rule (project)
+layout width: 80
+
+## fallback
+Permission required
+tool: custom_tool
+request: run custom action
+risk: unknown tool behavior
+details:
+  - opaque input
+options:
+> Allow [allow] - run this tool once (this request)
+  Deny [deny] - block this tool call (this request)
+  Always allow [always allow] - save a reusable allow rule (project)
+
+## sandbox
+Sandbox permission required
+tool: sandbox
+request: write target
+risk: operation is outside current sandbox policy
+details:
+  - profile: read-only
+  - target denied
+options:
+> Allow [allow] - run this tool once (this request)
+  Deny [deny] - block this tool call (this request)
+  Always allow [always allow] - save a reusable allow rule (project)
+
+## hooks
+hook: PreToolUse
+matcher: Bash(*)
+decision: allow
+notes
+  - matched project hook
+
+## shell-details
+shell: bash
+command: cargo test
+risk: shell command
+
+## shell-options
+> Allow [allow] - run network command once (this request)
+  Deny [deny] - do not run command (this request)
+  Always allow exact command [always allow] - save exact command rule (project)
+
+## shell-feedback
+accepted: cargo test
+one-shot
+running now
+
+## worker-badge
+executor: 2 pending permission(s)
+
+## worker-pending
+executor: 1 pending permission(s)
+tool: write
+request: src/lib.rs
+queue position: 1
+
+## ask-choice-state
+  [ ] Inspect logs
+> [x] Ask operator
+  [ ] Abort
+
+## ask-preview-box
+Preview: Question
+Pick one
+
+## ask-preview-question
+Preview: Question
+Which path?
+- src
+- tests
+
+## ask-navigation
+Question 2/3 | Back | Next | Submit
+
+## ask-question-view
+Choose
+  [ ] Inspect logs
+> [x] Ask operator
+  [ ] Abort
+
+## ask-submit
+Ready to submit 2/3 answer(s)
+Enter submit | Esc cancel
+
+## ask-request
+Ask user question
+Need input
+  [ ] Inspect logs
+> [x] Ask operator
+  [ ] Abort
+Question 2/3 | Back | Next | Submit
+
+## bash-request
+Bash command permission
+tool: bash
+request: cargo test
+details:
+  - shell: bash
+command: cargo test
+risk: shell command
+options:
+> Allow [allow] - run shell command once (this request)
+  Deny [deny] - do not run command (this request)
+  Always allow exact command [always allow] - save exact command rule (project)
+
+## bash-options
+  Allow [allow] - run shell command once (this request)
+  Deny [deny] - do not run command (this request)
+> Always allow exact command [always allow] - save exact command rule (project)
+
+## powershell-request
+PowerShell command permission
+tool: powershell
+request: Get-ChildItem
+details:
+  - shell: powershell
+command: Get-ChildItem
+risk: shell command
+options:
+  Allow [allow] - run shell command once (this request)
+> Deny [deny] - do not run command (this request)
+  Always allow exact command [always allow] - save exact command rule (project)
+
+## powershell-options
+> Allow [allow] - run shell command once (this request)
+  Deny [deny] - do not run command (this request)
+  Always allow exact command [always allow] - save exact command rule (project)
+
+## ide-diff
+IDE diff: true
+editor: code
+inline diff: true
+
+## file-options
+  Allow edit [allow] - permit edit to src/lib.rs (this request)
+  Deny edit [deny] - leave file unchanged (this request)
+> Always allow path [always allow] - save rule for src/lib.rs (project)
+
+## file-handler
+allow src/lib.rs (save rule: true)
+
+## file-dialog
+File permission
+tool: file
+request: edit src/lib.rs
+details:
+  - diff: +3 -1
+options:
+  Allow edit [allow] - permit edit to src/lib.rs (this request)
+> Deny edit [deny] - leave file unchanged (this request)
+  Always allow path [always allow] - save rule for src/lib.rs (this request)
+
+## file-write-diff
+write diff: src/lib.rs
+new lines: 3
+replaced lines: 1
+
+## file-write-request
+File write permission
+tool: write
+request: src/lib.rs
+details:
+  - write diff: src/lib.rs
+new lines: 3
+replaced lines: 1
+options:
+  Allow edit [allow] - permit edit to src/lib.rs (this request)
+> Deny edit [deny] - leave file unchanged (this request)
+  Always allow path [always allow] - save rule for src/lib.rs (this request)
+
+## file-edit-request
+File edit permission
+tool: edit
+request: src/lib.rs
+details:
+  - operation: replace range
+options:
+> Allow edit [allow] - permit edit to src/lib.rs (this request)
+  Deny edit [deny] - leave file unchanged (this request)
+  Always allow path [always allow] - save rule for src/lib.rs (this request)
+
+## filesystem-request
+Filesystem permission
+tool: filesystem
+request: read src
+risk: filesystem access can modify or disclose local files
+options:
+  Allow [allow] - run this tool once (this request)
+  Deny [deny] - block this tool call (this request)
+> Always allow [always allow] - save a reusable allow rule (project)
+
+## computer-use
+Computer use approval
+tool: computer
+request: click
+risk: interactive desktop action
+details:
+  - target: browser window
+  - screenshot: true
+options:
+> Allow [allow] - run this tool once (this request)
+  Deny [deny] - block this tool call (this request)
+  Always allow [always allow] - save a reusable allow rule (project)
+
+## enter-plan
+Enter plan mode
+reason: Need design first
+No file edits will be made while planning
+
+## exit-plan
+Exit plan mode
+plan: implement helpers
+verification:
+  - cargo test
+
+## monitor
+Monitor permission
+tool: monitor
+request: cargo test
+risk: background observation of process output
+details:
+  - duration: 60s
+options:
+  Allow [allow] - run this tool once (this request)
+> Deny [deny] - block this tool call (this request)
+  Always allow [always allow] - save a reusable allow rule (project)
+
+## review-artifact
+Review artifact permission
+tool: review
+request: docs/report.md
+details:
+  - reviewer: reviewer
+options:
+> Allow [allow] - run this tool once (this request)
+  Deny [deny] - block this tool call (this request)
+  Always allow [always allow] - save a reusable allow rule (project)
+
+## sed-edit
+Sed edit permission
+tool: sed
+request: src/lib.rs
+details:
+  - pattern: foo
+  - replacement: bar
+options:
+  Allow edit [allow] - permit edit to src/lib.rs (this request)
+> Deny edit [deny] - leave file unchanged (this request)
+  Always allow path [always allow] - save rule for src/lib.rs (this request)
+
+## notebook-diff
+notebook: analysis.ipynb
+cell: 2
+language: python
+
+## notebook-request
+Notebook edit permission
+tool: notebook_edit
+request: analysis.ipynb
+details:
+  - notebook: analysis.ipynb
+cell: 2
+language: python
+options:
+> Allow edit [allow] - permit edit to analysis.ipynb (this request)
+  Deny edit [deny] - leave file unchanged (this request)
+  Always allow path [always allow] - save rule for analysis.ipynb (this request)
+
+## skill-request
+Skill permission
+tool: skill
+request: lint-fix
+details:
+  - action: run skill
+options:
+  Allow [allow] - run this tool once (this request)
+> Deny [deny] - block this tool call (this request)
+  Always allow [always allow] - save a reusable allow rule (project)
+
+## web-fetch
+Web fetch permission
+tool: web_fetch
+request: https://example.com
+risk: network access
+details:
+  - method: GET
+options:
+  Allow [allow] - run this tool once (this request)
+  Deny [deny] - block this tool call (this request)
+> Always allow [always allow] - save a reusable allow rule (project)
+
+## rule-description
+allow Bash(ls*) (project, source: .cc-rust/settings.json)
+
+## rule-input
+pattern: Bash(cargo test*)
+decision: allow
+
+## rule-input-validation
+pattern must be one line
+
+## rule-list
+Permission rules (2)
+  allow Bash(ls*) (project, source: .cc-rust/settings.json)
+> deny Write(src/**) (local settings, source: policy)
+
+## add-rules
+Add permission rules (1)
+rule 1
+  pattern: Bash(cargo test*)
+  decision: allow
+
+## add-workspace
+Add workspace directory
+path: F:/repo
+trusted: true
+
+## remove-workspace
+Remove workspace directory
+path: F:/repo/tmp
+dependent rules: 2
+
+## workspace-tab
+Workspace directories (2)
+> F:/repo (trusted)
+  F:/repo/tmp (untrusted)
+
+## recent-denials
+Recent denials (1)
+- bash matched rm -rf: destructive command

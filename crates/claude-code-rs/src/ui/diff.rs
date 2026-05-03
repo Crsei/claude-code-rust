@@ -1,3 +1,15 @@
+// BEGIN generated upstream diff modules
+// Rust-side diff modules mirrored from upstream React components.
+#[allow(dead_code)]
+pub mod diff_detail_view;
+#[allow(dead_code)]
+pub mod diff_dialog;
+#[allow(dead_code)]
+pub mod diff_file_list;
+// END generated upstream diff modules
+
+use std::collections::HashMap;
+
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
@@ -5,6 +17,117 @@ use similar::{ChangeTag, TextDiff};
 use unicode_width::UnicodeWidthChar;
 
 use super::theme::Theme;
+
+pub const MAX_VISIBLE_FILES: usize = 5;
+
+/// Public metadata for one diffed file.
+#[derive(Debug, Clone)]
+pub struct DiffFile {
+    pub path: String,
+    pub lines_added: usize,
+    pub lines_removed: usize,
+    pub is_binary: bool,
+    pub is_large_file: bool,
+    pub is_truncated: bool,
+    pub is_untracked: bool,
+}
+
+impl DiffFile {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        path: impl Into<String>,
+        lines_added: usize,
+        lines_removed: usize,
+        is_binary: bool,
+        is_large_file: bool,
+        is_truncated: bool,
+        is_untracked: bool,
+    ) -> Self {
+        Self {
+            path: path.into(),
+            lines_added,
+            lines_removed,
+            is_binary,
+            is_large_file,
+            is_truncated,
+            is_untracked,
+        }
+    }
+}
+
+/// Aggregate diff stats displayed in dialog headings.
+#[derive(Debug, Clone)]
+pub struct DiffStats {
+    pub files_count: usize,
+    pub lines_added: usize,
+    pub lines_removed: usize,
+}
+
+impl DiffStats {
+    pub fn new(files_count: usize, lines_added: usize, lines_removed: usize) -> Self {
+        Self {
+            files_count,
+            lines_added,
+            lines_removed,
+        }
+    }
+}
+
+/// Parsed diff payload for the diff dialog surfaces.
+#[derive(Debug, Clone)]
+pub struct DiffData {
+    pub stats: Option<DiffStats>,
+    pub files: Vec<DiffFile>,
+    pub hunks: HashMap<String, Vec<String>>,
+    pub loading: bool,
+}
+
+impl DiffData {
+    pub fn empty() -> Self {
+        Self {
+            stats: None,
+            files: Vec::new(),
+            hunks: HashMap::new(),
+            loading: false,
+        }
+    }
+
+    pub fn hunks_for_path(&self, path: &str) -> &[String] {
+        self.hunks.get(path).map_or(&[], |hunks| hunks.as_slice())
+    }
+}
+
+/// Shared truncation utility used by diff list/detail surfaces.
+pub(crate) fn truncate_start_to_width(text: &str, max_width: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= max_width {
+        text.to_string()
+    } else if max_width <= 3 {
+        ".".repeat(max_width)
+    } else {
+        let start = chars.len() - (max_width - 3);
+        format!("...{}", chars[start..].iter().collect::<String>())
+    }
+}
+
+/// Truncate by terminal display width while preserving grapheme boundaries.
+pub(crate) fn truncate_by_width(text: &str, max_width: usize) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+
+    let mut width = 0usize;
+    let mut out = String::new();
+    for ch in text.chars() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if width + ch_width > max_width {
+            break;
+        }
+        out.push(ch);
+        width += ch_width;
+    }
+    out
+}
 
 /// A single line from a unified diff.
 #[derive(Debug, Clone)]
@@ -103,7 +226,7 @@ pub fn render_diff(old: &str, new: &str, area: Rect, buf: &mut Buffer, theme: &T
         // splitting multi-byte characters.
         let prefix_width = 12usize;
         let content_width = max_width.saturating_sub(prefix_width);
-        let content = truncate_visible(&diff_line.content, content_width);
+        let content = truncate_by_width(&diff_line.content, content_width);
 
         let line = Line::from(vec![
             line_no_spans[0].clone(),
@@ -128,22 +251,4 @@ pub fn render_diff(old: &str, new: &str, area: Rect, buf: &mut Buffer, theme: &T
         let notice_line = Line::from(Span::styled(notice, theme.dim));
         buf.set_line(area.x, area.y + y_offset, &notice_line, area.width);
     }
-}
-
-fn truncate_visible(text: &str, max_width: usize) -> String {
-    if max_width == 0 {
-        return String::new();
-    }
-
-    let mut width = 0usize;
-    let mut out = String::new();
-    for ch in text.chars() {
-        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
-        if width + ch_width > max_width {
-            break;
-        }
-        out.push(ch);
-        width += ch_width;
-    }
-    out
 }

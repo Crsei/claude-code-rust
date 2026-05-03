@@ -1,0 +1,14 @@
+---
+source: crates/claude-code-rs/src/ui/teams/mod.rs
+expression: rendered
+---
+## status
+[2 teammates] - Enter to view
+
+## dialog
+Team: ui-port
+> reviewer       running    mode=plan tasks=2
+  role: Review implementation risks
+  builder        running    mode=ask tasks=0 hidden
+  role: Implement bounded changes
+k kill | s shutdown | h hide | m cycle mode

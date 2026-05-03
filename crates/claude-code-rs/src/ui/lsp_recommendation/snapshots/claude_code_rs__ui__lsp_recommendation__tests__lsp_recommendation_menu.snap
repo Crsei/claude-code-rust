@@ -1,0 +1,9 @@
+---
+source: crates/claude-code-rs/src/ui/lsp_recommendation/mod.rs
+expression: rendered
+---
+Language servers
+> Rust         rust-analyzer
+  reason: Cargo.toml detected
+  install: rustup component add rust-analyzer
+  TypeScript   typescript-language-server

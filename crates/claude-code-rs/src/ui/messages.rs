@@ -1,3 +1,75 @@
+// BEGIN generated upstream messages modules
+// Rust-side message modules mirrored from upstream React components.
+#[allow(dead_code)]
+pub mod advisor_message;
+#[allow(dead_code)]
+pub mod assistant_redacted_thinking_message;
+#[allow(dead_code)]
+pub mod assistant_text_message;
+#[allow(dead_code)]
+pub mod assistant_thinking_message;
+#[allow(dead_code)]
+pub mod assistant_tool_use_message;
+#[allow(dead_code)]
+pub mod attachment_message;
+#[allow(dead_code)]
+pub mod collapsed_read_search_content;
+#[allow(dead_code)]
+pub mod compact_boundary_message;
+#[allow(dead_code)]
+pub mod grouped_tool_use_content;
+#[allow(dead_code)]
+pub mod highlighted_thinking_text;
+#[allow(dead_code)]
+pub mod hook_progress_message;
+#[allow(dead_code)]
+pub mod null_rendering_attachments;
+#[allow(dead_code)]
+pub mod plan_approval_message;
+#[allow(dead_code)]
+pub mod rate_limit_message;
+#[allow(dead_code)]
+pub mod shutdown_message;
+#[allow(dead_code)]
+pub mod system_api_error_message;
+#[allow(dead_code)]
+pub mod system_text_message;
+#[allow(dead_code)]
+pub mod task_assignment_message;
+#[allow(dead_code)]
+pub mod team_mem_collapsed;
+#[allow(dead_code)]
+pub mod team_mem_saved;
+#[allow(dead_code)]
+pub mod user_agent_notification_message;
+#[allow(dead_code)]
+pub mod user_bash_input_message;
+#[allow(dead_code)]
+pub mod user_bash_output_message;
+#[allow(dead_code)]
+pub mod user_channel_message;
+#[allow(dead_code)]
+pub mod user_command_message;
+#[allow(dead_code)]
+pub mod user_image_message;
+#[allow(dead_code)]
+pub mod user_local_command_output_message;
+#[allow(dead_code)]
+pub mod user_memory_input_message;
+#[allow(dead_code)]
+pub mod user_plan_message;
+#[allow(dead_code)]
+pub mod user_prompt_message;
+#[allow(dead_code)]
+pub mod user_resource_update_message;
+#[allow(dead_code)]
+pub mod user_teammate_message;
+#[allow(dead_code)]
+pub mod user_text_message;
+#[allow(dead_code)]
+pub mod user_tool_result_message;
+// END generated upstream messages modules
+
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
@@ -445,5 +517,183 @@ fn abbreviate_json(value: &serde_json::Value, max_chars: usize) -> String {
         format!("{}...", &full[..max_chars - 3])
     } else {
         full[..max_chars].to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::advisor_message::render_advisor_message;
+    use super::assistant_redacted_thinking_message::render_assistant_redacted_thinking_message;
+    use super::assistant_text_message::render_assistant_text_message;
+    use super::assistant_thinking_message::render_assistant_thinking_message;
+    use super::assistant_tool_use_message::render_assistant_tool_use_message;
+    use super::attachment_message::render_attachment_message;
+    use super::collapsed_read_search_content::render_collapsed_read_search_content;
+    use super::compact_boundary_message::render_compact_boundary_message;
+    use super::grouped_tool_use_content::render_grouped_tool_use_content;
+    use super::highlighted_thinking_text::render_highlighted_thinking_text;
+    use super::hook_progress_message::render_hook_progress_message;
+    use super::null_rendering_attachments::render_null_rendering_attachments;
+    use super::plan_approval_message::render_plan_approval_message;
+    use super::rate_limit_message::render_rate_limit_message;
+    use super::shutdown_message::render_shutdown_message;
+    use super::system_api_error_message::render_system_api_error_message;
+    use super::system_text_message::render_system_text_message;
+    use super::task_assignment_message::render_task_assignment_message;
+    use super::team_mem_collapsed::render_team_mem_collapsed;
+    use super::team_mem_saved::render_team_mem_saved;
+    use super::user_agent_notification_message::render_user_agent_notification_message;
+    use super::user_bash_input_message::render_user_bash_input_message;
+    use super::user_bash_output_message::render_user_bash_output_message;
+    use super::user_channel_message::render_user_channel_message;
+    use super::user_command_message::render_user_command_message;
+    use super::user_image_message::render_user_image_message;
+    use super::user_local_command_output_message::render_user_local_command_output_message;
+    use super::user_memory_input_message::render_user_memory_input_message;
+    use super::user_plan_message::render_user_plan_message;
+    use super::user_prompt_message::render_user_prompt_message;
+    use super::user_resource_update_message::render_user_resource_update_message;
+    use super::user_teammate_message::render_user_teammate_message;
+    use super::user_text_message::render_user_text_message;
+    use crate::ui::theme::Theme;
+
+    #[test]
+    fn snapshot_message_component_helpers() {
+        let theme = Theme::default();
+        let rendered = [
+            section(
+                "advisor",
+                render_advisor_message(Some("gpt"), "Plan next steps", "No issues", &theme),
+            ),
+            section(
+                "assistant-redacted-thinking",
+                render_assistant_redacted_thinking_message(&theme),
+            ),
+            section(
+                "assistant-text",
+                render_assistant_text_message("Hello", &theme),
+            ),
+            section(
+                "assistant-thinking",
+                render_assistant_thinking_message("I will inspect the files", &theme),
+            ),
+            section(
+                "assistant-tool-use",
+                render_assistant_tool_use_message("read_file", "path=src/main.rs", &theme),
+            ),
+            section(
+                "attachment",
+                render_attachment_message("log", "appended", &theme),
+            ),
+            section(
+                "collapsed-read-search",
+                render_collapsed_read_search_content("notes.txt", 3, &theme),
+            ),
+            section(
+                "compact-boundary",
+                render_compact_boundary_message(120, 80, &theme),
+            ),
+            section(
+                "grouped-tool-use",
+                render_grouped_tool_use_content(&["read_file", "edit_file"], &theme),
+            ),
+            section(
+                "highlighted-thinking",
+                render_highlighted_thinking_text("cache warmup", &theme),
+            ),
+            section(
+                "hook-progress",
+                render_hook_progress_message("PostToolUse", "running", &theme),
+            ),
+            section(
+                "null-rendering-attachments",
+                render_null_rendering_attachments("filtered", &theme),
+            ),
+            section(
+                "plan-approval",
+                render_plan_approval_message("refactor ui", true, &theme),
+            ),
+            section(
+                "rate-limit",
+                render_rate_limit_message("messages", 250, &theme),
+            ),
+            section(
+                "shutdown",
+                render_shutdown_message("user requested", &theme),
+            ),
+            section(
+                "system-api-error",
+                render_system_api_error_message(429, "rate limit exceeded", &theme),
+            ),
+            section(
+                "system-text",
+                render_system_text_message("note", "Context switch", &theme),
+            ),
+            section(
+                "task-assignment",
+                render_task_assignment_message("build", "alice", &theme),
+            ),
+            section(
+                "team-mem-collapsed",
+                render_team_mem_collapsed("team-a", 4, &theme),
+            ),
+            section(
+                "team-mem-saved",
+                render_team_mem_saved("/tmp/team.md", &theme),
+            ),
+            section(
+                "user-agent-notification",
+                render_user_agent_notification_message("Agent connected", &theme),
+            ),
+            section(
+                "user-bash-input",
+                render_user_bash_input_message("ls -la", &theme),
+            ),
+            section(
+                "user-bash-output",
+                render_user_bash_output_message("ls -la", "README.md", &theme),
+            ),
+            section(
+                "user-channel",
+                render_user_channel_message("default", "status ok", &theme),
+            ),
+            section(
+                "user-command",
+                render_user_command_message("build", Some("/repo"), &theme),
+            ),
+            section(
+                "user-image",
+                render_user_image_message("/tmp/a.png", "png", &theme),
+            ),
+            section(
+                "user-local-output",
+                render_user_local_command_output_message("echo hi", 0, "hi", &theme),
+            ),
+            section(
+                "user-memory-input",
+                render_user_memory_input_message("prompt", "value", &theme),
+            ),
+            section("user-plan", render_user_plan_message("run tests", &theme)),
+            section(
+                "user-prompt",
+                render_user_prompt_message("Continue", &theme),
+            ),
+            section(
+                "user-resource-update",
+                render_user_resource_update_message("memory", "+1GB", &theme),
+            ),
+            section(
+                "user-teammate",
+                render_user_teammate_message("charlie", "online", &theme),
+            ),
+            section("user-text", render_user_text_message("Hello world", &theme)),
+        ]
+        .join("\n\n");
+
+        insta::assert_snapshot!("message_component_helpers", rendered);
+    }
+
+    fn section(name: &str, body: String) -> String {
+        format!("## {name}\n{body}")
     }
 }

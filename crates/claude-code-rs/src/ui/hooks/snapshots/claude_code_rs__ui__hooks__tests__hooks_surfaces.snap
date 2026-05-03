@@ -1,0 +1,39 @@
+---
+source: crates/claude-code-rs/src/ui/hooks/mod.rs
+expression: rendered
+---
+## config
+Hooks
+> PreToolUse     matchers=2 commands=2
+a add | e edit | d delete
+
+## event
+Select hook event
+  PreToolUse     Before a tool executes
+> PostToolUse    After a tool returns
+  Notification   When a notification is emitted
+  Stop           When the main agent stops
+  SubagentStop   When a subagent stops
+
+## matcher
+Select matcher
+  All tools
+> Bash
+
+## hook
+Select hook
+  enabled  cargo fmt --check
+> disabled cargo test -p claude-code-rs timeout=30s
+
+## prompt
+Add hook
+Command to run
+> cargo check
+Enter confirm | Esc cancel
+
+## view
+Event: PreToolUse
+Matcher: Bash
+Commands:
+  - cargo fmt --check (enabled)
+  - cargo test -p claude-code-rs (disabled)

@@ -1,4 +1,6 @@
 #[allow(dead_code)]
+pub mod agents;
+#[allow(dead_code)]
 pub mod app;
 #[allow(dead_code)]
 pub mod approval_overlay;
@@ -39,15 +41,23 @@ pub mod get_git_diff;
 #[allow(dead_code)]
 pub mod history_cell;
 #[allow(dead_code)]
+pub mod hooks;
+#[allow(dead_code)]
 pub mod insert_history;
 #[allow(dead_code)]
 pub mod keybindings;
+#[allow(dead_code)]
+pub mod lsp_recommendation;
 #[allow(dead_code)]
 pub mod markdown;
 #[allow(dead_code)]
 pub mod markdown_render;
 #[allow(dead_code)]
 pub mod markdown_stream;
+#[allow(dead_code)]
+pub mod mcp;
+#[allow(dead_code)]
+pub mod memory;
 #[allow(dead_code)]
 pub mod mention_codec;
 #[allow(dead_code)]
@@ -67,6 +77,8 @@ pub mod session_log;
 #[allow(dead_code)]
 pub mod shimmer;
 #[allow(dead_code)]
+pub mod skills;
+#[allow(dead_code)]
 pub mod skills_helpers;
 #[allow(dead_code)]
 pub mod slash_command;
@@ -80,6 +92,10 @@ pub mod status_line_resolver;
 pub mod status_widget;
 #[allow(dead_code)]
 pub mod streaming_controller;
+#[allow(dead_code)]
+pub mod tasks;
+#[allow(dead_code)]
+pub mod teams;
 pub mod terminal_env;
 #[allow(dead_code)]
 pub mod terminal_integration;

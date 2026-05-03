@@ -1,0 +1,218 @@
+//! Rust-side agent management surfaces mirrored from upstream agents.
+
+#[allow(dead_code)]
+pub mod agent_detail;
+#[allow(dead_code)]
+pub mod agent_editor;
+#[allow(dead_code)]
+pub mod agent_file_utils;
+#[allow(dead_code)]
+pub mod agent_navigation_footer;
+#[allow(dead_code)]
+pub mod agents_list;
+#[allow(dead_code)]
+pub mod agents_menu;
+#[allow(dead_code)]
+pub mod color_picker;
+#[allow(dead_code)]
+pub mod generate_agent;
+#[allow(dead_code)]
+pub mod model_selector;
+#[allow(dead_code)]
+pub mod new_agent_creation;
+#[allow(dead_code)]
+pub mod tool_selector;
+#[allow(dead_code)]
+pub mod types;
+#[allow(dead_code)]
+pub mod utils;
+#[allow(dead_code)]
+pub mod validate_agent;
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::agent_detail::render_agent_detail;
+    use super::agent_editor::{render_save_change_summary, AgentEditorState, AgentSaveChanges};
+    use super::agent_file_utils::{format_agent_as_markdown, render_agent_file_summary};
+    use super::agent_navigation_footer::AgentNavigationFooter;
+    use super::agents_list::AgentsListState;
+    use super::agents_menu::AgentsMenuState;
+    use super::color_picker::ColorPickerState;
+    use super::generate_agent::{
+        generate_agent_draft, render_generated_agent_preview, GenerateAgentRequest,
+    };
+    use super::model_selector::render_model_selector;
+    use super::new_agent_creation::create_agent_wizard::render_create_agent_wizard;
+    use super::new_agent_creation::wizard_steps::color_step::render_color_step;
+    use super::new_agent_creation::wizard_steps::confirm_step_wrapper::render_confirm_step_wrapper;
+    use super::new_agent_creation::wizard_steps::description_step::render_description_step;
+    use super::new_agent_creation::wizard_steps::generate_step::render_generate_step;
+    use super::new_agent_creation::wizard_steps::location_step::render_location_step;
+    use super::new_agent_creation::wizard_steps::memory_step::render_memory_step;
+    use super::new_agent_creation::wizard_steps::method_step::render_method_step;
+    use super::new_agent_creation::wizard_steps::model_step::render_model_step;
+    use super::new_agent_creation::wizard_steps::prompt_step::render_prompt_step;
+    use super::new_agent_creation::wizard_steps::tools_step::render_tools_step;
+    use super::new_agent_creation::wizard_steps::type_step::render_type_step;
+    use super::new_agent_creation::{AgentCreationMethod, AgentWizardData};
+    use super::tool_selector::{default_agent_tools, ToolSelectorState};
+    use super::types::{AgentDefinition, AgentMemoryScope, AgentSource, AgentSourceFilter};
+    use super::validate_agent::{render_validation_result, validate_agent_definition};
+
+    fn sample_agent() -> AgentDefinition {
+        let mut hooks = BTreeMap::new();
+        hooks.insert("PreToolUse".to_string(), vec!["check".to_string()]);
+        let mut agent = AgentDefinition::new(
+            "reviewer",
+            "Use when code changes need a focused review before commit.",
+            "Review the assigned diff, identify correctness risks, and report concise findings.",
+            AgentSource::Project,
+        )
+        .with_tools(["Read", "Grep", "Bash"])
+        .with_model("sonnet")
+        .with_memory(AgentMemoryScope::Project)
+        .with_color("blue")
+        .with_base_dir("./.cc-rust/agents")
+        .with_filename("reviewer");
+        agent.permission_mode = Some("ask".to_string());
+        agent.skills = vec!["code-review".to_string(), "security-review".to_string()];
+        agent.hooks = hooks;
+        agent
+    }
+
+    #[test]
+    fn snapshot_agents_core_surfaces() {
+        let agent = sample_agent();
+        let built_in = AgentDefinition::new(
+            "general-purpose",
+            "Use for ordinary work.",
+            "You are a helpful general agent.",
+            AgentSource::BuiltIn,
+        );
+        let mut list = AgentsListState::new(
+            AgentSourceFilter::All,
+            vec![built_in.clone(), agent.clone()],
+        );
+        list.move_next();
+
+        let mut color = ColorPickerState::new("reviewer", Some("blue"));
+        color.move_next();
+
+        let mut tool_state = ToolSelectorState::new(
+            default_agent_tools(),
+            Some(vec!["Read".to_string(), "Bash".to_string()]),
+        );
+        tool_state.show_individual_tools = true;
+
+        let validation = validate_agent_definition(
+            "reviewer-2",
+            &agent.when_to_use,
+            &agent.system_prompt,
+            &["reviewer".to_string()],
+        );
+        let save = AgentSaveChanges {
+            tools: Some(vec!["Read".to_string(), "Grep".to_string()]),
+            color: Some("green".to_string()),
+            model: Some("opus".to_string()),
+        };
+
+        let rendered = [
+            section(
+                "menu",
+                AgentsMenuState::default_with_counts(2, 1, 0, 1).render(),
+            ),
+            section("list", list.render()),
+            section("detail", render_agent_detail(&agent, 72)),
+            section("editor", AgentEditorState::new(agent.clone()).render_menu()),
+            section("file-summary", render_agent_file_summary(&agent)),
+            section("markdown", format_agent_as_markdown(&agent)),
+            section("color", color.render()),
+            section("model", render_model_selector(Some("custom-model-id"))),
+            section("tools", tool_state.render()),
+            section(
+                "footer",
+                AgentNavigationFooter {
+                    can_create: true,
+                    can_edit: true,
+                    can_delete: false,
+                    in_selection: true,
+                }
+                .render(),
+            ),
+            section("validation", render_validation_result(&validation)),
+            section("save", render_save_change_summary(&agent, &save)),
+        ]
+        .join("\n\n");
+
+        insta::assert_snapshot!("agents_core_surfaces", rendered);
+    }
+
+    #[test]
+    fn snapshot_agent_generation_and_wizard() {
+        let draft = generate_agent_draft(&GenerateAgentRequest {
+            goal: "review unsafe Rust changes".to_string(),
+            source: AgentSource::Project,
+            preferred_tools: vec!["Read".to_string(), "Grep".to_string()],
+        });
+
+        let mut data = AgentWizardData::empty();
+        data.location = Some(AgentSource::Project);
+        data.method = Some(AgentCreationMethod::Generate);
+        data.generation_goal = Some("review unsafe Rust changes".to_string());
+        data.agent_type = Some(draft.agent.agent_type.clone());
+        data.system_prompt = Some(draft.agent.system_prompt.clone());
+        data.when_to_use = Some(draft.agent.when_to_use.clone());
+        data.tools = draft.agent.tools.clone();
+        data.model = Some("sonnet".to_string());
+        data.color = Some("purple".to_string());
+        data.memory = Some(AgentMemoryScope::Project);
+
+        let rendered = [
+            section("draft", render_generated_agent_preview(&draft)),
+            section("wizard", render_create_agent_wizard(&data, 3, true)),
+            section("location", render_location_step(data.location)),
+            section("method", render_method_step(data.method)),
+            section(
+                "generate",
+                render_generate_step(data.generation_goal.as_deref(), true),
+            ),
+            section(
+                "type",
+                render_type_step(
+                    data.agent_type.as_deref(),
+                    &["reviewer".to_string()],
+                    data.when_to_use.as_deref().unwrap_or_default(),
+                    data.system_prompt.as_deref().unwrap_or_default(),
+                ),
+            ),
+            section(
+                "prompt",
+                render_prompt_step(data.system_prompt.as_deref(), 64),
+            ),
+            section(
+                "description",
+                render_description_step(data.when_to_use.as_deref(), 64),
+            ),
+            section("tools", render_tools_step(data.tools.clone(), false)),
+            section("model", render_model_step(data.model.as_deref())),
+            section(
+                "color",
+                render_color_step(
+                    data.agent_type.as_deref().unwrap_or("agent"),
+                    data.color.as_deref(),
+                ),
+            ),
+            section("memory", render_memory_step(data.memory)),
+            section("confirm", render_confirm_step_wrapper(&data)),
+        ]
+        .join("\n\n");
+
+        insta::assert_snapshot!("agent_generation_and_wizard", rendered);
+    }
+
+    fn section(name: &str, body: impl AsRef<str>) -> String {
+        format!("## {name}\n{}", body.as_ref())
+    }
+}

@@ -1,0 +1,71 @@
+---
+source: crates/claude-code-rs/src/ui/mcp/mod.rs
+expression: rendered
+---
+## list
+MCP servers (3)
+  database       stdio   connected  tools=1
+  uvx db-mcp
+> docs           remote  failed     tools=0
+  https://mcp.example.com
+  agent-tools    agent   connecting tools=0
+
+## capabilities
+Capabilities
+- tools        1
+- resources    3
+
+## warnings
+1 MCP parsing warning(s)
+- missing auth token
+
+## tool-list
+Tools (1)
+> query                Run a read-only query
+
+## tool-detail
+Tool: query
+Run a read-only query
+input:
+  - sql: string
+  - limit: number
+
+## stdio-menu
+Server: database
+kind: stdio
+command: uvx db-mcp
+status: connected
+actions: reconnect | disable | remove
+
+## remote-menu
+Server: docs
+kind: remote
+url: https://mcp.example.com
+status: failed
+actions: reconnect | open | disable
+
+## agent-menu
+Server: agent-tools
+kind: agent
+owner: reviewer
+status: connecting
+actions: view tools | reconnect
+
+## settings
+MCP settings
+enabled: true
+config: ~/.cc-rust/mcp.json
+servers: 3
+warnings: 1
+
+## reconnect
+Reconnecting docs (2/5) - HTTP 401
+Enter retry | Esc cancel
+
+## elicitation
+MCP needs input
+> token (required) - API token
+  value: <empty>
+  region (optional) - Region
+  value: us
+Enter submit | Esc cancel

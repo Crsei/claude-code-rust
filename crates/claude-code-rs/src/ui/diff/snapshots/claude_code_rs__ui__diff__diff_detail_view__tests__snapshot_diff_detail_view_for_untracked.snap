@@ -1,0 +1,7 @@
+---
+source: crates/claude-code-rs/src/ui/diff/diff_detail_view.rs
+expression: "output.join(\"\\n\")"
+---
+foo.rs
+New file not yet staged.
+Run `git add foo.rs` to see line counts.

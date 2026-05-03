@@ -1,0 +1,105 @@
+---
+source: crates/claude-code-rs/src/ui/messages.rs
+expression: rendered
+---
+## advisor
+Advisor[gpt] Prompt: Plan next steps
+Advisory: No issues
+
+## assistant-redacted-thinking
+Assistant thinking was redacted by policy
+
+## assistant-text
+Assistant: Hello
+
+## assistant-thinking
+Assistant thinking: I will inspect the files
+
+## assistant-tool-use
+Assistant used tool read_file: path=src/main.rs
+
+## attachment
+Attachment: log -> appended
+
+## collapsed-read-search
+Read notes.txt: 3 lines (collapsed)
+
+## compact-boundary
+Context compacted: before=120 after=80
+
+## grouped-tool-use
+Grouped tool uses:
+- read_file
+- edit_file
+
+## highlighted-thinking
+[THINKING] cache warmup
+
+## hook-progress
+Hook [PostToolUse] running
+
+## null-rendering-attachments
+Skipped attachments: filtered
+
+## plan-approval
+Plan 'refactor ui' approved
+
+## rate-limit
+Rate limit hit on messages; retry in 250ms
+
+## shutdown
+Session shutting down: user requested
+
+## system-api-error
+API error 429: rate limit exceeded
+
+## system-text
+System(note): Context switch
+
+## task-assignment
+Task 'build' assigned to alice
+
+## team-mem-collapsed
+Team memory for team-a collapsed (4 entries)
+
+## team-mem-saved
+Team memory saved to /tmp/team.md
+
+## user-agent-notification
+Notification: Agent connected
+
+## user-bash-input
+> ls -la
+
+## user-bash-output
+ls -la -> README.md
+
+## user-channel
+Channel default: status ok
+
+## user-command
+Command (/repo): build
+
+## user-image
+Image: /tmp/a.png (png)
+
+## user-local-output
+Local command [0]: echo hi -> hi
+
+## user-memory-input
+Memory input: prompt=value
+
+## user-plan
+User plan: run tests
+
+## user-prompt
+Prompt: Continue
+
+## user-resource-update
+Resource update: memory +1GB
+
+## user-teammate
+Teammate charlie: online
+
+## user-text
+You: Hello world
