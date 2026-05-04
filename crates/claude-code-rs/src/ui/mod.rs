@@ -120,6 +120,9 @@ pub mod markdown_render;
 #[path = "rendering/markdown_stream.rs"]
 pub mod markdown_stream;
 #[allow(dead_code)]
+#[path = "rendering/progress_bar.rs"]
+pub mod progress_bar;
+#[allow(dead_code)]
 #[path = "rendering/shimmer.rs"]
 pub mod shimmer;
 #[allow(dead_code)]

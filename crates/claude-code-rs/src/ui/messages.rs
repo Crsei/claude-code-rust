@@ -100,7 +100,10 @@ mod tests {
     use super::team_mem_saved::render_team_mem_saved;
     use super::user_agent_notification_message::render_user_agent_notification_message;
     use super::user_bash_input_message::render_user_bash_input_message;
-    use super::user_bash_output_message::render_user_bash_output_message;
+    use super::user_bash_output_message::{
+        render_user_bash_output_message, render_user_bash_output_message_with_options,
+        ShellOutputRenderOptions,
+    };
     use super::user_channel_message::render_user_channel_message;
     use super::user_command_message::render_user_command_message;
     use super::user_image_message::render_user_image_message;
@@ -208,6 +211,19 @@ mod tests {
             section(
                 "user-bash-output",
                 render_user_bash_output_message("ls -la", "README.md", &theme),
+            ),
+            section(
+                "user-bash-output-collapsed",
+                render_user_bash_output_message_with_options(
+                    "cargo test",
+                    "one\ntwo\nthree\nfour\nfive\nsix",
+                    ShellOutputRenderOptions {
+                        width: 80,
+                        elapsed_ms: Some(12_400),
+                        total_bytes: Some(2048),
+                        ..ShellOutputRenderOptions::default()
+                    },
+                ),
             ),
             section(
                 "user-channel",

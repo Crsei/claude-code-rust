@@ -74,6 +74,15 @@ Notification: Agent connected
 ## user-bash-output
 ls -la -> README.md
 
+## user-bash-output-collapsed
+$ cargo test
+two
+three
+four
+five
+six
++1 lines (12.4s) 2.0KB
+
 ## user-channel
 Channel default: status ok
 

@@ -1,6 +1,7 @@
 //! Shared task status formatting helpers.
 
 use super::{TaskKind, TaskState, TaskStatus};
+use crate::ui::progress_bar::render_progress_bar;
 
 pub fn state_label(state: TaskState) -> &'static str {
     match state {
@@ -33,16 +34,16 @@ pub fn format_elapsed(ms: u64) -> String {
 }
 
 pub fn progress_bar(task: &TaskStatus, width: usize) -> String {
-    let width = width.max(1);
     let Some((done, total)) = task.progress else {
-        return "-".repeat(width);
+        return render_progress_bar(0.0, width);
     };
-    let filled = if total == 0 {
-        0
+
+    let ratio = if total == 0 {
+        0.0
     } else {
-        width.saturating_mul(done.min(total)) / total
+        done.min(total) as f64 / total as f64
     };
-    format!("{}{}", "#".repeat(filled), "-".repeat(width - filled))
+    render_progress_bar(ratio, width)
 }
 
 pub fn task_header(task: &TaskStatus) -> String {
