@@ -1,5 +1,6 @@
 ---
-source: crates/claude-code-rs/src/ui/visual_regression.rs
+source: crates/claude-code-rs/src/ui/runtime/visual_regression.rs
+assertion_line: 367
 expression: render_foundation_snapshot()
 ---
 ## approval
@@ -58,7 +59,7 @@ tool-call bash
 diff src/ui/mod.rs +14 -0
 
 ## selection
-Slash commands filter='p'
+Slash commands / p
 > /plugin - manage plugins
 
 ## status-widget

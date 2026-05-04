@@ -1,6 +1,9 @@
 //! Reusable selection, command, and picker surface.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+
+use crate::ui::fuzzy_match::best_fuzzy_match;
+use crate::ui::search_box::SearchBox;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectionItem {
@@ -89,6 +92,21 @@ impl SelectionSurface {
                 .map(|item| SelectionSurfaceEvent::Selected(item.id.clone()))
                 .unwrap_or(SelectionSurfaceEvent::None),
             KeyCode::Esc => SelectionSurfaceEvent::Closed,
+            KeyCode::Backspace => {
+                self.filter.pop();
+                self.selected = 0;
+                SelectionSurfaceEvent::None
+            }
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.filter.clear();
+                self.selected = 0;
+                SelectionSurfaceEvent::None
+            }
+            KeyCode::Char(ch) if key.modifiers.is_empty() => {
+                self.filter.push(ch);
+                self.selected = 0;
+                SelectionSurfaceEvent::None
+            }
             _ => SelectionSurfaceEvent::None,
         }
     }
@@ -101,7 +119,11 @@ impl SelectionSurface {
     }
 
     pub fn render_lines(&self, height: usize) -> Vec<String> {
-        let mut lines = vec![format!("{} filter='{}'", self.title, self.filter)];
+        let search = SearchBox::new(&self.filter)
+            .placeholder("Filter...")
+            .borderless(true)
+            .render();
+        let mut lines = vec![format!("{} {}", self.title, search)];
         for (visible_idx, item_idx) in self.visible_indices().into_iter().take(height).enumerate() {
             let item = &self.items[item_idx];
             let marker = if visible_idx == self.selected {
@@ -119,21 +141,24 @@ impl SelectionSurface {
     }
 
     fn visible_indices(&self) -> Vec<usize> {
-        let needle = self.filter.to_ascii_lowercase();
-        self.items
+        let mut matches = self
+            .items
             .iter()
             .enumerate()
             .filter_map(|(idx, item)| {
-                if needle.is_empty()
-                    || item.label.to_ascii_lowercase().contains(&needle)
-                    || item.id.to_ascii_lowercase().contains(&needle)
-                {
-                    Some(idx)
-                } else {
-                    None
-                }
+                let matched = best_fuzzy_match(
+                    [
+                        item.label.as_str(),
+                        item.id.as_str(),
+                        item.description.as_str(),
+                    ],
+                    &self.filter,
+                )?;
+                Some((idx, matched.score))
             })
-            .collect()
+            .collect::<Vec<_>>();
+        matches.sort_by_key(|(idx, score)| (*score, *idx));
+        matches.into_iter().map(|(idx, _)| idx).collect()
     }
 }
 
@@ -146,6 +171,15 @@ mod tests {
         KeyEvent {
             code,
             modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    fn ctrl_key(ch: char) -> KeyEvent {
+        KeyEvent {
+            code: KeyCode::Char(ch),
+            modifiers: KeyModifiers::CONTROL,
             kind: KeyEventKind::Press,
             state: KeyEventState::NONE,
         }
@@ -201,5 +235,44 @@ mod tests {
             surface.handle_key(key(KeyCode::Esc)),
             SelectionSurfaceEvent::Closed
         );
+    }
+
+    #[test]
+    fn typed_filter_edits_query() {
+        let mut surface = picker();
+
+        surface.handle_key(key(KeyCode::Char('c')));
+        surface.handle_key(key(KeyCode::Char('o')));
+        assert_eq!(
+            surface.selected_item().map(|item| item.id.as_str()),
+            Some("config")
+        );
+
+        surface.handle_key(key(KeyCode::Backspace));
+        assert_eq!(surface.filter, "c");
+
+        surface.handle_key(ctrl_key('u'));
+        assert_eq!(surface.filter, "");
+    }
+
+    #[test]
+    fn fuzzy_filter_orders_exact_before_subsequence() {
+        let mut surface = SelectionSurface::new(
+            "Commands",
+            vec![
+                SelectionItem {
+                    description: "model context protocol".into(),
+                    ..SelectionItem::new("protocol", "Model Context Protocol")
+                },
+                SelectionItem::new("mcp", "mcp"),
+                SelectionItem::new("memory", "Memory"),
+            ],
+        );
+
+        surface.set_filter("mcp");
+        let rendered = surface.render_lines(3).join("\n");
+
+        assert!(rendered.contains("> mcp - "));
+        assert!(rendered.contains("Model Context Protocol"));
     }
 }

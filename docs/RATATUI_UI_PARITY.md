@@ -129,7 +129,7 @@
 | 输入历史插入 | — | `input/insert_history.rs` | ✅ |
 | Vim 模式 | `VimTextInput.tsx` | `input/vim.rs` | ✅ |
 | 基础文本输入 | `BaseTextInput.tsx` | (ratatui 原生) | ➖ |
-| 搜索框 | `SearchBox.tsx` | — | ❌ |
+| 搜索框 | `SearchBox.tsx` | `components/search_box.rs` | ✅ 文本渲染 primitive 已补齐，含 focused/cursor/borderless snapshot |
 | 文件搜索 (Ctrl+F) | — | `input/file_search.rs` | ✅ |
 | 提及编解码 | — | `input/mention_codec.rs` | ✅ |
 | 表单导航 | — | `input/form_navigation.rs` | ✅ |
@@ -369,7 +369,7 @@
 |------|-------|---------|------|
 | 对话框 | `design-system/Dialog.tsx` | (分散在各模块) | ➖ |
 | 标签页 | `design-system/Tabs.tsx` | (内联 render_tabs) | ⚠️ |
-| 模糊选择器 | `design-system/FuzzyPicker.tsx` | — | ❌ |
+| 模糊选择器 | `design-system/FuzzyPicker.tsx` | `components/fuzzy_match.rs` + `selection_surface.rs` | ⚠️ fuzzy 排序基础已补齐，完整 preview/action picker 待消费者接入 |
 | 列表项 | `design-system/ListItem.tsx` | (ratatui List) | ➖ |
 | 加载状态 | `design-system/LoadingState.tsx` | `rendering/spinner.rs` | ✅ |
 | 进度条 | `design-system/ProgressBar.tsx` | `rendering/progress_bar.rs` | ✅ 纯文本 1/8 block 渲染 |
@@ -548,7 +548,7 @@
 |--------|------|
 | Shell 输出展开/格式化 | 已补齐基础 expanded option、ANSI/JSON/宽度截断、elapsed/timeout footer；仍缺最新 shell 输出自动展开上下文 |
 | 结构化 Diff (hunks) | 已补齐 `diff/structured_diff.rs`，支持 unified diff hunk 解析、old/new gutter、multi-hunk 分隔、no-newline/large/truncated/untracked snapshot 覆盖；文件编辑更新消息留到 Step 12 |
-| 搜索框 (`SearchBox`) | 影响 MCP/Agent 等面板的过滤交互 |
+| 搜索框 (`SearchBox`) | 已补齐共享文本渲染 primitive，并接入 `SelectionSurface` 头部 |
 | 历史搜索 (`HistorySearchDialog`) | Ctrl+R 功能缺失 |
 | 进度条 (`ProgressBar`) | 已补齐共享 1/8 block 渲染；后续继续接入更多长任务 surface |
 | Tool 活动渲染完善 | 当前 `tool_activity.rs` 过于简化 |
@@ -561,7 +561,7 @@
 | 任务面板完善 (BackgroundTask, ShellProgress) | `tasks/` 模块已存在并有 snapshot；下一步是集成复核和细节补齐 |
 | 状态行增强 | 缺少自定义状态行、IDE 指示器等 |
 | 文件编辑 diff 完善 | 缺少 hunks 展开、更新消息 |
-| 模糊选择器 (`FuzzyPicker`) | 影响选择体验 |
+| 模糊选择器 (`FuzzyPicker`) | fuzzy scorer 与 SelectionSurface/command palette 排序已补齐；完整 preview/action picker 仍待后续步骤 |
 | MCP 审批/导入对话框 | 4 个对话框缺失 |
 
 #### P2 — 平台/集成功能
@@ -596,8 +596,8 @@
 
 ## 下一步建议
 
-1. **立即**: 继续补齐 SearchBox/FuzzyPicker 与历史搜索；Shell 最新输出自动展开上下文仍待接线
-2. **短期**: 搜索/过滤组件 (SearchBox, HistorySearch, FuzzyPicker)、设置页完善
+1. **立即**: 继续补齐历史搜索 (Ctrl+R) 与 Tool 活动渲染；Shell 最新输出自动展开上下文仍待接线
+2. **短期**: 将 fuzzy/search foundation 复用到 HistorySearch、设置页和 MCP/Agent 选择面
 3. **中期**: 任务面板、状态行增强、MCP 审批对话框
 4. **长期**: IDE 集成、远程功能 (视路线图)
 5. **不追**: LogoV2 动画、纯 React 抽象 (SentryErrorBoundary)、设计系统基类

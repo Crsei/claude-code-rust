@@ -53,6 +53,9 @@ pub mod cwd_prompt;
 #[path = "components/feature_panels.rs"]
 pub mod feature_panels;
 #[allow(dead_code)]
+#[path = "components/fuzzy_match.rs"]
+pub mod fuzzy_match;
+#[allow(dead_code)]
 #[path = "components/pager_overlay.rs"]
 pub mod pager_overlay;
 #[allow(dead_code)]
@@ -61,6 +64,9 @@ pub mod prompt_input;
 #[allow(dead_code)]
 #[path = "components/resume_picker.rs"]
 pub mod resume_picker;
+#[allow(dead_code)]
+#[path = "components/search_box.rs"]
+pub mod search_box;
 #[allow(dead_code)]
 #[path = "components/selection_surface.rs"]
 pub mod selection_surface;
