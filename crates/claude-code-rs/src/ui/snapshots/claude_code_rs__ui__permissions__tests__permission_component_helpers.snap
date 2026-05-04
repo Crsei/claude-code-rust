@@ -274,6 +274,21 @@ options:
   Deny edit [deny] - leave file unchanged (this request)
   Always allow path [always allow] - save rule for src/lib.rs (this request)
 
+## file-edit-request-diff
+File edit permission
+tool: edit
+request: src/lib.rs
+details:
+  - operation: replace range
+file: src/lib.rs
+summary: Added 2...    new_call();
+        3 +     extra_call();
+   3    4   }
+options:
+> Allow edit [allow] - permit edit to src/lib.rs (this request)
+  Deny edit [deny] - leave file unchanged (this request)
+  Always allow path [always allow] - save rule for src/lib.rs (this request)
+
 ## filesystem-request
 Filesystem permission
 tool: filesystem

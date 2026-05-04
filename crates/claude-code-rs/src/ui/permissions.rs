@@ -87,7 +87,9 @@ mod tests {
     use super::enter_plan_mode_permission_request::enter_plan_mode_permission_request::render_enter_plan_mode_permission_request;
     use super::exit_plan_mode_permission_request::exit_plan_mode_permission_request::render_exit_plan_mode_permission_request;
     use super::fallback_permission_request::render_fallback_permission_request;
-    use super::file_edit_permission_request::file_edit_permission_request::render_file_edit_permission_request;
+    use super::file_edit_permission_request::file_edit_permission_request::{
+        render_file_edit_permission_request, render_file_edit_permission_request_with_diff,
+    };
     use super::file_permission_dialog::file_permission_dialog::render_file_permission_dialog;
     use super::file_permission_dialog::ide_diff_config::{render_ide_diff_config, IdeDiffConfig};
     use super::file_permission_dialog::permission_options::file_permission_options;
@@ -141,9 +143,15 @@ mod tests {
     use super::web_fetch_permission_request::web_fetch_permission_request::render_web_fetch_permission_request;
     use super::worker_badge::render_worker_badge;
     use super::worker_pending_permission::render_worker_pending_permission;
+    use crate::ui::diff::file_edit_diff::unified_hunk_lines_from_edit;
 
     #[test]
     fn snapshot_permission_component_helpers() {
+        let edit_hunks = unified_hunk_lines_from_edit(
+            "src/lib.rs",
+            "fn main() {\n    old_call();\n}\n",
+            "fn main() {\n    new_call();\n    extra_call();\n}\n",
+        );
         let mut choices = MultipleChoiceState::new(vec![
             "Inspect logs".to_string(),
             "Ask operator".to_string(),
@@ -369,6 +377,16 @@ mod tests {
             section(
                 "file-edit-request",
                 render_file_edit_permission_request("src/lib.rs", "replace range", 0),
+            ),
+            section(
+                "file-edit-request-diff",
+                render_file_edit_permission_request_with_diff(
+                    "src/lib.rs",
+                    "replace range",
+                    &edit_hunks,
+                    0,
+                    80,
+                ),
             ),
             section(
                 "filesystem-request",

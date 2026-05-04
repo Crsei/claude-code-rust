@@ -17,6 +17,8 @@ pub mod collapsed_read_search_content;
 #[allow(dead_code)]
 pub mod compact_boundary_message;
 #[allow(dead_code)]
+pub mod file_edit_tool_updated_message;
+#[allow(dead_code)]
 pub mod grouped_tool_use_content;
 #[allow(dead_code)]
 pub mod highlighted_thinking_text;
@@ -86,6 +88,10 @@ mod tests {
     use super::attachment_message::render_attachment_message;
     use super::collapsed_read_search_content::render_collapsed_read_search_content;
     use super::compact_boundary_message::render_compact_boundary_message;
+    use super::file_edit_tool_updated_message::{
+        render_file_edit_tool_canceled_message, render_file_edit_tool_rejected_message,
+        render_file_edit_tool_updated_message, FileEditMessageStyle, FileEditToolUpdatedView,
+    };
     use super::grouped_tool_use_content::render_grouped_tool_use_content;
     use super::highlighted_thinking_text::render_highlighted_thinking_text;
     use super::hook_progress_message::render_hook_progress_message;
@@ -114,11 +120,17 @@ mod tests {
     use super::user_resource_update_message::render_user_resource_update_message;
     use super::user_teammate_message::render_user_teammate_message;
     use super::user_text_message::render_user_text_message;
+    use crate::ui::diff::file_edit_diff::unified_hunk_lines_from_edit;
     use crate::ui::theme::Theme;
 
     #[test]
     fn snapshot_message_component_helpers() {
         let theme = Theme::default();
+        let edit_hunks = unified_hunk_lines_from_edit(
+            "src/lib.rs",
+            "fn main() {\n    old_call();\n}\n",
+            "fn main() {\n    new_call();\n    extra_call();\n}\n",
+        );
         let rendered = [
             section(
                 "advisor",
@@ -151,6 +163,38 @@ mod tests {
             section(
                 "compact-boundary",
                 render_compact_boundary_message(120, 80, &theme),
+            ),
+            section(
+                "file-edit-updated",
+                render_file_edit_tool_updated_message(&FileEditToolUpdatedView {
+                    file_path: "src/lib.rs".to_string(),
+                    hunk_lines: edit_hunks.clone(),
+                    style: FileEditMessageStyle::Regular,
+                    verbose: true,
+                    preview_hint: None,
+                    width: 80,
+                    max_lines: 20,
+                }),
+            ),
+            section(
+                "file-edit-condensed",
+                render_file_edit_tool_updated_message(&FileEditToolUpdatedView {
+                    file_path: "src/lib.rs".to_string(),
+                    hunk_lines: edit_hunks,
+                    style: FileEditMessageStyle::Condensed,
+                    verbose: false,
+                    preview_hint: None,
+                    width: 80,
+                    max_lines: 20,
+                }),
+            ),
+            section(
+                "file-edit-rejected",
+                render_file_edit_tool_rejected_message("src/lib.rs", Some("needs review")),
+            ),
+            section(
+                "file-edit-canceled",
+                render_file_edit_tool_canceled_message("src/lib.rs"),
             ),
             section(
                 "grouped-tool-use",

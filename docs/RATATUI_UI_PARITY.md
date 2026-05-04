@@ -261,9 +261,9 @@
 | Diff 文件列表 | `diff/DiffFileList.tsx` | `diff/diff_file_list.rs` | ✅ |
 | Diff 详情视图 | `diff/DiffDetailView.tsx` | `diff/diff_detail_view.rs` | ✅ |
 | 结构化 Diff hunks | `StructuredDiff/hunks.ts` | `diff/structured_diff.rs` | ✅ |
-| 文件编辑 Diff | `FileEditToolDiff.tsx` | `rendering/get_git_diff.rs` + `diff/structured_diff.rs` | ⚠️ hunk 基础已补齐，文件编辑更新消息待 Step 12 |
-| 文件编辑更新消息 | `FileEditToolUpdatedMessage.tsx` | — | ❌ |
-| Diff 内联视图 | `DiffView.tsx` | — | ❌ |
+| 文件编辑 Diff | `FileEditToolDiff.tsx` | `diff/file_edit_diff.rs` + `diff/structured_diff.rs` + `permissions/file_edit_permission_request/file_edit_tool_diff.rs` | ✅ |
+| 文件编辑更新消息 | `FileEditToolUpdatedMessage.tsx` | `messages/file_edit_tool_updated_message.rs` | ⚠️ renderer/snapshot 已补齐；live transcript 接线依赖 backend file-edit event data |
+| Diff 内联视图 | `DiffView.tsx` | `diff/file_edit_diff.rs` + `diff/diff_detail_view.rs` | ⚠️ 共享 renderer 已补齐；未单独引入 React 式 `DiffView` 组件 |
 
 ---
 
@@ -547,7 +547,7 @@
 | 项目 | 里程碑状态 |
 |------|------------|
 | Shell 输出展开/格式化 | 基础完成：已补齐 expanded option、ANSI/JSON/宽度截断、elapsed/timeout footer。残余：最新 shell 输出自动展开上下文仍待 runtime/event 接线，见 `docs/KNOWN_ISSUES.md` #21 |
-| 结构化 Diff (hunks) | 完成：已补齐 `diff/structured_diff.rs`，支持 unified diff hunk 解析、old/new gutter、multi-hunk 分隔、no-newline/large/truncated/untracked snapshot 覆盖。文件编辑更新消息留到 Step 12 |
+| 结构化 Diff (hunks) | 完成：已补齐 `diff/structured_diff.rs` 与 `diff/file_edit_diff.rs`，支持 unified diff hunk 解析、old/new gutter、multi-hunk 分隔、no-newline/large/truncated snapshot 覆盖，并复用于文件编辑 permission/update surfaces |
 | 搜索框 (`SearchBox`) | 完成：已补齐共享文本渲染 primitive，并接入 `SelectionSurface` 头部 |
 | 历史搜索 (`HistorySearchDialog`) | 基础完成：已补齐 Ctrl+R in-session 历史搜索、SearchBox、exact-first/fuzzy-second 过滤、窄/宽预览、空态与 key handling。残余：Rust 端暂无持久 timestamped history reader，当前从本次会话 `push_history` 条目生成时间戳，见 `docs/KNOWN_ISSUES.md` #22 |
 | 进度条 (`ProgressBar`) | 完成：已补齐共享 1/8 block 渲染，并接入任务/shell surface |
@@ -557,7 +557,7 @@ P0 milestone residual risks:
 
 - 最新 shell 输出尚未根据实时 shell 上下文自动展开；当前 renderer 已支持展开/折叠和完整 detail view，但自动策略等待事件接线。
 - Ctrl+R 历史搜索当前只覆盖本次 TUI 会话内提交的 prompt；跨会话持久历史需要后续 reader/API。
-- 文件编辑成功/拒绝/取消后的专用更新消息仍归入 Step 12，因为该项依赖 file-edit event 数据流，不阻塞 P0 hunk renderer 基础。
+- 文件编辑成功/拒绝/取消 render surface 已补齐；live transcript 接线仍依赖后端提供结构化 file-edit event 数据流，不阻塞 P0 hunk renderer 基础。
 
 #### P1 — 影响功能完整性
 
@@ -566,7 +566,7 @@ P0 milestone residual risks:
 | 设置页完善 (ModelPicker, ThemePicker 等) | 已补 `/config` Model/Theme/Effort picker 基础，复用 `SelectionSurface` 与 `/config set` 持久化；standalone picker、live theme preview、syntax toggle 仍待后续增强 |
 | 任务面板完善 (BackgroundTask, ShellProgress) | 已完成集成复核：`/tasks` command surface 汇总 tool/team task，列表显示 kind/state/elapsed/progress/summary，并覆盖 tool/team action snapshot；shell 最新输出自动展开仍按 P0 residual #21 跟踪 |
 | 状态行增强 | 已接 `/statusline` custom command runner/payload；fallback footer 同步 permission/sandbox/effort；`StatusSnapshot` 支持 subsystem/IDE/memory/PR 等 optional indicators 并覆盖 present/absent snapshot；live IDE/PR 后端数据不在本步强行引入 |
-| 文件编辑 diff 完善 | 缺少 hunks 展开、更新消息 |
+| 文件编辑 diff 完善 | 已补齐 shared file-edit diff preview、permission hunk 展开、updated/rejected/canceled render snapshots；live transcript 接线取决于 backend file-edit event data |
 | 模糊选择器 (`FuzzyPicker`) | fuzzy scorer 与 SelectionSurface/command palette 排序已补齐；完整 preview/action picker 仍待后续步骤 |
 | MCP 审批/导入对话框 | 审批、拷贝、多选、服务器卡片已补齐；Desktop 导入 UI surface 已补齐，自动发现 Claude Desktop 配置仍待后端数据源 |
 
@@ -602,8 +602,8 @@ P0 milestone residual risks:
 
 ## 下一步建议
 
-1. **立即**: 进入 P1 文件编辑 diff 更新消息；P0 残余已记录为明确风险
+1. **立即**: 进入 P1 文档/里程碑 gate，统一 `WORK_STATUS` / `IMPLEMENTATION_GAPS` / archive 记录
 2. **短期**: 将 fuzzy/search foundation 继续复用到 Agent 选择面
-3. **中期**: Claude Desktop MCP 配置自动发现、文件编辑 diff 更新消息
+3. **中期**: Claude Desktop MCP 配置自动发现、live file-edit transcript event 接线
 4. **长期**: IDE 集成、远程功能 (视路线图)
 5. **不追**: LogoV2 动画、纯 React 抽象 (SentryErrorBoundary)、设计系统基类

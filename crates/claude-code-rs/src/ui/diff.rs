@@ -6,6 +6,7 @@ pub mod diff_detail_view;
 pub mod diff_dialog;
 #[allow(dead_code)]
 pub mod diff_file_list;
+pub mod file_edit_diff;
 pub mod structured_diff;
 // END generated upstream diff modules
 
