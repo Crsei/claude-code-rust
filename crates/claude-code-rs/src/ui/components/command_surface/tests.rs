@@ -15,7 +15,9 @@ use crate::ui::memory::memory_file_selector::{
     MemoryFileKind, MemoryFileOption, MemoryFileSelectorState,
 };
 use crate::ui::skills::skills_menu::SkillMenuItem;
-use crate::ui::tasks::{TaskKind as UiTaskKind, TaskStatus as UiTaskStatus};
+use crate::ui::tasks::{
+    TaskKind as UiTaskKind, TaskState as UiTaskState, TaskStatus as UiTaskStatus,
+};
 use crate::ui::teams::teams_dialog::{TeamSummary, TeammateStatus};
 
 fn key(code: KeyCode) -> KeyEvent {
@@ -149,6 +151,50 @@ fn tasks_surface_routes_selected_task_actions() {
     assert_eq!(
         surface.handle_key(key(KeyCode::Char('d'))),
         CommandSurfaceOutcome::Submit("/tasks delete task-1".to_string())
+    );
+}
+
+#[test]
+fn tasks_surface_snapshots_tool_and_team_integration() {
+    let mut tool = UiTaskStatus::new("task-1", "cargo test", UiTaskKind::Shell);
+    tool.state = UiTaskState::Running;
+    tool.progress = Some((1, 2));
+    tool.summary = "running tests".into();
+    tool.elapsed_ms = 3_200;
+
+    let mut teammate =
+        UiTaskStatus::new("team-1", "builder (ui-port)", UiTaskKind::InProcessTeammate);
+    teammate.state = UiTaskState::Running;
+    teammate.summary = "implementing task panel".into();
+
+    let mut surface = CommandSurface::Tasks(TasksSurface {
+        items: vec![
+            TaskSurfaceItem {
+                task: tool,
+                source: TaskSurfaceSource::Tool,
+            },
+            TaskSurfaceItem {
+                task: teammate,
+                source: TaskSurfaceSource::Team {
+                    teammate_name: "builder".into(),
+                },
+            },
+        ],
+        selected_index: 0,
+    });
+
+    let mut rendered = vec![section("tool-selected", surface.render())];
+    surface.handle_key(key(KeyCode::Down));
+    rendered.push(section("team-selected", surface.render()));
+
+    insta::assert_snapshot!("tasks_surface_tool_team_integration", rendered.join("\n\n"));
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Char('s'))),
+        CommandSurfaceOutcome::Submit("/team kill builder".to_string())
+    );
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Char('d'))),
+        CommandSurfaceOutcome::None
     );
 }
 

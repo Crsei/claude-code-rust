@@ -12,6 +12,6 @@ pub fn render_background_tasks_dialog(tasks: &[TaskStatus], selected_index: usiz
             lines.push(render_background_task(task, idx == selected_index));
         }
     }
-    lines.push("Enter details | k kill | Esc close".to_string());
+    lines.push("Enter details | k/s stop | d delete tool | r refresh | Esc close".to_string());
     lines.join("\n")
 }

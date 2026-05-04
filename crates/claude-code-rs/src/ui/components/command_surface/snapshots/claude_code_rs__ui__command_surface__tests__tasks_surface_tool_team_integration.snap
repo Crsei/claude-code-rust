@@ -1,0 +1,15 @@
+---
+source: crates/claude-code-rs/src/ui/components/command_surface/tests.rs
+expression: "rendered.join(\"\\n\\n\")"
+---
+-- tool-selected --
+Background tasks (2)
+> cargo test         shell     running     3.2s [█████     ] running tests
+  builder (ui-port)  teammate  running      0ms [          ] implementing task panel
+Enter details | k/s stop | d delete tool | r refresh | Esc close
+
+-- team-selected --
+Background tasks (2)
+  cargo test         shell     running     3.2s [█████     ] running tests
+> builder (ui-port)  teammate  running      0ms [          ] implementing task panel
+Enter details | k/s stop | d delete tool | r refresh | Esc close

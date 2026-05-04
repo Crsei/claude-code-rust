@@ -340,12 +340,12 @@
 
 | 功能 | TS 端 | Rust 端 | 状态 |
 |------|-------|---------|------|
-| 任务列表面板 | `TaskListV2.tsx` | `command_surface/surfaces/tasks.rs` + `tasks/background_tasks_dialog.rs` | ⚠️ 已有 surface，待集成复核 |
-| 后台任务状态 | `tasks/BackgroundTaskStatus.tsx` | `tasks/background_task_status.rs` | ⚠️ 已有 surface + snapshot，待 TS 细节复核 |
-| 后台任务卡片 | `tasks/BackgroundTask.tsx` | `tasks/background_task.rs` | ⚠️ 已有基础卡片，待交互细节复核 |
+| 任务列表面板 | `TaskListV2.tsx` | `command_surface/surfaces/tasks.rs` + `tasks/background_tasks_dialog.rs` | ✅ 已接 command surface，覆盖 tool/team 混合列表、details/stop/delete/refresh action 与 snapshot |
+| 后台任务状态 | `tasks/BackgroundTaskStatus.tsx` | `tasks/background_task_status.rs` | ✅ 已有 running/failed 聚合状态与 snapshot |
+| 后台任务卡片 | `tasks/BackgroundTask.tsx` | `tasks/background_task.rs` | ✅ 已显示 kind/state/elapsed/progress/summary，覆盖 snapshot |
 | Shell 进度 | `tasks/ShellProgress.tsx` | `tasks/shell_progress.rs` + `rendering/progress_bar.rs` | ⚠️ 已接共享 ProgressBar，待 shell 输出细节补齐 |
-| 工具活动渲染 | `tasks/renderToolActivity.tsx` | `tasks/render_tool_activity.rs` + `rendering/tool_activity.rs` | ⚠️ 简化版 |
-| 任务状态工具 | `tasks/taskStatusUtils.ts` | `tasks/task_status_utils.rs` | ⚠️ 已接共享 ProgressBar，待状态细节补齐 |
+| 工具活动渲染 | `tasks/renderToolActivity.tsx` | `tasks/render_tool_activity.rs` + `rendering/tool_activity.rs` | ✅ 已复用统一 `ToolActivity` 模型，覆盖状态、参数、progress、错误和输出预览 |
+| 任务状态工具 | `tasks/taskStatusUtils.ts` | `tasks/task_status_utils.rs` | ✅ 已接共享 ProgressBar、kind/state label 与 elapsed formatting |
 | 恢复任务选择器 | `ResumeTask.tsx` | `components/resume_picker.rs` | ✅ |
 
 ---
@@ -564,7 +564,7 @@ P0 milestone residual risks:
 | 缺失项 | 说明 |
 |--------|------|
 | 设置页完善 (ModelPicker, ThemePicker 等) | 已补 `/config` Model/Theme/Effort picker 基础，复用 `SelectionSurface` 与 `/config set` 持久化；standalone picker、live theme preview、syntax toggle 仍待后续增强 |
-| 任务面板完善 (BackgroundTask, ShellProgress) | `tasks/` 模块已存在并有 snapshot；下一步是集成复核和细节补齐 |
+| 任务面板完善 (BackgroundTask, ShellProgress) | 已完成集成复核：`/tasks` command surface 汇总 tool/team task，列表显示 kind/state/elapsed/progress/summary，并覆盖 tool/team action snapshot；shell 最新输出自动展开仍按 P0 residual #21 跟踪 |
 | 状态行增强 | 缺少自定义状态行、IDE 指示器等 |
 | 文件编辑 diff 完善 | 缺少 hunks 展开、更新消息 |
 | 模糊选择器 (`FuzzyPicker`) | fuzzy scorer 与 SelectionSurface/command palette 排序已补齐；完整 preview/action picker 仍待后续步骤 |
@@ -602,7 +602,7 @@ P0 milestone residual risks:
 
 ## 下一步建议
 
-1. **立即**: 进入 P1 任务面板集成复核；P0 残余已记录为明确风险
+1. **立即**: 进入 P1 状态行增强；P0 残余已记录为明确风险
 2. **短期**: 将 fuzzy/search foundation 继续复用到 MCP/Agent 选择面
 3. **中期**: 任务面板、状态行增强、MCP 审批对话框
 4. **长期**: IDE 集成、远程功能 (视路线图)
