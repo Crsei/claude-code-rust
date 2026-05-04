@@ -1,0 +1,42 @@
+---
+source: crates/claude-code-rs/src/ui/components/command_surface/tests.rs
+expression: "rendered.join(\"\\n\\n\")"
+---
+-- status --
+Config
+[Status]  Model   Theme   Effort   Config   Editor
+> Show effective config - model=custom-model; backend=native
+  Show setting sources - which layer set each key
+Left/Right switch tabs | Up/Down navigate | Enter select | Esc close
+
+-- model --
+Config
+ Status  [Model]  Theme   Effort   Config   Editor
+Current effort: medium (10240 tokens)
+Model / Filter...
+> custom-model - configured; current; effort=medium
+  opus (claude-opus-4-20250514) - configured; effort=medium
+Left/Right switch tabs | Type filter | Up/Down navigate | Enter select | Esc close
+
+-- theme --
+Config
+ Status   Model  [Theme]  Effort   Config   Editor
+Theme / Filter...
+  Auto - match terminal when supported
+  Dark mode - default ratatui palette
+> Light mode - light terminal palette; current
+  Solarized - low-contrast terminal palette
+  Monokai - high-contrast editor palette
+  Nord - cool low-saturation palette
+Left/Right switch tabs | Type filter | Up/Down navigate | Enter select | Esc close
+
+-- effort --
+Config
+ Status   Model   Theme  [Effort]  Config   Editor
+Effort / Filter...
+  Auto - model default; 10240 tokens
+  Low - shorter thinking budget; 4096 tokens
+> Medium - balanced thinking budget; 10240 tokens; current
+  High - deeper thinking budget; 24576 tokens
+  Max - largest fixed thinking budget; 32768 tokens
+Left/Right switch tabs | Type filter | Up/Down navigate | Enter select | Esc close

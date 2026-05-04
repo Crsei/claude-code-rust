@@ -27,6 +27,15 @@ fn key(code: KeyCode) -> KeyEvent {
     }
 }
 
+fn section(label: &str, body: String) -> String {
+    let body = body
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("-- {label} --\n{body}")
+}
+
 #[test]
 fn agents_surface_submits_selected_agent_detail_command() {
     let mut surface = CommandSurface::Agents(AgentsSurface::new(Path::new(".")));
@@ -205,7 +214,7 @@ fn config_surface_uses_tab_navigation_and_selection() {
     let mut surface = CommandSurface::Config(ConfigSurface::new(&AppState::default()));
     assert!(surface.render().contains("[Status]"));
 
-    surface.handle_key(key(KeyCode::Right));
+    surface.handle_key(key(KeyCode::Char('5')));
     assert!(surface.render().contains("[Config]"));
     surface.handle_key(key(KeyCode::Down));
 
@@ -216,6 +225,62 @@ fn config_surface_uses_tab_navigation_and_selection() {
     assert_eq!(
         surface.handle_key(key(KeyCode::Esc)),
         CommandSurfaceOutcome::Close
+    );
+}
+
+#[test]
+fn config_surface_exposes_model_theme_and_effort_pickers() {
+    let mut state = AppState::default();
+    state.main_loop_model = "custom-model".into();
+    state.settings.available_models = vec!["custom-model".into(), "opus".into()];
+    state.settings.theme = Some("light".into());
+    state.effort_value = Some("medium".into());
+
+    let mut surface = CommandSurface::Config(ConfigSurface::new(&state));
+    let mut rendered = vec![section("status", surface.render())];
+
+    surface.handle_key(key(KeyCode::Right));
+    rendered.push(section("model", surface.render()));
+
+    surface.handle_key(key(KeyCode::Right));
+    rendered.push(section("theme", surface.render()));
+
+    surface.handle_key(key(KeyCode::Right));
+    rendered.push(section("effort", surface.render()));
+
+    insta::assert_snapshot!("config_surface_model_theme_effort", rendered.join("\n\n"));
+}
+
+#[test]
+fn config_surface_picker_selection_submits_config_set_commands() {
+    let mut state = AppState::default();
+    state.main_loop_model = "custom-model".into();
+    state.settings.available_models = vec!["custom-model".into(), "opus".into()];
+    state.settings.theme = Some("light".into());
+    state.effort_value = Some("medium".into());
+
+    let mut model_surface = CommandSurface::Config(ConfigSurface::new(&state));
+    model_surface.handle_key(key(KeyCode::Right));
+    assert_eq!(
+        model_surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::Submit("/config set model custom-model".to_string())
+    );
+
+    let mut theme_surface = CommandSurface::Config(ConfigSurface::new(&state));
+    theme_surface.handle_key(key(KeyCode::Right));
+    theme_surface.handle_key(key(KeyCode::Right));
+    assert_eq!(
+        theme_surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::Submit("/config set theme light".to_string())
+    );
+
+    let mut effort_surface = CommandSurface::Config(ConfigSurface::new(&state));
+    effort_surface.handle_key(key(KeyCode::Right));
+    effort_surface.handle_key(key(KeyCode::Right));
+    effort_surface.handle_key(key(KeyCode::Right));
+    assert_eq!(
+        effort_surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::Submit("/config set effortLevel medium".to_string())
     );
 }
 

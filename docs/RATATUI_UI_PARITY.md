@@ -275,8 +275,8 @@
 | 设置配置 | `Settings/Config.tsx` | (同上) | ⚠️ |
 | 设置状态 | `Settings/Status.tsx` | (同上) | ⚠️ |
 | 设置用量 | `Settings/Usage.tsx` | — | ❌ |
-| 模型选择器 | `ModelPicker.tsx` | — | ❌ |
-| 主题选择器 | `ThemePicker.tsx` | `rendering/theme.rs` | ⚠️ 渲染有，选择器无 |
+| 模型选择器 | `ModelPicker.tsx` | `components/command_surface/surfaces/config.rs` | ⚠️ 已补 `/config` Model picker，支持 configured/built-in/current model、filter 与 `/config set model` |
+| 主题选择器 | `ThemePicker.tsx` | `components/command_surface/surfaces/config.rs` + `rendering/theme.rs` | ⚠️ 已补 `/config` Theme picker，支持 known/custom theme 与 `/config set theme`；live preview / syntax toggle 仍待 renderer 数据流 |
 | 输出风格选择 | `OutputStylePicker.tsx` | — | ❌ |
 | 语言选择器 | `LanguagePicker.tsx` | — | ❌ |
 | Thinking 开关 | `ThinkingToggle.tsx` | — | ❌ |
@@ -563,7 +563,7 @@ P0 milestone residual risks:
 
 | 缺失项 | 说明 |
 |--------|------|
-| 设置页完善 (ModelPicker, ThemePicker 等) | 设置页仅基本 config surface |
+| 设置页完善 (ModelPicker, ThemePicker 等) | 已补 `/config` Model/Theme/Effort picker 基础，复用 `SelectionSurface` 与 `/config set` 持久化；standalone picker、live theme preview、syntax toggle 仍待后续增强 |
 | 任务面板完善 (BackgroundTask, ShellProgress) | `tasks/` 模块已存在并有 snapshot；下一步是集成复核和细节补齐 |
 | 状态行增强 | 缺少自定义状态行、IDE 指示器等 |
 | 文件编辑 diff 完善 | 缺少 hunks 展开、更新消息 |
@@ -602,8 +602,8 @@ P0 milestone residual risks:
 
 ## 下一步建议
 
-1. **立即**: 进入 P1 设置页 ModelPicker / ThemePicker；P0 残余已记录为明确风险
-2. **短期**: 将 fuzzy/search foundation 继续复用到设置页和 MCP/Agent 选择面
+1. **立即**: 进入 P1 任务面板集成复核；P0 残余已记录为明确风险
+2. **短期**: 将 fuzzy/search foundation 继续复用到 MCP/Agent 选择面
 3. **中期**: 任务面板、状态行增强、MCP 审批对话框
 4. **长期**: IDE 集成、远程功能 (视路线图)
 5. **不追**: LogoV2 动画、纯 React 抽象 (SentryErrorBoundary)、设计系统基类
