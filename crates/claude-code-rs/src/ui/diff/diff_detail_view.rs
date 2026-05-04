@@ -1,3 +1,4 @@
+use super::structured_diff::{parse_structured_hunks, render_structured_diff_hunks};
 use super::{truncate_by_width, DiffFile};
 
 const MAX_CONTEXT_LINES: usize = 400;
@@ -23,6 +24,19 @@ fn render_plain_lines(lines: Vec<String>, width: usize) -> Vec<String> {
         .collect()
 }
 
+fn render_diff_body(hunks: &[String], width: usize) -> Vec<String> {
+    let structured_hunks = parse_structured_hunks(hunks);
+    if !structured_hunks.is_empty() {
+        return render_structured_diff_hunks(&structured_hunks, width, MAX_CONTEXT_LINES);
+    }
+
+    let mut body = split_hunks(hunks);
+    if body.len() > MAX_CONTEXT_LINES {
+        body.truncate(MAX_CONTEXT_LINES);
+    }
+    render_plain_lines(body, width)
+}
+
 /// Render the detail view for a selected file.
 pub fn render_diff_detail_view_lines(
     file: &DiffFile,
@@ -46,14 +60,12 @@ pub fn render_diff_detail_view_lines(
     }
 
     let mut lines = vec![file.path.clone()];
-    let mut body = split_hunks(hunks);
+    let mut body = render_diff_body(hunks, width);
     if body.is_empty() {
         body.push(NO_DIFF_NOTE.to_string());
-    } else if body.len() > MAX_CONTEXT_LINES {
-        body.truncate(MAX_CONTEXT_LINES);
     }
 
-    lines.extend(render_plain_lines(body, width));
+    lines.extend(body);
     if file.is_truncated {
         lines.push(TRUNCATED_NOTE.to_string());
     }
@@ -76,6 +88,48 @@ mod tests {
     fn snapshot_diff_detail_view_for_binary() {
         let file = DiffFile::new("asset.bin", 0, 0, true, false, false, false);
         let output = render_diff_detail_view_lines(&file, &[], 80);
+        assert_snapshot!(output.join("\n"));
+    }
+
+    #[test]
+    fn snapshot_diff_detail_view_for_structured_hunks() {
+        let file = DiffFile::new("src/main.rs", 2, 1, false, false, false, false);
+        let hunks = vec![
+            "diff --git a/src/main.rs b/src/main.rs".to_string(),
+            "index 1111111..2222222 100644".to_string(),
+            "--- a/src/main.rs".to_string(),
+            "+++ b/src/main.rs".to_string(),
+            "@@ -1,3 +1,4 @@ fn main".to_string(),
+            " fn main() {".to_string(),
+            "-    old_call();".to_string(),
+            "+    new_call();".to_string(),
+            "+    extra_call();".to_string(),
+            " }".to_string(),
+        ];
+
+        let output = render_diff_detail_view_lines(&file, &hunks, 80);
+
+        assert_snapshot!(output.join("\n"));
+    }
+
+    #[test]
+    fn snapshot_diff_detail_view_for_large_file() {
+        let file = DiffFile::new("large.rs", 0, 0, false, true, false, false);
+        let output = render_diff_detail_view_lines(&file, &[], 80);
+        assert_snapshot!(output.join("\n"));
+    }
+
+    #[test]
+    fn snapshot_diff_detail_view_for_truncated_structured_hunks() {
+        let file = DiffFile::new("src/main.rs", 1, 1, false, false, true, false);
+        let hunks = vec![
+            "@@ -1,1 +1,1 @@".to_string(),
+            "-old".to_string(),
+            "+new".to_string(),
+        ];
+
+        let output = render_diff_detail_view_lines(&file, &hunks, 80);
+
         assert_snapshot!(output.join("\n"));
     }
 }

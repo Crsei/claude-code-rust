@@ -6,6 +6,7 @@ pub mod diff_detail_view;
 pub mod diff_dialog;
 #[allow(dead_code)]
 pub mod diff_file_list;
+pub mod structured_diff;
 // END generated upstream diff modules
 
 use std::collections::HashMap;
@@ -16,6 +17,7 @@ use ratatui::text::{Line, Span};
 use similar::{ChangeTag, TextDiff};
 use unicode_width::UnicodeWidthChar;
 
+use self::structured_diff::{parse_structured_hunks, StructuredDiffHunk};
 use super::theme::Theme;
 
 pub const MAX_VISIBLE_FILES: usize = 5;
@@ -94,6 +96,10 @@ impl DiffData {
 
     pub fn hunks_for_path(&self, path: &str) -> &[String] {
         self.hunks.get(path).map_or(&[], |hunks| hunks.as_slice())
+    }
+
+    pub fn structured_hunks_for_path(&self, path: &str) -> Vec<StructuredDiffHunk> {
+        parse_structured_hunks(self.hunks_for_path(path))
     }
 }
 

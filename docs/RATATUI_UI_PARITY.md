@@ -99,7 +99,7 @@
 | 消息时间戳 | `MessageTimestamp.tsx` | — | ❌ |
 | 消息选择器 | `MessageSelector.tsx` | — | ❌ |
 | 消息操作 (复制等) | `messageActions.tsx` | — | ❌ |
-| 结构化 diff 展示 | `StructuredDiff.tsx` + `StructuredDiffList.tsx` | `diff/` (3 files) | ⚠️ TS 有 hunks 展开系统 |
+| 结构化 diff 展示 | `StructuredDiff.tsx` + `StructuredDiffList.tsx` | `diff/structured_diff.rs` + `diff/` | ✅ 已有 hunk 解析、旧/新 gutter、multi-hunk 分隔与截断覆盖 |
 | 折叠展开提示 | `CtrlOToExpand.tsx` | (inline in transcript) | ✅ |
 | 压缩摘要 | `CompactSummary.tsx` | — | ❌ |
 | 用户中断展示 | `InterruptedByUser.tsx` | — | ❌ |
@@ -260,8 +260,8 @@
 | Diff 对话框 | `diff/DiffDialog.tsx` | `diff/diff_dialog.rs` | ✅ |
 | Diff 文件列表 | `diff/DiffFileList.tsx` | `diff/diff_file_list.rs` | ✅ |
 | Diff 详情视图 | `diff/DiffDetailView.tsx` | `diff/diff_detail_view.rs` | ✅ |
-| 结构化 Diff hunks | `StructuredDiff/hunks.ts` | — | ❌ |
-| 文件编辑 Diff | `FileEditToolDiff.tsx` | `rendering/get_git_diff.rs` | ⚠️ 简化版 |
+| 结构化 Diff hunks | `StructuredDiff/hunks.ts` | `diff/structured_diff.rs` | ✅ |
+| 文件编辑 Diff | `FileEditToolDiff.tsx` | `rendering/get_git_diff.rs` + `diff/structured_diff.rs` | ⚠️ hunk 基础已补齐，文件编辑更新消息待 Step 12 |
 | 文件编辑更新消息 | `FileEditToolUpdatedMessage.tsx` | — | ❌ |
 | Diff 内联视图 | `DiffView.tsx` | — | ❌ |
 
@@ -547,7 +547,7 @@
 | 缺失项 | 说明 |
 |--------|------|
 | Shell 输出展开/格式化 | 已补齐基础 expanded option、ANSI/JSON/宽度截断、elapsed/timeout footer；仍缺最新 shell 输出自动展开上下文 |
-| 结构化 Diff (hunks) | `StructuredDiff/` — 影响代码审查体验 |
+| 结构化 Diff (hunks) | 已补齐 `diff/structured_diff.rs`，支持 unified diff hunk 解析、old/new gutter、multi-hunk 分隔、no-newline/large/truncated/untracked snapshot 覆盖；文件编辑更新消息留到 Step 12 |
 | 搜索框 (`SearchBox`) | 影响 MCP/Agent 等面板的过滤交互 |
 | 历史搜索 (`HistorySearchDialog`) | Ctrl+R 功能缺失 |
 | 进度条 (`ProgressBar`) | 已补齐共享 1/8 block 渲染；后续继续接入更多长任务 surface |
@@ -596,7 +596,7 @@
 
 ## 下一步建议
 
-1. **立即**: 补齐 Shell 输出渲染 (P0)、结构化 Diff (P0)
+1. **立即**: 继续补齐 SearchBox/FuzzyPicker 与历史搜索；Shell 最新输出自动展开上下文仍待接线
 2. **短期**: 搜索/过滤组件 (SearchBox, HistorySearch, FuzzyPicker)、设置页完善
 3. **中期**: 任务面板、状态行增强、MCP 审批对话框
 4. **长期**: IDE 集成、远程功能 (视路线图)
