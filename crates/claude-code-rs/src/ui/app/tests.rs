@@ -304,6 +304,63 @@ fn prompt_arrow_keys_still_drive_history() {
 }
 
 #[test]
+fn ctrl_r_opens_history_search_and_escape_closes() {
+    let mut app = App::new();
+    app.push_history("first prompt".to_string());
+
+    assert_eq!(
+        send_key_with_modifiers(&mut app, KeyCode::Char('r'), KeyModifiers::CONTROL),
+        AppAction::None
+    );
+    assert!(app.history_search_active());
+
+    let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
+    terminal.draw(|frame| app.render(frame)).expect("draw");
+    let content = buffer_to_lines(terminal.backend().buffer(), 100, 24).join("\n");
+    assert!(content.contains("Search prompts"));
+    assert!(content.contains("first prompt"));
+
+    assert_eq!(send_key(&mut app, KeyCode::Esc), AppAction::None);
+    assert!(!app.history_search_active());
+    assert!(app.prompt.input.is_empty());
+}
+
+#[test]
+fn history_search_enter_fills_selected_prompt() {
+    let mut app = App::new();
+    app.push_history("first prompt".to_string());
+    app.push_history("second prompt".to_string());
+
+    assert_eq!(
+        send_key_with_modifiers(&mut app, KeyCode::Char('r'), KeyModifiers::CONTROL),
+        AppAction::None
+    );
+    assert_eq!(send_key(&mut app, KeyCode::Enter), AppAction::None);
+
+    assert!(!app.history_search_active());
+    assert_eq!(app.prompt.input, "second prompt");
+    assert_eq!(app.prompt.cursor_position, app.prompt.input.len());
+}
+
+#[test]
+fn history_search_filters_before_selecting() {
+    let mut app = App::new();
+    app.push_history("git status --short".to_string());
+    app.push_history("cargo test -p claude-code-rs history_search".to_string());
+
+    assert_eq!(
+        send_key_with_modifiers(&mut app, KeyCode::Char('r'), KeyModifiers::CONTROL),
+        AppAction::None
+    );
+    assert_eq!(send_key(&mut app, KeyCode::Char('g')), AppAction::None);
+    assert_eq!(send_key(&mut app, KeyCode::Char('i')), AppAction::None);
+    assert_eq!(send_key(&mut app, KeyCode::Char('t')), AppAction::None);
+    assert_eq!(send_key(&mut app, KeyCode::Enter), AppAction::None);
+
+    assert_eq!(app.prompt.input, "git status --short");
+}
+
+#[test]
 fn command_surface_handles_selection_before_prompt_input() {
     let mut app = App::new();
     app.open_command_surface(CommandSurface::lsp_recommendation(

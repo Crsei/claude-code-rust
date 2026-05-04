@@ -47,6 +47,7 @@ use workspace_trust::is_workspace_trusted;
 
 use super::command_palette::CommandPalette;
 use super::command_surface::CommandSurface;
+use super::history_search_dialog::{HistorySearchDialog, HistorySearchEntry};
 use super::permissions::{PermissionChoice, PermissionDialog};
 use super::prompt_input::PromptInput;
 use super::spinner::SpinnerState;
@@ -99,11 +100,12 @@ pub struct App {
     /// Startup trust gate shown before the normal welcome panel.
     workspace_trust_pending: bool,
     workspace_trust_selection: usize,
-    history: Vec<String>,
+    history: Vec<HistorySearchEntry>,
     history_index: Option<usize>,
     saved_input: String,
     command_palette: CommandPalette,
     command_surface: Option<CommandSurface>,
+    history_search_dialog: Option<HistorySearchDialog>,
 
     // Prompt suggestions
     /// Next-prompt suggestions shown after an assistant turn completes.
@@ -183,6 +185,7 @@ impl App {
             saved_input: String::new(),
             command_palette: CommandPalette::new(),
             command_surface: None,
+            history_search_dialog: None,
             vscroll: VirtualScroll::new(),
             dirty: true,
             tick_counter: 0,
@@ -385,6 +388,10 @@ impl App {
         self.command_surface.is_some()
     }
 
+    pub fn history_search_active(&self) -> bool {
+        self.history_search_dialog.is_some()
+    }
+
     /// Current transcript state exposed read-only so tests can assert
     /// search invariants without going through the render path.
     pub fn transcript_state(&self) -> &TranscriptState {
@@ -413,8 +420,9 @@ impl App {
     }
 
     pub fn push_history(&mut self, text: String) {
-        if self.history.last() != Some(&text) {
-            self.history.push(text);
+        if self.history.last().map(|entry| entry.display.as_str()) != Some(text.as_str()) {
+            self.history
+                .push(HistorySearchEntry::new(text, current_unix_secs()));
         }
         self.history_index = None;
         self.saved_input.clear();
@@ -427,4 +435,11 @@ impl Default for App {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn current_unix_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_default()
 }

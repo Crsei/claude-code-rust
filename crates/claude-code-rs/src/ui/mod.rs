@@ -56,6 +56,9 @@ pub mod feature_panels;
 #[path = "components/fuzzy_match.rs"]
 pub mod fuzzy_match;
 #[allow(dead_code)]
+#[path = "components/history_search_dialog.rs"]
+pub mod history_search_dialog;
+#[allow(dead_code)]
 #[path = "components/pager_overlay.rs"]
 pub mod pager_overlay;
 #[allow(dead_code)]

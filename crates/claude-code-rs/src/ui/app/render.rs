@@ -8,6 +8,7 @@ use ratatui::Frame;
 use super::App;
 use crate::ui::command_palette::CommandPalette;
 use crate::ui::command_surface::CommandSurface;
+use crate::ui::history_search_dialog::HistorySearchDialog;
 use crate::ui::messages::render_messages;
 use crate::ui::theme::Theme;
 use crate::ui::transcript::{self, TranscriptInputMode, ViewMode};
@@ -172,6 +173,10 @@ impl App {
 
         if let Some(ref surface) = self.command_surface {
             render_command_surface_overlay(surface, size, frame.buffer_mut(), &self.theme);
+        }
+
+        if let Some(ref dialog) = self.history_search_dialog {
+            render_history_search_overlay(dialog, size, frame.buffer_mut(), &self.theme);
         }
 
         if let Some(ref dialog) = self.permission_dialog {
@@ -523,6 +528,39 @@ fn render_command_surface_overlay(
         .border_style(theme.dim);
     let inner = block.inner(overlay);
     block.render(overlay, buf);
+    Paragraph::new(text)
+        .style(Style::default().fg(Color::White))
+        .wrap(Wrap { trim: false })
+        .render(inner, buf);
+}
+
+fn render_history_search_overlay(
+    dialog: &HistorySearchDialog,
+    area: Rect,
+    buf: &mut ratatui::buffer::Buffer,
+    theme: &Theme,
+) {
+    if area.width < 20 || area.height < 8 {
+        return;
+    }
+
+    let width = area.width.saturating_sub(4).clamp(20, 120);
+    let height = area.height.saturating_sub(4).clamp(8, 18);
+    let overlay = Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    };
+
+    Clear.render(overlay, buf);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" History Search ")
+        .border_style(theme.dim);
+    let inner = block.inner(overlay);
+    block.render(overlay, buf);
+    let text = dialog.render(inner.width as usize, inner.height as usize);
     Paragraph::new(text)
         .style(Style::default().fg(Color::White))
         .wrap(Wrap { trim: false })

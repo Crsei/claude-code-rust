@@ -1,10 +1,11 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
 
 use crate::ui::command_surface::CommandSurfaceOutcome;
+use crate::ui::history_search_dialog::{HistorySearchDialog, HistorySearchDialogEvent};
 use crate::ui::transcript::ViewMode;
 use crate::ui::vim::VimAction;
 
-use super::{App, AppAction};
+use super::{current_unix_secs, App, AppAction};
 
 impl App {
     pub fn handle_key_event(&mut self, key: KeyEvent) -> AppAction {
@@ -25,6 +26,10 @@ impl App {
                 return AppAction::PermissionResponse(choice);
             }
             return AppAction::None;
+        }
+
+        if self.history_search_dialog.is_some() {
+            return self.handle_history_search_key(key);
         }
 
         if self.command_surface.is_some() {
@@ -240,6 +245,31 @@ impl App {
         }
     }
 
+    fn handle_history_search_key(&mut self, key: KeyEvent) -> AppAction {
+        let Some(dialog) = self.history_search_dialog.as_mut() else {
+            return AppAction::None;
+        };
+
+        match dialog.handle_key(key) {
+            HistorySearchDialogEvent::None => AppAction::None,
+            HistorySearchDialogEvent::Cancelled => {
+                self.history_search_dialog = None;
+                self.sync_command_palette();
+                AppAction::None
+            }
+            HistorySearchDialogEvent::Selected(prompt) => {
+                self.history_search_dialog = None;
+                self.prompt.input = prompt;
+                self.prompt.cursor_position = self.prompt.input.len();
+                self.prompt.is_active = true;
+                self.history_index = None;
+                self.saved_input.clear();
+                self.sync_command_palette();
+                AppAction::None
+            }
+        }
+    }
+
     pub fn handle_mouse_event(&mut self, mouse: MouseEvent) -> AppAction {
         match mouse.kind {
             MouseEventKind::ScrollUp => {
@@ -291,7 +321,7 @@ impl App {
             }
         }
         if let Some(idx) = self.history_index {
-            self.prompt.input = self.history[idx].clone();
+            self.prompt.input = self.history[idx].display.clone();
             self.prompt.cursor_position = self.prompt.input.len();
         }
     }
@@ -300,7 +330,7 @@ impl App {
         if let Some(idx) = self.history_index {
             if idx < self.history.len() - 1 {
                 self.history_index = Some(idx + 1);
-                self.prompt.input = self.history[idx + 1].clone();
+                self.prompt.input = self.history[idx + 1].display.clone();
                 self.prompt.cursor_position = self.prompt.input.len();
             } else {
                 self.history_index = None;
@@ -432,6 +462,12 @@ impl App {
                 }
                 return None;
             }
+            "history:search" => {
+                if self.view_mode == ViewMode::Prompt && !self.is_streaming {
+                    self.open_history_search();
+                }
+                return Some(AppAction::None);
+            }
             "chat:clearInput" => {
                 self.prompt.input.clear();
                 self.prompt.cursor_position = 0;
@@ -523,6 +559,18 @@ impl App {
         }
 
         None
+    }
+
+    pub(super) fn open_history_search(&mut self) {
+        let entries = self.history.iter().rev().cloned().collect::<Vec<_>>();
+        self.history_search_dialog = Some(HistorySearchDialog::from_entries(
+            entries,
+            self.prompt.input.clone(),
+            current_unix_secs(),
+        ));
+        self.command_palette.close();
+        self.command_surface = None;
+        self.dirty = true;
     }
 
     pub(super) fn apply_vim_action(&mut self, action: VimAction) -> Option<AppAction> {
