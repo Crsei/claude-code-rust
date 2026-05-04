@@ -257,6 +257,15 @@ impl App {
         if self.vim.enabled {
             parts.push(format!("vim:{}", self.vim.mode.indicator()));
         }
+        if !self.permission_mode_label.is_empty() {
+            parts.push(format!("perm:{}", self.permission_mode_label));
+        }
+        if !self.sandbox_label.is_empty() {
+            parts.push(format!("sandbox:{}", self.sandbox_label));
+        }
+        if let Some(effort) = &self.effort_label {
+            parts.push(format!("effort:{effort}"));
+        }
         parts.push(mode.to_string());
         parts.push(format!(
             "Ctrl+C {}",

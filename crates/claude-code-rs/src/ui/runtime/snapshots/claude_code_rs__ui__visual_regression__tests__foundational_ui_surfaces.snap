@@ -62,7 +62,7 @@ Slash commands / p
 > /plugin - manage plugins
 
 ## status-widget
-claude-sonnet | F:/repo | perm=ask | sandbox=workspace-write | tools=1 | agents=2 | $0.1234
+claude-sonnet | F:/repo | perm=ask | sandbox=workspace-write | tools=1 | agents=2 | $0.1234 | subsystems=attention | effort=medium | ide=3 lines selected | memory=1.4 GiB/warn | pr=#42 approved
 model: claude-sonnet
 cwd: F:/repo
 permission: ask
@@ -70,6 +70,11 @@ sandbox: workspace-write
 running tools: 1
 active agents: 2
 subsystems: attention
+indicators:
+- effort: medium
+- ide: 3 lines selected
+- memory: 1.4 GiB (warn)
+- pr: #42 approved
 
 ## streaming
 stream complete=false committed=14

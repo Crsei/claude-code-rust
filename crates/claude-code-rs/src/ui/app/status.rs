@@ -48,6 +48,30 @@ impl App {
         self.dirty = true;
     }
 
+    /// Mirror runtime-only settings into the built-in footer. The custom
+    /// status-line payload has richer JSON; these labels keep the fallback
+    /// footer useful when no command status line is configured.
+    pub fn sync_status_context_from_state(&mut self, state: &crate::types::app_state::AppState) {
+        let permission_mode = state.tool_permission_context.mode.as_str().to_string();
+        let sandbox = sandbox_label(&state.settings.sandbox);
+        let effort = state
+            .effort_value
+            .clone()
+            .or_else(|| state.settings.effort_level.clone())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+
+        if self.permission_mode_label != permission_mode
+            || self.sandbox_label != sandbox
+            || self.effort_label != effort
+        {
+            self.permission_mode_label = permission_mode;
+            self.sandbox_label = sandbox;
+            self.effort_label = effort;
+            self.dirty = true;
+        }
+    }
+
     /// Shared handle to the status-line runner. `/statusline` calls this
     /// to inspect / reset the runner without owning the App.
     pub fn status_line_runner(&self) -> StatusLineRunner {
@@ -101,5 +125,18 @@ impl App {
         let _ = self
             .status_line_runner
             .refresh(&self.status_line_settings, &payload);
+    }
+}
+
+fn sandbox_label(settings: &crate::config::settings::SandboxSettings) -> String {
+    if !settings.enabled.unwrap_or(false) {
+        return "off".to_string();
+    }
+
+    let mode = settings.mode.as_deref().unwrap_or("workspace");
+    if settings.network.disabled.unwrap_or(false) {
+        format!("{mode},no-net")
+    } else {
+        mode.to_string()
     }
 }

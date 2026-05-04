@@ -130,6 +130,7 @@ fn sync_app_runtime_from_state(
     app.set_output_style(state.settings.output_style.clone());
     app.set_editor_mode(state.settings.editor_mode.as_deref());
     app.set_keybindings(state.keybindings.clone());
+    app.sync_status_context_from_state(state);
 
     let lang =
         crate::voice::language::normalize_language_for_stt(state.settings.language.as_deref());

@@ -17,7 +17,7 @@ use super::markdown::markdown_to_lines;
 use super::messages::render_messages;
 use super::permissions::PermissionDialog;
 use super::selection_surface::{SelectionItem, SelectionSurface};
-use super::status_widget::StatusSnapshot;
+use super::status_widget::{StatusIndicator, StatusSnapshot};
 use super::streaming_controller::{StreamingController, StreamingDelta};
 use super::terminal_integration::{render_policy, TerminalEnvironment};
 use super::theme::Theme;
@@ -146,6 +146,12 @@ pub fn render_foundation_snapshot() -> String {
         running_tools: 1,
         active_agents: 2,
         subsystems_ok: false,
+        indicators: vec![
+            StatusIndicator::new("effort", "medium"),
+            StatusIndicator::new("ide", "3 lines selected"),
+            StatusIndicator::warning("memory", "1.4 GiB"),
+            StatusIndicator::new("pr", "#42 approved"),
+        ],
     };
     sections.push(section(
         "status-widget",

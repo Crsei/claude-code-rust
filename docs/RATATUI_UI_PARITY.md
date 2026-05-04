@@ -394,15 +394,15 @@
 |------|-------|---------|------|
 | 状态行渲染 | `StatusLine.tsx` | `status/status_line_resolver.rs` | ✅ |
 | 内置状态行 | `BuiltinStatusLine.tsx` | (cc_engine::status_line) | ✅ |
-| 自定义状态行 | `StatusLine/CustomStatusLine.tsx` | — | ❌ |
-| 状态行状态机 | `StatusLine/status-line-state.ts` | — | ❌ |
+| 自定义状态行 | `StatusLine.tsx` custom command flow | `cc_engine::status_line::{payload,runner}` + `commands/statusline_cmd.rs` + `app/render.rs` | ✅ `/statusline` command/payload/runner 已接入 |
+| 状态行状态机 | `StatusLine.tsx` debounce/cancel flow | `cc_engine::status_line::runner.rs` | ✅ throttled refresh、payload fingerprint、in-flight abort、fallback error marker |
 | 状态通知 | `StatusNotices.tsx` | `components/status_widget.rs` | ✅ |
-| 子系统状态 | `SubsystemStatus.tsx` | — | ❌ |
-| IDE 状态指示器 | `IdeStatusIndicator.tsx` | — | ❌ |
-| 内存用量指示器 | `MemoryUsageIndicator.tsx` | — | ❌ |
-| PR 徽章 | `PrBadge.tsx` | — | ❌ |
-| 精力指示器 | `EffortIndicator.ts` + `EffortCallout.tsx` | — | ❌ |
-| 开发栏 | `DevBar.tsx` | — | ❌ |
+| 子系统状态 | `SubsystemStatus.tsx` (current upstream file absent; legacy row) | `components/status_widget.rs` + `runtime/capability_contract.rs` | ✅ status widget 可显示 subsystem ok/attention 与可选 indicator |
+| IDE 状态指示器 | `IdeStatusIndicator.tsx` | `components/status_widget.rs` optional indicator | ✅ 有数据时渲染，不在本步引入 IDE 后端 |
+| 内存用量指示器 | `MemoryUsageIndicator.tsx` | `components/status_widget.rs` optional warning/error indicator | ✅ 有数据时渲染，absent 状态有 snapshot |
+| PR 徽章 | `PrBadge.tsx` | `components/status_widget.rs` optional indicator | ⚠️ 可渲染 PR indicator，live PR 数据流未接 |
+| 精力指示器 | `EffortIndicator.ts` + `EffortCallout.tsx` | `app/render.rs` + `components/status_widget.rs` | ✅ fallback footer 同步 `effortLevel`/runtime effort |
+| 开发栏 | `DevBar.tsx` | — | ⚠️ dev-only chrome，暂不作为 ratatui P1 阻塞 |
 
 ---
 
@@ -565,7 +565,7 @@ P0 milestone residual risks:
 |--------|------|
 | 设置页完善 (ModelPicker, ThemePicker 等) | 已补 `/config` Model/Theme/Effort picker 基础，复用 `SelectionSurface` 与 `/config set` 持久化；standalone picker、live theme preview、syntax toggle 仍待后续增强 |
 | 任务面板完善 (BackgroundTask, ShellProgress) | 已完成集成复核：`/tasks` command surface 汇总 tool/team task，列表显示 kind/state/elapsed/progress/summary，并覆盖 tool/team action snapshot；shell 最新输出自动展开仍按 P0 residual #21 跟踪 |
-| 状态行增强 | 缺少自定义状态行、IDE 指示器等 |
+| 状态行增强 | 已接 `/statusline` custom command runner/payload；fallback footer 同步 permission/sandbox/effort；`StatusSnapshot` 支持 subsystem/IDE/memory/PR 等 optional indicators 并覆盖 present/absent snapshot；live IDE/PR 后端数据不在本步强行引入 |
 | 文件编辑 diff 完善 | 缺少 hunks 展开、更新消息 |
 | 模糊选择器 (`FuzzyPicker`) | fuzzy scorer 与 SelectionSurface/command palette 排序已补齐；完整 preview/action picker 仍待后续步骤 |
 | MCP 审批/导入对话框 | 4 个对话框缺失 |
@@ -602,8 +602,8 @@ P0 milestone residual risks:
 
 ## 下一步建议
 
-1. **立即**: 进入 P1 状态行增强；P0 残余已记录为明确风险
+1. **立即**: 进入 P1 MCP 审批/导入对话框；P0 残余已记录为明确风险
 2. **短期**: 将 fuzzy/search foundation 继续复用到 MCP/Agent 选择面
-3. **中期**: 任务面板、状态行增强、MCP 审批对话框
+3. **中期**: MCP 审批对话框、文件编辑 diff 更新消息
 4. **长期**: IDE 集成、远程功能 (视路线图)
 5. **不追**: LogoV2 动画、纯 React 抽象 (SentryErrorBoundary)、设计系统基类

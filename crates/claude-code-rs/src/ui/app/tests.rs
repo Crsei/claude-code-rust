@@ -1,6 +1,8 @@
 use super::workspace_trust::trusted_workspaces_path;
 use super::*;
+use crate::types::app_state::AppState;
 use crate::types::message::{MessageContent, UserMessage};
+use crate::types::tool::PermissionMode;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
@@ -74,6 +76,27 @@ fn render_places_prompt_after_short_chat_content() {
         !content[22].trim_start().starts_with(">"),
         "prompt should not be pinned to the bottom row"
     );
+}
+
+#[test]
+fn status_bar_renders_runtime_context_indicators() {
+    let mut app = App::new();
+    app.set_model_name("claude-sonnet-4-20250514".to_string());
+    let mut state = AppState::default();
+    state.tool_permission_context.mode = PermissionMode::AcceptEdits;
+    state.settings.sandbox.enabled = Some(true);
+    state.settings.sandbox.mode = Some("workspace".to_string());
+    state.settings.sandbox.network.disabled = Some(true);
+    state.effort_value = Some("medium".to_string());
+    app.sync_status_context_from_state(&state);
+
+    let mut terminal = Terminal::new(TestBackend::new(120, 24)).expect("terminal");
+    terminal.draw(|frame| app.render(frame)).expect("draw");
+
+    let content = buffer_to_lines(terminal.backend().buffer(), 120, 24).join("\n");
+    assert!(content.contains("perm:acceptEdits"));
+    assert!(content.contains("sandbox:workspace,no-net"));
+    assert!(content.contains("effort:medium"));
 }
 
 #[test]
