@@ -1,6 +1,5 @@
 ---
 source: crates/claude-code-rs/src/ui/runtime/visual_regression.rs
-assertion_line: 367
 expression: render_foundation_snapshot()
 ---
 ## approval
@@ -87,5 +86,5 @@ alt-screen: false
 notifications: terminal-bell
 
 ## tool-activity
-Succeeded Read - loaded src/ui/app.rs (80 lines, 12ms)
-Running Bash - cargo test (14 lines, 240ms)
+[succeeded] | 12ms | Read(path=src/ui/app.rs) | loaded file | 80 output lines
+[running] | 240ms | Bash(command=cargo test) | 1/4 [██▌       ] | running tests | 14 output lines

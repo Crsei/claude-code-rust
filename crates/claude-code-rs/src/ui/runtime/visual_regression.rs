@@ -171,19 +171,28 @@ pub fn render_foundation_snapshot() -> String {
     ));
 
     let activities = vec![
-        ToolActivity {
-            name: "Read".into(),
-            state: ToolState::Succeeded,
-            summary: "loaded src/ui/app.rs".into(),
-            elapsed_ms: 12,
-            output_lines: 80,
+        {
+            let mut activity = ToolActivity::from_tool_use(
+                "read_file",
+                r#"{"path":"src/ui/app.rs"}"#,
+                ToolState::Succeeded,
+            );
+            activity.summary = "loaded file".into();
+            activity.elapsed_ms = 12;
+            activity.output_lines = 80;
+            activity
         },
-        ToolActivity {
-            name: "Bash".into(),
-            state: ToolState::Running,
-            summary: "cargo test".into(),
-            elapsed_ms: 240,
-            output_lines: 14,
+        {
+            let mut activity = ToolActivity::from_tool_use(
+                "bash",
+                r#"{"command":"cargo test"}"#,
+                ToolState::Running,
+            );
+            activity.summary = "running tests".into();
+            activity.elapsed_ms = 240;
+            activity.progress = Some((1, 4));
+            activity.output_lines = 14;
+            activity
         },
     ];
     sections.push(section(

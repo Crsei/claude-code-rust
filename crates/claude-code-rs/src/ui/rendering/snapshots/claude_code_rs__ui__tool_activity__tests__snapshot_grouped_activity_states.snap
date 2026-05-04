@@ -1,0 +1,22 @@
+---
+source: crates/claude-code-rs/src/ui/rendering/tool_activity.rs
+expression: "format!(\"## grouped\\n{}\\n\\n## transcript\\n{}\\n\\n## empty\\n{}\",\nrender_grouped_activity(&[running.clone(), failed.clone(), cancelled,\nqueued]), running.transcript_block(), render_grouped_activity(&[]))"
+---
+## grouped
+[running] | 12.4s | Bash(command=cargo test -p claude-code-rs) | 3/5 [██████    ] | running tests | 18 output lines
+[failed] | 900ms | Read(path=src/ui/app.rs) | error: permission denied
+[cancelled] | 0ms | unknown_tool | user interrupted
+[queued] | 0ms | Todo
+
+## transcript
+tool: bash
+display: Bash(command=cargo test -p claude-code-rs)
+state: running
+elapsed: 12.4s
+progress: 3/5 [██████    ]
+summary: running tests
+output lines: 18
+output preview: running 18 tests
+
+## empty
+No tool activity

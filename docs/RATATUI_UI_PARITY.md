@@ -524,7 +524,7 @@
 | 动画微光 | `rendering/shimmer.rs` | ✅ |
 | 旋转器 | `rendering/spinner.rs` | ✅ |
 | Git Diff 获取 | `rendering/get_git_diff.rs` | ✅ |
-| 工具活动渲染 | `rendering/tool_activity.rs` | ⚠️ 简化版 |
+| 工具活动渲染 | `rendering/tool_activity.rs` | ✅ 已补齐 user-facing 名称、参数摘要、状态、elapsed、progress、错误摘要与输出预览 |
 | 历史单元格 | `rendering/history_cell.rs` | ✅ |
 
 ---
@@ -551,7 +551,7 @@
 | 搜索框 (`SearchBox`) | 已补齐共享文本渲染 primitive，并接入 `SelectionSurface` 头部 |
 | 历史搜索 (`HistorySearchDialog`) | 已补齐 Ctrl+R in-session 历史搜索、SearchBox、exact-first/fuzzy-second 过滤、窄/宽预览、空态与 key handling；Rust 端暂无持久 timestamped history reader，当前从本次会话 `push_history` 条目生成时间戳 |
 | 进度条 (`ProgressBar`) | 已补齐共享 1/8 block 渲染；后续继续接入更多长任务 surface |
-| Tool 活动渲染完善 | 当前 `tool_activity.rs` 过于简化 |
+| Tool 活动渲染完善 | 已补齐统一 `ToolActivity` 模型与 grouped/task/message 复用，覆盖 queued/running/succeeded/failed/cancelled、参数摘要、progress、错误和输出预览 snapshot |
 
 #### P1 — 影响功能完整性
 
@@ -596,7 +596,7 @@
 
 ## 下一步建议
 
-1. **立即**: 继续补齐 Tool 活动渲染；Shell 最新输出自动展开上下文仍待接线
+1. **立即**: 进入 P0 文档与里程碑 gate；Shell 最新输出自动展开上下文仍待接线
 2. **短期**: 将 fuzzy/search foundation 继续复用到设置页和 MCP/Agent 选择面
 3. **中期**: 任务面板、状态行增强、MCP 审批对话框
 4. **长期**: IDE 集成、远程功能 (视路线图)

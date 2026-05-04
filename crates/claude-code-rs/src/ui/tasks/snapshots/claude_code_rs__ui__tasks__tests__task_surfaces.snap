@@ -65,6 +65,6 @@ Workflow: ui-port
 - review worker      succeeded reported findings
 
 ## activity
-running 12.4s cargo test - running tests
-failed 0ms remote deploy - connection lost
-succeeded 0ms review worker - reported findings
+[running] | 12.4s | cargo test(shell) | 3/5 [██████    ] | running tests | 2 output lines
+[failed] | 0ms | remote deploy(remote) | error: connection lost | 1 output lines
+[succeeded] | 0ms | review worker(agent) | reported findings | 1 output lines

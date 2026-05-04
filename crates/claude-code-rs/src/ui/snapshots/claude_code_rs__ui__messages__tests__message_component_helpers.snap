@@ -16,7 +16,7 @@ Assistant: Hello
 Assistant thinking: I will inspect the files
 
 ## assistant-tool-use
-Assistant used tool read_file: path=src/main.rs
+Assistant used Read(path=src/main.rs)
 
 ## attachment
 Attachment: log -> appended
@@ -29,8 +29,8 @@ Context compacted: before=120 after=80
 
 ## grouped-tool-use
 Grouped tool uses:
-- read_file
-- edit_file
+[queued] | 0ms | Read
+[queued] | 0ms | Edit
 
 ## highlighted-thinking
 [THINKING] cache warmup
