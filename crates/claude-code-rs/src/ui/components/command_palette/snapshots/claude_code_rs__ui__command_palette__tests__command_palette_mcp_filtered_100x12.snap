@@ -1,16 +1,15 @@
 ---
 source: crates/claude-code-rs/src/ui/components/command_palette/tests.rs
-assertion_line: 167
 expression: "render_palette_snapshot(\"/mcp\", &cwd, 100, 12, &[])"
 ---
 "┌ Commands ────────────────────────────────────────────────────────────────────────────────────────┐"
-"│/mcp                 MCP server management (list, status, add, edit, remove, connect)             │"
+"│/mcp                 MCP server management (list, status, add, edit, remove, approve, reject, conn│"
 "│/ide                 Detect, select, or reconnect the IDE MCP bridge                              │"
 "│/doctor             (diagnostics)  Aggregated diagnostics (install, auth, settings, MCP, terminal)│"
 "│/memory             (mem)  View and manage CLAUDE.md project instructions                         │"
 "│/help               (h, ?)  Show available commands and their descriptions                        │"
 "│                                                                                                  │"
-"│Usage: /mcp <list|status|add|edit|remove|connect|disconnect|reconnect>                            │"
+"│Usage: /mcp <list|status|add|edit|remove|approve|reject|connect|disconnect|reconnect>             │"
 "│Example: /mcp add ctx7 --command=npx --arg=-y --arg=@upstash/context7-mcp                         │"
 "│Edit: user: ~/.cc-rust/settings.json | project: ./.cc-rust/settings.json                          │"
 "│      local: ./.cc-rust/settings.local.json                                                       │"

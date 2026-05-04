@@ -17,6 +17,16 @@ pub mod mcp_reconnect;
 #[allow(dead_code)]
 pub mod mcp_remote_server_menu;
 #[allow(dead_code)]
+pub mod mcp_server_approval_dialog;
+#[allow(dead_code)]
+pub mod mcp_server_card;
+#[allow(dead_code)]
+pub mod mcp_server_desktop_import_dialog;
+#[allow(dead_code)]
+pub mod mcp_server_dialog_copy;
+#[allow(dead_code)]
+pub mod mcp_server_multiselect_dialog;
+#[allow(dead_code)]
 pub mod mcp_settings;
 #[allow(dead_code)]
 pub mod mcp_stdio_server_menu;
@@ -37,6 +47,16 @@ mod tests {
     use super::mcp_parsing_warnings::render_mcp_parsing_warnings;
     use super::mcp_reconnect::render_mcp_reconnect;
     use super::mcp_remote_server_menu::render_mcp_remote_server_menu;
+    use super::mcp_server_approval_dialog::render_mcp_server_approval_dialog;
+    use super::mcp_server_card::render_mcp_server_card;
+    use super::mcp_server_desktop_import_dialog::{
+        render_mcp_server_desktop_import_dialog, DesktopMcpImportServer,
+        McpServerDesktopImportState,
+    };
+    use super::mcp_server_dialog_copy::render_mcp_server_dialog_copy;
+    use super::mcp_server_multiselect_dialog::{
+        render_mcp_server_multiselect_dialog, McpServerMultiselectState,
+    };
     use super::mcp_settings::{render_mcp_settings, McpSettingsSummary};
     use super::mcp_stdio_server_menu::render_mcp_stdio_server_menu;
     use super::mcp_tool_detail_view::render_mcp_tool_detail_view;
@@ -84,6 +104,56 @@ mod tests {
             section("tool-detail", render_mcp_tool_detail_view(&tool)),
             section("stdio-menu", render_mcp_stdio_server_menu(&stdio)),
             section("remote-menu", render_mcp_remote_server_menu(&remote)),
+            section("server-card", render_mcp_server_card(&remote, true)),
+            section("dialog-copy", render_mcp_server_dialog_copy()),
+            section(
+                "approval-dialog",
+                render_mcp_server_approval_dialog("playwright", 1),
+            ),
+            section(
+                "multiselect-dialog",
+                render_mcp_server_multiselect_dialog(&McpServerMultiselectState {
+                    servers: vec![
+                        super::mcp_server_multiselect_dialog::McpServerMultiSelectItem {
+                            name: "github".to_string(),
+                            selected: true,
+                        },
+                        super::mcp_server_multiselect_dialog::McpServerMultiSelectItem {
+                            name: "playwright".to_string(),
+                            selected: false,
+                        },
+                        super::mcp_server_multiselect_dialog::McpServerMultiSelectItem {
+                            name: "sentry".to_string(),
+                            selected: true,
+                        },
+                    ],
+                    selected_index: 1,
+                }),
+            ),
+            section(
+                "desktop-import-dialog",
+                render_mcp_server_desktop_import_dialog(&McpServerDesktopImportState {
+                    servers: vec![
+                        DesktopMcpImportServer {
+                            name: "filesystem".to_string(),
+                            command_or_url: "npx @modelcontextprotocol/server-filesystem"
+                                .to_string(),
+                            collides: false,
+                            selected: true,
+                            final_name: None,
+                        },
+                        DesktopMcpImportServer {
+                            name: "github".to_string(),
+                            command_or_url: "uvx mcp-github".to_string(),
+                            collides: true,
+                            selected: false,
+                            final_name: Some("github-1".to_string()),
+                        },
+                    ],
+                    selected_index: 1,
+                    target_scope: "~/.cc-rust/settings.json".to_string(),
+                }),
+            ),
             section(
                 "agent-menu",
                 render_mcp_agent_server_menu(&agent, "reviewer"),

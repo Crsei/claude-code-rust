@@ -245,11 +245,11 @@
 | MCP 设置 | — | `mcp/mcp_settings.rs` | ✅ |
 | MCP Elicitation | — | `mcp/elicitation_dialog.rs` | ✅ |
 | MCP Agent Server | — | `mcp/mcp_agent_server_menu.rs` | ✅ |
-| MCP 服务器审批 | `MCPServerApprovalDialog.tsx` | — | ❌ |
-| MCP Desktop 导入 | `MCPServerDesktopImportDialog.tsx` | — | ❌ |
-| MCP 服务器拷贝 | `MCPServerDialogCopy.tsx` | — | ❌ |
-| MCP 多选 | `MCPServerMultiselectDialog.tsx` | — | ❌ |
-| MCP 服务器卡片 | `panels/McpServerCard.tsx` | — | ❌ |
+| MCP 服务器审批 | `MCPServerApprovalDialog.tsx` | `mcp/mcp_server_approval_dialog.rs` + `/mcp approve|reject` | ✅ |
+| MCP Desktop 导入 | `MCPServerDesktopImportDialog.tsx` | `mcp/mcp_server_desktop_import_dialog.rs` | ⚠️ UI surface 完成；等待后端提供 Claude Desktop 数据源 |
+| MCP 服务器拷贝 | `MCPServerDialogCopy.tsx` | `mcp/mcp_server_dialog_copy.rs` | ✅ |
+| MCP 多选 | `MCPServerMultiselectDialog.tsx` | `mcp/mcp_server_multiselect_dialog.rs` | ✅ |
+| MCP 服务器卡片 | `panels/McpServerCard.tsx` | `mcp/mcp_server_card.rs` | ✅ |
 
 ---
 
@@ -568,7 +568,7 @@ P0 milestone residual risks:
 | 状态行增强 | 已接 `/statusline` custom command runner/payload；fallback footer 同步 permission/sandbox/effort；`StatusSnapshot` 支持 subsystem/IDE/memory/PR 等 optional indicators 并覆盖 present/absent snapshot；live IDE/PR 后端数据不在本步强行引入 |
 | 文件编辑 diff 完善 | 缺少 hunks 展开、更新消息 |
 | 模糊选择器 (`FuzzyPicker`) | fuzzy scorer 与 SelectionSurface/command palette 排序已补齐；完整 preview/action picker 仍待后续步骤 |
-| MCP 审批/导入对话框 | 4 个对话框缺失 |
+| MCP 审批/导入对话框 | 审批、拷贝、多选、服务器卡片已补齐；Desktop 导入 UI surface 已补齐，自动发现 Claude Desktop 配置仍待后端数据源 |
 
 #### P2 — 平台/集成功能
 
@@ -602,8 +602,8 @@ P0 milestone residual risks:
 
 ## 下一步建议
 
-1. **立即**: 进入 P1 MCP 审批/导入对话框；P0 残余已记录为明确风险
-2. **短期**: 将 fuzzy/search foundation 继续复用到 MCP/Agent 选择面
-3. **中期**: MCP 审批对话框、文件编辑 diff 更新消息
+1. **立即**: 进入 P1 文件编辑 diff 更新消息；P0 残余已记录为明确风险
+2. **短期**: 将 fuzzy/search foundation 继续复用到 Agent 选择面
+3. **中期**: Claude Desktop MCP 配置自动发现、文件编辑 diff 更新消息
 4. **长期**: IDE 集成、远程功能 (视路线图)
 5. **不追**: LogoV2 动画、纯 React 抽象 (SentryErrorBoundary)、设计系统基类

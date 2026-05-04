@@ -107,9 +107,12 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
             &["/loop 5m /status"],
         ),
         "mcp" => CommandMeta {
-            usage: "/mcp <list|status|add|edit|remove|connect|disconnect|reconnect>".to_string(),
+            usage:
+                "/mcp <list|status|add|edit|remove|approve|reject|connect|disconnect|reconnect>"
+                    .to_string(),
             examples: vec![
                 "/mcp add ctx7 --command=npx --arg=-y --arg=@upstash/context7-mcp".to_string(),
+                "/mcp approve playwright --all-project".to_string(),
             ],
             edit_targets: vec![
                 EditTarget::new(

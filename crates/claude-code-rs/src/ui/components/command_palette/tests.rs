@@ -55,7 +55,7 @@ fn argument_hint_is_shown_after_command_selection() {
     let hint = CommandPalette::argument_hint("/mcp ", Path::new("/repo"));
     assert_eq!(
         hint.as_deref(),
-        Some("/mcp <list|status|add|edit|remove|connect|disconnect|reconnect>")
+        Some("/mcp <list|status|add|edit|remove|approve|reject|connect|disconnect|reconnect>")
     );
     assert_eq!(
         CommandPalette::argument_help_height("/mcp ", Path::new("/repo")),

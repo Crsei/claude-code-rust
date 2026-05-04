@@ -407,7 +407,9 @@ pub fn get_all_commands() -> Vec<Command> {
         Command {
             name: "mcp".into(),
             aliases: vec![],
-            description: "MCP server management (list, status, add, edit, remove, connect)".into(),
+            description:
+                "MCP server management (list, status, add, edit, remove, approve, reject, connect)"
+                    .into(),
             handler: Box::new(mcp_cmd::McpHandler),
         },
         Command {

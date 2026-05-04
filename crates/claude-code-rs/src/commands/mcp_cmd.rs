@@ -6,6 +6,8 @@
 //! - `/mcp add <name> ...`  - create a new stdio config (persists to user scope)
 //! - `/mcp edit <name> ...` - update an existing config (auto-detects scope)
 //! - `/mcp remove <name>`   - delete a config from its matching editable scope
+//! - `/mcp approve <name...>` - approve `.mcp.json` project servers
+//! - `/mcp reject <name...>`  - reject `.mcp.json` project servers
 //! - `/mcp connect <name>`  - (runtime) connect an existing server
 //! - `/mcp disconnect <name>` - (runtime) disconnect a connected server
 //! - `/mcp reconnect <name>`  - (runtime) reconnect a server
@@ -41,6 +43,8 @@ impl CommandHandler for McpHandler {
             Some("add") => handle_add(&parts[1..], ctx),
             Some("edit") | Some("update") => handle_edit(&parts[1..], ctx),
             Some("remove") | Some("rm") | Some("delete") => handle_remove(&parts[1..], ctx),
+            Some("approve") | Some("enable") => handle_mcpjson_decision(&parts[1..], ctx, true),
+            Some("reject") | Some("disable") => handle_mcpjson_decision(&parts[1..], ctx, false),
             Some("connect") => handle_connect(&parts[1..]),
             Some("disconnect") => handle_disconnect(&parts[1..]),
             Some("reconnect") => handle_reconnect(&parts[1..]),
@@ -61,6 +65,8 @@ fn help_text() -> String {
        /mcp add <name> [flags]         create a new stdio config (user scope by default)\n  \
        /mcp edit <name> [flags]        update an existing config (auto-detects scope)\n  \
        /mcp remove <name> [--scope=..] delete a config from an editable scope\n  \
+       /mcp approve <name...> [--all-project] approve .mcp.json project server(s)\n  \
+       /mcp reject <name...>           reject .mcp.json project server(s)\n  \
        /mcp connect <name>             connect an existing server\n  \
        /mcp disconnect <name>          disconnect a connected server\n  \
        /mcp reconnect <name>           reconnect a server\n\n\
@@ -441,6 +447,31 @@ fn handle_remove(rest: &[&str], ctx: &mut CommandContext) -> Result<CommandResul
     )))
 }
 
+fn handle_mcpjson_decision(
+    rest: &[&str],
+    ctx: &mut CommandContext,
+    approve: bool,
+) -> Result<CommandResult> {
+    let parsed = parse_mcpjson_decision_args(rest);
+    if let Some(error) = parsed.error {
+        return Ok(CommandResult::Output(format!(
+            "{}\n\n{}",
+            error,
+            help_text()
+        )));
+    }
+    if parsed.names.is_empty() {
+        let verb = if approve { "approve" } else { "reject" };
+        return Ok(CommandResult::Output(format!(
+            "Usage: /mcp {verb} <name...>{}",
+            if approve { " [--all-project]" } else { "" }
+        )));
+    }
+
+    persist_mcpjson_decision(&ctx.cwd, &parsed.names, approve, parsed.all_project)
+        .map(CommandResult::Output)
+}
+
 // ---------------------------------------------------------------------------
 // connect / disconnect / reconnect
 // ---------------------------------------------------------------------------
@@ -494,6 +525,13 @@ struct ParsedFlags {
     transport: Option<String>,
     scope: Option<ConfigScope>,
     browser: Option<bool>,
+    error: Option<String>,
+}
+
+#[derive(Default, Debug, Clone)]
+struct ParsedMcpjsonDecisionArgs {
+    names: Vec<String>,
+    all_project: bool,
     error: Option<String>,
 }
 
@@ -551,6 +589,26 @@ fn parse_flags(rest: &[&str]) -> ParsedFlags {
     out
 }
 
+fn parse_mcpjson_decision_args(rest: &[&str]) -> ParsedMcpjsonDecisionArgs {
+    let mut out = ParsedMcpjsonDecisionArgs::default();
+
+    for raw in rest {
+        let raw = raw.trim();
+        if raw.is_empty() {
+            continue;
+        }
+        if raw == "--all-project" {
+            out.all_project = true;
+        } else if raw.starts_with("--") {
+            out.error = Some(format!("unknown flag `{}`", raw));
+        } else {
+            out.names.push(raw.to_string());
+        }
+    }
+
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Misc helpers — shared between subcommands
 // ---------------------------------------------------------------------------
@@ -601,6 +659,87 @@ fn write_settings_value(path: &std::path::Path, value: &serde_json::Value) -> Re
     std::fs::write(&tmp, pretty)?;
     std::fs::rename(&tmp, path)?;
     Ok(())
+}
+
+fn persist_mcpjson_decision(
+    cwd: &std::path::Path,
+    names: &[String],
+    approve: bool,
+    all_project: bool,
+) -> Result<String> {
+    let path = cwd.join(".cc-rust").join("settings.json");
+    let mut value = read_settings_value(&path)?;
+    let obj = match value.as_object_mut() {
+        Some(obj) => obj,
+        None => {
+            return Ok(format!("{} is not a JSON object", path.display()));
+        }
+    };
+
+    if approve {
+        add_string_array_entries(obj, "enabledMcpjsonServers", names);
+        remove_string_array_entries(obj, "disabledMcpjsonServers", names);
+        if all_project {
+            obj.insert(
+                "enableAllProjectMcpServers".to_string(),
+                serde_json::Value::Bool(true),
+            );
+        }
+    } else {
+        add_string_array_entries(obj, "disabledMcpjsonServers", names);
+        remove_string_array_entries(obj, "enabledMcpjsonServers", names);
+    }
+
+    write_settings_value(&path, &value)?;
+
+    let verb = if approve { "Approved" } else { "Rejected" };
+    let mut suffix = String::new();
+    if approve && all_project {
+        suffix.push_str("\n  Future project MCP servers will be approved automatically.");
+    }
+    Ok(format!(
+        "{} .mcp.json server(s) `{}` in project scope (at {}).{}",
+        verb,
+        names.join("`, `"),
+        path.display(),
+        suffix
+    ))
+}
+
+fn add_string_array_entries(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    names: &[String],
+) {
+    let value = obj
+        .entry(key.to_string())
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+    if !value.is_array() {
+        *value = serde_json::Value::Array(Vec::new());
+    }
+    let Some(array) = value.as_array_mut() else {
+        return;
+    };
+    for name in names {
+        if !array.iter().any(|item| item.as_str() == Some(name)) {
+            array.push(serde_json::Value::String(name.clone()));
+        }
+    }
+}
+
+fn remove_string_array_entries(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    names: &[String],
+) {
+    let Some(array) = obj.get_mut(key).and_then(|value| value.as_array_mut()) else {
+        return;
+    };
+    array.retain(|item| {
+        item.as_str()
+            .map(|name| !names.iter().any(|blocked| blocked == name))
+            .unwrap_or(true)
+    });
 }
 
 fn entry_to_settings_value(entry: &McpServerConfigEntry) -> serde_json::Value {
@@ -826,6 +965,99 @@ mod tests {
             ),
             _ => panic!("expected Output"),
         }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn mcp_approve_project_mcp_json_servers_records_enabled() {
+        let home = tempfile::tempdir().unwrap();
+        let cwd = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let project_settings = cwd.path().join(".cc-rust").join("settings.json");
+        std::fs::create_dir_all(project_settings.parent().unwrap()).unwrap();
+        std::fs::write(
+            &project_settings,
+            serde_json::to_string_pretty(&serde_json::json!({
+                "enabledMcpjsonServers": ["existing"],
+                "disabledMcpjsonServers": ["github", "old"],
+                "enableAllProjectMcpServers": false
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let handler = McpHandler;
+        let mut ctx = test_ctx(cwd.path().to_path_buf());
+        let res = handler
+            .execute("approve github playwright --all-project", &mut ctx)
+            .await
+            .unwrap();
+        match res {
+            CommandResult::Output(text) => assert!(
+                text.contains("Approved .mcp.json server(s)")
+                    && text.contains("Future project MCP servers"),
+                "unexpected: {}",
+                text
+            ),
+            _ => panic!("expected Output"),
+        }
+
+        let disk: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&project_settings).unwrap()).unwrap();
+        assert_eq!(disk["enabledMcpjsonServers"][0], "existing");
+        assert_eq!(disk["enabledMcpjsonServers"][1], "github");
+        assert_eq!(disk["enabledMcpjsonServers"][2], "playwright");
+        assert_eq!(disk["disabledMcpjsonServers"][0], "old");
+        assert_eq!(disk["enableAllProjectMcpServers"], true);
+        assert!(
+            !home.path().join("settings.json").exists(),
+            "approval must stay in project .cc-rust settings"
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn mcp_reject_project_mcp_json_servers_records_disabled() {
+        let home = tempfile::tempdir().unwrap();
+        let cwd = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let project_settings = cwd.path().join(".cc-rust").join("settings.json");
+        std::fs::create_dir_all(project_settings.parent().unwrap()).unwrap();
+        std::fs::write(
+            &project_settings,
+            serde_json::to_string_pretty(&serde_json::json!({
+                "enabledMcpjsonServers": ["github", "keep"],
+                "disabledMcpjsonServers": ["old"]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let handler = McpHandler;
+        let mut ctx = test_ctx(cwd.path().to_path_buf());
+        let res = handler
+            .execute("reject github sentry", &mut ctx)
+            .await
+            .unwrap();
+        match res {
+            CommandResult::Output(text) => assert!(
+                text.contains("Rejected .mcp.json server(s)"),
+                "unexpected: {}",
+                text
+            ),
+            _ => panic!("expected Output"),
+        }
+
+        let disk: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&project_settings).unwrap()).unwrap();
+        assert_eq!(disk["enabledMcpjsonServers"][0], "keep");
+        assert_eq!(disk["disabledMcpjsonServers"][0], "old");
+        assert_eq!(disk["disabledMcpjsonServers"][1], "github");
+        assert_eq!(disk["disabledMcpjsonServers"][2], "sentry");
+        assert!(
+            !home.path().join("settings.json").exists(),
+            "rejection must stay in project .cc-rust settings"
+        );
     }
 
     #[tokio::test]

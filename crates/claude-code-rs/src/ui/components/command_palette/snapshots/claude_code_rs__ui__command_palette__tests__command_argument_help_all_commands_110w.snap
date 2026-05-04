@@ -1,6 +1,5 @@
 ---
-source: crates/claude-code-rs/src/ui/command_palette.rs
-assertion_line: 1160
+source: crates/claude-code-rs/src/ui/components/command_palette/tests.rs
 expression: normalize_snapshot_text(rendered)
 ---
 ## /init
@@ -241,9 +240,9 @@ expression: normalize_snapshot_text(rendered)
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /mcp
 ┌ /mcp arguments ────────────────────────────────────────────────────────────────────────────────────────────┐
-│Usage: /mcp <list|status|add|edit|remove|connect|disconnect|reconnect>                                      │
+│Usage: /mcp <list|status|add|edit|remove|approve|reject|connect|disconnect|reconnect>                       │
 │Example: /mcp add ctx7 --command=npx --arg=-y --arg=@upstash/context7-mcp                                   │
-│About: MCP server management (list, status, add, edit, remove, connect)                                     │
+│About: MCP server management (list, status, add, edit, remove, approve, reject, connect)                    │
 │Edit: user: ~/.cc-rust/settings.json | project: ./.cc-rust/settings.json                                    │
 │      local: ./.cc-rust/settings.local.json                                                                 │
 │Hint: Press Ctrl+E to pick a target.                                                                        │
