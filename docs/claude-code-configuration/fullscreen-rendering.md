@@ -41,14 +41,20 @@ Because the conversation lives in the alternate screen buffer instead of your te
 | Before                                              | Now                                                                                                                                                            | Details                                                                   |
 | :-------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------ |
 | `Cmd+f` or tmux search to find text                 | `Ctrl+o` once for transcript mode (then `/` to search or `[` to write to scrollback), or `Ctrl+o` twice for focus view (last prompt + tool summary + response) | [Search and review the conversation](#search-and-review-the-conversation) |
-| Terminal's native click-and-drag to select and copy | In-app selection, copies automatically on mouse release                                                                                                        | [Use the mouse](#use-the-mouse)                                           |
+| Terminal's native click-and-drag to select and copy | Still native by default; optional in-app mouse capture is available                                                                                            | [Use the mouse](#use-the-mouse)                                           |
 | `Cmd`-click to open a URL                           | Click the URL                                                                                                                                                  | [Use the mouse](#use-the-mouse)                                           |
 
-If mouse capture interferes with your workflow, you can [turn it off](#keep-native-text-selection) while keeping the flicker-free rendering.
+The Rust TUI keeps native terminal text selection enabled by default. If you prefer in-app mouse wheel events, you can [opt into mouse capture](#use-the-mouse).
 
 ## Use the mouse
 
-Fullscreen rendering captures mouse events and handles them inside Claude Code:
+The Rust TUI does not capture mouse events by default because mouse capture prevents normal terminal click-and-drag selection. To let fullscreen rendering handle wheel events inside Claude Code, opt in when starting the app:
+
+```bash theme={null}
+CLAUDE_CODE_ENABLE_MOUSE_CAPTURE=1 claude
+```
+
+With mouse capture enabled, fullscreen rendering captures mouse events and handles them inside Claude Code:
 
 * **Click in the prompt input** to position your cursor anywhere in the text you're typing.
 * **Click a collapsed tool result** to expand it and see the full output. Click again to collapse. The tool call and its result expand together. Only messages that have more to show are clickable.
@@ -75,7 +81,7 @@ Scrolling up pauses auto-follow so new output does not pull you back to the bott
 
 These actions are rebindable. See [Scroll actions](/en/keybindings#scroll-actions) for the full list of action names, including half-page and full-page variants that have no default binding.
 
-Mouse wheel scrolling requires your terminal to forward mouse events to Claude Code. Most terminals do this whenever an application requests it. iTerm2 makes it a per-profile setting: if the wheel does nothing but `PgUp` and `PgDn` work, open Settings → Profiles → Terminal and turn on Enable mouse reporting. The same setting is also required for click-to-expand and text selection to work.
+Mouse wheel scrolling requires `CLAUDE_CODE_ENABLE_MOUSE_CAPTURE=1` and a terminal that forwards mouse events to Claude Code. Most terminals do this whenever an application requests it. iTerm2 makes it a per-profile setting: if the wheel does nothing but `PgUp` and `PgDn` work, open Settings → Profiles → Terminal and turn on Enable mouse reporting. The same setting is also required for click-to-expand and text selection to work.
 
 ### Adjust wheel scroll speed
 
@@ -133,10 +139,10 @@ Mouse capture is the most common friction point, especially over SSH or inside t
 
 Claude Code tries to write the selection to your clipboard, but the path it uses depends on your setup. Inside tmux it writes to the tmux paste buffer. Over SSH it falls back to OSC 52 escape sequences, which some terminals block by default. Claude Code prints a toast after each copy telling you which path it used.
 
-If you rely on your terminal's native selection, set `CLAUDE_CODE_DISABLE_MOUSE=1` to opt out of mouse capture while keeping the flicker-free rendering and flat memory:
+The Rust TUI keeps terminal native selection enabled by default. If you have explicitly enabled mouse capture and want to force native selection back on, set `CLAUDE_CODE_DISABLE_MOUSE=1`:
 
 ```bash theme={null}
-CLAUDE_CODE_NO_FLICKER=1 CLAUDE_CODE_DISABLE_MOUSE=1 claude
+CLAUDE_CODE_DISABLE_MOUSE=1 claude
 ```
 
 With mouse capture disabled, keyboard scrolling with `PgUp`, `PgDn`, `Ctrl+Home`, and `Ctrl+End` still works, and your terminal handles selection natively. You lose click-to-position-cursor, click-to-expand tool output, URL clicking, and wheel scrolling inside Claude Code.

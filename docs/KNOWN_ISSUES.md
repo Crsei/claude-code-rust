@@ -41,6 +41,24 @@ components are not subscribing to terminal dimension changes.
 
 *Add new issues below this line.*
 
+## 20. Rust TUI mouse capture blocked native terminal text selection
+
+**Status**: Fixed (2026-05-04)
+
+**Description**: The Rust TUI enabled crossterm mouse capture by default so wheel events could reach the app. That also captured normal click-and-drag selection, preventing users from selecting terminal text for native copy workflows.
+
+**Fix**:
+1. Changed the Rust TUI default to skip mouse capture so terminal text selection and copy work out of the box.
+2. Added `CLAUDE_CODE_ENABLE_MOUSE_CAPTURE=1` as the explicit opt-in for users who prefer in-app wheel events.
+3. Kept `CLAUDE_CODE_DISABLE_MOUSE=1` as a legacy force-disable override and `CLAUDE_CODE_DISABLE_MOUSE=0` as a legacy opt-in when the new positive flag is unset.
+4. Updated `/terminal-setup` diagnostics and terminal configuration docs to report the new default.
+
+**Related files**:
+- `crates/claude-code-rs/src/ui/platform/terminal_env.rs`
+- `crates/claude-code-rs/src/ui/tui.rs`
+- `crates/claude-code-rs/src/commands/terminal_setup.rs`
+- `docs/claude-code-configuration/fullscreen-rendering.md`
+
 ## 19. Rust TUI terminal scrolling did not receive wheel events
 
 **Status**: Fixed (2026-05-03)

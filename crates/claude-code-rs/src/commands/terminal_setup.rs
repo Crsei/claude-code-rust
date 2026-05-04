@@ -3,7 +3,7 @@
 //!
 //! Output covers:
 //! - detected shell / terminal program / multiplexer
-//! - status of the three `CLAUDE_CODE_*` env toggles
+//! - status of the `CLAUDE_CODE_*` env toggles
 //! - tips for Shift+Enter support across common terminals
 //! - tmux passthrough advice when `$TMUX` is set
 //! - transcript-export expectations for `$VISUAL` / `$EDITOR`
@@ -65,6 +65,7 @@ pub struct EnvProbe {
     pub wt_session: Option<String>,
     pub term_program_version: Option<String>,
     pub claude_code_no_flicker: Option<String>,
+    pub claude_code_enable_mouse_capture: Option<String>,
     pub claude_code_disable_mouse: Option<String>,
     pub claude_code_scroll_speed: Option<String>,
 }
@@ -98,6 +99,7 @@ impl EnvProbe {
                 "VTE_VERSION" => p.vte_version = value,
                 "WT_SESSION" => p.wt_session = value,
                 "CLAUDE_CODE_NO_FLICKER" => p.claude_code_no_flicker = value,
+                "CLAUDE_CODE_ENABLE_MOUSE_CAPTURE" => p.claude_code_enable_mouse_capture = value,
                 "CLAUDE_CODE_DISABLE_MOUSE" => p.claude_code_disable_mouse = value,
                 "CLAUDE_CODE_SCROLL_SPEED" => p.claude_code_scroll_speed = value,
                 _ => {}
@@ -224,6 +226,12 @@ fn render_env(p: &EnvProbe) -> String {
             p.claude_code_no_flicker.clone().unwrap_or_default(),
         ),
         (
+            "CLAUDE_CODE_ENABLE_MOUSE_CAPTURE",
+            p.claude_code_enable_mouse_capture
+                .clone()
+                .unwrap_or_default(),
+        ),
+        (
             "CLAUDE_CODE_DISABLE_MOUSE",
             p.claude_code_disable_mouse.clone().unwrap_or_default(),
         ),
@@ -259,6 +267,10 @@ fn render_env(p: &EnvProbe) -> String {
         if effective.sync_updates { "on" } else { "off" }
     ));
     out.push_str(&row(
+        "CLAUDE_CODE_ENABLE_MOUSE_CAPTURE",
+        &p.claude_code_enable_mouse_capture,
+    ));
+    out.push_str(&row(
         "CLAUDE_CODE_DISABLE_MOUSE",
         &p.claude_code_disable_mouse,
     ));
@@ -266,9 +278,9 @@ fn render_env(p: &EnvProbe) -> String {
         "    -> mouse capture:        {}\n",
         if TerminalEnvConfig::DISABLE_MOUSE_RUNTIME_SUPPORTED {
             if effective.disable_mouse {
-                "disabled by env flag"
+                "disabled (native selection/copy)"
             } else {
-                "enabled for wheel events"
+                "enabled for wheel events; terminal drag selection is captured"
             }
         } else {
             "not implemented in current runtime (env is diagnostic-only)"
@@ -327,7 +339,7 @@ fn render_tips(p: &EnvProbe) -> String {
     if !TerminalEnvConfig::DISABLE_MOUSE_RUNTIME_SUPPORTED {
         out.push_str("Mouse flag status:\n");
         out.push_str(
-            "  - `CLAUDE_CODE_DISABLE_MOUSE` is parsed and shown here, but the current Rust TUI does not change mouse capture at runtime yet.\n\n",
+            "  - Mouse capture env flags are parsed and shown here, but the current Rust TUI does not change mouse capture at runtime yet.\n\n",
         );
     }
 
@@ -493,9 +505,23 @@ mod tests {
     }
 
     #[test]
+    fn env_table_reports_default_native_selection() {
+        let p = EnvProbe::from_iter(Vec::<(&str, &str)>::new());
+        let out = render_env(&p);
+        assert!(out.contains("disabled (native selection/copy)"));
+    }
+
+    #[test]
+    fn env_table_reports_enable_mouse_capture_runtime_effect() {
+        let p = EnvProbe::from_iter(vec![("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", "1")]);
+        let out = render_env(&p);
+        assert!(out.contains("enabled for wheel events"));
+    }
+
+    #[test]
     fn env_table_reports_disable_mouse_runtime_effect() {
         let p = EnvProbe::from_iter(vec![("CLAUDE_CODE_DISABLE_MOUSE", "1")]);
         let out = render_env(&p);
-        assert!(out.contains("disabled by env flag"));
+        assert!(out.contains("disabled (native selection/copy)"));
     }
 }

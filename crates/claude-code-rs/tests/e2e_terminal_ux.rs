@@ -2,8 +2,9 @@
 //!
 //! Black-box checks:
 //!
-//! - CLI `--init-only` accepts each of the three `CLAUDE_CODE_*` env
-//!   toggles without crashing (NO_FLICKER, DISABLE_MOUSE, SCROLL_SPEED).
+//! - CLI `--init-only` accepts the `CLAUDE_CODE_*` terminal env toggles
+//!   without crashing (NO_FLICKER, ENABLE_MOUSE_CAPTURE, DISABLE_MOUSE,
+//!   SCROLL_SPEED).
 //! - Garbage values still boot cleanly (parser falls back to defaults).
 //! - Editor env vars with quoted paths / argument suffixes do not break
 //!   startup, even though transcript export still requires a bare
@@ -58,6 +59,14 @@ fn cli_init_only_accepts_disable_mouse_env() {
 
 #[test]
 #[serial]
+fn cli_init_only_accepts_enable_mouse_capture_env() {
+    run_init_only(|cmd| {
+        cmd.env("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", "1");
+    });
+}
+
+#[test]
+#[serial]
 fn cli_init_only_accepts_scroll_speed_env() {
     for value in ["3", "15", "50"] {
         run_init_only(|cmd| {
@@ -72,6 +81,7 @@ fn cli_init_only_accepts_scroll_speed_env() {
 fn cli_init_only_tolerates_bogus_terminal_env_values() {
     run_init_only(|cmd| {
         cmd.env("CLAUDE_CODE_NO_FLICKER", "maybe-later");
+        cmd.env("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", "not-today");
         cmd.env("CLAUDE_CODE_DISABLE_MOUSE", "???");
         cmd.env("CLAUDE_CODE_SCROLL_SPEED", "banana");
     });
@@ -80,9 +90,10 @@ fn cli_init_only_tolerates_bogus_terminal_env_values() {
 /// Setting all three together should still boot without errors.
 #[test]
 #[serial]
-fn cli_init_only_accepts_all_three_env_toggles_together() {
+fn cli_init_only_accepts_terminal_env_toggles_together() {
     run_init_only(|cmd| {
         cmd.env("CLAUDE_CODE_NO_FLICKER", "1")
+            .env("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", "1")
             .env("CLAUDE_CODE_DISABLE_MOUSE", "0")
             .env("CLAUDE_CODE_SCROLL_SPEED", "8");
     });

@@ -118,8 +118,8 @@ pub async fn run_tui(
     }
 
     // Terminal env config (issue #12) — `CLAUDE_CODE_NO_FLICKER`,
-    // `CLAUDE_CODE_DISABLE_MOUSE`, `CLAUDE_CODE_SCROLL_SPEED`. Cached
-    // for the duration of the session.
+    // `CLAUDE_CODE_ENABLE_MOUSE_CAPTURE`, `CLAUDE_CODE_DISABLE_MOUSE`,
+    // `CLAUDE_CODE_SCROLL_SPEED`. Cached for the duration of the session.
     app.set_terminal_env(terminal_env);
 
     // Voice dictation (issue #13) — build a controller from the null

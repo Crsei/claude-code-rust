@@ -66,7 +66,8 @@ fn slash_command_surfaces_open_only_for_empty_interactive_commands() {
     let cwd = std::env::current_dir().expect("current dir");
 
     for command in [
-        "agents", "config", "diff", "hooks", "mcp", "memory", "sandbox", "skills", "tasks", "team",
+        "agents", "config", "diff", "hooks", "login", "mcp", "memory", "sandbox", "skills",
+        "tasks", "team",
     ] {
         assert!(
             CommandSurface::for_slash_command(command, "", &state, &cwd).is_some(),
@@ -77,6 +78,29 @@ fn slash_command_surfaces_open_only_for_empty_interactive_commands() {
             "{command} with args should keep the normal slash-command path"
         );
     }
+}
+
+#[test]
+fn login_surface_routes_auth_actions() {
+    let mut surface = CommandSurface::Login(LoginSurface { action_index: 0 });
+
+    assert!(surface.render().contains("Login methods"));
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::Submit("/login status".to_string())
+    );
+
+    surface.handle_key(key(KeyCode::Right));
+    assert!(surface.render().contains("[API key]"));
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::FillPrompt("/login ".to_string())
+    );
+
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Char('5'))),
+        CommandSurfaceOutcome::Submit("/login 5".to_string())
+    );
 }
 
 #[test]

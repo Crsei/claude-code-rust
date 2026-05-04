@@ -8,8 +8,11 @@
 //! |                             | `0` turns them off. Default is on (we already use  |
 //! |                             | them) so this is a way to opt out on terminals     |
 //! |                             | that behave badly.                                 |
-//! | `CLAUDE_CODE_DISABLE_MOUSE` | `1` keeps native terminal mouse handling enabled   |
-//! |                             | by skipping TUI mouse capture.                     |
+//! | `CLAUDE_CODE_ENABLE_MOUSE_CAPTURE` | `1` opts into TUI mouse capture for wheel |
+//! |                                    | events. Default is off so terminal text   |
+//! |                                    | selection/copy keeps working.             |
+//! | `CLAUDE_CODE_DISABLE_MOUSE`        | Legacy override. `1` keeps native terminal |
+//! |                                    | mouse handling enabled.                    |
 //! | `CLAUDE_CODE_SCROLL_SPEED`  | Lines per PageUp / PageDown scroll step. Integer,  |
 //! |                             | clamped to `[1, 50]`. Default: 5.                  |
 //!
@@ -25,7 +28,9 @@ pub struct TerminalEnvConfig {
     /// cc-rust TUI emits these by default to reduce tearing; this gate is
     /// here so users on broken terminals can turn them off.
     pub sync_updates: bool,
-    /// Hint to any future mouse-capture code path: never enable grabs.
+    /// Whether to skip crossterm mouse capture so native terminal text
+    /// selection/copy keeps working. This defaults to true; mouse capture is
+    /// now an explicit opt-in because it steals normal drag selection.
     pub disable_mouse: bool,
     /// Lines per scroll step for PageUp / PageDown and related keys.
     pub scroll_speed: u16,
@@ -35,14 +40,14 @@ impl Default for TerminalEnvConfig {
     fn default() -> Self {
         Self {
             sync_updates: true,
-            disable_mouse: false,
+            disable_mouse: true,
             scroll_speed: Self::DEFAULT_SCROLL_SPEED,
         }
     }
 }
 
 impl TerminalEnvConfig {
-    /// The TUI runner honors `CLAUDE_CODE_DISABLE_MOUSE` when deciding
+    /// The TUI runner honors the mouse-capture env flags when deciding
     /// whether to enable crossterm mouse capture.
     pub const DISABLE_MOUSE_RUNTIME_SUPPORTED: bool = true;
     /// Default scroll speed when no override is set. Exposed publicly
@@ -70,6 +75,8 @@ impl TerminalEnvConfig {
         V: AsRef<str>,
     {
         let mut cfg = Self::default();
+        let mut enable_mouse_capture: Option<bool> = None;
+        let mut disable_mouse: Option<bool> = None;
         for (k, v) in iter {
             match k.as_ref() {
                 "CLAUDE_CODE_NO_FLICKER" => {
@@ -77,10 +84,11 @@ impl TerminalEnvConfig {
                         cfg.sync_updates = b;
                     }
                 }
+                "CLAUDE_CODE_ENABLE_MOUSE_CAPTURE" => {
+                    enable_mouse_capture = parse_bool(v.as_ref());
+                }
                 "CLAUDE_CODE_DISABLE_MOUSE" => {
-                    if let Some(b) = parse_bool(v.as_ref()) {
-                        cfg.disable_mouse = b;
-                    }
+                    disable_mouse = parse_bool(v.as_ref());
                 }
                 "CLAUDE_CODE_SCROLL_SPEED" => {
                     if let Ok(n) = v.as_ref().trim().parse::<u16>() {
@@ -88,6 +96,18 @@ impl TerminalEnvConfig {
                     }
                 }
                 _ => {}
+            }
+        }
+        if let Some(enabled) = enable_mouse_capture {
+            cfg.disable_mouse = !enabled;
+        }
+        if let Some(disabled) = disable_mouse {
+            if disabled {
+                cfg.disable_mouse = true;
+            } else if enable_mouse_capture.is_none() {
+                // Preserve the old escape hatch for users who already set the
+                // negative flag to `0` to keep wheel events enabled.
+                cfg.disable_mouse = false;
             }
         }
         cfg
@@ -175,7 +195,7 @@ mod tests {
     fn defaults_are_sensible() {
         let cfg = TerminalEnvConfig::default();
         assert!(cfg.sync_updates);
-        assert!(!cfg.disable_mouse);
+        assert!(cfg.disable_mouse);
         assert_eq!(cfg.scroll_speed, TerminalEnvConfig::DEFAULT_SCROLL_SPEED);
     }
 
@@ -204,6 +224,34 @@ mod tests {
     }
 
     #[test]
+    fn enable_mouse_capture_opts_into_mouse_events() {
+        for value in ["1", "true", "YES", "on"] {
+            let cfg =
+                TerminalEnvConfig::from_iter(vec![("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", value)]);
+            assert!(
+                !cfg.disable_mouse,
+                "value {:?} should enable mouse capture",
+                value
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_disable_mouse_false_still_enables_mouse_capture() {
+        let cfg = TerminalEnvConfig::from_iter(vec![("CLAUDE_CODE_DISABLE_MOUSE", "0")]);
+        assert!(!cfg.disable_mouse);
+    }
+
+    #[test]
+    fn explicit_disable_mouse_wins_over_enable_mouse_capture() {
+        let cfg = TerminalEnvConfig::from_iter(vec![
+            ("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", "1"),
+            ("CLAUDE_CODE_DISABLE_MOUSE", "1"),
+        ]);
+        assert!(cfg.disable_mouse);
+    }
+
+    #[test]
     fn scroll_speed_parses_and_clamps() {
         let cfg = TerminalEnvConfig::from_iter(vec![("CLAUDE_CODE_SCROLL_SPEED", "12")]);
         assert_eq!(cfg.scroll_speed, 12);
@@ -219,6 +267,7 @@ mod tests {
     fn garbage_values_fall_back_to_defaults() {
         let cfg = TerminalEnvConfig::from_iter(vec![
             ("CLAUDE_CODE_NO_FLICKER", "maybe"),
+            ("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", "later"),
             ("CLAUDE_CODE_DISABLE_MOUSE", ""),
             ("CLAUDE_CODE_SCROLL_SPEED", "fast"),
         ]);
