@@ -542,16 +542,22 @@
 
 ### 按优先级分类的缺失项
 
-#### P0 — 影响核心体验
+#### P0 — 影响核心体验（2026-05-04 milestone gate）
 
-| 缺失项 | 说明 |
-|--------|------|
-| Shell 输出展开/格式化 | 已补齐基础 expanded option、ANSI/JSON/宽度截断、elapsed/timeout footer；仍缺最新 shell 输出自动展开上下文 |
-| 结构化 Diff (hunks) | 已补齐 `diff/structured_diff.rs`，支持 unified diff hunk 解析、old/new gutter、multi-hunk 分隔、no-newline/large/truncated/untracked snapshot 覆盖；文件编辑更新消息留到 Step 12 |
-| 搜索框 (`SearchBox`) | 已补齐共享文本渲染 primitive，并接入 `SelectionSurface` 头部 |
-| 历史搜索 (`HistorySearchDialog`) | 已补齐 Ctrl+R in-session 历史搜索、SearchBox、exact-first/fuzzy-second 过滤、窄/宽预览、空态与 key handling；Rust 端暂无持久 timestamped history reader，当前从本次会话 `push_history` 条目生成时间戳 |
-| 进度条 (`ProgressBar`) | 已补齐共享 1/8 block 渲染；后续继续接入更多长任务 surface |
-| Tool 活动渲染完善 | 已补齐统一 `ToolActivity` 模型与 grouped/task/message 复用，覆盖 queued/running/succeeded/failed/cancelled、参数摘要、progress、错误和输出预览 snapshot |
+| 项目 | 里程碑状态 |
+|------|------------|
+| Shell 输出展开/格式化 | 基础完成：已补齐 expanded option、ANSI/JSON/宽度截断、elapsed/timeout footer。残余：最新 shell 输出自动展开上下文仍待 runtime/event 接线，见 `docs/KNOWN_ISSUES.md` #21 |
+| 结构化 Diff (hunks) | 完成：已补齐 `diff/structured_diff.rs`，支持 unified diff hunk 解析、old/new gutter、multi-hunk 分隔、no-newline/large/truncated/untracked snapshot 覆盖。文件编辑更新消息留到 Step 12 |
+| 搜索框 (`SearchBox`) | 完成：已补齐共享文本渲染 primitive，并接入 `SelectionSurface` 头部 |
+| 历史搜索 (`HistorySearchDialog`) | 基础完成：已补齐 Ctrl+R in-session 历史搜索、SearchBox、exact-first/fuzzy-second 过滤、窄/宽预览、空态与 key handling。残余：Rust 端暂无持久 timestamped history reader，当前从本次会话 `push_history` 条目生成时间戳，见 `docs/KNOWN_ISSUES.md` #22 |
+| 进度条 (`ProgressBar`) | 完成：已补齐共享 1/8 block 渲染，并接入任务/shell surface |
+| Tool 活动渲染完善 | 完成：已补齐统一 `ToolActivity` 模型与 grouped/task/message 复用，覆盖 queued/running/succeeded/failed/cancelled、参数摘要、progress、错误和输出预览 snapshot |
+
+P0 milestone residual risks:
+
+- 最新 shell 输出尚未根据实时 shell 上下文自动展开；当前 renderer 已支持展开/折叠和完整 detail view，但自动策略等待事件接线。
+- Ctrl+R 历史搜索当前只覆盖本次 TUI 会话内提交的 prompt；跨会话持久历史需要后续 reader/API。
+- 文件编辑成功/拒绝/取消后的专用更新消息仍归入 Step 12，因为该项依赖 file-edit event 数据流，不阻塞 P0 hunk renderer 基础。
 
 #### P1 — 影响功能完整性
 
@@ -596,7 +602,7 @@
 
 ## 下一步建议
 
-1. **立即**: 进入 P0 文档与里程碑 gate；Shell 最新输出自动展开上下文仍待接线
+1. **立即**: 进入 P1 设置页 ModelPicker / ThemePicker；P0 残余已记录为明确风险
 2. **短期**: 将 fuzzy/search foundation 继续复用到设置页和 MCP/Agent 选择面
 3. **中期**: 任务面板、状态行增强、MCP 审批对话框
 4. **长期**: IDE 集成、远程功能 (视路线图)

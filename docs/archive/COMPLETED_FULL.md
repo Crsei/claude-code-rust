@@ -273,3 +273,9 @@ PlanMode、Worktree、Skill 完整实现真实逻辑。
 | Module | Files | Notes |
 | --- | --- | --- |
 | Skill packages (MVP-010) | `crates/cc-skills/src/{lib.rs,loader.rs,bundled.rs}`, `crates/claude-code-rs/src/commands/skills_cmd.rs`, `crates/claude-code-rs/src/commands/reload_plugins_cmd.rs`, `crates/claude-code-rs/src/ipc/subsystem_handlers.rs`, `crates/claude-code-rs/src/main.rs`, `crates/claude-code-rs/src/mcp/tools.rs` | Versioned skill package metadata, frontmatter/layout diagnostics, dependency graph resolution, registry revisions, explicit reload invalidation, plugin skill reload integration, bundled skill versions, and MCP `skill://` resource ingestion. Remote skill marketplace/state loading and continuous file watching are intentional crops. |
+
+## 2026-05-04 Full-Build Updates
+
+| Module | Files | Notes |
+| --- | --- | --- |
+| Ratatui P0 UI parity milestone | `crates/claude-code-rs/src/ui/rendering/progress_bar.rs`, `crates/claude-code-rs/src/ui/messages/user_bash_output_message.rs`, `crates/claude-code-rs/src/ui/diff/structured_diff.rs`, `crates/claude-code-rs/src/ui/components/search_box.rs`, `crates/claude-code-rs/src/ui/components/history_search_dialog.rs`, `crates/claude-code-rs/src/ui/rendering/tool_activity.rs`, `docs/RATATUI_UI_PARITY.md` | Completed the P0 ratatui foundations for shell output formatting, structured diff hunks, shared search/fuzzy filtering, Ctrl+R in-session history search, shared progress bars, and richer tool activity rendering. Residuals are explicit: latest shell-output auto-expand needs runtime/event wiring, Ctrl+R remains in-session until a persistent timestamped history reader exists, and file-edit update messages stay scheduled for Step 12. |

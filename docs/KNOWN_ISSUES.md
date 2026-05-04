@@ -41,6 +41,43 @@ components are not subscribing to terminal dimension changes.
 
 *Add new issues below this line.*
 
+## 22. Rust TUI Ctrl+R history search only searches the current session
+
+**Status**: Open (2026-05-04)
+
+**Description**: The Rust TUI now has a Ctrl+R history search dialog with fuzzy filtering, narrow/wide previews, and selection handling. The entries currently come from prompts pushed during the active TUI session, with timestamps synthesized at insertion time. Prompts from previous sessions are not loaded into the dialog yet.
+
+**Expected behavior**: Ctrl+R should search timestamped prompt history across persisted sessions when the storage layer exposes an appropriate reader.
+
+**Reproduction**:
+1. Submit prompts in one TUI session and exit.
+2. Start a new TUI session.
+3. Press `Ctrl+R`.
+4. Observe that the previous session's prompts are not listed.
+
+**Related files**:
+- `crates/claude-code-rs/src/ui/components/history_search_dialog.rs`
+- `crates/claude-code-rs/src/ui/app.rs`
+- `crates/claude-code-rs/src/ui/input/keybindings.rs`
+
+## 21. Rust TUI latest shell output does not auto-expand from runtime context
+
+**Status**: Open (2026-05-04)
+
+**Description**: The Rust TUI shell output renderer supports expanded and collapsed modes, ANSI cleanup, compact JSON formatting, width-aware truncation, elapsed/timeout footer text, and full-output detail surfaces. The latest shell command output is not automatically expanded based on live shell context yet; callers must still choose the expanded rendering path explicitly.
+
+**Expected behavior**: The most recent shell output should automatically render with expanded context when runtime state identifies it as the current/latest shell result, matching the upstream `ExpandShellOutputContext` behavior.
+
+**Reproduction**:
+1. Run a shell command that emits multi-line output.
+2. Inspect the transcript/task shell output in the Rust TUI.
+3. Observe that the renderer has the required expanded mode, but the latest-output auto-expand policy is not driven by runtime context.
+
+**Related files**:
+- `crates/claude-code-rs/src/ui/messages/user_bash_output_message.rs`
+- `crates/claude-code-rs/src/ui/tasks/shell_progress.rs`
+- `crates/claude-code-rs/src/ui/tasks/shell_detail_dialog.rs`
+
 ## 20. Rust TUI mouse capture blocked native terminal text selection
 
 **Status**: Fixed (2026-05-04)
