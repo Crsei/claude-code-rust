@@ -1,6 +1,6 @@
 # cc-rust 工作状态总览
 
-> 更新日期: 2026-04-22 | 分支: `rust-lite`（历史名称，当前阶段：**全量构建 / Full Build**）
+> 更新日期: 2026-05-04 | 分支: `rust-lite`（历史名称，当前阶段：**全量构建 / Full Build**）
 >
 > **阶段说明**：本仓库已从 "rust-lite 精简版" 切换到**全量构建**。§3 原"显式延期 (Deferred)"清单不再默认等于"不做"，触及这些条目的新工作默认按上游完整实现对齐，除非重新评估后登记到 [`IMPLEMENTATION_GAPS.md`](IMPLEMENTATION_GAPS.md) §7 "Intentional 裁剪"。详细规则见 [`../CLAUDE.md`](../CLAUDE.md) 顶部"当前阶段"说明。
 >
@@ -76,6 +76,7 @@
 |------|------|------|
 | Vim 状态机 | `ui/src/vim/state-machine.ts` | ✅ — normal/insert/visual 三模式；导航 (h/l/0/$/^/w/b/e)、operator (d/y/c)、单键 (x/X/p/u/D/C) 与 visual 选区；不计划扩展到完整 Vim 语义 |
 | 终端 resize 回流 | `src/ui/tui.rs` + `src/ui/virtual_scroll.rs` | ✅ (Rust TUI 端 2026-04-19) / **Open** (TS/OpenTUI 端) — 见 KNOWN_ISSUES #1 |
+| ratatui UI parity P0/P1 | `docs/RATATUI_UI_PARITY.md` + `crates/claude-code-rs/src/ui/**` | ✅ (2026-05-04 milestone) — P0 shell/diff/search/history/progress/tool-activity foundation and P1 settings/tasks/status/MCP/file-edit render surfaces are complete; live shell auto-expand, persistent Ctrl+R history, live IDE/PR indicators, Claude Desktop MCP discovery, and file-edit transcript event wiring remain explicit backend-gated residuals |
 | 窄终端布局降级 | — | **Open** — KNOWN_ISSUES #4, #5 |
 
 14 个核心组件均已完成。

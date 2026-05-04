@@ -42,11 +42,11 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | 模块 | 待补齐的行为（参考上游） |
 |------|----------|
 | BashTool | PowerShell 分支、sandbox、进程组管理、危险命令拒绝列表（Stage 3c.2 已落地；Bash/PowerShell 执行前硬拦，BashTool 内部仍保留 Ask 级子命令检测）、heredoc 校验、Git 操作跟踪 |
-| FileEditTool | diff 预览、冲突检测、文件锁检查、编辑历史、自动缩进修正 |
+| FileEditTool | 冲突检测、文件锁检查、编辑历史、自动缩进修正；ratatui diff 预览/更新消息 renderer 已补齐，live transcript 接线仍依赖 backend file-edit event data |
 | FileWriteTool | 临时文件后 rename 的安全写入、备份/恢复、大小限制、权限保持、二进制内容检查 |
 | FileReadTool | 符号链接解析、大文件智能分页、文件编码检测 |
 | SkillTool | 依赖解析、热重载、版本管理、完整 frontmatter 校验、MCP skill builder |
-| TaskTools | 远程/多类型后台任务 supervisor parity、超时控制、独立 UI；磁盘持久化、基础依赖字段、输出保留、后台 local-agent 取消已完成 |
+| TaskTools | 远程/多类型后台任务 supervisor parity、超时控制；磁盘持久化、基础依赖字段、输出保留、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
 | PlanMode | auto-mode/classifier gate、团队审批流、计划持久化、实现关联跟踪 |
 | LSP | `didChange` 增量同步、`publishDiagnostics` 被动反馈、补全建议、插件侧配置整合 |
 | WebFetch | JS 渲染、Cookie 管理、代理支持、重定向限制、Content-Type 智能处理 |
