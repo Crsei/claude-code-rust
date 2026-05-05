@@ -280,6 +280,15 @@ fn main() -> ExitCode {
         return startup::fast_paths::run_dump_system_prompt(&cli);
     }
 
+    if !cli.print && cli.output_format.is_none() {
+        let daemon_cwd = std::path::PathBuf::from(resolve_cwd(&cli));
+        if let Some(code) =
+            daemon::process_state::try_run_management_command(&cli.prompt, &daemon_cwd, cli.port)
+        {
+            return code;
+        }
+    }
+
     let exit_code = rt.block_on(async {
         match run_full_init(cli).await {
             Ok(code) => code,
@@ -825,6 +834,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             eprintln!("error: --daemon requires FEATURE_KAIROS=1");
             return Ok(ExitCode::FAILURE);
         }
+        daemon::process_state::write_started(cli.port, std::path::Path::new(&cwd))?;
 
         // Set KAIROS state
         engine.update_app_state(|app| {
@@ -866,7 +876,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         let tick_state = daemon_state.clone();
         let tick_enabled = features::enabled(Feature::Proactive);
 
-        return tokio::select! {
+        let daemon_result = tokio::select! {
             result = daemon::server::serve_http(http_state, cli.port) => {
                 result.map(|()| ExitCode::SUCCESS)
             }
@@ -877,7 +887,16 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                 tracing::info!("daemon shutting down");
                 Ok(ExitCode::SUCCESS)
             }
+            _ = daemon::process_state::wait_for_shutdown_request() => {
+                tracing::info!("daemon shutdown requested");
+                Ok(ExitCode::SUCCESS)
+            }
         };
+        if let Err(err) = daemon::process_state::write_stopped(cli.port, std::path::Path::new(&cwd))
+        {
+            warn!(error = %err, "failed to write daemon stopped state");
+        }
+        return daemon_result;
     }
 
     // B.12: Enter TUI or headless mode

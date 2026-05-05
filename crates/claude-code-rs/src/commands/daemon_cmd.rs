@@ -1,40 +1,34 @@
-//! `/daemon` command -- view/control the KAIROS daemon process.
+//! `/daemon` command -- view/control the daemon process.
 //!
 //! Subcommands:
 //! - `status` (default): show daemon URL and running state
 //! - `stop`: request daemon shutdown
-//!
-//! Requires `FEATURE_KAIROS=1`.
 
 use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::config::features::{self, Feature};
-
-/// Default daemon check URL.
-const DAEMON_CHECK_URL: &str = "http://127.0.0.1:3579/health";
+use crate::daemon::process_state::{self, DaemonStatusSnapshot};
 
 pub struct DaemonCmdHandler;
 
 #[async_trait]
 impl CommandHandler for DaemonCmdHandler {
     async fn execute(&self, args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
-        if !features::enabled(Feature::Kairos) {
-            return Ok(CommandResult::Output(
-                "Daemon command requires FEATURE_KAIROS=1".into(),
-            ));
-        }
-
         match args.trim().to_lowercase().as_str() {
             "" | "status" => show_status(ctx),
             "stop" => request_stop(ctx),
+            "start" | "restart" => Ok(CommandResult::Output(
+                "Use the shell command `claude daemon start` or `claude daemon restart`.".into(),
+            )),
             other => Ok(CommandResult::Output(format!(
                 "Unknown subcommand: '{}'\n\
                  Usage:\n  \
                    /daemon          -- show daemon status\n  \
                    /daemon status   -- show daemon status\n  \
-                   /daemon stop     -- request daemon shutdown",
+                   /daemon stop     -- request daemon shutdown\n  \
+                   /daemon start    -- show shell command hint\n  \
+                   /daemon restart  -- show shell command hint",
                 other
             ))),
         }
@@ -42,27 +36,54 @@ impl CommandHandler for DaemonCmdHandler {
 }
 
 /// Show daemon status information.
-fn show_status(ctx: &CommandContext) -> Result<CommandResult> {
-    let active = ctx.app_state.kairos_active;
-    Ok(CommandResult::Output(format!(
-        "=== Daemon Status ===\n\
-         Running:    {}\n\
-         Health URL: {}",
-        if active { "yes" } else { "no" },
-        DAEMON_CHECK_URL
-    )))
+fn show_status(_ctx: &CommandContext) -> Result<CommandResult> {
+    let output = match process_state::status_snapshot()? {
+        DaemonStatusSnapshot::Running(state) => format!(
+            "=== Daemon Status ===\n\
+             Running:    yes\n\
+             PID:        {}\n\
+             Health URL: {}\n\
+             State file: {}",
+            state.pid,
+            state.health_url,
+            process_state::state_path().display()
+        ),
+        DaemonStatusSnapshot::Stale(state) => format!(
+            "=== Daemon Status ===\n\
+             Running:    stale\n\
+             Last PID:   {}\n\
+             State file: {}",
+            state.pid,
+            process_state::state_path().display()
+        ),
+        DaemonStatusSnapshot::Stopped => format!(
+            "=== Daemon Status ===\n\
+             Running:    no\n\
+             State file: {}",
+            process_state::state_path().display()
+        ),
+    };
+    Ok(CommandResult::Output(output))
 }
 
 /// Request daemon to stop.
-fn request_stop(ctx: &CommandContext) -> Result<CommandResult> {
-    if !ctx.app_state.kairos_active {
-        return Ok(CommandResult::Output(
+fn request_stop(_ctx: &CommandContext) -> Result<CommandResult> {
+    match process_state::status_snapshot()? {
+        DaemonStatusSnapshot::Running(state) => {
+            process_state::request_shutdown("slash command /daemon stop")?;
+            Ok(CommandResult::Output(format!(
+                "Daemon stop requested for PID {}.",
+                state.pid
+            )))
+        }
+        DaemonStatusSnapshot::Stale(state) => Ok(CommandResult::Output(format!(
+            "Daemon state is stale for PID {}. Run `claude daemon status` from the shell to refresh.",
+            state.pid
+        ))),
+        DaemonStatusSnapshot::Stopped => Ok(CommandResult::Output(
             "Daemon is not currently running.".into(),
-        ));
+        )),
     }
-
-    // Actual shutdown will be handled by the daemon module once implemented.
-    Ok(CommandResult::Output("Daemon stop requested.".into()))
 }
 
 // ---------------------------------------------------------------------------
@@ -76,6 +97,29 @@ mod tests {
     use crate::types::app_state::AppState;
     use std::path::PathBuf;
 
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &std::path::Path) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = &self.previous {
+                std::env::set_var(self.key, previous);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
     fn test_ctx() -> CommandContext {
         CommandContext {
             messages: Vec::new(),
@@ -86,28 +130,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_feature_gate() {
+    #[serial_test::serial]
+    async fn test_status_without_state_reports_not_running() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
         let handler = DaemonCmdHandler;
         let mut ctx = test_ctx();
         let result = handler.execute("status", &mut ctx).await.unwrap();
         match result {
-            CommandResult::Output(text) => assert!(text.contains("FEATURE_KAIROS")),
+            CommandResult::Output(text) => assert!(text.contains("Running:    no")),
             _ => panic!("Expected Output"),
         }
     }
 
     #[tokio::test]
-    async fn test_all_args_gated() {
-        // Feature is not enabled in test env, so all invocations hit the gate.
+    #[serial_test::serial]
+    async fn test_start_and_restart_show_shell_hint() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
         let handler = DaemonCmdHandler;
         let mut ctx = test_ctx();
 
-        for input in &["status", "stop", "restart"] {
+        for input in &["start", "restart"] {
             let result = handler.execute(input, &mut ctx).await.unwrap();
             match result {
                 CommandResult::Output(text) => assert!(
-                    text.contains("FEATURE_KAIROS"),
-                    "expected gate message for input '{}'",
+                    text.contains("claude daemon"),
+                    "expected shell hint for input '{}'",
                     input
                 ),
                 _ => panic!("Expected Output for input '{}'", input),

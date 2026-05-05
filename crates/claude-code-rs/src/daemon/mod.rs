@@ -2,6 +2,7 @@
 pub mod channels;
 pub mod memory_log;
 pub mod notification;
+pub mod process_state;
 pub mod routes;
 pub mod server;
 pub mod sse;

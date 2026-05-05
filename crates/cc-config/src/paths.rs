@@ -52,6 +52,10 @@ pub fn logs_dir() -> PathBuf {
     data_root().join("logs")
 }
 
+pub fn daemon_dir() -> PathBuf {
+    data_root().join("daemon")
+}
+
 /// `{data_root}/logs/YYYY/MM/YYYY-MM-DD.md` — daemon daily log layout.
 pub fn daily_log_path(now: DateTime<Local>) -> PathBuf {
     logs_dir()
@@ -327,6 +331,7 @@ mod tests {
         assert_eq!(skills_dir_global(), base.join("skills"));
         assert_eq!(teams_dir(), base.join("teams"));
         assert_eq!(tasks_dir(), base.join("tasks"));
+        assert_eq!(daemon_dir(), base.join("daemon"));
     }
 
     #[test]
