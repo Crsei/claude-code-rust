@@ -3,18 +3,30 @@
 //! Extracted from loop_impl.rs to keep the core stream! macro body focused.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use tracing::{debug, warn};
 use uuid::Uuid;
 
 use crate::types::message::{
-    AssistantMessage, ContentBlock, Message, MessageContent, ToolResultContent, UserMessage,
+    AssistantMessage, ContentBlock, Message, MessageContent, StreamEvent, ToolResultContent,
+    UserMessage,
 };
 use crate::types::state::QueryLoopState;
 use crate::types::tool::ToolProgress;
 use crate::types::transitions::{Continue, Terminal};
 
 use super::deps::{QueryDeps, ToolExecRequest, ToolExecResult};
+
+#[cfg(test)]
+const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_millis(50);
+#[cfg(not(test))]
+const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
+
+#[cfg(test)]
+const DEFAULT_STREAM_STALL_TIMEOUT: Duration = Duration::from_millis(25);
+#[cfg(not(test))]
+const DEFAULT_STREAM_STALL_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Maximum number of max_output_tokens recovery attempts.
 pub(crate) const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT: usize = 3;
@@ -91,6 +103,34 @@ fn is_recoverable_model_capacity_error(error: &str) -> bool {
         || lower.contains("overloaded")
         || lower.contains("high demand")
         || lower.contains("capacity")
+}
+
+pub(crate) fn stream_idle_timeout() -> Duration {
+    duration_from_env("CC_RUST_STREAM_IDLE_TIMEOUT_MS").unwrap_or(DEFAULT_STREAM_IDLE_TIMEOUT)
+}
+
+pub(crate) fn stream_stall_timeout() -> Duration {
+    duration_from_env("CC_RUST_STREAM_STALL_TIMEOUT_MS").unwrap_or(DEFAULT_STREAM_STALL_TIMEOUT)
+}
+
+fn duration_from_env(name: &str) -> Option<Duration> {
+    let value = std::env::var(name).ok()?;
+    let millis = value.trim().parse::<u64>().ok()?;
+    if millis == 0 {
+        return None;
+    }
+    Some(Duration::from_millis(millis))
+}
+
+pub(crate) fn is_stream_progress_event(event: &StreamEvent) -> bool {
+    matches!(
+        event,
+        StreamEvent::ContentBlockStart { .. }
+            | StreamEvent::ContentBlockDelta { .. }
+            | StreamEvent::ContentBlockStop { .. }
+            | StreamEvent::MessageDelta { .. }
+            | StreamEvent::MessageStop
+    )
 }
 
 /// Handle prompt_too_long error recovery.

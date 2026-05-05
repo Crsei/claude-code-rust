@@ -41,9 +41,9 @@ use crate::services::tool_use_summary::{self, ToolInfo};
 use super::deps::{ModelCallParams, QueryDeps};
 use super::loop_helpers::{
     execute_tool_calls, fallback_model_for_stream_start_error, handle_max_output_tokens,
-    handle_prompt_too_long, is_prompt_too_long_error, make_abort_message, make_error_message,
-    make_tool_result_user_message, make_user_message, strip_fallback_signature_blocks,
-    MaxTokensRecovery, PromptRecovery,
+    handle_prompt_too_long, is_prompt_too_long_error, is_stream_progress_event, make_abort_message,
+    make_error_message, make_tool_result_user_message, make_user_message, stream_idle_timeout,
+    stream_stall_timeout, strip_fallback_signature_blocks, MaxTokensRecovery, PromptRecovery,
 };
 use super::stop_hooks::{self, StopHookResult};
 use super::token_budget::check_token_budget;
@@ -351,10 +351,41 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 let mut accumulator = crate::api::streaming::StreamAccumulator::new();
                 let mut stream_error: Option<String> = None;
                 let mut first_response_at: Option<std::time::Instant> = None;
+                let idle_timeout = stream_idle_timeout();
+                let stall_timeout = stream_stall_timeout();
+                let mut last_progress_at = std::time::Instant::now();
 
-                while let Some(event_result) = event_stream.next().await {
+                loop {
+                    let event_result = match tokio::time::timeout(
+                        idle_timeout,
+                        event_stream.next(),
+                    ).await {
+                        Ok(Some(event_result)) => event_result,
+                        Ok(None) => break,
+                        Err(_) => {
+                            stream_error = Some(format!(
+                                "stream idle timeout after {}ms",
+                                idle_timeout.as_millis()
+                            ));
+                            break;
+                        }
+                    };
+
                     match event_result {
                         Ok(event) => {
+                            let now = std::time::Instant::now();
+                            if is_stream_progress_event(&event) {
+                                let stalled_for = now.duration_since(last_progress_at);
+                                if stalled_for > stall_timeout {
+                                    stream_error = Some(format!(
+                                        "stream stalled for {}ms without progress",
+                                        stalled_for.as_millis()
+                                    ));
+                                    break;
+                                }
+                                last_progress_at = now;
+                            }
+
                             if first_response_at.is_none()
                                 && matches!(
                                     &event,
@@ -362,7 +393,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                                         | StreamEvent::ContentBlockDelta { .. }
                                 )
                             {
-                                first_response_at = Some(std::time::Instant::now());
+                                first_response_at = Some(now);
                             }
                             accumulator.process_event(&event);
                             yield QueryYield::Stream(event);

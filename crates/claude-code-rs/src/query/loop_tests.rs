@@ -2,6 +2,7 @@ use super::*;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
 use cc_types::hooks::{
@@ -26,6 +27,7 @@ enum MockStreamStep {
     Response(ModelResponse),
     Error(String),
     Events(Vec<Result<StreamEvent, String>>),
+    DelayedEvents(Vec<(Duration, Result<StreamEvent, String>)>),
 }
 
 /// Mock deps for testing.
@@ -91,7 +93,7 @@ impl QueryDeps for MockDeps {
         match self.pop_stream_step()? {
             MockStreamStep::Response(resp) => Ok(resp),
             MockStreamStep::Error(error) => anyhow::bail!("{}", error),
-            MockStreamStep::Events(_) => {
+            MockStreamStep::Events(_) | MockStreamStep::DelayedEvents(_) => {
                 anyhow::bail!("raw stream events are not supported by call_model")
             }
         }
@@ -125,19 +127,33 @@ impl QueryDeps for MockDeps {
                 }));
                 events.push(Ok(StreamEvent::MessageStop));
                 events
+                    .into_iter()
+                    .map(|event| (Duration::from_millis(0), event))
+                    .collect()
             }
             MockStreamStep::Error(error) => anyhow::bail!("{}", error),
-            MockStreamStep::Events(events) => events,
+            MockStreamStep::Events(events) => events
+                .into_iter()
+                .map(|event| (Duration::from_millis(0), event))
+                .collect(),
+            MockStreamStep::DelayedEvents(events) => events,
         };
 
         let stream_finished = self.stream_finished.clone();
-        let stream = futures::stream::iter(events.into_iter().map(|event| match event {
-            Ok(event) => Ok(event),
-            Err(error) => anyhow::bail!("{}", error),
-        }))
-        .inspect(move |event| {
-            if matches!(event, Ok(StreamEvent::MessageStop)) {
-                stream_finished.store(true, Ordering::SeqCst);
+        let stream = futures::stream::iter(events.into_iter()).then(move |(delay, event)| {
+            let stream_finished = stream_finished.clone();
+            async move {
+                if !delay.is_zero() {
+                    tokio::time::sleep(delay).await;
+                }
+                let result = match event {
+                    Ok(event) => Ok(event),
+                    Err(error) => anyhow::bail!("{}", error),
+                };
+                if matches!(result, Ok(StreamEvent::MessageStop)) {
+                    stream_finished.store(true, Ordering::SeqCst);
+                }
+                result
             }
         });
         Ok(Box::pin(stream))
@@ -288,6 +304,20 @@ fn request_start_count(items: &[QueryYield]) -> usize {
         .iter()
         .filter(|item| matches!(item, QueryYield::RequestStart(_)))
         .count()
+}
+
+fn has_api_error_containing(items: &[QueryYield], needle: &str) -> bool {
+    items.iter().any(|item| {
+        if let QueryYield::Message(Message::Assistant(msg)) = item {
+            msg.is_api_error_message
+                && msg
+                    .api_error
+                    .as_deref()
+                    .is_some_and(|error| error.contains(needle))
+        } else {
+            false
+        }
+    })
 }
 
 struct StopContinuationHookRunner {
@@ -648,6 +678,72 @@ async fn test_fallback_tombstones_partial_assistant_after_stream_error() {
                 ))
         )),
         "fallback response should be yielded after tombstone"
+    );
+}
+
+#[tokio::test]
+async fn test_stream_idle_watchdog_errors_when_first_event_never_arrives() {
+    let deps = Arc::new(MockDeps::from_steps(vec![MockStreamStep::DelayedEvents(
+        vec![(
+            Duration::from_millis(75),
+            Ok(StreamEvent::MessageStart {
+                usage: Usage::default(),
+            }),
+        )],
+    )]));
+
+    let stream = query(
+        make_query_params(vec![make_user_message_for_test("Wait for stream")]),
+        deps,
+    );
+    let items: Vec<QueryYield> = stream.collect().await;
+
+    assert_eq!(request_start_count(&items), 1);
+    assert!(
+        has_api_error_containing(&items, "stream idle timeout"),
+        "idle watchdog should surface a stream timeout error: {:?}",
+        items
+    );
+}
+
+#[tokio::test]
+async fn test_stream_stall_detection_errors_after_handshake_without_progress() {
+    let deps = Arc::new(MockDeps::from_steps(vec![MockStreamStep::DelayedEvents(
+        vec![
+            (
+                Duration::from_millis(0),
+                Ok(StreamEvent::MessageStart {
+                    usage: Usage::default(),
+                }),
+            ),
+            (
+                Duration::from_millis(40),
+                Ok(StreamEvent::ContentBlockStart {
+                    index: 0,
+                    content_block: ContentBlock::Text {
+                        text: String::new(),
+                    },
+                }),
+            ),
+        ],
+    )]));
+
+    let stream = query(
+        make_query_params(vec![make_user_message_for_test("Detect stall")]),
+        deps,
+    );
+    let items: Vec<QueryYield> = stream.collect().await;
+
+    assert!(
+        items
+            .iter()
+            .any(|item| matches!(item, QueryYield::Stream(StreamEvent::MessageStart { .. }))),
+        "stream handshake should be forwarded before the stall is detected"
+    );
+    assert!(
+        has_api_error_containing(&items, "stream stalled"),
+        "passive stall detection should surface a stream stalled error: {:?}",
+        items
     );
 }
 
