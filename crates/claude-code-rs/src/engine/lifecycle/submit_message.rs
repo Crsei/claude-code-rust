@@ -227,17 +227,23 @@ impl QueryEngine {
 
             // Pull live language/output_style off AppState so /config set
             // takes effect on the next submit without restarting the engine.
-            let (cfg_language, cfg_output_style, include_auto_memory) = {
+            let (
+                cfg_language,
+                cfg_output_style,
+                include_auto_memory,
+                session_memory_context,
+            ) = {
                 let s = state_ref.read();
                 (
                     s.app_state.settings.language.clone(),
                     s.app_state.settings.output_style.clone(),
                     s.app_state.settings.auto_memory_enabled.unwrap_or(false),
+                    s.session_memory.format_memory_context(5),
                 )
             };
 
             let (system_prompt_parts, user_context, system_context) =
-                system_prompt::build_system_prompt(
+                system_prompt::build_system_prompt_with_session_memory(
                     config.custom_system_prompt.as_deref(),
                     config.append_system_prompt.as_deref(),
                     &tools_snapshot,
@@ -246,6 +252,7 @@ impl QueryEngine {
                     cfg_language.as_deref(),
                     cfg_output_style.as_deref(),
                     include_auto_memory,
+                    session_memory_context.as_deref(),
                 );
 
             // Fire InstructionsLoaded hook if CLAUDE.md context was injected

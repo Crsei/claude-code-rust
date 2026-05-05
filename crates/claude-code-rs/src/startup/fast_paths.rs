@@ -91,7 +91,22 @@ pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
         .as_ref()
         .and_then(|s| s.auto_memory_enabled)
         .unwrap_or(false);
-    let (parts, _, _) = crate::engine::system_prompt::build_system_prompt(
+    let session_memory_context = {
+        let mut service = crate::services::session_memory::SessionMemoryService::new(
+            crate::services::session_memory::SessionMemoryConfig::default(),
+        );
+        match service.load_from_disk() {
+            Ok(()) => service.format_memory_context(5),
+            Err(e) => {
+                tracing::debug!(
+                    error = %e,
+                    "failed to load session memory for dump-system-prompt"
+                );
+                None
+            }
+        }
+    };
+    let (parts, _, _) = crate::engine::system_prompt::build_system_prompt_with_session_memory(
         cli.system_prompt.as_deref(),
         cli.append_system_prompt.as_deref(),
         &tools,
@@ -100,6 +115,7 @@ pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
         dump_lang.as_deref(),
         dump_style.as_deref(),
         include_auto_memory,
+        session_memory_context.as_deref(),
     );
     for part in &parts {
         println!("{}", part);

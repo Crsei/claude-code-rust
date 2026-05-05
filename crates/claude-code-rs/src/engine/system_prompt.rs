@@ -373,6 +373,35 @@ pub fn build_system_prompt(
     HashMap<String, String>,
     HashMap<String, String>,
 ) {
+    build_system_prompt_with_session_memory(
+        custom_prompt,
+        append_prompt,
+        tools,
+        model,
+        cwd,
+        language,
+        output_style,
+        include_auto_memory,
+        None,
+    )
+}
+
+/// Build the default system prompt parts with optional session insights.
+pub fn build_system_prompt_with_session_memory(
+    custom_prompt: Option<&str>,
+    append_prompt: Option<&str>,
+    tools: &[Arc<dyn Tool>],
+    model: &str,
+    cwd: &str,
+    language: Option<&str>,
+    output_style: Option<&str>,
+    include_auto_memory: bool,
+    session_memory_context: Option<&str>,
+) -> (
+    Vec<String>,
+    HashMap<String, String>,
+    HashMap<String, String>,
+) {
     let mut parts: Vec<String> = Vec::new();
 
     if let Some(custom) = custom_prompt {
@@ -546,6 +575,7 @@ pub fn build_system_prompt(
     }
 
     // ── Memory context injection ──
+    let mut memory_context_parts = Vec::new();
     match cc_session::memdir::build_memory_context_with(cwd_path, include_auto_memory) {
         Ok(context) if !context.is_empty() => {
             debug!(
@@ -553,14 +583,7 @@ pub fn build_system_prompt(
                 context_len = context.len(),
                 "injecting memory context into system prompt"
             );
-            parts.push(format!(
-                "# Memory Context\n\n\
-                 The following memories may contain user preferences, project facts, \
-                 and durable context from previous work. Use them when relevant, but \
-                 prefer newer conversation context when there is a conflict.\n\n\
-                 {}",
-                context
-            ));
+            memory_context_parts.push(context);
         }
         Ok(_) => {
             debug!(cwd = cwd, "no memory context found");
@@ -572,6 +595,27 @@ pub fn build_system_prompt(
                 "failed to load memory context, continuing without it"
             );
         }
+    }
+    if let Some(context) = session_memory_context
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+    {
+        debug!(
+            cwd = cwd,
+            context_len = context.len(),
+            "injecting session insight context into system prompt"
+        );
+        memory_context_parts.push(context.to_string());
+    }
+    if !memory_context_parts.is_empty() {
+        parts.push(format!(
+            "# Memory Context\n\n\
+             The following memories may contain user preferences, project facts, \
+             and durable context from previous work. Use them when relevant, but \
+             prefer newer conversation context when there is a conflict.\n\n\
+             {}",
+            memory_context_parts.join("\n\n")
+        ));
     }
 
     // ── Append prompt ──
@@ -1107,6 +1151,26 @@ mod tests {
 
         let _ = fs::remove_dir_all(&dir);
         let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn test_session_memory_context_injection() {
+        prompt_sections::clear_cache();
+        let (parts, _, _) = build_system_prompt_with_session_memory(
+            None,
+            None,
+            &[],
+            "test",
+            "/tmp",
+            None,
+            None,
+            false,
+            Some("<session-insights>\n- [session] Keep API tests focused.\n</session-insights>"),
+        );
+        let joined = parts.join("\n");
+        assert!(joined.contains("# Memory Context"));
+        assert!(joined.contains("<session-insights>"));
+        assert!(joined.contains("Keep API tests focused."));
     }
 
     // ── git_status_section tests ──

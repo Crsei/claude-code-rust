@@ -165,6 +165,31 @@ impl SessionMemoryService {
         self.entries.iter().take(limit).cloned().collect()
     }
 
+    /// Format recent entries for injection into the system prompt.
+    pub fn format_memory_context(&self, limit: usize) -> Option<String> {
+        if !self.config.enabled {
+            return None;
+        }
+
+        let entries = self.get_memory_context(limit);
+        if entries.is_empty() {
+            return None;
+        }
+
+        let mut context = String::from("<session-insights>\n");
+        for entry in entries {
+            let content = entry.content.replace(['\r', '\n'], " ");
+            let tags = if entry.tags.is_empty() {
+                String::new()
+            } else {
+                format!(" tags={}", entry.tags.join(","))
+            };
+            context.push_str(&format!("- [{}{}] {}\n", entry.session_id, tags, content));
+        }
+        context.push_str("</session-insights>");
+        Some(context)
+    }
+
     /// Simple substring search across all entries' content and tags.
     pub fn search(&self, query: &str) -> Vec<&MemoryEntry> {
         let query_lower = query.to_lowercase();
@@ -261,6 +286,26 @@ mod tests {
         }
         let ctx = svc.get_memory_context(3);
         assert_eq!(ctx.len(), 3);
+    }
+
+    #[test]
+    fn format_memory_context_wraps_recent_entries() {
+        let tmp = std::env::temp_dir().join("cc_rust_test_session_mem_format");
+        let mut svc = SessionMemoryService::new(test_config(&tmp));
+        svc.entries.push(make_entry(
+            "1",
+            "Use cargo test filters\nfor focused checks.",
+            &["testing"],
+        ));
+        svc.entries
+            .push(make_entry("2", "Prefer existing patterns", &[]));
+
+        let ctx = svc.format_memory_context(1).unwrap();
+        assert!(ctx.starts_with("<session-insights>"));
+        assert!(ctx.contains("Use cargo test filters for focused checks."));
+        assert!(ctx.contains("tags=testing"));
+        assert!(!ctx.contains("Prefer existing patterns"));
+        assert!(ctx.ends_with("</session-insights>"));
     }
 
     #[test]
