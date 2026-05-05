@@ -1,7 +1,7 @@
 use super::commands::query_prompt_text;
 use super::engine_events::{create_user_message, handle_sdk_message, now_ts, StreamingState};
 use super::subsystem_events::handle_subsystem_event;
-use crate::engine::sdk_types::{SdkMessage, SdkStreamEvent, SdkUserReplay};
+use crate::engine::sdk_types::{SdkAssistantMessage, SdkMessage, SdkStreamEvent, SdkUserReplay};
 use crate::ipc::subsystem_events::{LspEvent, SubsystemEvent};
 use crate::types::message::{
     ContentBlock, InfoLevel, Message, MessageContent, StreamEvent, SystemMessage, SystemSubtype,
@@ -133,6 +133,81 @@ fn tui_streaming_keeps_tool_use_after_empty_thinking_block() {
             assert_eq!(input["file_path"], "Cargo.toml");
         }
         other => panic!("expected tool use block, got {:?}", other),
+    }
+}
+
+#[test]
+fn tui_ignores_tool_input_delta_until_final_assistant() {
+    let mut app = App::new();
+    app.add_message(create_user_message("read cargo"));
+    let mut state = StreamingState::new();
+
+    handle_sdk_message(
+        &mut app,
+        stream_event(StreamEvent::ContentBlockStart {
+            index: 0,
+            content_block: ContentBlock::ToolUse {
+                id: "toolu_streamed".to_string(),
+                name: "Read".to_string(),
+                input: json!({}),
+            },
+        }),
+        &mut state,
+    );
+    handle_sdk_message(
+        &mut app,
+        stream_event(StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "input_json_delta",
+                "partial_json": "{\"file_path\":\"Cargo.toml\"}"
+            }),
+        }),
+        &mut state,
+    );
+
+    let blocks = last_assistant_blocks(&app);
+    assert_eq!(blocks.len(), 1);
+    match &blocks[0] {
+        ContentBlock::ToolUse { input, .. } => {
+            assert_eq!(input, &json!({}));
+        }
+        other => panic!("expected partial tool use block, got {:?}", other),
+    }
+
+    handle_sdk_message(
+        &mut app,
+        SdkMessage::Assistant(SdkAssistantMessage {
+            message: crate::types::message::AssistantMessage {
+                uuid: uuid::Uuid::new_v4(),
+                timestamp: now_ts(),
+                role: "assistant".to_string(),
+                content: vec![ContentBlock::ToolUse {
+                    id: "toolu_streamed".to_string(),
+                    name: "Read".to_string(),
+                    input: json!({"file_path": "Cargo.toml"}),
+                }],
+                usage: None,
+                stop_reason: Some("tool_use".to_string()),
+                is_api_error_message: false,
+                api_error: None,
+                cost_usd: 0.0,
+            },
+            session_id: "test-session".to_string(),
+            parent_tool_use_id: None,
+        }),
+        &mut state,
+    );
+
+    let blocks = last_assistant_blocks(&app);
+    assert_eq!(blocks.len(), 1);
+    match &blocks[0] {
+        ContentBlock::ToolUse { id, name, input } => {
+            assert_eq!(id, "toolu_streamed");
+            assert_eq!(name, "Read");
+            assert_eq!(input["file_path"], "Cargo.toml");
+        }
+        other => panic!("expected final tool use block, got {:?}", other),
     }
 }
 

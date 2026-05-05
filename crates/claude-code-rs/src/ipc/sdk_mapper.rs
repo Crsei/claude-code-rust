@@ -245,30 +245,41 @@ fn handle_stream_event(
     message_id: &str,
     sink: &FrontendSink,
 ) -> std::io::Result<()> {
+    if let Some(message) = stream_event_to_backend_message(event, message_id) {
+        sink.send(&message)
+    } else {
+        Ok(())
+    }
+}
+
+fn stream_event_to_backend_message(
+    event: &StreamEvent,
+    message_id: &str,
+) -> Option<BackendMessage> {
     match event {
-        StreamEvent::MessageStart { .. } => sink.send(&BackendMessage::StreamStart {
+        StreamEvent::MessageStart { .. } => Some(BackendMessage::StreamStart {
             message_id: message_id.to_string(),
         }),
-        StreamEvent::ContentBlockStart { .. } => Ok(()),
+        StreamEvent::ContentBlockStart { .. } => None,
         StreamEvent::ContentBlockDelta { ref delta, .. } => {
             if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
-                sink.send(&BackendMessage::StreamDelta {
+                Some(BackendMessage::StreamDelta {
                     message_id: message_id.to_string(),
                     text: text.to_string(),
                 })
             } else if let Some(thinking) = delta.get("thinking").and_then(|v| v.as_str()) {
-                sink.send(&BackendMessage::ThinkingDelta {
+                Some(BackendMessage::ThinkingDelta {
                     message_id: message_id.to_string(),
                     thinking: thinking.to_string(),
                 })
             } else {
-                Ok(())
+                None
             }
         }
-        StreamEvent::MessageStop => sink.send(&BackendMessage::StreamEnd {
+        StreamEvent::MessageStop => Some(BackendMessage::StreamEnd {
             message_id: message_id.to_string(),
         }),
-        _ => Ok(()),
+        _ => None,
     }
 }
 
@@ -604,5 +615,55 @@ mod tests {
                 .and_then(|value| value.as_u64()),
             Some(2)
         );
+    }
+
+    #[test]
+    fn headless_stream_event_mapping_ignores_tool_input_delta() {
+        let message = stream_event_to_backend_message(
+            &StreamEvent::ContentBlockDelta {
+                index: 0,
+                delta: serde_json::json!({
+                    "type": "input_json_delta",
+                    "partial_json": "{\"file_path\":\"Cargo.toml\"}"
+                }),
+            },
+            "message-1",
+        );
+
+        assert!(
+            message.is_none(),
+            "headless should not render tool input deltas as text"
+        );
+    }
+
+    #[test]
+    fn headless_stream_event_mapping_keeps_text_and_thinking_deltas() {
+        assert!(matches!(
+            stream_event_to_backend_message(
+                &StreamEvent::ContentBlockDelta {
+                    index: 0,
+                    delta: serde_json::json!({
+                        "type": "text_delta",
+                        "text": "hello"
+                    }),
+                },
+                "message-1",
+            ),
+            Some(BackendMessage::StreamDelta { text, .. }) if text == "hello"
+        ));
+
+        assert!(matches!(
+            stream_event_to_backend_message(
+                &StreamEvent::ContentBlockDelta {
+                    index: 0,
+                    delta: serde_json::json!({
+                        "type": "thinking_delta",
+                        "thinking": "considering"
+                    }),
+                },
+                "message-1",
+            ),
+            Some(BackendMessage::ThinkingDelta { thinking, .. }) if thinking == "considering"
+        ));
     }
 }
