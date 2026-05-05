@@ -25,7 +25,7 @@
 
 ## 1. S 级简化 (>80% 缩减)
 
-### 1.1 BashTool — 仍有 Full Build 差距 (输出截断 / heredoc / Git 跟踪 / 进程树终止 / 危险命令拒绝列表 / security validator 高风险规则与 AST 启发式批次 / sandbox FS preflight / fail-closed 用户面已补全)
+### 1.1 BashTool — 仍有 Full Build 差距 (输出截断 / heredoc / Git 跟踪 / 进程树终止 / 危险命令拒绝列表 / security validator 高风险规则与 AST 启发式批次 / 明显 parse-error fail-closed / sandbox FS preflight / fail-closed 用户面已补全)
 
 | | TypeScript | Rust |
 |---|---|---|
@@ -42,6 +42,7 @@
 - ✅ **进程树终止 / 取消语义** (Unix process group、Windows `taskkill /T /F`，超时和 abort signal 终止进程树并返回 `termination` 元数据)
 - ✅ **命令拒绝列表与危险命令分析子项** (force-with-lease、`git clean` dry-run 例外、stash drop/clear、SQL drop/truncate、PowerShell destructive cmdlet/alias)
 - ✅ **PowerShell security validator 高风险与 AST 启发式规则** (`Invoke-Expression`、嵌套 PowerShell、download cradle、`Add-Type`、COM object、`Start-Process` 提权/再拉 PowerShell、WMI/CIM 进程创建；standalone download utilities、script file execution、`ForEach-Object -MemberName`、`Invoke-Item`、scheduled task、env/module/runtime-state mutation；动态 IEX、危险 script block、stop-parsing、明显危险 static method；一般 dynamic command name、dot-sourced dynamic command、subexpression、expandable string、splatting、member/static member invocation、非 CLM allowlist type literal)
+- ✅ **PowerShell 明显 parse-error fail-closed 子项** (未闭合 quote、paren、brace、type literal delimiter 与 mismatched closing delimiter 在执行安全门中拒绝)
 - ✅ **sandbox 文件系统 preflight 子项** (shell redirection、常见 Bash 写命令、PowerShell 写 cmdlet 按 read-only/workspace/allowWrite/denyWrite 执行 Rust 级拒绝)
 - ✅ **sandbox fail-closed 用户面** (`/sandbox require` / `/sandbox optional` 切换 `sandbox.failIfUnavailable`，缺少 OS-level primitive 时可明确硬失败或 best-effort fallback)
 
@@ -49,7 +50,7 @@
 - PowerShell 分支 (8,959 行的 PowerShellTool)
 - Windows Restricted Token / Job Object OS-level primitive
 - 复杂后台任务 / auto-background 超时逻辑
-- PowerShell 原生 AST parser fidelity（`elementTypes` / `children` / `nameType` / parse error fail-closed / statement securityPatterns 等；Rust 当前为 quote-aware 启发式硬拦，不等同完整 parser）
+- PowerShell 原生 AST parser fidelity（`elementTypes` / `children` / `nameType` / full parser-invalid coverage / statement securityPatterns 等；Rust 当前为 quote-aware 启发式硬拦，不等同完整 parser）
 - 终端大小感知
 
 ---

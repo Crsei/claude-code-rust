@@ -480,6 +480,10 @@ pub fn is_dangerous_powershell_command(command: &str) -> Option<String> {
         return Some(reason);
     }
 
+    if let Some(reason) = powershell_obvious_parse_error_reason(trimmed) {
+        return Some(reason.to_string());
+    }
+
     for pattern in POWERSHELL_DANGER_PATTERNS.iter() {
         if pattern.regex.is_match(trimmed) {
             return Some(pattern.reason.to_string());
@@ -495,6 +499,79 @@ pub fn is_dangerous_powershell_command(command: &str) -> Option<String> {
             "PowerShell .NET type [{}] is outside the ConstrainedLanguage allowlist",
             type_name
         ));
+    }
+
+    None
+}
+
+fn powershell_obvious_parse_error_reason(command: &str) -> Option<&'static str> {
+    let chars: Vec<char> = command.chars().collect();
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut stack: Vec<char> = Vec::new();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let ch = chars[i];
+
+        if in_single {
+            if ch == '\'' {
+                if chars.get(i + 1) == Some(&'\'') {
+                    i += 2;
+                    continue;
+                }
+                in_single = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if in_double {
+            if ch == '`' {
+                i += 2;
+                continue;
+            }
+            if ch == '"' {
+                in_double = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        match ch {
+            '`' => {
+                i += 2;
+                continue;
+            }
+            '\'' => in_single = true,
+            '"' => in_double = true,
+            '(' => stack.push(')'),
+            '{' => stack.push('}'),
+            '[' if is_powershell_type_start(chars.get(i + 1)) || stack.last() == Some(&']') => {
+                stack.push(']');
+            }
+            ')' | '}' => {
+                if stack.pop() != Some(ch) {
+                    return Some("PowerShell command has mismatched closing delimiter");
+                }
+            }
+            ']' if stack.last() == Some(&']') => {
+                stack.pop();
+            }
+            _ => {}
+        }
+
+        i += 1;
+    }
+
+    if in_single {
+        return Some("PowerShell command has an unterminated single-quoted string");
+    }
+    if in_double {
+        return Some("PowerShell command has an unterminated double-quoted string");
+    }
+    if !stack.is_empty() {
+        return Some("PowerShell command has an unterminated delimiter");
     }
 
     None
@@ -965,5 +1042,20 @@ mod tests {
         assert!(is_dangerous_powershell_command("Get-ChildItem env:").is_none());
         assert!(is_dangerous_powershell_command("Where-Object { $_.Name -like 'a*' }").is_none());
         assert!(is_dangerous_command("powershell.exe -EncodedCommand SQBFAFgA").is_none());
+    }
+
+    #[test]
+    fn test_powershell_obvious_parse_errors_fail_closed() {
+        assert!(is_dangerous_powershell_command("Write-Output 'unterminated").is_some());
+        assert!(is_dangerous_powershell_command(r#"Write-Output "unterminated"#).is_some());
+        assert!(is_dangerous_powershell_command("Write-Output $(Get-Date").is_some());
+        assert!(is_dangerous_powershell_command("if ($true) { Write-Output ok").is_some());
+        assert!(is_dangerous_powershell_command("Write-Output [System.IO.FileInfo").is_some());
+        assert!(is_dangerous_powershell_command("Write-Output )").is_some());
+
+        assert!(is_dangerous_powershell_command("Where-Object { $_.Name -like 'a*' }").is_none());
+        assert!(is_dangerous_powershell_command("Write-Output '[not a delimiter'").is_none());
+        assert!(is_dangerous_powershell_command("[int]$count").is_none());
+        assert!(is_dangerous_powershell_command("[string[]]$names").is_none());
     }
 }
