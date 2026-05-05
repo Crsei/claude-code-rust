@@ -15,9 +15,12 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use tracing::{info, warn};
 
-use super::process_state::{self, DaemonWorkerStatus};
+use super::{
+    process_state::{self, DaemonWorkerStatus},
+    protocol,
+};
 
-const ASSISTANT_WORKER_ID: &str = "assistant-session-1";
+pub const ASSISTANT_WORKER_ID: &str = "assistant-session-1";
 const REGISTRY_TICK_INTERVAL: Duration = Duration::from_secs(1);
 const WORKER_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
 const WORKER_STALE_AFTER: Duration = Duration::from_secs(10);
@@ -244,6 +247,19 @@ pub async fn run_worker_mode(kind: &str, worker_id: &str, cwd: PathBuf) -> Resul
             return Ok(());
         }
         process_state::write_worker_heartbeat(worker_id)?;
+        let command_result = protocol::process_pending_commands(worker_id, kind.as_str())?;
+        if command_result.acked > 0 {
+            info!(
+                worker_id,
+                acked = command_result.acked,
+                handled = command_result.handled,
+                "daemon worker processed command files"
+            );
+        }
+        if command_result.shutdown_requested {
+            process_state::write_worker_stopped(worker_id, None)?;
+            return Ok(());
+        }
     }
 }
 

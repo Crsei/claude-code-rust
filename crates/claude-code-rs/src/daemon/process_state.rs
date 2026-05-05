@@ -373,6 +373,10 @@ pub fn try_run_management_command(args: &[String], cwd: &Path, port: u16) -> Opt
         "status" => print_result(print_status()),
         "stop" => print_result(stop_daemon()),
         "restart" => print_result(restart_daemon(args, cwd, port)),
+        "submit" => print_result(submit_worker_command(args)),
+        "abort" => print_result(abort_worker_command()),
+        "command" => print_result(print_worker_command(args)),
+        "events" => print_result(print_worker_events(args)),
         "help" | "--help" | "-h" => {
             print_usage();
             ExitCode::SUCCESS
@@ -465,6 +469,87 @@ fn restart_daemon(args: &[String], cwd: &Path, port: u16) -> Result<()> {
     start_daemon(args, cwd, port)
 }
 
+fn submit_worker_command(args: &[String]) -> Result<()> {
+    require_running_daemon()?;
+    let text = args
+        .get(2..)
+        .unwrap_or_default()
+        .join(" ")
+        .trim()
+        .to_string();
+    if text.is_empty() {
+        anyhow::bail!("daemon submit requires text");
+    }
+
+    let command = super::protocol::enqueue_command(
+        super::supervisor::ASSISTANT_WORKER_ID,
+        super::protocol::DaemonCommandKind::Submit,
+        serde_json::json!({ "text": text }),
+        None,
+    )?;
+    println!(
+        "daemon command queued: id={} worker={} kind=submit",
+        command.command_id, command.target_worker_id
+    );
+    Ok(())
+}
+
+fn abort_worker_command() -> Result<()> {
+    require_running_daemon()?;
+    let command = super::protocol::enqueue_command(
+        super::supervisor::ASSISTANT_WORKER_ID,
+        super::protocol::DaemonCommandKind::Abort,
+        serde_json::json!({}),
+        None,
+    )?;
+    println!(
+        "daemon command queued: id={} worker={} kind=abort",
+        command.command_id, command.target_worker_id
+    );
+    Ok(())
+}
+
+fn print_worker_command(args: &[String]) -> Result<()> {
+    let Some(command_id) = args.get(2) else {
+        anyhow::bail!("daemon command requires a command id");
+    };
+    let worker_id = args
+        .get(3)
+        .map(String::as_str)
+        .unwrap_or(super::supervisor::ASSISTANT_WORKER_ID);
+    let Some(command) = super::protocol::read_command(worker_id, command_id)? else {
+        anyhow::bail!("daemon command not found: {command_id}");
+    };
+    println!("{}", serde_json::to_string_pretty(&command)?);
+    Ok(())
+}
+
+fn print_worker_events(args: &[String]) -> Result<()> {
+    let worker_id = args
+        .get(2)
+        .map(String::as_str)
+        .unwrap_or(super::supervisor::ASSISTANT_WORKER_ID);
+    let events = super::protocol::read_worker_events(worker_id)?;
+    if events.is_empty() {
+        println!("daemon events: none for worker={worker_id}");
+        return Ok(());
+    }
+    for event in events {
+        println!("{}", serde_json::to_string(&event)?);
+    }
+    Ok(())
+}
+
+fn require_running_daemon() -> Result<DaemonProcessState> {
+    match status_snapshot()? {
+        DaemonStatusSnapshot::Running(state) => Ok(state),
+        DaemonStatusSnapshot::Stale(state) => {
+            anyhow::bail!("daemon state is stale for pid={}", state.pid)
+        }
+        DaemonStatusSnapshot::Stopped => anyhow::bail!("daemon is not running"),
+    }
+}
+
 fn print_status() -> Result<()> {
     match status_snapshot()? {
         DaemonStatusSnapshot::Running(state) => {
@@ -531,7 +616,7 @@ fn ensure_daemon_dir() -> Result<()> {
     Ok(())
 }
 
-fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+pub(crate) fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     let parent = path
         .parent()
         .with_context(|| format!("path has no parent: {}", path.display()))?;
@@ -602,7 +687,7 @@ fn print_result(result: Result<()>) -> ExitCode {
 
 fn print_usage() {
     eprintln!(
-        "Usage:\n  claude daemon [status]\n  claude daemon start [--port <port>]\n  claude daemon stop\n  claude daemon restart [--port <port>]"
+        "Usage:\n  claude daemon [status]\n  claude daemon start [--port <port>]\n  claude daemon stop\n  claude daemon restart [--port <port>]\n  claude daemon submit <text>\n  claude daemon abort\n  claude daemon command <id> [worker-id]\n  claude daemon events [worker-id]"
     );
 }
 

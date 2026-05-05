@@ -357,3 +357,30 @@ Rust 端必须继续遵守路径隔离：所有 cc-rust daemon 状态写入 `~/.
 - `cargo fmt --all --check` 当前仍被既有非 daemon 文件 `crates/claude-code-rs/src/tools/send_message.rs` 的格式差异阻塞；本阶段 daemon 相关文件已由 rustfmt 格式化。
 - `cargo clippy -p claude-code-rs --all-targets -- -D warnings` 当前仍被既有非 daemon crate `crates/cc-sandbox/src/runner.rs` 的 `needless_lifetimes` 阻塞。
 - 测试编译当前仍报告既有非 daemon warning：`crates/claude-code-rs/src/teams/in_process.rs` 的 `permission_mode` 字段未读取。
+
+## Phase 3 实施记录（2026-05-05）
+
+状态：已落地文件系统 command/event 协议和 worker ack 循环；submit 的真实 QueryEngine 执行仍保留在当前 HTTP supervisor 路径，Phase 4 再迁移。
+
+本阶段交付：
+- 新增 `daemon::protocol`：
+  - command 文件：`~/.cc-rust/daemon/commands/<worker-id>/<command-id>.json`
+  - event 日志：`~/.cc-rust/daemon/events/<worker-id>.ndjson`
+  - command kind：`submit`、`abort`、`permission_response`、`ask_user_response`、`shutdown`、`reload_config`
+  - command status：`pending`、`acked`、`handled`、`failed`
+  - idempotency key 去重：同一个 worker 下相同 key 不重复生成命令。
+- worker 心跳循环会读取 pending command：
+  - 所有 pending command 先写入 `acked` 和 `command_ack` event。
+  - `abort` 立即标记 `handled` 并写入 `abort_ack` event。
+  - `submit` 当前标记 `acked` 并写入 `command_deferred` event，避免重启后重复 ack；真实执行在 Phase 4 迁移。
+- CLI 管理入口新增：
+  - `daemon submit <text>`
+  - `daemon abort`
+  - `daemon command <id> [worker-id]`
+  - `daemon events [worker-id]`
+
+验证记录：
+- `cargo test -p claude-code-rs daemon::protocol` 通过，覆盖 idempotency 去重、submit 只 ack 一次、abort handled/event。
+- `cargo test -p claude-code-rs daemon::supervisor` 通过，确认 worker registry 仍可编译运行。
+- `rustfmt --edition 2021 --check` 已针对 Phase 3 daemon 文件通过。
+- 本地 command/event smoke 通过：临时 `CC_RUST_HOME` + `FEATURE_KAIROS=1` + port `21986` 下，`daemon submit` 生成 `acked` command 和 `command_deferred` event，`daemon abort` 生成 `handled` command 和 `abort_ack` event，stop 后 supervisor 不存活。
