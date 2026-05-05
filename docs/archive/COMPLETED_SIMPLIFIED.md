@@ -204,9 +204,10 @@
 - ✅ 后台 local-agent runtime cancellation token
 - ✅ `TaskOutput` `block` / `timeout` 与 `retrieval_status` (`success` / `timeout` / `not_ready`)
 - ✅ 上游 task type taxonomy：`local_bash` / `local_agent` / `remote_agent` / `in_process_teammate` / `local_workflow` / `monitor_mcp` / `dream`，并迁移历史 alias
+- ✅ remote/multi-type supervisor 元数据底座：`tool_use_id`、`remote_task_type`、`remote_session_id`、`remote_task_metadata`、`poll_started_at`
 
 **TS 独有（未移植）：**
-- 远程/多类型后台任务 runtime supervisor parity
+- 远程/多类型后台任务 poller/restore/review-timeout runtime parity
 - 复杂后台任务 auto-background / review-timeout 细节
 
 ---

@@ -166,6 +166,9 @@ fn render_tool_detail(task: &TaskEntry) -> String {
     if let Some(parent_id) = &task.parent_id {
         out.push_str(&format!("  Parent:      {}\n", parent_id));
     }
+    if let Some(tool_use_id) = &task.tool_use_id {
+        out.push_str(&format!("  Tool use:    {}\n", tool_use_id));
+    }
     if let Some(agent_id) = &task.agent_id {
         out.push_str(&format!("  Agent:       {}\n", agent_id));
     }
@@ -180,6 +183,18 @@ fn render_tool_detail(task: &TaskEntry) -> String {
     }
     if let Some(branch) = &task.worktree_branch {
         out.push_str(&format!("  Branch:      {}\n", branch));
+    }
+    if let Some(remote_task_type) = &task.remote_task_type {
+        out.push_str(&format!("  Remote type: {}\n", remote_task_type));
+    }
+    if let Some(remote_session_id) = &task.remote_session_id {
+        out.push_str(&format!("  Remote sess: {}\n", remote_session_id));
+    }
+    if let Some(poll_started_at) = task.poll_started_at {
+        out.push_str(&format!("  Poll start:  {}\n", poll_started_at));
+    }
+    if let Some(remote_task_metadata) = &task.remote_task_metadata {
+        out.push_str(&format!("  Remote meta: {}\n", remote_task_metadata));
     }
     if !task.depends_on.is_empty() {
         out.push_str(&format!("  Depends on:  {}\n", task.depends_on.join(", ")));

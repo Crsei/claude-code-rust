@@ -142,6 +142,7 @@ pub(super) async fn spawn_background_agent(
                 .as_ref()
                 .map(|wt| wt.worktree_path.display().to_string()),
             worktree_branch: prepared.worktree.as_ref().map(|wt| wt.branch_name.clone()),
+            ..TaskCreateOptions::default()
         },
     );
     let task_id = task_entry.id.clone();

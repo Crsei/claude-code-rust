@@ -25,7 +25,7 @@ use tokio_util::sync::CancellationToken;
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
 
-const TASK_SCHEMA_VERSION: u32 = 3;
+const TASK_SCHEMA_VERSION: u32 = 4;
 const DEFAULT_OUTPUT_LIMIT_BYTES: usize = 64 * 1024;
 const OUTPUT_SUMMARY_MAX_CHARS: usize = 2_000;
 const DEFAULT_TASK_OUTPUT_TIMEOUT_MS: u64 = 30_000;
@@ -39,6 +39,11 @@ const TASK_KIND_IN_PROCESS_TEAMMATE: &str = "in_process_teammate";
 const TASK_KIND_LOCAL_WORKFLOW: &str = "local_workflow";
 const TASK_KIND_MONITOR_MCP: &str = "monitor_mcp";
 const TASK_KIND_DREAM: &str = "dream";
+const REMOTE_TASK_TYPE_REMOTE_AGENT: &str = "remote-agent";
+const REMOTE_TASK_TYPE_ULTRAPLAN: &str = "ultraplan";
+const REMOTE_TASK_TYPE_ULTRAREVIEW: &str = "ultrareview";
+const REMOTE_TASK_TYPE_AUTOFIX_PR: &str = "autofix-pr";
+const REMOTE_TASK_TYPE_BACKGROUND_PR: &str = "background-pr";
 const TASK_CREATE_KIND_ENUM: &[&str] = &[
     TASK_KIND_TOOL,
     TASK_KIND_LOCAL_BASH,
@@ -48,6 +53,13 @@ const TASK_CREATE_KIND_ENUM: &[&str] = &[
     TASK_KIND_LOCAL_WORKFLOW,
     TASK_KIND_MONITOR_MCP,
     TASK_KIND_DREAM,
+];
+const REMOTE_TASK_TYPE_ENUM: &[&str] = &[
+    REMOTE_TASK_TYPE_REMOTE_AGENT,
+    REMOTE_TASK_TYPE_ULTRAPLAN,
+    REMOTE_TASK_TYPE_ULTRAREVIEW,
+    REMOTE_TASK_TYPE_AUTOFIX_PR,
+    REMOTE_TASK_TYPE_BACKGROUND_PR,
 ];
 
 // =============================================================================
@@ -74,11 +86,16 @@ pub struct TaskCreateOptions {
     pub kind: Option<String>,
     pub parent_id: Option<String>,
     pub depends_on: Vec<String>,
+    pub tool_use_id: Option<String>,
     pub agent_id: Option<String>,
     pub supervisor_id: Option<String>,
     pub isolation: Option<String>,
     pub worktree_path: Option<String>,
     pub worktree_branch: Option<String>,
+    pub remote_task_type: Option<String>,
+    pub remote_session_id: Option<String>,
+    pub remote_task_metadata: Option<Value>,
+    pub poll_started_at: Option<i64>,
 }
 
 /// A process-local handle used to cancel active task execution.
@@ -111,11 +128,16 @@ pub struct TaskEntry {
     pub output_truncated: bool,
     pub parent_id: Option<String>,
     pub depends_on: Vec<String>,
+    pub tool_use_id: Option<String>,
     pub agent_id: Option<String>,
     pub supervisor_id: Option<String>,
     pub isolation: Option<String>,
     pub worktree_path: Option<String>,
     pub worktree_branch: Option<String>,
+    pub remote_task_type: Option<String>,
+    pub remote_session_id: Option<String>,
+    pub remote_task_metadata: Option<Value>,
+    pub poll_started_at: Option<i64>,
     pub cancel_requested_at: Option<i64>,
     pub recovered_at: Option<i64>,
     pub previous_status: Option<TaskStatus>,
@@ -231,11 +253,18 @@ impl TaskStore {
             output_truncated: false,
             parent_id: options.parent_id.filter(|s| !s.trim().is_empty()),
             depends_on: normalize_dependencies(options.depends_on),
+            tool_use_id: normalize_optional_string(options.tool_use_id),
             agent_id: normalize_optional_string(options.agent_id),
             supervisor_id: normalize_optional_string(options.supervisor_id),
             isolation: normalize_optional_string(options.isolation),
             worktree_path: normalize_optional_string(options.worktree_path),
             worktree_branch: normalize_optional_string(options.worktree_branch),
+            remote_task_type: normalize_remote_task_type(options.remote_task_type),
+            remote_session_id: normalize_optional_string(options.remote_session_id),
+            remote_task_metadata: options
+                .remote_task_metadata
+                .filter(|value| !value.is_null()),
+            poll_started_at: options.poll_started_at,
             cancel_requested_at: None,
             recovered_at: None,
             previous_status: None,
@@ -399,11 +428,16 @@ fn task_to_json(entry: &TaskEntry) -> Value {
         "updated_at": entry.updated_at,
         "parent_id": entry.parent_id,
         "depends_on": entry.depends_on,
+        "tool_use_id": entry.tool_use_id,
         "agent_id": entry.agent_id,
         "supervisor_id": entry.supervisor_id,
         "isolation": entry.isolation,
         "worktree_path": entry.worktree_path,
         "worktree_branch": entry.worktree_branch,
+        "remote_task_type": entry.remote_task_type,
+        "remote_session_id": entry.remote_session_id,
+        "remote_task_metadata": entry.remote_task_metadata,
+        "poll_started_at": entry.poll_started_at,
         "blocked_dependencies": blocked_dependencies,
         "output_summary": entry.output_summary,
         "output_bytes": entry.output_bytes,
@@ -452,6 +486,8 @@ struct PersistedTaskRecord {
     #[serde(default)]
     depends_on: Vec<String>,
     #[serde(default)]
+    tool_use_id: Option<String>,
+    #[serde(default)]
     agent_id: Option<String>,
     #[serde(default)]
     supervisor_id: Option<String>,
@@ -461,6 +497,14 @@ struct PersistedTaskRecord {
     worktree_path: Option<String>,
     #[serde(default)]
     worktree_branch: Option<String>,
+    #[serde(default)]
+    remote_task_type: Option<String>,
+    #[serde(default)]
+    remote_session_id: Option<String>,
+    #[serde(default)]
+    remote_task_metadata: Option<Value>,
+    #[serde(default)]
+    poll_started_at: Option<i64>,
     #[serde(default)]
     cancel_requested_at: Option<i64>,
     #[serde(default)]
@@ -557,11 +601,16 @@ impl TaskRepository {
                         output_truncated: false,
                         parent_id: None,
                         depends_on: Vec::new(),
+                        tool_use_id: None,
                         agent_id: None,
                         supervisor_id: None,
                         isolation: None,
                         worktree_path: None,
                         worktree_branch: None,
+                        remote_task_type: None,
+                        remote_session_id: None,
+                        remote_task_metadata: None,
+                        poll_started_at: None,
                         cancel_requested_at: None,
                         recovered_at: None,
                         previous_status: None,
@@ -616,11 +665,16 @@ impl TaskRepository {
             output_truncated: record.output_truncated || output_truncated_now,
             parent_id: record.parent_id.filter(|s| !s.trim().is_empty()),
             depends_on: normalize_dependencies(record.depends_on),
+            tool_use_id: normalize_optional_string(record.tool_use_id),
             agent_id: normalize_optional_string(record.agent_id),
             supervisor_id: normalize_optional_string(record.supervisor_id),
             isolation: normalize_optional_string(record.isolation),
             worktree_path: normalize_optional_string(record.worktree_path),
             worktree_branch: normalize_optional_string(record.worktree_branch),
+            remote_task_type: normalize_remote_task_type(record.remote_task_type),
+            remote_session_id: normalize_optional_string(record.remote_session_id),
+            remote_task_metadata: record.remote_task_metadata.filter(|value| !value.is_null()),
+            poll_started_at: record.poll_started_at,
             cancel_requested_at: record.cancel_requested_at,
             recovered_at: record.recovered_at,
             previous_status,
@@ -679,11 +733,16 @@ impl PersistedTaskRecord {
             output_truncated: entry.output_truncated,
             parent_id: entry.parent_id.clone(),
             depends_on: entry.depends_on.clone(),
+            tool_use_id: entry.tool_use_id.clone(),
             agent_id: entry.agent_id.clone(),
             supervisor_id: entry.supervisor_id.clone(),
             isolation: entry.isolation.clone(),
             worktree_path: entry.worktree_path.clone(),
             worktree_branch: entry.worktree_branch.clone(),
+            remote_task_type: entry.remote_task_type.clone(),
+            remote_session_id: entry.remote_session_id.clone(),
+            remote_task_metadata: entry.remote_task_metadata.clone(),
+            poll_started_at: entry.poll_started_at,
             cancel_requested_at: entry.cancel_requested_at,
             recovered_at: entry.recovered_at,
             previous_status: entry.previous_status.map(|s| s.as_str().to_string()),
@@ -782,6 +841,19 @@ fn normalize_optional_string(value: Option<String>) -> Option<String> {
             Some(trimmed.to_string())
         }
     })
+}
+
+fn normalize_remote_task_type(value: Option<String>) -> Option<String> {
+    let value = normalize_optional_string(value)?;
+    let normalized = value.to_ascii_lowercase().replace('_', "-");
+    match normalized.as_str() {
+        REMOTE_TASK_TYPE_REMOTE_AGENT => Some(REMOTE_TASK_TYPE_REMOTE_AGENT.to_string()),
+        REMOTE_TASK_TYPE_ULTRAPLAN => Some(REMOTE_TASK_TYPE_ULTRAPLAN.to_string()),
+        REMOTE_TASK_TYPE_ULTRAREVIEW => Some(REMOTE_TASK_TYPE_ULTRAREVIEW.to_string()),
+        REMOTE_TASK_TYPE_AUTOFIX_PR => Some(REMOTE_TASK_TYPE_AUTOFIX_PR.to_string()),
+        REMOTE_TASK_TYPE_BACKGROUND_PR => Some(REMOTE_TASK_TYPE_BACKGROUND_PR.to_string()),
+        _ => Some(value),
+    }
 }
 
 fn sanitize_kind(kind: &str) -> String {
@@ -941,6 +1013,47 @@ impl Tool for TaskCreateTool {
                     "type": "array",
                     "items": { "type": "string" },
                     "description": "Task IDs that should complete before this task"
+                },
+                "tool_use_id": {
+                    "type": "string",
+                    "description": "Optional upstream tool use ID associated with this task"
+                },
+                "agent_id": {
+                    "type": "string",
+                    "description": "Optional agent ID associated with this task"
+                },
+                "supervisor_id": {
+                    "type": "string",
+                    "description": "Optional runtime supervisor ID for this task"
+                },
+                "isolation": {
+                    "type": "string",
+                    "description": "Optional runtime isolation label, such as worktree"
+                },
+                "worktree_path": {
+                    "type": "string",
+                    "description": "Optional worktree path for isolated task execution"
+                },
+                "worktree_branch": {
+                    "type": "string",
+                    "description": "Optional worktree branch for isolated task execution"
+                },
+                "remote_task_type": {
+                    "type": "string",
+                    "enum": REMOTE_TASK_TYPE_ENUM,
+                    "description": "Optional remote task subtype used by remote-agent supervisors"
+                },
+                "remote_session_id": {
+                    "type": "string",
+                    "description": "Optional remote session ID used to restore or poll a remote task"
+                },
+                "remote_task_metadata": {
+                    "type": "object",
+                    "description": "Optional remote task metadata, such as repository or pull request identifiers"
+                },
+                "poll_started_at": {
+                    "type": "integer",
+                    "description": "Optional remote poll start timestamp in milliseconds since epoch"
                 }
             },
             "required": ["subject", "description"]
@@ -979,7 +1092,56 @@ impl Tool for TaskCreateTool {
                     .collect()
             })
             .unwrap_or_default();
-        let has_options = kind.is_some() || parent_id.is_some() || !depends_on.is_empty();
+        let tool_use_id = input
+            .get("tool_use_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let agent_id = input
+            .get("agent_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let supervisor_id = input
+            .get("supervisor_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let isolation = input
+            .get("isolation")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let worktree_path = input
+            .get("worktree_path")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let worktree_branch = input
+            .get("worktree_branch")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let remote_task_type = input
+            .get("remote_task_type")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let remote_session_id = input
+            .get("remote_session_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let remote_task_metadata = input
+            .get("remote_task_metadata")
+            .filter(|v| v.is_object())
+            .cloned();
+        let poll_started_at = input.get("poll_started_at").and_then(|v| v.as_i64());
+        let has_options = kind.is_some()
+            || parent_id.is_some()
+            || !depends_on.is_empty()
+            || tool_use_id.is_some()
+            || agent_id.is_some()
+            || supervisor_id.is_some()
+            || isolation.is_some()
+            || worktree_path.is_some()
+            || worktree_branch.is_some()
+            || remote_task_type.is_some()
+            || remote_session_id.is_some()
+            || remote_task_metadata.is_some()
+            || poll_started_at.is_some();
 
         let entry = if has_options {
             store().create_with_options(
@@ -989,6 +1151,16 @@ impl Tool for TaskCreateTool {
                     kind,
                     parent_id,
                     depends_on,
+                    tool_use_id,
+                    agent_id,
+                    supervisor_id,
+                    isolation,
+                    worktree_path,
+                    worktree_branch,
+                    remote_task_type,
+                    remote_session_id,
+                    remote_task_metadata,
+                    poll_started_at,
                     ..TaskCreateOptions::default()
                 },
             )
@@ -1370,11 +1542,16 @@ fn task_output_payload(entry: &TaskEntry, retrieval_status: TaskOutputRetrievalS
         "description": entry.description,
         "output": output.clone(),
         "subject": entry.subject,
+        "tool_use_id": entry.tool_use_id,
         "agent_id": entry.agent_id,
         "supervisor_id": entry.supervisor_id,
         "isolation": entry.isolation,
         "worktree_path": entry.worktree_path,
         "worktree_branch": entry.worktree_branch,
+        "remote_task_type": entry.remote_task_type,
+        "remote_session_id": entry.remote_session_id,
+        "remote_task_metadata": entry.remote_task_metadata,
+        "poll_started_at": entry.poll_started_at,
         "output_summary": entry.output_summary,
         "output_bytes": entry.output_bytes,
         "output_truncated": entry.output_truncated,
@@ -1386,11 +1563,16 @@ fn task_output_payload(entry: &TaskEntry, retrieval_status: TaskOutputRetrievalS
         // Legacy flat fields remain for existing callers.
         "task_id": entry.id,
         "subject": entry.subject,
+        "tool_use_id": entry.tool_use_id,
         "agent_id": entry.agent_id,
         "supervisor_id": entry.supervisor_id,
         "isolation": entry.isolation,
         "worktree_path": entry.worktree_path,
         "worktree_branch": entry.worktree_branch,
+        "remote_task_type": entry.remote_task_type,
+        "remote_session_id": entry.remote_session_id,
+        "remote_task_metadata": entry.remote_task_metadata,
+        "poll_started_at": entry.poll_started_at,
         "output": output,
         "output_summary": entry.output_summary,
         "output_bytes": entry.output_bytes,
@@ -1757,6 +1939,48 @@ mod tests {
     }
 
     #[test]
+    fn test_remote_task_metadata_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path());
+        let task = store.create_with_options(
+            "remote review",
+            "poll remote session",
+            TaskCreateOptions {
+                kind: Some("remote-agent".to_string()),
+                tool_use_id: Some("toolu_123".to_string()),
+                remote_task_type: Some("remote_agent".to_string()),
+                remote_session_id: Some("session-123".to_string()),
+                remote_task_metadata: Some(json!({
+                    "owner": "acme",
+                    "repo": "widget",
+                    "prNumber": 42
+                })),
+                poll_started_at: Some(1_714_000_000_000),
+                ..TaskCreateOptions::default()
+            },
+        );
+
+        assert_eq!(task.kind, "remote_agent");
+        assert_eq!(task.tool_use_id.as_deref(), Some("toolu_123"));
+        assert_eq!(task.remote_task_type.as_deref(), Some("remote-agent"));
+        assert_eq!(task.remote_session_id.as_deref(), Some("session-123"));
+        assert_eq!(task.remote_task_metadata.as_ref().unwrap()["prNumber"], 42);
+        assert_eq!(task.poll_started_at, Some(1_714_000_000_000));
+
+        let restarted = TaskStore::with_dir(tmp.path());
+        let restored = restarted.get(&task.id).unwrap();
+        assert_eq!(restored.kind, "remote_agent");
+        assert_eq!(restored.tool_use_id.as_deref(), Some("toolu_123"));
+        assert_eq!(restored.remote_task_type.as_deref(), Some("remote-agent"));
+        assert_eq!(restored.remote_session_id.as_deref(), Some("session-123"));
+        assert_eq!(
+            restored.remote_task_metadata.as_ref().unwrap()["repo"],
+            "widget"
+        );
+        assert_eq!(restored.poll_started_at, Some(1_714_000_000_000));
+    }
+
+    #[test]
     fn test_task_store_not_found() {
         let (_tmp, store) = temp_store();
         assert!(store.get("nonexistent").is_none());
@@ -1823,6 +2047,27 @@ mod tests {
     }
 
     #[test]
+    fn test_remote_task_type_aliases_canonicalize_to_upstream_values() {
+        assert_eq!(
+            normalize_remote_task_type(Some("remote_agent".to_string())).as_deref(),
+            Some("remote-agent")
+        );
+        assert_eq!(
+            normalize_remote_task_type(Some("autofix_pr".to_string())).as_deref(),
+            Some("autofix-pr")
+        );
+        assert_eq!(
+            normalize_remote_task_type(Some("background-pr".to_string())).as_deref(),
+            Some("background-pr")
+        );
+        assert_eq!(
+            normalize_remote_task_type(Some("custom-remote".to_string())).as_deref(),
+            Some("custom-remote")
+        );
+        assert_eq!(normalize_remote_task_type(Some(" ".to_string())), None);
+    }
+
+    #[test]
     fn test_task_store_persists_canonicalized_task_kinds() {
         let tmp = tempfile::tempdir().unwrap();
         let store = TaskStore::with_dir(tmp.path());
@@ -1849,6 +2094,39 @@ mod tests {
         let restarted = TaskStore::with_dir(tmp.path());
         assert_eq!(restarted.get(&shell.id).unwrap().kind, "local_bash");
         assert_eq!(restarted.get(&workflow.id).unwrap().kind, "local_workflow");
+    }
+
+    #[test]
+    fn test_task_create_schema_exposes_supervisor_metadata_fields() {
+        let schema = TaskCreateTool.input_json_schema();
+        let props = &schema["properties"];
+        for field in [
+            "tool_use_id",
+            "agent_id",
+            "supervisor_id",
+            "remote_task_type",
+            "remote_session_id",
+            "remote_task_metadata",
+            "poll_started_at",
+        ] {
+            assert!(props.get(field).is_some(), "schema should expose {field}");
+        }
+        let remote_types: Vec<&str> = props["remote_task_type"]["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            remote_types,
+            vec![
+                "remote-agent",
+                "ultraplan",
+                "ultrareview",
+                "autofix-pr",
+                "background-pr",
+            ]
+        );
     }
 
     #[test]
@@ -2025,6 +2303,16 @@ mod tests {
             "updated_at": entry.updated_at,
             "parent_id": entry.parent_id,
             "depends_on": entry.depends_on,
+            "tool_use_id": entry.tool_use_id,
+            "agent_id": entry.agent_id,
+            "supervisor_id": entry.supervisor_id,
+            "isolation": entry.isolation,
+            "worktree_path": entry.worktree_path,
+            "worktree_branch": entry.worktree_branch,
+            "remote_task_type": entry.remote_task_type,
+            "remote_session_id": entry.remote_session_id,
+            "remote_task_metadata": entry.remote_task_metadata,
+            "poll_started_at": entry.poll_started_at,
             "blocked_dependencies": blocked_dependencies,
             "output_summary": entry.output_summary,
             "output_bytes": entry.output_bytes,
