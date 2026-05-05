@@ -39,9 +39,9 @@ use crate::services::tool_use_summary::{self, ToolInfo};
 
 use super::deps::{ModelCallParams, QueryDeps};
 use super::loop_helpers::{
-    execute_tool_calls, handle_max_output_tokens, handle_prompt_too_long, make_abort_message,
-    make_error_message, make_tool_result_user_message, make_user_message, MaxTokensRecovery,
-    PromptRecovery,
+    execute_tool_calls, fallback_model_for_stream_start_error, handle_max_output_tokens,
+    handle_prompt_too_long, is_prompt_too_long_error, make_abort_message, make_error_message,
+    make_tool_result_user_message, make_user_message, MaxTokensRecovery, PromptRecovery,
 };
 use super::stop_hooks::{self, StopHookResult};
 use super::token_budget::check_token_budget;
@@ -62,6 +62,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
         let task_budget = params.task_budget.as_ref().map(|b| b.total);
         let query_source = params.query_source;
         let skip_cache_write = params.skip_cache_write;
+        let fallback_model = params.fallback_model;
         let mut budget_tracker = BudgetTracker::new();
         let mut cumulative_usage = Usage::default();
 
@@ -222,6 +223,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 .model
                 .clone()
                 .unwrap_or_else(|| deps.get_app_state().main_loop_model.clone());
+            let mut effective_model = model_for_langfuse.clone();
             let provider_for_langfuse = deps
                 .langfuse_provider_name()
                 .unwrap_or_else(|| "unknown".to_string());
@@ -235,7 +237,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     trace,
                     &model_for_langfuse,
                     &provider_for_langfuse,
-                    generation_input,
+                    generation_input.clone(),
                 )
             });
 
@@ -252,9 +254,80 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     None,
                 );
             }
-            let model_call_start = std::time::Instant::now();
+            let mut model_call_start = std::time::Instant::now();
 
-            let stream_result = deps.call_model_streaming(call_params).await;
+            let mut stream_result = deps.call_model_streaming(call_params.clone()).await;
+            if let Err(ref e) = stream_result {
+                let error_str = e.to_string();
+                if !is_prompt_too_long_error(&error_str) {
+                    if let Some(fallback) = fallback_model_for_stream_start_error(
+                        fallback_model.as_deref(),
+                        &effective_model,
+                        &error_str,
+                    ) {
+                        crate::services::langfuse::finish_generation_span(
+                            generation_span.take(),
+                            None,
+                            None,
+                            None,
+                            Some(&error_str),
+                        );
+                        {
+                            use crate::observability::{
+                                AuditLevel, EventKind, Outcome, Stage,
+                            };
+                            req_audit_ctx.emit(
+                                EventKind::ModelRequestError,
+                                Stage::ModelCall,
+                                AuditLevel::Warn,
+                                Outcome::Failed,
+                                Some(model_call_start.elapsed().as_millis() as u64),
+                                Some(serde_json::json!({
+                                    "error": error_str,
+                                    "fallback_model": &fallback,
+                                })),
+                            );
+                        }
+
+                        warn!(
+                            error = %error_str,
+                            from_model = %effective_model,
+                            to_model = %fallback,
+                            "model call failed before streaming; retrying with fallback model"
+                        );
+
+                        effective_model = fallback.clone();
+                        let mut fallback_params = call_params.clone();
+                        fallback_params.model = Some(fallback);
+                        generation_span = deps.langfuse_trace().as_ref().and_then(|trace| {
+                            crate::services::langfuse::create_generation_span(
+                                trace,
+                                &effective_model,
+                                &provider_for_langfuse,
+                                generation_input.clone(),
+                            )
+                        });
+                        yield QueryYield::RequestStart(RequestStartEvent);
+                        {
+                            use crate::observability::{
+                                AuditLevel, EventKind, Outcome, Stage,
+                            };
+                            req_audit_ctx.emit(
+                                EventKind::ModelRequestStart,
+                                Stage::ModelCall,
+                                AuditLevel::Info,
+                                Outcome::Started,
+                                None,
+                                Some(serde_json::json!({
+                                    "fallback_model": &effective_model,
+                                })),
+                            );
+                        }
+                        model_call_start = std::time::Instant::now();
+                        stream_result = deps.call_model_streaming(fallback_params).await;
+                    }
+                }
+            }
             let mut event_stream = match stream_result {
                 Ok(s) => s,
                 Err(e) => {
@@ -267,7 +340,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                         Some(&error_str),
                     );
 
-                    if error_str.contains("prompt_too_long") || error_str.contains("prompt is too long") {
+                    if is_prompt_too_long_error(&error_str) {
                         let terminal = handle_prompt_too_long(
                             &deps,
                             &mut state,
@@ -352,7 +425,6 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 break;
             }
 
-            let effective_model = deps.get_app_state().main_loop_model;
             let assistant_message = accumulator.build(&effective_model);
             let ttft_ms = first_response_at
                 .map(|instant| instant.duration_since(model_call_start).as_millis() as u64);

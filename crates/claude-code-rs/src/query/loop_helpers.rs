@@ -39,6 +39,37 @@ pub(crate) enum MaxTokensRecovery {
     Terminal,
 }
 
+pub(crate) fn is_prompt_too_long_error(error: &str) -> bool {
+    error.contains("prompt_too_long") || error.contains("prompt is too long")
+}
+
+/// Return the configured fallback model when a stream-start failure is a
+/// capacity-style failure and the fallback differs from the attempted model.
+pub(crate) fn fallback_model_for_stream_start_error(
+    fallback_model: Option<&str>,
+    attempted_model: &str,
+    error: &str,
+) -> Option<String> {
+    if !is_recoverable_model_capacity_error(error) {
+        return None;
+    }
+
+    let fallback = fallback_model?.trim();
+    if fallback.is_empty() || fallback == attempted_model {
+        return None;
+    }
+
+    Some(fallback.to_string())
+}
+
+fn is_recoverable_model_capacity_error(error: &str) -> bool {
+    let lower = error.to_ascii_lowercase();
+    lower.contains("529")
+        || lower.contains("overloaded")
+        || lower.contains("high demand")
+        || lower.contains("capacity")
+}
+
 /// Handle prompt_too_long error recovery.
 ///
 /// Three-step recovery:

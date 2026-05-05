@@ -438,6 +438,47 @@ async fn test_prompt_too_long_reactive_compact_retries_model_call() {
 }
 
 #[tokio::test]
+async fn test_fallback_model_retries_stream_start_capacity_error() {
+    let deps = Arc::new(MockDeps::from_steps(vec![
+        MockStreamStep::Error("529 overloaded: high demand".to_string()),
+        MockStreamStep::Response(make_text_response("Recovered on fallback")),
+    ]));
+
+    let mut params = make_query_params(vec![make_user_message_for_test("Use the fallback")]);
+    params.fallback_model = Some("claude-fallback".to_string());
+
+    let stream = query(params, deps.clone());
+    let items: Vec<QueryYield> = stream.collect().await;
+
+    assert_eq!(
+        request_start_count(&items),
+        2,
+        "fallback should emit a second model request start"
+    );
+
+    let recorded = deps.recorded_params();
+    let primary_model = AppState::default().main_loop_model;
+    assert_eq!(
+        recorded.len(),
+        2,
+        "primary failure should be retried once with fallback"
+    );
+    assert_eq!(recorded[0].model.as_deref(), Some(primary_model.as_str()));
+    assert_eq!(recorded[1].model.as_deref(), Some("claude-fallback"));
+    assert!(
+        items.iter().any(|item| matches!(
+            item,
+            QueryYield::Message(Message::Assistant(msg))
+                if msg.content.iter().any(|block| matches!(
+                    block,
+                    ContentBlock::Text { text } if text.contains("Recovered on fallback")
+                ))
+        )),
+        "fallback response should be yielded as the assistant message"
+    );
+}
+
+#[tokio::test]
 async fn test_max_tokens_recovery_escalates_next_request_limit() {
     let deps = Arc::new(MockDeps::new(vec![
         make_text_response_with_stop_and_output_tokens("Partial answer", "max_tokens", 50),
