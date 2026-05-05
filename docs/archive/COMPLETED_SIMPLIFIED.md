@@ -97,11 +97,11 @@
 
 ---
 
-### 1.4 FileReadTool — 54% 缩减 (PDF/图片/ipynb 已补全)
+### 1.4 FileReadTool — 已补齐主要 Full Build 差距 (原 54% 缩减)
 
 | | TypeScript | Rust |
 |---|---|---|
-| 行数 | 1,602 (5 文件) | 743 (1 文件) |
+| 行数 | 1,602 (5 文件) | 1,214 (1 文件) |
 | 文件 | — | `tools/file_read.rs` |
 
 **Rust 保留：**
@@ -111,11 +111,12 @@
 - ✅ **图片文件** (.png/.jpg/.gif/.bmp/.webp → base64 编码, .svg → 文本读取)
 - ✅ **PDF 文件** (pages 参数, 通过 `pdftotext` 子进程提取文本)
 - ✅ **Jupyter notebook** (.ipynb JSON 解析, cell 类型/源码/输出提取)
+- ✅ **符号链接解析** (canonicalize + `resolved_path` / `symlink_resolved` 元数据)
+- ✅ **大文件智能分页** (默认窗口 + `next_offset` 续读提示)
+- ✅ **文件编码检测** (UTF-8/UTF-8 BOM、UTF-16 LE/BE BOM、UTF-16 无 BOM 启发式、UTF-8 lossy fallback)
 
 **TS 独有（未移植）：**
-- 符号链接解析
-- 大文件智能分页策略
-- 文件编码检测
+- （主要读取路径已对齐；后续差异按 `IMPLEMENTATION_GAPS.md` 新条目登记）
 
 ---
 
@@ -139,47 +140,48 @@
 
 ---
 
-### 1.6 FileWriteTool — 82% 缩减
+### 1.6 FileWriteTool — 已补齐 Full Build 差距 (原 82% 缩减)
 
 | | TypeScript | Rust |
 |---|---|---|
-| 行数 | 856 (3 文件) | 157 (1 文件) |
-| 文件 | — | `tools/file_write.rs` |
+| 行数 | 856 (3 文件) | 429 + 683 (2 文件) |
+| 文件 | — | `tools/file_write.rs` + `tools/fs/safe_write.rs` |
 
 **Rust 保留：**
 - 路径验证 + 内容写入
 - 父目录自动创建
+- ✅ 安全文件写入 (先写临时 → rename)
+- ✅ 文件备份/恢复
+- ✅ 二进制内容检查
+- ✅ 文件大小限制
+- ✅ 权限保持
 
 **TS 独有（未移植）：**
-- 安全文件写入 (先写临时 → rename)
-- 文件备份/恢复
-- 二进制内容检查
-- 文件大小限制
-- 权限保持
+- （主要写入安全路径已对齐；后续差异按 `IMPLEMENTATION_GAPS.md` 新条目登记）
 
 ---
 
 ## 2. A 级简化 (50-80% 缩减)
 
-### 2.1 SkillTool — 69% 缩减
+### 2.1 SkillTool — 核心已补齐 (原 69% 缩减)
 
 | | TypeScript | Rust |
 |---|---|---|
-| 行数 | 1,477 (4 文件) | 454 (1 文件) |
-| 文件 | — | `tools/skill.rs` |
+| 行数 | 1,477 (4 文件) | 454 + 2,125 (4 文件) |
+| 文件 | — | `tools/skill.rs` + `crates/cc-skills/src/{lib,loader,bundled}.rs` |
 
 **Rust 保留：**
 - 技能查找 (registry 查询)
 - 参数替换 ($ARGUMENTS, ${NAME})
 - new_messages 注入 (inline 上下文)
 - fork 上下文 fallback
+- ✅ 技能依赖解析
+- ✅ 技能热重载 (`/skills reload`)
+- ✅ 技能版本管理 / 冲突检测 / app 兼容版本
+- ✅ frontmatter 诊断与关键字段校验
 
 **TS 独有（未移植）：**
-- MCP skill builder (mcpSkillBuilders.ts)
-- 技能依赖解析
-- 技能热重载
-- 技能版本管理
-- 复杂 frontmatter 验证
+- MCP skill builder (如后续需要，按插件/脚手架能力单独立项)
 
 ---
 
@@ -243,11 +245,11 @@
 
 ---
 
-### 2.5 LSP 工具 + 服务 — 56% 缩减
+### 2.5 LSP 工具 + 服务 — 已补齐 Full Build 核心差距 (原 56% 缩减)
 
 | | TypeScript | Rust |
 |---|---|---|
-| 行数 | 2,005 (6 文件) | 877 + 1,200 (5 文件) |
+| 行数 | 2,005 (6 文件) | 752 + 3,024 (5 文件) |
 | 文件 | — | `tools/lsp.rs` + `lsp_service/{mod,transport,client,conversions}.rs` |
 
 **Rust 保留：**
@@ -257,12 +259,12 @@
 - `lsp-types` 0.97 协议类型 → 内部类型转换
 - 6 种语言服务器支持（rust-analyzer, typescript-language-server, pylsp, gopls, clangd, jdtls）
 - 按需懒启动 + 崩溃自动重启
+- ✅ 增量文档同步 (`textDocument/didChange`)
+- ✅ 被动诊断反馈 (`publishDiagnostics`)
+- ✅ 补全建议 (`textDocument/completion`)
 
 **TS 独有（未移植）：**
-- 增量文档同步 (didChange)
-- 被动诊断反馈 (publishDiagnostics)
-- 补全建议
-- 插件集成 LSP 配置
+- 插件侧 LSP 配置整合如后续需要，按插件配置入口单独登记
 
 ---
 
@@ -373,13 +375,13 @@
 | UI (全部) | 54,049 | 3,165 | 94% | S (框架) |
 | permissions/ | 9,409 | 959 | 90% | S |
 | FileEditTool | 1,812 | 386 | 79% | A (fuzzy 已补全) |
-| FileReadTool | 1,602 | 743 | 54% | A (PDF/图片/ipynb 已补全) |
-| FileWriteTool | 856 | 157 | 82% | S |
+| FileReadTool | 1,602 | 1,214 | 24% | Full-build 差距已补齐 |
+| FileWriteTool | 856 | 1,112 | +30% | Full-build 差距已补齐 |
 | GrepTool | 795 | 371 | 53% | A (rg+multiline 已补全) |
-| SkillTool | 1,477 | 454 | 69% | A |
+| SkillTool | 1,477 | 2,579 | +75% | 核心已补齐 |
 | TaskTools | 1,561 | 648 | 58% | A |
 | ToolSearchTool | 593 | 254 | 57% | A |
-| LSP | 2,005 | 1,170 | 42% | B |
+| LSP | 2,005 | 3,776 | +88% | Full-build 核心差距已补齐 |
 | WebFetchTool | 1,131 | 553 | 51% | A |
 | PlanMode | 934 | 432 | 54% | A |
 
@@ -400,12 +402,12 @@
 1. ~~**FileEditTool fuzzy 匹配**~~ ✅ 已补全 — 230→386 行, `similar::TextDiff` 滑动窗口
 2. ~~**BashTool 输出截断**~~ ✅ 已补全 — 199→430 行, head+tail 行级截断
 3. ~~**FileReadTool PDF/图片**~~ ✅ 已补全 — 236→743 行, 图片 base64 + PDF pdftotext + ipynb JSON
+   - 2026-05-05 继续补齐 symlink 解析、编码检测、大文件分页 — 743→1,214 行
 4. ~~**GrepTool ripgrep 调用**~~ ✅ 已补全 — 185→371 行, rg 子进程 + multiline + offset
 5. ~~**AgentTool worktree 隔离**~~ ✅ 已补全 — 322→789 行, 临时 worktree + 变更检测 + 自动清理
 
 **剩余补全建议 (低优先级)：**
 
-1. **FileWriteTool** — 安全写入 (先写临时 → rename)、备份
-2. **ToolSearchTool** — TF-IDF 排名、全文索引
-3. **API 提供商** — Bedrock/Vertex 填充
-4. **认证** — OAuth 登录流程
+1. **ToolSearchTool** — TF-IDF 排名、全文索引
+2. **API 提供商** — Bedrock/Vertex 剩余 provider parity
+3. **认证** — OAuth 登录流程

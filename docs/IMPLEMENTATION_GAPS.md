@@ -13,44 +13,62 @@
 
 | 范围 | 当前状态 | 说明 |
 |------|----------|------|
-| API providers | 未完成 (单独立项) | Bedrock、Vertex 仍未实现；由独立 issue 追踪 |
+| API providers | 部分完成 (单独立项) | Bedrock / Vertex 已有 provider adapter 与基础测试；Bedrock 仍缺原生 AWS EventStream，Vertex 仍缺 direct service-account JWT exchange。补齐或裁剪决策见 `architecture/mvp-optimization-plans/MVP-001-api-providers-plan.md` |
 | Team Memory 客户端同步 | 未实现 | 服务端代理已落地 (`src/daemon/team_memory_proxy.rs` + `ui/team-memory-server/`)；前端尚未调用，计划见 `superpowers/plans/2026-04-11-team-memory-sync.md` |
 
 > 以下项在历史文档中曾标注为 stub，经代码核对已在 `rust-lite` 分支中收口，保留在本节做历史追踪：
 >
-> - **IPC `clear_messages`** — 已由 `QueryEngine::clear_messages()` (`src/engine/lifecycle/mod.rs:245`) 实现，`/clear` 路径在 `src/ipc/ingress.rs:332-339` 调用 engine 清空并回传 `conversation_replaced`。
-> - **权限 Phase 2 Hook 拦截** — `src/tools/execution/pipeline.rs:124-211` 先跑 `run_pre_tool_hooks`，再把结果折进 `has_permissions_to_use_tool_with_hook` (`src/permissions/decision.rs:259-362`)，hook 的 deny/ask/allow 会按规范顺序生效。
+> - **IPC `clear_messages`** — 已由 `QueryEngine::clear_messages()` (`crates/claude-code-rs/src/engine/lifecycle/mod.rs:245`) 实现，`/clear` 路径在 `crates/claude-code-rs/src/ipc/ingress.rs:332-339` 调用 engine 清空并回传 `conversation_replaced`。
+> - **权限 Phase 2 Hook 拦截** — `crates/claude-code-rs/src/tools/execution/pipeline.rs:124-211` 先跑 `run_pre_tool_hooks`，再把结果折进 `has_permissions_to_use_tool_with_hook` (`crates/claude-code-rs/src/permissions/decision.rs:259-362`)，hook 的 deny/ask/allow 会按规范顺序生效。
 > - **Vim 状态机** — `ui/src/vim/state-machine.ts` 已覆盖 normal/insert/visual 三模式、导航 (h/l/0/$/^/w/b/e)、operator (d/y/c)、单键 (x/X/p/u/D/C) 与 visual 选区操作；KNOWN_ISSUES 中目前无相关 open 项。
 > - **Agent Teams 用户面** — `/team` 斜杠命令 + `TeamSpawn` 工具 + Team Dashboard 已落地，详见 §1.1。
 
 ### 1.1 Agent Teams 收口状态
 
-rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全量**"：
+rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全量**"（2026-05-05 核验通过）：
 
-- **闭环核心** — `src/teams/` 的 10 个子模块 (types/protocol/mailbox/context/identity/in_process/helpers/constants/runner/backend) 驱动同进程多代理 mailbox，teammate 作为 tokio 任务在 `task_local!` 身份隔离下运行。
-- **工具层** — `SendMessage` 工具处理消息路由和协议消息；`TeamSpawn` 工具 (`src/tools/team_spawn.rs`) 让模型从对话里直接拉起新 teammate，必要时自动创建 session 绑定的团队。
-- **REPL 层** — `/team` 斜杠命令家族 (`src/commands/team_cmd.rs`) 覆盖 `create / list / status / spawn / send / kill / leave / delete`。
-- **UI 层** — `ui/src/components/TeamPanel.tsx` 订阅 `BackendMessage::TeamEvent`，展示活跃 team、成员在线状态、未读计数、最近消息。
-- **启用条件** — `is_agent_teams_active(app_state)` 同时接受 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var 与 `AppState::team_context` 存在两种启用方式，后者让 `/team create` 或 `TeamSpawn` 调用在会话内就能解锁 team 功能。
+- **闭环核心** — `crates/claude-code-rs/src/teams/` 的 10 个子模块 (types/protocol/mailbox/context/identity/in_process/helpers/constants/runner/backend) 驱动同进程多代理 mailbox，teammate 作为 tokio 任务在 `task_local!` 身份隔离下运行。`runner.rs` 顶部仍有 `#![allow(unused)]`，存在未收束的死代码/符号（见 TECH_DEBT）。
+- **工具层** — `SendMessage` 工具 (`crates/claude-code-rs/src/tools/send_message.rs:67`) `is_enabled()` 总返回 `true`，call 时检查 team_context 做优雅拒绝；`TeamSpawn` 工具 (`crates/claude-code-rs/src/tools/team_spawn.rs:150`) 让模型从对话里直接拉起新 teammate，必要时自动创建 session 绑定的团队。
+- **REPL 层** — `/team` 斜杠命令家族 (`crates/claude-code-rs/src/commands/team_cmd.rs`) 覆盖 `create / list / status / spawn / send / kill / leave / delete` 8 个子命令。
+- **UI 层** — `ui/src/components/TeamPanel.tsx` 订阅 `BackendMessage::TeamEvent`（通过 `protocol.ts:674` 的 `team_event` 类型），展示活跃 team、成员在线状态、未读计数、最近消息。
+- **IPC 层** — `crates/claude-code-rs/src/ipc/agent_handlers.rs:132` 的 `build_team_status_events()` 读盘后发出 `TeamEvent::StatusSnapshot`；`crates/claude-code-rs/src/ipc/ingress.rs:420-431` 在 `/team` 命令执行后同步 `team_context` 并推送状态快照。
+- **启用条件** — `is_agent_teams_active(app_state)` (`crates/claude-code-rs/src/teams/mod.rs:87`) 同时接受 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var 与 `AppState::team_context` 存在两种启用方式，后者让 `/team create` 或 `TeamSpawn` 调用在会话内就能解锁 team 功能。
 
-**MVP-005 后端策略 (2026-04-28)**：tmux / iTerm2 终端 pane 后端正式登记为 §7 Intentional 裁剪。cc-rust 只支持 in-process backend；`backend::PaneBackend` trait 作为上游对齐审查边界保留，但 `backend::SUPPORTED_BACKENDS` 只包含 `in-process`，所有 runtime spawn 路径都通过 `InProcessBackend` 执行。
+**MVP-005 后端策略 (2026-04-28)**：tmux / iTerm2 终端 pane 后端正式登记为 §7 Intentional 裁剪。cc-rust 只支持 in-process backend；`backend::PaneBackend` trait 作为上游对齐审查边界保留，但 `backend::SUPPORTED_BACKENDS` (`crates/claude-code-rs/src/teams/backend.rs:23`) 只包含 `InProcess`，所有 runtime spawn 路径都通过 `InProcessBackend` 执行。
 
 ## 2. 全量构建待补齐 TODO（原「已完成但仍为缩减实现」）
 
 > **状态反转**：下表条目**不再**被视为"已接受的 Lite 缩减"。它们是全量构建阶段需要按上游对齐的 TODO。触及以下模块时，默认按上游完整行为补齐，而不是"保持现状"。详细的原版代码路径/行数对照见 [`archive/COMPLETED_SIMPLIFIED.md`](archive/COMPLETED_SIMPLIFIED.md)。
 
+### 2.1 已补齐或基本补齐（2026-05-05 代码核对）
+
+| 模块 | 当前结论 | 证据 / 备注 |
+|------|----------|-------------|
+| FileWriteTool | 已补齐 | `crates/claude-code-rs/src/tools/fs/safe_write.rs` 已覆盖临时文件 + rename、恢复备份、大小限制、权限保持、二进制拒绝；`crates/claude-code-rs/src/tools/fs/file_write.rs` 返回 safe_write 诊断 |
+| FileReadTool | 已补齐 | `crates/claude-code-rs/src/tools/fs/file_read.rs` 已覆盖 symlink canonicalize/metadata、UTF-8/UTF-16/BOM 检测、UTF-8 lossy fallback、大文件默认分页与 `next_offset` |
+| SkillTool | 核心已补齐 | `crates/cc-skills/src/lib.rs` / `loader.rs` 已覆盖依赖解析、版本冲突、兼容版本、hot reload、frontmatter 诊断；若后续需要上游 MCP skill builder，可按插件/脚手架能力单独立项 |
+| LSP | 已补齐 | `crates/claude-code-rs/src/lsp_service/client.rs` 已实现 `didChange` ranged updates 与 `publishDiagnostics` 被动接收；`crates/claude-code-rs/src/tools/lsp.rs` / `crates/claude-code-rs/src/lsp_service/mod.rs` 已提供 completion 与 diagnostics snapshot |
+
+### 2.2 仍需补齐的工具 parity
+
 | 模块 | 待补齐的行为（参考上游） |
 |------|----------|
 | BashTool | PowerShell 分支、sandbox、进程组管理、危险命令拒绝列表（Stage 3c.2 已落地；Bash/PowerShell 执行前硬拦，BashTool 内部仍保留 Ask 级子命令检测）、heredoc 校验、Git 操作跟踪 |
 | FileEditTool | 冲突检测、文件锁检查、编辑历史、自动缩进修正；ratatui diff 预览/更新消息 renderer 已补齐，live transcript 接线仍依赖 backend file-edit event data |
-| FileWriteTool | 临时文件后 rename 的安全写入、备份/恢复、大小限制、权限保持、二进制内容检查 |
-| FileReadTool | 符号链接解析、大文件智能分页、文件编码检测 |
-| SkillTool | 依赖解析、热重载、版本管理、完整 frontmatter 校验、MCP skill builder |
 | TaskTools | 远程/多类型后台任务 supervisor parity、超时控制；磁盘持久化、基础依赖字段、输出保留、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
 | PlanMode | auto-mode/classifier gate、团队审批流、计划持久化、实现关联跟踪 |
-| LSP | `didChange` 增量同步、`publishDiagnostics` 被动反馈、补全建议、插件侧配置整合 |
 | WebFetch | JS 渲染、Cookie 管理、代理支持、重定向限制、Content-Type 智能处理 |
-| AgentTool | 团队上下文集成、spawnMultiAgent、工具白名单过滤、background 模式完整化、工具定义去重 |
+| AgentTool | 团队上下文集成、spawnMultiAgent、工具白名单过滤、工具定义去重；background worktree/权限回调/取消已由 `crates/claude-code-rs/src/engine/agent/supervisor.rs` 收口 |
+
+### 2.3 推荐执行顺序（逐步领取）
+
+1. **BashTool**：先补 heredoc 校验、Git 操作跟踪、进程组/取消语义，再复核 PowerShell 分支与 sandbox 的上游差异。
+2. **FileEditTool**：补冲突检测与文件锁检查；随后接编辑历史和自动缩进修正，并用 backend file-edit event data 验证 TUI transcript。
+3. **AgentTool**：补团队上下文注入、工具白名单过滤、工具定义去重；再评估 `spawnMultiAgent` 是否作为独立工具或 AgentTool 扩展。
+4. **TaskTools**：在现有持久化和取消基础上补超时控制、远程/多类型后台任务 supervisor parity。
+5. **PlanMode**：补 auto-mode/classifier gate、团队审批流、计划持久化与实现关联追踪。
+6. **WebFetch**：按 `architecture/mvp-optimization-plans/MVP-009-web-fetch-browser-grade-plan.md` 逐步补 JS 渲染、Cookie jar、代理与重定向限制。
+7. **收尾复核**：每完成一项运行对应单元/e2e，迁移归档到 `COMPLETED_FULL.md`，并从本节删除对应 TODO。
 
 补齐流程：
 1. 读上游实现（`F:\AIclassmanager\cc\src\tools\<name>\**` 或 `claude-code-bun` 同名模块）。
@@ -68,9 +86,8 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 |------|------|------|
 | UI resize 回流 | Open | 终端缩放后内容不会可靠重排 |
 | 窄终端欢迎页布局 | Open | Tips 文本截断、ASCII logo 破碎 |
-| Background agent + worktree | Open（设计限制） | `run_in_background` 与 `isolation: "worktree"` 不能同时生效 |
-| Background agent 权限回调 | Open（设计限制） | 子引擎无 `permission_callback`，默认模式下需 Ask 的工具会被直接拒绝 |
-| Background agent 取消 | Open（设计限制） | 未保存 `JoinHandle`，用户 abort/退出时后台代理不会被统一取消 |
+
+> Background agent + worktree、权限回调、取消/退出清理已由 `crates/claude-code-rs/src/engine/agent/supervisor.rs` 收口；历史 caveat 不再作为 Open 项保留。如后续发现回归，再写入本节。
 
 ## 4. 仍在进行或仅有方案文档的工作
 

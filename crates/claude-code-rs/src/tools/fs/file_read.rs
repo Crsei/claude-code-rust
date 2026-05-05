@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -15,7 +15,34 @@ use crate::types::tool::{
 /// Corresponds to TypeScript: tools/FileReadTool
 pub struct FileReadTool;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReadTarget {
+    original_path: String,
+    read_path: PathBuf,
+    resolved_path: String,
+    symlink_resolved: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DecodedText {
+    content: String,
+    encoding: &'static str,
+    lossy: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FormattedRead {
+    output: String,
+    total_lines: usize,
+    start_line: usize,
+    end_line: usize,
+    next_offset: Option<usize>,
+    line_limited: bool,
+}
+
 impl FileReadTool {
+    const DEFAULT_TEXT_LINE_LIMIT: usize = 2000;
+
     pub fn new() -> Self {
         FileReadTool
     }
@@ -45,6 +72,36 @@ impl FileReadTool {
     fn is_binary(content: &[u8]) -> bool {
         let check_len = content.len().min(8192);
         content[..check_len].contains(&0)
+    }
+
+    async fn resolve_read_target(file_path: &str) -> std::io::Result<ReadTarget> {
+        let path = Path::new(file_path);
+        let symlink_metadata = tokio::fs::symlink_metadata(path).await?;
+        let symlink_resolved = symlink_metadata.file_type().is_symlink();
+        let read_path = tokio::fs::canonicalize(path).await?;
+        let resolved_path = read_path.to_string_lossy().to_string();
+
+        Ok(ReadTarget {
+            original_path: file_path.to_string(),
+            read_path,
+            resolved_path,
+            symlink_resolved,
+        })
+    }
+
+    fn attach_read_target(result: &mut ToolResult, target: &ReadTarget) {
+        if let Some(obj) = result.data.as_object_mut() {
+            obj.insert("file_path".to_string(), json!(target.original_path));
+            obj.insert("resolved_path".to_string(), json!(target.resolved_path));
+            obj.insert(
+                "symlink_resolved".to_string(),
+                json!(target.symlink_resolved),
+            );
+        }
+    }
+
+    fn target_matches(target: &ReadTarget, predicate: fn(&Path) -> bool) -> bool {
+        predicate(Path::new(&target.original_path)) || predicate(&target.read_path)
     }
 
     /// Check if the file is an image based on extension
@@ -98,12 +155,16 @@ impl FileReadTool {
 
         // SVG is text-based, return content directly
         if ext == "svg" {
-            let content = tokio::fs::read_to_string(file_path).await?;
+            let bytes = tokio::fs::read(file_path).await?;
+            let decoded = Self::decode_text_bytes(&bytes)?
+                .ok_or_else(|| anyhow::anyhow!("SVG file appears to be binary"))?;
             return Ok(ToolResult {
                 data: json!({
                     "type": "image",
                     "media_type": "image/svg+xml",
-                    "content": content,
+                    "content": decoded.content,
+                    "encoding": decoded.encoding,
+                    "encoding_lossy": decoded.lossy,
                     "file_path": file_path,
                 }),
                 new_messages: vec![],
@@ -126,6 +187,112 @@ impl FileReadTool {
             new_messages: vec![],
             ..Default::default()
         })
+    }
+
+    fn decode_text_bytes(bytes: &[u8]) -> Result<Option<DecodedText>> {
+        if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+            let content = std::str::from_utf8(&bytes[3..])?.to_string();
+            return Ok(Some(DecodedText {
+                content,
+                encoding: "utf-8-bom",
+                lossy: false,
+            }));
+        }
+
+        if bytes.starts_with(&[0xFF, 0xFE]) {
+            let content = Self::decode_utf16_bytes(&bytes[2..], true)?;
+            return Ok(Some(DecodedText {
+                content,
+                encoding: "utf-16le-bom",
+                lossy: false,
+            }));
+        }
+
+        if bytes.starts_with(&[0xFE, 0xFF]) {
+            let content = Self::decode_utf16_bytes(&bytes[2..], false)?;
+            return Ok(Some(DecodedText {
+                content,
+                encoding: "utf-16be-bom",
+                lossy: false,
+            }));
+        }
+
+        if let Some(little_endian) = Self::detect_utf16_without_bom(bytes) {
+            let content = Self::decode_utf16_bytes(bytes, little_endian)?;
+            return Ok(Some(DecodedText {
+                content,
+                encoding: if little_endian {
+                    "utf-16le"
+                } else {
+                    "utf-16be"
+                },
+                lossy: false,
+            }));
+        }
+
+        if Self::is_binary(bytes) {
+            return Ok(None);
+        }
+
+        match std::str::from_utf8(bytes) {
+            Ok(content) => Ok(Some(DecodedText {
+                content: content.to_string(),
+                encoding: "utf-8",
+                lossy: false,
+            })),
+            Err(_) => Ok(Some(DecodedText {
+                content: String::from_utf8_lossy(bytes).to_string(),
+                encoding: "utf-8-lossy",
+                lossy: true,
+            })),
+        }
+    }
+
+    fn detect_utf16_without_bom(bytes: &[u8]) -> Option<bool> {
+        let check_len = bytes.len().min(8192) & !1;
+        if check_len < 8 {
+            return None;
+        }
+
+        let sample = &bytes[..check_len];
+        let pairs = check_len / 2;
+        let even_nul = sample.iter().step_by(2).filter(|&&b| b == 0).count();
+        let odd_nul = sample
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .filter(|&&b| b == 0)
+            .count();
+
+        let even_ratio = even_nul as f32 / pairs as f32;
+        let odd_ratio = odd_nul as f32 / pairs as f32;
+
+        if odd_ratio > 0.30 && even_ratio < 0.05 {
+            Some(true)
+        } else if even_ratio > 0.30 && odd_ratio < 0.05 {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    fn decode_utf16_bytes(bytes: &[u8], little_endian: bool) -> Result<String> {
+        if bytes.len() % 2 != 0 {
+            return Err(anyhow::anyhow!("UTF-16 text has an odd number of bytes"));
+        }
+
+        let units: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|chunk| {
+                if little_endian {
+                    u16::from_le_bytes([chunk[0], chunk[1]])
+                } else {
+                    u16::from_be_bytes([chunk[0], chunk[1]])
+                }
+            })
+            .collect();
+
+        String::from_utf16(&units).map_err(|e| anyhow::anyhow!("Invalid UTF-16 text: {}", e))
     }
 
     /// Parse a pages parameter like "1-5", "3", "10-20" into (first_page, last_page)
@@ -354,6 +521,141 @@ impl FileReadTool {
 
         (result, total_lines)
     }
+
+    fn format_text_window(content: &str, offset: usize, limit: Option<usize>) -> FormattedRead {
+        let lines: Vec<&str> = content.lines().collect();
+        let total_lines = lines.len();
+        let start = if offset > 0 { offset - 1 } else { 0 };
+
+        if start >= total_lines {
+            return FormattedRead {
+                output: String::new(),
+                total_lines,
+                start_line: offset,
+                end_line: 0,
+                next_offset: None,
+                line_limited: false,
+            };
+        }
+
+        let window_limit = limit.unwrap_or(Self::DEFAULT_TEXT_LINE_LIMIT);
+        let end = start.saturating_add(window_limit).min(total_lines);
+        let mut output = String::new();
+
+        for (i, line) in lines[start..end].iter().enumerate() {
+            let line_num = start + i + 1;
+            output.push_str(&format!("{}\t{}\n", line_num, line));
+        }
+
+        let next_offset = if end < total_lines {
+            Some(end + 1)
+        } else {
+            None
+        };
+
+        FormattedRead {
+            output,
+            total_lines,
+            start_line: start + 1,
+            end_line: end,
+            next_offset,
+            line_limited: next_offset.is_some(),
+        }
+    }
+
+    async fn read_text(
+        target: &ReadTarget,
+        offset: Option<usize>,
+        limit: Option<usize>,
+        max_chars: usize,
+    ) -> Result<ToolResult> {
+        let bytes = tokio::fs::read(&target.read_path).await?;
+        let decoded = match Self::decode_text_bytes(&bytes)? {
+            Some(decoded) => decoded,
+            None => {
+                return Ok(ToolResult {
+                    data: json!({
+                        "error": "File appears to be binary. Cannot display binary file contents.",
+                        "file_path": target.original_path,
+                        "resolved_path": target.resolved_path,
+                        "symlink_resolved": target.symlink_resolved,
+                    }),
+                    new_messages: vec![],
+                    ..Default::default()
+                })
+            }
+        };
+
+        let effective_offset = offset.unwrap_or(0);
+        let formatted = Self::format_text_window(&decoded.content, effective_offset, limit);
+
+        if formatted.output.is_empty() && formatted.total_lines > 0 {
+            return Ok(ToolResult {
+                data: json!({
+                    "output": format!("File has {} lines, but offset {} is beyond the end.", formatted.total_lines, effective_offset),
+                    "total_lines": formatted.total_lines,
+                    "file_path": target.original_path,
+                    "resolved_path": target.resolved_path,
+                    "symlink_resolved": target.symlink_resolved,
+                    "encoding": decoded.encoding,
+                    "encoding_lossy": decoded.lossy,
+                }),
+                new_messages: vec![],
+                ..Default::default()
+            });
+        }
+
+        if formatted.output.is_empty() {
+            return Ok(ToolResult {
+                data: json!({
+                    "output": "(empty file)",
+                    "total_lines": 0,
+                    "file_path": target.original_path,
+                    "resolved_path": target.resolved_path,
+                    "symlink_resolved": target.symlink_resolved,
+                    "encoding": decoded.encoding,
+                    "encoding_lossy": decoded.lossy,
+                    "truncated": false,
+                }),
+                new_messages: vec![],
+                ..Default::default()
+            });
+        }
+
+        let mut output = formatted.output;
+        if let Some(next_offset) = formatted.next_offset {
+            output.push_str(&format!(
+                "... (showing lines {}-{} of {}; use offset {} to continue)\n",
+                formatted.start_line, formatted.end_line, formatted.total_lines, next_offset
+            ));
+        }
+
+        let truncated_by_chars = output.chars().count() > max_chars;
+        if truncated_by_chars {
+            output = output.chars().take(max_chars).collect();
+            output.push_str("\n... (output truncated)");
+        }
+
+        Ok(ToolResult {
+            data: json!({
+                "output": output,
+                "total_lines": formatted.total_lines,
+                "start_line": formatted.start_line,
+                "end_line": formatted.end_line,
+                "next_offset": formatted.next_offset,
+                "truncated": formatted.line_limited || truncated_by_chars,
+                "line_limited": formatted.line_limited,
+                "char_limited": truncated_by_chars,
+                "encoding": decoded.encoding,
+                "encoding_lossy": decoded.lossy,
+                "file_path": target.original_path,
+                "resolved_path": target.resolved_path,
+                "symlink_resolved": target.symlink_resolved,
+            }),
+            new_messages: vec![],
+            ..Default::default()
+        })
+    }
 }
 
 #[async_trait]
@@ -441,17 +743,36 @@ impl Tool for FileReadTool {
             });
         }
 
-        let path = Path::new(&file_path);
+        let target = match Self::resolve_read_target(&file_path).await {
+            Ok(target) => target,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(ToolResult {
+                    data: json!({ "error": format!("File not found: {}", file_path) }),
+                    new_messages: vec![],
+                    ..Default::default()
+                });
+            }
+            Err(e) => {
+                return Ok(ToolResult {
+                    data: json!({ "error": format!("Failed to resolve file path {}: {}", file_path, e) }),
+                    new_messages: vec![],
+                    ..Default::default()
+                });
+            }
+        };
 
-        if !path.exists() {
-            return Ok(ToolResult {
-                data: json!({ "error": format!("File not found: {}", file_path) }),
-                new_messages: vec![],
-                ..Default::default()
-            });
-        }
+        let metadata = match tokio::fs::metadata(&target.read_path).await {
+            Ok(metadata) => metadata,
+            Err(e) => {
+                return Ok(ToolResult {
+                    data: json!({ "error": format!("Failed to read metadata for {}: {}", file_path, e) }),
+                    new_messages: vec![],
+                    ..Default::default()
+                });
+            }
+        };
 
-        if path.is_dir() {
+        if metadata.is_dir() {
             return Ok(ToolResult {
                 data: json!({ "error": format!("Path is a directory, not a file: {}. Use ls via Bash tool to list directory contents.", file_path) }),
                 new_messages: vec![],
@@ -459,10 +780,15 @@ impl Tool for FileReadTool {
             });
         }
 
+        let read_path = target.read_path.to_string_lossy().to_string();
+
         // Route based on file extension BEFORE binary detection
-        if Self::is_image_file(path) {
-            return match Self::read_image(&file_path).await {
-                Ok(result) => Ok(result),
+        if Self::target_matches(&target, Self::is_image_file) {
+            return match Self::read_image(&read_path).await {
+                Ok(mut result) => {
+                    Self::attach_read_target(&mut result, &target);
+                    Ok(result)
+                }
                 Err(e) => Ok(ToolResult {
                     data: json!({ "error": format!("Failed to read image: {}", e) }),
                     new_messages: vec![],
@@ -471,9 +797,12 @@ impl Tool for FileReadTool {
             };
         }
 
-        if Self::is_pdf_file(path) {
-            return match Self::read_pdf(&file_path, pages).await {
-                Ok(result) => Ok(result),
+        if Self::target_matches(&target, Self::is_pdf_file) {
+            return match Self::read_pdf(&read_path, pages).await {
+                Ok(mut result) => {
+                    Self::attach_read_target(&mut result, &target);
+                    Ok(result)
+                }
                 Err(e) => Ok(ToolResult {
                     data: json!({ "error": format!("Failed to read PDF: {}", e) }),
                     new_messages: vec![],
@@ -482,9 +811,12 @@ impl Tool for FileReadTool {
             };
         }
 
-        if Self::is_notebook_file(path) {
-            return match Self::read_notebook(&file_path).await {
-                Ok(result) => Ok(result),
+        if Self::target_matches(&target, Self::is_notebook_file) {
+            return match Self::read_notebook(&read_path).await {
+                Ok(mut result) => {
+                    Self::attach_read_target(&mut result, &target);
+                    Ok(result)
+                }
                 Err(e) => Ok(ToolResult {
                     data: json!({ "error": format!("Failed to read notebook: {}", e) }),
                     new_messages: vec![],
@@ -493,74 +825,14 @@ impl Tool for FileReadTool {
             };
         }
 
-        // Read file bytes first for binary detection
-        let bytes = match tokio::fs::read(&file_path).await {
-            Ok(b) => b,
-            Err(e) => {
-                return Ok(ToolResult {
-                    data: json!({ "error": format!("Failed to read file: {}", e) }),
-                    new_messages: vec![],
-                    ..Default::default()
-                });
-            }
-        };
-
-        if Self::is_binary(&bytes) {
-            return Ok(ToolResult {
-                data: json!({ "error": "File appears to be binary. Cannot display binary file contents." }),
+        match Self::read_text(&target, offset, limit, self.max_result_size_chars()).await {
+            Ok(result) => Ok(result),
+            Err(e) => Ok(ToolResult {
+                data: json!({ "error": format!("Failed to read file: {}", e) }),
                 new_messages: vec![],
                 ..Default::default()
-            });
-        }
-
-        let content = String::from_utf8_lossy(&bytes).to_string();
-
-        let effective_offset = offset.unwrap_or(0);
-
-        let (formatted, total_lines) =
-            Self::format_with_line_numbers(&content, effective_offset, limit);
-
-        if formatted.is_empty() && total_lines > 0 {
-            return Ok(ToolResult {
-                data: json!({
-                    "output": format!("File has {} lines, but offset {} is beyond the end.", total_lines, effective_offset),
-                    "total_lines": total_lines,
-                }),
-                new_messages: vec![],
-                ..Default::default()
-            });
-        }
-
-        if formatted.is_empty() {
-            return Ok(ToolResult {
-                data: json!({
-                    "output": "(empty file)",
-                    "total_lines": 0,
-                }),
-                new_messages: vec![],
-                ..Default::default()
-            });
-        }
-
-        // Truncate if too large
-        let max_chars = self.max_result_size_chars();
-        let output = if formatted.len() > max_chars {
-            let mut truncated = formatted;
-            truncated.truncate(max_chars);
-            truncated.push_str("\n... (output truncated)");
-            truncated
-        } else {
-            formatted
-        };
-
-        Ok(ToolResult {
-            data: json!({
-                "output": output,
-                "total_lines": total_lines,
             }),
-            new_messages: vec![],
-            ..Default::default()
-        })
+        }
     }
 
     async fn prompt(&self) -> String {
@@ -568,9 +840,10 @@ impl Tool for FileReadTool {
 Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.\n\n\
 Usage:\n\
 - The file_path parameter must be an absolute path, not a relative path\n\
-- If limit is not provided, it reads from the starting offset to the end of the file\n\
+- If limit is not provided, small files are read from the starting offset to the end; large text files are paginated and include next_offset to continue\n\
 - When you already know which part of the file you need, only read that part. This can be important for larger files.\n\
 - Results are returned using cat -n format, with line numbers starting at 1\n\
+- Text results include encoding, resolved_path, and symlink_resolved metadata when available\n\
 - This tool allows Claude Code to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as Claude Code is a multimodal LLM.\n\
 - This tool can read PDF files (.pdf). For large PDFs (more than 10 pages), you MUST provide the pages parameter to read specific page ranges (e.g., pages: \"1-5\"). Reading a large PDF without the pages parameter will fail. Maximum 20 pages per request.\n\
 - This tool can read Jupyter notebooks (.ipynb files) and returns all cells with their outputs, combining code, text, and visualizations.\n\
@@ -655,6 +928,155 @@ mod tests {
 
         assert_eq!(total_lines, 4);
         assert_eq!(formatted, "2\tline2\n3\tline3\n");
+    }
+
+    #[test]
+    fn test_format_text_window_auto_paginates_large_files() {
+        let content = (1..=FileReadTool::DEFAULT_TEXT_LINE_LIMIT + 2)
+            .map(|line| format!("line{line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let formatted = FileReadTool::format_text_window(&content, 0, None);
+
+        assert_eq!(
+            formatted.total_lines,
+            FileReadTool::DEFAULT_TEXT_LINE_LIMIT + 2
+        );
+        assert_eq!(formatted.start_line, 1);
+        assert_eq!(formatted.end_line, FileReadTool::DEFAULT_TEXT_LINE_LIMIT);
+        assert_eq!(
+            formatted.next_offset,
+            Some(FileReadTool::DEFAULT_TEXT_LINE_LIMIT + 1)
+        );
+        assert!(formatted.line_limited);
+        assert!(formatted.output.contains(&format!(
+            "{}\tline{}",
+            FileReadTool::DEFAULT_TEXT_LINE_LIMIT,
+            FileReadTool::DEFAULT_TEXT_LINE_LIMIT
+        )));
+        assert!(!formatted.output.contains(&format!(
+            "{}\tline{}",
+            FileReadTool::DEFAULT_TEXT_LINE_LIMIT + 1,
+            FileReadTool::DEFAULT_TEXT_LINE_LIMIT + 1
+        )));
+    }
+
+    #[test]
+    fn test_decode_text_bytes_detects_utf8_bom() {
+        let decoded = FileReadTool::decode_text_bytes(b"\xEF\xBB\xBFhello")
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(decoded.content, "hello");
+        assert_eq!(decoded.encoding, "utf-8-bom");
+        assert!(!decoded.lossy);
+    }
+
+    #[test]
+    fn test_decode_text_bytes_detects_utf16le_bom() {
+        let bytes = [0xFF, 0xFE, b'h', 0, b'e', 0, b'l', 0, b'l', 0, b'o', 0];
+        let decoded = FileReadTool::decode_text_bytes(&bytes).unwrap().unwrap();
+
+        assert_eq!(decoded.content, "hello");
+        assert_eq!(decoded.encoding, "utf-16le-bom");
+        assert!(!decoded.lossy);
+    }
+
+    #[test]
+    fn test_decode_text_bytes_detects_utf16be_without_bom() {
+        let bytes = [0, b'h', 0, b'e', 0, b'l', 0, b'l', 0, b'o'];
+        let decoded = FileReadTool::decode_text_bytes(&bytes).unwrap().unwrap();
+
+        assert_eq!(decoded.content, "hello");
+        assert_eq!(decoded.encoding, "utf-16be");
+        assert!(!decoded.lossy);
+    }
+
+    #[tokio::test]
+    async fn test_read_text_reports_encoding_and_pagination_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("utf16.txt");
+        let bytes = [
+            0xFF, 0xFE, b'a', 0, b'l', 0, b'p', 0, b'h', 0, b'a', 0, b'\n', 0, b'b', 0, b'e', 0,
+            b't', 0, b'a', 0,
+        ];
+        tokio::fs::write(&file_path, bytes).await.unwrap();
+
+        let target = FileReadTool::resolve_read_target(file_path.to_str().unwrap())
+            .await
+            .unwrap();
+        let result = FileReadTool::read_text(&target, None, Some(1), 10_000)
+            .await
+            .unwrap();
+
+        assert_eq!(result.data["encoding"], "utf-16le-bom");
+        assert_eq!(result.data["total_lines"], 2);
+        assert_eq!(result.data["next_offset"], 2);
+        assert_eq!(result.data["line_limited"], true);
+        assert!(result.data["output"].as_str().unwrap().contains("1\talpha"));
+        assert!(!result.data["output"].as_str().unwrap().contains("2\tbeta"));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_read_target_for_regular_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("regular.txt");
+        tokio::fs::write(&file_path, "hello").await.unwrap();
+
+        let target = FileReadTool::resolve_read_target(file_path.to_str().unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(target.original_path, file_path.to_string_lossy());
+        assert!(!target.symlink_resolved);
+        assert_eq!(
+            target.read_path,
+            tokio::fs::canonicalize(&file_path).await.unwrap()
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_resolve_read_target_reports_unix_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("target.txt");
+        let link_path = dir.path().join("link.txt");
+        tokio::fs::write(&file_path, "hello").await.unwrap();
+        std::os::unix::fs::symlink(&file_path, &link_path).unwrap();
+
+        let target = FileReadTool::resolve_read_target(link_path.to_str().unwrap())
+            .await
+            .unwrap();
+
+        assert!(target.symlink_resolved);
+        assert_eq!(
+            target.read_path,
+            tokio::fs::canonicalize(&file_path).await.unwrap()
+        );
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn test_resolve_read_target_reports_windows_symlink_when_available() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("target.txt");
+        let link_path = dir.path().join("link.txt");
+        tokio::fs::write(&file_path, "hello").await.unwrap();
+
+        if std::os::windows::fs::symlink_file(&file_path, &link_path).is_err() {
+            return;
+        }
+
+        let target = FileReadTool::resolve_read_target(link_path.to_str().unwrap())
+            .await
+            .unwrap();
+
+        assert!(target.symlink_resolved);
+        assert_eq!(
+            target.read_path,
+            tokio::fs::canonicalize(&file_path).await.unwrap()
+        );
     }
 
     #[tokio::test]

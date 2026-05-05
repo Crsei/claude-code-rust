@@ -7,6 +7,18 @@
 
 ---
 
+## 2026-05-05 Full Build parity 更新
+
+| 模块 | 文件 | 验证 | 说明 |
+|------|------|------|------|
+| FileReadTool | `tools/fs/file_read.rs` | `cargo test -p claude-code-rs file_read` | 补齐 symlink canonicalize/metadata、UTF-8/UTF-16/BOM 编码检测、UTF-8 lossy fallback、大文件默认分页与 `next_offset` |
+| FileWriteTool | `tools/fs/file_write.rs`, `tools/fs/safe_write.rs` | 既有 safe_write / file_write 测试 | 已覆盖临时文件 + rename、恢复备份、大小限制、权限保持、二进制拒绝 |
+| SkillTool | `tools/skill.rs`, `crates/cc-skills/src/*` | 既有 cc-skills / SkillTool 测试 | 已覆盖依赖解析、版本管理、frontmatter 诊断、hot reload、fork/inline 上下文 |
+| LSP | `tools/lsp.rs`, `lsp_service/*` | 既有 LSP service / tool 测试 | 已覆盖 `didChange`、被动 `publishDiagnostics`、completion 与 diagnostics snapshot |
+| Background Agent lifecycle | `engine/agent/supervisor.rs`, `tools/tasks.rs` | 既有 supervisor / task store 测试 | background worktree、权限回调传递、取消与 shutdown cleanup 已收口 |
+
+---
+
 ## Phase 0: 类型基础
 
 完整定义了所有核心类型，与 TS 功能对等。
