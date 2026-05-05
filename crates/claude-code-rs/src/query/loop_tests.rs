@@ -15,13 +15,13 @@ use crate::query::deps::{
     CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
 };
 use crate::types::app_state::AppState;
-use crate::types::config::{QuerySource, TaskBudget};
+use crate::types::config::{QueryGates, QuerySource, TaskBudget};
 use crate::types::message::{
     AssistantMessage, ContentBlock, ImageSource, MessageContent, StreamEvent, ToolResultContent,
     Usage, UserMessage,
 };
 use crate::types::state::AutoCompactTracking;
-use crate::types::tool::{ToolProgress, Tools};
+use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools};
 
 enum MockStreamStep {
     Response(ModelResponse),
@@ -39,6 +39,12 @@ struct MockDeps {
     aborted: AtomicBool,
     stream_finished: Arc<AtomicBool>,
     tool_executed_before_stream_finished: AtomicBool,
+    tool_execution_count: AtomicUsize,
+    tool_completed_count: AtomicUsize,
+    active_tools: AtomicUsize,
+    max_active_tools: AtomicUsize,
+    tool_delay: Duration,
+    tools: Tools,
     hook_runner: parking_lot::Mutex<Arc<dyn HookRunner>>,
 }
 
@@ -61,8 +67,24 @@ impl MockDeps {
             aborted: AtomicBool::new(false),
             stream_finished: Arc::new(AtomicBool::new(false)),
             tool_executed_before_stream_finished: AtomicBool::new(false),
+            tool_execution_count: AtomicUsize::new(0),
+            tool_completed_count: AtomicUsize::new(0),
+            active_tools: AtomicUsize::new(0),
+            max_active_tools: AtomicUsize::new(0),
+            tool_delay: Duration::ZERO,
+            tools: vec![],
             hook_runner: parking_lot::Mutex::new(Arc::new(cc_types::hooks::NoopHookRunner)),
         }
+    }
+
+    fn with_tools(mut self, tools: Tools) -> Self {
+        self.tools = tools;
+        self
+    }
+
+    fn with_tool_delay(mut self, delay: Duration) -> Self {
+        self.tool_delay = delay;
+        self
     }
 
     fn recorded_params(&self) -> Vec<ModelCallParams> {
@@ -183,10 +205,18 @@ impl QueryDeps for MockDeps {
         _parent: &AssistantMessage,
         _on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolExecResult> {
+        self.tool_execution_count.fetch_add(1, Ordering::SeqCst);
+        let active = self.active_tools.fetch_add(1, Ordering::SeqCst) + 1;
+        self.max_active_tools.fetch_max(active, Ordering::SeqCst);
         if !self.stream_finished.load(Ordering::SeqCst) {
             self.tool_executed_before_stream_finished
                 .store(true, Ordering::SeqCst);
         }
+        if !self.tool_delay.is_zero() {
+            tokio::time::sleep(self.tool_delay).await;
+        }
+        self.active_tools.fetch_sub(1, Ordering::SeqCst);
+        self.tool_completed_count.fetch_add(1, Ordering::SeqCst);
 
         Ok(ToolExecResult {
             tool_use_id: request.tool_use_id,
@@ -213,11 +243,11 @@ impl QueryDeps for MockDeps {
     }
 
     fn get_tools(&self) -> Tools {
-        vec![]
+        self.tools.clone()
     }
 
     async fn refresh_tools(&self) -> Result<Tools> {
-        Ok(vec![])
+        Ok(self.tools.clone())
     }
 
     fn hook_runner(&self) -> Arc<dyn HookRunner> {
@@ -249,6 +279,45 @@ fn make_query_params(messages: Vec<Message>) -> QueryParams {
         max_turns: None,
         skip_cache_write: None,
         task_budget: None,
+        gates: QueryGates::default(),
+    }
+}
+
+struct LoopTestTool {
+    name: &'static str,
+    concurrency_safe: bool,
+}
+
+#[async_trait::async_trait]
+impl Tool for LoopTestTool {
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    async fn description(&self, _input: &Value) -> String {
+        String::new()
+    }
+
+    fn input_json_schema(&self) -> Value {
+        serde_json::json!({})
+    }
+
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        self.concurrency_safe
+    }
+
+    async fn call(
+        &self,
+        _input: Value,
+        _ctx: &ToolUseContext,
+        _parent_message: &AssistantMessage,
+        _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
+    ) -> Result<ToolResult> {
+        Ok(ToolResult::default())
+    }
+
+    async fn prompt(&self) -> String {
+        String::new()
     }
 }
 
@@ -422,6 +491,7 @@ async fn test_simple_text_response_terminates() {
         max_turns: None,
         skip_cache_write: None,
         task_budget: None,
+        gates: QueryGates::default(),
     };
 
     let stream = query(params, deps);
@@ -940,6 +1010,7 @@ async fn test_tool_use_then_text_response() {
         max_turns: None,
         skip_cache_write: None,
         task_budget: None,
+        gates: QueryGates::default(),
     };
 
     let stream = query(params, deps.clone());
@@ -963,6 +1034,215 @@ async fn test_tool_use_then_text_response() {
             .load(Ordering::SeqCst),
         "tool execution should not start before the model stream reaches message_stop"
     );
+}
+
+#[tokio::test]
+async fn streaming_tool_execution_gate_starts_safe_tools_before_message_stop() {
+    let events = vec![
+        (
+            Duration::ZERO,
+            Ok(StreamEvent::MessageStart {
+                usage: Usage::default(),
+            }),
+        ),
+        (
+            Duration::ZERO,
+            Ok(StreamEvent::ContentBlockStart {
+                index: 0,
+                content_block: ContentBlock::ToolUse {
+                    id: "tu_safe_1".to_string(),
+                    name: "SafeTool".to_string(),
+                    input: serde_json::json!({}),
+                },
+            }),
+        ),
+        (
+            Duration::ZERO,
+            Ok(StreamEvent::ContentBlockStop { index: 0 }),
+        ),
+        (
+            Duration::from_millis(5),
+            Ok(StreamEvent::ContentBlockStart {
+                index: 1,
+                content_block: ContentBlock::ToolUse {
+                    id: "tu_safe_2".to_string(),
+                    name: "SafeTool".to_string(),
+                    input: serde_json::json!({}),
+                },
+            }),
+        ),
+        (
+            Duration::ZERO,
+            Ok(StreamEvent::ContentBlockStop { index: 1 }),
+        ),
+        (
+            Duration::from_millis(5),
+            Ok(StreamEvent::ContentBlockStart {
+                index: 2,
+                content_block: ContentBlock::Text {
+                    text: String::new(),
+                },
+            }),
+        ),
+        (
+            Duration::ZERO,
+            Ok(StreamEvent::ContentBlockDelta {
+                index: 2,
+                delta: serde_json::json!({
+                    "type": "text_delta",
+                    "text": "still streaming"
+                }),
+            }),
+        ),
+        (
+            Duration::ZERO,
+            Ok(StreamEvent::ContentBlockStop { index: 2 }),
+        ),
+        (
+            Duration::ZERO,
+            Ok(StreamEvent::MessageDelta {
+                delta: crate::types::message::MessageDelta {
+                    stop_reason: Some("tool_use".to_string()),
+                },
+                usage: Some(Usage::default()),
+            }),
+        ),
+        (Duration::ZERO, Ok(StreamEvent::MessageStop)),
+    ];
+    let tools: Tools = vec![Arc::new(LoopTestTool {
+        name: "SafeTool",
+        concurrency_safe: true,
+    })];
+    let deps = Arc::new(
+        MockDeps::from_steps(vec![
+            MockStreamStep::DelayedEvents(events),
+            MockStreamStep::Response(make_text_response("streamed tools complete")),
+        ])
+        .with_tools(tools)
+        .with_tool_delay(Duration::from_millis(20)),
+    );
+    let mut params = make_query_params(vec![make_user_message_for_test("run safe tools")]);
+    params.gates.streaming_tool_execution = true;
+
+    let items: Vec<QueryYield> = query(params, deps.clone()).collect().await;
+
+    assert!(
+        deps.tool_executed_before_stream_finished
+            .load(Ordering::SeqCst),
+        "safe tools should start while the assistant stream is still open"
+    );
+    assert_eq!(
+        deps.tool_execution_count.load(Ordering::SeqCst),
+        2,
+        "started streaming tools must not be re-executed after message_stop"
+    );
+    assert_eq!(
+        deps.tool_completed_count.load(Ordering::SeqCst),
+        2,
+        "streaming tool tasks should be awaited before continuation"
+    );
+    assert_eq!(
+        deps.max_active_tools.load(Ordering::SeqCst),
+        2,
+        "consecutive safe tools should run concurrently"
+    );
+    let tool_result_messages = items
+        .iter()
+        .filter(|item| {
+            matches!(
+                item,
+                QueryYield::Message(Message::User(user))
+                    if user.is_meta && user.source_tool_assistant_uuid.is_some()
+            )
+        })
+        .count();
+    assert_eq!(tool_result_messages, 2);
+    assert_eq!(request_start_count(&items), 2);
+}
+
+#[tokio::test]
+async fn streaming_tool_execution_aborts_started_tools_on_stream_fallback() {
+    let events = vec![
+        (
+            Duration::ZERO,
+            Ok(StreamEvent::MessageStart {
+                usage: Usage::default(),
+            }),
+        ),
+        (
+            Duration::ZERO,
+            Ok(StreamEvent::ContentBlockStart {
+                index: 0,
+                content_block: ContentBlock::ToolUse {
+                    id: "tu_orphan".to_string(),
+                    name: "SafeTool".to_string(),
+                    input: serde_json::json!({}),
+                },
+            }),
+        ),
+        (
+            Duration::ZERO,
+            Ok(StreamEvent::ContentBlockStop { index: 0 }),
+        ),
+        (
+            Duration::from_millis(5),
+            Err("529 overloaded during stream".to_string()),
+        ),
+    ];
+    let tools: Tools = vec![Arc::new(LoopTestTool {
+        name: "SafeTool",
+        concurrency_safe: true,
+    })];
+    let deps = Arc::new(
+        MockDeps::from_steps(vec![
+            MockStreamStep::DelayedEvents(events),
+            MockStreamStep::Response(make_text_response("fallback recovered")),
+        ])
+        .with_tools(tools)
+        .with_tool_delay(Duration::from_millis(50)),
+    );
+    let mut params = make_query_params(vec![make_user_message_for_test("run then fallback")]);
+    params.gates.streaming_tool_execution = true;
+    params.fallback_model = Some("fallback-model".to_string());
+
+    let items: Vec<QueryYield> = query(params, deps.clone()).collect().await;
+
+    assert_eq!(
+        request_start_count(&items),
+        2,
+        "stream interruption should retry on fallback model"
+    );
+    assert!(
+        items
+            .iter()
+            .any(|item| matches!(item, QueryYield::Tombstone(_))),
+        "partial primary assistant should be tombstoned before fallback"
+    );
+    assert!(
+        deps.tool_executed_before_stream_finished
+            .load(Ordering::SeqCst),
+        "the primary attempt should have started the safe tool before failing"
+    );
+    assert_eq!(
+        deps.tool_completed_count.load(Ordering::SeqCst),
+        0,
+        "started primary-attempt tools should be aborted instead of awaited into fallback"
+    );
+    let tool_result_messages = items
+        .iter()
+        .filter(|item| {
+            matches!(
+                item,
+                QueryYield::Message(Message::User(user))
+                    if user.is_meta && user.source_tool_assistant_uuid.is_some()
+            )
+        })
+        .count();
+    assert_eq!(
+        tool_result_messages, 0,
+        "orphaned primary-attempt tool results must not enter fallback transcript"
+    );
+    assert!(!has_api_error_containing(&items, "529 overloaded"));
 }
 
 #[tokio::test]
@@ -1008,6 +1288,7 @@ async fn test_max_turns_limit() {
         max_turns: Some(1),
         skip_cache_write: None,
         task_budget: None,
+        gates: QueryGates::default(),
     };
 
     let stream = query(params, deps);
@@ -1050,6 +1331,7 @@ async fn test_abort_before_api_call() {
         max_turns: None,
         skip_cache_write: None,
         task_budget: None,
+        gates: QueryGates::default(),
     };
 
     let stream = query(params, deps);
@@ -1248,6 +1530,7 @@ async fn test_image_tool_result_flows_as_blocks() {
         max_turns: None,
         skip_cache_write: None,
         task_budget: None,
+        gates: QueryGates::default(),
     };
 
     let stream = query(params, deps);
@@ -1546,6 +1829,7 @@ async fn test_computer_use_screenshot_click_round_trip() {
         max_turns: None,
         skip_cache_write: None,
         task_budget: None,
+        gates: QueryGates::default(),
     };
 
     let stream = query(params, deps);

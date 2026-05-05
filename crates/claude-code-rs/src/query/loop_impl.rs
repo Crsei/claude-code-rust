@@ -30,8 +30,8 @@ use uuid::Uuid;
 use crate::types::config::QueryParams;
 use crate::types::message::QueryYield;
 use crate::types::message::{
-    Attachment, AttachmentMessage, ContentBlock, Message, RequestStartEvent, StreamEvent,
-    TombstoneMessage, Usage,
+    AssistantMessage, Attachment, AttachmentMessage, ContentBlock, Message, RequestStartEvent,
+    StreamEvent, TombstoneMessage, Usage,
 };
 use crate::types::state::{BudgetTracker, QueryLoopState, TokenBudgetDecision};
 use crate::types::transitions::Continue;
@@ -42,9 +42,9 @@ use super::deps::{ModelCallParams, QueryDeps};
 use super::loop_helpers::{
     classify_model_call_failure, execute_tool_calls, handle_max_output_tokens,
     handle_prompt_too_long, is_stream_progress_event, make_abort_message, make_error_message,
-    make_tool_result_user_message, make_user_message, stream_idle_timeout, stream_stall_timeout,
-    strip_fallback_signature_blocks, MaxTokensRecovery, ModelCallFailureRecovery,
-    ModelCallFailureStage, PromptRecovery,
+    make_tool_result_user_message, make_user_message, merge_tool_results_by_tool_use_order,
+    stream_idle_timeout, stream_stall_timeout, strip_fallback_signature_blocks, MaxTokensRecovery,
+    ModelCallFailureRecovery, ModelCallFailureStage, PromptRecovery, StreamingToolExecutor,
 };
 use super::stop_hooks::{self, StopHookResult};
 use super::token_budget::check_token_budget;
@@ -66,6 +66,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
         let query_source = params.query_source;
         let skip_cache_write = params.skip_cache_write;
         let fallback_model = params.fallback_model;
+        let gates = params.gates;
         let mut budget_tracker = BudgetTracker::new();
         let mut cumulative_usage = Usage::default();
 
@@ -233,7 +234,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             let mut fallback_used = false;
 
             use futures::StreamExt;
-            let assistant_message = loop {
+            let (assistant_message, streaming_tool_executor) = loop {
                 yield QueryYield::RequestStart(RequestStartEvent);
 
                 let attempt_model = attempt_params
@@ -351,6 +352,21 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
 
                 // Consume stream events, forwarding to caller while accumulating
                 let mut accumulator = crate::api::streaming::StreamAccumulator::new();
+                let assistant_uuid = Uuid::new_v4();
+                let streaming_tool_parent = AssistantMessage {
+                    uuid: assistant_uuid,
+                    timestamp: chrono::Utc::now().timestamp_millis(),
+                    role: "assistant".to_string(),
+                    content: vec![],
+                    usage: None,
+                    stop_reason: None,
+                    is_api_error_message: false,
+                    api_error: None,
+                    cost_usd: 0.0,
+                };
+                let mut streaming_tool_executor = gates
+                    .streaming_tool_execution
+                    .then(StreamingToolExecutor::new);
                 let mut stream_error: Option<String> = None;
                 let mut first_response_at: Option<std::time::Instant> = None;
                 let idle_timeout = stream_idle_timeout();
@@ -406,6 +422,20 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                                         tool_name = %tool_use.name,
                                         "identified completed streamed tool_use block"
                                     );
+                                    if let Some(executor) = streaming_tool_executor.as_mut() {
+                                        if executor.add_tool_use(
+                                            deps.clone(),
+                                            &tools,
+                                            &streaming_tool_parent,
+                                            deps.tool_progress_callback(),
+                                            tool_use,
+                                        ) {
+                                            debug!(
+                                                tool_index = *index,
+                                                "started streaming-safe tool before message_stop"
+                                            );
+                                        }
+                                    }
                                 }
                             }
                             yield QueryYield::Stream(event);
@@ -418,6 +448,10 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 }
 
                 if let Some(ref err) = stream_error {
+                    if let Some(executor) = streaming_tool_executor.take() {
+                        executor.abort();
+                    }
+
                     let ttft_ms = first_response_at
                         .map(|instant| instant.duration_since(model_call_start).as_millis() as u64);
                     crate::services::langfuse::finish_generation_span(
@@ -476,7 +510,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     break 'query_loop;
                 }
 
-                let assistant_message = accumulator.build(&attempt_model);
+                let assistant_message = accumulator.build_with_uuid(&attempt_model, assistant_uuid);
                 let ttft_ms = first_response_at
                     .map(|instant| instant.duration_since(model_call_start).as_millis() as u64);
                 crate::services::langfuse::finish_generation_span(
@@ -507,7 +541,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     );
                 }
 
-                break assistant_message;
+                break (assistant_message, streaming_tool_executor);
             };
 
             // Accumulate usage
@@ -553,6 +587,10 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             let tool_uses = stop_hooks::extract_tool_uses(&assistant_message);
 
             if tool_uses.is_empty() {
+                if let Some(executor) = streaming_tool_executor {
+                    executor.abort();
+                }
+
                 // ── TERMINAL CHECK (no tool calls) ──
 
                 // 5a. max_output_tokens recovery
@@ -658,14 +696,38 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             } else {
                 // ── STEP 6: TOOL EXECUTION ──
 
-                let tool_results = execute_tool_calls(
-                    &deps,
-                    &tool_uses,
-                    &tools,
-                    &assistant_message,
-                    deps.tool_progress_callback(),
-                )
-                .await;
+                let tool_results = if let Some(executor) = streaming_tool_executor {
+                    let streamed = executor.finish().await;
+                    let remaining_tool_uses = tool_uses
+                        .iter()
+                        .filter(|(tool_use_id, _, _)| {
+                            !streamed.started_tool_use_ids.contains(tool_use_id)
+                        })
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let remaining_results = execute_tool_calls(
+                        &deps,
+                        &remaining_tool_uses,
+                        &tools,
+                        &assistant_message,
+                        deps.tool_progress_callback(),
+                    )
+                    .await;
+                    merge_tool_results_by_tool_use_order(
+                        &tool_uses,
+                        streamed.results,
+                        remaining_results,
+                    )
+                } else {
+                    execute_tool_calls(
+                        &deps,
+                        &tool_uses,
+                        &tools,
+                        &assistant_message,
+                        deps.tool_progress_callback(),
+                    )
+                    .await
+                };
 
                 if deps.is_aborted() {
                     info!("aborted during tool execution");

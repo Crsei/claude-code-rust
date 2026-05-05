@@ -38,7 +38,8 @@ Provider HTTP/SSE 或 synthesized response
   -> query::loop_impl::query()
        - 逐个转发 QueryYield::Stream(event)
        - StreamAccumulator 累积最终 AssistantMessage
-       - stream 结束后统一执行 tool_use
+       - gate off 时 stream 结束后统一执行 tool_use
+       - gate on 时在 content_block_stop 后提前启动 safe tool_use，stream 结束后只等待/补执行剩余工具
   -> engine::lifecycle::submit_message()
        - SdkMessage::StreamEvent
        - SdkMessage::Assistant
@@ -67,8 +68,8 @@ Provider HTTP/SSE 或 synthesized response
 | `content_block_start` | 解析为 `ContentBlockStart`，`StreamAccumulator` 按 index 保存初始 block。 | 已实现 |
 | `content_block_delta.text_delta` | 追加到 `ContentBlock::Text.text`；TUI/headless 也能实时显示文本 delta。 | 已实现 |
 | `content_block_delta.thinking_delta` | 追加到 `ContentBlock::Thinking.thinking`；TUI/headless 能实时显示 thinking delta。 | 部分实现 |
-| `content_block_delta.signature_delta` | 当前没有写入 `ContentBlock::Thinking.signature`。 | 未实现 |
-| `content_block_delta.input_json_delta` | 当前 accumulator/TUI 不拼接 `partial_json`；Anthropic/Vertex/Bedrock 风格的 streaming tool input 可能丢失。 | 未实现 |
+| `content_block_delta.signature_delta` | 写入 `ContentBlock::Thinking.signature`，fallback retry 前会移除旧模型签名块。 | 已实现 |
+| `content_block_delta.input_json_delta` | `StreamAccumulator` 拼接 `partial_json`，在 `content_block_stop` / final build 时回填完整 `ToolUse.input`。 | 已实现 |
 | `content_block_delta.connector_text_delta` | 没有对应内容块和 delta 累积逻辑。 | 未实现 |
 | `content_block_stop` | 事件会转发；Rust 现阶段有意保留“stream event 实时输出 + message stream 结束后产出一个最终 `AssistantMessage`”的交付语义。 | Intentional / 暂不改 |
 | `message_delta` | 更新 `stop_reason` 和 usage；`max_tokens` 会触发后续恢复逻辑。 | 已实现 |
@@ -79,11 +80,11 @@ Provider HTTP/SSE 或 synthesized response
 
 | Provider 类别 | 当前 streaming 方式 | 已实现 | 主要差距 |
 | --- | --- | --- | --- |
-| Anthropic native / 当前 `ApiProvider::Azure` 路由 | `/v1/messages` SSE，按 Anthropic 事件解析。 | 文本、thinking、usage、stop_reason、tool block 起点。 | `input_json_delta`、`signature_delta` 未累积；流错误恢复不足；Azure 命名/能力矩阵与实际路由需再确认。 |
-| Vertex Anthropic | `streamRawPredict`，复用 Anthropic SSE 解析。 | native streaming 主链路。 | 认证仍偏环境/gcloud fallback；同样缺 `input_json_delta`/`signature_delta`。 |
+| Anthropic native / 当前 `ApiProvider::Azure` 路由 | `/v1/messages` SSE，按 Anthropic 事件解析。 | 文本、thinking、usage、stop_reason、tool input delta、thinking signature、tool block 完成边界。 | Azure 命名/能力矩阵与实际路由需再确认。 |
+| Vertex Anthropic | `streamRawPredict`，复用 Anthropic SSE 解析。 | native streaming 主链路、tool input delta、thinking signature。 | 认证仍偏环境/gcloud fallback。 |
 | OpenAI-compatible / Codex / DeepSeek / Qwen 等 | OpenAI chat/completions SSE 转换为统一 `StreamEvent`。 | 文本 delta、usage、finish_reason 映射；DeepSeek `reasoning_content` 映射 thinking；tool calls 在 finish 时转为 `ToolUse` block。 | tool calls 不是实时 `input_json_delta`；thinking 仅覆盖特定兼容字段；代码注释提到 Azure OpenAI，但当前 `ApiProvider::Azure` 不走该分支。 |
 | Google Gemini | `streamGenerateContent?alt=sse`，按累计文本 diff 产出 `text_delta`。 | 文本 streaming。 | 工具调用、thinking、prompt cache 未支持。 |
-| Bedrock | 当前用非 streaming `/invoke`，再合成 `StreamEvent`。 | 可复用统一下游链路。 | 未接 AWS EventStream；合成 tool_use 依赖 `input_json_delta`，但 accumulator 不拼接，工具输入可能丢失。 |
+| Bedrock | 当前用非 streaming `/invoke`，再合成 `StreamEvent`。 | 可复用统一下游链路。 | 未接 AWS EventStream；streaming 协议仍不是原生 Bedrock EventStream。 |
 | Foundry | capability 标为 unsupported。 | 无。 | 未实现 provider。 |
 
 ## 消费者层行为
@@ -114,12 +115,14 @@ Provider HTTP/SSE 或 synthesized response
 - stream 中途 capacity 失败触发 fallback 时，主 loop 会 tombstone 已累积 partial assistant；fallback retry 前会移除旧模型的 thinking / redacted-thinking signature blocks。
 - Query 主循环已区分 request-start failure、stream-interrupted failure 和正常 assistant `stop_reason`：可恢复 primary 错误在 fallback 成功时 withheld，fallback 耗尽后才释放最终 API error。
 - 工具执行已支持 stream 结束后的安全工具并发批处理和非安全工具串行执行。
+- `QueryGates.streaming_tool_execution` 已接入主 loop：默认关闭，可用 `CC_RUST_STREAMING_TOOL_EXECUTION=1` 打开；gate off 保留 post-stream 工具执行，gate on 时完整 safe `tool_use` block 在 `content_block_stop` 后通过 canonical `QueryDeps::execute_tool()` 提前启动，stream 结束后只等待已启动任务并补执行剩余工具。
+- stream 中途 fallback / tombstone 会 abort 当前 attempt 已启动的 stream-time tool task，旧 assistant 的工具结果不会进入 fallback transcript。
 
 ## 未实现 / 未对齐
 
 | 优先级 | 差距 | 影响 |
 | --- | --- | --- |
-| P0 | `StreamingToolExecutor` 存在但未接入 query 主循环。 | 当前只能在完整 assistant 结束后执行工具，无法像 Bun 版那样按内容块流式启动安全工具。 |
+| P1 | `StreamingToolExecutor` 主 loop 接入仍保留最终单 assistant 交付语义。 | safe 工具可在 stream 期间提前启动，但 SDK/session/TUI 仍等待最终 `AssistantMessage`；per-block assistant message 尚未启用。 |
 | P1 | `ApiRetry` 用户可见事件和非 streaming fallback 尚未完整对齐。 | stream 建立前 retry/backoff 和主 loop failure 分类已落地；但 retry 可见性、非 streaming fallback 策略和 daemon/TUI/headless 事件覆盖仍需在 7.6 等任务收敛。 |
 | P1 | `server_tool_use`、`connector_text` 未建模。 | Web search/server tool/connector 类内容无法按参考协议完整还原。 |
 | P1 | `content_block_stop` 不产出 per-block `AssistantMessage`。 | 这是当前有意保留的边界：SDK/session/TUI 仍以最终单 assistant 替换 partial stream；per-block assistant 需要和 `StreamingToolExecutor`、session tombstone/fallback 语义一起重新设计。 |
@@ -128,15 +131,15 @@ Provider HTTP/SSE 或 synthesized response
 | P2 | Daemon SSE 跳过部分 SDK 事件，permission endpoint 仍是 stub。 | daemon/Web 客户端能力不完整。 |
 | P2 | Google tool use、Bedrock AWS EventStream、Vertex service-account JWT exchange 等 provider 能力仍未补齐。 | 多 provider 行为还不是 full-build 对齐状态。 |
 | P2 | Azure provider 的命名、能力矩阵和 streaming 路由存在不一致。 | 可能导致 Azure OpenAI 与 Anthropic-compatible Azure endpoint 的预期混淆。 |
-| P2 | 针对 streaming tool input、mid-stream error、retry、stall/idle 的回归测试不足。 | 后续补齐协议时容易回归。 |
+| P2 | 针对 provider-specific streaming、retry 可见性和 daemon/TUI/headless 覆盖的回归测试不足。 | 后续补齐 provider 和表面事件时容易回归。 |
 
 ## 建议补齐顺序
 
-1. 接入 `StreamingToolExecutor` 前，继续保留最终单 `AssistantMessage` 交付语义；真正改成 per-block assistant 时，需要同步设计工具 block 完成边界、SDK/session 持久化、fallback tombstone 和 UI partial replacement。
+1. 继续保留最终单 `AssistantMessage` 交付语义；真正改成 per-block assistant 时，需要同步设计 SDK/session 持久化、fallback tombstone 和 UI partial replacement。
 2. 补 prompt-too-long 的 collapse drain retry，避免只依赖 reactive compact。
 3. 补 `ApiRetry` / `CompactBoundary` / `ToolUseSummary` 等事件在 daemon SSE、TUI、headless 中的可见性策略。
 4. 再扩展 provider：Bedrock EventStream、Google tool use、server tool/connector content。
 
 ## 文档一致性提醒
 
-`docs/architecture/conversation/streaming.mdx` 中已有 streaming 说明，但部分描述与当前代码不完全一致，尤其是 `StreamingToolExecutor` 是否已在主循环中实时执行工具。后续若以本页作为 full-build 对齐清单，应同步更新该旧文档，避免两个 architecture 入口给出不同结论。
+`docs/architecture/conversation/streaming.mdx` 中已有 streaming 说明，但部分 provider / UI 表面描述仍可能与当前代码不完全一致。后续若以本页作为 full-build 对齐清单，应同步更新该旧文档，避免两个 architecture 入口给出不同结论。

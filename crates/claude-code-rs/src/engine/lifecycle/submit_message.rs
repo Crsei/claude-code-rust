@@ -283,6 +283,9 @@ impl QueryEngine {
                 max_turns: config.max_turns,
                 skip_cache_write: None,
                 task_budget: config.task_budget.clone(),
+                gates: crate::types::config::QueryGates::from_env(
+                    state_ref.read().app_state.fast_mode,
+                ),
             };
 
             // Create API client for the selected backend.

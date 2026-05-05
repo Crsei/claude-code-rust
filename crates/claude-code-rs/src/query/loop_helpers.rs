@@ -2,18 +2,21 @@
 //!
 //! Extracted from loop_impl.rs to keep the core stream! macro body focused.
 
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
+use crate::api::streaming::CompletedToolUse;
 use crate::types::message::{
     AssistantMessage, ContentBlock, Message, MessageContent, StreamEvent, ToolResultContent,
     UserMessage,
 };
 use crate::types::state::QueryLoopState;
-use crate::types::tool::ToolProgress;
+use crate::types::tool::{ToolProgress, Tools};
 use crate::types::transitions::{Continue, Terminal};
 
 use super::deps::{QueryDeps, ToolExecRequest, ToolExecResult};
@@ -36,6 +39,113 @@ pub(crate) const ESCALATED_MAX_TOKENS: usize = 64_000;
 
 type ToolUseTuple = (String, String, serde_json::Value);
 type ToolUseBatch = (bool, Vec<ToolUseTuple>);
+
+struct StartedStreamingTool {
+    tool_use_id: String,
+    tool_name: String,
+    handle: JoinHandle<anyhow::Result<ToolExecResult>>,
+}
+
+pub(crate) struct FinishedStreamingToolExecutions {
+    pub started_tool_use_ids: HashSet<String>,
+    pub results: Vec<ToolExecResult>,
+}
+
+pub(crate) struct StreamingToolExecutor {
+    started: Vec<StartedStreamingTool>,
+    blocked_by_serial_tool: bool,
+}
+
+impl StreamingToolExecutor {
+    pub(crate) fn new() -> Self {
+        Self {
+            started: Vec::new(),
+            blocked_by_serial_tool: false,
+        }
+    }
+
+    pub(crate) fn add_tool_use(
+        &mut self,
+        deps: Arc<dyn QueryDeps>,
+        tools: &Tools,
+        parent_message: &AssistantMessage,
+        on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
+        tool_use: CompletedToolUse,
+    ) -> bool {
+        if self.blocked_by_serial_tool {
+            return false;
+        }
+
+        let is_safe = tools
+            .iter()
+            .find(|tool| tool.name() == tool_use.name)
+            .is_some_and(|tool| tool.is_concurrency_safe(&tool_use.input));
+        if !is_safe {
+            self.blocked_by_serial_tool = true;
+            return false;
+        }
+
+        let tools = tools.clone();
+        let parent = parent_message.clone();
+        let request = ToolExecRequest {
+            tool_use_id: tool_use.id.clone(),
+            tool_name: tool_use.name.clone(),
+            input: tool_use.input,
+            langfuse_batch_span: None,
+        };
+        let tool_use_id = request.tool_use_id.clone();
+        let tool_name = request.tool_name.clone();
+        let handle = tokio::spawn(async move {
+            deps.execute_tool(request, &tools, &parent, on_progress)
+                .await
+        });
+        self.started.push(StartedStreamingTool {
+            tool_use_id,
+            tool_name,
+            handle,
+        });
+        true
+    }
+
+    pub(crate) async fn finish(self) -> FinishedStreamingToolExecutions {
+        let mut started_tool_use_ids = HashSet::new();
+        let mut results = Vec::new();
+
+        for started in self.started {
+            started_tool_use_ids.insert(started.tool_use_id.clone());
+            match started.handle.await {
+                Ok(Ok(result)) => results.push(result),
+                Ok(Err(error)) => {
+                    warn!(error = %error, tool = %started.tool_name, "streaming tool execution error");
+                    results.push(internal_tool_error_result(
+                        started.tool_use_id,
+                        started.tool_name,
+                        error,
+                    ));
+                }
+                Err(error) => {
+                    warn!(error = %error, tool = %started.tool_name, "streaming tool task aborted or panicked");
+                    results.push(internal_tool_error_result(
+                        started.tool_use_id,
+                        started.tool_name,
+                        error,
+                    ));
+                }
+            }
+        }
+
+        FinishedStreamingToolExecutions {
+            started_tool_use_ids,
+            results,
+        }
+    }
+
+    pub(crate) fn abort(self) {
+        for started in self.started {
+            started.handle.abort();
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ModelCallFailureStage {
@@ -361,6 +471,44 @@ pub(crate) async fn execute_tool_calls(
     }
 
     results
+}
+
+fn internal_tool_error_result(
+    tool_use_id: String,
+    tool_name: String,
+    error: impl std::fmt::Display,
+) -> ToolExecResult {
+    ToolExecResult {
+        tool_use_id,
+        tool_name,
+        result: crate::types::tool::ToolResult {
+            data: serde_json::json!(format!("Internal error: {}", error)),
+            new_messages: vec![],
+            ..Default::default()
+        },
+        is_error: true,
+    }
+}
+
+pub(crate) fn merge_tool_results_by_tool_use_order(
+    tool_uses: &[(String, String, serde_json::Value)],
+    streamed_results: Vec<ToolExecResult>,
+    remaining_results: Vec<ToolExecResult>,
+) -> Vec<ToolExecResult> {
+    let mut by_id = streamed_results
+        .into_iter()
+        .chain(remaining_results)
+        .map(|result| (result.tool_use_id.clone(), result))
+        .collect::<HashMap<_, _>>();
+
+    let mut ordered = Vec::new();
+    for (tool_use_id, _, _) in tool_uses {
+        if let Some(result) = by_id.remove(tool_use_id) {
+            ordered.push(result);
+        }
+    }
+    ordered.extend(by_id.into_values());
+    ordered
 }
 
 /// Create an abort placeholder assistant message.

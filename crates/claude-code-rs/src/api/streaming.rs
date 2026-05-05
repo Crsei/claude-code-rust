@@ -231,14 +231,18 @@ impl StreamAccumulator {
     }
 
     /// Build the final AssistantMessage with cost calculated from model pricing.
-    pub fn build(mut self, model: &str) -> AssistantMessage {
+    pub fn build(self, model: &str) -> AssistantMessage {
+        self.build_with_uuid(model, uuid::Uuid::new_v4())
+    }
+
+    pub fn build_with_uuid(mut self, model: &str, uuid: uuid::Uuid) -> AssistantMessage {
         for index in 0..self.content_blocks.len() {
             self.finalize_tool_input(index);
         }
 
         let cost_usd = crate::api::pricing::calculate_cost(model, &self.usage);
         AssistantMessage {
-            uuid: uuid::Uuid::new_v4(),
+            uuid,
             timestamp: chrono::Utc::now().timestamp(),
             role: "assistant".to_string(),
             content: self.content_blocks,

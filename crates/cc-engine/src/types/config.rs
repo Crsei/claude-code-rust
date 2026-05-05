@@ -37,6 +37,37 @@ pub struct QueryGates {
     pub fast_mode_enabled: bool,
 }
 
+impl Default for QueryGates {
+    fn default() -> Self {
+        Self {
+            streaming_tool_execution: false,
+            emit_tool_use_summaries: false,
+            fast_mode_enabled: false,
+        }
+    }
+}
+
+impl QueryGates {
+    pub fn from_env(fast_mode_enabled: bool) -> Self {
+        Self {
+            streaming_tool_execution: env_flag_enabled("CC_RUST_STREAMING_TOOL_EXECUTION"),
+            emit_tool_use_summaries: false,
+            fast_mode_enabled,
+        }
+    }
+}
+
+fn env_flag_enabled(name: &str) -> bool {
+    std::env::var(name)
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
+
 /// query() 函数的参数
 ///
 /// 对应 TypeScript: query.ts 的 QueryParams
@@ -51,6 +82,7 @@ pub struct QueryParams {
     pub max_turns: Option<usize>,
     pub skip_cache_write: Option<bool>,
     pub task_budget: Option<TaskBudget>,
+    pub gates: QueryGates,
 }
 
 /// 查询来源
