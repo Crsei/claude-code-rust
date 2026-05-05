@@ -40,8 +40,9 @@ mod tests;
 
 use commands::{query_prompt_text, try_execute_command, CmdAction};
 use engine_events::{
-    create_user_message, handle_sdk_message, install_tui_permission_callback, now_ts,
-    permission_choice_to_decision, spawn_engine_query, EngineEvent, StreamingState,
+    create_user_message, handle_sdk_message, handle_tool_progress, install_tui_permission_callback,
+    install_tui_tool_progress_callback, now_ts, permission_choice_to_decision, spawn_engine_query,
+    EngineEvent, StreamingState,
 };
 use export::export_to_editor;
 use subsystem_events::{
@@ -151,6 +152,7 @@ pub async fn run_tui(
     // ── Create channels ────────────────────────────────────────────
     let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<EngineEvent>();
     install_tui_permission_callback(&engine, engine_tx.clone());
+    install_tui_tool_progress_callback(&engine, engine_tx.clone());
     let mut pending_permission_response: Option<oneshot::Sender<String>> = None;
     let mut streaming_state = StreamingState::new();
 
@@ -339,6 +341,9 @@ pub async fn run_tui(
                 match engine_event {
                     EngineEvent::Sdk(sdk_msg) => {
                         handle_sdk_message(&mut app, *sdk_msg, &mut streaming_state);
+                    }
+                    EngineEvent::ToolProgress(progress) => {
+                        handle_tool_progress(&mut app, progress);
                     }
                     EngineEvent::PermissionRequest {
                         tool_name,

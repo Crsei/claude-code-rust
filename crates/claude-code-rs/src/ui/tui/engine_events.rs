@@ -2,10 +2,12 @@ use crate::engine::lifecycle::QueryEngine;
 use crate::engine::sdk_types::SdkMessage;
 use crate::services::prompt_suggestion::PromptSuggestionService;
 use crate::types::config::QuerySource;
+use crate::types::message::ProgressMessage;
 use crate::types::message::{
     AssistantMessage, ContentBlock, InfoLevel, Message, MessageContent, StreamEvent, SystemMessage,
     SystemSubtype, UserMessage,
 };
+use crate::types::tool::ToolProgress;
 use crate::ui::app::App;
 use crate::ui::permissions::PermissionChoice;
 use futures::StreamExt;
@@ -58,6 +60,8 @@ impl StreamingState {
 pub(super) enum EngineEvent {
     /// An SDK message from the engine stream.
     Sdk(Box<SdkMessage>),
+    /// Progress from a long-running tool.
+    ToolProgress(ProgressMessage),
     /// A tool permission prompt that must be answered by the UI.
     PermissionRequest {
         tool_name: String,
@@ -99,6 +103,88 @@ pub(super) fn install_tui_permission_callback(
         },
     );
     engine.set_permission_callback(callback);
+}
+
+pub(super) fn install_tui_tool_progress_callback(
+    engine: &Arc<QueryEngine>,
+    tx: mpsc::UnboundedSender<EngineEvent>,
+) {
+    let callback = Arc::new(move |progress: ToolProgress| {
+        let _ = tx.send(EngineEvent::ToolProgress(
+            progress_message_from_tool_progress(progress),
+        ));
+    });
+    engine.set_tool_progress_callback(callback);
+}
+
+pub(super) fn progress_message_from_tool_progress(progress: ToolProgress) -> ProgressMessage {
+    let message = tool_progress_display_text(&progress.data);
+    let data = match progress.data {
+        serde_json::Value::Object(mut map) => {
+            map.insert("message".to_string(), serde_json::Value::String(message));
+            serde_json::Value::Object(map)
+        }
+        other => serde_json::json!({
+            "message": message,
+            "raw": other,
+        }),
+    };
+
+    ProgressMessage {
+        uuid: uuid::Uuid::new_v4(),
+        timestamp: now_ts(),
+        tool_use_id: progress.tool_use_id,
+        data,
+    }
+}
+
+fn tool_progress_display_text(data: &serde_json::Value) -> String {
+    let tool = data
+        .get("tool")
+        .and_then(|v| v.as_str())
+        .filter(|tool| !tool.is_empty())
+        .unwrap_or("Tool");
+    let elapsed_seconds = data
+        .get("elapsed_seconds")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let output = data
+        .get("output")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .replace(['\r', '\n'], " ");
+    let total_lines = data.get("total_lines").and_then(|v| v.as_u64());
+
+    let mut text = format!("{tool} running {elapsed_seconds}s");
+    if let Some(total_lines) = total_lines {
+        let label = if total_lines == 1 { "line" } else { "lines" };
+        text.push_str(&format!("; {total_lines} {label}"));
+    }
+    let output = output.trim();
+    if !output.is_empty() {
+        let output = crate::utils::messages::truncate_text(output, 120);
+        text.push_str(&format!("; {output}"));
+    }
+    text
+}
+
+pub(super) fn handle_tool_progress(app: &mut App, progress: ProgressMessage) {
+    if let Some(text) = progress.data.get("message").and_then(|v| v.as_str()) {
+        app.set_spinner_message(text.to_string());
+    }
+
+    let replace_last = app.messages().last().is_some_and(|message| {
+        matches!(
+            message,
+            Message::Progress(existing) if existing.tool_use_id == progress.tool_use_id
+        )
+    });
+
+    if replace_last {
+        app.replace_last_message(Message::Progress(progress));
+    } else {
+        app.add_message(Message::Progress(progress));
+    }
 }
 
 pub(super) fn permission_choice_to_decision(choice: PermissionChoice) -> &'static str {

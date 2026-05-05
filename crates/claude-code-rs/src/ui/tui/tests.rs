@@ -1,5 +1,8 @@
 use super::commands::query_prompt_text;
-use super::engine_events::{create_user_message, handle_sdk_message, now_ts, StreamingState};
+use super::engine_events::{
+    create_user_message, handle_sdk_message, handle_tool_progress, now_ts,
+    progress_message_from_tool_progress, StreamingState,
+};
 use super::subsystem_events::handle_subsystem_event;
 use crate::engine::sdk_types::{
     SdkAssistantMessage, SdkMessage, SdkStreamEvent, SdkTombstone, SdkUserReplay,
@@ -9,6 +12,7 @@ use crate::types::message::{
     ContentBlock, InfoLevel, Message, MessageContent, StreamEvent, SystemMessage, SystemSubtype,
     ToolResultContent, UserMessage,
 };
+use crate::types::tool::ToolProgress;
 use crate::ui::app::App;
 use serde_json::json;
 fn stream_event(event: StreamEvent) -> SdkMessage {
@@ -341,6 +345,53 @@ fn tui_user_replay_preserves_tool_result_preview() {
         }
         other => panic!("expected user message, got {:?}", other),
     }
+}
+
+#[test]
+fn tui_tool_progress_updates_existing_progress_message() {
+    let mut app = App::new();
+
+    let first = progress_message_from_tool_progress(ToolProgress {
+        tool_use_id: "toolu_1".to_string(),
+        data: json!({
+            "tool": "Bash",
+            "output": "hello",
+            "elapsed_seconds": 2,
+            "total_lines": 1,
+        }),
+    });
+    handle_tool_progress(&mut app, first);
+
+    assert_eq!(app.messages().len(), 1);
+    let Message::Progress(progress) = &app.messages()[0] else {
+        panic!("expected progress message");
+    };
+    assert_eq!(progress.tool_use_id, "toolu_1");
+    assert_eq!(progress.data["message"], "Bash running 2s; 1 line; hello");
+
+    let second = progress_message_from_tool_progress(ToolProgress {
+        tool_use_id: "toolu_1".to_string(),
+        data: json!({
+            "tool": "Bash",
+            "output": "hello\nworld",
+            "elapsed_seconds": 3,
+            "total_lines": 2,
+        }),
+    });
+    handle_tool_progress(&mut app, second);
+
+    assert_eq!(
+        app.messages().len(),
+        1,
+        "same tool progress should replace the previous progress message"
+    );
+    let Message::Progress(progress) = &app.messages()[0] else {
+        panic!("expected progress message");
+    };
+    assert_eq!(
+        progress.data["message"],
+        "Bash running 3s; 2 lines; hello world"
+    );
 }
 
 #[test]
