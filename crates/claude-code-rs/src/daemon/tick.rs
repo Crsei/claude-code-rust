@@ -6,7 +6,7 @@ use std::time::Duration;
 use chrono::Local;
 use futures::StreamExt;
 use serde_json::json;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::types::config::QuerySource;
 
@@ -38,6 +38,18 @@ pub async fn tick_loop(state: DaemonState) {
         if state.engine.is_sleeping() {
             debug!("tick skipped: sleeping");
             continue;
+        }
+        match super::process_state::active_sleep_state() {
+            Ok(Some(sleep)) => {
+                debug!(
+                    sleeping_until = %sleep.sleeping_until.to_rfc3339(),
+                    reason = ?sleep.reason,
+                    "tick skipped: daemon sleep state active"
+                );
+                continue;
+            }
+            Ok(None) => {}
+            Err(err) => warn!(error = %err, "failed to read daemon sleep state"),
         }
 
         let now = Local::now();

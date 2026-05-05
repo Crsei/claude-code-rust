@@ -89,12 +89,15 @@ impl Tool for SleepTool {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+        let sleep_state =
+            crate::daemon::process_state::write_sleep_state(duration_seconds as u64, &reason)?;
 
         Ok(ToolResult {
             data: json!({
                 "status": "sleeping",
                 "duration_seconds": duration_seconds,
                 "reason": reason,
+                "sleep_until": sleep_state.sleeping_until.to_rfc3339(),
             }),
             new_messages: vec![],
             ..Default::default()

@@ -103,6 +103,14 @@ pub struct DaemonControlToken {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DaemonSleepState {
+    pub schema_version: u32,
+    pub sleeping_until: DateTime<Utc>,
+    pub reason: Option<String>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DaemonStatusSnapshot {
     Running(DaemonProcessState),
@@ -124,6 +132,10 @@ pub fn shutdown_request_path() -> PathBuf {
 
 pub fn control_token_path() -> PathBuf {
     daemon_dir().join("control-token.json")
+}
+
+pub fn sleep_state_path() -> PathBuf {
+    daemon_dir().join("sleep-state.json")
 }
 
 pub fn workers_dir() -> PathBuf {
@@ -165,6 +177,7 @@ pub fn write_started(port: u16, cwd: &Path) -> Result<DaemonProcessState> {
 pub fn write_stopped(port: u16, cwd: &Path) -> Result<DaemonProcessState> {
     clear_shutdown_request()?;
     clear_control_token()?;
+    clear_sleep_state()?;
     let now = Utc::now();
     let state = DaemonProcessState {
         schema_version: SCHEMA_VERSION,
@@ -412,6 +425,61 @@ pub fn clear_control_token() -> Result<()> {
     Ok(())
 }
 
+pub fn write_sleep_state(duration_seconds: u64, reason: &str) -> Result<DaemonSleepState> {
+    let until = Utc::now() + chrono::Duration::seconds(duration_seconds as i64);
+    write_sleep_state_until(until, reason)
+}
+
+pub fn write_sleep_state_until(
+    sleeping_until: DateTime<Utc>,
+    reason: &str,
+) -> Result<DaemonSleepState> {
+    ensure_daemon_dir()?;
+    let state = DaemonSleepState {
+        schema_version: SCHEMA_VERSION,
+        sleeping_until,
+        reason: if reason.trim().is_empty() {
+            None
+        } else {
+            Some(reason.trim().to_string())
+        },
+        updated_at: Utc::now(),
+    };
+    atomic_write_json(&sleep_state_path(), &state)?;
+    Ok(state)
+}
+
+pub fn read_sleep_state() -> Result<Option<DaemonSleepState>> {
+    let path = sleep_state_path();
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&path)
+        .with_context(|| format!("failed to read daemon sleep state {}", path.display()))?;
+    let state = serde_json::from_str(&text)
+        .with_context(|| format!("failed to parse daemon sleep state {}", path.display()))?;
+    Ok(Some(state))
+}
+
+pub fn active_sleep_state() -> Result<Option<DaemonSleepState>> {
+    let Some(state) = read_sleep_state()? else {
+        return Ok(None);
+    };
+    if state.sleeping_until <= Utc::now() {
+        clear_sleep_state()?;
+        return Ok(None);
+    }
+    Ok(Some(state))
+}
+
+pub fn clear_sleep_state() -> Result<()> {
+    let path = sleep_state_path();
+    if path.exists() {
+        fs::remove_file(&path).with_context(|| format!("failed to remove {}", path.display()))?;
+    }
+    Ok(())
+}
+
 pub fn try_run_management_command(args: &[String], cwd: &Path, port: u16) -> Option<ExitCode> {
     if args.first().map(String::as_str) != Some("daemon") {
         return None;
@@ -428,6 +496,8 @@ pub fn try_run_management_command(args: &[String], cwd: &Path, port: u16) -> Opt
         "command" => print_result(print_worker_command(args)),
         "events" => print_result(print_worker_events(args)),
         "token" => print_result(print_control_token()),
+        "sleep" => print_result(schedule_sleep_command(args)),
+        "wake" => print_result(wake_daemon_command()),
         "help" | "--help" | "-h" => {
             print_usage();
             ExitCode::SUCCESS
@@ -599,6 +669,31 @@ fn print_control_token() -> Result<()> {
     Ok(())
 }
 
+fn schedule_sleep_command(args: &[String]) -> Result<()> {
+    require_running_daemon()?;
+    let seconds = args
+        .get(2)
+        .with_context(|| "daemon sleep requires seconds")?
+        .parse::<u64>()
+        .with_context(|| "daemon sleep seconds must be a positive integer")?;
+    if !(1..=3600).contains(&seconds) {
+        anyhow::bail!("daemon sleep seconds must be between 1 and 3600");
+    }
+    let reason = args.get(3..).unwrap_or_default().join(" ");
+    let state = write_sleep_state(seconds, &reason)?;
+    println!(
+        "daemon sleeping until {}",
+        state.sleeping_until.to_rfc3339()
+    );
+    Ok(())
+}
+
+fn wake_daemon_command() -> Result<()> {
+    clear_sleep_state()?;
+    println!("daemon sleep cleared");
+    Ok(())
+}
+
 fn require_running_daemon() -> Result<DaemonProcessState> {
     match status_snapshot()? {
         DaemonStatusSnapshot::Running(state) => Ok(state),
@@ -746,7 +841,7 @@ fn print_result(result: Result<()>) -> ExitCode {
 
 fn print_usage() {
     eprintln!(
-        "Usage:\n  claude daemon [status]\n  claude daemon start [--port <port>]\n  claude daemon stop\n  claude daemon restart [--port <port>]\n  claude daemon submit <text>\n  claude daemon abort\n  claude daemon command <id> [worker-id]\n  claude daemon events [worker-id]\n  claude daemon token"
+        "Usage:\n  claude daemon [status]\n  claude daemon start [--port <port>]\n  claude daemon stop\n  claude daemon restart [--port <port>]\n  claude daemon submit <text>\n  claude daemon abort\n  claude daemon command <id> [worker-id]\n  claude daemon events [worker-id]\n  claude daemon token\n  claude daemon sleep <seconds> [reason]\n  claude daemon wake"
     );
 }
 
@@ -954,5 +1049,20 @@ mod tests {
 
         write_stopped(DEFAULT_DAEMON_PORT, temp.path()).unwrap();
         assert!(read_control_token().unwrap().is_none());
+    }
+
+    #[test]
+    #[serial]
+    fn sleep_state_tracks_active_and_expired_sleep() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+
+        let active = write_sleep_state(60, "waiting").unwrap();
+        assert_eq!(active.reason.as_deref(), Some("waiting"));
+        assert!(active_sleep_state().unwrap().is_some());
+
+        write_sleep_state_until(Utc::now() - chrono::Duration::seconds(1), "expired").unwrap();
+        assert!(active_sleep_state().unwrap().is_none());
+        assert!(read_sleep_state().unwrap().is_none());
     }
 }

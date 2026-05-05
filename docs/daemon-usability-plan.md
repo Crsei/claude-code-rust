@@ -424,3 +424,22 @@ Rust 端必须继续遵守路径隔离：所有 cc-rust daemon 状态写入 `~/.
 - `cargo test -p claude-code-rs daemon::process_state` 通过，新增覆盖 control token 创建、校验、stop 清理。
 - `cargo test -p claude-code-rs daemon::routes` 通过编译。
 - 本地 token smoke 通过：临时 `CC_RUST_HOME` + `FEATURE_KAIROS=1` + port `21988` 下，无 token 的 `/api/abort` 返回 `unauthorized`；`daemon token` 返回 36 字符 token；带 token 的 `/api/permission` 和 `/api/abort` 正常入队并生成 4 条 event；stop 后 `control-token.json` 被删除且 supervisor 不存活。
+
+## Phase 6 实施记录（2026-05-05）
+
+状态：已落地跨进程 daemon sleep state，使 proactive tick、`/api/status`、SleepTool、`/sleep` 和 CLI 管理命令共享同一份持久化休眠状态。完整 scheduler worker、cron-style task 接管、daily log 结构化双轨和未完成任务恢复仍保留为后续工作。
+
+本阶段交付：
+- 新增 `~/.cc-rust/daemon/sleep-state.json`，记录 `sleeping_until`、`reason`、`updated_at` 和 schema version。
+- 新增 `daemon sleep <seconds> [reason]` 与 `daemon wake` 管理命令，支持从另一个 CLI 进程暂停或恢复 daemon proactive tick。
+- SleepTool 和 `/sleep` 现在都会写入持久化 daemon sleep state，并在输出中返回实际 `sleep_until`。
+- proactive `tick_loop` 在每次 tick 前读取 active sleep state；未过期时跳过 tick，过期时自动清理状态文件。
+- `/api/status` 新增 `daemon_sleep_until` 与 `daemon_sleep_reason`，并把持久化 daemon sleep 纳入 `sleeping` 判断。
+- `daemon stop` 会清理 `sleep-state.json`，避免下次启动继承陈旧休眠状态。
+
+验证记录：
+- `cargo test -p claude-code-rs daemon::process_state` 通过，覆盖 sleep state active/expired 清理。
+- `cargo test -p claude-code-rs tools::exec::sleep` 通过，确认 SleepTool 测试仍通过。
+- `rustfmt --edition 2021` 已针对本阶段 Rust 文件通过。
+- 本地 sleep smoke 通过：临时 `CC_RUST_HOME` + `FEATURE_KAIROS=1` + port `21989` 下，`daemon sleep 60 'phase six smoke'` 后 `/api/status` 返回 `sleeping=true`、`daemon_sleep_reason=phase six smoke`，`daemon wake` 后 `/api/status` 返回 `sleeping=false` 且 `sleep-state.json` 被删除；stop 后 supervisor 不存活。
+- 未执行 30 分钟以上长跑、完整 scheduler worker 和 recoverable task 恢复测试；这些仍是 Phase 7 发布门槛或后续增强项。

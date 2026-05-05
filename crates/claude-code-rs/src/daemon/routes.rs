@@ -61,6 +61,8 @@ pub struct StatusResponse {
     pub query_running: bool,
     pub clients_connected: usize,
     pub sleeping: bool,
+    pub daemon_sleep_until: Option<String>,
+    pub daemon_sleep_reason: Option<String>,
     pub permission_mode: String,
     pub plan_workflow: Option<PlanWorkflowRecord>,
     pub supervisor_status: String,
@@ -446,6 +448,7 @@ async fn permission(
 /// `GET /api/status` -- return daemon status.
 async fn status(State(state): State<DaemonState>) -> Json<StatusResponse> {
     let app_state = state.engine.app_state();
+    let daemon_sleep = process_state::active_sleep_state().unwrap_or_default();
     let (supervisor_status, supervisor_pid, health_url, workers) =
         match process_state::status_snapshot() {
             Ok(DaemonStatusSnapshot::Running(process)) => (
@@ -468,7 +471,11 @@ async fn status(State(state): State<DaemonState>) -> Json<StatusResponse> {
         proactive: state.features.proactive,
         query_running: state.is_query_running.load(Ordering::SeqCst),
         clients_connected: state.clients.read().len(),
-        sleeping: state.engine.is_sleeping(),
+        sleeping: state.engine.is_sleeping() || daemon_sleep.is_some(),
+        daemon_sleep_until: daemon_sleep
+            .as_ref()
+            .map(|sleep| sleep.sleeping_until.to_rfc3339()),
+        daemon_sleep_reason: daemon_sleep.and_then(|sleep| sleep.reason),
         permission_mode: app_state.tool_permission_context.mode.as_str().to_string(),
         plan_workflow: app_state.plan_workflow,
         supervisor_status,

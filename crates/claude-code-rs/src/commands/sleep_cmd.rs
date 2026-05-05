@@ -58,8 +58,12 @@ impl CommandHandler for SleepCmdHandler {
             )));
         }
 
+        let sleep_state =
+            crate::daemon::process_state::write_sleep_state(secs, "slash command /sleep")?;
+
         Ok(CommandResult::Output(format!(
-            "Sleep scheduled for {} second{}. Proactive actions paused.",
+            "Sleep scheduled until {} ({} second{}). Proactive actions paused.",
+            sleep_state.sleeping_until.to_rfc3339(),
             secs,
             if secs == 1 { "" } else { "s" }
         )))
