@@ -52,6 +52,7 @@
 | 2.1 canonical path 决策 | 已完成 | 2026-05-05 | 文档：本页“2.1 canonical path 决策”；代码注释：`query/deps.rs`、`loop_helpers.rs`、`tools/execution/pipeline.rs`、`tools/execution/coordinator.rs`。 | 主 loop canonical 工具执行边界确定为 `QueryDeps::execute_tool()` / `QueryEngineDeps::execute_tool()`；`run_tool_use()` 暂作为参考/待折叠管线，缺失的 validation、security、result-size 阶段在 2.2 合入 canonical 边界。 |
 | 2.2 行为合并 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs engine::lifecycle::deps`，8 passed。 | `QueryEngineDeps::execute_tool()` 现在复用 `tools::execution` 的 lookup alias、validation、`_simulatedSedEdit` sanitization、security validation、result-size enforcement，同时保留既有 allow / deny / ask、hook、progress id、abort、audit / Langfuse 和结构化 `ToolResult` 保真。 |
 | 2.3 concurrency-safe 语义 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs execute_tool_calls_batches_consecutive_safe_tools_only`，1 passed。 | `loop_helpers::execute_tool_calls()` 已有连续 safe 批量并发、unsafe 串行屏障、结果顺序稳定的回归测试；阶段 4 接入 stream-time scheduler 时必须保留该语义。 |
+| 2.4 tool result 标准化 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs tool_result_user_message`，3 passed；`cargo test -p claude-code-rs query::loop_impl::loop_tests`，10 passed。 | 新增 `make_tool_result_user_message()` 作为 `ToolExecResult` 进入下一轮 `tool_result` user message 的统一生成点，保留 error、`model_content`、`display_preview` 和 `new_messages` 语义；`loop_tests` 改为显式导入消息类型，不再依赖 `loop_impl` 私有 import。 |
 
 ## Subagent 并行拆分规则
 

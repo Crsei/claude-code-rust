@@ -16,7 +16,8 @@ use crate::query::deps::{
 use crate::types::app_state::AppState;
 use crate::types::config::{QuerySource, TaskBudget};
 use crate::types::message::{
-    AssistantMessage, ContentBlock, ImageSource, StreamEvent, ToolResultContent, Usage,
+    AssistantMessage, ContentBlock, ImageSource, MessageContent, StreamEvent, ToolResultContent,
+    Usage, UserMessage,
 };
 use crate::types::state::AutoCompactTracking;
 use crate::types::tool::{ToolProgress, Tools};

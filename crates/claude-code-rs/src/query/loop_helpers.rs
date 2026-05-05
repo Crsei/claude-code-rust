@@ -7,7 +7,9 @@ use std::sync::Arc;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
-use crate::types::message::{AssistantMessage, ContentBlock, Message, MessageContent, UserMessage};
+use crate::types::message::{
+    AssistantMessage, ContentBlock, Message, MessageContent, ToolResultContent, UserMessage,
+};
 use crate::types::state::QueryLoopState;
 use crate::types::tool::ToolProgress;
 use crate::types::transitions::{Continue, Terminal};
@@ -284,6 +286,53 @@ pub(crate) fn make_user_message(
     }
 }
 
+/// Build the canonical user-facing `tool_result` message for a completed tool.
+///
+/// This is the only query-loop path that converts [`ToolExecResult`] into the
+/// next-turn model context. Keep result normalization here so post-stream and
+/// future stream-time tool execution produce identical user messages.
+pub(crate) fn make_tool_result_user_message(
+    deps: &Arc<dyn QueryDeps>,
+    exec_result: &ToolExecResult,
+    source_tool_assistant_uuid: Uuid,
+) -> UserMessage {
+    let (content, display_text) = normalize_tool_result_content(exec_result);
+    let tool_result_block = ContentBlock::ToolResult {
+        tool_use_id: exec_result.tool_use_id.clone(),
+        content,
+        is_error: exec_result.is_error,
+    };
+
+    UserMessage {
+        uuid: Uuid::parse_str(&deps.uuid()).unwrap_or_else(|_| Uuid::new_v4()),
+        timestamp: chrono::Utc::now().timestamp_millis(),
+        role: "user".to_string(),
+        content: MessageContent::Blocks(vec![tool_result_block]),
+        is_meta: true,
+        tool_use_result: Some(display_text),
+        source_tool_assistant_uuid: Some(source_tool_assistant_uuid),
+    }
+}
+
+fn normalize_tool_result_content(exec_result: &ToolExecResult) -> (ToolResultContent, String) {
+    if exec_result.is_error {
+        let text = format!("Error: {}", exec_result.result.data);
+        return (ToolResultContent::Text(text.clone()), text);
+    }
+
+    if let Some(ref model_content) = exec_result.result.model_content {
+        let preview = exec_result
+            .result
+            .display_preview
+            .clone()
+            .unwrap_or_else(|| exec_result.result.data.to_string());
+        return (model_content.clone(), preview);
+    }
+
+    let text = exec_result.result.data.to_string();
+    (ToolResultContent::Text(text.clone()), text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -456,6 +505,135 @@ mod tests {
             is_api_error_message: false,
             api_error: None,
             cost_usd: 0.0,
+        }
+    }
+
+    #[test]
+    fn tool_result_user_message_normalizes_plain_text_result() {
+        let deps: Arc<dyn QueryDeps> = Arc::new(RecordingDeps::new());
+        let source_uuid = uuid::Uuid::new_v4();
+        let exec_result = ToolExecResult {
+            tool_use_id: "tu_text".to_string(),
+            tool_name: "TextTool".to_string(),
+            result: ToolResult {
+                data: serde_json::json!({"ok": true}),
+                new_messages: vec![],
+                ..Default::default()
+            },
+            is_error: false,
+        };
+
+        let user_msg = make_tool_result_user_message(&deps, &exec_result, source_uuid);
+
+        assert!(user_msg.is_meta);
+        assert_eq!(user_msg.source_tool_assistant_uuid, Some(source_uuid));
+        assert_eq!(user_msg.tool_use_result.as_deref(), Some(r#"{"ok":true}"#));
+        match &user_msg.content {
+            MessageContent::Blocks(blocks) => match &blocks[0] {
+                ContentBlock::ToolResult {
+                    tool_use_id,
+                    content,
+                    is_error,
+                } => {
+                    assert_eq!(tool_use_id, "tu_text");
+                    assert!(!is_error);
+                    match content {
+                        ToolResultContent::Text(text) => assert_eq!(text, r#"{"ok":true}"#),
+                        other => panic!("expected text tool result, got {:?}", other),
+                    }
+                }
+                other => panic!("expected tool result block, got {:?}", other),
+            },
+            other => panic!("expected block user message, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn tool_result_user_message_preserves_model_content_and_preview() {
+        let deps: Arc<dyn QueryDeps> = Arc::new(RecordingDeps::new());
+        let source_uuid = uuid::Uuid::new_v4();
+        let image = ContentBlock::Image {
+            source: crate::types::message::ImageSource {
+                source_type: "base64".to_string(),
+                media_type: "image/png".to_string(),
+                data: "iVBORw0KGgo=".to_string(),
+            },
+        };
+        let exec_result = ToolExecResult {
+            tool_use_id: "tu_image".to_string(),
+            tool_name: "Screenshot".to_string(),
+            result: ToolResult {
+                data: serde_json::json!({"raw": "large"}),
+                model_content: Some(ToolResultContent::Blocks(vec![image])),
+                display_preview: Some("[Screenshot: image/png]".to_string()),
+                new_messages: vec![],
+            },
+            is_error: false,
+        };
+
+        let user_msg = make_tool_result_user_message(&deps, &exec_result, source_uuid);
+
+        assert_eq!(
+            user_msg.tool_use_result.as_deref(),
+            Some("[Screenshot: image/png]")
+        );
+        match &user_msg.content {
+            MessageContent::Blocks(blocks) => match &blocks[0] {
+                ContentBlock::ToolResult {
+                    content, is_error, ..
+                } => {
+                    assert!(!is_error);
+                    match content {
+                        ToolResultContent::Blocks(inner) => {
+                            assert!(matches!(inner.first(), Some(ContentBlock::Image { .. })));
+                        }
+                        other => panic!("expected structured tool result, got {:?}", other),
+                    }
+                }
+                other => panic!("expected tool result block, got {:?}", other),
+            },
+            other => panic!("expected block user message, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn tool_result_user_message_normalizes_errors_before_model_content() {
+        let deps: Arc<dyn QueryDeps> = Arc::new(RecordingDeps::new());
+        let source_uuid = uuid::Uuid::new_v4();
+        let exec_result = ToolExecResult {
+            tool_use_id: "tu_error".to_string(),
+            tool_name: "FailingTool".to_string(),
+            result: ToolResult {
+                data: serde_json::json!("permission denied"),
+                model_content: Some(ToolResultContent::Text("ignored".to_string())),
+                display_preview: Some("ignored".to_string()),
+                new_messages: vec![],
+            },
+            is_error: true,
+        };
+
+        let user_msg = make_tool_result_user_message(&deps, &exec_result, source_uuid);
+
+        assert_eq!(
+            user_msg.tool_use_result.as_deref(),
+            Some("Error: \"permission denied\"")
+        );
+        match &user_msg.content {
+            MessageContent::Blocks(blocks) => match &blocks[0] {
+                ContentBlock::ToolResult {
+                    content, is_error, ..
+                } => {
+                    assert!(is_error);
+                    match content {
+                        ToolResultContent::Text(text) => {
+                            assert_eq!(text, "Error: \"permission denied\"");
+                        }
+                        other => panic!("expected text error result, got {:?}", other),
+                    }
+                }
+                other => panic!("expected tool result block, got {:?}", other),
+            },
+            other => panic!("expected block user message, got {:?}", other),
         }
     }
 

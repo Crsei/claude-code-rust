@@ -30,8 +30,7 @@ use uuid::Uuid;
 use crate::types::config::QueryParams;
 use crate::types::message::QueryYield;
 use crate::types::message::{
-    Attachment, AttachmentMessage, ContentBlock, Message, MessageContent, RequestStartEvent,
-    StreamEvent, ToolResultContent, Usage, UserMessage,
+    Attachment, AttachmentMessage, ContentBlock, Message, RequestStartEvent, StreamEvent, Usage,
 };
 use crate::types::state::{BudgetTracker, QueryLoopState, TokenBudgetDecision};
 use crate::types::transitions::Continue;
@@ -41,7 +40,8 @@ use crate::services::tool_use_summary::{self, ToolInfo};
 use super::deps::{ModelCallParams, QueryDeps};
 use super::loop_helpers::{
     execute_tool_calls, handle_max_output_tokens, handle_prompt_too_long, make_abort_message,
-    make_error_message, make_user_message, MaxTokensRecovery, PromptRecovery,
+    make_error_message, make_tool_result_user_message, make_user_message, MaxTokensRecovery,
+    PromptRecovery,
 };
 use super::stop_hooks::{self, StopHookResult};
 use super::token_budget::check_token_budget;
@@ -549,37 +549,8 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
 
                 // Convert tool results to user messages
                 for exec_result in &tool_results {
-                    // Use structured model_content when available (e.g. images from MCP),
-                    // otherwise fall back to text-only content.
-                    let (tr_content, display_text) = if exec_result.is_error {
-                        let text = format!("Error: {}", exec_result.result.data);
-                        (ToolResultContent::Text(text.clone()), text)
-                    } else if let Some(ref model_content) = exec_result.result.model_content {
-                        let preview = exec_result.result.display_preview
-                            .clone()
-                            .unwrap_or_else(|| exec_result.result.data.to_string());
-                        (model_content.clone(), preview)
-                    } else {
-                        let text = exec_result.result.data.to_string();
-                        (ToolResultContent::Text(text.clone()), text)
-                    };
-
-                    let tool_result_block = ContentBlock::ToolResult {
-                        tool_use_id: exec_result.tool_use_id.clone(),
-                        content: tr_content,
-                        is_error: exec_result.is_error,
-                    };
-
-                    let user_msg = UserMessage {
-                        uuid: Uuid::parse_str(&deps.uuid()).unwrap_or_else(|_| Uuid::new_v4()),
-                        timestamp: chrono::Utc::now().timestamp_millis(),
-                        role: "user".to_string(),
-                        content: MessageContent::Blocks(vec![tool_result_block]),
-                        is_meta: true,
-                        tool_use_result: Some(display_text),
-                        source_tool_assistant_uuid: Some(assistant_message.uuid),
-                    };
-
+                    let user_msg =
+                        make_tool_result_user_message(&deps, exec_result, assistant_message.uuid);
                     let msg = Message::User(user_msg);
                     yield QueryYield::Message(msg.clone());
                     state.messages.push(msg);
