@@ -15,6 +15,8 @@ use tokio::process::Command;
 
 use super::availability::Mechanism;
 use super::errors::SandboxError;
+use super::filesystem::FsDecision;
+use super::mode::SandboxMode;
 use super::network::NetworkDecision;
 use super::policy::SandboxPolicy;
 use cc_types::permissions::{ToolPermissionContext, ToolPermissionRulesBySource};
@@ -81,7 +83,238 @@ pub fn preflight_shell_command(policy: &SandboxPolicy, command: &str) -> Result<
     if let NetworkDecision::Denied(err) = policy.network.check_shell_command(command) {
         return Err(err);
     }
+    if policy.is_active() {
+        for raw_path in extract_shell_write_targets(command) {
+            let Some(path) = resolve_shell_path(policy, &raw_path) else {
+                continue;
+            };
+            if policy.mode == SandboxMode::ReadOnly {
+                return Err(SandboxError::ReadOnlyModeDeniesWrite { path });
+            }
+            match policy.paths.check_write(&path) {
+                FsDecision::Allowed => {}
+                FsDecision::Denied { reason } if reason.starts_with("denyWrite ") => {
+                    return Err(SandboxError::WriteDenied { path, rule: reason });
+                }
+                FsDecision::Denied { reason } if reason.starts_with("outside workspace ") => {
+                    return Err(SandboxError::WriteOutsideWorkspace { path });
+                }
+                FsDecision::Denied { reason } => {
+                    return Err(SandboxError::Policy { message: reason });
+                }
+            }
+        }
+    }
     Ok(())
+}
+
+fn extract_shell_write_targets(command: &str) -> Vec<String> {
+    let mut targets = Vec::new();
+    for segment in split_shell_segments(command) {
+        let Ok(words) = cc_utils::bash::parse_command(&segment) else {
+            continue;
+        };
+        collect_redirection_targets(&words, &mut targets);
+        collect_write_command_targets(&words, &mut targets);
+    }
+    targets
+}
+
+fn split_shell_segments(command: &str) -> Vec<String> {
+    let mut segments = Vec::new();
+    let mut current = String::new();
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut chars = command.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\\' && !in_single_quote {
+            current.push(ch);
+            if let Some(next) = chars.next() {
+                current.push(next);
+            }
+            continue;
+        }
+        if ch == '\'' && !in_double_quote {
+            in_single_quote = !in_single_quote;
+            current.push(ch);
+            continue;
+        }
+        if ch == '"' && !in_single_quote {
+            in_double_quote = !in_double_quote;
+            current.push(ch);
+            continue;
+        }
+
+        if !in_single_quote && !in_double_quote {
+            if (ch == '&' || ch == '|') && chars.peek() == Some(&ch) {
+                push_segment(&mut segments, &mut current);
+                chars.next();
+                continue;
+            }
+            if matches!(ch, ';' | '|') {
+                push_segment(&mut segments, &mut current);
+                continue;
+            }
+        }
+
+        current.push(ch);
+    }
+    push_segment(&mut segments, &mut current);
+    segments
+}
+
+fn push_segment(segments: &mut Vec<String>, current: &mut String) {
+    let trimmed = current.trim();
+    if !trimmed.is_empty() {
+        segments.push(trimmed.to_string());
+    }
+    current.clear();
+}
+
+fn collect_redirection_targets(words: &[String], targets: &mut Vec<String>) {
+    let mut iter = words.iter().peekable();
+    while let Some(word) = iter.next() {
+        if is_redirection_operator(word) {
+            if let Some(target) = iter.peek() {
+                push_target(target, targets);
+            }
+            continue;
+        }
+        if let Some(target) = attached_redirection_target(word) {
+            push_target(target, targets);
+        }
+    }
+}
+
+fn is_redirection_operator(word: &str) -> bool {
+    matches!(word, ">" | ">>" | "&>" | "&>>")
+        || word
+            .strip_suffix('>')
+            .is_some_and(|prefix| !prefix.is_empty() && prefix.chars().all(|c| c.is_ascii_digit()))
+        || word
+            .strip_suffix(">>")
+            .is_some_and(|prefix| !prefix.is_empty() && prefix.chars().all(|c| c.is_ascii_digit()))
+}
+
+fn attached_redirection_target(word: &str) -> Option<&str> {
+    for op in ["&>>", "&>", ">>", ">"] {
+        if let Some(rest) = word.strip_prefix(op) {
+            return Some(rest);
+        }
+    }
+    let first_non_digit = word
+        .char_indices()
+        .find(|(_, ch)| !ch.is_ascii_digit())
+        .map(|(idx, _)| idx)?;
+    if first_non_digit > 0 {
+        let rest = &word[first_non_digit..];
+        if let Some(target) = rest.strip_prefix(">>").or_else(|| rest.strip_prefix('>')) {
+            return Some(target);
+        }
+    }
+    None
+}
+
+fn collect_write_command_targets(words: &[String], targets: &mut Vec<String>) {
+    let Some(command) = words.first().map(|w| command_name(w)) else {
+        return;
+    };
+    let args = &words[1..];
+    match command.as_str() {
+        "touch" | "mkdir" | "rm" | "rmdir" | "del" | "erase" | "remove-item" | "ri"
+        | "set-content" | "add-content" | "clear-content" | "new-item" | "ni" | "out-file" => {
+            collect_path_args(args, targets);
+        }
+        "cp" | "copy" | "copy-item" | "move" | "mv" | "move-item" | "install" => {
+            if let Some(destination) = powershell_named_arg(args, &["-destination", "-dest"]) {
+                push_target(destination, targets);
+            } else if let Some(last) = args.iter().rev().find(|arg| !is_option(arg)) {
+                push_target(last, targets);
+            }
+        }
+        "tee" | "tee-object" => collect_path_args(args, targets),
+        _ => {}
+    }
+}
+
+fn collect_path_args<'a>(args: &'a [String], targets: &mut Vec<String>) {
+    let mut idx = 0;
+    let mut saw_named_path = false;
+    while idx < args.len() {
+        let arg = &args[idx];
+        if matches!(
+            arg.to_ascii_lowercase().as_str(),
+            "-path" | "-literalpath" | "-filepath"
+        ) {
+            if let Some(next) = args.get(idx + 1) {
+                push_target(next, targets);
+                saw_named_path = true;
+            }
+            idx += 2;
+            continue;
+        }
+        idx += 1;
+    }
+    if !saw_named_path {
+        for arg in args.iter().filter(|arg| !is_option(arg)) {
+            push_target(arg, targets);
+        }
+    }
+}
+
+fn powershell_named_arg<'a>(args: &'a [String], names: &[&str]) -> Option<&'a str> {
+    args.windows(2).find_map(|pair| {
+        names
+            .iter()
+            .any(|name| pair[0].eq_ignore_ascii_case(name))
+            .then_some(pair[1].as_str())
+    })
+}
+
+fn command_name(word: &str) -> String {
+    std::path::Path::new(word)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(word)
+        .to_ascii_lowercase()
+}
+
+fn is_option(arg: &str) -> bool {
+    arg.starts_with('-')
+}
+
+fn push_target(raw: &str, targets: &mut Vec<String>) {
+    let trimmed = raw.trim();
+    if trimmed.is_empty()
+        || trimmed == "-"
+        || trimmed.starts_with('&')
+        || trimmed.starts_with('$')
+        || trimmed.contains("://")
+        || trimmed.eq_ignore_ascii_case("nul")
+        || trimmed.eq_ignore_ascii_case("/dev/null")
+    {
+        return;
+    }
+    targets.push(trimmed.to_string());
+}
+
+fn resolve_shell_path(policy: &SandboxPolicy, raw: &str) -> Option<PathBuf> {
+    let path = raw.trim_matches('"').trim_matches('\'');
+    if path.is_empty() || path.contains('*') || path.contains('?') {
+        return None;
+    }
+    let candidate = PathBuf::from(path);
+    if candidate.is_absolute() || looks_like_windows_absolute_path(path) {
+        Some(candidate)
+    } else {
+        Some(policy.paths.workspace().join(candidate))
+    }
+}
+
+fn looks_like_windows_absolute_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 3 && bytes[1] == b':' && matches!(bytes[2], b'\\' | b'/')
 }
 
 // ---------------------------------------------------------------------------
@@ -614,6 +847,98 @@ mod tests {
         let err = preflight_shell_command(&policy, "curl https://evil.net")
             .expect_err("disallowed host should be blocked");
         assert!(matches!(err, SandboxError::DomainNotAllowed { .. }));
+    }
+
+    #[test]
+    fn preflight_shell_command_blocks_read_only_writes() {
+        use super::super::policy::SandboxPolicyBuilder;
+        use cc_config::settings::SandboxSettings;
+
+        let policy = SandboxPolicyBuilder::new(std::path::PathBuf::from("/proj"))
+            .settings(SandboxSettings {
+                enabled: Some(true),
+                mode: Some("read-only".into()),
+                ..Default::default()
+            })
+            .build();
+
+        let err = preflight_shell_command(&policy, "echo hi > out.txt")
+            .expect_err("read-only mode should block explicit writes");
+        assert!(matches!(err, SandboxError::ReadOnlyModeDeniesWrite { .. }));
+    }
+
+    #[test]
+    fn preflight_shell_command_blocks_outside_workspace_writes() {
+        use super::super::policy::SandboxPolicyBuilder;
+        use cc_config::settings::SandboxSettings;
+
+        let policy = SandboxPolicyBuilder::new(std::path::PathBuf::from("/proj"))
+            .settings(SandboxSettings {
+                enabled: Some(true),
+                ..Default::default()
+            })
+            .build();
+
+        let err = preflight_shell_command(&policy, "echo hi > /tmp/out.txt")
+            .expect_err("workspace sandbox should block outside writes");
+        assert!(matches!(err, SandboxError::WriteOutsideWorkspace { .. }));
+    }
+
+    #[test]
+    fn preflight_shell_command_allows_workspace_writes() {
+        use super::super::policy::SandboxPolicyBuilder;
+        use cc_config::settings::SandboxSettings;
+
+        let policy = SandboxPolicyBuilder::new(std::path::PathBuf::from("/proj"))
+            .settings(SandboxSettings {
+                enabled: Some(true),
+                ..Default::default()
+            })
+            .build();
+
+        preflight_shell_command(&policy, "mkdir build && touch build/out.txt")
+            .expect("workspace writes should pass preflight");
+    }
+
+    #[test]
+    fn preflight_shell_command_respects_allow_and_deny_write() {
+        use super::super::policy::SandboxPolicyBuilder;
+        use cc_config::settings::{SandboxFilesystemSettings, SandboxSettings};
+
+        let policy = SandboxPolicyBuilder::new(std::path::PathBuf::from("/proj"))
+            .settings(SandboxSettings {
+                enabled: Some(true),
+                filesystem: SandboxFilesystemSettings {
+                    allow_write: vec!["/tmp/build".into()],
+                    deny_write: vec!["/proj/secrets".into()],
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .build();
+
+        preflight_shell_command(&policy, "echo hi > /tmp/build/out.txt")
+            .expect("allowWrite should permit outside write target");
+        let err = preflight_shell_command(&policy, "echo hi > /proj/secrets/out.txt")
+            .expect_err("denyWrite should override workspace writes");
+        assert!(matches!(err, SandboxError::WriteDenied { .. }));
+    }
+
+    #[test]
+    fn preflight_shell_command_checks_powershell_write_cmdlets() {
+        use super::super::policy::SandboxPolicyBuilder;
+        use cc_config::settings::SandboxSettings;
+
+        let policy = SandboxPolicyBuilder::new(std::path::PathBuf::from("/proj"))
+            .settings(SandboxSettings {
+                enabled: Some(true),
+                ..Default::default()
+            })
+            .build();
+
+        let err = preflight_shell_command(&policy, "Set-Content -Path /tmp/out.txt -Value hi")
+            .expect_err("PowerShell write cmdlets should be checked");
+        assert!(matches!(err, SandboxError::WriteOutsideWorkspace { .. }));
     }
 
     #[test]

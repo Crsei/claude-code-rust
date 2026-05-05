@@ -25,12 +25,12 @@
 
 ## 1. S 级简化 (>80% 缩减)
 
-### 1.1 BashTool — 仍有 Full Build 差距 (输出截断 / heredoc / Git 跟踪 / 进程树终止 / 危险命令拒绝列表 / security validator 高风险规则已补全)
+### 1.1 BashTool — 仍有 Full Build 差距 (输出截断 / heredoc / Git 跟踪 / 进程树终止 / 危险命令拒绝列表 / security validator 高风险规则 / sandbox FS preflight 已补全)
 
 | | TypeScript | Rust |
 |---|---|---|
 | 行数 | 12,411 (18 文件) | 830 + 934 + 563 + 193 + 432 (+security gate) |
-| 文件 | — | `tools/exec/bash.rs` + `crates/cc-utils/src/bash.rs` + `crates/cc-utils/src/git_operation_tracking.rs` + `tools/exec/process_control.rs` + `crates/cc-permissions/src/dangerous.rs` |
+| 文件 | — | `tools/exec/bash.rs` + `crates/cc-utils/src/bash.rs` + `crates/cc-utils/src/git_operation_tracking.rs` + `tools/exec/process_control.rs` + `crates/cc-permissions/src/dangerous.rs` + `crates/cc-sandbox/src/runner.rs` |
 
 **Rust 保留：**
 - 基础进程执行 (`tokio::process::Command`)
@@ -42,10 +42,11 @@
 - ✅ **进程树终止 / 取消语义** (Unix process group、Windows `taskkill /T /F`，超时和 abort signal 终止进程树并返回 `termination` 元数据)
 - ✅ **命令拒绝列表与危险命令分析子项** (force-with-lease、`git clean` dry-run 例外、stash drop/clear、SQL drop/truncate、PowerShell destructive cmdlet/alias)
 - ✅ **PowerShell security validator 高风险规则** (`Invoke-Expression`、嵌套 PowerShell、download cradle、`Add-Type`、COM object、`Start-Process` 提权/再拉 PowerShell、WMI/CIM 进程创建)
+- ✅ **sandbox 文件系统 preflight 子项** (shell redirection、常见 Bash 写命令、PowerShell 写 cmdlet 按 read-only/workspace/allowWrite/denyWrite 执行 Rust 级拒绝)
 
 **TS 独有（未移植）：**
 - PowerShell 分支 (8,959 行的 PowerShellTool)
-- 沙箱执行环境 (sandbox/)
+- sandbox OS-level 平台隔离差异（尤其 Windows primitive / fail-closed 产品边界）
 - 复杂后台任务 / auto-background 超时逻辑
 - PowerShell AST parser fidelity 与剩余 validator checks（dynamic command name、script block/subexpression、splatting、module/env/runtime-state 等）
 - 终端大小感知
@@ -371,7 +372,7 @@
 |------|---------|-----------|--------|------|
 | state (→ types) | ~58,000 | 832 | 99% | S |
 | skills/ | ~43,000 | 989 | 98% | S |
-| BashTool | 12,411 | 2,952 | 76% | S (截断 / heredoc 校验 / Git 操作跟踪 / 进程树终止 / 危险命令拒绝列表 / security validator 高风险规则已补全) |
+| BashTool | 12,411 | 2,952 + sandbox runner 973 | 76% | S (截断 / heredoc 校验 / Git 操作跟踪 / 进程树终止 / 危险命令拒绝列表 / security validator 高风险规则 / sandbox FS preflight 已补全) |
 | utils/ | 90,813 | 2,857 | 97% | S |
 | AgentTool | 6,072 | 789 | 87% | S (worktree 已补全) |
 | UI (全部) | 54,049 | 3,165 | 94% | S (框架) |
@@ -408,6 +409,7 @@
    - 2026-05-05 继续补齐进程树终止 / 取消语义 — 新增 `tools/exec/process_control.rs`，Bash/PowerShell 共享超时和 abort 终止路径
    - 2026-05-05 继续补齐危险命令拒绝列表 — `cc-permissions/src/dangerous.rs` 增加上游 destructive warning 覆盖面，并让 PowerShell 执行安全门调用专用检测
    - 2026-05-05 继续补齐 PowerShell security validator 高风险规则 — 覆盖 eval、nested PowerShell、download cradle、Add-Type、COM、Start-Process、WMI/CIM spawn
+   - 2026-05-05 继续补齐 sandbox 文件系统 preflight — `cc-sandbox/src/runner.rs` 对 shell 显式写目标执行 read-only/workspace/allowWrite/denyWrite 检查
 3. ~~**FileReadTool PDF/图片**~~ ✅ 已补全 — 236→743 行, 图片 base64 + PDF pdftotext + ipynb JSON
    - 2026-05-05 继续补齐 symlink 解析、编码检测、大文件分页 — 743→1,214 行
 4. ~~**GrepTool ripgrep 调用**~~ ✅ 已补全 — 185→371 行, rg 子进程 + multiline + offset

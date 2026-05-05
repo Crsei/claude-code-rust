@@ -53,12 +53,13 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | BashTool 进程树/取消语义 | 已补齐子项 | `crates/claude-code-rs/src/tools/exec/process_control.rs` 为 Bash/PowerShell 统一配置 Unix process group / Windows `taskkill /T /F`，超时和 abort signal 会终止进程树并返回 `termination` 元数据；PowerShell 已从 `cmd.output()` 改为显式 spawn 以复用同一终止语义 |
 | Bash/PowerShell 危险命令拒绝列表 | 已补齐子项 | `crates/cc-permissions/src/dangerous.rs` 已补齐上游 destructive warning 覆盖面：`git push --force-with-lease`、`git clean` dry-run 例外、`git stash drop/clear`、SQL drop/truncate、PowerShell `Remove-Item`/`Clear-Content`/磁盘与系统 cmdlet；`PowerShellTool` 通过执行安全门调用 PowerShell 专用检测 |
 | PowerShell security validator 高风险规则 | 已补齐子项 | `crates/cc-permissions/src/dangerous.rs` 已覆盖上游 `powershellSecurity.ts` 第一批高风险拦截：`Invoke-Expression`/`iex`、嵌套 `powershell`/`pwsh`、download cradle、`Add-Type`、COM object、`Start-Process` 提权或再拉 PowerShell、WMI/CIM 进程创建；执行安全门测试覆盖 PowerShell 拦截路径 |
+| Bash/PowerShell sandbox 文件系统 preflight | 已补齐子项 | `crates/cc-sandbox/src/runner.rs` 的 `preflight_shell_command()` 已接入显式写目标检查，覆盖 shell redirection、常见 Bash 写命令与 PowerShell 写 cmdlet，并按 read-only/workspace/allowWrite/denyWrite 返回 sandbox policy error |
 
 ### 2.2 仍需补齐的工具 parity
 
 | 模块 | 待补齐的行为（参考上游） |
 |------|----------|
-| BashTool | PowerShell AST parser fidelity 与剩余 validator checks（dynamic command name、script block/subexpression、splatting、module/env/runtime-state 等）、sandbox 文件系统策略与平台隔离差异；Stage 3c.2 执行前硬拦、heredoc、Git 操作跟踪、进程树终止、destructive denylist 与高风险 security validator 子项已落地 |
+| BashTool | PowerShell AST parser fidelity 与剩余 validator checks（dynamic command name、script block/subexpression、splatting、module/env/runtime-state 等）、sandbox OS-level 平台隔离差异（尤其 Windows primitive / fail-closed 产品边界）；Stage 3c.2 执行前硬拦、heredoc、Git 操作跟踪、进程树终止、destructive denylist、高风险 security validator 与显式写目标 FS preflight 子项已落地 |
 | FileEditTool | 冲突检测、文件锁检查、编辑历史、自动缩进修正；ratatui diff 预览/更新消息 renderer 已补齐，live transcript 接线仍依赖 backend file-edit event data |
 | TaskTools | 远程/多类型后台任务 supervisor parity、超时控制；磁盘持久化、基础依赖字段、输出保留、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
 | PlanMode | auto-mode/classifier gate、团队审批流、计划持久化、实现关联跟踪 |
