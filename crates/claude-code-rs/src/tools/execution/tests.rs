@@ -316,6 +316,13 @@ fn test_powershell_dangerous_command_blocked() {
         result.is_some(),
         "PowerShell Invoke-Expression security pattern should be blocked"
     );
+
+    let input = serde_json::json!({"command": "Import-Module .\\payload.psm1"});
+    let result = security_validate("id12", "PowerShell", &input, &tool, &ctx, Instant::now());
+    assert!(
+        result.is_some(),
+        "PowerShell module-loading security pattern should be blocked"
+    );
 }
 
 // -- make_error_result tests (shared helper in mod.rs) --------------------
