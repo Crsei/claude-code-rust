@@ -13,6 +13,7 @@ use crate::types::tool::Tools;
 
 pub mod bash;
 pub mod powershell;
+mod powershell_parser;
 pub(crate) mod process_control;
 pub mod repl;
 pub mod sleep;

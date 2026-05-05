@@ -4,12 +4,11 @@
 //! On Windows, uses `powershell.exe -NoProfile -NonInteractive -Command`.
 //! On non-Windows, uses `pwsh -NoProfile -NonInteractive -Command`.
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::sandbox::{make_runner, policy_from_app_state, preflight_shell_command};
@@ -23,26 +22,13 @@ use crate::utils::git_operation_tracking::track_git_operations_json;
 use crate::utils::shell::build_shell_env;
 
 use super::bash::truncate_output;
+use super::powershell_parser;
 use super::process_control::{
     configure_process_group, wait_for_exit_or_termination, ControlledExit,
 };
 
 /// PowerShellTool -- execute PowerShell commands.
 pub struct PowerShellTool;
-
-const POWERSHELL_PARSE_TIMEOUT: Duration = Duration::from_millis(5_000);
-const POWERSHELL_PARSE_INPUT_ENV: &str = "CC_RUST_POWERSHELL_PARSE_INPUT";
-const POWERSHELL_PARSE_SCRIPT: &str = r#"
-$tokens = $null
-$errors = $null
-[System.Management.Automation.Language.Parser]::ParseInput($env:CC_RUST_POWERSHELL_PARSE_INPUT, [ref]$tokens, [ref]$errors) | Out-Null
-$items = @($errors | ForEach-Object { "$($_.ErrorId): $($_.Message)" })
-if ($items.Count -eq 0) {
-  "[]"
-} else {
-  ConvertTo-Json -InputObject $items -Compress
-}
-"#;
 
 impl PowerShellTool {
     fn parse_input(input: &Value) -> (String, u64) {
@@ -65,47 +51,6 @@ impl PowerShellTool {
         } else {
             "pwsh"
         }
-    }
-
-    async fn native_parse_errors(command: &str) -> Result<Vec<String>> {
-        let mut parser = tokio::process::Command::new(Self::powershell_executable());
-        parser
-            .arg("-NoProfile")
-            .arg("-NonInteractive")
-            .arg("-Command")
-            .arg(POWERSHELL_PARSE_SCRIPT)
-            .env(POWERSHELL_PARSE_INPUT_ENV, command)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true);
-
-        let output = match tokio::time::timeout(POWERSHELL_PARSE_TIMEOUT, parser.output()).await {
-            Ok(Ok(output)) => output,
-            Ok(Err(err)) => return Err(anyhow!("failed to start PowerShell parser: {}", err)),
-            Err(_) => return Err(anyhow!("PowerShell parser timed out")),
-        };
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(anyhow!(
-                "PowerShell parser exited with status {}{}",
-                output.status,
-                if stderr.is_empty() {
-                    String::new()
-                } else {
-                    format!(": {}", stderr)
-                }
-            ));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let trimmed = stdout.trim();
-        if trimmed.is_empty() {
-            return Ok(Vec::new());
-        }
-        serde_json::from_str::<Vec<String>>(trimmed)
-            .or_else(|_| serde_json::from_str::<String>(trimmed).map(|single| vec![single]))
-            .map_err(|err| anyhow!("failed to parse PowerShell parser output: {}", err))
     }
 }
 
@@ -177,14 +122,26 @@ impl Tool for PowerShellTool {
                 error_code: 1,
             };
         }
-        match Self::native_parse_errors(command).await {
-            Ok(errors) if errors.is_empty() => {}
-            Ok(errors) => {
+        match powershell_parser::analyze(command).await {
+            Ok(analysis) if !analysis.parser_errors.is_empty() => {
                 return ValidationResult::Error {
-                    message: format!("PowerShell parser rejected command: {}", errors.join("; ")),
+                    message: format!(
+                        "PowerShell parser rejected command: {}",
+                        analysis.parser_errors.join("; ")
+                    ),
                     error_code: 1,
                 };
             }
+            Ok(analysis) if !analysis.security_diagnostics.is_empty() => {
+                return ValidationResult::Error {
+                    message: format!(
+                        "PowerShell security metadata rejected command: {}",
+                        analysis.security_diagnostics.join("; ")
+                    ),
+                    error_code: 1,
+                };
+            }
+            Ok(_) => {}
             Err(err) => {
                 return ValidationResult::Error {
                     message: format!("PowerShell parser unavailable: {}", err),
@@ -613,6 +570,82 @@ mod tests {
                 assert!(message.contains("PowerShell parser rejected command"));
             }
             ValidationResult::Ok => panic!("invalid PowerShell should fail parser validation"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_powershell_native_parser_accepts_safe_filter_script_block() {
+        let tool = PowerShellTool;
+        if !tool.is_enabled() {
+            return;
+        }
+        let (ctx, _tx) = test_context();
+        let result = tool
+            .validate_input(
+                &json!({ "command": "Get-Process | Where-Object { $_.ProcessName -like 'pwsh' }" }),
+                &ctx,
+            )
+            .await;
+        assert!(matches!(result, ValidationResult::Ok));
+    }
+
+    #[tokio::test]
+    async fn test_powershell_native_parser_rejects_dynamic_command_name() {
+        let tool = PowerShellTool;
+        if !tool.is_enabled() {
+            return;
+        }
+        let (ctx, _tx) = test_context();
+        let result = tool
+            .validate_input(&json!({ "command": "& $env:COMSPEC" }), &ctx)
+            .await;
+        match result {
+            ValidationResult::Error { message, .. } => {
+                assert!(message.contains("PowerShell security metadata rejected command"));
+                assert!(message.contains("dynamic expression"));
+            }
+            ValidationResult::Ok => panic!("dynamic PowerShell command name should fail"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_powershell_native_parser_rejects_colon_bound_expression() {
+        let tool = PowerShellTool;
+        if !tool.is_enabled() {
+            return;
+        }
+        let (ctx, _tx) = test_context();
+        let result = tool
+            .validate_input(
+                &json!({ "command": "Get-Process -Name:($env:PROCESSOR_ARCHITECTURE)" }),
+                &ctx,
+            )
+            .await;
+        match result {
+            ValidationResult::Error { message, .. } => {
+                assert!(message.contains("PowerShell security metadata rejected command"));
+                assert!(message.contains("colon-bound parameter"));
+            }
+            ValidationResult::Ok => panic!("colon-bound expression should fail"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_powershell_native_parser_rejects_path_like_command_name() {
+        let tool = PowerShellTool;
+        if !tool.is_enabled() {
+            return;
+        }
+        let (ctx, _tx) = test_context();
+        let result = tool
+            .validate_input(&json!({ "command": r"scripts\Get-Process" }), &ctx)
+            .await;
+        match result {
+            ValidationResult::Error { message, .. } => {
+                assert!(message.contains("PowerShell security metadata rejected command"));
+                assert!(message.contains("path-like command names"));
+            }
+            ValidationResult::Ok => panic!("path-like PowerShell command name should fail"),
         }
     }
 
