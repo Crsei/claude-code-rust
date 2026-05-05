@@ -162,4 +162,10 @@ pub struct AgentContext {
     pub langfuse_session_id: String,
     /// Sub-agent role/type used for telemetry naming.
     pub agent_type: Option<String>,
+    /// Active team context inherited from the parent engine, if any.
+    ///
+    /// Team-aware tools such as `SendMessage` read this from AppState; without
+    /// carrying it into child engines, spawned subagents lose access to the
+    /// current team even when the parent session is already in a team.
+    pub team_context: Option<cc_types::teams::TeamContext>,
 }

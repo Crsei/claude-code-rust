@@ -277,6 +277,7 @@ fn build_child_config(
             },
             langfuse_session_id: ctx.langfuse_session_id.clone(),
             agent_type: child_agent_type.map(|value| value.to_string()),
+            team_context: (ctx.get_app_state)().team_context,
         }),
     }
 }

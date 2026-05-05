@@ -153,6 +153,9 @@ impl QueryEngine {
             app_state.main_loop_model = model.clone();
             app_state.settings.model = Some(model.clone());
         }
+        if let Some(agent_context) = config.agent_context.as_ref() {
+            app_state.team_context = agent_context.team_context.clone();
+        }
 
         // Initialize session memory service and load existing entries
         let mut session_memory = SessionMemoryService::new(SessionMemoryConfig::default());

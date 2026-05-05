@@ -2,7 +2,7 @@
 mod tests {
     use crate::engine::lifecycle::*;
     use crate::engine::sdk_types::*;
-    use crate::types::config::{QueryEngineConfig, QuerySource};
+    use crate::types::config::{AgentContext, QueryEngineConfig, QuerySource};
     use crate::types::message::{Message, MessageContent, Usage, UserMessage};
     use tempfile::tempdir;
 
@@ -60,6 +60,34 @@ mod tests {
         assert!(engine.usage().total_cost_usd == 0.0);
         assert!(!engine.session_id.as_str().is_empty());
         assert_eq!(engine.current_session_id(), engine.session_id);
+    }
+
+    #[test]
+    fn test_query_engine_inherits_agent_team_context() {
+        let mut config = make_config();
+        config.agent_context = Some(AgentContext {
+            agent_id: "researcher@alpha".to_string(),
+            query_tracking: crate::types::tool::QueryChainTracking {
+                chain_id: "chain-1".to_string(),
+                depth: 1,
+            },
+            langfuse_session_id: "session-1".to_string(),
+            agent_type: Some("Explore".to_string()),
+            team_context: Some(cc_types::teams::TeamContext {
+                team_name: "alpha".to_string(),
+                ..Default::default()
+            }),
+        });
+
+        let engine = QueryEngine::new(config);
+        let app_state = &engine.state.read().app_state;
+        assert_eq!(
+            app_state
+                .team_context
+                .as_ref()
+                .map(|context| context.team_name.as_str()),
+            Some("alpha")
+        );
     }
 
     #[test]

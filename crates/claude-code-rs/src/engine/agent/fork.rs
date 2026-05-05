@@ -127,6 +127,7 @@ pub async fn run_fork(params: ForkParams) -> Result<ForkOutcome> {
             query_tracking: QueryChainTracking { chain_id, depth: 1 },
             langfuse_session_id: String::new(),
             agent_type: Some("fork".to_string()),
+            team_context: None,
         }),
     };
 
