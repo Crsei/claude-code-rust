@@ -285,7 +285,7 @@
 
 | | TypeScript | Rust |
 |---|---|---|
-| 行数 | 1,131 (5 文件) | 720 (1 文件) |
+| 行数 | 1,131 (5 文件) | 835 (1 文件) |
 | 文件 | — | `tools/web_fetch.rs` |
 
 **Rust 保留：**
@@ -295,12 +295,12 @@
 - 响应截断
 - 缓存
 - ✅ redirect budget / cross-host diagnostic：最多 10 跳，仅同源/`www.` 变体自动跟随；跨站 redirect 返回目标 URL 诊断
+- ✅ Content-Type 基础分发：HTML 提取文本、JSON pretty-print、文本型 MIME 直出、二进制 MIME 拒绝进入模型上下文
 
 **TS 独有（未移植）：**
 - JavaScript 渲染 (headless browser)
 - Cookie 管理
 - 代理支持
-- Content-Type 智能处理
 
 ---
 

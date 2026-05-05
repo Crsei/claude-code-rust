@@ -326,6 +326,72 @@ async fn get_with_permitted_redirects(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResponseContentKind {
+    Html,
+    Json,
+    Text,
+    Binary,
+}
+
+fn media_type(content_type: &str) -> String {
+    content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase()
+}
+
+fn is_binary_content_type(content_type: &str) -> bool {
+    let media_type = media_type(content_type);
+    if media_type.is_empty() || media_type.starts_with("text/") {
+        return false;
+    }
+    if media_type == "application/json" || media_type.ends_with("+json") {
+        return false;
+    }
+    if media_type == "application/xml" || media_type.ends_with("+xml") {
+        return false;
+    }
+    if media_type.starts_with("application/javascript") {
+        return false;
+    }
+    if media_type == "application/x-www-form-urlencoded" {
+        return false;
+    }
+    true
+}
+
+fn response_content_kind(content_type: &str) -> ResponseContentKind {
+    let media_type = media_type(content_type);
+    if media_type == "text/html" || media_type == "application/xhtml+xml" {
+        ResponseContentKind::Html
+    } else if media_type == "application/json" || media_type.ends_with("+json") {
+        ResponseContentKind::Json
+    } else if is_binary_content_type(content_type) {
+        ResponseContentKind::Binary
+    } else {
+        ResponseContentKind::Text
+    }
+}
+
+fn extract_text_for_content_type(content_type: &str, body_bytes: &[u8]) -> String {
+    match response_content_kind(content_type) {
+        ResponseContentKind::Html => {
+            let body = String::from_utf8_lossy(body_bytes);
+            strip_html_tags(&body)
+        }
+        ResponseContentKind::Json => serde_json::from_slice::<Value>(body_bytes)
+            .ok()
+            .and_then(|value| serde_json::to_string_pretty(&value).ok())
+            .unwrap_or_else(|| String::from_utf8_lossy(body_bytes).to_string()),
+        ResponseContentKind::Text | ResponseContentKind::Binary => {
+            String::from_utf8_lossy(body_bytes).to_string()
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tool implementation
 // ---------------------------------------------------------------------------
@@ -501,16 +567,24 @@ To complete your request, use WebFetch again with the redirected URL."
             });
         }
 
-        let body = String::from_utf8_lossy(&body_bytes).to_string();
+        let content_kind = response_content_kind(&content_type);
+        if content_kind == ResponseContentKind::Binary {
+            return Ok(ToolResult {
+                data: json!({
+                    "url": url,
+                    "finalUrl": final_url,
+                    "status": status,
+                    "contentType": content_type,
+                    "bytes": body_bytes.len(),
+                    "binary": true,
+                    "error": "WebFetch received binary content and did not place raw bytes into the model context",
+                }),
+                new_messages: vec![],
+                ..Default::default()
+            });
+        }
 
-        // Extract text from HTML or return raw
-        let text =
-            if content_type.contains("text/html") || content_type.contains("application/xhtml") {
-                strip_html_tags(&body)
-            } else {
-                body
-            };
-
+        let text = extract_text_for_content_type(&content_type, &body_bytes);
         let text = truncate_text(&text, MAX_TEXT_LENGTH);
         let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -680,6 +754,47 @@ mod tests {
         let resolved =
             resolve_redirect_url("https://example.com/a/b/page.html", "../target?q=1").unwrap();
         assert_eq!(resolved, "https://example.com/a/target?q=1");
+    }
+
+    #[test]
+    fn test_content_type_classification_matches_text_and_binary_boundaries() {
+        assert_eq!(
+            response_content_kind("text/html; charset=utf-8"),
+            ResponseContentKind::Html
+        );
+        assert_eq!(
+            response_content_kind("application/vnd.api+json"),
+            ResponseContentKind::Json
+        );
+        assert_eq!(
+            response_content_kind("application/xml"),
+            ResponseContentKind::Text
+        );
+        assert_eq!(
+            response_content_kind("application/pdf"),
+            ResponseContentKind::Binary
+        );
+        assert_eq!(
+            response_content_kind(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ),
+            ResponseContentKind::Binary
+        );
+    }
+
+    #[test]
+    fn test_extract_text_for_content_type_handles_html_case_insensitively() {
+        let text = extract_text_for_content_type(
+            "Text/HTML; charset=UTF-8",
+            b"<html><body><script>hidden()</script><h1>Hello</h1></body></html>",
+        );
+        assert_eq!(text, "Hello");
+    }
+
+    #[test]
+    fn test_extract_text_for_content_type_pretty_prints_json() {
+        let text = extract_text_for_content_type("application/json", br#"{"b":2,"a":1}"#);
+        assert_eq!(text, "{\n  \"a\": 1,\n  \"b\": 2\n}");
     }
 
     #[test]
