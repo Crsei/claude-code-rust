@@ -14,6 +14,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tracing::{debug, info};
 
+use crate::teams::in_process::InProcessBackend;
 use crate::teams::types::TeammateMessage;
 use crate::teams::{constants, helpers, identity, mailbox, protocol};
 use crate::types::message::AssistantMessage;
@@ -326,8 +327,55 @@ fn handle_protocol_message(
             ..Default::default()
         }),
 
-        protocol::ProtocolMessage::PlanApprovalResponse { .. } => {
+        protocol::ProtocolMessage::PlanApprovalRequest {
+            ref from,
+            ref request_id,
+            ..
+        } => {
+            let requester = if from.trim().is_empty() {
+                sender
+            } else {
+                from.as_str()
+            };
+            let marked =
+                InProcessBackend::set_plan_approval_pending_by_agent(requester, team_name, true);
+            let now = chrono::Utc::now();
+            let message = TeammateMessage {
+                from: sender.to_string(),
+                text: raw_message.to_string(),
+                timestamp: now.to_rfc3339(),
+                read: false,
+                color: None,
+                summary: Some("Plan approval request".into()),
+            };
+            mailbox::write_to_mailbox(to, message, team_name)?;
+            Ok(ToolResult {
+                data: json!({
+                    "sent": true,
+                    "type": "plan_approval_request",
+                    "to": to,
+                    "from": requester,
+                    "request_id": request_id,
+                    "awaiting_plan_approval": marked,
+                }),
+                new_messages: vec![],
+                ..Default::default()
+            })
+        }
+
+        protocol::ProtocolMessage::PlanApprovalResponse {
+            approved,
+            ref feedback,
+            ref permission_mode,
+            ..
+        } => {
             // Forward plan approval to teammate
+            let permission_mode = permission_mode.as_deref().map(PermissionMode::parse);
+            let pending_cleared =
+                InProcessBackend::set_plan_approval_pending_by_agent(to, team_name, false);
+            if let Some(mode) = permission_mode.clone() {
+                InProcessBackend::set_permission_mode_by_agent(to, team_name, mode);
+            }
             let now = chrono::Utc::now();
             let message = TeammateMessage {
                 from: sender.to_string(),
@@ -339,7 +387,16 @@ fn handle_protocol_message(
             };
             mailbox::write_to_mailbox(to, message, team_name)?;
             Ok(ToolResult {
-                data: json!({"sent": true, "type": "plan_approval_response", "to": to}),
+                data: json!({
+                    "sent": true,
+                    "type": "plan_approval_response",
+                    "to": to,
+                    "approved": approved,
+                    "feedback": feedback,
+                    "awaiting_plan_approval": false,
+                    "pending_cleared": pending_cleared,
+                    "permission_mode": permission_mode.as_ref().map(PermissionMode::as_str),
+                }),
                 new_messages: vec![],
                 ..Default::default()
             })
@@ -373,6 +430,32 @@ fn handle_protocol_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::teams::in_process::InProcessBackend;
+    use crate::teams::types::{
+        InProcessTeammateTaskState, TaskStatus, TeamContext, TeammateIdentity,
+    };
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     #[test]
     fn test_tool_name() {
@@ -432,6 +515,111 @@ mod tests {
             tool.user_facing_name(Some(&input)),
             "SendMessage(to: researcher)"
         );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn plan_approval_request_marks_teammate_pending_and_forwards_to_leader() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        InProcessBackend::clear_registry();
+        register_test_teammate(false, PermissionMode::Plan);
+
+        let raw = json!({
+            "type": "plan_approval_request",
+            "from": "worker",
+            "timestamp": "2026-05-05T00:00:00Z",
+            "planFilePath": ".cc-rust/current-plan.md",
+            "planContent": "Implement in two steps",
+            "requestId": "plan_approval-worker-1",
+        })
+        .to_string();
+
+        let result = handle_protocol_message(
+            &raw,
+            constants::TEAM_LEAD_NAME,
+            "worker",
+            "team",
+            &TeamContext::default(),
+        )
+        .unwrap();
+        assert_eq!(result.data["type"], "plan_approval_request");
+        assert_eq!(result.data["awaiting_plan_approval"], true);
+
+        let snapshot = InProcessBackend::task_snapshots().remove(0);
+        assert!(snapshot.awaiting_plan_approval);
+        let inbox = mailbox::read_mailbox(constants::TEAM_LEAD_NAME, "team").unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].summary.as_deref(), Some("Plan approval request"));
+
+        InProcessBackend::clear_registry();
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn plan_approval_response_clears_pending_and_updates_permission_mode() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        InProcessBackend::clear_registry();
+        register_test_teammate(true, PermissionMode::Plan);
+
+        let raw = json!({
+            "type": "plan_approval_response",
+            "requestId": "plan_approval-worker-1",
+            "approved": true,
+            "timestamp": "2026-05-05T00:01:00Z",
+            "permissionMode": "acceptEdits",
+        })
+        .to_string();
+
+        let result = handle_protocol_message(
+            &raw,
+            "worker",
+            constants::TEAM_LEAD_NAME,
+            "team",
+            &TeamContext::default(),
+        )
+        .unwrap();
+        assert_eq!(result.data["type"], "plan_approval_response");
+        assert_eq!(result.data["awaiting_plan_approval"], false);
+        assert_eq!(result.data["pending_cleared"], true);
+        assert_eq!(result.data["permission_mode"], "acceptEdits");
+
+        let snapshot = InProcessBackend::task_snapshots().remove(0);
+        assert!(!snapshot.awaiting_plan_approval);
+        assert_eq!(snapshot.permission_mode, PermissionMode::AcceptEdits);
+        let inbox = mailbox::read_mailbox("worker", "team").unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].summary.as_deref(), Some("Plan approval response"));
+
+        InProcessBackend::clear_registry();
+    }
+
+    fn register_test_teammate(awaiting_plan_approval: bool, permission_mode: PermissionMode) {
+        InProcessBackend::register_task(InProcessTeammateTaskState {
+            id: "task-1".into(),
+            status: TaskStatus::Running,
+            identity: TeammateIdentity {
+                agent_id: "worker@team".into(),
+                agent_name: "worker".into(),
+                team_name: "team".into(),
+                color: None,
+                plan_mode_required: true,
+                parent_session_id: "session".into(),
+            },
+            prompt: "initial".into(),
+            model: None,
+            abort_handle: None,
+            cancellation_token: None,
+            awaiting_plan_approval,
+            permission_mode,
+            error: None,
+            pending_user_messages: vec![],
+            is_idle: false,
+            shutdown_requested: false,
+            last_reported_tool_count: 0,
+            last_reported_token_count: 0,
+        });
     }
 
     fn create_test_context() -> ToolUseContext {

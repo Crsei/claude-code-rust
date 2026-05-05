@@ -21,6 +21,7 @@ use super::types::*;
 
 use crate::engine::lifecycle::QueryEngine;
 use crate::types::config::{QueryEngineConfig, QuerySource};
+use crate::types::tool::PermissionMode;
 
 // ---------------------------------------------------------------------------
 // Spawn entry point
@@ -367,10 +368,30 @@ fn handle_protocol_message(
         }
 
         ProtocolMessage::PlanApprovalResponse {
-            approved, feedback, ..
+            approved,
+            feedback,
+            permission_mode,
+            ..
         } => {
             debug!(approved, feedback = ?feedback, "plan approval response received");
-            // Would unblock the plan mode gate
+            InProcessBackend::set_plan_approval_pending(task_id, false);
+            if let Some(mode) = permission_mode.as_deref() {
+                InProcessBackend::set_permission_mode(task_id, PermissionMode::parse(mode));
+            }
+            let message = if approved {
+                "Plan approved by team leader. Exit plan mode and proceed according to the approved plan."
+                    .to_string()
+            } else {
+                format!(
+                    "Plan rejected by team leader. Revise the plan before implementation.{}",
+                    feedback
+                        .as_deref()
+                        .filter(|text| !text.trim().is_empty())
+                        .map(|text| format!("\nFeedback: {text}"))
+                        .unwrap_or_default()
+                )
+            };
+            InProcessBackend::push_pending_user_message(task_id, message);
         }
 
         ProtocolMessage::PermissionResponse {
@@ -475,5 +496,58 @@ mod tests {
         assert!(formatted.starts_with("Team mailbox messages:"));
         assert!(formatted.contains("- Message from lead: first"));
         assert!(formatted.contains("- Message from reviewer: second"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn plan_approval_response_updates_runner_state_and_queues_feedback() {
+        InProcessBackend::clear_registry();
+        InProcessBackend::register_task(InProcessTeammateTaskState {
+            id: "task-1".into(),
+            status: TaskStatus::Running,
+            identity: TeammateIdentity {
+                agent_id: "worker@team".into(),
+                agent_name: "worker".into(),
+                team_name: "team".into(),
+                color: None,
+                plan_mode_required: true,
+                parent_session_id: "session".into(),
+            },
+            prompt: "initial".into(),
+            model: None,
+            abort_handle: None,
+            cancellation_token: None,
+            awaiting_plan_approval: true,
+            permission_mode: PermissionMode::Plan,
+            error: None,
+            pending_user_messages: vec![],
+            is_idle: true,
+            shutdown_requested: false,
+            last_reported_tool_count: 0,
+            last_reported_token_count: 0,
+        });
+
+        let approved = ProtocolMessage::PlanApprovalResponse {
+            request_id: "plan_approval-worker-1".into(),
+            approved: true,
+            feedback: None,
+            timestamp: "2026-05-05T00:01:00Z".into(),
+            permission_mode: Some("acceptEdits".into()),
+        };
+
+        let should_shutdown =
+            handle_protocol_message(approved, "worker", "team", "worker@team", "task-1").unwrap();
+        assert!(!should_shutdown);
+        let snapshot = InProcessBackend::task_snapshots().remove(0);
+        assert!(!snapshot.awaiting_plan_approval);
+        assert_eq!(snapshot.permission_mode, PermissionMode::AcceptEdits);
+        assert_eq!(
+            InProcessBackend::take_pending_user_messages("task-1"),
+            vec![
+                "Plan approved by team leader. Exit plan mode and proceed according to the approved plan."
+                    .to_string()
+            ]
+        );
+        InProcessBackend::clear_registry();
     }
 }

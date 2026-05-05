@@ -236,7 +236,7 @@
 
 ---
 
-### 2.4 PlanMode — 缩减实现（计划持久化 / 实现关联子项已补）
+### 2.4 PlanMode — 缩减实现（计划持久化 / 实现关联 / 团队审批子项已补）
 
 | | TypeScript | Rust |
 |---|---|---|
@@ -252,10 +252,10 @@
 - `.cc-rust/current-plan-workflow.json` 持久化 `PlanWorkflowRecord`
 - approval lifecycle、trace 与 plan_text 记录
 - approved/implementing 计划会在 `TaskCreate` 后关联 task id，并推进到 implementing
+- 团队审批 mailbox flow：`plan_approval_request` / `plan_approval_response` 会更新 teammate `awaiting_plan_approval`、`permission_mode`，并把审批结果注入下一轮
 
 **TS 独有（未移植）：**
 - full auto-mode LLM classifier parity
-- 团队审批工作流
 
 ---
 

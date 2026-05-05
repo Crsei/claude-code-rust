@@ -76,7 +76,7 @@ pub(crate) fn team_task_surface_item(
             "team task failed",
         ])
     } else if task.awaiting_plan_approval {
-        "awaiting plan approval".to_string()
+        format!("awaiting plan approval ({})", task.permission_mode.as_str())
     } else if task.is_idle {
         "idle".to_string()
     } else {

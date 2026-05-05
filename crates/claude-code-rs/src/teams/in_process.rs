@@ -95,6 +95,52 @@ impl InProcessBackend {
         }
     }
 
+    /// Mark whether a teammate is waiting for leader plan approval.
+    pub fn set_plan_approval_pending(task_id: &str, pending: bool) -> bool {
+        let mut registry = TASK_REGISTRY.lock();
+        if let Some(state) = registry.get_mut(task_id) {
+            state.awaiting_plan_approval = pending;
+            return true;
+        }
+        false
+    }
+
+    /// Mark whether a teammate is waiting for leader plan approval by name.
+    pub fn set_plan_approval_pending_by_agent(
+        agent_name: &str,
+        team_name: &str,
+        pending: bool,
+    ) -> bool {
+        let agent_id = identity::format_agent_id(agent_name, team_name);
+        let Some(task_id) = Self::find_task(&agent_id) else {
+            return false;
+        };
+        Self::set_plan_approval_pending(&task_id, pending)
+    }
+
+    /// Update the teammate permission mode tracked by the in-process registry.
+    pub fn set_permission_mode(task_id: &str, mode: PermissionMode) -> bool {
+        let mut registry = TASK_REGISTRY.lock();
+        if let Some(state) = registry.get_mut(task_id) {
+            state.permission_mode = mode;
+            return true;
+        }
+        false
+    }
+
+    /// Update the teammate permission mode by agent name.
+    pub fn set_permission_mode_by_agent(
+        agent_name: &str,
+        team_name: &str,
+        mode: PermissionMode,
+    ) -> bool {
+        let agent_id = identity::format_agent_id(agent_name, team_name);
+        let Some(task_id) = Self::find_task(&agent_id) else {
+            return false;
+        };
+        Self::set_permission_mode(&task_id, mode)
+    }
+
     /// Attach the tokio abort handle after spawning the runner task.
     pub fn set_abort_handle(task_id: &str, abort_handle: tokio::task::AbortHandle) {
         let mut registry = TASK_REGISTRY.lock();
@@ -177,6 +223,7 @@ impl InProcessBackend {
                 prompt: state.prompt.clone(),
                 model: state.model.clone(),
                 awaiting_plan_approval: state.awaiting_plan_approval,
+                permission_mode: state.permission_mode.clone(),
             })
             .collect()
     }
@@ -203,6 +250,7 @@ pub struct TeammateTaskSnapshot {
     pub prompt: String,
     pub model: Option<String>,
     pub awaiting_plan_approval: bool,
+    pub permission_mode: PermissionMode,
 }
 
 #[async_trait]
@@ -522,6 +570,53 @@ mod tests {
             vec!["Message from lead: go".to_string()]
         );
         assert!(InProcessBackend::take_pending_user_messages("task-1").is_empty());
+        setup();
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn plan_approval_and_permission_mode_state_can_be_updated_by_agent() {
+        setup();
+        InProcessBackend::register_task(InProcessTeammateTaskState {
+            id: "task-1".into(),
+            status: TaskStatus::Running,
+            identity: TeammateIdentity {
+                agent_id: "worker@team".into(),
+                agent_name: "worker".into(),
+                team_name: "team".into(),
+                color: None,
+                plan_mode_required: true,
+                parent_session_id: "session".into(),
+            },
+            prompt: "initial".into(),
+            model: None,
+            abort_handle: None,
+            cancellation_token: None,
+            awaiting_plan_approval: false,
+            permission_mode: PermissionMode::Plan,
+            error: None,
+            pending_user_messages: vec![],
+            is_idle: false,
+            shutdown_requested: false,
+            last_reported_tool_count: 0,
+            last_reported_token_count: 0,
+        });
+
+        assert!(InProcessBackend::set_plan_approval_pending_by_agent(
+            "worker", "team", true
+        ));
+        assert!(InProcessBackend::set_permission_mode_by_agent(
+            "worker",
+            "team",
+            PermissionMode::AcceptEdits
+        ));
+
+        let snapshot = InProcessBackend::task_snapshots()
+            .into_iter()
+            .find(|task| task.agent_name == "worker")
+            .unwrap();
+        assert!(snapshot.awaiting_plan_approval);
+        assert_eq!(snapshot.permission_mode, PermissionMode::AcceptEdits);
         setup();
     }
 }
