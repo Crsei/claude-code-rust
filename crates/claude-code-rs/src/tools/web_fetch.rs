@@ -43,6 +43,9 @@ const CACHE_TTL: Duration = Duration::from_secs(15 * 60);
 /// Maximum number of cached entries.
 const MAX_CACHE_ENTRIES: usize = 64;
 
+/// Maximum same-host redirect hops.
+const MAX_REDIRECTS: usize = 10;
+
 // ---------------------------------------------------------------------------
 // Simple in-memory cache
 // ---------------------------------------------------------------------------
@@ -216,6 +219,113 @@ fn normalise_url(raw: &str) -> Result<String> {
     Ok(url)
 }
 
+fn is_redirect_status(status: reqwest::StatusCode) -> bool {
+    matches!(status.as_u16(), 301 | 302 | 307 | 308)
+}
+
+fn redirect_status_text(status: u16) -> &'static str {
+    match status {
+        301 => "Moved Permanently",
+        307 => "Temporary Redirect",
+        308 => "Permanent Redirect",
+        302 => "Found",
+        _ => "Redirect",
+    }
+}
+
+fn is_permitted_redirect(original_url: &str, redirect_url: &str) -> bool {
+    let Ok(parsed_original) = url::Url::parse(original_url) else {
+        return false;
+    };
+    let Ok(parsed_redirect) = url::Url::parse(redirect_url) else {
+        return false;
+    };
+
+    if parsed_redirect.scheme() != parsed_original.scheme() {
+        return false;
+    }
+    if parsed_redirect.port() != parsed_original.port() {
+        return false;
+    }
+    if !parsed_redirect.username().is_empty() || parsed_redirect.password().is_some() {
+        return false;
+    }
+
+    let strip_www = |host: &str| host.strip_prefix("www.").unwrap_or(host).to_string();
+    let Some(original_host) = parsed_original.host_str() else {
+        return false;
+    };
+    let Some(redirect_host) = parsed_redirect.host_str() else {
+        return false;
+    };
+    strip_www(original_host) == strip_www(redirect_host)
+}
+
+fn resolve_redirect_url(original_url: &str, location: &str) -> Result<String> {
+    let base = url::Url::parse(original_url).context("Invalid redirect base URL")?;
+    Ok(base
+        .join(location)
+        .context("Invalid redirect Location")?
+        .to_string())
+}
+
+enum FetchOutcome {
+    Response(reqwest::Response),
+    Redirect {
+        original_url: String,
+        redirect_url: String,
+        status: u16,
+    },
+}
+
+async fn get_with_permitted_redirects(
+    client: &reqwest::Client,
+    initial_url: &str,
+) -> Result<FetchOutcome> {
+    let mut current_url = initial_url.to_string();
+    let mut redirect_count = 0usize;
+
+    loop {
+        let resp = client
+            .get(&current_url)
+            .header("Accept", "text/html,application/xhtml+xml,text/plain,*/*")
+            .send()
+            .await
+            .with_context(|| format!("Failed to fetch {}", current_url))?;
+
+        if !is_redirect_status(resp.status()) {
+            return Ok(FetchOutcome::Response(resp));
+        }
+
+        let status = resp.status().as_u16();
+        let Some(location) = resp
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|value| value.to_str().ok())
+        else {
+            bail!(
+                "Redirect response from {} missing Location header",
+                current_url
+            );
+        };
+        let redirect_url = resolve_redirect_url(&current_url, location)?;
+
+        if !is_permitted_redirect(&current_url, &redirect_url) {
+            return Ok(FetchOutcome::Redirect {
+                original_url: current_url,
+                redirect_url,
+                status,
+            });
+        }
+
+        redirect_count += 1;
+        if redirect_count > MAX_REDIRECTS {
+            bail!("Too many redirects (exceeded {})", MAX_REDIRECTS);
+        }
+        current_url = redirect_url;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tool implementation
 // ---------------------------------------------------------------------------
@@ -327,19 +437,44 @@ impl Tool for WebFetchTool {
 
         let client = reqwest::Client::builder()
             .timeout(FETCH_TIMEOUT)
-            .redirect(reqwest::redirect::Policy::limited(10))
+            .redirect(reqwest::redirect::Policy::none())
             .user_agent("ClaudeCode/0.1 (Rust)")
             .build()
             .context("Failed to build HTTP client")?;
 
-        let resp = client
-            .get(&url)
-            .header("Accept", "text/html,application/xhtml+xml,text/plain,*/*")
-            .send()
-            .await
-            .with_context(|| format!("Failed to fetch {}", url))?;
+        let resp = match get_with_permitted_redirects(&client, &url).await? {
+            FetchOutcome::Response(resp) => resp,
+            FetchOutcome::Redirect {
+                original_url,
+                redirect_url,
+                status,
+            } => {
+                let status_text = redirect_status_text(status);
+                let message = format!(
+                    "REDIRECT DETECTED: The URL redirects to a different host.\n\n\
+Original URL: {original_url}\n\
+Redirect URL: {redirect_url}\n\
+Status: {status} {status_text}\n\n\
+To complete your request, use WebFetch again with the redirected URL."
+                );
+                return Ok(ToolResult {
+                    data: json!({
+                        "url": url,
+                        "status": status,
+                        "content": message,
+                        "redirect_detected": true,
+                        "original_url": original_url,
+                        "redirect_url": redirect_url,
+                        "durationMs": start.elapsed().as_millis() as u64,
+                    }),
+                    new_messages: vec![],
+                    ..Default::default()
+                });
+            }
+        };
 
         let status = resp.status().as_u16();
+        let final_url = resp.url().to_string();
         let content_type = resp
             .headers()
             .get("content-type")
@@ -387,6 +522,7 @@ impl Tool for WebFetchTool {
         Ok(ToolResult {
             data: json!({
                 "url": url,
+                "finalUrl": final_url,
                 "status": status,
                 "content": text,
                 "contentType": content_type,
@@ -501,6 +637,49 @@ mod tests {
     fn test_normalise_url_too_long() {
         let long = "https://".to_string() + &"a".repeat(MAX_URL_LENGTH);
         assert!(normalise_url(&long).is_err());
+    }
+
+    #[test]
+    fn test_redirect_policy_allows_same_host_and_www_variants() {
+        assert!(is_permitted_redirect(
+            "https://example.com/docs",
+            "https://example.com/new-docs?x=1"
+        ));
+        assert!(is_permitted_redirect(
+            "https://example.com/docs",
+            "https://www.example.com/docs"
+        ));
+        assert!(is_permitted_redirect(
+            "https://www.example.com/docs",
+            "https://example.com/docs"
+        ));
+    }
+
+    #[test]
+    fn test_redirect_policy_rejects_cross_boundary_redirects() {
+        assert!(!is_permitted_redirect(
+            "https://example.com/docs",
+            "https://evil.example.net/docs"
+        ));
+        assert!(!is_permitted_redirect(
+            "https://example.com/docs",
+            "http://example.com/docs"
+        ));
+        assert!(!is_permitted_redirect(
+            "https://example.com/docs",
+            "https://example.com:8443/docs"
+        ));
+        assert!(!is_permitted_redirect(
+            "https://example.com/docs",
+            "https://user@example.com/docs"
+        ));
+    }
+
+    #[test]
+    fn test_resolve_redirect_url_handles_relative_locations() {
+        let resolved =
+            resolve_redirect_url("https://example.com/a/b/page.html", "../target?q=1").unwrap();
+        assert_eq!(resolved, "https://example.com/a/target?q=1");
     }
 
     #[test]

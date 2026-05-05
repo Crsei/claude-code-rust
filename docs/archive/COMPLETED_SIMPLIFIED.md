@@ -281,11 +281,11 @@
 
 ---
 
-### 2.6 WebFetchTool — 51% 缩减
+### 2.6 WebFetchTool — 缩减实现（redirect policy 子项已补）
 
 | | TypeScript | Rust |
 |---|---|---|
-| 行数 | 1,131 (5 文件) | 553 (1 文件) |
+| 行数 | 1,131 (5 文件) | 720 (1 文件) |
 | 文件 | — | `tools/web_fetch.rs` |
 
 **Rust 保留：**
@@ -294,12 +294,12 @@
 - URL 验证
 - 响应截断
 - 缓存
+- ✅ redirect budget / cross-host diagnostic：最多 10 跳，仅同源/`www.` 变体自动跟随；跨站 redirect 返回目标 URL 诊断
 
 **TS 独有（未移植）：**
 - JavaScript 渲染 (headless browser)
 - Cookie 管理
 - 代理支持
-- 重定向限制
 - Content-Type 智能处理
 
 ---
