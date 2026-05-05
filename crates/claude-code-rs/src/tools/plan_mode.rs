@@ -153,6 +153,26 @@ impl Tool for ExitPlanModeTool {
                 "plan": {
                     "type": "string",
                     "description": "The implementation plan (optional — can also be written to a plan file)"
+                },
+                "allowedPrompts": {
+                    "type": "array",
+                    "description": "Prompt-based permissions requested by the plan. cc-rust maps these conservatively to transient session allow rules.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "tool": {
+                                "type": "string",
+                                "enum": ["Bash"],
+                                "description": "The tool this prompt applies to"
+                            },
+                            "prompt": {
+                                "type": "string",
+                                "description": "Bash permission pattern such as 'cargo test*' or 'prefix:cargo'"
+                            }
+                        },
+                        "required": ["tool", "prompt"],
+                        "additionalProperties": false
+                    }
                 }
             },
             "additionalProperties": false
@@ -163,7 +183,7 @@ impl Tool for ExitPlanModeTool {
         true
     }
 
-    async fn validate_input(&self, _input: &Value, ctx: &ToolUseContext) -> ValidationResult {
+    async fn validate_input(&self, input: &Value, ctx: &ToolUseContext) -> ValidationResult {
         let state = (ctx.get_app_state)();
         if state.tool_permission_context.mode != PermissionMode::Plan {
             return ValidationResult::Error {
@@ -176,6 +196,12 @@ impl Tool for ExitPlanModeTool {
                 error_code: 1,
             };
         }
+        if let Err(message) = allowed_prompt_rules(input) {
+            return ValidationResult::Error {
+                message,
+                error_code: 2,
+            };
+        }
         ValidationResult::Ok
     }
 
@@ -185,14 +211,28 @@ impl Tool for ExitPlanModeTool {
             .and_then(|v| v.as_str())
             .map(str::to_string);
 
+        let allowed_prompt_count = match allowed_prompt_rules(input) {
+            Ok(rules) => rules.len(),
+            Err(message) => {
+                return PermissionResult::Deny { message };
+            }
+        };
+
         match mutate_plan_workflow(ctx, plan_cwd(), move |state, cwd, existing| {
             crate::plan_workflow::request_approval_state(state, cwd, existing, "main", "tool", plan)
         }) {
             Ok(record) => PermissionResult::Ask {
-                message: format!(
-                    "Approve plan {} and exit plan mode to begin implementation?",
-                    record.id
-                ),
+                message: if allowed_prompt_count == 0 {
+                    format!(
+                        "Approve plan {} and exit plan mode to begin implementation?",
+                        record.id
+                    )
+                } else {
+                    format!(
+                        "Approve plan {} and exit plan mode to begin implementation? This will also add {} transient allowed prompt rule(s).",
+                        record.id, allowed_prompt_count
+                    )
+                },
             },
             Err(err) => PermissionResult::Deny {
                 message: format!("Unable to persist plan approval request: {err}"),
@@ -212,18 +252,30 @@ impl Tool for ExitPlanModeTool {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+        let allowed_prompt_rules =
+            allowed_prompt_rules(&input).map_err(|message| anyhow::anyhow!(message))?;
 
         let record = mutate_plan_workflow(ctx, plan_cwd(), {
             let plan_for_record = (!plan.is_empty()).then(|| plan.clone());
+            let rules_for_state = allowed_prompt_rules.clone();
             move |state, cwd, existing| {
-                crate::plan_workflow::approve_and_exit_state(
+                let record = crate::plan_workflow::approve_and_exit_state(
                     state,
                     cwd,
                     existing,
                     "main",
                     "tool",
                     plan_for_record,
-                )
+                );
+                if !rules_for_state.is_empty() {
+                    state
+                        .tool_permission_context
+                        .session_allow_rules
+                        .entry("plan_allowed_prompts".into())
+                        .or_default()
+                        .extend(rules_for_state);
+                }
+                record
             }
         })?;
 
@@ -234,6 +286,9 @@ impl Tool for ExitPlanModeTool {
 
         if !plan.is_empty() {
             result["plan"] = json!(plan);
+        }
+        if !allowed_prompt_rules.is_empty() {
+            result["allowed_prompt_rules"] = json!(allowed_prompt_rules);
         }
 
         Ok(ToolResult {
@@ -255,6 +310,41 @@ impl Tool for ExitPlanModeTool {
     fn user_facing_name(&self, _input: Option<&Value>) -> String {
         String::new() // hidden from tool-use display
     }
+}
+
+fn allowed_prompt_rules(input: &Value) -> std::result::Result<Vec<String>, String> {
+    let Some(prompts) = input.get("allowedPrompts") else {
+        return Ok(Vec::new());
+    };
+    let prompts = prompts
+        .as_array()
+        .ok_or_else(|| "allowedPrompts must be an array.".to_string())?;
+
+    let mut rules = Vec::with_capacity(prompts.len());
+    for (idx, prompt) in prompts.iter().enumerate() {
+        let tool = prompt
+            .get("tool")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| format!("allowedPrompts[{idx}].tool must be a string."))?;
+        if tool != "Bash" {
+            return Err(format!(
+                "allowedPrompts[{idx}].tool '{tool}' is not supported; only Bash is supported."
+            ));
+        }
+        let pattern = prompt
+            .get("prompt")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| format!("allowedPrompts[{idx}].prompt must be a non-empty string."))?;
+        if pattern.contains('\n') || pattern.contains('\r') || pattern.contains(')') {
+            return Err(format!(
+                "allowedPrompts[{idx}].prompt contains unsupported characters for a Bash permission pattern."
+            ));
+        }
+        rules.push(format!("Bash({pattern})"));
+    }
+    Ok(rules)
 }
 
 fn plan_cwd() -> PathBuf {
@@ -500,6 +590,83 @@ mod tests {
         assert_eq!(s.tool_permission_context.mode, PermissionMode::Auto);
     }
 
+    #[tokio::test]
+    async fn test_exit_plan_mode_adds_allowed_prompt_session_rules() {
+        let state = Arc::new(RwLock::new(AppState::default()));
+        {
+            let mut s = state.write();
+            s.tool_permission_context.mode = PermissionMode::Plan;
+            s.tool_permission_context.pre_plan_mode = Some(PermissionMode::Default);
+        }
+
+        let exit_tool = ExitPlanModeTool;
+        let dummy_msg = AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: vec![],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        };
+        let ctx = make_ctx(Arc::clone(&state));
+        let input = json!({
+            "plan": "Run tests after implementation.",
+            "allowedPrompts": [
+                {"tool": "Bash", "prompt": "cargo test*"}
+            ]
+        });
+
+        let result = exit_tool.call(input, &ctx, &dummy_msg, None).await.unwrap();
+        assert_eq!(
+            result.data["allowed_prompt_rules"][0].as_str().unwrap(),
+            "Bash(cargo test*)"
+        );
+
+        let s = state.read();
+        let plan_rules = s
+            .tool_permission_context
+            .session_allow_rules
+            .get("plan_allowed_prompts")
+            .expect("plan allowed prompt rules should be recorded");
+        assert!(plan_rules.iter().any(|rule| rule == "Bash(cargo test*)"));
+
+        let decision = cc_permissions::decision::has_permissions_to_use_tool(
+            "Bash",
+            &json!({"command": "cargo test --all"}),
+            &s.tool_permission_context,
+            None,
+        );
+        assert_eq!(
+            decision.behavior,
+            cc_permissions::decision::PermissionBehavior::Allow
+        );
+    }
+
+    #[tokio::test]
+    async fn test_exit_plan_mode_rejects_invalid_allowed_prompts() {
+        let tool = ExitPlanModeTool;
+        let state = Arc::new(RwLock::new(AppState::default()));
+        {
+            let mut s = state.write();
+            s.tool_permission_context.mode = PermissionMode::Plan;
+        }
+        let ctx = make_ctx(state);
+
+        let result = tool
+            .validate_input(
+                &json!({"allowedPrompts": [{"tool": "Read", "prompt": "src/*"}]}),
+                &ctx,
+            )
+            .await;
+        assert!(matches!(
+            result,
+            ValidationResult::Error { error_code: 2, .. }
+        ));
+    }
+
     #[test]
     fn test_plan_mode_schema() {
         let enter = EnterPlanModeTool;
@@ -509,5 +676,6 @@ mod tests {
         let exit = ExitPlanModeTool;
         let schema = exit.input_json_schema();
         assert!(schema["properties"].get("plan").is_some());
+        assert!(schema["properties"].get("allowedPrompts").is_some());
     }
 }
