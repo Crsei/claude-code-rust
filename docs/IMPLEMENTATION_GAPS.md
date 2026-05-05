@@ -67,13 +67,14 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | AgentTool 团队上下文继承 | 已补齐子项 | `crates/cc-engine/src/types/config.rs` 的 `AgentContext` 携带父会话 `team_context`，`QueryEngine::new()` 初始化子 agent AppState 时恢复该上下文，`build_child_config()` 从父 `ToolUseContext` 注入当前团队；子 agent 中的 `SendMessage` 不再因默认 AppState 丢失团队上下文 |
 | AgentTool 多 agent 调度入口 | 已补齐子项 | `Agent` schema 对齐上游 `name` / `team_name` / `mode` 参数；提供 `name` 时走现有 `TeamSpawn` in-process teammate 路径，继承显式或当前 team context，输出 `status: "teammate_spawned"` / `teammate_id` / `team_name`，并把 `mode: "plan"` 传递为 teammate plan-mode requirement；tmux/iTerm2 pane 后端仍按 §7 Intentional 裁剪 |
 | TaskTools `TaskOutput` 阻塞/超时读取 | 已补齐子项 | `TaskOutput` schema 已补 `block` / `timeout`（0..600000ms，默认 30000ms）并返回上游兼容 `retrieval_status: success / timeout / not_ready` + nested `task`；保留旧 flat output 字段给既有调用方；等待循环会轮询 task store 并响应 abort signal |
+| TaskTools 上游 task type taxonomy | 已补齐子项 | `TaskCreate.kind` schema 对齐上游 task type：`local_bash` / `local_agent` / `remote_agent` / `in_process_teammate` / `local_workflow` / `monitor_mcp` / `dream`（保留 Rust generic `tool`）；历史 `local_shell` / `workflow` / `monitor` / `team` 等 alias 会在创建和持久化恢复时 canonicalize |
 
 ### 2.2 仍需补齐的工具 parity
 
 | 模块 | 待补齐的行为（参考上游） |
 |------|----------|
 | BashTool | PowerShell 原生 AST parser fidelity（`elementTypes` / `children` / `nameType` / parse error fail-closed / statement securityPatterns 等结构化语义）与 Windows Restricted Token / Job Object OS-level primitive；Stage 3c.2 执行前硬拦、heredoc、Git 操作跟踪、进程树终止、destructive denylist、高风险 security validator、AST 启发式安全检查、显式写目标 FS preflight 与 fail-closed 用户面子项已落地 |
-| TaskTools | 远程/多类型后台任务 supervisor parity；磁盘持久化、基础依赖字段、输出保留、`TaskOutput` 阻塞/超时读取、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
+| TaskTools | 远程/多类型后台任务 runtime supervisor parity；磁盘持久化、基础依赖字段、输出保留、`TaskOutput` 阻塞/超时读取、上游 task type taxonomy、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
 | PlanMode | auto-mode/classifier gate、团队审批流、计划持久化、实现关联跟踪 |
 | WebFetch | JS 渲染、Cookie 管理、代理支持、重定向限制、Content-Type 智能处理 |
 
@@ -82,7 +83,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 每个条目完成时都按同一收口流程处理：读上游实现 → 改 Rust 端 → 补单元/e2e → `cargo fmt --all --check` + 对应构建 → 更新本文件与 archive → 单独提交。
 
 1. **BashTool 剩余安全/沙箱复核**：对照 `src/tools/BashTool/**` 与 PowerShell validator，评估是否需要引入原生 PowerShell AST parser（或等价结构化 parser）来补齐 `elementTypes` / `children` / `nameType` / parse error fail-closed / statement securityPatterns 等非正则语义；同时评估 Windows Restricted Token / Job Object OS-level primitive 是否进入实现队列或移入 §7 Intentional 裁剪。
-2. **TaskTools 后台任务 parity**：在现有持久化、取消、`TaskOutput` 阻塞/超时读取基础上补远程/多类型后台任务 supervisor parity，并验证 `/tasks` UI 与 task store 的状态一致性。
+2. **TaskTools 后台任务 parity**：在现有持久化、取消、`TaskOutput` 阻塞/超时读取和上游 task type taxonomy 基础上补远程/多类型后台任务 runtime supervisor parity，并验证 `/tasks` UI 与 task store 的状态一致性。
 3. **PlanMode 执行闭环**：补 auto-mode/classifier gate、团队审批流、计划持久化与实现关联追踪；完成后用 plan 创建、恢复、审批、执行关联的 e2e 覆盖。
 4. **WebFetch browser-grade 能力**：按 `architecture/mvp-optimization-plans/MVP-009-web-fetch-browser-grade-plan.md` 逐步补 JS 渲染、Cookie jar、代理、重定向限制与 Content-Type 智能处理。
 5. **API providers 决策/实现**：按 `architecture/mvp-optimization-plans/MVP-001-api-providers-plan.md` 重评 Bedrock 原生 AWS EventStream 与 Vertex direct service-account JWT exchange；实现或写入 §7 Intentional 裁剪，不再停留在“部分完成”。

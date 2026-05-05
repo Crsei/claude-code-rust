@@ -31,6 +31,24 @@ const OUTPUT_SUMMARY_MAX_CHARS: usize = 2_000;
 const DEFAULT_TASK_OUTPUT_TIMEOUT_MS: u64 = 30_000;
 const MAX_TASK_OUTPUT_TIMEOUT_MS: u64 = 600_000;
 const TASK_OUTPUT_POLL_INTERVAL_MS: u64 = 100;
+const TASK_KIND_TOOL: &str = "tool";
+const TASK_KIND_LOCAL_BASH: &str = "local_bash";
+const TASK_KIND_LOCAL_AGENT: &str = "local_agent";
+const TASK_KIND_REMOTE_AGENT: &str = "remote_agent";
+const TASK_KIND_IN_PROCESS_TEAMMATE: &str = "in_process_teammate";
+const TASK_KIND_LOCAL_WORKFLOW: &str = "local_workflow";
+const TASK_KIND_MONITOR_MCP: &str = "monitor_mcp";
+const TASK_KIND_DREAM: &str = "dream";
+const TASK_CREATE_KIND_ENUM: &[&str] = &[
+    TASK_KIND_TOOL,
+    TASK_KIND_LOCAL_BASH,
+    TASK_KIND_LOCAL_AGENT,
+    TASK_KIND_REMOTE_AGENT,
+    TASK_KIND_IN_PROCESS_TEAMMATE,
+    TASK_KIND_LOCAL_WORKFLOW,
+    TASK_KIND_MONITOR_MCP,
+    TASK_KIND_DREAM,
+];
 
 // =============================================================================
 // TaskStore: shared state
@@ -771,7 +789,7 @@ fn sanitize_kind(kind: &str) -> String {
     if trimmed.is_empty() {
         return default_task_kind();
     }
-    trimmed
+    let sanitized: String = trimmed
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
@@ -780,11 +798,23 @@ fn sanitize_kind(kind: &str) -> String {
                 '_'
             }
         })
-        .collect()
+        .collect();
+
+    match sanitized.to_ascii_lowercase().as_str() {
+        "local_shell" | "local-bash" | "bash" => TASK_KIND_LOCAL_BASH.to_string(),
+        "local-agent" => TASK_KIND_LOCAL_AGENT.to_string(),
+        "remote-agent" => TASK_KIND_REMOTE_AGENT.to_string(),
+        "teammate" | "team" | "in-process-teammate" => TASK_KIND_IN_PROCESS_TEAMMATE.to_string(),
+        "workflow" | "local-workflow" => TASK_KIND_LOCAL_WORKFLOW.to_string(),
+        "monitor" | "monitor-mcp" => TASK_KIND_MONITOR_MCP.to_string(),
+        "dream" => TASK_KIND_DREAM.to_string(),
+        "tool" => TASK_KIND_TOOL.to_string(),
+        _ => sanitized,
+    }
 }
 
 fn default_task_kind() -> String {
-    "tool".to_string()
+    TASK_KIND_TOOL.to_string()
 }
 
 fn output_file_name(id: &str) -> String {
@@ -900,8 +930,8 @@ impl Tool for TaskCreateTool {
                 },
                 "kind": {
                     "type": "string",
-                    "description": "Stable task kind for persisted records",
-                    "enum": ["tool", "local_shell", "local_agent", "remote_agent", "workflow", "monitor", "dream", "team"]
+                    "description": "Stable task type for persisted records; legacy aliases are accepted and normalized",
+                    "enum": TASK_CREATE_KIND_ENUM
                 },
                 "parent_id": {
                     "type": "string",
@@ -1752,6 +1782,73 @@ mod tests {
             assert_eq!(TaskStatus::from_str(s), Some(status));
         }
         assert_eq!(TaskStatus::from_str("invalid"), None);
+    }
+
+    #[test]
+    fn test_task_create_schema_uses_upstream_task_type_taxonomy() {
+        let schema = TaskCreateTool.input_json_schema();
+        let variants: Vec<&str> = schema["properties"]["kind"]["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            variants,
+            vec![
+                "tool",
+                "local_bash",
+                "local_agent",
+                "remote_agent",
+                "in_process_teammate",
+                "local_workflow",
+                "monitor_mcp",
+                "dream",
+            ]
+        );
+        assert!(!variants.contains(&"local_shell"));
+        assert!(!variants.contains(&"workflow"));
+        assert!(!variants.contains(&"team"));
+    }
+
+    #[test]
+    fn test_task_kind_aliases_canonicalize_to_upstream_types() {
+        assert_eq!(sanitize_kind(" local_shell "), "local_bash");
+        assert_eq!(sanitize_kind("local-bash"), "local_bash");
+        assert_eq!(sanitize_kind("remote-agent"), "remote_agent");
+        assert_eq!(sanitize_kind("team"), "in_process_teammate");
+        assert_eq!(sanitize_kind("workflow"), "local_workflow");
+        assert_eq!(sanitize_kind("monitor"), "monitor_mcp");
+        assert_eq!(sanitize_kind("custom kind"), "custom_kind");
+    }
+
+    #[test]
+    fn test_task_store_persists_canonicalized_task_kinds() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path());
+        let shell = store.create_with_options(
+            "shell",
+            "",
+            TaskCreateOptions {
+                kind: Some("local_shell".to_string()),
+                ..TaskCreateOptions::default()
+            },
+        );
+        let workflow = store.create_with_options(
+            "workflow",
+            "",
+            TaskCreateOptions {
+                kind: Some("workflow".to_string()),
+                ..TaskCreateOptions::default()
+            },
+        );
+
+        assert_eq!(shell.kind, "local_bash");
+        assert_eq!(workflow.kind, "local_workflow");
+
+        let restarted = TaskStore::with_dir(tmp.path());
+        assert_eq!(restarted.get(&shell.id).unwrap().kind, "local_bash");
+        assert_eq!(restarted.get(&workflow.id).unwrap().kind, "local_workflow");
     }
 
     #[test]
