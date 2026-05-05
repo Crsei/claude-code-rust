@@ -239,6 +239,27 @@ static POWERSHELL_DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(
             r"(?i)(?:^|[|;&\n({])\s*(?:(?:[A-Za-z0-9_.-]+\\)?(?:Set-Alias|sal|New-Alias|nal|Set-Variable|sv|New-Variable|nv))\b",
             "PowerShell alias or variable mutation can affect future command resolution",
         ),
+        // --- PowerShell AST/security validator targeted syntax batch ---
+        (
+            r"(?i)(?:^|[|;&\n({])\s*&\s*(?:\$\{function:(?:Invoke-Expression|iex)\}|\([^)]*(?:Invoke-Expression|iex)[^)]*\))",
+            "PowerShell dynamic command invocation resolves to Invoke-Expression",
+        ),
+        (
+            r"(?i)(?:^|[|;&\n({])\s*(?:Invoke-Command|icm|Invoke-Expression|iex|Start-Job|Start-ThreadJob|Register-ScheduledJob|Register-EngineEvent|Register-ObjectEvent|Register-WmiEvent|New-PSSession|Enter-PSSession)\b[^|;&\n]*\{",
+            "PowerShell dangerous cmdlet receives a script block",
+        ),
+        (
+            r"(?i)(?:^|[|;&\n({])\s*(?:ForEach-Object|foreach|%)\b[^|;&\n]*\{",
+            "PowerShell ForEach-Object script block can execute arbitrary code",
+        ),
+        (
+            r"(?i)--%",
+            "PowerShell stop-parsing token prevents static validation",
+        ),
+        (
+            r"(?i)\[[^\]\n]*(?:Diagnostics\.Process|Reflection\.Assembly|Runtime\.InteropServices\.Marshal|Net\.WebClient)[^\]\n]*\]::",
+            "PowerShell static .NET method call can bypass command validation",
+        ),
     ];
 
     patterns
@@ -506,8 +527,31 @@ mod tests {
         .is_some());
         assert!(is_dangerous_powershell_command("Start-Process calc.exe /Verb RunAs").is_some());
         assert!(is_dangerous_powershell_command(r"New-Object /ComObject WScript.Shell").is_some());
+        assert!(is_dangerous_powershell_command(
+            r"& ${function:Invoke-Expression} 'Write-Host pwn'"
+        )
+        .is_some());
+        assert!(
+            is_dangerous_powershell_command(r"& ('Invoke-Expression') 'Write-Host pwn'").is_some()
+        );
+        assert!(is_dangerous_powershell_command(
+            "Invoke-Command -ComputerName host { Remove-Item C:\\tmp -Recurse }"
+        )
+        .is_some());
+        assert!(
+            is_dangerous_powershell_command("Get-Process | ForEach-Object { $_.Kill() }").is_some()
+        );
+        assert!(is_dangerous_powershell_command("cmd.exe --% /c calc.exe").is_some());
+        assert!(
+            is_dangerous_powershell_command("[System.Diagnostics.Process]::Start('calc.exe')")
+                .is_some()
+        );
+        assert!(
+            is_dangerous_powershell_command("[System.Reflection.Assembly]::Load($bytes)").is_some()
+        );
         assert!(is_dangerous_powershell_command("Get-Process powershell").is_none());
         assert!(is_dangerous_powershell_command("Get-ChildItem env:").is_none());
+        assert!(is_dangerous_powershell_command("Where-Object { $_.Name -like 'a*' }").is_none());
         assert!(is_dangerous_command("powershell.exe -EncodedCommand SQBFAFgA").is_none());
     }
 }
