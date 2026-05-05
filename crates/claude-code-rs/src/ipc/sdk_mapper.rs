@@ -146,6 +146,11 @@ pub fn handle_sdk_message(
             level: "info".to_string(),
         }),
 
+        // ── Tombstone ───────────────────────────────────────────
+        SdkMessage::Tombstone(_) => sink.send(&BackendMessage::Tombstone {
+            message_id: message_id.to_string(),
+        }),
+
         // ── Result ──────────────────────────────────────────────
         SdkMessage::Result(r) => {
             // Always send StreamEnd to clear UI streaming state

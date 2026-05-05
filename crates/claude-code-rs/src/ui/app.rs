@@ -251,6 +251,14 @@ impl App {
         self.dirty = true;
     }
 
+    pub fn remove_last_message(&mut self) {
+        if self.messages.pop().is_some() {
+            self.vscroll.invalidate_from(self.messages.len());
+            self.scroll_to_bottom_deferred();
+            self.dirty = true;
+        }
+    }
+
     pub fn messages(&self) -> &[Message] {
         &self.messages
     }

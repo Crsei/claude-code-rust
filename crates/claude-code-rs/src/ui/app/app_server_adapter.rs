@@ -38,6 +38,7 @@ pub fn backend_message_kind(message: &BackendMessage) -> &'static str {
         BackendMessage::StreamDelta { .. } => "stream_delta",
         BackendMessage::ThinkingDelta { .. } => "thinking_delta",
         BackendMessage::StreamEnd { .. } => "stream_end",
+        BackendMessage::Tombstone { .. } => "tombstone",
         BackendMessage::AssistantMessage { .. } => "assistant_message",
         BackendMessage::ToolUse { .. } => "tool_use",
         BackendMessage::ToolResult { .. } => "tool_result",

@@ -165,6 +165,8 @@ pub enum BackendMessage {
     },
     /// Streaming for a content block has finished.
     StreamEnd { message_id: String },
+    /// A previously streamed partial assistant should be discarded.
+    Tombstone { message_id: String },
     /// Final assistant message (content is the serialized Vec<ContentBlock>).
     AssistantMessage {
         id: String,

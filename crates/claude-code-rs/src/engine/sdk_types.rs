@@ -7,7 +7,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::engine::lifecycle::{PermissionDenial, UsageTracking};
-use crate::types::message::{CompactMetadata, StreamEvent};
+use crate::types::message::{AssistantMessage, CompactMetadata, StreamEvent};
 
 // ---------------------------------------------------------------------------
 // Top-level SDK message enum
@@ -33,6 +33,8 @@ pub enum SdkMessage {
     ApiRetry(SdkApiRetry),
     /// Tool-use summary.
     ToolUseSummary(SdkToolUseSummary),
+    /// Tombstone for an assistant message that was abandoned by fallback retry.
+    Tombstone(SdkTombstone),
     /// Final result (every `submit_message` call ends with exactly one of these).
     Result(SdkResult),
 }
@@ -113,6 +115,14 @@ pub struct SdkApiRetry {
 pub struct SdkToolUseSummary {
     pub summary: String,
     pub preceding_tool_use_ids: Vec<String>,
+    pub session_id: String,
+    pub uuid: Uuid,
+}
+
+/// Tombstone for an orphaned assistant message.
+#[derive(Debug, Clone, Serialize)]
+pub struct SdkTombstone {
+    pub message: AssistantMessage,
     pub session_id: String,
     pub uuid: Uuid,
 }

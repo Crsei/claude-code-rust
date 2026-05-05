@@ -30,7 +30,8 @@ use uuid::Uuid;
 use crate::types::config::QueryParams;
 use crate::types::message::QueryYield;
 use crate::types::message::{
-    Attachment, AttachmentMessage, ContentBlock, Message, RequestStartEvent, StreamEvent, Usage,
+    Attachment, AttachmentMessage, ContentBlock, Message, RequestStartEvent, StreamEvent,
+    TombstoneMessage, Usage,
 };
 use crate::types::state::{BudgetTracker, QueryLoopState, TokenBudgetDecision};
 use crate::types::transitions::Continue;
@@ -67,7 +68,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
         let mut cumulative_usage = Usage::default();
 
         // Main loop
-        loop {
+        'query_loop: loop {
             // ──────────────────────────────────────────────────────
             // STEP 1: SETUP
             // ──────────────────────────────────────────────────────
@@ -204,8 +205,6 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             // STEP 3: API CALL -- streaming model call
             // ──────────────────────────────────────────────────────
 
-            yield QueryYield::RequestStart(RequestStartEvent);
-
             let tools = deps.get_tools();
 
             let call_params = ModelCallParams {
@@ -219,11 +218,6 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 effort_value: deps.get_app_state().effort_value.clone(),
                 advisor_model: deps.get_app_state().advisor_model.clone(),
             };
-            let model_for_langfuse = call_params
-                .model
-                .clone()
-                .unwrap_or_else(|| deps.get_app_state().main_loop_model.clone());
-            let mut effective_model = model_for_langfuse.clone();
             let provider_for_langfuse = deps
                 .langfuse_provider_name()
                 .unwrap_or_else(|| "unknown".to_string());
@@ -232,39 +226,51 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 &call_params.system_prompt,
                 &call_params.tools,
             );
-            let mut generation_span = deps.langfuse_trace().as_ref().and_then(|trace| {
-                crate::services::langfuse::create_generation_span(
-                    trace,
-                    &model_for_langfuse,
-                    &provider_for_langfuse,
-                    generation_input.clone(),
-                )
-            });
-
-            // Emit model.request.start audit event
             let req_audit_ctx = turn_audit_ctx.with_request();
-            {
-                use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
-                req_audit_ctx.emit(
-                    EventKind::ModelRequestStart,
-                    Stage::ModelCall,
-                    AuditLevel::Info,
-                    Outcome::Started,
-                    None,
-                    None,
-                );
-            }
-            let mut model_call_start = std::time::Instant::now();
+            let mut attempt_params = call_params.clone();
+            let mut fallback_used = false;
 
-            let mut stream_result = deps.call_model_streaming(call_params.clone()).await;
-            if let Err(ref e) = stream_result {
-                let error_str = e.to_string();
-                if !is_prompt_too_long_error(&error_str) {
-                    if let Some(fallback) = fallback_model_for_stream_start_error(
-                        fallback_model.as_deref(),
-                        &effective_model,
-                        &error_str,
-                    ) {
+            use futures::StreamExt;
+            let assistant_message = loop {
+                yield QueryYield::RequestStart(RequestStartEvent);
+
+                let attempt_model = attempt_params
+                    .model
+                    .clone()
+                    .unwrap_or_else(|| deps.get_app_state().main_loop_model.clone());
+                let mut generation_span = deps.langfuse_trace().as_ref().and_then(|trace| {
+                    crate::services::langfuse::create_generation_span(
+                        trace,
+                        &attempt_model,
+                        &provider_for_langfuse,
+                        generation_input.clone(),
+                    )
+                });
+
+                {
+                    use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                    req_audit_ctx.emit(
+                        EventKind::ModelRequestStart,
+                        Stage::ModelCall,
+                        AuditLevel::Info,
+                        Outcome::Started,
+                        None,
+                        if fallback_used {
+                            Some(serde_json::json!({
+                                "fallback_model": &attempt_model,
+                            }))
+                        } else {
+                            None
+                        },
+                    );
+                }
+                let model_call_start = std::time::Instant::now();
+
+                let stream_result = deps.call_model_streaming(attempt_params.clone()).await;
+                let mut event_stream = match stream_result {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let error_str = e.to_string();
                         crate::services::langfuse::finish_generation_span(
                             generation_span.take(),
                             None,
@@ -272,190 +278,187 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                             None,
                             Some(&error_str),
                         );
-                        {
-                            use crate::observability::{
-                                AuditLevel, EventKind, Outcome, Stage,
-                            };
-                            req_audit_ctx.emit(
-                                EventKind::ModelRequestError,
-                                Stage::ModelCall,
-                                AuditLevel::Warn,
-                                Outcome::Failed,
-                                Some(model_call_start.elapsed().as_millis() as u64),
-                                Some(serde_json::json!({
-                                    "error": error_str,
-                                    "fallback_model": &fallback,
-                                })),
-                            );
+
+                        if is_prompt_too_long_error(&error_str) {
+                            let terminal = handle_prompt_too_long(
+                                &deps,
+                                &mut state,
+                                &error_str,
+                            ).await;
+
+                            match terminal {
+                                PromptRecovery::Continue(reason) => {
+                                    state.transition = Some(reason);
+                                    continue 'query_loop;
+                                }
+                                PromptRecovery::Terminal(_term) => {
+                                    yield QueryYield::Message(Message::Assistant(
+                                        make_error_message(&deps, &error_str),
+                                    ));
+                                    break 'query_loop;
+                                }
+                            }
                         }
 
-                        warn!(
-                            error = %error_str,
-                            from_model = %effective_model,
-                            to_model = %fallback,
-                            "model call failed before streaming; retrying with fallback model"
-                        );
+                        if !fallback_used {
+                            if let Some(fallback) = fallback_model_for_stream_start_error(
+                                fallback_model.as_deref(),
+                                &attempt_model,
+                                &error_str,
+                            ) {
+                                {
+                                    use crate::observability::{
+                                        AuditLevel, EventKind, Outcome, Stage,
+                                    };
+                                    req_audit_ctx.emit(
+                                        EventKind::ModelRequestError,
+                                        Stage::ModelCall,
+                                        AuditLevel::Warn,
+                                        Outcome::Failed,
+                                        Some(model_call_start.elapsed().as_millis() as u64),
+                                        Some(serde_json::json!({
+                                            "error": error_str,
+                                            "fallback_model": &fallback,
+                                        })),
+                                    );
+                                }
 
-                        effective_model = fallback.clone();
-                        let mut fallback_params = call_params.clone();
-                        fallback_params.model = Some(fallback);
-                        generation_span = deps.langfuse_trace().as_ref().and_then(|trace| {
-                            crate::services::langfuse::create_generation_span(
-                                trace,
-                                &effective_model,
-                                &provider_for_langfuse,
-                                generation_input.clone(),
-                            )
-                        });
-                        yield QueryYield::RequestStart(RequestStartEvent);
-                        {
-                            use crate::observability::{
-                                AuditLevel, EventKind, Outcome, Stage,
-                            };
-                            req_audit_ctx.emit(
-                                EventKind::ModelRequestStart,
-                                Stage::ModelCall,
-                                AuditLevel::Info,
-                                Outcome::Started,
-                                None,
-                                Some(serde_json::json!({
-                                    "fallback_model": &effective_model,
-                                })),
-                            );
+                                warn!(
+                                    error = %error_str,
+                                    from_model = %attempt_model,
+                                    to_model = %fallback,
+                                    "model call failed before streaming; retrying with fallback model"
+                                );
+
+                                fallback_used = true;
+                                attempt_params.model = Some(fallback);
+                                continue;
+                            }
                         }
-                        model_call_start = std::time::Instant::now();
-                        stream_result = deps.call_model_streaming(fallback_params).await;
+
+                        warn!(error = %e, "model call failed");
+                        yield QueryYield::Message(Message::Assistant(
+                            make_error_message(&deps, &error_str),
+                        ));
+                        break 'query_loop;
+                    }
+                };
+
+                // Consume stream events, forwarding to caller while accumulating
+                let mut accumulator = crate::api::streaming::StreamAccumulator::new();
+                let mut stream_error: Option<String> = None;
+                let mut first_response_at: Option<std::time::Instant> = None;
+
+                while let Some(event_result) = event_stream.next().await {
+                    match event_result {
+                        Ok(event) => {
+                            if first_response_at.is_none()
+                                && matches!(
+                                    &event,
+                                    StreamEvent::ContentBlockStart { .. }
+                                        | StreamEvent::ContentBlockDelta { .. }
+                                )
+                            {
+                                first_response_at = Some(std::time::Instant::now());
+                            }
+                            accumulator.process_event(&event);
+                            yield QueryYield::Stream(event);
+                        }
+                        Err(e) => {
+                            stream_error = Some(e.to_string());
+                            break;
+                        }
                     }
                 }
-            }
-            let mut event_stream = match stream_result {
-                Ok(s) => s,
-                Err(e) => {
-                    let error_str = e.to_string();
+
+                if let Some(ref err) = stream_error {
+                    let ttft_ms = first_response_at
+                        .map(|instant| instant.duration_since(model_call_start).as_millis() as u64);
                     crate::services::langfuse::finish_generation_span(
                         generation_span.take(),
                         None,
                         None,
-                        None,
-                        Some(&error_str),
+                        ttft_ms,
+                        Some(err),
                     );
+                    warn!(error = %err, "stream error during model call");
+                    {
+                        use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                        req_audit_ctx.emit(
+                            EventKind::ModelRequestError,
+                            Stage::ModelCall,
+                            AuditLevel::Error,
+                            Outcome::Failed,
+                            Some(model_call_start.elapsed().as_millis() as u64),
+                            Some(serde_json::json!({"error": err})),
+                        );
+                    }
 
-                    if is_prompt_too_long_error(&error_str) {
-                        let terminal = handle_prompt_too_long(
-                            &deps,
-                            &mut state,
-                            &error_str,
-                        ).await;
+                    if !fallback_used {
+                        if let Some(fallback) = fallback_model_for_stream_start_error(
+                            fallback_model.as_deref(),
+                            &attempt_model,
+                            err,
+                        ) {
+                            let tombstone_message = accumulator.build(&attempt_model);
+                            if !tombstone_message.content.is_empty() {
+                                yield QueryYield::Tombstone(TombstoneMessage {
+                                    message: tombstone_message,
+                                });
+                            }
 
-                        match terminal {
-                            PromptRecovery::Continue(reason) => {
-                                state.transition = Some(reason);
-                                continue;
-                            }
-                            PromptRecovery::Terminal(_term) => {
-                                yield QueryYield::Message(Message::Assistant(
-                                    make_error_message(&deps, &error_str),
-                                ));
-                                break;
-                            }
+                            warn!(
+                                error = %err,
+                                from_model = %attempt_model,
+                                to_model = %fallback,
+                                "stream failed after partial assistant; tombstoning and retrying with fallback model"
+                            );
+
+                            fallback_used = true;
+                            attempt_params.model = Some(fallback);
+                            continue;
                         }
                     }
 
-                    warn!(error = %e, "model call failed");
                     yield QueryYield::Message(Message::Assistant(
-                        make_error_message(&deps, &error_str),
+                        make_error_message(&deps, err),
                     ));
-                    break;
+                    break 'query_loop;
                 }
-            };
 
-            // Consume stream events, forwarding to caller while accumulating
-            let mut accumulator = crate::api::streaming::StreamAccumulator::new();
-            let mut stream_error: Option<String> = None;
-            let mut first_response_at: Option<std::time::Instant> = None;
-
-            use futures::StreamExt;
-            while let Some(event_result) = event_stream.next().await {
-                match event_result {
-                    Ok(event) => {
-                        if first_response_at.is_none()
-                            && matches!(
-                                &event,
-                                StreamEvent::ContentBlockStart { .. }
-                                    | StreamEvent::ContentBlockDelta { .. }
-                            )
-                        {
-                            first_response_at = Some(std::time::Instant::now());
-                        }
-                        accumulator.process_event(&event);
-                        yield QueryYield::Stream(event);
-                    }
-                    Err(e) => {
-                        stream_error = Some(e.to_string());
-                        break;
-                    }
-                }
-            }
-
-            if let Some(ref err) = stream_error {
+                let assistant_message = accumulator.build(&attempt_model);
                 let ttft_ms = first_response_at
                     .map(|instant| instant.duration_since(model_call_start).as_millis() as u64);
                 crate::services::langfuse::finish_generation_span(
                     generation_span.take(),
-                    None,
-                    None,
+                    Some(crate::services::langfuse::convert::convert_assistant_output(
+                        &assistant_message,
+                    )),
+                    assistant_message.usage.as_ref(),
                     ttft_ms,
-                    Some(err),
+                    None,
                 );
-                warn!(error = %err, "stream error during model call");
+
                 {
                     use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                    let model_duration = model_call_start.elapsed().as_millis() as u64;
                     req_audit_ctx.emit(
-                        EventKind::ModelRequestError,
+                        EventKind::ModelRequestFinish,
                         Stage::ModelCall,
-                        AuditLevel::Error,
-                        Outcome::Failed,
-                        Some(model_call_start.elapsed().as_millis() as u64),
-                        Some(serde_json::json!({"error": err})),
+                        AuditLevel::Info,
+                        Outcome::Completed,
+                        Some(model_duration),
+                        Some(serde_json::json!({
+                            "stop_reason": assistant_message.stop_reason,
+                            "tool_use_count": assistant_message.content.iter()
+                                .filter(|b| matches!(b, ContentBlock::ToolUse { .. }))
+                                .count(),
+                        })),
                     );
                 }
-                yield QueryYield::Message(Message::Assistant(
-                    make_error_message(&deps, err),
-                ));
-                break;
-            }
 
-            let assistant_message = accumulator.build(&effective_model);
-            let ttft_ms = first_response_at
-                .map(|instant| instant.duration_since(model_call_start).as_millis() as u64);
-            crate::services::langfuse::finish_generation_span(
-                generation_span.take(),
-                Some(crate::services::langfuse::convert::convert_assistant_output(
-                    &assistant_message,
-                )),
-                assistant_message.usage.as_ref(),
-                ttft_ms,
-                None,
-            );
-
-            // Emit model.request.finish audit event
-            {
-                use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
-                let model_duration = model_call_start.elapsed().as_millis() as u64;
-                req_audit_ctx.emit(
-                    EventKind::ModelRequestFinish,
-                    Stage::ModelCall,
-                    AuditLevel::Info,
-                    Outcome::Completed,
-                    Some(model_duration),
-                    Some(serde_json::json!({
-                        "stop_reason": assistant_message.stop_reason,
-                        "tool_use_count": assistant_message.content.iter()
-                            .filter(|b| matches!(b, ContentBlock::ToolUse { .. }))
-                            .count(),
-                    })),
-                );
-            }
+                break assistant_message;
+            };
 
             // Accumulate usage
             if let Some(ref usage) = assistant_message.usage {

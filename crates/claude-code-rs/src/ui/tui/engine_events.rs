@@ -230,6 +230,13 @@ pub(super) fn handle_sdk_message(app: &mut App, msg: SdkMessage, ss: &mut Stream
             }
         }
 
+        SdkMessage::Tombstone(_) => {
+            if ss.is_partial() {
+                app.remove_last_message();
+                ss.clear();
+            }
+        }
+
         SdkMessage::UserReplay(user) => {
             if user.is_replay && !user.is_synthetic {
                 return;

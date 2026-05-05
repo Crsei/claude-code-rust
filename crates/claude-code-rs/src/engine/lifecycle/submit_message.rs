@@ -649,8 +649,36 @@ impl QueryEngine {
                     // --------------------------------------------------------
                     // D.8: Tombstone
                     // --------------------------------------------------------
-                    QueryYield::Tombstone(_) => {
-                        debug!("tombstone received (model fallback retry)");
+                    QueryYield::Tombstone(ref tombstone) => {
+                        debug!(
+                            assistant_uuid = %tombstone.message.uuid,
+                            "tombstone received (model fallback retry)"
+                        );
+                        {
+                            let mut s = state_ref.write();
+                            s.messages.retain(|message| {
+                                !matches!(
+                                    message,
+                                    Message::Assistant(assistant)
+                                        if assistant.uuid == tombstone.message.uuid
+                                )
+                            });
+                        }
+
+                        yield SdkMessage::Tombstone(SdkTombstone {
+                            message: tombstone.message.clone(),
+                            session_id: session_id.to_string(),
+                            uuid: Uuid::new_v4(),
+                        });
+
+                        if config.auto_save_session {
+                            let all_msgs = state_ref.read().messages.clone();
+                            let _ = crate::session::storage::save_session(
+                                session_id.as_str(),
+                                &all_msgs,
+                                &config.cwd,
+                            );
+                        }
                     }
 
                     // --------------------------------------------------------

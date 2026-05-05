@@ -139,6 +139,14 @@ pub fn sdk_message_to_sse(msg: &SdkMessage, message_id: &str) -> Option<SseEvent
                 "session_id": r.session_id,
             }),
         ),
+        SdkMessage::Tombstone(t) => (
+            "tombstone".to_string(),
+            json!({
+                "message_id": message_id,
+                "assistant_id": t.message.uuid,
+                "session_id": t.session_id,
+            }),
+        ),
         // Variants we do not broadcast to SSE clients.
         SdkMessage::ApiRetry(_)
         | SdkMessage::CompactBoundary(_)

@@ -25,6 +25,7 @@ use crate::types::tool::{ToolProgress, Tools};
 enum MockStreamStep {
     Response(ModelResponse),
     Error(String),
+    Events(Vec<Result<StreamEvent, String>>),
 }
 
 /// Mock deps for testing.
@@ -90,6 +91,9 @@ impl QueryDeps for MockDeps {
         match self.pop_stream_step()? {
             MockStreamStep::Response(resp) => Ok(resp),
             MockStreamStep::Error(error) => anyhow::bail!("{}", error),
+            MockStreamStep::Events(_) => {
+                anyhow::bail!("raw stream events are not supported by call_model")
+            }
         }
     }
 
@@ -100,31 +104,38 @@ impl QueryDeps for MockDeps {
         self.call_params.lock().push(params);
         self.stream_finished.store(false, Ordering::SeqCst);
 
-        let resp = match self.pop_stream_step()? {
-            MockStreamStep::Response(resp) => resp,
+        let events = match self.pop_stream_step()? {
+            MockStreamStep::Response(resp) => {
+                let mut events = Vec::new();
+                events.push(Ok(StreamEvent::MessageStart {
+                    usage: resp.usage.clone(),
+                }));
+                for (i, block) in resp.assistant_message.content.iter().enumerate() {
+                    events.push(Ok(StreamEvent::ContentBlockStart {
+                        index: i,
+                        content_block: block.clone(),
+                    }));
+                    events.push(Ok(StreamEvent::ContentBlockStop { index: i }));
+                }
+                events.push(Ok(StreamEvent::MessageDelta {
+                    delta: crate::types::message::MessageDelta {
+                        stop_reason: resp.assistant_message.stop_reason.clone(),
+                    },
+                    usage: Some(resp.usage),
+                }));
+                events.push(Ok(StreamEvent::MessageStop));
+                events
+            }
             MockStreamStep::Error(error) => anyhow::bail!("{}", error),
+            MockStreamStep::Events(events) => events,
         };
 
-        let mut events = Vec::new();
-        events.push(StreamEvent::MessageStart {
-            usage: resp.usage.clone(),
-        });
-        for (i, block) in resp.assistant_message.content.iter().enumerate() {
-            events.push(StreamEvent::ContentBlockStart {
-                index: i,
-                content_block: block.clone(),
-            });
-            events.push(StreamEvent::ContentBlockStop { index: i });
-        }
-        events.push(StreamEvent::MessageDelta {
-            delta: crate::types::message::MessageDelta {
-                stop_reason: resp.assistant_message.stop_reason.clone(),
-            },
-            usage: Some(resp.usage),
-        });
-        events.push(StreamEvent::MessageStop);
         let stream_finished = self.stream_finished.clone();
-        let stream = futures::stream::iter(events.into_iter().map(Ok)).inspect(move |event| {
+        let stream = futures::stream::iter(events.into_iter().map(|event| match event {
+            Ok(event) => Ok(event),
+            Err(error) => anyhow::bail!("{}", error),
+        }))
+        .inspect(move |event| {
             if matches!(event, Ok(StreamEvent::MessageStop)) {
                 stream_finished.store(true, Ordering::SeqCst);
             }
@@ -475,6 +486,74 @@ async fn test_fallback_model_retries_stream_start_capacity_error() {
                 ))
         )),
         "fallback response should be yielded as the assistant message"
+    );
+}
+
+#[tokio::test]
+async fn test_fallback_tombstones_partial_assistant_after_stream_error() {
+    let deps = Arc::new(MockDeps::from_steps(vec![
+        MockStreamStep::Events(vec![
+            Ok(StreamEvent::MessageStart {
+                usage: Usage::default(),
+            }),
+            Ok(StreamEvent::ContentBlockStart {
+                index: 0,
+                content_block: ContentBlock::Text {
+                    text: String::new(),
+                },
+            }),
+            Ok(StreamEvent::ContentBlockDelta {
+                index: 0,
+                delta: serde_json::json!({
+                    "type": "text_delta",
+                    "text": "orphaned partial"
+                }),
+            }),
+            Err("529 overloaded during stream".to_string()),
+        ]),
+        MockStreamStep::Response(make_text_response("Recovered after tombstone")),
+    ]));
+
+    let mut params = make_query_params(vec![make_user_message_for_test("Use fallback")]);
+    params.fallback_model = Some("claude-fallback".to_string());
+
+    let stream = query(params, deps.clone());
+    let items: Vec<QueryYield> = stream.collect().await;
+
+    assert_eq!(
+        request_start_count(&items),
+        2,
+        "partial stream failure should retry with fallback"
+    );
+    let tombstone = items.iter().find_map(|item| {
+        if let QueryYield::Tombstone(tombstone) = item {
+            Some(tombstone)
+        } else {
+            None
+        }
+    });
+    let tombstone = tombstone.expect("expected tombstone for orphaned partial assistant");
+    assert!(
+        tombstone.message.content.iter().any(|block| matches!(
+            block,
+            ContentBlock::Text { text } if text == "orphaned partial"
+        )),
+        "tombstone should carry the orphaned partial assistant content"
+    );
+
+    let recorded = deps.recorded_params();
+    assert_eq!(recorded.len(), 2);
+    assert_eq!(recorded[1].model.as_deref(), Some("claude-fallback"));
+    assert!(
+        items.iter().any(|item| matches!(
+            item,
+            QueryYield::Message(Message::Assistant(msg))
+                if msg.content.iter().any(|block| matches!(
+                    block,
+                    ContentBlock::Text { text } if text.contains("Recovered after tombstone")
+                ))
+        )),
+        "fallback response should be yielded after tombstone"
     );
 }
 

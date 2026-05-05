@@ -1,7 +1,9 @@
 use super::commands::query_prompt_text;
 use super::engine_events::{create_user_message, handle_sdk_message, now_ts, StreamingState};
 use super::subsystem_events::handle_subsystem_event;
-use crate::engine::sdk_types::{SdkAssistantMessage, SdkMessage, SdkStreamEvent, SdkUserReplay};
+use crate::engine::sdk_types::{
+    SdkAssistantMessage, SdkMessage, SdkStreamEvent, SdkTombstone, SdkUserReplay,
+};
 use crate::ipc::subsystem_events::{LspEvent, SubsystemEvent};
 use crate::types::message::{
     ContentBlock, InfoLevel, Message, MessageContent, StreamEvent, SystemMessage, SystemSubtype,
@@ -245,6 +247,62 @@ fn tui_ignores_unsupported_text_like_delta() {
         ContentBlock::Text { text } => assert_eq!(text, ""),
         other => panic!("expected text block, got {:?}", other),
     }
+}
+
+#[test]
+fn tui_tombstone_removes_partial_streaming_assistant() {
+    let mut app = App::new();
+    app.add_message(create_user_message("fallback please"));
+    let mut state = StreamingState::new();
+    let tombstone_message = crate::types::message::AssistantMessage {
+        uuid: uuid::Uuid::new_v4(),
+        timestamp: now_ts(),
+        role: "assistant".to_string(),
+        content: vec![ContentBlock::Text {
+            text: "orphaned".to_string(),
+        }],
+        usage: None,
+        stop_reason: None,
+        is_api_error_message: false,
+        api_error: None,
+        cost_usd: 0.0,
+    };
+
+    handle_sdk_message(
+        &mut app,
+        stream_event(StreamEvent::ContentBlockStart {
+            index: 0,
+            content_block: ContentBlock::Text {
+                text: String::new(),
+            },
+        }),
+        &mut state,
+    );
+    handle_sdk_message(
+        &mut app,
+        stream_event(StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "text_delta",
+                "text": "orphaned"
+            }),
+        }),
+        &mut state,
+    );
+    assert_eq!(app.messages().len(), 2);
+
+    handle_sdk_message(
+        &mut app,
+        SdkMessage::Tombstone(SdkTombstone {
+            message: tombstone_message,
+            session_id: "test-session".to_string(),
+            uuid: uuid::Uuid::new_v4(),
+        }),
+        &mut state,
+    );
+
+    assert_eq!(app.messages().len(), 1);
+    assert!(matches!(app.messages()[0], Message::User(_)));
 }
 
 #[test]

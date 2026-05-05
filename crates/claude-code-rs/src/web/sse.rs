@@ -36,6 +36,7 @@ impl SdkMessage {
             SdkMessage::CompactBoundary(_) => "compact_boundary",
             SdkMessage::ApiRetry(_) => "api_retry",
             SdkMessage::ToolUseSummary(_) => "tool_use_summary",
+            SdkMessage::Tombstone(_) => "tombstone",
             SdkMessage::Result(_) => "result",
         }
     }
