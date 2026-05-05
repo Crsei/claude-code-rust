@@ -169,6 +169,71 @@ async fn test_connect_sse_not_implemented() {
 }
 
 #[tokio::test]
+async fn test_connect_sse_rejects_insecure_remote_http() {
+    let config = McpServerConfig {
+        name: "sse-server".to_string(),
+        transport: "sse".to_string(),
+        command: None,
+        args: None,
+        url: Some("http://example.com/mcp".to_string()),
+        headers: None,
+        env: None,
+        browser_mcp: None,
+        disabled: None,
+    };
+
+    let mut client = McpClient::new(config);
+    let result = client.connect().await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("https"));
+}
+
+#[tokio::test]
+async fn test_connect_sse_rejects_header_injection() {
+    let mut headers = HashMap::new();
+    headers.insert(
+        "Authorization".to_string(),
+        "Bearer ok\r\nX-Bad: yes".to_string(),
+    );
+    let config = McpServerConfig {
+        name: "sse-server".to_string(),
+        transport: "sse".to_string(),
+        command: None,
+        args: None,
+        url: Some("https://example.com/mcp".to_string()),
+        headers: Some(headers),
+        env: None,
+        browser_mcp: None,
+        disabled: None,
+    };
+
+    let mut client = McpClient::new(config);
+    let result = client.connect().await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("header value"));
+}
+
+#[tokio::test]
+async fn test_connect_sse_rejects_missing_url() {
+    let config = McpServerConfig {
+        name: "sse-server".to_string(),
+        transport: "sse".to_string(),
+        command: None,
+        args: None,
+        url: None,
+        headers: None,
+        env: None,
+        browser_mcp: None,
+        disabled: None,
+    };
+
+    let mut client = McpClient::new(config);
+    let result = client.connect().await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("url"));
+}
+
+#[tokio::test]
 async fn test_disconnect_idempotent() {
     let config = McpServerConfig {
         name: "test".to_string(),

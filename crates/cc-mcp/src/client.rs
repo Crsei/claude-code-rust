@@ -93,12 +93,7 @@ impl McpClient {
     pub async fn connect(&mut self) -> Result<()> {
         let result = match self.config.transport.as_str() {
             "stdio" => self.connect_stdio().await,
-            "sse" => {
-                bail!(
-                    "SSE transport is not yet implemented. \
-                     Use stdio transport instead."
-                )
-            }
+            "sse" => self.connect_sse().await,
             other => bail!("unknown MCP transport type: '{}'", other),
         };
 
@@ -190,6 +185,18 @@ impl McpClient {
 
         debug!(server = %self.config.name, "MCP: stdio server connected");
         Ok(())
+    }
+
+    /// Validate SSE transport configuration before returning the current
+    /// unsupported-transport error. This keeps remote MCP settings from
+    /// accepting insecure URLs or header-injection payloads while the runtime
+    /// transport is still being implemented.
+    async fn connect_sse(&mut self) -> Result<()> {
+        validate_sse_config(&self.config)?;
+        bail!(
+            "SSE transport is not yet implemented. \
+             Use stdio transport instead."
+        )
     }
 
     /// Initialize the MCP connection -- exchange capabilities with the server.
@@ -529,6 +536,68 @@ impl McpClient {
     pub fn supports_resources(&self) -> bool {
         self.server_capabilities.resources.is_some()
     }
+}
+
+fn validate_sse_config(config: &McpServerConfig) -> Result<()> {
+    let url = config
+        .url
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("sse transport requires 'url' field"))?;
+    validate_sse_url(url)?;
+
+    if let Some(headers) = &config.headers {
+        for (name, value) in headers {
+            validate_header_name(name)?;
+            validate_header_value(name, value)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_sse_url(url: &str) -> Result<()> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() || trimmed != url {
+        bail!("sse url must be a non-empty URL without surrounding whitespace");
+    }
+    if trimmed.starts_with("https://") {
+        return Ok(());
+    }
+    if let Some(rest) = trimmed.strip_prefix("http://") {
+        let host_port = rest
+            .split(['/', '?', '#'])
+            .next()
+            .unwrap_or_default()
+            .trim();
+        let host = host_port
+            .strip_prefix('[')
+            .and_then(|value| value.split(']').next())
+            .or_else(|| host_port.split(':').next())
+            .unwrap_or_default();
+        if matches!(host, "localhost" | "127.0.0.1" | "::1") {
+            return Ok(());
+        }
+        bail!("sse transport requires https URLs unless the host is loopback");
+    }
+    bail!("sse transport requires an http:// or https:// URL");
+}
+
+fn validate_header_name(name: &str) -> Result<()> {
+    if name.is_empty()
+        || !name
+            .bytes()
+            .all(|b| matches!(b, b'!' | b'#'..=b'\'' | b'*' | b'+' | b'-' | b'.' | b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'))
+    {
+        bail!("invalid SSE header name '{}'", name);
+    }
+    Ok(())
+}
+
+fn validate_header_value(name: &str, value: &str) -> Result<()> {
+    if value.contains('\r') || value.contains('\n') || value.contains('\0') {
+        bail!("invalid SSE header value for '{}'", name);
+    }
+    Ok(())
 }
 
 impl Drop for McpClient {

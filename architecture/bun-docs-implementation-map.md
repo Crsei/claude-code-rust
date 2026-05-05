@@ -53,8 +53,8 @@
 | Context | `token-budget.mdx` | 部分实现 | 预算判断与续跑逻辑存在，但主要依赖启发式估算，不是 provider 级精确 token 统计。 |
 | Extensibility | `custom-agents.mdx` | 部分实现 | 定义、编辑、运行链路已通；安全边界主要依赖通用工具过滤与隔离。 |
 | Extensibility | `hooks.mdx` | 已实现 | hooks 配置、执行和权限联动已形成闭环。 |
-| Extensibility | `mcp-configuration.mdx` | 部分实现 | MCP 配置、发现、管理可用；运行时主要完成 stdio 主路径，SSE 未落地。 |
-| Extensibility | `mcp-protocol.mdx` | 部分实现 | JSON-RPC stdio 主路径存在；协议级安全、认证和完整 transport 覆盖仍不完整。 |
+| Extensibility | `mcp-configuration.mdx` | 部分实现 | MCP 配置、发现、管理可用；SSE URL/header 安全校验已接入，运行时主要完成 stdio 主路径。 |
+| Extensibility | `mcp-protocol.mdx` | 部分实现 | JSON-RPC stdio 主路径存在；SSE 配置安全已补，认证和完整 remote transport 覆盖仍不完整。 |
 | Extensibility | `skills.mdx` | 已实现 | skills frontmatter、加载、注册、调用、fork 执行与命令入口已形成闭环。 |
 | Safety | `auto-mode.mdx` | 部分实现 | `PermissionMode::Auto` 与 fallback 存在；Bun 的 transcript / classifier 两阶段流程未完整落地。 |
 | Safety | `permission-model.mdx` | 已实现 | allow / ask / deny 规则、mode fallback、hook overlay、session grant 已落地。 |
@@ -81,7 +81,7 @@
 - Worktree isolation 已有核心隔离和清理，但 Bun 的 hook 驱动创建 / 销毁、目录布局和恢复流程没有一一对齐。
 - Context compaction、project memory、token budget 都已有主体能力，但 session-memory 压缩闭环、主 prompt memory 注入、provider 级 token 精确统计仍需补齐或明确裁剪。
 - Custom agents 已可定义、编辑、运行，但独立安全边界不如 hooks / skills 明确。
-- MCP 当前以 stdio JSON-RPC 主路径为主，SSE、认证、协议级安全和完整 transport 矩阵仍不完整。
+- MCP 当前以 stdio JSON-RPC 主路径为主；SSE URL/header 安全校验已补，SSE runtime、认证和完整 transport 矩阵仍不完整。
 - Auto mode 缺少 Bun 的 transcript / classifier 两阶段流程。
 - Plan mode 已补入 `allowedPrompts` 输入和 session allow bridge；仍缺 Bun 的自然语言语义 classifier。
 - Windows OS-level sandbox 未实现；当前 Windows 侧主要是 Rust-level policy checks。
@@ -90,7 +90,7 @@
 ## 后续动作
 
 1. 优先确认 Safety 的未实现项：Windows OS-level sandbox、`allowedPrompts` 自然语言 classifier。
-2. 其次确认 MCP transport 与协议安全：SSE、认证、断线恢复、完整 server / resource 行为。
+2. 其次确认 MCP transport 与协议安全：SSE runtime、认证、断线恢复、完整 server / resource 行为。
 3. 再确认 Context 端到端链路：memory 注入、session-memory 压缩、精确 token 统计。
 4. 对 Agent Teams 明确产品边界：继续保留 in-process 版本，还是补 coordinator / swarm 同构模式。
 5. 对 Tools 差异建立单独 issue：`TodoWrite` 是否需要补齐、`Glob` 是否应改为按修改时间排序、WebFetch 是否需要 JS rendering。
@@ -102,3 +102,4 @@
 | --- | --- | --- | --- | --- |
 | 2026-05-05 | Safety / Plan mode `allowedPrompts` | 已完成确定性 Bash pattern bridge；语义 classifier 仍部分实现 | `crates/claude-code-rs/src/tools/plan_mode.rs` 接受 `allowedPrompts`，批准后写入 `plan_allowed_prompts` session rules | `cargo test -p claude-code-rs tools::plan_mode::tests:: -- --nocapture`，10 passed |
 | 2026-05-05 | Safety / Sandbox `allowedCommands` | 已完成 workspace sandbox command allow bridge | `crates/claude-code-rs/src/tools/execution/security.rs` 统一判断，`engine/lifecycle/deps.rs` 与 `tools/execution/pipeline.rs` 接入 central permission fallback | `cargo test -p cc-sandbox allowed_command -- --nocapture` passed；`cargo test -p claude-code-rs central_permission_sandbox_allowed_command -- --nocapture` 被当前工作树未提交的 `crates/cc-compact/src/context_collapse.rs` 编译错误阻塞 |
+| 2026-05-05 | Extensibility / MCP SSE config safety | 已完成远程 SSE 配置安全校验；SSE runtime 仍部分实现 | `crates/cc-mcp/src/client.rs` 在 `sse` connect 前校验 URL 与 headers，拒绝非 loopback 明文 HTTP、缺失 URL、CR/LF header 注入 | `cargo test -p cc-mcp sse -- --nocapture`，4 passed |
