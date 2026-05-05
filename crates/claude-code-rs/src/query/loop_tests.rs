@@ -1,5 +1,6 @@
 use super::*;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -19,14 +20,18 @@ use crate::types::tool::{ToolProgress, Tools};
 /// Mock deps for testing.
 struct MockDeps {
     responses: parking_lot::Mutex<Vec<ModelResponse>>,
-    aborted: std::sync::atomic::AtomicBool,
+    aborted: AtomicBool,
+    stream_finished: Arc<AtomicBool>,
+    tool_executed_before_stream_finished: AtomicBool,
 }
 
 impl MockDeps {
     fn new(responses: Vec<ModelResponse>) -> Self {
         Self {
             responses: parking_lot::Mutex::new(responses),
-            aborted: std::sync::atomic::AtomicBool::new(false),
+            aborted: AtomicBool::new(false),
+            stream_finished: Arc::new(AtomicBool::new(false)),
+            tool_executed_before_stream_finished: AtomicBool::new(false),
         }
     }
 }
@@ -45,6 +50,8 @@ impl QueryDeps for MockDeps {
         &self,
         _params: ModelCallParams,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+        self.stream_finished.store(false, Ordering::SeqCst);
+
         let mut responses = self.responses.lock();
         if responses.is_empty() {
             anyhow::bail!("no more mock responses");
@@ -68,7 +75,12 @@ impl QueryDeps for MockDeps {
             usage: Some(resp.usage),
         });
         events.push(StreamEvent::MessageStop);
-        let stream = futures::stream::iter(events.into_iter().map(Ok));
+        let stream_finished = self.stream_finished.clone();
+        let stream = futures::stream::iter(events.into_iter().map(Ok)).inspect(move |event| {
+            if matches!(event, Ok(StreamEvent::MessageStop)) {
+                stream_finished.store(true, Ordering::SeqCst);
+            }
+        });
         Ok(Box::pin(stream))
     }
 
@@ -95,6 +107,11 @@ impl QueryDeps for MockDeps {
         _parent: &AssistantMessage,
         _on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolExecResult> {
+        if !self.stream_finished.load(Ordering::SeqCst) {
+            self.tool_executed_before_stream_finished
+                .store(true, Ordering::SeqCst);
+        }
+
         Ok(ToolExecResult {
             tool_use_id: request.tool_use_id,
             tool_name: request.tool_name,
@@ -116,7 +133,7 @@ impl QueryDeps for MockDeps {
     }
 
     fn is_aborted(&self) -> bool {
-        self.aborted.load(std::sync::atomic::Ordering::Relaxed)
+        self.aborted.load(Ordering::Relaxed)
     }
 
     fn get_tools(&self) -> Tools {
@@ -255,7 +272,7 @@ async fn test_tool_use_then_text_response() {
         task_budget: None,
     };
 
-    let stream = query(params, deps);
+    let stream = query(params, deps.clone());
     let items: Vec<QueryYield> = stream.collect().await;
 
     let request_starts = items
@@ -269,6 +286,13 @@ async fn test_tool_use_then_text_response() {
         .filter(|i| matches!(i, QueryYield::Message(Message::Assistant(_))))
         .count();
     assert_eq!(assistant_msgs, 2, "expected 2 assistant messages");
+
+    assert!(
+        !deps
+            .tool_executed_before_stream_finished
+            .load(Ordering::SeqCst),
+        "tool execution should not start before the model stream reaches message_stop"
+    );
 }
 
 #[tokio::test]
