@@ -25,12 +25,12 @@
 
 ## 1. S 级简化 (>80% 缩减)
 
-### 1.1 BashTool — 97% 缩减 (输出截断 / heredoc 校验已补全)
+### 1.1 BashTool — 仍有 Full Build 差距 (输出截断 / heredoc 校验 / Git 操作跟踪已补全)
 
 | | TypeScript | Rust |
 |---|---|---|
-| 行数 | 12,411 (18 文件) | 796 + 934 (2 文件) |
-| 文件 | — | `tools/exec/bash.rs` + `crates/cc-utils/src/bash.rs` |
+| 行数 | 12,411 (18 文件) | 806 + 934 + 563 (3 文件) |
+| 文件 | — | `tools/exec/bash.rs` + `crates/cc-utils/src/bash.rs` + `crates/cc-utils/src/git_operation_tracking.rs` |
 
 **Rust 保留：**
 - 基础进程执行 (`tokio::process::Command`)
@@ -38,6 +38,7 @@
 - stdout/stderr 输出捕获
 - ✅ **输出截断策略** (head 200 行 + tail 100 行 + 中间省略, 行边界感知)
 - ✅ **heredoc 校验** (未闭合 delimiter、quoted delimiter、`<<-`、多 heredoc、quoted text / arithmetic shift 规避)
+- ✅ **Git 操作跟踪** (shell-agnostic 检测 commit/amend/cherry-pick、push branch、merge/rebase、`gh pr`、`glab mr create`、curl PR endpoint；Bash/PowerShell 成功结果附带 `git_operations`)
 
 **TS 独有（未移植）：**
 - PowerShell 分支 (8,959 行的 PowerShellTool)
@@ -46,7 +47,6 @@
 - 进程组管理
 - 命令拒绝列表与危险命令分析
 - 终端大小感知
-- Git 操作跟踪 (gitOperationTracking)
 
 ---
 
@@ -369,7 +369,7 @@
 |------|---------|-----------|--------|------|
 | state (→ types) | ~58,000 | 832 | 99% | S |
 | skills/ | ~43,000 | 989 | 98% | S |
-| BashTool | 12,411 | 1,730 | 86% | S (截断 / heredoc 校验已补全) |
+| BashTool | 12,411 | 2,303 | 81% | S (截断 / heredoc 校验 / Git 操作跟踪已补全) |
 | utils/ | 90,813 | 2,857 | 97% | S |
 | AgentTool | 6,072 | 789 | 87% | S (worktree 已补全) |
 | UI (全部) | 54,049 | 3,165 | 94% | S (框架) |
@@ -402,6 +402,7 @@
 1. ~~**FileEditTool fuzzy 匹配**~~ ✅ 已补全 — 230→386 行, `similar::TextDiff` 滑动窗口
 2. ~~**BashTool 输出截断**~~ ✅ 已补全 — 199→430 行, head+tail 行级截断
    - 2026-05-05 继续补齐 heredoc 校验 — BashTool + cc-utils bash helper 共 1,730 行
+   - 2026-05-05 继续补齐 Git 操作跟踪 — 新增 `cc-utils/src/git_operation_tracking.rs`，Bash/PowerShell 结果附带 `git_operations`
 3. ~~**FileReadTool PDF/图片**~~ ✅ 已补全 — 236→743 行, 图片 base64 + PDF pdftotext + ipynb JSON
    - 2026-05-05 继续补齐 symlink 解析、编码检测、大文件分页 — 743→1,214 行
 4. ~~**GrepTool ripgrep 调用**~~ ✅ 已补全 — 185→371 行, rg 子进程 + multiline + offset

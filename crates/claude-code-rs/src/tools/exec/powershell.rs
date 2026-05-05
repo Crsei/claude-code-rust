@@ -15,6 +15,7 @@ use crate::types::tool::{
     ValidationResult,
 };
 use crate::utils::bash::resolve_timeout;
+use crate::utils::git_operation_tracking::track_git_operations_json;
 use crate::utils::shell::build_shell_env;
 
 use super::bash::truncate_output;
@@ -261,16 +262,25 @@ impl Tool for PowerShellTool {
                     combined.push_str(&stderr);
                 }
 
+                let git_operations =
+                    track_git_operations_json(&command, exit_code, Some(&combined));
                 let max_chars = self.max_result_size_chars();
                 combined = truncate_output(&combined, max_chars);
 
+                let mut data = json!({
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "exit_code": exit_code,
+                    "output": combined,
+                });
+                if let Some(git_operations) = git_operations {
+                    if let Some(object) = data.as_object_mut() {
+                        object.insert("git_operations".to_string(), git_operations);
+                    }
+                }
+
                 Ok(ToolResult {
-                    data: json!({
-                        "stdout": stdout,
-                        "stderr": stderr,
-                        "exit_code": exit_code,
-                        "output": combined,
-                    }),
+                    data,
                     new_messages: vec![],
                     ..Default::default()
                 })

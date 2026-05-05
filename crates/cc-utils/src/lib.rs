@@ -8,6 +8,7 @@ pub mod bash;
 pub mod cwd;
 pub mod file_state_cache;
 pub mod git;
+pub mod git_operation_tracking;
 pub mod messages;
 pub mod shell;
 pub mod tokens;

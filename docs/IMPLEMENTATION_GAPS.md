@@ -49,12 +49,13 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | SkillTool | 核心已补齐 | `crates/cc-skills/src/lib.rs` / `loader.rs` 已覆盖依赖解析、版本冲突、兼容版本、hot reload、frontmatter 诊断；若后续需要上游 MCP skill builder，可按插件/脚手架能力单独立项 |
 | LSP | 已补齐 | `crates/claude-code-rs/src/lsp_service/client.rs` 已实现 `didChange` ranged updates 与 `publishDiagnostics` 被动接收；`crates/claude-code-rs/src/tools/lsp.rs` / `crates/claude-code-rs/src/lsp_service/mod.rs` 已提供 completion 与 diagnostics snapshot |
 | BashTool heredoc 校验 | 已补齐子项 | `crates/cc-utils/src/bash.rs` 的 `validate_heredocs()` 已覆盖未闭合 delimiter、quoted delimiter、`<<-`、同一命令行多个 heredoc、quoted text / arithmetic shift 规避；`BashTool::validate_input()` 执行前拒绝畸形 heredoc |
+| BashTool Git 操作跟踪 | 已补齐子项 | `crates/cc-utils/src/git_operation_tracking.rs` 已对齐上游 shell-agnostic 检测，覆盖 commit/amend/cherry-pick、push branch、merge/rebase、`gh pr`、`glab mr create` 与 curl PR endpoint；`BashTool` / `PowerShellTool` 成功结果会附带 `git_operations` 元数据 |
 
 ### 2.2 仍需补齐的工具 parity
 
 | 模块 | 待补齐的行为（参考上游） |
 |------|----------|
-| BashTool | PowerShell 分支、sandbox、进程组管理、危险命令拒绝列表（Stage 3c.2 已落地；Bash/PowerShell 执行前硬拦，BashTool 内部仍保留 Ask 级子命令检测）、Git 操作跟踪 |
+| BashTool | PowerShell 分支、sandbox、进程组管理、危险命令拒绝列表（Stage 3c.2 已落地；Bash/PowerShell 执行前硬拦，BashTool 内部仍保留 Ask 级子命令检测） |
 | FileEditTool | 冲突检测、文件锁检查、编辑历史、自动缩进修正；ratatui diff 预览/更新消息 renderer 已补齐，live transcript 接线仍依赖 backend file-edit event data |
 | TaskTools | 远程/多类型后台任务 supervisor parity、超时控制；磁盘持久化、基础依赖字段、输出保留、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
 | PlanMode | auto-mode/classifier gate、团队审批流、计划持久化、实现关联跟踪 |
@@ -63,7 +64,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 
 ### 2.3 推荐执行顺序（逐步领取）
 
-1. **BashTool**：先补 Git 操作跟踪、进程组/取消语义，再复核 PowerShell 分支与 sandbox 的上游差异。
+1. **BashTool**：先补进程组/取消语义，再复核 PowerShell 分支与 sandbox 的上游差异。
 2. **FileEditTool**：补冲突检测与文件锁检查；随后接编辑历史和自动缩进修正，并用 backend file-edit event data 验证 TUI transcript。
 3. **AgentTool**：补团队上下文注入、工具白名单过滤、工具定义去重；再评估 `spawnMultiAgent` 是否作为独立工具或 AgentTool 扩展。
 4. **TaskTools**：在现有持久化和取消基础上补超时控制、远程/多类型后台任务 supervisor parity。
