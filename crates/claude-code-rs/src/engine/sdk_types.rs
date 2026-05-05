@@ -68,6 +68,12 @@ pub struct SdkUserReplay {
     pub timestamp: i64,
     pub is_replay: bool,
     pub is_synthetic: bool,
+    /// Human-readable tool result preview used by TUI/transcript renderers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_use_result: Option<String>,
+    /// Assistant message that originated the tool call, when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_tool_assistant_uuid: Option<Uuid>,
     /// Structured content blocks (tool results, etc.) — present when
     /// the user message carries `MessageContent::Blocks`.
     #[serde(skip_serializing_if = "Option::is_none")]

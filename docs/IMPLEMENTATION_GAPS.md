@@ -60,13 +60,13 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | FileEditTool 文件锁/readonly 写前检查 | 已补齐子项 | `Edit` 在 validate/call 阶段尝试以读写句柄打开目标文件，提前拒绝 readonly、PermissionDenied、WouldBlock 与 Windows sharing violation（5/32/33）等锁定或不可写状态，避免等到覆盖写入时才失败 |
 | FileEditTool 编辑历史备份 | 已补齐子项 | `Edit` 写入改走 `safe_write_text()`，每次覆盖前创建恢复备份并在 tool result / FileChanged hook payload 暴露 `edit_history.backup_path`，同时保留 atomic replace 与权限保持诊断 |
 | FileEditTool 自动缩进修正 | 已补齐子项 | `Edit` 在 `old_string` 精确匹配失败时会查找唯一的“去除 leading whitespace 后等价”代码块，并把 `new_string` 的 leading whitespace 映射到文件中的实际缩进；歧义匹配保持拒绝 |
+| FileEditTool live transcript 接线 | 已补齐子项 | `Edit` 成功结果把 concise model content 与 UI-only `display_preview` 分离；`SdkUserReplay` / headless IPC / Rust TUI 保留 `tool_use_result`，并用 `file_edit_tool_updated_message` 在 prompt/transcript 中渲染结构化 diff 预览 |
 
 ### 2.2 仍需补齐的工具 parity
 
 | 模块 | 待补齐的行为（参考上游） |
 |------|----------|
 | BashTool | PowerShell AST parser fidelity 与剩余 validator checks（一般 dynamic command name、一般 subexpression/splatting、member method、完整 CLM type literal、expandable string 等需要 AST 语义的检查）、sandbox OS-level 平台隔离差异（尤其 Windows primitive / fail-closed 产品边界）；Stage 3c.2 执行前硬拦、heredoc、Git 操作跟踪、进程树终止、destructive denylist、高风险 security validator 与显式写目标 FS preflight 子项已落地 |
-| FileEditTool | 读后冲突检测、文件锁/readonly 写前检查、编辑历史备份与自动缩进修正已补齐，ratatui diff 预览/更新消息 renderer 已补齐；剩余为用 backend file-edit event data 验证/接线 live transcript |
 | TaskTools | 远程/多类型后台任务 supervisor parity、超时控制；磁盘持久化、基础依赖字段、输出保留、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
 | PlanMode | auto-mode/classifier gate、团队审批流、计划持久化、实现关联跟踪 |
 | WebFetch | JS 渲染、Cookie 管理、代理支持、重定向限制、Content-Type 智能处理 |
@@ -77,17 +77,16 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 每个条目完成时都按同一收口流程处理：读上游实现 → 改 Rust 端 → 补单元/e2e → `cargo fmt --all --check` + 对应构建 → 更新本文件与 archive → 单独提交。
 
 1. **BashTool 剩余安全/沙箱复核**：对照 `src/tools/BashTool/**` 与 PowerShell validator，补齐一般 dynamic command name、一般 subexpression/splatting、member method、完整 CLM type literal、expandable string 等剩余 AST/security 检查；同时把 Windows OS-level sandbox 的可实现边界写清楚，能实现的落代码，不能实现的移入 §7 Intentional 裁剪。
-2. **FileEditTool transcript 收口**：用 backend file-edit event data 验证/接线 TUI live transcript；如果上游完整 session-level file rewind UI / snapshot 管线仍是产品必需项，先拆成独立实现计划再动代码。
-3. **AgentTool 团队上下文与工具边界**：补团队上下文注入、工具白名单过滤、工具定义去重；随后评估 `spawnMultiAgent` 是独立工具还是 AgentTool 扩展，并补多 agent 调度测试。
-4. **TaskTools 后台任务 parity**：在现有持久化/取消基础上补超时控制、远程/多类型后台任务 supervisor parity，并验证 `/tasks` UI 与 task store 的状态一致性。
-5. **PlanMode 执行闭环**：补 auto-mode/classifier gate、团队审批流、计划持久化与实现关联追踪；完成后用 plan 创建、恢复、审批、执行关联的 e2e 覆盖。
-6. **WebFetch browser-grade 能力**：按 `architecture/mvp-optimization-plans/MVP-009-web-fetch-browser-grade-plan.md` 逐步补 JS 渲染、Cookie jar、代理、重定向限制与 Content-Type 智能处理。
-7. **API providers 决策/实现**：按 `architecture/mvp-optimization-plans/MVP-001-api-providers-plan.md` 重评 Bedrock 原生 AWS EventStream 与 Vertex direct service-account JWT exchange；实现或写入 §7 Intentional 裁剪，不再停留在“部分完成”。
-8. **Team Memory 客户端同步**：接通 `src/daemon/team_memory_proxy.rs` / `ui/team-memory-server/` 的前端调用路径，补同步、断线恢复与冲突处理测试。
-9. **UI caveats 收束**：修复 §3 的终端 resize 回流与窄终端欢迎页布局；完成后迁移到 archive 或 `KNOWN_ISSUES.md` closed 记录。
-10. **活跃方案文档清理**：逐个复核 §4 文档，能落地的拆成实现任务，过期或已覆盖的归档，仍有效的保留 owner/下一步。
-11. **历史 Deferred 重评**：按 §5 类别决定实现、延期或 §7 Intentional 裁剪；不得继续用 "lite 不做" 作为理由。
-12. **最终全量复核**：跑覆盖相关工具面的单元/e2e 与 release build，确认本节没有残留 TODO，更新 `WORK_STATUS.md` / archive 后收尾。
+2. **AgentTool 团队上下文与工具边界**：补团队上下文注入、工具白名单过滤、工具定义去重；随后评估 `spawnMultiAgent` 是独立工具还是 AgentTool 扩展，并补多 agent 调度测试。
+3. **TaskTools 后台任务 parity**：在现有持久化/取消基础上补超时控制、远程/多类型后台任务 supervisor parity，并验证 `/tasks` UI 与 task store 的状态一致性。
+4. **PlanMode 执行闭环**：补 auto-mode/classifier gate、团队审批流、计划持久化与实现关联追踪；完成后用 plan 创建、恢复、审批、执行关联的 e2e 覆盖。
+5. **WebFetch browser-grade 能力**：按 `architecture/mvp-optimization-plans/MVP-009-web-fetch-browser-grade-plan.md` 逐步补 JS 渲染、Cookie jar、代理、重定向限制与 Content-Type 智能处理。
+6. **API providers 决策/实现**：按 `architecture/mvp-optimization-plans/MVP-001-api-providers-plan.md` 重评 Bedrock 原生 AWS EventStream 与 Vertex direct service-account JWT exchange；实现或写入 §7 Intentional 裁剪，不再停留在“部分完成”。
+7. **Team Memory 客户端同步**：接通 `src/daemon/team_memory_proxy.rs` / `ui/team-memory-server/` 的前端调用路径，补同步、断线恢复与冲突处理测试。
+8. **UI caveats 收束**：修复 §3 的终端 resize 回流与窄终端欢迎页布局；完成后迁移到 archive 或 `KNOWN_ISSUES.md` closed 记录。
+9. **活跃方案文档清理**：逐个复核 §4 文档，能落地的拆成实现任务，过期或已覆盖的归档，仍有效的保留 owner/下一步。
+10. **历史 Deferred 重评**：按 §5 类别决定实现、延期或 §7 Intentional 裁剪；不得继续用 "lite 不做" 作为理由。
+11. **最终全量复核**：跑覆盖相关工具面的单元/e2e 与 release build，确认本节没有残留 TODO，更新 `WORK_STATUS.md` / archive 后收尾。
 
 补齐流程：
 1. 读上游实现（`F:\AIclassmanager\cc\src\tools\<name>\**` 或 `claude-code-bun` 同名模块）。

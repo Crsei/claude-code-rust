@@ -1,5 +1,6 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use crate::types::message::{
@@ -9,6 +10,9 @@ use crate::ui::markdown::markdown_to_lines;
 use crate::ui::theme::Theme;
 use crate::ui::virtual_scroll::VirtualScroll;
 
+use super::file_edit_tool_updated_message::{
+    render_file_edit_tool_updated_message, FileEditMessageStyle, FileEditToolUpdatedView,
+};
 use super::wrap::wrap_line_to_width;
 
 /// Render only the visible messages into the given buffer area using virtual
@@ -102,14 +106,19 @@ fn render_user_message<'a>(
 
     let content_text = match &msg.content {
         MessageContent::Text(t) => t.clone(),
-        MessageContent::Blocks(blocks) => blocks
-            .iter()
-            .filter_map(|b| match b {
-                ContentBlock::Text { text } => Some(text.clone()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
+        MessageContent::Blocks(blocks) => {
+            if let Some(tool_lines) = render_tool_result_user_message(msg, blocks, theme) {
+                return tool_lines;
+            }
+            blocks
+                .iter()
+                .filter_map(|b| match b {
+                    ContentBlock::Text { text } => Some(text.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
     };
 
     // First line includes the "You: " prefix.
@@ -127,6 +136,111 @@ fn render_user_message<'a>(
     }
 
     lines
+}
+
+fn render_tool_result_user_message<'a>(
+    msg: &crate::types::message::UserMessage,
+    blocks: &[ContentBlock],
+    theme: &Theme,
+) -> Option<Vec<Line<'a>>> {
+    let tool_result = blocks.iter().find_map(|block| match block {
+        ContentBlock::ToolResult {
+            content, is_error, ..
+        } => Some((content, *is_error)),
+        _ => None,
+    })?;
+
+    if let Some(preview) = msg.tool_use_result.as_deref() {
+        if !tool_result.1 {
+            if let Some(lines) = render_file_edit_preview(preview, theme) {
+                return Some(lines);
+            }
+        }
+        return Some(styled_text_lines(
+            &pretty_json_or_raw(preview),
+            theme.tool_result,
+        ));
+    }
+
+    let text = tool_result_content_text(tool_result.0);
+    let style = if tool_result.1 {
+        theme.error
+    } else {
+        theme.tool_result
+    };
+    Some(styled_text_lines(&text, style))
+}
+
+fn render_file_edit_preview<'a>(preview: &str, theme: &Theme) -> Option<Vec<Line<'a>>> {
+    let value = serde_json::from_str::<serde_json::Value>(preview).ok()?;
+    if value.get("kind").and_then(|v| v.as_str()) != Some("file_edit") {
+        return None;
+    }
+    let file_path = value.get("path").and_then(|v| v.as_str())?.to_string();
+    let hunk_lines = value
+        .get("hunk_lines")?
+        .as_array()?
+        .iter()
+        .filter_map(|line| line.as_str().map(str::to_string))
+        .collect::<Vec<_>>();
+    if hunk_lines.is_empty() {
+        return None;
+    }
+
+    let rendered = render_file_edit_tool_updated_message(&FileEditToolUpdatedView {
+        file_path,
+        hunk_lines,
+        style: FileEditMessageStyle::Regular,
+        verbose: true,
+        preview_hint: None,
+        width: 100,
+        max_lines: 48,
+    });
+    Some(
+        rendered
+            .lines()
+            .enumerate()
+            .map(|(idx, line)| {
+                let style = if idx == 0 {
+                    theme.tool_name
+                } else {
+                    theme.tool_result
+                };
+                Line::from(Span::styled(line.to_string(), style))
+            })
+            .collect(),
+    )
+}
+
+fn tool_result_content_text(content: &ToolResultContent) -> String {
+    match content {
+        ToolResultContent::Text(text) => text.clone(),
+        ToolResultContent::Blocks(blocks) => blocks
+            .iter()
+            .filter_map(|block| match block {
+                ContentBlock::Text { text } => Some(text.clone()),
+                ContentBlock::Image { source } => Some(format!("[image: {}]", source.media_type)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+    }
+}
+
+fn pretty_json_or_raw(raw: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(raw)
+        .ok()
+        .and_then(|value| serde_json::to_string_pretty(&value).ok())
+        .unwrap_or_else(|| raw.to_string())
+}
+
+fn styled_text_lines<'a>(text: &str, style: Style) -> Vec<Line<'a>> {
+    if text.is_empty() {
+        return vec![Line::from(Span::styled("<empty tool output>", style))];
+    }
+    text.lines()
+        .map(|line| Line::from(Span::styled(line.to_string(), style)))
+        .collect()
 }
 
 // ── Assistant messages ──────────────────────────────────────────────────
@@ -398,5 +512,62 @@ fn abbreviate_json(value: &serde_json::Value, max_chars: usize) -> String {
         format!("{}...", &full[..max_chars - 3])
     } else {
         full[..max_chars].to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_single_message;
+    use crate::types::message::{
+        ContentBlock, Message, MessageContent, ToolResultContent, UserMessage,
+    };
+    use crate::ui::diff::file_edit_diff::unified_hunk_lines_from_edit;
+    use crate::ui::theme::Theme;
+    use serde_json::json;
+
+    #[test]
+    fn renders_file_edit_tool_preview_from_tool_use_result() {
+        let hunk_lines = unified_hunk_lines_from_edit(
+            "src/lib.rs",
+            "fn main() {\n    old_call();\n}\n",
+            "fn main() {\n    new_call();\n}\n",
+        );
+        let preview = json!({
+            "kind": "file_edit",
+            "path": "src/lib.rs",
+            "output": "Successfully replaced 1 occurrence(s) in src/lib.rs",
+            "replacements": 1,
+            "hunk_lines": hunk_lines,
+        })
+        .to_string();
+        let message = Message::User(UserMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "user".to_string(),
+            content: MessageContent::Blocks(vec![ContentBlock::ToolResult {
+                tool_use_id: "toolu_edit".to_string(),
+                content: ToolResultContent::Text("The file was updated.".to_string()),
+                is_error: false,
+            }]),
+            is_meta: true,
+            tool_use_result: Some(preview),
+            source_tool_assistant_uuid: None,
+        });
+
+        let rendered = render_single_message(&message, &Theme::default())
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(rendered.contains("Added 1 line, removed 1 line"));
+        assert!(rendered.contains("file: src/lib.rs"));
+        assert!(rendered.contains("old_call();"));
+        assert!(rendered.contains("new_call();"));
     }
 }

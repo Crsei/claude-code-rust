@@ -1,11 +1,11 @@
 use super::commands::query_prompt_text;
 use super::engine_events::{create_user_message, handle_sdk_message, now_ts, StreamingState};
 use super::subsystem_events::handle_subsystem_event;
-use crate::engine::sdk_types::{SdkMessage, SdkStreamEvent};
+use crate::engine::sdk_types::{SdkMessage, SdkStreamEvent, SdkUserReplay};
 use crate::ipc::subsystem_events::{LspEvent, SubsystemEvent};
 use crate::types::message::{
     ContentBlock, InfoLevel, Message, MessageContent, StreamEvent, SystemMessage, SystemSubtype,
-    UserMessage,
+    ToolResultContent, UserMessage,
 };
 use crate::ui::app::App;
 use serde_json::json;
@@ -133,6 +133,44 @@ fn tui_streaming_keeps_tool_use_after_empty_thinking_block() {
             assert_eq!(input["file_path"], "Cargo.toml");
         }
         other => panic!("expected tool use block, got {:?}", other),
+    }
+}
+
+#[test]
+fn tui_user_replay_preserves_tool_result_preview() {
+    let mut app = App::new();
+    let mut state = StreamingState::new();
+    let source_uuid = uuid::Uuid::new_v4();
+
+    handle_sdk_message(
+        &mut app,
+        SdkMessage::UserReplay(SdkUserReplay {
+            content: "[1 content blocks]".to_string(),
+            session_id: "test-session".to_string(),
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: now_ts(),
+            is_replay: true,
+            is_synthetic: true,
+            tool_use_result: Some("{\"kind\":\"file_edit\"}".to_string()),
+            source_tool_assistant_uuid: Some(source_uuid),
+            content_blocks: Some(vec![ContentBlock::ToolResult {
+                tool_use_id: "toolu_1".to_string(),
+                content: ToolResultContent::Text("The file was updated.".to_string()),
+                is_error: false,
+            }]),
+        }),
+        &mut state,
+    );
+
+    match app.messages().last().expect("user replay message") {
+        Message::User(user) => {
+            assert_eq!(
+                user.tool_use_result.as_deref(),
+                Some("{\"kind\":\"file_edit\"}")
+            );
+            assert_eq!(user.source_tool_assistant_uuid, Some(source_uuid));
+        }
+        other => panic!("expected user message, got {:?}", other),
     }
 }
 

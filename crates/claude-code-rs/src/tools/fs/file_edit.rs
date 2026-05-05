@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use similar::TextDiff;
 
-use crate::types::message::AssistantMessage;
+use crate::types::message::{AssistantMessage, ToolResultContent};
 use crate::types::tool::{
     FileCacheEntry, FileStateCache, Tool, ToolProgress, ToolResult, ToolUseContext,
     ValidationResult,
@@ -246,6 +246,17 @@ impl FileEditTool {
             old_string: actual_old,
             new_string: adjusted_new,
         })
+    }
+
+    fn unified_hunk_lines(path: &str, old_content: &str, new_content: &str) -> Vec<String> {
+        TextDiff::from_lines(old_content, new_content)
+            .unified_diff()
+            .context_radius(3)
+            .header(&format!("a/{path}"), &format!("b/{path}"))
+            .to_string()
+            .lines()
+            .map(str::to_string)
+            .collect()
     }
 
     /// Find the best fuzzy match for `old_string` within `content` using
@@ -588,6 +599,26 @@ impl Tool for FileEditTool {
         {
             let replacements = if replace_all { occurrence_count } else { 1 };
             Self::record_edit_state(ctx, &file_path, path, &new_content);
+            let output = format!(
+                "Successfully replaced {} occurrence(s) in {}",
+                replacements, file_path
+            );
+            let hunk_lines = Self::unified_hunk_lines(&file_path, &content, &new_content);
+            let display_preview = json!({
+                "kind": "file_edit",
+                "tool": "Edit",
+                "path": &file_path,
+                "output": &output,
+                "replacements": replacements,
+                "auto_indent_adjusted": auto_indent_adjusted,
+                "hunk_lines": &hunk_lines,
+                "edit_history": {
+                    "backup_path": write_report.backup_path.as_ref().map(|p| p.display().to_string()),
+                    "atomic": true,
+                    "permissions_preserved": write_report.permissions_preserved,
+                },
+            })
+            .to_string();
 
             // Fire FileChanged hook
             {
@@ -611,11 +642,8 @@ impl Tool for FileEditTool {
 
             Ok(ToolResult {
                 data: json!({
-                    "output": format!(
-                        "Successfully replaced {} occurrence(s) in {}",
-                        replacements, file_path
-                    ),
-                    "path": file_path,
+                    "output": &output,
+                    "path": &file_path,
                     "replacements": replacements,
                     "auto_indent_adjusted": auto_indent_adjusted,
                     "edit_history": {
@@ -624,8 +652,9 @@ impl Tool for FileEditTool {
                         "permissions_preserved": write_report.permissions_preserved,
                     },
                 }),
+                model_content: Some(ToolResultContent::Text(output)),
+                display_preview: Some(display_preview),
                 new_messages: vec![],
-                ..Default::default()
             })
         }
     }
@@ -971,6 +1000,24 @@ fn main() {
             .unwrap();
         assert_eq!(first_edit.data["replacements"], 1);
         assert_eq!(first_edit.data["edit_history"]["atomic"], true);
+        match first_edit.model_content {
+            Some(ToolResultContent::Text(ref text)) => {
+                assert!(text.contains("Successfully replaced 1 occurrence(s)"));
+            }
+            other => panic!("expected concise text model content, got {:?}", other),
+        }
+        let display_preview = first_edit
+            .display_preview
+            .as_deref()
+            .and_then(|text| serde_json::from_str::<Value>(text).ok())
+            .expect("edit should expose a UI display preview");
+        assert_eq!(display_preview["kind"], "file_edit");
+        assert_eq!(display_preview["replacements"], 1);
+        assert!(display_preview["hunk_lines"]
+            .as_array()
+            .expect("preview has hunk lines")
+            .iter()
+            .any(|line| line.as_str().is_some_and(|line| line.contains("gamma"))));
         let backup_path = first_edit.data["edit_history"]["backup_path"]
             .as_str()
             .expect("edit should create a recovery backup");

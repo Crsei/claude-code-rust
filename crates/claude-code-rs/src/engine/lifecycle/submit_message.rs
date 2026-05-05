@@ -441,6 +441,8 @@ impl QueryEngine {
                                 timestamp: user_msg.timestamp,
                                 is_replay: true,
                                 is_synthetic: user_msg.is_meta,
+                                tool_use_result: user_msg.tool_use_result.clone(),
+                                source_tool_assistant_uuid: user_msg.source_tool_assistant_uuid,
                                 content_blocks,
                             });
                         }
@@ -583,6 +585,8 @@ impl QueryEngine {
                                             timestamp: attachment_msg.timestamp,
                                             is_replay: false,
                                             is_synthetic: true,
+                                            tool_use_result: None,
+                                            source_tool_assistant_uuid: None,
                                             content_blocks: None,
                                         },
                                     );

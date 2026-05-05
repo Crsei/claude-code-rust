@@ -238,8 +238,8 @@ pub(super) fn handle_sdk_message(app: &mut App, msg: SdkMessage, ss: &mut Stream
                 role: "user".to_string(),
                 content,
                 is_meta: user.is_synthetic,
-                tool_use_result: None,
-                source_tool_assistant_uuid: None,
+                tool_use_result: user.tool_use_result,
+                source_tool_assistant_uuid: user.source_tool_assistant_uuid,
             }));
         }
 

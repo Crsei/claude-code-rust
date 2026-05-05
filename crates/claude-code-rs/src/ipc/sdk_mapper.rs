@@ -80,6 +80,16 @@ pub fn handle_sdk_message(
 
             // Extract and forward tool results from content blocks
             if let Some(ref blocks) = replay.content_blocks {
+                let replay_tool_preview = if blocks
+                    .iter()
+                    .filter(|block| matches!(block, ContentBlock::ToolResult { .. }))
+                    .count()
+                    == 1
+                {
+                    replay.tool_use_result.clone()
+                } else {
+                    None
+                };
                 for block in blocks {
                     if let ContentBlock::ToolResult {
                         tool_use_id,
@@ -93,7 +103,7 @@ pub fn handle_sdk_message(
                         };
                         let _ = sink.send(&BackendMessage::ToolResult {
                             tool_use_id: tool_use_id.clone(),
-                            output,
+                            output: replay_tool_preview.clone().unwrap_or(output),
                             is_error: *is_error,
                             content_blocks: content_infos,
                         });

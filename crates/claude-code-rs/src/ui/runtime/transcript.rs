@@ -211,7 +211,19 @@ pub fn message_plaintext(message: &Message) -> String {
     match message {
         Message::User(u) => match &u.content {
             MessageContent::Text(t) => t.clone(),
-            MessageContent::Blocks(blocks) => blocks_to_text(blocks),
+            MessageContent::Blocks(blocks) => {
+                let mut text = blocks_to_text(blocks);
+                if let Some(preview) = &u.tool_use_result {
+                    if !text.is_empty() {
+                        text.push('\n');
+                    }
+                    text.push_str(
+                        &file_edit_preview_plaintext(preview)
+                            .unwrap_or_else(|| preview.to_string()),
+                    );
+                }
+                text
+            }
         },
         Message::Assistant(a) => blocks_to_text(&a.content),
         Message::System(s) => match &s.subtype {
@@ -280,6 +292,21 @@ fn blocks_to_text(blocks: &[ContentBlock]) -> String {
         }
     }
     out
+}
+
+fn file_edit_preview_plaintext(preview: &str) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(preview).ok()?;
+    if value.get("kind").and_then(|v| v.as_str()) != Some("file_edit") {
+        return None;
+    }
+    let path = value.get("path").and_then(|v| v.as_str()).unwrap_or("");
+    let output = value.get("output").and_then(|v| v.as_str()).unwrap_or("");
+    let replacements = value
+        .get("replacements")
+        .and_then(|v| v.as_u64())
+        .map(|count| format!(" ({count} replacement(s))"))
+        .unwrap_or_default();
+    Some(format!("file_edit: {path}{replacements}\n{output}"))
 }
 
 /// Search every message for `query` (case-insensitive substring).

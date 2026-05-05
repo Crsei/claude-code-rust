@@ -186,6 +186,8 @@ fn make_user_replay(
         timestamp: 0,
         is_replay: false,
         is_synthetic: true,
+        tool_use_result: None,
+        source_tool_assistant_uuid: None,
         content_blocks: Some(blocks),
     })
 }
@@ -324,6 +326,8 @@ fn test_sdk_to_agent_event_user_replay_no_blocks_returns_none() {
             timestamp: 0,
             is_replay: false,
             is_synthetic: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
             content_blocks: None,
         });
     assert!(sdk_to_agent_event(&msg, "a1").is_none());

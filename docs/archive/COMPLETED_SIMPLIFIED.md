@@ -78,7 +78,7 @@
 
 ---
 
-### 1.3 FileEditTool — 缩减实现 (fuzzy + 安全/历史/缩进子项已补全)
+### 1.3 FileEditTool — 缩减实现 (fuzzy + 安全/历史/缩进/transcript 子项已补全)
 
 | | TypeScript | Rust |
 |---|---|---|
@@ -94,10 +94,9 @@
 - ✅ **文件锁/readonly 写前检查** (`Edit` 写入前尝试读写打开目标文件，提前拒绝 readonly、PermissionDenied、WouldBlock 与 Windows sharing violation)
 - ✅ **编辑历史备份** (`Edit` 复用 `safe_write_text()`，覆盖前创建恢复备份并在结果 / hook payload 暴露 `edit_history.backup_path`)
 - ✅ **自动缩进修正** (`Edit` 精确匹配失败时查找唯一缩进等价块，并把 `new_string` leading whitespace 映射到文件实际缩进；歧义候选拒绝)
+- ✅ **live transcript FileEdit 预览** (`Edit` 结果分离 concise model content 与 UI-only `display_preview`；SDK replay/headless IPC/Rust TUI 保留 `tool_use_result` 并渲染结构化 diff)
 
 **TS 独有（未移植）：**
-- Diff 渲染 (用户预览)
-- 多编辑冲突解决
 - 完整 session-level file rewind UI / snapshot 管线
 
 ---
@@ -379,7 +378,7 @@
 | AgentTool | 6,072 | 789 | 87% | S (worktree 已补全) |
 | UI (全部) | 54,049 | 3,165 | 94% | S (框架) |
 | permissions/ | 9,409 | 959 | 90% | S |
-| FileEditTool | 1,812 | 1,001 | 45% | A (fuzzy + 安全/历史/缩进子项已补全) |
+| FileEditTool | 1,812 | 1,001+ | 45% | A (fuzzy + 安全/历史/缩进/transcript 子项已补全) |
 | FileReadTool | 1,602 | 1,214 | 24% | Full-build 差距已补齐 |
 | FileWriteTool | 856 | 1,112 | +30% | Full-build 差距已补齐 |
 | GrepTool | 795 | 371 | 53% | A (rg+multiline 已补全) |
