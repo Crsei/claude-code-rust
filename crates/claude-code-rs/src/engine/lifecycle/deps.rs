@@ -16,10 +16,14 @@ use uuid::Uuid;
 use crate::query::deps::{
     CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
 };
+use crate::tools::execution::{
+    enforce_result_size, find_tool, is_plan_mode_plan_file_write, security_validate,
+    ToolExecutionResult,
+};
 use crate::types::app_state::AppState;
 use crate::types::message::{Message, StreamEvent};
 use crate::types::state::AutoCompactTracking;
-use crate::types::tool::{ToolProgress, Tools};
+use crate::types::tool::{PermissionMode, ToolProgress, Tools, ValidationResult};
 
 use super::helpers::{build_messages_request, format_conversation_for_summary};
 use super::QueryEngineState;
@@ -67,15 +71,31 @@ fn central_permission_result_for_tool(
     app_state: &AppState,
     hook_decision: Option<&crate::permissions::decision::HookPermissionDecision>,
 ) -> crate::types::tool::PermissionResult {
-    use crate::permissions::decision::{self, PermissionBehavior};
+    use crate::permissions::decision::{
+        self, PermissionBehavior, PermissionDecision, PermissionDecisionReason,
+    };
 
-    let decision = decision::has_permissions_to_use_tool_with_hook(
-        tool_name,
-        input,
-        &app_state.tool_permission_context,
-        hook_decision,
-        None,
-    );
+    let plan_file_write_allowed = app_state.tool_permission_context.mode == PermissionMode::Plan
+        && is_plan_mode_plan_file_write(tool_name, input);
+
+    let decision = if plan_file_write_allowed {
+        PermissionDecision {
+            behavior: PermissionBehavior::Allow,
+            updated_input: None,
+            message: None,
+            reason: PermissionDecisionReason::Mode {
+                mode: "plan_file".to_string(),
+            },
+        }
+    } else {
+        decision::has_permissions_to_use_tool_with_hook(
+            tool_name,
+            input,
+            &app_state.tool_permission_context,
+            hook_decision,
+            None,
+        )
+    };
     let behavior = decision.behavior;
     let message = decision.message;
     if let Some(updated_input) = decision.updated_input {
@@ -92,6 +112,20 @@ fn central_permission_result_for_tool(
         PermissionBehavior::Ask => crate::types::tool::PermissionResult::Ask {
             message: message.unwrap_or_else(|| format!("Allow tool '{}'?", tool_name)),
         },
+    }
+}
+
+fn tool_execution_result_to_exec_result(result: ToolExecutionResult) -> ToolExecResult {
+    let mut tool_result = result.result;
+    if !result.new_messages.is_empty() {
+        tool_result.new_messages = result.new_messages;
+    }
+
+    ToolExecResult {
+        tool_use_id: result.tool_use_id,
+        tool_name: result.tool_name,
+        result: tool_result,
+        is_error: result.is_error,
     }
 }
 
@@ -394,9 +428,7 @@ impl QueryDeps for QueryEngineDeps {
         // `crate::tools::hooks` impl (see issue #74, Phase 5b).
         let hooks = self.hook_runner.as_ref();
 
-        let tool = tools
-            .iter()
-            .find(|t| t.name() == request.tool_name)
+        let tool = find_tool(&request.tool_name, tools)
             .ok_or_else(|| anyhow::anyhow!("tool not found: {}", request.tool_name))?;
 
         let ctx = crate::types::tool::ToolUseContext {
@@ -452,22 +484,59 @@ impl QueryDeps for QueryEngineDeps {
             command_dispatcher: self.command_dispatcher.clone(),
         };
 
-        // ── Load hook configs from AppState ────────────────────────
+        // Load hook configs from AppState.
         let hooks_map = self.state.read().app_state.hooks.clone();
         let pre_configs = hooks.load_hook_configs(&hooks_map, "PreToolUse");
         let post_configs = hooks.load_hook_configs(&hooks_map, "PostToolUse");
         let failure_configs = hooks.load_hook_configs(&hooks_map, "PostToolUseFailure");
 
-        // ── Pre-tool hooks ─────────────────────────────────────────
+        // Pre-tool hooks.
+        let execution_started = std::time::Instant::now();
+
+        match tool.validate_input(&request.input, &ctx).await {
+            ValidationResult::Ok => {}
+            ValidationResult::Error { message, .. } => {
+                return Ok(ToolExecResult {
+                    tool_use_id: request.tool_use_id,
+                    tool_name: request.tool_name,
+                    result: crate::types::tool::ToolResult {
+                        data: serde_json::json!(format!(
+                            "Input validation error: {}. The schema was not sent - please check the tool's input requirements.",
+                            message
+                        )),
+                        new_messages: vec![],
+                        ..Default::default()
+                    },
+                    is_error: true,
+                });
+            }
+        }
+
+        let mut sanitized_input = request.input.clone();
+        if let Some(obj) = sanitized_input.as_object_mut() {
+            obj.remove("_simulatedSedEdit");
+        }
+
+        if let Some(result) = security_validate(
+            &request.tool_use_id,
+            &request.tool_name,
+            &sanitized_input,
+            tool.as_ref(),
+            &ctx,
+            execution_started,
+        ) {
+            return Ok(tool_execution_result_to_exec_result(result));
+        }
+
         let (mut effective_input, permission_override) = match hooks
-            .run_pre_tool_hooks(&request.tool_name, &request.input, &pre_configs)
+            .run_pre_tool_hooks(&request.tool_name, &sanitized_input, &pre_configs)
             .await
         {
             Ok(PreToolHookResult::Continue {
                 updated_input,
                 permission_override,
             }) => (
-                updated_input.unwrap_or_else(|| request.input.clone()),
+                updated_input.unwrap_or_else(|| sanitized_input.clone()),
                 permission_override,
             ),
             Ok(PreToolHookResult::Stop { message }) => {
@@ -484,11 +553,11 @@ impl QueryDeps for QueryEngineDeps {
             }
             Err(e) => {
                 tracing::warn!(error = %e, "pre-tool hook error, continuing");
-                (request.input.clone(), None)
+                (sanitized_input, None)
             }
         };
 
-        // ── Permission check (tool-local checks first, then central rules/mode) ──
+        // Permission check (tool-local checks first, then central rules/mode).
         let hook_decision = match permission_override.as_ref() {
             Some(PermissionOverride::Allow) => {
                 tracing::debug!(
@@ -510,7 +579,7 @@ impl QueryDeps for QueryEngineDeps {
             if !deny_configs.is_empty() {
                 let payload = serde_json::json!({
                     "tool_name": request.tool_name,
-                    "tool_input": request.input,
+                    "tool_input": effective_input.clone(),
                     "reason": format!("Permission denied by hook: {}", reason),
                 });
                 let _ = hooks
@@ -572,7 +641,7 @@ impl QueryDeps for QueryEngineDeps {
                     if !deny_configs.is_empty() {
                         let payload = serde_json::json!({
                             "tool_name": request.tool_name,
-                            "tool_input": request.input,
+                            "tool_input": effective_input.clone(),
                             "reason": format!("Permission denied: {}", message),
                         });
                         let _ = hooks
@@ -614,7 +683,7 @@ impl QueryDeps for QueryEngineDeps {
                     if !perm_req_configs.is_empty() {
                         let payload = serde_json::json!({
                             "tool_name": request.tool_name,
-                            "tool_input": request.input,
+                            "tool_input": effective_input.clone(),
                             "message": message,
                         });
                         if let Ok(output) = hooks
@@ -639,7 +708,7 @@ impl QueryDeps for QueryEngineDeps {
                                         if !deny_configs.is_empty() {
                                             let deny_payload = serde_json::json!({
                                                 "tool_name": request.tool_name,
-                                                "tool_input": request.input,
+                                                "tool_input": effective_input.clone(),
                                                 "reason": "Permission denied by PermissionRequest hook",
                                             });
                                             let _ = hooks
@@ -743,7 +812,7 @@ impl QueryDeps for QueryEngineDeps {
                                     if !deny_configs.is_empty() {
                                         let payload = serde_json::json!({
                                             "tool_name": request.tool_name,
-                                            "tool_input": request.input,
+                                            "tool_input": effective_input.clone(),
                                             "reason": "Permission denied by user",
                                         });
                                         let _ = hooks
@@ -774,7 +843,7 @@ impl QueryDeps for QueryEngineDeps {
                             if !deny_configs.is_empty() {
                                 let payload = serde_json::json!({
                                     "tool_name": request.tool_name,
-                                    "tool_input": request.input,
+                                    "tool_input": effective_input.clone(),
                                     "reason": format!("Permission required (no callback): {}", message),
                                 });
                                 let _ = hooks
@@ -801,7 +870,7 @@ impl QueryDeps for QueryEngineDeps {
             }
         }
 
-        // ── Tool execution with post-hooks ─────────────────────────
+        // Tool execution with post-hooks.
 
         // Emit tool.start audit event
         let tool_audit_ctx = self.audit_ctx.with_tool_use(&request.tool_use_id);
@@ -855,7 +924,7 @@ impl QueryDeps for QueryEngineDeps {
             )
             .await
         {
-            Ok(result) => {
+            Ok(mut result) => {
                 let result_preview =
                     result
                         .display_preview
@@ -905,6 +974,8 @@ impl QueryDeps for QueryEngineDeps {
                     }
                 }
 
+                result.data = enforce_result_size(result.data, tool.max_result_size_chars());
+
                 Ok(ToolExecResult {
                     tool_use_id: request.tool_use_id,
                     tool_name: request.tool_name,
@@ -940,7 +1011,7 @@ impl QueryDeps for QueryEngineDeps {
                     let _ = hooks
                         .run_post_tool_failure_hooks(
                             &request.tool_name,
-                            &request.input,
+                            &effective_input,
                             &e.to_string(),
                             &failure_configs,
                         )
@@ -1009,8 +1080,172 @@ impl QueryDeps for QueryEngineDeps {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::tool::PermissionResult;
-    use serde_json::json;
+    use crate::engine::lifecycle::QueryEngine;
+    use crate::types::config::QueryEngineConfig;
+    use crate::types::message::{AssistantMessage, ToolResultContent};
+    use crate::types::tool::{
+        PermissionCallback, PermissionMode, PermissionResult, Tool, ToolResult, ToolUseContext,
+    };
+    use serde_json::{json, Value};
+
+    struct CanonicalTool {
+        name: &'static str,
+        validation_error: Option<&'static str>,
+        permission: Option<PermissionResult>,
+        result: ToolResult,
+        max_result_size_chars: usize,
+        seen_input: Arc<parking_lot::Mutex<Option<Value>>>,
+        progress_payload: Option<Value>,
+    }
+
+    #[async_trait::async_trait]
+    impl Tool for CanonicalTool {
+        fn name(&self) -> &str {
+            self.name
+        }
+
+        async fn description(&self, _input: &Value) -> String {
+            String::new()
+        }
+
+        fn input_json_schema(&self) -> Value {
+            json!({})
+        }
+
+        async fn validate_input(&self, _input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
+            if let Some(message) = self.validation_error {
+                ValidationResult::Error {
+                    message: message.to_string(),
+                    error_code: 1,
+                }
+            } else {
+                ValidationResult::Ok
+            }
+        }
+
+        async fn check_permissions(
+            &self,
+            input: &Value,
+            _ctx: &ToolUseContext,
+        ) -> PermissionResult {
+            self.permission
+                .clone()
+                .unwrap_or_else(|| PermissionResult::Allow {
+                    updated_input: input.clone(),
+                })
+        }
+
+        async fn call(
+            &self,
+            input: Value,
+            _ctx: &ToolUseContext,
+            _parent_message: &AssistantMessage,
+            on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
+        ) -> Result<ToolResult> {
+            *self.seen_input.lock() = Some(input);
+            if let (Some(callback), Some(payload)) = (on_progress, self.progress_payload.clone()) {
+                callback(ToolProgress {
+                    tool_use_id: String::new(),
+                    data: payload,
+                });
+            }
+            Ok(self.result.clone())
+        }
+
+        async fn prompt(&self) -> String {
+            String::new()
+        }
+
+        fn max_result_size_chars(&self) -> usize {
+            self.max_result_size_chars
+        }
+    }
+
+    fn make_config(tools: Tools) -> QueryEngineConfig {
+        QueryEngineConfig {
+            cwd: ".".to_string(),
+            tools,
+            custom_system_prompt: None,
+            append_system_prompt: None,
+            user_specified_model: None,
+            fallback_model: None,
+            max_turns: None,
+            max_budget_usd: None,
+            task_budget: None,
+            verbose: false,
+            initial_messages: None,
+            commands: vec![],
+            thinking_config: None,
+            json_schema: None,
+            replay_user_messages: false,
+            persist_session: false,
+            resolved_model: None,
+            auto_save_session: false,
+            agent_context: None,
+        }
+    }
+
+    fn make_deps(tools: Tools, mode: PermissionMode) -> QueryEngineDeps {
+        let engine = QueryEngine::new(make_config(tools));
+        engine.state.write().app_state.tool_permission_context.mode = mode;
+
+        QueryEngineDeps {
+            aborted: engine.aborted.clone(),
+            state: engine.state.clone(),
+            audit_ctx: crate::observability::AuditContext::noop("test"),
+            langfuse_trace: None,
+            api_client: None,
+            agent_context: None,
+            permission_callback: None,
+            bg_agent_tx: None,
+            tool_progress_callback: None,
+            pending_bg_results: cc_types::background_agents::PendingBackgroundResults::new(),
+            hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
+            command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
+        }
+    }
+
+    fn parent_message() -> AssistantMessage {
+        AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: vec![],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        }
+    }
+
+    fn tool_request(tool_name: &str, input: Value) -> ToolExecRequest {
+        ToolExecRequest {
+            tool_use_id: "tu_test".to_string(),
+            tool_name: tool_name.to_string(),
+            input,
+            langfuse_batch_span: None,
+        }
+    }
+
+    fn canonical_tool(
+        name: &'static str,
+        seen_input: Arc<parking_lot::Mutex<Option<Value>>>,
+    ) -> Arc<CanonicalTool> {
+        Arc::new(CanonicalTool {
+            name,
+            validation_error: None,
+            permission: None,
+            result: ToolResult {
+                data: json!("ok"),
+                new_messages: vec![],
+                ..Default::default()
+            },
+            max_result_size_chars: 100_000,
+            seen_input,
+            progress_payload: None,
+        })
+    }
 
     #[test]
     fn central_permission_default_mode_asks_for_bash_after_tool_allow() {
@@ -1061,5 +1296,210 @@ mod tests {
         );
 
         assert!(matches!(result, PermissionResult::Ask { .. }));
+    }
+
+    #[tokio::test]
+    async fn execute_tool_rejects_validation_error_before_call() {
+        let seen_input = Arc::new(parking_lot::Mutex::new(None));
+        let tool = Arc::new(CanonicalTool {
+            name: "ValidateMe",
+            validation_error: Some("missing required field"),
+            permission: None,
+            result: ToolResult::default(),
+            max_result_size_chars: 100_000,
+            seen_input: seen_input.clone(),
+            progress_payload: None,
+        });
+        let deps = make_deps(vec![tool], PermissionMode::Bypass);
+
+        let result = deps
+            .execute_tool(
+                tool_request("ValidateMe", json!({})),
+                &deps.get_tools(),
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_error);
+        assert!(result
+            .result
+            .data
+            .as_str()
+            .is_some_and(|text| text.contains("Input validation error")));
+        assert!(
+            seen_input.lock().is_none(),
+            "validation failure must stop before Tool::call"
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_tool_sanitizes_input_and_enforces_result_size() {
+        let seen_input = Arc::new(parking_lot::Mutex::new(None));
+        let tool = Arc::new(CanonicalTool {
+            name: "SanitizeMe",
+            validation_error: None,
+            permission: None,
+            result: ToolResult {
+                data: json!("x".repeat(200)),
+                model_content: Some(ToolResultContent::Text("model content".to_string())),
+                display_preview: Some("preview".to_string()),
+                new_messages: vec![],
+            },
+            max_result_size_chars: 40,
+            seen_input: seen_input.clone(),
+            progress_payload: None,
+        });
+        let deps = make_deps(vec![tool], PermissionMode::Bypass);
+
+        let result = deps
+            .execute_tool(
+                tool_request(
+                    "SanitizeMe",
+                    json!({"keep": true, "_simulatedSedEdit": "remove me"}),
+                ),
+                &deps.get_tools(),
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.is_error);
+        let input = seen_input.lock().clone().expect("tool should be called");
+        assert_eq!(input.get("keep"), Some(&json!(true)));
+        assert!(
+            input.get("_simulatedSedEdit").is_none(),
+            "canonical path should strip simulated edit marker"
+        );
+        assert!(
+            result
+                .result
+                .data
+                .as_str()
+                .is_some_and(|text| text.contains("characters omitted")),
+            "canonical path should enforce max_result_size_chars"
+        );
+        assert_eq!(result.result.display_preview.as_deref(), Some("preview"));
+        assert!(matches!(
+            result.result.model_content,
+            Some(ToolResultContent::Text(ref text)) if text == "model content"
+        ));
+    }
+
+    #[tokio::test]
+    async fn execute_tool_blocks_dangerous_command_before_call() {
+        let seen_input = Arc::new(parking_lot::Mutex::new(None));
+        let tool = canonical_tool("Bash", seen_input.clone());
+        let deps = make_deps(vec![tool], PermissionMode::Default);
+
+        let result = deps
+            .execute_tool(
+                tool_request("Bash", json!({"command": "rm -rf /"})),
+                &deps.get_tools(),
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_error);
+        assert!(result
+            .result
+            .data
+            .as_str()
+            .is_some_and(|text| text.contains("Dangerous command blocked")));
+        assert!(
+            seen_input.lock().is_none(),
+            "security validation must stop before Tool::call"
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_tool_returns_permission_deny_without_call() {
+        let seen_input = Arc::new(parking_lot::Mutex::new(None));
+        let tool = Arc::new(CanonicalTool {
+            name: "DenyMe",
+            validation_error: None,
+            permission: Some(PermissionResult::Deny {
+                message: "blocked by test".to_string(),
+            }),
+            result: ToolResult::default(),
+            max_result_size_chars: 100_000,
+            seen_input: seen_input.clone(),
+            progress_payload: None,
+        });
+        let deps = make_deps(vec![tool], PermissionMode::Bypass);
+
+        let result = deps
+            .execute_tool(
+                tool_request("DenyMe", json!({})),
+                &deps.get_tools(),
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_error);
+        assert!(result
+            .result
+            .data
+            .as_str()
+            .is_some_and(|text| text.contains("Permission denied: blocked by test")));
+        assert!(
+            seen_input.lock().is_none(),
+            "permission denial must stop before Tool::call"
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_tool_preserves_ask_callback_and_progress_ids() {
+        let seen_input = Arc::new(parking_lot::Mutex::new(None));
+        let tool = Arc::new(CanonicalTool {
+            name: "AskMe",
+            validation_error: None,
+            permission: Some(PermissionResult::Ask {
+                message: "needs approval".to_string(),
+            }),
+            result: ToolResult {
+                data: json!("approved"),
+                new_messages: vec![],
+                ..Default::default()
+            },
+            max_result_size_chars: 100_000,
+            seen_input,
+            progress_payload: Some(json!({"phase": "running"})),
+        });
+        let mut deps = make_deps(vec![tool], PermissionMode::Default);
+        let callback: PermissionCallback =
+            Arc::new(|_, _, _, _| Box::pin(async { "allow".to_string() }));
+        deps.permission_callback = Some(callback);
+        let seen_progress = Arc::new(parking_lot::Mutex::new(None));
+        let progress_callback: Arc<dyn Fn(ToolProgress) + Send + Sync> = {
+            let seen_progress = seen_progress.clone();
+            Arc::new(move |progress| {
+                *seen_progress.lock() = Some(progress);
+            })
+        };
+
+        let result = deps
+            .execute_tool(
+                tool_request("AskMe", json!({})),
+                &deps.get_tools(),
+                &parent_message(),
+                Some(progress_callback),
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.is_error);
+        let progress = seen_progress
+            .lock()
+            .clone()
+            .expect("tool should emit progress");
+        assert_eq!(progress.tool_use_id, "tu_test");
+        assert_eq!(progress.data, json!({"phase": "running"}));
     }
 }

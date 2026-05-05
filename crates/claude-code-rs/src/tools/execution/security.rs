@@ -25,7 +25,7 @@ use super::{make_error_result, ToolExecutionResult};
 ///   3c.3  Path boundary enforcement — Write/Edit paths must be within allowed dirs
 ///
 /// All checks are skipped when the permission mode is `Bypass`.
-pub(super) fn security_validate(
+pub(crate) fn security_validate(
     tool_use_id: &str,
     tool_name: &str,
     input: &Value,
@@ -127,7 +127,7 @@ pub(super) fn security_validate(
 
 /// True when a write/edit tool targets the dedicated plan file that plan mode
 /// is allowed to maintain.
-pub(super) fn is_plan_mode_plan_file_write(tool_name: &str, input: &Value) -> bool {
+pub(crate) fn is_plan_mode_plan_file_write(tool_name: &str, input: &Value) -> bool {
     const PLAN_FILE_WRITE_TOOLS: &[&str] = &["Write", "Edit", "FileWrite", "FileEdit"];
     if !PLAN_FILE_WRITE_TOOLS.contains(&tool_name) {
         return false;
@@ -176,7 +176,7 @@ fn normalize_nonexistent_path(path: &Path) -> PathBuf {
 }
 
 /// Find a tool by name, with alias fallback.
-pub(super) fn find_tool(name: &str, tools: &Tools) -> Option<Arc<dyn Tool>> {
+pub(crate) fn find_tool(name: &str, tools: &Tools) -> Option<Arc<dyn Tool>> {
     // Primary: exact name match
     if let Some(tool) = tools.iter().find(|t| t.name() == name) {
         return Some(Arc::clone(tool));
@@ -191,7 +191,7 @@ pub(super) fn find_tool(name: &str, tools: &Tools) -> Option<Arc<dyn Tool>> {
 }
 
 /// Enforce tool result size limit by truncating if necessary.
-pub(super) fn enforce_result_size(data: Value, max_chars: usize) -> Value {
+pub(crate) fn enforce_result_size(data: Value, max_chars: usize) -> Value {
     match &data {
         Value::String(s) if s.len() > max_chars => {
             let head = &s[..max_chars / 2];
