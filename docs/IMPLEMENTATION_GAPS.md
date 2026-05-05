@@ -63,6 +63,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | FileEditTool 编辑历史备份 | 已补齐子项 | `Edit` 写入改走 `safe_write_text()`，每次覆盖前创建恢复备份并在 tool result / FileChanged hook payload 暴露 `edit_history.backup_path`，同时保留 atomic replace 与权限保持诊断 |
 | FileEditTool 自动缩进修正 | 已补齐子项 | `Edit` 在 `old_string` 精确匹配失败时会查找唯一的“去除 leading whitespace 后等价”代码块，并把 `new_string` 的 leading whitespace 映射到文件中的实际缩进；歧义匹配保持拒绝 |
 | FileEditTool live transcript 接线 | 已补齐子项 | `Edit` 成功结果把 concise model content 与 UI-only `display_preview` 分离；`SdkUserReplay` / headless IPC / Rust TUI 保留 `tool_use_result`，并用 `file_edit_tool_updated_message` 在 prompt/transcript 中渲染结构化 diff 预览 |
+| AgentTool 工具白名单与去重 | 已补齐子项 | `crates/claude-code-rs/src/engine/agent/mod.rs` 创建 child `QueryEngineConfig` 前会按 `subagent_type` 解析内置/用户/项目 agent 定义，应用 `tools` allow-list、`disallowedTools` deny-list、`Bash(...)` 等规则规格的基础工具名解析，并按工具名去重；Explore/Plan/code-reviewer 等只读内置 agent 不再继承全量工具 |
 
 ### 2.2 仍需补齐的工具 parity
 
@@ -72,14 +73,14 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | TaskTools | 远程/多类型后台任务 supervisor parity、超时控制；磁盘持久化、基础依赖字段、输出保留、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
 | PlanMode | auto-mode/classifier gate、团队审批流、计划持久化、实现关联跟踪 |
 | WebFetch | JS 渲染、Cookie 管理、代理支持、重定向限制、Content-Type 智能处理 |
-| AgentTool | 团队上下文集成、spawnMultiAgent、工具白名单过滤、工具定义去重；background worktree/权限回调/取消已由 `crates/claude-code-rs/src/engine/agent/supervisor.rs` 收口 |
+| AgentTool | 团队上下文集成、spawnMultiAgent；background worktree/权限回调/取消已由 `crates/claude-code-rs/src/engine/agent/supervisor.rs` 收口，工具白名单过滤/工具定义去重已补齐 |
 
 ### 2.3 更新后的顺序执行计划（逐项领取）
 
 每个条目完成时都按同一收口流程处理：读上游实现 → 改 Rust 端 → 补单元/e2e → `cargo fmt --all --check` + 对应构建 → 更新本文件与 archive → 单独提交。
 
 1. **BashTool 剩余安全/沙箱复核**：对照 `src/tools/BashTool/**` 与 PowerShell validator，评估是否需要引入原生 PowerShell AST parser（或等价结构化 parser）来补齐 `elementTypes` / `children` / `nameType` / parse error fail-closed / statement securityPatterns 等非正则语义；同时评估 Windows Restricted Token / Job Object OS-level primitive 是否进入实现队列或移入 §7 Intentional 裁剪。
-2. **AgentTool 团队上下文与工具边界**：补团队上下文注入、工具白名单过滤、工具定义去重；随后评估 `spawnMultiAgent` 是独立工具还是 AgentTool 扩展，并补多 agent 调度测试。
+2. **AgentTool 团队上下文与多 agent 调度**：在已补齐工具白名单/去重的基础上，补团队上下文注入；随后评估 `spawnMultiAgent` 是独立工具还是 AgentTool 扩展，并补多 agent 调度测试。
 3. **TaskTools 后台任务 parity**：在现有持久化/取消基础上补超时控制、远程/多类型后台任务 supervisor parity，并验证 `/tasks` UI 与 task store 的状态一致性。
 4. **PlanMode 执行闭环**：补 auto-mode/classifier gate、团队审批流、计划持久化与实现关联追踪；完成后用 plan 创建、恢复、审批、执行关联的 e2e 覆盖。
 5. **WebFetch browser-grade 能力**：按 `architecture/mvp-optimization-plans/MVP-009-web-fetch-browser-grade-plan.md` 逐步补 JS 渲染、Cookie jar、代理、重定向限制与 Content-Type 智能处理。

@@ -68,14 +68,13 @@
 - 基础输入验证 (prompt 必填)
 - 模型覆盖 (model alias 解析)
 - ✅ **worktree 隔离执行** (`isolation: "worktree"`, 创建临时 worktree → 运行 agent → 变更检测 → 自动清理/保留, fail-closed 安全)
+- ✅ **工具白名单过滤与定义去重** (child `QueryEngineConfig` 按 `subagent_type` 解析内置/用户/项目 agent 定义，应用 `tools` / `disallowedTools`，按工具名去重；Explore/Plan/code-reviewer 不再继承全量工具)
 
 **TS 独有（未移植）：**
 - 多后端 spawn (in-process / tmux / iTerm2)
 - 团队上下文与 agent teams 集成
 - `spawnMultiAgent.ts` (1,093 行)
-- 工具白名单过滤
 - background 模式
-- 工具定义去重
 
 ---
 

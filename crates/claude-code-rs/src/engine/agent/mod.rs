@@ -15,7 +15,9 @@ mod worktree;
 #[cfg(test)]
 mod tests;
 
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use serde::Deserialize;
@@ -237,7 +239,11 @@ fn build_child_config(
     parent_model: &str,
     current_depth: usize,
 ) -> QueryEngineConfig {
-    let child_tools = crate::tools::registry::get_all_tools();
+    let child_tools = resolve_child_tools(
+        crate::tools::registry::get_all_tools(),
+        Path::new(&cwd),
+        child_agent_type,
+    );
     let chain_id = ctx
         .query_tracking
         .as_ref()
@@ -273,6 +279,82 @@ fn build_child_config(
             agent_type: child_agent_type.map(|value| value.to_string()),
         }),
     }
+}
+
+fn resolve_child_tools(tools: Tools, cwd: &Path, child_agent_type: Option<&str>) -> Tools {
+    let tools = dedupe_tools_by_name(tools);
+    let Some(agent_type) = child_agent_type.or(Some("general-purpose")) else {
+        return tools;
+    };
+    let Some(definition) = active_agent_definition(cwd, agent_type) else {
+        return tools;
+    };
+    filter_tools_for_agent_definition(tools, &definition)
+}
+
+fn active_agent_definition(
+    cwd: &Path,
+    agent_type: &str,
+) -> Option<crate::ipc::subsystem_types::AgentDefinitionEntry> {
+    crate::ipc::agent_settings::list_all_agents(cwd)
+        .into_iter()
+        .filter(|entry| entry.name == agent_type)
+        .last()
+}
+
+fn filter_tools_for_agent_definition(
+    tools: Tools,
+    definition: &crate::ipc::subsystem_types::AgentDefinitionEntry,
+) -> Tools {
+    let disallowed: HashSet<String> = definition
+        .disallowed_tools
+        .iter()
+        .map(|spec| tool_name_from_spec(spec).to_string())
+        .collect();
+
+    let available: Tools = tools
+        .into_iter()
+        .filter(|tool| !disallowed.contains(tool.name()))
+        .collect();
+
+    if definition.tools.is_empty() {
+        return available;
+    }
+
+    let by_name: HashMap<String, Arc<dyn Tool>> = available
+        .into_iter()
+        .map(|tool| (tool.name().to_string(), tool))
+        .collect();
+    let mut resolved = Tools::new();
+    let mut seen = HashSet::new();
+
+    for spec in &definition.tools {
+        let name = tool_name_from_spec(spec);
+        if !seen.insert(name.to_string()) {
+            continue;
+        }
+        if let Some(tool) = by_name.get(name) {
+            resolved.push(Arc::clone(tool));
+        }
+    }
+
+    resolved
+}
+
+fn dedupe_tools_by_name(tools: Tools) -> Tools {
+    let mut seen = HashSet::new();
+    tools
+        .into_iter()
+        .filter(|tool| seen.insert(tool.name().to_string()))
+        .collect()
+}
+
+fn tool_name_from_spec(spec: &str) -> &str {
+    let trimmed = spec.trim();
+    trimmed
+        .split_once('(')
+        .map(|(name, _)| name.trim())
+        .unwrap_or(trimmed)
 }
 
 // ---------------------------------------------------------------------------
@@ -334,4 +416,72 @@ async fn collect_stream_result(
     }
 
     (result_text, had_error)
+}
+
+#[cfg(test)]
+mod child_tool_boundary_tests {
+    use super::*;
+    use crate::ipc::subsystem_types::{AgentDefinitionEntry, AgentDefinitionSource};
+
+    fn tool_names(tools: &Tools) -> Vec<String> {
+        tools.iter().map(|tool| tool.name().to_string()).collect()
+    }
+
+    fn test_definition(tools: Vec<&str>, disallowed_tools: Vec<&str>) -> AgentDefinitionEntry {
+        AgentDefinitionEntry {
+            name: "limited".to_string(),
+            description: "Limited test agent".to_string(),
+            system_prompt: "Use the listed tools only.".to_string(),
+            tools: tools.into_iter().map(|name| name.to_string()).collect(),
+            disallowed_tools: disallowed_tools
+                .into_iter()
+                .map(|name| name.to_string())
+                .collect(),
+            model: None,
+            color: None,
+            permission_mode: None,
+            memory: None,
+            max_turns: None,
+            effort: None,
+            background: false,
+            isolation: None,
+            skills: vec![],
+            hooks: serde_json::Value::Null,
+            mcp_servers: vec![],
+            initial_prompt: None,
+            filename: None,
+            source: AgentDefinitionSource::Project,
+            file_path: None,
+        }
+    }
+
+    #[test]
+    fn builtin_explore_agent_receives_only_read_only_tools() {
+        let definition = crate::ipc::builtin_agents::builtin_agent_entries()
+            .into_iter()
+            .find(|entry| entry.name == "Explore")
+            .expect("Explore built-in agent");
+        let tools =
+            filter_tools_for_agent_definition(crate::tools::registry::get_all_tools(), &definition);
+        let names = tool_names(&tools);
+
+        assert_eq!(names, vec!["Glob", "Grep", "Read"]);
+        assert!(!names.contains(&"Write".to_string()));
+        assert!(!names.contains(&"Bash".to_string()));
+        assert!(!names.contains(&"Agent".to_string()));
+    }
+
+    #[test]
+    fn custom_agent_tools_apply_allow_deny_specs_and_dedupe() {
+        let definition = test_definition(
+            vec!["Read", "Write", "Read", "Bash(git status)"],
+            vec!["Write"],
+        );
+        let tools =
+            filter_tools_for_agent_definition(crate::tools::registry::get_all_tools(), &definition);
+        let names = tool_names(&tools);
+
+        assert_eq!(names, vec!["Read", "Bash"]);
+        assert_eq!(names.iter().filter(|name| *name == "Read").count(), 1);
+    }
 }
