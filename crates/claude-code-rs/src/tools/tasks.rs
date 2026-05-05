@@ -767,21 +767,36 @@ fn recover_task_after_restart(entry: &mut TaskEntry) -> bool {
     }
 
     if entry.status.should_interrupt_on_startup() {
-        let recovered_status = if is_remote_recoverable_task(entry) {
+        let remote_recoverable = is_remote_recoverable_task(entry);
+        let recovered_status = if remote_recoverable {
             TaskStatus::Recoverable
         } else {
             TaskStatus::Interrupted
         };
-        if entry.status == recovered_status && entry.recovered_at.is_some() {
+        let now = chrono::Utc::now();
+        let mut recovered = false;
+
+        if entry.status != recovered_status || entry.recovered_at.is_none() {
+            if entry.status != recovered_status || entry.previous_status.is_none() {
+                entry.previous_status = Some(entry.status);
+            }
+            entry.status = recovered_status;
+            entry.recovered_at = Some(now.timestamp());
+            recovered = true;
+        }
+
+        if remote_recoverable {
+            let poll_started_at = now.timestamp_millis();
+            if entry.poll_started_at != Some(poll_started_at) {
+                entry.poll_started_at = Some(poll_started_at);
+                recovered = true;
+            }
+        }
+
+        if !recovered {
             return changed;
         }
-        let now = chrono::Utc::now().timestamp();
-        if entry.status != recovered_status || entry.previous_status.is_none() {
-            entry.previous_status = Some(entry.status);
-        }
-        entry.status = recovered_status;
-        entry.recovered_at = Some(now);
-        entry.updated_at = now;
+        entry.updated_at = now.timestamp();
         return true;
     }
 
@@ -2049,9 +2064,11 @@ mod tests {
         assert_eq!(task.remote_session_id.as_deref(), Some("session-123"));
         assert_eq!(task.remote_task_metadata.as_ref().unwrap()["prNumber"], 42);
         assert_eq!(task.poll_started_at, Some(1_714_000_000_000));
+        store.update_status(&task.id, TaskStatus::Completed);
 
         let restarted = TaskStore::with_dir(tmp.path());
         let restored = restarted.get(&task.id).unwrap();
+        assert_eq!(restored.status, TaskStatus::Completed);
         assert_eq!(restored.kind, "remote_agent");
         assert_eq!(restored.tool_use_id.as_deref(), Some("toolu_123"));
         assert_eq!(restored.remote_task_type.as_deref(), Some("remote-agent"));
@@ -2064,7 +2081,7 @@ mod tests {
     }
 
     #[test]
-    fn test_restart_marks_remote_tasks_recoverable() {
+    fn test_restart_marks_remote_tasks_recoverable_and_resets_poll_timer() {
         let tmp = tempfile::tempdir().unwrap();
         let store = TaskStore::with_dir(tmp.path());
         let task = store.create_with_options(
@@ -2100,14 +2117,16 @@ mod tests {
             restored.remote_task_metadata.as_ref().unwrap()["prNumber"],
             7
         );
-        assert_eq!(restored.poll_started_at, Some(1_714_000_000_000));
+        let poll_started_at = restored.poll_started_at.unwrap();
+        assert!(poll_started_at > 1_714_000_000_000);
 
-        let recovered_at = restored.recovered_at;
+        let previous_recovered_at = restored.recovered_at;
         let restarted_again = TaskStore::with_dir(tmp.path());
         let restored_again = restarted_again.get(&task.id).unwrap();
         assert_eq!(restored_again.status, TaskStatus::Recoverable);
         assert_eq!(restored_again.previous_status, Some(TaskStatus::InProgress));
-        assert_eq!(restored_again.recovered_at, recovered_at);
+        assert_eq!(restored_again.recovered_at, previous_recovered_at);
+        assert!(restored_again.poll_started_at.unwrap() >= poll_started_at);
     }
 
     #[test]

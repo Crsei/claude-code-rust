@@ -72,6 +72,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | TaskTools 上游 task type taxonomy | 已补齐子项 | `TaskCreate.kind` schema 对齐上游 task type：`local_bash` / `local_agent` / `remote_agent` / `in_process_teammate` / `local_workflow` / `monitor_mcp` / `dream`（保留 Rust generic `tool`）；历史 `local_shell` / `workflow` / `monitor` / `team` 等 alias 会在创建和持久化恢复时 canonicalize |
 | TaskTools remote/multi-type supervisor metadata | 已补齐子项 | `TaskStore` schema v4 持久化 `tool_use_id`、`remote_task_type`、`remote_session_id`、`remote_task_metadata`、`poll_started_at` 等上游 remote supervisor 恢复所需字段；`TaskCreate` schema、`TaskGet`/`TaskList` JSON、`TaskOutput` payload 与 `/tasks show` 均暴露这些元数据 |
 | TaskTools remote restart recoverable marker | 已补齐子项 | `TaskStore` 重启加载时会把携带 `remote_agent` / `remote_session_id` / `remote_task_type` 身份的未完成任务标记为 `recoverable`，保留 `previous_status` / `recovered_at` 与 remote metadata；`TaskOutput` 会把 `recoverable` 视为仍未就绪，等待后续 poller reconnect 或用户停止 |
+| TaskTools remote restore poll timer reset | 已补齐子项 | 对齐上游 `RemoteAgentTask` restore 语义：remote task 在重启恢复为 `recoverable` 时把 `poll_started_at` 重置为当前恢复时间，避免 remote review 因离线时间超过 30 分钟而一恢复就触发超时；终态 remote task 保持原始 `poll_started_at` |
 | PlanMode 保守 classifier / 计划持久化 | 已补齐子项 | `crates/claude-code-rs/src/plan_workflow.rs` 已集中管理 plan workflow，IPC / daemon 用户入口会通过保守关键词 classifier 进入 Plan mode；`.cc-rust/current-plan-workflow.json` 持久化 `PlanWorkflowRecord`，记录 draft / approval / rejected / approved 状态与 trace |
 | PlanMode 实现任务关联追踪 | 已补齐子项 | `TaskCreate` 创建实现任务后会把已批准或执行中的 `PlanWorkflowRecord` link 到 task id，将状态推进到 `implementing` 并持久化；tool result 暴露更新后的 `plan_workflow`，覆盖 plan→approval→implementation evidence 闭环 |
 
@@ -80,7 +81,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | 模块 | 待补齐的行为（参考上游） |
 |------|----------|
 | BashTool | PowerShell 原生 AST parser fidelity（`elementTypes` / `children` / `nameType` / full parser-invalid coverage / full statement securityPatterns 等结构化语义）与 Windows Restricted Token / Job Object OS-level primitive；Stage 3c.2 执行前硬拦、heredoc、Git 操作跟踪、进程树终止、destructive denylist、高风险 security validator、AST 启发式安全检查、script block securityPatterns 子集、明显 parse-error fail-closed、显式写目标 FS preflight 与 fail-closed 用户面子项已落地 |
-| TaskTools | 远程/多类型后台任务 poller/reconnect/review-timeout runtime parity；磁盘持久化、基础依赖字段、输出保留、`TaskOutput` 阻塞/超时读取、上游 task type taxonomy、remote supervisor 元数据底座、remote restart recoverable marker、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
+| TaskTools | 远程/多类型后台任务 poller/reconnect/review-timeout runtime parity；磁盘持久化、基础依赖字段、输出保留、`TaskOutput` 阻塞/超时读取、上游 task type taxonomy、remote supervisor 元数据底座、remote restart recoverable marker、remote restore poll timer reset、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
 | PlanMode | full auto-mode LLM classifier parity、团队审批流；保守 classifier gate、计划工作流持久化、ExitPlanMode approval lifecycle、实现任务关联追踪已落地 |
 | WebFetch | JS 渲染、Cookie 管理、代理支持、重定向限制、Content-Type 智能处理 |
 
@@ -89,7 +90,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 每个条目完成时都按同一收口流程处理：读上游实现 → 改 Rust 端 → 补单元/e2e → `cargo fmt --all --check` + 对应构建 → 更新本文件与 archive → 单独提交。
 
 1. **BashTool 剩余安全/沙箱复核**：对照 `src/tools/BashTool/**` 与 PowerShell validator，评估是否需要引入原生 PowerShell AST parser（或等价结构化 parser）来补齐 `elementTypes` / `children` / `nameType` / parse error fail-closed / statement securityPatterns 等非正则语义；同时评估 Windows Restricted Token / Job Object OS-level primitive 是否进入实现队列或移入 §7 Intentional 裁剪。
-2. **TaskTools 后台任务 parity**：在现有持久化、取消、`TaskOutput` 阻塞/超时读取、上游 task type taxonomy、remote supervisor 元数据底座和 remote restart recoverable marker 基础上，补远程/多类型后台任务 poller/reconnect/review-timeout runtime parity，并验证 `/tasks` UI 与 task store 的状态一致性。
+2. **TaskTools 后台任务 parity**：在现有持久化、取消、`TaskOutput` 阻塞/超时读取、上游 task type taxonomy、remote supervisor 元数据底座、remote restart recoverable marker 和 restore poll timer reset 基础上，补远程/多类型后台任务 poller/reconnect/review-timeout runtime parity，并验证 `/tasks` UI 与 task store 的状态一致性。
 3. **PlanMode 执行闭环**：在已有保守 classifier、计划持久化、审批状态与 `TaskCreate` 关联追踪基础上，补 full auto-mode LLM classifier parity 与团队审批流；完成后用 plan 创建、恢复、审批、执行关联的 e2e 覆盖。
 4. **WebFetch browser-grade 能力**：按 `architecture/mvp-optimization-plans/MVP-009-web-fetch-browser-grade-plan.md` 逐步补 JS 渲染、Cookie jar、代理、重定向限制与 Content-Type 智能处理。
 5. **API providers 决策/实现**：按 `architecture/mvp-optimization-plans/MVP-001-api-providers-plan.md` 重评 Bedrock 原生 AWS EventStream 与 Vertex direct service-account JWT exchange；实现或写入 §7 Intentional 裁剪，不再停留在“部分完成”。

@@ -208,6 +208,7 @@
 - ✅ 上游 task type taxonomy：`local_bash` / `local_agent` / `remote_agent` / `in_process_teammate` / `local_workflow` / `monitor_mcp` / `dream`，并迁移历史 alias
 - ✅ remote/multi-type supervisor 元数据底座：`tool_use_id`、`remote_task_type`、`remote_session_id`、`remote_task_metadata`、`poll_started_at`
 - ✅ remote restart recovery marker：重启后携带 remote identity 的未完成任务恢复为 `recoverable`，并由 `TaskOutput` 保持等待/未就绪语义
+- ✅ remote restore poll timer reset：恢复 remote task 时重置 `poll_started_at`，避免 remote review 离线后立即超时
 
 **TS 独有（未移植）：**
 - 远程/多类型后台任务 poller/reconnect/review-timeout runtime parity
