@@ -192,8 +192,8 @@ static POWERSHELL_DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(
             "PowerShell Start-Process can spawn an unvalidated PowerShell child",
         ),
         (
-            r"(?i)(?:^|[|;&\n({])\s*(?:Invoke-WmiMethod|Invoke-CimMethod)\b[^|;&\n]*(?:Win32_Process|Create)\b",
-            "PowerShell WMI/CIM process creation can spawn unvalidated commands",
+            r"(?i)(?:^|[|;&\n({])\s*(?:(?:[A-Za-z0-9_.-]+\\)?(?:Invoke-WmiMethod|iwmi|Invoke-CimMethod))\b",
+            "PowerShell WMI/CIM method invocation can spawn arbitrary processes via dynamic class or method arguments",
         ),
         // --- PowerShell security validator parity follow-up batch ---
         (
@@ -1233,6 +1233,19 @@ mod tests {
         assert!(is_dangerous_powershell_command("Start-Process calc.exe -V`erb:`RunAs").is_some());
         assert!(is_dangerous_powershell_command(
             "Invoke-WmiMethod -Class Win32_Process -Name Create"
+        )
+        .is_some());
+        assert!(
+            is_dangerous_powershell_command("Invoke-WmiMethod -Class $class -Name $method")
+                .is_some()
+        );
+        assert!(is_dangerous_powershell_command(
+            "Invoke-CimMethod -InputObject $obj -MethodName $m"
+        )
+        .is_some());
+        assert!(is_dangerous_powershell_command("iwmi -Class $class -Name $method").is_some());
+        assert!(is_dangerous_powershell_command(
+            r"Microsoft.PowerShell.Management\Invoke-WmiMethod -Class $class -Name $method"
         )
         .is_some());
         assert!(
