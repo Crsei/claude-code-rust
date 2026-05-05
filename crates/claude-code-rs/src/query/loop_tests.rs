@@ -34,6 +34,8 @@ enum MockStreamStep {
 struct MockDeps {
     stream_steps: parking_lot::Mutex<Vec<MockStreamStep>>,
     call_params: parking_lot::Mutex<Vec<ModelCallParams>>,
+    collapse_drain_result: parking_lot::Mutex<Option<CompactionResult>>,
+    collapse_drain_calls: AtomicUsize,
     reactive_compact_result: parking_lot::Mutex<Option<CompactionResult>>,
     reactive_compact_calls: AtomicUsize,
     aborted: AtomicBool,
@@ -62,6 +64,8 @@ impl MockDeps {
         Self {
             stream_steps: parking_lot::Mutex::new(stream_steps),
             call_params: parking_lot::Mutex::new(Vec::new()),
+            collapse_drain_result: parking_lot::Mutex::new(None),
+            collapse_drain_calls: AtomicUsize::new(0),
             reactive_compact_result: parking_lot::Mutex::new(None),
             reactive_compact_calls: AtomicUsize::new(0),
             aborted: AtomicBool::new(false),
@@ -93,6 +97,10 @@ impl MockDeps {
 
     fn set_reactive_compact_result(&self, result: Option<CompactionResult>) {
         *self.reactive_compact_result.lock() = result;
+    }
+
+    fn set_collapse_drain_result(&self, result: Option<CompactionResult>) {
+        *self.collapse_drain_result.lock() = result;
     }
 
     fn set_hook_runner(&self, runner: Arc<dyn HookRunner>) {
@@ -196,6 +204,15 @@ impl QueryDeps for MockDeps {
     async fn reactive_compact(&self, _messages: Vec<Message>) -> Result<Option<CompactionResult>> {
         self.reactive_compact_calls.fetch_add(1, Ordering::SeqCst);
         Ok(self.reactive_compact_result.lock().take())
+    }
+
+    async fn collapse_drain(
+        &self,
+        _messages: Vec<Message>,
+        _tracking: Option<AutoCompactTracking>,
+    ) -> Result<Option<CompactionResult>> {
+        self.collapse_drain_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(self.collapse_drain_result.lock().take())
     }
 
     async fn execute_tool(
@@ -531,6 +548,11 @@ async fn test_prompt_too_long_reactive_compact_retries_model_call() {
         "prompt_too_long recovery should retry the model call"
     );
     assert_eq!(
+        deps.collapse_drain_calls.load(Ordering::SeqCst),
+        1,
+        "prompt_too_long should drain collapses before reactive compact"
+    );
+    assert_eq!(
         deps.reactive_compact_calls.load(Ordering::SeqCst),
         1,
         "prompt_too_long should attempt reactive compact once"
@@ -546,6 +568,67 @@ async fn test_prompt_too_long_reactive_compact_retries_model_call() {
         }
     });
     assert!(recovered, "expected recovered assistant response");
+}
+
+#[tokio::test]
+async fn test_prompt_too_long_collapse_drain_retries_before_reactive_compact() {
+    let initial_messages = vec![make_user_message_for_test("Summarize this long context")];
+    let deps = Arc::new(MockDeps::from_steps(vec![
+        MockStreamStep::Error("prompt_too_long: context window exceeded".to_string()),
+        MockStreamStep::Response(make_text_response("Recovered after collapse drain.")),
+    ]));
+    deps.set_collapse_drain_result(Some(CompactionResult {
+        messages: initial_messages.clone(),
+        tracking: make_auto_compact_tracking(),
+    }));
+
+    let stream = query(make_query_params(initial_messages), deps.clone());
+    let items: Vec<QueryYield> = stream.collect().await;
+
+    assert_eq!(
+        request_start_count(&items),
+        2,
+        "collapse drain recovery should retry the model call"
+    );
+    assert_eq!(deps.collapse_drain_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        deps.reactive_compact_calls.load(Ordering::SeqCst),
+        0,
+        "reactive compact should not run when collapse drain succeeds"
+    );
+
+    let recovered = items.iter().any(|item| {
+        if let QueryYield::Message(Message::Assistant(msg)) = item {
+            msg.content.iter().any(|block| {
+                matches!(block, ContentBlock::Text { text } if text == "Recovered after collapse drain.")
+            })
+        } else {
+            false
+        }
+    });
+    assert!(recovered, "expected recovered assistant response");
+}
+
+#[tokio::test]
+async fn test_prompt_too_long_terminals_after_collapse_and_reactive_fail() {
+    let initial_messages = vec![make_user_message_for_test("Summarize this long context")];
+    let deps = Arc::new(MockDeps::from_steps(vec![MockStreamStep::Error(
+        "prompt_too_long: context window exceeded".to_string(),
+    )]));
+
+    let stream = query(make_query_params(initial_messages), deps.clone());
+    let items: Vec<QueryYield> = stream.collect().await;
+
+    assert_eq!(request_start_count(&items), 1);
+    assert_eq!(deps.collapse_drain_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(deps.reactive_compact_calls.load(Ordering::SeqCst), 1);
+    assert!(items.iter().any(|item| {
+        matches!(
+            item,
+            QueryYield::Message(Message::Assistant(message))
+                if message.is_api_error_message
+        )
+    }));
 }
 
 #[tokio::test]

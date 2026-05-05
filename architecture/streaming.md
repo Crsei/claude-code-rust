@@ -108,7 +108,7 @@ Provider HTTP/SSE 或 synthesized response
 - Bash 工具执行支持约 1 秒间隔的进度 callback，headless 端可收到 `ToolProgress`。
 - `message_delta.stop_reason` 和 usage 聚合已实现。
 - `max_tokens` 停止原因有恢复路径：先提升 max output tokens，再注入 continuation 消息，最多 3 次。
-- prompt-too-long 有 reactive compact retry 路径。
+- prompt-too-long 恢复链已经按 collapse drain -> reactive compact -> terminal 接入主 loop。
 - `input_json_delta.partial_json` 会累积到最终 `ToolUse.input`，`signature_delta` 会写入 thinking signature。
 - stream 建立前的 429、5xx、529 / overloaded / high-demand / capacity 和网络发送错误会按 `ApiClientConfig.max_retries` 退避重试；prompt-too-long、auth、invalid request 等不可恢复错误立即返回给上层恢复或 terminal 路径。
 - Query 主循环会在 stream 消费阶段执行主动 idle watchdog 和 passive stall 检测，默认 idle 120s / stall 60s，可通过 `CC_RUST_STREAM_IDLE_TIMEOUT_MS`、`CC_RUST_STREAM_STALL_TIMEOUT_MS` 调整。
@@ -126,7 +126,6 @@ Provider HTTP/SSE 或 synthesized response
 | P1 | `ApiRetry` 用户可见事件和非 streaming fallback 尚未完整对齐。 | stream 建立前 retry/backoff 和主 loop failure 分类已落地；但 retry 可见性、非 streaming fallback 策略和 daemon/TUI/headless 事件覆盖仍需在 7.6 等任务收敛。 |
 | P1 | `server_tool_use`、`connector_text` 未建模。 | Web search/server tool/connector 类内容无法按参考协议完整还原。 |
 | P1 | `content_block_stop` 不产出 per-block `AssistantMessage`。 | 这是当前有意保留的边界：SDK/session/TUI 仍以最终单 assistant 替换 partial stream；per-block assistant 需要和 `StreamingToolExecutor`、session tombstone/fallback 语义一起重新设计。 |
-| P1 | prompt-too-long 只有 reactive compact retry，没有 collapse drain。 | 极端长上下文恢复能力弱于参考设计。 |
 | P2 | TUI 未观察到 tool progress callback 安装。 | TUI 可能只能看到工具最终结果，不能显示 Bash 长任务实时进度。 |
 | P2 | Daemon SSE 跳过部分 SDK 事件，permission endpoint 仍是 stub。 | daemon/Web 客户端能力不完整。 |
 | P2 | Google tool use、Bedrock AWS EventStream、Vertex service-account JWT exchange 等 provider 能力仍未补齐。 | 多 provider 行为还不是 full-build 对齐状态。 |
@@ -136,9 +135,8 @@ Provider HTTP/SSE 或 synthesized response
 ## 建议补齐顺序
 
 1. 继续保留最终单 `AssistantMessage` 交付语义；真正改成 per-block assistant 时，需要同步设计 SDK/session 持久化、fallback tombstone 和 UI partial replacement。
-2. 补 prompt-too-long 的 collapse drain retry，避免只依赖 reactive compact。
-3. 补 `ApiRetry` / `CompactBoundary` / `ToolUseSummary` 等事件在 daemon SSE、TUI、headless 中的可见性策略。
-4. 再扩展 provider：Bedrock EventStream、Google tool use、server tool/connector content。
+2. 补 `ApiRetry` / `CompactBoundary` / `ToolUseSummary` 等事件在 daemon SSE、TUI、headless 中的可见性策略。
+3. 再扩展 provider：Bedrock EventStream、Google tool use、server tool/connector content。
 
 ## 文档一致性提醒
 

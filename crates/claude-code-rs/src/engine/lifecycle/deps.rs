@@ -6,8 +6,8 @@
 
 use parking_lot::RwLock;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use anyhow::Result;
 use futures::Stream;
@@ -17,16 +17,16 @@ use crate::query::deps::{
     CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
 };
 use crate::tools::execution::{
-    ToolExecutionResult, enforce_result_size, find_tool, is_plan_mode_plan_file_write,
-    sandbox_allowed_command_applies, security_validate,
+    enforce_result_size, find_tool, is_plan_mode_plan_file_write, sandbox_allowed_command_applies,
+    security_validate, ToolExecutionResult,
 };
 use crate::types::app_state::AppState;
 use crate::types::message::{Message, StreamEvent};
 use crate::types::state::AutoCompactTracking;
 use crate::types::tool::{PermissionMode, ToolProgress, Tools, ValidationResult};
 
-use super::QueryEngineState;
 use super::helpers::{build_messages_request, format_conversation_for_summary};
+use super::QueryEngineState;
 
 /// Dependency injection bridge: provides the query loop with access to the
 /// engine's shared state (abort flag, app state, tools) and, optionally, a
@@ -422,6 +422,52 @@ impl QueryDeps for QueryEngineDeps {
             }
             None => Ok(None),
         }
+    }
+
+    async fn collapse_drain(
+        &self,
+        messages: Vec<Message>,
+        tracking: Option<AutoCompactTracking>,
+    ) -> Result<Option<CompactionResult>> {
+        let model = {
+            let app = &self.state.read().app_state;
+            if app.main_loop_model.is_empty() {
+                self.api_client
+                    .as_ref()
+                    .map(|c| c.config().default_model.clone())
+                    .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string())
+            } else {
+                app.main_loop_model.clone()
+            }
+        };
+
+        let pipeline_result =
+            crate::compact::pipeline::run_context_pipeline(messages, tracking.clone(), &model)
+                .await;
+
+        if !pipeline_result.compacted {
+            return Ok(None);
+        }
+
+        tracing::info!(
+            snip_tokens_freed = pipeline_result.snip_tokens_freed,
+            microcompact_tokens_freed = pipeline_result.microcompact_tokens_freed,
+            context_collapse_tokens_freed = pipeline_result.context_collapse_tokens_freed,
+            total_tokens_freed = pipeline_result.total_tokens_freed,
+            "collapse drain: committed local context pipeline result"
+        );
+
+        Ok(Some(CompactionResult {
+            messages: pipeline_result.messages,
+            tracking: pipeline_result.tracking.unwrap_or_else(|| {
+                tracking.unwrap_or(AutoCompactTracking {
+                    compacted: false,
+                    turn_counter: 0,
+                    turn_id: String::new(),
+                    consecutive_failures: 0,
+                })
+            }),
+        }))
     }
 
     // Production implementation of the canonical query-loop tool execution
@@ -1100,7 +1146,7 @@ mod tests {
     use crate::types::tool::{
         PermissionCallback, PermissionMode, PermissionResult, Tool, ToolResult, ToolUseContext,
     };
-    use serde_json::{Value, json};
+    use serde_json::{json, Value};
 
     struct CanonicalTool {
         name: &'static str,
@@ -1381,13 +1427,11 @@ mod tests {
             .unwrap();
 
         assert!(result.is_error);
-        assert!(
-            result
-                .result
-                .data
-                .as_str()
-                .is_some_and(|text| text.contains("Input validation error"))
-        );
+        assert!(result
+            .result
+            .data
+            .as_str()
+            .is_some_and(|text| text.contains("Input validation error")));
         assert!(
             seen_input.lock().is_none(),
             "validation failure must stop before Tool::call"
@@ -1465,13 +1509,11 @@ mod tests {
             .unwrap();
 
         assert!(result.is_error);
-        assert!(
-            result
-                .result
-                .data
-                .as_str()
-                .is_some_and(|text| text.contains("Dangerous command blocked"))
-        );
+        assert!(result
+            .result
+            .data
+            .as_str()
+            .is_some_and(|text| text.contains("Dangerous command blocked")));
         assert!(
             seen_input.lock().is_none(),
             "security validation must stop before Tool::call"
@@ -1505,13 +1547,11 @@ mod tests {
             .unwrap();
 
         assert!(result.is_error);
-        assert!(
-            result
-                .result
-                .data
-                .as_str()
-                .is_some_and(|text| text.contains("Permission denied: blocked by test"))
-        );
+        assert!(result
+            .result
+            .data
+            .as_str()
+            .is_some_and(|text| text.contains("Permission denied: blocked by test")));
         assert!(
             seen_input.lock().is_none(),
             "permission denial must stop before Tool::call"

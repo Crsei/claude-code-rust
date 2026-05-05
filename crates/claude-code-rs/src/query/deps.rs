@@ -118,6 +118,18 @@ pub trait QueryDeps: Send + Sync {
     /// 响应式压缩: prompt_too_long 恢复时调用
     async fn reactive_compact(&self, messages: Vec<Message>) -> Result<Option<CompactionResult>>;
 
+    /// 上下文折叠排空: prompt_too_long 恢复的第一步。
+    ///
+    /// Default: no pending collapses to drain. Production overrides this with
+    /// the local context pipeline; tests can mock a deterministic result.
+    async fn collapse_drain(
+        &self,
+        _messages: Vec<Message>,
+        _tracking: Option<AutoCompactTracking>,
+    ) -> Result<Option<CompactionResult>> {
+        Ok(None)
+    }
+
     /// 执行单个工具
     /// Canonical query-loop tool execution boundary.
     ///

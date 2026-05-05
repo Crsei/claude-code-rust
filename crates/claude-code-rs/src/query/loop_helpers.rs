@@ -281,12 +281,33 @@ pub(crate) fn is_stream_progress_event(event: &StreamEvent) -> bool {
 /// 1. collapse drain -- remove oldest non-critical messages
 /// 2. reactive compact -- emergency compaction
 /// 3. unrecoverable -- return error
-#[allow(unused)]
 pub(crate) async fn handle_prompt_too_long(
     deps: &Arc<dyn QueryDeps>,
     state: &mut QueryLoopState,
-    error: &str,
+    _error: &str,
 ) -> PromptRecovery {
+    if !state.has_attempted_collapse_drain {
+        debug!("prompt_too_long: attempting collapse drain");
+        state.has_attempted_collapse_drain = true;
+
+        match deps
+            .collapse_drain(state.messages.clone(), state.auto_compact_tracking.clone())
+            .await
+        {
+            Ok(Some(result)) => {
+                state.messages = result.messages;
+                state.auto_compact_tracking = Some(result.tracking);
+                return PromptRecovery::Continue(Continue::CollapseDrainRetry { committed: 1 });
+            }
+            Ok(None) => {
+                debug!("collapse drain returned None, trying reactive compact");
+            }
+            Err(e) => {
+                warn!(error = %e, "collapse drain failed, trying reactive compact");
+            }
+        }
+    }
+
     if !state.has_attempted_reactive_compact {
         debug!("prompt_too_long: attempting reactive compact");
         state.has_attempted_reactive_compact = true;

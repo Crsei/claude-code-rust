@@ -32,6 +32,9 @@ pub struct QueryLoopState {
     /// 是否已尝试响应式压缩
     pub has_attempted_reactive_compact: bool,
 
+    /// 是否已尝试 prompt-too-long 的上下文折叠排空
+    pub has_attempted_collapse_drain: bool,
+
     /// 输出 token 上限覆盖 (escalate 时设为 ESCALATED_MAX_TOKENS)
     pub max_output_tokens_override: Option<usize>,
 
@@ -56,6 +59,7 @@ impl QueryLoopState {
             auto_compact_tracking: None,
             max_output_tokens_recovery_count: 0,
             has_attempted_reactive_compact: false,
+            has_attempted_collapse_drain: false,
             max_output_tokens_override: None,
             pending_tool_use_summary: None,
             stop_hook_active: None,
