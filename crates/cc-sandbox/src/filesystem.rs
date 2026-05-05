@@ -13,8 +13,8 @@
 // [`check_write`] / [`check_read`] are the Rust-level policy enforcement
 // surface. On Linux/macOS the OS primitive (bubblewrap / sandbox-exec) does
 // the real enforcement, so these methods only run in tests today. They stay
-// public because the Windows back-end (issue #8 follow-up) and the
-// `/sandbox` command's path-preview feature call them.
+// public because the Windows path uses Rust-level preflight checks and the
+// `/sandbox` command's path-preview feature calls them.
 
 use std::path::{Path, PathBuf};
 

@@ -89,7 +89,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 
 | 模块 | 待补齐的行为（参考上游） |
 |------|----------|
-| BashTool | PowerShell 原生 AST parser fidelity（`elementTypes` / `children` / `nameType` / full parser-invalid coverage / full statement securityPatterns 等结构化语义）与 Windows Restricted Token / Job Object OS-level primitive；Stage 3c.2 执行前硬拦、heredoc、Git 操作跟踪、进程树终止、destructive denylist、高风险 security validator、AST 启发式安全检查、script block securityPatterns 子集、明显 parse-error fail-closed、参数绑定安全规则、`New-Object` TypeName CLM 校验、显式写目标 FS preflight 与 fail-closed 用户面子项已落地 |
+| BashTool | PowerShell 原生 AST parser fidelity（`elementTypes` / `children` / `nameType` / full parser-invalid coverage / full statement securityPatterns 等结构化语义）；Windows Restricted Token / Job Object OS-level primitive 已评估并移入 §7 Intentional 裁剪；Stage 3c.2 执行前硬拦、heredoc、Git 操作跟踪、进程树终止、destructive denylist、高风险 security validator、AST 启发式安全检查、script block securityPatterns 子集、明显 parse-error fail-closed、参数绑定安全规则、`New-Object` TypeName CLM 校验、显式写目标 FS preflight 与 fail-closed 用户面子项已落地 |
 | TaskTools | 远程/多类型后台任务 poller/reconnect runtime parity；磁盘持久化、基础依赖字段、输出保留、`TaskOutput` 阻塞/超时读取、上游 task type taxonomy、remote supervisor 元数据底座、remote restart recoverable marker、remote restore poll timer reset、remote review timeout guard、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
 | PlanMode | full auto-mode LLM classifier parity；保守 classifier gate、计划工作流持久化、ExitPlanMode approval lifecycle、实现任务关联追踪、团队审批 mailbox flow、专用计划文件写入白名单已落地 |
 | WebFetch | JS 渲染；redirect budget / cross-host redirect diagnostic、Content-Type 基础分发、环境代理/`NO_PROXY` 与 Cookie/credential 安全边界子项已落地 |
@@ -98,7 +98,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 
 每个条目完成时都按同一收口流程处理：读上游实现 → 改 Rust 端 → 补单元/e2e → `cargo fmt --all --check` + 对应构建 → 更新本文件与 archive → 单独提交。
 
-1. **BashTool 剩余安全/沙箱复核**：对照 `src/tools/BashTool/**` 与 PowerShell validator，评估是否需要引入原生 PowerShell AST parser（或等价结构化 parser）来补齐 `elementTypes` / `children` / `nameType` / parse error fail-closed / statement securityPatterns 等非正则语义；同时评估 Windows Restricted Token / Job Object OS-level primitive 是否进入实现队列或移入 §7 Intentional 裁剪。
+1. **BashTool 剩余安全复核**：对照 `src/tools/BashTool/**` 与 PowerShell validator，评估是否需要引入原生 PowerShell AST parser（或等价结构化 parser）来补齐 `elementTypes` / `children` / `nameType` / parse error fail-closed / statement securityPatterns 等非正则语义；Windows Restricted Token / Job Object OS-level primitive 已按上游平台边界移入 §7 Intentional 裁剪。
 2. **TaskTools 后台任务 parity**：在现有持久化、取消、`TaskOutput` 阻塞/超时读取、上游 task type taxonomy、remote supervisor 元数据底座、remote restart recoverable marker、restore poll timer reset 和 remote review timeout guard 基础上，补远程/多类型后台任务 poller/reconnect runtime parity，并验证 `/tasks` UI 与 task store 的状态一致性。
 3. **PlanMode auto-mode parity**：在已有保守 classifier、计划持久化、审批状态、团队审批 mailbox flow、专用计划文件写入白名单与 `TaskCreate` 关联追踪基础上，补 full auto-mode LLM classifier parity；完成后用 plan 创建、恢复、审批、执行关联与 plan 文件增量维护的 e2e 覆盖。
 4. **WebFetch browser-grade 能力**：按 `architecture/mvp-optimization-plans/MVP-009-web-fetch-browser-grade-plan.md` 逐步补 JS 渲染；redirect budget / cross-host redirect diagnostic、Content-Type 基础分发、环境代理/`NO_PROXY` 和 Cookie/credential 安全边界已完成。
@@ -178,6 +178,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 示例（占位，按需新增，避免空泛）：
 
 - Agent Teams tmux/iTerm2 pane backend：cc-rust 当前主运行环境包含 Windows，外部 pane 后端会引入 tmux/iTerm2/窗口管理器耦合、跨平台清理语义和额外交互面；MVP-005 决定不实现外部 pane backend，而是把 in-process backend 做成唯一受支持路径并补齐生命周期控制。`PaneBackend` trait 保留为未来上游 parity 审查边界。| Codex | 2026-04-28 | 用户明确需要可见终端 pane、上游 pane protocol 成为产品必需项，或 cc-rust roadmap 切换到 Unix terminal-pane 优先发布
+- BashTool Windows Restricted Token / Job Object OS-level primitive：上游 `@anthropic-ai/sandbox-runtime` 当前只对 macOS、Linux 与 WSL2 暴露 sandbox 支持，PowerShell permission UI 明确没有 sandbox toggle（Windows 不支持 sandbox）；cc-rust 不自研 Windows token/job sandbox，保留 Rust-level FS/network preflight、`/sandbox require` fail-closed 与 unavailable 诊断。| Codex | 2026-05-05 | 上游发布 Windows sandbox-runtime backend、PowerShell sandbox toggle 成为产品必需项，或安全策略要求 Windows OS-level enforcement
 
 新增规则：
 1. 任何进入本节的条目必须在 PR 里说明理由，并列出未来需要复审的触发条件（例如"上游发布 v2 协议后复审"）。

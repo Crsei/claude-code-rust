@@ -3,7 +3,8 @@
 //! Results:
 //! - Linux (and WSL2): looks for `bwrap` on `$PATH`
 //! - macOS: looks for `/usr/bin/sandbox-exec`
-//! - Windows: always `Unavailable` for now (Restricted Token support TBD)
+//! - Windows: always `Unavailable`; upstream sandboxing does not expose a
+//!   Windows OS-level primitive, so cc-rust keeps Rust-level policy checks
 //!
 //! Called once per sandbox construction and cached in
 //! [`crate::sandbox::SandboxPolicy`].
@@ -35,7 +36,7 @@ pub enum Mechanism {
     Bubblewrap,
     /// macOS Seatbelt (`sandbox-exec`).
     Seatbelt,
-    /// Windows Restricted Token + Job Object (future work).
+    /// Reserved label for the intentionally-unavailable Windows OS primitive.
     WindowsRestrictedToken,
 }
 
@@ -121,8 +122,10 @@ fn probe() -> Availability {
         Availability::Unavailable {
             platform: "windows",
             reason: "Windows Restricted Token + Job Object support is not \
-                     wired up yet. Rust-level policy checks still apply; OS-level \
-                     enforcement is deferred to a follow-up (issue #8)."
+                     implemented because upstream sandbox-runtime/PowerShell \
+                     sandbox parity does not currently support Windows. \
+                     Rust-level policy checks still apply; set \
+                     sandbox.failIfUnavailable=true to fail closed."
                 .into(),
         }
     }

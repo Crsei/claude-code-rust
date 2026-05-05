@@ -20,7 +20,7 @@
 //! |----------|---------------------|
 //! | Linux / WSL2 | bubblewrap wrapper (when `bwrap` is on `$PATH`) |
 //! | macOS | `sandbox-exec` (Seatbelt) wrapper |
-//! | Windows | Rust-level policy checks only; OS-level enforcement TBD |
+//! | Windows | Rust-level policy checks only; no upstream OS-level parity |
 //!
 //! On every platform, path-based allow/deny checks and network-domain checks
 //! run **in-process before spawn** as a best-effort second line of defence,

@@ -48,10 +48,10 @@
 - ✅ **PowerShell 明显 parse-error fail-closed 子项** (未闭合 quote、paren、brace、type literal delimiter 与 mismatched closing delimiter 在执行安全门中拒绝)
 - ✅ **sandbox 文件系统 preflight 子项** (shell redirection、常见 Bash 写命令、PowerShell 写 cmdlet 按 read-only/workspace/allowWrite/denyWrite 执行 Rust 级拒绝)
 - ✅ **sandbox fail-closed 用户面** (`/sandbox require` / `/sandbox optional` 切换 `sandbox.failIfUnavailable`，缺少 OS-level primitive 时可明确硬失败或 best-effort fallback)
+- ✅ **Windows sandbox OS-level primitive 决策** (Restricted Token / Job Object 不自研；上游 sandbox-runtime/PowerShell UI 当前不支持 Windows sandbox，cc-rust 保留 Rust-level preflight 与 fail-closed 用户面，详见 `IMPLEMENTATION_GAPS.md` §7)
 
 **TS 独有（未移植）：**
 - PowerShell 分支 (8,959 行的 PowerShellTool)
-- Windows Restricted Token / Job Object OS-level primitive
 - 复杂后台任务 / auto-background 超时逻辑
 - PowerShell 原生 AST parser fidelity（`elementTypes` / `children` / `nameType` / full parser-invalid coverage / full statement securityPatterns 等；Rust 当前为 quote-aware 启发式硬拦，不等同完整 parser）
 - 终端大小感知
@@ -434,6 +434,7 @@
    - 2026-05-05 继续补齐 PowerShell New-Object TypeName CLM 子项 — 覆盖 `-TypeName` / `-t:` / 位置 TypeName 的 CLM allowlist 校验
    - 2026-05-05 继续补齐 sandbox 文件系统 preflight — `cc-sandbox/src/runner.rs` 对 shell 显式写目标执行 read-only/workspace/allowWrite/denyWrite 检查
    - 2026-05-05 继续补齐 sandbox fail-closed 用户面 — `/sandbox require` / `/sandbox optional` 暴露 `sandbox.failIfUnavailable` 会话切换
+   - 2026-05-05 重评 Windows Restricted Token / Job Object — 上游 sandbox-runtime/PowerShell UI 当前不支持 Windows sandbox，移入 `IMPLEMENTATION_GAPS.md` §7 Intentional 裁剪；保留 Rust-level FS/network preflight 与 fail-closed 用户面
 3. ~~**FileReadTool PDF/图片**~~ ✅ 已补全 — 236→743 行, 图片 base64 + PDF pdftotext + ipynb JSON
    - 2026-05-05 继续补齐 symlink 解析、编码检测、大文件分页 — 743→1,214 行
 4. ~~**GrepTool ripgrep 调用**~~ ✅ 已补全 — 185→371 行, rg 子进程 + multiline + offset
