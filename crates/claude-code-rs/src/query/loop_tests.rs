@@ -507,6 +507,10 @@ async fn test_fallback_model_retries_stream_start_capacity_error() {
     assert_eq!(recorded[0].model.as_deref(), Some(primary_model.as_str()));
     assert_eq!(recorded[1].model.as_deref(), Some("claude-fallback"));
     assert!(
+        !has_api_error_containing(&items, "529 overloaded"),
+        "recoverable stream-start error should be withheld when fallback succeeds"
+    );
+    assert!(
         items.iter().any(|item| matches!(
             item,
             QueryYield::Message(Message::Assistant(msg))
@@ -669,6 +673,10 @@ async fn test_fallback_tombstones_partial_assistant_after_stream_error() {
     assert_eq!(recorded.len(), 2);
     assert_eq!(recorded[1].model.as_deref(), Some("claude-fallback"));
     assert!(
+        !has_api_error_containing(&items, "529 overloaded during stream"),
+        "recoverable mid-stream error should be withheld when fallback succeeds"
+    );
+    assert!(
         items.iter().any(|item| matches!(
             item,
             QueryYield::Message(Message::Assistant(msg))
@@ -679,6 +687,37 @@ async fn test_fallback_tombstones_partial_assistant_after_stream_error() {
         )),
         "fallback response should be yielded after tombstone"
     );
+}
+
+#[tokio::test]
+async fn test_fallback_exhaustion_releases_terminal_stream_start_error() {
+    let deps = Arc::new(MockDeps::from_steps(vec![
+        MockStreamStep::Error("529 overloaded primary".to_string()),
+        MockStreamStep::Error("529 overloaded fallback".to_string()),
+    ]));
+
+    let mut params = make_query_params(vec![make_user_message_for_test("Use fallback")]);
+    params.fallback_model = Some("claude-fallback".to_string());
+
+    let stream = query(params, deps.clone());
+    let items: Vec<QueryYield> = stream.collect().await;
+
+    assert_eq!(
+        request_start_count(&items),
+        2,
+        "primary should be retried once on the fallback model"
+    );
+    assert!(
+        !has_api_error_containing(&items, "529 overloaded primary"),
+        "recoverable primary failure should remain withheld"
+    );
+    assert!(
+        has_api_error_containing(&items, "529 overloaded fallback"),
+        "fallback exhaustion should release the final visible error"
+    );
+    let recorded = deps.recorded_params();
+    assert_eq!(recorded.len(), 2);
+    assert_eq!(recorded[1].model.as_deref(), Some("claude-fallback"));
 }
 
 #[tokio::test]

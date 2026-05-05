@@ -37,6 +37,19 @@ pub(crate) const ESCALATED_MAX_TOKENS: usize = 64_000;
 type ToolUseTuple = (String, String, serde_json::Value);
 type ToolUseBatch = (bool, Vec<ToolUseTuple>);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModelCallFailureStage {
+    RequestStart,
+    StreamInterrupted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ModelCallFailureRecovery {
+    PromptTooLong,
+    Fallback { model: String },
+    Terminal,
+}
+
 /// prompt_too_long recovery result.
 #[allow(unused)]
 pub(crate) enum PromptRecovery {
@@ -55,9 +68,9 @@ pub(crate) fn is_prompt_too_long_error(error: &str) -> bool {
     error.contains("prompt_too_long") || error.contains("prompt is too long")
 }
 
-/// Return the configured fallback model when a stream-start failure is a
-/// capacity-style failure and the fallback differs from the attempted model.
-pub(crate) fn fallback_model_for_stream_start_error(
+/// Return the configured fallback model when a capacity-style model failure can
+/// be retried on a different model.
+fn fallback_model_for_recoverable_model_error(
     fallback_model: Option<&str>,
     attempted_model: &str,
     error: &str,
@@ -72,6 +85,25 @@ pub(crate) fn fallback_model_for_stream_start_error(
     }
 
     Some(fallback.to_string())
+}
+
+pub(crate) fn classify_model_call_failure(
+    stage: ModelCallFailureStage,
+    fallback_model: Option<&str>,
+    attempted_model: &str,
+    error: &str,
+) -> ModelCallFailureRecovery {
+    if stage == ModelCallFailureStage::RequestStart && is_prompt_too_long_error(error) {
+        return ModelCallFailureRecovery::PromptTooLong;
+    }
+
+    if let Some(model) =
+        fallback_model_for_recoverable_model_error(fallback_model, attempted_model, error)
+    {
+        return ModelCallFailureRecovery::Fallback { model };
+    }
+
+    ModelCallFailureRecovery::Terminal
 }
 
 /// Return a fallback request history without model-bound signature blocks.
@@ -600,6 +632,50 @@ mod tests {
             api_error: None,
             cost_usd: 0.0,
         }
+    }
+
+    #[test]
+    fn model_call_failure_classifier_separates_stage_recovery_paths() {
+        assert_eq!(
+            classify_model_call_failure(
+                ModelCallFailureStage::RequestStart,
+                Some("claude-fallback"),
+                "claude-primary",
+                "prompt_too_long: context window exceeded",
+            ),
+            ModelCallFailureRecovery::PromptTooLong
+        );
+        assert_eq!(
+            classify_model_call_failure(
+                ModelCallFailureStage::RequestStart,
+                Some("claude-fallback"),
+                "claude-primary",
+                "529 overloaded: high demand",
+            ),
+            ModelCallFailureRecovery::Fallback {
+                model: "claude-fallback".to_string()
+            }
+        );
+        assert_eq!(
+            classify_model_call_failure(
+                ModelCallFailureStage::StreamInterrupted,
+                Some("claude-fallback"),
+                "claude-primary",
+                "529 overloaded during stream",
+            ),
+            ModelCallFailureRecovery::Fallback {
+                model: "claude-fallback".to_string()
+            }
+        );
+        assert_eq!(
+            classify_model_call_failure(
+                ModelCallFailureStage::StreamInterrupted,
+                Some("claude-fallback"),
+                "claude-primary",
+                "prompt_too_long after stream started",
+            ),
+            ModelCallFailureRecovery::Terminal
+        );
     }
 
     #[test]

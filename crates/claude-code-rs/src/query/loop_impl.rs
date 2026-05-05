@@ -40,10 +40,11 @@ use crate::services::tool_use_summary::{self, ToolInfo};
 
 use super::deps::{ModelCallParams, QueryDeps};
 use super::loop_helpers::{
-    execute_tool_calls, fallback_model_for_stream_start_error, handle_max_output_tokens,
-    handle_prompt_too_long, is_prompt_too_long_error, is_stream_progress_event, make_abort_message,
-    make_error_message, make_tool_result_user_message, make_user_message, stream_idle_timeout,
-    stream_stall_timeout, strip_fallback_signature_blocks, MaxTokensRecovery, PromptRecovery,
+    classify_model_call_failure, execute_tool_calls, handle_max_output_tokens,
+    handle_prompt_too_long, is_stream_progress_event, make_abort_message, make_error_message,
+    make_tool_result_user_message, make_user_message, stream_idle_timeout, stream_stall_timeout,
+    strip_fallback_signature_blocks, MaxTokensRecovery, ModelCallFailureRecovery,
+    ModelCallFailureStage, PromptRecovery,
 };
 use super::stop_hooks::{self, StopHookResult};
 use super::token_budget::check_token_budget;
@@ -280,12 +281,16 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                             Some(&error_str),
                         );
 
-                        if is_prompt_too_long_error(&error_str) {
-                            let terminal = handle_prompt_too_long(
-                                &deps,
-                                &mut state,
-                                &error_str,
-                            ).await;
+                        let recovery = classify_model_call_failure(
+                            ModelCallFailureStage::RequestStart,
+                            fallback_model.as_deref(),
+                            &attempt_model,
+                            &error_str,
+                        );
+
+                        if matches!(&recovery, ModelCallFailureRecovery::PromptTooLong) {
+                            let terminal =
+                                handle_prompt_too_long(&deps, &mut state, &error_str).await;
 
                             match terminal {
                                 PromptRecovery::Continue(reason) => {
@@ -302,11 +307,8 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                         }
 
                         if !fallback_used {
-                            if let Some(fallback) = fallback_model_for_stream_start_error(
-                                fallback_model.as_deref(),
-                                &attempt_model,
-                                &error_str,
-                            ) {
+                            if let ModelCallFailureRecovery::Fallback { model: fallback } = recovery
+                            {
                                 {
                                     use crate::observability::{
                                         AuditLevel, EventKind, Outcome, Stage,
@@ -428,12 +430,14 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                         );
                     }
 
+                    let recovery = classify_model_call_failure(
+                        ModelCallFailureStage::StreamInterrupted,
+                        fallback_model.as_deref(),
+                        &attempt_model,
+                        err,
+                    );
                     if !fallback_used {
-                        if let Some(fallback) = fallback_model_for_stream_start_error(
-                            fallback_model.as_deref(),
-                            &attempt_model,
-                            err,
-                        ) {
+                        if let ModelCallFailureRecovery::Fallback { model: fallback } = recovery {
                             let tombstone_message = accumulator.build(&attempt_model);
                             if !tombstone_message.content.is_empty() {
                                 yield QueryYield::Tombstone(TombstoneMessage {

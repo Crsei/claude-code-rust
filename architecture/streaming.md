@@ -112,6 +112,7 @@ Provider HTTP/SSE 或 synthesized response
 - stream 建立前的 429、5xx、529 / overloaded / high-demand / capacity 和网络发送错误会按 `ApiClientConfig.max_retries` 退避重试；prompt-too-long、auth、invalid request 等不可恢复错误立即返回给上层恢复或 terminal 路径。
 - Query 主循环会在 stream 消费阶段执行主动 idle watchdog 和 passive stall 检测，默认 idle 120s / stall 60s，可通过 `CC_RUST_STREAM_IDLE_TIMEOUT_MS`、`CC_RUST_STREAM_STALL_TIMEOUT_MS` 调整。
 - stream 中途 capacity 失败触发 fallback 时，主 loop 会 tombstone 已累积 partial assistant；fallback retry 前会移除旧模型的 thinking / redacted-thinking signature blocks。
+- Query 主循环已区分 request-start failure、stream-interrupted failure 和正常 assistant `stop_reason`：可恢复 primary 错误在 fallback 成功时 withheld，fallback 耗尽后才释放最终 API error。
 - 工具执行已支持 stream 结束后的安全工具并发批处理和非安全工具串行执行。
 
 ## 未实现 / 未对齐
@@ -119,7 +120,7 @@ Provider HTTP/SSE 或 synthesized response
 | 优先级 | 差距 | 影响 |
 | --- | --- | --- |
 | P0 | `StreamingToolExecutor` 存在但未接入 query 主循环。 | 当前只能在完整 assistant 结束后执行工具，无法像 Bun 版那样按内容块流式启动安全工具。 |
-| P1 | mid-stream error 分类、`ApiRetry` 用户可见事件和非 streaming fallback 尚未完整对齐。 | stream 建立前已 retry/backoff；但已开始输出后的错误仍主要由 query fallback/tombstone 路径处理，retry 可见性和 exhausted 后释放策略还需在 3.6 / 7.6 收敛。 |
+| P1 | `ApiRetry` 用户可见事件和非 streaming fallback 尚未完整对齐。 | stream 建立前 retry/backoff 和主 loop failure 分类已落地；但 retry 可见性、非 streaming fallback 策略和 daemon/TUI/headless 事件覆盖仍需在 7.6 等任务收敛。 |
 | P1 | `server_tool_use`、`connector_text` 未建模。 | Web search/server tool/connector 类内容无法按参考协议完整还原。 |
 | P1 | `content_block_stop` 不产出 per-block `AssistantMessage`。 | 这是当前有意保留的边界：SDK/session/TUI 仍以最终单 assistant 替换 partial stream；per-block assistant 需要和 `StreamingToolExecutor`、session tombstone/fallback 语义一起重新设计。 |
 | P1 | prompt-too-long 只有 reactive compact retry，没有 collapse drain。 | 极端长上下文恢复能力弱于参考设计。 |
@@ -132,10 +133,9 @@ Provider HTTP/SSE 或 synthesized response
 ## 建议补齐顺序
 
 1. 接入 `StreamingToolExecutor` 前，继续保留最终单 `AssistantMessage` 交付语义；真正改成 per-block assistant 时，需要同步设计工具 block 完成边界、SDK/session 持久化、fallback tombstone 和 UI partial replacement。
-2. 在 3.6 明确 request 建立失败、stream 中途失败、assistant stop reason 的 exhausted/withheld/release 策略。
-3. 补 prompt-too-long 的 collapse drain retry，避免只依赖 reactive compact。
-4. 补 `ApiRetry` / `CompactBoundary` / `ToolUseSummary` 等事件在 daemon SSE、TUI、headless 中的可见性策略。
-5. 再扩展 provider：Bedrock EventStream、Google tool use、server tool/connector content。
+2. 补 prompt-too-long 的 collapse drain retry，避免只依赖 reactive compact。
+3. 补 `ApiRetry` / `CompactBoundary` / `ToolUseSummary` 等事件在 daemon SSE、TUI、headless 中的可见性策略。
+4. 再扩展 provider：Bedrock EventStream、Google tool use、server tool/connector content。
 
 ## 文档一致性提醒
 
