@@ -70,6 +70,7 @@
 | 5.3 freed-token accounting | 已完成 | 2026-05-05 | `cargo test -p cc-compact pipeline`，5 passed；`cargo test -p claude-code-rs query::loop_impl::loop_tests`，18 passed。 | `PipelineResult` 现在暴露 snip / microcompact / context collapse 分段释放 token、总释放 token 和 autocompact adjusted token；autocompact 阈值判断会先扣除本轮 local compaction 已释放的 token。 |
 | 5.4 collapse drain retry | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs prompt_too_long`，3 passed；`cargo test -p claude-code-rs query::loop_impl::loop_tests`，20 passed。 | prompt-too-long 现在先尝试 `QueryDeps::collapse_drain()`，成功则以 `Continue::CollapseDrainRetry` 重试；无可折叠内容或失败时再尝试 reactive compact，两者都失败后 terminal。 |
 | 5.5 max_tokens/context 交互 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs prompt_too_long`，3 passed；`cargo test -p claude-code-rs test_max_tokens_recovery_escalates_next_request_limit`，1 passed；`cargo test -p claude-code-rs query::loop_impl::loop_tests`，20 passed。 | prompt-too-long 的 collapse/reactive retry 不会设置 max-output-token override；`max_tokens` stop reason 的升级/续写路径不会调用 collapse drain 或 reactive compact。 |
+| 6.1 observable input 工具清单 | 已完成 | 2026-05-05 | 文档：本页“6.1 observable input 回填清单”。 | 参考实现中只有 FileRead / FileWrite / FileEdit / SendMessage 有 tool-level `backfillObservableInput()`；hooks / permission `updatedInput` 属于执行边界替换，不再二次回填。 |
 
 ## Subagent 并行拆分规则
 
@@ -320,6 +321,27 @@
 | 6.2 | 实现“只有新增字段才 clone”的回填策略。 | `the-loop.md` | 无新增字段时消息 JSON byte identity 不变。 |
 | 6.3 | 把回填位置接入 streaming / post-stream 两种工具执行路径。 | `the-loop.md` | gate on/off 都得到同样的最终 tool input。 |
 | 6.4 | 增加 prompt-cache identity 回归测试。 | `the-loop.md` | 无意义重序列化会被测试捕获。 |
+
+### 6.1 observable input 回填清单
+
+参考实现把 `backfillObservableInput()` 定义在 tool trait 上，只在 observer-facing clone 上补 legacy / derived 字段。原始 assistant `tool_use.input` 继续进入 API-bound transcript；这样 prompt cache 的 JSON byte identity 不会因为可观察字段或路径展开被破坏。
+
+回填规则分两层：
+
+- Tool-level backfill：只适用于显式实现 `backfillObservableInput()` 的工具，且必须幂等。
+- Execution-boundary replacement：`PreToolUse` hook 或 permission 返回 `updatedInput` 时，新的 input 自己拥有完整 shape，不再套用 tool-level backfill。
+
+| 工具 / 来源 | 需要回填的字段 | 参考实现行为 | Rust 当前状态 | 并行性 |
+| --- | --- | --- | --- | --- |
+| `Read` / `FileReadTool` | `file_path` | 对 observer clone 展开为 absolute path，供 hooks / allowlist 使用；因为只是覆盖已有字段，不克隆最终 yield message。 | `Tool` trait 没有 `backfill_observable_input`；`Read` 的 hooks / permission 仍看原始 `file_path`。 | 可让 subagent 独立补 tool method 和 unit test；接入 loop 必须串行。 |
+| `Write` / `FileWriteTool` | `file_path` | 同 `Read`，只覆盖已有 `file_path`；不改变 API-bound message，也不改变 tool result 里回显的输入路径。 | 同上。 | 可并行补 tool method/test；接入串行。 |
+| `Edit` / `FileEditTool` | `file_path` | 同 `Read` / `Write`，用于 hooks / allowlist 的路径规范化。 | 同上。 | 可并行补 tool method/test；接入串行。 |
+| `SendMessage` | string message：`type`、`recipient`、`content`；broadcast 额外 `type=broadcast`；structured message：`type`、`recipient`、`request_id`、`approve`、`content`。 | 当缺少 `type` 且能从 `to` / `message` 推导时添加 legacy 字段；因为是新增字段，observer yield message 需要 clone。 | Rust `SendMessageInput.message` 目前是 `String`，只覆盖 string/broadcast 分支；structured message object 仍属于 Stage 7 team surface gap。 | string/broadcast helper 可并行；structured message 支持和 SDK/IPC 表面必须跟 Stage 7 串行。 |
+| `_simulatedSedEdit` sanitization | 删除内部字段 | 参考实现只在 Bash execution boundary 做 defense-in-depth strip；这不是 observable backfill。 | Rust canonical path 当前会从 object input 删除该字段，再执行 hook / permission / tool call。 | 不作为 6.2 backfill helper 实现；若调整范围需随 Bash / sed-edit permission 串行复核。 |
+| `PreToolUse.updatedInput` | hook 返回的完整 input | 替换 processed input；不再重新跑 tool-level backfill。 | Rust canonical path 已在 `run_pre_tool_hooks()` 后替换 `effective_input`。 | 不适合拆给多个 subagent；属于 execution boundary contract。 |
+| permission `updatedInput` | permission / UI 返回的完整 input | 替换 call input；不再重新跑 tool-level backfill。 | Rust canonical path 已在 tool-local / central permission 后替换 `effective_input`。 | 不适合并行实现；会影响权限、hooks、audit 和 prompt-cache identity。 |
+
+6.2 的实现顺序应先补 trait/helper 和 file tool / SendMessage 的纯函数测试，再由主 loop owner 串行接入 observer clone。6.3 再统一 streaming tool execution gate on/off 的双路径行为，避免 stream-time result 与 post-stream result 对 assistant message 做两套不同回填。
 
 ## 阶段 7：Loop 表面能力收敛
 
