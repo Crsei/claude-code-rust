@@ -184,6 +184,10 @@ static POWERSHELL_DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(
             "PowerShell Start-Process RunAs can escalate privileges",
         ),
         (
+            r#"(?i)(?:^|[|;&\n({])\s*(?:Start-Process|saps|start)\b[^|;&\n]*[-/\x{2013}\x{2014}\x{2015}]v[a-z`]*\s*:\s*['"` ]*runas['"` ]*"#,
+            "PowerShell Start-Process RunAs can escalate privileges",
+        ),
+        (
             r"(?i)(?:^|[|;&\n({])\s*(?:Start-Process|saps|start)\b[^|;&\n]*(?:pwsh(?:\.exe)?|powershell(?:\.exe)?)\b",
             "PowerShell Start-Process can spawn an unvalidated PowerShell child",
         ),
@@ -209,8 +213,16 @@ static POWERSHELL_DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(
             "PowerShell script file execution cannot be statically validated",
         ),
         (
+            r#"(?i)(?:^|[|;&\n({])\s*(?:Invoke-Command|icm|Start-Job|Start-ThreadJob|Register-ScheduledJob)\b[^|;&\n{}]*\s+(?:'[^']+\.(?:ps1|psm1|psd1)'|"[^"]+\.(?:ps1|psm1|psd1)"|[^\s|;&{}-][^\s|;&{}]*\.(?:ps1|psm1|psd1))\b"#,
+            "PowerShell positional script file argument can execute arbitrary code",
+        ),
+        (
             r"(?i)(?:^|[|;&\n({])\s*(?:ForEach-Object|foreach|%)\b[^|;&\n]*(?:[-/\x{2013}\x{2014}\x{2015}](?:MemberName|m)\b)",
             "PowerShell ForEach-Object -MemberName invokes methods by name",
+        ),
+        (
+            r"(?i)(?:^|[|;&\n({])\s*(?:(?:ForEach-Object|foreach)\b|%)[^|;&\n{}]*\s+[^\s|;&{}-][^\s|;&{}]*\b",
+            "PowerShell ForEach-Object positional argument can invoke methods by name",
         ),
         (
             r"(?i)(?:^|[|;&\n({])\s*(?:Invoke-Item|ii)\b",
@@ -1044,6 +1056,11 @@ mod tests {
         assert!(
             is_dangerous_powershell_command("Start-Process powershell.exe -Verb RunAs").is_some()
         );
+        assert!(is_dangerous_powershell_command("Start-Process calc.exe -Verb:RunAs").is_some());
+        assert!(
+            is_dangerous_powershell_command(r#"Start-Process calc.exe -Verb:"RunAs""#).is_some()
+        );
+        assert!(is_dangerous_powershell_command("Start-Process calc.exe -V`erb:`RunAs").is_some());
         assert!(is_dangerous_powershell_command(
             "Invoke-WmiMethod -Class Win32_Process -Name Create"
         )
@@ -1057,10 +1074,14 @@ mod tests {
         assert!(
             is_dangerous_powershell_command("Invoke-Command -FilePath .\\payload.ps1").is_some()
         );
+        assert!(is_dangerous_powershell_command("Start-Job .\\payload.ps1").is_some());
+        assert!(is_dangerous_powershell_command(r#"Start-ThreadJob "payload.psm1""#).is_some());
         assert!(
             is_dangerous_powershell_command("Get-Process | ForEach-Object -MemberName Kill")
                 .is_some()
         );
+        assert!(is_dangerous_powershell_command("Get-Process | ForEach-Object Kill").is_some());
+        assert!(is_dangerous_powershell_command("Get-Process | % Kill").is_some());
         assert!(is_dangerous_powershell_command("Invoke-Item .\\payload.ps1").is_some());
         assert!(is_dangerous_powershell_command(
             "Register-ScheduledTask -TaskName p -Action $action"
