@@ -18,7 +18,7 @@ use crate::types::tool::{
 use crate::utils::bash::{
     extract_command_name, extract_command_prefixes, has_malformed_tokens, has_unterminated_quotes,
     is_command_parseable, parse_command, resolve_timeout, rewrite_windows_null_redirect,
-    should_add_stdin_redirect, split_compound_command,
+    should_add_stdin_redirect, split_compound_command, validate_heredocs,
 };
 use crate::utils::shell::{build_shell_env, detect_default_shell};
 
@@ -213,6 +213,12 @@ impl Tool for BashTool {
         if has_unterminated_quotes(command) {
             return ValidationResult::Error {
                 message: "Command has unterminated quotes".to_string(),
+                error_code: 1,
+            };
+        }
+        if let Err(message) = validate_heredocs(command) {
+            return ValidationResult::Error {
+                message,
                 error_code: 1,
             };
         }

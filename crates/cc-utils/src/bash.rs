@@ -195,6 +195,214 @@ pub fn contains_heredoc(command: &str) -> bool {
         || HEREDOC_UNQUOTED.is_match(command)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HeredocSpec {
+    delimiter: String,
+    strip_tabs: bool,
+}
+
+/// Validate that shell heredocs have a matching closing delimiter.
+///
+/// This is intentionally line-based: bash reads heredoc bodies after the full
+/// command line, and a closing delimiter must appear on its own line. The
+/// parser skips quoted strings, comments, here-strings (`<<<`), and simple
+/// arithmetic shift forms so normal command text is not rejected as heredoc
+/// syntax.
+pub fn validate_heredocs(command: &str) -> Result<(), String> {
+    if !command.contains("<<") {
+        return Ok(());
+    }
+
+    let mut pending: std::collections::VecDeque<HeredocSpec> = std::collections::VecDeque::new();
+
+    for line in command.lines() {
+        if let Some(spec) = pending.front() {
+            let candidate = if spec.strip_tabs {
+                line.trim_start_matches('\t')
+            } else {
+                line
+            };
+
+            if candidate == spec.delimiter {
+                pending.pop_front();
+            }
+            continue;
+        }
+
+        for spec in parse_heredoc_specs_on_line(line)? {
+            pending.push_back(spec);
+        }
+    }
+
+    if let Some(spec) = pending.front() {
+        return Err(format!(
+            "Heredoc delimiter '{}' is missing its closing line",
+            spec.delimiter
+        ));
+    }
+
+    Ok(())
+}
+
+fn parse_heredoc_specs_on_line(line: &str) -> Result<Vec<HeredocSpec>, String> {
+    let chars: Vec<char> = line.chars().collect();
+    let mut specs = Vec::new();
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+    let mut i = 0;
+
+    while i < chars.len() {
+        let ch = chars[i];
+
+        if escaped {
+            escaped = false;
+            i += 1;
+            continue;
+        }
+
+        if ch == '\\' && !in_single {
+            escaped = true;
+            i += 1;
+            continue;
+        }
+
+        if ch == '\'' && !in_double {
+            in_single = !in_single;
+            i += 1;
+            continue;
+        }
+
+        if ch == '"' && !in_single {
+            in_double = !in_double;
+            i += 1;
+            continue;
+        }
+
+        if !in_single && !in_double && ch == '#' {
+            break;
+        }
+
+        if in_single || in_double || ch != '<' || chars.get(i + 1) != Some(&'<') {
+            i += 1;
+            continue;
+        }
+
+        if chars.get(i + 2) == Some(&'<') {
+            i += 3;
+            continue;
+        }
+
+        if looks_like_arithmetic_shift(&chars, i) {
+            i += 2;
+            continue;
+        }
+
+        let (spec, next_index) = parse_heredoc_spec(&chars, i)?;
+        specs.push(spec);
+        i = next_index;
+    }
+
+    Ok(specs)
+}
+
+fn parse_heredoc_spec(
+    chars: &[char],
+    operator_index: usize,
+) -> Result<(HeredocSpec, usize), String> {
+    let mut i = operator_index + 2;
+    let strip_tabs = if chars.get(i) == Some(&'-') {
+        i += 1;
+        true
+    } else {
+        false
+    };
+
+    while matches!(chars.get(i), Some(' ' | '\t')) {
+        i += 1;
+    }
+
+    let delimiter = match chars.get(i) {
+        Some('\'') | Some('"') => {
+            let quote = chars[i];
+            i += 1;
+            let start = i;
+            while i < chars.len() && chars[i] != quote {
+                i += 1;
+            }
+            if i >= chars.len() {
+                return Err("Heredoc delimiter quote is not closed".to_string());
+            }
+            let delimiter: String = chars[start..i].iter().collect();
+            i += 1;
+            delimiter
+        }
+        Some('\\') => {
+            i += 1;
+            let start = i;
+            while i < chars.len() && is_heredoc_word_char(chars[i]) {
+                i += 1;
+            }
+            chars[start..i].iter().collect()
+        }
+        Some(_) => {
+            let start = i;
+            while i < chars.len() && is_heredoc_word_char(chars[i]) {
+                i += 1;
+            }
+            chars[start..i].iter().collect()
+        }
+        None => String::new(),
+    };
+
+    if delimiter.is_empty() {
+        return Err("Heredoc operator is missing a delimiter".to_string());
+    }
+
+    Ok((
+        HeredocSpec {
+            delimiter,
+            strip_tabs,
+        },
+        i,
+    ))
+}
+
+fn is_heredoc_word_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_'
+}
+
+fn looks_like_arithmetic_shift(chars: &[char], operator_index: usize) -> bool {
+    let before_digit = previous_non_whitespace(chars, operator_index)
+        .map(|ch| ch.is_ascii_digit())
+        .unwrap_or(false);
+    let after_digit = next_non_whitespace(chars, operator_index + 2)
+        .map(|ch| ch.is_ascii_digit())
+        .unwrap_or(false);
+
+    if before_digit && after_digit {
+        return true;
+    }
+
+    let before: String = chars[..operator_index].iter().collect();
+    before.matches("((").count() > before.matches("))").count()
+}
+
+fn previous_non_whitespace(chars: &[char], before: usize) -> Option<char> {
+    chars[..before]
+        .iter()
+        .rev()
+        .find(|ch| !ch.is_whitespace())
+        .copied()
+}
+
+fn next_non_whitespace(chars: &[char], after: usize) -> Option<char> {
+    chars[after..]
+        .iter()
+        .find(|ch| !ch.is_whitespace())
+        .copied()
+}
+
 /// Patterns for detecting multiline strings inside quotes.
 static SINGLE_QUOTE_MULTILINE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"'(?:[^'\\]|\\.)*\n(?:[^'\\]|\\.)*'").expect("invalid single-quote multiline regex")
@@ -573,6 +781,42 @@ mod tests {
     #[test]
     fn test_bit_shift_not_heredoc() {
         assert!(!contains_heredoc("echo $((1 << 2))"));
+    }
+
+    #[test]
+    fn test_validate_heredoc_closed() {
+        assert!(validate_heredocs("cat <<EOF\nhello\nEOF").is_ok());
+    }
+
+    #[test]
+    fn test_validate_heredoc_missing_closer() {
+        let err = validate_heredocs("cat <<EOF\nhello").unwrap_err();
+        assert!(err.contains("EOF"));
+    }
+
+    #[test]
+    fn test_validate_heredoc_quoted_and_dash_forms() {
+        assert!(validate_heredocs("cat <<'EOF'\n$HOME\nEOF").is_ok());
+        assert!(validate_heredocs("cat <<-EOF\n\tbody\n\tEOF").is_ok());
+    }
+
+    #[test]
+    fn test_validate_heredoc_multiple_on_one_command_line() {
+        let command = "cat <<A <<B\nfirst\nA\nsecond\nB";
+        assert!(validate_heredocs(command).is_ok());
+    }
+
+    #[test]
+    fn test_validate_heredoc_ignores_quoted_text_and_shifts() {
+        assert!(validate_heredocs(r#"echo "<<EOF""#).is_ok());
+        assert!(validate_heredocs("echo $((1 << 2))").is_ok());
+        assert!(validate_heredocs("echo 1 << 2").is_ok());
+    }
+
+    #[test]
+    fn test_validate_heredoc_rejects_malformed_delimiter() {
+        let err = validate_heredocs("cat <<'EOF\nhello\nEOF").unwrap_err();
+        assert!(err.contains("quote"));
     }
 
     // --- stdin redirect ---
