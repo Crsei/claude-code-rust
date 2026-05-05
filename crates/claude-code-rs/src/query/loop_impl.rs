@@ -398,6 +398,16 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                                 first_response_at = Some(now);
                             }
                             accumulator.process_event(&event);
+                            if let StreamEvent::ContentBlockStop { index } = &event {
+                                if let Some(tool_use) = accumulator.completed_tool_use(*index) {
+                                    debug!(
+                                        tool_index = tool_use.index,
+                                        tool_id = %tool_use.id,
+                                        tool_name = %tool_use.name,
+                                        "identified completed streamed tool_use block"
+                                    );
+                                }
+                            }
                             yield QueryYield::Stream(event);
                         }
                         Err(e) => {

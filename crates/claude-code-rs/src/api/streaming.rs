@@ -4,6 +4,14 @@ use serde_json::Value;
 
 use crate::types::message::{AssistantMessage, ContentBlock, MessageDelta, StreamEvent, Usage};
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompletedToolUse {
+    pub index: usize,
+    pub id: String,
+    pub name: String,
+    pub input: Value,
+}
+
 /// Parse a single SSE line into a StreamEvent
 pub fn parse_sse_event(event_type: &str, data: &str) -> Result<Option<StreamEvent>> {
     let parsed: Value = serde_json::from_str(data)?;
@@ -57,6 +65,7 @@ pub struct StreamAccumulator {
     pub usage: Usage,
     pub stop_reason: Option<String>,
     tool_input_partials: Vec<String>,
+    stopped_blocks: Vec<bool>,
 }
 
 impl StreamAccumulator {
@@ -66,6 +75,7 @@ impl StreamAccumulator {
             usage: Usage::default(),
             stop_reason: None,
             tool_input_partials: Vec::new(),
+            stopped_blocks: Vec::new(),
         }
     }
 
@@ -86,8 +96,12 @@ impl StreamAccumulator {
                 while self.tool_input_partials.len() <= *index {
                     self.tool_input_partials.push(String::new());
                 }
+                while self.stopped_blocks.len() <= *index {
+                    self.stopped_blocks.push(false);
+                }
                 self.content_blocks[*index] = content_block.clone();
                 self.tool_input_partials[*index].clear();
+                self.stopped_blocks[*index] = false;
             }
             StreamEvent::ContentBlockDelta { index, delta } => {
                 if let Some(block) = self.content_blocks.get_mut(*index) {
@@ -156,6 +170,10 @@ impl StreamAccumulator {
             }
             StreamEvent::ContentBlockStop { index } => {
                 self.finalize_tool_input(*index);
+                while self.stopped_blocks.len() <= *index {
+                    self.stopped_blocks.push(false);
+                }
+                self.stopped_blocks[*index] = true;
             }
             StreamEvent::MessageDelta { delta, usage } => {
                 self.stop_reason = delta.stop_reason.clone();
@@ -192,6 +210,23 @@ impl StreamAccumulator {
         {
             *block_input = input;
             partial_json.clear();
+        }
+    }
+
+    pub fn completed_tool_use(&mut self, index: usize) -> Option<CompletedToolUse> {
+        if !self.stopped_blocks.get(index).copied().unwrap_or(false) {
+            return None;
+        }
+
+        self.finalize_tool_input(index);
+        match self.content_blocks.get(index) {
+            Some(ContentBlock::ToolUse { id, name, input }) => Some(CompletedToolUse {
+                index,
+                id: id.clone(),
+                name: name.clone(),
+                input: input.clone(),
+            }),
+            _ => None,
         }
     }
 
@@ -282,6 +317,38 @@ mod tests {
             }
             other => panic!("expected tool_use block, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn exposes_completed_tool_use_after_block_stop() {
+        let mut accumulator = StreamAccumulator::new();
+
+        accumulator.process_event(&StreamEvent::ContentBlockStart {
+            index: 0,
+            content_block: ContentBlock::ToolUse {
+                id: "toolu_done".to_string(),
+                name: "Read".to_string(),
+                input: json!({}),
+            },
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "input_json_delta",
+                "partial_json": "{\"file_path\":\"src/main.rs\"}"
+            }),
+        });
+
+        assert!(accumulator.completed_tool_use(0).is_none());
+
+        accumulator.process_event(&StreamEvent::ContentBlockStop { index: 0 });
+        let completed = accumulator.completed_tool_use(0).expect("completed tool");
+
+        assert_eq!(completed.index, 0);
+        assert_eq!(completed.id, "toolu_done");
+        assert_eq!(completed.name, "Read");
+        assert_eq!(completed.input, json!({ "file_path": "src/main.rs" }));
+        assert!(accumulator.completed_tool_use(1).is_none());
     }
 
     #[test]
