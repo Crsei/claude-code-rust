@@ -4,6 +4,7 @@
 //! Returns a human-readable reason string when a dangerous pattern is detected.
 
 use regex::Regex;
+use std::collections::HashSet;
 use std::sync::LazyLock;
 
 use cc_utils::bash::{contains_multiline_string, has_unterminated_quotes};
@@ -272,6 +273,157 @@ static POWERSHELL_DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(
         .collect()
 });
 
+/// PowerShell Constrained Language Mode allowed type names.
+///
+/// This mirrors the upstream TypeScript allowlist used by
+/// `PowerShellTool/clmTypes.ts`. Types intentionally removed upstream for
+/// network-binding or WMI/LDAP side effects are not included here.
+static POWERSHELL_CLM_ALLOWED_TYPES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    [
+        "alias",
+        "allowemptycollection",
+        "allowemptystring",
+        "allownull",
+        "argumentcompleter",
+        "argumentcompletions",
+        "array",
+        "bigint",
+        "bool",
+        "byte",
+        "char",
+        "cimclass",
+        "cimconverter",
+        "ciminstance",
+        "cimtype",
+        "cmdletbinding",
+        "cultureinfo",
+        "datetime",
+        "decimal",
+        "double",
+        "dsclocalconfigurationmanager",
+        "dscproperty",
+        "dscresource",
+        "experimentaction",
+        "experimental",
+        "experimentalfeature",
+        "float",
+        "guid",
+        "hashtable",
+        "int",
+        "int16",
+        "int32",
+        "int64",
+        "ipaddress",
+        "ipendpoint",
+        "long",
+        "mailaddress",
+        "norunspaceaffinity",
+        "nullstring",
+        "object",
+        "objectsecurity",
+        "ordered",
+        "outputtype",
+        "parameter",
+        "physicaladdress",
+        "pscredential",
+        "pscustomobject",
+        "psdefaultvalue",
+        "pslistmodifier",
+        "psobject",
+        "psprimitivedictionary",
+        "pstypenameattribute",
+        "ref",
+        "regex",
+        "sbyte",
+        "securestring",
+        "semver",
+        "short",
+        "single",
+        "string",
+        "supportswildcards",
+        "switch",
+        "timespan",
+        "uint",
+        "uint16",
+        "uint32",
+        "uint64",
+        "ulong",
+        "uri",
+        "ushort",
+        "validatecount",
+        "validatedrive",
+        "validatelength",
+        "validatenotnull",
+        "validatenotnullorempty",
+        "validatenotnullorwhitespace",
+        "validatepattern",
+        "validaterange",
+        "validatescript",
+        "validateset",
+        "validatetrusteddata",
+        "validateuserdrive",
+        "version",
+        "void",
+        "wildcardpattern",
+        "x500distinguishedname",
+        "x509certificate",
+        "xml",
+        "system.array",
+        "system.boolean",
+        "system.byte",
+        "system.char",
+        "system.datetime",
+        "system.decimal",
+        "system.double",
+        "system.guid",
+        "system.int16",
+        "system.int32",
+        "system.int64",
+        "system.numerics.biginteger",
+        "system.object",
+        "system.sbyte",
+        "system.single",
+        "system.string",
+        "system.timespan",
+        "system.uint16",
+        "system.uint32",
+        "system.uint64",
+        "system.uri",
+        "system.version",
+        "system.void",
+        "system.collections.hashtable",
+        "system.text.regularexpressions.regex",
+        "system.globalization.cultureinfo",
+        "system.net.ipaddress",
+        "system.net.ipendpoint",
+        "system.net.mail.mailaddress",
+        "system.net.networkinformation.physicaladdress",
+        "system.security.securestring",
+        "system.security.cryptography.x509certificates.x509certificate",
+        "system.security.cryptography.x509certificates.x500distinguishedname",
+        "system.xml.xmldocument",
+        "system.management.automation.pscredential",
+        "system.management.automation.pscustomobject",
+        "system.management.automation.pslistmodifier",
+        "system.management.automation.psobject",
+        "system.management.automation.psprimitivedictionary",
+        "system.management.automation.psreference",
+        "system.management.automation.semanticversion",
+        "system.management.automation.switchparameter",
+        "system.management.automation.wildcardpattern",
+        "system.management.automation.language.nullstring",
+        "microsoft.management.infrastructure.cimclass",
+        "microsoft.management.infrastructure.cimconverter",
+        "microsoft.management.infrastructure.ciminstance",
+        "microsoft.management.infrastructure.cimtype",
+        "system.collections.specialized.ordereddictionary",
+        "system.security.accesscontrol.objectsecurity",
+        "microsoft.powershell.commands.modulespecification",
+    ]
+    .into_iter()
+    .collect()
+});
+
 /// Check if a shell command string contains a dangerous pattern.
 ///
 /// Returns `Some(reason)` with a human-readable explanation if the command is
@@ -334,7 +486,247 @@ pub fn is_dangerous_powershell_command(command: &str) -> Option<String> {
         }
     }
 
+    if let Some(reason) = powershell_ast_heuristic_reason(trimmed) {
+        return Some(reason.to_string());
+    }
+
+    if let Some(type_name) = powershell_type_literal_outside_clm(trimmed) {
+        return Some(format!(
+            "PowerShell .NET type [{}] is outside the ConstrainedLanguage allowlist",
+            type_name
+        ));
+    }
+
     None
+}
+
+fn powershell_ast_heuristic_reason(command: &str) -> Option<&'static str> {
+    let chars: Vec<char> = command.chars().collect();
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut i = 0;
+
+    while i < chars.len() {
+        let ch = chars[i];
+
+        if in_single {
+            if ch == '\'' {
+                if chars.get(i + 1) == Some(&'\'') {
+                    i += 2;
+                    continue;
+                }
+                in_single = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if in_double {
+            if ch == '`' {
+                i += 2;
+                continue;
+            }
+            if ch == '"' {
+                in_double = false;
+                i += 1;
+                continue;
+            }
+            if ch == '$' && is_powershell_variable_or_subexpression_start(chars.get(i + 1)) {
+                return Some("PowerShell expandable string can hide runtime expressions");
+            }
+            i += 1;
+            continue;
+        }
+
+        match ch {
+            '\'' => {
+                in_single = true;
+                i += 1;
+                continue;
+            }
+            '"' => {
+                in_double = true;
+                i += 1;
+                continue;
+            }
+            '$' if chars.get(i + 1) == Some(&'(') => {
+                return Some("PowerShell subexpression can hide command execution");
+            }
+            '@' if is_powershell_command_boundary(chars.get(i.wrapping_sub(1)))
+                && is_powershell_identifier_start(chars.get(i + 1)) =>
+            {
+                return Some("PowerShell splatting obscures command arguments");
+            }
+            '&' if chars.get(i + 1) != Some(&'&')
+                && is_powershell_command_boundary(chars.get(i.wrapping_sub(1))) =>
+            {
+                let next = next_non_ws(&chars, i + 1);
+                if matches!(next.and_then(|idx| chars.get(idx)), Some('$' | '(')) {
+                    return Some(
+                        "PowerShell command name is a dynamic expression which cannot be statically validated",
+                    );
+                }
+            }
+            '.' if is_powershell_command_boundary(chars.get(i.wrapping_sub(1)))
+                && next_non_ws(&chars, i + 1)
+                    .and_then(|idx| chars.get(idx))
+                    .is_some_and(|next| matches!(next, '$' | '(')) =>
+            {
+                return Some(
+                    "PowerShell dot-sourced command is dynamic and cannot be statically validated",
+                );
+            }
+            '.' if is_powershell_identifier_start(chars.get(i + 1)) => {
+                let mut j = i + 2;
+                while j < chars.len() && is_powershell_identifier_continue(chars[j]) {
+                    j += 1;
+                }
+                while j < chars.len() && chars[j].is_whitespace() {
+                    j += 1;
+                }
+                if chars.get(j) == Some(&'(') {
+                    return Some("PowerShell member method invocation can access .NET APIs");
+                }
+            }
+            ':' if chars.get(i + 1) == Some(&':') => {
+                return Some("PowerShell static .NET member invocation can access .NET APIs");
+            }
+            _ => {}
+        }
+
+        i += 1;
+    }
+
+    None
+}
+
+fn powershell_type_literal_outside_clm(command: &str) -> Option<String> {
+    let chars: Vec<char> = command.chars().collect();
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut i = 0;
+
+    while i < chars.len() {
+        let ch = chars[i];
+
+        if in_single {
+            if ch == '\'' {
+                if chars.get(i + 1) == Some(&'\'') {
+                    i += 2;
+                    continue;
+                }
+                in_single = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if in_double {
+            if ch == '`' {
+                i += 2;
+                continue;
+            }
+            if ch == '"' {
+                in_double = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if ch == '\'' {
+            in_single = true;
+            i += 1;
+            continue;
+        }
+        if ch == '"' {
+            in_double = true;
+            i += 1;
+            continue;
+        }
+
+        if ch == '[' && is_powershell_type_start(chars.get(i + 1)) {
+            if let Some((inner, end_idx)) = read_bracketed_type_literal(&chars, i) {
+                let normalized = normalize_powershell_type_name(&inner);
+                if !POWERSHELL_CLM_ALLOWED_TYPES.contains(normalized.as_str()) {
+                    return Some(inner);
+                }
+                i = end_idx + 1;
+                continue;
+            }
+        }
+
+        i += 1;
+    }
+
+    None
+}
+
+fn read_bracketed_type_literal(chars: &[char], start: usize) -> Option<(String, usize)> {
+    let mut depth = 0usize;
+    let mut idx = start;
+    while idx < chars.len() {
+        match chars[idx] {
+            '[' => depth += 1,
+            ']' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    let inner = chars[start + 1..idx].iter().collect::<String>();
+                    return Some((inner, idx));
+                }
+            }
+            _ => {}
+        }
+        idx += 1;
+    }
+    None
+}
+
+fn normalize_powershell_type_name(type_name: &str) -> String {
+    let mut normalized = type_name.trim().to_ascii_lowercase();
+
+    if let Some(paren_idx) = normalized.find('(') {
+        normalized.truncate(paren_idx);
+    }
+    if let Some(generic_idx) = normalized.find('[') {
+        normalized.truncate(generic_idx);
+    }
+    while normalized.ends_with("[]") {
+        normalized.truncate(normalized.len().saturating_sub(2));
+    }
+
+    normalized.trim().to_string()
+}
+
+fn next_non_ws(chars: &[char], mut idx: usize) -> Option<usize> {
+    while idx < chars.len() {
+        if !chars[idx].is_whitespace() {
+            return Some(idx);
+        }
+        idx += 1;
+    }
+    None
+}
+
+fn is_powershell_command_boundary(prev: Option<&char>) -> bool {
+    prev.is_none_or(|ch| ch.is_whitespace() || matches!(ch, '|' | ';' | '&' | '\n' | '(' | '{'))
+}
+
+fn is_powershell_variable_or_subexpression_start(ch: Option<&char>) -> bool {
+    ch.is_some_and(|ch| {
+        matches!(ch, '(' | '{' | '?' | '$' | '^') || ch.is_ascii_alphanumeric() || *ch == '_'
+    })
+}
+
+fn is_powershell_type_start(ch: Option<&char>) -> bool {
+    ch.is_some_and(|ch| ch.is_ascii_alphabetic() || *ch == '_')
+}
+
+fn is_powershell_identifier_start(ch: Option<&char>) -> bool {
+    ch.is_some_and(|ch| ch.is_ascii_alphabetic() || *ch == '_')
+}
+
+fn is_powershell_identifier_continue(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_' || ch == '-'
 }
 
 fn git_clean_forced_without_dry_run(command: &str) -> bool {
@@ -549,6 +941,26 @@ mod tests {
         assert!(
             is_dangerous_powershell_command("[System.Reflection.Assembly]::Load($bytes)").is_some()
         );
+        assert!(is_dangerous_powershell_command(r"& $cmd -Argument 1").is_some());
+        assert!(is_dangerous_powershell_command(r"& (Get-Command calc.exe)").is_some());
+        assert!(is_dangerous_powershell_command(r". $profile").is_some());
+        assert!(is_dangerous_powershell_command("Write-Output $(Get-Date)").is_some());
+        assert!(is_dangerous_powershell_command(r#"Write-Output "hello $env:PATH""#).is_some());
+        assert!(is_dangerous_powershell_command(r#"Write-Output "arg $1""#).is_some());
+        assert!(is_dangerous_powershell_command("Get-ChildItem @params").is_some());
+        assert!(is_dangerous_powershell_command("$process.Kill()").is_some());
+        assert!(is_dangerous_powershell_command("[int]::Parse('1')").is_some());
+        assert!(is_dangerous_powershell_command("[System.IO.FileInfo]$path").is_some());
+        assert!(is_dangerous_powershell_command("[adsi]'LDAP://example.test'").is_some());
+        assert!(is_dangerous_powershell_command("[wmi]'root/cimv2:Win32_Process'").is_some());
+        assert!(is_dangerous_powershell_command("& git status").is_none());
+        assert!(is_dangerous_powershell_command("Write-Output 'hello $env:PATH'").is_none());
+        assert!(is_dangerous_powershell_command("Write-Output 'a.b()'").is_none());
+        assert!(
+            is_dangerous_powershell_command("Select-String -Pattern '[A-Z]' file.txt").is_none()
+        );
+        assert!(is_dangerous_powershell_command("[int]$count").is_none());
+        assert!(is_dangerous_powershell_command("[string[]]$names").is_none());
         assert!(is_dangerous_powershell_command("Get-Process powershell").is_none());
         assert!(is_dangerous_powershell_command("Get-ChildItem env:").is_none());
         assert!(is_dangerous_powershell_command("Where-Object { $_.Name -like 'a*' }").is_none());
