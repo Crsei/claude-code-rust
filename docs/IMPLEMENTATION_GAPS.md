@@ -70,20 +70,22 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | WebFetch | JS 渲染、Cookie 管理、代理支持、重定向限制、Content-Type 智能处理 |
 | AgentTool | 团队上下文集成、spawnMultiAgent、工具白名单过滤、工具定义去重；background worktree/权限回调/取消已由 `crates/claude-code-rs/src/engine/agent/supervisor.rs` 收口 |
 
-### 2.3 当前执行队列（逐步领取）
+### 2.3 更新后的顺序执行计划（逐项领取）
 
-1. **BashTool**：复核 PowerShell AST/security validator 与 sandbox 文件系统策略的上游差异，明确 Windows OS-level sandbox 的产品边界。
-2. **FileEditTool**：用 backend file-edit event data 验证/接线 TUI transcript；如需完整 session-level file rewind UI / snapshot 管线，单独拆项。
-3. **AgentTool**：补团队上下文注入、工具白名单过滤、工具定义去重；再评估 `spawnMultiAgent` 是否作为独立工具或 AgentTool 扩展。
-4. **TaskTools**：在现有持久化和取消基础上补超时控制、远程/多类型后台任务 supervisor parity。
-5. **PlanMode**：补 auto-mode/classifier gate、团队审批流、计划持久化与实现关联追踪。
-6. **WebFetch**：按 `architecture/mvp-optimization-plans/MVP-009-web-fetch-browser-grade-plan.md` 逐步补 JS 渲染、Cookie jar、代理与重定向限制。
-7. **API providers**：按 `architecture/mvp-optimization-plans/MVP-001-api-providers-plan.md` 重评 Bedrock 原生 AWS EventStream 与 Vertex direct service-account JWT exchange；实现或写入 §7 Intentional 裁剪。
-8. **Team Memory 客户端同步**：接通 `src/daemon/team_memory_proxy.rs` / `ui/team-memory-server/` 的前端调用路径，并补同步/断线恢复测试。
-9. **UI caveats**：收束 §3 的终端 resize 回流与窄终端欢迎页布局，完成后迁移到 archive 或 KNOWN_ISSUES closed 记录。
-10. **活跃方案文档**：逐个复核 §4 文档，能落地的拆成实现任务，过期或已覆盖的归档，仍有效的保留 owner/下一步。
+每个条目完成时都按同一收口流程处理：读上游实现 → 改 Rust 端 → 补单元/e2e → `cargo fmt --all --check` + 对应构建 → 更新本文件与 archive → 单独提交。
+
+1. **BashTool 剩余安全/沙箱复核**：对照 `src/tools/BashTool/**` 与 PowerShell validator，补齐 dynamic command name、script block/subexpression、splatting、module/env/runtime-state 等剩余 AST/security 检查；同时把 Windows OS-level sandbox 的可实现边界写清楚，能实现的落代码，不能实现的移入 §7 Intentional 裁剪。
+2. **FileEditTool transcript 收口**：用 backend file-edit event data 验证/接线 TUI live transcript；如果上游完整 session-level file rewind UI / snapshot 管线仍是产品必需项，先拆成独立实现计划再动代码。
+3. **AgentTool 团队上下文与工具边界**：补团队上下文注入、工具白名单过滤、工具定义去重；随后评估 `spawnMultiAgent` 是独立工具还是 AgentTool 扩展，并补多 agent 调度测试。
+4. **TaskTools 后台任务 parity**：在现有持久化/取消基础上补超时控制、远程/多类型后台任务 supervisor parity，并验证 `/tasks` UI 与 task store 的状态一致性。
+5. **PlanMode 执行闭环**：补 auto-mode/classifier gate、团队审批流、计划持久化与实现关联追踪；完成后用 plan 创建、恢复、审批、执行关联的 e2e 覆盖。
+6. **WebFetch browser-grade 能力**：按 `architecture/mvp-optimization-plans/MVP-009-web-fetch-browser-grade-plan.md` 逐步补 JS 渲染、Cookie jar、代理、重定向限制与 Content-Type 智能处理。
+7. **API providers 决策/实现**：按 `architecture/mvp-optimization-plans/MVP-001-api-providers-plan.md` 重评 Bedrock 原生 AWS EventStream 与 Vertex direct service-account JWT exchange；实现或写入 §7 Intentional 裁剪，不再停留在“部分完成”。
+8. **Team Memory 客户端同步**：接通 `src/daemon/team_memory_proxy.rs` / `ui/team-memory-server/` 的前端调用路径，补同步、断线恢复与冲突处理测试。
+9. **UI caveats 收束**：修复 §3 的终端 resize 回流与窄终端欢迎页布局；完成后迁移到 archive 或 `KNOWN_ISSUES.md` closed 记录。
+10. **活跃方案文档清理**：逐个复核 §4 文档，能落地的拆成实现任务，过期或已覆盖的归档，仍有效的保留 owner/下一步。
 11. **历史 Deferred 重评**：按 §5 类别决定实现、延期或 §7 Intentional 裁剪；不得继续用 "lite 不做" 作为理由。
-12. **收尾复核**：每完成一项运行对应单元/e2e，迁移归档到 `COMPLETED_FULL.md`，并从本节删除对应 TODO。
+12. **最终全量复核**：跑覆盖相关工具面的单元/e2e 与 release build，确认本节没有残留 TODO，更新 `WORK_STATUS.md` / archive 后收尾。
 
 补齐流程：
 1. 读上游实现（`F:\AIclassmanager\cc\src\tools\<name>\**` 或 `claude-code-bun` 同名模块）。
