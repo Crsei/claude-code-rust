@@ -66,6 +66,7 @@ pub fn context_collapse_if_needed(messages: Vec<Message>, model: &str) -> Contex
             compact_metadata: Some(CompactMetadata {
                 pre_compact_token_count: initial_tokens,
                 post_compact_token_count: 0,
+                preserved_segment: None,
             }),
         },
         content: format!("<context_collapse>\n{}\n</context_collapse>", summary),

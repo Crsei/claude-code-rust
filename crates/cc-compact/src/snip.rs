@@ -67,6 +67,7 @@ pub fn snip_compact_if_needed(messages: Vec<Message>, max_turns: usize) -> SnipR
             compact_metadata: Some(CompactMetadata {
                 pre_compact_token_count: tokens_freed,
                 post_compact_token_count: 0,
+                preserved_segment: None,
             }),
         },
         content: format!(

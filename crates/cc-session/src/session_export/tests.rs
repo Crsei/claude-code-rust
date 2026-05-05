@@ -83,6 +83,7 @@ fn make_compact_boundary(pre: u64, post: u64) -> Message {
             compact_metadata: Some(CompactMetadata {
                 pre_compact_token_count: pre,
                 post_compact_token_count: post,
+                preserved_segment: None,
             }),
         },
         content: format!("[Compacted: {} \u{2192} {} tokens]", pre, post),

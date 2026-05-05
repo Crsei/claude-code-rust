@@ -64,8 +64,17 @@ impl CommandHandler for CompactHandler {
             let post_messages =
                 compaction::build_post_compact_messages(&summary, &ctx.messages, &config);
 
+            let preserved_segment = compaction::create_preserved_segment(
+                post_messages.first(),
+                &pipeline_result.messages,
+            );
+
             // Create the compact boundary marker
-            let boundary = compaction::create_compact_boundary(pre_tokens, post_tokens);
+            let boundary = compaction::create_compact_boundary_with_preserved_segment(
+                pre_tokens,
+                post_tokens,
+                Some(preserved_segment),
+            );
 
             // Apply: replace conversation with compacted messages + boundary
             let mut new_messages = pipeline_result.messages;
@@ -104,7 +113,7 @@ mod tests {
     use super::*;
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
-    use crate::types::message::{Message, MessageContent, UserMessage};
+    use crate::types::message::{Message, MessageContent, SystemSubtype, UserMessage};
     use std::path::PathBuf;
     use uuid::Uuid;
 
@@ -179,5 +188,46 @@ mod tests {
             }
             _ => panic!("Expected Output result"),
         }
+    }
+
+    #[tokio::test]
+    async fn test_compact_boundary_includes_preserved_segment() {
+        let handler = CompactHandler;
+        let messages = (0..205)
+            .map(|idx| make_user_msg(&format!("turn {idx} {}", "x".repeat(80))))
+            .collect();
+        let mut ctx = CommandContext {
+            messages,
+            cwd: PathBuf::from("."),
+            app_state: AppState::default(),
+            session_id: SessionId::new(),
+        };
+
+        let result = handler.execute("", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(text.contains("Compacted"));
+            }
+            _ => panic!("Expected Output result"),
+        }
+
+        let segment = ctx
+            .messages
+            .iter()
+            .find_map(|message| {
+                if let Message::System(system) = message {
+                    if let SystemSubtype::CompactBoundary {
+                        compact_metadata: Some(metadata),
+                    } = &system.subtype
+                    {
+                        return metadata.preserved_segment.as_ref();
+                    }
+                }
+                None
+            })
+            .expect("expected compact boundary preserved segment");
+
+        assert!(segment.summary_message_uuid.is_some());
+        assert!(!segment.preserved_message_uuids.is_empty());
     }
 }

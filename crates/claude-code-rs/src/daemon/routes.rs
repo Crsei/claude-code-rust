@@ -645,6 +645,7 @@ mod tests {
                 compact_metadata: Some(CompactMetadata {
                     pre_compact_token_count: 100,
                     post_compact_token_count: 40,
+                    preserved_segment: None,
                 }),
             }),
             "message-1",

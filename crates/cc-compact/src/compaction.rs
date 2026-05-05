@@ -25,8 +25,8 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use cc_types::message::{
-    CompactMetadata, ContentBlock, Message, MessageContent, SystemMessage, SystemSubtype,
-    UserMessage,
+    CompactMetadata, ContentBlock, Message, MessageContent, PreservedSegment, SystemMessage,
+    SystemSubtype, UserMessage,
 };
 use cc_types::state::AutoCompactTracking;
 use cc_utils::tokens;
@@ -183,6 +183,15 @@ pub fn build_post_compact_messages(
 
 /// Create a compact boundary system message.
 pub fn create_compact_boundary(pre_compact_tokens: u64, post_compact_tokens: u64) -> Message {
+    create_compact_boundary_with_preserved_segment(pre_compact_tokens, post_compact_tokens, None)
+}
+
+/// Create a compact boundary system message with preserved segment metadata.
+pub fn create_compact_boundary_with_preserved_segment(
+    pre_compact_tokens: u64,
+    post_compact_tokens: u64,
+    preserved_segment: Option<PreservedSegment>,
+) -> Message {
     Message::System(SystemMessage {
         uuid: Uuid::new_v4(),
         timestamp: chrono::Utc::now().timestamp_millis(),
@@ -190,6 +199,7 @@ pub fn create_compact_boundary(pre_compact_tokens: u64, post_compact_tokens: u64
             compact_metadata: Some(CompactMetadata {
                 pre_compact_token_count: pre_compact_tokens,
                 post_compact_token_count: post_compact_tokens,
+                preserved_segment,
             }),
         },
         content: format!(
@@ -197,6 +207,20 @@ pub fn create_compact_boundary(pre_compact_tokens: u64, post_compact_tokens: u64
             pre_compact_tokens, post_compact_tokens
         ),
     })
+}
+
+/// Build preserved-segment metadata for a compact boundary.
+pub fn create_preserved_segment(
+    summary_message: Option<&Message>,
+    preserved_messages: &[Message],
+) -> PreservedSegment {
+    PreservedSegment {
+        summary_message_uuid: summary_message.map(|message| message.uuid().to_string()),
+        preserved_message_uuids: preserved_messages
+            .iter()
+            .map(|message| message.uuid().to_string())
+            .collect(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -417,6 +441,21 @@ mod tests {
         } else {
             panic!("expected system message");
         }
+    }
+
+    #[test]
+    fn test_create_preserved_segment() {
+        let summary = make_user("summary");
+        let preserved = vec![make_user("recent")];
+        let segment = create_preserved_segment(Some(&summary), &preserved);
+        assert_eq!(
+            segment.summary_message_uuid,
+            Some(summary.uuid().to_string())
+        );
+        assert_eq!(
+            segment.preserved_message_uuids,
+            vec![preserved[0].uuid().to_string()]
+        );
     }
 
     #[test]

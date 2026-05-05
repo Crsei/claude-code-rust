@@ -130,7 +130,15 @@ pub enum InfoLevel {
 pub struct CompactMetadata {
     pub pre_compact_token_count: u64,
     pub post_compact_token_count: u64,
-    // preserved_segment 等更多字段后续添加
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preserved_segment: Option<PreservedSegment>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PreservedSegment {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary_message_uuid: Option<String>,
+    pub preserved_message_uuids: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

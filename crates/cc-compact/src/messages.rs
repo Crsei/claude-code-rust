@@ -285,6 +285,7 @@ mod tests {
                     compact_metadata: Some(CompactMetadata {
                         pre_compact_token_count: 1000,
                         post_compact_token_count: 200,
+                        preserved_segment: None,
                     }),
                 },
                 content: "compacted".into(),
