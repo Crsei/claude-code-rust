@@ -238,6 +238,13 @@ pub trait Tool: Send + Sync {
         }
     }
 
+    /// Backfill observer-only derived input fields.
+    ///
+    /// Implementations mutate the supplied copy, never the original model
+    /// input. The query loop uses this for SDK/UI/session observers without
+    /// changing the API-bound assistant message that prompt caching relies on.
+    fn backfill_observable_input(&self, _input: &mut serde_json::Map<String, Value>) {}
+
     /// 执行工具
     async fn call(
         &self,

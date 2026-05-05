@@ -21,6 +21,7 @@ pub mod exec;
 // Not tools themselves.
 pub mod execution;
 pub mod hooks;
+pub(crate) mod observable_input;
 pub mod orchestration;
 pub mod registry;
 

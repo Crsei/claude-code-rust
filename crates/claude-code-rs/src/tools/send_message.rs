@@ -91,6 +91,47 @@ impl Tool for SendMessageTool {
         ValidationResult::Ok
     }
 
+    fn backfill_observable_input(&self, input: &mut serde_json::Map<String, Value>) {
+        if input.contains_key("type") {
+            return;
+        }
+
+        let Some(to) = input.get("to").and_then(Value::as_str).map(str::to_string) else {
+            return;
+        };
+        let Some(message) = input.get("message").cloned() else {
+            return;
+        };
+
+        match message {
+            Value::String(text) if to == "*" => {
+                input.insert("type".to_string(), Value::String("broadcast".to_string()));
+                input.insert("content".to_string(), Value::String(text));
+            }
+            Value::String(text) => {
+                input.insert("type".to_string(), Value::String("message".to_string()));
+                input.insert("recipient".to_string(), Value::String(to));
+                input.insert("content".to_string(), Value::String(text));
+            }
+            Value::Object(message) => {
+                if let Some(value) = message.get("type") {
+                    input.insert("type".to_string(), value.clone());
+                }
+                input.insert("recipient".to_string(), Value::String(to));
+                if let Some(value) = message.get("request_id") {
+                    input.insert("request_id".to_string(), value.clone());
+                }
+                if let Some(value) = message.get("approve") {
+                    input.insert("approve".to_string(), value.clone());
+                }
+                if let Some(value) = message.get("reason").or_else(|| message.get("feedback")) {
+                    input.insert("content".to_string(), value.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+
     async fn call(
         &self,
         input: Value,

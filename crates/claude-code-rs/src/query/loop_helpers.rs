@@ -2,6 +2,7 @@
 //!
 //! Extracted from loop_impl.rs to keep the core stream! macro body focused.
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -532,6 +533,50 @@ pub(crate) fn merge_tool_results_by_tool_use_order(
     ordered
 }
 
+pub(crate) fn backfill_observable_tool_inputs<'a>(
+    assistant: &'a AssistantMessage,
+    tools: &Tools,
+) -> Cow<'a, AssistantMessage> {
+    let mut cloned_content: Option<Vec<ContentBlock>> = None;
+
+    for (index, block) in assistant.content.iter().enumerate() {
+        let ContentBlock::ToolUse { id, name, input } = block else {
+            continue;
+        };
+        let Some(original_input) = input.as_object() else {
+            continue;
+        };
+        let Some(tool) = tools.iter().find(|tool| tool.name() == name) else {
+            continue;
+        };
+
+        let mut input_copy = original_input.clone();
+        tool.backfill_observable_input(&mut input_copy);
+
+        let added_fields = input_copy
+            .keys()
+            .any(|key| !original_input.contains_key(key));
+        if !added_fields {
+            continue;
+        }
+
+        let content = cloned_content.get_or_insert_with(|| assistant.content.clone());
+        content[index] = ContentBlock::ToolUse {
+            id: id.clone(),
+            name: name.clone(),
+            input: serde_json::Value::Object(input_copy),
+        };
+    }
+
+    match cloned_content {
+        Some(content) => Cow::Owned(AssistantMessage {
+            content,
+            ..assistant.clone()
+        }),
+        None => Cow::Borrowed(assistant),
+    }
+}
+
 /// Create an abort placeholder assistant message.
 pub(crate) fn make_abort_message(deps: &Arc<dyn QueryDeps>, reason: &str) -> AssistantMessage {
     AssistantMessage {
@@ -649,6 +694,16 @@ mod tests {
         concurrency_safe: bool,
     }
 
+    enum BackfillMode {
+        AddField,
+        OverwriteOnly,
+    }
+
+    struct BackfillTool {
+        name: &'static str,
+        mode: BackfillMode,
+    }
+
     #[async_trait::async_trait]
     impl Tool for BatchTool {
         fn name(&self) -> &str {
@@ -665,6 +720,46 @@ mod tests {
 
         fn is_concurrency_safe(&self, _input: &Value) -> bool {
             self.concurrency_safe
+        }
+
+        async fn call(
+            &self,
+            _input: Value,
+            _ctx: &ToolUseContext,
+            _parent_message: &AssistantMessage,
+            _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
+        ) -> Result<ToolResult> {
+            Ok(ToolResult::default())
+        }
+
+        async fn prompt(&self) -> String {
+            String::new()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Tool for BackfillTool {
+        fn name(&self) -> &str {
+            self.name
+        }
+
+        async fn description(&self, _input: &Value) -> String {
+            String::new()
+        }
+
+        fn input_json_schema(&self) -> Value {
+            serde_json::json!({})
+        }
+
+        fn backfill_observable_input(&self, input: &mut serde_json::Map<String, Value>) {
+            match self.mode {
+                BackfillMode::AddField => {
+                    input.insert("type".to_string(), serde_json::json!("message"));
+                }
+                BackfillMode::OverwriteOnly => {
+                    input.insert("file_path".to_string(), serde_json::json!("/abs/file.txt"));
+                }
+            }
         }
 
         async fn call(
@@ -909,6 +1004,77 @@ mod tests {
             Message::Assistant(assistant) if assistant.content.len() == 4
         ));
         assert!(matches!(&stripped[1], Message::User(_)));
+    }
+
+    #[test]
+    fn observable_input_backfill_keeps_byte_identity_when_only_overwriting_fields() {
+        let assistant = AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: vec![ContentBlock::ToolUse {
+                id: "tu_path".to_string(),
+                name: "PathTool".to_string(),
+                input: serde_json::json!({"file_path": "file.txt"}),
+            }],
+            usage: None,
+            stop_reason: Some("tool_use".to_string()),
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        };
+        let before = serde_json::to_string(&assistant).expect("serialize assistant");
+        let tools: Tools = vec![Arc::new(BackfillTool {
+            name: "PathTool",
+            mode: BackfillMode::OverwriteOnly,
+        })];
+
+        let backfilled = backfill_observable_tool_inputs(&assistant, &tools);
+
+        assert!(matches!(backfilled, Cow::Borrowed(_)));
+        let after = serde_json::to_string(&assistant).expect("serialize assistant");
+        assert_eq!(after, before);
+    }
+
+    #[test]
+    fn observable_input_backfill_clones_when_adding_fields() {
+        let assistant = AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: vec![ContentBlock::ToolUse {
+                id: "tu_msg".to_string(),
+                name: "MessageTool".to_string(),
+                input: serde_json::json!({"to": "worker", "message": "hello"}),
+            }],
+            usage: None,
+            stop_reason: Some("tool_use".to_string()),
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        };
+        let tools: Tools = vec![Arc::new(BackfillTool {
+            name: "MessageTool",
+            mode: BackfillMode::AddField,
+        })];
+
+        let backfilled = backfill_observable_tool_inputs(&assistant, &tools);
+
+        let Cow::Owned(backfilled) = backfilled else {
+            panic!("expected observable clone when backfill adds fields");
+        };
+        match &backfilled.content[0] {
+            ContentBlock::ToolUse { input, .. } => {
+                assert_eq!(input.get("type"), Some(&serde_json::json!("message")));
+            }
+            other => panic!("expected tool_use, got {:?}", other),
+        }
+        match &assistant.content[0] {
+            ContentBlock::ToolUse { input, .. } => {
+                assert!(input.get("type").is_none());
+            }
+            other => panic!("expected tool_use, got {:?}", other),
+        }
     }
 
     #[test]

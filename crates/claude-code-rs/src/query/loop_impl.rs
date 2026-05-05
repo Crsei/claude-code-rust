@@ -40,11 +40,12 @@ use crate::services::tool_use_summary::{self, ToolInfo};
 
 use super::deps::{ModelCallParams, QueryDeps};
 use super::loop_helpers::{
-    classify_model_call_failure, execute_tool_calls, handle_max_output_tokens,
-    handle_prompt_too_long, is_stream_progress_event, make_abort_message, make_error_message,
-    make_tool_result_user_message, make_user_message, merge_tool_results_by_tool_use_order,
-    stream_idle_timeout, stream_stall_timeout, strip_fallback_signature_blocks, MaxTokensRecovery,
-    ModelCallFailureRecovery, ModelCallFailureStage, PromptRecovery, StreamingToolExecutor,
+    backfill_observable_tool_inputs, classify_model_call_failure, execute_tool_calls,
+    handle_max_output_tokens, handle_prompt_too_long, is_stream_progress_event, make_abort_message,
+    make_error_message, make_tool_result_user_message, make_user_message,
+    merge_tool_results_by_tool_use_order, stream_idle_timeout, stream_stall_timeout,
+    strip_fallback_signature_blocks, MaxTokensRecovery, ModelCallFailureRecovery,
+    ModelCallFailureStage, PromptRecovery, StreamingToolExecutor,
 };
 use super::stop_hooks::{self, StopHookResult};
 use super::token_budget::check_token_budget;
@@ -558,7 +559,9 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
 
             if deps.is_aborted() {
                 info!("aborted after streaming");
-                yield QueryYield::Message(Message::Assistant(assistant_message));
+                let observable_assistant =
+                    backfill_observable_tool_inputs(&assistant_message, &tools).into_owned();
+                yield QueryYield::Message(Message::Assistant(observable_assistant));
                 break;
             }
 
@@ -577,7 +580,9 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             }
 
             // Yield assistant message
-            yield QueryYield::Message(Message::Assistant(assistant_message.clone()));
+            let observable_assistant =
+                backfill_observable_tool_inputs(&assistant_message, &tools).into_owned();
+            yield QueryYield::Message(Message::Assistant(observable_assistant));
             state.messages.push(Message::Assistant(assistant_message.clone()));
 
             // ──────────────────────────────────────────────────────

@@ -305,6 +305,11 @@ struct LoopTestTool {
     concurrency_safe: bool,
 }
 
+struct ObservableInputTool {
+    name: &'static str,
+    concurrency_safe: bool,
+}
+
 #[async_trait::async_trait]
 impl Tool for LoopTestTool {
     fn name(&self) -> &str {
@@ -321,6 +326,58 @@ impl Tool for LoopTestTool {
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
         self.concurrency_safe
+    }
+
+    async fn call(
+        &self,
+        _input: Value,
+        _ctx: &ToolUseContext,
+        _parent_message: &AssistantMessage,
+        _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
+    ) -> Result<ToolResult> {
+        Ok(ToolResult::default())
+    }
+
+    async fn prompt(&self) -> String {
+        String::new()
+    }
+}
+
+#[async_trait::async_trait]
+impl Tool for ObservableInputTool {
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    async fn description(&self, _input: &Value) -> String {
+        String::new()
+    }
+
+    fn input_json_schema(&self) -> Value {
+        serde_json::json!({})
+    }
+
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        self.concurrency_safe
+    }
+
+    fn backfill_observable_input(&self, input: &mut serde_json::Map<String, Value>) {
+        if input.contains_key("type") {
+            return;
+        }
+        let Some(to) = input.get("to").and_then(Value::as_str).map(str::to_string) else {
+            return;
+        };
+        let Some(message) = input
+            .get("message")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+        else {
+            return;
+        };
+        input.insert("type".to_string(), serde_json::json!("message"));
+        input.insert("recipient".to_string(), serde_json::json!(to));
+        input.insert("content".to_string(), serde_json::json!(message));
     }
 
     async fn call(
@@ -1139,6 +1196,130 @@ async fn test_tool_use_then_text_response() {
             .load(Ordering::SeqCst),
         "tool execution should not start before the model stream reaches message_stop"
     );
+}
+
+async fn run_observable_input_backfill_case(
+    streaming_tool_execution: bool,
+) -> (Vec<QueryYield>, Vec<ModelCallParams>) {
+    let tool_response = ModelResponse {
+        assistant_message: AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: chrono::Utc::now().timestamp_millis(),
+            role: "assistant".to_string(),
+            content: vec![ContentBlock::ToolUse {
+                id: "tu_observable".to_string(),
+                name: "ObservableMessage".to_string(),
+                input: serde_json::json!({"to": "worker", "message": "hello"}),
+            }],
+            usage: Some(Usage::default()),
+            stop_reason: Some("tool_use".to_string()),
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        },
+        stream_events: vec![],
+        usage: Usage::default(),
+    };
+    let tools: Tools = vec![Arc::new(ObservableInputTool {
+        name: "ObservableMessage",
+        concurrency_safe: true,
+    })];
+    let deps = Arc::new(
+        MockDeps::new(vec![
+            tool_response,
+            make_text_response("observable input complete"),
+        ])
+        .with_tools(tools),
+    );
+    let mut params = make_query_params(vec![make_user_message_for_test("send message")]);
+    params.gates.streaming_tool_execution = streaming_tool_execution;
+
+    let items: Vec<QueryYield> = query(params, deps.clone()).collect().await;
+    let recorded_params = deps.recorded_params();
+    (items, recorded_params)
+}
+
+fn yielded_tool_input(items: &[QueryYield], tool_name: &str) -> Value {
+    items
+        .iter()
+        .find_map(|item| {
+            let QueryYield::Message(Message::Assistant(assistant)) = item else {
+                return None;
+            };
+            assistant.content.iter().find_map(|block| match block {
+                ContentBlock::ToolUse { name, input, .. } if name == tool_name => {
+                    Some(input.clone())
+                }
+                _ => None,
+            })
+        })
+        .expect("yielded assistant tool input")
+}
+
+fn request_tool_input(params: &[ModelCallParams], request_index: usize, tool_name: &str) -> Value {
+    params[request_index]
+        .messages
+        .iter()
+        .find_map(|message| {
+            let Message::Assistant(assistant) = message else {
+                return None;
+            };
+            assistant.content.iter().find_map(|block| match block {
+                ContentBlock::ToolUse { name, input, .. } if name == tool_name => {
+                    Some(input.clone())
+                }
+                _ => None,
+            })
+        })
+        .expect("request assistant tool input")
+}
+
+#[tokio::test]
+async fn observable_input_backfill_clones_yield_without_changing_next_request_gate_off() {
+    let (items, params) = run_observable_input_backfill_case(false).await;
+
+    let yielded_input = yielded_tool_input(&items, "ObservableMessage");
+    assert_eq!(
+        yielded_input.get("type"),
+        Some(&serde_json::json!("message"))
+    );
+    assert_eq!(
+        yielded_input.get("recipient"),
+        Some(&serde_json::json!("worker"))
+    );
+    assert_eq!(
+        yielded_input.get("content"),
+        Some(&serde_json::json!("hello"))
+    );
+
+    let request_input = request_tool_input(&params, 1, "ObservableMessage");
+    assert!(request_input.get("type").is_none());
+    assert!(request_input.get("recipient").is_none());
+    assert!(request_input.get("content").is_none());
+}
+
+#[tokio::test]
+async fn observable_input_backfill_matches_with_streaming_tool_gate_on() {
+    let (items, params) = run_observable_input_backfill_case(true).await;
+
+    let yielded_input = yielded_tool_input(&items, "ObservableMessage");
+    assert_eq!(
+        yielded_input.get("type"),
+        Some(&serde_json::json!("message"))
+    );
+    assert_eq!(
+        yielded_input.get("recipient"),
+        Some(&serde_json::json!("worker"))
+    );
+    assert_eq!(
+        yielded_input.get("content"),
+        Some(&serde_json::json!("hello"))
+    );
+
+    let request_input = request_tool_input(&params, 1, "ObservableMessage");
+    assert!(request_input.get("type").is_none());
+    assert!(request_input.get("recipient").is_none());
+    assert!(request_input.get("content").is_none());
 }
 
 #[tokio::test]
