@@ -326,6 +326,85 @@ async fn get_with_permitted_redirects(
     }
 }
 
+fn first_env_value<F>(names: &[&str], lookup: &F) -> Option<String>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    names
+        .iter()
+        .find_map(|name| lookup(name).filter(|value| !value.trim().is_empty()))
+}
+
+fn no_proxy_matches(host: &str, no_proxy: &str) -> bool {
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    no_proxy.split(',').any(|pattern| {
+        let pattern = pattern.trim().trim_end_matches('.').to_ascii_lowercase();
+        if pattern.is_empty() {
+            return false;
+        }
+        if pattern == "*" {
+            return true;
+        }
+        let pattern = pattern
+            .split_once(':')
+            .map(|(host, _)| host)
+            .unwrap_or(pattern.as_str())
+            .trim_start_matches('.');
+        host == pattern || host.ends_with(&format!(".{}", pattern))
+    })
+}
+
+fn proxy_url_from_env_for_url(url: &str) -> Option<String> {
+    proxy_url_from_env_for_url_with(url, |name| std::env::var(name).ok())
+}
+
+fn proxy_url_from_env_for_url_with<F>(url: &str, lookup: F) -> Option<String>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let parsed = url::Url::parse(url).ok()?;
+    let host = parsed.host_str()?;
+    if first_env_value(&["NO_PROXY", "no_proxy"], &lookup)
+        .as_deref()
+        .is_some_and(|no_proxy| no_proxy_matches(host, no_proxy))
+    {
+        return None;
+    }
+
+    let candidates: &[&str] = if parsed.scheme() == "https" {
+        &[
+            "HTTPS_PROXY",
+            "https_proxy",
+            "ALL_PROXY",
+            "all_proxy",
+            "HTTP_PROXY",
+            "http_proxy",
+        ]
+    } else {
+        &[
+            "HTTP_PROXY",
+            "http_proxy",
+            "ALL_PROXY",
+            "all_proxy",
+            "HTTPS_PROXY",
+            "https_proxy",
+        ]
+    };
+    first_env_value(candidates, &lookup)
+}
+
+fn apply_proxy_from_env(
+    builder: reqwest::ClientBuilder,
+    url: &str,
+) -> Result<reqwest::ClientBuilder> {
+    let Some(proxy_url) = proxy_url_from_env_for_url(url) else {
+        return Ok(builder);
+    };
+    let proxy = reqwest::Proxy::all(&proxy_url)
+        .with_context(|| format!("Invalid proxy URL {proxy_url}"))?;
+    Ok(builder.proxy(proxy))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ResponseContentKind {
     Html,
@@ -504,7 +583,8 @@ impl Tool for WebFetchTool {
         let client = reqwest::Client::builder()
             .timeout(FETCH_TIMEOUT)
             .redirect(reqwest::redirect::Policy::none())
-            .user_agent("ClaudeCode/0.1 (Rust)")
+            .user_agent("ClaudeCode/0.1 (Rust)");
+        let client = apply_proxy_from_env(client, &url)?
             .build()
             .context("Failed to build HTTP client")?;
 
@@ -754,6 +834,50 @@ mod tests {
         let resolved =
             resolve_redirect_url("https://example.com/a/b/page.html", "../target?q=1").unwrap();
         assert_eq!(resolved, "https://example.com/a/target?q=1");
+    }
+
+    #[test]
+    fn test_proxy_url_prefers_scheme_specific_proxy() {
+        let env = |name: &str| match name {
+            "HTTPS_PROXY" => Some("http://secure-proxy.local:8080".to_string()),
+            "HTTP_PROXY" => Some("http://plain-proxy.local:8080".to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            proxy_url_from_env_for_url_with("https://example.com/path", env).as_deref(),
+            Some("http://secure-proxy.local:8080")
+        );
+    }
+
+    #[test]
+    fn test_proxy_url_falls_back_to_all_proxy() {
+        let env = |name: &str| match name {
+            "ALL_PROXY" => Some("socks5://proxy.local:1080".to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            proxy_url_from_env_for_url_with("https://example.com/path", env).as_deref(),
+            Some("socks5://proxy.local:1080")
+        );
+    }
+
+    #[test]
+    fn test_proxy_url_honors_no_proxy_exact_suffix_and_wildcard() {
+        let env = |name: &str| match name {
+            "HTTPS_PROXY" => Some("http://proxy.local:8080".to_string()),
+            "NO_PROXY" => Some("localhost,.internal.example,example.org:443".to_string()),
+            _ => None,
+        };
+        assert!(proxy_url_from_env_for_url_with("https://localhost/status", env).is_none());
+        assert!(proxy_url_from_env_for_url_with("https://api.internal.example/v1", env).is_none());
+        assert!(proxy_url_from_env_for_url_with("https://example.org/path", env).is_none());
+
+        let env = |name: &str| match name {
+            "HTTPS_PROXY" => Some("http://proxy.local:8080".to_string()),
+            "NO_PROXY" => Some("*".to_string()),
+            _ => None,
+        };
+        assert!(proxy_url_from_env_for_url_with("https://example.com/path", env).is_none());
     }
 
     #[test]
