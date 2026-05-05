@@ -1,0 +1,333 @@
+# Agent Loop / Streaming 补齐路线图
+
+记录日期：2026-05-05
+
+来源：
+
+- `architecture/agent-loop.md`
+- `architecture/streaming.md`
+- `architecture/the-loop.md`
+
+目标：把当前 `cc-rust` 的 agent loop、streaming、工具执行和恢复路径补齐到 Bun / TypeScript 参考实现的完整行为。本文只整理待办任务和执行顺序，不描述已经完整对齐的基础能力。
+
+## 排序原则
+
+补齐顺序按依赖关系而不是按文档出现顺序排列：
+
+1. 先补会破坏语义正确性的底层协议问题。
+2. 再统一工具执行入口，避免后续接入 streaming tool execution 时复制权限、hook、validation、progress、abort 逻辑。
+3. 在工具仍是 post-stream 执行时先补模型调用恢复，因为此时 fallback / tombstone 的状态空间更小。
+4. 等 stream event、工具执行入口、fallback 语义稳定后，再接入 `StreamingToolExecutor`。
+5. context collapse、attachment、slash command、provider 扩展放在主 loop 语义稳定后补齐。
+6. 每个阶段先补测试或 fixture，再改行为。
+
+## 总体补齐顺序
+
+| 阶段 | 主题 | 优先级 | 依赖 | 完成后解锁 |
+| --- | --- | --- | --- | --- |
+| 0 | 基线测试与任务边界 | P0 | 无 | 后续行为改动有回归保护。 |
+| 1 | Streaming content-block 协议正确性 | P0 | 阶段 0 | tool_use 参数完整、thinking 签名完整、后续 stream-time 工具识别可用。 |
+| 2 | 工具执行 canonical path | P0 | 阶段 0 | 权限、hooks、validation、result-size、progress 只有一套规则。 |
+| 3 | 模型调用恢复契约 | P0/P1 | 阶段 1 | fallback、tombstone、retry、stream error、idle/stall 有统一状态语义。 |
+| 4 | StreamingToolExecutor 接入主 loop | P0 | 阶段 1、2、3 | 工具可在模型流式输出期间启动执行。 |
+| 5 | Context pipeline 与 prompt-too-long 完整恢复 | P1 | 阶段 3 | collapse drain + reactive compact + terminal 的恢复链完整。 |
+| 6 | Tool input observability 与 prompt-cache identity | P1 | 阶段 1、2、4 | 可观察 input 回填不破坏 prompt cache byte identity。 |
+| 7 | Loop 表面能力收敛 | P2 | 阶段 2、4、5 | attachment、slash command、query gates、SDK/IPC/TUI 行为一致。 |
+| 8 | Provider parity 扩展 | P2 | 阶段 1、3 | Bedrock、Google、Vertex、Azure 等 provider 差异可逐步收敛。 |
+| 9 | 文档与旧入口收敛 | P2 | 所有阶段 | `architecture/` 与 `docs/architecture/` 不再给出冲突结论。 |
+
+## 执行进度
+
+| 任务 | 状态 | 完成日期 | 证据 | 备注 |
+| --- | --- | --- | --- | --- |
+| 0.1 streaming fixture | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs api::streaming::tests`，3 passed。 | 在 `api/streaming.rs` 内新增 mixed Anthropic stream fixture，覆盖 `message_start`、text、thinking、tool_use、`message_delta`、`message_stop`。 |
+| 1.1 `input_json_delta` | 已完成 | 2026-05-05 | `api::streaming::tests::accumulates_tool_input_json_delta` 通过。 | `StreamAccumulator` 现在累积 `partial_json`，在 `content_block_stop` 和最终 `build()` 时解析为 `ToolUse.input`。 |
+| 1.2 `signature_delta` | 已完成 | 2026-05-05 | `api::streaming::tests::accumulates_thinking_signature_delta` 通过。 | `StreamAccumulator` 现在将 `signature_delta.signature` 追加到 `ContentBlock::Thinking.signature`。 |
+
+## Subagent 并行拆分规则
+
+可以交给 subagent 并行完成的任务，应满足以下条件：
+
+- 写入范围清晰，最好限定在测试、provider adapter、文档、单个 mapper 或单个工具执行阶段。
+- 不需要先决定全局语义，例如 session tombstone 如何持久化、canonical tool execution path 选哪条。
+- 可以用独立 fixture 验证，不依赖另一个未合并实现。
+- 不会同时改 `loop_impl.rs`、`loop_helpers.rs`、`deps.rs` 这类主状态机核心文件。
+
+不适合并行交给多个 subagent 的任务：
+
+- 需要一次性确定跨层契约的任务，例如 fallback/tombstone 的 SDK、session、UI 可观察语义。
+- 会重排主 loop 状态机的任务，例如 `StreamingToolExecutor` 接入、prompt-too-long 恢复链重写。
+- 会改变工具执行 canonical path 的任务，因为它影响权限、hooks、validation、progress、abort、result-size。
+- 最终集成和验证，因为需要统一读完整 diff、跑测试并判断行为是否真的闭环。
+
+阶段级并行性：
+
+| 阶段 | 可否让 subagent 并行 | 建议拆法 | 不应并行的部分 |
+| --- | --- | --- | --- |
+| 0：基线测试 | 可并行 | `test-engineer` 分别补 streaming fixture、query loop fixture、recovery fixture。 | 测试命名、fixture 目录结构、哪些测试先标 pending 由 leader 统一决定。 |
+| 1：stream 协议正确性 | 部分可并行 | 一个 `executor` 补 `input_json_delta`，另一个补 `signature_delta`，`test-engineer` 同步补 fixture。 | `content_block_stop` 是否产出 per-block assistant message 必须 leader 决策后再改。 |
+| 2：工具执行 canonical path | 不建议并行实现 | 可让 `explore`/`architect` 做只读对比，列出两条执行路径差异。 | canonical path 选择、主 loop 迁移、权限/hook/result-size 合并必须串行完成。 |
+| 3：模型调用恢复契约 | 部分可并行 | `test-engineer` 先写 fallback/retry/stall fixture；`executor` 可独立补 retry/backoff helper。 | tombstone 生命周期、fallback attempt wrapper、SDK/session/UI 语义必须由 leader 串行集成。 |
+| 4：StreamingToolExecutor 接入 | 不建议并行实现 | 可让 `explore` 提前列出 event 边界和现有 coordinator API 缺口。 | 主 loop 接入、gate 行为、已启动工具与 fallback/abort 交互必须单线实现。 |
+| 5：Context pipeline | 部分可并行 | `executor` 可独立实现 freed-token 统计；`test-engineer` 补 prompt-too-long fixture。 | context collapse 语义、collapse drain retry 与 autocompact 的最终集成必须串行。 |
+| 6：Observable input | 部分可并行 | `explore` 梳理需要回填的工具；`test-engineer` 补 byte identity 测试。 | 回填插入点和 streaming/post-stream 双路径集成必须串行。 |
+| 7：Loop 表面能力 | 可并行 | attachment、slash command、query gates、TUI progress、daemon SSE 可按模块分给不同 subagent。 | SDK/IPC/TUI/Web 的最终事件契约需要 leader 统一复核。 |
+| 8：Provider parity | 可并行 | Bedrock、Google、Vertex、Azure 可按 provider 独立分配。 | provider capability matrix 和统一错误/stream 语义要集中复核。 |
+| 9：文档收敛 | 可并行 | `writer` 可同步更新旧 docs 和 gap/archive 清单。 | intentional 差异的最终措辞和范围必须和代码实际行为一致。 |
+
+任务级并行标注：
+
+| 任务 | 并行性 | 适合的 subagent 输出 |
+| --- | --- | --- |
+| 0.1 streaming fixture | 可并行 | 新增测试文件或测试用例，列出当前 pending gap。 |
+| 0.2 post-stream tool fixture | 可并行 | 锁定旧行为的 e2e / unit fixture。 |
+| 0.3 recovery fixture | 可并行 | prompt-too-long、max_tokens、stop hook、token budget 测试矩阵。 |
+| 0.4 ownership 梳理 | 不并行 | leader 产出最终 ownership，避免多个子任务写同一核心文件。 |
+| 1.1 `input_json_delta` | 可并行，但需独占 `streaming.rs` 相关写入 | 实现 + fixture。 |
+| 1.2 `signature_delta` | 可并行，但需和 1.1 协调同文件冲突 | 实现 + fixture。 |
+| 1.3 unsupported delta 策略 | 可并行做设计，不建议独立落实现 | 设计建议和影响面。 |
+| 1.4 TUI/headless 映射 | 可并行 | mapper/UI 层补齐或验证不渲染 tool input delta。 |
+| 1.5 per-block assistant 语义 | 不并行 | leader 决策；实现前需定 SDK/session 语义。 |
+| 2.1 canonical path 决策 | 不并行 | leader 决策，可接收只读调研。 |
+| 2.2 行为合并 | 不并行 | 主线串行改动，避免权限/hook 规则分叉。 |
+| 2.3 concurrency-safe 语义 | 可并行补测试，不建议并行改实现 | 测试矩阵。 |
+| 2.4 tool result 标准化 | 部分可并行 | 可先调研和测试，最终接入串行。 |
+| 3.1 fallback wrapper | 不并行 | 主线串行实现。 |
+| 3.2 tombstone 生命周期 | 不并行 | 主线串行实现。 |
+| 3.3 signature 清理 | 部分可并行 | 可独立补 helper / test，最终接入 fallback 串行。 |
+| 3.4 retry/backoff | 可并行 | 独立 helper + unit tests。 |
+| 3.5 idle/stall watchdog | 可并行做 helper，不建议独立接主 loop | timeout helper + tests。 |
+| 3.6 withheld stream error | 不并行 | 依赖 fallback/tombstone 语义。 |
+| 4.1-4.6 StreamingToolExecutor 接入 | 不并行实现 | 只适合并行做只读分析、测试准备、review。 |
+| 5.1 context collapse | 部分可并行 | 可独立做 collapse primitive；最终 pipeline 接入串行。 |
+| 5.2 tool pair 完整性 | 可并行测试 | 构造 collapse 后 tool_use/tool_result 配对测试。 |
+| 5.3 freed-token 统计 | 可并行 | pipeline result 扩展 + tests，写入范围清楚时可独立。 |
+| 5.4 collapse drain retry | 不并行 | 主 loop 恢复链串行实现。 |
+| 5.5 max_tokens 交互 | 可并行测试 | 边界 fixture。 |
+| 6.1 工具清单 | 可并行 | 只读梳理表。 |
+| 6.2 clone 策略 | 部分可并行 | helper + byte identity tests。 |
+| 6.3 双路径接入 | 不并行 | 依赖阶段 4，主线串行。 |
+| 6.4 prompt-cache 测试 | 可并行 | 回归测试。 |
+| 7.1-7.6 表面能力 | 可并行 | 按 attachment、slash command、gates、TUI、daemon 拆独立写入范围。 |
+| 8.1-8.5 provider parity | 可并行 | 每个 provider 一个独立子任务，避免共享文件冲突时由 leader 集成 capability matrix。 |
+| 9.1-9.3 文档收敛 | 可并行 | 文档 PR / patch，最终由 leader 对照代码复核。 |
+
+## 阶段 0：基线测试与任务边界
+
+目的：先把当前行为和目标行为固定下来，避免后续大改时无法判断是修复还是回归。
+
+任务：
+
+| ID | 任务 | 来源 | 验收 |
+| --- | --- | --- | --- |
+| 0.1 | 为 `StreamAccumulator` 建 Anthropic-style fixture：text、thinking、tool_use、message_delta、message_stop。 | `streaming.md` | 当前已支持的 text/thinking/usage 通过；tool input delta 可先作为 pending/failing case。 |
+| 0.2 | 为 query loop 建最小 post-stream tool execution fixture。 | `agent-loop.md`、`the-loop.md` | 能证明当前是 stream 结束后执行工具，后续改成 stream-time 时测试会同步改期望。 |
+| 0.3 | 为 prompt-too-long、max_tokens、stop hook、token budget 建恢复路径 fixture。 | `agent-loop.md`、`the-loop.md` | 已实现路径被锁定，未实现路径以 TODO 测试或文档化 test gap 记录。 |
+| 0.4 | 梳理主 loop 入口和工具执行入口的 ownership。 | `agent-loop.md` | 明确哪些文件是阶段 1-4 的主要改动面。 |
+
+建议主要文件：
+
+- `crates/claude-code-rs/src/api/streaming.rs`
+- `crates/claude-code-rs/src/query/loop_impl.rs`
+- `crates/claude-code-rs/src/query/loop_helpers.rs`
+- `crates/claude-code-rs/src/tools/execution/`
+
+## 阶段 1：Streaming content-block 协议正确性
+
+这是最高优先级，因为不补 `input_json_delta` 就无法可靠识别 streaming tool_use 的完整参数。
+
+任务：
+
+| ID | 任务 | 来源 | 验收 |
+| --- | --- | --- | --- |
+| 1.1 | 在 `StreamAccumulator` 中累积 `input_json_delta.partial_json`。 | `streaming.md` | 多个 partial JSON delta 在 `content_block_stop` 或最终 build 时解析成完整 `ToolUse.input`。 |
+| 1.2 | 在 `StreamAccumulator` 中处理 `signature_delta`。 | `streaming.md` | `ContentBlock::Thinking.signature` 最终包含 provider 返回的签名。 |
+| 1.3 | 定义未知 / 暂不支持 delta 的处理策略。 | `streaming.md` | `server_tool_use`、`connector_text` 不再静默误判；至少保留可观察 warning 或明确 unsupported。 |
+| 1.4 | 同步 TUI/headless 映射边界。 | `streaming.md` | text/thinking 继续实时渲染；tool input delta 不乱渲染，但最终 assistant/tool_use 参数完整。 |
+| 1.5 | 明确 `content_block_stop` 交付语义。 | `streaming.md`、`the-loop.md` | 决定是否实现 per-block `AssistantMessage`。如果保留最终单 assistant，文档标注为 intentional。 |
+
+验收测试：
+
+- Anthropic-style tool_use：`content_block_start` 初始 input `{}`，多个 `input_json_delta` 后最终 input 完整。
+- Thinking：`thinking_delta` + `signature_delta` 后最终 thinking block 完整。
+- Bedrock synthesized tool_use 不再因为 `input_json_delta` 未累积而丢参数。
+
+## 阶段 2：工具执行 canonical path
+
+当前主 loop 使用 `loop_helpers::execute_tool_calls()` / `QueryEngineDeps::execute_tool()`，同时存在 `tools/execution/pipeline.rs::run_tool_use()`。在接入 `StreamingToolExecutor` 前必须确定唯一规则入口。
+
+任务：
+
+| ID | 任务 | 来源 | 验收 |
+| --- | --- | --- | --- |
+| 2.1 | 决定 canonical path：迁移主 loop 到 `run_tool_use()`，或把缺失阶段合入 `QueryEngineDeps::execute_tool()`。 | `agent-loop.md`、`the-loop.md` | 架构文档和代码注释都指向同一个工具执行入口。 |
+| 2.2 | 合并 validation / permission / hooks / result-size / progress / abort 行为。 | `agent-loop.md` | allow、deny、ask、validation failure、oversized result 都走同一套规则。 |
+| 2.3 | 保留现有 concurrency-safe 批处理语义。 | `agent-loop.md` | 连续 safe tools 可并发，unsafe tools 串行，行为有测试覆盖。 |
+| 2.4 | 统一工具结果标准化和 `tool_result` user message 生成。 | `the-loop.md` | 工具结果进入下一轮前经过一致的 normalize/size budget 处理。 |
+
+验收测试：
+
+- 权限 allow / deny / ask。
+- PreToolUse / PostToolUse hook。
+- oversized result。
+- 并发 safe tools 与 serial unsafe tools 混排。
+- abort in tool execution。
+
+## 阶段 3：模型调用恢复契约
+
+先在 post-stream 工具执行模型下补齐 fallback / retry，可以降低与 `StreamingToolExecutor` 的耦合。
+
+任务：
+
+| ID | 任务 | 来源 | 验收 |
+| --- | --- | --- | --- |
+| 3.1 | 实现 `attemptWithFallback` 等价 wrapper。 | `agent-loop.md`、`the-loop.md` | `QueryParams::fallback_model` 真正参与模型调用重试。 |
+| 3.2 | 完成 tombstone retry 生命周期。 | `agent-loop.md`、`streaming.md`、`the-loop.md` | fallback 发生时已收集 assistant 内容被 tombstone，SDK/session/UI 可观察。 |
+| 3.3 | 清理跨模型不可安全回放的 thinking signature blocks。 | `the-loop.md` | fallback retry 不把旧模型 signature 当成新模型上下文。 |
+| 3.4 | 接入 streaming API retry/backoff。 | `streaming.md` | 可重试网络错误、限流、5xx 按策略重试；不可恢复错误立即 terminal。 |
+| 3.5 | 增加主动 idle watchdog 和 passive stall 检测。 | `streaming.md` | 长时间无 delta 的连接可中断并进入恢复或报错路径。 |
+| 3.6 | 区分 request 建立失败、stream 中途失败、assistant stop reason。 | `the-loop.md` | recoverable stream error 可以 withheld；恢复耗尽后再释放用户可见错误。 |
+
+验收测试：
+
+- primary model stream 中途失败后 fallback model 重试。
+- tombstone 事件不被最终 transcript 当作有效 assistant。
+- 5xx / 429 backoff。
+- idle/stall timeout。
+- prompt-too-long 和 max_tokens 与新 wrapper 不冲突。
+
+## 阶段 4：StreamingToolExecutor 接入主 loop
+
+这是 agent loop 行为对齐的核心阶段。阶段 1 确保 tool input 完整，阶段 2 确保执行入口统一，阶段 3 确保 fallback 状态语义稳定。
+
+任务：
+
+| ID | 任务 | 来源 | 验收 |
+| --- | --- | --- | --- |
+| 4.1 | 在 stream event 消费阶段识别完整 `tool_use` block。 | `agent-loop.md`、`streaming.md`、`the-loop.md` | `content_block_stop` 后可拿到完整 tool name/input/id。 |
+| 4.2 | 将完整 tool_use 提交给 `StreamingToolExecutor`。 | `agent-loop.md`、`the-loop.md` | concurrency-safe 工具可在 assistant stream 尚未结束时开始执行。 |
+| 4.3 | `StreamingToolExecutor` 复用阶段 2 的 canonical execution path。 | `agent-loop.md` | 权限、hooks、progress、abort、result-size 不分叉。 |
+| 4.4 | stream 结束后只等待 remaining results。 | `the-loop.md` | 不重复执行已启动工具。 |
+| 4.5 | 用 `QueryGates.streaming_tool_execution` 控制新行为。 | `agent-loop.md`、`the-loop.md` | gate off 时保留 post-stream 批处理；gate on 时启用 stream-time 调度。 |
+| 4.6 | 定义 fallback 与已启动工具的交互。 | `streaming.md`、`the-loop.md` | fallback/tombstone 不会让旧 assistant 的工具结果污染新 attempt。 |
+
+验收测试：
+
+- assistant 继续输出文本时，第一个 safe tool 已经开始执行。
+- 多个 safe tools 并发，unsafe tool 串行。
+- gate off 行为与旧 post-stream 路径一致。
+- stream abort / fallback 时已启动工具被取消或隔离。
+
+## 阶段 5：Context pipeline 与 prompt-too-long 完整恢复
+
+这个阶段补齐参考文档中的 pre-processing pipeline 和 prompt-too-long 恢复链。
+
+任务：
+
+| ID | 任务 | 来源 | 验收 |
+| --- | --- | --- | --- |
+| 5.1 | 实现 context collapse。 | `agent-loop.md`、`the-loop.md` | `applyCollapsesIfNeeded()` 等价阶段不再是 placeholder。 |
+| 5.2 | 保护 tool_use / tool_result 配对完整性。 | `the-loop.md` | collapse 不会留下孤立 tool_result 或丢失工具上下文。 |
+| 5.3 | 记录 snip / microcompact / collapse freed tokens。 | `agent-loop.md`、`the-loop.md` | freed token 能传入 autocompact 阈值计算。 |
+| 5.4 | 实现 `collapse_drain_retry`。 | `agent-loop.md`、`the-loop.md` | prompt-too-long 先 drain pending collapses，再 reactive compact，最后 terminal。 |
+| 5.5 | 固化 max-output-tokens 与 context 恢复交互。 | `agent-loop.md` | max_tokens escalate/recovery 不被 context retry 误触发。 |
+
+验收测试：
+
+- 刚 snip/microcompact 释放空间后不重复 autocompact。
+- prompt-too-long：collapse drain 成功。
+- prompt-too-long：collapse drain 失败但 reactive compact 成功。
+- prompt-too-long：两者都失败后 terminal。
+- collapse 后工具调用配对仍合法。
+
+## 阶段 6：Tool input observability 与 prompt-cache identity
+
+`backfillObservableInput()` 是参考实现中容易被忽略但影响 prompt cache 的细节。建议在 stream-time 工具执行稳定后补齐，避免输入结构反复重写。
+
+任务：
+
+| ID | 任务 | 来源 | 验收 |
+| --- | --- | --- | --- |
+| 6.1 | 梳理需要 observable input 回填的工具。 | `agent-loop.md`、`the-loop.md` | 每个需要回填的工具有明确字段和原因。 |
+| 6.2 | 实现“只有新增字段才 clone”的回填策略。 | `the-loop.md` | 无新增字段时消息 JSON byte identity 不变。 |
+| 6.3 | 把回填位置接入 streaming / post-stream 两种工具执行路径。 | `the-loop.md` | gate on/off 都得到同样的最终 tool input。 |
+| 6.4 | 增加 prompt-cache identity 回归测试。 | `the-loop.md` | 无意义重序列化会被测试捕获。 |
+
+## 阶段 7：Loop 表面能力收敛
+
+这些不是最底层语义问题，但会影响 SDK、IPC、TUI、Web 客户端看到的行为完整度。
+
+任务：
+
+| ID | 任务 | 来源 | 验收 |
+| --- | --- | --- | --- |
+| 7.1 | 补完整 Attachment stage。 | `agent-loop.md`、`the-loop.md` | edited file、queued command、structured output、nested memory、skill discovery 有统一产出路径。 |
+| 7.2 | 区分进入模型上下文的 attachment 和只给 UI/SDK 的 attachment。 | `agent-loop.md` | session transcript、SDK event、UI 显示边界清晰。 |
+| 7.3 | 接入 slash command dispatcher 的真实异步执行结果。 | `agent-loop.md`、`the-loop.md` | command 可直接返回、生成消息继续 query、或生成 attachment。 |
+| 7.4 | 收敛 `QueryGates` 行为。 | `agent-loop.md`、`the-loop.md` | `streaming_tool_execution`、`emit_tool_use_summaries`、`fast_mode_enabled` 都有明确默认值和测试。 |
+| 7.5 | 补 TUI tool progress callback 或标记为 intentional。 | `streaming.md` | TUI 能看到 Bash 长任务实时进度，或文档解释为什么只 headless 支持。 |
+| 7.6 | 补 daemon SSE 事件覆盖。 | `streaming.md` | `ApiRetry`、`CompactBoundary`、`ToolUseSummary` 是否广播有明确策略。 |
+
+验收测试：
+
+- SDK / IPC mapper e2e。
+- TUI streaming progress。
+- known / unknown / async slash command。
+- gate fixture 覆盖开关行为。
+
+## 阶段 8：Provider parity 扩展
+
+Provider 扩展应放在统一 streaming 协议和恢复语义之后，避免每个 provider 自己处理一套边界。
+
+任务：
+
+| ID | 任务 | 来源 | 验收 |
+| --- | --- | --- | --- |
+| 8.1 | 接 Bedrock AWS EventStream。 | `streaming.md` | 不再依赖非 streaming `/invoke` 合成事件。 |
+| 8.2 | 补 Google Gemini tool use / thinking 能力，或明确 unsupported。 | `streaming.md` | capability matrix 与真实行为一致。 |
+| 8.3 | 补 Vertex service-account JWT exchange。 | `streaming.md` | Vertex 不只依赖环境 token / gcloud fallback。 |
+| 8.4 | 整理 Azure provider 命名、能力矩阵和路由。 | `streaming.md` | Azure OpenAI 与 Anthropic-compatible Azure endpoint 不再混淆。 |
+| 8.5 | 建模 `server_tool_use`、`connector_text`。 | `streaming.md` | 对应 content block 至少能 round-trip 或明确 unsupported。 |
+
+## 阶段 9：文档与旧入口收敛
+
+任务：
+
+| ID | 任务 | 来源 | 验收 |
+| --- | --- | --- | --- |
+| 9.1 | 更新 `docs/architecture/conversation/streaming.mdx` 中过时的 `StreamingToolExecutor` 描述。 | `streaming.md` | 不再声称主 loop 已接入未接入的行为。 |
+| 9.2 | 将完成的 gap 从 `docs/IMPLEMENTATION_GAPS.md` 迁移到 archive。 | AGENTS.md 项目规则 | 已补齐条目不再停留在 gap 清单。 |
+| 9.3 | 为保留的差异标记 intentional。 | `agent-loop.md`、`streaming.md`、`the-loop.md` | 保留 post-stream、单 assistant message 等差异时有明确理由。 |
+
+## 依赖关系图
+
+```text
+阶段 0：测试基线
+  -> 阶段 1：stream delta / content block 完整性
+  -> 阶段 2：工具执行 canonical path
+  -> 阶段 3：fallback / tombstone / retry / watchdog
+  -> 阶段 4：StreamingToolExecutor 接入
+  -> 阶段 5：context collapse / prompt-too-long 完整恢复
+  -> 阶段 6：observable input / prompt cache identity
+  -> 阶段 7：attachment / slash command / gates / UI-SDK surfaces
+  -> 阶段 8：provider parity
+  -> 阶段 9：文档收敛
+```
+
+并行机会：
+
+- 阶段 1 和阶段 2 可以并行，但阶段 4 必须等两者完成。
+- 阶段 5 的 context collapse 可以和阶段 4 的工具执行细节并行，但 `prompt-too-long` 恢复测试需要等阶段 3 的恢复 wrapper 稳定。
+- 阶段 8 的 provider parity 可以分 provider 并行，但必须复用阶段 1 和阶段 3 的统一协议 / 恢复语义。
+
+## 第一批建议落地任务
+
+如果从最小可交付切入，建议第一批只做以下 5 个任务：
+
+1. `StreamAccumulator` 支持 `input_json_delta.partial_json`，补 Anthropic-style tool_use streaming 测试。
+2. `StreamAccumulator` 支持 `signature_delta`，补 thinking signature 测试。
+3. 确定并文档化 canonical tool execution path。
+4. 为当前 post-stream tool execution 建 e2e，锁住权限、hooks、并发、oversized result。
+5. 设计 `attemptWithFallback` / tombstone 的 SDK 和 session 可观察语义。
+
+这批完成后，才进入 `StreamingToolExecutor` 接入；否则会把协议、工具执行和恢复三类问题揉在同一个大改里，难以验证。

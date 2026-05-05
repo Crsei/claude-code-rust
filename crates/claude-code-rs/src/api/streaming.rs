@@ -56,6 +56,7 @@ pub struct StreamAccumulator {
     pub content_blocks: Vec<ContentBlock>,
     pub usage: Usage,
     pub stop_reason: Option<String>,
+    tool_input_partials: Vec<String>,
 }
 
 impl StreamAccumulator {
@@ -64,6 +65,7 @@ impl StreamAccumulator {
             content_blocks: Vec::new(),
             usage: Usage::default(),
             stop_reason: None,
+            tool_input_partials: Vec::new(),
         }
     }
 
@@ -81,7 +83,11 @@ impl StreamAccumulator {
                         text: String::new(),
                     });
                 }
+                while self.tool_input_partials.len() <= *index {
+                    self.tool_input_partials.push(String::new());
+                }
                 self.content_blocks[*index] = content_block.clone();
+                self.tool_input_partials[*index].clear();
             }
             StreamEvent::ContentBlockDelta { index, delta } => {
                 if let Some(block) = self.content_blocks.get_mut(*index) {
@@ -96,9 +102,28 @@ impl StreamAccumulator {
                                 thinking.push_str(t);
                             }
                         }
+                        ContentBlock::ToolUse { .. } => {
+                            if let Some(partial_json) =
+                                delta.get("partial_json").and_then(|v| v.as_str())
+                            {
+                                while self.tool_input_partials.len() <= *index {
+                                    self.tool_input_partials.push(String::new());
+                                }
+                                self.tool_input_partials[*index].push_str(partial_json);
+                            }
+                        }
                         _ => {}
                     }
+
+                    if let ContentBlock::Thinking { signature, .. } = block {
+                        if let Some(s) = delta.get("signature").and_then(|v| v.as_str()) {
+                            signature.get_or_insert_with(String::new).push_str(s);
+                        }
+                    }
                 }
+            }
+            StreamEvent::ContentBlockStop { index } => {
+                self.finalize_tool_input(*index);
             }
             StreamEvent::MessageDelta { delta, usage } => {
                 self.stop_reason = delta.stop_reason.clone();
@@ -117,8 +142,33 @@ impl StreamAccumulator {
         }
     }
 
+    fn finalize_tool_input(&mut self, index: usize) {
+        let Some(partial_json) = self.tool_input_partials.get_mut(index) else {
+            return;
+        };
+        if partial_json.is_empty() {
+            return;
+        }
+
+        let Ok(input) = serde_json::from_str::<Value>(partial_json) else {
+            return;
+        };
+
+        if let Some(ContentBlock::ToolUse {
+            input: block_input, ..
+        }) = self.content_blocks.get_mut(index)
+        {
+            *block_input = input;
+            partial_json.clear();
+        }
+    }
+
     /// Build the final AssistantMessage with cost calculated from model pricing.
-    pub fn build(self, model: &str) -> AssistantMessage {
+    pub fn build(mut self, model: &str) -> AssistantMessage {
+        for index in 0..self.content_blocks.len() {
+            self.finalize_tool_input(index);
+        }
+
         let cost_usd = crate::api::pricing::calculate_cost(model, &self.usage);
         AssistantMessage {
             uuid: uuid::Uuid::new_v4(),
@@ -130,6 +180,207 @@ impl StreamAccumulator {
             is_api_error_message: false,
             api_error: None,
             cost_usd,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn accumulates_tool_input_json_delta() {
+        let mut accumulator = StreamAccumulator::new();
+
+        accumulator.process_event(&StreamEvent::ContentBlockStart {
+            index: 0,
+            content_block: ContentBlock::ToolUse {
+                id: "toolu_1".to_string(),
+                name: "Bash".to_string(),
+                input: json!({}),
+            },
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "input_json_delta",
+                "partial_json": "{\"command\":\"echo"
+            }),
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "input_json_delta",
+                "partial_json": " hi\",\"timeout\":1000}"
+            }),
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockStop { index: 0 });
+
+        let message = accumulator.build("claude-sonnet-4-20250514");
+        match &message.content[0] {
+            ContentBlock::ToolUse { id, name, input } => {
+                assert_eq!(id, "toolu_1");
+                assert_eq!(name, "Bash");
+                assert_eq!(input["command"], "echo hi");
+                assert_eq!(input["timeout"], 1000);
+            }
+            other => panic!("expected tool_use block, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn accumulates_thinking_signature_delta() {
+        let mut accumulator = StreamAccumulator::new();
+
+        accumulator.process_event(&StreamEvent::ContentBlockStart {
+            index: 0,
+            content_block: ContentBlock::Thinking {
+                thinking: String::new(),
+                signature: None,
+            },
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "thinking_delta",
+                "thinking": "first "
+            }),
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "thinking_delta",
+                "thinking": "second"
+            }),
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "signature_delta",
+                "signature": "sig-a"
+            }),
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "signature_delta",
+                "signature": "sig-b"
+            }),
+        });
+
+        let message = accumulator.build("claude-sonnet-4-20250514");
+        match &message.content[0] {
+            ContentBlock::Thinking {
+                thinking,
+                signature,
+            } => {
+                assert_eq!(thinking, "first second");
+                assert_eq!(signature.as_deref(), Some("sig-asig-b"));
+            }
+            other => panic!("expected thinking block, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn accumulates_mixed_anthropic_stream_sequence() {
+        let mut accumulator = StreamAccumulator::new();
+
+        accumulator.process_event(&StreamEvent::MessageStart {
+            usage: Usage {
+                input_tokens: 42,
+                output_tokens: 0,
+                cache_read_input_tokens: 3,
+                cache_creation_input_tokens: 2,
+            },
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockStart {
+            index: 0,
+            content_block: ContentBlock::Text {
+                text: String::new(),
+            },
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "text_delta",
+                "text": "hello"
+            }),
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockStop { index: 0 });
+        accumulator.process_event(&StreamEvent::ContentBlockStart {
+            index: 1,
+            content_block: ContentBlock::Thinking {
+                thinking: String::new(),
+                signature: None,
+            },
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 1,
+            delta: json!({
+                "type": "thinking_delta",
+                "thinking": "considering"
+            }),
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 1,
+            delta: json!({
+                "type": "signature_delta",
+                "signature": "sig"
+            }),
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockStop { index: 1 });
+        accumulator.process_event(&StreamEvent::ContentBlockStart {
+            index: 2,
+            content_block: ContentBlock::ToolUse {
+                id: "toolu_2".to_string(),
+                name: "Read".to_string(),
+                input: json!({}),
+            },
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 2,
+            delta: json!({
+                "type": "input_json_delta",
+                "partial_json": "{\"file_path\":\"Cargo.toml\"}"
+            }),
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockStop { index: 2 });
+        accumulator.process_event(&StreamEvent::MessageDelta {
+            delta: MessageDelta {
+                stop_reason: Some("tool_use".to_string()),
+            },
+            usage: Some(Usage {
+                input_tokens: 0,
+                output_tokens: 9,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+            }),
+        });
+        accumulator.process_event(&StreamEvent::MessageStop);
+
+        let message = accumulator.build("claude-sonnet-4-20250514");
+        assert_eq!(message.stop_reason.as_deref(), Some("tool_use"));
+        let usage = message.usage.as_ref().expect("usage");
+        assert_eq!(usage.input_tokens, 42);
+        assert_eq!(usage.output_tokens, 9);
+        assert_eq!(usage.cache_read_input_tokens, 3);
+        assert_eq!(usage.cache_creation_input_tokens, 2);
+
+        match &message.content[..] {
+            [ContentBlock::Text { text }, ContentBlock::Thinking {
+                thinking,
+                signature,
+            }, ContentBlock::ToolUse { id, name, input }] => {
+                assert_eq!(text, "hello");
+                assert_eq!(thinking, "considering");
+                assert_eq!(signature.as_deref(), Some("sig"));
+                assert_eq!(id, "toolu_2");
+                assert_eq!(name, "Read");
+                assert_eq!(input["file_path"], "Cargo.toml");
+            }
+            other => panic!("unexpected content blocks: {other:?}"),
         }
     }
 }
