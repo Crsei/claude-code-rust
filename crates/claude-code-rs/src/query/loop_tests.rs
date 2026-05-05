@@ -1,62 +1,109 @@
 use super::*;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use anyhow::Result;
+use cc_types::hooks::{
+    HookEventConfig, HookOutput, HookRunner, HooksMap, PostToolHookResult, PreToolHookResult,
+};
 use futures::StreamExt;
+use serde_json::Value;
 
 use crate::query::deps::{
     CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
 };
 use crate::types::app_state::AppState;
-use crate::types::config::QuerySource;
+use crate::types::config::{QuerySource, TaskBudget};
 use crate::types::message::{
     AssistantMessage, ContentBlock, ImageSource, StreamEvent, ToolResultContent, Usage,
 };
 use crate::types::state::AutoCompactTracking;
 use crate::types::tool::{ToolProgress, Tools};
 
+enum MockStreamStep {
+    Response(ModelResponse),
+    Error(String),
+}
+
 /// Mock deps for testing.
 struct MockDeps {
-    responses: parking_lot::Mutex<Vec<ModelResponse>>,
+    stream_steps: parking_lot::Mutex<Vec<MockStreamStep>>,
+    call_params: parking_lot::Mutex<Vec<ModelCallParams>>,
+    reactive_compact_result: parking_lot::Mutex<Option<CompactionResult>>,
+    reactive_compact_calls: AtomicUsize,
     aborted: AtomicBool,
     stream_finished: Arc<AtomicBool>,
     tool_executed_before_stream_finished: AtomicBool,
+    hook_runner: parking_lot::Mutex<Arc<dyn HookRunner>>,
 }
 
 impl MockDeps {
     fn new(responses: Vec<ModelResponse>) -> Self {
+        Self::from_steps(
+            responses
+                .into_iter()
+                .map(MockStreamStep::Response)
+                .collect(),
+        )
+    }
+
+    fn from_steps(stream_steps: Vec<MockStreamStep>) -> Self {
         Self {
-            responses: parking_lot::Mutex::new(responses),
+            stream_steps: parking_lot::Mutex::new(stream_steps),
+            call_params: parking_lot::Mutex::new(Vec::new()),
+            reactive_compact_result: parking_lot::Mutex::new(None),
+            reactive_compact_calls: AtomicUsize::new(0),
             aborted: AtomicBool::new(false),
             stream_finished: Arc::new(AtomicBool::new(false)),
             tool_executed_before_stream_finished: AtomicBool::new(false),
+            hook_runner: parking_lot::Mutex::new(Arc::new(cc_types::hooks::NoopHookRunner)),
         }
+    }
+
+    fn recorded_params(&self) -> Vec<ModelCallParams> {
+        self.call_params.lock().clone()
+    }
+
+    fn set_reactive_compact_result(&self, result: Option<CompactionResult>) {
+        *self.reactive_compact_result.lock() = result;
+    }
+
+    fn set_hook_runner(&self, runner: Arc<dyn HookRunner>) {
+        *self.hook_runner.lock() = runner;
+    }
+
+    fn pop_stream_step(&self) -> Result<MockStreamStep> {
+        let mut steps = self.stream_steps.lock();
+        if steps.is_empty() {
+            anyhow::bail!("no more mock responses");
+        }
+        Ok(steps.remove(0))
     }
 }
 
 #[async_trait::async_trait]
 impl QueryDeps for MockDeps {
-    async fn call_model(&self, _params: ModelCallParams) -> Result<ModelResponse> {
-        let mut responses = self.responses.lock();
-        if responses.is_empty() {
-            anyhow::bail!("no more mock responses");
+    async fn call_model(&self, params: ModelCallParams) -> Result<ModelResponse> {
+        self.call_params.lock().push(params);
+        match self.pop_stream_step()? {
+            MockStreamStep::Response(resp) => Ok(resp),
+            MockStreamStep::Error(error) => anyhow::bail!("{}", error),
         }
-        Ok(responses.remove(0))
     }
 
     async fn call_model_streaming(
         &self,
-        _params: ModelCallParams,
+        params: ModelCallParams,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+        self.call_params.lock().push(params);
         self.stream_finished.store(false, Ordering::SeqCst);
 
-        let mut responses = self.responses.lock();
-        if responses.is_empty() {
-            anyhow::bail!("no more mock responses");
-        }
-        let resp = responses.remove(0);
+        let resp = match self.pop_stream_step()? {
+            MockStreamStep::Response(resp) => resp,
+            MockStreamStep::Error(error) => anyhow::bail!("{}", error),
+        };
+
         let mut events = Vec::new();
         events.push(StreamEvent::MessageStart {
             usage: resp.usage.clone(),
@@ -97,7 +144,8 @@ impl QueryDeps for MockDeps {
     }
 
     async fn reactive_compact(&self, _messages: Vec<Message>) -> Result<Option<CompactionResult>> {
-        Ok(None)
+        self.reactive_compact_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(self.reactive_compact_result.lock().take())
     }
 
     async fn execute_tool(
@@ -143,9 +191,57 @@ impl QueryDeps for MockDeps {
     async fn refresh_tools(&self) -> Result<Tools> {
         Ok(vec![])
     }
+
+    fn hook_runner(&self) -> Arc<dyn HookRunner> {
+        self.hook_runner.lock().clone()
+    }
+}
+
+fn make_user_message_for_test(text: &str) -> Message {
+    Message::User(UserMessage {
+        uuid: uuid::Uuid::new_v4(),
+        timestamp: 0,
+        role: "user".to_string(),
+        content: MessageContent::Text(text.to_string()),
+        is_meta: false,
+        tool_use_result: None,
+        source_tool_assistant_uuid: None,
+    })
+}
+
+fn make_query_params(messages: Vec<Message>) -> QueryParams {
+    QueryParams {
+        messages,
+        system_prompt: vec![],
+        user_context: Default::default(),
+        system_context: Default::default(),
+        fallback_model: None,
+        query_source: QuerySource::ReplMainThread,
+        max_output_tokens_override: None,
+        max_turns: None,
+        skip_cache_write: None,
+        task_budget: None,
+    }
+}
+
+fn make_auto_compact_tracking() -> AutoCompactTracking {
+    AutoCompactTracking {
+        compacted: true,
+        turn_counter: 1,
+        turn_id: "test-turn".to_string(),
+        consecutive_failures: 0,
+    }
 }
 
 fn make_text_response(text: &str) -> ModelResponse {
+    make_text_response_with_stop_and_output_tokens(text, "end_turn", 50)
+}
+
+fn make_text_response_with_stop_and_output_tokens(
+    text: &str,
+    stop_reason: &str,
+    output_tokens: u64,
+) -> ModelResponse {
     ModelResponse {
         assistant_message: AssistantMessage {
             uuid: uuid::Uuid::new_v4(),
@@ -156,11 +252,11 @@ fn make_text_response(text: &str) -> ModelResponse {
             }],
             usage: Some(Usage {
                 input_tokens: 100,
-                output_tokens: 50,
+                output_tokens,
                 cache_read_input_tokens: 0,
                 cache_creation_input_tokens: 0,
             }),
-            stop_reason: Some("end_turn".to_string()),
+            stop_reason: Some(stop_reason.to_string()),
             is_api_error_message: false,
             api_error: None,
             cost_usd: 0.001,
@@ -168,10 +264,96 @@ fn make_text_response(text: &str) -> ModelResponse {
         stream_events: vec![],
         usage: Usage {
             input_tokens: 100,
-            output_tokens: 50,
+            output_tokens,
             cache_read_input_tokens: 0,
             cache_creation_input_tokens: 0,
         },
+    }
+}
+
+fn request_start_count(items: &[QueryYield]) -> usize {
+    items
+        .iter()
+        .filter(|item| matches!(item, QueryYield::RequestStart(_)))
+        .count()
+}
+
+struct StopContinuationHookRunner {
+    message: String,
+    calls: AtomicUsize,
+}
+
+impl StopContinuationHookRunner {
+    fn new(message: &str) -> Self {
+        Self {
+            message: message.to_string(),
+            calls: AtomicUsize::new(0),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl HookRunner for StopContinuationHookRunner {
+    fn load_hook_configs(&self, _hooks_value: &HooksMap, event_name: &str) -> Vec<HookEventConfig> {
+        if event_name == "Stop" {
+            vec![HookEventConfig {
+                matcher: None,
+                hooks: Vec::new(),
+            }]
+        } else {
+            Vec::new()
+        }
+    }
+
+    async fn run_pre_tool_hooks(
+        &self,
+        _tool_name: &str,
+        _input: &Value,
+        _hook_configs: &[HookEventConfig],
+    ) -> anyhow::Result<PreToolHookResult> {
+        Ok(PreToolHookResult::Continue {
+            updated_input: None,
+            permission_override: None,
+        })
+    }
+
+    async fn run_post_tool_hooks(
+        &self,
+        _tool_name: &str,
+        _input: &Value,
+        _tool_result_data: &Value,
+        _hook_configs: &[HookEventConfig],
+    ) -> anyhow::Result<PostToolHookResult> {
+        Ok(PostToolHookResult::Continue)
+    }
+
+    async fn run_post_tool_failure_hooks(
+        &self,
+        _tool_name: &str,
+        _input: &Value,
+        _error: &str,
+        _hook_configs: &[HookEventConfig],
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn run_event_hooks(
+        &self,
+        _event_name: &str,
+        _payload: &Value,
+        _hook_configs: &[HookEventConfig],
+    ) -> anyhow::Result<HookOutput> {
+        Ok(HookOutput::default())
+    }
+
+    async fn run_stop_hooks(
+        &self,
+        _hook_configs: &[HookEventConfig],
+    ) -> anyhow::Result<PostToolHookResult> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(PostToolHookResult::StopContinuation {
+            message: self.message.clone(),
+        })
     }
 }
 
@@ -214,6 +396,144 @@ async fn test_simple_text_response_terminates() {
         .iter()
         .any(|item| matches!(item, QueryYield::Message(Message::Assistant(_))));
     assert!(has_assistant, "expected an assistant message in output");
+}
+
+#[tokio::test]
+async fn test_prompt_too_long_reactive_compact_retries_model_call() {
+    let initial_messages = vec![make_user_message_for_test("Summarize this long context")];
+    let deps = Arc::new(MockDeps::from_steps(vec![
+        MockStreamStep::Error("prompt_too_long: context window exceeded".to_string()),
+        MockStreamStep::Response(make_text_response("Recovered after compact.")),
+    ]));
+    deps.set_reactive_compact_result(Some(CompactionResult {
+        messages: initial_messages.clone(),
+        tracking: make_auto_compact_tracking(),
+    }));
+
+    let stream = query(make_query_params(initial_messages), deps.clone());
+    let items: Vec<QueryYield> = stream.collect().await;
+
+    assert_eq!(
+        request_start_count(&items),
+        2,
+        "prompt_too_long recovery should retry the model call"
+    );
+    assert_eq!(
+        deps.reactive_compact_calls.load(Ordering::SeqCst),
+        1,
+        "prompt_too_long should attempt reactive compact once"
+    );
+
+    let recovered = items.iter().any(|item| {
+        if let QueryYield::Message(Message::Assistant(msg)) = item {
+            msg.content.iter().any(|block| {
+                matches!(block, ContentBlock::Text { text } if text == "Recovered after compact.")
+            })
+        } else {
+            false
+        }
+    });
+    assert!(recovered, "expected recovered assistant response");
+}
+
+#[tokio::test]
+async fn test_max_tokens_recovery_escalates_next_request_limit() {
+    let deps = Arc::new(MockDeps::new(vec![
+        make_text_response_with_stop_and_output_tokens("Partial answer", "max_tokens", 50),
+        make_text_response("Continuation after larger output limit."),
+    ]));
+
+    let stream = query(
+        make_query_params(vec![make_user_message_for_test("Write a long answer")]),
+        deps.clone(),
+    );
+    let items: Vec<QueryYield> = stream.collect().await;
+
+    assert_eq!(
+        request_start_count(&items),
+        2,
+        "max_tokens should trigger one retry"
+    );
+    let params = deps.recorded_params();
+    assert_eq!(params.len(), 2, "expected two model calls");
+    assert_eq!(params[0].max_output_tokens, None);
+    assert_eq!(
+        params[1].max_output_tokens,
+        Some(crate::query::loop_helpers::ESCALATED_MAX_TOKENS)
+    );
+}
+
+#[tokio::test]
+async fn test_stop_hook_continuation_injects_meta_user_message_once() {
+    let deps = Arc::new(MockDeps::new(vec![
+        make_text_response("Need final audit."),
+        make_text_response("Final answer after stop hook."),
+    ]));
+    deps.set_hook_runner(Arc::new(StopContinuationHookRunner::new(
+        "Run one more validation pass.",
+    )));
+
+    let stream = query(
+        make_query_params(vec![make_user_message_for_test("Finish the task")]),
+        deps.clone(),
+    );
+    let items: Vec<QueryYield> = stream.collect().await;
+
+    assert_eq!(
+        request_start_count(&items),
+        2,
+        "stop hook continuation should trigger one more model call"
+    );
+    let params = deps.recorded_params();
+    assert_eq!(params.len(), 2, "expected continuation model call");
+
+    let continuation = params[1].messages.iter().rev().find_map(|message| {
+        if let Message::User(user) = message {
+            if let MessageContent::Text(text) = &user.content {
+                return Some((user.is_meta, text.as_str()));
+            }
+        }
+        None
+    });
+    assert_eq!(
+        continuation,
+        Some((true, "Run one more validation pass.")),
+        "stop hook continuation should be injected as a meta user message"
+    );
+}
+
+#[tokio::test]
+async fn test_token_budget_continuation_injects_nudge_message() {
+    let deps = Arc::new(MockDeps::new(vec![
+        make_text_response_with_stop_and_output_tokens("Still working.", "end_turn", 50),
+        make_text_response_with_stop_and_output_tokens("Budget complete.", "end_turn", 50),
+    ]));
+    let mut params = make_query_params(vec![make_user_message_for_test("Spend the budget")]);
+    params.task_budget = Some(TaskBudget { total: 100 });
+
+    let stream = query(params, deps.clone());
+    let items: Vec<QueryYield> = stream.collect().await;
+
+    assert_eq!(
+        request_start_count(&items),
+        2,
+        "token budget nudge should trigger one continuation"
+    );
+    let params = deps.recorded_params();
+    assert_eq!(params.len(), 2, "expected continuation model call");
+
+    let nudge = params[1].messages.iter().rev().find_map(|message| {
+        if let Message::User(user) = message {
+            if let MessageContent::Text(text) = &user.content {
+                return Some((user.is_meta, text.as_str()));
+            }
+        }
+        None
+    });
+    assert!(
+        matches!(nudge, Some((true, text)) if text.contains("Token budget at 50%")),
+        "token budget continuation should inject a meta nudge message"
+    );
 }
 
 #[tokio::test]

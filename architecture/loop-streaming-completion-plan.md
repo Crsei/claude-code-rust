@@ -42,6 +42,7 @@
 | --- | --- | --- | --- | --- |
 | 0.1 streaming fixture | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs api::streaming::tests`，3 passed。 | 在 `api/streaming.rs` 内新增 mixed Anthropic stream fixture，覆盖 `message_start`、text、thinking、tool_use、`message_delta`、`message_stop`。 |
 | 0.2 post-stream tool fixture | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs test_tool_use_then_text_response`，1 passed。 | `query::loop_tests::MockDeps` 现在记录 `message_stop` 是否已被消费，并断言当前工具执行不会早于模型流结束启动；后续接入 stream-time tool execution 时需同步调整该期望。 |
+| 0.3 recovery fixture | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs query::loop_impl::loop_tests`，10 passed。 | 新增 prompt-too-long reactive compact retry、`max_tokens` 输出上限升级、Stop hook 续写、token budget nudge 四条 query-loop fixture；collapse drain retry 仍未实现，保留在 5.4 串行补齐。 |
 | 1.1 `input_json_delta` | 已完成 | 2026-05-05 | `api::streaming::tests::accumulates_tool_input_json_delta` 通过。 | `StreamAccumulator` 现在累积 `partial_json`，在 `content_block_stop` 和最终 `build()` 时解析为 `ToolUse.input`。 |
 | 1.2 `signature_delta` | 已完成 | 2026-05-05 | `api::streaming::tests::accumulates_thinking_signature_delta` 通过。 | `StreamAccumulator` 现在将 `signature_delta.signature` 追加到 `ContentBlock::Thinking.signature`。 |
 | 1.3 unsupported delta 策略 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs api::streaming::tests`，5 passed；`cargo test -p claude-code-rs unsupported_text_like_delta`，3 passed。 | Accumulator、headless、TUI、agent event forwarding 都按 delta `type` 处理 text/thinking/input；未知或暂不支持的 text-like delta 不再被误当作 assistant text，同时保留无 `type` legacy delta 兼容。 |
