@@ -40,9 +40,16 @@ use super::{make_error_result, ToolExecutionResult};
 ///
 /// Corresponds to TypeScript: `runToolUse()` in toolExecution.ts
 ///
-/// This is the central function that takes a tool_use block from the
-/// assistant's response and runs it through validation, hooks, permissions,
-/// execution, and result processing.
+/// This is the reference full-pipeline function that takes a tool_use block
+/// from the assistant's response and runs it through validation, hooks,
+/// permissions, execution, and result processing.
+///
+/// Main query-loop execution is currently canonicalized on
+/// `QueryDeps::execute_tool` / `QueryEngineDeps::execute_tool` because that
+/// boundary owns lifecycle state, interactive permission callbacks, progress,
+/// audit/Langfuse spans, and structured `ToolResult` preservation. Stage 2
+/// folds this function's missing validation/security/result-size behavior into
+/// that canonical boundary before stream-time scheduling uses it.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_tool_use(
     tool_use_id: &str,

@@ -119,6 +119,14 @@ pub trait QueryDeps: Send + Sync {
     async fn reactive_compact(&self, messages: Vec<Message>) -> Result<Option<CompactionResult>>;
 
     /// 执行单个工具
+    /// Canonical query-loop tool execution boundary.
+    ///
+    /// Main-loop batching and future stream-time schedulers should route tool
+    /// calls through this method instead of calling `tools::execution::run_tool_use`
+    /// directly. The production implementation owns lifecycle state, interactive
+    /// permission callbacks, progress forwarding, audit/Langfuse spans, and
+    /// structured `ToolResult` preservation. Stage 2 folds the remaining
+    /// validation/security/result-size behavior into this boundary.
     async fn execute_tool(
         &self,
         request: ToolExecRequest,

@@ -109,6 +109,9 @@ pub(crate) fn handle_max_output_tokens(
 }
 
 /// Execute tool calls (batched: concurrency-safe ones together, rest serial).
+///
+/// Keep this helper thin: it owns batching/order only, then routes every tool
+/// call through the canonical [`QueryDeps::execute_tool`] boundary.
 pub(crate) async fn execute_tool_calls(
     deps: &Arc<dyn QueryDeps>,
     tool_uses: &[(String, String, serde_json::Value)],

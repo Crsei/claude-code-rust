@@ -376,6 +376,10 @@ impl QueryDeps for QueryEngineDeps {
         }
     }
 
+    // Production implementation of the canonical query-loop tool execution
+    // boundary declared in `QueryDeps`. Stage 2 keeps main-loop and future
+    // stream-time scheduling routed here while folding in the remaining
+    // validation/security/result-size stages from `tools::execution::run_tool_use`.
     async fn execute_tool(
         &self,
         request: ToolExecRequest,

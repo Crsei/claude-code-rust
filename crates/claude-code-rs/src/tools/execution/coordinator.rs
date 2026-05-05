@@ -36,6 +36,12 @@ pub struct TrackedTool {
 /// Tools are added as they arrive from the streaming API response.
 /// Concurrency-safe tools start executing immediately; non-safe tools
 /// wait until all preceding concurrent tools complete.
+///
+/// Main-loop integration note: before this coordinator becomes the live
+/// stream-time path, its tool dispatch must be rewired through the canonical
+/// `QueryDeps::execute_tool` boundary instead of calling `run_tool_use`
+/// directly, so permissions, progress, audit, abort, and result preservation
+/// stay shared with post-stream execution.
 pub struct StreamingToolExecutor {
     tracked: Vec<TrackedTool>,
     /// Whether any Bash tool has errored (triggers sibling abort).

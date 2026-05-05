@@ -49,6 +49,7 @@
 | 1.3 unsupported delta 策略 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs api::streaming::tests`，5 passed；`cargo test -p claude-code-rs unsupported_text_like_delta`，3 passed。 | Accumulator、headless、TUI、agent event forwarding 都按 delta `type` 处理 text/thinking/input；未知或暂不支持的 text-like delta 不再被误当作 assistant text，同时保留无 `type` legacy delta 兼容。 |
 | 1.4 TUI/headless 映射 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs headless_stream_event_mapping`；`cargo test -p claude-code-rs tui_ignores_tool_input_delta_until_final_assistant`。 | Headless 只把 text/thinking delta 映射为可见流；TUI 忽略 tool input delta，并等待最终 assistant 替换为完整 tool_use。 |
 | 1.5 per-block assistant 语义 | 已完成 | 2026-05-05 | 文档决策：`architecture/streaming.md` 已标注 Intentional / 暂不改。 | 现阶段保留“stream event 实时输出 + 最终单 `AssistantMessage`”；per-block assistant 需等 `StreamingToolExecutor`、SDK/session、fallback tombstone 语义一起设计。 |
+| 2.1 canonical path 决策 | 已完成 | 2026-05-05 | 文档：本页“2.1 canonical path 决策”；代码注释：`query/deps.rs`、`loop_helpers.rs`、`tools/execution/pipeline.rs`、`tools/execution/coordinator.rs`。 | 主 loop canonical 工具执行边界确定为 `QueryDeps::execute_tool()` / `QueryEngineDeps::execute_tool()`；`run_tool_use()` 暂作为参考/待折叠管线，缺失的 validation、security、result-size 阶段在 2.2 合入 canonical 边界。 |
 
 ## Subagent 并行拆分规则
 
@@ -183,6 +184,25 @@
 ## 阶段 2：工具执行 canonical path
 
 当前主 loop 使用 `loop_helpers::execute_tool_calls()` / `QueryEngineDeps::execute_tool()`，同时存在 `tools/execution/pipeline.rs::run_tool_use()`。在接入 `StreamingToolExecutor` 前必须确定唯一规则入口。
+
+### 2.1 canonical path 决策
+
+决策：主 query loop 的 canonical 工具执行边界是 `QueryDeps::execute_tool()`，生产实现是 `QueryEngineDeps::execute_tool()`。
+
+理由：
+
+- `QueryEngineDeps::execute_tool()` 已经持有 lifecycle state、`permission_callback`、`ask_user_callback`、`tool_progress_callback`、audit context、Langfuse trace、file state cache、background agent channel、command dispatcher。
+- 当前主 loop 的 post-stream 批处理已经通过 `loop_helpers::execute_tool_calls()` 进入 `QueryDeps::execute_tool()`，0.2 fixture 已锁定这个边界。
+- `QueryEngineDeps::execute_tool()` 会保留 `ToolResult.model_content`、`display_preview` 和 `new_messages`，这对 screenshot / computer-use 等多模态工具结果进入下一轮很关键。
+- `tools/execution/pipeline.rs::run_tool_use()` 覆盖了 `validate_input`、输入 sanitization、`security_validate()`、`enforce_result_size()` 等阶段，但当前不拥有交互式 permission callback、progress tool_use_id 补全、audit / Langfuse span、完整 `ToolResult` 保真，也不是主 loop 路径。
+
+后续要求：
+
+- 2.2 不迁移主 loop 直接调用 `run_tool_use()`；而是把 `run_tool_use()` 中缺失的 validation、sanitization、security、result-size、hook-stopped-continuation 语义合入 `QueryEngineDeps::execute_tool()` 或它调用的共享 helper。
+- 2.3 的 concurrency-safe 批处理继续由 `loop_helpers::execute_tool_calls()` 控制，直到阶段 4 引入 stream-time scheduler。
+- 2.4 统一 `ToolExecResult` 到 `tool_result` user message 的标准化，避免 `run_tool_use()` 和 `QueryEngineDeps::execute_tool()` 各自组装不同结果。
+- 阶段 4 接入 `StreamingToolExecutor` 时，executor 必须通过 `QueryDeps::execute_tool()` / `ToolExecRequest` 调度工具，不能直接复用当前 `run_tool_use()` 绕过 canonical 边界。
+- `run_tool_use()` 暂保留为参考实现和测试覆盖来源；当阶段 2 合并完成后，再决定删除、降级为 helper，或让它内部委托给 canonical 边界。
 
 任务：
 
