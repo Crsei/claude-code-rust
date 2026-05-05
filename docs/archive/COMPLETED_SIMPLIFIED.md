@@ -231,24 +231,26 @@
 
 ---
 
-### 2.4 PlanMode — 54% 缩减
+### 2.4 PlanMode — 缩减实现（计划持久化 / 实现关联子项已补）
 
 | | TypeScript | Rust |
 |---|---|---|
-| 行数 | 934 (8 文件) | 432 (1 文件) |
-| 文件 | — | `tools/plan_mode.rs` |
+| 行数 | 934 (8 文件) | `tools/plan_mode.rs` + `plan_workflow.rs` + `cc-types::plan_workflow` + IPC/daemon/tasks 接线 |
+| 文件 | — | `tools/plan_mode.rs`, `plan_workflow.rs`, `tools/tasks.rs`, `crates/cc-types/src/plan_workflow.rs` |
 
 **Rust 保留：**
 - 完整状态转换 (save/restore pre_plan_mode)
 - agent 上下文阻止
 - 重复进入检测
 - 用户确认退出
+- 保守 classifier gate（IPC / daemon 用户入口的显式关键词触发）
+- `.cc-rust/current-plan-workflow.json` 持久化 `PlanWorkflowRecord`
+- approval lifecycle、trace 与 plan_text 记录
+- approved/implementing 计划会在 `TaskCreate` 后关联 task id，并推进到 implementing
 
 **TS 独有（未移植）：**
-- auto-mode 集成 (classifier gate)
+- full auto-mode LLM classifier parity
 - 团队审批工作流
-- 计划文件持久化
-- 计划与实现关联跟踪
 
 ---
 

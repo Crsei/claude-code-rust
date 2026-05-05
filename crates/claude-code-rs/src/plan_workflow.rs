@@ -18,8 +18,6 @@ use crate::types::app_state::AppState;
 use crate::types::tool::PermissionMode;
 
 pub use cc_types::plan_workflow::PlanWorkflowRecord;
-
-#[cfg(test)]
 use cc_types::plan_workflow::PlanWorkflowStatus;
 
 const DEFAULT_OWNER: &str = "main";
@@ -161,6 +159,34 @@ pub fn link_task_state(
     record.link_task(source, task_id, summary);
     app_state.plan_workflow = Some(record.clone());
     record
+}
+
+pub fn maybe_link_implementation_task_state(
+    app_state: &mut AppState,
+    cwd: &Path,
+    existing: Option<PlanWorkflowRecord>,
+    owner: &str,
+    source: &str,
+    task_id: String,
+    summary: Option<String>,
+) -> Option<PlanWorkflowRecord> {
+    let record = app_state.plan_workflow.clone().or(existing)?;
+    if !matches!(
+        record.status,
+        PlanWorkflowStatus::Approved | PlanWorkflowStatus::Implementing
+    ) {
+        return None;
+    }
+
+    Some(link_task_state(
+        app_state,
+        cwd,
+        Some(record),
+        owner,
+        source,
+        task_id,
+        summary,
+    ))
 }
 
 pub fn enter_engine_plan_mode(
@@ -404,5 +430,62 @@ mod tests {
 
         let blocked = classify_plan_entry("Do not enter plan mode; implement directly", &state);
         assert!(!blocked.should_enter);
+    }
+
+    #[test]
+    fn implementation_task_link_requires_approved_plan() {
+        let tmp = tempdir().unwrap();
+        let mut state = AppState::default();
+        let draft = PlanWorkflowRecord::new(
+            tmp.path()
+                .join(".cc-rust")
+                .join("current-plan.md")
+                .display()
+                .to_string(),
+            Some("main".to_string()),
+            "test",
+        );
+        state.plan_workflow = Some(draft);
+
+        let skipped = maybe_link_implementation_task_state(
+            &mut state,
+            tmp.path(),
+            None,
+            "main",
+            "task_create",
+            "task_draft".to_string(),
+            Some("draft task".to_string()),
+        );
+        assert!(skipped.is_none());
+
+        let mut approved = PlanWorkflowRecord::new(
+            tmp.path()
+                .join(".cc-rust")
+                .join("current-plan.md")
+                .display()
+                .to_string(),
+            Some("main".to_string()),
+            "test",
+        );
+        approved.approve("test");
+        state.plan_workflow = Some(approved);
+
+        let linked = maybe_link_implementation_task_state(
+            &mut state,
+            tmp.path(),
+            None,
+            "main",
+            "task_create",
+            "task_impl".to_string(),
+            Some("implementation task".to_string()),
+        )
+        .expect("approved plan should link implementation task");
+
+        assert_eq!(linked.status, PlanWorkflowStatus::Implementing);
+        assert_eq!(linked.linked_task_ids, vec!["task_impl"]);
+        assert_eq!(
+            state.plan_workflow.as_ref().unwrap().linked_task_ids,
+            vec!["task_impl"]
+        );
     }
 }

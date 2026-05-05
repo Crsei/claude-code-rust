@@ -965,6 +965,60 @@ fn store() -> &'static TaskStore {
     &GLOBAL_STORE
 }
 
+fn plan_workflow_cwd() -> PathBuf {
+    let cwd = crate::bootstrap::state::original_cwd();
+    if !cwd.as_os_str().is_empty() {
+        return cwd;
+    }
+
+    let fallback = std::env::temp_dir().join("cc-rust-plan-workflow");
+    let _ = std::fs::create_dir_all(fallback.join(".cc-rust"));
+    fallback
+}
+
+fn maybe_link_plan_workflow_task(
+    ctx: &ToolUseContext,
+    entry: &TaskEntry,
+) -> Result<Option<crate::plan_workflow::PlanWorkflowRecord>> {
+    let cwd = plan_workflow_cwd();
+    let existing = match crate::plan_workflow::load(&cwd) {
+        Ok(record) => record,
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                "failed to load plan workflow for task link; continuing without link"
+            );
+            None
+        }
+    };
+    let persist_cwd = cwd.clone();
+    let task_id = entry.id.clone();
+    let summary = Some(entry.subject.clone());
+    let slot: Arc<Mutex<Option<Option<crate::plan_workflow::PlanWorkflowRecord>>>> =
+        Arc::new(Mutex::new(None));
+    let slot_for_update = Arc::clone(&slot);
+
+    (ctx.set_app_state)(Box::new(move |mut state| {
+        let linked = crate::plan_workflow::maybe_link_implementation_task_state(
+            &mut state,
+            &cwd,
+            existing,
+            "main",
+            "task_create",
+            task_id,
+            summary,
+        );
+        *slot_for_update.lock() = Some(linked);
+        state
+    }));
+
+    let record = slot.lock().clone().unwrap_or(None);
+    if let Some(record) = &record {
+        crate::plan_workflow::persist(&persist_cwd, record)?;
+    }
+    Ok(record)
+}
+
 /// Read-only handle to the global task store, exposed for command surfaces
 /// (`/tasks`) that want to enumerate tool-driven tasks without running a
 /// tool call. The store is cheap to clone: all interior state is behind `Arc`.
@@ -1168,6 +1222,8 @@ impl Tool for TaskCreateTool {
             store().create(subject, description)
         };
 
+        let linked_plan_workflow = maybe_link_plan_workflow_task(ctx, &entry)?;
+
         // Fire TaskCreated hook.
         {
             let app_state = (ctx.get_app_state)();
@@ -1183,11 +1239,18 @@ impl Tool for TaskCreateTool {
             }
         }
 
+        let mut data = json!({
+            "task": task_to_json(&entry),
+            "message": format!("Created task: {}", entry.subject)
+        });
+        if let Some(record) = linked_plan_workflow {
+            if let Some(map) = data.as_object_mut() {
+                map.insert("plan_workflow".to_string(), json!(record));
+            }
+        }
+
         Ok(ToolResult {
-            data: json!({
-                "task": task_to_json(&entry),
-                "message": format!("Created task: {}", entry.subject)
-            }),
+            data,
             new_messages: vec![],
             ..Default::default()
         })
