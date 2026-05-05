@@ -215,7 +215,10 @@ fn normalise_url(raw: &str) -> Result<String> {
     };
 
     // Basic parse check
-    url::Url::parse(&url).context("Invalid URL")?;
+    let parsed = url::Url::parse(&url).context("Invalid URL")?;
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        bail!("URL contains embedded credentials; WebFetch does not support cookie or credentialed URL fetches");
+    }
     Ok(url)
 }
 
@@ -526,6 +529,12 @@ impl Tool for WebFetchTool {
                 error_code: 400,
             };
         }
+        if let Err(err) = normalise_url(url) {
+            return ValidationResult::Error {
+                message: format!("Invalid URL: {err}"),
+                error_code: 400,
+            };
+        }
         ValidationResult::Ok
     }
 
@@ -791,6 +800,13 @@ mod tests {
     fn test_normalise_url_too_long() {
         let long = "https://".to_string() + &"a".repeat(MAX_URL_LENGTH);
         assert!(normalise_url(&long).is_err());
+    }
+
+    #[test]
+    fn test_normalise_url_rejects_embedded_credentials() {
+        assert!(normalise_url("https://user@example.com").is_err());
+        assert!(normalise_url("https://user:pass@example.com").is_err());
+        assert!(normalise_url("user:pass@example.com").is_err());
     }
 
     #[test]

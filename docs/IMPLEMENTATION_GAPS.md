@@ -71,6 +71,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | WebFetch redirect policy | 已补齐子项 | `WebFetch` 已改为手动 redirect 处理：最多 10 跳，仅自动跟随同 scheme、同显式 port、同 host/`www.` 变体且无凭据的 redirect；跨 host / scheme / port / credential redirect 会返回 `redirect_detected` 诊断和目标 URL，避免静默跨站抓取 |
 | WebFetch Content-Type 基础分发 | 已补齐子项 | `WebFetch` 现在按 MIME 分发响应：HTML（大小写不敏感）继续提取文本，`application/json` / `+json` pretty-print，text/XML/JS/form 等文本直出，PDF/Office/image/audio/video 等二进制 MIME 返回 `binary: true` 诊断而不把 raw bytes 塞进模型上下文 |
 | WebFetch 环境代理支持 | 已补齐子项 | `WebFetch` 构建 HTTP client 时会显式读取 `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY`（含小写变体），按请求 scheme 选择代理，并支持 `NO_PROXY` / `no_proxy` 的 exact、domain suffix、host:port 与 `*` 绕过规则 |
+| WebFetch Cookie/credential 安全边界 | 已补齐子项 | 对齐上游 `validateURL()` 的“未支持 cookies/internal domains”边界，`WebFetch` 现在在 URL 规范化与输入校验阶段拒绝 `https://user:pass@host` 等 embedded credentials；Rust reqwest client 不启用 cookie store，避免静默携带 cookie / Basic Auth 语义 |
 | TaskTools `TaskOutput` 阻塞/超时读取 | 已补齐子项 | `TaskOutput` schema 已补 `block` / `timeout`（0..600000ms，默认 30000ms）并返回上游兼容 `retrieval_status: success / timeout / not_ready` + nested `task`；保留旧 flat output 字段给既有调用方；等待循环会轮询 task store 并响应 abort signal |
 | TaskTools 上游 task type taxonomy | 已补齐子项 | `TaskCreate.kind` schema 对齐上游 task type：`local_bash` / `local_agent` / `remote_agent` / `in_process_teammate` / `local_workflow` / `monitor_mcp` / `dream`（保留 Rust generic `tool`）；历史 `local_shell` / `workflow` / `monitor` / `team` 等 alias 会在创建和持久化恢复时 canonicalize |
 | TaskTools remote/multi-type supervisor metadata | 已补齐子项 | `TaskStore` schema v4 持久化 `tool_use_id`、`remote_task_type`、`remote_session_id`、`remote_task_metadata`、`poll_started_at` 等上游 remote supervisor 恢复所需字段；`TaskCreate` schema、`TaskGet`/`TaskList` JSON、`TaskOutput` payload 与 `/tasks show` 均暴露这些元数据 |
@@ -86,7 +87,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | BashTool | PowerShell 原生 AST parser fidelity（`elementTypes` / `children` / `nameType` / full parser-invalid coverage / full statement securityPatterns 等结构化语义）与 Windows Restricted Token / Job Object OS-level primitive；Stage 3c.2 执行前硬拦、heredoc、Git 操作跟踪、进程树终止、destructive denylist、高风险 security validator、AST 启发式安全检查、script block securityPatterns 子集、明显 parse-error fail-closed、显式写目标 FS preflight 与 fail-closed 用户面子项已落地 |
 | TaskTools | 远程/多类型后台任务 poller/reconnect/review-timeout runtime parity；磁盘持久化、基础依赖字段、输出保留、`TaskOutput` 阻塞/超时读取、上游 task type taxonomy、remote supervisor 元数据底座、remote restart recoverable marker、remote restore poll timer reset、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
 | PlanMode | full auto-mode LLM classifier parity、团队审批流；保守 classifier gate、计划工作流持久化、ExitPlanMode approval lifecycle、实现任务关联追踪已落地 |
-| WebFetch | JS 渲染、Cookie 管理；redirect budget / cross-host redirect diagnostic、Content-Type 基础分发与环境代理/`NO_PROXY` 子项已落地 |
+| WebFetch | JS 渲染；redirect budget / cross-host redirect diagnostic、Content-Type 基础分发、环境代理/`NO_PROXY` 与 Cookie/credential 安全边界子项已落地 |
 
 ### 2.3 更新后的顺序执行计划（逐项领取）
 
@@ -95,7 +96,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 1. **BashTool 剩余安全/沙箱复核**：对照 `src/tools/BashTool/**` 与 PowerShell validator，评估是否需要引入原生 PowerShell AST parser（或等价结构化 parser）来补齐 `elementTypes` / `children` / `nameType` / parse error fail-closed / statement securityPatterns 等非正则语义；同时评估 Windows Restricted Token / Job Object OS-level primitive 是否进入实现队列或移入 §7 Intentional 裁剪。
 2. **TaskTools 后台任务 parity**：在现有持久化、取消、`TaskOutput` 阻塞/超时读取、上游 task type taxonomy、remote supervisor 元数据底座、remote restart recoverable marker 和 restore poll timer reset 基础上，补远程/多类型后台任务 poller/reconnect/review-timeout runtime parity，并验证 `/tasks` UI 与 task store 的状态一致性。
 3. **PlanMode 执行闭环**：在已有保守 classifier、计划持久化、审批状态与 `TaskCreate` 关联追踪基础上，补 full auto-mode LLM classifier parity 与团队审批流；完成后用 plan 创建、恢复、审批、执行关联的 e2e 覆盖。
-4. **WebFetch browser-grade 能力**：按 `architecture/mvp-optimization-plans/MVP-009-web-fetch-browser-grade-plan.md` 逐步补 JS 渲染与 Cookie jar；redirect budget / cross-host redirect diagnostic、Content-Type 基础分发和环境代理/`NO_PROXY` 已完成。
+4. **WebFetch browser-grade 能力**：按 `architecture/mvp-optimization-plans/MVP-009-web-fetch-browser-grade-plan.md` 逐步补 JS 渲染；redirect budget / cross-host redirect diagnostic、Content-Type 基础分发、环境代理/`NO_PROXY` 和 Cookie/credential 安全边界已完成。
 5. **API providers 决策/实现**：按 `architecture/mvp-optimization-plans/MVP-001-api-providers-plan.md` 重评 Bedrock 原生 AWS EventStream 与 Vertex direct service-account JWT exchange；实现或写入 §7 Intentional 裁剪，不再停留在“部分完成”。
 6. **Team Memory 客户端同步**：接通 `src/daemon/team_memory_proxy.rs` / `ui/team-memory-server/` 的前端调用路径，补同步、断线恢复与冲突处理测试。
 7. **UI caveats 收束**：修复 §3 的终端 resize 回流与窄终端欢迎页布局；完成后迁移到 archive 或 `KNOWN_ISSUES.md` closed 记录。
