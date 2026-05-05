@@ -195,6 +195,27 @@ fn verbose_flag_accepted() {
         .success();
 }
 
+#[test]
+fn daemon_management_reports_stopped_state_without_running_daemon() {
+    let home = tempfile::tempdir().expect("temp daemon home");
+
+    cli()
+        .args(["daemon", "status"])
+        .env("CC_RUST_HOME", home.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("daemon status: stopped"));
+
+    cli()
+        .args(["daemon", "sleep", "1", "e2e"])
+        .env("CC_RUST_HOME", home.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "daemon command failed: daemon is not running",
+        ));
+}
+
 // =========================================================================
 // 6. System prompt overrides
 // =========================================================================

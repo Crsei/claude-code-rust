@@ -60,11 +60,6 @@ mod tests {
         let path = today_log_path();
         let path_str = path.to_string_lossy();
         assert!(
-            path_str.contains(".cc-rust"),
-            "path should contain .cc-rust: {}",
-            path_str
-        );
-        assert!(
             path_str.contains("logs"),
             "path should contain logs: {}",
             path_str

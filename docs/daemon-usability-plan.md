@@ -443,3 +443,35 @@ Rust 端必须继续遵守路径隔离：所有 cc-rust daemon 状态写入 `~/.
 - `rustfmt --edition 2021` 已针对本阶段 Rust 文件通过。
 - 本地 sleep smoke 通过：临时 `CC_RUST_HOME` + `FEATURE_KAIROS=1` + port `21989` 下，`daemon sleep 60 'phase six smoke'` 后 `/api/status` 返回 `sleeping=true`、`daemon_sleep_reason=phase six smoke`，`daemon wake` 后 `/api/status` 返回 `sleeping=false` 且 `sleep-state.json` 被删除；stop 后 supervisor 不存活。
 - 未执行 30 分钟以上长跑、完整 scheduler worker 和 recoverable task 恢复测试；这些仍是 Phase 7 发布门槛或后续增强项。
+
+## Phase 7 实施记录（2026-05-05）
+
+状态：已补齐 daemon 专用操作文档、快速 CLI 回归测试和发布门槛记录；完整 workspace 发布门槛仍被非 daemon 既有失败阻塞，daemon 目标测试集已通过。
+
+本阶段交付：
+- 新增 `docs/DAEMON_OPERATIONS.md`，集中记录 daemon CLI、slash command、HTTP token、状态文件、发布验证命令与剩余 non-parity 范围。
+- 新增 `e2e_cli::daemon_management_reports_stopped_state_without_running_daemon`，验证外部 CLI 在空 `CC_RUST_HOME` 下能报告 stopped，且没有运行 daemon 时 `daemon sleep` 会安全失败。
+- 修正 `daemon::memory_log` 测试，不再假设 `CC_RUST_HOME` 临时重定向路径必须包含默认目录名 `.cc-rust`。
+- 本计划文档记录 Phase 1-7 的落地结果与已知发布阻塞。
+
+验证记录：
+- `rustfmt --edition 2021 --check` 针对 daemon 相关 Rust 文件与 `tests/e2e_cli.rs` 通过。
+- `cargo fmt --all --check` 通过。
+- `cargo test -p cc-config partition_functions_all_root_under_data_root --lib` 通过。
+- `cargo test -p claude-code-rs daemon::process_state` 通过。
+- `cargo test -p claude-code-rs daemon::protocol` 通过。
+- `cargo test -p claude-code-rs daemon::supervisor` 通过。
+- `cargo test -p claude-code-rs daemon::routes` 通过编译。
+- `cargo test -p claude-code-rs daemon::sse` 通过编译。
+- `cargo test -p claude-code-rs daemon::memory_log` 通过。
+- `cargo test -p claude-code-rs commands::daemon_cmd` 通过。
+- `cargo test -p claude-code-rs tools::exec::sleep` 通过。
+- `cargo test -p claude-code-rs --test e2e_cli daemon_management_reports_stopped_state_without_running_daemon` 通过。
+- `cargo clippy --workspace --all-targets -- -D warnings` 未通过，当前阻塞为既有非本阶段项：`crates/cc-sandbox/src/runner.rs:241` 的 `clippy::needless_lifetimes`。
+- `cargo test --workspace` 未通过；修正 daemon memory_log 后剩余失败在非 daemon 模块：`commands::config_cmd::tests::test_config_set_model_in_memory`、`commands::ide_cmd::tests::select_then_clear_round_trip`、`teams::mailbox::tests::test_write_multiple_and_read`、`tools::fs::file_edit::tests::edit_auto_adjusts_unique_indentation_mismatch`、`tools::worktree::tests::test_exit_worktree_no_session`、`tools::worktree::tests::test_exit_worktree_invalid_action`。
+
+仍未覆盖：
+- 30 分钟以上 daemon soak。
+- 有真实模型凭据的 HTTP submit -> SSE result live e2e。
+- worker 崩溃/重启自动化 e2e。
+- bridge worker 远程注册与远程控制结果回传。
