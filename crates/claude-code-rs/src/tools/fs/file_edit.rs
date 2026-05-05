@@ -14,6 +14,8 @@ use crate::types::tool::{
     ValidationResult,
 };
 
+use super::safe_write::{safe_write_text, SafeWriteOptions};
+
 /// FileEditTool — Edit a file by replacing exact string matches
 ///
 /// Corresponds to TypeScript: tools/FileEditTool
@@ -22,6 +24,7 @@ pub struct FileEditTool;
 const FILE_NOT_READ_ERROR: &str = "File has not been read yet. Read it first before writing to it.";
 const FILE_UNEXPECTEDLY_MODIFIED_ERROR: &str =
     "File has been unexpectedly modified. Read it again before attempting to write it.";
+const MAX_EDIT_FILE_BYTES: usize = 1024 * 1024 * 1024;
 
 impl FileEditTool {
     pub fn new() -> Self {
@@ -440,47 +443,76 @@ impl Tool for FileEditTool {
             content.replacen(&old_string, &new_string, 1)
         };
 
-        // Write back
-        match tokio::fs::write(&file_path, &new_content).await {
-            Ok(()) => {
-                let replacements = if replace_all { occurrence_count } else { 1 };
-                Self::record_edit_state(ctx, &file_path, path, &new_content);
-
-                // Fire FileChanged hook
-                {
-                    let app_state = (ctx.get_app_state)();
-                    let configs =
-                        crate::tools::hooks::load_hook_configs(&app_state.hooks, "FileChanged");
-                    if !configs.is_empty() {
-                        let payload = json!({
-                            "file_path": &file_path,
-                            "operation": "edit",
-                            "replacements": replacements,
-                        });
-                        let _ =
-                            crate::tools::hooks::run_event_hooks("FileChanged", &payload, &configs)
-                                .await;
-                    }
-                }
-
-                Ok(ToolResult {
-                    data: json!({
-                        "output": format!(
-                            "Successfully replaced {} occurrence(s) in {}",
-                            replacements, file_path
-                        ),
-                        "path": file_path,
-                        "replacements": replacements,
-                    }),
+        let safe_options = SafeWriteOptions {
+            max_bytes: MAX_EDIT_FILE_BYTES,
+            session_id: Some(ctx.session_id.clone()),
+            ..Default::default()
+        };
+        let file_path_for_write = file_path.clone();
+        let new_content_for_write = new_content.clone();
+        let write_report = match tokio::task::spawn_blocking(move || {
+            safe_write_text(file_path_for_write, &new_content_for_write, &safe_options)
+        })
+        .await
+        {
+            Ok(Ok(report)) => report,
+            Ok(Err(e)) => {
+                return Ok(ToolResult {
+                    data: json!({ "error": format!("Failed to write edit safely: {}", e) }),
                     new_messages: vec![],
                     ..Default::default()
-                })
+                });
             }
-            Err(e) => Ok(ToolResult {
-                data: json!({ "error": format!("Failed to write file: {}", e) }),
+            Err(e) => {
+                return Ok(ToolResult {
+                    data: json!({ "error": format!("Safe edit task failed: {}", e) }),
+                    new_messages: vec![],
+                    ..Default::default()
+                });
+            }
+        };
+
+        // Write back
+        {
+            let replacements = if replace_all { occurrence_count } else { 1 };
+            Self::record_edit_state(ctx, &file_path, path, &new_content);
+
+            // Fire FileChanged hook
+            {
+                let app_state = (ctx.get_app_state)();
+                let configs =
+                    crate::tools::hooks::load_hook_configs(&app_state.hooks, "FileChanged");
+                if !configs.is_empty() {
+                    let payload = json!({
+                        "file_path": &file_path,
+                        "operation": "edit",
+                        "replacements": replacements,
+                        "edit_history": {
+                            "backup_path": write_report.backup_path.as_ref().map(|p| p.display().to_string()),
+                        },
+                    });
+                    let _ = crate::tools::hooks::run_event_hooks("FileChanged", &payload, &configs)
+                        .await;
+                }
+            }
+
+            Ok(ToolResult {
+                data: json!({
+                    "output": format!(
+                        "Successfully replaced {} occurrence(s) in {}",
+                        replacements, file_path
+                    ),
+                    "path": file_path,
+                    "replacements": replacements,
+                    "edit_history": {
+                        "backup_path": write_report.backup_path.as_ref().map(|p| p.display().to_string()),
+                        "atomic": true,
+                        "permissions_preserved": write_report.permissions_preserved,
+                    },
+                }),
                 new_messages: vec![],
                 ..Default::default()
-            }),
+            })
         }
     }
 
@@ -761,6 +793,14 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(first_edit.data["replacements"], 1);
+        assert_eq!(first_edit.data["edit_history"]["atomic"], true);
+        let backup_path = first_edit.data["edit_history"]["backup_path"]
+            .as_str()
+            .expect("edit should create a recovery backup");
+        assert_eq!(
+            std::fs::read_to_string(backup_path).unwrap(),
+            "alpha\nbeta\n"
+        );
 
         let second_edit = FileEditTool::new()
             .call(
