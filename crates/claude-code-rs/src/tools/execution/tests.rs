@@ -330,6 +330,13 @@ fn test_powershell_dangerous_command_blocked() {
         result.is_some(),
         "PowerShell obvious parse errors should fail closed"
     );
+
+    let input = serde_json::json!({"command": "Write-Output { Get-Date }"});
+    let result = security_validate("id14", "PowerShell", &input, &tool, &ctx, Instant::now());
+    assert!(
+        result.is_some(),
+        "PowerShell script blocks should fail closed unless used by safe consumers"
+    );
 }
 
 // -- make_error_result tests (shared helper in mod.rs) --------------------

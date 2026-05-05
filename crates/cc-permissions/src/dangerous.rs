@@ -629,6 +629,15 @@ fn powershell_ast_heuristic_reason(command: &str) -> Option<&'static str> {
             '$' if chars.get(i + 1) == Some(&'(') => {
                 return Some("PowerShell subexpression can hide command execution");
             }
+            '{' if chars.get(i.wrapping_sub(1)) != Some(&'@') => {
+                let command_name = powershell_segment_command_before(&chars, i);
+                if !command_name
+                    .as_deref()
+                    .is_some_and(is_powershell_safe_script_block_consumer)
+                {
+                    return Some("PowerShell script block can execute arbitrary code");
+                }
+            }
             '@' if is_powershell_command_boundary(chars.get(i.wrapping_sub(1)))
                 && is_powershell_identifier_start(chars.get(i + 1)) =>
             {
@@ -675,6 +684,80 @@ fn powershell_ast_heuristic_reason(command: &str) -> Option<&'static str> {
     }
 
     None
+}
+
+fn powershell_segment_command_before(chars: &[char], idx: usize) -> Option<String> {
+    let mut start = idx;
+    while start > 0 {
+        let prev = chars[start - 1];
+        if matches!(prev, '|' | ';' | '\n' | '\r' | '&') {
+            break;
+        }
+        start -= 1;
+    }
+
+    while start < idx && chars[start].is_whitespace() {
+        start += 1;
+    }
+    if matches!(chars.get(start), Some('&' | '.')) {
+        start += 1;
+        while start < idx && chars[start].is_whitespace() {
+            start += 1;
+        }
+    }
+
+    let mut end = start;
+    while end < idx {
+        let ch = chars[end];
+        if ch.is_whitespace() || matches!(ch, '|' | ';' | '&' | '(' | ')' | '{' | '}') {
+            break;
+        }
+        end += 1;
+    }
+
+    if end <= start {
+        return None;
+    }
+
+    let raw = chars[start..end].iter().collect::<String>();
+    Some(strip_powershell_module_prefix(&raw).to_ascii_lowercase())
+}
+
+fn strip_powershell_module_prefix(name: &str) -> &str {
+    if name.starts_with(".\\")
+        || name.starts_with("..\\")
+        || name.starts_with("\\\\")
+        || name.get(1..2) == Some(":")
+    {
+        return name;
+    }
+
+    name.rsplit_once('\\')
+        .map(|(_, stripped)| stripped)
+        .unwrap_or(name)
+}
+
+fn is_powershell_safe_script_block_consumer(name: &str) -> bool {
+    matches!(
+        name,
+        "where-object"
+            | "where"
+            | "?"
+            | "sort-object"
+            | "sort"
+            | "select-object"
+            | "select"
+            | "group-object"
+            | "group"
+            | "format-table"
+            | "ft"
+            | "format-list"
+            | "fl"
+            | "format-wide"
+            | "fw"
+            | "format-custom"
+            | "fc"
+    )
 }
 
 fn powershell_type_literal_outside_clm(command: &str) -> Option<String> {
@@ -1057,5 +1140,18 @@ mod tests {
         assert!(is_dangerous_powershell_command("Write-Output '[not a delimiter'").is_none());
         assert!(is_dangerous_powershell_command("[int]$count").is_none());
         assert!(is_dangerous_powershell_command("[string[]]$names").is_none());
+    }
+
+    #[test]
+    fn test_powershell_script_blocks_fail_closed_except_safe_consumers() {
+        assert!(is_dangerous_powershell_command("Write-Output { Get-Date }").is_some());
+        assert!(is_dangerous_powershell_command("ForEach-Object { $_.Kill() }").is_some());
+        assert!(is_dangerous_powershell_command("function Invoke-Thing { Get-Date }").is_some());
+
+        assert!(is_dangerous_powershell_command("Where-Object { $_.Name -like 'a*' }").is_none());
+        assert!(is_dangerous_powershell_command("? { $_.Name -like 'a*' }").is_none());
+        assert!(is_dangerous_powershell_command("Sort-Object { $_.Length }").is_none());
+        assert!(is_dangerous_powershell_command("Select-Object { $_.Name }").is_none());
+        assert!(is_dangerous_powershell_command("Write-Output @{Name='x'}").is_none());
     }
 }
