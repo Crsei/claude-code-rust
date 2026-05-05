@@ -436,6 +436,11 @@ static POWERSHELL_CLM_ALLOWED_TYPES: LazyLock<HashSet<&'static str>> = LazyLock:
     .collect()
 });
 
+static POWERSHELL_NEW_OBJECT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)(?:^|[|;&\n({])\s*(?:[A-Za-z0-9_.-]+\\)?New-Object\b(?P<args>[^|;&\n{}]*)")
+        .expect("valid New-Object regex")
+});
+
 /// Check if a shell command string contains a dangerous pattern.
 ///
 /// Returns `Some(reason)` with a human-readable explanation if the command is
@@ -504,6 +509,13 @@ pub fn is_dangerous_powershell_command(command: &str) -> Option<String> {
 
     if let Some(reason) = powershell_ast_heuristic_reason(trimmed) {
         return Some(reason.to_string());
+    }
+
+    if let Some(type_name) = powershell_new_object_type_outside_clm(trimmed) {
+        return Some(format!(
+            "New-Object instantiates .NET type '{}' outside the ConstrainedLanguage allowlist",
+            type_name
+        ));
     }
 
     if let Some(type_name) = powershell_type_literal_outside_clm(trimmed) {
@@ -770,6 +782,164 @@ fn is_powershell_safe_script_block_consumer(name: &str) -> bool {
             | "format-custom"
             | "fc"
     )
+}
+
+fn powershell_new_object_type_outside_clm(command: &str) -> Option<String> {
+    for captures in POWERSHELL_NEW_OBJECT_RE.captures_iter(command) {
+        let Some(args) = captures.name("args").map(|m| m.as_str()) else {
+            continue;
+        };
+        let Some(type_name) = powershell_new_object_type_from_args(args) else {
+            continue;
+        };
+        let normalized = normalize_powershell_type_name(&type_name);
+        if !POWERSHELL_CLM_ALLOWED_TYPES.contains(normalized.as_str()) {
+            return Some(type_name);
+        }
+    }
+    None
+}
+
+fn powershell_new_object_type_from_args(args: &str) -> Option<String> {
+    let tokens = split_powershell_args(args);
+    let mut i = 0;
+
+    while i < tokens.len() {
+        let token = tokens[i].trim();
+        if token.is_empty() {
+            i += 1;
+            continue;
+        }
+
+        if let Some((name, inline_value)) = parse_powershell_parameter(token) {
+            if powershell_param_abbrev_matches(&name, "typename", "t") {
+                return inline_value
+                    .filter(|value| !value.trim().is_empty())
+                    .or_else(|| tokens.get(i + 1).map(|value| clean_powershell_arg(value)));
+            }
+
+            if new_object_value_param_consumes_next(&name) && inline_value.is_none() {
+                i += 2;
+            } else {
+                i += 1;
+            }
+            continue;
+        }
+
+        return Some(clean_powershell_arg(token));
+    }
+
+    None
+}
+
+fn split_powershell_args(args: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut in_single = false;
+    let mut in_double = false;
+    let chars: Vec<char> = args.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let ch = chars[i];
+
+        if in_single {
+            if ch == '\'' {
+                if chars.get(i + 1) == Some(&'\'') {
+                    current.push('\'');
+                    i += 2;
+                    continue;
+                }
+                in_single = false;
+            } else {
+                current.push(ch);
+            }
+            i += 1;
+            continue;
+        }
+
+        if in_double {
+            if ch == '`' {
+                if let Some(next) = chars.get(i + 1) {
+                    current.push(*next);
+                    i += 2;
+                    continue;
+                }
+            }
+            if ch == '"' {
+                in_double = false;
+            } else {
+                current.push(ch);
+            }
+            i += 1;
+            continue;
+        }
+
+        match ch {
+            '\'' => in_single = true,
+            '"' => in_double = true,
+            '`' => {
+                if let Some(next) = chars.get(i + 1) {
+                    current.push(*next);
+                    i += 2;
+                    continue;
+                }
+            }
+            ch if ch.is_whitespace() => {
+                if !current.is_empty() {
+                    tokens.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(ch),
+        }
+
+        i += 1;
+    }
+
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+
+    tokens
+}
+
+fn parse_powershell_parameter(token: &str) -> Option<(String, Option<String>)> {
+    let cleaned = token.trim().replace('`', "");
+    let mut chars = cleaned.chars();
+    let first = chars.next()?;
+    if !is_powershell_param_prefix(first) {
+        return None;
+    }
+
+    let rest = chars.as_str();
+    let (name, inline_value) = rest
+        .split_once(':')
+        .map(|(name, value)| (name, Some(clean_powershell_arg(value))))
+        .unwrap_or((rest, None));
+
+    Some((name.to_ascii_lowercase(), inline_value))
+}
+
+fn is_powershell_param_prefix(ch: char) -> bool {
+    matches!(ch, '-' | '/' | '\u{2013}' | '\u{2014}' | '\u{2015}')
+}
+
+fn powershell_param_abbrev_matches(name: &str, full: &str, min: &str) -> bool {
+    name.len() >= min.len() && full.starts_with(name)
+}
+
+fn new_object_value_param_consumes_next(name: &str) -> bool {
+    powershell_param_abbrev_matches(name, "argumentlist", "a")
+        || powershell_param_abbrev_matches(name, "comobject", "com")
+        || powershell_param_abbrev_matches(name, "property", "p")
+        || powershell_param_abbrev_matches(name, "typename", "t")
+}
+
+fn clean_powershell_arg(value: &str) -> String {
+    value
+        .trim()
+        .trim_matches(|ch| matches!(ch, '\'' | '"' | '`'))
+        .to_string()
 }
 
 fn powershell_type_literal_outside_clm(command: &str) -> Option<String> {
@@ -1146,6 +1316,33 @@ mod tests {
         assert!(is_dangerous_powershell_command("Get-ChildItem env:").is_none());
         assert!(is_dangerous_powershell_command("Where-Object { $_.Name -like 'a*' }").is_none());
         assert!(is_dangerous_command("powershell.exe -EncodedCommand SQBFAFgA").is_none());
+    }
+
+    #[test]
+    fn test_powershell_new_object_typename_clm_boundary() {
+        assert!(is_dangerous_powershell_command("New-Object System.Net.WebClient").is_some());
+        assert!(
+            is_dangerous_powershell_command("New-Object -TypeName System.Diagnostics.Process")
+                .is_some()
+        );
+        assert!(
+            is_dangerous_powershell_command("New-Object -t:System.Reflection.Assembly").is_some()
+        );
+        assert!(
+            is_dangerous_powershell_command(r#"New-Object -TypeName "System.IO.FileInfo""#)
+                .is_some()
+        );
+        assert!(
+            is_dangerous_powershell_command("New-Object -Strict System.Net.Sockets.TcpClient")
+                .is_some()
+        );
+
+        assert!(is_dangerous_powershell_command("New-Object PSObject").is_none());
+        assert!(is_dangerous_powershell_command("New-Object -TypeName string").is_none());
+        assert!(is_dangerous_powershell_command(
+            r#"New-Object -TypeName "System.Uri" -ArgumentList "https://example.test""#
+        )
+        .is_none());
     }
 
     #[test]
