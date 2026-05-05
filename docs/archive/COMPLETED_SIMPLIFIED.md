@@ -195,7 +195,7 @@
 
 | | TypeScript | Rust |
 |---|---|---|
-| 行数 | 1,561 (15 文件, 6 工具) | 648 (1 文件) |
+| 行数 | 1,561 (15 文件, 6 工具) | 2,604 (1 文件) |
 | 文件 | — | `tools/tasks.rs` |
 
 **Rust 保留：**
@@ -209,10 +209,11 @@
 - ✅ remote/multi-type supervisor 元数据底座：`tool_use_id`、`remote_task_type`、`remote_session_id`、`remote_task_metadata`、`poll_started_at`
 - ✅ remote restart recovery marker：重启后携带 remote identity 的未完成任务恢复为 `recoverable`，并由 `TaskOutput` 保持等待/未就绪语义
 - ✅ remote restore poll timer reset：恢复 remote task 时重置 `poll_started_at`，避免 remote review 离线后立即超时
+- ✅ remote review timeout guard：读取/list 时刷新 `ultrareview` / `isRemoteReview` active 任务，超过 `poll_started_at + 30min` 后持久化为 `failed`
 
 **TS 独有（未移植）：**
-- 远程/多类型后台任务 poller/reconnect/review-timeout runtime parity
-- 复杂后台任务 auto-background / review-timeout 细节
+- 远程/多类型后台任务 poller/reconnect runtime parity
+- 复杂后台任务 auto-background 细节
 
 ---
 

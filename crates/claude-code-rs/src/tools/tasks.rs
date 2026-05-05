@@ -32,6 +32,7 @@ const OUTPUT_SUMMARY_MAX_CHARS: usize = 2_000;
 const DEFAULT_TASK_OUTPUT_TIMEOUT_MS: u64 = 30_000;
 const MAX_TASK_OUTPUT_TIMEOUT_MS: u64 = 600_000;
 const TASK_OUTPUT_POLL_INTERVAL_MS: u64 = 100;
+const REMOTE_REVIEW_TIMEOUT_MS: i64 = 30 * 60 * 1000;
 const TASK_KIND_TOOL: &str = "tool";
 const TASK_KIND_LOCAL_BASH: &str = "local_bash";
 const TASK_KIND_LOCAL_AGENT: &str = "local_agent";
@@ -283,7 +284,7 @@ impl TaskStore {
     }
 
     pub fn get(&self, id: &str) -> Option<TaskEntry> {
-        self.tasks.lock().get(id).cloned()
+        self.refresh_remote_review_timeout(id)
     }
 
     pub fn update_status(&self, id: &str, status: TaskStatus) -> Option<TaskEntry> {
@@ -331,6 +332,7 @@ impl TaskStore {
     }
 
     pub fn list(&self) -> Vec<TaskEntry> {
+        self.refresh_remote_review_timeouts();
         let tasks = self.tasks.lock();
         let mut entries: Vec<TaskEntry> = tasks.values().cloned().collect();
         entries.sort_by_key(|e| (e.created_at, e.id.clone()));
@@ -417,6 +419,44 @@ impl TaskStore {
                 "failed to persist task"
             );
         }
+    }
+
+    fn refresh_remote_review_timeouts(&self) {
+        let ids: Vec<String> = self.tasks.lock().keys().cloned().collect();
+        for id in ids {
+            self.refresh_remote_review_timeout(&id);
+        }
+    }
+
+    fn refresh_remote_review_timeout(&self, id: &str) -> Option<TaskEntry> {
+        let now = chrono::Utc::now();
+        let now_ms = now.timestamp_millis();
+        let mut tasks = self.tasks.lock();
+        let entry = tasks.get_mut(id)?;
+
+        if !remote_review_timed_out(entry, now_ms) {
+            return Some(entry.clone());
+        }
+
+        if entry.previous_status.is_none() {
+            entry.previous_status = Some(entry.status);
+        }
+        entry.status = TaskStatus::Failed;
+        entry.updated_at = now.timestamp();
+        if entry.output.trim().is_empty() {
+            entry.output =
+                "Remote review did not produce output (remote session exceeded 30 minutes)."
+                    .to_string();
+        } else if !entry.output.contains("remote session exceeded 30 minutes") {
+            entry
+                .output
+                .push_str("\nRemote review timed out after 30 minutes.");
+        }
+        refresh_output_metadata(entry);
+        let cloned = entry.clone();
+        drop(tasks);
+        self.persist_entry(&cloned);
+        Some(cloned)
     }
 }
 
@@ -807,6 +847,24 @@ fn is_remote_recoverable_task(entry: &TaskEntry) -> bool {
     entry.kind == TASK_KIND_REMOTE_AGENT
         || entry.remote_session_id.is_some()
         || entry.remote_task_type.is_some()
+}
+
+fn is_remote_review_task(entry: &TaskEntry) -> bool {
+    entry.remote_task_type.as_deref() == Some(REMOTE_TASK_TYPE_ULTRAREVIEW)
+        || entry
+            .remote_task_metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("isRemoteReview"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+}
+
+fn remote_review_timed_out(entry: &TaskEntry, now_ms: i64) -> bool {
+    entry.status.is_active_for_output_wait()
+        && is_remote_review_task(entry)
+        && entry
+            .poll_started_at
+            .is_some_and(|started| now_ms.saturating_sub(started) > REMOTE_REVIEW_TIMEOUT_MS)
 }
 
 fn normalize_loaded_status(status: TaskStatus) -> TaskStatus {
@@ -2127,6 +2185,62 @@ mod tests {
         assert_eq!(restored_again.previous_status, Some(TaskStatus::InProgress));
         assert_eq!(restored_again.recovered_at, previous_recovered_at);
         assert!(restored_again.poll_started_at.unwrap() >= poll_started_at);
+    }
+
+    #[test]
+    fn test_remote_review_timeout_marks_task_failed_and_persists() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path());
+        let stale_poll_started_at =
+            chrono::Utc::now().timestamp_millis() - REMOTE_REVIEW_TIMEOUT_MS - 1;
+        let task = store.create_with_options(
+            "remote review",
+            "wait for remote review output",
+            TaskCreateOptions {
+                kind: Some("remote_agent".to_string()),
+                remote_task_type: Some("ultrareview".to_string()),
+                remote_session_id: Some("session-timeout".to_string()),
+                poll_started_at: Some(stale_poll_started_at),
+                ..TaskCreateOptions::default()
+            },
+        );
+        store.update_status(&task.id, TaskStatus::InProgress);
+
+        let timed_out = store.get(&task.id).unwrap();
+        assert_eq!(timed_out.status, TaskStatus::Failed);
+        assert_eq!(timed_out.previous_status, Some(TaskStatus::InProgress));
+        assert!(timed_out
+            .output
+            .contains("remote session exceeded 30 minutes"));
+
+        let restarted = TaskStore::with_dir(tmp.path());
+        let restored = restarted.get(&task.id).unwrap();
+        assert_eq!(restored.status, TaskStatus::Failed);
+        assert!(restored
+            .output
+            .contains("remote session exceeded 30 minutes"));
+    }
+
+    #[test]
+    fn test_remote_review_timeout_does_not_apply_to_generic_remote_agents() {
+        let (_tmp, store) = temp_store();
+        let stale_poll_started_at =
+            chrono::Utc::now().timestamp_millis() - REMOTE_REVIEW_TIMEOUT_MS - 1;
+        let task = store.create_with_options(
+            "remote agent",
+            "wait for generic remote agent",
+            TaskCreateOptions {
+                kind: Some("remote_agent".to_string()),
+                remote_task_type: Some("remote-agent".to_string()),
+                remote_session_id: Some("session-generic".to_string()),
+                poll_started_at: Some(stale_poll_started_at),
+                ..TaskCreateOptions::default()
+            },
+        );
+        store.update_status(&task.id, TaskStatus::InProgress);
+
+        let still_running = store.get(&task.id).unwrap();
+        assert_eq!(still_running.status, TaskStatus::InProgress);
     }
 
     #[test]
