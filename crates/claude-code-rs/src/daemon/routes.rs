@@ -91,8 +91,8 @@ pub struct DetachRequest {
 /// Convert an [`SdkMessage`] into an [`SseEvent`] suitable for broadcasting
 /// over SSE.
 ///
-/// Returns `None` for message variants that do not need to be sent to
-/// frontends (currently: `ApiRetry`, `CompactBoundary`, `ToolUseSummary`).
+/// Returns `None` only for message variants that are internal to the SDK
+/// stream and do not have a daemon-facing contract.
 pub fn sdk_message_to_sse(msg: &SdkMessage, message_id: &str) -> Option<SseEvent> {
     let (event_type, data) = match msg {
         SdkMessage::SystemInit(init) => (
@@ -147,10 +147,35 @@ pub fn sdk_message_to_sse(msg: &SdkMessage, message_id: &str) -> Option<SseEvent
                 "session_id": t.session_id,
             }),
         ),
-        // Variants we do not broadcast to SSE clients.
-        SdkMessage::ApiRetry(_)
-        | SdkMessage::CompactBoundary(_)
-        | SdkMessage::ToolUseSummary(_) => return None,
+        SdkMessage::ApiRetry(retry) => (
+            "api_retry".to_string(),
+            json!({
+                "message_id": message_id,
+                "attempt": retry.attempt,
+                "max_retries": retry.max_retries,
+                "retry_delay_ms": retry.retry_delay_ms,
+                "error_status": retry.error_status,
+                "error": retry.error,
+                "session_id": retry.session_id,
+            }),
+        ),
+        SdkMessage::CompactBoundary(boundary) => (
+            "compact_boundary".to_string(),
+            json!({
+                "message_id": message_id,
+                "compact_metadata": boundary.compact_metadata,
+                "session_id": boundary.session_id,
+            }),
+        ),
+        SdkMessage::ToolUseSummary(summary) => (
+            "tool_use_summary".to_string(),
+            json!({
+                "message_id": message_id,
+                "summary": summary.summary,
+                "preceding_tool_use_ids": summary.preceding_tool_use_ids,
+                "session_id": summary.session_id,
+            }),
+        ),
     };
 
     Some(SseEvent {
@@ -577,4 +602,85 @@ pub fn team_memory_routes() -> Router<DaemonState> {
 /// `GET /health` -- simple liveness probe.
 pub async fn health() -> Json<Value> {
     Json(json!({ "status": "ok" }))
+}
+
+#[cfg(test)]
+mod tests {
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::engine::sdk_types::{SdkApiRetry, SdkCompactBoundary, SdkToolUseSummary};
+    use crate::types::message::CompactMetadata;
+
+    #[test]
+    fn daemon_sse_broadcasts_api_retry_events() {
+        let event = sdk_message_to_sse(
+            &SdkMessage::ApiRetry(SdkApiRetry {
+                attempt: 1,
+                max_retries: 3,
+                retry_delay_ms: 250,
+                error_status: Some(529),
+                error: "overloaded".to_string(),
+                session_id: "session-1".to_string(),
+                uuid: Uuid::new_v4(),
+            }),
+            "message-1",
+        )
+        .expect("api retry should be broadcast");
+
+        assert_eq!(event.event_type, "api_retry");
+        assert_eq!(event.data["message_id"], "message-1");
+        assert_eq!(event.data["attempt"], 1);
+        assert_eq!(event.data["max_retries"], 3);
+        assert_eq!(event.data["error_status"], 529);
+        assert_eq!(event.data["session_id"], "session-1");
+    }
+
+    #[test]
+    fn daemon_sse_broadcasts_compact_boundaries() {
+        let event = sdk_message_to_sse(
+            &SdkMessage::CompactBoundary(SdkCompactBoundary {
+                session_id: "session-1".to_string(),
+                uuid: Uuid::new_v4(),
+                compact_metadata: Some(CompactMetadata {
+                    pre_compact_token_count: 100,
+                    post_compact_token_count: 40,
+                }),
+            }),
+            "message-1",
+        )
+        .expect("compact boundary should be broadcast");
+
+        assert_eq!(event.event_type, "compact_boundary");
+        assert_eq!(event.data["message_id"], "message-1");
+        assert_eq!(
+            event.data["compact_metadata"]["pre_compact_token_count"],
+            100
+        );
+        assert_eq!(
+            event.data["compact_metadata"]["post_compact_token_count"],
+            40
+        );
+        assert_eq!(event.data["session_id"], "session-1");
+    }
+
+    #[test]
+    fn daemon_sse_broadcasts_tool_use_summaries() {
+        let event = sdk_message_to_sse(
+            &SdkMessage::ToolUseSummary(SdkToolUseSummary {
+                summary: "Read finished".to_string(),
+                preceding_tool_use_ids: vec!["toolu_1".to_string()],
+                session_id: "session-1".to_string(),
+                uuid: Uuid::new_v4(),
+            }),
+            "message-1",
+        )
+        .expect("tool use summary should be broadcast");
+
+        assert_eq!(event.event_type, "tool_use_summary");
+        assert_eq!(event.data["message_id"], "message-1");
+        assert_eq!(event.data["summary"], "Read finished");
+        assert_eq!(event.data["preceding_tool_use_ids"][0], "toolu_1");
+        assert_eq!(event.data["session_id"], "session-1");
+    }
 }

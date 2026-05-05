@@ -74,6 +74,7 @@
 | 6.2 only-added-fields clone 策略 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs observable_input_backfill`，4 passed；`cargo test -p cc-engine`，12 passed。 | `Tool` trait 新增 observer-only `backfill_observable_input()`；`backfill_observable_tool_inputs()` 只在 tool backfill 新增字段时 clone assistant message，覆盖已有字段时保留原消息 byte identity。 |
 | 6.3 streaming / post-stream 双路径接入 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs query::loop_impl::loop_tests`，22 passed。 | 主 loop yield assistant 前生成 observer-facing clone，但 `state.messages` 和下一轮 model request 继续保留原始 assistant；gate off 和 gate on 的 observable tool input 一致。 |
 | 6.4 prompt-cache identity 回归测试 | 已完成 | 2026-05-05 | `observable_input_backfill_keeps_byte_identity_when_only_overwriting_fields`、`observable_input_backfill_clones_yield_without_changing_next_request_gate_off`、`observable_input_backfill_matches_with_streaming_tool_gate_on` 通过。 | 测试断言 file-path 类覆盖字段不触发 clone，SendMessage 类新增字段触发 observer clone，且下一轮请求不携带 observer-only 字段。 |
+| 7.6 daemon SSE 事件覆盖 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs daemon::routes::tests`，3 passed。 | daemon SSE 不再过滤 `ApiRetry`、`CompactBoundary`、`ToolUseSummary`；事件名分别为 `api_retry`、`compact_boundary`、`tool_use_summary`，payload 保留 `message_id`、`session_id` 和对应关键字段。 |
 
 ## Subagent 并行拆分规则
 
