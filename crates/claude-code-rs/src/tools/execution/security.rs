@@ -8,10 +8,11 @@ use serde_json::Value;
 
 use crate::permissions::dangerous;
 use crate::permissions::path_validation;
+use crate::types::app_state::AppState;
 use crate::types::tool::ToolUseContext;
 use crate::types::tool::{PermissionMode, Tool, Tools};
 
-use super::{make_error_result, ToolExecutionResult};
+use super::{ToolExecutionResult, make_error_result};
 
 /// Centralized security checks run before hooks and permission evaluation.
 ///
@@ -143,6 +144,41 @@ pub(crate) fn is_plan_mode_plan_file_write(tool_name: &str, input: &Value) -> bo
     let cwd = crate::bootstrap::state::original_cwd();
     let plan_path = crate::config::paths::current_plan_file_path(&cwd);
     paths_equivalent_for_plan_file(&candidate, &plan_path)
+}
+
+/// True when sandbox `allowedCommands` should pre-approve this shell call.
+///
+/// This is intentionally narrower than permission allow rules: it applies
+/// only to sandboxed workspace-mode shell commands and only after the normal
+/// deny/ask checks have already had a chance to win.
+pub(crate) fn sandbox_allowed_command_applies(
+    tool_name: &str,
+    input: &Value,
+    app_state: &AppState,
+) -> bool {
+    if !matches!(tool_name, "Bash" | "PowerShell") {
+        return false;
+    }
+    if input
+        .get("dangerouslyDisableSandbox")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        return false;
+    }
+    let Some(command) = input.get("command").and_then(|v| v.as_str()) else {
+        return false;
+    };
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let policy = crate::sandbox::policy_from_app_state(
+        &app_state.tool_permission_context,
+        &app_state.settings.sandbox,
+        cwd,
+        false,
+    );
+    policy.enabled
+        && policy.mode == crate::sandbox::SandboxMode::Workspace
+        && policy.is_allowed_command(command)
 }
 
 fn paths_equivalent_for_plan_file(candidate: &Path, plan_path: &Path) -> bool {

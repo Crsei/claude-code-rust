@@ -89,7 +89,7 @@
 
 ## 后续动作
 
-1. 优先确认 Safety 的未实现项：Windows OS-level sandbox、`allowedCommands` 到 permission decision 的闭环、`allowedPrompts` 自然语言 classifier。
+1. 优先确认 Safety 的未实现项：Windows OS-level sandbox、`allowedPrompts` 自然语言 classifier。
 2. 其次确认 MCP transport 与协议安全：SSE、认证、断线恢复、完整 server / resource 行为。
 3. 再确认 Context 端到端链路：memory 注入、session-memory 压缩、精确 token 统计。
 4. 对 Agent Teams 明确产品边界：继续保留 in-process 版本，还是补 coordinator / swarm 同构模式。
@@ -101,3 +101,4 @@
 | 日期 | 任务 | 状态 | 证据 | 验证 |
 | --- | --- | --- | --- | --- |
 | 2026-05-05 | Safety / Plan mode `allowedPrompts` | 已完成确定性 Bash pattern bridge；语义 classifier 仍部分实现 | `crates/claude-code-rs/src/tools/plan_mode.rs` 接受 `allowedPrompts`，批准后写入 `plan_allowed_prompts` session rules | `cargo test -p claude-code-rs tools::plan_mode::tests:: -- --nocapture`，10 passed |
+| 2026-05-05 | Safety / Sandbox `allowedCommands` | 已完成 workspace sandbox command allow bridge | `crates/claude-code-rs/src/tools/execution/security.rs` 统一判断，`engine/lifecycle/deps.rs` 与 `tools/execution/pipeline.rs` 接入 central permission fallback | `cargo test -p cc-sandbox allowed_command -- --nocapture` passed；`cargo test -p claude-code-rs central_permission_sandbox_allowed_command -- --nocapture` 被当前工作树未提交的 `crates/cc-compact/src/context_collapse.rs` 编译错误阻塞 |

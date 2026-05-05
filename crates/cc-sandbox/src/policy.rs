@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use cc_config::settings::SandboxSettings;
 
-use super::availability::{detect_availability, Availability};
+use super::availability::{Availability, detect_availability};
 use super::filesystem::PathResolver;
 use super::mode::SandboxMode;
 use super::network::NetworkPolicy;
@@ -54,10 +54,7 @@ impl SandboxPolicy {
     /// Is `cmd` in the `allowedCommands` pre-approval list?
     ///
     /// Exposed on the public policy surface so the permission-decision flow
-    /// can auto-approve sandboxed commands in `workspace` mode. The current
-    /// cc-rust binary doesn't call it yet; the hook is deferred to a
-    /// follow-up that wires `allowedCommands` into `permissions::decision`.
-    #[allow(dead_code)]
+    /// can auto-approve sandboxed commands in `workspace` mode.
     pub fn is_allowed_command(&self, cmd: &str) -> bool {
         command_matches_any(cmd, &self.allowed_commands)
     }

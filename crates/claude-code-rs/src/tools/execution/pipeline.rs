@@ -32,9 +32,10 @@ use crate::types::message::AssistantMessage;
 use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools};
 
 use super::security::{
-    enforce_result_size, find_tool, is_plan_mode_plan_file_write, security_validate,
+    enforce_result_size, find_tool, is_plan_mode_plan_file_write, sandbox_allowed_command_applies,
+    security_validate,
 };
-use super::{make_error_result, ToolExecutionResult};
+use super::{ToolExecutionResult, make_error_result};
 
 /// Execute a single tool call through the full pipeline.
 ///
@@ -213,7 +214,7 @@ pub async fn run_tool_use(
         }
     }
 
-    let central_decision = if plan_file_write_allowed {
+    let mut central_decision = if plan_file_write_allowed {
         PermissionDecision {
             behavior: PermissionBehavior::Allow,
             updated_input: None,
@@ -232,6 +233,23 @@ pub async fn run_tool_use(
             None,
         )
     };
+    if matches!(&central_decision.behavior, PermissionBehavior::Ask)
+        && matches!(
+            &central_decision.reason,
+            decision::PermissionDecisionReason::Mode { .. }
+        )
+        && app_state.tool_permission_context.mode != crate::types::tool::PermissionMode::Plan
+        && sandbox_allowed_command_applies(tool_name, &effective_input, &app_state)
+    {
+        central_decision = PermissionDecision {
+            behavior: PermissionBehavior::Allow,
+            updated_input: None,
+            message: None,
+            reason: decision::PermissionDecisionReason::Mode {
+                mode: "sandbox_allowed_command".into(),
+            },
+        };
+    }
 
     let effective_input = central_decision
         .updated_input

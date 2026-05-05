@@ -6,8 +6,8 @@
 
 use parking_lot::RwLock;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::Result;
 use futures::Stream;
@@ -17,16 +17,16 @@ use crate::query::deps::{
     CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
 };
 use crate::tools::execution::{
-    enforce_result_size, find_tool, is_plan_mode_plan_file_write, security_validate,
-    ToolExecutionResult,
+    ToolExecutionResult, enforce_result_size, find_tool, is_plan_mode_plan_file_write,
+    sandbox_allowed_command_applies, security_validate,
 };
 use crate::types::app_state::AppState;
 use crate::types::message::{Message, StreamEvent};
 use crate::types::state::AutoCompactTracking;
 use crate::types::tool::{PermissionMode, ToolProgress, Tools, ValidationResult};
 
-use super::helpers::{build_messages_request, format_conversation_for_summary};
 use super::QueryEngineState;
+use super::helpers::{build_messages_request, format_conversation_for_summary};
 
 /// Dependency injection bridge: provides the query loop with access to the
 /// engine's shared state (abort flag, app state, tools) and, optionally, a
@@ -78,7 +78,7 @@ fn central_permission_result_for_tool(
     let plan_file_write_allowed = app_state.tool_permission_context.mode == PermissionMode::Plan
         && is_plan_mode_plan_file_write(tool_name, input);
 
-    let decision = if plan_file_write_allowed {
+    let mut decision = if plan_file_write_allowed {
         PermissionDecision {
             behavior: PermissionBehavior::Allow,
             updated_input: None,
@@ -96,6 +96,20 @@ fn central_permission_result_for_tool(
             None,
         )
     };
+    if matches!(&decision.behavior, PermissionBehavior::Ask)
+        && matches!(&decision.reason, PermissionDecisionReason::Mode { .. })
+        && app_state.tool_permission_context.mode != PermissionMode::Plan
+        && sandbox_allowed_command_applies(tool_name, input, app_state)
+    {
+        decision = PermissionDecision {
+            behavior: PermissionBehavior::Allow,
+            updated_input: None,
+            message: None,
+            reason: PermissionDecisionReason::Mode {
+                mode: "sandbox_allowed_command".to_string(),
+            },
+        };
+    }
     let behavior = decision.behavior;
     let message = decision.message;
     if let Some(updated_input) = decision.updated_input {
@@ -1086,7 +1100,7 @@ mod tests {
     use crate::types::tool::{
         PermissionCallback, PermissionMode, PermissionResult, Tool, ToolResult, ToolUseContext,
     };
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     struct CanonicalTool {
         name: &'static str,
@@ -1275,6 +1289,50 @@ mod tests {
     }
 
     #[test]
+    fn central_permission_sandbox_allowed_command_allows_workspace_bash() {
+        let mut app_state = AppState::default();
+        app_state.settings.sandbox.enabled = Some(true);
+        app_state.settings.sandbox.mode = Some("workspace".into());
+        app_state.settings.sandbox.allowed_commands = vec!["cargo test".into()];
+        let mut input = json!({"command": "cargo test --all"});
+
+        let result = central_permission_result_for_tool("Bash", &mut input, &app_state, None);
+
+        assert!(matches!(result, PermissionResult::Allow { .. }));
+    }
+
+    #[test]
+    fn central_permission_sandbox_allowed_command_does_not_override_ask_rule() {
+        let mut app_state = AppState::default();
+        app_state.settings.sandbox.enabled = Some(true);
+        app_state.settings.sandbox.mode = Some("workspace".into());
+        app_state.settings.sandbox.allowed_commands = vec!["cargo test".into()];
+        app_state
+            .tool_permission_context
+            .always_ask_rules
+            .insert("test".into(), vec!["Bash".into()]);
+        let mut input = json!({"command": "cargo test --all"});
+
+        let result = central_permission_result_for_tool("Bash", &mut input, &app_state, None);
+
+        assert!(matches!(result, PermissionResult::Ask { .. }));
+    }
+
+    #[test]
+    fn central_permission_sandbox_allowed_command_does_not_override_plan_mode() {
+        let mut app_state = AppState::default();
+        app_state.tool_permission_context.mode = PermissionMode::Plan;
+        app_state.settings.sandbox.enabled = Some(true);
+        app_state.settings.sandbox.mode = Some("workspace".into());
+        app_state.settings.sandbox.allowed_commands = vec!["cargo test".into()];
+        let mut input = json!({"command": "cargo test --all"});
+
+        let result = central_permission_result_for_tool("Bash", &mut input, &app_state, None);
+
+        assert!(matches!(result, PermissionResult::Ask { .. }));
+    }
+
+    #[test]
     fn central_permission_ask_rule_overrides_hook_allow() {
         let mut app_state = AppState::default();
         app_state
@@ -1323,11 +1381,13 @@ mod tests {
             .unwrap();
 
         assert!(result.is_error);
-        assert!(result
-            .result
-            .data
-            .as_str()
-            .is_some_and(|text| text.contains("Input validation error")));
+        assert!(
+            result
+                .result
+                .data
+                .as_str()
+                .is_some_and(|text| text.contains("Input validation error"))
+        );
         assert!(
             seen_input.lock().is_none(),
             "validation failure must stop before Tool::call"
@@ -1405,11 +1465,13 @@ mod tests {
             .unwrap();
 
         assert!(result.is_error);
-        assert!(result
-            .result
-            .data
-            .as_str()
-            .is_some_and(|text| text.contains("Dangerous command blocked")));
+        assert!(
+            result
+                .result
+                .data
+                .as_str()
+                .is_some_and(|text| text.contains("Dangerous command blocked"))
+        );
         assert!(
             seen_input.lock().is_none(),
             "security validation must stop before Tool::call"
@@ -1443,11 +1505,13 @@ mod tests {
             .unwrap();
 
         assert!(result.is_error);
-        assert!(result
-            .result
-            .data
-            .as_str()
-            .is_some_and(|text| text.contains("Permission denied: blocked by test")));
+        assert!(
+            result
+                .result
+                .data
+                .as_str()
+                .is_some_and(|text| text.contains("Permission denied: blocked by test"))
+        );
         assert!(
             seen_input.lock().is_none(),
             "permission denial must stop before Tool::call"
