@@ -1,3 +1,5 @@
+use std::fs::OpenOptions;
+use std::io;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
@@ -96,6 +98,41 @@ impl FileEditTool {
         }
 
         Ok(())
+    }
+
+    fn validate_file_writable(path: &Path) -> std::result::Result<(), String> {
+        let metadata = std::fs::metadata(path)
+            .map_err(|err| format!("Failed to stat file before editing: {}", err))?;
+        if metadata.permissions().readonly() {
+            return Err(format!(
+                "File is readonly or locked and cannot be edited: {}",
+                path.display()
+            ));
+        }
+
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .map(|_| ())
+            .map_err(|err| {
+                if Self::is_lock_or_permission_error(&err) {
+                    format!(
+                        "File is locked or not writable and cannot be edited: {} ({})",
+                        path.display(),
+                        err
+                    )
+                } else {
+                    format!("Failed to open file for editing: {}", err)
+                }
+            })
+    }
+
+    fn is_lock_or_permission_error(err: &io::Error) -> bool {
+        matches!(
+            err.kind(),
+            io::ErrorKind::PermissionDenied | io::ErrorKind::WouldBlock
+        ) || matches!(err.raw_os_error(), Some(5 | 32 | 33))
     }
 
     fn record_edit_state(ctx: &ToolUseContext, file_path: &str, path: &Path, content: &str) {
@@ -276,6 +313,12 @@ impl Tool for FileEditTool {
                             error_code: 7,
                         };
                     }
+                    if let Err(message) = Self::validate_file_writable(path) {
+                        return ValidationResult::Error {
+                            message,
+                            error_code: 8,
+                        };
+                    }
                 }
                 Err(e) => {
                     return ValidationResult::Error {
@@ -328,6 +371,14 @@ impl Tool for FileEditTool {
         };
 
         if let Err(message) = Self::validate_cached_read(ctx, &file_path, path, &content) {
+            return Ok(ToolResult {
+                data: json!({ "error": message }),
+                new_messages: vec![],
+                ..Default::default()
+            });
+        }
+
+        if let Err(message) = Self::validate_file_writable(path) {
             return Ok(ToolResult {
                 data: json!({ "error": message }),
                 new_messages: vec![],
@@ -634,6 +685,47 @@ mod tests {
         assert_eq!(
             tokio::fs::read_to_string(&file_path).await.unwrap(),
             "external\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_rejects_readonly_file_before_writing() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("sample.txt");
+        tokio::fs::write(&file_path, "alpha\n").await.unwrap();
+
+        let ctx = test_context();
+        cache_file_state(&ctx, &file_path, "alpha\n");
+
+        let mut permissions = std::fs::metadata(&file_path).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&file_path, permissions).unwrap();
+
+        let result = FileEditTool::new()
+            .call(
+                json!({
+                    "file_path": file_path.to_string_lossy(),
+                    "old_string": "alpha",
+                    "new_string": "beta",
+                }),
+                &ctx,
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let mut permissions = std::fs::metadata(&file_path).unwrap().permissions();
+        permissions.set_readonly(false);
+        std::fs::set_permissions(&file_path, permissions).unwrap();
+
+        assert!(result.data["error"]
+            .as_str()
+            .unwrap()
+            .contains("readonly or locked"));
+        assert_eq!(
+            tokio::fs::read_to_string(&file_path).await.unwrap(),
+            "alpha\n"
         );
     }
 

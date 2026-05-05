@@ -78,11 +78,11 @@
 
 ---
 
-### 1.3 FileEditTool — 缩减实现 (fuzzy + 读后冲突检测已补全)
+### 1.3 FileEditTool — 缩减实现 (fuzzy + 读后冲突/锁检查已补全)
 
 | | TypeScript | Rust |
 |---|---|---|
-| 行数 | 1,812 (6 文件) | 692 (1 文件) |
+| 行数 | 1,812 (6 文件) | 784 (1 文件) |
 | 文件 | — | `tools/file_edit.rs` |
 
 **Rust 保留：**
@@ -91,11 +91,11 @@
 - 路径验证
 - ✅ **Fuzzy 匹配** (基于 `similar::TextDiff` 的滑动窗口相似度搜索, >60% 阈值建议最佳匹配, 显示行号范围和相似百分比)
 - ✅ **读后冲突检测** (`Read` 完整读取登记共享 `FileStateCache`; `Edit` 拒绝未读或读后被外部修改的文件，并在成功编辑后刷新缓存)
+- ✅ **文件锁/readonly 写前检查** (`Edit` 写入前尝试读写打开目标文件，提前拒绝 readonly、PermissionDenied、WouldBlock 与 Windows sharing violation)
 
 **TS 独有（未移植）：**
 - Diff 渲染 (用户预览)
 - 多编辑冲突解决
-- 文件锁定检查
 - 编辑历史追踪
 - 缩进自动检测与修正
 
@@ -405,6 +405,7 @@
 
 1. ~~**FileEditTool fuzzy 匹配**~~ ✅ 已补全 — 230→386 行, `similar::TextDiff` 滑动窗口
    - 2026-05-05 继续补齐读后冲突检测 — `Read` / `Edit` 共享文件快照，防止覆盖未读或读后外部修改的文件
+   - 2026-05-05 继续补齐文件锁/readonly 写前检查 — `Edit` 提前拒绝锁定或不可写目标
 2. ~~**BashTool 输出截断**~~ ✅ 已补全 — 199→430 行, head+tail 行级截断
    - 2026-05-05 继续补齐 heredoc 校验 — BashTool + cc-utils bash helper 共 1,730 行
    - 2026-05-05 继续补齐 Git 操作跟踪 — 新增 `cc-utils/src/git_operation_tracking.rs`，Bash/PowerShell 结果附带 `git_operations`
