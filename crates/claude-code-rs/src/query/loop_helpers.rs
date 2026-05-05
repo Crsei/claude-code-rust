@@ -283,3 +283,266 @@ pub(crate) fn make_user_message(
         source_tool_assistant_uuid: None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+    use futures::Stream;
+    use serde_json::Value;
+    use std::pin::Pin;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    use crate::query::deps::{CompactionResult, ModelCallParams, ModelResponse};
+    use crate::types::app_state::AppState;
+    use crate::types::message::{StreamEvent, Usage};
+    use crate::types::state::AutoCompactTracking;
+    use crate::types::tool::{Tool, ToolResult, ToolUseContext, Tools};
+
+    struct BatchTool {
+        name: &'static str,
+        concurrency_safe: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl Tool for BatchTool {
+        fn name(&self) -> &str {
+            self.name
+        }
+
+        async fn description(&self, _input: &Value) -> String {
+            String::new()
+        }
+
+        fn input_json_schema(&self) -> Value {
+            serde_json::json!({})
+        }
+
+        fn is_concurrency_safe(&self, _input: &Value) -> bool {
+            self.concurrency_safe
+        }
+
+        async fn call(
+            &self,
+            _input: Value,
+            _ctx: &ToolUseContext,
+            _parent_message: &AssistantMessage,
+            _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
+        ) -> Result<ToolResult> {
+            Ok(ToolResult::default())
+        }
+
+        async fn prompt(&self) -> String {
+            String::new()
+        }
+    }
+
+    struct RecordingDeps {
+        active: AtomicUsize,
+        max_active: AtomicUsize,
+        events: parking_lot::Mutex<Vec<String>>,
+        aborted: AtomicBool,
+    }
+
+    impl RecordingDeps {
+        fn new() -> Self {
+            Self {
+                active: AtomicUsize::new(0),
+                max_active: AtomicUsize::new(0),
+                events: parking_lot::Mutex::new(Vec::new()),
+                aborted: AtomicBool::new(false),
+            }
+        }
+
+        fn events(&self) -> Vec<String> {
+            self.events.lock().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl QueryDeps for RecordingDeps {
+        async fn call_model(&self, _params: ModelCallParams) -> Result<ModelResponse> {
+            anyhow::bail!("not used")
+        }
+
+        async fn call_model_streaming(
+            &self,
+            _params: ModelCallParams,
+        ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+            anyhow::bail!("not used")
+        }
+
+        async fn microcompact(&self, messages: Vec<Message>) -> Result<Vec<Message>> {
+            Ok(messages)
+        }
+
+        async fn autocompact(
+            &self,
+            _messages: Vec<Message>,
+            _tracking: Option<AutoCompactTracking>,
+        ) -> Result<Option<CompactionResult>> {
+            Ok(None)
+        }
+
+        async fn reactive_compact(
+            &self,
+            _messages: Vec<Message>,
+        ) -> Result<Option<CompactionResult>> {
+            Ok(None)
+        }
+
+        async fn execute_tool(
+            &self,
+            request: ToolExecRequest,
+            _tools: &Tools,
+            _parent: &AssistantMessage,
+            _on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
+        ) -> Result<ToolExecResult> {
+            let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_active.fetch_max(active, Ordering::SeqCst);
+            self.events
+                .lock()
+                .push(format!("start:{}", request.tool_use_id));
+
+            tokio::time::sleep(Duration::from_millis(25)).await;
+
+            self.events
+                .lock()
+                .push(format!("end:{}", request.tool_use_id));
+            self.active.fetch_sub(1, Ordering::SeqCst);
+
+            Ok(ToolExecResult {
+                tool_use_id: request.tool_use_id,
+                tool_name: request.tool_name,
+                result: ToolResult {
+                    data: serde_json::json!("ok"),
+                    new_messages: vec![],
+                    ..Default::default()
+                },
+                is_error: false,
+            })
+        }
+
+        fn get_app_state(&self) -> AppState {
+            AppState::default()
+        }
+
+        fn uuid(&self) -> String {
+            uuid::Uuid::new_v4().to_string()
+        }
+
+        fn is_aborted(&self) -> bool {
+            self.aborted.load(Ordering::Relaxed)
+        }
+
+        fn get_tools(&self) -> Tools {
+            vec![]
+        }
+
+        async fn refresh_tools(&self) -> Result<Tools> {
+            Ok(vec![])
+        }
+    }
+
+    fn parent_message() -> AssistantMessage {
+        AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: vec![],
+            usage: Some(Usage::default()),
+            stop_reason: Some("tool_use".to_string()),
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_tool_calls_batches_consecutive_safe_tools_only() {
+        let concrete_deps = Arc::new(RecordingDeps::new());
+        let deps: Arc<dyn QueryDeps> = concrete_deps.clone();
+        let tools: Tools = vec![
+            Arc::new(BatchTool {
+                name: "Safe",
+                concurrency_safe: true,
+            }),
+            Arc::new(BatchTool {
+                name: "Unsafe",
+                concurrency_safe: false,
+            }),
+        ];
+        let tool_uses = vec![
+            (
+                "safe_1".to_string(),
+                "Safe".to_string(),
+                serde_json::json!({}),
+            ),
+            (
+                "safe_2".to_string(),
+                "Safe".to_string(),
+                serde_json::json!({}),
+            ),
+            (
+                "unsafe_1".to_string(),
+                "Unsafe".to_string(),
+                serde_json::json!({}),
+            ),
+            (
+                "safe_3".to_string(),
+                "Safe".to_string(),
+                serde_json::json!({}),
+            ),
+        ];
+
+        let results = execute_tool_calls(&deps, &tool_uses, &tools, &parent_message(), None).await;
+
+        assert_eq!(
+            concrete_deps.max_active.load(Ordering::SeqCst),
+            2,
+            "only the consecutive safe batch should run concurrently"
+        );
+        assert_eq!(
+            results
+                .iter()
+                .map(|result| result.tool_use_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["safe_1", "safe_2", "unsafe_1", "safe_3"],
+            "results should stay in tool_use order"
+        );
+
+        let events = concrete_deps.events();
+        let end_safe_1 = events
+            .iter()
+            .position(|event| event == "end:safe_1")
+            .unwrap();
+        let end_safe_2 = events
+            .iter()
+            .position(|event| event == "end:safe_2")
+            .unwrap();
+        let start_unsafe = events
+            .iter()
+            .position(|event| event == "start:unsafe_1")
+            .unwrap();
+        assert!(
+            start_unsafe > end_safe_1 && start_unsafe > end_safe_2,
+            "unsafe tool must not start until the preceding safe batch finishes: {:?}",
+            events
+        );
+
+        let end_unsafe = events
+            .iter()
+            .position(|event| event == "end:unsafe_1")
+            .unwrap();
+        let start_safe_3 = events
+            .iter()
+            .position(|event| event == "start:safe_3")
+            .unwrap();
+        assert!(
+            start_safe_3 > end_unsafe,
+            "later safe tool must wait behind preceding unsafe tool: {:?}",
+            events
+        );
+    }
+}
