@@ -7,8 +7,9 @@
 //!
 //! Runtime cancellation handles are intentionally separate from persisted
 //! task metadata: persisted records survive restart, cancellation tokens do
-//! not. On startup, unfinished tasks without a live supervisor are migrated to
-//! `interrupted`.
+//! not. On startup, unfinished local tasks without a live supervisor are
+//! migrated to `interrupted`; remote tasks keep enough identity to be marked
+//! `recoverable` until a poller can reconnect or the user stops them.
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -200,7 +201,10 @@ impl TaskStatus {
     }
 
     fn is_active_for_output_wait(self) -> bool {
-        matches!(self, TaskStatus::Pending | TaskStatus::InProgress)
+        matches!(
+            self,
+            TaskStatus::Pending | TaskStatus::InProgress | TaskStatus::Recoverable
+        )
     }
 }
 
@@ -763,15 +767,31 @@ fn recover_task_after_restart(entry: &mut TaskEntry) -> bool {
     }
 
     if entry.status.should_interrupt_on_startup() {
+        let recovered_status = if is_remote_recoverable_task(entry) {
+            TaskStatus::Recoverable
+        } else {
+            TaskStatus::Interrupted
+        };
+        if entry.status == recovered_status && entry.recovered_at.is_some() {
+            return changed;
+        }
         let now = chrono::Utc::now().timestamp();
-        entry.previous_status = Some(entry.status);
-        entry.status = TaskStatus::Interrupted;
+        if entry.status != recovered_status || entry.previous_status.is_none() {
+            entry.previous_status = Some(entry.status);
+        }
+        entry.status = recovered_status;
         entry.recovered_at = Some(now);
         entry.updated_at = now;
         return true;
     }
 
     changed
+}
+
+fn is_remote_recoverable_task(entry: &TaskEntry) -> bool {
+    entry.kind == TASK_KIND_REMOTE_AGENT
+        || entry.remote_session_id.is_some()
+        || entry.remote_task_type.is_some()
 }
 
 fn normalize_loaded_status(status: TaskStatus) -> TaskStatus {
@@ -2044,6 +2064,53 @@ mod tests {
     }
 
     #[test]
+    fn test_restart_marks_remote_tasks_recoverable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path());
+        let task = store.create_with_options(
+            "remote agent",
+            "resume remote session",
+            TaskCreateOptions {
+                kind: Some("remote_agent".to_string()),
+                remote_task_type: Some("ultrareview".to_string()),
+                remote_session_id: Some("session-restore".to_string()),
+                remote_task_metadata: Some(json!({
+                    "owner": "acme",
+                    "repo": "widget",
+                    "prNumber": 7
+                })),
+                poll_started_at: Some(1_714_000_000_000),
+                ..TaskCreateOptions::default()
+            },
+        );
+        store.update_status(&task.id, TaskStatus::InProgress);
+
+        let restarted = TaskStore::with_dir(tmp.path());
+        let restored = restarted.get(&task.id).unwrap();
+
+        assert_eq!(restored.status, TaskStatus::Recoverable);
+        assert_eq!(restored.previous_status, Some(TaskStatus::InProgress));
+        assert!(restored.recovered_at.is_some());
+        assert_eq!(restored.remote_task_type.as_deref(), Some("ultrareview"));
+        assert_eq!(
+            restored.remote_session_id.as_deref(),
+            Some("session-restore")
+        );
+        assert_eq!(
+            restored.remote_task_metadata.as_ref().unwrap()["prNumber"],
+            7
+        );
+        assert_eq!(restored.poll_started_at, Some(1_714_000_000_000));
+
+        let recovered_at = restored.recovered_at;
+        let restarted_again = TaskStore::with_dir(tmp.path());
+        let restored_again = restarted_again.get(&task.id).unwrap();
+        assert_eq!(restored_again.status, TaskStatus::Recoverable);
+        assert_eq!(restored_again.previous_status, Some(TaskStatus::InProgress));
+        assert_eq!(restored_again.recovered_at, recovered_at);
+    }
+
+    #[test]
     fn test_task_store_not_found() {
         let (_tmp, store) = temp_store();
         assert!(store.get("nonexistent").is_none());
@@ -2242,6 +2309,22 @@ mod tests {
         assert_eq!(payload["task_id"], task.id);
         assert_eq!(payload["output"], "partial output");
         assert_eq!(payload["agent_id"], "agent-1");
+    }
+
+    #[tokio::test]
+    async fn test_task_output_treats_recoverable_as_active_wait_state() {
+        let (_tmp, store) = temp_store();
+        let task = store.create("remote", "");
+        store.update_status(&task.id, TaskStatus::Recoverable);
+        let (_tx, rx) = tokio::sync::watch::channel(false);
+
+        let result = wait_for_task_output(store, &task.id, 0, rx).await.unwrap();
+        match result {
+            TaskOutputWaitResult::TimedOut(Some(entry)) => {
+                assert_eq!(entry.status, TaskStatus::Recoverable);
+            }
+            other => panic!("expected timeout with recoverable task, got {other:?}"),
+        }
     }
 
     #[tokio::test]
