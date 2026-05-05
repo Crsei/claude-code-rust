@@ -6,6 +6,8 @@
 //!   /sandbox on               set enabled=true (mode defaults to workspace)
 //!   /sandbox off              set enabled=false (mode=full)
 //!   /sandbox mode <name>      switch mode (read-only | workspace | full)
+//!   /sandbox require          fail if the OS-level primitive is unavailable
+//!   /sandbox optional         allow Rust-level checks when primitive is missing
 //!   /sandbox no-network       disable all network (network.disabled=true)
 //!   /sandbox network on|off   toggle network.disabled
 //!
@@ -74,6 +76,25 @@ impl CommandHandler for SandboxHandler {
                     Err(e) => Ok(CommandResult::Output(format!("Error: {}", e))),
                 }
             }
+            "require" | "required" | "strict" | "fail-closed" => {
+                ctx.app_state.settings.sandbox.enabled = Some(true);
+                ctx.app_state.settings.sandbox.fail_if_unavailable = Some(true);
+                if ctx.app_state.settings.sandbox.mode.is_none() {
+                    ctx.app_state.settings.sandbox.mode =
+                        Some(SandboxMode::default_enabled().as_str().to_string());
+                }
+                Ok(CommandResult::Output(format!(
+                    "Sandbox now requires an OS-level primitive.\n\n{}",
+                    render_status(ctx)
+                )))
+            }
+            "optional" | "best-effort" => {
+                ctx.app_state.settings.sandbox.fail_if_unavailable = Some(false);
+                Ok(CommandResult::Output(format!(
+                    "Sandbox may fall back to Rust-level checks when the OS-level primitive is unavailable.\n\n{}",
+                    render_status(ctx)
+                )))
+            }
             "no-network" | "offline" => {
                 ctx.app_state.settings.sandbox.network.disabled = Some(true);
                 Ok(CommandResult::Output(format!(
@@ -113,6 +134,8 @@ impl CommandHandler for SandboxHandler {
                  /sandbox on             — enable sandbox\n  \
                  /sandbox off            — disable sandbox\n  \
                  /sandbox mode <name>    — switch mode (read-only | workspace | full)\n  \
+                 /sandbox require        — fail if OS-level sandbox is unavailable\n  \
+                 /sandbox optional       — allow best-effort fallback\n  \
                  /sandbox no-network     — disable network\n  \
                  /sandbox network on|off — toggle network access",
                 other
@@ -271,6 +294,34 @@ mod tests {
         let mut ctx = make_ctx();
         handler.execute("mode full", &mut ctx).await.unwrap();
         assert_eq!(ctx.app_state.settings.sandbox.enabled, Some(false));
+    }
+
+    #[tokio::test]
+    async fn require_enables_fail_if_unavailable() {
+        let handler = SandboxHandler;
+        let mut ctx = make_ctx();
+        handler.execute("require", &mut ctx).await.unwrap();
+        assert_eq!(ctx.app_state.settings.sandbox.enabled, Some(true));
+        assert_eq!(
+            ctx.app_state.settings.sandbox.mode.as_deref(),
+            Some("workspace")
+        );
+        assert_eq!(
+            ctx.app_state.settings.sandbox.fail_if_unavailable,
+            Some(true)
+        );
+    }
+
+    #[tokio::test]
+    async fn optional_disables_fail_if_unavailable() {
+        let handler = SandboxHandler;
+        let mut ctx = make_ctx();
+        ctx.app_state.settings.sandbox.fail_if_unavailable = Some(true);
+        handler.execute("optional", &mut ctx).await.unwrap();
+        assert_eq!(
+            ctx.app_state.settings.sandbox.fail_if_unavailable,
+            Some(false)
+        );
     }
 
     #[tokio::test]

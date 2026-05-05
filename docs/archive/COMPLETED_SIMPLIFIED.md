@@ -25,7 +25,7 @@
 
 ## 1. S 级简化 (>80% 缩减)
 
-### 1.1 BashTool — 仍有 Full Build 差距 (输出截断 / heredoc / Git 跟踪 / 进程树终止 / 危险命令拒绝列表 / security validator 高风险规则与 AST 启发式批次 / sandbox FS preflight 已补全)
+### 1.1 BashTool — 仍有 Full Build 差距 (输出截断 / heredoc / Git 跟踪 / 进程树终止 / 危险命令拒绝列表 / security validator 高风险规则与 AST 启发式批次 / sandbox FS preflight / fail-closed 用户面已补全)
 
 | | TypeScript | Rust |
 |---|---|---|
@@ -43,10 +43,11 @@
 - ✅ **命令拒绝列表与危险命令分析子项** (force-with-lease、`git clean` dry-run 例外、stash drop/clear、SQL drop/truncate、PowerShell destructive cmdlet/alias)
 - ✅ **PowerShell security validator 高风险与 AST 启发式规则** (`Invoke-Expression`、嵌套 PowerShell、download cradle、`Add-Type`、COM object、`Start-Process` 提权/再拉 PowerShell、WMI/CIM 进程创建；standalone download utilities、script file execution、`ForEach-Object -MemberName`、`Invoke-Item`、scheduled task、env/module/runtime-state mutation；动态 IEX、危险 script block、stop-parsing、明显危险 static method；一般 dynamic command name、dot-sourced dynamic command、subexpression、expandable string、splatting、member/static member invocation、非 CLM allowlist type literal)
 - ✅ **sandbox 文件系统 preflight 子项** (shell redirection、常见 Bash 写命令、PowerShell 写 cmdlet 按 read-only/workspace/allowWrite/denyWrite 执行 Rust 级拒绝)
+- ✅ **sandbox fail-closed 用户面** (`/sandbox require` / `/sandbox optional` 切换 `sandbox.failIfUnavailable`，缺少 OS-level primitive 时可明确硬失败或 best-effort fallback)
 
 **TS 独有（未移植）：**
 - PowerShell 分支 (8,959 行的 PowerShellTool)
-- sandbox OS-level 平台隔离差异（尤其 Windows primitive / fail-closed 产品边界）
+- Windows Restricted Token / Job Object OS-level primitive
 - 复杂后台任务 / auto-background 超时逻辑
 - PowerShell 原生 AST parser fidelity（`elementTypes` / `children` / `nameType` / parse error fail-closed / statement securityPatterns 等；Rust 当前为 quote-aware 启发式硬拦，不等同完整 parser）
 - 终端大小感知
@@ -373,7 +374,7 @@
 |------|---------|-----------|--------|------|
 | state (→ types) | ~58,000 | 832 | 99% | S |
 | skills/ | ~43,000 | 989 | 98% | S |
-| BashTool | 12,411 | 3,077 + sandbox runner 973 | 75% | S (截断 / heredoc 校验 / Git 操作跟踪 / 进程树终止 / 危险命令拒绝列表 / security validator 高风险与 AST 启发式批次 / sandbox FS preflight 已补全) |
+| BashTool | 12,411 | 3,077 + sandbox runner 973 | 75% | S (截断 / heredoc 校验 / Git 操作跟踪 / 进程树终止 / 危险命令拒绝列表 / security validator 高风险与 AST 启发式批次 / sandbox FS preflight / fail-closed 用户面已补全) |
 | utils/ | 90,813 | 2,857 | 97% | S |
 | AgentTool | 6,072 | 789 | 87% | S (worktree 已补全) |
 | UI (全部) | 54,049 | 3,165 | 94% | S (框架) |
@@ -418,6 +419,7 @@
    - 2026-05-05 继续补齐 PowerShell security validator 目标语法规则 — 覆盖动态 IEX、危险 script block、ForEach script block、stop-parsing、明显危险 static method
    - 2026-05-05 继续补齐 PowerShell security validator AST 启发式规则 — 覆盖一般 dynamic command name、dot-sourced dynamic command、subexpression、expandable string、splatting、member/static member invocation、非 CLM allowlist type literal
    - 2026-05-05 继续补齐 sandbox 文件系统 preflight — `cc-sandbox/src/runner.rs` 对 shell 显式写目标执行 read-only/workspace/allowWrite/denyWrite 检查
+   - 2026-05-05 继续补齐 sandbox fail-closed 用户面 — `/sandbox require` / `/sandbox optional` 暴露 `sandbox.failIfUnavailable` 会话切换
 3. ~~**FileReadTool PDF/图片**~~ ✅ 已补全 — 236→743 行, 图片 base64 + PDF pdftotext + ipynb JSON
    - 2026-05-05 继续补齐 symlink 解析、编码检测、大文件分页 — 743→1,214 行
 4. ~~**GrepTool ripgrep 调用**~~ ✅ 已补全 — 185→371 行, rg 子进程 + multiline + offset

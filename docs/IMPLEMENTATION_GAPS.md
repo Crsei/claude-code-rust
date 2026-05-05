@@ -57,6 +57,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | PowerShell security validator 目标语法规则 | 已补齐子项 | `crates/cc-permissions/src/dangerous.rs` 以执行前硬拦形式覆盖动态调用 `Invoke-Expression`、危险 cmdlet script block、`ForEach-Object` script block、stop-parsing `--%` 与明显危险的 .NET static method 调用（Process/Assembly/Marshal/WebClient）；完整 AST parser parity 仍单列在 §2.2 |
 | PowerShell security validator AST 启发式规则 | 已补齐子项 | `crates/cc-permissions/src/dangerous.rs` 增加 quote-aware 扫描与 CLM allowlist，覆盖一般 dynamic command name（`& $cmd` / `& (...)`）、dot-sourced dynamic command、`$()` subexpression、expandable string、splatting、member/static member invocation 与非 CLM allowlist type literal；原生 AST parser fidelity 仍单列在 §2.2 |
 | Bash/PowerShell sandbox 文件系统 preflight | 已补齐子项 | `crates/cc-sandbox/src/runner.rs` 的 `preflight_shell_command()` 已接入显式写目标检查，覆盖 shell redirection、常见 Bash 写命令与 PowerShell 写 cmdlet，并按 read-only/workspace/allowWrite/denyWrite 返回 sandbox policy error |
+| Bash/PowerShell sandbox fail-closed 用户面 | 已补齐子项 | `crates/cc-sandbox/src/runner.rs` 已在 OS primitive 不可用且 `sandbox.failIfUnavailable=true` 时硬失败；`/sandbox require` / `/sandbox optional` 现在可在会话内切换 fail-closed 与 best-effort fallback，并在 `/sandbox` 状态中暴露当前边界 |
 | FileEditTool 读后冲突检测 | 已补齐子项 | `Read` 完整文本读取会写入共享 `FileStateCache`；`Edit` 校验和写入前按文件内容 hash 拒绝未读文件或读后被外部修改的文件，并在成功编辑后刷新缓存，避免覆盖用户/格式化器改动 |
 | FileEditTool 文件锁/readonly 写前检查 | 已补齐子项 | `Edit` 在 validate/call 阶段尝试以读写句柄打开目标文件，提前拒绝 readonly、PermissionDenied、WouldBlock 与 Windows sharing violation（5/32/33）等锁定或不可写状态，避免等到覆盖写入时才失败 |
 | FileEditTool 编辑历史备份 | 已补齐子项 | `Edit` 写入改走 `safe_write_text()`，每次覆盖前创建恢复备份并在 tool result / FileChanged hook payload 暴露 `edit_history.backup_path`，同时保留 atomic replace 与权限保持诊断 |
@@ -67,7 +68,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 
 | 模块 | 待补齐的行为（参考上游） |
 |------|----------|
-| BashTool | PowerShell 原生 AST parser fidelity（`elementTypes` / `children` / `nameType` / parse error fail-closed / statement securityPatterns 等结构化语义）与 sandbox OS-level 平台隔离差异（尤其 Windows primitive / fail-closed 产品边界）；Stage 3c.2 执行前硬拦、heredoc、Git 操作跟踪、进程树终止、destructive denylist、高风险 security validator、AST 启发式安全检查与显式写目标 FS preflight 子项已落地 |
+| BashTool | PowerShell 原生 AST parser fidelity（`elementTypes` / `children` / `nameType` / parse error fail-closed / statement securityPatterns 等结构化语义）与 Windows Restricted Token / Job Object OS-level primitive；Stage 3c.2 执行前硬拦、heredoc、Git 操作跟踪、进程树终止、destructive denylist、高风险 security validator、AST 启发式安全检查、显式写目标 FS preflight 与 fail-closed 用户面子项已落地 |
 | TaskTools | 远程/多类型后台任务 supervisor parity、超时控制；磁盘持久化、基础依赖字段、输出保留、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
 | PlanMode | auto-mode/classifier gate、团队审批流、计划持久化、实现关联跟踪 |
 | WebFetch | JS 渲染、Cookie 管理、代理支持、重定向限制、Content-Type 智能处理 |
@@ -77,7 +78,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 
 每个条目完成时都按同一收口流程处理：读上游实现 → 改 Rust 端 → 补单元/e2e → `cargo fmt --all --check` + 对应构建 → 更新本文件与 archive → 单独提交。
 
-1. **BashTool 剩余安全/沙箱复核**：对照 `src/tools/BashTool/**` 与 PowerShell validator，评估是否需要引入原生 PowerShell AST parser（或等价结构化 parser）来补齐 `elementTypes` / `children` / `nameType` / parse error fail-closed / statement securityPatterns 等非正则语义；同时把 Windows OS-level sandbox 的可实现边界写清楚，能实现的落代码，不能实现的移入 §7 Intentional 裁剪。
+1. **BashTool 剩余安全/沙箱复核**：对照 `src/tools/BashTool/**` 与 PowerShell validator，评估是否需要引入原生 PowerShell AST parser（或等价结构化 parser）来补齐 `elementTypes` / `children` / `nameType` / parse error fail-closed / statement securityPatterns 等非正则语义；同时评估 Windows Restricted Token / Job Object OS-level primitive 是否进入实现队列或移入 §7 Intentional 裁剪。
 2. **AgentTool 团队上下文与工具边界**：补团队上下文注入、工具白名单过滤、工具定义去重；随后评估 `spawnMultiAgent` 是独立工具还是 AgentTool 扩展，并补多 agent 调度测试。
 3. **TaskTools 后台任务 parity**：在现有持久化/取消基础上补超时控制、远程/多类型后台任务 supervisor parity，并验证 `/tasks` UI 与 task store 的状态一致性。
 4. **PlanMode 执行闭环**：补 auto-mode/classifier gate、团队审批流、计划持久化与实现关联追踪；完成后用 plan 创建、恢复、审批、执行关联的 e2e 覆盖。
