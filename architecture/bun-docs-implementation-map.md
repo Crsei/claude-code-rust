@@ -48,7 +48,7 @@
 | Agent | `sub-agents.mdx` | 已实现 | `AgentTool`、内置 agent、同步 / 后台生命周期、hooks、AgentTree、fork 与 worktree 侧路均有实现入口。 |
 | Agent | `worktree-isolation.mdx` | 部分实现 | 子 Agent worktree 隔离和清理已存在，但路径布局、hook 入口和恢复流程与 Bun 上游不同。 |
 | Context | `compaction.mdx` | 部分实现 | 本地压缩、boundary、PTL 恢复与 hook 路径存在；Bun 风格 session-memory 压缩闭环仍需继续确认。 |
-| Context | `project-memory.mdx` | 部分实现 | memory CRUD、`CLAUDE.md` 注入、Project / Global / Team memory 主提示词注入存在；auto-memory toggle 与 session-insights 回注仍不完全闭环。 |
+| Context | `project-memory.mdx` | 部分实现 | memory CRUD、`CLAUDE.md` 注入、Project / Global / Team memory 主提示词注入存在；Auto memory 已由 `auto_memory_enabled` 门控注入，session-insights 回注仍不完全闭环。 |
 | Context | `system-prompt.mdx` | 已实现 | 静态段、动态段、缓存边界、`CLAUDE.md` 注入、append / override 顺序均已落地。 |
 | Context | `token-budget.mdx` | 部分实现 | 预算判断与续跑逻辑存在，但主要依赖启发式估算，不是 provider 级精确 token 统计。 |
 | Extensibility | `custom-agents.mdx` | 部分实现 | 定义、编辑、运行链路已通；安全边界主要依赖通用工具过滤与隔离。 |
@@ -79,7 +79,7 @@
 
 - Agent Teams 是 Rust 的 in-process teammate / mailbox 版本，不是 Bun coordinator / swarm 的同构实现；tmux / iTerm2 等多终端后端属于故意裁剪。
 - Worktree isolation 已有核心隔离和清理，但 Bun 的 hook 驱动创建 / 销毁、目录布局和恢复流程没有一一对齐。
-- Context compaction、project memory、token budget 都已有主体能力，但 session-memory 压缩闭环、auto-memory / session-insights 回注、provider 级 token 精确统计仍需补齐或明确裁剪。
+- Context compaction、project memory、token budget 都已有主体能力，但 session-memory 压缩闭环、session-insights 回注、provider 级 token 精确统计仍需补齐或明确裁剪。
 - Custom agents 已可定义、编辑、运行，但独立安全边界不如 hooks / skills 明确。
 - MCP 当前以 stdio JSON-RPC 主路径为主；SSE URL/header 安全校验已补，SSE runtime、认证和完整 transport 矩阵仍不完整。
 - Auto mode 缺少 Bun 的 transcript / classifier 两阶段流程。
@@ -91,7 +91,7 @@
 
 1. 优先确认 Safety 的未实现项：Windows OS-level sandbox、`allowedPrompts` 自然语言 classifier。
 2. 其次确认 MCP transport 与协议安全：SSE runtime、认证、断线恢复、完整 server / resource 行为。
-3. 再确认 Context 端到端链路：auto-memory / session-insights 回注、session-memory 压缩、精确 token 统计。
+3. 再确认 Context 端到端链路：session-insights 回注、session-memory 压缩、精确 token 统计。
 4. 对 Agent Teams 明确产品边界：继续保留 in-process 版本，还是补 coordinator / swarm 同构模式。
 5. 对 Tools 差异建立单独 issue：V2 Tasks 是否要补 Bun 的递增 ID / 双向依赖模型、WebFetch 是否需要 JS rendering。
 6. 后续进入实现补齐时，为每个改动建立单独任务，不在本文档中混入代码设计细节。
@@ -106,3 +106,4 @@
 | 2026-05-05 | Tools / Glob mtime ordering | 已完成 Bun 文档排序语义补齐 | `crates/claude-code-rs/src/tools/fs/glob_tool.rs` 收集文件修改时间，按修改时间倒序返回，并以路径升序作为稳定兜底 | `cargo test -p claude-code-rs tools::fs::glob_tool::tests:: -- --nocapture`，12 passed |
 | 2026-05-05 | Tools / TodoWrite V1 compatibility | 已完成独立 `TodoWrite` 工具入口；V2 任务模型仍部分实现 | `crates/claude-code-rs/src/tools/tasks.rs` 增加 V1 全量替换 todo store、全部完成清空与验证提示；`registry.rs` 与 `tool_search.rs` 接入 | `cargo test -p claude-code-rs todo_write -- --nocapture`，4 passed；`cargo test -p claude-code-rs tools::registry::tests::test_find_tool_by_name -- --nocapture`，1 passed |
 | 2026-05-05 | Context / Memory prompt injection | 已完成 Project / Global / Team memory 主提示词注入；auto-memory 与 session-insights 回注仍部分实现 | `crates/claude-code-rs/src/engine/system_prompt.rs` 调用 `cc_session::memdir::build_memory_context()` 并注入 `# Memory Context` | `cargo test -p claude-code-rs engine::system_prompt::tests:: -- --nocapture`，30 passed |
+| 2026-05-05 | Context / Auto-memory prompt gate | 已完成 `autoMemoryEnabled` 控制的 Auto memory 主提示词注入；session-insights 回注仍部分实现 | `crates/claude-code-rs/src/engine/lifecycle/submit_message.rs` 与 `startup/fast_paths.rs` 将设置传入 `build_system_prompt()`，`system_prompt.rs` 调用 `build_memory_context_with()` | `cargo test -p claude-code-rs engine::system_prompt::tests:: -- --nocapture`，31 passed |

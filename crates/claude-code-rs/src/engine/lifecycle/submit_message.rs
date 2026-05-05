@@ -227,11 +227,12 @@ impl QueryEngine {
 
             // Pull live language/output_style off AppState so /config set
             // takes effect on the next submit without restarting the engine.
-            let (cfg_language, cfg_output_style) = {
+            let (cfg_language, cfg_output_style, include_auto_memory) = {
                 let s = state_ref.read();
                 (
                     s.app_state.settings.language.clone(),
                     s.app_state.settings.output_style.clone(),
+                    s.app_state.settings.auto_memory_enabled.unwrap_or(false),
                 )
             };
 
@@ -244,6 +245,7 @@ impl QueryEngine {
                     &config.cwd,
                     cfg_language.as_deref(),
                     cfg_output_style.as_deref(),
+                    include_auto_memory,
                 );
 
             // Fire InstructionsLoaded hook if CLAUDE.md context was injected

@@ -87,6 +87,10 @@ pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
         .map(|loaded| loaded.effective);
     let dump_lang = dump_settings.as_ref().and_then(|s| s.language.clone());
     let dump_style = dump_settings.as_ref().and_then(|s| s.output_style.clone());
+    let include_auto_memory = dump_settings
+        .as_ref()
+        .and_then(|s| s.auto_memory_enabled)
+        .unwrap_or(false);
     let (parts, _, _) = crate::engine::system_prompt::build_system_prompt(
         cli.system_prompt.as_deref(),
         cli.append_system_prompt.as_deref(),
@@ -95,6 +99,7 @@ pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
         &cwd,
         dump_lang.as_deref(),
         dump_style.as_deref(),
+        include_auto_memory,
     );
     for part in &parts {
         println!("{}", part);

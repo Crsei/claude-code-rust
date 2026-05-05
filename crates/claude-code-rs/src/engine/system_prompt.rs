@@ -367,6 +367,7 @@ pub fn build_system_prompt(
     cwd: &str,
     language: Option<&str>,
     output_style: Option<&str>,
+    include_auto_memory: bool,
 ) -> (
     Vec<String>,
     HashMap<String, String>,
@@ -545,7 +546,7 @@ pub fn build_system_prompt(
     }
 
     // ── Memory context injection ──
-    match cc_session::memdir::build_memory_context(cwd_path) {
+    match cc_session::memdir::build_memory_context_with(cwd_path, include_auto_memory) {
         Ok(context) if !context.is_empty() => {
             debug!(
                 cwd = cwd,
@@ -703,6 +704,29 @@ fn build_subsystem_status_reminder() -> Option<String> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::Path;
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set_path(key: &'static str, path: &Path) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, path);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     #[test]
     fn test_intro_section_contains_identity() {
@@ -821,6 +845,7 @@ mod tests {
             "/tmp",
             None,
             None,
+            false,
         );
 
         // Should have at least: intro, system, doing_tasks, actions, tools, tone, efficiency, boundary, env_info, summarize
@@ -861,6 +886,7 @@ mod tests {
             "/tmp",
             Some("Chinese"),
             None,
+            false,
         );
         let joined = parts.join("\n");
         assert!(joined.contains("# Language"), "language section missing");
@@ -881,6 +907,7 @@ mod tests {
             "/tmp",
             None,
             Some("explanatory"),
+            false,
         );
         let joined = parts.join("\n");
         assert!(
@@ -900,6 +927,7 @@ mod tests {
             "/tmp",
             None,
             Some("default"),
+            false,
         );
         let joined = parts.join("\n");
         assert!(
@@ -919,6 +947,7 @@ mod tests {
             "/tmp",
             None,
             None,
+            false,
         );
         assert_eq!(parts[0], "You are a custom assistant.");
         // Should NOT contain static sections
@@ -937,6 +966,7 @@ mod tests {
             "/tmp",
             None,
             None,
+            false,
         );
         assert_eq!(parts.last().unwrap(), "Always be concise.");
     }
@@ -999,7 +1029,7 @@ mod tests {
         fs::write(&md_path, "# Rules\nUse snake_case.").unwrap();
 
         let cwd = dir.to_str().unwrap();
-        let (parts, _, _) = build_system_prompt(None, None, &[], "test", cwd, None, None);
+        let (parts, _, _) = build_system_prompt(None, None, &[], "test", cwd, None, None, false);
         let joined = parts.join("\n");
         assert!(joined.contains("snake_case"));
         assert!(joined.contains("OVERRIDE"));
@@ -1022,7 +1052,7 @@ mod tests {
         .unwrap();
 
         let cwd = dir.to_str().unwrap();
-        let (parts, _, _) = build_system_prompt(None, None, &[], "test", cwd, None, None);
+        let (parts, _, _) = build_system_prompt(None, None, &[], "test", cwd, None, None, false);
         let joined = parts.join("\n");
         assert!(joined.contains("# Memory Context"));
         assert!(joined.contains("<memory-context>"));
@@ -1030,6 +1060,53 @@ mod tests {
         assert!(joined.contains("stable v2 endpoint"));
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ── auto memory tests ──
+
+    #[test]
+    fn test_auto_memory_context_respects_toggle() {
+        prompt_sections::clear_cache();
+        let dir = std::env::temp_dir().join(format!(
+            "sysprompt_auto_memory_cwd_{}",
+            uuid::Uuid::new_v4()
+        ));
+        let home = std::env::temp_dir().join(format!(
+            "sysprompt_auto_memory_home_{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        fs::create_dir_all(&home).unwrap();
+        let _home_guard = EnvGuard::set_path("CC_RUST_HOME", &home);
+
+        cc_session::memdir::write_memory(
+            "build-insight",
+            "Prefer narrow cargo test filters for prompt changes.",
+            "auto",
+            cc_session::memdir::MemoryScope::Auto,
+            &dir,
+        )
+        .unwrap();
+
+        let cwd = dir.to_str().unwrap();
+        let (disabled_parts, _, _) =
+            build_system_prompt(None, None, &[], "test", cwd, None, None, false);
+        let disabled = disabled_parts.join("\n");
+        assert!(
+            !disabled.contains("build-insight"),
+            "auto memories should stay out of the prompt while disabled"
+        );
+
+        let (enabled_parts, _, _) =
+            build_system_prompt(None, None, &[], "test", cwd, None, None, true);
+        let enabled = enabled_parts.join("\n");
+        assert!(enabled.contains("# Memory Context"));
+        assert!(enabled.contains("## Auto Memories"));
+        assert!(enabled.contains("build-insight"));
+        assert!(enabled.contains("narrow cargo test filters"));
+
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&home);
     }
 
     // ── git_status_section tests ──
