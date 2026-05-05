@@ -20,7 +20,7 @@
 | --- | --- | --- | --- | --- |
 | 工具系统 | 工具抽象、注册、schema、权限、结果 | `crates/cc-engine/src/types/tool.rs:192-269`，`crates/claude-code-rs/src/tools/registry.rs:41-83` | 已实现 | `Tool` trait 已提供 `name`、`input_json_schema`、`validate_input`、`check_permissions`、`call`、`prompt`、`max_result_size_chars` 等核心能力；registry 先聚合 `fs::tools()` 和 `exec::tools()`，再追加单工具和插件工具。 |
 | 文件操作 | Read / Edit / Write | `crates/claude-code-rs/src/tools/fs/mod.rs:14-31`，`crates/claude-code-rs/src/tools/fs/file_read.rs:706-889`，`crates/claude-code-rs/src/tools/fs/file_edit.rs:329-673`，`crates/claude-code-rs/src/tools/fs/file_write.rs:41-219`，`crates/claude-code-rs/src/tools/fs/safe_write.rs:50-132` | 已实现 | Read 支持文本、图片、PDF、Notebook；Edit 强制先读后写并校验未被外部修改；Write 通过安全写入和 `FileChanged` hook 完成原子替换。 |
-| 搜索导航 | Glob / Grep / ToolSearch / LSP | `crates/claude-code-rs/src/tools/fs/glob_tool.rs:13-202`，`crates/claude-code-rs/src/tools/fs/grep.rs:1-218`，`crates/claude-code-rs/src/tools/tool_search.rs:504-627`，`crates/claude-code-rs/src/tools/lsp.rs:1-435` | 已实现 | Glob、Grep、ToolSearch、LSP 都已接入 registry。Rust 额外提供 LSP code intelligence，属于 Bun 文档未单列的扩展能力。 |
+| 搜索导航 | Glob / Grep / ToolSearch / LSP | `crates/claude-code-rs/src/tools/fs/glob_tool.rs`，`crates/claude-code-rs/src/tools/fs/grep.rs:1-218`，`crates/claude-code-rs/src/tools/tool_search.rs:504-627`，`crates/claude-code-rs/src/tools/lsp.rs:1-435` | 已实现 | Glob、Grep、ToolSearch、LSP 都已接入 registry；Glob 已按修改时间倒序返回，路径作为稳定兜底。Rust 额外提供 LSP code intelligence，属于 Bun 文档未单列的扩展能力。 |
 | Shell 执行 | BashTool | `crates/claude-code-rs/src/tools/exec/mod.rs:14-30`，`crates/claude-code-rs/src/tools/exec/bash.rs:134-668` | 已实现 | Bash 具备命令解析、危险命令检测、sandbox 预检、超时、进程组控制和实时输出流。Rust 还额外暴露了 PowerShell、Repl、Sleep。 |
 | 任务管理 | TodoWrite V1、Tasks V2 | `crates/claude-code-rs/src/tools/tasks.rs:3-9`，`crates/claude-code-rs/src/tools/tasks.rs:1123-1867`，`crates/claude-code-rs/src/tools/registry.rs:19-24,62-67` | 部分实现 | Rust 只实现了 V2 任务体系：`TaskCreate`、`TaskGet`、`TaskUpdate`、`TaskList`、`TaskStop`、`TaskOutput`。`TodoWrite` 没有独立工具入口；任务 ID 采用 UUID，而不是 Bun 文档里的简单递增编号。 |
 | 网络工具差异 | WebSearch / WebFetch | `crates/claude-code-rs/src/tools/web_search/tool.rs:1-258`，`crates/claude-code-rs/src/tools/web_fetch.rs:1-723`，`crates/claude-code-rs/src/tools/registry.rs:22-24,56-57` | 已实现 | Rust 端已提供 WebSearch 和 WebFetch，但实现路径不同于 Bun：WebSearch 走 Tavily / Brave provider，WebFetch 走 sandbox 网络策略、URL 归一化、同源重定向限制和内存缓存。 |
@@ -52,12 +52,12 @@
 
 - 上游主题是 Glob、Grep、ToolSearch，并把 WebSearch / WebFetch 作为同章中的网络检索能力。
 - Glob 和 Grep 都已经进入文件系统子域，见 `crates/claude-code-rs/src/tools/fs/mod.rs:14-31`。
-- Glob 的核心实现位于 `crates/claude-code-rs/src/tools/fs/glob_tool.rs:13-202`，但它当前是按路径做稳定排序，而不是 Bun 文档里强调的按修改时间排序，见 `crates/claude-code-rs/src/tools/fs/glob_tool.rs:161-202`。
+- Glob 的核心实现位于 `crates/claude-code-rs/src/tools/fs/glob_tool.rs`；结果会按修改时间倒序排序，并用路径升序作为稳定兜底。
 - Grep 先尝试外部 `rg`，失败后回退到内部 walker + regex，见 `crates/claude-code-rs/src/tools/fs/grep.rs:1-218`。
 - ToolSearch 支持自然语言查询、`select:<tool-name>` 精确选择、来源过滤和 schema hydration，见 `crates/claude-code-rs/src/tools/tool_search.rs:504-627`、`crates/claude-code-rs/src/tools/tool_search.rs:763-781`。
 - LSP 作为 Rust 额外扩展，提供 definition、reference、hover、symbol、completion、diagnostics 等能力，见 `crates/claude-code-rs/src/tools/lsp.rs:1-11`、`crates/claude-code-rs/src/tools/lsp.rs:236-435`。
 - 状态：已实现。
-- 结论：搜索与导航的主链路已经落地；若要严格对齐 Bun 文档，唯一明显差异是 Glob 的结果排序策略和 Rust 额外提供的 LSP 扩展。
+- 结论：搜索与导航的主链路已经落地；Glob 的结果排序语义已补齐到 Bun 文档描述，Rust 额外提供 LSP 扩展。
 
 ### `shell-execution.mdx`
 
@@ -112,7 +112,7 @@
 
 ### 待确认
 
-- 若后续要做 Bun 级别逐项对齐，需要再确认 `Glob` 的排序策略是否要从当前“按路径稳定排序”改成文档里描述的“按修改时间排序”，见 `crates/claude-code-rs/src/tools/fs/glob_tool.rs:161-202`。
+- 当前未发现需要在本文中继续标成“待确认”的核心工具差异。
 
 ### 故意裁剪
 
@@ -120,6 +120,5 @@
 
 ## 后续动作
 
-1. 如果要继续做文档级对齐，优先补一张 `Glob` 排序差异表，把 Bun 的修改时间排序和 Rust 的路径排序分开写清楚。
-2. 如果要补齐任务管理文档，建议先决定是补一个 `TodoWrite` 兼容层，还是在文档里明确声明只保留 V2 Tasks。
-3. 如果要继续细化网络工具差异，建议把 Bun 的 Anthropic WebSearch 路径和 Rust 的 Tavily / Brave 路径单独拆成对照表。
+1. 如果要补齐任务管理文档，建议先决定是补一个 `TodoWrite` 兼容层，还是在文档里明确声明只保留 V2 Tasks。
+2. 如果要继续细化网络工具差异，建议把 Bun 的 Anthropic WebSearch 路径和 Rust 的 Tavily / Brave 路径单独拆成对照表。

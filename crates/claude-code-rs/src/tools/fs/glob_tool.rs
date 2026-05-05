@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -11,6 +12,12 @@ use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Validat
 ///
 /// Corresponds to TypeScript: tools/GlobTool
 pub struct GlobTool;
+
+#[derive(Debug, Clone)]
+struct GlobMatch {
+    path: String,
+    modified: Option<SystemTime>,
+}
 
 impl GlobTool {
     pub fn new() -> Self {
@@ -136,13 +143,20 @@ impl Tool for GlobTool {
         // Use the glob crate to find matching files
         // Run in blocking task since glob is synchronous
         let matches = tokio::task::spawn_blocking(move || {
-            let mut results: Vec<String> = Vec::new();
+            let mut results: Vec<GlobMatch> = Vec::new();
             match glob::glob(&full_pattern) {
                 Ok(paths) => {
                     for entry in paths {
                         match entry {
                             Ok(path) => {
-                                results.push(path.to_string_lossy().to_string());
+                                let modified = path
+                                    .metadata()
+                                    .and_then(|metadata| metadata.modified())
+                                    .ok();
+                                results.push(GlobMatch {
+                                    path: path.to_string_lossy().to_string(),
+                                    modified,
+                                });
                             }
                             Err(_) => continue,
                         }
@@ -158,8 +172,8 @@ impl Tool for GlobTool {
 
         match matches {
             Ok(mut files) => {
-                // Sort by path for consistent output
-                files.sort();
+                sort_matches_by_modified(&mut files);
+                let files: Vec<String> = files.into_iter().map(|entry| entry.path).collect();
 
                 let count = files.len();
                 let output = if files.is_empty() {
@@ -209,10 +223,23 @@ impl Tool for GlobTool {
     }
 }
 
+fn sort_matches_by_modified(files: &mut [GlobMatch]) {
+    files.sort_by(|a, b| {
+        let modified_order = match (a.modified, b.modified) {
+            (Some(a_modified), Some(b_modified)) => b_modified.cmp(&a_modified),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        };
+        modified_order.then_with(|| a.path.cmp(&b.path))
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::time::Duration;
 
     #[test]
     fn test_name() {
@@ -282,6 +309,37 @@ mod tests {
             Some("/src".to_string())
         );
         assert_eq!(tool.get_path(&json!({})), None);
+    }
+
+    #[test]
+    fn test_sort_matches_by_modified_descending_with_path_tie_breaker() {
+        let base = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+        let mut files = vec![
+            GlobMatch {
+                path: "older.rs".to_string(),
+                modified: Some(base),
+            },
+            GlobMatch {
+                path: "z_tie.rs".to_string(),
+                modified: Some(base + Duration::from_secs(10)),
+            },
+            GlobMatch {
+                path: "missing_modified.rs".to_string(),
+                modified: None,
+            },
+            GlobMatch {
+                path: "a_tie.rs".to_string(),
+                modified: Some(base + Duration::from_secs(10)),
+            },
+        ];
+
+        sort_matches_by_modified(&mut files);
+        let paths: Vec<_> = files.into_iter().map(|entry| entry.path).collect();
+
+        assert_eq!(
+            paths,
+            vec!["a_tie.rs", "z_tie.rs", "older.rs", "missing_modified.rs"]
+        );
     }
 
     #[tokio::test]
