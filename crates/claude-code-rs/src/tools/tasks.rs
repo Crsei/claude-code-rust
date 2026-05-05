@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::time::{sleep, Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
 use crate::types::message::AssistantMessage;
@@ -27,6 +28,9 @@ use crate::types::tool::*;
 const TASK_SCHEMA_VERSION: u32 = 3;
 const DEFAULT_OUTPUT_LIMIT_BYTES: usize = 64 * 1024;
 const OUTPUT_SUMMARY_MAX_CHARS: usize = 2_000;
+const DEFAULT_TASK_OUTPUT_TIMEOUT_MS: u64 = 30_000;
+const MAX_TASK_OUTPUT_TIMEOUT_MS: u64 = 600_000;
+const TASK_OUTPUT_POLL_INTERVAL_MS: u64 = 100;
 
 // =============================================================================
 // TaskStore: shared state
@@ -153,6 +157,10 @@ impl TaskStatus {
 
     fn is_success(self) -> bool {
         matches!(self, TaskStatus::Completed)
+    }
+
+    fn is_active_for_output_wait(self) -> bool {
+        matches!(self, TaskStatus::Pending | TaskStatus::InProgress)
     }
 }
 
@@ -1274,6 +1282,131 @@ impl Tool for TaskStopTool {
 
 pub struct TaskOutputTool;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskOutputRetrievalStatus {
+    Success,
+    Timeout,
+    NotReady,
+}
+
+impl TaskOutputRetrievalStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            TaskOutputRetrievalStatus::Success => "success",
+            TaskOutputRetrievalStatus::Timeout => "timeout",
+            TaskOutputRetrievalStatus::NotReady => "not_ready",
+        }
+    }
+}
+
+#[derive(Debug)]
+enum TaskOutputWaitResult {
+    Ready(TaskEntry),
+    TimedOut(Option<TaskEntry>),
+}
+
+fn parse_task_output_timeout_ms(input: &Value) -> Result<u64> {
+    let Some(timeout) = input.get("timeout") else {
+        return Ok(DEFAULT_TASK_OUTPUT_TIMEOUT_MS);
+    };
+    let value = if let Some(value) = timeout.as_u64() {
+        value
+    } else if let Some(value) = timeout.as_f64() {
+        if !value.is_finite() || value < 0.0 || value.fract() != 0.0 {
+            anyhow::bail!("timeout must be an integer between 0 and {MAX_TASK_OUTPUT_TIMEOUT_MS}");
+        }
+        value as u64
+    } else {
+        anyhow::bail!("timeout must be an integer between 0 and {MAX_TASK_OUTPUT_TIMEOUT_MS}");
+    };
+
+    if value > MAX_TASK_OUTPUT_TIMEOUT_MS {
+        anyhow::bail!("timeout must be between 0 and {MAX_TASK_OUTPUT_TIMEOUT_MS} milliseconds");
+    }
+
+    Ok(value)
+}
+
+fn task_output_payload(entry: &TaskEntry, retrieval_status: TaskOutputRetrievalStatus) -> Value {
+    let output = if entry.output.is_empty() {
+        "(no output yet)".to_string()
+    } else {
+        entry.output.clone()
+    };
+    let task = json!({
+        "task_id": entry.id,
+        "task_type": entry.kind,
+        "status": entry.status.as_str(),
+        "description": entry.description,
+        "output": output.clone(),
+        "subject": entry.subject,
+        "agent_id": entry.agent_id,
+        "supervisor_id": entry.supervisor_id,
+        "isolation": entry.isolation,
+        "worktree_path": entry.worktree_path,
+        "worktree_branch": entry.worktree_branch,
+        "output_summary": entry.output_summary,
+        "output_bytes": entry.output_bytes,
+        "output_truncated": entry.output_truncated,
+    });
+
+    json!({
+        "retrieval_status": retrieval_status.as_str(),
+        "task": task,
+        // Legacy flat fields remain for existing callers.
+        "task_id": entry.id,
+        "subject": entry.subject,
+        "agent_id": entry.agent_id,
+        "supervisor_id": entry.supervisor_id,
+        "isolation": entry.isolation,
+        "worktree_path": entry.worktree_path,
+        "worktree_branch": entry.worktree_branch,
+        "output": output,
+        "output_summary": entry.output_summary,
+        "output_bytes": entry.output_bytes,
+        "output_truncated": entry.output_truncated,
+    })
+}
+
+async fn wait_for_task_output(
+    task_store: TaskStore,
+    task_id: &str,
+    timeout_ms: u64,
+    mut abort_signal: tokio::sync::watch::Receiver<bool>,
+) -> Result<TaskOutputWaitResult> {
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+
+    loop {
+        let entry = task_store.get(task_id);
+        if let Some(entry) = &entry {
+            if !entry.status.is_active_for_output_wait() {
+                return Ok(TaskOutputWaitResult::Ready(entry.clone()));
+            }
+        } else {
+            return Ok(TaskOutputWaitResult::TimedOut(None));
+        }
+
+        let now = Instant::now();
+        if timeout_ms == 0 || now >= deadline {
+            return Ok(TaskOutputWaitResult::TimedOut(entry));
+        }
+
+        let remaining = deadline.saturating_duration_since(now);
+        let delay = remaining.min(Duration::from_millis(TASK_OUTPUT_POLL_INTERVAL_MS));
+        tokio::select! {
+            changed = abort_signal.changed() => {
+                if changed.is_ok() && *abort_signal.borrow() {
+                    anyhow::bail!("TaskOutput wait aborted");
+                }
+                if changed.is_err() {
+                    sleep(delay).await;
+                }
+            }
+            _ = sleep(delay) => {}
+        }
+    }
+}
+
 #[async_trait]
 impl Tool for TaskOutputTool {
     fn name(&self) -> &str {
@@ -1291,6 +1424,18 @@ impl Tool for TaskOutputTool {
                 "task_id": {
                     "type": "string",
                     "description": "The task ID whose output to retrieve"
+                },
+                "block": {
+                    "type": "boolean",
+                    "description": "Whether to wait for the task to leave pending/running state",
+                    "default": true
+                },
+                "timeout": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": MAX_TASK_OUTPUT_TIMEOUT_MS,
+                    "description": "Maximum wait time in milliseconds when block=true",
+                    "default": DEFAULT_TASK_OUTPUT_TIMEOUT_MS
                 }
             },
             "required": ["task_id"]
@@ -1308,31 +1453,48 @@ impl Tool for TaskOutputTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
         let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
+        let block = input.get("block").and_then(|v| v.as_bool()).unwrap_or(true);
+        let timeout_ms = parse_task_output_timeout_ms(&input)?;
 
-        match store().get(id) {
+        let initial = store().get(id);
+        match initial {
             Some(entry) => Ok(ToolResult {
-                data: json!({
-                    "task_id": entry.id,
-                    "subject": entry.subject,
-                    "agent_id": entry.agent_id,
-                    "supervisor_id": entry.supervisor_id,
-                    "isolation": entry.isolation,
-                    "worktree_path": entry.worktree_path,
-                    "worktree_branch": entry.worktree_branch,
-                    "output": if entry.output.is_empty() {
-                        "(no output yet)".to_string()
+                data: if !block {
+                    let retrieval_status = if entry.status.is_active_for_output_wait() {
+                        TaskOutputRetrievalStatus::NotReady
                     } else {
-                        entry.output
-                    },
-                    "output_summary": entry.output_summary,
-                    "output_bytes": entry.output_bytes,
-                    "output_truncated": entry.output_truncated,
-                }),
+                        TaskOutputRetrievalStatus::Success
+                    };
+                    task_output_payload(&entry, retrieval_status)
+                } else if !entry.status.is_active_for_output_wait() {
+                    task_output_payload(&entry, TaskOutputRetrievalStatus::Success)
+                } else {
+                    match wait_for_task_output(
+                        store().clone(),
+                        id,
+                        timeout_ms,
+                        ctx.abort_signal.clone(),
+                    )
+                    .await?
+                    {
+                        TaskOutputWaitResult::Ready(entry) => {
+                            task_output_payload(&entry, TaskOutputRetrievalStatus::Success)
+                        }
+                        TaskOutputWaitResult::TimedOut(Some(entry)) => {
+                            task_output_payload(&entry, TaskOutputRetrievalStatus::Timeout)
+                        }
+                        TaskOutputWaitResult::TimedOut(None) => json!({
+                            "retrieval_status": TaskOutputRetrievalStatus::Timeout.as_str(),
+                            "task": null,
+                            "error": format!("Task not found: {}", id),
+                        }),
+                    }
+                },
                 new_messages: vec![],
                 ..Default::default()
             }),
@@ -1590,6 +1752,100 @@ mod tests {
             assert_eq!(TaskStatus::from_str(s), Some(status));
         }
         assert_eq!(TaskStatus::from_str("invalid"), None);
+    }
+
+    #[test]
+    fn test_task_output_schema_exposes_block_timeout_controls() {
+        let schema = TaskOutputTool.input_json_schema();
+        let props = &schema["properties"];
+        assert_eq!(props["block"]["type"], "boolean");
+        assert_eq!(props["block"]["default"], true);
+        assert_eq!(props["timeout"]["type"], "integer");
+        assert_eq!(props["timeout"]["minimum"], 0);
+        assert_eq!(props["timeout"]["maximum"], MAX_TASK_OUTPUT_TIMEOUT_MS);
+        assert_eq!(props["timeout"]["default"], DEFAULT_TASK_OUTPUT_TIMEOUT_MS);
+    }
+
+    #[test]
+    fn test_task_output_timeout_validation_matches_upstream_bounds() {
+        assert_eq!(parse_task_output_timeout_ms(&json!({})).unwrap(), 30_000);
+        assert_eq!(
+            parse_task_output_timeout_ms(&json!({ "timeout": 600_000 })).unwrap(),
+            600_000
+        );
+        assert!(parse_task_output_timeout_ms(&json!({ "timeout": 600_001 })).is_err());
+        assert!(parse_task_output_timeout_ms(&json!({ "timeout": -1 })).is_err());
+        assert!(parse_task_output_timeout_ms(&json!({ "timeout": 1.5 })).is_err());
+    }
+
+    #[test]
+    fn test_task_output_payload_preserves_legacy_fields_and_status() {
+        let (_tmp, store) = temp_store();
+        let task = store.create_with_options(
+            "agent task",
+            "collect output",
+            TaskCreateOptions {
+                kind: Some("local_agent".to_string()),
+                agent_id: Some("agent-1".to_string()),
+                supervisor_id: Some("supervisor-1".to_string()),
+                ..TaskCreateOptions::default()
+            },
+        );
+        store.update_status(&task.id, TaskStatus::InProgress);
+        store.append_output(&task.id, "partial output");
+        let entry = store.get(&task.id).unwrap();
+
+        let payload = task_output_payload(&entry, TaskOutputRetrievalStatus::NotReady);
+        assert_eq!(payload["retrieval_status"], "not_ready");
+        assert_eq!(payload["task"]["task_id"], task.id);
+        assert_eq!(payload["task"]["task_type"], "local_agent");
+        assert_eq!(payload["task"]["status"], "in_progress");
+        assert_eq!(payload["task"]["output"], "partial output");
+        assert_eq!(payload["task_id"], task.id);
+        assert_eq!(payload["output"], "partial output");
+        assert_eq!(payload["agent_id"], "agent-1");
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_task_output_times_out_active_task() {
+        let (_tmp, store) = temp_store();
+        let task = store.create("running", "");
+        store.update_status(&task.id, TaskStatus::InProgress);
+        let (_tx, rx) = tokio::sync::watch::channel(false);
+
+        let result = wait_for_task_output(store, &task.id, 0, rx).await.unwrap();
+        match result {
+            TaskOutputWaitResult::TimedOut(Some(entry)) => {
+                assert_eq!(entry.status, TaskStatus::InProgress);
+            }
+            other => panic!("expected timeout with current task, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_task_output_observes_completion() {
+        let (_tmp, store) = temp_store();
+        let task = store.create("running", "");
+        store.update_status(&task.id, TaskStatus::InProgress);
+        let writer = store.clone();
+        let task_id = task.id.clone();
+        tokio::spawn(async move {
+            sleep(Duration::from_millis(20)).await;
+            writer.append_output(&task_id, "done");
+            writer.update_status(&task_id, TaskStatus::Completed);
+        });
+        let (_tx, rx) = tokio::sync::watch::channel(false);
+
+        let result = wait_for_task_output(store, &task.id, 1_000, rx)
+            .await
+            .unwrap();
+        match result {
+            TaskOutputWaitResult::Ready(entry) => {
+                assert_eq!(entry.status, TaskStatus::Completed);
+                assert_eq!(entry.output, "done");
+            }
+            other => panic!("expected completed task, got {other:?}"),
+        }
     }
 
     #[test]

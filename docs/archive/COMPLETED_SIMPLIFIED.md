@@ -197,15 +197,16 @@
 | 文件 | — | `tools/tasks.rs` |
 
 **Rust 保留：**
-- TaskStore (内存 HashMap)
+- TaskStore（持久化 task records + 进程内索引）
 - 6 个操作: Create/Get/Update/List/Stop/Output
+- ✅ 磁盘持久化、输出 sidecar 与重启 interruption recovery
+- ✅ 依赖字段、agent/supervisor/isolation 元数据
+- ✅ 后台 local-agent runtime cancellation token
+- ✅ `TaskOutput` `block` / `timeout` 与 `retrieval_status` (`success` / `timeout` / `not_ready`)
 
 **TS 独有（未移植）：**
-- 任务持久化 (磁盘存储)
-- 任务进度 UI 渲染 (React 组件)
-- 任务依赖图
-- 后台任务管理
-- 任务超时
+- 远程/多类型后台任务 supervisor parity
+- 复杂后台任务 auto-background / review-timeout 细节
 
 ---
 
