@@ -490,6 +490,100 @@ async fn test_fallback_model_retries_stream_start_capacity_error() {
 }
 
 #[tokio::test]
+async fn test_fallback_strips_signature_blocks_from_retry_messages() {
+    let deps = Arc::new(MockDeps::from_steps(vec![
+        MockStreamStep::Error("529 overloaded: high demand".to_string()),
+        MockStreamStep::Response(make_text_response("Recovered without signed thinking")),
+    ]));
+
+    let signed_assistant = Message::Assistant(AssistantMessage {
+        uuid: uuid::Uuid::new_v4(),
+        timestamp: 0,
+        role: "assistant".to_string(),
+        content: vec![
+            ContentBlock::Text {
+                text: "keep visible context".to_string(),
+            },
+            ContentBlock::Thinking {
+                thinking: "private chain".to_string(),
+                signature: Some("primary-model-signature".to_string()),
+            },
+            ContentBlock::RedactedThinking {
+                data: "redacted-signature-payload".to_string(),
+            },
+            ContentBlock::ToolUse {
+                id: "toolu_keep".to_string(),
+                name: "Read".to_string(),
+                input: serde_json::json!({"file_path": "Cargo.toml"}),
+            },
+        ],
+        usage: Some(Usage::default()),
+        stop_reason: Some("tool_use".to_string()),
+        is_api_error_message: false,
+        api_error: None,
+        cost_usd: 0.0,
+    });
+    let mut params = make_query_params(vec![
+        make_user_message_for_test("Use fallback with prior thinking"),
+        signed_assistant,
+    ]);
+    params.fallback_model = Some("claude-fallback".to_string());
+
+    let stream = query(params, deps.clone());
+    let _items: Vec<QueryYield> = stream.collect().await;
+
+    let recorded = deps.recorded_params();
+    assert_eq!(recorded.len(), 2);
+
+    let primary_assistant = recorded[0]
+        .messages
+        .iter()
+        .find_map(|message| match message {
+            Message::Assistant(assistant) => Some(assistant),
+            _ => None,
+        })
+        .expect("primary request should include assistant context");
+    assert!(
+        primary_assistant
+            .content
+            .iter()
+            .any(|block| matches!(block, ContentBlock::Thinking { .. })),
+        "primary request keeps original signed thinking"
+    );
+
+    let fallback_assistant = recorded[1]
+        .messages
+        .iter()
+        .find_map(|message| match message {
+            Message::Assistant(assistant) => Some(assistant),
+            _ => None,
+        })
+        .expect("fallback request should include assistant context");
+    assert_eq!(recorded[1].model.as_deref(), Some("claude-fallback"));
+    assert!(
+        fallback_assistant.content.iter().all(|block| !matches!(
+            block,
+            ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. }
+        )),
+        "fallback request must not replay old model thinking signatures"
+    );
+    assert!(
+        fallback_assistant.content.iter().any(|block| matches!(
+            block,
+            ContentBlock::Text { text } if text == "keep visible context"
+        )),
+        "fallback request should keep visible assistant context"
+    );
+    assert!(
+        fallback_assistant.content.iter().any(|block| matches!(
+            block,
+            ContentBlock::ToolUse { id, .. } if id == "toolu_keep"
+        )),
+        "fallback request should keep tool_use context"
+    );
+}
+
+#[tokio::test]
 async fn test_fallback_tombstones_partial_assistant_after_stream_error() {
     let deps = Arc::new(MockDeps::from_steps(vec![
         MockStreamStep::Events(vec![

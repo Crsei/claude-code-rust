@@ -42,7 +42,8 @@ use super::deps::{ModelCallParams, QueryDeps};
 use super::loop_helpers::{
     execute_tool_calls, fallback_model_for_stream_start_error, handle_max_output_tokens,
     handle_prompt_too_long, is_prompt_too_long_error, make_abort_message, make_error_message,
-    make_tool_result_user_message, make_user_message, MaxTokensRecovery, PromptRecovery,
+    make_tool_result_user_message, make_user_message, strip_fallback_signature_blocks,
+    MaxTokensRecovery, PromptRecovery,
 };
 use super::stop_hooks::{self, StopHookResult};
 use super::token_budget::check_token_budget;
@@ -331,6 +332,8 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                                 );
 
                                 fallback_used = true;
+                                attempt_params.messages =
+                                    strip_fallback_signature_blocks(&attempt_params.messages);
                                 attempt_params.model = Some(fallback);
                                 continue;
                             }
@@ -415,6 +418,8 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                             );
 
                             fallback_used = true;
+                            attempt_params.messages =
+                                strip_fallback_signature_blocks(&attempt_params.messages);
                             attempt_params.model = Some(fallback);
                             continue;
                         }

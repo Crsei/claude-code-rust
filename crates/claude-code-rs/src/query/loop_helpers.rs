@@ -62,6 +62,29 @@ pub(crate) fn fallback_model_for_stream_start_error(
     Some(fallback.to_string())
 }
 
+/// Return a fallback request history without model-bound signature blocks.
+///
+/// Thinking and redacted-thinking blocks are signed against the model/key that
+/// produced them, so cross-model fallback must not replay them as context.
+pub(crate) fn strip_fallback_signature_blocks(messages: &[Message]) -> Vec<Message> {
+    messages
+        .iter()
+        .map(|message| match message {
+            Message::Assistant(assistant) => {
+                let mut assistant = assistant.clone();
+                assistant.content.retain(|block| {
+                    !matches!(
+                        block,
+                        ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. }
+                    )
+                });
+                Message::Assistant(assistant)
+            }
+            _ => message.clone(),
+        })
+        .collect()
+}
+
 fn is_recoverable_model_capacity_error(error: &str) -> bool {
     let lower = error.to_ascii_lowercase();
     lower.contains("529")
@@ -537,6 +560,70 @@ mod tests {
             api_error: None,
             cost_usd: 0.0,
         }
+    }
+
+    #[test]
+    fn fallback_signature_stripping_removes_thinking_blocks_only_from_assistant_messages() {
+        let source = vec![
+            Message::Assistant(AssistantMessage {
+                uuid: uuid::Uuid::new_v4(),
+                timestamp: 0,
+                role: "assistant".to_string(),
+                content: vec![
+                    ContentBlock::Text {
+                        text: "keep text".to_string(),
+                    },
+                    ContentBlock::Thinking {
+                        thinking: "private chain".to_string(),
+                        signature: Some("old-model-signature".to_string()),
+                    },
+                    ContentBlock::RedactedThinking {
+                        data: "redacted-signature-payload".to_string(),
+                    },
+                    ContentBlock::ToolUse {
+                        id: "toolu_1".to_string(),
+                        name: "Read".to_string(),
+                        input: serde_json::json!({"file_path": "Cargo.toml"}),
+                    },
+                ],
+                usage: Some(Usage::default()),
+                stop_reason: Some("tool_use".to_string()),
+                is_api_error_message: false,
+                api_error: None,
+                cost_usd: 0.0,
+            }),
+            Message::User(UserMessage {
+                uuid: uuid::Uuid::new_v4(),
+                timestamp: 0,
+                role: "user".to_string(),
+                content: MessageContent::Text("keep user".to_string()),
+                is_meta: false,
+                tool_use_result: None,
+                source_tool_assistant_uuid: None,
+            }),
+        ];
+
+        let stripped = strip_fallback_signature_blocks(&source);
+
+        match &stripped[0] {
+            Message::Assistant(assistant) => {
+                assert_eq!(assistant.content.len(), 2);
+                assert!(matches!(
+                    assistant.content[0],
+                    ContentBlock::Text { ref text } if text == "keep text"
+                ));
+                assert!(matches!(
+                    assistant.content[1],
+                    ContentBlock::ToolUse { ref id, .. } if id == "toolu_1"
+                ));
+            }
+            other => panic!("expected assistant message, got {:?}", other),
+        }
+        assert!(matches!(
+            &source[0],
+            Message::Assistant(assistant) if assistant.content.len() == 4
+        ));
+        assert!(matches!(&stripped[1], Message::User(_)));
     }
 
     #[test]
