@@ -96,7 +96,7 @@ pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
             crate::services::session_memory::SessionMemoryConfig::default(),
         );
         match service.load_from_disk() {
-            Ok(()) => service.format_memory_context(5),
+            Ok(()) => service.format_memory_context_for_workspace(5, Some(cwd_path)),
             Err(e) => {
                 tracing::debug!(
                     error = %e,

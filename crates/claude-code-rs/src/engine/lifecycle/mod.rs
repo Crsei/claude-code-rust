@@ -493,6 +493,7 @@ impl QueryEngine {
             id: uuid::Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now().timestamp(),
             session_id: self.session_id.to_string(),
+            workspace: Some(self.config.cwd.clone()),
             content: insight,
             tags: vec!["auto-extract".to_string()],
         };

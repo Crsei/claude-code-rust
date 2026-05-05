@@ -54,6 +54,9 @@ pub struct MemoryEntry {
     pub timestamp: i64,
     /// Session ID this entry was extracted from.
     pub session_id: String,
+    /// Workspace path this entry was extracted from, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
     /// The insight content extracted from the conversation.
     pub content: String,
     /// Categorization tags.
@@ -167,11 +170,30 @@ impl SessionMemoryService {
 
     /// Format recent entries for injection into the system prompt.
     pub fn format_memory_context(&self, limit: usize) -> Option<String> {
+        self.format_memory_context_for_workspace(limit, None)
+    }
+
+    /// Format recent entries scoped to a workspace for prompt injection.
+    pub fn format_memory_context_for_workspace(
+        &self,
+        limit: usize,
+        workspace: Option<&Path>,
+    ) -> Option<String> {
         if !self.config.enabled {
             return None;
         }
 
-        let entries = self.get_memory_context(limit);
+        let workspace = workspace.map(|p| p.to_string_lossy().to_string());
+        let entries: Vec<MemoryEntry> = self
+            .entries
+            .iter()
+            .filter(|entry| match workspace.as_deref() {
+                Some(expected) => entry.workspace.as_deref() == Some(expected),
+                None => true,
+            })
+            .take(limit)
+            .cloned()
+            .collect();
         if entries.is_empty() {
             return None;
         }
@@ -227,6 +249,7 @@ mod tests {
             id: id.to_string(),
             timestamp: chrono::Utc::now().timestamp(),
             session_id: "test-session".to_string(),
+            workspace: None,
             content: content.to_string(),
             tags: tags.iter().map(|t| t.to_string()).collect(),
         }
@@ -306,6 +329,28 @@ mod tests {
         assert!(ctx.contains("tags=testing"));
         assert!(!ctx.contains("Prefer existing patterns"));
         assert!(ctx.ends_with("</session-insights>"));
+    }
+
+    #[test]
+    fn format_memory_context_for_workspace_filters_entries() {
+        let tmp = std::env::temp_dir().join("cc_rust_test_session_mem_workspace");
+        let mut svc = SessionMemoryService::new(test_config(&tmp));
+        let workspace = tmp.join("workspace-a");
+        let other = tmp.join("workspace-b");
+
+        let mut matching = make_entry("1", "workspace insight", &[]);
+        matching.workspace = Some(workspace.to_string_lossy().to_string());
+        svc.entries.push(matching);
+
+        let mut non_matching = make_entry("2", "other workspace insight", &[]);
+        non_matching.workspace = Some(other.to_string_lossy().to_string());
+        svc.entries.push(non_matching);
+
+        let ctx = svc
+            .format_memory_context_for_workspace(5, Some(&workspace))
+            .unwrap();
+        assert!(ctx.contains("workspace insight"));
+        assert!(!ctx.contains("other workspace insight"));
     }
 
     #[test]

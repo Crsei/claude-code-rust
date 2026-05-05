@@ -238,7 +238,8 @@ impl QueryEngine {
                     s.app_state.settings.language.clone(),
                     s.app_state.settings.output_style.clone(),
                     s.app_state.settings.auto_memory_enabled.unwrap_or(false),
-                    s.session_memory.format_memory_context(5),
+                    s.session_memory
+                        .format_memory_context_for_workspace(5, Some(std::path::Path::new(&config.cwd))),
                 )
             };
 
