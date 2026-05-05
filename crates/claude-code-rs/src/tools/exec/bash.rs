@@ -23,6 +23,10 @@ use crate::utils::bash::{
 use crate::utils::git_operation_tracking::track_git_operations_json;
 use crate::utils::shell::{build_shell_env, detect_default_shell};
 
+use super::process_control::{
+    configure_process_group, wait_for_exit_or_termination, ControlledExit,
+};
+
 /// Truncate output using head+tail strategy.
 /// Keeps first `head_lines` lines and last `tail_lines` lines,
 /// inserting a separator showing how many lines were omitted.
@@ -421,6 +425,7 @@ impl Tool for BashTool {
         // Ensure stdio is piped even on the unwrapped path so we can stream.
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
+        configure_process_group(&mut cmd);
         cmd.kill_on_drop(true);
 
         // Spawn the child so we can stream stdout/stderr back as the
@@ -514,13 +519,9 @@ impl Tool for BashTool {
             })
         });
 
-        let exit_status = match tokio::time::timeout(timeout_duration, child.wait()).await {
-            Ok(status) => status,
-            Err(_) => {
-                let _ = child.start_kill();
-                Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout"))
-            }
-        };
+        let exit_status =
+            wait_for_exit_or_termination(&mut child, timeout_duration, ctx.abort_signal.clone())
+                .await;
 
         if let Some(handle) = progress_handle {
             handle.abort();
@@ -539,7 +540,7 @@ impl Tool for BashTool {
         let stderr = stderr_buf.lock().clone();
 
         match exit_status {
-            Ok(status) => {
+            ControlledExit::Exited(Ok(status)) => {
                 let exit_code = status.code().unwrap_or(-1);
 
                 let mut combined = String::new();
@@ -593,17 +594,40 @@ impl Tool for BashTool {
                     ..Default::default()
                 })
             }
-            Err(e) if e.kind() == std::io::ErrorKind::TimedOut => Ok(ToolResult {
+            ControlledExit::TimedOut(wait_result) => Ok(ToolResult {
                 data: json!({
                     "error": format!(
                         "Command timed out after {}ms",
                         timeout_duration.as_millis()
-                    )
+                    ),
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "exit_code": wait_result
+                        .ok()
+                        .and_then(|status| status.code())
+                        .unwrap_or(143),
+                    "interrupted": true,
+                    "termination": "timeout",
                 }),
                 new_messages: vec![],
                 ..Default::default()
             }),
-            Err(e) => Ok(ToolResult {
+            ControlledExit::Cancelled(wait_result) => Ok(ToolResult {
+                data: json!({
+                    "error": "Command interrupted",
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "exit_code": wait_result
+                        .ok()
+                        .and_then(|status| status.code())
+                        .unwrap_or(137),
+                    "interrupted": true,
+                    "termination": "cancelled",
+                }),
+                new_messages: vec![],
+                ..Default::default()
+            }),
+            ControlledExit::Exited(Err(e)) => Ok(ToolResult {
                 data: json!({ "error": format!("Failed to execute command: {}", e) }),
                 new_messages: vec![],
                 ..Default::default()

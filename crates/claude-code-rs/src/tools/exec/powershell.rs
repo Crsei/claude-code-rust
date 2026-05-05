@@ -6,7 +6,10 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use parking_lot::Mutex;
 use serde_json::{json, Value};
+use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::sandbox::{make_runner, policy_from_app_state, preflight_shell_command};
 use crate::types::message::AssistantMessage;
@@ -19,6 +22,9 @@ use crate::utils::git_operation_tracking::track_git_operations_json;
 use crate::utils::shell::build_shell_env;
 
 use super::bash::truncate_output;
+use super::process_control::{
+    configure_process_group, wait_for_exit_or_termination, ControlledExit,
+};
 
 /// PowerShellTool -- execute PowerShell commands.
 pub struct PowerShellTool;
@@ -241,15 +247,67 @@ impl Tool for PowerShellTool {
             cmd.stderr(std::process::Stdio::piped());
         }
 
+        configure_process_group(&mut cmd);
+        cmd.kill_on_drop(true);
+
         let timeout_duration = resolve_timeout(Some(timeout_ms));
+        let mut child = match cmd.spawn() {
+            Ok(child) => child,
+            Err(e) => {
+                return Ok(ToolResult {
+                    data: json!({ "error": format!("Failed to execute PowerShell command: {}", e) }),
+                    new_messages: vec![],
+                    ..Default::default()
+                });
+            }
+        };
 
-        let result = tokio::time::timeout(timeout_duration, cmd.output()).await;
+        let stdout_pipe = child.stdout.take();
+        let stderr_pipe = child.stderr.take();
+        let stdout_buf: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+        let stderr_buf: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
 
-        match result {
-            Ok(Ok(output)) => {
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                let exit_code = output.status.code().unwrap_or(-1);
+        let stdout_task = stdout_pipe.map(|pipe| {
+            let buf = stdout_buf.clone();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(pipe).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    let mut b = buf.lock();
+                    b.push_str(&line);
+                    b.push('\n');
+                }
+            })
+        });
+
+        let stderr_task = stderr_pipe.map(|pipe| {
+            let buf = stderr_buf.clone();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(pipe).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    let mut b = buf.lock();
+                    b.push_str(&line);
+                    b.push('\n');
+                }
+            })
+        });
+
+        let exit_status =
+            wait_for_exit_or_termination(&mut child, timeout_duration, ctx.abort_signal.clone())
+                .await;
+
+        if let Some(handle) = stdout_task {
+            let _ = handle.await;
+        }
+        if let Some(handle) = stderr_task {
+            let _ = handle.await;
+        }
+
+        let stdout = stdout_buf.lock().clone();
+        let stderr = stderr_buf.lock().clone();
+
+        match exit_status {
+            ControlledExit::Exited(Ok(status)) => {
+                let exit_code = status.code().unwrap_or(-1);
 
                 let mut combined = String::new();
                 if !stdout.is_empty() {
@@ -285,13 +343,38 @@ impl Tool for PowerShellTool {
                     ..Default::default()
                 })
             }
-            Ok(Err(e)) => Ok(ToolResult {
-                data: json!({ "error": format!("Failed to execute PowerShell command: {}", e) }),
+            ControlledExit::TimedOut(wait_result) => Ok(ToolResult {
+                data: json!({
+                    "error": format!("PowerShell command timed out after {}ms", timeout_duration.as_millis()),
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "exit_code": wait_result
+                        .ok()
+                        .and_then(|status| status.code())
+                        .unwrap_or(143),
+                    "interrupted": true,
+                    "termination": "timeout",
+                }),
                 new_messages: vec![],
                 ..Default::default()
             }),
-            Err(_) => Ok(ToolResult {
-                data: json!({ "error": format!("PowerShell command timed out after {}ms", timeout_duration.as_millis()) }),
+            ControlledExit::Cancelled(wait_result) => Ok(ToolResult {
+                data: json!({
+                    "error": "PowerShell command interrupted",
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "exit_code": wait_result
+                        .ok()
+                        .and_then(|status| status.code())
+                        .unwrap_or(137),
+                    "interrupted": true,
+                    "termination": "cancelled",
+                }),
+                new_messages: vec![],
+                ..Default::default()
+            }),
+            ControlledExit::Exited(Err(e)) => Ok(ToolResult {
+                data: json!({ "error": format!("Failed to execute PowerShell command: {}", e) }),
                 new_messages: vec![],
                 ..Default::default()
             }),
@@ -321,6 +404,63 @@ On Windows, uses powershell.exe; on other platforms, uses pwsh (PowerShell Core)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    use crate::types::app_state::AppState;
+    use crate::types::message::ContentBlock;
+    use crate::types::tool::{FileStateCache, ToolUseOptions};
+    use uuid::Uuid;
+
+    fn test_context() -> (ToolUseContext, tokio::sync::watch::Sender<bool>) {
+        let app_state = AppState::default();
+        let (tx, rx) = tokio::sync::watch::channel(false);
+
+        (
+            ToolUseContext {
+                options: ToolUseOptions {
+                    debug: false,
+                    main_loop_model: "test".to_string(),
+                    verbose: false,
+                    is_non_interactive_session: false,
+                    custom_system_prompt: None,
+                    append_system_prompt: None,
+                    max_budget_usd: None,
+                },
+                abort_signal: rx,
+                read_file_state: FileStateCache {
+                    entries: HashMap::new(),
+                },
+                get_app_state: Arc::new(move || app_state.clone()),
+                set_app_state: Arc::new(|_| {}),
+                session_id: "powershell-test-session".to_string(),
+                langfuse_session_id: "powershell-test-session".to_string(),
+                messages: vec![],
+                agent_id: None,
+                agent_type: None,
+                query_tracking: None,
+                permission_callback: None,
+                ask_user_callback: None,
+                bg_agent_tx: None,
+                hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
+                command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
+            },
+            tx,
+        )
+    }
+
+    fn parent_message() -> AssistantMessage {
+        AssistantMessage {
+            uuid: Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: Vec::<ContentBlock>::new(),
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        }
+    }
 
     #[test]
     fn test_powershell_tool_name() {
@@ -376,5 +516,59 @@ mod tests {
         } else {
             assert_eq!(exe, "pwsh");
         }
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn test_powershell_timeout_terminates_process() {
+        let tool = PowerShellTool;
+        let (ctx, _tx) = test_context();
+        let result = tool
+            .call(
+                json!({
+                    "command": "Start-Sleep -Seconds 30",
+                    "timeout": 100
+                }),
+                &ctx,
+                &parent_message(),
+                None,
+            )
+            .await
+            .expect("tool call should return");
+
+        assert_eq!(result.data["termination"], json!("timeout"));
+        assert_eq!(result.data["interrupted"], json!(true));
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn test_powershell_abort_signal_terminates_process() {
+        let tool = PowerShellTool;
+        let (ctx, tx) = test_context();
+        let parent = parent_message();
+        let task = tokio::spawn(async move {
+            tool.call(
+                json!({
+                    "command": "Start-Sleep -Seconds 30",
+                    "timeout": 30_000
+                }),
+                &ctx,
+                &parent,
+                None,
+            )
+            .await
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        tx.send(true).expect("send abort");
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), task)
+            .await
+            .expect("cancelled command should finish")
+            .expect("task join")
+            .expect("tool call");
+
+        assert_eq!(result.data["termination"], json!("cancelled"));
+        assert_eq!(result.data["interrupted"], json!(true));
     }
 }
