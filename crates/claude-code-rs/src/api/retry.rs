@@ -74,8 +74,8 @@ pub fn categorize_api_error(status: u16, body: &str) -> ApiErrorCategory {
                 }
             }
         }
-        500 | 502 | 503 => ApiErrorCategory::ServerError,
         529 => ApiErrorCategory::Overloaded,
+        500..=599 => ApiErrorCategory::ServerError,
         400 => {
             if body.contains("prompt is too long") || body.contains("too many tokens") {
                 ApiErrorCategory::PromptTooLong
@@ -93,6 +93,88 @@ pub fn categorize_api_error(status: u16, body: &str) -> ApiErrorCategory {
             message: body.to_string(),
         },
     }
+}
+
+/// Categorize a failure that happened before the stream was handed to callers.
+///
+/// Provider implementations currently return `anyhow::Error`, so this parser
+/// preserves retry semantics across Anthropic, OpenAI-compatible, Gemini,
+/// Vertex, and Bedrock error strings until those paths grow typed errors.
+pub fn categorize_stream_start_error(message: &str) -> ApiErrorCategory {
+    if let Some(status) = extract_http_status(message) {
+        return categorize_api_error(status, message);
+    }
+
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("prompt is too long")
+        || lower.contains("prompt_too_long")
+        || lower.contains("too many tokens")
+    {
+        return ApiErrorCategory::PromptTooLong;
+    }
+    if lower.contains("max_tokens") || lower.contains("max output tokens") {
+        return ApiErrorCategory::MaxOutputTokens;
+    }
+    if lower.contains("unauthorized")
+        || lower.contains("forbidden")
+        || lower.contains("invalid api key")
+        || lower.contains("authentication")
+    {
+        return ApiErrorCategory::AuthError;
+    }
+    if lower.contains("invalid request") || lower.contains("bad request") {
+        return ApiErrorCategory::InvalidRequest {
+            message: message.to_string(),
+        };
+    }
+    if lower.contains("overloaded") || lower.contains("high demand") || lower.contains("capacity") {
+        return ApiErrorCategory::Overloaded;
+    }
+    if lower.contains("rate limit")
+        || lower.contains("rate_limit")
+        || lower.contains("too many requests")
+    {
+        return ApiErrorCategory::RateLimit {
+            retry_after_ms: None,
+        };
+    }
+    if lower.contains("failed to send")
+        || lower.contains("error sending")
+        || lower.contains("timed out")
+        || lower.contains("timeout")
+        || lower.contains("connection")
+        || lower.contains("connect")
+        || lower.contains("dns")
+        || lower.contains("eof")
+        || lower.contains("network")
+    {
+        return ApiErrorCategory::ServerError;
+    }
+
+    ApiErrorCategory::Unknown {
+        status: None,
+        message: message.to_string(),
+    }
+}
+
+fn extract_http_status(message: &str) -> Option<u16> {
+    let lower = message.to_ascii_lowercase();
+    for marker in ["http ", "status ", "status: "] {
+        if let Some(index) = lower.find(marker) {
+            let after = &lower[index + marker.len()..];
+            let digits: String = after
+                .chars()
+                .skip_while(|ch| !ch.is_ascii_digit())
+                .take_while(|ch| ch.is_ascii_digit())
+                .collect();
+            if digits.len() == 3 {
+                if let Ok(status) = digits.parse::<u16>() {
+                    return Some(status);
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Calculate delay for a retry attempt
@@ -114,4 +196,41 @@ fn rand_fraction() -> f64 {
         .unwrap_or_default()
         .subsec_nanos();
     (nanos % 1000) as f64 / 1000.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stream_start_error_classifies_retryable_http_and_network_failures() {
+        assert!(
+            categorize_stream_start_error("Provider qwen error (HTTP 429): rate limit")
+                .is_retryable()
+        );
+        assert!(
+            categorize_stream_start_error("Google Gemini error (HTTP 504): gateway timeout")
+                .is_retryable()
+        );
+        assert!(
+            categorize_stream_start_error("failed to send HTTP request: connection closed")
+                .is_retryable()
+        );
+        assert!(categorize_stream_start_error("529 overloaded: high demand").is_retryable());
+    }
+
+    #[test]
+    fn stream_start_error_keeps_nonretryable_failures_terminal() {
+        assert!(
+            !categorize_stream_start_error("API error (HTTP 400): prompt is too long")
+                .is_retryable()
+        );
+        assert!(
+            !categorize_stream_start_error("API error (HTTP 401): unauthorized").is_retryable()
+        );
+        assert!(!categorize_stream_start_error("Provider error: invalid request").is_retryable());
+        assert!(
+            !categorize_stream_start_error("provider returned malformed content").is_retryable()
+        );
+    }
 }

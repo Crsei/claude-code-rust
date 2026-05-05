@@ -1,11 +1,14 @@
 //! API client — creates provider-specific HTTP clients and drives the
 //! Anthropic Messages API (streaming + non-streaming).
+use std::future::Future;
 use std::pin::Pin;
+use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use futures::Stream;
 use serde_json::Value;
 
+use crate::api::retry::{categorize_stream_start_error, retry_delay, RetryConfig};
 use crate::types::message::{AssistantMessage, StreamEvent};
 
 // Re-export siblings for convenience within this module's tests.
@@ -759,7 +762,52 @@ impl ApiClient {
         &self,
         request: MessagesRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
-        self.stream_provider.stream(&self.http, &request).await
+        let retry_config = RetryConfig {
+            max_retries: self.config.max_retries,
+            ..RetryConfig::default()
+        };
+        self.messages_stream_with_backoff(request, retry_config, tokio::time::sleep)
+            .await
+    }
+
+    async fn messages_stream_with_backoff<SleepFn, SleepFuture>(
+        &self,
+        request: MessagesRequest,
+        retry_config: RetryConfig,
+        mut sleep: SleepFn,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>>
+    where
+        SleepFn: FnMut(Duration) -> SleepFuture,
+        SleepFuture: Future<Output = ()>,
+    {
+        let mut retry_attempt = 0;
+
+        loop {
+            match self.stream_provider.stream(&self.http, &request).await {
+                Ok(stream) => return Ok(stream),
+                Err(error) => {
+                    let error_message = error.to_string();
+                    let category = categorize_stream_start_error(&error_message);
+
+                    if !category.is_retryable() || retry_attempt >= retry_config.max_retries {
+                        return Err(error);
+                    }
+
+                    let delay = retry_delay(&retry_config, retry_attempt);
+                    tracing::warn!(
+                        attempt = retry_attempt + 1,
+                        max_retries = retry_config.max_retries,
+                        delay_ms = delay.as_millis() as u64,
+                        category = ?category,
+                        error = %error_message,
+                        "streaming API call failed before first event; retrying with backoff"
+                    );
+
+                    sleep(delay).await;
+                    retry_attempt += 1;
+                }
+            }
+        }
     }
 
     /// Send a non-streaming messages request.

@@ -1,4 +1,7 @@
 use super::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -798,6 +801,117 @@ data: {\"type\":\"message_stop\"}";
 fn test_sse_line_parsing_empty_text() {
     let events = parse_sse_text("").unwrap();
     assert!(events.is_empty());
+}
+
+struct FlakyStreamProvider {
+    calls: Arc<AtomicUsize>,
+    fail_times: usize,
+    error: &'static str,
+}
+
+#[async_trait::async_trait]
+impl crate::api::stream_provider::StreamProvider for FlakyStreamProvider {
+    async fn stream(
+        &self,
+        _http: &reqwest::Client,
+        _request: &MessagesRequest,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+        let call_index = self.calls.fetch_add(1, Ordering::SeqCst);
+        if call_index < self.fail_times {
+            anyhow::bail!("{}", self.error);
+        }
+
+        Ok(Box::pin(futures::stream::empty::<Result<StreamEvent>>()))
+    }
+}
+
+fn minimal_stream_request() -> MessagesRequest {
+    MessagesRequest {
+        model: "claude-sonnet-4-20250514".to_string(),
+        messages: vec![serde_json::json!({"role": "user", "content": "Hello"})],
+        system: None,
+        max_tokens: 1024,
+        tools: None,
+        stream: true,
+        thinking: None,
+        tool_choice: None,
+        advisor_model: None,
+    }
+}
+
+fn retry_test_config(max_retries: usize) -> crate::api::retry::RetryConfig {
+    crate::api::retry::RetryConfig {
+        max_retries,
+        initial_delay_ms: 0,
+        max_delay_ms: 0,
+        backoff_multiplier: 1.0,
+        retryable_status_codes: vec![429, 500, 502, 503, 504, 529],
+    }
+}
+
+#[tokio::test]
+async fn messages_stream_retries_retryable_stream_start_errors() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let client = ApiClient {
+        config: anthropic_config(),
+        http: reqwest::Client::new(),
+        stream_provider: Box::new(FlakyStreamProvider {
+            calls: calls.clone(),
+            fail_times: 1,
+            error: "Provider qwen error (HTTP 500): upstream unavailable",
+        }),
+    };
+    let observed_delays = Arc::new(Mutex::new(Vec::new()));
+    let observed_delays_for_sleep = observed_delays.clone();
+
+    let result = client
+        .messages_stream_with_backoff(
+            minimal_stream_request(),
+            retry_test_config(2),
+            move |delay| {
+                observed_delays_for_sleep.lock().unwrap().push(delay);
+                std::future::ready(())
+            },
+        )
+        .await;
+
+    assert!(result.is_ok());
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        *observed_delays.lock().unwrap(),
+        vec![Duration::from_millis(0)]
+    );
+}
+
+#[tokio::test]
+async fn messages_stream_does_not_retry_nonretryable_stream_start_errors() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let client = ApiClient {
+        config: anthropic_config(),
+        http: reqwest::Client::new(),
+        stream_provider: Box::new(FlakyStreamProvider {
+            calls: calls.clone(),
+            fail_times: 1,
+            error: "API error (HTTP 400): prompt is too long",
+        }),
+    };
+    let observed_delays = Arc::new(Mutex::new(Vec::new()));
+    let observed_delays_for_sleep = observed_delays.clone();
+
+    let result = client
+        .messages_stream_with_backoff(
+            minimal_stream_request(),
+            retry_test_config(2),
+            move |delay| {
+                observed_delays_for_sleep.lock().unwrap().push(delay);
+                std::future::ready(())
+            },
+        )
+        .await;
+
+    assert!(result.is_err());
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(observed_delays.lock().unwrap().is_empty());
 }
 
 // -----------------------------------------------------------------------
