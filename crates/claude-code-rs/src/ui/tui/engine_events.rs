@@ -174,34 +174,41 @@ pub(super) fn handle_sdk_message(app: &mut App, msg: SdkMessage, ss: &mut Stream
                     if is_new_message {
                         ss.active = true;
                     }
-                    if let Some(t) = delta.get("text").and_then(|v| v.as_str()) {
-                        if let ContentBlock::Text { text } = ss.ensure_block(
-                            index,
-                            ContentBlock::Text {
-                                text: String::new(),
-                            },
-                        ) {
-                            text.push_str(t);
+                    let mut handled = false;
+                    if stream_delta_type_matches(delta, "text_delta") {
+                        if let Some(t) = delta.get("text").and_then(|v| v.as_str()) {
+                            if let ContentBlock::Text { text } = ss.ensure_block(
+                                index,
+                                ContentBlock::Text {
+                                    text: String::new(),
+                                },
+                            ) {
+                                text.push_str(t);
+                            }
+                            if is_new_message {
+                                app.add_message(make_partial_assistant(&ss.blocks));
+                            } else {
+                                app.replace_last_message(make_partial_assistant(&ss.blocks));
+                            }
+                            handled = true;
                         }
-                        if is_new_message {
-                            app.add_message(make_partial_assistant(&ss.blocks));
-                        } else {
-                            app.replace_last_message(make_partial_assistant(&ss.blocks));
-                        }
-                    } else if let Some(t) = delta.get("thinking").and_then(|v| v.as_str()) {
-                        if let ContentBlock::Thinking { thinking, .. } = ss.ensure_block(
-                            index,
-                            ContentBlock::Thinking {
-                                thinking: String::new(),
-                                signature: None,
-                            },
-                        ) {
-                            thinking.push_str(t);
-                        }
-                        if is_new_message {
-                            app.add_message(make_partial_assistant(&ss.blocks));
-                        } else {
-                            app.replace_last_message(make_partial_assistant(&ss.blocks));
+                    }
+                    if !handled && stream_delta_type_matches(delta, "thinking_delta") {
+                        if let Some(t) = delta.get("thinking").and_then(|v| v.as_str()) {
+                            if let ContentBlock::Thinking { thinking, .. } = ss.ensure_block(
+                                index,
+                                ContentBlock::Thinking {
+                                    thinking: String::new(),
+                                    signature: None,
+                                },
+                            ) {
+                                thinking.push_str(t);
+                            }
+                            if is_new_message {
+                                app.add_message(make_partial_assistant(&ss.blocks));
+                            } else {
+                                app.replace_last_message(make_partial_assistant(&ss.blocks));
+                            }
                         }
                     }
                 }
@@ -304,6 +311,13 @@ pub(super) fn handle_sdk_message(app: &mut App, msg: SdkMessage, ss: &mut Stream
     }
 }
 
+fn stream_delta_type_matches(delta: &serde_json::Value, expected: &str) -> bool {
+    delta
+        .get("type")
+        .and_then(|v| v.as_str())
+        .map_or(true, |actual| actual == expected)
+}
+
 /// Build a partial assistant message for streaming display.
 fn make_partial_assistant(blocks: &[ContentBlock]) -> Message {
     Message::Assistant(AssistantMessage {
@@ -318,7 +332,6 @@ fn make_partial_assistant(blocks: &[ContentBlock]) -> Message {
         cost_usd: 0.0,
     })
 }
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

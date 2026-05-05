@@ -91,35 +91,67 @@ impl StreamAccumulator {
             }
             StreamEvent::ContentBlockDelta { index, delta } => {
                 if let Some(block) = self.content_blocks.get_mut(*index) {
-                    match block {
+                    let handled = match block {
                         ContentBlock::Text { text } => {
-                            if let Some(t) = delta.get("text").and_then(|v| v.as_str()) {
-                                text.push_str(t);
+                            if delta_type_matches(delta, "text_delta") {
+                                if let Some(t) = delta.get("text").and_then(|v| v.as_str()) {
+                                    text.push_str(t);
+                                    true
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
                             }
                         }
-                        ContentBlock::Thinking { thinking, .. } => {
-                            if let Some(t) = delta.get("thinking").and_then(|v| v.as_str()) {
-                                thinking.push_str(t);
+                        ContentBlock::Thinking {
+                            thinking,
+                            signature,
+                        } => {
+                            let mut handled = false;
+                            if delta_type_matches(delta, "thinking_delta") {
+                                if let Some(t) = delta.get("thinking").and_then(|v| v.as_str()) {
+                                    thinking.push_str(t);
+                                    handled = true;
+                                }
                             }
+                            if delta_type_matches(delta, "signature_delta") {
+                                if let Some(s) = delta.get("signature").and_then(|v| v.as_str()) {
+                                    signature.get_or_insert_with(String::new).push_str(s);
+                                    handled = true;
+                                }
+                            }
+                            handled
                         }
                         ContentBlock::ToolUse { .. } => {
-                            if let Some(partial_json) =
-                                delta.get("partial_json").and_then(|v| v.as_str())
-                            {
-                                while self.tool_input_partials.len() <= *index {
-                                    self.tool_input_partials.push(String::new());
+                            if delta_type_matches(delta, "input_json_delta") {
+                                if let Some(partial_json) =
+                                    delta.get("partial_json").and_then(|v| v.as_str())
+                                {
+                                    while self.tool_input_partials.len() <= *index {
+                                        self.tool_input_partials.push(String::new());
+                                    }
+                                    self.tool_input_partials[*index].push_str(partial_json);
+                                    true
+                                } else {
+                                    false
                                 }
-                                self.tool_input_partials[*index].push_str(partial_json);
+                            } else {
+                                false
                             }
                         }
-                        _ => {}
-                    }
+                        _ => false,
+                    };
 
-                    if let ContentBlock::Thinking { signature, .. } = block {
-                        if let Some(s) = delta.get("signature").and_then(|v| v.as_str()) {
-                            signature.get_or_insert_with(String::new).push_str(s);
-                        }
+                    if !handled {
+                        log_unsupported_delta(*index, delta);
                     }
+                } else {
+                    tracing::warn!(
+                        index = *index,
+                        delta_type = delta_type_name(delta),
+                        "received stream content block delta before content block start"
+                    );
                 }
             }
             StreamEvent::ContentBlockStop { index } => {
@@ -182,6 +214,28 @@ impl StreamAccumulator {
             cost_usd,
         }
     }
+}
+
+fn delta_type_matches(delta: &Value, expected: &str) -> bool {
+    delta
+        .get("type")
+        .and_then(|v| v.as_str())
+        .map_or(true, |actual| actual == expected)
+}
+
+fn delta_type_name(delta: &Value) -> &str {
+    delta
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+}
+
+fn log_unsupported_delta(index: usize, delta: &Value) {
+    tracing::warn!(
+        index,
+        delta_type = delta_type_name(delta),
+        "ignoring unsupported stream content block delta"
+    );
 }
 
 #[cfg(test)]
@@ -280,6 +334,53 @@ mod tests {
                 assert_eq!(signature.as_deref(), Some("sig-asig-b"));
             }
             other => panic!("expected thinking block, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ignores_text_like_unsupported_delta() {
+        let mut accumulator = StreamAccumulator::new();
+
+        accumulator.process_event(&StreamEvent::ContentBlockStart {
+            index: 0,
+            content_block: ContentBlock::Text {
+                text: "prefix".to_string(),
+            },
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "connector_text_delta",
+                "text": " should not append"
+            }),
+        });
+
+        let message = accumulator.build("claude-sonnet-4-20250514");
+        match &message.content[0] {
+            ContentBlock::Text { text } => assert_eq!(text, "prefix"),
+            other => panic!("expected text block, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn accepts_legacy_delta_without_type() {
+        let mut accumulator = StreamAccumulator::new();
+
+        accumulator.process_event(&StreamEvent::ContentBlockStart {
+            index: 0,
+            content_block: ContentBlock::Text {
+                text: String::new(),
+            },
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({ "text": "legacy" }),
+        });
+
+        let message = accumulator.build("claude-sonnet-4-20250514");
+        match &message.content[0] {
+            ContentBlock::Text { text } => assert_eq!(text, "legacy"),
+            other => panic!("expected text block, got {other:?}"),
         }
     }
 

@@ -5,9 +5,19 @@ use uuid::Uuid;
 
 #[test]
 fn test_resolve_model_alias() {
-    assert!(resolve_model_alias("sonnet", "fallback").contains("sonnet"));
-    assert!(resolve_model_alias("opus", "fallback").contains("opus"));
-    assert!(resolve_model_alias("haiku", "fallback").contains("haiku"));
+    assert_eq!(
+        resolve_model_alias("SOTA", "fallback"),
+        "claude-opus-4-20250514"
+    );
+    assert_eq!(
+        resolve_model_alias("MOTA", "fallback"),
+        "claude-sonnet-4-20250514"
+    );
+    assert_eq!(
+        resolve_model_alias("FOTA", "fallback"),
+        "claude-haiku-3-5-20241022"
+    );
+    assert_eq!(resolve_model_alias("opus", "fallback"), "opus");
     assert_eq!(
         resolve_model_alias("custom-model", "fallback"),
         "custom-model"
@@ -99,7 +109,7 @@ fn test_agent_input_deserialization() {
         "prompt": "search for bugs",
         "description": "bug search",
         "subagent_type": "Explore",
-        "model": "haiku",
+        "model": "FOTA",
         "run_in_background": true,
         "isolation": "worktree"
     }))
@@ -107,7 +117,7 @@ fn test_agent_input_deserialization() {
     assert_eq!(input.prompt, "search for bugs");
     assert_eq!(input.description.as_deref(), Some("bug search"));
     assert_eq!(input.subagent_type.as_deref(), Some("Explore"));
-    assert_eq!(input.model.as_deref(), Some("haiku"));
+    assert_eq!(input.model.as_deref(), Some("FOTA"));
     assert!(input.run_in_background);
     assert_eq!(input.isolation.as_deref(), Some("worktree"));
 }
@@ -221,6 +231,15 @@ fn test_sdk_to_agent_event_stream_delta_thinking() {
 #[test]
 fn test_sdk_to_agent_event_stream_delta_unknown_field_returns_none() {
     let msg = make_stream_event(json!({"other_field": 42}));
+    assert!(sdk_to_agent_event(&msg, "a1").is_none());
+}
+
+#[test]
+fn test_sdk_to_agent_event_unsupported_text_like_delta_returns_none() {
+    let msg = make_stream_event(json!({
+        "type": "connector_text_delta",
+        "text": "not assistant text"
+    }));
     assert!(sdk_to_agent_event(&msg, "a1").is_none());
 }
 

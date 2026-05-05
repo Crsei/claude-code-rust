@@ -212,6 +212,42 @@ fn tui_ignores_tool_input_delta_until_final_assistant() {
 }
 
 #[test]
+fn tui_ignores_unsupported_text_like_delta() {
+    let mut app = App::new();
+    app.add_message(create_user_message("stream connector text"));
+    let mut state = StreamingState::new();
+
+    handle_sdk_message(
+        &mut app,
+        stream_event(StreamEvent::ContentBlockStart {
+            index: 0,
+            content_block: ContentBlock::Text {
+                text: String::new(),
+            },
+        }),
+        &mut state,
+    );
+    handle_sdk_message(
+        &mut app,
+        stream_event(StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "connector_text_delta",
+                "text": "not assistant text"
+            }),
+        }),
+        &mut state,
+    );
+
+    let blocks = last_assistant_blocks(&app);
+    assert_eq!(blocks.len(), 1);
+    match &blocks[0] {
+        ContentBlock::Text { text } => assert_eq!(text, ""),
+        other => panic!("expected text block, got {:?}", other),
+    }
+}
+
+#[test]
 fn tui_user_replay_preserves_tool_result_preview() {
     let mut app = App::new();
     let mut state = StreamingState::new();

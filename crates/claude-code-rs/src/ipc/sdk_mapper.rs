@@ -262,25 +262,36 @@ fn stream_event_to_backend_message(
         }),
         StreamEvent::ContentBlockStart { .. } => None,
         StreamEvent::ContentBlockDelta { ref delta, .. } => {
-            if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
-                Some(BackendMessage::StreamDelta {
-                    message_id: message_id.to_string(),
-                    text: text.to_string(),
-                })
-            } else if let Some(thinking) = delta.get("thinking").and_then(|v| v.as_str()) {
-                Some(BackendMessage::ThinkingDelta {
-                    message_id: message_id.to_string(),
-                    thinking: thinking.to_string(),
-                })
-            } else {
-                None
+            if stream_delta_type_matches(delta, "text_delta") {
+                if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
+                    return Some(BackendMessage::StreamDelta {
+                        message_id: message_id.to_string(),
+                        text: text.to_string(),
+                    });
+                }
             }
+            if stream_delta_type_matches(delta, "thinking_delta") {
+                if let Some(thinking) = delta.get("thinking").and_then(|v| v.as_str()) {
+                    return Some(BackendMessage::ThinkingDelta {
+                        message_id: message_id.to_string(),
+                        thinking: thinking.to_string(),
+                    });
+                }
+            }
+            None
         }
         StreamEvent::MessageStop => Some(BackendMessage::StreamEnd {
             message_id: message_id.to_string(),
         }),
         _ => None,
     }
+}
+
+fn stream_delta_type_matches(delta: &serde_json::Value, expected: &str) -> bool {
+    delta
+        .get("type")
+        .and_then(|v| v.as_str())
+        .map_or(true, |actual| actual == expected)
 }
 
 // ---------------------------------------------------------------------------
@@ -633,6 +644,25 @@ mod tests {
         assert!(
             message.is_none(),
             "headless should not render tool input deltas as text"
+        );
+    }
+
+    #[test]
+    fn headless_stream_event_mapping_ignores_unsupported_text_like_delta() {
+        let message = stream_event_to_backend_message(
+            &StreamEvent::ContentBlockDelta {
+                index: 0,
+                delta: serde_json::json!({
+                    "type": "connector_text_delta",
+                    "text": "not assistant text"
+                }),
+            },
+            "message-1",
+        );
+
+        assert!(
+            message.is_none(),
+            "headless should not render unsupported text-like deltas"
         );
     }
 

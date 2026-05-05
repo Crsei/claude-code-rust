@@ -61,14 +61,9 @@ struct AgentInput {
 /// Maximum depth for nested agent spawning to prevent infinite recursion.
 const MAX_AGENT_DEPTH: usize = 5;
 
-/// Resolve a model alias ("sonnet", "opus", "haiku") to a full model ID.
+/// Resolve a public model alias to a full model ID.
 fn resolve_model_alias(alias: &str, _fallback: &str) -> String {
-    match alias {
-        "sonnet" => "claude-sonnet-4-20250514".to_string(),
-        "opus" => "claude-opus-4-20250514".to_string(),
-        "haiku" => "claude-haiku-4-5-20251001".to_string(),
-        other => other.to_string(),
-    }
+    crate::model_registry::resolve_model_alias(alias)
 }
 
 // ---------------------------------------------------------------------------
@@ -177,20 +172,23 @@ pub(crate) fn sdk_to_agent_event(
     match sdk_msg {
         SdkMessage::StreamEvent(evt) => match &evt.event {
             StreamEvent::ContentBlockDelta { delta, .. } => {
-                if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
-                    Some(AgentEvent::StreamDelta {
-                        agent_id: agent_id.to_string(),
-                        text: text.to_string(),
-                    })
-                } else {
-                    delta
-                        .get("thinking")
-                        .and_then(|v| v.as_str())
-                        .map(|thinking| AgentEvent::ThinkingDelta {
+                if stream_delta_type_matches(delta, "text_delta") {
+                    if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
+                        return Some(AgentEvent::StreamDelta {
+                            agent_id: agent_id.to_string(),
+                            text: text.to_string(),
+                        });
+                    }
+                }
+                if stream_delta_type_matches(delta, "thinking_delta") {
+                    if let Some(thinking) = delta.get("thinking").and_then(|v| v.as_str()) {
+                        return Some(AgentEvent::ThinkingDelta {
                             agent_id: agent_id.to_string(),
                             thinking: thinking.to_string(),
-                        })
+                        });
+                    }
                 }
+                None
             }
             _ => None,
         },
@@ -233,6 +231,13 @@ pub(crate) fn sdk_to_agent_event(
         }
         _ => None,
     }
+}
+
+fn stream_delta_type_matches(delta: &serde_json::Value, expected: &str) -> bool {
+    delta
+        .get("type")
+        .and_then(|v| v.as_str())
+        .map_or(true, |actual| actual == expected)
 }
 
 // ---------------------------------------------------------------------------
