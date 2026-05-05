@@ -4,7 +4,6 @@ use crate::types::app_state::AppState;
 use crate::types::tool::{
     FileStateCache, PermissionMode, PermissionResult, ToolPermissionContext, ToolUseOptions,
 };
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -31,9 +30,7 @@ fn make_ctx_with_mode(mode: PermissionMode) -> ToolUseContext {
             max_budget_usd: None,
         },
         abort_signal: rx,
-        read_file_state: FileStateCache {
-            entries: HashMap::new(),
-        },
+        read_file_state: FileStateCache::default(),
         get_app_state: Arc::new(move || app.clone()),
         set_app_state: Arc::new(|_| {}),
         session_id: "test-session".to_string(),

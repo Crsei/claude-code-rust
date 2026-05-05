@@ -1,6 +1,6 @@
 # 已完成模块 — 完整实现
 
-> 最后更新: 2026-04-02
+> 最后更新: 2026-05-05
 > 此文档记录与 TypeScript 原版功能对等或接近完整的已完成模块。
 > 大幅简化的模块见 [`COMPLETED_SIMPLIFIED.md`](COMPLETED_SIMPLIFIED.md)。
 > 剩余工作见 [`REWRITE_PLAN.md`](../REWRITE_PLAN.md)。
@@ -18,6 +18,7 @@
 | Bash/PowerShell destructive denylist | `crates/cc-permissions/src/dangerous.rs`, `tools/execution/security.rs` | `cargo test -p cc-permissions dangerous`; `cargo test -p claude-code-rs bash`; `cargo test -p claude-code-rs powershell` | 补齐上游 destructive warning 覆盖面：force-with-lease、`git clean` dry-run 例外、stash drop/clear、SQL drop/truncate、PowerShell `Remove-Item`/`Clear-Content`/磁盘与系统 cmdlet |
 | PowerShell security validator high-risk batch | `crates/cc-permissions/src/dangerous.rs`, `tools/execution/tests.rs` | `cargo test -p cc-permissions dangerous`; `cargo test -p claude-code-rs powershell` | 覆盖 `Invoke-Expression`、嵌套 PowerShell、download cradle、`Add-Type`、COM object、`Start-Process` 提权/再拉 PowerShell、WMI/CIM 进程创建 |
 | Bash/PowerShell sandbox filesystem preflight | `crates/cc-sandbox/src/runner.rs` | `cargo test -p cc-sandbox preflight_shell_command`; `cargo test -p claude-code-rs bash`; `cargo test -p claude-code-rs powershell` | `preflight_shell_command()` 在网络检查外增加显式写目标检查，覆盖 redirection、常见 Bash 写命令、PowerShell 写 cmdlet，并执行 read-only/workspace/allowWrite/denyWrite 策略 |
+| FileEditTool stale-read conflict detection | `crates/cc-engine/src/types/tool.rs`, `tools/fs/file_read.rs`, `tools/fs/file_edit.rs` | `cargo test -p claude-code-rs file_edit`; `cargo test -p claude-code-rs file_read`; `cargo test -p cc-engine`; `cargo build -p claude-code-rs --release` | `Read` 完整文本读取登记共享文件快照；`Edit` 拒绝未读或读后被外部修改的文件，成功编辑后刷新缓存以支持连续编辑 |
 | FileWriteTool | `tools/fs/file_write.rs`, `tools/fs/safe_write.rs` | 既有 safe_write / file_write 测试 | 已覆盖临时文件 + rename、恢复备份、大小限制、权限保持、二进制拒绝 |
 | SkillTool | `tools/skill.rs`, `crates/cc-skills/src/*` | 既有 cc-skills / SkillTool 测试 | 已覆盖依赖解析、版本管理、frontmatter 诊断、hot reload、fork/inline 上下文 |
 | LSP | `tools/lsp.rs`, `lsp_service/*` | 既有 LSP service / tool 测试 | 已覆盖 `didChange`、被动 `publishDiagnostics`、completion 与 diagnostics snapshot |

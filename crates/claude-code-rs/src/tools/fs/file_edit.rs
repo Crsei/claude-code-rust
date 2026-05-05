@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::UNIX_EPOCH;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -6,12 +7,19 @@ use serde_json::{json, Value};
 use similar::TextDiff;
 
 use crate::types::message::AssistantMessage;
-use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use crate::types::tool::{
+    FileCacheEntry, FileStateCache, Tool, ToolProgress, ToolResult, ToolUseContext,
+    ValidationResult,
+};
 
 /// FileEditTool — Edit a file by replacing exact string matches
 ///
 /// Corresponds to TypeScript: tools/FileEditTool
 pub struct FileEditTool;
+
+const FILE_NOT_READ_ERROR: &str = "File has not been read yet. Read it first before writing to it.";
+const FILE_UNEXPECTEDLY_MODIFIED_ERROR: &str =
+    "File has been unexpectedly modified. Read it again before attempting to write it.";
 
 impl FileEditTool {
     pub fn new() -> Self {
@@ -39,6 +47,68 @@ impl FileEditTool {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         (file_path, old_string, new_string, replace_all)
+    }
+
+    fn modified_millis(metadata: &std::fs::Metadata) -> i64 {
+        metadata
+            .modified()
+            .ok()
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+            .unwrap_or(0)
+    }
+
+    fn state_keys(file_path: &str, path: &Path) -> Vec<String> {
+        let mut keys = Vec::new();
+        Self::push_unique_key(&mut keys, file_path.to_string());
+        Self::push_unique_key(&mut keys, path.to_string_lossy().to_string());
+        if let Ok(canonical) = std::fs::canonicalize(path) {
+            Self::push_unique_key(&mut keys, canonical.to_string_lossy().to_string());
+        }
+        keys
+    }
+
+    fn push_unique_key(keys: &mut Vec<String>, key: String) {
+        if !key.is_empty() && !keys.iter().any(|existing| existing == &key) {
+            keys.push(key);
+        }
+    }
+
+    fn cached_entry(ctx: &ToolUseContext, file_path: &str, path: &Path) -> Option<FileCacheEntry> {
+        Self::state_keys(file_path, path)
+            .into_iter()
+            .find_map(|key| ctx.read_file_state.get(&key))
+    }
+
+    fn validate_cached_read(
+        ctx: &ToolUseContext,
+        file_path: &str,
+        path: &Path,
+        content: &str,
+    ) -> std::result::Result<(), &'static str> {
+        let Some(entry) = Self::cached_entry(ctx, file_path, path) else {
+            return Err(FILE_NOT_READ_ERROR);
+        };
+
+        let current_hash = FileStateCache::hash_content(content.as_bytes());
+        if current_hash != entry.content_hash {
+            return Err(FILE_UNEXPECTEDLY_MODIFIED_ERROR);
+        }
+
+        Ok(())
+    }
+
+    fn record_edit_state(ctx: &ToolUseContext, file_path: &str, path: &Path, content: &str) {
+        let timestamp = std::fs::metadata(path)
+            .map(|metadata| Self::modified_millis(&metadata))
+            .unwrap_or(0);
+        let entry = FileCacheEntry {
+            content_hash: FileStateCache::hash_content(content.as_bytes()),
+            last_read_timestamp: timestamp,
+        };
+        for key in Self::state_keys(file_path, path) {
+            ctx.read_file_state.insert(key, entry.clone());
+        }
     }
 
     /// Find the best fuzzy match for `old_string` within `content` using
@@ -161,7 +231,7 @@ impl Tool for FileEditTool {
             .map(|s| s.to_string())
     }
 
-    async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
+    async fn validate_input(&self, input: &Value, ctx: &ToolUseContext) -> ValidationResult {
         let file_path = input
             .get("file_path")
             .and_then(|v| v.as_str())
@@ -194,6 +264,26 @@ impl Tool for FileEditTool {
                 message: "old_string and new_string must be different".to_string(),
                 error_code: 1,
             };
+        }
+        let path = Path::new(file_path);
+        if path.exists() {
+            match tokio::fs::read_to_string(path).await {
+                Ok(content) => {
+                    if let Err(message) = Self::validate_cached_read(ctx, file_path, path, &content)
+                    {
+                        return ValidationResult::Error {
+                            message: message.to_string(),
+                            error_code: 7,
+                        };
+                    }
+                }
+                Err(e) => {
+                    return ValidationResult::Error {
+                        message: format!("Failed to read file: {}", e),
+                        error_code: 1,
+                    };
+                }
+            }
         }
         ValidationResult::Ok
     }
@@ -236,6 +326,14 @@ impl Tool for FileEditTool {
                 });
             }
         };
+
+        if let Err(message) = Self::validate_cached_read(ctx, &file_path, path, &content) {
+            return Ok(ToolResult {
+                data: json!({ "error": message }),
+                new_messages: vec![],
+                ..Default::default()
+            });
+        }
 
         // Count occurrences of old_string
         let occurrence_count = content.matches(&old_string).count();
@@ -295,6 +393,7 @@ impl Tool for FileEditTool {
         match tokio::fs::write(&file_path, &new_content).await {
             Ok(()) => {
                 let replacements = if replace_all { occurrence_count } else { 1 };
+                Self::record_edit_state(ctx, &file_path, path, &new_content);
 
                 // Fire FileChanged hook
                 {
@@ -353,6 +452,71 @@ Usage:\n\
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools::fs::file_read::FileReadTool;
+    use crate::types::app_state::AppState;
+    use crate::types::message::ContentBlock;
+    use crate::types::tool::{FileStateCache, ToolUseOptions};
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    fn test_context() -> ToolUseContext {
+        let app_state = AppState::default();
+        let (_tx, rx) = tokio::sync::watch::channel(false);
+
+        ToolUseContext {
+            options: ToolUseOptions {
+                debug: false,
+                main_loop_model: "test".to_string(),
+                verbose: false,
+                is_non_interactive_session: false,
+                custom_system_prompt: None,
+                append_system_prompt: None,
+                max_budget_usd: None,
+            },
+            abort_signal: rx,
+            read_file_state: FileStateCache::default(),
+            get_app_state: Arc::new(move || app_state.clone()),
+            set_app_state: Arc::new(|_| {}),
+            session_id: "file-edit-test-session".to_string(),
+            langfuse_session_id: "file-edit-test-session".to_string(),
+            messages: vec![],
+            agent_id: None,
+            agent_type: None,
+            query_tracking: None,
+            permission_callback: None,
+            ask_user_callback: None,
+            bg_agent_tx: None,
+            hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
+            command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
+        }
+    }
+
+    fn parent_message() -> AssistantMessage {
+        AssistantMessage {
+            uuid: Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: Vec::<ContentBlock>::new(),
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        }
+    }
+
+    fn cache_file_state(ctx: &ToolUseContext, path: &Path, content: &str) {
+        let timestamp = std::fs::metadata(path)
+            .map(|metadata| FileEditTool::modified_millis(&metadata))
+            .unwrap_or(0);
+        ctx.read_file_state.insert(
+            path.to_string_lossy().to_string(),
+            FileCacheEntry {
+                content_hash: FileStateCache::hash_content(content.as_bytes()),
+                last_read_timestamp: timestamp,
+            },
+        );
+    }
 
     #[test]
     fn test_fuzzy_match_whitespace_diff() {
@@ -412,5 +576,117 @@ mod tests {
         assert_eq!(m.start_line, 1);
         assert_eq!(m.end_line, 3);
         assert!(m.text.contains("let count = 0;"));
+    }
+
+    #[tokio::test]
+    async fn edit_rejects_file_that_has_not_been_read() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("sample.txt");
+        tokio::fs::write(&file_path, "alpha\n").await.unwrap();
+
+        let ctx = test_context();
+        let result = FileEditTool::new()
+            .call(
+                json!({
+                    "file_path": file_path.to_string_lossy(),
+                    "old_string": "alpha",
+                    "new_string": "beta",
+                }),
+                &ctx,
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.data["error"], FILE_NOT_READ_ERROR);
+        assert_eq!(
+            tokio::fs::read_to_string(&file_path).await.unwrap(),
+            "alpha\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_rejects_file_modified_after_cached_read() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("sample.txt");
+        tokio::fs::write(&file_path, "alpha\n").await.unwrap();
+
+        let ctx = test_context();
+        cache_file_state(&ctx, &file_path, "alpha\n");
+        tokio::fs::write(&file_path, "external\n").await.unwrap();
+
+        let result = FileEditTool::new()
+            .call(
+                json!({
+                    "file_path": file_path.to_string_lossy(),
+                    "old_string": "alpha",
+                    "new_string": "beta",
+                }),
+                &ctx,
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.data["error"], FILE_UNEXPECTEDLY_MODIFIED_ERROR);
+        assert_eq!(
+            tokio::fs::read_to_string(&file_path).await.unwrap(),
+            "external\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn full_read_registers_state_and_edit_refreshes_it() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("sample.txt");
+        tokio::fs::write(&file_path, "alpha\nbeta\n").await.unwrap();
+
+        let ctx = test_context();
+        let read_result = FileReadTool::new()
+            .call(
+                json!({ "file_path": file_path.to_string_lossy() }),
+                &ctx,
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(read_result.data["truncated"], false);
+
+        let first_edit = FileEditTool::new()
+            .call(
+                json!({
+                    "file_path": file_path.to_string_lossy(),
+                    "old_string": "alpha",
+                    "new_string": "gamma",
+                }),
+                &ctx,
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(first_edit.data["replacements"], 1);
+
+        let second_edit = FileEditTool::new()
+            .call(
+                json!({
+                    "file_path": file_path.to_string_lossy(),
+                    "old_string": "beta",
+                    "new_string": "delta",
+                }),
+                &ctx,
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(second_edit.data["replacements"], 1);
+        assert_eq!(
+            tokio::fs::read_to_string(&file_path).await.unwrap(),
+            "gamma\ndelta\n"
+        );
     }
 }

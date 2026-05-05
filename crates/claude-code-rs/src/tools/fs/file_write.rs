@@ -224,7 +224,6 @@ Usage:\n\
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use std::sync::Arc;
 
     use crate::types::app_state::AppState;
@@ -248,9 +247,7 @@ mod tests {
                 max_budget_usd: None,
             },
             abort_signal: rx,
-            read_file_state: FileStateCache {
-                entries: HashMap::new(),
-            },
+            read_file_state: FileStateCache::default(),
             get_app_state: Arc::new(move || app_state.clone()),
             set_app_state: Arc::new(|_| {}),
             session_id: "file-write-test-session".to_string(),

@@ -1,10 +1,12 @@
 #![allow(dead_code)]
 use std::collections::HashMap;
 use std::future::Future;
+use std::hash::{Hash, Hasher};
 use std::pin::Pin;
 use std::sync::Arc;
 
 use anyhow::Result;
+use parking_lot::RwLock;
 use serde_json::Value;
 
 use super::app_state::AppState;
@@ -100,14 +102,33 @@ pub use cc_types::permissions::{
 /// 文件状态缓存 (LRU, 追踪工具已读/已写的文件)
 #[derive(Debug, Clone, Default)]
 pub struct FileStateCache {
-    // 简化版: 后续用 lru crate 替换
-    pub entries: HashMap<String, FileCacheEntry>,
+    pub entries: Arc<RwLock<HashMap<String, FileCacheEntry>>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct FileCacheEntry {
     pub content_hash: u64,
     pub last_read_timestamp: i64,
+}
+
+impl FileStateCache {
+    pub fn get(&self, path: &str) -> Option<FileCacheEntry> {
+        self.entries.read().get(path).cloned()
+    }
+
+    pub fn insert(&self, path: String, entry: FileCacheEntry) {
+        self.entries.write().insert(path, entry);
+    }
+
+    pub fn invalidate(&self, path: &str) {
+        self.entries.write().remove(path);
+    }
+
+    pub fn hash_content(content: &[u8]) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        content.hash(&mut hasher);
+        hasher.finish()
+    }
 }
 
 pub type AppStateUpdater = Box<dyn FnOnce(AppState) -> AppState>;

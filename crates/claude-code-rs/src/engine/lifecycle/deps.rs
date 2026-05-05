@@ -412,7 +412,7 @@ impl QueryDeps for QueryEngineDeps {
                 }
                 rx
             },
-            read_file_state: crate::types::tool::FileStateCache::default(),
+            read_file_state: self.state.read().file_state_cache.clone(),
             get_app_state: {
                 let state = self.state.clone();
                 Arc::new(move || state.read().app_state.clone())

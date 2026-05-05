@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -7,7 +8,8 @@ use serde_json::{json, Value};
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{
-    InterruptBehavior, Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult,
+    FileCacheEntry, InterruptBehavior, Tool, ToolProgress, ToolResult, ToolUseContext,
+    ValidationResult,
 };
 
 /// FileReadTool — Read files from the filesystem
@@ -66,6 +68,31 @@ impl FileReadTool {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         (file_path, offset, limit, pages)
+    }
+
+    fn modified_millis(metadata: &std::fs::Metadata) -> i64 {
+        metadata
+            .modified()
+            .ok()
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+            .unwrap_or(0)
+    }
+
+    fn record_text_read(ctx: &ToolUseContext, target: &ReadTarget, content: &str, timestamp: i64) {
+        let entry = FileCacheEntry {
+            content_hash: crate::types::tool::FileStateCache::hash_content(content.as_bytes()),
+            last_read_timestamp: timestamp,
+        };
+
+        let keys = [
+            target.original_path.clone(),
+            target.read_path.to_string_lossy().to_string(),
+            target.resolved_path.clone(),
+        ];
+        for key in keys {
+            ctx.read_file_state.insert(key, entry.clone());
+        }
     }
 
     /// Detect if content is likely binary by checking for null bytes
@@ -568,8 +595,13 @@ impl FileReadTool {
         offset: Option<usize>,
         limit: Option<usize>,
         max_chars: usize,
+        ctx: Option<&ToolUseContext>,
     ) -> Result<ToolResult> {
         let bytes = tokio::fs::read(&target.read_path).await?;
+        let modified_at = tokio::fs::metadata(&target.read_path)
+            .await
+            .map(|metadata| Self::modified_millis(&metadata))
+            .unwrap_or(0);
         let decoded = match Self::decode_text_bytes(&bytes)? {
             Some(decoded) => decoded,
             None => {
@@ -588,6 +620,7 @@ impl FileReadTool {
 
         let effective_offset = offset.unwrap_or(0);
         let formatted = Self::format_text_window(&decoded.content, effective_offset, limit);
+        let is_full_read_request = effective_offset == 0 && limit.is_none();
 
         if formatted.output.is_empty() && formatted.total_lines > 0 {
             return Ok(ToolResult {
@@ -606,6 +639,11 @@ impl FileReadTool {
         }
 
         if formatted.output.is_empty() {
+            if is_full_read_request {
+                if let Some(ctx) = ctx {
+                    Self::record_text_read(ctx, target, &decoded.content, modified_at);
+                }
+            }
             return Ok(ToolResult {
                 data: json!({
                     "output": "(empty file)",
@@ -634,6 +672,11 @@ impl FileReadTool {
         if truncated_by_chars {
             output = output.chars().take(max_chars).collect();
             output.push_str("\n... (output truncated)");
+        }
+        if is_full_read_request && !formatted.line_limited && !truncated_by_chars {
+            if let Some(ctx) = ctx {
+                Self::record_text_read(ctx, target, &decoded.content, modified_at);
+            }
         }
 
         Ok(ToolResult {
@@ -729,7 +772,7 @@ impl Tool for FileReadTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _parent_message: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
@@ -825,7 +868,15 @@ impl Tool for FileReadTool {
             };
         }
 
-        match Self::read_text(&target, offset, limit, self.max_result_size_chars()).await {
+        match Self::read_text(
+            &target,
+            offset,
+            limit,
+            self.max_result_size_chars(),
+            Some(ctx),
+        )
+        .await
+        {
             Ok(result) => Ok(result),
             Err(e) => Ok(ToolResult {
                 data: json!({ "error": format!("Failed to read file: {}", e) }),
@@ -1006,7 +1057,7 @@ mod tests {
         let target = FileReadTool::resolve_read_target(file_path.to_str().unwrap())
             .await
             .unwrap();
-        let result = FileReadTool::read_text(&target, None, Some(1), 10_000)
+        let result = FileReadTool::read_text(&target, None, Some(1), 10_000, None)
             .await
             .unwrap();
 

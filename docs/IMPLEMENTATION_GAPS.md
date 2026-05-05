@@ -54,13 +54,14 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | Bash/PowerShell 危险命令拒绝列表 | 已补齐子项 | `crates/cc-permissions/src/dangerous.rs` 已补齐上游 destructive warning 覆盖面：`git push --force-with-lease`、`git clean` dry-run 例外、`git stash drop/clear`、SQL drop/truncate、PowerShell `Remove-Item`/`Clear-Content`/磁盘与系统 cmdlet；`PowerShellTool` 通过执行安全门调用 PowerShell 专用检测 |
 | PowerShell security validator 高风险规则 | 已补齐子项 | `crates/cc-permissions/src/dangerous.rs` 已覆盖上游 `powershellSecurity.ts` 第一批高风险拦截：`Invoke-Expression`/`iex`、嵌套 `powershell`/`pwsh`、download cradle、`Add-Type`、COM object、`Start-Process` 提权或再拉 PowerShell、WMI/CIM 进程创建；执行安全门测试覆盖 PowerShell 拦截路径 |
 | Bash/PowerShell sandbox 文件系统 preflight | 已补齐子项 | `crates/cc-sandbox/src/runner.rs` 的 `preflight_shell_command()` 已接入显式写目标检查，覆盖 shell redirection、常见 Bash 写命令与 PowerShell 写 cmdlet，并按 read-only/workspace/allowWrite/denyWrite 返回 sandbox policy error |
+| FileEditTool 读后冲突检测 | 已补齐子项 | `Read` 完整文本读取会写入共享 `FileStateCache`；`Edit` 校验和写入前按文件内容 hash 拒绝未读文件或读后被外部修改的文件，并在成功编辑后刷新缓存，避免覆盖用户/格式化器改动 |
 
 ### 2.2 仍需补齐的工具 parity
 
 | 模块 | 待补齐的行为（参考上游） |
 |------|----------|
 | BashTool | PowerShell AST parser fidelity 与剩余 validator checks（dynamic command name、script block/subexpression、splatting、module/env/runtime-state 等）、sandbox OS-level 平台隔离差异（尤其 Windows primitive / fail-closed 产品边界）；Stage 3c.2 执行前硬拦、heredoc、Git 操作跟踪、进程树终止、destructive denylist、高风险 security validator 与显式写目标 FS preflight 子项已落地 |
-| FileEditTool | 冲突检测、文件锁检查、编辑历史、自动缩进修正；ratatui diff 预览/更新消息 renderer 已补齐，live transcript 接线仍依赖 backend file-edit event data |
+| FileEditTool | 文件锁检查、编辑历史、自动缩进修正；读后冲突检测已补齐，ratatui diff 预览/更新消息 renderer 已补齐，live transcript 接线仍依赖 backend file-edit event data |
 | TaskTools | 远程/多类型后台任务 supervisor parity、超时控制；磁盘持久化、基础依赖字段、输出保留、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
 | PlanMode | auto-mode/classifier gate、团队审批流、计划持久化、实现关联跟踪 |
 | WebFetch | JS 渲染、Cookie 管理、代理支持、重定向限制、Content-Type 智能处理 |
@@ -69,7 +70,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 ### 2.3 当前执行队列（逐步领取）
 
 1. **BashTool**：复核 PowerShell AST/security validator 与 sandbox 文件系统策略的上游差异，明确 Windows OS-level sandbox 的产品边界。
-2. **FileEditTool**：补冲突检测与文件锁检查；随后接编辑历史和自动缩进修正，并用 backend file-edit event data 验证 TUI transcript。
+2. **FileEditTool**：补文件锁检查；随后接编辑历史和自动缩进修正，并用 backend file-edit event data 验证 TUI transcript。
 3. **AgentTool**：补团队上下文注入、工具白名单过滤、工具定义去重；再评估 `spawnMultiAgent` 是否作为独立工具或 AgentTool 扩展。
 4. **TaskTools**：在现有持久化和取消基础上补超时控制、远程/多类型后台任务 supervisor parity。
 5. **PlanMode**：补 auto-mode/classifier gate、团队审批流、计划持久化与实现关联追踪。

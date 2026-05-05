@@ -64,6 +64,8 @@ pub(crate) struct QueryEngineState {
     pub(crate) app_state: AppState,
     /// Current tool registry (shared with deps).
     pub(crate) tools: Tools,
+    /// File snapshots observed by Read/Edit tools, used to reject stale edits.
+    pub(crate) file_state_cache: crate::types::tool::FileStateCache,
     /// Skills discovered during this session (dedup).
     pub(crate) discovered_skill_names: HashSet<String>,
     /// Nested memory paths already loaded (dedup).
@@ -170,6 +172,7 @@ impl QueryEngine {
                 total_turn_count: 0,
                 app_state,
                 tools,
+                file_state_cache: crate::types::tool::FileStateCache::default(),
                 discovered_skill_names: HashSet::new(),
                 loaded_nested_memory_paths: HashSet::new(),
                 permission_callback: None,
