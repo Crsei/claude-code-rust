@@ -252,6 +252,10 @@ static POWERSHELL_DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(
             r"(?i)(?:^|[|;&\n({])\s*(?:(?:[A-Za-z0-9_.-]+\\)?(?:Set-Alias|sal|New-Alias|nal|Set-Variable|sv|New-Variable|nv))\b",
             "PowerShell alias or variable mutation can affect future command resolution",
         ),
+        (
+            r#"(?i)(?:^|[|;&\n({])\s*(?:&\s+|\.\s+)?(?:(?:"[^"]+\.(?:ps1|psm1|psd1|bat|cmd|vbs|js|jse|wsf)"|'[^']+\.(?:ps1|psm1|psd1|bat|cmd|vbs|js|jse|wsf)'|[^\s|;&{}()'"`]+\.(?:ps1|psm1|psd1|bat|cmd|vbs|js|jse|wsf))|(?:"(?:\.{1,2}[\\/]|[A-Za-z]:[\\/]|[/\\]|[^"]*[\\/])[^"]+\.exe"|'(?:\.{1,2}[\\/]|[A-Za-z]:[\\/]|[/\\]|[^']*[\\/])[^']+\.exe'|(?:\.{1,2}[\\/]|[A-Za-z]:[\\/]|[/\\]|[^\s|;&{}()'"`]*[\\/])[^\s|;&{}()'"`]+\.exe))(?:$|[\s|;&{}()])"#,
+            "PowerShell application-style command names can execute local scripts or binaries outside cmdlet validation",
+        ),
         // --- PowerShell AST/security validator targeted syntax batch ---
         (
             r"(?i)(?:^|[|;&\n({])\s*&\s*(?:\$\{function:(?:Invoke-Expression|iex)\}|\([^)]*(?:Invoke-Expression|iex)[^)]*\))",
@@ -1281,6 +1285,12 @@ mod tests {
             "Microsoft.PowerShell.Utility\\Set-Variable PSDefaultParameterValues @{}"
         )
         .is_some());
+        assert!(is_dangerous_powershell_command(r".\payload.ps1").is_some());
+        assert!(is_dangerous_powershell_command(r"& '.\payload.ps1'").is_some());
+        assert!(is_dangerous_powershell_command(r". .\profile.ps1").is_some());
+        assert!(is_dangerous_powershell_command(r"scripts\Out-Null.ps1").is_some());
+        assert!(is_dangerous_powershell_command("code\n.\\build.ps1").is_some());
+        assert!(is_dangerous_powershell_command(r"C:\tmp\payload.exe").is_some());
         assert!(is_dangerous_powershell_command("Start-Process calc.exe /Verb RunAs").is_some());
         assert!(is_dangerous_powershell_command(r"New-Object /ComObject WScript.Shell").is_some());
         assert!(is_dangerous_powershell_command(
@@ -1327,6 +1337,11 @@ mod tests {
         assert!(is_dangerous_powershell_command("[string[]]$names").is_none());
         assert!(is_dangerous_powershell_command("Get-Process powershell").is_none());
         assert!(is_dangerous_powershell_command("Get-ChildItem env:").is_none());
+        assert!(is_dangerous_powershell_command("where.exe git").is_none());
+        assert!(is_dangerous_powershell_command(
+            r"Microsoft.PowerShell.Management\Get-ChildItem ."
+        )
+        .is_none());
         assert!(is_dangerous_powershell_command("Where-Object { $_.Name -like 'a*' }").is_none());
         assert!(is_dangerous_command("powershell.exe -EncodedCommand SQBFAFgA").is_none());
     }

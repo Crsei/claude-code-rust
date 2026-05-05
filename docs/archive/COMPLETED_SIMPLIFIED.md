@@ -41,7 +41,7 @@
 - ✅ **Git 操作跟踪** (shell-agnostic 检测 commit/amend/cherry-pick、push branch、merge/rebase、`gh pr`、`glab mr create`、curl PR endpoint；Bash/PowerShell 成功结果附带 `git_operations`)
 - ✅ **进程树终止 / 取消语义** (Unix process group、Windows `taskkill /T /F`，超时和 abort signal 终止进程树并返回 `termination` 元数据)
 - ✅ **命令拒绝列表与危险命令分析子项** (force-with-lease、`git clean` dry-run 例外、stash drop/clear、SQL drop/truncate、PowerShell destructive cmdlet/alias)
-- ✅ **PowerShell security validator 高风险与 AST 启发式规则** (`Invoke-Expression`、嵌套 PowerShell、download cradle、`Add-Type`、COM object、`Start-Process` 提权/再拉 PowerShell、WMI/CIM 任意方法调用 fail-closed；standalone download utilities、script file execution、`ForEach-Object -MemberName`、`Invoke-Item`、scheduled task、env/module/runtime-state mutation；动态 IEX、危险 script block、stop-parsing、明显危险 static method；一般 dynamic command name、dot-sourced dynamic command、subexpression、expandable string、splatting、member/static member invocation、非 CLM allowlist type literal)
+- ✅ **PowerShell security validator 高风险与 AST 启发式规则** (`Invoke-Expression`、嵌套 PowerShell、download cradle、`Add-Type`、COM object、`Start-Process` 提权/再拉 PowerShell、WMI/CIM 任意方法调用 fail-closed；standalone download utilities、script file execution、`ForEach-Object -MemberName`、`Invoke-Item`、scheduled task、env/module/runtime-state mutation；动态 IEX、危险 script block、stop-parsing、明显危险 static method；一般 dynamic command name、dot-sourced dynamic command、subexpression、expandable string、splatting、member/static member invocation、非 CLM allowlist type literal、`nameType=application` command-name guard 子集)
 - ✅ **PowerShell 参数绑定安全规则子项** (`Start-Process -Verb:RunAs` 冒号/quote/backtick 形式、`Start-Job`/`Start-ThreadJob` 位置脚本文件参数、`ForEach-Object`/`%` 位置 `MemberName` 参数)
 - ✅ **PowerShell `New-Object` TypeName CLM 子项** (`New-Object` 的 `-TypeName` / `-t:` / 位置 TypeName 参数按上游 CLM allowlist 校验)
 - ✅ **PowerShell `securityPatterns.hasScriptBlocks` 子集** (非安全消费者的 script block fail-closed，仅允许 Where/Sort/Select/Group/Format 过滤与输出消费者)
@@ -430,6 +430,7 @@
    - 2026-05-05 继续补齐 PowerShell security validator 高风险规则（二）— 覆盖 standalone download utilities、script file execution、ForEach-Object MemberName、Invoke-Item、scheduled task、env/module/runtime-state mutation
    - 2026-05-05 继续补齐 PowerShell security validator 目标语法规则 — 覆盖动态 IEX、危险 script block、ForEach script block、stop-parsing、明显危险 static method
    - 2026-05-05 继续补齐 PowerShell security validator AST 启发式规则 — 覆盖一般 dynamic command name、dot-sourced dynamic command、subexpression、expandable string、splatting、member/static member invocation、非 CLM allowlist type literal
+   - 2026-05-05 继续补齐 PowerShell `nameType=application` 命令名 guard 子集 — 拒绝直接执行本地脚本/路径应用（如 `.\payload.ps1`、`scripts\Out-Null.ps1`、路径限定 `.exe`）
    - 2026-05-05 继续补齐 PowerShell 参数绑定安全规则子项 — 覆盖 Start-Process 冒号绑定 RunAs、位置脚本文件参数与 ForEach-Object 位置 MemberName
    - 2026-05-05 继续补齐 PowerShell New-Object TypeName CLM 子项 — 覆盖 `-TypeName` / `-t:` / 位置 TypeName 的 CLM allowlist 校验
    - 2026-05-05 继续补齐 PowerShell 原生 parser-invalid fail-closed — `PowerShellTool::validate_input()` 调用 `Parser.ParseInput()` 在执行前拒绝完整 parser errors
