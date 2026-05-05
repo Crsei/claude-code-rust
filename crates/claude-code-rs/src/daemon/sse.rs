@@ -10,10 +10,15 @@ use axum::extract::{Query, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use futures::stream::Stream;
 use serde::Deserialize;
+use serde_json::json;
 use tokio_stream::StreamExt;
 use tracing::info;
 
-use super::state::{DaemonState, SseClient, SseEvent};
+use super::{
+    protocol,
+    state::{DaemonState, SseClient, SseEvent},
+    supervisor::ASSISTANT_WORKER_ID,
+};
 
 /// Query parameters for the SSE endpoint.
 #[derive(Debug, Deserialize)]
@@ -42,6 +47,19 @@ pub async fn sse_handler(
         for event in state.events_since(last_id) {
             let _ = tx.send(event);
         }
+    }
+    for event in protocol::read_worker_events(ASSISTANT_WORKER_ID).unwrap_or_default() {
+        let _ = tx.send(SseEvent {
+            id: event.event_id,
+            event_type: format!("daemon_{}", event.event_type),
+            data: json!({
+                "worker_id": event.worker_id,
+                "command_id": event.command_id,
+                "event_type": event.event_type,
+                "data": event.data,
+                "created_at": event.created_at,
+            }),
+        });
     }
 
     // Register client.

@@ -22,7 +22,10 @@ use crate::engine::sdk_types::SdkMessage;
 use crate::types::config::QuerySource;
 use crate::types::plan_workflow::PlanWorkflowRecord;
 
+use super::process_state::{self, DaemonStatusSnapshot, DaemonWorkerSummary};
+use super::protocol::{self, DaemonCommandKind};
 use super::state::{DaemonState, SseEvent};
+use super::supervisor::ASSISTANT_WORKER_ID;
 use super::team_memory_proxy;
 
 // ---------------------------------------------------------------------------
@@ -33,6 +36,7 @@ use super::team_memory_proxy;
 pub struct SubmitRequest {
     pub text: String,
     pub id: Option<String>,
+    pub idempotency_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,6 +62,12 @@ pub struct StatusResponse {
     pub sleeping: bool,
     pub permission_mode: String,
     pub plan_workflow: Option<PlanWorkflowRecord>,
+    pub supervisor_status: String,
+    pub supervisor_pid: Option<u32>,
+    pub health_url: Option<String>,
+    pub workers: Vec<DaemonWorkerSummary>,
+    pub command_root: String,
+    pub assistant_event_log: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -161,9 +171,36 @@ pub fn api_routes() -> Router<DaemonState> {
 async fn submit(State(state): State<DaemonState>, Json(body): Json<SubmitRequest>) -> Json<Value> {
     let text = body.text;
     let message_id = body.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let command = match protocol::enqueue_command(
+        ASSISTANT_WORKER_ID,
+        DaemonCommandKind::Submit,
+        json!({
+            "text": text.clone(),
+            "message_id": message_id.clone(),
+            "source": "http",
+        }),
+        Some(body.idempotency_key.unwrap_or_else(|| message_id.clone())),
+    ) {
+        Ok(command) => command,
+        Err(err) => {
+            return Json(json!({
+                "status": "error",
+                "message": err.to_string(),
+            }));
+        }
+    };
 
     info!(message_id, text_len = text.len(), "submit received");
     super::memory_log::append_log_entry(&format!("user submit: {}", &text));
+    state.broadcast(SseEvent {
+        id: String::new(),
+        event_type: "daemon_command".to_string(),
+        data: json!({
+            "command_id": command.command_id,
+            "worker_id": command.target_worker_id,
+            "kind": "submit",
+        }),
+    });
 
     let classifier = crate::plan_workflow::classify_plan_entry(&text, &state.engine.app_state());
     if classifier.should_enter {
@@ -207,14 +244,32 @@ async fn submit(State(state): State<DaemonState>, Json(body): Json<SubmitRequest
         state_clone.is_query_running.store(false, Ordering::SeqCst);
     });
 
-    Json(json!({ "status": "ok", "message_id": message_id }))
+    Json(json!({
+        "status": "ok",
+        "message_id": message_id,
+        "command_id": command.command_id,
+    }))
 }
 
 /// `POST /api/abort` -- abort the currently running query.
 async fn abort(State(state): State<DaemonState>) -> Json<Value> {
     info!("abort request received");
+    let command = match protocol::enqueue_command(
+        ASSISTANT_WORKER_ID,
+        DaemonCommandKind::Abort,
+        json!({ "source": "http" }),
+        None,
+    ) {
+        Ok(command) => command,
+        Err(err) => {
+            return Json(json!({
+                "status": "error",
+                "message": err.to_string(),
+            }));
+        }
+    };
     state.engine.abort();
-    Json(json!({ "status": "ok" }))
+    Json(json!({ "status": "ok", "command_id": command.command_id }))
 }
 
 /// `POST /api/command` -- execute a slash command.
@@ -303,18 +358,56 @@ async fn command(
 }
 
 /// `POST /api/permission` -- respond to a permission prompt (stub).
-async fn permission(Json(body): Json<PermissionRequest>) -> Json<Value> {
+async fn permission(
+    State(_state): State<DaemonState>,
+    Json(body): Json<PermissionRequest>,
+) -> Json<Value> {
     warn!(
-        tool_use_id = body.tool_use_id,
-        decision = body.decision,
-        "permission endpoint is a stub"
+        tool_use_id = %body.tool_use_id,
+        decision = %body.decision,
+        "permission endpoint queued daemon command"
     );
-    Json(json!({ "status": "stub", "tool_use_id": body.tool_use_id }))
+    let command = match protocol::enqueue_command(
+        ASSISTANT_WORKER_ID,
+        DaemonCommandKind::PermissionResponse,
+        json!({
+            "tool_use_id": body.tool_use_id.clone(),
+            "decision": body.decision.clone(),
+            "source": "http",
+        }),
+        None,
+    ) {
+        Ok(command) => command,
+        Err(err) => {
+            return Json(json!({
+                "status": "error",
+                "message": err.to_string(),
+            }));
+        }
+    };
+    Json(json!({ "status": "queued", "command_id": command.command_id }))
 }
 
 /// `GET /api/status` -- return daemon status.
 async fn status(State(state): State<DaemonState>) -> Json<StatusResponse> {
     let app_state = state.engine.app_state();
+    let (supervisor_status, supervisor_pid, health_url, workers) =
+        match process_state::status_snapshot() {
+            Ok(DaemonStatusSnapshot::Running(process)) => (
+                "running".to_string(),
+                Some(process.pid),
+                Some(process.health_url),
+                process.workers,
+            ),
+            Ok(DaemonStatusSnapshot::Stale(process)) => (
+                "stale".to_string(),
+                Some(process.pid),
+                Some(process.health_url),
+                process.workers,
+            ),
+            Ok(DaemonStatusSnapshot::Stopped) => ("stopped".to_string(), None, None, Vec::new()),
+            Err(err) => (format!("error: {err}"), None, None, Vec::new()),
+        };
     Json(StatusResponse {
         kairos_active: state.features.kairos,
         proactive: state.features.proactive,
@@ -323,6 +416,14 @@ async fn status(State(state): State<DaemonState>) -> Json<StatusResponse> {
         sleeping: state.engine.is_sleeping(),
         permission_mode: app_state.tool_permission_context.mode.as_str().to_string(),
         plan_workflow: app_state.plan_workflow,
+        supervisor_status,
+        supervisor_pid,
+        health_url,
+        workers,
+        command_root: protocol::commands_dir().display().to_string(),
+        assistant_event_log: protocol::worker_events_path(ASSISTANT_WORKER_ID)
+            .display()
+            .to_string(),
     })
 }
 
@@ -347,12 +448,17 @@ async fn detach(State(state): State<DaemonState>, Json(body): Json<DetachRequest
 
 /// `POST /api/resize` -- terminal resize notification (stub).
 async fn resize() -> Json<Value> {
-    Json(json!({ "status": "stub" }))
+    Json(json!({ "status": "noop", "message": "resize forwarding is not implemented yet" }))
 }
 
 /// `GET /api/history` -- return conversation history (stub).
-async fn history() -> Json<Value> {
-    Json(json!({ "history": [] }))
+async fn history(State(state): State<DaemonState>) -> Json<Value> {
+    let daemon_events = protocol::read_worker_events(ASSISTANT_WORKER_ID).unwrap_or_default();
+    Json(json!({
+        "history": [],
+        "sse_events": state.events_since("0"),
+        "daemon_events": daemon_events,
+    }))
 }
 
 // ---------------------------------------------------------------------------

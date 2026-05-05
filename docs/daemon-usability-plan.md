@@ -384,3 +384,22 @@ Rust 端必须继续遵守路径隔离：所有 cc-rust daemon 状态写入 `~/.
 - `cargo test -p claude-code-rs daemon::supervisor` 通过，确认 worker registry 仍可编译运行。
 - `rustfmt --edition 2021 --check` 已针对 Phase 3 daemon 文件通过。
 - 本地 command/event smoke 通过：临时 `CC_RUST_HOME` + `FEATURE_KAIROS=1` + port `21986` 下，`daemon submit` 生成 `acked` command 和 `command_deferred` event，`daemon abort` 生成 `handled` command 和 `abort_ack` event，stop 后 supervisor 不存活。
+
+## Phase 4 实施记录（2026-05-05）
+
+状态：现有 KAIROS HTTP/SSE 控制面已经开始读取 supervisor/worker 状态并写入 command/event 协议；为避免破坏现有能力，`/api/submit` 仍沿用 supervisor 内 QueryEngine 流式执行，同时额外投递 submit command，后续再迁移真实执行所有权。
+
+本阶段交付：
+- `/api/submit` 会先投递 `submit` command 到 `assistant-session-1`，返回 `command_id`，并继续沿用现有 QueryEngine/SSE 执行路径。
+- `/api/abort` 会投递 `abort` command，同时调用当前 `engine.abort()`。
+- `/api/permission` 不再只返回 stub，而是投递 `permission_response` command。
+- `/api/status` 增加 supervisor/worker 视图：`supervisor_status`、`supervisor_pid`、`health_url`、`workers`、`command_root`、`assistant_event_log`。
+- `/api/history` 增加 `daemon_events` 与当前 SSE buffer。
+- `/api/resize` 明确返回 `noop`，不再伪装成已实现。
+- `/events` 在连接时会 replay `assistant-session-1` 的 daemon event 日志，作为 Phase 4 的文件事件桥接。
+
+验证记录：
+- `cargo test -p claude-code-rs daemon::routes` 通过编译。
+- `cargo test -p claude-code-rs daemon::sse` 通过编译。
+- 本地 HTTP control-plane smoke 通过：临时 `CC_RUST_HOME` + `FEATURE_KAIROS=1` + port `21987` 下，`/api/status` 返回 1 个 running worker；`/api/permission` 返回 queued command；`/api/abort` 返回 command_id；`/api/history` 返回 permission/abort 产生的 4 条 daemon event；stop 后 supervisor 不存活。
+- 未执行 `/api/submit` live smoke，以避免触发真实模型请求；该路由已在编译层验证并保留原有执行路径。
