@@ -1198,6 +1198,71 @@ async fn test_tool_use_then_text_response() {
     );
 }
 
+async fn run_tool_use_summary_gate_case(emit_tool_use_summaries: bool) -> Vec<QueryYield> {
+    let tool_response = ModelResponse {
+        assistant_message: AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: chrono::Utc::now().timestamp_millis(),
+            role: "assistant".to_string(),
+            content: vec![ContentBlock::ToolUse {
+                id: "tu_summary".to_string(),
+                name: "Bash".to_string(),
+                input: serde_json::json!({"command": "echo hello"}),
+            }],
+            usage: Some(Usage {
+                input_tokens: 100,
+                output_tokens: 80,
+                ..Default::default()
+            }),
+            stop_reason: Some("tool_use".to_string()),
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.001,
+        },
+        stream_events: vec![],
+        usage: Usage::default(),
+    };
+    let deps = Arc::new(MockDeps::new(vec![
+        tool_response,
+        make_text_response("Done!"),
+    ]));
+    let mut params = make_query_params(vec![make_user_message_for_test("Run echo hello")]);
+    params.gates.emit_tool_use_summaries = emit_tool_use_summaries;
+
+    query(params, deps).collect().await
+}
+
+#[tokio::test]
+async fn tool_use_summary_gate_defaults_off() {
+    let items = run_tool_use_summary_gate_case(false).await;
+
+    assert!(
+        !items
+            .iter()
+            .any(|item| matches!(item, QueryYield::ToolUseSummary(_))),
+        "default gates should not emit tool use summaries"
+    );
+}
+
+#[tokio::test]
+async fn tool_use_summary_gate_yields_summary_when_enabled() {
+    let items = run_tool_use_summary_gate_case(true).await;
+    let summary = items
+        .iter()
+        .find_map(|item| {
+            if let QueryYield::ToolUseSummary(summary) = item {
+                Some(summary)
+            } else {
+                None
+            }
+        })
+        .expect("tool use summary should be emitted");
+
+    assert!(summary.summary.contains("Bash"));
+    assert!(summary.summary.contains("mock tool output"));
+    assert_eq!(summary.preceding_tool_use_ids, vec!["tu_summary"]);
+}
+
 async fn run_observable_input_backfill_case(
     streaming_tool_execution: bool,
 ) -> (Vec<QueryYield>, Vec<ModelCallParams>) {

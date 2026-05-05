@@ -49,23 +49,33 @@ impl Default for QueryGates {
 
 impl QueryGates {
     pub fn from_env(fast_mode_enabled: bool) -> Self {
+        Self::from_env_iter(fast_mode_enabled, std::env::vars())
+    }
+
+    pub fn from_env_iter(
+        fast_mode_enabled: bool,
+        iter: impl IntoIterator<Item = (String, String)>,
+    ) -> Self {
+        let env: std::collections::HashMap<String, String> = iter.into_iter().collect();
         Self {
-            streaming_tool_execution: env_flag_enabled("CC_RUST_STREAMING_TOOL_EXECUTION"),
-            emit_tool_use_summaries: false,
+            streaming_tool_execution: env_flag_enabled(&env, "CC_RUST_STREAMING_TOOL_EXECUTION"),
+            emit_tool_use_summaries: env_flag_enabled(&env, "CC_RUST_EMIT_TOOL_USE_SUMMARIES"),
             fast_mode_enabled,
         }
     }
 }
 
-fn env_flag_enabled(name: &str) -> bool {
-    std::env::var(name)
-        .map(|value| {
-            matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            )
-        })
+fn env_flag_enabled(env: &std::collections::HashMap<String, String>, name: &str) -> bool {
+    env.get(name)
+        .map(|value| flag_value_enabled(value))
         .unwrap_or(false)
+}
+
+fn flag_value_enabled(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
 }
 
 /// query() 函数的参数
@@ -131,6 +141,62 @@ impl QuerySource {
 #[derive(Debug, Clone)]
 pub struct TaskBudget {
     pub total: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn query_gates_default_to_closed() {
+        let gates = QueryGates::default();
+
+        assert!(!gates.streaming_tool_execution);
+        assert!(!gates.emit_tool_use_summaries);
+        assert!(!gates.fast_mode_enabled);
+    }
+
+    #[test]
+    fn query_gates_from_env_iter_reads_all_flags() {
+        let gates = QueryGates::from_env_iter(
+            true,
+            [
+                (
+                    "CC_RUST_STREAMING_TOOL_EXECUTION".to_string(),
+                    "yes".to_string(),
+                ),
+                (
+                    "CC_RUST_EMIT_TOOL_USE_SUMMARIES".to_string(),
+                    "ON".to_string(),
+                ),
+            ],
+        );
+
+        assert!(gates.streaming_tool_execution);
+        assert!(gates.emit_tool_use_summaries);
+        assert!(gates.fast_mode_enabled);
+    }
+
+    #[test]
+    fn query_gates_from_env_iter_treats_unknown_values_as_off() {
+        let gates = QueryGates::from_env_iter(
+            false,
+            [
+                (
+                    "CC_RUST_STREAMING_TOOL_EXECUTION".to_string(),
+                    "enabled".to_string(),
+                ),
+                (
+                    "CC_RUST_EMIT_TOOL_USE_SUMMARIES".to_string(),
+                    "0".to_string(),
+                ),
+            ],
+        );
+
+        assert!(!gates.streaming_tool_execution);
+        assert!(!gates.emit_tool_use_summaries);
+        assert!(!gates.fast_mode_enabled);
+    }
 }
 
 /// QueryEngine 配置

@@ -31,7 +31,7 @@ use crate::types::config::QueryParams;
 use crate::types::message::QueryYield;
 use crate::types::message::{
     AssistantMessage, Attachment, AttachmentMessage, ContentBlock, Message, RequestStartEvent,
-    StreamEvent, TombstoneMessage, Usage,
+    StreamEvent, TombstoneMessage, ToolUseSummaryMessage, Usage,
 };
 use crate::types::state::{BudgetTracker, QueryLoopState, TokenBudgetDecision};
 use crate::types::transitions::Continue;
@@ -566,17 +566,19 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             }
 
             // Inject pending tool use summary as system message
-            if let Some(summary) = state.pending_tool_use_summary.take() {
-                debug!(summary = %crate::utils::messages::truncate_text(&summary, 200), "injecting tool use summary");
-                let sys_msg = Message::System(crate::types::message::SystemMessage {
-                    uuid: Uuid::parse_str(&deps.uuid()).unwrap_or_else(|_| Uuid::new_v4()),
-                    timestamp: chrono::Utc::now().timestamp_millis(),
-                    subtype: crate::types::message::SystemSubtype::Informational {
-                        level: crate::types::message::InfoLevel::Info,
-                    },
-                    content: format!("[tool summary] {}", summary),
-                });
-                state.messages.push(sys_msg);
+            if gates.emit_tool_use_summaries {
+                if let Some(summary) = state.pending_tool_use_summary.take() {
+                    debug!(summary = %crate::utils::messages::truncate_text(&summary, 200), "injecting tool use summary");
+                    let sys_msg = Message::System(crate::types::message::SystemMessage {
+                        uuid: Uuid::parse_str(&deps.uuid()).unwrap_or_else(|_| Uuid::new_v4()),
+                        timestamp: chrono::Utc::now().timestamp_millis(),
+                        subtype: crate::types::message::SystemSubtype::Informational {
+                            level: crate::types::message::InfoLevel::Info,
+                        },
+                        content: format!("[tool summary] {}", summary),
+                    });
+                    state.messages.push(sys_msg);
+                }
             }
 
             // Yield assistant message
@@ -754,28 +756,43 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 }
 
                 // ── STEP 6b: Generate tool use summary ──
-                let tool_infos: Vec<ToolInfo> = tool_results
-                    .iter()
-                    .map(|r| ToolInfo {
-                        name: r.tool_name.clone(),
-                        input_summary: r.result.data.to_string(),
-                        output_summary: if r.is_error {
-                            format!("Error: {}", r.result.data)
+                if gates.emit_tool_use_summaries {
+                    let tool_infos: Vec<ToolInfo> = tool_results
+                        .iter()
+                        .map(|r| ToolInfo {
+                            name: r.tool_name.clone(),
+                            input_summary: r.result.data.to_string(),
+                            output_summary: if r.is_error {
+                                format!("Error: {}", r.result.data)
+                            } else {
+                                r.result.data.to_string()
+                            },
+                        })
+                        .collect();
+
+                    let last_text = assistant_message.content.iter().find_map(|b| {
+                        if let ContentBlock::Text { text } = b {
+                            Some(text.as_str())
                         } else {
-                            r.result.data.to_string()
-                        },
-                    })
-                    .collect();
+                            None
+                        }
+                    });
 
-                let last_text = assistant_message.content.iter().find_map(|b| {
-                    if let ContentBlock::Text { text } = b { Some(text.as_str()) } else { None }
-                });
-
-                if let Some(summary) = tool_use_summary::generate_tool_use_summary(
-                    &tool_infos,
-                    last_text,
-                ) {
-                    state.pending_tool_use_summary = Some(summary);
+                    if let Some(summary) = tool_use_summary::generate_tool_use_summary(
+                        &tool_infos,
+                        last_text,
+                    ) {
+                        let summary_msg = ToolUseSummaryMessage {
+                            uuid: Uuid::parse_str(&deps.uuid()).unwrap_or_else(|_| Uuid::new_v4()),
+                            summary: summary.clone(),
+                            preceding_tool_use_ids: tool_results
+                                .iter()
+                                .map(|r| r.tool_use_id.clone())
+                                .collect(),
+                        };
+                        yield QueryYield::ToolUseSummary(summary_msg);
+                        state.pending_tool_use_summary = Some(summary);
+                    }
                 }
 
                 // ── STEP 7: ATTACHMENTS (placeholder) ──
