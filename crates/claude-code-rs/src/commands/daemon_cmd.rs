@@ -38,16 +38,36 @@ impl CommandHandler for DaemonCmdHandler {
 /// Show daemon status information.
 fn show_status(_ctx: &CommandContext) -> Result<CommandResult> {
     let output = match process_state::status_snapshot()? {
-        DaemonStatusSnapshot::Running(state) => format!(
-            "=== Daemon Status ===\n\
-             Running:    yes\n\
-             PID:        {}\n\
-             Health URL: {}\n\
-             State file: {}",
-            state.pid,
-            state.health_url,
-            process_state::state_path().display()
-        ),
+        DaemonStatusSnapshot::Running(state) => {
+            let workers = if state.workers.is_empty() {
+                "Workers:    0".to_string()
+            } else {
+                let mut lines = vec![format!("Workers:    {}", state.workers.len())];
+                for worker in &state.workers {
+                    let pid = worker
+                        .pid
+                        .map(|pid| pid.to_string())
+                        .unwrap_or_else(|| "-".to_string());
+                    lines.push(format!(
+                        "  - {} kind={} pid={} status={}",
+                        worker.worker_id, worker.kind, pid, worker.status
+                    ));
+                }
+                lines.join("\n")
+            };
+            format!(
+                "=== Daemon Status ===\n\
+                 Running:    yes\n\
+                 PID:        {}\n\
+                 Health URL: {}\n\
+                 State file: {}\n\
+                 {}",
+                state.pid,
+                state.health_url,
+                process_state::state_path().display(),
+                workers
+            )
+        }
         DaemonStatusSnapshot::Stale(state) => format!(
             "=== Daemon Status ===\n\
              Running:    stale\n\

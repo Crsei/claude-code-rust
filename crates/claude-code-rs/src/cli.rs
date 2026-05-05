@@ -82,6 +82,14 @@ pub struct Cli {
     #[arg(long, hide = true)]
     pub daemon: bool,
 
+    /// INTERNAL: run as a daemon worker child process.
+    #[arg(long = "daemon-worker", hide = true)]
+    pub daemon_worker: Option<String>,
+
+    /// INTERNAL: daemon worker identifier.
+    #[arg(long = "worker-id", hide = true)]
+    pub worker_id: Option<String>,
+
     /// Daemon HTTP port (default: 19836).
     #[arg(long, default_value = "19836")]
     pub port: u16,

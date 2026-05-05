@@ -18,7 +18,6 @@ const SCHEMA_VERSION: u32 = 1;
 #[cfg(test)]
 const DEFAULT_DAEMON_PORT: u16 = 19836;
 const STOP_GRACE_PERIOD: Duration = Duration::from_secs(5);
-const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -26,6 +25,28 @@ pub enum DaemonRunStatus {
     Running,
     Stopped,
     Stale,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DaemonWorkerStatus {
+    Starting,
+    Running,
+    Stopped,
+    Exited,
+    Stale,
+}
+
+impl DaemonWorkerStatus {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Starting => "starting",
+            Self::Running => "running",
+            Self::Stopped => "stopped",
+            Self::Exited => "exited",
+            Self::Stale => "stale",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -52,6 +73,23 @@ pub struct DaemonProcessState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DaemonWorkerState {
+    pub schema_version: u32,
+    pub worker_id: String,
+    pub kind: String,
+    pub pid: Option<u32>,
+    pub cwd: PathBuf,
+    pub log_path: PathBuf,
+    pub status: DaemonWorkerStatus,
+    pub started_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub last_heartbeat_at: Option<DateTime<Utc>>,
+    pub restart_count: u32,
+    pub required: bool,
+    pub exit_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DaemonShutdownRequest {
     pub schema_version: u32,
     pub requested_at: DateTime<Utc>,
@@ -75,6 +113,22 @@ pub fn state_path() -> PathBuf {
 
 pub fn shutdown_request_path() -> PathBuf {
     daemon_dir().join("shutdown-request.json")
+}
+
+pub fn workers_dir() -> PathBuf {
+    daemon_dir().join("workers")
+}
+
+pub fn worker_state_path(worker_id: &str) -> PathBuf {
+    workers_dir().join(format!("{}.json", sanitize_worker_id(worker_id)))
+}
+
+pub fn logs_dir() -> PathBuf {
+    daemon_dir().join("logs")
+}
+
+pub fn worker_log_path(worker_id: &str) -> PathBuf {
+    logs_dir().join(format!("{}.log", sanitize_worker_id(worker_id)))
 }
 
 pub fn write_started(port: u16, cwd: &Path) -> Result<DaemonProcessState> {
@@ -115,6 +169,141 @@ pub fn write_stopped(port: u16, cwd: &Path) -> Result<DaemonProcessState> {
     Ok(state)
 }
 
+pub fn write_supervisor_heartbeat(port: u16, cwd: &Path) -> Result<DaemonProcessState> {
+    let now = Utc::now();
+    let workers = worker_summaries()?;
+    let mut state = read_state()?.unwrap_or_else(|| DaemonProcessState {
+        schema_version: SCHEMA_VERSION,
+        status: DaemonRunStatus::Running,
+        pid: std::process::id(),
+        cwd: cwd.to_path_buf(),
+        port,
+        health_url: health_url(port),
+        started_at: now,
+        updated_at: now,
+        shutdown_requested: false,
+        workers: Vec::new(),
+    });
+
+    state.schema_version = SCHEMA_VERSION;
+    state.status = DaemonRunStatus::Running;
+    state.pid = std::process::id();
+    state.cwd = cwd.to_path_buf();
+    state.port = port;
+    state.health_url = health_url(port);
+    state.updated_at = now;
+    state.shutdown_requested = shutdown_requested();
+    state.workers = workers;
+    write_state(&state)?;
+    Ok(state)
+}
+
+pub fn write_worker_running(
+    worker_id: &str,
+    kind: &str,
+    pid: u32,
+    cwd: &Path,
+    log_path: &Path,
+    restart_count: u32,
+    required: bool,
+) -> Result<DaemonWorkerState> {
+    let now = Utc::now();
+    let state = DaemonWorkerState {
+        schema_version: SCHEMA_VERSION,
+        worker_id: worker_id.to_string(),
+        kind: kind.to_string(),
+        pid: Some(pid),
+        cwd: cwd.to_path_buf(),
+        log_path: log_path.to_path_buf(),
+        status: DaemonWorkerStatus::Running,
+        started_at: now,
+        updated_at: now,
+        last_heartbeat_at: Some(now),
+        restart_count,
+        required,
+        exit_status: None,
+    };
+    write_worker_state(&state)?;
+    Ok(state)
+}
+
+pub fn write_worker_heartbeat(worker_id: &str) -> Result<()> {
+    let Some(mut state) = read_worker_state(worker_id)? else {
+        anyhow::bail!("daemon worker state not found for {worker_id}");
+    };
+    let now = Utc::now();
+    state.status = DaemonWorkerStatus::Running;
+    state.updated_at = now;
+    state.last_heartbeat_at = Some(now);
+    state.exit_status = None;
+    write_worker_state(&state)
+}
+
+pub fn write_worker_stopped(worker_id: &str, exit_status: Option<String>) -> Result<()> {
+    let Some(mut state) = read_worker_state(worker_id)? else {
+        return Ok(());
+    };
+    state.status = if exit_status.is_some() {
+        DaemonWorkerStatus::Exited
+    } else {
+        DaemonWorkerStatus::Stopped
+    };
+    state.pid = None;
+    state.updated_at = Utc::now();
+    state.exit_status = exit_status;
+    write_worker_state(&state)
+}
+
+pub fn write_worker_stale(worker_id: &str, reason: &str) -> Result<()> {
+    let Some(mut state) = read_worker_state(worker_id)? else {
+        return Ok(());
+    };
+    state.status = DaemonWorkerStatus::Stale;
+    state.updated_at = Utc::now();
+    state.exit_status = Some(reason.to_string());
+    write_worker_state(&state)
+}
+
+pub fn read_worker_state(worker_id: &str) -> Result<Option<DaemonWorkerState>> {
+    let path = worker_state_path(worker_id);
+    if !path.exists() {
+        return Ok(None);
+    }
+    read_worker_state_file(&path).map(Some)
+}
+
+pub fn read_worker_states() -> Result<Vec<DaemonWorkerState>> {
+    let dir = workers_dir();
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut states = Vec::new();
+    for entry in fs::read_dir(&dir).with_context(|| format!("failed to read {}", dir.display()))? {
+        let entry = entry.with_context(|| format!("failed to read entry in {}", dir.display()))?;
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        states.push(read_worker_state_file(&path)?);
+    }
+    states.sort_by(|left, right| left.worker_id.cmp(&right.worker_id));
+    Ok(states)
+}
+
+pub fn worker_summaries() -> Result<Vec<DaemonWorkerSummary>> {
+    Ok(read_worker_states()?
+        .into_iter()
+        .map(|state| DaemonWorkerSummary {
+            worker_id: state.worker_id,
+            kind: state.kind,
+            pid: state.pid,
+            status: state.status.as_str().to_string(),
+            updated_at: state.updated_at,
+        })
+        .collect())
+}
+
 pub fn read_state() -> Result<Option<DaemonProcessState>> {
     let path = state_path();
     if !path.exists() {
@@ -135,6 +324,7 @@ pub fn status_snapshot() -> Result<DaemonStatusSnapshot> {
         return Ok(DaemonStatusSnapshot::Stopped);
     }
     if process_is_alive(state.pid) {
+        state.workers = worker_summaries()?;
         return Ok(DaemonStatusSnapshot::Running(state));
     }
     state.status = DaemonRunStatus::Stale;
@@ -170,15 +360,6 @@ pub fn clear_shutdown_request() -> Result<()> {
         fs::remove_file(&path).with_context(|| format!("failed to remove {}", path.display()))?;
     }
     Ok(())
-}
-
-pub async fn wait_for_shutdown_request() {
-    loop {
-        if shutdown_requested() {
-            return;
-        }
-        tokio::time::sleep(SHUTDOWN_POLL_INTERVAL).await;
-    }
 }
 
 pub fn try_run_management_command(args: &[String], cwd: &Path, port: u16) -> Option<ExitCode> {
@@ -296,6 +477,20 @@ fn print_status() -> Result<()> {
             println!("  updated_at: {}", state.updated_at.to_rfc3339());
             println!("  shutdown_requested: {}", state.shutdown_requested);
             println!("  workers: {}", state.workers.len());
+            for worker in &state.workers {
+                let pid = worker
+                    .pid
+                    .map(|pid| pid.to_string())
+                    .unwrap_or_else(|| "-".to_string());
+                println!(
+                    "    {} kind={} pid={} status={} updated_at={}",
+                    worker.worker_id,
+                    worker.kind,
+                    pid,
+                    worker.status,
+                    worker.updated_at.to_rfc3339()
+                );
+            }
         }
         DaemonStatusSnapshot::Stale(state) => {
             println!("daemon status: stale");
@@ -314,9 +509,26 @@ fn write_state(state: &DaemonProcessState) -> Result<()> {
     atomic_write_json(&state_path(), state)
 }
 
+fn write_worker_state(state: &DaemonWorkerState) -> Result<()> {
+    ensure_daemon_dir()?;
+    atomic_write_json(&worker_state_path(&state.worker_id), state)
+}
+
+fn read_worker_state_file(path: &Path) -> Result<DaemonWorkerState> {
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("failed to read daemon worker state {}", path.display()))?;
+    serde_json::from_str(&text)
+        .with_context(|| format!("failed to parse daemon worker state {}", path.display()))
+}
+
 fn ensure_daemon_dir() -> Result<()> {
     fs::create_dir_all(daemon_dir())
-        .with_context(|| format!("failed to create {}", daemon_dir().display()))
+        .with_context(|| format!("failed to create {}", daemon_dir().display()))?;
+    fs::create_dir_all(workers_dir())
+        .with_context(|| format!("failed to create {}", workers_dir().display()))?;
+    fs::create_dir_all(logs_dir())
+        .with_context(|| format!("failed to create {}", logs_dir().display()))?;
+    Ok(())
 }
 
 fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
@@ -359,6 +571,19 @@ fn health_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}/health")
 }
 
+fn sanitize_worker_id(worker_id: &str) -> String {
+    worker_id
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 fn parse_port(args: &[String]) -> Option<u16> {
     args.windows(2)
         .find(|pair| pair[0] == "--port")
@@ -393,7 +618,7 @@ fn configure_detached(cmd: &mut Command) {
 fn configure_detached(_cmd: &mut Command) {}
 
 #[cfg(unix)]
-fn process_is_alive(pid: u32) -> bool {
+pub(crate) fn process_is_alive(pid: u32) -> bool {
     let rc = unsafe { libc::kill(pid as libc::pid_t, 0) };
     if rc == 0 {
         return true;
@@ -402,7 +627,7 @@ fn process_is_alive(pid: u32) -> bool {
 }
 
 #[cfg(windows)]
-fn process_is_alive(pid: u32) -> bool {
+pub(crate) fn process_is_alive(pid: u32) -> bool {
     let Ok(output) = Command::new("tasklist")
         .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
         .output()
@@ -418,7 +643,7 @@ fn process_is_alive(pid: u32) -> bool {
 }
 
 #[cfg(unix)]
-fn terminate_process_tree(pid: u32) -> Result<()> {
+pub(crate) fn terminate_process_tree(pid: u32) -> Result<()> {
     let pid = pid as libc::pid_t;
     unsafe {
         libc::kill(pid, libc::SIGTERM);
@@ -433,7 +658,7 @@ fn terminate_process_tree(pid: u32) -> Result<()> {
 }
 
 #[cfg(windows)]
-fn terminate_process_tree(pid: u32) -> Result<()> {
+pub(crate) fn terminate_process_tree(pid: u32) -> Result<()> {
     let status = Command::new("taskkill")
         .args(["/PID", &pid.to_string(), "/T", "/F"])
         .status()
@@ -517,5 +742,58 @@ mod tests {
             "20100".to_string(),
         ];
         assert_eq!(parse_port(&args), Some(20100));
+    }
+
+    #[test]
+    #[serial]
+    fn worker_state_updates_supervisor_summary() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let cwd = temp.path().join("workspace");
+        fs::create_dir_all(&cwd).unwrap();
+        let log_path = worker_log_path("assistant/session:1");
+
+        write_worker_running(
+            "assistant/session:1",
+            "assistant-session",
+            std::process::id(),
+            &cwd,
+            &log_path,
+            2,
+            true,
+        )
+        .unwrap();
+        write_supervisor_heartbeat(DEFAULT_DAEMON_PORT, &cwd).unwrap();
+
+        let state = read_state().unwrap().unwrap();
+        assert_eq!(state.workers.len(), 1);
+        assert_eq!(state.workers[0].worker_id, "assistant/session:1");
+        assert_eq!(state.workers[0].status, "running");
+        assert!(worker_state_path("assistant/session:1").ends_with("assistant_session_1.json"));
+    }
+
+    #[test]
+    #[serial]
+    fn worker_heartbeat_preserves_restart_count() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let log_path = worker_log_path("assistant-session-1");
+        write_worker_running(
+            "assistant-session-1",
+            "assistant-session",
+            std::process::id(),
+            temp.path(),
+            &log_path,
+            3,
+            true,
+        )
+        .unwrap();
+
+        write_worker_heartbeat("assistant-session-1").unwrap();
+        let state = read_worker_state("assistant-session-1").unwrap().unwrap();
+
+        assert_eq!(state.restart_count, 3);
+        assert_eq!(state.status, DaemonWorkerStatus::Running);
+        assert!(state.last_heartbeat_at.is_some());
     }
 }

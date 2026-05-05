@@ -335,3 +335,25 @@ Rust 端必须继续遵守路径隔离：所有 cc-rust daemon 状态写入 `~/.
 - worker 崩溃能被检测并按策略恢复。
 - HTTP/SSE 或 CLI 管理入口能稳定展示真实状态。
 - daemon 退出后不遗留 worker 子进程、锁文件或错误的 running 状态。
+
+## Phase 2 实施记录（2026-05-05）
+
+状态：已落地 supervisor + worker registry 的生命周期主干，仍未把 submit/abort 的真实业务处理迁入 assistant worker（该部分保留给 Phase 3/4 的 command/event 协议和 HTTP 路由迁移）。
+
+本阶段交付：
+- 新增隐藏 worker 入口：`--daemon-worker <kind> --worker-id <id>`，目前支持 `assistant-session`。
+- 新增 `daemon::supervisor`，由 supervisor 启动并监控 `assistant-session-1` worker。
+- 新增 worker 状态 schema：`~/.cc-rust/daemon/workers/<worker-id>.json`，记录 kind、pid、status、heartbeat、restart_count、required、log_path。
+- 新增 worker 日志路径：`~/.cc-rust/daemon/logs/<worker-id>.log`。
+- supervisor loop 现在负责 spawn worker、刷新 supervisor heartbeat、读取 worker heartbeat、按 restart policy 重启异常 worker，并在 shutdown 时终止 worker 进程树。
+- `daemon status` 和 `/daemon status` 会展示 worker 数量、kind、pid、status。
+
+验证记录：
+- `cargo test -p claude-code-rs daemon::process_state` 通过，覆盖 worker state 写入、heartbeat、summary 聚合。
+- `cargo test -p claude-code-rs daemon::supervisor` 通过，覆盖默认 worker spec 和 worker kind 解析。
+- 本地 start/status/stop smoke 通过：临时 `CC_RUST_HOME` + `FEATURE_KAIROS=1` + port `21984` 下，status 展示 1 个 running worker，stop 后 supervisor 和 worker 均不存在。
+- 本地 worker crash/restart smoke 通过：port `21985` 下手动 `taskkill` worker 后，supervisor 启动新 worker PID，`restart_count` 从 0 变为 1，stop 后无进程残留。
+- `rustfmt --edition 2021 --check` 已针对本阶段 Rust 文件通过。
+- `cargo fmt --all --check` 当前仍被既有非 daemon 文件 `crates/claude-code-rs/src/tools/send_message.rs` 的格式差异阻塞；本阶段 daemon 相关文件已由 rustfmt 格式化。
+- `cargo clippy -p claude-code-rs --all-targets -- -D warnings` 当前仍被既有非 daemon crate `crates/cc-sandbox/src/runner.rs` 的 `needless_lifetimes` 阻塞。
+- 测试编译当前仍报告既有非 daemon warning：`crates/claude-code-rs/src/teams/in_process.rs` 的 `permission_mode` 字段未读取。

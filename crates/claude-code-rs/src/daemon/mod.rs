@@ -7,6 +7,7 @@ pub mod routes;
 pub mod server;
 pub mod sse;
 pub mod state;
+pub mod supervisor;
 pub mod team_memory_proxy;
 pub mod tick;
 pub mod webhook;

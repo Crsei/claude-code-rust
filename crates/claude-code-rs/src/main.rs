@@ -275,6 +275,24 @@ fn main() -> ExitCode {
 
     info!("claude-code-rs v{}", env!("CARGO_PKG_VERSION"));
 
+    if let Some(worker_kind) = cli.daemon_worker.clone() {
+        let worker_cwd = std::path::PathBuf::from(resolve_cwd(&cli));
+        let worker_id = cli
+            .worker_id
+            .clone()
+            .unwrap_or_else(|| format!("{}-{}", worker_kind, std::process::id()));
+        let worker_result = rt.block_on(async {
+            daemon::supervisor::run_worker_mode(&worker_kind, &worker_id, worker_cwd).await
+        });
+        return match worker_result {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                error!("Daemon worker failed: {:#}", err);
+                ExitCode::FAILURE
+            }
+        };
+    }
+
     // Fast path: --dump-system-prompt
     if cli.dump_system_prompt {
         return startup::fast_paths::run_dump_system_prompt(&cli);
@@ -875,6 +893,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         let http_state = daemon_state.clone();
         let tick_state = daemon_state.clone();
         let tick_enabled = features::enabled(Feature::Proactive);
+        let supervisor_cwd = std::path::PathBuf::from(cwd.clone());
 
         let daemon_result = tokio::select! {
             result = daemon::server::serve_http(http_state, cli.port) => {
@@ -887,11 +906,13 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                 tracing::info!("daemon shutting down");
                 Ok(ExitCode::SUCCESS)
             }
-            _ = daemon::process_state::wait_for_shutdown_request() => {
-                tracing::info!("daemon shutdown requested");
-                Ok(ExitCode::SUCCESS)
+            result = daemon::supervisor::run_supervisor_loop(supervisor_cwd, cli.port) => {
+                result.map(|()| ExitCode::SUCCESS)
             }
         };
+        if let Err(err) = daemon::supervisor::terminate_known_workers() {
+            warn!(error = %err, "failed to terminate daemon workers");
+        }
         if let Err(err) = daemon::process_state::write_stopped(cli.port, std::path::Path::new(&cwd))
         {
             warn!(error = %err, "failed to write daemon stopped state");
