@@ -65,6 +65,8 @@
 | 4.4 remaining results 等待 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs streaming_tool_execution_gate_starts_safe_tools_before_message_stop`，1 passed。 | stream 结束后先 await 已启动 safe tools，再只对未启动工具调用 post-stream 批处理，并按原始 `tool_use` 顺序合并结果，避免重复执行。 |
 | 4.5 `QueryGates.streaming_tool_execution` | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs test_tool_use_then_text_response`，1 passed；`cargo test -p claude-code-rs streaming_tool_execution_gate_starts_safe_tools_before_message_stop`，1 passed。 | `QueryParams.gates` 默认关闭新行为，可用 `CC_RUST_STREAMING_TOOL_EXECUTION=1` 打开；gate off 保留旧 post-stream 语义，gate on 启用 stream-time safe tool 调度。 |
 | 4.6 fallback 与已启动工具隔离 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs streaming_tool_execution_aborts_started_tools_on_stream_fallback`，1 passed。 | stream 中途 fallback/tombstone 会 abort 当前 attempt 已启动的 stream-time tool task；旧 assistant 的工具结果不会写入 fallback transcript。 |
+| 5.1 context collapse | 已完成 | 2026-05-05 | `cargo test -p cc-compact context_collapse`，3 passed；`cargo test -p cc-compact pipeline`，4 passed；`cargo test -p claude-code-rs query::loop_impl::loop_tests`，18 passed。 | `cc-compact` 新增 context collapse 阶段：超过 turn/token 阈值时把旧上下文折叠为 `CompactBoundary` system message，并在 autocompact 前运行。 |
+| 5.2 tool pair 完整性 | 已完成 | 2026-05-05 | `context_collapse::tests::context_collapse_preserves_tool_use_result_pairs_in_tail` 通过。 | collapse 以 user turn 边界切分并保留最近 turns，避免在保留尾部留下孤立 `tool_result` 或丢失对应 `tool_use`。 |
 
 ## Subagent 并行拆分规则
 

@@ -17,6 +17,7 @@ use cc_types::state::AutoCompactTracking;
 use cc_utils::tokens;
 
 use super::auto_compact;
+use super::context_collapse;
 use super::microcompact;
 use super::snip;
 use super::tool_result_budget;
@@ -107,7 +108,16 @@ pub async fn run_context_pipeline(
     current = micro_result.messages;
 
     // ── Step 4: Context collapse (Phase 2+) ─────────────────────────
-    // Not yet implemented — will fold old segments into summaries.
+    let collapse_result = context_collapse::context_collapse_if_needed(current, model);
+    if collapse_result.boundary_message.is_some() {
+        compacted = true;
+        debug!(
+            freed = collapse_result.tokens_freed,
+            collapsed_messages = collapse_result.collapsed_messages,
+            "context collapse: folded old turns into summary"
+        );
+    }
+    current = collapse_result.messages;
 
     // ── Step 5: Auto compact check ──────────────────────────────────
     let estimated = tokens::estimate_messages_tokens(&current);
@@ -273,6 +283,29 @@ mod tests {
         let messages = vec![make_user("Hello"), make_assistant("Hi!")];
         let result = run_context_pipeline(messages, None, "claude-sonnet-4-20250514").await;
         assert!(result.estimated_tokens > 0);
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_applies_context_collapse_before_autocompact() {
+        let mut messages = vec![make_user("initial context")];
+        for turn in 0..50 {
+            messages.push(make_user(&format!("question {turn} {}", "x".repeat(120))));
+            messages.push(make_assistant(&format!(
+                "answer {turn} {}",
+                "y".repeat(120)
+            )));
+        }
+
+        let result = run_context_pipeline(messages, None, "claude-sonnet-4-20250514").await;
+
+        assert!(result.compacted);
+        assert!(
+            result
+                .messages
+                .iter()
+                .any(|message| matches!(message, Message::System(system) if system.content.contains("<context_collapse>"))),
+            "pipeline should insert a context collapse boundary"
+        );
     }
 
     #[tokio::test]

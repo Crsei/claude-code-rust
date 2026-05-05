@@ -8,6 +8,7 @@
 pub mod auto_compact;
 pub mod compaction;
 pub mod context_analysis;
+pub mod context_collapse;
 pub mod messages;
 pub mod microcompact;
 pub mod pipeline;
