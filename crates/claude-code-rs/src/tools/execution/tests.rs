@@ -1,4 +1,6 @@
-use super::security::{enforce_result_size, find_tool, security_validate};
+use super::security::{
+    enforce_result_size, find_tool, is_plan_mode_plan_file_write, security_validate,
+};
 use super::*;
 use crate::types::app_state::AppState;
 use crate::types::tool::{
@@ -45,6 +47,11 @@ fn make_ctx_with_mode(mode: PermissionMode) -> ToolUseContext {
         hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
         command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
     }
+}
+
+fn set_original_cwd_for_test(path: &std::path::Path) {
+    let mut ps = crate::bootstrap::PROCESS_STATE.write();
+    ps.original_cwd = path.to_path_buf();
 }
 
 // -- Stub tools for testing is_read_only behavior -----------------------
@@ -186,6 +193,56 @@ fn test_plan_mode_allows_read_tools() {
 
     let result = security_validate("id2", "Grep", &input, &tool, &ctx, now);
     assert!(result.is_none(), "Plan mode should allow read-only tool");
+}
+
+#[test]
+#[serial_test::serial]
+fn test_plan_mode_allows_dedicated_plan_file_write() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(temp.path().join(".cc-rust")).unwrap();
+    set_original_cwd_for_test(temp.path());
+
+    let plan_path = crate::config::paths::current_plan_file_path(temp.path());
+    let plan_path = plan_path.to_string_lossy().into_owned();
+    let ctx = make_ctx_with_mode(PermissionMode::Plan);
+    let tool = WritableStub;
+    let input = serde_json::json!({
+        "file_path": plan_path,
+        "content": "## Plan\n- keep planning"
+    });
+
+    assert!(is_plan_mode_plan_file_write("Write", &input));
+    let result = security_validate("id-plan", "Write", &input, &tool, &ctx, Instant::now());
+    assert!(
+        result.is_none(),
+        "Plan mode should allow writes to its dedicated plan file"
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn test_plan_mode_blocks_non_plan_file_write() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(temp.path().join(".cc-rust")).unwrap();
+    set_original_cwd_for_test(temp.path());
+
+    let other_path = temp.path().join("other.md").to_string_lossy().into_owned();
+    let ctx = make_ctx_with_mode(PermissionMode::Plan);
+    let tool = WritableStub;
+    let input = serde_json::json!({
+        "file_path": other_path,
+        "content": "not the plan"
+    });
+
+    assert!(!is_plan_mode_plan_file_write("Write", &input));
+    let result = security_validate("id-other", "Write", &input, &tool, &ctx, Instant::now());
+    assert!(
+        result.is_some(),
+        "Plan mode should still block non-plan file writes"
+    );
+    let err = result.unwrap();
+    assert!(err.is_error);
+    assert!(err.result.data.as_str().unwrap().contains("Plan mode"));
 }
 
 #[test]

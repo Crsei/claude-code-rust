@@ -253,6 +253,7 @@
 - approval lifecycle、trace 与 plan_text 记录
 - approved/implementing 计划会在 `TaskCreate` 后关联 task id，并推进到 implementing
 - 团队审批 mailbox flow：`plan_approval_request` / `plan_approval_response` 会更新 teammate `awaiting_plan_approval`、`permission_mode`，并把审批结果注入下一轮
+- Plan mode 专用计划文件写入白名单：仅当前解析出的 plan 文件可由 `Write` / `Edit` / `FileWrite` / `FileEdit` 维护，其余非只读工具仍被 Stage 3c 拒绝
 
 **TS 独有（未移植）：**
 - full auto-mode LLM classifier parity

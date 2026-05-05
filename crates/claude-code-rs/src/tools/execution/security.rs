@@ -1,5 +1,6 @@
 //! Security validation for tool execution.
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -19,6 +20,7 @@ use super::{make_error_result, ToolExecutionResult};
 ///
 /// Checks performed (in order):
 ///   3c.1  Plan-mode gate — non-read-only tools are blocked in Plan mode
+///         except writes to the dedicated plan file
 ///   3c.2  Dangerous command detection — Bash/PowerShell commands screened
 ///   3c.3  Path boundary enforcement — Write/Edit paths must be within allowed dirs
 ///
@@ -39,8 +41,11 @@ pub(super) fn security_validate(
         return None;
     }
 
+    let plan_file_write_allowed =
+        *mode == PermissionMode::Plan && is_plan_mode_plan_file_write(tool_name, input);
+
     // ── 3c.1: Plan mode gate ───────────────────────────────────────
-    if *mode == PermissionMode::Plan && !tool.is_read_only(input) {
+    if *mode == PermissionMode::Plan && !tool.is_read_only(input) && !plan_file_write_allowed {
         return Some(make_error_result(
             tool_use_id,
             tool_name,
@@ -74,7 +79,7 @@ pub(super) fn security_validate(
 
     // ── 3c.3: Path boundary check (Write / Edit) ──────────────────
     const FILE_TOOL_NAMES: &[&str] = &["Write", "Edit", "FileWrite", "FileEdit"];
-    if FILE_TOOL_NAMES.contains(&tool_name) {
+    if FILE_TOOL_NAMES.contains(&tool_name) && !plan_file_write_allowed {
         if let Some(file_path_str) = input.get("file_path").and_then(|v| v.as_str()) {
             // Step 1: validate path structure (traversal attacks, null bytes, etc.)
             let canonical = match path_validation::validate_file_path(file_path_str) {
@@ -118,6 +123,56 @@ pub(super) fn security_validate(
     }
 
     None // all checks passed
+}
+
+/// True when a write/edit tool targets the dedicated plan file that plan mode
+/// is allowed to maintain.
+pub(super) fn is_plan_mode_plan_file_write(tool_name: &str, input: &Value) -> bool {
+    const PLAN_FILE_WRITE_TOOLS: &[&str] = &["Write", "Edit", "FileWrite", "FileEdit"];
+    if !PLAN_FILE_WRITE_TOOLS.contains(&tool_name) {
+        return false;
+    }
+
+    let Some(file_path) = input.get("file_path").and_then(|value| value.as_str()) else {
+        return false;
+    };
+    let Ok(candidate) = path_validation::validate_file_path(file_path) else {
+        return false;
+    };
+
+    let cwd = crate::bootstrap::state::original_cwd();
+    let plan_path = crate::config::paths::current_plan_file_path(&cwd);
+    paths_equivalent_for_plan_file(&candidate, &plan_path)
+}
+
+fn paths_equivalent_for_plan_file(candidate: &Path, plan_path: &Path) -> bool {
+    normalize_for_compare(candidate) == normalize_for_compare(plan_path)
+}
+
+fn normalize_for_compare(path: &Path) -> String {
+    let normalized = path
+        .canonicalize()
+        .unwrap_or_else(|_| normalize_nonexistent_path(path));
+    let mut rendered = normalized.to_string_lossy().replace('\\', "/");
+    while rendered.len() > 1 && rendered.ends_with('/') && !rendered.ends_with(":/") {
+        rendered.pop();
+    }
+    if cfg!(windows) {
+        rendered.make_ascii_lowercase();
+    }
+    rendered
+}
+
+fn normalize_nonexistent_path(path: &Path) -> PathBuf {
+    if let Some(parent) = path.parent() {
+        if let Ok(parent) = parent.canonicalize() {
+            return path
+                .file_name()
+                .map(|name| parent.join(name))
+                .unwrap_or(parent);
+        }
+    }
+    path.to_path_buf()
 }
 
 /// Find a tool by name, with alias fallback.

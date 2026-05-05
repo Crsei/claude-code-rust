@@ -31,7 +31,9 @@ fn build_hook_decision(o: Option<&PermissionOverride>) -> Option<HookPermissionD
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools};
 
-use super::security::{enforce_result_size, find_tool, security_validate};
+use super::security::{
+    enforce_result_size, find_tool, is_plan_mode_plan_file_write, security_validate,
+};
 use super::{make_error_result, ToolExecutionResult};
 
 /// Execute a single tool call through the full pipeline.
@@ -164,6 +166,12 @@ pub async fn run_tool_use(
     // decision flow so deny / ask still beat hook allow per spec.
     let hook_decision = build_hook_decision(permission_override.as_ref());
 
+    let plan_file_write_allowed = {
+        let app_state = (ctx.get_app_state)();
+        app_state.tool_permission_context.mode == crate::types::tool::PermissionMode::Plan
+            && is_plan_mode_plan_file_write(tool_name, &effective_input)
+    };
+
     // The tool may still expose its own per-tool checks (e.g. dangerous
     // command detection in Bash). Run them first so tool-local deny/ask
     // decisions cannot be bypassed by hook overrides, broad allow rules,
@@ -198,14 +206,25 @@ pub async fn run_tool_use(
         }
     }
 
-    let app_state = (ctx.get_app_state)();
-    let central_decision = decision::has_permissions_to_use_tool_with_hook(
-        tool_name,
-        &effective_input,
-        &app_state.tool_permission_context,
-        hook_decision.as_ref(),
-        None,
-    );
+    let central_decision = if plan_file_write_allowed {
+        PermissionDecision {
+            behavior: PermissionBehavior::Allow,
+            updated_input: None,
+            message: None,
+            reason: decision::PermissionDecisionReason::Mode {
+                mode: "plan_file".into(),
+            },
+        }
+    } else {
+        let app_state = (ctx.get_app_state)();
+        decision::has_permissions_to_use_tool_with_hook(
+            tool_name,
+            &effective_input,
+            &app_state.tool_permission_context,
+            hook_decision.as_ref(),
+            None,
+        )
+    };
 
     let effective_input = central_decision
         .updated_input
@@ -389,6 +408,7 @@ pub async fn run_tool_use(
 mod tests {
     use super::super::make_error_result;
     use super::*;
+    use crate::tools::fs::file_write::FileWriteTool;
     use crate::types::app_state::AppState;
     use crate::types::message::AssistantMessage;
     use crate::types::tool::{
@@ -574,6 +594,51 @@ mod tests {
         assert_eq!(
             result.result.data.as_str(),
             Some("Permission required: tool-local confirmation")
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn plan_mode_pipeline_writes_plan_file_without_prompt() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(temp.path().join(".cc-rust")).unwrap();
+        {
+            let mut ps = crate::bootstrap::PROCESS_STATE.write();
+            ps.original_cwd = temp.path().to_path_buf();
+        }
+
+        let plan_path = crate::config::paths::current_plan_file_path(temp.path());
+        let plan_path_string = plan_path.to_string_lossy().into_owned();
+
+        let mut app_state = AppState::default();
+        app_state.tool_permission_context.mode = PermissionMode::Plan;
+        let state = Arc::new(RwLock::new(app_state));
+        let ctx = make_ctx(state, true);
+        let tools: Tools = vec![Arc::new(FileWriteTool::new())];
+
+        let result = run_tool_use(
+            "plan-write",
+            "Write",
+            json!({
+                "file_path": plan_path_string,
+                "content": "## Plan\n- verify plan file write"
+            }),
+            &tools,
+            &ctx,
+            &dummy_parent(),
+            None,
+            &[],
+        )
+        .await;
+
+        assert!(
+            !result.is_error,
+            "plan file write should not require a prompt: {:?}",
+            result.result.data
+        );
+        assert_eq!(
+            std::fs::read_to_string(plan_path).unwrap(),
+            "## Plan\n- verify plan file write"
         );
     }
 }
