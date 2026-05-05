@@ -367,6 +367,7 @@ impl QueryEngine {
             let deps = Arc::new(QueryEngineDeps {
                 aborted: aborted_ref.clone(),
                 state: state_ref.clone(),
+                cwd: config.cwd.clone(),
                 audit_ctx: submit_audit_ctx,
                 langfuse_trace: submit_langfuse_trace.clone(),
                 api_client,

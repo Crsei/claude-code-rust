@@ -12,5 +12,6 @@ pub mod context_collapse;
 pub mod messages;
 pub mod microcompact;
 pub mod pipeline;
+pub mod session_memory_compact;
 pub mod snip;
 pub mod tool_result_budget;

@@ -34,6 +34,7 @@ use super::QueryEngineState;
 pub(crate) struct QueryEngineDeps {
     pub(crate) aborted: Arc<AtomicBool>,
     pub(crate) state: Arc<RwLock<QueryEngineState>>,
+    pub(crate) cwd: String,
     /// Audit context for this submit — carries correlation IDs.
     pub(crate) audit_ctx: crate::observability::AuditContext,
     pub(crate) langfuse_trace: Option<crate::services::langfuse::LangfuseTrace>,
@@ -280,6 +281,36 @@ impl QueryDeps for QueryEngineDeps {
         // If auto-compact was triggered AND we have an API client, generate a model summary
         if let Some(ref updated_tracking) = pipeline_result.tracking {
             if updated_tracking.compacted {
+                let session_memory_context = {
+                    let state = self.state.read();
+                    state.session_memory.format_memory_context_for_workspace(
+                        5,
+                        Some(std::path::Path::new(&self.cwd)),
+                    )
+                };
+                if let Some(context) = session_memory_context.as_deref() {
+                    if let Some(session_memory_result) =
+                        crate::compact::session_memory_compact::session_memory_compact_if_needed(
+                            pipeline_result.messages.clone(),
+                            context,
+                        )
+                    {
+                        tracing::info!(
+                            tokens_freed = session_memory_result.tokens_freed,
+                            kept_start_index = session_memory_result.kept_start_index,
+                            "autocompact: session-memory summary complete"
+                        );
+                        let new_tracking = crate::compact::compaction::tracking_on_success(
+                            tracking.as_ref(),
+                            &Uuid::new_v4().to_string(),
+                        );
+                        return Ok(Some(CompactionResult {
+                            messages: session_memory_result.messages,
+                            tracking: new_tracking,
+                        }));
+                    }
+                }
+
                 // Try model-based summarization if API client is available
                 if let Some(ref _client) = self.api_client {
                     let summary_prompt = crate::compact::compaction::build_compaction_prompt();
@@ -1252,6 +1283,7 @@ mod tests {
         QueryEngineDeps {
             aborted: engine.aborted.clone(),
             state: engine.state.clone(),
+            cwd: ".".to_string(),
             audit_ctx: crate::observability::AuditContext::noop("test"),
             langfuse_trace: None,
             api_client: None,

@@ -26,7 +26,7 @@
 
 | Bun 文档 | cc-rust 主要入口 | 状态 | 核心结论 |
 | --- | --- | --- | --- |
-| `compaction.mdx` | [`cc-compact/src/pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`cc-compact/src/compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L99), [`claude-code-rs/src/query/loop_helpers.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/loop_helpers.rs#L202) | 部分实现 | 本地压缩、boundary、PTL 恢复、hook 已有；但 Bun 风格的专用 session-memory 压缩链路没有看到完整接入。 |
+| `compaction.mdx` | [`cc-compact/src/pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`cc-compact/src/session_memory_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/session_memory_compact.rs), [`cc-compact/src/compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L99), [`claude-code-rs/src/query/loop_helpers.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/loop_helpers.rs#L202) | 部分实现 | 本地压缩、Session Memory Compact、boundary、PTL 恢复、hook 已有；preservedSegment 注解、feature gate 与 Bun 的完整恢复语义仍未完全同构。 |
 | `project-memory.mdx` | [`cc-session/src/memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L72), [`cc-config/src/claude_md.rs`](F:/AIclassmanager/cc/rust/crates/cc-config/src/claude_md.rs#L51), [`claude-code-rs/src/engine/system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs) | 部分实现 | 记忆 CRUD、`CLAUDE.md` 注入、Project/Global/Team memory 主提示词注入都存在；Auto memory 已由 `auto_memory_enabled` 门控注入，最近 session-insights 也会按 workspace 回注；抽取策略仍需继续对齐。 |
 | `system-prompt.mdx` | [`claude-code-rs/src/engine/system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs#L361), [`claude-code-rs/src/engine/prompt_sections.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/prompt_sections.rs#L17), [`claude-code-rs/src/engine/lifecycle/submit_message.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/submit_message.rs#L238) | 已实现 | 静态段、动态段、缓存边界、`CLAUDE.md` 注入、append/override 顺序都已落地。 |
 | `token-budget.mdx` | [`cc-utils/src/tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs), [`cc-compact/src/auto_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/auto_compact.rs), [`claude-code-rs/src/query/token_budget.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/token_budget.rs#L9) | 部分实现 | 预算判断、续跑逻辑、`CLAUDE_CODE_MAX_CONTEXT_TOKENS` 与 `[1m]` 窗口解析存在；仍主要依赖启发式估算，不是 Bun 文档里那种 provider 级精确 token 统计。 |
@@ -43,6 +43,8 @@
 
 - `run_context_pipeline()` 已实现工具结果预算、snip、microcompact、自动压缩检查四步主流程。[`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65)
 - `should_auto_compact()` 明确跳过 `compact` 和 `session_memory` 来源，避免递归触发。[`compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L99)
+- `session_memory_compact_if_needed()` 已提供无 API 的 Session Memory Compact：使用 `<session-insights>` 作为旧历史摘要，保留 10K-40K token 的最近窗口，并在保留 tool_result 时向前纳入对应 tool_use。[`session_memory_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/session_memory_compact.rs)
+- `QueryEngineDeps::autocompact()` 在 auto-compact 触发且当前 workspace 有 session-insights 时，优先走 Session Memory Compact，再回退到模型摘要或本地管线。[`deps.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/deps.rs)
 - `build_post_compact_messages()` 会在摘要后重建上下文，并恢复最近文件引用。[`compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L139)
 - `create_compact_boundary()` 和 `get_messages_after_compact_boundary()` 已提供 boundary 生成与回溯能力。[`compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L184), [`messages.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/messages.rs#L106)
 - `handle_prompt_too_long()` 提供 PTL 重试路径；`reactive_compact()` 失败时会回退到终态。[`loop_helpers.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/loop_helpers.rs#L202), [`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L154)
@@ -51,7 +53,7 @@
 **状态判断**
 
 - `部分实现`。
-- 原因不是“没有压缩”，而是压缩主链路已经存在；差异点在于 Bun 文档里强调的 session-memory 专用压缩语义、实验性分支和某些恢复策略，在当前 Rust 实现里没有看到完整的一一对应。
+- 原因不是“没有压缩”，而是压缩主链路和 Session Memory Compact 都已经存在；差异点在于 Bun 文档里的 preservedSegment 注解、feature gate 组合、Partial Compact 和某些恢复策略，在当前 Rust 实现里没有看到完整的一一对应。
 
 ### `project-memory.mdx`
 
@@ -117,14 +119,14 @@
 
 - 系统提示词拼装链路已经落地：静态段、动态段、缓存边界、`CLAUDE.md` 注入、append/override 顺序都能在源码里直接定位。[`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs#L361), [`prompt_sections.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/prompt_sections.rs#L51)
 - 记忆存储、命令面和主提示词注入已经实现：`cc-session::memdir` 支持四个 scope 的 CRUD 和搜索，`/memory` 也能查看、编辑和打开这些目录；Project / Global / Team memory 会进入 `# Memory Context`，Auto memory 会在 `auto_memory_enabled` 开启时进入同一段落，当前 workspace 最近 session-insights 也会回放到同一段落。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L111), [`commands/memory.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/memory.rs#L41), [`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs)
-- 压缩主链路已经实现：tool result budget、snip、microcompact、自动压缩、boundary、PTL 恢复和 hook 都有对应代码。[`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L184)
+- 压缩主链路已经实现：tool result budget、snip、microcompact、Session Memory Compact、自动压缩、boundary、PTL 恢复和 hook 都有对应代码。[`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`session_memory_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/session_memory_compact.rs), [`compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L184)
 - token 预算已经接入主循环：任务预算继续/停止、max_output_tokens 恢复、自动压缩阈值都不是占位。[`token_budget.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/token_budget.rs#L9), [`loop_helpers.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/loop_helpers.rs#L202)
 
 ## 未实现 / 部分实现 / 待确认 / 故意裁剪
 
 ### 部分实现
 
-- `compaction.mdx`：已有完整压缩管线，但 Bun 文档里的 session-memory 专用压缩语义没有看到同构实现。[`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65)
+- `compaction.mdx`：已有完整压缩管线和 Session Memory Compact，但 Bun 文档里的 preservedSegment 注解、feature gate 组合与 Partial Compact 还没有看到同构实现。[`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`session_memory_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/session_memory_compact.rs)
 - `project-memory.mdx`：记忆 CRUD、`CLAUDE.md` 注入、Project / Global / Team memory 主提示词注入、`auto_memory_enabled` 门控的 Auto memory 注入和 workspace-scoped session-insights 回注都存在；session-insights 的抽取策略仍需继续对齐。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L248), [`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs), [`session_memory.rs`](F:/AIclassmanager/cc/rust/crates/cc-services/src/session_memory.rs)
 - `token-budget.mdx`：有预算判断、动态窗口解析和恢复，但主要依赖启发式估算，不是精确 token 统计。[`tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs)
 
