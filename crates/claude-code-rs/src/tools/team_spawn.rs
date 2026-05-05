@@ -21,7 +21,7 @@ use crate::teams::types::{
 };
 use crate::teams::{backend, constants, helpers, identity, in_process::InProcessBackend};
 use crate::types::message::AssistantMessage;
-use crate::types::tool::*;
+use crate::types::tool::{PermissionMode, *};
 
 /// TeamSpawn tool.
 pub struct TeamSpawnTool;
@@ -47,6 +47,9 @@ struct TeamSpawnInput {
     /// Optional backend. cc-rust supports only in-process.
     #[serde(default)]
     backend: Option<BackendType>,
+    /// Optional permission mode for the teammate. `plan` requires plan approval.
+    #[serde(default)]
+    mode: Option<String>,
 }
 
 #[async_trait]
@@ -91,6 +94,11 @@ impl Tool for TeamSpawnTool {
                     "type": "string",
                     "enum": ["in-process"],
                     "description": "Execution backend. cc-rust intentionally supports only in-process Agent Teams."
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["default", "auto", "bypass", "plan", "acceptEdits", "dontAsk"],
+                    "description": "Optional permission mode for the teammate. Use \"plan\" to require plan approval before edits."
                 }
             },
             "required": ["name", "prompt"]
@@ -214,6 +222,7 @@ impl Tool for TeamSpawnTool {
             .unwrap_or_else(|| helpers::assign_color(&team_file));
         let agent_id = identity::format_agent_id(&params.name, &team_name);
         let now = chrono::Utc::now().timestamp();
+        let plan_mode_required = team_spawn_plan_mode_required(params.mode.as_deref());
 
         let new_member = TeamMember {
             agent_id: agent_id.clone(),
@@ -222,7 +231,7 @@ impl Tool for TeamSpawnTool {
             model: params.model.clone(),
             prompt: Some(params.prompt.clone()),
             color: Some(color.clone()),
-            plan_mode_required: None,
+            plan_mode_required: plan_mode_required.then_some(true),
             joined_at: now,
             tmux_pane_id: String::new(),
             cwd: cwd.clone(),
@@ -231,7 +240,7 @@ impl Tool for TeamSpawnTool {
             subscriptions: vec![],
             backend_type: Some(BackendType::InProcess),
             is_active: Some(true),
-            mode: None,
+            mode: params.mode.clone(),
         };
         team_file.members.push(new_member.clone());
         helpers::write_team_file(&team_name, &team_file)?;
@@ -242,7 +251,7 @@ impl Tool for TeamSpawnTool {
                 name: params.name.clone(),
                 team_name: team_name.clone(),
                 color: Some(color.clone()),
-                plan_mode_required: false,
+                plan_mode_required,
                 prompt: params.prompt.clone(),
                 cwd: cwd.clone(),
                 model: params.model.clone(),
@@ -338,6 +347,7 @@ impl Tool for TeamSpawnTool {
                 "name": params.name,
                 "color": color,
                 "backend": backend_type.to_string(),
+                "plan_mode_required": plan_mode_required,
                 "implicitly_created_team": freshly_created,
             }),
             new_messages: vec![],
@@ -359,6 +369,12 @@ impl Tool for TeamSpawnTool {
             "TeamSpawn".into()
         }
     }
+}
+
+fn team_spawn_plan_mode_required(mode: Option<&str>) -> bool {
+    mode.map(PermissionMode::parse)
+        .unwrap_or(PermissionMode::Default)
+        == PermissionMode::Plan
 }
 
 // ---------------------------------------------------------------------------
@@ -387,5 +403,21 @@ mod tests {
     #[test]
     fn tool_name_is_team_spawn() {
         assert_eq!(TeamSpawnTool.name(), "TeamSpawn");
+    }
+
+    #[test]
+    fn input_json_schema_exposes_plan_mode() {
+        let schema = TeamSpawnTool.input_json_schema();
+        let mode_enum = schema["properties"]["mode"]["enum"].as_array().unwrap();
+        let variants: Vec<&str> = mode_enum.iter().filter_map(|v| v.as_str()).collect();
+        assert!(variants.contains(&"plan"));
+    }
+
+    #[test]
+    fn plan_mode_flag_only_accepts_plan_mode() {
+        assert!(team_spawn_plan_mode_required(Some("plan")));
+        assert!(team_spawn_plan_mode_required(Some("read-only")));
+        assert!(!team_spawn_plan_mode_required(None));
+        assert!(!team_spawn_plan_mode_required(Some("acceptEdits")));
     }
 }

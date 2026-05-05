@@ -65,6 +65,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | FileEditTool live transcript 接线 | 已补齐子项 | `Edit` 成功结果把 concise model content 与 UI-only `display_preview` 分离；`SdkUserReplay` / headless IPC / Rust TUI 保留 `tool_use_result`，并用 `file_edit_tool_updated_message` 在 prompt/transcript 中渲染结构化 diff 预览 |
 | AgentTool 工具白名单与去重 | 已补齐子项 | `crates/claude-code-rs/src/engine/agent/mod.rs` 创建 child `QueryEngineConfig` 前会按 `subagent_type` 解析内置/用户/项目 agent 定义，应用 `tools` allow-list、`disallowedTools` deny-list、`Bash(...)` 等规则规格的基础工具名解析，并按工具名去重；Explore/Plan/code-reviewer 等只读内置 agent 不再继承全量工具 |
 | AgentTool 团队上下文继承 | 已补齐子项 | `crates/cc-engine/src/types/config.rs` 的 `AgentContext` 携带父会话 `team_context`，`QueryEngine::new()` 初始化子 agent AppState 时恢复该上下文，`build_child_config()` 从父 `ToolUseContext` 注入当前团队；子 agent 中的 `SendMessage` 不再因默认 AppState 丢失团队上下文 |
+| AgentTool 多 agent 调度入口 | 已补齐子项 | `Agent` schema 对齐上游 `name` / `team_name` / `mode` 参数；提供 `name` 时走现有 `TeamSpawn` in-process teammate 路径，继承显式或当前 team context，输出 `status: "teammate_spawned"` / `teammate_id` / `team_name`，并把 `mode: "plan"` 传递为 teammate plan-mode requirement；tmux/iTerm2 pane 后端仍按 §7 Intentional 裁剪 |
 
 ### 2.2 仍需补齐的工具 parity
 
@@ -74,23 +75,21 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | TaskTools | 远程/多类型后台任务 supervisor parity、超时控制；磁盘持久化、基础依赖字段、输出保留、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
 | PlanMode | auto-mode/classifier gate、团队审批流、计划持久化、实现关联跟踪 |
 | WebFetch | JS 渲染、Cookie 管理、代理支持、重定向限制、Content-Type 智能处理 |
-| AgentTool | spawnMultiAgent；background worktree/权限回调/取消已由 `crates/claude-code-rs/src/engine/agent/supervisor.rs` 收口，工具白名单过滤/工具定义去重与团队上下文继承已补齐 |
 
 ### 2.3 更新后的顺序执行计划（逐项领取）
 
 每个条目完成时都按同一收口流程处理：读上游实现 → 改 Rust 端 → 补单元/e2e → `cargo fmt --all --check` + 对应构建 → 更新本文件与 archive → 单独提交。
 
 1. **BashTool 剩余安全/沙箱复核**：对照 `src/tools/BashTool/**` 与 PowerShell validator，评估是否需要引入原生 PowerShell AST parser（或等价结构化 parser）来补齐 `elementTypes` / `children` / `nameType` / parse error fail-closed / statement securityPatterns 等非正则语义；同时评估 Windows Restricted Token / Job Object OS-level primitive 是否进入实现队列或移入 §7 Intentional 裁剪。
-2. **AgentTool 多 agent 调度**：在已补齐工具白名单/去重和团队上下文继承的基础上，评估 `spawnMultiAgent` 是独立工具还是 AgentTool 扩展，并补多 agent 调度测试。
-3. **TaskTools 后台任务 parity**：在现有持久化/取消基础上补超时控制、远程/多类型后台任务 supervisor parity，并验证 `/tasks` UI 与 task store 的状态一致性。
-4. **PlanMode 执行闭环**：补 auto-mode/classifier gate、团队审批流、计划持久化与实现关联追踪；完成后用 plan 创建、恢复、审批、执行关联的 e2e 覆盖。
-5. **WebFetch browser-grade 能力**：按 `architecture/mvp-optimization-plans/MVP-009-web-fetch-browser-grade-plan.md` 逐步补 JS 渲染、Cookie jar、代理、重定向限制与 Content-Type 智能处理。
-6. **API providers 决策/实现**：按 `architecture/mvp-optimization-plans/MVP-001-api-providers-plan.md` 重评 Bedrock 原生 AWS EventStream 与 Vertex direct service-account JWT exchange；实现或写入 §7 Intentional 裁剪，不再停留在“部分完成”。
-7. **Team Memory 客户端同步**：接通 `src/daemon/team_memory_proxy.rs` / `ui/team-memory-server/` 的前端调用路径，补同步、断线恢复与冲突处理测试。
-8. **UI caveats 收束**：修复 §3 的终端 resize 回流与窄终端欢迎页布局；完成后迁移到 archive 或 `KNOWN_ISSUES.md` closed 记录。
-9. **活跃方案文档清理**：逐个复核 §4 文档，能落地的拆成实现任务，过期或已覆盖的归档，仍有效的保留 owner/下一步。
-10. **历史 Deferred 重评**：按 §5 类别决定实现、延期或 §7 Intentional 裁剪；不得继续用 "lite 不做" 作为理由。
-11. **最终全量复核**：跑覆盖相关工具面的单元/e2e 与 release build，确认本节没有残留 TODO，更新 `WORK_STATUS.md` / archive 后收尾。
+2. **TaskTools 后台任务 parity**：在现有持久化/取消基础上补超时控制、远程/多类型后台任务 supervisor parity，并验证 `/tasks` UI 与 task store 的状态一致性。
+3. **PlanMode 执行闭环**：补 auto-mode/classifier gate、团队审批流、计划持久化与实现关联追踪；完成后用 plan 创建、恢复、审批、执行关联的 e2e 覆盖。
+4. **WebFetch browser-grade 能力**：按 `architecture/mvp-optimization-plans/MVP-009-web-fetch-browser-grade-plan.md` 逐步补 JS 渲染、Cookie jar、代理、重定向限制与 Content-Type 智能处理。
+5. **API providers 决策/实现**：按 `architecture/mvp-optimization-plans/MVP-001-api-providers-plan.md` 重评 Bedrock 原生 AWS EventStream 与 Vertex direct service-account JWT exchange；实现或写入 §7 Intentional 裁剪，不再停留在“部分完成”。
+6. **Team Memory 客户端同步**：接通 `src/daemon/team_memory_proxy.rs` / `ui/team-memory-server/` 的前端调用路径，补同步、断线恢复与冲突处理测试。
+7. **UI caveats 收束**：修复 §3 的终端 resize 回流与窄终端欢迎页布局；完成后迁移到 archive 或 `KNOWN_ISSUES.md` closed 记录。
+8. **活跃方案文档清理**：逐个复核 §4 文档，能落地的拆成实现任务，过期或已覆盖的归档，仍有效的保留 owner/下一步。
+9. **历史 Deferred 重评**：按 §5 类别决定实现、延期或 §7 Intentional 裁剪；不得继续用 "lite 不做" 作为理由。
+10. **最终全量复核**：跑覆盖相关工具面的单元/e2e 与 release build，确认本节没有残留 TODO，更新 `WORK_STATUS.md` / archive 后收尾。
 
 补齐流程：
 1. 读上游实现（`F:\AIclassmanager\cc\src\tools\<name>\**` 或 `claude-code-bun` 同名模块）。

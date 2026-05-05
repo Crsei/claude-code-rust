@@ -44,6 +44,15 @@ struct AgentInput {
     /// Whether to run the agent in the background.
     #[serde(default)]
     run_in_background: bool,
+    /// Optional teammate name. When set, AgentTool routes to Agent Teams spawn.
+    #[serde(default)]
+    name: Option<String>,
+    /// Optional Agent Teams team name. Defaults to active team context.
+    #[serde(default)]
+    team_name: Option<String>,
+    /// Optional teammate permission mode. `plan` requires plan approval.
+    #[serde(default)]
+    mode: Option<String>,
     /// Isolation mode ("worktree" for git worktree isolation).
     #[serde(default)]
     isolation: Option<String>,

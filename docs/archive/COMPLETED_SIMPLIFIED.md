@@ -70,12 +70,11 @@
 - ✅ **worktree 隔离执行** (`isolation: "worktree"`, 创建临时 worktree → 运行 agent → 变更检测 → 自动清理/保留, fail-closed 安全)
 - ✅ **工具白名单过滤与定义去重** (child `QueryEngineConfig` 按 `subagent_type` 解析内置/用户/项目 agent 定义，应用 `tools` / `disallowedTools`，按工具名去重；Explore/Plan/code-reviewer 不再继承全量工具)
 - ✅ **团队上下文继承** (`AgentContext` 携带父会话 `team_context`，child `QueryEngine` 初始化时恢复到 AppState；子 agent 内的 `SendMessage` 可继续使用当前团队上下文)
+- ✅ **AgentTool 多 agent 调度入口** (`Agent` 支持 `name` / `team_name` / `mode`；`name` 触发 in-process `TeamSpawn` teammate，返回 `teammate_spawned` / `teammate_id` / `team_name`，并把 `mode: "plan"` 映射到 teammate plan-mode requirement)
 
 **TS 独有（未移植）：**
-- 多后端 spawn (in-process / tmux / iTerm2)
-- agent teams 的内联 teammate spawn / 多 agent 调度入口
-- `spawnMultiAgent.ts` (1,093 行)
-- background 模式
+- 多后端 spawn 中的 tmux / iTerm2 pane backend
+- `spawnMultiAgent.ts` 的 tmux/iTerm2 pane 布局与安装引导细节（§7 Intentional 裁剪）
 
 ---
 

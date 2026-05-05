@@ -47,6 +47,19 @@ impl Tool for AgentTool {
                     "default": false,
                     "description": "Set to true to run this agent in the background"
                 },
+                "name": {
+                    "type": "string",
+                    "description": "Name for the spawned teammate. When set, AgentTool routes to Agent Teams and the teammate can be messaged via SendMessage."
+                },
+                "team_name": {
+                    "type": "string",
+                    "description": "Team name for spawning a named teammate. Defaults to the active team context; if omitted with no active team, an implicit session team is created."
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["default", "auto", "bypass", "plan", "acceptEdits", "dontAsk"],
+                    "description": "Optional permission mode for the named teammate. Use \"plan\" to require plan approval."
+                },
                 "isolation": {
                     "type": "string",
                     "enum": ["worktree"],
@@ -96,6 +109,39 @@ impl Tool for AgentTool {
             .as_deref()
             .map(|m| resolve_model_alias(m, &parent_model))
             .unwrap_or_else(|| env_model.unwrap_or_else(|| parent_model.clone()));
+
+        if let Some(spawn_request) = teammate_spawn_request(&params, &(ctx.get_app_state)())? {
+            let cwd = std::env::current_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| ".".to_string());
+            let agent_definition =
+                super::active_agent_definition(std::path::Path::new(&cwd), subagent_type);
+            let teammate_model = params
+                .model
+                .as_deref()
+                .and_then(|model| resolve_optional_teammate_model(model, &parent_model))
+                .or_else(|| {
+                    agent_definition
+                        .as_ref()
+                        .and_then(|definition| definition.model.as_deref())
+                        .and_then(|model| resolve_optional_teammate_model(model, &parent_model))
+                });
+            let spawn_input = json!({
+                "name": spawn_request.name,
+                "prompt": params.prompt.clone(),
+                "description": description,
+                "team": spawn_request.team_name,
+                "model": teammate_model,
+                "color": agent_definition.as_ref().and_then(|definition| definition.color.clone()),
+                "mode": params.mode.clone(),
+                "backend": "in-process",
+            });
+            let mut result = crate::tools::team_spawn::TeamSpawnTool
+                .call(spawn_input, ctx, _parent, _on_progress)
+                .await?;
+            annotate_agent_teammate_result(&mut result, &params.prompt);
+            return Ok(result);
+        }
 
         let agent_id = Uuid::new_v4().to_string();
 
@@ -257,6 +303,86 @@ and return exactly the information you need.\n\
 
     fn max_result_size_chars(&self) -> usize {
         200_000
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TeammateSpawnRequest {
+    name: String,
+    team_name: Option<String>,
+}
+
+fn teammate_spawn_request(
+    params: &AgentInput,
+    app_state: &crate::types::app_state::AppState,
+) -> Result<Option<TeammateSpawnRequest>> {
+    let Some(raw_name) = params.name.as_deref() else {
+        return Ok(None);
+    };
+    let name = raw_name.trim();
+    if name.is_empty() {
+        bail!("'name' is required for Agent teammate spawn");
+    }
+
+    if let Some(team_context) = app_state
+        .team_context
+        .as_ref()
+        .filter(|context| !context.team_name.is_empty())
+    {
+        if !crate::teams::identity::is_team_lead(Some(team_context)) {
+            bail!(
+                "Teammates cannot spawn other teammates; omit `name` to create a normal subagent"
+            );
+        }
+    }
+
+    let team_name = params
+        .team_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            app_state
+                .team_context
+                .as_ref()
+                .map(|context| context.team_name.trim())
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+        });
+
+    Ok(Some(TeammateSpawnRequest {
+        name: name.to_string(),
+        team_name,
+    }))
+}
+
+fn resolve_optional_teammate_model(raw_model: &str, parent_model: &str) -> Option<String> {
+    let model = raw_model.trim();
+    if model.is_empty() {
+        return None;
+    }
+    if model.eq_ignore_ascii_case("inherit") {
+        return Some(parent_model.to_string());
+    }
+    Some(resolve_model_alias(model, parent_model))
+}
+
+fn annotate_agent_teammate_result(result: &mut ToolResult, prompt: &str) {
+    let Some(object) = result.data.as_object_mut() else {
+        return;
+    };
+    if object.get("spawned").and_then(Value::as_bool) != Some(true) {
+        return;
+    }
+
+    object.insert("status".into(), json!("teammate_spawned"));
+    object.insert("prompt".into(), json!(prompt));
+    if let Some(agent_id) = object.get("agent_id").cloned() {
+        object.entry("teammate_id").or_insert(agent_id);
+    }
+    if let Some(team_name) = object.get("team").cloned() {
+        object.entry("team_name").or_insert(team_name);
     }
 }
 
@@ -469,6 +595,102 @@ mod tests {
         let schema = tool.input_json_schema();
         let default_val = &schema["properties"]["run_in_background"]["default"];
         assert_eq!(default_val, &serde_json::Value::Bool(false));
+    }
+
+    #[test]
+    fn test_schema_exposes_multi_agent_spawn_fields() {
+        let tool = AgentTool;
+        let schema = tool.input_json_schema();
+        let props = schema["properties"].as_object().unwrap();
+        assert!(props.contains_key("name"));
+        assert!(props.contains_key("team_name"));
+        assert!(props.contains_key("mode"));
+
+        let mode_enum = schema["properties"]["mode"]["enum"].as_array().unwrap();
+        let variants: Vec<&str> = mode_enum.iter().filter_map(|v| v.as_str()).collect();
+        assert!(variants.contains(&"plan"));
+    }
+
+    #[test]
+    fn test_teammate_spawn_request_uses_explicit_or_active_team() {
+        let mut state = crate::types::app_state::AppState::default();
+        let lead_id = crate::teams::identity::lead_agent_id("alpha");
+        state.team_context = Some(cc_types::teams::TeamContext {
+            team_name: "alpha".into(),
+            lead_agent_id: lead_id.clone(),
+            self_agent_id: Some(lead_id),
+            ..Default::default()
+        });
+
+        let params: AgentInput = serde_json::from_value(json!({
+            "prompt": "review",
+            "description": "review code",
+            "name": " reviewer ",
+            "team_name": " beta "
+        }))
+        .unwrap();
+        let request = teammate_spawn_request(&params, &state).unwrap().unwrap();
+        assert_eq!(request.name, "reviewer");
+        assert_eq!(request.team_name.as_deref(), Some("beta"));
+
+        let params: AgentInput = serde_json::from_value(json!({
+            "prompt": "review",
+            "description": "review code",
+            "name": "reviewer"
+        }))
+        .unwrap();
+        let request = teammate_spawn_request(&params, &state).unwrap().unwrap();
+        assert_eq!(request.team_name.as_deref(), Some("alpha"));
+    }
+
+    #[test]
+    fn test_teammate_spawn_request_allows_implicit_team_without_context() {
+        let state = crate::types::app_state::AppState::default();
+        let params: AgentInput = serde_json::from_value(json!({
+            "prompt": "review",
+            "description": "review code",
+            "name": "reviewer"
+        }))
+        .unwrap();
+        let request = teammate_spawn_request(&params, &state).unwrap().unwrap();
+        assert_eq!(request.name, "reviewer");
+        assert!(request.team_name.is_none());
+    }
+
+    #[test]
+    fn test_teammate_spawn_request_rejects_nested_teammate_spawn() {
+        let mut state = crate::types::app_state::AppState::default();
+        state.team_context = Some(cc_types::teams::TeamContext {
+            team_name: "alpha".into(),
+            lead_agent_id: crate::teams::identity::lead_agent_id("alpha"),
+            self_agent_id: Some(crate::teams::identity::format_agent_id("worker", "alpha")),
+            ..Default::default()
+        });
+        let params: AgentInput = serde_json::from_value(json!({
+            "prompt": "review",
+            "description": "review code",
+            "name": "reviewer"
+        }))
+        .unwrap();
+        let error = teammate_spawn_request(&params, &state).unwrap_err();
+        assert!(error.to_string().contains("Teammates cannot spawn"));
+    }
+
+    #[test]
+    fn test_agent_teammate_result_annotation() {
+        let mut result = ToolResult {
+            data: json!({
+                "spawned": true,
+                "agent_id": "reviewer@alpha",
+                "team": "alpha"
+            }),
+            ..Default::default()
+        };
+        annotate_agent_teammate_result(&mut result, "review code");
+        assert_eq!(result.data["status"], json!("teammate_spawned"));
+        assert_eq!(result.data["prompt"], json!("review code"));
+        assert_eq!(result.data["teammate_id"], json!("reviewer@alpha"));
+        assert_eq!(result.data["team_name"], json!("alpha"));
     }
 
     // -----------------------------------------------------------------------
