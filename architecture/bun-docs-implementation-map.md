@@ -50,7 +50,7 @@
 | Context | `compaction.mdx` | 部分实现 | 本地压缩、boundary、PTL 恢复与 hook 路径存在；Bun 风格 session-memory 压缩闭环仍需继续确认。 |
 | Context | `project-memory.mdx` | 部分实现 | memory CRUD、`CLAUDE.md` 注入、Project / Global / Team memory 主提示词注入存在；Auto memory 已由 `auto_memory_enabled` 门控注入，最近 session-insights 也会按 workspace 回注；抽取策略仍需继续对齐。 |
 | Context | `system-prompt.mdx` | 已实现 | 静态段、动态段、缓存边界、`CLAUDE.md` 注入、append / override 顺序均已落地。 |
-| Context | `token-budget.mdx` | 部分实现 | 预算判断与续跑逻辑存在，但主要依赖启发式估算，不是 provider 级精确 token 统计。 |
+| Context | `token-budget.mdx` | 部分实现 | 预算判断、续跑逻辑、环境变量覆盖和 `[1m]` 窗口解析存在；仍主要依赖启发式估算，不是 provider 级精确 token 统计。 |
 | Extensibility | `custom-agents.mdx` | 部分实现 | 定义、编辑、运行链路已通；安全边界主要依赖通用工具过滤与隔离。 |
 | Extensibility | `hooks.mdx` | 已实现 | hooks 配置、执行和权限联动已形成闭环。 |
 | Extensibility | `mcp-configuration.mdx` | 部分实现 | MCP 配置、发现、管理可用；SSE URL/header 安全校验已接入，运行时主要完成 stdio 主路径。 |
@@ -109,3 +109,4 @@
 | 2026-05-05 | Context / Auto-memory prompt gate | 已完成 `autoMemoryEnabled` 控制的 Auto memory 主提示词注入；session-insights 回注仍部分实现 | `crates/claude-code-rs/src/engine/lifecycle/submit_message.rs` 与 `startup/fast_paths.rs` 将设置传入 `build_system_prompt()`，`system_prompt.rs` 调用 `build_memory_context_with()` | `cargo test -p claude-code-rs engine::system_prompt::tests:: -- --nocapture`，31 passed |
 | 2026-05-05 | Context / Session insights prompt replay | 已完成最近 session-insights 主提示词回放；作用域过滤与抽取策略仍部分实现 | `crates/cc-services/src/session_memory.rs` 格式化 `<session-insights>`，`submit_message.rs` 与 `fast_paths.rs` 将其传入 `build_system_prompt_with_session_memory()` | `cargo test -p cc-services session_memory -- --nocapture`，6 passed；`cargo test -p claude-code-rs engine::system_prompt::tests:: -- --nocapture`，32 passed |
 | 2026-05-05 | Context / Session insights workspace scope | 已完成 session-insights 按当前 workspace 回放；抽取策略仍部分实现 | `crates/cc-services/src/session_memory.rs` 为条目记录 `workspace` 并按 workspace 过滤，`engine/lifecycle/mod.rs` 保存当前 cwd | `cargo test -p cc-services session_memory -- --nocapture`，7 passed；`cargo test -p claude-code-rs engine::system_prompt::tests:: -- --nocapture`，32 passed |
+| 2026-05-05 | Context / Dynamic context window | 已完成 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` 与 `[1m]` 窗口解析；provider 级精确 token 统计仍部分实现 | `crates/cc-utils/src/tokens.rs` 解析动态窗口，`crates/cc-compact/src/auto_compact.rs` 复用同一入口 | `cargo test -p cc-utils tokens -- --nocapture`，11 passed；`cargo test -p cc-compact auto_compact -- --nocapture`，6 passed |

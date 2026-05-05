@@ -2,10 +2,28 @@
 
 use cc_types::message::{ContentBlock, Message, MessageContent, ToolResultContent};
 
+const CONTEXT_WINDOW_ENV: &str = "CLAUDE_CODE_MAX_CONTEXT_TOKENS";
+
 /// Get the context window size for a given model.
 /// Returns token count for the model's context window.
-fn get_context_window_size(_model: &str) -> u64 {
-    200_000
+pub fn get_context_window_size(model: &str) -> u64 {
+    let env_override = std::env::var(CONTEXT_WINDOW_ENV).ok();
+    resolve_context_window_size(model, env_override.as_deref())
+}
+
+fn resolve_context_window_size(model: &str, env_override: Option<&str>) -> u64 {
+    if let Some(value) = env_override
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|value| *value > 0)
+    {
+        return value;
+    }
+
+    if model.to_ascii_lowercase().contains("[1m]") {
+        cc_config::constants::tokens::CONTEXT_WINDOW_1M
+    } else {
+        cc_config::constants::tokens::MODEL_CONTEXT_WINDOW_DEFAULT
+    }
 }
 
 /// Average characters per token for English text.
@@ -162,8 +180,46 @@ mod tests {
     }
 
     #[test]
+    fn test_context_window_supports_1m_suffix() {
+        assert_eq!(
+            resolve_context_window_size("claude-sonnet-4-20250514[1m]", None),
+            1_000_000
+        );
+    }
+
+    #[test]
+    fn test_context_window_env_override_wins() {
+        assert_eq!(
+            resolve_context_window_size("claude-sonnet-4-20250514[1m]", Some("320000")),
+            320_000
+        );
+    }
+
+    #[test]
+    fn test_context_window_invalid_env_falls_back() {
+        assert_eq!(
+            resolve_context_window_size("claude-sonnet-4-20250514", Some("not-a-number")),
+            200_000
+        );
+        assert_eq!(
+            resolve_context_window_size("claude-sonnet-4-20250514[1m]", Some("0")),
+            1_000_000
+        );
+    }
+
+    #[test]
     fn test_not_over_token_limit() {
         let messages = vec![make_user_message("hello", false)];
         assert!(!is_over_token_limit(&messages, "claude-sonnet-4-20250514"));
+    }
+
+    #[test]
+    fn test_is_over_token_limit_respects_1m_suffix() {
+        let large_text = "a".repeat(640_004);
+        let messages = vec![make_user_message(&large_text, false)];
+        assert!(!is_over_token_limit(
+            &messages,
+            "claude-sonnet-4-20250514[1m]"
+        ));
     }
 }
