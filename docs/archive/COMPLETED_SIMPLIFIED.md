@@ -25,12 +25,12 @@
 
 ## 1. S 级简化 (>80% 缩减)
 
-### 1.1 BashTool — 仍有 Full Build 差距 (输出截断 / heredoc / Git 跟踪 / 进程树终止已补全)
+### 1.1 BashTool — 仍有 Full Build 差距 (输出截断 / heredoc / Git 跟踪 / 进程树终止 / 危险命令拒绝列表已补全)
 
 | | TypeScript | Rust |
 |---|---|---|
-| 行数 | 12,411 (18 文件) | 830 + 934 + 563 + 193 (4 文件) |
-| 文件 | — | `tools/exec/bash.rs` + `crates/cc-utils/src/bash.rs` + `crates/cc-utils/src/git_operation_tracking.rs` + `tools/exec/process_control.rs` |
+| 行数 | 12,411 (18 文件) | 830 + 934 + 563 + 193 + 374 (+security gate) |
+| 文件 | — | `tools/exec/bash.rs` + `crates/cc-utils/src/bash.rs` + `crates/cc-utils/src/git_operation_tracking.rs` + `tools/exec/process_control.rs` + `crates/cc-permissions/src/dangerous.rs` |
 
 **Rust 保留：**
 - 基础进程执行 (`tokio::process::Command`)
@@ -40,12 +40,13 @@
 - ✅ **heredoc 校验** (未闭合 delimiter、quoted delimiter、`<<-`、多 heredoc、quoted text / arithmetic shift 规避)
 - ✅ **Git 操作跟踪** (shell-agnostic 检测 commit/amend/cherry-pick、push branch、merge/rebase、`gh pr`、`glab mr create`、curl PR endpoint；Bash/PowerShell 成功结果附带 `git_operations`)
 - ✅ **进程树终止 / 取消语义** (Unix process group、Windows `taskkill /T /F`，超时和 abort signal 终止进程树并返回 `termination` 元数据)
+- ✅ **命令拒绝列表与危险命令分析子项** (force-with-lease、`git clean` dry-run 例外、stash drop/clear、SQL drop/truncate、PowerShell destructive cmdlet/alias)
 
 **TS 独有（未移植）：**
 - PowerShell 分支 (8,959 行的 PowerShellTool)
 - 沙箱执行环境 (sandbox/)
 - 复杂后台任务 / auto-background 超时逻辑
-- 命令拒绝列表与危险命令分析
+- PowerShell AST/security validator 深度 parity
 - 终端大小感知
 
 ---
@@ -369,7 +370,7 @@
 |------|---------|-----------|--------|------|
 | state (→ types) | ~58,000 | 832 | 99% | S |
 | skills/ | ~43,000 | 989 | 98% | S |
-| BashTool | 12,411 | 2,520 | 80% | S (截断 / heredoc 校验 / Git 操作跟踪 / 进程树终止已补全) |
+| BashTool | 12,411 | 2,894 | 77% | S (截断 / heredoc 校验 / Git 操作跟踪 / 进程树终止 / 危险命令拒绝列表已补全) |
 | utils/ | 90,813 | 2,857 | 97% | S |
 | AgentTool | 6,072 | 789 | 87% | S (worktree 已补全) |
 | UI (全部) | 54,049 | 3,165 | 94% | S (框架) |
@@ -404,6 +405,7 @@
    - 2026-05-05 继续补齐 heredoc 校验 — BashTool + cc-utils bash helper 共 1,730 行
    - 2026-05-05 继续补齐 Git 操作跟踪 — 新增 `cc-utils/src/git_operation_tracking.rs`，Bash/PowerShell 结果附带 `git_operations`
    - 2026-05-05 继续补齐进程树终止 / 取消语义 — 新增 `tools/exec/process_control.rs`，Bash/PowerShell 共享超时和 abort 终止路径
+   - 2026-05-05 继续补齐危险命令拒绝列表 — `cc-permissions/src/dangerous.rs` 增加上游 destructive warning 覆盖面，并让 PowerShell 执行安全门调用专用检测
 3. ~~**FileReadTool PDF/图片**~~ ✅ 已补全 — 236→743 行, 图片 base64 + PDF pdftotext + ipynb JSON
    - 2026-05-05 继续补齐 symlink 解析、编码检测、大文件分页 — 743→1,214 行
 4. ~~**GrepTool ripgrep 调用**~~ ✅ 已补全 — 185→371 行, rg 子进程 + multiline + offset

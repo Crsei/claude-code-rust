@@ -55,7 +55,13 @@ pub(super) fn security_validate(
     // ── 3c.2: Dangerous command check (Bash / PowerShell) ──────────
     if tool_name == "Bash" || tool_name == "PowerShell" {
         if let Some(command) = input.get("command").and_then(|v| v.as_str()) {
-            if let Some(reason) = dangerous::is_dangerous_command(command) {
+            let danger = if tool_name == "PowerShell" {
+                dangerous::is_dangerous_powershell_command(command)
+            } else {
+                dangerous::is_dangerous_command(command)
+            };
+
+            if let Some(reason) = danger {
                 return Some(make_error_result(
                     tool_use_id,
                     tool_name,

@@ -51,12 +51,13 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 | BashTool heredoc 校验 | 已补齐子项 | `crates/cc-utils/src/bash.rs` 的 `validate_heredocs()` 已覆盖未闭合 delimiter、quoted delimiter、`<<-`、同一命令行多个 heredoc、quoted text / arithmetic shift 规避；`BashTool::validate_input()` 执行前拒绝畸形 heredoc |
 | BashTool Git 操作跟踪 | 已补齐子项 | `crates/cc-utils/src/git_operation_tracking.rs` 已对齐上游 shell-agnostic 检测，覆盖 commit/amend/cherry-pick、push branch、merge/rebase、`gh pr`、`glab mr create` 与 curl PR endpoint；`BashTool` / `PowerShellTool` 成功结果会附带 `git_operations` 元数据 |
 | BashTool 进程树/取消语义 | 已补齐子项 | `crates/claude-code-rs/src/tools/exec/process_control.rs` 为 Bash/PowerShell 统一配置 Unix process group / Windows `taskkill /T /F`，超时和 abort signal 会终止进程树并返回 `termination` 元数据；PowerShell 已从 `cmd.output()` 改为显式 spawn 以复用同一终止语义 |
+| Bash/PowerShell 危险命令拒绝列表 | 已补齐子项 | `crates/cc-permissions/src/dangerous.rs` 已补齐上游 destructive warning 覆盖面：`git push --force-with-lease`、`git clean` dry-run 例外、`git stash drop/clear`、SQL drop/truncate、PowerShell `Remove-Item`/`Clear-Content`/磁盘与系统 cmdlet；`PowerShellTool` 通过执行安全门调用 PowerShell 专用检测 |
 
 ### 2.2 仍需补齐的工具 parity
 
 | 模块 | 待补齐的行为（参考上游） |
 |------|----------|
-| BashTool | PowerShell 分支、sandbox、危险命令拒绝列表（Stage 3c.2 已落地；Bash/PowerShell 执行前硬拦，BashTool 内部仍保留 Ask 级子命令检测） |
+| BashTool | PowerShell AST/security validator 深度 parity、sandbox 文件系统策略与平台隔离差异；Stage 3c.2 执行前硬拦、heredoc、Git 操作跟踪、进程树终止和 destructive denylist 子项已落地 |
 | FileEditTool | 冲突检测、文件锁检查、编辑历史、自动缩进修正；ratatui diff 预览/更新消息 renderer 已补齐，live transcript 接线仍依赖 backend file-edit event data |
 | TaskTools | 远程/多类型后台任务 supervisor parity、超时控制；磁盘持久化、基础依赖字段、输出保留、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
 | PlanMode | auto-mode/classifier gate、团队审批流、计划持久化、实现关联跟踪 |
@@ -65,7 +66,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 
 ### 2.3 推荐执行顺序（逐步领取）
 
-1. **BashTool**：复核 PowerShell 分支与 sandbox 的上游差异，并收束危险命令拒绝列表剩余差异。
+1. **BashTool**：复核 PowerShell AST/security validator 与 sandbox 文件系统策略的上游差异，明确 Windows OS-level sandbox 的产品边界。
 2. **FileEditTool**：补冲突检测与文件锁检查；随后接编辑历史和自动缩进修正，并用 backend file-edit event data 验证 TUI transcript。
 3. **AgentTool**：补团队上下文注入、工具白名单过滤、工具定义去重；再评估 `spawnMultiAgent` 是否作为独立工具或 AgentTool 扩展。
 4. **TaskTools**：在现有持久化和取消基础上补超时控制、远程/多类型后台任务 supervisor parity。

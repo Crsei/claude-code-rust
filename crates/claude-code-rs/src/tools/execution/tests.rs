@@ -296,14 +296,21 @@ fn test_bypass_mode_skips_all() {
 fn test_powershell_dangerous_command_blocked() {
     let ctx = make_ctx_with_mode(PermissionMode::Default);
     let tool = WritableStub;
-    let input = serde_json::json!({"command": "rm -rf /"});
     let now = Instant::now();
 
     // PowerShell should also be checked
+    let input = serde_json::json!({"command": "rm -rf /"});
     let result = security_validate("id9", "PowerShell", &input, &tool, &ctx, now);
     assert!(
         result.is_some(),
         "PowerShell dangerous command should be blocked"
+    );
+
+    let input = serde_json::json!({"command": r"Remove-Item -Recurse -Force C:\tmp"});
+    let result = security_validate("id10", "PowerShell", &input, &tool, &ctx, Instant::now());
+    assert!(
+        result.is_some(),
+        "PowerShell Remove-Item destructive command should be blocked"
     );
 }
 
