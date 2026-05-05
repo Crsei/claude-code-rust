@@ -10,6 +10,7 @@
 use std::sync::atomic::Ordering;
 
 use axum::extract::State;
+use axum::http::HeaderMap;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
@@ -167,8 +168,51 @@ pub fn api_routes() -> Router<DaemonState> {
         .route("/api/history", get(history))
 }
 
+fn require_control_token(headers: &HeaderMap) -> Result<(), Json<Value>> {
+    let Some(candidate) = extract_control_token(headers) else {
+        return Err(Json(json!({
+            "status": "unauthorized",
+            "message": "missing daemon control token",
+        })));
+    };
+    match process_state::verify_control_token(candidate) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(Json(json!({
+            "status": "unauthorized",
+            "message": "invalid daemon control token",
+        }))),
+        Err(err) => Err(Json(json!({
+            "status": "error",
+            "message": err.to_string(),
+        }))),
+    }
+}
+
+fn extract_control_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get("x-cc-rust-daemon-token")
+        .and_then(|value| value.to_str().ok())
+        .or_else(|| {
+            headers
+                .get(axum::http::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.strip_prefix("Bearer "))
+        })
+}
+
 /// `POST /api/submit` -- submit a user message and begin streaming.
-async fn submit(State(state): State<DaemonState>, Json(body): Json<SubmitRequest>) -> Json<Value> {
+async fn submit(
+    State(state): State<DaemonState>,
+    headers: HeaderMap,
+    Json(body): Json<SubmitRequest>,
+) -> Json<Value> {
+    if let Err(response) = require_control_token(&headers) {
+        return response;
+    }
+    submit_authorized(state, body).await
+}
+
+async fn submit_authorized(state: DaemonState, body: SubmitRequest) -> Json<Value> {
     let text = body.text;
     let message_id = body.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let command = match protocol::enqueue_command(
@@ -252,7 +296,10 @@ async fn submit(State(state): State<DaemonState>, Json(body): Json<SubmitRequest
 }
 
 /// `POST /api/abort` -- abort the currently running query.
-async fn abort(State(state): State<DaemonState>) -> Json<Value> {
+async fn abort(State(state): State<DaemonState>, headers: HeaderMap) -> Json<Value> {
+    if let Err(response) = require_control_token(&headers) {
+        return response;
+    }
     info!("abort request received");
     let command = match protocol::enqueue_command(
         ASSISTANT_WORKER_ID,
@@ -275,8 +322,12 @@ async fn abort(State(state): State<DaemonState>) -> Json<Value> {
 /// `POST /api/command` -- execute a slash command.
 async fn command(
     State(state): State<DaemonState>,
+    headers: HeaderMap,
     Json(body): Json<CommandRequest>,
 ) -> Json<Value> {
+    if let Err(response) = require_control_token(&headers) {
+        return response;
+    }
     let raw = body.raw.trim().to_string();
     let Some((cmd_idx, args)) = commands::parse_command_input(&raw) else {
         return Json(json!({ "status": "error", "message": format!("unknown command: {raw}") }));
@@ -360,8 +411,12 @@ async fn command(
 /// `POST /api/permission` -- respond to a permission prompt (stub).
 async fn permission(
     State(_state): State<DaemonState>,
+    headers: HeaderMap,
     Json(body): Json<PermissionRequest>,
 ) -> Json<Value> {
+    if let Err(response) = require_control_token(&headers) {
+        return response;
+    }
     warn!(
         tool_use_id = %body.tool_use_id,
         decision = %body.decision,
@@ -447,7 +502,10 @@ async fn detach(State(state): State<DaemonState>, Json(body): Json<DetachRequest
 }
 
 /// `POST /api/resize` -- terminal resize notification (stub).
-async fn resize() -> Json<Value> {
+async fn resize(headers: HeaderMap) -> Json<Value> {
+    if let Err(response) = require_control_token(&headers) {
+        return response;
+    }
     Json(json!({ "status": "noop", "message": "resize forwarding is not implemented yet" }))
 }
 

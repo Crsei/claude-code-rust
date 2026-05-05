@@ -403,3 +403,24 @@ Rust 端必须继续遵守路径隔离：所有 cc-rust daemon 状态写入 `~/.
 - `cargo test -p claude-code-rs daemon::sse` 通过编译。
 - 本地 HTTP control-plane smoke 通过：临时 `CC_RUST_HOME` + `FEATURE_KAIROS=1` + port `21987` 下，`/api/status` 返回 1 个 running worker；`/api/permission` 返回 queued command；`/api/abort` 返回 command_id；`/api/history` 返回 permission/abort 产生的 4 条 daemon event；stop 后 supervisor 不存活。
 - 未执行 `/api/submit` live smoke，以避免触发真实模型请求；该路由已在编译层验证并保留原有执行路径。
+
+## Phase 5 实施记录（2026-05-05）
+
+状态：已落地 remote-control/BRIDGE_MODE 前置安全边界：本地 daemon control token。真正的 bridge worker 联网注册、远程 submit/abort/permission 映射仍保留为后续工作。
+
+本阶段交付：
+- supervisor 启动时生成 `~/.cc-rust/daemon/control-token.json`，stop 时清理。
+- 新增 `daemon token` 管理命令，用于本机 CLI 读取当前 control token。
+- HTTP mutating endpoints 要求 token：
+  - `POST /api/submit`
+  - `POST /api/abort`
+  - `POST /api/command`
+  - `POST /api/permission`
+  - `POST /api/resize`
+- token 可通过 `x-cc-rust-daemon-token: <token>` 或 `Authorization: Bearer <token>` 传入。
+- 缺失或错误 token 的 mutating 请求返回 `status=unauthorized`，不会写 command 文件。
+
+验证记录：
+- `cargo test -p claude-code-rs daemon::process_state` 通过，新增覆盖 control token 创建、校验、stop 清理。
+- `cargo test -p claude-code-rs daemon::routes` 通过编译。
+- 本地 token smoke 通过：临时 `CC_RUST_HOME` + `FEATURE_KAIROS=1` + port `21988` 下，无 token 的 `/api/abort` 返回 `unauthorized`；`daemon token` 返回 36 字符 token；带 token 的 `/api/permission` 和 `/api/abort` 正常入队并生成 4 条 event；stop 后 `control-token.json` 被删除且 supervisor 不存活。

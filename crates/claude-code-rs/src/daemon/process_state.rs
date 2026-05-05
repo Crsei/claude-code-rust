@@ -96,6 +96,13 @@ pub struct DaemonShutdownRequest {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DaemonControlToken {
+    pub schema_version: u32,
+    pub token: String,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DaemonStatusSnapshot {
     Running(DaemonProcessState),
@@ -113,6 +120,10 @@ pub fn state_path() -> PathBuf {
 
 pub fn shutdown_request_path() -> PathBuf {
     daemon_dir().join("shutdown-request.json")
+}
+
+pub fn control_token_path() -> PathBuf {
+    daemon_dir().join("control-token.json")
 }
 
 pub fn workers_dir() -> PathBuf {
@@ -133,6 +144,7 @@ pub fn worker_log_path(worker_id: &str) -> PathBuf {
 
 pub fn write_started(port: u16, cwd: &Path) -> Result<DaemonProcessState> {
     clear_shutdown_request()?;
+    write_control_token()?;
     let now = Utc::now();
     let state = DaemonProcessState {
         schema_version: SCHEMA_VERSION,
@@ -152,6 +164,7 @@ pub fn write_started(port: u16, cwd: &Path) -> Result<DaemonProcessState> {
 
 pub fn write_stopped(port: u16, cwd: &Path) -> Result<DaemonProcessState> {
     clear_shutdown_request()?;
+    clear_control_token()?;
     let now = Utc::now();
     let state = DaemonProcessState {
         schema_version: SCHEMA_VERSION,
@@ -362,6 +375,43 @@ pub fn clear_shutdown_request() -> Result<()> {
     Ok(())
 }
 
+pub fn write_control_token() -> Result<DaemonControlToken> {
+    ensure_daemon_dir()?;
+    let token = DaemonControlToken {
+        schema_version: SCHEMA_VERSION,
+        token: uuid::Uuid::new_v4().to_string(),
+        created_at: Utc::now(),
+    };
+    atomic_write_json(&control_token_path(), &token)?;
+    Ok(token)
+}
+
+pub fn read_control_token() -> Result<Option<DaemonControlToken>> {
+    let path = control_token_path();
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&path)
+        .with_context(|| format!("failed to read daemon control token {}", path.display()))?;
+    let token = serde_json::from_str(&text)
+        .with_context(|| format!("failed to parse daemon control token {}", path.display()))?;
+    Ok(Some(token))
+}
+
+pub fn verify_control_token(candidate: &str) -> Result<bool> {
+    Ok(read_control_token()?
+        .map(|stored| stored.token == candidate)
+        .unwrap_or(false))
+}
+
+pub fn clear_control_token() -> Result<()> {
+    let path = control_token_path();
+    if path.exists() {
+        fs::remove_file(&path).with_context(|| format!("failed to remove {}", path.display()))?;
+    }
+    Ok(())
+}
+
 pub fn try_run_management_command(args: &[String], cwd: &Path, port: u16) -> Option<ExitCode> {
     if args.first().map(String::as_str) != Some("daemon") {
         return None;
@@ -377,6 +427,7 @@ pub fn try_run_management_command(args: &[String], cwd: &Path, port: u16) -> Opt
         "abort" => print_result(abort_worker_command()),
         "command" => print_result(print_worker_command(args)),
         "events" => print_result(print_worker_events(args)),
+        "token" => print_result(print_control_token()),
         "help" | "--help" | "-h" => {
             print_usage();
             ExitCode::SUCCESS
@@ -540,6 +591,14 @@ fn print_worker_events(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn print_control_token() -> Result<()> {
+    let Some(token) = read_control_token()? else {
+        anyhow::bail!("daemon control token is not available");
+    };
+    println!("{}", token.token);
+    Ok(())
+}
+
 fn require_running_daemon() -> Result<DaemonProcessState> {
     match status_snapshot()? {
         DaemonStatusSnapshot::Running(state) => Ok(state),
@@ -687,7 +746,7 @@ fn print_result(result: Result<()>) -> ExitCode {
 
 fn print_usage() {
     eprintln!(
-        "Usage:\n  claude daemon [status]\n  claude daemon start [--port <port>]\n  claude daemon stop\n  claude daemon restart [--port <port>]\n  claude daemon submit <text>\n  claude daemon abort\n  claude daemon command <id> [worker-id]\n  claude daemon events [worker-id]"
+        "Usage:\n  claude daemon [status]\n  claude daemon start [--port <port>]\n  claude daemon stop\n  claude daemon restart [--port <port>]\n  claude daemon submit <text>\n  claude daemon abort\n  claude daemon command <id> [worker-id]\n  claude daemon events [worker-id]\n  claude daemon token"
     );
 }
 
@@ -880,5 +939,20 @@ mod tests {
         assert_eq!(state.restart_count, 3);
         assert_eq!(state.status, DaemonWorkerStatus::Running);
         assert!(state.last_heartbeat_at.is_some());
+    }
+
+    #[test]
+    #[serial]
+    fn control_token_is_created_and_cleared_with_daemon_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+
+        write_started(DEFAULT_DAEMON_PORT, temp.path()).unwrap();
+        let token = read_control_token().unwrap().unwrap();
+        assert!(verify_control_token(&token.token).unwrap());
+        assert!(!verify_control_token("wrong").unwrap());
+
+        write_stopped(DEFAULT_DAEMON_PORT, temp.path()).unwrap();
+        assert!(read_control_token().unwrap().is_none());
     }
 }
