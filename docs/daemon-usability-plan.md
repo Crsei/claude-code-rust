@@ -81,6 +81,21 @@ Rust 端必须继续遵守路径隔离：所有 cc-rust daemon 状态写入 `~/.
 
 - 2026-05-05：Phase 1 MVP 已开始落地。新增 `~/.cc-rust/daemon/` 状态根、`supervisor.json`、`shutdown-request.json`、跨进程 `daemon start/status/stop/restart` 管理入口、运行中 daemon 对 shutdown 请求的轮询退出。此阶段仍未实现 worker registry；Phase 2 继续处理。
 
+## Phase 0 实施记录（2026-05-05）
+
+状态：已完成 daemon 可用化的语义边界、目标架构和状态协议基线梳理。本阶段是文档/设计基线，不引入运行时代码。
+
+本阶段交付：
+- 明确 Rust 端 daemon 目标不是单进程 KAIROS HTTP demo，而是 supervisor 管理 worker 的后台守护进程。
+- 明确所有持久化状态必须写入 `~/.cc-rust/daemon/`，继续遵守 cc-rust 与上游 Claude/Codex 的路径隔离。
+- 定义目标状态文件结构：`supervisor.json`、`workers/<worker-id>.json`、`commands/<command-id>.json`、`events/<worker-id>.ndjson`、`logs/<worker-id>.log`。
+- 定义 MVP worker kind：优先落地 `assistant-session`，bridge/proactive/team-memory worker 作为后续增强。
+- 明确安全边界：远程控制能力前必须先有本地 control token 和监听地址约束。
+
+验证记录：
+- Phase 1-7 的后续实现均沿用本阶段定义的状态根和 supervisor/worker/command/event 分层。
+- `docs/DAEMON_OPERATIONS.md` 已把最终操作面和剩余 non-parity 范围固化为发布检查入口。
+
 ### Phase 0：对齐上游语义与边界
 
 目标：先确认 Rust 端要复刻的 Daemon 行为，不把 KAIROS HTTP service、remote-control server、background sessions 混成不可维护的一层。
