@@ -209,6 +209,25 @@ impl TaskStatus {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct TodoItem {
+    content: String,
+    status: String,
+    #[serde(
+        rename = "activeForm",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    active_form: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct TodoWriteOutcome {
+    todos: Vec<TodoItem>,
+    cleared: bool,
+    verification_nudge_needed: bool,
+}
+
 impl TaskStore {
     pub fn new() -> Self {
         Self::with_dir(crate::config::paths::tasks_dir())
@@ -1054,8 +1073,72 @@ static GLOBAL_STORE: std::sync::LazyLock<TaskStore> = std::sync::LazyLock::new(|
     )))
 });
 
+static TODO_STORE: std::sync::LazyLock<Mutex<HashMap<String, Vec<TodoItem>>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
 fn store() -> &'static TaskStore {
     &GLOBAL_STORE
+}
+
+fn todo_owner_key(ctx: &ToolUseContext) -> String {
+    ctx.agent_id
+        .clone()
+        .filter(|id| !id.trim().is_empty())
+        .unwrap_or_else(|| ctx.session_id.clone())
+}
+
+fn parse_todo_items(input: &Value) -> std::result::Result<Vec<TodoItem>, String> {
+    let Some(todos_value) = input.get("todos") else {
+        return Err("todos is required".to_string());
+    };
+    let mut todos: Vec<TodoItem> = serde_json::from_value(todos_value.clone())
+        .map_err(|err| format!("invalid todos array: {err}"))?;
+
+    for (index, todo) in todos.iter_mut().enumerate() {
+        todo.content = todo.content.trim().to_string();
+        if todo.content.is_empty() {
+            return Err(format!("todos[{index}].content is required"));
+        }
+        if !matches!(
+            todo.status.as_str(),
+            "pending" | "in_progress" | "completed"
+        ) {
+            return Err(format!("todos[{index}].status is invalid"));
+        }
+        todo.active_form = todo.active_form.as_ref().and_then(|value| {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+    }
+
+    Ok(todos)
+}
+
+fn replace_todos_for_key(key: &str, todos: Vec<TodoItem>) -> TodoWriteOutcome {
+    let all_done = todos.iter().all(|todo| todo.status == "completed");
+    let verification_nudge_needed = all_done
+        && todos.len() >= 3
+        && !todos
+            .iter()
+            .any(|todo| todo.content.to_ascii_lowercase().contains("verif"));
+    let stored = if all_done { Vec::new() } else { todos };
+
+    TODO_STORE.lock().insert(key.to_string(), stored.clone());
+
+    TodoWriteOutcome {
+        todos: stored,
+        cleared: all_done,
+        verification_nudge_needed,
+    }
+}
+
+#[cfg(test)]
+fn todo_snapshot_for_key(key: &str) -> Vec<TodoItem> {
+    TODO_STORE.lock().get(key).cloned().unwrap_or_default()
 }
 
 fn plan_workflow_cwd() -> PathBuf {
@@ -1117,6 +1200,118 @@ fn maybe_link_plan_workflow_task(
 /// tool call. The store is cheap to clone: all interior state is behind `Arc`.
 pub fn global_store() -> TaskStore {
     GLOBAL_STORE.clone()
+}
+
+// =============================================================================
+// TodoWriteTool
+// =============================================================================
+
+pub struct TodoWriteTool;
+
+#[async_trait]
+impl Tool for TodoWriteTool {
+    fn name(&self) -> &str {
+        "TodoWrite"
+    }
+
+    async fn description(&self, _: &Value) -> String {
+        "Replace the current session todo list with the provided todos array.".to_string()
+    }
+
+    fn input_json_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "todos": {
+                    "type": "array",
+                    "description": "Complete replacement todo list for the current session or agent",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "content": {
+                                "type": "string",
+                                "description": "Todo item text"
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": ["pending", "in_progress", "completed"],
+                                "description": "Todo status"
+                            },
+                            "activeForm": {
+                                "type": "string",
+                                "description": "Optional in-progress wording for UI display"
+                            }
+                        },
+                        "required": ["content", "status"]
+                    }
+                }
+            },
+            "required": ["todos"]
+        })
+    }
+
+    async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
+        match parse_todo_items(input) {
+            Ok(_) => ValidationResult::Ok,
+            Err(message) => ValidationResult::Error {
+                message,
+                error_code: 1,
+            },
+        }
+    }
+
+    async fn call(
+        &self,
+        input: Value,
+        ctx: &ToolUseContext,
+        _p: &AssistantMessage,
+        _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
+    ) -> Result<ToolResult> {
+        let todos = match parse_todo_items(&input) {
+            Ok(todos) => todos,
+            Err(message) => {
+                return Ok(ToolResult {
+                    data: json!({ "error": message }),
+                    new_messages: vec![],
+                    ..Default::default()
+                });
+            }
+        };
+        let key = todo_owner_key(ctx);
+        let outcome = replace_todos_for_key(&key, todos);
+        let count = outcome.todos.len();
+        let mut data = json!({
+            "todos": outcome.todos,
+            "count": count,
+            "cleared": outcome.cleared,
+            "message": if outcome.cleared {
+                "Todo list cleared because all items are completed"
+            } else {
+                "Todo list updated"
+            },
+        });
+
+        if outcome.verification_nudge_needed {
+            if let Some(map) = data.as_object_mut() {
+                map.insert(
+                    "verification_nudge".to_string(),
+                    json!(
+                        "You completed 3+ todo items without a verification step; consider adding or running verification before claiming completion."
+                    ),
+                );
+            }
+        }
+
+        Ok(ToolResult {
+            data,
+            new_messages: vec![],
+            ..Default::default()
+        })
+    }
+
+    async fn prompt(&self) -> String {
+        "Track progress by replacing the current todo list with a complete todos array. Use pending, in_progress, and completed statuses.".to_string()
+    }
 }
 
 // =============================================================================
@@ -2269,6 +2464,81 @@ mod tests {
             assert_eq!(TaskStatus::from_str(s), Some(status));
         }
         assert_eq!(TaskStatus::from_str("invalid"), None);
+    }
+
+    #[test]
+    fn test_todo_write_schema_matches_upstream_shape() {
+        let schema = TodoWriteTool.input_json_schema();
+        assert_eq!(schema["required"], json!(["todos"]));
+        let item = &schema["properties"]["todos"]["items"];
+        assert_eq!(item["required"], json!(["content", "status"]));
+        assert_eq!(
+            item["properties"]["status"]["enum"],
+            json!(["pending", "in_progress", "completed"])
+        );
+        assert!(item["properties"].get("activeForm").is_some());
+    }
+
+    #[test]
+    fn test_todo_write_replaces_session_state_and_clears_completed_list() {
+        let key = format!("todo-test-{}", uuid::Uuid::new_v4());
+        let todos = parse_todo_items(&json!({
+            "todos": [
+                { "content": "Plan work", "status": "completed" },
+                { "content": "Implement work", "status": "in_progress", "activeForm": "Implementing work" }
+            ]
+        }))
+        .unwrap();
+
+        let outcome = replace_todos_for_key(&key, todos);
+        assert!(!outcome.cleared);
+        assert_eq!(outcome.todos.len(), 2);
+        assert_eq!(todo_snapshot_for_key(&key).len(), 2);
+
+        let completed = parse_todo_items(&json!({
+            "todos": [
+                { "content": "Plan work", "status": "completed" },
+                { "content": "Implement work", "status": "completed" },
+                { "content": "Document work", "status": "completed" }
+            ]
+        }))
+        .unwrap();
+
+        let outcome = replace_todos_for_key(&key, completed);
+        assert!(outcome.cleared);
+        assert!(outcome.todos.is_empty());
+        assert!(outcome.verification_nudge_needed);
+        assert!(todo_snapshot_for_key(&key).is_empty());
+    }
+
+    #[test]
+    fn test_todo_write_keeps_completed_verification_list_quiet() {
+        let key = format!("todo-test-{}", uuid::Uuid::new_v4());
+        let todos = parse_todo_items(&json!({
+            "todos": [
+                { "content": "Implement work", "status": "completed" },
+                { "content": "Verify behavior", "status": "completed" },
+                { "content": "Update docs", "status": "completed" }
+            ]
+        }))
+        .unwrap();
+
+        let outcome = replace_todos_for_key(&key, todos);
+        assert!(outcome.cleared);
+        assert!(!outcome.verification_nudge_needed);
+    }
+
+    #[test]
+    fn test_todo_write_rejects_invalid_items() {
+        assert!(parse_todo_items(&json!({})).is_err());
+        assert!(parse_todo_items(&json!({
+            "todos": [{ "content": "", "status": "pending" }]
+        }))
+        .is_err());
+        assert!(parse_todo_items(&json!({
+            "todos": [{ "content": "Run", "status": "running" }]
+        }))
+        .is_err());
     }
 
     #[test]

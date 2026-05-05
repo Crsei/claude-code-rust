@@ -690,7 +690,8 @@ fn infer_tool_category(source: ToolSearchSource, name: &str, tool: &dyn Tool) ->
         "Edit" | "Write" | "NotebookEdit" => "edit",
         "Bash" | "PowerShell" | "Repl" | "Sleep" => "execution",
         "EnterPlanMode" | "ExitPlanMode" => "planning",
-        "TaskCreate" | "TaskGet" | "TaskUpdate" | "TaskList" | "TaskStop" | "TaskOutput" => "tasks",
+        "TodoWrite" | "TaskCreate" | "TaskGet" | "TaskUpdate" | "TaskList" | "TaskStop"
+        | "TaskOutput" => "tasks",
         "Agent" | "TeamSpawn" | "SendMessage" => "agent",
         "LSP" => "lsp",
         "SystemStatus" | "Config" | "StructuredOutput" | "AskUserQuestion" => "system",

@@ -17,6 +17,7 @@ use super::structured_output::StructuredOutputTool;
 use super::system_status::SystemStatusTool;
 use super::tasks::{
     TaskCreateTool, TaskGetTool, TaskListTool, TaskOutputTool, TaskStopTool, TaskUpdateTool,
+    TodoWriteTool,
 };
 use super::team_spawn::TeamSpawnTool;
 use super::tool_search::ToolSearchTool;
@@ -59,6 +60,7 @@ fn base_tools() -> Tools {
         Arc::new(ExitPlanModeTool) as _,
         Arc::new(EnterWorktreeTool) as _,
         Arc::new(ExitWorktreeTool) as _,
+        Arc::new(TodoWriteTool) as _,
         Arc::new(TaskCreateTool) as _,
         Arc::new(TaskGetTool) as _,
         Arc::new(TaskUpdateTool) as _,
@@ -115,6 +117,9 @@ mod tests {
 
         let read = tools.iter().find(|t| t.name() == "Read");
         assert!(read.is_some(), "should find Read tool");
+
+        let todo_write = tools.iter().find(|t| t.name() == "TodoWrite");
+        assert!(todo_write.is_some(), "should find TodoWrite tool");
 
         let nonexistent = tools.iter().find(|t| t.name() == "NonExistentTool");
         assert!(nonexistent.is_none(), "should not find nonexistent tool");
