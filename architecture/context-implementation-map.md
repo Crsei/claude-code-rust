@@ -27,7 +27,7 @@
 | Bun 文档 | cc-rust 主要入口 | 状态 | 核心结论 |
 | --- | --- | --- | --- |
 | `compaction.mdx` | [`cc-compact/src/pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`cc-compact/src/compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L99), [`claude-code-rs/src/query/loop_helpers.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/loop_helpers.rs#L202) | 部分实现 | 本地压缩、boundary、PTL 恢复、hook 已有；但 Bun 风格的专用 session-memory 压缩链路没有看到完整接入。 |
-| `project-memory.mdx` | [`cc-session/src/memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L72), [`cc-config/src/claude_md.rs`](F:/AIclassmanager/cc/rust/crates/cc-config/src/claude_md.rs#L51), [`claude-code-rs/src/engine/lifecycle/mod.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/mod.rs#L160) | 部分实现 | 记忆 CRUD、`CLAUDE.md` 注入、session memory 落盘都存在，但记忆上下文并未在主提示词链路里形成同样强的端到端注入。 |
+| `project-memory.mdx` | [`cc-session/src/memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L72), [`cc-config/src/claude_md.rs`](F:/AIclassmanager/cc/rust/crates/cc-config/src/claude_md.rs#L51), [`claude-code-rs/src/engine/system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs) | 部分实现 | 记忆 CRUD、`CLAUDE.md` 注入、Project/Global/Team memory 主提示词注入都存在；auto-memory toggle 与 session-insights 自动回注仍未完整闭环。 |
 | `system-prompt.mdx` | [`claude-code-rs/src/engine/system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs#L361), [`claude-code-rs/src/engine/prompt_sections.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/prompt_sections.rs#L17), [`claude-code-rs/src/engine/lifecycle/submit_message.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/submit_message.rs#L238) | 已实现 | 静态段、动态段、缓存边界、`CLAUDE.md` 注入、append/override 顺序都已落地。 |
 | `token-budget.mdx` | [`cc-utils/src/tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs#L19), [`cc-compact/src/auto_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/auto_compact.rs#L8), [`claude-code-rs/src/query/token_budget.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/token_budget.rs#L9) | 部分实现 | 预算判断与续跑逻辑存在，但当前主要是启发式估算，不是 Bun 文档里那种 provider 级精确 token 统计。 |
 
@@ -64,6 +64,7 @@
 - `cc-session::memdir` 已实现四个 scope：`Global`、`Project`、`Team`、`Auto`，并且给出明确路径映射。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L38), [`paths.rs`](F:/AIclassmanager/cc/rust/crates/cc-config/src/paths.rs#L96)
 - `write_memory()`、`read_memory()`、`delete_memory()`、`list_memories()`、`search_memories()` 都已实现。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L111)
 - `build_memory_context_with()` 已能把 project/global/team/auto 记忆组装成 `<memory-context>`，并且 team/auto 有门控条件。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L248)
+- `build_system_prompt()` 现在会把 `build_memory_context()` 生成的 Project / Global / Team memory 注入到 `# Memory Context` 段落，形成主提示词端到端路径。[`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs)
 - `/memory` 命令已经把四个 scope 暴露到 UI/CLI，并支持查看、写入、删除、搜索和打开目录。[`commands/memory.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/memory.rs#L41), [`commands/memory.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/memory.rs#L214)
 - `build_claude_md_context()` 会把祖先目录里的 `CLAUDE.md` 合并进上下文，且 `build_system_prompt()` 会把这段内容注入到系统提示词里。[`claude_md.rs`](F:/AIclassmanager/cc/rust/crates/cc-config/src/claude_md.rs#L51), [`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs#L517)
 - 另有独立的 `SessionMemoryService`，会把对话中抽取的简要 insight 持久化到 `~/.cc-rust/session-insights/`。[`session_memory.rs`](F:/AIclassmanager/cc/rust/crates/cc-services/src/session_memory.rs#L20), [`mod.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/mod.rs#L160)
@@ -71,7 +72,7 @@
 **状态判断**
 
 - `部分实现`。
-- `CLAUDE.md` 注入是实打实的已接入路径，但 `build_memory_context_with()` 目前没有看到接进 `build_system_prompt()` 主链路；session memory 也只看到落盘和抽取，没有看到自动回注到系统提示词。
+- `CLAUDE.md` 和 Project / Global / Team memory 都已经接入主提示词；剩余差异是 auto-memory toggle 尚未传入 `build_system_prompt()`，以及 `SessionMemoryService` 的 insight 落盘没有自动回注到系统提示词。
 
 ### `system-prompt.mdx`
 
@@ -115,7 +116,7 @@
 ## 已实现汇总
 
 - 系统提示词拼装链路已经落地：静态段、动态段、缓存边界、`CLAUDE.md` 注入、append/override 顺序都能在源码里直接定位。[`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs#L361), [`prompt_sections.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/prompt_sections.rs#L51)
-- 记忆存储与命令面已经实现：`cc-session::memdir` 支持四个 scope 的 CRUD 和搜索，`/memory` 也能查看、编辑和打开这些目录。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L111), [`commands/memory.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/memory.rs#L41)
+- 记忆存储、命令面和主提示词注入已经实现：`cc-session::memdir` 支持四个 scope 的 CRUD 和搜索，`/memory` 也能查看、编辑和打开这些目录；Project / Global / Team memory 会进入 `# Memory Context`。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L111), [`commands/memory.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/memory.rs#L41), [`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs)
 - 压缩主链路已经实现：tool result budget、snip、microcompact、自动压缩、boundary、PTL 恢复和 hook 都有对应代码。[`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L184)
 - token 预算已经接入主循环：任务预算继续/停止、max_output_tokens 恢复、自动压缩阈值都不是占位。[`token_budget.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/token_budget.rs#L9), [`loop_helpers.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/loop_helpers.rs#L202)
 
@@ -124,7 +125,7 @@
 ### 部分实现
 
 - `compaction.mdx`：已有完整压缩管线，但 Bun 文档里的 session-memory 专用压缩语义没有看到同构实现。[`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65)
-- `project-memory.mdx`：记忆 CRUD 和 `CLAUDE.md` 注入都存在，但 `build_memory_context_with()` 没看到接进系统提示词主链路。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L248), [`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs#L517)
+- `project-memory.mdx`：记忆 CRUD、`CLAUDE.md` 注入和 Project / Global / Team memory 主提示词注入都存在；auto-memory toggle 与 session-insights 自动回注仍未完整闭环。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L248), [`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs)
 - `token-budget.mdx`：有预算判断和恢复，但主要依赖启发式估算，不是精确 token 统计。[`tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs#L19)
 
 ### 待确认
@@ -142,6 +143,6 @@
 
 ## 后续动作
 
-1. 如果要继续对齐 Bun 的 `project-memory` 语义，优先确认 `build_memory_context_with()` 是否应该接入 `build_system_prompt()`，以及 auto/team scope 的门控顺序。
+1. 如果要继续对齐 Bun 的 `project-memory` 语义，下一步应把 `auto_memory_enabled` 传入主提示词构建，并决定 `SessionMemoryService` 的 insight 是否要自动回注。
 2. 如果要继续对齐 `token-budget` 语义，补齐精确 token 统计的 provider 路径，或者把“仅启发式估算”明确写成故意裁剪。
 3. 如果要继续写 `extensibility`、`safety`、`tools` 章节，建议沿用同样的结构：上游文档清单、实现映射表、逐文档分析、汇总、缺口、后续动作。

@@ -9,7 +9,8 @@
 //!   2. DYNAMIC_BOUNDARY marker
 //!   3. Dynamic sections (session-specific, via prompt_sections registry)
 //!   4. CLAUDE.md context injection
-//!   5. Append prompt (if any)
+//!   5. Memory context injection
+//!   6. Append prompt (if any)
 
 #![allow(unused)]
 
@@ -543,6 +544,35 @@ pub fn build_system_prompt(
         }
     }
 
+    // ── Memory context injection ──
+    match cc_session::memdir::build_memory_context(cwd_path) {
+        Ok(context) if !context.is_empty() => {
+            debug!(
+                cwd = cwd,
+                context_len = context.len(),
+                "injecting memory context into system prompt"
+            );
+            parts.push(format!(
+                "# Memory Context\n\n\
+                 The following memories may contain user preferences, project facts, \
+                 and durable context from previous work. Use them when relevant, but \
+                 prefer newer conversation context when there is a conflict.\n\n\
+                 {}",
+                context
+            ));
+        }
+        Ok(_) => {
+            debug!(cwd = cwd, "no memory context found");
+        }
+        Err(e) => {
+            debug!(
+                cwd = cwd,
+                error = %e,
+                "failed to load memory context, continuing without it"
+            );
+        }
+    }
+
     // ── Append prompt ──
     if let Some(append) = append_prompt {
         parts.push(append.to_string());
@@ -973,6 +1003,31 @@ mod tests {
         let joined = parts.join("\n");
         assert!(joined.contains("snake_case"));
         assert!(joined.contains("OVERRIDE"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_memory_context_injection() {
+        prompt_sections::clear_cache();
+        let dir = std::env::temp_dir().join(format!("sysprompt_memory_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        cc_session::memdir::write_memory(
+            "api-contract",
+            "Use the stable v2 endpoint for uploads.",
+            "project",
+            cc_session::memdir::MemoryScope::Project,
+            &dir,
+        )
+        .unwrap();
+
+        let cwd = dir.to_str().unwrap();
+        let (parts, _, _) = build_system_prompt(None, None, &[], "test", cwd, None, None);
+        let joined = parts.join("\n");
+        assert!(joined.contains("# Memory Context"));
+        assert!(joined.contains("<memory-context>"));
+        assert!(joined.contains("api-contract"));
+        assert!(joined.contains("stable v2 endpoint"));
 
         let _ = fs::remove_dir_all(&dir);
     }
