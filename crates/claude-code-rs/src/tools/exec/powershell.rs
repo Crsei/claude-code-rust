@@ -4,11 +4,12 @@
 //! On Windows, uses `powershell.exe -NoProfile -NonInteractive -Command`.
 //! On non-Windows, uses `pwsh -NoProfile -NonInteractive -Command`.
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::sandbox::{make_runner, policy_from_app_state, preflight_shell_command};
@@ -28,6 +29,20 @@ use super::process_control::{
 
 /// PowerShellTool -- execute PowerShell commands.
 pub struct PowerShellTool;
+
+const POWERSHELL_PARSE_TIMEOUT: Duration = Duration::from_millis(5_000);
+const POWERSHELL_PARSE_INPUT_ENV: &str = "CC_RUST_POWERSHELL_PARSE_INPUT";
+const POWERSHELL_PARSE_SCRIPT: &str = r#"
+$tokens = $null
+$errors = $null
+[System.Management.Automation.Language.Parser]::ParseInput($env:CC_RUST_POWERSHELL_PARSE_INPUT, [ref]$tokens, [ref]$errors) | Out-Null
+$items = @($errors | ForEach-Object { "$($_.ErrorId): $($_.Message)" })
+if ($items.Count -eq 0) {
+  "[]"
+} else {
+  ConvertTo-Json -InputObject $items -Compress
+}
+"#;
 
 impl PowerShellTool {
     fn parse_input(input: &Value) -> (String, u64) {
@@ -50,6 +65,47 @@ impl PowerShellTool {
         } else {
             "pwsh"
         }
+    }
+
+    async fn native_parse_errors(command: &str) -> Result<Vec<String>> {
+        let mut parser = tokio::process::Command::new(Self::powershell_executable());
+        parser
+            .arg("-NoProfile")
+            .arg("-NonInteractive")
+            .arg("-Command")
+            .arg(POWERSHELL_PARSE_SCRIPT)
+            .env(POWERSHELL_PARSE_INPUT_ENV, command)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true);
+
+        let output = match tokio::time::timeout(POWERSHELL_PARSE_TIMEOUT, parser.output()).await {
+            Ok(Ok(output)) => output,
+            Ok(Err(err)) => return Err(anyhow!("failed to start PowerShell parser: {}", err)),
+            Err(_) => return Err(anyhow!("PowerShell parser timed out")),
+        };
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(anyhow!(
+                "PowerShell parser exited with status {}{}",
+                output.status,
+                if stderr.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {}", stderr)
+                }
+            ));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let trimmed = stdout.trim();
+        if trimmed.is_empty() {
+            return Ok(Vec::new());
+        }
+        serde_json::from_str::<Vec<String>>(trimmed)
+            .or_else(|_| serde_json::from_str::<String>(trimmed).map(|single| vec![single]))
+            .map_err(|err| anyhow!("failed to parse PowerShell parser output: {}", err))
     }
 }
 
@@ -120,6 +176,21 @@ impl Tool for PowerShellTool {
                 message: "Command must not be empty".to_string(),
                 error_code: 1,
             };
+        }
+        match Self::native_parse_errors(command).await {
+            Ok(errors) if errors.is_empty() => {}
+            Ok(errors) => {
+                return ValidationResult::Error {
+                    message: format!("PowerShell parser rejected command: {}", errors.join("; ")),
+                    error_code: 1,
+                };
+            }
+            Err(err) => {
+                return ValidationResult::Error {
+                    message: format!("PowerShell parser unavailable: {}", err),
+                    error_code: 1,
+                };
+            }
         }
         ValidationResult::Ok
     }
@@ -511,6 +582,37 @@ mod tests {
             assert_eq!(exe, "powershell.exe");
         } else {
             assert_eq!(exe, "pwsh");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_powershell_native_parser_accepts_valid_command() {
+        let tool = PowerShellTool;
+        if !tool.is_enabled() {
+            return;
+        }
+        let (ctx, _tx) = test_context();
+        let result = tool
+            .validate_input(&json!({ "command": "Write-Output 'ok'" }), &ctx)
+            .await;
+        assert!(matches!(result, ValidationResult::Ok));
+    }
+
+    #[tokio::test]
+    async fn test_powershell_native_parser_rejects_invalid_command() {
+        let tool = PowerShellTool;
+        if !tool.is_enabled() {
+            return;
+        }
+        let (ctx, _tx) = test_context();
+        let result = tool
+            .validate_input(&json!({ "command": "if ($true) { Write-Output ok" }), &ctx)
+            .await;
+        match result {
+            ValidationResult::Error { message, .. } => {
+                assert!(message.contains("PowerShell parser rejected command"));
+            }
+            ValidationResult::Ok => panic!("invalid PowerShell should fail parser validation"),
         }
     }
 

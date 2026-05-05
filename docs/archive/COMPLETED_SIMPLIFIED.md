@@ -45,7 +45,7 @@
 - ✅ **PowerShell 参数绑定安全规则子项** (`Start-Process -Verb:RunAs` 冒号/quote/backtick 形式、`Start-Job`/`Start-ThreadJob` 位置脚本文件参数、`ForEach-Object`/`%` 位置 `MemberName` 参数)
 - ✅ **PowerShell `New-Object` TypeName CLM 子项** (`New-Object` 的 `-TypeName` / `-t:` / 位置 TypeName 参数按上游 CLM allowlist 校验)
 - ✅ **PowerShell `securityPatterns.hasScriptBlocks` 子集** (非安全消费者的 script block fail-closed，仅允许 Where/Sort/Select/Group/Format 过滤与输出消费者)
-- ✅ **PowerShell 明显 parse-error fail-closed 子项** (未闭合 quote、paren、brace、type literal delimiter 与 mismatched closing delimiter 在执行安全门中拒绝)
+- ✅ **PowerShell parser-invalid fail-closed 子项** (`PowerShellTool::validate_input()` 调用原生 `Parser.ParseInput()` 拒绝完整 parser errors；权限库保留未闭合 quote/paren/brace/type literal 与 mismatched delimiter 轻量 fallback)
 - ✅ **sandbox 文件系统 preflight 子项** (shell redirection、常见 Bash 写命令、PowerShell 写 cmdlet 按 read-only/workspace/allowWrite/denyWrite 执行 Rust 级拒绝)
 - ✅ **sandbox fail-closed 用户面** (`/sandbox require` / `/sandbox optional` 切换 `sandbox.failIfUnavailable`，缺少 OS-level primitive 时可明确硬失败或 best-effort fallback)
 - ✅ **Windows sandbox OS-level primitive 决策** (Restricted Token / Job Object 不自研；上游 sandbox-runtime/PowerShell UI 当前不支持 Windows sandbox，cc-rust 保留 Rust-level preflight 与 fail-closed 用户面，详见 `IMPLEMENTATION_GAPS.md` §7)
@@ -53,7 +53,7 @@
 **TS 独有（未移植）：**
 - PowerShell 分支 (8,959 行的 PowerShellTool)
 - 复杂后台任务 / auto-background 超时逻辑
-- PowerShell 原生 AST parser fidelity（`elementTypes` / `children` / `nameType` / full parser-invalid coverage / full statement securityPatterns 等；Rust 当前为 quote-aware 启发式硬拦，不等同完整 parser）
+- PowerShell 原生 AST parser fidelity（`elementTypes` / `children` / `nameType` / full statement securityPatterns 等；Rust 当前为原生 parser-invalid fail-closed + quote-aware 启发式硬拦，不等同完整 parser）
 - 终端大小感知
 
 ---
@@ -432,6 +432,7 @@
    - 2026-05-05 继续补齐 PowerShell security validator AST 启发式规则 — 覆盖一般 dynamic command name、dot-sourced dynamic command、subexpression、expandable string、splatting、member/static member invocation、非 CLM allowlist type literal
    - 2026-05-05 继续补齐 PowerShell 参数绑定安全规则子项 — 覆盖 Start-Process 冒号绑定 RunAs、位置脚本文件参数与 ForEach-Object 位置 MemberName
    - 2026-05-05 继续补齐 PowerShell New-Object TypeName CLM 子项 — 覆盖 `-TypeName` / `-t:` / 位置 TypeName 的 CLM allowlist 校验
+   - 2026-05-05 继续补齐 PowerShell 原生 parser-invalid fail-closed — `PowerShellTool::validate_input()` 调用 `Parser.ParseInput()` 在执行前拒绝完整 parser errors
    - 2026-05-05 继续补齐 sandbox 文件系统 preflight — `cc-sandbox/src/runner.rs` 对 shell 显式写目标执行 read-only/workspace/allowWrite/denyWrite 检查
    - 2026-05-05 继续补齐 sandbox fail-closed 用户面 — `/sandbox require` / `/sandbox optional` 暴露 `sandbox.failIfUnavailable` 会话切换
    - 2026-05-05 重评 Windows Restricted Token / Job Object — 上游 sandbox-runtime/PowerShell UI 当前不支持 Windows sandbox，移入 `IMPLEMENTATION_GAPS.md` §7 Intentional 裁剪；保留 Rust-level FS/network preflight 与 fail-closed 用户面
