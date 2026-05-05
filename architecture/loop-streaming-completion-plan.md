@@ -67,6 +67,7 @@
 | 4.6 fallback 与已启动工具隔离 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs streaming_tool_execution_aborts_started_tools_on_stream_fallback`，1 passed。 | stream 中途 fallback/tombstone 会 abort 当前 attempt 已启动的 stream-time tool task；旧 assistant 的工具结果不会写入 fallback transcript。 |
 | 5.1 context collapse | 已完成 | 2026-05-05 | `cargo test -p cc-compact context_collapse`，3 passed；`cargo test -p cc-compact pipeline`，4 passed；`cargo test -p claude-code-rs query::loop_impl::loop_tests`，18 passed。 | `cc-compact` 新增 context collapse 阶段：超过 turn/token 阈值时把旧上下文折叠为 `CompactBoundary` system message，并在 autocompact 前运行。 |
 | 5.2 tool pair 完整性 | 已完成 | 2026-05-05 | `context_collapse::tests::context_collapse_preserves_tool_use_result_pairs_in_tail` 通过。 | collapse 以 user turn 边界切分并保留最近 turns，避免在保留尾部留下孤立 `tool_result` 或丢失对应 `tool_use`。 |
+| 5.3 freed-token accounting | 已完成 | 2026-05-05 | `cargo test -p cc-compact pipeline`，5 passed；`cargo test -p claude-code-rs query::loop_impl::loop_tests`，18 passed。 | `PipelineResult` 现在暴露 snip / microcompact / context collapse 分段释放 token、总释放 token 和 autocompact adjusted token；autocompact 阈值判断会先扣除本轮 local compaction 已释放的 token。 |
 
 ## Subagent 并行拆分规则
 

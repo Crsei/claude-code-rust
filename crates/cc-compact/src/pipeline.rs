@@ -7,10 +7,7 @@
 //!   4. contextCollapse — fold old segments into summaries (Phase 2+)
 //!   5. autoCompact — full summarization when nearing token limit
 
-#![allow(unused)]
-
-use anyhow::Result;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use cc_types::message::Message;
 use cc_types::state::AutoCompactTracking;
@@ -37,6 +34,17 @@ pub struct PipelineResult {
     pub compacted: bool,
     /// Estimated tokens after compaction.
     pub estimated_tokens: u64,
+    /// Estimated tokens used for the auto-compact threshold after this
+    /// pipeline's local token savings are credited.
+    pub auto_compact_estimated_tokens: u64,
+    /// Estimated tokens freed by history snipping.
+    pub snip_tokens_freed: u64,
+    /// Estimated tokens freed by microcompacting old tool results.
+    pub microcompact_tokens_freed: u64,
+    /// Estimated tokens freed by context collapse.
+    pub context_collapse_tokens_freed: u64,
+    /// Total estimated tokens freed before auto-compact is considered.
+    pub total_tokens_freed: u64,
 }
 
 /// Result of a reactive compaction attempt.
@@ -70,6 +78,7 @@ pub async fn run_context_pipeline(
 ) -> PipelineResult {
     let mut current = messages;
     let mut compacted = false;
+    let initial_tokens = tokens::estimate_messages_tokens(&current);
 
     // ── Step 1: Tool result budget (async — saves oversized results to disk) ──
     let mut replacement_state = tool_result_budget::ContentReplacementState::default();
@@ -94,6 +103,7 @@ pub async fn run_context_pipeline(
             "snip compact: trimmed old turns"
         );
     }
+    let snip_tokens_freed = snip_result.tokens_freed;
     current = snip_result.messages;
 
     // ── Step 3: Microcompact ────────────────────────────────────────
@@ -105,6 +115,7 @@ pub async fn run_context_pipeline(
             "microcompact: trimmed old tool results"
         );
     }
+    let microcompact_tokens_freed = micro_result.tokens_freed;
     current = micro_result.messages;
 
     // ── Step 4: Context collapse (Phase 2+) ─────────────────────────
@@ -117,37 +128,48 @@ pub async fn run_context_pipeline(
             "context collapse: folded old turns into summary"
         );
     }
+    let context_collapse_tokens_freed = collapse_result.tokens_freed;
     current = collapse_result.messages;
 
     // ── Step 5: Auto compact check ──────────────────────────────────
     let estimated = tokens::estimate_messages_tokens(&current);
-    let updated_tracking = if auto_compact::should_auto_compact(estimated, model) {
-        info!(
-            estimated_tokens = estimated,
-            model = model,
-            "auto compact triggered (>80% of context window)"
-        );
-        let base = tracking.unwrap_or(AutoCompactTracking {
-            compacted: false,
-            turn_counter: 0,
-            turn_id: String::new(),
-            consecutive_failures: 0,
-        });
-        Some(AutoCompactTracking {
-            compacted: true,
-            turn_counter: base.turn_counter + 1,
-            turn_id: base.turn_id,
-            consecutive_failures: base.consecutive_failures,
-        })
-    } else {
-        tracking
-    };
+    let total_tokens_freed = snip_tokens_freed
+        .saturating_add(microcompact_tokens_freed)
+        .saturating_add(context_collapse_tokens_freed);
+    let auto_compact_estimated_tokens = estimated.saturating_sub(total_tokens_freed);
+    let updated_tracking =
+        if auto_compact::should_auto_compact(auto_compact_estimated_tokens, model) {
+            info!(
+                estimated_tokens = auto_compact_estimated_tokens,
+                raw_estimated_tokens = estimated,
+                pre_autocompact_tokens_freed = total_tokens_freed,
+                model = model,
+                "auto compact triggered (>80% of context window)"
+            );
+            let base = tracking.unwrap_or(AutoCompactTracking {
+                compacted: false,
+                turn_counter: 0,
+                turn_id: String::new(),
+                consecutive_failures: 0,
+            });
+            Some(AutoCompactTracking {
+                compacted: true,
+                turn_counter: base.turn_counter + 1,
+                turn_id: base.turn_id,
+                consecutive_failures: base.consecutive_failures,
+            })
+        } else {
+            tracking
+        };
 
     if compacted {
-        let final_tokens = tokens::estimate_messages_tokens(&current);
         info!(
-            before_tokens = estimated,
-            after_tokens = final_tokens,
+            before_tokens = initial_tokens,
+            after_tokens = estimated,
+            auto_compact_estimated_tokens = auto_compact_estimated_tokens,
+            snip_tokens_freed = snip_tokens_freed,
+            microcompact_tokens_freed = microcompact_tokens_freed,
+            context_collapse_tokens_freed = context_collapse_tokens_freed,
             messages = current.len(),
             "compaction pipeline completed",
         );
@@ -158,6 +180,11 @@ pub async fn run_context_pipeline(
         tracking: updated_tracking,
         compacted,
         estimated_tokens: estimated,
+        auto_compact_estimated_tokens,
+        snip_tokens_freed,
+        microcompact_tokens_freed,
+        context_collapse_tokens_freed,
+        total_tokens_freed,
     }
 }
 
@@ -271,11 +298,33 @@ mod tests {
         })
     }
 
+    fn make_tool_use_assistant(id: &str) -> Message {
+        Message::Assistant(AssistantMessage {
+            uuid: Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".into(),
+            content: vec![ContentBlock::ToolUse {
+                id: id.into(),
+                name: "bash".into(),
+                input: serde_json::json!({ "command": "echo test" }),
+            }],
+            usage: None,
+            stop_reason: Some("tool_use".into()),
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        })
+    }
+
     #[tokio::test]
     async fn test_pipeline_no_changes_small_conversation() {
         let messages = vec![make_user("Hello"), make_assistant("Hi!")];
         let result = run_context_pipeline(messages, None, "claude-sonnet-4-20250514").await;
         assert_eq!(result.messages.len(), 2);
+        assert_eq!(result.snip_tokens_freed, 0);
+        assert_eq!(result.microcompact_tokens_freed, 0);
+        assert_eq!(result.context_collapse_tokens_freed, 0);
+        assert_eq!(result.total_tokens_freed, 0);
     }
 
     #[tokio::test]
@@ -299,6 +348,13 @@ mod tests {
         let result = run_context_pipeline(messages, None, "claude-sonnet-4-20250514").await;
 
         assert!(result.compacted);
+        assert!(result.context_collapse_tokens_freed > 0);
+        assert_eq!(
+            result.total_tokens_freed,
+            result.snip_tokens_freed
+                + result.microcompact_tokens_freed
+                + result.context_collapse_tokens_freed
+        );
         assert!(
             result
                 .messages
@@ -306,6 +362,29 @@ mod tests {
                 .any(|message| matches!(message, Message::System(system) if system.content.contains("<context_collapse>"))),
             "pipeline should insert a context collapse boundary"
         );
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_credits_local_freed_tokens_before_autocompact_threshold() {
+        let model = "claude-sonnet-4-20250514";
+        let mut messages = vec![make_user("initial context")];
+        let large_tool_result = "x".repeat(75_000);
+        for index in 0..16 {
+            let tool_use_id = format!("toolu_{index}");
+            messages.push(make_tool_use_assistant(&tool_use_id));
+            messages.push(crate::messages::create_tool_result_message(
+                &tool_use_id,
+                &large_tool_result,
+                false,
+            ));
+        }
+
+        let result = run_context_pipeline(messages, None, model).await;
+
+        assert!(result.microcompact_tokens_freed > 0);
+        assert!(result.estimated_tokens > 160_000);
+        assert!(result.auto_compact_estimated_tokens < 160_000);
+        assert!(result.tracking.is_none());
     }
 
     #[tokio::test]
