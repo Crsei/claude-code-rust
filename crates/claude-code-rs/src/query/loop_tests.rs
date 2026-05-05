@@ -557,6 +557,12 @@ async fn test_prompt_too_long_reactive_compact_retries_model_call() {
         1,
         "prompt_too_long should attempt reactive compact once"
     );
+    let params = deps.recorded_params();
+    assert_eq!(params.len(), 2);
+    assert_eq!(
+        params[1].max_output_tokens, None,
+        "context recovery must not trigger max-output-token escalation"
+    );
 
     let recovered = items.iter().any(|item| {
         if let QueryYield::Message(Message::Assistant(msg)) = item {
@@ -595,6 +601,12 @@ async fn test_prompt_too_long_collapse_drain_retries_before_reactive_compact() {
         deps.reactive_compact_calls.load(Ordering::SeqCst),
         0,
         "reactive compact should not run when collapse drain succeeds"
+    );
+    let params = deps.recorded_params();
+    assert_eq!(params.len(), 2);
+    assert_eq!(
+        params[1].max_output_tokens, None,
+        "collapse-drain retry must not trigger max-output-token escalation"
     );
 
     let recovered = items.iter().any(|item| {
@@ -963,6 +975,16 @@ async fn test_max_tokens_recovery_escalates_next_request_limit() {
     assert_eq!(
         params[1].max_output_tokens,
         Some(crate::query::loop_helpers::ESCALATED_MAX_TOKENS)
+    );
+    assert_eq!(
+        deps.collapse_drain_calls.load(Ordering::SeqCst),
+        0,
+        "max_tokens recovery must not invoke context collapse drain"
+    );
+    assert_eq!(
+        deps.reactive_compact_calls.load(Ordering::SeqCst),
+        0,
+        "max_tokens recovery must not invoke reactive compact"
     );
 }
 

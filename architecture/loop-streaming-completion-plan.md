@@ -69,6 +69,7 @@
 | 5.2 tool pair 完整性 | 已完成 | 2026-05-05 | `context_collapse::tests::context_collapse_preserves_tool_use_result_pairs_in_tail` 通过。 | collapse 以 user turn 边界切分并保留最近 turns，避免在保留尾部留下孤立 `tool_result` 或丢失对应 `tool_use`。 |
 | 5.3 freed-token accounting | 已完成 | 2026-05-05 | `cargo test -p cc-compact pipeline`，5 passed；`cargo test -p claude-code-rs query::loop_impl::loop_tests`，18 passed。 | `PipelineResult` 现在暴露 snip / microcompact / context collapse 分段释放 token、总释放 token 和 autocompact adjusted token；autocompact 阈值判断会先扣除本轮 local compaction 已释放的 token。 |
 | 5.4 collapse drain retry | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs prompt_too_long`，3 passed；`cargo test -p claude-code-rs query::loop_impl::loop_tests`，20 passed。 | prompt-too-long 现在先尝试 `QueryDeps::collapse_drain()`，成功则以 `Continue::CollapseDrainRetry` 重试；无可折叠内容或失败时再尝试 reactive compact，两者都失败后 terminal。 |
+| 5.5 max_tokens/context 交互 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs prompt_too_long`，3 passed；`cargo test -p claude-code-rs test_max_tokens_recovery_escalates_next_request_limit`，1 passed；`cargo test -p claude-code-rs query::loop_impl::loop_tests`，20 passed。 | prompt-too-long 的 collapse/reactive retry 不会设置 max-output-token override；`max_tokens` stop reason 的升级/续写路径不会调用 collapse drain 或 reactive compact。 |
 
 ## Subagent 并行拆分规则
 
