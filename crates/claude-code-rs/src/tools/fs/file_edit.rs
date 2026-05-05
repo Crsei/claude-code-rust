@@ -26,6 +26,11 @@ const FILE_UNEXPECTEDLY_MODIFIED_ERROR: &str =
     "File has been unexpectedly modified. Read it again before attempting to write it.";
 const MAX_EDIT_FILE_BYTES: usize = 1024 * 1024 * 1024;
 
+struct IndentationAdjustedEdit {
+    old_string: String,
+    new_string: String,
+}
+
 impl FileEditTool {
     pub fn new() -> Self {
         FileEditTool
@@ -149,6 +154,98 @@ impl FileEditTool {
         for key in Self::state_keys(file_path, path) {
             ctx.read_file_state.insert(key, entry.clone());
         }
+    }
+
+    fn leading_indent(line: &str) -> &str {
+        let end = line
+            .char_indices()
+            .find_map(|(idx, ch)| (!matches!(ch, ' ' | '\t')).then_some(idx))
+            .unwrap_or(line.len());
+        &line[..end]
+    }
+
+    fn trim_leading_indent(line: &str) -> &str {
+        &line[Self::leading_indent(line).len()..]
+    }
+
+    fn find_indentation_adjusted_edit(
+        content: &str,
+        old_string: &str,
+        new_string: &str,
+    ) -> Option<IndentationAdjustedEdit> {
+        let old_lines: Vec<&str> = old_string.lines().collect();
+        if old_lines.is_empty() {
+            return None;
+        }
+        let old_trimmed: Vec<&str> = old_lines
+            .iter()
+            .map(|line| Self::trim_leading_indent(line))
+            .collect();
+        let content_lines: Vec<&str> = content.lines().collect();
+        if content_lines.len() < old_lines.len() {
+            return None;
+        }
+
+        let mut matched_window: Option<&[&str]> = None;
+        for window in content_lines.windows(old_lines.len()) {
+            let same_without_indent = window
+                .iter()
+                .map(|line| Self::trim_leading_indent(line))
+                .eq(old_trimmed.iter().copied());
+            if same_without_indent {
+                if matched_window.is_some() {
+                    return None;
+                }
+                matched_window = Some(window);
+            }
+        }
+
+        let actual_lines = matched_window?;
+        let mut indent_map: Vec<(&str, &str)> = Vec::new();
+        for (old_line, actual_line) in old_lines.iter().zip(actual_lines.iter()) {
+            if Self::trim_leading_indent(old_line).is_empty() {
+                continue;
+            }
+            let old_indent = Self::leading_indent(old_line);
+            let actual_indent = Self::leading_indent(actual_line);
+            if let Some((_, mapped_actual)) = indent_map
+                .iter()
+                .find(|(mapped_old, _)| *mapped_old == old_indent)
+            {
+                if *mapped_actual != actual_indent {
+                    return None;
+                }
+            } else {
+                indent_map.push((old_indent, actual_indent));
+            }
+        }
+        indent_map.sort_by_key(|(old_indent, _)| std::cmp::Reverse(old_indent.len()));
+
+        let adjusted_new_lines: Vec<String> = new_string
+            .split('\n')
+            .map(|line| {
+                if line.is_empty() {
+                    return String::new();
+                }
+                for (old_indent, actual_indent) in &indent_map {
+                    if line.starts_with(old_indent) {
+                        return format!("{}{}", actual_indent, &line[old_indent.len()..]);
+                    }
+                }
+                line.to_string()
+            })
+            .collect();
+
+        let actual_old = actual_lines.join("\n");
+        let adjusted_new = adjusted_new_lines.join("\n");
+        if actual_old == old_string && adjusted_new == new_string {
+            return None;
+        }
+
+        Some(IndentationAdjustedEdit {
+            old_string: actual_old,
+            new_string: adjusted_new,
+        })
     }
 
     /// Find the best fuzzy match for `old_string` within `content` using
@@ -389,8 +486,23 @@ impl Tool for FileEditTool {
             });
         }
 
-        // Count occurrences of old_string
-        let occurrence_count = content.matches(&old_string).count();
+        // Count occurrences of old_string. If the only mismatch is leading
+        // indentation, repair the replacement against the file's actual indent.
+        let mut actual_old_string = old_string.clone();
+        let mut actual_new_string = new_string.clone();
+        let mut auto_indent_adjusted = false;
+        let mut occurrence_count = content.matches(&actual_old_string).count();
+
+        if occurrence_count == 0 {
+            if let Some(adjusted) =
+                Self::find_indentation_adjusted_edit(&content, &old_string, &new_string)
+            {
+                actual_old_string = adjusted.old_string;
+                actual_new_string = adjusted.new_string;
+                auto_indent_adjusted = true;
+                occurrence_count = content.matches(&actual_old_string).count();
+            }
+        }
 
         if occurrence_count == 0 {
             // Attempt fuzzy matching to provide a helpful suggestion
@@ -437,10 +549,10 @@ impl Tool for FileEditTool {
 
         // Perform replacement
         let new_content = if replace_all {
-            content.replace(&old_string, &new_string)
+            content.replace(&actual_old_string, &actual_new_string)
         } else {
             // Replace only the first occurrence
-            content.replacen(&old_string, &new_string, 1)
+            content.replacen(&actual_old_string, &actual_new_string, 1)
         };
 
         let safe_options = SafeWriteOptions {
@@ -487,6 +599,7 @@ impl Tool for FileEditTool {
                         "file_path": &file_path,
                         "operation": "edit",
                         "replacements": replacements,
+                        "auto_indent_adjusted": auto_indent_adjusted,
                         "edit_history": {
                             "backup_path": write_report.backup_path.as_ref().map(|p| p.display().to_string()),
                         },
@@ -504,6 +617,7 @@ impl Tool for FileEditTool {
                     ),
                     "path": file_path,
                     "replacements": replacements,
+                    "auto_indent_adjusted": auto_indent_adjusted,
                     "edit_history": {
                         "backup_path": write_report.backup_path.as_ref().map(|p| p.display().to_string()),
                         "atomic": true,
@@ -661,6 +775,25 @@ mod tests {
         assert!(m.text.contains("let count = 0;"));
     }
 
+    #[test]
+    fn indentation_adjustment_requires_unique_trimmed_match() {
+        let content = "\
+if ready {
+    println!(\"one\");
+}
+
+if ready {
+    println!(\"one\");
+}
+";
+        let old_string = "  if ready {\n    println!(\"one\");\n  }";
+        let new_string = "  if ready {\n    println!(\"two\");\n  }";
+
+        assert!(
+            FileEditTool::find_indentation_adjusted_edit(content, old_string, new_string).is_none()
+        );
+    }
+
     #[tokio::test]
     async fn edit_rejects_file_that_has_not_been_read() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -717,6 +850,50 @@ mod tests {
         assert_eq!(
             tokio::fs::read_to_string(&file_path).await.unwrap(),
             "external\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_auto_adjusts_unique_indentation_mismatch() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("sample.rs");
+        let original = "\
+fn main() {
+    if ready {
+        println!(\"old\");
+    }
+}
+";
+        tokio::fs::write(&file_path, original).await.unwrap();
+
+        let ctx = test_context();
+        cache_file_state(&ctx, &file_path, original);
+
+        let result = FileEditTool::new()
+            .call(
+                json!({
+                    "file_path": file_path.to_string_lossy(),
+                    "old_string": "if ready {\n  println!(\"old\");\n}",
+                    "new_string": "if ready {\n  println!(\"new\");\n}",
+                }),
+                &ctx,
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.data["replacements"], 1);
+        assert_eq!(result.data["auto_indent_adjusted"], true);
+        assert_eq!(
+            tokio::fs::read_to_string(&file_path).await.unwrap(),
+            "\
+fn main() {
+    if ready {
+        println!(\"new\");
+    }
+}
+"
         );
     }
 

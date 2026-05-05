@@ -78,11 +78,11 @@
 
 ---
 
-### 1.3 FileEditTool — 缩减实现 (fuzzy + 安全/历史子项已补全)
+### 1.3 FileEditTool — 缩减实现 (fuzzy + 安全/历史/缩进子项已补全)
 
 | | TypeScript | Rust |
 |---|---|---|
-| 行数 | 1,812 (6 文件) | 824 (1 文件) |
+| 行数 | 1,812 (6 文件) | 1,001 (1 文件) |
 | 文件 | — | `tools/file_edit.rs` |
 
 **Rust 保留：**
@@ -93,12 +93,12 @@
 - ✅ **读后冲突检测** (`Read` 完整读取登记共享 `FileStateCache`; `Edit` 拒绝未读或读后被外部修改的文件，并在成功编辑后刷新缓存)
 - ✅ **文件锁/readonly 写前检查** (`Edit` 写入前尝试读写打开目标文件，提前拒绝 readonly、PermissionDenied、WouldBlock 与 Windows sharing violation)
 - ✅ **编辑历史备份** (`Edit` 复用 `safe_write_text()`，覆盖前创建恢复备份并在结果 / hook payload 暴露 `edit_history.backup_path`)
+- ✅ **自动缩进修正** (`Edit` 精确匹配失败时查找唯一缩进等价块，并把 `new_string` leading whitespace 映射到文件实际缩进；歧义候选拒绝)
 
 **TS 独有（未移植）：**
 - Diff 渲染 (用户预览)
 - 多编辑冲突解决
 - 完整 session-level file rewind UI / snapshot 管线
-- 缩进自动检测与修正
 
 ---
 
@@ -379,7 +379,7 @@
 | AgentTool | 6,072 | 789 | 87% | S (worktree 已补全) |
 | UI (全部) | 54,049 | 3,165 | 94% | S (框架) |
 | permissions/ | 9,409 | 959 | 90% | S |
-| FileEditTool | 1,812 | 386 | 79% | A (fuzzy 已补全) |
+| FileEditTool | 1,812 | 1,001 | 45% | A (fuzzy + 安全/历史/缩进子项已补全) |
 | FileReadTool | 1,602 | 1,214 | 24% | Full-build 差距已补齐 |
 | FileWriteTool | 856 | 1,112 | +30% | Full-build 差距已补齐 |
 | GrepTool | 795 | 371 | 53% | A (rg+multiline 已补全) |
@@ -408,6 +408,7 @@
    - 2026-05-05 继续补齐读后冲突检测 — `Read` / `Edit` 共享文件快照，防止覆盖未读或读后外部修改的文件
    - 2026-05-05 继续补齐文件锁/readonly 写前检查 — `Edit` 提前拒绝锁定或不可写目标
    - 2026-05-05 继续补齐编辑历史备份 — `Edit` 覆盖前创建恢复备份并返回 `edit_history.backup_path`
+   - 2026-05-05 继续补齐自动缩进修正 — `Edit` 精确匹配失败时可映射唯一缩进等价块，歧义候选拒绝
 2. ~~**BashTool 输出截断**~~ ✅ 已补全 — 199→430 行, head+tail 行级截断
    - 2026-05-05 继续补齐 heredoc 校验 — BashTool + cc-utils bash helper 共 1,730 行
    - 2026-05-05 继续补齐 Git 操作跟踪 — 新增 `cc-utils/src/git_operation_tracking.rs`，Bash/PowerShell 结果附带 `git_operations`
