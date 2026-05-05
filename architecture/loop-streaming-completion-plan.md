@@ -43,6 +43,7 @@
 | 0.1 streaming fixture | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs api::streaming::tests`，3 passed。 | 在 `api/streaming.rs` 内新增 mixed Anthropic stream fixture，覆盖 `message_start`、text、thinking、tool_use、`message_delta`、`message_stop`。 |
 | 0.2 post-stream tool fixture | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs test_tool_use_then_text_response`，1 passed。 | `query::loop_tests::MockDeps` 现在记录 `message_stop` 是否已被消费，并断言当前工具执行不会早于模型流结束启动；后续接入 stream-time tool execution 时需同步调整该期望。 |
 | 0.3 recovery fixture | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs query::loop_impl::loop_tests`，10 passed。 | 新增 prompt-too-long reactive compact retry、`max_tokens` 输出上限升级、Stop hook 续写、token budget nudge 四条 query-loop fixture；collapse drain retry 仍未实现，保留在 5.4 串行补齐。 |
+| 0.4 ownership 梳理 | 已完成 | 2026-05-05 | 文档：本页“阶段 1-4 ownership”。 | 明确主 loop、工具执行入口、stream accumulator、mapper/provider 的写入边界；阶段 2/4 的核心实现必须 leader 串行集成，subagent 只做只读调研或独立测试。 |
 | 1.1 `input_json_delta` | 已完成 | 2026-05-05 | `api::streaming::tests::accumulates_tool_input_json_delta` 通过。 | `StreamAccumulator` 现在累积 `partial_json`，在 `content_block_stop` 和最终 `build()` 时解析为 `ToolUse.input`。 |
 | 1.2 `signature_delta` | 已完成 | 2026-05-05 | `api::streaming::tests::accumulates_thinking_signature_delta` 通过。 | `StreamAccumulator` 现在将 `signature_delta.signature` 追加到 `ContentBlock::Thinking.signature`。 |
 | 1.3 unsupported delta 策略 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs api::streaming::tests`，5 passed；`cargo test -p claude-code-rs unsupported_text_like_delta`，3 passed。 | Accumulator、headless、TUI、agent event forwarding 都按 delta `type` 处理 text/thinking/input；未知或暂不支持的 text-like delta 不再被误当作 assistant text，同时保留无 `type` legacy delta 兼容。 |
@@ -136,6 +137,28 @@
 - `crates/claude-code-rs/src/query/loop_impl.rs`
 - `crates/claude-code-rs/src/query/loop_helpers.rs`
 - `crates/claude-code-rs/src/tools/execution/`
+
+## 阶段 1-4 ownership
+
+0.4 决策：阶段 1-4 的核心状态机和工具执行边界由 leader 串行维护。subagent 可以并行做只读对比、测试夹具、provider adapter 或 mapper 层补丁，但不能同时改同一条主 loop / tool execution contract。
+
+| 范围 | 主要文件 | ownership | 可并行工作 | 串行要求 |
+| --- | --- | --- | --- | --- |
+| Stream 协议累积 | `crates/claude-code-rs/src/api/streaming.rs` | 阶段 1 的协议 owner。 | 可以并行补 provider fixture、TUI/headless 不渲染测试。 | `ContentBlock` / `StreamEvent` 解释规则必须单一 owner 合并，避免不同 delta 类型被重复解释。 |
+| Stream 可见面映射 | `crates/claude-code-rs/src/ipc/sdk_mapper.rs`、`crates/claude-code-rs/src/ui/tui/engine_events.rs`、`crates/claude-code-rs/src/engine/agent/mod.rs` | mapper owner，在 accumulator 契约稳定后跟进。 | 可按 IPC、TUI、agent event 独立拆给 subagent。 | 不得自行改变最终 assistant / per-block assistant 交付语义；该语义由阶段 1.5 / 阶段 4 统一决策。 |
+| 主 query loop 状态机 | `crates/claude-code-rs/src/query/loop_impl.rs` | leader 独占 owner。 | 只允许并行做只读分析和不改状态机的测试准备。 | fallback/tombstone、stream-time tool scheduling、collapse drain、terminal / continue transition 必须串行改。 |
+| Loop helper 与恢复 helper | `crates/claude-code-rs/src/query/loop_helpers.rs` | 跟随 `loop_impl.rs` 的同一 owner。 | 可并行补 helper unit tests。 | helper 改动若影响 `QueryLoopState`、`Continue`、工具批处理顺序，必须和 `loop_impl.rs` 同批串行集成。 |
+| QueryDeps 边界 | `crates/claude-code-rs/src/query/deps.rs`、`crates/claude-code-rs/src/engine/lifecycle/deps.rs` | 阶段 2 canonical path owner。 | 可并行调研当前 `QueryEngineDeps::execute_tool()` 与 `run_tool_use()` 差异。 | `ToolExecRequest`、progress callback、permission/hook/abort/result-size 语义不能由多个任务分叉修改。 |
+| 通用工具执行管线 | `crates/claude-code-rs/src/tools/execution/pipeline.rs`、`crates/claude-code-rs/src/tools/execution/coordinator.rs` | 阶段 2/4 tool execution owner。 | coordinator API 缺口、pipeline 单元测试可并行准备。 | canonical path 决策前不迁移主 loop；`StreamingToolExecutor` 接入必须复用阶段 2 的唯一规则入口。 |
+| 工具与权限支撑面 | `crates/claude-code-rs/src/tools/**`、`crates/claude-code-rs/src/permissions/**` | 由 canonical path owner 牵头，具体工具可模块 owner 跟进。 | 单个工具 validation / permission fixture 可以并行。 | 不得把阶段 2 缺失能力临时复制进单个工具，除非文档标记 intentional。 |
+
+阶段 1-4 的提交顺序也按 ownership 收敛：
+
+1. `streaming.rs` 协议规则先稳定。
+2. mapper / TUI / headless 只同步协议可见面，不改主 loop 语义。
+3. 阶段 2 先决定 canonical tool execution path，再改 `QueryDeps` / `QueryEngineDeps` / `tools/execution`。
+4. 阶段 3 的 fallback / tombstone wrapper 只由主 loop owner 串行接入。
+5. 阶段 4 最后改 `loop_impl.rs` 接入 `StreamingToolExecutor`，并复用阶段 2 的工具执行入口。
 
 ## 阶段 1：Streaming content-block 协议正确性
 
