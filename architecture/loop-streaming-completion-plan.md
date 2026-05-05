@@ -45,6 +45,7 @@
 | 1.2 `signature_delta` | 已完成 | 2026-05-05 | `api::streaming::tests::accumulates_thinking_signature_delta` 通过。 | `StreamAccumulator` 现在将 `signature_delta.signature` 追加到 `ContentBlock::Thinking.signature`。 |
 | 1.3 unsupported delta 策略 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs api::streaming::tests`，5 passed；`cargo test -p claude-code-rs unsupported_text_like_delta`，3 passed。 | Accumulator、headless、TUI、agent event forwarding 都按 delta `type` 处理 text/thinking/input；未知或暂不支持的 text-like delta 不再被误当作 assistant text，同时保留无 `type` legacy delta 兼容。 |
 | 1.4 TUI/headless 映射 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs headless_stream_event_mapping`；`cargo test -p claude-code-rs tui_ignores_tool_input_delta_until_final_assistant`。 | Headless 只把 text/thinking delta 映射为可见流；TUI 忽略 tool input delta，并等待最终 assistant 替换为完整 tool_use。 |
+| 1.5 per-block assistant 语义 | 已完成 | 2026-05-05 | 文档决策：`architecture/streaming.md` 已标注 Intentional / 暂不改。 | 现阶段保留“stream event 实时输出 + 最终单 `AssistantMessage`”；per-block assistant 需等 `StreamingToolExecutor`、SDK/session、fallback tombstone 语义一起设计。 |
 
 ## Subagent 并行拆分规则
 
