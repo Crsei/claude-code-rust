@@ -126,6 +126,10 @@ pub fn tasks_dir() -> PathBuf {
     data_root().join("tasks")
 }
 
+pub fn pr_activity_subscriptions_path() -> PathBuf {
+    data_root().join("pr-activity-subscriptions.json")
+}
+
 /// `{data_root}/projects/{sanitized_cwd}/memory/team/`
 pub fn team_memory_dir(cwd: &Path) -> PathBuf {
     let sanitized: String = cwd
@@ -331,6 +335,10 @@ mod tests {
         assert_eq!(skills_dir_global(), base.join("skills"));
         assert_eq!(teams_dir(), base.join("teams"));
         assert_eq!(tasks_dir(), base.join("tasks"));
+        assert_eq!(
+            pr_activity_subscriptions_path(),
+            base.join("pr-activity-subscriptions.json")
+        );
         assert_eq!(daemon_dir(), base.join("daemon"));
     }
 

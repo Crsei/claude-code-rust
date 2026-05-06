@@ -51,6 +51,7 @@ pub mod worktree;
 pub mod lsp;
 
 // Inter-agent messaging (Teams).
+pub mod pr_activity;
 pub mod send_message;
 pub mod team_spawn;
 

@@ -9,6 +9,7 @@
 
 use std::sync::atomic::Ordering;
 
+use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::routing::{get, post};
@@ -571,8 +572,53 @@ pub fn webhook_routes() -> Router<DaemonState> {
         .route("/webhook/generic", post(webhook_generic))
 }
 
-async fn webhook_github() -> Json<Value> {
-    Json(json!({ "status": "received", "source": "github" }))
+async fn webhook_github(headers: HeaderMap, body: Bytes) -> Json<Value> {
+    if let Err(message) = verify_optional_github_signature(&headers, &body) {
+        return Json(json!({
+            "status": "unauthorized",
+            "source": "github",
+            "message": message,
+        }));
+    }
+
+    let payload = match serde_json::from_slice::<Value>(&body) {
+        Ok(payload) => payload,
+        Err(error) => {
+            return Json(json!({
+                "status": "error",
+                "source": "github",
+                "message": format!("invalid JSON payload: {error}"),
+            }));
+        }
+    };
+    let event_name = header_str(&headers, "x-github-event");
+    let delivery_id = header_str(&headers, "x-github-delivery");
+    let Some(activity) = crate::tools::pr_activity::parse_github_pr_activity(
+        &payload,
+        event_name.as_deref(),
+        delivery_id.as_deref(),
+    ) else {
+        return Json(json!({
+            "status": "ignored",
+            "source": "github",
+            "event": event_name,
+        }));
+    };
+
+    match crate::tools::pr_activity::route_github_pr_activity(&activity) {
+        Ok(result) => Json(json!({
+            "status": "received",
+            "source": "github",
+            "event": event_name,
+            "matched": result.matched,
+            "delivered": result.delivered,
+        })),
+        Err(error) => Json(json!({
+            "status": "error",
+            "source": "github",
+            "message": error.to_string(),
+        })),
+    }
 }
 
 async fn webhook_slack() -> Json<Value> {
@@ -581,6 +627,31 @@ async fn webhook_slack() -> Json<Value> {
 
 async fn webhook_generic() -> Json<Value> {
     Json(json!({ "status": "received", "source": "generic" }))
+}
+
+fn verify_optional_github_signature(headers: &HeaderMap, body: &[u8]) -> Result<(), String> {
+    let secret = std::env::var("CC_RUST_GITHUB_WEBHOOK_SECRET")
+        .or_else(|_| std::env::var("GITHUB_WEBHOOK_SECRET"))
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+    let Some(secret) = secret else {
+        return Ok(());
+    };
+    let Some(signature) = header_str(headers, "x-hub-signature-256") else {
+        return Err("missing X-Hub-Signature-256".to_string());
+    };
+    if crate::daemon::webhook::verify_github_signature(body, &signature, &secret) {
+        Ok(())
+    } else {
+        Err("invalid GitHub webhook signature".to_string())
+    }
+}
+
+fn header_str(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(ToOwned::to_owned)
 }
 
 // ---------------------------------------------------------------------------
@@ -611,6 +682,28 @@ mod tests {
     use super::*;
     use crate::engine::sdk_types::{SdkApiRetry, SdkCompactBoundary, SdkToolUseSummary};
     use crate::types::message::CompactMetadata;
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     #[test]
     fn daemon_sse_broadcasts_api_retry_events() {
@@ -683,5 +776,71 @@ mod tests {
         assert_eq!(event.data["summary"], "Read finished");
         assert_eq!(event.data["preceding_tool_use_ids"][0], "toolu_1");
         assert_eq!(event.data["session_id"], "session-1");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn github_webhook_routes_matching_pr_activity_to_mailbox() {
+        let home = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _github_secret = EnvGuard::set("CC_RUST_GITHUB_WEBHOOK_SECRET", "");
+        let _legacy_secret = EnvGuard::set("GITHUB_WEBHOOK_SECRET", "");
+        crate::teams::helpers::create_team("phase4-route", None, None, ".").unwrap();
+        crate::tools::pr_activity::subscribe(
+            "AIclassmanager".into(),
+            "cc-rust".into(),
+            42,
+            "phase4-route".into(),
+            crate::teams::constants::TEAM_LEAD_NAME.into(),
+        )
+        .unwrap();
+        let body = serde_json::to_vec(&json!({
+            "action": "opened",
+            "repository": {
+                "name": "cc-rust",
+                "owner": { "login": "AIclassmanager" }
+            },
+            "pull_request": {
+                "number": 42,
+                "title": "Phase 4",
+                "html_url": "https://github.com/AIclassmanager/cc-rust/pull/42"
+            },
+            "sender": { "login": "octocat" }
+        }))
+        .unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert("x-github-event", "pull_request".parse().unwrap());
+        headers.insert("x-github-delivery", "delivery-42".parse().unwrap());
+
+        let Json(response) = webhook_github(headers, Bytes::from(body)).await;
+
+        assert_eq!(response["status"], "received");
+        assert_eq!(response["matched"], 1);
+        assert_eq!(response["delivered"], 1);
+        let inbox = crate::teams::mailbox::read_mailbox(
+            crate::teams::constants::TEAM_LEAD_NAME,
+            "phase4-route",
+        )
+        .unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert!(inbox[0].text.contains("delivery-42"));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn github_webhook_rejects_bad_signature_when_secret_is_configured() {
+        let _secret = EnvGuard::set("CC_RUST_GITHUB_WEBHOOK_SECRET", "secret");
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-hub-signature-256",
+            "sha256=0000000000000000000000000000000000000000000000000000000000000000"
+                .parse()
+                .unwrap(),
+        );
+
+        let Json(response) = webhook_github(headers, Bytes::from_static(b"{}")).await;
+
+        assert_eq!(response["status"], "unauthorized");
+        assert!(response["message"].as_str().unwrap().contains("invalid"));
     }
 }
