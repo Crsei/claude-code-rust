@@ -238,6 +238,7 @@ mod tests {
         use futures::StreamExt;
 
         let mut engine = QueryEngine::new(make_config());
+        let original_session = engine.current_session_id();
         engine.set_command_dispatcher(std::sync::Arc::new(
             crate::commands::DefaultCommandDispatcher::new(),
         ));
@@ -269,9 +270,74 @@ mod tests {
                 assert_eq!(result.subtype, ResultSubtype::Success);
                 assert!(!result.is_error);
                 assert!(result.result.contains("clear"));
+                assert_eq!(result.session_id, engine.current_session_id().to_string());
             }
             other => panic!("expected SdkMessage::Result, got {:?}", other),
         }
+        assert_ne!(engine.current_session_id(), original_session);
+        assert!(engine.messages().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_submit_output_command_executes_handler() {
+        use futures::StreamExt;
+
+        let mut engine = QueryEngine::new(make_config());
+        engine.set_command_dispatcher(std::sync::Arc::new(
+            crate::commands::DefaultCommandDispatcher::new(),
+        ));
+        let stream = engine.submit_message("/help clear", QuerySource::Sdk);
+        let mut stream = std::pin::pin!(stream);
+
+        let mut items: Vec<SdkMessage> = Vec::new();
+        while let Some(msg) = stream.next().await {
+            items.push(msg);
+        }
+
+        let result = items
+            .iter()
+            .find_map(|item| {
+                if let SdkMessage::Result(result) = item {
+                    Some(result)
+                } else {
+                    None
+                }
+            })
+            .expect("result message");
+
+        assert_eq!(result.subtype, ResultSubtype::Success);
+        assert!(!result.is_error);
+        assert!(result.result.contains("/clear"));
+        assert!(!result.result.contains("help clear"));
+    }
+
+    #[tokio::test]
+    async fn test_submit_query_command_injects_handler_messages_before_model_call() {
+        use futures::StreamExt;
+
+        let mut engine = QueryEngine::new(make_config());
+        engine.set_command_dispatcher(std::sync::Arc::new(
+            crate::commands::DefaultCommandDispatcher::new(),
+        ));
+        let stream = engine.submit_message("/review 123", QuerySource::Sdk);
+        let mut stream = std::pin::pin!(stream);
+
+        let first = stream.next().await.expect("system init");
+        assert!(matches!(first, SdkMessage::SystemInit(_)));
+
+        let messages = engine.messages();
+        let review_prompt = messages.iter().find_map(|message| {
+            if let Message::User(user) = message {
+                if let MessageContent::Text(text) = &user.content {
+                    return Some(text.as_str());
+                }
+            }
+            None
+        });
+        assert!(
+            matches!(review_prompt, Some(text) if text.contains("Review pull request `123`")),
+            "query command should inject a user prompt before the first model call"
+        );
     }
 
     #[tokio::test]

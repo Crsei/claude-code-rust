@@ -5,7 +5,7 @@
 
 use uuid::Uuid;
 
-use cc_types::commands::CommandDispatcher;
+use cc_types::commands::{CommandDispatcher, ParsedCommand};
 
 use crate::types::message::{Message, MessageContent, UserMessage};
 
@@ -29,6 +29,8 @@ pub struct ProcessedInput {
     pub model: Option<String>,
     /// Text result for local commands (displayed without querying the model).
     pub result_text: Option<String>,
+    /// Parsed slash command to execute in the async lifecycle layer.
+    pub parsed_command: Option<ParsedCommand>,
 }
 
 // ---------------------------------------------------------------------------
@@ -38,16 +40,15 @@ pub struct ProcessedInput {
 /// Process raw user input: detect slash commands, build user message.
 ///
 /// 1. If the input starts with `/`, try to match a registered command.
-///    - For local-only commands the returned `ProcessedInput` has
-///      `should_query = false` and carries a `result_text`.
-///    - For commands that inject messages (e.g. `/compact`), the returned
-///      `ProcessedInput` has `should_query = true` and the injected messages
-///      in `messages`.
+///    - Known commands return a parsed command with `should_query = false`.
+///      The async lifecycle layer executes the handler and decides whether the
+///      command yields local output or injects messages for a model query.
 /// 2. Otherwise, wrap the input in a plain `UserMessage` with
 ///    `should_query = true`.
 ///
-/// `dispatcher` is the command dispatcher used to parse slash commands. The
-/// engine no longer imports `crate::commands` directly (see issue #74 / 5c).
+/// `dispatcher` is the command dispatcher used to parse slash commands.
+/// Handler execution stays out of this pure parsing layer because handlers may
+/// need async I/O and mutable engine state.
 pub fn process_user_input(
     input: &str,
     _messages: &[Message],
@@ -59,25 +60,13 @@ pub fn process_user_input(
     // -- Slash-command path ---------------------------------------------------
     if trimmed.starts_with('/') {
         if let Some(parsed) = dispatcher.parse_command_input(trimmed) {
-            // We matched a registered command. For now we treat all
-            // commands as local (should_query = false) and return the
-            // command name + args as result_text. Full command execution
-            // (which requires async) will be wired later; this gives the
-            // engine the information it needs to route.
-            let cmd_name = dispatcher
-                .command_name(parsed.index)
-                .unwrap_or_else(|| String::from("unknown"));
-
             return ProcessedInput {
                 messages: Vec::new(),
                 should_query: false,
                 allowed_tools: None,
                 model: None,
-                result_text: Some(
-                    format!("/{cmd_name} {args}", args = parsed.args)
-                        .trim()
-                        .to_string(),
-                ),
+                result_text: None,
+                parsed_command: Some(parsed),
             };
         }
 
@@ -102,6 +91,7 @@ pub fn process_user_input(
         allowed_tools: None,
         model: None,
         result_text: None,
+        parsed_command: None,
     }
 }
 
@@ -163,19 +153,20 @@ mod tests {
         let result = process_user_input("/help", &[], "/tmp", &d);
         assert!(!result.should_query);
         assert!(result.messages.is_empty());
-        assert!(result.result_text.is_some());
-        assert_eq!(result.result_text.as_deref(), Some("/help"));
+        assert!(result.result_text.is_none());
+        let parsed = result.parsed_command.expect("parsed command");
+        assert_eq!(parsed.index, 0);
+        assert_eq!(parsed.args, "");
     }
 
     #[test]
     fn test_slash_command_with_args() {
         let d = TestDispatcher;
-        let result = process_user_input("/config set model opus", &[], "/tmp", &d);
+        let result = process_user_input("/config set model SOTA", &[], "/tmp", &d);
         assert!(!result.should_query);
-        assert!(result.result_text.is_some());
-        let text = result.result_text.unwrap();
-        assert!(text.starts_with("/config"));
-        assert!(text.contains("set model opus"));
+        let parsed = result.parsed_command.expect("parsed command");
+        assert_eq!(parsed.index, 1);
+        assert_eq!(parsed.args, "set model SOTA");
     }
 
     #[test]

@@ -14,6 +14,7 @@ use futures::Stream;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use crate::commands::{CommandContext, CommandResult};
 use crate::engine::codex_exec;
 use crate::engine::input_processing;
 use crate::engine::result;
@@ -54,6 +55,7 @@ impl QueryEngine {
         let prompt = prompt.to_string();
 
         let state_ref = self.state.clone();
+        let active_session_id_ref = self.active_session_id.clone();
         let aborted_ref = self.aborted.clone();
         let pending_bg_results = self.pending_bg_results.clone();
         let hook_runner = self.hook_runner.clone();
@@ -138,12 +140,116 @@ impl QueryEngine {
 
             // A.2: Process user input (delegate to input_processing module)
             let current_msgs_snapshot = state_ref.read().messages.clone();
-            let processed = input_processing::process_user_input(
+            let mut local_result_is_error = false;
+            let mut local_result_session_id = session_id.clone();
+            let mut processed = input_processing::process_user_input(
                 &prompt,
                 &current_msgs_snapshot,
                 &config.cwd,
                 command_dispatcher.as_ref(),
             );
+
+            if let Some(parsed_command) = processed.parsed_command.clone() {
+                let mut commands = crate::commands::get_all_commands();
+                let command_name = command_dispatcher
+                    .command_name(parsed_command.index)
+                    .unwrap_or_else(|| format!("#{}", parsed_command.index));
+                if let Some(command) = commands.get_mut(parsed_command.index) {
+                    let mut ctx = CommandContext {
+                        messages: current_msgs_snapshot.clone(),
+                        cwd: std::path::PathBuf::from(&config.cwd),
+                        app_state: state_ref.read().app_state.clone(),
+                        session_id: session_id.clone(),
+                    };
+
+                    match command.handler.execute(&parsed_command.args, &mut ctx).await {
+                        Ok(result) => {
+                            match result {
+                                CommandResult::Output(text) => {
+                                    let mut s = state_ref.write();
+                                    s.messages = ctx.messages;
+                                    s.app_state = ctx.app_state;
+                                    processed.result_text = Some(text);
+                                    processed.should_query = false;
+                                    processed.messages.clear();
+                                }
+                                CommandResult::Query(messages) => {
+                                    let mut s = state_ref.write();
+                                    s.messages = ctx.messages;
+                                    s.app_state = ctx.app_state;
+                                    processed.messages = messages;
+                                    processed.should_query = true;
+                                    processed.result_text = None;
+                                }
+                                CommandResult::Clear => {
+                                    let previous_id = active_session_id_ref.read().clone();
+                                    if config.auto_save_session && !ctx.messages.is_empty() {
+                                        if let Err(err) = crate::session::storage::save_session(
+                                            previous_id.as_str(),
+                                            &ctx.messages,
+                                            &config.cwd,
+                                        ) {
+                                            warn!(
+                                                error = %err,
+                                                session = %previous_id,
+                                                "failed to save previous session before command clear"
+                                            );
+                                        }
+                                    }
+
+                                    let new_session_id = crate::bootstrap::SessionId::new();
+                                    {
+                                        let mut s = state_ref.write();
+                                        s.messages.clear();
+                                        s.usage = UsageTracking::default();
+                                        s.permission_denials.clear();
+                                        s.total_turn_count = 0;
+                                        s.app_state = ctx.app_state;
+                                    }
+                                    *active_session_id_ref.write() = new_session_id.clone();
+                                    crate::bootstrap::PROCESS_STATE.write().session_id =
+                                        new_session_id.clone();
+                                    local_result_session_id = new_session_id;
+
+                                    processed.result_text = Some("Conversation cleared.".to_string());
+                                    processed.should_query = false;
+                                    processed.messages.clear();
+                                }
+                                CommandResult::Exit(text) => {
+                                    let mut s = state_ref.write();
+                                    s.messages = ctx.messages;
+                                    s.app_state = ctx.app_state;
+                                    processed.result_text = Some(text);
+                                    processed.should_query = false;
+                                    processed.messages.clear();
+                                }
+                                CommandResult::None => {
+                                    let mut s = state_ref.write();
+                                    s.messages = ctx.messages;
+                                    s.app_state = ctx.app_state;
+                                    processed.result_text = Some(String::new());
+                                    processed.should_query = false;
+                                    processed.messages.clear();
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            local_result_is_error = true;
+                            processed.result_text =
+                                Some(format!("Command /{} failed: {}", command_name, err));
+                            processed.should_query = false;
+                            processed.messages.clear();
+                        }
+                    }
+                    processed.parsed_command = None;
+                } else {
+                    local_result_is_error = true;
+                    processed.result_text = Some(format!("Unknown command: /{}", command_name));
+                    processed.should_query = false;
+                    processed.messages.clear();
+                    processed.parsed_command = None;
+                }
+            }
 
             // A.3: Push processed messages into mutable_messages
             {
@@ -203,20 +309,28 @@ impl QueryEngine {
                     .unwrap_or_default();
 
                 yield SdkMessage::Result(SdkResult {
-                    subtype: ResultSubtype::Success,
-                    is_error: false,
+                    subtype: if local_result_is_error {
+                        ResultSubtype::ErrorDuringExecution
+                    } else {
+                        ResultSubtype::Success
+                    },
+                    is_error: local_result_is_error,
                     duration_ms: started_at.elapsed().as_millis() as u64,
                     duration_api_ms: 0,
                     num_turns: 0,
-                    result: local_text,
+                    result: local_text.clone(),
                     stop_reason: None,
-                    session_id: session_id.to_string(),
+                    session_id: local_result_session_id.to_string(),
                     total_cost_usd: 0.0,
                     usage: UsageTracking::default(),
                     permission_denials: vec![],
                     structured_output: None,
                     uuid: Uuid::new_v4(),
-                    errors: vec![],
+                    errors: if local_result_is_error {
+                        vec![local_text.clone()]
+                    } else {
+                        vec![]
+                    },
                 });
                 return;
             }

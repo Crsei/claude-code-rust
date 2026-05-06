@@ -1,9 +1,9 @@
-//! Trait used by the engine to dispatch slash commands without importing the
-//! main crate's `commands::` module.
+//! Trait used by the input-processing layer to parse slash commands without
+//! importing the main crate's `commands::` module.
 //!
-//! The engine only needs two operations: parse an input string and find out
-//! the canonical command name for a parsed index. The concrete dispatcher
-//! lives in the main crate's `commands::` module.
+//! The pure parsing layer only needs two operations: parse an input string and
+//! find out the canonical command name for a parsed index. The async lifecycle
+//! layer still executes handlers through the concrete command registry.
 //!
 //! See issue #74 (`[workspace-split] Phase 5`, sub-task 5c).
 
@@ -15,7 +15,8 @@
 #[derive(Debug, Clone)]
 pub struct ParsedCommand {
     /// Zero-based index of the command in the registry's `get_all_commands()`
-    /// list.  Opaque to the engine — it only passes it back to the dispatcher.
+    /// list. Opaque to the parser; the lifecycle layer resolves it against the
+    /// concrete command registry when executing the handler.
     pub index: usize,
     /// Arguments: the trimmed text after the command token (may be empty).
     pub args: String,
