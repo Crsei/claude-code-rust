@@ -32,6 +32,8 @@ pub struct PipelineResult {
     pub tracking: Option<AutoCompactTracking>,
     /// Whether any compaction was actually performed.
     pub compacted: bool,
+    /// Whether this pipeline pass crossed the auto-compact threshold.
+    pub auto_compact_triggered: bool,
     /// Estimated tokens after compaction.
     pub estimated_tokens: u64,
     /// Estimated tokens used for the auto-compact threshold after this
@@ -137,30 +139,31 @@ pub async fn run_context_pipeline(
         .saturating_add(microcompact_tokens_freed)
         .saturating_add(context_collapse_tokens_freed);
     let auto_compact_estimated_tokens = estimated.saturating_sub(total_tokens_freed);
-    let updated_tracking =
-        if auto_compact::should_auto_compact(auto_compact_estimated_tokens, model) {
-            info!(
-                estimated_tokens = auto_compact_estimated_tokens,
-                raw_estimated_tokens = estimated,
-                pre_autocompact_tokens_freed = total_tokens_freed,
-                model = model,
-                "auto compact triggered (>80% of context window)"
-            );
-            let base = tracking.unwrap_or(AutoCompactTracking {
-                compacted: false,
-                turn_counter: 0,
-                turn_id: String::new(),
-                consecutive_failures: 0,
-            });
-            Some(AutoCompactTracking {
-                compacted: true,
-                turn_counter: base.turn_counter + 1,
-                turn_id: base.turn_id,
-                consecutive_failures: base.consecutive_failures,
-            })
-        } else {
-            tracking
-        };
+    let auto_compact_triggered =
+        auto_compact::should_auto_compact(auto_compact_estimated_tokens, model);
+    let updated_tracking = if auto_compact_triggered {
+        info!(
+            estimated_tokens = auto_compact_estimated_tokens,
+            raw_estimated_tokens = estimated,
+            pre_autocompact_tokens_freed = total_tokens_freed,
+            model = model,
+            "auto compact triggered (>80% of context window)"
+        );
+        let base = tracking.unwrap_or(AutoCompactTracking {
+            compacted: false,
+            turn_counter: 0,
+            turn_id: String::new(),
+            consecutive_failures: 0,
+        });
+        Some(AutoCompactTracking {
+            compacted: true,
+            turn_counter: base.turn_counter + 1,
+            turn_id: base.turn_id,
+            consecutive_failures: base.consecutive_failures,
+        })
+    } else {
+        tracking
+    };
 
     if compacted {
         info!(
@@ -179,6 +182,7 @@ pub async fn run_context_pipeline(
         messages: current,
         tracking: updated_tracking,
         compacted,
+        auto_compact_triggered,
         estimated_tokens: estimated,
         auto_compact_estimated_tokens,
         snip_tokens_freed,
@@ -389,6 +393,26 @@ mod tests {
         assert!(result.estimated_tokens > 160_000);
         assert!(result.auto_compact_estimated_tokens < 160_000);
         assert!(result.tracking.is_none());
+        assert!(!result.auto_compact_triggered);
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_keeps_previous_tracking_without_new_auto_compact_trigger() {
+        let messages = vec![make_user("Hello"), make_assistant("Hi!")];
+        let tracking = AutoCompactTracking {
+            compacted: true,
+            turn_counter: 0,
+            turn_id: "previous".into(),
+            consecutive_failures: 0,
+        };
+
+        let result =
+            run_context_pipeline(messages, Some(tracking.clone()), "claude-sonnet-4-20250514")
+                .await;
+
+        assert!(!result.auto_compact_triggered);
+        assert!(result.tracking.is_some());
+        assert_eq!(result.tracking.unwrap().turn_id, tracking.turn_id);
     }
 
     #[tokio::test]
