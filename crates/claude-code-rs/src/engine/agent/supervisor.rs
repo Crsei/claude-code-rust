@@ -22,6 +22,9 @@ use crate::tools::tasks::{global_store, TaskCreateOptions, TaskEntry, TaskStatus
 use crate::types::config::{QueryEngineConfig, QuerySource};
 use crate::types::tool::*;
 use crate::utils::bash::validate_working_directory;
+use crate::worktree_hooks::{
+    default_agent_worktree_path, ensure_worktree_parent, run_worktree_create_hook,
+};
 
 use super::{
     build_child_config, count_worktree_changes, find_git_root, get_head_sha, sdk_to_agent_event,
@@ -41,6 +44,8 @@ struct WorktreeRuntime {
     worktree_path: PathBuf,
     branch_name: String,
     original_head: Option<String>,
+    hook_runner: Arc<dyn cc_types::hooks::HookRunner>,
+    hooks: cc_types::hooks::HooksMap,
 }
 
 struct PreparedRuntime {
@@ -108,6 +113,8 @@ pub(super) async fn spawn_background_agent(
         &agent_model,
         current_depth,
         ctx.agent_id.as_deref(),
+        ctx.hook_runner.clone(),
+        (ctx.get_app_state)().hooks,
     )
     .await?;
     validate_working_directory(&prepared.child_cwd)?;
@@ -549,6 +556,8 @@ async fn prepare_runtime(
     agent_model: &str,
     current_depth: usize,
     parent_agent_id: Option<&str>,
+    hook_runner: Arc<dyn cc_types::hooks::HookRunner>,
+    hooks: cc_types::hooks::HooksMap,
 ) -> Result<PreparedRuntime> {
     if !use_worktree {
         return Ok(PreparedRuntime {
@@ -564,6 +573,8 @@ async fn prepare_runtime(
         agent_model,
         current_depth,
         parent_agent_id,
+        hook_runner,
+        hooks,
     )
     .await
     {
@@ -600,13 +611,15 @@ async fn prepare_worktree_runtime(
     agent_model: &str,
     current_depth: usize,
     parent_agent_id: Option<&str>,
+    hook_runner: Arc<dyn cc_types::hooks::HookRunner>,
+    hooks: cc_types::hooks::HooksMap,
 ) -> Result<PreparedRuntime> {
     let cwd = std::env::current_dir()?;
     let git_root = find_git_root(&cwd).await?;
     let original_head = get_head_sha(&git_root).await;
     let short_id = &uuid::Uuid::new_v4().to_string()[..8];
     let branch_name = format!("agent-worktree-{}", short_id);
-    let worktree_path = std::env::temp_dir().join(format!("agent-worktree-{}", short_id));
+    let worktree_path = default_agent_worktree_path(short_id);
 
     info!(
         agent_id = %agent_id,
@@ -615,25 +628,65 @@ async fn prepare_worktree_runtime(
         "creating background agent worktree"
     );
 
-    let output = tokio::process::Command::new("git")
-        .args([
-            "-C",
-            &git_root.to_string_lossy(),
-            "worktree",
-            "add",
-            "-B",
-            &branch_name,
-            &worktree_path.to_string_lossy(),
-        ])
-        .output()
-        .await?;
+    let hook_created = match run_worktree_create_hook(
+        &hook_runner,
+        &hooks,
+        "BackgroundAgent",
+        &git_root,
+        &worktree_path,
+        &branch_name,
+        short_id,
+        Some(agent_id),
+    )
+    .await
+    {
+        Ok(Some(created)) if created.worktree_path.is_dir() => Some(created),
+        Ok(Some(created)) => {
+            warn!(
+                agent_id = %agent_id,
+                worktree_path = %created.worktree_path.display(),
+                "WorktreeCreate hook returned a missing directory; falling back to git"
+            );
+            None
+        }
+        Ok(None) => None,
+        Err(err) => {
+            warn!(
+                agent_id = %agent_id,
+                error = %err,
+                "WorktreeCreate hook failed; falling back to git"
+            );
+            None
+        }
+    };
 
-    if !output.status.success() {
-        anyhow::bail!(
-            "git worktree add failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
+    let (worktree_path, branch_name) = if let Some(created) = hook_created {
+        (created.worktree_path, created.branch_name)
+    } else {
+        ensure_worktree_parent(&worktree_path)?;
+
+        let output = tokio::process::Command::new("git")
+            .args([
+                "-C",
+                &git_root.to_string_lossy(),
+                "worktree",
+                "add",
+                "-B",
+                &branch_name,
+                &worktree_path.to_string_lossy(),
+            ])
+            .output()
+            .await?;
+
+        if !output.status.success() {
+            anyhow::bail!(
+                "git worktree add failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+
+        (worktree_path, branch_name)
+    };
 
     let _ = crate::dashboard::emit_subagent_event(
         "worktree_created",
@@ -656,6 +709,8 @@ async fn prepare_worktree_runtime(
             worktree_path,
             branch_name,
             original_head,
+            hook_runner,
+            hooks,
         }),
         startup_warning: None,
     })
@@ -719,14 +774,25 @@ async fn append_worktree_outcome(
                 "branch": worktree.branch_name,
             })),
         );
-        AgentTool::cleanup_worktree(
+        let cleaned = AgentTool::cleanup_worktree_with_hooks(
             &worktree.git_root,
             &worktree.worktree_path,
             &worktree.branch_name,
             agent_id,
+            Some(&worktree.hook_runner),
+            Some(&worktree.hooks),
         )
         .await;
-        result_text.push_str("\n\n[Worktree isolation: no changes detected; worktree cleaned up]");
+        if cleaned {
+            result_text
+                .push_str("\n\n[Worktree isolation: no changes detected; worktree cleaned up]");
+        } else {
+            result_text.push_str(&format!(
+                "\n\n[Worktree isolation: no changes detected, but cleanup could not be verified. Worktree kept at: {} on branch: {}]",
+                worktree.worktree_path.display(),
+                worktree.branch_name
+            ));
+        }
     }
 }
 
@@ -750,17 +816,25 @@ async fn finalize_or_keep_worktree_after_forced_shutdown(
         );
         let _ = global_store().append_output(task_id, &suffix);
     } else {
-        AgentTool::cleanup_worktree(
+        let cleaned = AgentTool::cleanup_worktree_with_hooks(
             &worktree.git_root,
             &worktree.worktree_path,
             &worktree.branch_name,
             agent_id,
+            Some(&worktree.hook_runner),
+            Some(&worktree.hooks),
         )
         .await;
-        let _ = global_store().append_output(
-            task_id,
-            "[Supervisor: shutdown cleaned an unchanged worktree]",
-        );
+        let suffix = if cleaned {
+            "[Supervisor: shutdown cleaned an unchanged worktree]".to_string()
+        } else {
+            format!(
+                "[Supervisor: shutdown kept unchanged worktree at {} on branch {} because cleanup could not be verified]",
+                worktree.worktree_path.display(),
+                worktree.branch_name
+            )
+        };
+        let _ = global_store().append_output(task_id, &suffix);
     }
 }
 

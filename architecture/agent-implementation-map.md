@@ -34,9 +34,9 @@
 
 | 上游文档 | 结论 | cc-rust 侧核心依据 | 备注 |
 | --- | --- | --- | --- |
-| `coordinator-and-swarm.mdx` | `部分实现` | `teams/mod.rs:11-44`、`team_cmd.rs:1-435`、`send_message.rs:23-435`、`team_spawn.rs:26-359`、`teams/runner.rs:64-448`、`tasks.rs:421-476,1972-2029,2086-2198` | Agent Teams、in-process teammate、Mailbox、TaskList / TaskStop 都有；但没有独立的 coordinator 专用模式入口、coordinator prompt / tool filter、worker 专用 agent，也没有 `subscribe_pr_activity`。 |
+| `coordinator-and-swarm.mdx` | `部分实现` | `teams/mod.rs:11-44`、`teams/coordinator.rs`、`commands/coordinator.rs`、`tools/registry.rs`、`send_message.rs:23-435`、`team_spawn.rs:26-359`、`teams/runner.rs:64-448`、`tasks.rs:421-476,1972-2029,2086-2198`、`tools/pr_activity.rs` | Agent Teams、coordinator gate / prompt / tool policy、worker agent、in-process teammate、Mailbox、TaskList / TaskStop、PR activity 本地订阅闭环均已落地；tmux / iTerm2 等外部 swarm 后端仍按当前实现范围保留为裁剪项。 |
 | `sub-agents.mdx` | `已实现` | `engine/agent/mod.rs:30-62,247-356`、`tool_impl.rs:88-229`、`dispatch.rs:168-238`、`supervisor.rs:74-189`、`ipc/builtin_agents.rs:1-180`、`ipc/agent_settings.rs:180-245,545-583` | 子 Agent 入口、内置 agent、agent 定义工具过滤、background / sync 生命周期、hooks、AgentTree、worktree 隔离和 fork 侧路都已落地。 |
-| `worktree-isolation.mdx` | `部分实现` | `tools/worktree.rs:1-520`、`engine/agent/worktree.rs:1-342`、`engine/agent/supervisor.rs:546-762`、`engine/agent/mod.rs:104-156` | 有用户会话 worktree 工具、子 Agent worktree 隔离和清理；但路径布局、hook-based 创建/删除、sparse checkout 和恢复流程与 Bun 上游不同。 |
+| `worktree-isolation.mdx` | `部分实现` | `worktree_hooks.rs`、`tools/worktree.rs:1-520`、`engine/agent/worktree.rs:1-342`、`engine/agent/supervisor.rs:546-762`、`engine/agent/mod.rs:104-156`、`cc-config/src/paths.rs` | 有用户会话 worktree 工具、子 Agent worktree 隔离、`WorktreeCreate` / `WorktreeRemove` hook 接线和 `{CC_RUST_HOME}/worktrees` 隔离路径；sparse checkout、session restore 与 Bun 的 `.claude/worktrees` 同构布局仍未实现。 |
 
 ## 逐文档分析
 
@@ -49,10 +49,10 @@
 - `SendMessage` 已实现 mailbox 定向与广播能力：`tools/send_message.rs:23-435` 负责路由消息到队友 mailbox；`teams/mailbox.rs:71-177` 负责读写、锁和清理；`teams/runner.rs:281-448` 负责轮询 mailbox、处理协议消息和空闲通知。
 - `TaskList` / `TaskStop` 已实现：`tools/tasks.rs:2086-2198` 提供任务列表与取消，配合 `supervisor.rs:74-189` 把后台 Agent 绑定到持久任务。
 - `plan` 相关的审批链路也有对应：`tools/plan_mode.rs` 和 `teams/runner.rs:330-386` 支持计划审批消息往返。
-- 缺口在于 Bun 的独立 coordinator 机制没有在 Rust 源码里出现：当前没有单独的 `coordinatorMode` 入口，也没有 `subscribe_pr_activity` 一类的 PR 事件订阅工具。补充文件核查确认，Bun 的 coordinator gate / session-mode sync / worker context / system prompt 位于 `src/coordinator/coordinatorMode.ts:36-133`、`111-369`；Rust 侧只在 `cc-config/src/features.rs:21-32`、`91-96` 看到 `AgentTeams` gate，没有 `Coordinator` feature 或 `CLAUDE_CODE_COORDINATOR_MODE` 入口。
-- Bun 的 coordinator 工具白名单由 `src/constants/tools.ts:105-110` 定义为 `Agent`、`TaskStop`、`SendMessage`、`SyntheticOutput`，并在 `src/utils/toolPool.ts:35-40` 额外放行 `subscribe_pr_activity` / `unsubscribe_pr_activity` 后缀。Rust 侧 `tools/registry.rs:42-79` 仍注册完整工具池，没有 coordinator-mode filter。
+- 原缺口在于 Bun 的独立 coordinator 机制没有在 Rust 源码里出现。Phase 1-4 已补 `Coordinator` feature gate、`CLAUDE_CODE_COORDINATOR_MODE`、coordinator prompt / session override、`/coordinator` 入口、worker 默认 agent，以及 `subscribe_pr_activity` / `unsubscribe_pr_activity` 的本地可测事件流；Bun 的 coordinator gate / session-mode sync / worker context / system prompt 仍作为语义对照来源。
+- Bun 的 coordinator 工具白名单由 `src/constants/tools.ts:105-110` 定义为 `Agent`、`TaskStop`、`SendMessage`、`SyntheticOutput`，并在 `src/utils/toolPool.ts:35-40` 额外放行 `subscribe_pr_activity` / `unsubscribe_pr_activity` 后缀。Rust 侧已在 `tools/registry.rs` 用 `ToolPolicy` 区分 default / coordinator / worker / teammate 工具池；其中 `SyntheticOutput` 当前没有同构工具。
 - Bun 的 coordinator worker 专用 agent 在 `src/coordinator/workerAgent.ts:41-67` 定义，工具集来自 `ASYNC_AGENT_ALLOWED_TOOLS` 减去内部编排工具。Rust 侧 `ipc/builtin_agents.rs:27-140` 没有 `worker` 内置 agent；`teams/runner.rs:89-98` 给 in-process teammate 装配 `get_all_tools()`，因此没有 Bun 那套 team lead / worker 工具白名单分层。
-- PR 订阅精确行为已收敛为 `未实现`：Rust 仓库未发现 `subscribe_pr_activity` / `unsubscribe_pr_activity` 工具或 suffix 放行逻辑；现有 `/review` 只是生成本地 `gh pr view` / `gh pr diff` 工作流提示（`commands/review.rs:41-55`），daemon 的 `/webhook/github` 仍是接收即返回的 Phase-3 stub（`daemon/routes.rs:563-575`）。
+- PR 订阅精确行为已补成本地可测闭环：`tools/pr_activity.rs` 暴露 `subscribe_pr_activity` / `unsubscribe_pr_activity`，coordinator 工具策略放行这两个工具，订阅状态写入 `{CC_RUST_HOME}/pr-activity-subscriptions.json`，daemon 的 `/webhook/github` 会按 pull request / review / issue comment 事件匹配订阅并投递 mailbox；真实 GitHub App / MCP 传输仍是后续集成点。
 - 另一个显著差异是后端策略：`teams/mod.rs:39-44` 明确把当前实现收敛到 `in_process::InProcessBackend`，因此 Bun 文档里的 tmux / 多终端 swarm 路径属于 `故意裁剪`。
 
 ### sub-agents.mdx
@@ -77,9 +77,9 @@
 - 运行时 worktree 采用临时目录和自动分支命名：`worktree.rs:86-106` 生成 `agent-worktree-{id}`，`worktree.rs:275-342` 根据变更决定保留或清理。
 - 后台 Agent 也复用同一套 worktree 生命周期：`supervisor.rs:546-762` 先准备 worktree，再在退出时按变更数决定保留或清理。
 - 变更统计是 fail-closed 的：`engine/agent/mod.rs:104-156` 的 `count_worktree_changes()` 依赖 `git status` / `git rev-list`，失败时返回 `None`，后续清理逻辑不会冒险删除。
-- 用户会话层也已有 `EnterWorktree` / `ExitWorktree` 工具：`tools/worktree.rs:203-285` 创建不可嵌套的临时 git worktree，`tools/worktree.rs:350-412` 在删除前执行 fail-closed 变更检查，`tools/worktree.rs:426-520` 支持 `keep` 或 `remove`。但它使用系统临时目录和 `cc-worktree-{slug}` 分支，不使用 Bun 的 `.claude/worktrees/<slug>` 与 `worktree/<slug>` 布局。
-- Bun 的 hook-based worktree 链路位于 `src/utils/worktree.ts:715-727`、`825-827`、`912-918`、`967-973`，会通过 `WorktreeCreate` / `WorktreeRemove` 替代 git 创建/删除。Rust 侧只看到通用 hook dispatcher 和 `SubagentStart` / `SubagentStop` 事件；`tools/worktree.rs`、`engine/agent/worktree.rs`、`engine/agent/supervisor.rs` 没有 `WorktreeCreate` / `WorktreeRemove` 事件调用，因此该差异不是 `待确认`，而是 `部分实现` 中的明确缺口。
-- 这意味着“子 Agent worktree 隔离”能力是存在的，但 Bun 文档里的路径布局、hook 方式和会话恢复流程并没有一一对齐，因此整章结论应记为 `部分实现`，其中 `.claude/worktrees` 和 `WorktreeCreate` / `WorktreeRemove` 属于 `故意裁剪`。
+- 用户会话层也已有 `EnterWorktree` / `ExitWorktree` 工具：`tools/worktree.rs:203-285` 创建不可嵌套的 git worktree，`tools/worktree.rs:350-412` 在删除前执行 fail-closed 变更检查，`tools/worktree.rs:426-520` 支持 `keep` 或 `remove`。Phase 5 后默认目录使用 `{CC_RUST_HOME}/worktrees/cc-worktree-{slug}`，仍不使用 Bun 的 `.claude/worktrees/<slug>` 与 `worktree/<slug>` 布局。
+- Bun 的 hook-based worktree 链路位于 `src/utils/worktree.ts:715-727`、`825-827`、`912-918`、`967-973`，会通过 `WorktreeCreate` / `WorktreeRemove` 替代 git 创建/删除。Rust 侧已新增共享 `worktree_hooks.rs`，并在 `tools/worktree.rs`、`engine/agent/worktree.rs`、`engine/agent/supervisor.rs` 接入 create/remove hook；hook 缺失时回退 git create/remove，hook remove 未明确成功、路径越界或清理无法验证时保留 worktree。
+- 这意味着“子 Agent worktree 隔离”和 hook 替代链路都已存在，但 Bun 文档里的 `.claude/worktrees` 同构布局、sparse checkout 与 session restore 仍未一一对齐，因此整章结论仍应记为 `部分实现`。
 
 ## 补充核查：文件与行为
 
@@ -87,10 +87,10 @@
 
 | 原待确认点 | Bun 侧文件证据 | cc-rust 侧文件证据 | 收敛结论 |
 | --- | --- | --- | --- |
-| coordinator 专用 prompt / gate | `coordinatorMode.ts:36-41` 定义 `COORDINATOR_MODE` + `CLAUDE_CODE_COORDINATOR_MODE` gate；`coordinatorMode.ts:80-109` 注入 worker 工具上下文；`coordinatorMode.ts:111-369` 生成 coordinator prompt。 | `cc-config/src/features.rs:21-32,91-96` 只有 `AgentTeams` gate；`teams/mod.rs:61-93` 只判断 env 或 `AppState::team_context`；源码未发现 `Coordinator` feature、`CLAUDE_CODE_COORDINATOR_MODE` 或 `getCoordinatorSystemPrompt`。 | `未实现` |
-| coordinator / worker 工具白名单分层 | `constants/tools.ts:55-71` 定义 async agent 工具；`77-86` 定义 teammate 专属任务/消息工具；`105-110` 定义 coordinator 工具；`workerAgent.ts:35-45` 从 async 工具里剔除内部编排工具。 | `tools/registry.rs:42-79` 注册完整工具池；`engine/agent/mod.rs:299-356` 只对普通 subagent 按 agent definition 过滤；`teams/runner.rs:89-98` 给 teammate 使用完整 `get_all_tools()`；`ipc/builtin_agents.rs:27-140` 没有 `worker` 内置 agent。 | `部分实现`：普通 subagent 工具过滤已实现；Bun coordinator/team worker 分层未实现。 |
-| PR activity subscription 精确行为 | `toolPool.ts:8-18,35-40` 允许 `subscribe_pr_activity` / `unsubscribe_pr_activity` 后缀；`coordinatorMode.ts:128-133` 明确提示 coordinator 直接管理 PR 订阅。 | `rg` 未在 Rust 工具/registry 中找到 `subscribe_pr_activity` 或 `unsubscribe_pr_activity`；`commands/review.rs:41-55` 只是本地 `gh pr` review prompt；`daemon/routes.rs:563-575` 的 GitHub webhook 仍是 stub。 | `未实现` |
-| WorktreeCreate / WorktreeRemove hook 对照 | `utils/worktree.ts:715-727`、`912-918` 优先执行 `WorktreeCreate`；`825-827`、`967-973` 对 hook-based worktree 执行 `WorktreeRemove`。 | `tools/worktree.rs:220-285`、`426-520` 和 `engine/agent/worktree.rs:86-107,275-342` 直接调用 git；`tools/hooks` 只有通用事件 runner，未看到 worktree 专用事件接线。 | `部分实现`：git worktree 能力存在；hook-based VCS 替代链路缺失。 |
+| coordinator 专用 prompt / gate | `coordinatorMode.ts:36-41` 定义 `COORDINATOR_MODE` + `CLAUDE_CODE_COORDINATOR_MODE` gate；`coordinatorMode.ts:80-109` 注入 worker 工具上下文；`coordinatorMode.ts:111-369` 生成 coordinator prompt。 | `cc-config/src/features.rs` 新增 `Coordinator` gate（`CLAUDE_CODE_COORDINATOR_MODE`）；`teams/coordinator.rs` 集中 coordinator prompt / session override；`engine/system_prompt.rs` 按 gate 注入 coordinator section；`commands/coordinator.rs` 提供运行时启停入口。 | `已实现` |
+| coordinator / worker 工具白名单分层 | `constants/tools.ts:55-71` 定义 async agent 工具；`77-86` 定义 teammate 专属任务/消息工具；`105-110` 定义 coordinator 工具；`workerAgent.ts:35-45` 从 async 工具里剔除内部编排工具。 | `tools/registry.rs` 新增 `ToolPolicy` 分层并限制 coordinator lead / worker 工具；`ipc/builtin_agents.rs` 新增 `worker` 内置 agent；`teams/runner.rs` 和 in-process teammate 创建链路按策略注入工具。 | `部分实现`：coordinator/worker 分层已落地；上游 `SyntheticOutput` 在 Rust 当前工具面中没有同构能力。 |
+| PR activity subscription 精确行为 | `toolPool.ts:8-18,35-40` 允许 `subscribe_pr_activity` / `unsubscribe_pr_activity` 后缀；`coordinatorMode.ts:128-133` 明确提示 coordinator 直接管理 PR 订阅。 | `tools/pr_activity.rs` 实现订阅/取消订阅和事件匹配；`tools/registry.rs` 只在 coordinator 策略暴露订阅工具；`daemon/routes.rs` 的 `/webhook/github` 路由 GitHub PR/review/comment 事件到 mailbox；状态写入 `{CC_RUST_HOME}/pr-activity-subscriptions.json`。 | `部分实现`：本地 webhook + store + mailbox 闭环已实现；真实 GitHub App / MCP 传输仍是后续集成点。 |
+| WorktreeCreate / WorktreeRemove hook 对照 | `utils/worktree.ts:715-727`、`912-918` 优先执行 `WorktreeCreate`；`825-827`、`967-973` 对 hook-based worktree 执行 `WorktreeRemove`。 | `worktree_hooks.rs` 定义共享 schema 与路径边界；`tools/worktree.rs`、`engine/agent/worktree.rs`、`engine/agent/supervisor.rs` 在创建/删除路径接入 `WorktreeCreate` / `WorktreeRemove`；`cc-config/src/paths.rs` 新增 `{CC_RUST_HOME}/worktrees`。 | `已实现`：hook create/remove 替代链路已接线；sparse checkout / session restore 仍按 worktree 章节记录为未实现。 |
 
 ### 行为核查收敛
 
@@ -115,13 +115,12 @@
 
 ## 未实现 / 部分实现 / 待确认 / 故意裁剪
 
-- `未实现`：独立的 coordinator 专用模式入口、专用 gate、以及 `subscribe_pr_activity` 一类的 PR 事件订阅工具。当前 Rust 侧只看到 Agent Teams / in-process swarm 的替代路径。
+- `未实现`：真实 GitHub App / MCP PR activity 传输、worktree sparse checkout、worktree session restore，以及 Bun `.claude/worktrees` 的完全同构路径布局。
 - `部分实现`：`coordinator-and-swarm.mdx` 里的 swarm 语义在 Rust 侧是“in-process teammate + mailbox + task store”版本，和 Bun 的 coordinator / swarm 分层不是同构实现。
-- `部分实现`：普通子 Agent 的 `tools` / `disallowed_tools` 过滤已实现，但 Bun coordinator 的 team lead / worker 工具白名单分层没有实现；in-process teammate 目前获得完整 registry 工具池。
-- `部分实现`：`worktree-isolation.mdx` 的上游目录布局与工具链更完整，Rust 侧已经有 worktree，但路径和生命周期更偏简单直接。
+- `部分实现`：普通子 Agent 的 `tools` / `disallowed_tools` 过滤、coordinator lead / worker 工具白名单分层、worker 内置 agent 已实现；上游 `SyntheticOutput` 在 Rust 当前工具面中没有同构能力。
+- `部分实现`：`worktree-isolation.mdx` 的 hook create/remove 与 `{CC_RUST_HOME}/worktrees` 隔离根已实现；sparse checkout、session restore 与 Bun `.claude/worktrees` 完全同构布局仍未实现。
 - `故意裁剪`：`teams/mod.rs:39-44` 已明确只保留 `in_process::InProcessBackend`，因此 tmux / iTerm2 一类后端不在当前实现范围内。
-- `故意裁剪`：上游 `WorktreeCreate` / `WorktreeRemove` 的 hook 驱动创建与销毁流程，在 `cc-rust` 里没有对应的同构实现。
-- `待确认`：当前未发现需要继续保留为 `待确认` 的 agent 核心项。原 `待确认` 的 coordinator prompt、team lead / worker 工具白名单、PR 订阅行为、WorktreeCreate / WorktreeRemove hook 对照已在本轮收敛为上面的 `未实现` / `部分实现` / `故意裁剪`。
+- `待确认`：当前未发现需要继续保留为 `待确认` 的 agent 核心项。原 `待确认` 的 coordinator prompt、team lead / worker 工具白名单、PR 订阅行为、WorktreeCreate / WorktreeRemove hook 对照已在本轮收敛并按 Phase 1-5 落地或明确列为后续未实现项。
 
 ## 实现阶段建议
 
@@ -132,6 +131,7 @@
 - 2026-05-06：Phase 2 已完成第一轮落地，新增 `ToolPolicy` 分层（`DefaultAgent` / `Coordinator` / `CoordinatorWorker` / `InProcessTeammate`），主会话在 coordinator gate 开启时切换到 lead 工具池，in-process teammate runner 切换到受限工具池，并在 coordinator 模式下默认用 `worker` agent prompt / 工具边界启动 teammate。
 - 2026-05-06：Phase 3 已完成最小运行时闭环，新增 `/coordinator` 命令入口，可在当前会话启停 coordinator gate、创建/绑定 active team、展示 lead 工具策略；`/team spawn` 与 `TeamSpawn` 在 coordinator 模式下默认创建 `worker` teammate，并继续复用现有 `SendMessage` / `TaskList` / `TaskStop` 通信和任务控制链路。
 - 2026-05-06：Phase 4 已完成本地可测的 PR activity subscription 闭环，新增 `subscribe_pr_activity` / `unsubscribe_pr_activity` coordinator-only 工具、`{CC_RUST_HOME}/pr-activity-subscriptions.json` 隔离存储，以及 `/webhook/github` 对 pull request / review / issue comment 事件的订阅匹配和 mailbox 投递；真实 GitHub App / MCP 传输仍作为后续集成点。
+- 2026-05-06：Phase 5 已完成 worktree hook parity 的可测骨架，新增 `WorktreeCreate` / `WorktreeRemove` 事件入口和共享 hook schema，用户 `EnterWorktree` / `ExitWorktree`、同步 Agent worktree、后台 supervisor worktree 创建/清理路径均接入 hook；默认 worktree 根切换到 `{CC_RUST_HOME}/worktrees`，删除路径在路径越界、hook remove 未明确处理或清理无法验证时保留 worktree。
 
 ### Phase 0：锁定现有行为基线
 
@@ -218,4 +218,4 @@
 
 1. 如果后续要继续补 `context`、`extensibility`、`safety`、`tools` 四章，沿用同一模板分别生成映射表。
 2. 如果要追求与 Bun coordinator 完全同构，下一步不是继续核查，而是补设计决策：是否引入 `COORDINATOR_MODE` gate、coordinator prompt、coordinator tool filter、worker 内置 agent 与 PR activity subscription MCP 适配。
-3. 如果要追求与 Bun worktree 章节完全同构，下一步是补实现设计：`.claude/worktrees/<slug>` 路径、`worktree/<slug>` 分支、session restore、sparse checkout、`WorktreeCreate` / `WorktreeRemove` hook 接线。
+3. 如果要追求与 Bun worktree 章节完全同构，下一步是补实现设计：`.claude/worktrees/<slug>` 路径、`worktree/<slug>` 分支、session restore、sparse checkout。

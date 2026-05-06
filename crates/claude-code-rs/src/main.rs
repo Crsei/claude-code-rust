@@ -44,6 +44,7 @@ mod startup;
 mod tools;
 mod types;
 mod ui;
+mod worktree_hooks;
 // `utils` lives in its own crate (`cc-utils`). Re-alias at the crate root so
 // existing `crate::utils::...` paths continue to resolve.
 use cc_utils as utils;

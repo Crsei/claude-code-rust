@@ -44,6 +44,8 @@ const KNOWN_EVENTS: &[&str] = &[
     "Stop",
     "SubagentStart",
     "SubagentStop",
+    "WorktreeCreate",
+    "WorktreeRemove",
     "Notification",
 ];
 

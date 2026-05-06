@@ -27,6 +27,10 @@ use tracing::{debug, info, warn};
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
+use crate::worktree_hooks::{
+    default_user_worktree_path, ensure_worktree_parent, run_worktree_create_hook,
+    run_worktree_remove_hook, validate_allowed_worktree_path, WorktreeRemoveHookOutcome,
+};
 
 // ---------------------------------------------------------------------------
 // Worktree session state (process-global, single session)
@@ -213,7 +217,7 @@ impl Tool for EnterWorktreeTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _parent: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
@@ -228,7 +232,7 @@ impl Tool for EnterWorktreeTool {
         let git_root = find_git_root(&cwd).await.unwrap_or_else(|| cwd.clone());
         let original_head = get_head_sha(&git_root).await;
 
-        let worktree_path = std::env::temp_dir().join(format!("cc-worktree-{}", slug));
+        let worktree_path = default_user_worktree_path(&slug);
         let branch_name = format!("cc-worktree-{}", slug);
 
         info!(
@@ -237,23 +241,66 @@ impl Tool for EnterWorktreeTool {
             "creating git worktree"
         );
 
-        let output = tokio::process::Command::new("git")
-            .args([
-                "-C",
-                &git_root.to_string_lossy(),
-                "worktree",
-                "add",
-                "-B",
-                &branch_name,
-                &worktree_path.to_string_lossy(),
-            ])
-            .output()
-            .await?;
+        let app_state = (ctx.get_app_state)();
+        let hook_created = match run_worktree_create_hook(
+            &ctx.hook_runner,
+            &app_state.hooks,
+            "EnterWorktree",
+            &git_root,
+            &worktree_path,
+            &branch_name,
+            &slug,
+            ctx.agent_id.as_deref(),
+        )
+        .await
+        {
+            Ok(Some(created)) if created.worktree_path.is_dir() => Some(created),
+            Ok(Some(created)) => {
+                warn!(
+                    worktree_path = %created.worktree_path.display(),
+                    "WorktreeCreate hook returned a missing directory; falling back to git"
+                );
+                None
+            }
+            Ok(None) => None,
+            Err(err) => {
+                warn!(
+                    error = %err,
+                    "WorktreeCreate hook failed; falling back to git"
+                );
+                None
+            }
+        };
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("Failed to create worktree: {}", stderr);
-        }
+        let (worktree_path, branch_name, created_by) = if let Some(created) = hook_created {
+            (
+                created.worktree_path,
+                created.branch_name,
+                "WorktreeCreate hook",
+            )
+        } else {
+            ensure_worktree_parent(&worktree_path)?;
+
+            let output = tokio::process::Command::new("git")
+                .args([
+                    "-C",
+                    &git_root.to_string_lossy(),
+                    "worktree",
+                    "add",
+                    "-B",
+                    &branch_name,
+                    &worktree_path.to_string_lossy(),
+                ])
+                .output()
+                .await?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                bail!("Failed to create worktree: {}", stderr);
+            }
+
+            (worktree_path, branch_name, "git worktree")
+        };
 
         set_worktree_session(Some(WorktreeSession {
             worktree_path: worktree_path.clone(),
@@ -272,6 +319,7 @@ impl Tool for EnterWorktreeTool {
             data: json!({
                 "worktree_path": worktree_path.display().to_string(),
                 "branch": branch_name,
+                "created_by": created_by,
                 "message": format!(
                     "Created worktree at {} on branch {}. \
                      Changes made here are isolated from the main working tree. \
@@ -419,7 +467,7 @@ impl Tool for ExitWorktreeTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _parent: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
@@ -465,72 +513,157 @@ impl Tool for ExitWorktreeTool {
                     "removing worktree"
                 );
 
-                let remove_result = tokio::process::Command::new("git")
-                    .args([
-                        "-C",
-                        &original_cwd.to_string_lossy(),
-                        "worktree",
-                        "remove",
-                        "--force",
-                        &worktree_path.to_string_lossy(),
-                    ])
-                    .output()
-                    .await;
-
                 let mut warnings = Vec::new();
 
-                match remove_result {
-                    Ok(o) if o.status.success() => {
-                        debug!("worktree directory removed");
+                if let Err(err) = validate_allowed_worktree_path(&worktree_path) {
+                    warnings.push(format!(
+                        "worktree removal refused: {}. Worktree session remains active.",
+                        err
+                    ));
+                    return Ok(ToolResult {
+                        data: json!({
+                            "action": "remove",
+                            "removed": false,
+                            "worktree_path": worktree_path.display().to_string(),
+                            "branch": branch_name,
+                            "message": "Worktree was not removed because its path is outside the cc-rust worktree root.",
+                            "warnings": warnings,
+                        }),
+                        new_messages: vec![],
+                        ..Default::default()
+                    });
+                }
+
+                let app_state = (ctx.get_app_state)();
+                let hook_outcome = match run_worktree_remove_hook(
+                    &ctx.hook_runner,
+                    &app_state.hooks,
+                    "ExitWorktree",
+                    &original_cwd,
+                    &worktree_path,
+                    &branch_name,
+                    ctx.agent_id.as_deref(),
+                )
+                .await
+                {
+                    Ok(outcome) => outcome,
+                    Err(err) => {
+                        warnings.push(format!(
+                            "WorktreeRemove hook failed: {}. Worktree session remains active.",
+                            err
+                        ));
+                        WorktreeRemoveHookOutcome::Unhandled
                     }
-                    Ok(o) => {
-                        let stderr = String::from_utf8_lossy(&o.stderr);
-                        warn!("git worktree remove warning: {}", stderr);
-                        warnings.push(format!("worktree remove warning: {}", stderr.trim()));
+                };
+
+                let mut removed_by = None;
+
+                match hook_outcome {
+                    WorktreeRemoveHookOutcome::NoHook => {
+                        let remove_result = tokio::process::Command::new("git")
+                            .args([
+                                "-C",
+                                &original_cwd.to_string_lossy(),
+                                "worktree",
+                                "remove",
+                                "--force",
+                                &worktree_path.to_string_lossy(),
+                            ])
+                            .output()
+                            .await;
+
+                        match remove_result {
+                            Ok(o) if o.status.success() => {
+                                debug!("worktree directory removed");
+                                removed_by = Some("git worktree");
+                            }
+                            Ok(o) => {
+                                let stderr = String::from_utf8_lossy(&o.stderr);
+                                warn!("git worktree remove warning: {}", stderr);
+                                warnings
+                                    .push(format!("worktree remove warning: {}", stderr.trim()));
+                            }
+                            Err(e) => {
+                                warn!("git worktree remove failed: {}", e);
+                                warnings.push(format!("worktree remove failed: {}", e));
+                            }
+                        }
+
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+                        if !worktree_path.exists() {
+                            let branch_result = tokio::process::Command::new("git")
+                                .args([
+                                    "-C",
+                                    &original_cwd.to_string_lossy(),
+                                    "branch",
+                                    "-D",
+                                    &branch_name,
+                                ])
+                                .output()
+                                .await;
+
+                            match branch_result {
+                                Ok(o) if o.status.success() => {
+                                    debug!("worktree branch deleted");
+                                }
+                                Ok(o) => {
+                                    let stderr = String::from_utf8_lossy(&o.stderr);
+                                    warn!("branch delete warning: {}", stderr);
+                                    warnings
+                                        .push(format!("branch delete warning: {}", stderr.trim()));
+                                }
+                                Err(e) => {
+                                    warn!("branch delete failed: {}", e);
+                                    warnings.push(format!("branch delete failed: {}", e));
+                                }
+                            }
+                        }
                     }
-                    Err(e) => {
-                        warn!("git worktree remove failed: {}", e);
-                        warnings.push(format!("worktree remove failed: {}", e));
+                    WorktreeRemoveHookOutcome::Handled => {
+                        removed_by = Some("WorktreeRemove hook");
+                    }
+                    WorktreeRemoveHookOutcome::Unhandled => {
+                        if warnings.is_empty() {
+                            warnings.push(
+                                "WorktreeRemove hook did not explicitly report removal. \
+                                 Worktree session remains active."
+                                    .to_string(),
+                            );
+                        }
                     }
                 }
 
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-                let branch_result = tokio::process::Command::new("git")
-                    .args([
-                        "-C",
-                        &original_cwd.to_string_lossy(),
-                        "branch",
-                        "-D",
-                        &branch_name,
-                    ])
-                    .output()
-                    .await;
-
-                match branch_result {
-                    Ok(o) if o.status.success() => {
-                        debug!("worktree branch deleted");
-                    }
-                    Ok(o) => {
-                        let stderr = String::from_utf8_lossy(&o.stderr);
-                        warn!("branch delete warning: {}", stderr);
-                        warnings.push(format!("branch delete warning: {}", stderr.trim()));
-                    }
-                    Err(e) => {
-                        warn!("branch delete failed: {}", e);
-                        warnings.push(format!("branch delete failed: {}", e));
-                    }
+                if worktree_path.exists() {
+                    warnings.push(
+                        "Worktree removal could not be verified; session remains active."
+                            .to_string(),
+                    );
+                    return Ok(ToolResult {
+                        data: json!({
+                            "action": "remove",
+                            "removed": false,
+                            "worktree_path": worktree_path.display().to_string(),
+                            "branch": branch_name,
+                            "message": "Worktree kept because removal could not be verified.",
+                            "warnings": warnings,
+                        }),
+                        new_messages: vec![],
+                        ..Default::default()
+                    });
                 }
-
-                set_worktree_session(None);
 
                 let mut result = json!({
                     "action": "remove",
-                    "message": "Worktree removed and branch deleted.",
+                    "removed": true,
+                    "removed_by": removed_by.unwrap_or("unknown"),
+                    "message": "Worktree removed.",
                 });
                 if !warnings.is_empty() {
                     result["warnings"] = json!(warnings);
                 }
+
+                set_worktree_session(None);
 
                 Ok(ToolResult {
                     data: result,
@@ -640,6 +773,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_exit_worktree_no_session() {
         set_worktree_session(None);
 
@@ -653,6 +787,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_exit_worktree_invalid_action() {
         set_worktree_session(Some(WorktreeSession {
             worktree_path: PathBuf::from("/tmp/test"),
@@ -674,7 +809,83 @@ mod tests {
         set_worktree_session(None);
     }
 
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_exit_worktree_remove_fails_closed_when_state_cannot_be_verified() {
+        let tmp = tempfile::tempdir().unwrap();
+        set_worktree_session(Some(WorktreeSession {
+            worktree_path: tmp.path().join("missing-worktree"),
+            branch_name: "test-branch".to_string(),
+            original_cwd: tmp.path().to_path_buf(),
+            original_head_commit: Some("abc123".to_string()),
+        }));
+
+        let tool = ExitWorktreeTool;
+        let ctx = make_ctx();
+        let result = tool
+            .validate_input(&json!({"action": "remove"}), &ctx)
+            .await;
+        match result {
+            ValidationResult::Error {
+                message,
+                error_code,
+            } => {
+                assert_eq!(error_code, 4);
+                assert!(message.contains("Could not verify worktree state"));
+                assert!(message.contains("discard_changes: true"));
+            }
+            other => panic!("expected fail-closed validation error, got {other:?}"),
+        }
+
+        set_worktree_session(None);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_exit_worktree_remove_refuses_out_of_bounds_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        set_worktree_session(Some(WorktreeSession {
+            worktree_path: tmp.path().join("outside-worktree"),
+            branch_name: "test-branch".to_string(),
+            original_cwd: tmp.path().to_path_buf(),
+            original_head_commit: None,
+        }));
+
+        let parent = AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: vec![],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        };
+        let tool = ExitWorktreeTool;
+        let ctx = make_ctx();
+        let result = tool
+            .call(
+                json!({"action": "remove", "discard_changes": true}),
+                &ctx,
+                &parent,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.data["removed"], false);
+        assert!(result.data["message"]
+            .as_str()
+            .unwrap()
+            .contains("outside the cc-rust worktree root"));
+        assert!(get_current_worktree_session().is_some());
+
+        set_worktree_session(None);
+    }
+
     #[test]
+    #[serial_test::serial]
     fn test_worktree_session_lifecycle() {
         set_worktree_session(None);
         assert!(get_current_worktree_session().is_none());
@@ -695,6 +906,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_enter_worktree_blocks_nesting() {
         set_worktree_session(Some(WorktreeSession {
             worktree_path: PathBuf::from("/tmp/existing"),

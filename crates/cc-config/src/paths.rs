@@ -126,6 +126,10 @@ pub fn tasks_dir() -> PathBuf {
     data_root().join("tasks")
 }
 
+pub fn worktrees_dir() -> PathBuf {
+    data_root().join("worktrees")
+}
+
 pub fn pr_activity_subscriptions_path() -> PathBuf {
     data_root().join("pr-activity-subscriptions.json")
 }
@@ -335,6 +339,7 @@ mod tests {
         assert_eq!(skills_dir_global(), base.join("skills"));
         assert_eq!(teams_dir(), base.join("teams"));
         assert_eq!(tasks_dir(), base.join("tasks"));
+        assert_eq!(worktrees_dir(), base.join("worktrees"));
         assert_eq!(
             pr_activity_subscriptions_path(),
             base.join("pr-activity-subscriptions.json")

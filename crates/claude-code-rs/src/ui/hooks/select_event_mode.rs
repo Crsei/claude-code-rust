@@ -7,6 +7,8 @@ pub enum HookEvent {
     Notification,
     Stop,
     SubagentStop,
+    WorktreeCreate,
+    WorktreeRemove,
 }
 
 impl HookEvent {
@@ -17,6 +19,8 @@ impl HookEvent {
             HookEvent::Notification => "Notification",
             HookEvent::Stop => "Stop",
             HookEvent::SubagentStop => "SubagentStop",
+            HookEvent::WorktreeCreate => "WorktreeCreate",
+            HookEvent::WorktreeRemove => "WorktreeRemove",
         }
     }
 
@@ -27,6 +31,8 @@ impl HookEvent {
             HookEvent::Notification => "When a notification is emitted",
             HookEvent::Stop => "When the main agent stops",
             HookEvent::SubagentStop => "When a subagent stops",
+            HookEvent::WorktreeCreate => "When a worktree is created",
+            HookEvent::WorktreeRemove => "When a worktree is removed",
         }
     }
 }
@@ -37,6 +43,8 @@ pub const HOOK_EVENTS: &[HookEvent] = &[
     HookEvent::Notification,
     HookEvent::Stop,
     HookEvent::SubagentStop,
+    HookEvent::WorktreeCreate,
+    HookEvent::WorktreeRemove,
 ];
 
 pub fn render_select_event_mode(selected: HookEvent) -> String {

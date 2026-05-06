@@ -15,6 +15,10 @@ use super::{
     AgentInput, AgentTool,
 };
 use crate::engine::lifecycle::QueryEngine;
+use crate::worktree_hooks::{
+    default_agent_worktree_path, ensure_worktree_parent, run_worktree_create_hook,
+    run_worktree_remove_hook, validate_allowed_worktree_path, WorktreeRemoveHookOutcome,
+};
 
 impl AgentTool {
     /// Run the agent inside an isolated git worktree.
@@ -86,7 +90,7 @@ impl AgentTool {
         // -- 2. Create branch + worktree
         let short_id = &Uuid::new_v4().to_string()[..8];
         let branch_name = format!("agent-worktree-{}", short_id);
-        let worktree_path = std::env::temp_dir().join(format!("agent-worktree-{}", short_id));
+        let worktree_path = default_agent_worktree_path(short_id);
 
         info!(
             agent_id = %agent_id,
@@ -95,69 +99,52 @@ impl AgentTool {
             "creating agent worktree"
         );
 
-        let wt_output = tokio::process::Command::new("git")
-            .args([
-                "-C",
-                &git_root.to_string_lossy(),
-                "worktree",
-                "add",
-                "-B",
-                &branch_name,
-                &worktree_path.to_string_lossy(),
-            ])
-            .output()
-            .await;
-
-        match wt_output {
-            Ok(ref o) if !o.status.success() => {
-                let stderr = String::from_utf8_lossy(&o.stderr);
+        let app_state = (ctx.get_app_state)();
+        let hook_created = match run_worktree_create_hook(
+            &ctx.hook_runner,
+            &app_state.hooks,
+            "AgentTool",
+            &git_root,
+            &worktree_path,
+            &branch_name,
+            short_id,
+            Some(agent_id),
+        )
+        .await
+        {
+            Ok(Some(created)) if created.worktree_path.is_dir() => Some(created),
+            Ok(Some(created)) => {
                 warn!(
                     agent_id = %agent_id,
-                    error = %stderr,
-                    "worktree creation failed — falling back to normal execution"
+                    worktree_path = %created.worktree_path.display(),
+                    "WorktreeCreate hook returned a missing directory; falling back to git"
                 );
-                let _ = crate::dashboard::emit_subagent_event(
-                    "warning",
-                    agent_id,
-                    ctx.agent_id.as_deref(),
-                    Some(description),
-                    Some(agent_model),
-                    current_depth + 1,
-                    background,
-                    Some(json!({
-                        "message": format!(
-                            "worktree isolation skipped: git worktree add failed: {}",
-                            stderr.trim()
-                        ),
-                    })),
-                );
-                return self
-                    .run_agent_normal(
-                        params,
-                        ctx,
-                        agent_id,
-                        description,
-                        agent_model,
-                        parent_model,
-                        current_depth,
-                        background,
-                    )
-                    .await
-                    .map(|mut r| {
-                        if let Some(s) = r.data.as_str() {
-                            r.data = json!(format!(
-                                "[WARNING: worktree isolation skipped — git worktree add failed: {}]\n\n{}",
-                                stderr.trim(), s
-                            ));
-                        }
-                        r
-                    });
+                None
             }
+            Ok(None) => None,
             Err(e) => {
                 warn!(
                     agent_id = %agent_id,
                     error = %e,
-                    "worktree creation failed — falling back to normal execution"
+                    "WorktreeCreate hook failed; falling back to git"
+                );
+                None
+            }
+        };
+
+        let (worktree_path, branch_name, created_by_hook) = if let Some(created) = hook_created {
+            debug!(
+                agent_id = %agent_id,
+                worktree_path = %created.worktree_path.display(),
+                "worktree created by WorktreeCreate hook"
+            );
+            (created.worktree_path, created.branch_name, true)
+        } else {
+            if let Err(e) = ensure_worktree_parent(&worktree_path) {
+                warn!(
+                    agent_id = %agent_id,
+                    error = %e,
+                    "worktree parent preparation failed; falling back to normal execution"
                 );
                 let _ = crate::dashboard::emit_subagent_event(
                     "warning",
@@ -186,19 +173,122 @@ impl AgentTool {
                     .map(|mut r| {
                         if let Some(s) = r.data.as_str() {
                             r.data = json!(format!(
-                                "[WARNING: worktree isolation skipped — {}]\n\n{}",
+                                "[WARNING: worktree isolation skipped - {}]\n\n{}",
                                 e, s
                             ));
                         }
                         r
                     });
             }
-            Ok(_) => {
-                debug!(
-                    agent_id = %agent_id,
-                    worktree_path = %worktree_path.display(),
-                    "worktree created successfully"
-                );
+            (worktree_path, branch_name, false)
+        };
+
+        if !created_by_hook {
+            let wt_output = tokio::process::Command::new("git")
+                .args([
+                    "-C",
+                    &git_root.to_string_lossy(),
+                    "worktree",
+                    "add",
+                    "-B",
+                    &branch_name,
+                    &worktree_path.to_string_lossy(),
+                ])
+                .output()
+                .await;
+
+            match wt_output {
+                Ok(ref o) if !o.status.success() => {
+                    let stderr = String::from_utf8_lossy(&o.stderr);
+                    warn!(
+                        agent_id = %agent_id,
+                        error = %stderr,
+                        "worktree creation failed — falling back to normal execution"
+                    );
+                    let _ = crate::dashboard::emit_subagent_event(
+                        "warning",
+                        agent_id,
+                        ctx.agent_id.as_deref(),
+                        Some(description),
+                        Some(agent_model),
+                        current_depth + 1,
+                        background,
+                        Some(json!({
+                            "message": format!(
+                                "worktree isolation skipped: git worktree add failed: {}",
+                                stderr.trim()
+                            ),
+                        })),
+                    );
+                    return self
+                    .run_agent_normal(
+                        params,
+                        ctx,
+                        agent_id,
+                        description,
+                        agent_model,
+                        parent_model,
+                        current_depth,
+                        background,
+                    )
+                    .await
+                    .map(|mut r| {
+                        if let Some(s) = r.data.as_str() {
+                            r.data = json!(format!(
+                                "[WARNING: worktree isolation skipped — git worktree add failed: {}]\n\n{}",
+                                stderr.trim(), s
+                            ));
+                        }
+                        r
+                    });
+                }
+                Err(e) => {
+                    warn!(
+                        agent_id = %agent_id,
+                        error = %e,
+                        "worktree creation failed — falling back to normal execution"
+                    );
+                    let _ = crate::dashboard::emit_subagent_event(
+                        "warning",
+                        agent_id,
+                        ctx.agent_id.as_deref(),
+                        Some(description),
+                        Some(agent_model),
+                        current_depth + 1,
+                        background,
+                        Some(json!({
+                            "message": format!("worktree isolation skipped: {}", e),
+                        })),
+                    );
+                    return self
+                        .run_agent_normal(
+                            params,
+                            ctx,
+                            agent_id,
+                            description,
+                            agent_model,
+                            parent_model,
+                            current_depth,
+                            background,
+                        )
+                        .await
+                        .map(|mut r| {
+                            if let Some(s) = r.data.as_str() {
+                                r.data = json!(format!(
+                                    "[WARNING: worktree isolation skipped — {}]\n\n{}",
+                                    e, s
+                                ));
+                            }
+                            r
+                        });
+                }
+                Ok(_) => {
+                    debug!(
+                        agent_id = %agent_id,
+                        worktree_path = %worktree_path.display(),
+                        "worktree created successfully"
+                    );
+                }
             }
         }
 
@@ -336,10 +426,27 @@ impl AgentTool {
                 })),
             );
 
-            Self::cleanup_worktree(&git_root, &worktree_path, &branch_name, agent_id).await;
+            let cleaned = Self::cleanup_worktree_with_hooks(
+                &git_root,
+                &worktree_path,
+                &branch_name,
+                agent_id,
+                Some(&ctx.hook_runner),
+                Some(&app_state.hooks),
+            )
+            .await;
 
-            result_text
-                .push_str("\n\n[Worktree isolation: no changes detected — worktree cleaned up]");
+            if cleaned {
+                result_text.push_str(
+                    "\n\n[Worktree isolation: no changes detected — worktree cleaned up]",
+                );
+            } else {
+                result_text.push_str(&format!(
+                    "\n\n[Worktree isolation: no changes detected, but cleanup could not be verified. Worktree kept at: {} on branch: {}]",
+                    worktree_path.display(),
+                    branch_name
+                ));
+            }
         }
 
         let duration_ms = started.elapsed().as_millis() as u64;
@@ -407,13 +514,71 @@ impl AgentTool {
         })
     }
 
-    /// Remove a worktree and its branch after agent completes with no changes.
-    pub(super) async fn cleanup_worktree(
+    /// Remove a worktree through `WorktreeRemove` hooks when configured.
+    ///
+    /// Missing hooks fall back to git. Configured hooks must explicitly report
+    /// that they handled removal; failures and ambiguous output keep the
+    /// worktree so cleanup stays fail-closed.
+    pub(super) async fn cleanup_worktree_with_hooks(
         git_root: &Path,
         worktree_path: &Path,
         branch_name: &str,
         agent_id: &str,
-    ) {
+        hook_runner: Option<&std::sync::Arc<dyn cc_types::hooks::HookRunner>>,
+        hooks: Option<&cc_types::hooks::HooksMap>,
+    ) -> bool {
+        if let Err(err) = validate_allowed_worktree_path(worktree_path) {
+            warn!(
+                agent_id = %agent_id,
+                error = %err,
+                "worktree cleanup refused for out-of-bounds path"
+            );
+            return false;
+        }
+
+        if let (Some(hook_runner), Some(hooks)) = (hook_runner, hooks) {
+            match run_worktree_remove_hook(
+                hook_runner,
+                hooks,
+                "AgentTool",
+                git_root,
+                worktree_path,
+                branch_name,
+                Some(agent_id),
+            )
+            .await
+            {
+                Ok(WorktreeRemoveHookOutcome::NoHook) => {}
+                Ok(WorktreeRemoveHookOutcome::Handled) => {
+                    if worktree_path.exists() {
+                        warn!(
+                            agent_id = %agent_id,
+                            worktree_path = %worktree_path.display(),
+                            "WorktreeRemove hook reported success but path still exists"
+                        );
+                        return false;
+                    }
+                    debug!(agent_id = %agent_id, "worktree removed by WorktreeRemove hook");
+                    return true;
+                }
+                Ok(WorktreeRemoveHookOutcome::Unhandled) => {
+                    warn!(
+                        agent_id = %agent_id,
+                        "WorktreeRemove hook did not explicitly report removal; keeping worktree"
+                    );
+                    return false;
+                }
+                Err(err) => {
+                    warn!(
+                        agent_id = %agent_id,
+                        error = %err,
+                        "WorktreeRemove hook failed; keeping worktree"
+                    );
+                    return false;
+                }
+            }
+        }
+
         let remove_result = tokio::process::Command::new("git")
             .args([
                 "-C",
@@ -426,9 +591,11 @@ impl AgentTool {
             .output()
             .await;
 
+        let mut removed = false;
         match remove_result {
             Ok(o) if o.status.success() => {
                 debug!(agent_id = %agent_id, "agent worktree directory removed");
+                removed = true;
             }
             Ok(o) => {
                 let stderr = String::from_utf8_lossy(&o.stderr);
@@ -440,6 +607,15 @@ impl AgentTool {
             Err(e) => {
                 warn!(agent_id = %agent_id, "worktree remove failed: {}", e);
             }
+        }
+
+        if worktree_path.exists() {
+            warn!(
+                agent_id = %agent_id,
+                worktree_path = %worktree_path.display(),
+                "worktree removal could not be verified"
+            );
+            return false;
         }
 
         // Brief pause to let git release locks before branch delete
@@ -471,6 +647,8 @@ impl AgentTool {
                 warn!(agent_id = %agent_id, "branch delete failed: {}", e);
             }
         }
+
+        removed
     }
 }
 
@@ -491,13 +669,16 @@ mod tests {
         assert_eq!(branch_name, "agent-worktree-abcd1234");
     }
 
-    /// Worktree path must be under temp dir with matching suffix.
+    /// Worktree path must be under the cc-rust worktree root with matching suffix.
     #[test]
     fn test_worktree_path_format() {
         let short_id = "abcd1234";
-        let worktree_path = std::env::temp_dir().join(format!("agent-worktree-{}", short_id));
+        let worktree_path = crate::worktree_hooks::default_agent_worktree_path(short_id);
         let path_str = worktree_path.to_string_lossy();
         assert!(path_str.contains("agent-worktree-abcd1234"));
+        assert!(crate::worktree_hooks::is_allowed_worktree_path(
+            &worktree_path
+        ));
     }
 
     /// Branch name and worktree path suffix must be consistent (same short_id).
@@ -505,7 +686,7 @@ mod tests {
     fn test_branch_name_and_path_share_same_id() {
         let short_id = "deadbeef";
         let branch_name = format!("agent-worktree-{}", short_id);
-        let worktree_path = std::env::temp_dir().join(format!("agent-worktree-{}", short_id));
+        let worktree_path = crate::worktree_hooks::default_agent_worktree_path(short_id);
         let path_tail = worktree_path
             .file_name()
             .and_then(|n| n.to_str())
