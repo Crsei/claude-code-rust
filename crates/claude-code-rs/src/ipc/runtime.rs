@@ -97,13 +97,20 @@ impl HeadlessRuntime {
                     server_name,
                     state,
                     error,
-                } => super::subsystem_events::SubsystemEvent::Mcp(
-                    super::subsystem_events::McpEvent::ServerStateChanged {
-                        server_name,
-                        state,
-                        error,
-                    },
-                ),
+                } => {
+                    crate::mcp::runtime::record_server_state(
+                        server_name.clone(),
+                        state.clone(),
+                        error.clone(),
+                    );
+                    super::subsystem_events::SubsystemEvent::Mcp(
+                        super::subsystem_events::McpEvent::ServerStateChanged {
+                            server_name,
+                            state,
+                            error,
+                        },
+                    )
+                }
                 cc_mcp::McpSubsystemEvent::ToolsDiscovered { server_name, tools } => {
                     super::subsystem_events::SubsystemEvent::Mcp(
                         super::subsystem_events::McpEvent::ToolsDiscovered {

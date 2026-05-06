@@ -24,7 +24,10 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::ipc::subsystem_handlers::{build_mcp_server_config_entries, build_mcp_server_info_list};
+use crate::ipc::subsystem_handlers::{
+    build_mcp_server_config_entries, build_mcp_server_info_list_for_cwd_async,
+    run_mcp_runtime_operation, McpRuntimeOperation,
+};
 use crate::ipc::subsystem_types::{ConfigScope, McpServerConfigEntry};
 use crate::mcp::McpServerConfig;
 
@@ -38,16 +41,16 @@ impl CommandHandler for McpHandler {
         match parts.first().copied() {
             None => Ok(CommandResult::Output(help_text())),
             Some("help") | Some("-h") | Some("--help") => Ok(CommandResult::Output(help_text())),
-            Some("list") | Some("ls") => handle_list(ctx),
-            Some("status") => handle_status(ctx),
+            Some("list") | Some("ls") => handle_list(ctx).await,
+            Some("status") => handle_status(ctx).await,
             Some("add") => handle_add(&parts[1..], ctx),
             Some("edit") | Some("update") => handle_edit(&parts[1..], ctx),
             Some("remove") | Some("rm") | Some("delete") => handle_remove(&parts[1..], ctx),
             Some("approve") | Some("enable") => handle_mcpjson_decision(&parts[1..], ctx, true),
             Some("reject") | Some("disable") => handle_mcpjson_decision(&parts[1..], ctx, false),
-            Some("connect") => handle_connect(&parts[1..]),
-            Some("disconnect") => handle_disconnect(&parts[1..]),
-            Some("reconnect") => handle_reconnect(&parts[1..]),
+            Some("connect") => handle_connect(&parts[1..], ctx).await,
+            Some("disconnect") => handle_disconnect(&parts[1..], ctx).await,
+            Some("reconnect") => handle_reconnect(&parts[1..], ctx).await,
             Some(sub) => Ok(CommandResult::Output(format!(
                 "Unknown mcp subcommand: '{}'.\n\n{}",
                 sub,
@@ -89,9 +92,9 @@ fn help_text() -> String {
 // list / status
 // ---------------------------------------------------------------------------
 
-fn handle_list(ctx: &CommandContext) -> Result<CommandResult> {
+async fn handle_list(ctx: &CommandContext) -> Result<CommandResult> {
     let entries = build_mcp_server_config_entries(&ctx.cwd);
-    let status = build_mcp_server_info_list();
+    let status = build_mcp_server_info_list_for_cwd_async(&ctx.cwd).await;
 
     if entries.is_empty() {
         return Ok(CommandResult::Output(
@@ -166,8 +169,8 @@ fn handle_list(ctx: &CommandContext) -> Result<CommandResult> {
     ))
 }
 
-fn handle_status(_ctx: &CommandContext) -> Result<CommandResult> {
-    let status = build_mcp_server_info_list();
+async fn handle_status(ctx: &CommandContext) -> Result<CommandResult> {
+    let status = build_mcp_server_info_list_for_cwd_async(&ctx.cwd).await;
     if status.is_empty() {
         return Ok(CommandResult::Output(
             "No MCP servers discovered.".to_string(),
@@ -476,36 +479,39 @@ fn handle_mcpjson_decision(
 // connect / disconnect / reconnect
 // ---------------------------------------------------------------------------
 
-fn handle_connect(rest: &[&str]) -> Result<CommandResult> {
+async fn handle_connect(rest: &[&str], ctx: &CommandContext) -> Result<CommandResult> {
     match rest.first() {
-        Some(name) => Ok(CommandResult::Output(format!(
-            "Queued connect for MCP server `{}`. The active session will pick it up on its next connection pass.",
-            name
-        ))),
+        Some(name) => {
+            let report =
+                run_mcp_runtime_operation(&ctx.cwd, McpRuntimeOperation::Connect, name).await;
+            Ok(CommandResult::Output(report.text))
+        }
         None => Ok(CommandResult::Output(
             "Usage: /mcp connect <name>".to_string(),
         )),
     }
 }
 
-fn handle_disconnect(rest: &[&str]) -> Result<CommandResult> {
+async fn handle_disconnect(rest: &[&str], ctx: &CommandContext) -> Result<CommandResult> {
     match rest.first() {
-        Some(name) => Ok(CommandResult::Output(format!(
-            "Queued disconnect for MCP server `{}`. The active session will drop its connection at the next sweep.",
-            name
-        ))),
+        Some(name) => {
+            let report =
+                run_mcp_runtime_operation(&ctx.cwd, McpRuntimeOperation::Disconnect, name).await;
+            Ok(CommandResult::Output(report.text))
+        }
         None => Ok(CommandResult::Output(
             "Usage: /mcp disconnect <name>".to_string(),
         )),
     }
 }
 
-fn handle_reconnect(rest: &[&str]) -> Result<CommandResult> {
+async fn handle_reconnect(rest: &[&str], ctx: &CommandContext) -> Result<CommandResult> {
     match rest.first() {
-        Some(name) => Ok(CommandResult::Output(format!(
-            "Queued reconnect for MCP server `{}`. The active session will cycle its connection.",
-            name
-        ))),
+        Some(name) => {
+            let report =
+                run_mcp_runtime_operation(&ctx.cwd, McpRuntimeOperation::Reconnect, name).await;
+            Ok(CommandResult::Output(report.text))
+        }
         None => Ok(CommandResult::Output(
             "Usage: /mcp reconnect <name>".to_string(),
         )),
@@ -803,6 +809,24 @@ mod tests {
         }
     }
 
+    struct RuntimeMcpGuard;
+
+    impl RuntimeMcpGuard {
+        fn install(
+            manager: std::sync::Arc<tokio::sync::Mutex<crate::mcp::manager::McpManager>>,
+        ) -> Self {
+            crate::mcp::runtime::clear_for_tests();
+            crate::mcp::runtime::install_manager(manager);
+            Self
+        }
+    }
+
+    impl Drop for RuntimeMcpGuard {
+        fn drop(&mut self) {
+            crate::mcp::runtime::clear_for_tests();
+        }
+    }
+
     #[tokio::test]
     async fn mcp_no_args_shows_help() {
         let handler = McpHandler;
@@ -1096,6 +1120,50 @@ mod tests {
             CommandResult::Output(text) => assert!(text.contains("Usage: /mcp connect")),
             _ => panic!("expected Output"),
         }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn mcp_reconnect_uses_runtime_manager() {
+        let home = tempfile::tempdir().unwrap();
+        let cwd = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let manager = std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::mcp::manager::McpManager::new(),
+        ));
+        let _runtime = RuntimeMcpGuard::install(manager.clone());
+        std::fs::write(
+            home.path().join("settings.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "mcpServers": {
+                    "rec-srv": {
+                        "type": "stdio",
+                        "command": "unused",
+                        "disabled": true
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let handler = McpHandler;
+        let mut ctx = test_ctx(cwd.path().to_path_buf());
+        let res = handler
+            .execute("reconnect rec-srv", &mut ctx)
+            .await
+            .unwrap();
+        match res {
+            CommandResult::Output(text) => {
+                assert!(text.contains("rec-srv"));
+                assert!(text.contains("disabled"));
+            }
+            _ => panic!("expected Output"),
+        }
+        assert!(
+            manager.lock().await.clients.is_empty(),
+            "disabled reconnect must not keep a live client"
+        );
     }
 
     #[tokio::test]

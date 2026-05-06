@@ -1,5 +1,10 @@
 # cc-rust 未完备项与全量构建 TODO
 
+## 2026-05-06 Extensibility MCP Phase Notes
+
+- Phase 1 completed: `/mcp connect`, `/mcp disconnect`, `/mcp reconnect`, and IPC MCP lifecycle commands now call the shared runtime `McpManager`.
+- Remaining MCP extensibility gaps: remote HTTPS SSE, OAuth / interactive auth, Streamable HTTP / WebSocket transport coverage, and runtime tool-registry rebuild for MCP servers first connected after startup.
+
 > **阶段切换 (2026-04-22)**：本仓库已从 "rust-lite 精简版" 切换到 **全量构建 (Full Build)** 阶段。
 > 本文原先承担的角色是"登记已接受的缩减/延期"，现在重新定义为：**对上游完整版尚未对齐的 TODO 清单**。
 > 原 §2、§5 中的条目默认视为待补齐，不再等于"不做"。具体规则见 [`../CLAUDE.md`](../CLAUDE.md) 顶部"当前阶段"说明。

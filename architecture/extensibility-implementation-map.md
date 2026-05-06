@@ -167,3 +167,4 @@ fork 执行还会继承 skill 的 `allowed_tools` 和 `model` 配置，见 `crat
 ## Phase 实施记录
 
 - 2026-05-06：Phase 0 已完成 baseline / scope lock。已记录测试基线与 transport/auth 实施顺序，见 `docs/archive/extensibility-phase0-baseline-scope-2026-05-06.md`。本阶段不改变运行时状态；下一阶段从 `/mcp reconnect` 与 IPC/runtime reconnect 语义接线开始。
+- 2026-05-06：Phase 1 已完成 MCP lifecycle/reconnect integration。`/mcp connect`、`/mcp disconnect`、`/mcp reconnect` 与 IPC MCP lifecycle commands 现在调用同一个运行时 `McpManager` 句柄；状态快照会读取 live manager、disabled config 与最后一次 runtime state。验证记录见 `docs/archive/extensibility-phase1-mcp-lifecycle-2026-05-06.md`。剩余 MCP gap 收窄为 remote HTTPS SSE、OAuth / interactive auth 与完整 transport matrix。

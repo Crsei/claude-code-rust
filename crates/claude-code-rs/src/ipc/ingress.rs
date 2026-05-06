@@ -149,7 +149,9 @@ pub(crate) async fn dispatch(
         }
         FrontendMessage::McpCommand { command } => {
             debug!("headless: MCP command: {:?}", command);
-            let msgs = super::subsystem_handlers::handle_mcp_command(command);
+            let cwd = std::path::Path::new(engine.cwd());
+            let msgs =
+                super::subsystem_handlers::handle_mcp_command_with_runtime(command, cwd).await;
             let _ = sink.send_many(msgs);
         }
         FrontendMessage::PluginCommand { command } => {

@@ -10,7 +10,7 @@
 //! and the `SystemStatus` tool.
 
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::protocol::BackendMessage;
 use super::subsystem_events::{
@@ -313,6 +313,40 @@ fn set_lsp_recommendations_disabled(disabled: bool) -> LspRecommendationSettings
     settings
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpRuntimeOperation {
+    Connect,
+    Disconnect,
+    Reconnect,
+}
+
+impl McpRuntimeOperation {
+    fn verb(self) -> &'static str {
+        match self {
+            Self::Connect => "connect",
+            Self::Disconnect => "disconnect",
+            Self::Reconnect => "reconnect",
+        }
+    }
+
+    fn past_tense(self) -> &'static str {
+        match self {
+            Self::Connect => "Connected",
+            Self::Disconnect => "Disconnected",
+            Self::Reconnect => "Reconnected",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct McpRuntimeReport {
+    pub server_name: String,
+    pub state: String,
+    pub error: Option<String>,
+    pub text: String,
+    pub level: String,
+}
+
 /// Handle an MCP subsystem command from the frontend.
 ///
 /// Lifecycle operations (`ConnectServer` / `DisconnectServer` /
@@ -322,30 +356,157 @@ fn set_lsp_recommendations_disabled(disabled: bool) -> LspRecommendationSettings
 ///
 /// `QueryStatus` builds a runtime-state list; `QueryConfig`/`UpsertConfig`/
 /// `RemoveConfig` implement the scope-aware config editor (issue #44).
+#[allow(dead_code)]
 pub fn handle_mcp_command(cmd: super::subsystem_events::McpCommand) -> Vec<BackendMessage> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    handle_mcp_command_at_cwd(cmd, &cwd)
+}
+
+pub async fn handle_mcp_command_with_runtime(
+    cmd: super::subsystem_events::McpCommand,
+    cwd: &Path,
+) -> Vec<BackendMessage> {
     use super::subsystem_events::McpCommand;
 
     match cmd {
         McpCommand::ConnectServer { server_name } => {
-            tracing::info!(server_name = %server_name, "MCP connect requested via IPC");
-            vec![BackendMessage::SystemInfo {
-                text: format!(
-                    "Queued connect for MCP server `{}`. The active session will pick it up on its next connection pass.",
-                    server_name
-                ),
-                level: "info".to_string(),
-            }]
+            let report =
+                run_mcp_runtime_operation(cwd, McpRuntimeOperation::Connect, &server_name).await;
+            mcp_runtime_report_messages(report)
         }
         McpCommand::DisconnectServer { server_name } => {
-            tracing::info!(server_name = %server_name, "MCP disconnect requested via IPC");
-            vec![BackendMessage::SystemInfo {
-                text: format!(
-                    "Queued disconnect for MCP server `{}`. The active session will drop its connection at the next sweep.",
-                    server_name
-                ),
-                level: "info".to_string(),
+            let report =
+                run_mcp_runtime_operation(cwd, McpRuntimeOperation::Disconnect, &server_name).await;
+            mcp_runtime_report_messages(report)
+        }
+        McpCommand::ReconnectServer { server_name } => {
+            let report =
+                run_mcp_runtime_operation(cwd, McpRuntimeOperation::Reconnect, &server_name).await;
+            mcp_runtime_report_messages(report)
+        }
+        McpCommand::QueryStatus => {
+            let servers = build_mcp_server_info_list_for_cwd_async(cwd).await;
+            vec![BackendMessage::McpEvent {
+                event: McpEvent::ServerList { servers },
             }]
         }
+        other => handle_mcp_command_at_cwd(other, cwd),
+    }
+}
+
+pub async fn run_mcp_runtime_operation(
+    cwd: &Path,
+    operation: McpRuntimeOperation,
+    server_name: &str,
+) -> McpRuntimeReport {
+    tracing::info!(
+        server_name = %server_name,
+        operation = operation.verb(),
+        "MCP runtime command requested"
+    );
+
+    let Some(manager) = crate::mcp::runtime::current_manager() else {
+        return mcp_runtime_report(
+            server_name,
+            "error",
+            Some("MCP runtime manager is not available".to_string()),
+            format!(
+                "Cannot {} MCP server `{}` because the runtime manager is not available.",
+                operation.verb(),
+                server_name
+            ),
+            "error",
+        );
+    };
+
+    if operation == McpRuntimeOperation::Disconnect {
+        let had_client = {
+            let mut manager = manager.lock().await;
+            manager.disconnect_server(server_name).await
+        };
+        let text = if had_client {
+            format!("Disconnected MCP server `{}`.", server_name)
+        } else {
+            format!(
+                "MCP server `{}` had no active connection; marked disconnected.",
+                server_name
+            )
+        };
+        return mcp_runtime_report(server_name, "disconnected", None, text, "info");
+    }
+
+    let config = match find_mcp_runtime_config(cwd, server_name) {
+        Ok(config) => config,
+        Err(message) => {
+            return mcp_runtime_report(
+                server_name,
+                "error",
+                Some(message.clone()),
+                message,
+                "error",
+            );
+        }
+    };
+    let disabled = config.disabled.unwrap_or(false);
+
+    let result = {
+        let mut manager = manager.lock().await;
+        match operation {
+            McpRuntimeOperation::Connect => manager.connect_server(config).await,
+            McpRuntimeOperation::Reconnect => manager.reconnect_server(config).await,
+            McpRuntimeOperation::Disconnect => unreachable!("disconnect handled above"),
+        }
+    };
+
+    match result {
+        Ok(()) if disabled => mcp_runtime_report(
+            server_name,
+            "disabled",
+            None,
+            format!(
+                "MCP server `{}` is disabled in settings; no live client was kept.",
+                server_name
+            ),
+            "info",
+        ),
+        Ok(()) => mcp_runtime_report(
+            server_name,
+            "connected",
+            None,
+            format!("{} MCP server `{}`.", operation.past_tense(), server_name),
+            "info",
+        ),
+        Err(err) => {
+            let message = format!(
+                "Failed to {} MCP server `{}`: {}",
+                operation.verb(),
+                server_name,
+                err
+            );
+            mcp_runtime_report(
+                server_name,
+                "error",
+                Some(err.to_string()),
+                message,
+                "error",
+            )
+        }
+    }
+}
+
+fn handle_mcp_command_at_cwd(
+    cmd: super::subsystem_events::McpCommand,
+    cwd: &Path,
+) -> Vec<BackendMessage> {
+    use super::subsystem_events::McpCommand;
+
+    match cmd {
+        McpCommand::ConnectServer { server_name } => mcp_runtime_report_messages(
+            mcp_runtime_unavailable_report(McpRuntimeOperation::Connect, &server_name),
+        ),
+        McpCommand::DisconnectServer { server_name } => mcp_runtime_report_messages(
+            mcp_runtime_unavailable_report(McpRuntimeOperation::Disconnect, &server_name),
+        ),
         McpCommand::ReconnectServer { server_name } => {
             tracing::info!(server_name = %server_name, "MCP reconnect requested via IPC");
             // Emit a live `connecting` state plus a system note. The runtime
@@ -370,44 +531,39 @@ pub fn handle_mcp_command(cmd: super::subsystem_events::McpCommand) -> Vec<Backe
             messages
         }
         McpCommand::QueryStatus => {
-            let servers = build_mcp_server_info_list();
+            let servers = build_mcp_server_info_list_for_cwd(cwd);
             vec![BackendMessage::McpEvent {
                 event: McpEvent::ServerList { servers },
             }]
         }
         McpCommand::QueryConfig => {
-            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             let entries = build_mcp_server_config_entries(&cwd);
             vec![BackendMessage::McpEvent {
                 event: McpEvent::ConfigList { entries },
             }]
         }
-        McpCommand::UpsertConfig { entry } => {
-            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            match upsert_mcp_entry(&cwd, entry) {
-                Ok(updated) => vec![BackendMessage::McpEvent {
-                    event: McpEvent::ConfigChanged {
-                        server_name: updated.name.clone(),
-                        entry: Some(updated),
+        McpCommand::UpsertConfig { entry } => match upsert_mcp_entry(&cwd, entry) {
+            Ok(updated) => vec![BackendMessage::McpEvent {
+                event: McpEvent::ConfigChanged {
+                    server_name: updated.name.clone(),
+                    entry: Some(updated),
+                },
+            }],
+            Err((server_name, message)) => {
+                tracing::warn!(
+                    server = %server_name,
+                    error = %message,
+                    "MCP: upsert_config rejected"
+                );
+                vec![BackendMessage::McpEvent {
+                    event: McpEvent::ConfigError {
+                        server_name,
+                        error: message,
                     },
-                }],
-                Err((server_name, message)) => {
-                    tracing::warn!(
-                        server = %server_name,
-                        error = %message,
-                        "MCP: upsert_config rejected"
-                    );
-                    vec![BackendMessage::McpEvent {
-                        event: McpEvent::ConfigError {
-                            server_name,
-                            error: message,
-                        },
-                    }]
-                }
+                }]
             }
-        }
+        },
         McpCommand::RemoveConfig { server_name, scope } => {
-            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             match remove_mcp_entry(&cwd, &server_name, &scope) {
                 Ok(()) => vec![BackendMessage::McpEvent {
                     event: McpEvent::ConfigChanged {
@@ -431,7 +587,6 @@ pub fn handle_mcp_command(cmd: super::subsystem_events::McpCommand) -> Vec<Backe
             }
         }
         McpCommand::ToggleEnabled { server_name, scope } => {
-            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             match toggle_mcp_entry_enabled(&cwd, &server_name, scope.as_ref()) {
                 Ok(updated) => {
                     // Sync runtime state — flipping `disabled` immediately
@@ -471,6 +626,73 @@ pub fn handle_mcp_command(cmd: super::subsystem_events::McpCommand) -> Vec<Backe
             }
         }
     }
+}
+
+fn mcp_runtime_unavailable_report(
+    operation: McpRuntimeOperation,
+    server_name: &str,
+) -> McpRuntimeReport {
+    mcp_runtime_report(
+        server_name,
+        "error",
+        Some("MCP runtime manager is not available".to_string()),
+        format!(
+            "Cannot {} MCP server `{}` because the live runtime manager is not available.",
+            operation.verb(),
+            server_name
+        ),
+        "error",
+    )
+}
+
+fn mcp_runtime_report(
+    server_name: &str,
+    state: &str,
+    error: Option<String>,
+    text: String,
+    level: &str,
+) -> McpRuntimeReport {
+    crate::mcp::runtime::record_server_state(server_name, state, error.clone());
+    McpRuntimeReport {
+        server_name: server_name.to_string(),
+        state: state.to_string(),
+        error,
+        text,
+        level: level.to_string(),
+    }
+}
+
+fn mcp_runtime_report_messages(report: McpRuntimeReport) -> Vec<BackendMessage> {
+    vec![
+        BackendMessage::McpEvent {
+            event: McpEvent::ServerStateChanged {
+                server_name: report.server_name,
+                state: report.state,
+                error: report.error,
+            },
+        },
+        BackendMessage::SystemInfo {
+            text: report.text,
+            level: report.level,
+        },
+    ]
+}
+
+fn find_mcp_runtime_config(
+    cwd: &Path,
+    server_name: &str,
+) -> Result<crate::mcp::McpServerConfig, String> {
+    let configs = crate::mcp::discovery::discover_mcp_servers(cwd)
+        .map_err(|err| format!("Failed to discover MCP servers: {err}"))?;
+    configs
+        .into_iter()
+        .find(|cfg| cfg.name == server_name)
+        .ok_or_else(|| {
+            format!(
+                "No MCP server named `{}` was found in the current discovery scope.",
+                server_name
+            )
+        })
 }
 
 /// Handle a plugin subsystem command from the frontend.
@@ -676,29 +898,97 @@ pub fn build_lsp_server_info_list() -> Vec<LspServerInfo> {
 
 /// Build a list of MCP server status info from discovered configurations.
 pub fn build_mcp_server_info_list() -> Vec<McpServerStatusInfo> {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let configs = crate::mcp::discovery::discover_mcp_servers(&cwd).unwrap_or_default();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    build_mcp_server_info_list_for_cwd(&cwd)
+}
 
+pub fn build_mcp_server_info_list_for_cwd(cwd: &Path) -> Vec<McpServerStatusInfo> {
+    let configs = crate::mcp::discovery::discover_mcp_servers(cwd).unwrap_or_default();
+    if let Some(manager) = crate::mcp::runtime::current_manager() {
+        if let Ok(manager) = manager.try_lock() {
+            return build_mcp_server_info_list_from_configs(configs, Some(&manager));
+        }
+    }
+
+    build_mcp_server_info_list_from_configs(configs, None)
+}
+
+pub async fn build_mcp_server_info_list_for_cwd_async(cwd: &Path) -> Vec<McpServerStatusInfo> {
+    let configs = crate::mcp::discovery::discover_mcp_servers(cwd).unwrap_or_default();
+    if let Some(manager) = crate::mcp::runtime::current_manager() {
+        let manager = manager.lock().await;
+        return build_mcp_server_info_list_from_configs(configs, Some(&manager));
+    }
+
+    build_mcp_server_info_list_from_configs(configs, None)
+}
+
+fn build_mcp_server_info_list_from_configs(
+    configs: Vec<crate::mcp::McpServerConfig>,
+    manager: Option<&crate::mcp::manager::McpManager>,
+) -> Vec<McpServerStatusInfo> {
     configs
         .into_iter()
-        .map(|cfg| {
-            let state = if cfg.disabled.unwrap_or(false) {
-                "disabled"
-            } else {
-                "pending"
-            };
-            McpServerStatusInfo {
-                name: cfg.name,
-                state: state.to_string(),
-                transport: cfg.transport,
-                tools_count: 0,
-                resources_count: 0,
-                server_info: None,
-                instructions: None,
-                error: None,
-            }
-        })
+        .map(|cfg| build_mcp_server_info(cfg, manager))
         .collect()
+}
+
+fn build_mcp_server_info(
+    cfg: crate::mcp::McpServerConfig,
+    manager: Option<&crate::mcp::manager::McpManager>,
+) -> McpServerStatusInfo {
+    if cfg.disabled.unwrap_or(false) {
+        return McpServerStatusInfo {
+            name: cfg.name,
+            state: "disabled".to_string(),
+            transport: cfg.transport,
+            tools_count: 0,
+            resources_count: 0,
+            server_info: None,
+            instructions: None,
+            error: None,
+        };
+    }
+
+    if let Some(client) = manager.and_then(|manager| manager.clients.get(&cfg.name)) {
+        let (state, error) = match &client.state {
+            crate::mcp::McpConnectionState::Pending => ("pending".to_string(), None),
+            crate::mcp::McpConnectionState::Connected => ("connected".to_string(), None),
+            crate::mcp::McpConnectionState::Disconnected => ("disconnected".to_string(), None),
+            crate::mcp::McpConnectionState::Error(error) => {
+                ("error".to_string(), Some(error.clone()))
+            }
+        };
+        let server_info = (!client.server_info.name.is_empty()).then(|| McpServerInfoBrief {
+            name: client.server_info.name.clone(),
+            version: client.server_info.version.clone(),
+        });
+        return McpServerStatusInfo {
+            name: cfg.name,
+            state,
+            transport: cfg.transport,
+            tools_count: client.tools.len(),
+            resources_count: client.resources.len(),
+            server_info,
+            instructions: client.instructions.clone(),
+            error,
+        };
+    }
+
+    let remembered = crate::mcp::runtime::server_state(&cfg.name);
+    McpServerStatusInfo {
+        name: cfg.name,
+        state: remembered
+            .as_ref()
+            .map(|state| state.state.clone())
+            .unwrap_or_else(|| "pending".to_string()),
+        transport: cfg.transport,
+        tools_count: 0,
+        resources_count: 0,
+        server_info: None,
+        instructions: None,
+        error: remembered.and_then(|state| state.error),
+    }
 }
 
 /// Build a list of editable config entries (issue #44) from scope-aware
@@ -1077,7 +1367,9 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn build_mcp_server_info_list_defaults_to_pending() {
+        crate::mcp::runtime::clear_for_tests();
         let infos = build_mcp_server_info_list();
         for info in &infos {
             assert_eq!(info.state, "pending");
@@ -1291,6 +1583,24 @@ mod tests {
                 Some(v) => std::env::set_var(self.key, v),
                 None => std::env::remove_var(self.key),
             }
+        }
+    }
+
+    struct RuntimeMcpGuard;
+
+    impl RuntimeMcpGuard {
+        fn install(
+            manager: std::sync::Arc<tokio::sync::Mutex<crate::mcp::manager::McpManager>>,
+        ) -> Self {
+            crate::mcp::runtime::clear_for_tests();
+            crate::mcp::runtime::install_manager(manager);
+            Self
+        }
+    }
+
+    impl Drop for RuntimeMcpGuard {
+        fn drop(&mut self) {
+            crate::mcp::runtime::clear_for_tests();
         }
     }
 
@@ -1642,12 +1952,44 @@ mod tests {
         }
     }
 
-    #[test]
-    fn handle_mcp_reconnect_emits_state_changed_and_info() {
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn handle_mcp_reconnect_uses_runtime_manager_and_emits_final_state() {
         use super::super::subsystem_events::McpCommand;
-        let msgs = handle_mcp_command(McpCommand::ReconnectServer {
-            server_name: "rec-srv".to_string(),
-        });
+
+        let home = tempfile::tempdir().expect("tempdir");
+        let cwd = tempfile::tempdir().expect("tempdir");
+        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let manager = std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::mcp::manager::McpManager::new(),
+        ));
+        let _runtime = RuntimeMcpGuard::install(manager.clone());
+        std::fs::write(
+            home.path().join("settings.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "mcpServers": {
+                    "rec-srv": {
+                        "type": "stdio",
+                        "command": "unused",
+                        "disabled": true
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let msgs = handle_mcp_command_with_runtime(
+            McpCommand::ReconnectServer {
+                server_name: "rec-srv".to_string(),
+            },
+            cwd.path(),
+        )
+        .await;
+        assert!(
+            manager.lock().await.clients.is_empty(),
+            "disabled reconnect must not keep a live client"
+        );
         assert_eq!(msgs.len(), 2);
         match &msgs[0] {
             BackendMessage::McpEvent {
@@ -1657,13 +1999,14 @@ mod tests {
                     },
             } => {
                 assert_eq!(server_name, "rec-srv");
-                assert_eq!(state, "pending");
+                assert_eq!(state, "disabled");
             }
             other => panic!("expected ServerStateChanged, got {:?}", other),
         }
         match &msgs[1] {
             BackendMessage::SystemInfo { text, .. } => {
                 assert!(text.contains("rec-srv"));
+                assert!(text.contains("disabled"));
             }
             other => panic!("expected SystemInfo, got {:?}", other),
         }

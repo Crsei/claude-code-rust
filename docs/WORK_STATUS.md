@@ -1,5 +1,10 @@
 # cc-rust 工作状态总览
 
+## 2026-05-06 Extensibility MCP Phase 1
+
+- MCP lifecycle integration is complete for `/mcp connect`, `/mcp disconnect`, `/mcp reconnect`, and IPC MCP lifecycle commands. All route through the shared runtime `McpManager` and report live status snapshots.
+- Remaining extensibility MCP work: remote HTTPS SSE, OAuth / interactive auth, full HTTP/WS transport matrix, and runtime tool-registry refresh for newly connected MCP servers.
+
 > 更新日期: 2026-05-04 | 分支: `rust-lite`（历史名称，当前阶段：**全量构建 / Full Build**）
 >
 > **阶段说明**：本仓库已从 "rust-lite 精简版" 切换到**全量构建**。§3 原"显式延期 (Deferred)"清单不再默认等于"不做"，触及这些条目的新工作默认按上游完整实现对齐，除非重新评估后登记到 [`IMPLEMENTATION_GAPS.md`](IMPLEMENTATION_GAPS.md) §7 "Intentional 裁剪"。详细规则见 [`../CLAUDE.md`](../CLAUDE.md) 顶部"当前阶段"说明。

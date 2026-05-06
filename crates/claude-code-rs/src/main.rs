@@ -511,6 +511,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         }
         crate::browser::detection::install_browser_servers(browser_servers);
 
+        crate::mcp::runtime::install_manager(mcp_manager.clone());
         mcp_manager
     };
 
