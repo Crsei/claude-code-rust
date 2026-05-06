@@ -35,15 +35,15 @@ use std::pin::Pin;
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use base64::{
-    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
     Engine as _,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use futures::Stream;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::api::client::{parse_sse_byte_stream, MessagesRequest};
+use crate::api::client::{MessagesRequest, parse_sse_byte_stream};
 use crate::api::model_mapping::to_vertex_model_id;
 use crate::api::retry::categorize_api_error;
 use crate::types::message::StreamEvent;
@@ -53,6 +53,22 @@ pub const DEFAULT_VERTEX_REGION: &str = "us-east5";
 const GOOGLE_CLOUD_PLATFORM_SCOPE: &str = "https://www.googleapis.com/auth/cloud-platform";
 const DEFAULT_GOOGLE_TOKEN_URI: &str = "https://oauth2.googleapis.com/token";
 const JWT_BEARER_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:jwt-bearer";
+
+/// Model prefix -> env var for Vertex region overrides.
+///
+/// This mirrors claude-code-bun's per-model override table. More specific
+/// prefixes must appear before less specific prefixes.
+const VERTEX_REGION_OVERRIDES: &[(&str, &str)] = &[
+    ("claude-haiku-4-5", "VERTEX_REGION_CLAUDE_HAIKU_4_5"),
+    ("claude-3-5-haiku", "VERTEX_REGION_CLAUDE_3_5_HAIKU"),
+    ("claude-3-5-sonnet", "VERTEX_REGION_CLAUDE_3_5_SONNET"),
+    ("claude-3-7-sonnet", "VERTEX_REGION_CLAUDE_3_7_SONNET"),
+    ("claude-opus-4-1", "VERTEX_REGION_CLAUDE_4_1_OPUS"),
+    ("claude-opus-4", "VERTEX_REGION_CLAUDE_4_0_OPUS"),
+    ("claude-sonnet-4-6", "VERTEX_REGION_CLAUDE_4_6_SONNET"),
+    ("claude-sonnet-4-5", "VERTEX_REGION_CLAUDE_4_5_SONNET"),
+    ("claude-sonnet-4", "VERTEX_REGION_CLAUDE_4_0_SONNET"),
+];
 
 /// Pre-obtained OAuth access token used for Vertex calls.
 #[derive(Debug, Clone)]
@@ -354,11 +370,7 @@ fn fetch_gcloud_token() -> Option<String> {
         return None;
     }
     let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if token.is_empty() {
-        None
-    } else {
-        Some(token)
-    }
+    if token.is_empty() { None } else { Some(token) }
 }
 
 /// Resolve the project ID from environment.
@@ -385,6 +397,31 @@ pub fn resolve_region() -> String {
         .unwrap_or_else(|| DEFAULT_VERTEX_REGION.to_string())
 }
 
+/// Resolve the Vertex region for a model, honoring per-model overrides.
+///
+/// The default region is normally `CLOUD_ML_REGION` or `us-east5`; callers can
+/// pass a different already-resolved default for constructed clients.
+pub fn resolve_region_for_model_with_default(model: Option<&str>, default_region: &str) -> String {
+    if let Some(model) = model {
+        for (prefix, env_var) in VERTEX_REGION_OVERRIDES {
+            if model.starts_with(prefix) {
+                return std::env::var(env_var)
+                    .ok()
+                    .filter(|v| !v.is_empty())
+                    .unwrap_or_else(|| default_region.to_string());
+            }
+        }
+    }
+    default_region.to_string()
+}
+
+/// Resolve the Vertex region for a model using process environment defaults.
+#[allow(dead_code)]
+pub fn resolve_region_for_model(model: Option<&str>) -> String {
+    let default_region = resolve_region();
+    resolve_region_for_model_with_default(model, &default_region)
+}
+
 /// Build the Vertex `:streamRawPredict` URL for a given model.
 pub fn build_stream_url(region: &str, project_id: &str, model_id: &str) -> String {
     format!(
@@ -392,6 +429,15 @@ pub fn build_stream_url(region: &str, project_id: &str, model_id: &str) -> Strin
         region = region,
         project = project_id,
         model = model_id,
+    )
+}
+
+/// Build the Vertex Anthropic `count-tokens:rawPredict` URL.
+pub fn build_count_tokens_url(region: &str, project_id: &str) -> String {
+    format!(
+        "https://{region}-aiplatform.googleapis.com/v1/projects/{project}/locations/{region}/publishers/anthropic/models/count-tokens:rawPredict",
+        region = region,
+        project = project_id,
     )
 }
 
@@ -419,6 +465,78 @@ fn to_vertex_body(request: &MessagesRequest) -> Result<Vec<u8>> {
     serde_json::to_vec(&body).context("failed to serialize Vertex request body")
 }
 
+/// Convert a `MessagesRequest` into the Vertex Anthropic Count Tokens body.
+///
+/// The count endpoint is a rawPredict model endpoint whose request contains
+/// the target Anthropic model ID plus the input-bearing fields. Generation-only
+/// fields from the streaming call are omitted.
+fn to_vertex_count_tokens_body(request: &MessagesRequest) -> Result<Vec<u8>> {
+    let mut body = json!({
+        "model": to_vertex_model_id(&request.model),
+        "messages": request.messages.clone(),
+    });
+    if let Some(system) = &request.system {
+        body["system"] = Value::Array(system.clone());
+    }
+    if let Some(tools) = &request.tools {
+        body["tools"] = Value::Array(tools.clone());
+    }
+    if let Some(thinking) = &request.thinking {
+        body["thinking"] = thinking.clone();
+    }
+    if let Some(tool_choice) = &request.tool_choice {
+        body["tool_choice"] = tool_choice.clone();
+    }
+    serde_json::to_vec(&body).context("failed to serialize Vertex Count Tokens body")
+}
+
+pub(crate) async fn vertex_count_tokens(
+    http: &reqwest::Client,
+    project_id: &str,
+    region: &str,
+    access_token: &VertexAccessToken,
+    request: &MessagesRequest,
+) -> Result<u64> {
+    #[derive(serde::Deserialize)]
+    struct CountTokensResponse {
+        input_tokens: u64,
+    }
+
+    let region = resolve_region_for_model_with_default(Some(&request.model), region);
+    let url = build_count_tokens_url(&region, project_id);
+    let body = to_vertex_count_tokens_body(request)?;
+
+    let response = http
+        .post(&url)
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", access_token.0))
+        .body(body)
+        .send()
+        .await
+        .context("failed to send Vertex Count Tokens request")?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let error_body = response
+            .text()
+            .await
+            .unwrap_or_else(|_| String::from("(failed to read Vertex Count Tokens body)"));
+        let category = categorize_api_error(status.as_u16(), &error_body);
+        bail!(
+            "Vertex Count Tokens error (HTTP {}): {:?} - {}",
+            status.as_u16(),
+            category,
+            error_body
+        );
+    }
+
+    let parsed: CountTokensResponse = response
+        .json()
+        .await
+        .context("failed to parse Vertex Count Tokens response")?;
+    Ok(parsed.input_tokens)
+}
+
 /// Vertex stream provider (implements `StreamProvider`).
 pub struct VertexStreamProvider {
     pub region: String,
@@ -434,7 +552,8 @@ impl crate::api::stream_provider::StreamProvider for VertexStreamProvider {
         request: &MessagesRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         let vertex_model = to_vertex_model_id(&request.model);
-        let url = build_stream_url(&self.region, &self.project_id, &vertex_model);
+        let region = resolve_region_for_model_with_default(Some(&request.model), &self.region);
+        let url = build_stream_url(&region, &self.project_id, &vertex_model);
         let body = to_vertex_body(request)?;
 
         let response = http
@@ -531,11 +650,54 @@ aM0cnYVle4nyuGi3M6aECuC6ggfLfXOQ3yGAmE3DKg2bgcmJag2cOT6fTRZemThD
     }
 
     #[test]
+    fn region_for_model_uses_specific_override() {
+        let saved = std::env::var("VERTEX_REGION_CLAUDE_HAIKU_4_5").ok();
+        std::env::set_var("VERTEX_REGION_CLAUDE_HAIKU_4_5", "us-central1");
+
+        assert_eq!(
+            resolve_region_for_model_with_default(Some("claude-haiku-4-5-20251001"), "us-east5"),
+            "us-central1"
+        );
+
+        match saved {
+            Some(v) => std::env::set_var("VERTEX_REGION_CLAUDE_HAIKU_4_5", v),
+            None => std::env::remove_var("VERTEX_REGION_CLAUDE_HAIKU_4_5"),
+        }
+    }
+
+    #[test]
+    fn region_for_model_falls_back_to_default_region() {
+        let saved = std::env::var("VERTEX_REGION_CLAUDE_4_5_SONNET").ok();
+        std::env::remove_var("VERTEX_REGION_CLAUDE_4_5_SONNET");
+
+        assert_eq!(
+            resolve_region_for_model_with_default(
+                Some("claude-sonnet-4-5-20250929"),
+                "europe-west4"
+            ),
+            "europe-west4"
+        );
+
+        if let Some(v) = saved {
+            std::env::set_var("VERTEX_REGION_CLAUDE_4_5_SONNET", v);
+        }
+    }
+
+    #[test]
     fn url_construction() {
         let url = build_stream_url("us-east5", "my-proj", "claude-sonnet-4-5@20250929");
         assert_eq!(
             url,
             "https://us-east5-aiplatform.googleapis.com/v1/projects/my-proj/locations/us-east5/publishers/anthropic/models/claude-sonnet-4-5@20250929:streamRawPredict"
+        );
+    }
+
+    #[test]
+    fn count_tokens_url_construction() {
+        let url = build_count_tokens_url("us-east5", "my-proj");
+        assert_eq!(
+            url,
+            "https://us-east5-aiplatform.googleapis.com/v1/projects/my-proj/locations/us-east5/publishers/anthropic/models/count-tokens:rawPredict"
         );
     }
 
@@ -596,6 +758,37 @@ aM0cnYVle4nyuGi3M6aECuC6ggfLfXOQ3yGAmE3DKg2bgcmJag2cOT6fTRZemThD
         assert_eq!(v["max_tokens"], 256);
         assert!(v.get("model").is_none());
         assert!(v.get("stream").is_none());
+    }
+
+    #[test]
+    fn count_tokens_body_uses_model_and_strips_generation_fields() {
+        let req = MessagesRequest {
+            model: "claude-sonnet-4-5-20250929".to_string(),
+            messages: vec![json!({"role":"user","content":"hi"})],
+            system: Some(vec![json!({"type":"text","text":"Be brief."})]),
+            max_tokens: 256,
+            tools: Some(vec![json!({
+                "name": "Read",
+                "description": "",
+                "input_schema": {"type": "object"}
+            })]),
+            stream: true,
+            thinking: Some(json!({"type":"enabled","budget_tokens":128})),
+            tool_choice: None,
+            advisor_model: Some("advisor".to_string()),
+        };
+
+        let raw = to_vertex_count_tokens_body(&req).unwrap();
+        let v: Value = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(v["model"], "claude-sonnet-4-5@20250929");
+        assert_eq!(v["messages"][0]["content"], "hi");
+        assert_eq!(v["system"][0]["text"], "Be brief.");
+        assert!(v.get("tools").is_some());
+        assert!(v.get("thinking").is_some());
+        assert!(v.get("anthropic_version").is_none());
+        assert!(v.get("max_tokens").is_none());
+        assert!(v.get("stream").is_none());
+        assert!(v.get("advisor_model").is_none());
     }
 
     #[test]

@@ -4,11 +4,11 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use futures::Stream;
 use serde_json::Value;
 
-use crate::api::retry::{categorize_stream_start_error, retry_delay, RetryConfig};
+use crate::api::retry::{RetryConfig, categorize_stream_start_error, retry_delay};
 use crate::types::message::{AssistantMessage, StreamEvent};
 
 // Re-export siblings for convenience within this module's tests.
@@ -382,7 +382,11 @@ impl ApiClient {
     pub fn supports_exact_token_count(&self) -> bool {
         matches!(
             self.config.provider,
-            ApiProvider::Anthropic { .. } | ApiProvider::Azure { .. } | ApiProvider::Google { .. }
+            ApiProvider::Anthropic { .. }
+                | ApiProvider::Azure { .. }
+                | ApiProvider::Google { .. }
+                | ApiProvider::Bedrock { .. }
+                | ApiProvider::Vertex { .. }
         )
     }
 
@@ -418,6 +422,42 @@ impl ApiClient {
                     provider: "google".to_string(),
                 })
             }
+            ApiProvider::Bedrock {
+                region,
+                auth,
+                base_url_override,
+            } => {
+                let input_tokens = crate::api::bedrock::bedrock_count_tokens(
+                    &self.http,
+                    region,
+                    auth,
+                    base_url_override.as_deref(),
+                    request,
+                )
+                .await?;
+                Ok(ExactTokenCount {
+                    input_tokens,
+                    provider: "bedrock".to_string(),
+                })
+            }
+            ApiProvider::Vertex {
+                project_id,
+                region,
+                access_token,
+            } => {
+                let input_tokens = crate::api::vertex::vertex_count_tokens(
+                    &self.http,
+                    project_id,
+                    region,
+                    access_token,
+                    request,
+                )
+                .await?;
+                Ok(ExactTokenCount {
+                    input_tokens,
+                    provider: "vertex".to_string(),
+                })
+            }
             provider => bail!(
                 "provider `{}` does not support exact token counting",
                 provider.langfuse_provider_name()
@@ -445,7 +485,7 @@ impl ApiClient {
         request: &MessagesRequest,
         provider: &str,
     ) -> Result<ExactTokenCount> {
-        use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+        use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 
         #[derive(serde::Deserialize)]
         struct CountTokensResponse {
@@ -528,11 +568,17 @@ impl ApiClient {
             ),
             ApiProvider::Vertex {
                 project_id, region, ..
-            } => crate::api::vertex::build_stream_url(
-                region,
-                project_id,
-                &crate::api::model_mapping::to_vertex_model_id(&self.config.default_model),
-            ),
+            } => {
+                let region = crate::api::vertex::resolve_region_for_model_with_default(
+                    Some(&self.config.default_model),
+                    region,
+                );
+                crate::api::vertex::build_stream_url(
+                    &region,
+                    project_id,
+                    &crate::api::model_mapping::to_vertex_model_id(&self.config.default_model),
+                )
+            }
         }
     }
 
@@ -832,7 +878,7 @@ impl ApiClient {
     /// Build the required HTTP headers for Anthropic-format providers.
     #[allow(dead_code)]
     pub fn build_headers(&self) -> reqwest::header::HeaderMap {
-        use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+        use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));

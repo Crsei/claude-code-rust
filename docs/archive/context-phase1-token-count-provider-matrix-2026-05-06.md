@@ -22,9 +22,9 @@ until near-threshold exact-count fallback is wired and tested separately.
 | Anthropic | Supported | `POST /v1/messages/count_tokens` | Uses the same shaped messages request body minus generation-only fields (`stream`, `max_tokens`, `advisor_model`). Parses `input_tokens`. |
 | Azure Anthropic-compatible | Supported | `POST {endpoint}/v1/messages/count_tokens` | Uses the Anthropic-compatible body/header path against the configured Azure endpoint. |
 | Google Gemini | Supported | `POST {base}/models/{model}:countTokens?key=...` | Wraps the normal Gemini `generateContent` body as `generateContentRequest` and parses `totalTokens`. |
-| OpenAI / OpenAI-compatible | Heuristic fallback | No cc-rust exact preflight endpoint wired | Official OpenAI guidance remains tokenizer/usage based for preflight counting, so this phase keeps OpenAI-compatible providers on the heuristic path. |
-| Bedrock | Heuristic fallback | Not wired | Requires separate provider-specific verification before implementation. |
-| Vertex | Heuristic fallback | Not wired | Requires separate Vertex/Gemini or Anthropic-on-Vertex endpoint verification before implementation. |
+| OpenAI / OpenAI-compatible | Heuristic fallback | Not wired for cc-rust's Chat Completions wire path | OpenAI now documents `POST /v1/responses/input_tokens`, but cc-rust's OpenAI-compatible provider still sends Chat Completions requests; using the Responses count endpoint would not be an exact count for the request actually sent. |
+| Bedrock | Supported | `POST /model/{modelId}/count-tokens` | Wraps the serialized Bedrock InvokeModel Anthropic body in `input.invokeModel.body` and parses `inputTokens`. |
+| Vertex | Supported | `POST /publishers/anthropic/models/count-tokens:rawPredict` | Sends the Anthropic-on-Vertex model ID plus input-bearing fields and parses `input_tokens`. |
 
 ## Official References Checked
 
@@ -32,6 +32,10 @@ until near-threshold exact-count fallback is wired and tested separately.
 - Anthropic token counting guide: https://docs.anthropic.com/en/docs/build-with-claude/token-counting
 - Gemini token counting API: https://ai.google.dev/api/tokens
 - OpenAI token concepts and tokenizer guidance: https://platform.openai.com/docs/concepts/tokens
+- OpenAI Responses input token count endpoint: https://developers.openai.com/api/reference/resources/responses/subresources/input_tokens/methods/count
+- Amazon Bedrock CountTokens API: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_CountTokens.html
+- Amazon Bedrock token counting guide: https://docs.aws.amazon.com/bedrock/latest/userguide/count-tokens.html
+- Vertex AI Claude token counting: https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude/count-tokens
 
 ## Verification
 
@@ -39,3 +43,4 @@ until near-threshold exact-count fallback is wired and tested separately.
 - `cargo test -p claude-code-rs test_anthropic_count_tokens_body_omits_generation_only_fields`
 - `cargo test -p claude-code-rs test_exact_token_count_support_matrix`
 - `cargo test -p claude-code-rs test_build_gemini_count_tokens_request_wraps_generate_content_request`
+- `cargo test -p claude-code-rs count_tokens`

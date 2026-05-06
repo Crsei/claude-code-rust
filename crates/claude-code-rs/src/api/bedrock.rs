@@ -9,6 +9,10 @@
 //!
 //! `POST https://bedrock-runtime.{region}.amazonaws.com/model/{model_id}/invoke-with-response-stream`
 //!
+//! Exact token count uses:
+//!
+//! `POST https://bedrock-runtime.{region}.amazonaws.com/model/{model_id}/count-tokens`
+//!
 //! With `ANTHROPIC_BEDROCK_BASE_URL` set, the base is overridden (useful for
 //! proxies / mock servers).
 //!
@@ -36,10 +40,10 @@
 use std::collections::HashMap;
 use std::pin::Pin;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use base64::Engine;
 use futures::{Stream, StreamExt};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::api::client::MessagesRequest;
 use crate::api::model_mapping::to_bedrock_model_id;
@@ -110,6 +114,23 @@ pub fn build_invoke_stream_url(
     )
 }
 
+/// Build the Bedrock CountTokens URL for a given model ID.
+pub fn build_count_tokens_url(
+    region: &str,
+    model_id: &str,
+    base_url_override: Option<&str>,
+) -> String {
+    let model_id_encoded = urlencoding::encode(model_id);
+    if let Some(base) = base_url_override {
+        let base = base.trim_end_matches('/');
+        return format!("{}/model/{}/count-tokens", base, model_id_encoded);
+    }
+    format!(
+        "https://bedrock-runtime.{}.amazonaws.com/model/{}/count-tokens",
+        region, model_id_encoded
+    )
+}
+
 /// Convert a `MessagesRequest` into the Bedrock-specific JSON body.
 fn to_bedrock_body(request: &MessagesRequest) -> Result<Vec<u8>> {
     let mut body = json!({
@@ -130,6 +151,104 @@ fn to_bedrock_body(request: &MessagesRequest) -> Result<Vec<u8>> {
         body["tool_choice"] = tool_choice.clone();
     }
     serde_json::to_vec(&body).context("failed to serialize Bedrock request body")
+}
+
+/// Convert a `MessagesRequest` into the raw Bedrock CountTokens body.
+///
+/// The runtime API models `input.invokeModel.body` as a blob, so this raw HTTP
+/// client sends the serialized InvokeModel body as base64 inside the JSON
+/// envelope.
+fn to_bedrock_count_tokens_body(request: &MessagesRequest) -> Result<Vec<u8>> {
+    let invoke_model_body = to_bedrock_body(request)?;
+    let body = json!({
+        "input": {
+            "invokeModel": {
+                "body": base64::engine::general_purpose::STANDARD.encode(invoke_model_body),
+            },
+        },
+    });
+    serde_json::to_vec(&body).context("failed to serialize Bedrock CountTokens request body")
+}
+
+pub(crate) async fn bedrock_count_tokens(
+    http: &reqwest::Client,
+    region: &str,
+    auth: &BedrockAuth,
+    base_url_override: Option<&str>,
+    request: &MessagesRequest,
+) -> Result<u64> {
+    #[derive(serde::Deserialize)]
+    struct CountTokensResponse {
+        #[serde(rename = "inputTokens")]
+        input_tokens: u64,
+    }
+
+    let bedrock_model = to_bedrock_model_id(&request.model);
+    let url = build_count_tokens_url(region, &bedrock_model, base_url_override);
+    let body = to_bedrock_count_tokens_body(request)?;
+
+    let mut builder = http
+        .post(&url)
+        .header("content-type", "application/json")
+        .body(body.clone());
+
+    match auth {
+        BedrockAuth::BearerToken(tok) => {
+            builder = builder.header("authorization", format!("Bearer {}", tok));
+        }
+        BedrockAuth::AwsCredentials(creds) => {
+            let parsed = url::Url::parse(&url).context("invalid Bedrock CountTokens URL")?;
+            let host = parsed
+                .host_str()
+                .context("Bedrock CountTokens URL missing host")?;
+            let path = parsed.path().to_string();
+            let (amz_date, date_stamp) = sigv4::current_timestamps();
+            let signed = sigv4::sign(
+                &SignRequest {
+                    method: "POST",
+                    host,
+                    path: &path,
+                    region,
+                    service: "bedrock",
+                    body: &body,
+                    content_type: "application/json",
+                    amz_date,
+                    date_stamp,
+                },
+                creds,
+            )?;
+            builder = builder
+                .header("authorization", signed.authorization)
+                .header("x-amz-date", signed.x_amz_date)
+                .header("x-amz-content-sha256", signed.x_amz_content_sha256);
+            if let Some(tok) = signed.x_amz_security_token {
+                builder = builder.header("x-amz-security-token", tok);
+            }
+        }
+    }
+
+    let response = builder
+        .send()
+        .await
+        .context("failed to send Bedrock CountTokens request")?;
+    let status = response.status();
+    if !status.is_success() {
+        let body_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| String::from("(failed to read Bedrock CountTokens body)"));
+        bail!(
+            "Bedrock CountTokens error (HTTP {}): {}",
+            status.as_u16(),
+            body_text
+        );
+    }
+
+    let parsed: CountTokensResponse = response
+        .json()
+        .await
+        .context("failed to parse Bedrock CountTokens response")?;
+    Ok(parsed.input_tokens)
 }
 
 #[derive(Debug)]
@@ -488,6 +607,25 @@ mod tests {
     }
 
     #[test]
+    fn count_tokens_url_uses_region_and_model() {
+        let url = build_count_tokens_url(
+            "eu-west-1",
+            "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            None,
+        );
+        assert_eq!(
+            url,
+            "https://bedrock-runtime.eu-west-1.amazonaws.com/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/count-tokens"
+        );
+    }
+
+    #[test]
+    fn count_tokens_url_override_from_base_url() {
+        let url = build_count_tokens_url("us-east-1", "foo", Some("https://proxy.example.com/"));
+        assert_eq!(url, "https://proxy.example.com/model/foo/count-tokens");
+    }
+
+    #[test]
     fn body_strips_stream_and_model_adds_anthropic_version() {
         let req = MessagesRequest {
             model: "claude-sonnet-4-5-20250929".to_string(),
@@ -506,6 +644,43 @@ mod tests {
         assert_eq!(v["max_tokens"], 128);
         assert!(v.get("model").is_none(), "model must not be in body");
         assert!(v.get("stream").is_none(), "stream must not be in body");
+    }
+
+    #[test]
+    fn count_tokens_body_wraps_invoke_model_body() {
+        let req = MessagesRequest {
+            model: "claude-sonnet-4-5-20250929".to_string(),
+            messages: vec![json!({"role":"user","content":"hi"})],
+            system: Some(vec![json!({"type":"text","text":"Be brief."})]),
+            max_tokens: 128,
+            tools: Some(vec![json!({
+                "name": "Read",
+                "description": "",
+                "input_schema": {"type": "object"}
+            })]),
+            stream: true,
+            thinking: None,
+            tool_choice: None,
+            advisor_model: Some("advisor".to_string()),
+        };
+
+        let raw = to_bedrock_count_tokens_body(&req).unwrap();
+        let outer: Value = serde_json::from_slice(&raw).unwrap();
+        let encoded = outer["input"]["invokeModel"]["body"]
+            .as_str()
+            .expect("CountTokens body must contain encoded InvokeModel body");
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .unwrap();
+        let inner: Value = serde_json::from_slice(&decoded).unwrap();
+
+        assert_eq!(inner["anthropic_version"], BEDROCK_ANTHROPIC_VERSION);
+        assert_eq!(inner["messages"][0]["content"], "hi");
+        assert_eq!(inner["system"][0]["text"], "Be brief.");
+        assert!(inner.get("tools").is_some());
+        assert!(inner.get("model").is_none());
+        assert!(inner.get("stream").is_none());
+        assert!(inner.get("advisor_model").is_none());
     }
 
     #[test]

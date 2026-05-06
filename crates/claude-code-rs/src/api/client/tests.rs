@@ -158,6 +158,32 @@ fn test_build_url_vertex_returns_streamrawpredict() {
 }
 
 #[test]
+fn test_build_url_vertex_uses_per_model_region_override() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved = save_env(&["VERTEX_REGION_CLAUDE_HAIKU_4_5"]);
+    std::env::set_var("VERTEX_REGION_CLAUDE_HAIKU_4_5", "us-central1");
+
+    let config = ApiClientConfig {
+        provider: ApiProvider::Vertex {
+            project_id: "my-project".to_string(),
+            region: "us-east5".to_string(),
+            access_token: crate::api::vertex::VertexAccessToken("dummy".to_string()),
+        },
+        default_model: "claude-haiku-4-5-20251001".to_string(),
+        max_retries: 3,
+        timeout_secs: 60,
+    };
+    let client = ApiClient::new(config);
+    let url = client.build_url();
+    assert_eq!(
+        url,
+        "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/anthropic/models/claude-haiku-4-5@20251001:streamRawPredict"
+    );
+
+    restore_env(saved);
+}
+
+#[test]
 fn test_build_url_azure() {
     let config = ApiClientConfig {
         provider: ApiProvider::Azure {
@@ -239,14 +265,18 @@ fn test_build_headers_has_required() {
     assert_eq!(headers.get("content-type").unwrap(), "application/json");
     assert_eq!(headers.get("anthropic-version").unwrap(), "2023-06-01");
     assert_eq!(headers.get("x-api-key").unwrap(), "sk-test-key-123");
-    assert!(headers
-        .get("anthropic-beta")
-        .unwrap()
-        .contains("interleaved-thinking"));
-    assert!(headers
-        .get("anthropic-beta")
-        .unwrap()
-        .contains("prompt-caching"));
+    assert!(
+        headers
+            .get("anthropic-beta")
+            .unwrap()
+            .contains("interleaved-thinking")
+    );
+    assert!(
+        headers
+            .get("anthropic-beta")
+            .unwrap()
+            .contains("prompt-caching")
+    );
 }
 
 #[test]
@@ -1008,6 +1038,17 @@ fn test_exact_token_count_support_matrix() {
     let anthropic = ApiClient::new(anthropic_config());
     assert!(anthropic.supports_exact_token_count());
 
+    let azure = ApiClient::new(ApiClientConfig {
+        provider: ApiProvider::Azure {
+            endpoint: "https://azure.example.com".to_string(),
+            api_key: "az-key".to_string(),
+        },
+        default_model: "claude-sonnet-4-20250514".to_string(),
+        max_retries: 3,
+        timeout_secs: 60,
+    });
+    assert!(azure.supports_exact_token_count());
+
     let google = ApiClient::new(ApiClientConfig {
         provider: ApiProvider::Google {
             api_key: "google-key".to_string(),
@@ -1018,6 +1059,30 @@ fn test_exact_token_count_support_matrix() {
         timeout_secs: 60,
     });
     assert!(google.supports_exact_token_count());
+
+    let bedrock = ApiClient::new(ApiClientConfig {
+        provider: ApiProvider::Bedrock {
+            region: "us-east-1".to_string(),
+            auth: crate::api::bedrock::BedrockAuth::BearerToken("bedrock-key".to_string()),
+            base_url_override: None,
+        },
+        default_model: "claude-sonnet-4-5-20250929".to_string(),
+        max_retries: 3,
+        timeout_secs: 60,
+    });
+    assert!(bedrock.supports_exact_token_count());
+
+    let vertex = ApiClient::new(ApiClientConfig {
+        provider: ApiProvider::Vertex {
+            project_id: "project".to_string(),
+            region: "us-east5".to_string(),
+            access_token: crate::api::vertex::VertexAccessToken("token".to_string()),
+        },
+        default_model: "claude-sonnet-4-5-20250929".to_string(),
+        max_retries: 3,
+        timeout_secs: 60,
+    });
+    assert!(vertex.supports_exact_token_count());
 
     let openai = ApiClient::new(ApiClientConfig {
         provider: ApiProvider::OpenAiCompat {
@@ -1031,6 +1096,19 @@ fn test_exact_token_count_support_matrix() {
         timeout_secs: 60,
     });
     assert!(!openai.supports_exact_token_count());
+
+    let openai_compatible = ApiClient::new(ApiClientConfig {
+        provider: ApiProvider::OpenAiCompat {
+            name: "deepseek".to_string(),
+            api_key: "sk-test".to_string(),
+            base_url: "https://api.deepseek.com/v1".to_string(),
+            default_model: "deepseek-chat".to_string(),
+        },
+        default_model: "deepseek-chat".to_string(),
+        max_retries: 3,
+        timeout_secs: 60,
+    });
+    assert!(!openai_compatible.supports_exact_token_count());
 }
 
 #[test]
@@ -1053,7 +1131,7 @@ fn test_messages_request_advisor_model_serializes_when_set() {
 
 #[test]
 fn test_provider_supports_advisor_matrix() {
-    use crate::api::client::{provider_supports_advisor, ApiProvider};
+    use crate::api::client::{ApiProvider, provider_supports_advisor};
     assert!(provider_supports_advisor(&ApiProvider::Anthropic {
         api_key: "k".into(),
         base_url: None,
