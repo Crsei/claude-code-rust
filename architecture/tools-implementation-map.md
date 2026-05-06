@@ -22,7 +22,7 @@
 | 文件操作 | Read / Edit / Write | `crates/claude-code-rs/src/tools/fs/mod.rs:14-31`，`crates/claude-code-rs/src/tools/fs/file_read.rs:706-889`，`crates/claude-code-rs/src/tools/fs/file_edit.rs:329-673`，`crates/claude-code-rs/src/tools/fs/file_write.rs:41-219`，`crates/claude-code-rs/src/tools/fs/safe_write.rs:50-132` | 已实现 | Read 支持文本、图片、PDF、Notebook；Edit 强制先读后写并校验未被外部修改；Write 通过安全写入和 `FileChanged` hook 完成原子替换。 |
 | 搜索导航 | Glob / Grep / ToolSearch / LSP | `crates/claude-code-rs/src/tools/fs/glob_tool.rs`，`crates/claude-code-rs/src/tools/fs/grep.rs:1-218`，`crates/claude-code-rs/src/tools/tool_search.rs:504-627`，`crates/claude-code-rs/src/tools/lsp.rs:1-435` | 已实现 | Glob、Grep、ToolSearch、LSP 都已接入 registry；Glob 已按修改时间倒序返回，路径作为稳定兜底。Rust 额外提供 LSP code intelligence，属于 Bun 文档未单列的扩展能力。 |
 | Shell 执行 | BashTool | `crates/claude-code-rs/src/tools/exec/mod.rs:14-30`，`crates/claude-code-rs/src/tools/exec/bash.rs:134-668` | 已实现 | Bash 具备命令解析、危险命令检测、sandbox 预检、超时、进程组控制和实时输出流。Rust 还额外暴露了 PowerShell、Repl、Sleep。 |
-| 任务管理 | TodoWrite V1、Tasks V2 | `crates/claude-code-rs/src/tools/tasks.rs`，`crates/claude-code-rs/src/tools/registry.rs` | 部分实现 | Rust 已提供 `TodoWrite` V1 兼容入口，以及 V2 任务体系：`TaskCreate`、`TaskGet`、`TaskUpdate`、`TaskList`、`TaskStop`、`TaskOutput`。任务仍以 UUID 为主；依赖真源仍是 `depends_on`，但已提供 Bun 兼容的 `blocked_by` / `blockedBy` 输入别名和 `blocks` 反向输出。 |
+| 任务管理 | TodoWrite V1、Tasks V2 | `crates/claude-code-rs/src/tools/tasks.rs`，`crates/claude-code-rs/src/tools/registry.rs` | 部分实现 | Rust 已提供 `TodoWrite` V1 兼容入口，以及 V2 任务体系：`TaskCreate`、`TaskGet`、`TaskUpdate`、`TaskList`、`TaskStop`、`TaskOutput`。新任务已使用递增 ID，并通过 `.highwatermark` 防止删除后复用；依赖真源仍是 `depends_on`，但已提供 Bun 兼容的 `blocked_by` / `blockedBy` 输入别名和 `blocks` 反向输出。 |
 | 网络工具差异 | WebSearch / WebFetch | `crates/claude-code-rs/src/tools/web_search/tool.rs:1-258`，`crates/claude-code-rs/src/tools/web_fetch.rs:1-723`，`crates/claude-code-rs/src/tools/registry.rs:22-24,56-57` | 已实现 | Rust 端已提供 WebSearch 和 WebFetch，但实现路径不同于 Bun：WebSearch 走 Tavily / Brave provider，WebFetch 走 sandbox 网络策略、URL 归一化、同源重定向限制和内存缓存。 |
 
 ## 逐文档分析
@@ -76,14 +76,14 @@
 - Rust 现在同时提供 `TodoWrite` V1 兼容入口和任务 V2 体系，见 `crates/claude-code-rs/src/tools/tasks.rs` 与 `crates/claude-code-rs/src/tools/registry.rs`。
 - `TodoWrite` 采用 Bun V1 的全量替换语义：输入 `todos[]` 覆盖当前 session / agent todo 列表，全部 `completed` 时清空列表，并在 3 个以上任务全部完成但缺少验证项时返回验证提示。
 - 任务存储默认落在 `~/.cc-rust/tasks` 或 `$CC_RUST_HOME/tasks`，见 `crates/claude-code-rs/src/tools/tasks.rs:3-9`。
-- `TaskStore` / `TaskRepository` 负责持久化、恢复、输出保留和 schema 迁移，见 `crates/claude-code-rs/src/tools/tasks.rs:68-222`、`crates/claude-code-rs/src/tools/tasks.rs:501-886`。
+- `TaskStore` / `TaskRepository` 负责持久化、恢复、输出保留和 schema 迁移，见 `crates/claude-code-rs/src/tools/tasks.rs:76-536`、`crates/claude-code-rs/src/tools/tasks.rs:550-931`。
 - `TaskCreate` 仍以 `depends_on` 为内部依赖真源，但接受 Bun 兼容的 `blocked_by` / `blockedBy` 输入别名；`task_to_json()` 会输出 `depends_on`、`blocked_by`、`blockedBy`，并计算反向 `blocks` 列表。
-- `TaskCreate`、`TaskGet`、`TaskUpdate`、`TaskList`、`TaskStop`、`TaskOutput` 的实现分别见 `crates/claude-code-rs/src/tools/tasks.rs:1123-1867`。
-- 任务 ID 使用 `uuid::Uuid::new_v4()` 生成，而不是 Bun 文档里的递增编号，见 `crates/claude-code-rs/src/tools/tasks.rs:241-248`。
-- `TaskUpdate` 在完成态时会发 `TaskCompleted` hook，`TaskCreate` 会发 `TaskCreated` hook，见 `crates/claude-code-rs/src/tools/tasks.rs:1318-1334`、`crates/claude-code-rs/src/tools/tasks.rs:1479-1499`。
-- `TaskOutput` 支持阻塞等待、超时和 abort signal，见 `crates/claude-code-rs/src/tools/tasks.rs:1688-1867`。
+- `TaskCreate`、`TaskGet`、`TaskUpdate`、`TaskList`、`TaskStop`、`TaskOutput` 的实现分别见 `crates/claude-code-rs/src/tools/tasks.rs:1458-2215`。
+- 任务 ID 已改为目录内递增编号，`TaskStore::create_with_options()` 通过 `reserve_next_task_id()` 写入 `.highwatermark`，删除任务后不会复用旧 ID；高水位文件的创建受 `.highwatermark.lock` 保护，见 `crates/claude-code-rs/src/tools/tasks.rs:271-284`、`crates/claude-code-rs/src/tools/tasks.rs:672-693`、`crates/claude-code-rs/src/tools/tasks.rs:840-883`。
+- `TaskUpdate` 在完成态时会发 `TaskCompleted` hook，`TaskCreate` 会发 `TaskCreated` hook，见 `crates/claude-code-rs/src/tools/tasks.rs:1813-1829`、`crates/claude-code-rs/src/tools/tasks.rs:1654-1666`。
+- `TaskOutput` 支持阻塞等待、超时和 abort signal，见 `crates/claude-code-rs/src/tools/tasks.rs:1975-2215`。
 - 状态：部分实现。
-- 结论：V1 `TodoWrite` 入口已经补齐，V2 任务体系也已落地；依赖字段已有 Bun 兼容别名与反向输出，但 V2 的 ID 分配、高水位和认领并发模型仍与 Bun 文档不同，因此这章仍不能写成完全对齐。
+- 结论：V1 `TodoWrite` 入口已经补齐，V2 任务体系也已落地；依赖字段已有 Bun 兼容别名与反向输出，ID 分配和高水位语义已对齐到 Bun 文档主路径，但任务认领、owner 与 agent-busy 竞争模型仍未复刻，因此这章仍不能写成完全对齐。
 
 ### `网络工具差异`
 
@@ -100,7 +100,7 @@
 - 搜索导航已经覆盖 Glob、Grep、ToolSearch、LSP。
 - Shell 执行已经覆盖 Bash，并附带 PowerShell、Repl、Sleep。
 - 网络工具已经覆盖 WebSearch 和 WebFetch。
-- 任务管理已经覆盖 `TodoWrite` V1 兼容入口、V2 任务链路和输出留存。
+- 任务管理已经覆盖 `TodoWrite` V1 兼容入口、V2 任务链路、递增 ID / 高水位和输出留存。
 
 ## 未实现 / 部分实现 / 待确认
 
@@ -110,7 +110,7 @@
 
 ### 部分实现
 
-- 任务管理已有 `TodoWrite` 和 V2 Tasks，并已补入 `blocked_by` / `blockedBy` / `blocks` 依赖兼容面；V2 仍未完整复刻 Bun 的递增 ID、高水位与认领竞争模型。
+- 任务管理已有 `TodoWrite` 和 V2 Tasks，并已补入 `blocked_by` / `blockedBy` / `blocks` 依赖兼容面以及递增 ID / 高水位；V2 仍未完整复刻 Bun 的任务认领、owner 与 agent-busy 竞争模型。
 
 ### 待确认
 
@@ -122,5 +122,5 @@
 
 ## 后续动作
 
-1. 如果要继续补齐任务管理文档，下一步应决定是否把 V2 的 UUID 模型改成 Bun 的递增 ID 与高水位模型，并补齐任务认领竞争语义。
+1. 如果要继续补齐任务管理文档，下一步应补齐 V2 的任务认领竞争语义，包括 owner 写入、blockedBy 未完成检查和 agent-busy 模式。
 2. 如果要继续细化网络工具差异，建议把 Bun 的 Anthropic WebSearch 路径和 Rust 的 Tavily / Brave 路径单独拆成对照表。

@@ -15,12 +15,12 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{Duration, Instant, sleep};
 use tokio_util::sync::CancellationToken;
 
 use crate::types::message::AssistantMessage;
@@ -33,6 +33,9 @@ const DEFAULT_TASK_OUTPUT_TIMEOUT_MS: u64 = 30_000;
 const MAX_TASK_OUTPUT_TIMEOUT_MS: u64 = 600_000;
 const TASK_OUTPUT_POLL_INTERVAL_MS: u64 = 100;
 const REMOTE_REVIEW_TIMEOUT_MS: i64 = 30 * 60 * 1000;
+const TASK_HIGHWATERMARK_FILE: &str = ".highwatermark";
+const TASK_HIGHWATERMARK_LOCK_FILE: &str = ".highwatermark.lock";
+const TASK_HIGHWATERMARK_LOCK_RETRIES: usize = 30;
 const TASK_KIND_TOOL: &str = "tool";
 const TASK_KIND_LOCAL_BASH: &str = "local_bash";
 const TASK_KIND_LOCAL_AGENT: &str = "local_agent";
@@ -264,7 +267,17 @@ impl TaskStore {
         options: TaskCreateOptions,
     ) -> TaskEntry {
         let now = chrono::Utc::now().timestamp();
-        let id = uuid::Uuid::new_v4().to_string();
+        let mut tasks = self.tasks.lock();
+        let id = match self.repository.reserve_next_task_id(&tasks) {
+            Ok(id) => id,
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    "failed to reserve incremental task id; falling back to uuid"
+                );
+                fallback_task_id(&tasks)
+            }
+        };
         let mut entry = TaskEntry {
             id: id.clone(),
             kind: sanitize_kind(options.kind.as_deref().unwrap_or("tool")),
@@ -297,7 +310,8 @@ impl TaskStore {
         };
         refresh_output_metadata(&mut entry);
 
-        self.tasks.lock().insert(id, entry.clone());
+        tasks.insert(id, entry.clone());
+        drop(tasks);
         self.persist_entry(&entry);
         entry
     }
@@ -655,6 +669,32 @@ impl TaskRepository {
         Ok(tasks)
     }
 
+    fn reserve_next_task_id(&self, tasks: &HashMap<String, TaskEntry>) -> Result<String> {
+        fs::create_dir_all(&self.dir)
+            .with_context(|| format!("failed to create task dir {}", self.dir.display()))?;
+
+        let _guard = HighWatermarkLock::acquire(self.dir.join(TASK_HIGHWATERMARK_LOCK_FILE))?;
+        let highest_seen = self
+            .read_highwatermark()?
+            .max(highest_numeric_task_id(tasks));
+        let next_id = highest_seen.saturating_add(1);
+        write_text_atomic(
+            &self.dir.join(TASK_HIGHWATERMARK_FILE),
+            &format!("{next_id}\n"),
+        )?;
+        Ok(next_id.to_string())
+    }
+
+    fn read_highwatermark(&self) -> Result<u64> {
+        let path = self.dir.join(TASK_HIGHWATERMARK_FILE);
+        match fs::read_to_string(&path) {
+            Ok(raw) => Ok(raw.trim().parse::<u64>().unwrap_or(0)),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(0),
+            Err(err) => Err(err)
+                .with_context(|| format!("failed to read task high watermark {}", path.display())),
+        }
+    }
+
     fn load_entry(&self, path: &Path) -> Result<Option<TaskEntry>> {
         let raw = fs::read_to_string(path)
             .with_context(|| format!("failed to read task file {}", path.display()))?;
@@ -795,6 +835,50 @@ impl TaskRepository {
 
     fn task_json_path(&self, id: &str) -> PathBuf {
         self.dir.join(format!("{}.json", safe_file_stem(id)))
+    }
+}
+
+#[derive(Debug)]
+struct HighWatermarkLock {
+    path: PathBuf,
+}
+
+impl HighWatermarkLock {
+    fn acquire(path: PathBuf) -> Result<Self> {
+        for attempt in 0..TASK_HIGHWATERMARK_LOCK_RETRIES {
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(_) => return Ok(Self { path }),
+                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                    let backoff_ms = (5_u64 << attempt.min(8)).min(250);
+                    std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
+                }
+                Err(err) => {
+                    return Err(err).with_context(|| {
+                        format!("failed to create high watermark lock {}", path.display())
+                    });
+                }
+            }
+        }
+
+        anyhow::bail!("timed out acquiring high watermark lock {}", path.display())
+    }
+}
+
+impl Drop for HighWatermarkLock {
+    fn drop(&mut self) {
+        if let Err(err) = fs::remove_file(&self.path) {
+            if err.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!(
+                    path = %self.path.display(),
+                    error = %err,
+                    "failed to remove high watermark lock"
+                );
+            }
+        }
     }
 }
 
@@ -958,6 +1042,23 @@ fn normalize_dependencies(depends_on: Vec<String>) -> Vec<String> {
         deps.push(dep.to_string());
     }
     deps
+}
+
+fn highest_numeric_task_id(tasks: &HashMap<String, TaskEntry>) -> u64 {
+    tasks
+        .keys()
+        .filter_map(|id| id.parse::<u64>().ok())
+        .max()
+        .unwrap_or(0)
+}
+
+fn fallback_task_id(tasks: &HashMap<String, TaskEntry>) -> String {
+    loop {
+        let id = uuid::Uuid::new_v4().to_string();
+        if !tasks.contains_key(&id) {
+            return id;
+        }
+    }
 }
 
 fn dependency_ids_from_input(input: &Value) -> Vec<String> {
@@ -2148,6 +2249,86 @@ mod tests {
     }
 
     #[test]
+    fn test_task_store_allocates_incrementing_ids_and_preserves_highwater() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path());
+        let first = store.create("first", "");
+        let second = store.create("second", "");
+
+        assert_eq!(first.id, "1");
+        assert_eq!(second.id, "2");
+
+        store.delete(&second.id).unwrap();
+        let third = store.create("third", "");
+        assert_eq!(third.id, "3");
+
+        let restarted = TaskStore::with_dir(tmp.path());
+        let fourth = restarted.create("fourth", "");
+        assert_eq!(fourth.id, "4");
+    }
+
+    #[test]
+    fn test_task_store_bootstraps_highwater_from_existing_numeric_tasks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let legacy = TaskEntry {
+            id: "7".to_string(),
+            kind: TASK_KIND_TOOL.to_string(),
+            subject: "legacy".to_string(),
+            description: String::new(),
+            status: TaskStatus::Completed,
+            output: String::new(),
+            output_summary: String::new(),
+            output_bytes: 0,
+            output_truncated: false,
+            parent_id: None,
+            depends_on: Vec::new(),
+            tool_use_id: None,
+            agent_id: None,
+            supervisor_id: None,
+            isolation: None,
+            worktree_path: None,
+            worktree_branch: None,
+            remote_task_type: None,
+            remote_session_id: None,
+            remote_task_metadata: None,
+            poll_started_at: None,
+            cancel_requested_at: None,
+            recovered_at: None,
+            previous_status: None,
+            created_at: 1,
+            updated_at: 1,
+        };
+        TaskRepository::new(tmp.path().to_path_buf(), DEFAULT_OUTPUT_LIMIT_BYTES)
+            .persist_entry(&legacy)
+            .unwrap();
+
+        let store = TaskStore::with_dir(tmp.path());
+        let next = store.create("next", "");
+        assert_eq!(next.id, "8");
+    }
+
+    #[test]
+    fn test_concurrent_task_creates_use_unique_incrementing_ids() {
+        let (_tmp, store) = temp_store();
+        let store = Arc::new(store);
+        let mut threads = Vec::new();
+
+        for index in 0..8 {
+            let store = Arc::clone(&store);
+            threads.push(thread::spawn(move || {
+                store.create(&format!("task {index}"), "").id
+            }));
+        }
+
+        let mut ids: Vec<u64> = threads
+            .into_iter()
+            .map(|thread| thread.join().unwrap().parse::<u64>().unwrap())
+            .collect();
+        ids.sort_unstable();
+        assert_eq!(ids, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    #[test]
     fn test_task_store_persists_and_recovers_completed_task() {
         let tmp = tempfile::tempdir().unwrap();
         let store = TaskStore::with_dir(tmp.path());
@@ -2466,16 +2647,20 @@ mod tests {
         let timed_out = store.get(&task.id).unwrap();
         assert_eq!(timed_out.status, TaskStatus::Failed);
         assert_eq!(timed_out.previous_status, Some(TaskStatus::InProgress));
-        assert!(timed_out
-            .output
-            .contains("remote session exceeded 30 minutes"));
+        assert!(
+            timed_out
+                .output
+                .contains("remote session exceeded 30 minutes")
+        );
 
         let restarted = TaskStore::with_dir(tmp.path());
         let restored = restarted.get(&task.id).unwrap();
         assert_eq!(restored.status, TaskStatus::Failed);
-        assert!(restored
-            .output
-            .contains("remote session exceeded 30 minutes"));
+        assert!(
+            restored
+                .output
+                .contains("remote session exceeded 30 minutes")
+        );
     }
 
     #[test]
@@ -2504,9 +2689,11 @@ mod tests {
     fn test_task_store_not_found() {
         let (_tmp, store) = temp_store();
         assert!(store.get("nonexistent").is_none());
-        assert!(store
-            .update_status("nonexistent", TaskStatus::Completed)
-            .is_none());
+        assert!(
+            store
+                .update_status("nonexistent", TaskStatus::Completed)
+                .is_none()
+        );
         assert!(store.stop("nonexistent").is_none());
     }
 
@@ -2593,14 +2780,18 @@ mod tests {
     #[test]
     fn test_todo_write_rejects_invalid_items() {
         assert!(parse_todo_items(&json!({})).is_err());
-        assert!(parse_todo_items(&json!({
-            "todos": [{ "content": "", "status": "pending" }]
-        }))
-        .is_err());
-        assert!(parse_todo_items(&json!({
-            "todos": [{ "content": "Run", "status": "running" }]
-        }))
-        .is_err());
+        assert!(
+            parse_todo_items(&json!({
+                "todos": [{ "content": "", "status": "pending" }]
+            }))
+            .is_err()
+        );
+        assert!(
+            parse_todo_items(&json!({
+                "todos": [{ "content": "Run", "status": "running" }]
+            }))
+            .is_err()
+        );
     }
 
     #[test]

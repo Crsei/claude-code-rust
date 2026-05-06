@@ -65,7 +65,7 @@
 | Tools | `file-operations.mdx` | 已实现 | Read / Edit / Write、安全写入、变更检测、历史保护均有实现。 |
 | Tools | `search-and-navigation.mdx` | 已实现 | Glob、Grep、ToolSearch、LSP、WebSearch、WebFetch 已接入；Glob 已按修改时间倒序返回。 |
 | Tools | `shell-execution.mdx` | 已实现 | Bash 具备危险命令检测、sandbox 预检、超时、进程控制和输出流；Rust 额外提供 PowerShell / Repl / Sleep。 |
-| Tools | `task-management.mdx` | 部分实现 | Rust 已有 `TodoWrite` V1 兼容入口和 V2 Tasks 工具体系；依赖模型已暴露 Bun 兼容别名，V2 的 ID 与认领并发模型仍不同。 |
+| Tools | `task-management.mdx` | 部分实现 | Rust 已有 `TodoWrite` V1 兼容入口和 V2 Tasks 工具体系；依赖模型已暴露 Bun 兼容别名，V2 递增 ID / 高水位已补齐，认领并发模型仍不同。 |
 
 ## 已实现能力汇总
 
@@ -85,7 +85,7 @@
 - Auto mode 缺少 Bun 的 transcript / classifier 两阶段流程。
 - Plan mode 已补入 `allowedPrompts` 输入、session allow bridge 和常见验证意图分类；仍缺 Bun 的通用 LLM 语义 classifier。
 - Windows OS-level sandbox 未实现；当前 Windows 侧主要是 Rust-level policy checks。
-- Tools 的 `TodoWrite` 与 V2 Tasks 均已接入；V2 已补入双向依赖兼容输出，但仍与 Bun 的递增 ID 和认领竞争模型不同。
+- Tools 的 `TodoWrite` 与 V2 Tasks 均已接入；V2 已补入双向依赖兼容输出、递增 ID 和高水位文件，但仍与 Bun 的任务认领、owner 和 agent-busy 竞争模型不同。
 
 ## 后续动作
 
@@ -93,7 +93,7 @@
 2. 其次确认 MCP transport 与协议安全：`/mcp reconnect` 接入 manager API、远程 HTTPS SSE、OAuth、断线恢复、完整 server / resource 行为。
 3. 再确认 Context 端到端链路：Partial Compact、session-insights 当前 session 过滤、精确 token 统计，以及 preservedSegment 是否需要覆盖自动压缩和内部 snip / context-collapse 边界。
 4. 对 Agent Teams 明确产品边界：继续保留 in-process 版本，还是补 coordinator / swarm 同构模式。
-5. 对 Tools 差异建立单独 issue：V2 Tasks 是否要补 Bun 的递增 ID / 高水位 / 认领竞争模型、WebFetch 是否需要 JS rendering。
+5. 对 Tools 差异建立单独 issue：V2 Tasks 是否要补 Bun 的认领竞争模型、WebFetch 是否需要 JS rendering。
 6. 后续进入实现补齐时，为每个改动建立单独任务，不在本文档中混入代码设计细节。
 
 ## 实施进度
@@ -120,3 +120,4 @@
 | 2026-05-06 | Context / Session insights tag filtering | 已完成 session-insights 回注 include/exclude tag 过滤；抽取内容策略仍部分实现 | `crates/cc-services/src/session_memory.rs` 为 `SessionMemoryConfig` 增加 `context_include_tags` / `context_exclude_tags`，回注时 exclude 优先、include 为空则不过滤 | `cargo check -p cc-services`；`cargo test -p cc-services session_memory -- --nocapture`，9 passed；`cargo test -p cc-services --lib`，45 passed |
 | 2026-05-06 | Context / Session insight extraction helper | 已完成 `cc-services` 内确定性 insight 抽取 helper；`try_extract_session_memory()` 生命周期接入仍部分实现 | `crates/cc-services/src/session_memory.rs` 增加 `extract_session_insight()`，保留用户意图、跳过短确认语、推断 tags，并按字符边界截断 | `cargo check -p cc-services`；`cargo test -p cc-services session_memory -- --nocapture`，12 passed；`cargo test -p cc-services --lib`，48 passed |
 | 2026-05-06 | Context / Session insight lifecycle extraction | 已完成 `try_extract_session_memory()` 接入确定性 insight helper；当前 session 过滤仍待确认 | `crates/claude-code-rs/src/engine/lifecycle/mod.rs` 从最近用户意图与 assistant 文本生成 session insight，保存 helper 推断的 tags | `cargo check -p claude-code-rs`；`cargo test -p claude-code-rs test_try_extract_session_memory_uses_structured_insight -- --nocapture`，1 passed |
+| 2026-05-06 | Tools / Task incremental IDs and highwater | 已完成 V2 Tasks 的递增 ID 与高水位防复用；任务认领竞争仍部分实现 | `crates/claude-code-rs/src/tools/tasks.rs` 通过 `.highwatermark` / `.highwatermark.lock` 分配新任务 ID，删除后不复用，旧 numeric task 可 bootstrap 下一 ID | `cargo check -p claude-code-rs`；`cargo test -p claude-code-rs tools::tasks::tests:: -- --nocapture`，40 passed |
