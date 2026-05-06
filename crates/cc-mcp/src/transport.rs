@@ -6,14 +6,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use serde_json::Value;
 
 type PendingRequest = oneshot::Sender<Result<Value>>;
 type PendingRequests = Arc<Mutex<HashMap<u64, PendingRequest>>>;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::net::TcpStream;
-use tokio::sync::{Mutex, oneshot};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, BufReader};
+use tokio::sync::{oneshot, Mutex};
 use tracing::{debug, info, warn};
 
 use super::channel::parse_channel_notification;
@@ -108,12 +107,14 @@ pub(crate) async fn reader_loop(
 /// The MCP SSE transport sends an initial `endpoint` event containing the
 /// HTTP POST target for client-to-server JSON-RPC messages. Later `message`
 /// events carry normal JSON-RPC responses and notifications.
-pub(crate) async fn sse_reader_loop(
-    mut reader: BufReader<TcpStream>,
+pub(crate) async fn sse_reader_loop<R>(
+    mut reader: R,
     pending: PendingRequests,
     server_name: String,
     mut endpoint_sender: Option<oneshot::Sender<Result<String>>>,
-) {
+) where
+    R: AsyncBufRead + Unpin,
+{
     let mut event_name = String::new();
     let mut data_lines: Vec<String> = Vec::new();
 

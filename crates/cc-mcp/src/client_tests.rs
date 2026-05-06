@@ -4,14 +4,14 @@ use crate::transport::dispatch_response;
 use crate::{JsonRpcError, JsonRpcResponse, McpConnectionState, McpServerConfig};
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use anyhow::Result;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{oneshot, Mutex};
 
 async fn read_http_request(stream: &mut TcpStream) -> (String, String) {
     let mut buffer = Vec::new();
@@ -294,29 +294,66 @@ async fn test_connect_stdio_missing_command() {
     assert!(result.unwrap_err().to_string().contains("command"));
 }
 
-#[tokio::test]
-async fn test_connect_sse_rejects_https_until_tls_runtime_exists() {
-    let config = McpServerConfig {
-        name: "sse-server".to_string(),
-        transport: "sse".to_string(),
-        command: None,
-        args: None,
-        url: Some("https://example.com/mcp".to_string()),
-        headers: None,
-        env: None,
-        browser_mcp: None,
-        disabled: None,
-    };
+#[test]
+fn test_sse_connect_target_accepts_remote_https() {
+    let target = super::SseConnectTarget::parse("https://example.com/mcp/sse?token=secret")
+        .expect("https SSE target");
+    match target {
+        super::SseConnectTarget::RemoteHttps(target) => {
+            assert_eq!(
+                super::redact_url_for_log(target.url.as_str()),
+                "https://example.com/mcp/sse?redacted"
+            );
+        }
+        other => panic!("expected remote https target, got {:?}", other),
+    }
+}
 
-    let mut client = McpClient::new(config);
-    let result = client.connect().await;
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("HTTPS SSE transport is not yet implemented")
-    );
+#[test]
+fn test_sse_remote_endpoint_resolves_same_origin_path() {
+    let target =
+        super::SseConnectTarget::parse("https://example.com/mcp/sse").expect("https SSE target");
+    let post_target = target
+        .resolve_endpoint("/messages?session=abc#ignored")
+        .expect("same-origin endpoint");
+    match post_target {
+        super::SsePostTarget::RemoteHttps(target) => {
+            assert_eq!(
+                target.url.as_str(),
+                "https://example.com/messages?session=abc"
+            );
+        }
+        other => panic!("expected remote https post target, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_sse_remote_endpoint_rejects_cross_origin() {
+    let target =
+        super::SseConnectTarget::parse("https://example.com/mcp/sse").expect("https SSE target");
+    let err = target
+        .resolve_endpoint("https://evil.example/messages")
+        .unwrap_err();
+    assert!(err.to_string().contains("same https origin"));
+}
+
+#[test]
+fn test_sse_remote_endpoint_rejects_plain_http() {
+    let target =
+        super::SseConnectTarget::parse("https://example.com/mcp/sse").expect("https SSE target");
+    let err = target
+        .resolve_endpoint("http://example.com/messages")
+        .unwrap_err();
+    assert!(err.to_string().contains("https"));
+}
+
+#[test]
+fn test_sse_auth_status_is_classified() {
+    let err =
+        super::handle_sse_event_stream_status(reqwest::StatusCode::UNAUTHORIZED, "remote-sse")
+            .unwrap_err();
+    assert!(super::is_auth_needed_error(&err));
+    assert!(err.to_string().contains("requires authentication"));
 }
 
 #[tokio::test]
@@ -447,6 +484,28 @@ async fn test_connect_sse_rejects_header_injection() {
     let result = client.connect().await;
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("header value"));
+}
+
+#[tokio::test]
+async fn test_connect_sse_rejects_reserved_header_override() {
+    let mut headers = HashMap::new();
+    headers.insert("Host".to_string(), "evil.example".to_string());
+    let config = McpServerConfig {
+        name: "sse-server".to_string(),
+        transport: "sse".to_string(),
+        command: None,
+        args: None,
+        url: Some("https://example.com/mcp".to_string()),
+        headers: Some(headers),
+        env: None,
+        browser_mcp: None,
+        disabled: None,
+    };
+
+    let mut client = McpClient::new(config);
+    let result = client.connect().await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("managed"));
 }
 
 #[tokio::test]

@@ -1,5 +1,10 @@
 # cc-rust 工作状态总览
 
+## 2026-05-06 Extensibility MCP Phase 2
+
+- Remote `https://` SSE compatibility is complete for the existing `type = "sse"` transport: no redirects, same-origin endpoint events, protected protocol headers, redacted URL logging, JSON-RPC POST reuse, and `auth-needed` classification on HTTP 401/403.
+- Remaining extensibility MCP work: OAuth / interactive auth, Streamable HTTP / WebSocket / IDE transport matrix, and runtime tool-registry refresh for newly connected MCP servers.
+
 ## 2026-05-06 Extensibility MCP Phase 1
 
 - MCP lifecycle integration is complete for `/mcp connect`, `/mcp disconnect`, `/mcp reconnect`, and IPC MCP lifecycle commands. All route through the shared runtime `McpManager` and report live status snapshots.

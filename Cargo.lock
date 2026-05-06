@@ -636,14 +636,19 @@ name = "cc-mcp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "cc-config",
+ "futures",
  "parking_lot",
+ "reqwest",
  "serde",
  "serde_json",
  "serial_test",
  "tempfile",
  "tokio",
+ "tokio-util",
  "tracing",
+ "url",
 ]
 
 [[package]]

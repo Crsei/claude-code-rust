@@ -477,19 +477,18 @@ pub async fn run_mcp_runtime_operation(
             "info",
         ),
         Err(err) => {
+            let state = if crate::mcp::client::is_auth_needed_error(&err) {
+                "auth-needed"
+            } else {
+                "error"
+            };
             let message = format!(
                 "Failed to {} MCP server `{}`: {}",
                 operation.verb(),
                 server_name,
                 err
             );
-            mcp_runtime_report(
-                server_name,
-                "error",
-                Some(err.to_string()),
-                message,
-                "error",
-            )
+            mcp_runtime_report(server_name, state, Some(err.to_string()), message, "error")
         }
     }
 }
