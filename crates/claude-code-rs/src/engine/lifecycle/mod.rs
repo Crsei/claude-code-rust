@@ -34,10 +34,12 @@ use tracing::{info, warn};
 
 use crate::bootstrap::SessionId;
 use crate::observability::AuditContext;
-use crate::services::session_memory::{SessionMemoryConfig, SessionMemoryService};
+use crate::services::session_memory::{
+    extract_session_insight, SessionMemoryConfig, SessionMemoryService,
+};
 use crate::types::app_state::AppState;
 use crate::types::config::QueryEngineConfig;
-use crate::types::message::Message;
+use crate::types::message::{ContentBlock, Message, MessageContent};
 use crate::types::tool::Tools;
 
 // ---------------------------------------------------------------------------
@@ -457,14 +459,14 @@ impl QueryEngine {
             return;
         }
 
-        // Find the last assistant message content for extraction
+        // Find the last assistant message content for extraction.
         let last_assistant = state.messages.iter().rev().find_map(|m| match m {
             Message::Assistant(a) => {
                 let text: String = a
                     .content
                     .iter()
                     .filter_map(|b| match b {
-                        crate::types::message::ContentBlock::Text { text } => Some(text.as_str()),
+                        ContentBlock::Text { text } => Some(text.as_str()),
                         _ => None,
                     })
                     .collect::<Vec<_>>()
@@ -478,15 +480,30 @@ impl QueryEngine {
             _ => None,
         });
 
-        let Some(content) = last_assistant else {
+        let Some(assistant_text) = last_assistant else {
             return;
         };
 
-        // Truncate to a reasonable insight length
-        let insight = if content.len() > 500 {
-            format!("{}...", &content[..500])
-        } else {
-            content
+        let last_user = state.messages.iter().rev().find_map(|m| match m {
+            Message::User(u) if !u.is_meta && u.tool_use_result.is_none() => match &u.content {
+                MessageContent::Text(text) => Some(text.clone()),
+                MessageContent::Blocks(blocks) => {
+                    let text = blocks
+                        .iter()
+                        .filter_map(|block| match block {
+                            ContentBlock::Text { text } => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    (!text.is_empty()).then_some(text)
+                }
+            },
+            _ => None,
+        });
+
+        let Some(insight) = extract_session_insight(last_user.as_deref(), &assistant_text) else {
+            return;
         };
 
         let entry = crate::services::session_memory::MemoryEntry {
@@ -494,8 +511,8 @@ impl QueryEngine {
             timestamp: chrono::Utc::now().timestamp(),
             session_id: self.session_id.to_string(),
             workspace: Some(self.config.cwd.clone()),
-            content: insight,
-            tags: vec!["auto-extract".to_string()],
+            content: insight.content,
+            tags: insight.tags,
         };
 
         if let Err(e) = state.session_memory.save_entry(entry) {

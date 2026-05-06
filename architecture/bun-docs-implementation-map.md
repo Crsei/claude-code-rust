@@ -48,7 +48,7 @@
 | Agent | `sub-agents.mdx` | 已实现 | `AgentTool`、内置 agent、同步 / 后台生命周期、hooks、AgentTree、fork 与 worktree 侧路均有实现入口。 |
 | Agent | `worktree-isolation.mdx` | 部分实现 | 子 Agent worktree 隔离和清理已存在，但路径布局、hook 入口和恢复流程与 Bun 上游不同。 |
 | Context | `compaction.mdx` | 部分实现 | 本地压缩、Session Memory Compact、boundary、手动 `/compact` preservedSegment 元数据、PTL 恢复与 hook 路径存在；feature gate、Partial Compact 与完整恢复语义仍未完全同构。 |
-| Context | `project-memory.mdx` | 部分实现 | memory CRUD、`CLAUDE.md` 注入、Project / Global / Team memory 主提示词注入存在；Auto memory 已由 `auto_memory_enabled` 门控注入，最近 session-insights 会按 workspace、时间窗口和 tag 规则回注；`cc-services` 已有确定性 insight 抽取 helper，但生命周期仍需接入。 |
+| Context | `project-memory.mdx` | 部分实现 | memory CRUD、`CLAUDE.md` 注入、Project / Global / Team memory 主提示词注入存在；Auto memory 已由 `auto_memory_enabled` 门控注入，最近 session-insights 会按 workspace、时间窗口和 tag 规则回注；生命周期抽取已改用确定性 insight helper。 |
 | Context | `system-prompt.mdx` | 已实现 | 静态段、动态段、缓存边界、`CLAUDE.md` 注入、append / override 顺序均已落地。 |
 | Context | `token-budget.mdx` | 部分实现 | 预算判断、续跑逻辑、环境变量覆盖和 `[1m]` 窗口解析存在；仍主要依赖启发式估算，不是 provider 级精确 token 统计。 |
 | Extensibility | `custom-agents.mdx` | 部分实现 | 定义、编辑、运行链路已通；安全边界主要依赖通用工具过滤与隔离。 |
@@ -79,7 +79,7 @@
 
 - Agent Teams 是 Rust 的 in-process teammate / mailbox 版本，不是 Bun coordinator / swarm 的同构实现；tmux / iTerm2 等多终端后端属于故意裁剪。
 - Worktree isolation 已有核心隔离和清理，但 Bun 的 hook 驱动创建 / 销毁、目录布局和恢复流程没有一一对齐。
-- Context compaction、project memory、token budget 都已有主体能力，但 Partial Compact、session-insights 抽取 helper 的生命周期接入、provider 级 token 精确统计仍需补齐或明确裁剪；session-insights 回注已支持 workspace、时间窗口和 tag 过滤；preservedSegment 目前已覆盖手动 `/compact` boundary，尚未扩展到所有压缩边界。
+- Context compaction、project memory、token budget 都已有主体能力，但 Partial Compact、session-insights 当前 session 过滤、provider 级 token 精确统计仍需补齐或明确裁剪；session-insights 回注已支持 workspace、时间窗口和 tag 过滤，生命周期抽取已改用确定性 helper；preservedSegment 目前已覆盖手动 `/compact` boundary，尚未扩展到所有压缩边界。
 - Custom agents 已可定义、编辑、运行，但独立安全边界不如 hooks / skills 明确。
 - MCP 当前已有 stdio JSON-RPC、本地 loopback HTTP SSE 主路径与 manager 级 reconnect API；上层 `/mcp reconnect` 接线、远程 HTTPS SSE、OAuth、自动退避重试和完整 transport 矩阵仍不完整。
 - Auto mode 缺少 Bun 的 transcript / classifier 两阶段流程。
@@ -91,7 +91,7 @@
 
 1. 优先确认 Safety 的未实现项：Windows OS-level sandbox、`allowedPrompts` 通用 LLM classifier。
 2. 其次确认 MCP transport 与协议安全：`/mcp reconnect` 接入 manager API、远程 HTTPS SSE、OAuth、断线恢复、完整 server / resource 行为。
-3. 再确认 Context 端到端链路：Partial Compact、session-insights 抽取 helper 接入与当前 session 过滤、精确 token 统计，以及 preservedSegment 是否需要覆盖自动压缩和内部 snip / context-collapse 边界。
+3. 再确认 Context 端到端链路：Partial Compact、session-insights 当前 session 过滤、精确 token 统计，以及 preservedSegment 是否需要覆盖自动压缩和内部 snip / context-collapse 边界。
 4. 对 Agent Teams 明确产品边界：继续保留 in-process 版本，还是补 coordinator / swarm 同构模式。
 5. 对 Tools 差异建立单独 issue：V2 Tasks 是否要补 Bun 的递增 ID / 高水位 / 认领竞争模型、WebFetch 是否需要 JS rendering。
 6. 后续进入实现补齐时，为每个改动建立单独任务，不在本文档中混入代码设计细节。
@@ -119,3 +119,4 @@
 | 2026-05-06 | Extensibility / MCP manager reconnect API | 已完成 manager 层单服务 connect/disconnect/reconnect；上层 `/mcp reconnect` / IPC 接线仍部分实现 | `crates/cc-mcp/src/manager.rs` 暴露 `connect_server()`、`disconnect_server()`、`reconnect_server()`，重连失败不会保留 stale client | `cargo check -p cc-mcp`；`cargo test -p cc-mcp manager -- --nocapture`，5 passed；`cargo test -p cc-mcp --lib`，34 passed |
 | 2026-05-06 | Context / Session insights tag filtering | 已完成 session-insights 回注 include/exclude tag 过滤；抽取内容策略仍部分实现 | `crates/cc-services/src/session_memory.rs` 为 `SessionMemoryConfig` 增加 `context_include_tags` / `context_exclude_tags`，回注时 exclude 优先、include 为空则不过滤 | `cargo check -p cc-services`；`cargo test -p cc-services session_memory -- --nocapture`，9 passed；`cargo test -p cc-services --lib`，45 passed |
 | 2026-05-06 | Context / Session insight extraction helper | 已完成 `cc-services` 内确定性 insight 抽取 helper；`try_extract_session_memory()` 生命周期接入仍部分实现 | `crates/cc-services/src/session_memory.rs` 增加 `extract_session_insight()`，保留用户意图、跳过短确认语、推断 tags，并按字符边界截断 | `cargo check -p cc-services`；`cargo test -p cc-services session_memory -- --nocapture`，12 passed；`cargo test -p cc-services --lib`，48 passed |
+| 2026-05-06 | Context / Session insight lifecycle extraction | 已完成 `try_extract_session_memory()` 接入确定性 insight helper；当前 session 过滤仍待确认 | `crates/claude-code-rs/src/engine/lifecycle/mod.rs` 从最近用户意图与 assistant 文本生成 session insight，保存 helper 推断的 tags | `cargo check -p claude-code-rs`；`cargo test -p claude-code-rs engine::lifecycle::tests::test_try_extract_session_memory_uses_structured_insight -- --nocapture` 被当前 `api/bedrock.rs` 测试编译错误阻塞 |

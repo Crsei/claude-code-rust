@@ -3,7 +3,9 @@ mod tests {
     use crate::engine::lifecycle::*;
     use crate::engine::sdk_types::*;
     use crate::types::config::{AgentContext, QueryEngineConfig, QuerySource};
-    use crate::types::message::{Message, MessageContent, Usage, UserMessage};
+    use crate::types::message::{
+        AssistantMessage, ContentBlock, Message, MessageContent, Usage, UserMessage,
+    };
     use tempfile::tempdir;
 
     struct EnvGuard {
@@ -228,6 +230,42 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
+    fn test_try_extract_session_memory_uses_structured_insight() {
+        let home = tempdir().unwrap();
+        let _guard = EnvGuard::set("CC_RUST_HOME", home.path());
+        let workspace = home.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+
+        let mut config = make_config();
+        config.cwd = workspace.to_string_lossy().to_string();
+        let engine = QueryEngine::new(config);
+        engine.replace_messages(vec![
+            user_message("Earlier request"),
+            assistant_message("Earlier assistant answer that is long enough."),
+            user_message("Please add MCP reconnect tests"),
+            assistant_message("Intermediate assistant answer that is long enough."),
+            assistant_message(
+                "Implemented the manager reconnect path. cargo test -p cc-mcp manager passed.",
+            ),
+        ]);
+
+        engine.try_extract_session_memory();
+
+        let entries = engine.state.read().session_memory.get_memory_context(1);
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0]
+            .content
+            .contains("Request: Please add MCP reconnect tests"));
+        assert!(entries[0]
+            .content
+            .contains("Insight: Implemented the manager reconnect path."));
+        assert!(entries[0].tags.contains(&"implementation".to_string()));
+        assert!(entries[0].tags.contains(&"testing".to_string()));
+        assert!(entries[0].tags.contains(&"mcp".to_string()));
+    }
+
+    #[test]
     fn test_set_tools() {
         let engine = QueryEngine::new(make_config());
         assert_eq!(engine.state.read().tools.len(), 0);
@@ -360,5 +398,33 @@ mod tests {
         } else {
             panic!("stream was empty");
         }
+    }
+
+    fn user_message(text: &str) -> Message {
+        Message::User(UserMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 1,
+            role: "user".into(),
+            content: MessageContent::Text(text.to_string()),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        })
+    }
+
+    fn assistant_message(text: &str) -> Message {
+        Message::Assistant(AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 1,
+            role: "assistant".into(),
+            content: vec![ContentBlock::Text {
+                text: text.to_string(),
+            }],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        })
     }
 }
