@@ -1,12 +1,18 @@
 #![allow(unused)]
 
-use cc_types::message::{ContentBlock, Message, MessageContent, ToolResultContent, UserMessage};
+use cc_types::message::{
+    ContentBlock, Message, MessageContent, MicrocompactMetadata, SystemMessage, SystemSubtype,
+    ToolResultContent,
+};
+use cc_utils::tokens;
+use uuid::Uuid;
 
 /// Result of microcompaction.
 #[derive(Debug)]
 pub struct MicrocompactResult {
     pub messages: Vec<Message>,
     pub tokens_freed: u64,
+    pub compacted_tool_ids: Vec<String>,
 }
 
 /// The number of most-recent tool results to always preserve intact.
@@ -28,8 +34,10 @@ pub fn microcompact_messages(messages: Vec<Message>) -> MicrocompactResult {
         return MicrocompactResult {
             messages,
             tokens_freed: 0,
+            compacted_tool_ids: Vec::new(),
         };
     }
+    let pre_tokens = tokens::estimate_messages_tokens(&messages);
 
     // First, identify the index of the last assistant message so we can
     // protect its associated tool results.
@@ -70,6 +78,7 @@ pub fn microcompact_messages(messages: Vec<Message>) -> MicrocompactResult {
     };
 
     let mut tokens_freed: u64 = 0;
+    let mut compacted_tool_ids = Vec::new();
     let mut result: Vec<Message> = Vec::with_capacity(messages.len());
 
     for (i, msg) in messages.into_iter().enumerate() {
@@ -79,17 +88,27 @@ pub fn microcompact_messages(messages: Vec<Message>) -> MicrocompactResult {
             && !recent_indices.contains(&i)
             && !last_turn_indices.contains(&i)
         {
-            let (compacted, freed) = compact_tool_result_message(msg);
+            let (compacted, freed, tool_ids) = compact_tool_result_message(msg);
             tokens_freed += freed;
+            extend_unique(&mut compacted_tool_ids, tool_ids);
             result.push(compacted);
         } else {
             result.push(msg);
         }
     }
 
+    if tokens_freed > 0 {
+        result.push(create_microcompact_boundary(
+            pre_tokens,
+            tokens_freed,
+            compacted_tool_ids.clone(),
+        ));
+    }
+
     MicrocompactResult {
         messages: result,
         tokens_freed,
+        compacted_tool_ids,
     }
 }
 
@@ -110,18 +129,21 @@ fn message_has_tool_result(msg: &Message) -> bool {
 /// For each ToolResult block whose content exceeds SIZE_THRESHOLD_CHARS,
 /// replace the content with a truncated summary.
 /// Returns the modified message and the number of estimated tokens freed.
-fn compact_tool_result_message(msg: Message) -> (Message, u64) {
+fn compact_tool_result_message(msg: Message) -> (Message, u64, Vec<String>) {
     let Message::User(mut user) = msg else {
-        return (msg, 0);
+        return (msg, 0, Vec::new());
     };
 
     let mut freed: u64 = 0;
+    let mut compacted_tool_ids = Vec::new();
 
     match &mut user.content {
         MessageContent::Blocks(blocks) => {
             for block in blocks.iter_mut() {
                 if let ContentBlock::ToolResult {
-                    ref mut content, ..
+                    tool_use_id,
+                    ref mut content,
+                    ..
                 } = block
                 {
                     let original_len = tool_result_content_len(content);
@@ -132,6 +154,7 @@ fn compact_tool_result_message(msg: Message) -> (Message, u64) {
                         // Rough token estimate: ~4 chars per token
                         let chars_saved = original_len.saturating_sub(new_len);
                         freed += (chars_saved as u64) / 4;
+                        compacted_tool_ids.push(tool_use_id.clone());
                     }
                 }
             }
@@ -139,7 +162,40 @@ fn compact_tool_result_message(msg: Message) -> (Message, u64) {
         MessageContent::Text(_) => {}
     }
 
-    (Message::User(user), freed)
+    (Message::User(user), freed, compacted_tool_ids)
+}
+
+fn create_microcompact_boundary(
+    pre_tokens: u64,
+    tokens_saved: u64,
+    compacted_tool_ids: Vec<String>,
+) -> Message {
+    let post_tokens = pre_tokens.saturating_sub(tokens_saved);
+    Message::System(SystemMessage {
+        uuid: Uuid::new_v4(),
+        timestamp: chrono::Utc::now().timestamp_millis(),
+        subtype: SystemSubtype::MicrocompactBoundary {
+            microcompact_metadata: Some(MicrocompactMetadata {
+                trigger: "auto".to_string(),
+                pre_tokens,
+                tokens_saved,
+                compacted_tool_ids,
+                cleared_attachment_uuids: Vec::new(),
+            }),
+        },
+        content: format!(
+            "Context microcompacted: {} -> {} tokens ({} tokens saved)",
+            pre_tokens, post_tokens, tokens_saved
+        ),
+    })
+}
+
+fn extend_unique(target: &mut Vec<String>, values: Vec<String>) {
+    for value in values {
+        if !target.contains(&value) {
+            target.push(value);
+        }
+    }
 }
 
 /// Get the character length of a ToolResultContent.
@@ -231,6 +287,7 @@ mod tests {
 
         let result = microcompact_messages(messages);
         assert_eq!(result.tokens_freed, 0);
+        assert!(result.compacted_tool_ids.is_empty());
         assert_eq!(result.messages.len(), 10);
     }
 
@@ -255,5 +312,46 @@ mod tests {
 
         let result = microcompact_messages(messages);
         assert!(result.tokens_freed > 0);
+        assert_eq!(result.compacted_tool_ids, vec!["tu_old"]);
+        assert!(matches!(
+            result.messages.last(),
+            Some(Message::System(SystemMessage {
+                subtype: SystemSubtype::MicrocompactBoundary { .. },
+                ..
+            }))
+        ));
+    }
+
+    #[test]
+    fn test_microcompact_boundary_records_metadata() {
+        let large_content = "x".repeat(2000);
+        let mut messages = vec![
+            make_assistant(),
+            create_tool_result_message("tu_old", &large_content, false),
+        ];
+        for i in 0..KEEP_RECENT_TOOL_RESULTS + 1 {
+            messages.push(make_assistant());
+            messages.push(create_tool_result_message(
+                &format!("tu_recent_{}", i),
+                "small result",
+                false,
+            ));
+        }
+
+        let result = microcompact_messages(messages);
+        let Some(Message::System(system)) = result.messages.last() else {
+            panic!("expected microcompact boundary");
+        };
+        let SystemSubtype::MicrocompactBoundary {
+            microcompact_metadata: Some(metadata),
+        } = &system.subtype
+        else {
+            panic!("expected microcompact metadata");
+        };
+
+        assert_eq!(metadata.trigger, "auto");
+        assert_eq!(metadata.tokens_saved, result.tokens_freed);
+        assert_eq!(metadata.compacted_tool_ids, vec!["tu_old"]);
+        assert!(metadata.cleared_attachment_uuids.is_empty());
     }
 }

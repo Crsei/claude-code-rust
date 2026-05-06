@@ -117,6 +117,10 @@ pub enum SystemSubtype {
     CompactBoundary {
         compact_metadata: Option<CompactMetadata>,
     },
+    /// Microcompact 边界：旧工具结果被就地精简，原消息结构仍保留
+    MicrocompactBoundary {
+        microcompact_metadata: Option<MicrocompactMetadata>,
+    },
     /// API 错误 (重试中)
     ApiError {
         retry_attempt: u32,
@@ -145,6 +149,15 @@ pub struct CompactMetadata {
     pub post_compact_token_count: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preserved_segment: Option<PreservedSegment>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MicrocompactMetadata {
+    pub trigger: String,
+    pub pre_tokens: u64,
+    pub tokens_saved: u64,
+    pub compacted_tool_ids: Vec<String>,
+    pub cleared_attachment_uuids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

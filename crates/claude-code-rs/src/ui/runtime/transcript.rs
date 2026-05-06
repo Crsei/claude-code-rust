@@ -231,6 +231,7 @@ pub fn message_plaintext(message: &Message) -> String {
             SystemSubtype::Informational { .. }
             | SystemSubtype::Warning
             | SystemSubtype::CompactBoundary { .. }
+            | SystemSubtype::MicrocompactBoundary { .. }
             | SystemSubtype::ApiError { .. } => s.content.clone(),
         },
         // Non-conversation meta messages (progress/attachments) are

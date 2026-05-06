@@ -11,7 +11,7 @@ use crate::ui::theme::Theme;
 use crate::ui::virtual_scroll::VirtualScroll;
 
 use super::file_edit_tool_updated_message::{
-    render_file_edit_tool_updated_message, FileEditMessageStyle, FileEditToolUpdatedView,
+    FileEditMessageStyle, FileEditToolUpdatedView, render_file_edit_tool_updated_message,
 };
 use super::wrap::wrap_line_to_width;
 
@@ -455,6 +455,7 @@ fn render_system_message<'a>(
 
     let (prefix, style) = match &msg.subtype {
         SystemSubtype::CompactBoundary { .. } => ("--- context compacted ---", theme.dim),
+        SystemSubtype::MicrocompactBoundary { .. } => ("--- context microcompacted ---", theme.dim),
         SystemSubtype::ApiError { error, .. } => {
             let _ = error;
             ("API Error: ", theme.error)
@@ -468,7 +469,10 @@ fn render_system_message<'a>(
         SystemSubtype::Warning => ("Warning: ", theme.warning),
     };
 
-    if matches!(&msg.subtype, SystemSubtype::CompactBoundary { .. }) {
+    if matches!(
+        &msg.subtype,
+        SystemSubtype::CompactBoundary { .. } | SystemSubtype::MicrocompactBoundary { .. }
+    ) {
         lines.push(Line::from(vec![Span::styled(prefix.to_string(), style)]));
     } else {
         let content_lines: Vec<&str> = msg.content.lines().collect();
