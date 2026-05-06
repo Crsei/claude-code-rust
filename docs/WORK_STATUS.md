@@ -1,5 +1,11 @@
 # cc-rust 工作状态总览
 
+## 2026-05-06 Extensibility Custom Agent Phase 5
+
+- Custom agent safety contract is complete for the current runtime path: child agents inherit parent tool permission context, user/project `permissionMode` applies only from default parent mode, plugin `permissionMode` is ignored, `disallowedTools` wins over `tools`, `disallowedTools: *` denies all tools, and `mcp__server__*` wildcard specs match namespaced tools.
+- Agent definitions now normalize security lists and `isolation: worktree`, reject unknown editable `isolation` values and `maxTurns: 0`, and apply definition defaults for model, background execution, isolation, teammate mode, and child `maxTurns`.
+- Remaining extensibility work: runtime tool-registry refresh for MCP servers first connected after startup, plus Phase 6 integration verification and documentation closure.
+
 ## 2026-05-06 Extensibility MCP Phase 4
 
 - MCP Streamable HTTP is complete for the current standard HTTP transport: POST JSON-RPC, JSON or SSE response bodies, `MCP-Session-Id`, `MCP-Protocol-Version`, optional GET SSE listener, DELETE session cleanup, OAuth header reuse, and secure remote HTTPS / loopback HTTP validation.

@@ -137,6 +137,7 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
                     self_agent_color: identity.color.clone(),
                     ..Default::default()
                 }),
+                tool_permission_context: None,
             }),
         };
 

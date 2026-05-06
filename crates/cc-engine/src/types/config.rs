@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 #[allow(unused_imports)]
-use super::tool::{QueryChainTracking, ToolUseContext, Tools};
+use super::tool::{QueryChainTracking, ToolPermissionContext, ToolUseContext, Tools};
 #[allow(unused_imports)]
 use cc_types::message::{Message, SystemMessage, Usage};
 
@@ -266,4 +266,10 @@ pub struct AgentContext {
     /// carrying it into child engines, spawned subagents lose access to the
     /// current team even when the parent session is already in a team.
     pub team_context: Option<cc_types::teams::TeamContext>,
+    /// Permission context inherited from the parent engine.
+    ///
+    /// Child agents must inherit the parent allow/deny/session grants before
+    /// applying any agent-specific permission mode so definitions cannot escape
+    /// the current conversation's safety state.
+    pub tool_permission_context: Option<ToolPermissionContext>,
 }

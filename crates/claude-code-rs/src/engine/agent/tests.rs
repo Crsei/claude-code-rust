@@ -18,6 +18,7 @@ fn test_resolve_model_alias() {
         "claude-haiku-3-5-20241022"
     );
     assert_eq!(resolve_model_alias("opus", "fallback"), "opus");
+    assert_eq!(resolve_model_alias("inherit", "fallback"), "fallback");
     assert_eq!(
         resolve_model_alias("custom-model", "fallback"),
         "custom-model"

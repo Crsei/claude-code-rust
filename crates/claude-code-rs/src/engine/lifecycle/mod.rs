@@ -157,6 +157,9 @@ impl QueryEngine {
         }
         if let Some(agent_context) = config.agent_context.as_ref() {
             app_state.team_context = agent_context.team_context.clone();
+            if let Some(permission_context) = agent_context.tool_permission_context.clone() {
+                app_state.tool_permission_context = permission_context;
+            }
         }
 
         // Initialize session memory service and load existing entries

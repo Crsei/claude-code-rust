@@ -193,10 +193,12 @@ pub fn parse_agent_file(
             .map(|v| split_list(&v))
             .unwrap_or_default(),
     );
-    let disallowed_tools = fm_get(&fm, "disallowedTools")
-        .or_else(|| fm_get(&fm, "disallowed_tools"))
-        .map(|v| split_list(&v))
-        .unwrap_or_default();
+    let disallowed_tools = normalize_disallowed_tools(
+        fm_get(&fm, "disallowedTools")
+            .or_else(|| fm_get(&fm, "disallowed_tools"))
+            .map(|v| split_list(&v))
+            .unwrap_or_default(),
+    );
     let model = fm_get(&fm, "model").filter(|s| !s.is_empty());
     let color = fm_get(&fm, "color").filter(|s| !s.is_empty());
     let permission_mode = fm_get(&fm, "permissionMode")
@@ -210,7 +212,7 @@ pub fn parse_agent_file(
     let background = fm_get(&fm, "background")
         .map(|v| matches!(v.to_ascii_lowercase().as_str(), "true" | "yes" | "1"))
         .unwrap_or(false);
-    let isolation = fm_get(&fm, "isolation").filter(|s| !s.is_empty());
+    let isolation = normalize_isolation(fm_get(&fm, "isolation"));
     let skills = fm_get(&fm, "skills")
         .map(|v| split_list(&v))
         .unwrap_or_default();
@@ -382,18 +384,47 @@ fn split_list(value: &str) -> Vec<String> {
         .collect()
 }
 
+fn normalize_list(values: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for value in values {
+        let value = value.trim();
+        if value.is_empty() || out.iter().any(|existing| existing == value) {
+            continue;
+        }
+        out.push(value.to_string());
+    }
+    out
+}
+
 /// Normalize the `tools` list: `["*"]` becomes `[]` (meaning "all tools"), so
 /// the rest of the code only has to check for an empty vec.
 fn normalize_tools(tools: Vec<String>) -> Vec<String> {
+    let tools = normalize_list(tools);
     if tools.len() == 1 && tools[0] == "*" {
         vec![]
     } else {
-        tools
+        tools.into_iter().filter(|tool| tool != "*").collect()
+    }
+}
+
+fn normalize_disallowed_tools(tools: Vec<String>) -> Vec<String> {
+    normalize_list(tools)
+}
+
+fn normalize_isolation(value: Option<String>) -> Option<String> {
+    let value = value?.trim().to_string();
+    if value.is_empty() {
+        return None;
+    }
+    if value.eq_ignore_ascii_case("worktree") {
+        Some("worktree".to_string())
+    } else {
+        Some(value)
     }
 }
 
 fn parse_permission_mode(value: String) -> Option<AgentPermissionMode> {
-    match value.as_str() {
+    match value.trim() {
         "default" => Some(AgentPermissionMode::Default),
         "acceptEdits" | "accept_edits" => Some(AgentPermissionMode::AcceptEdits),
         "bypassPermissions" | "bypass_permissions" => Some(AgentPermissionMode::BypassPermissions),
@@ -456,6 +487,9 @@ fn upsert_agent(
     }
     validate_name(&entry.name).map_err(|e| (entry.name.clone(), e))?;
     entry.tools = normalize_tools(entry.tools);
+    entry.disallowed_tools = normalize_disallowed_tools(entry.disallowed_tools);
+    entry.isolation = normalize_isolation(entry.isolation);
+    validate_security_fields(&entry).map_err(|e| (entry.name.clone(), e))?;
 
     let dir = agents_dir_for_source(cwd, &entry.source);
     fs::create_dir_all(&dir).map_err(|e| {
@@ -489,6 +523,21 @@ fn upsert_agent(
     entry.file_path = Some(path.to_string_lossy().to_string());
     entry.filename = None;
     Ok(entry)
+}
+
+fn validate_security_fields(entry: &AgentDefinitionEntry) -> Result<(), String> {
+    if let Some(isolation) = entry.isolation.as_deref() {
+        if !isolation.eq_ignore_ascii_case("worktree") {
+            return Err(format!(
+                "unsupported isolation `{}`; only `worktree` is supported",
+                isolation
+            ));
+        }
+    }
+    if entry.max_turns == Some(0) {
+        return Err("maxTurns must be greater than 0".to_string());
+    }
+    Ok(())
 }
 
 fn delete_agent(cwd: &Path, name: &str, source: &AgentDefinitionSource) -> Result<(), String> {
@@ -851,6 +900,46 @@ mod tests {
         )
         .expect("should parse");
         assert!(parsed.tools.is_empty(), "`*` should normalize to empty");
+    }
+
+    #[test]
+    fn tool_security_lists_are_normalized() {
+        let raw = "---\nname: bounded\ntools: \"*, Read, Read\"\ndisallowedTools: \"Write, Write, *\"\nisolation: WorkTree\n---\nBody\n";
+        let parsed = parse_agent_file(
+            &PathBuf::from("/tmp/bounded.md"),
+            raw,
+            AgentDefinitionSource::User,
+        )
+        .expect("should parse");
+
+        assert_eq!(parsed.tools, vec!["Read".to_string()]);
+        assert_eq!(
+            parsed.disallowed_tools,
+            vec!["Write".to_string(), "*".to_string()]
+        );
+        assert_eq!(parsed.isolation.as_deref(), Some("worktree"));
+    }
+
+    #[test]
+    fn upsert_rejects_unknown_isolation() {
+        let tmp = tempdir().unwrap();
+        let mut entry = make_entry("sandboxed", AgentDefinitionSource::Project);
+        entry.isolation = Some("sandbox".to_string());
+
+        let err = upsert_agent(tmp.path(), entry).unwrap_err();
+
+        assert!(err.1.contains("unsupported isolation"));
+    }
+
+    #[test]
+    fn upsert_rejects_zero_max_turns() {
+        let tmp = tempdir().unwrap();
+        let mut entry = make_entry("zero-turns", AgentDefinitionSource::Project);
+        entry.max_turns = Some(0);
+
+        let err = upsert_agent(tmp.path(), entry).unwrap_err();
+
+        assert!(err.1.contains("maxTurns"));
     }
 
     #[test]

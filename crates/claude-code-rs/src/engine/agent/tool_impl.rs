@@ -1,15 +1,15 @@
 //! Tool trait implementation for AgentTool.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
 
-use super::{resolve_model_alias, AgentInput, AgentTool, MAX_AGENT_DEPTH};
+use super::{AgentInput, AgentTool, MAX_AGENT_DEPTH, resolve_model_alias};
 
 #[async_trait]
 impl Tool for AgentTool {
@@ -80,7 +80,7 @@ impl Tool for AgentTool {
         _parent: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let params: AgentInput = serde_json::from_value(input)?;
+        let mut params: AgentInput = serde_json::from_value(input)?;
 
         // Check recursion depth
         let current_depth = ctx.query_tracking.as_ref().map(|t| t.depth).unwrap_or(0);
@@ -94,13 +94,24 @@ impl Tool for AgentTool {
             );
         }
 
+        let cwd = std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| ".".to_string());
+        let subagent_type_owned = params
+            .subagent_type
+            .clone()
+            .unwrap_or_else(|| "general-purpose".to_string());
+        let agent_definition =
+            super::active_agent_definition(std::path::Path::new(&cwd), &subagent_type_owned);
+        apply_agent_definition_defaults(&mut params, agent_definition.as_ref(), ctx);
+
         let description = params.description.as_deref().unwrap_or("unnamed task");
         let subagent_type = params.subagent_type.as_deref().unwrap_or("general-purpose");
 
         // Resolve model for the subagent.
-        // Priority: explicit model param → CLAUDE_MODEL env → parent model.
-        // This ensures subagents default to the .env-configured model even when
-        // the main agent's model has been changed at runtime (e.g. via /model).
+        // Priority: explicit model param, agent definition, CLAUDE_MODEL env,
+        // then parent model. Custom agent definitions stay authoritative while
+        // preserving the existing environment fallback.
         let parent_model = ctx.options.main_loop_model.clone();
         let env_model = std::env::var("CLAUDE_MODEL").ok().filter(|s| !s.is_empty());
         let agent_model = params
@@ -110,11 +121,6 @@ impl Tool for AgentTool {
             .unwrap_or_else(|| env_model.unwrap_or_else(|| parent_model.clone()));
 
         if let Some(spawn_request) = teammate_spawn_request(&params, &(ctx.get_app_state)())? {
-            let cwd = std::env::current_dir()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| ".".to_string());
-            let agent_definition =
-                super::active_agent_definition(std::path::Path::new(&cwd), subagent_type);
             let teammate_model = params
                 .model
                 .as_deref()
@@ -366,6 +372,52 @@ fn resolve_optional_teammate_model(raw_model: &str, parent_model: &str) -> Optio
         return Some(parent_model.to_string());
     }
     Some(resolve_model_alias(model, parent_model))
+}
+
+fn apply_agent_definition_defaults(
+    params: &mut AgentInput,
+    definition: Option<&crate::ipc::subsystem_types::AgentDefinitionEntry>,
+    ctx: &ToolUseContext,
+) {
+    let Some(definition) = definition else {
+        return;
+    };
+
+    if option_empty(params.model.as_deref()) {
+        params.model = definition.model.as_ref().and_then(|model| {
+            let model = model.trim();
+            (!model.is_empty()).then(|| model.to_string())
+        });
+    }
+
+    if !params.run_in_background && definition.background {
+        params.run_in_background = true;
+    }
+
+    if option_empty(params.isolation.as_deref()) {
+        params.isolation = runtime_isolation(definition.isolation.as_deref());
+    }
+
+    if option_empty(params.mode.as_deref()) {
+        if let Some(requested) = super::agent_definition_permission_mode(Some(definition)) {
+            let parent_mode = (ctx.get_app_state)().tool_permission_context.mode;
+            let effective = super::compose_agent_permission_mode(&parent_mode, Some(requested));
+            params.mode = Some(effective.as_str().to_string());
+        }
+    }
+}
+
+fn option_empty(value: Option<&str>) -> bool {
+    value.map(str::trim).unwrap_or("").is_empty()
+}
+
+fn runtime_isolation(value: Option<&str>) -> Option<String> {
+    let value = value?.trim();
+    if value.eq_ignore_ascii_case("worktree") {
+        Some("worktree".to_string())
+    } else {
+        None
+    }
 }
 
 fn annotate_agent_teammate_result(result: &mut ToolResult, prompt: &str) {

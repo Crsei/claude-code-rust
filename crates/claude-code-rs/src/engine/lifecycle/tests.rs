@@ -79,6 +79,7 @@ mod tests {
                 team_name: "alpha".to_string(),
                 ..Default::default()
             }),
+            tool_permission_context: None,
         });
 
         let engine = QueryEngine::new(config);
@@ -90,6 +91,35 @@ mod tests {
                 .map(|context| context.team_name.as_str()),
             Some("alpha")
         );
+    }
+
+    #[test]
+    fn test_query_engine_inherits_agent_permission_context() {
+        let mut permission_context =
+            crate::types::app_state::AppState::default().tool_permission_context;
+        permission_context.mode = crate::types::tool::PermissionMode::Plan;
+        permission_context.grant_session_allow("Read");
+
+        let mut config = make_config();
+        config.agent_context = Some(AgentContext {
+            agent_id: "planner@alpha".to_string(),
+            query_tracking: crate::types::tool::QueryChainTracking {
+                chain_id: "chain-2".to_string(),
+                depth: 1,
+            },
+            langfuse_session_id: "session-2".to_string(),
+            agent_type: Some("Plan".to_string()),
+            team_context: None,
+            tool_permission_context: Some(permission_context),
+        });
+
+        let engine = QueryEngine::new(config);
+        let app_state = &engine.state.read().app_state;
+        assert_eq!(
+            app_state.tool_permission_context.mode,
+            crate::types::tool::PermissionMode::Plan
+        );
+        assert!(app_state.tool_permission_context.has_session_grant("Read"));
     }
 
     #[test]

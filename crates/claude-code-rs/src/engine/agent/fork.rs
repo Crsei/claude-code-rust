@@ -128,6 +128,7 @@ pub async fn run_fork(params: ForkParams) -> Result<ForkOutcome> {
             langfuse_session_id: String::new(),
             agent_type: Some("fork".to_string()),
             team_context: None,
+            tool_permission_context: None,
         }),
     };
 

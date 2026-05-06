@@ -15,16 +15,20 @@ mod worktree;
 #[cfg(test)]
 mod tests;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::types::config::{AgentContext, QueryEngineConfig};
 use crate::types::tool::*;
+
+use crate::ipc::subsystem_types::{
+    AgentDefinitionEntry, AgentDefinitionSource, AgentPermissionMode,
+};
 
 /// AgentTool — spawns subagent instances to handle complex tasks.
 pub struct AgentTool;
@@ -63,6 +67,9 @@ const MAX_AGENT_DEPTH: usize = 5;
 
 /// Resolve a public model alias to a full model ID.
 fn resolve_model_alias(alias: &str, _fallback: &str) -> String {
+    if alias.trim().eq_ignore_ascii_case("inherit") {
+        return _fallback.to_string();
+    }
     crate::model_registry::resolve_model_alias(alias)
 }
 
@@ -253,16 +260,29 @@ fn build_child_config(
     parent_model: &str,
     current_depth: usize,
 ) -> QueryEngineConfig {
-    let child_tools = resolve_child_tools(
+    let agent_type = child_agent_type.or(Some("general-purpose"));
+    let definition = agent_type.and_then(|agent_type| {
+        let child_cwd = Path::new(&cwd);
+        active_agent_definition(child_cwd, agent_type).or_else(|| {
+            std::env::current_dir().ok().and_then(|parent_cwd| {
+                (parent_cwd != child_cwd)
+                    .then(|| active_agent_definition(&parent_cwd, agent_type))?
+            })
+        })
+    });
+    let child_tools = filter_tools_for_optional_definition(
         crate::tools::registry::get_all_tools(),
-        Path::new(&cwd),
-        child_agent_type,
+        definition.as_ref(),
     );
     let chain_id = ctx
         .query_tracking
         .as_ref()
         .map(|t| t.chain_id.clone())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let app_state = (ctx.get_app_state)();
+    let permission_context =
+        child_agent_permission_context(app_state.tool_permission_context, definition.as_ref());
+    let team_context = app_state.team_context;
 
     QueryEngineConfig {
         cwd,
@@ -271,7 +291,12 @@ fn build_child_config(
         append_system_prompt: ctx.options.append_system_prompt.clone(),
         user_specified_model: Some(agent_model.to_string()),
         fallback_model: Some(parent_model.to_string()),
-        max_turns: Some(30),
+        max_turns: definition
+            .as_ref()
+            .and_then(|entry| entry.max_turns)
+            .filter(|turns| *turns > 0)
+            .map(|turns| turns as usize)
+            .or(Some(30)),
         max_budget_usd: ctx.options.max_budget_usd,
         task_budget: None,
         verbose: ctx.options.verbose,
@@ -291,20 +316,10 @@ fn build_child_config(
             },
             langfuse_session_id: ctx.langfuse_session_id.clone(),
             agent_type: child_agent_type.map(|value| value.to_string()),
-            team_context: (ctx.get_app_state)().team_context,
+            team_context,
+            tool_permission_context: Some(permission_context),
         }),
     }
-}
-
-fn resolve_child_tools(tools: Tools, cwd: &Path, child_agent_type: Option<&str>) -> Tools {
-    let tools = dedupe_tools_by_name(tools);
-    let Some(agent_type) = child_agent_type.or(Some("general-purpose")) else {
-        return tools;
-    };
-    let Some(definition) = active_agent_definition(cwd, agent_type) else {
-        return tools;
-    };
-    filter_tools_for_agent_definition(tools, &definition)
 }
 
 fn active_agent_definition(
@@ -317,43 +332,110 @@ fn active_agent_definition(
         .last()
 }
 
-fn filter_tools_for_agent_definition(
+#[cfg(test)]
+fn filter_tools_for_agent_definition(tools: Tools, definition: &AgentDefinitionEntry) -> Tools {
+    filter_tools_for_optional_definition(tools, Some(definition))
+}
+
+fn filter_tools_for_optional_definition(
     tools: Tools,
-    definition: &crate::ipc::subsystem_types::AgentDefinitionEntry,
+    definition: Option<&AgentDefinitionEntry>,
 ) -> Tools {
-    let disallowed: HashSet<String> = definition
-        .disallowed_tools
-        .iter()
-        .map(|spec| tool_name_from_spec(spec).to_string())
-        .collect();
+    let tools = dedupe_tools_by_name(tools);
+    let Some(definition) = definition else {
+        return tools;
+    };
 
     let available: Tools = tools
         .into_iter()
-        .filter(|tool| !disallowed.contains(tool.name()))
+        .filter(|tool| {
+            !definition
+                .disallowed_tools
+                .iter()
+                .any(|spec| tool_matches_spec(tool.name(), spec))
+        })
         .collect();
 
     if definition.tools.is_empty() {
         return available;
     }
 
-    let by_name: HashMap<String, Arc<dyn Tool>> = available
-        .into_iter()
-        .map(|tool| (tool.name().to_string(), tool))
-        .collect();
     let mut resolved = Tools::new();
     let mut seen = HashSet::new();
 
     for spec in &definition.tools {
-        let name = tool_name_from_spec(spec);
-        if !seen.insert(name.to_string()) {
-            continue;
-        }
-        if let Some(tool) = by_name.get(name) {
-            resolved.push(Arc::clone(tool));
+        for tool in &available {
+            if !tool_matches_spec(tool.name(), spec) {
+                continue;
+            }
+            if seen.insert(tool.name().to_string()) {
+                resolved.push(Arc::clone(tool));
+            }
         }
     }
 
     resolved
+}
+
+pub(super) fn agent_definition_permission_mode(
+    definition: Option<&AgentDefinitionEntry>,
+) -> Option<AgentPermissionMode> {
+    let definition = definition?;
+    if matches!(definition.source, AgentDefinitionSource::Plugin { .. }) {
+        return None;
+    }
+    definition.permission_mode
+}
+
+pub(super) fn compose_agent_permission_mode(
+    parent: &PermissionMode,
+    requested: Option<AgentPermissionMode>,
+) -> PermissionMode {
+    match parent {
+        PermissionMode::Auto
+        | PermissionMode::Bypass
+        | PermissionMode::AcceptEdits
+        | PermissionMode::Plan
+        | PermissionMode::DontAsk => parent.clone(),
+        PermissionMode::Default => requested
+            .map(agent_permission_mode_to_runtime)
+            .unwrap_or(PermissionMode::Default),
+    }
+}
+
+fn child_agent_permission_context(
+    mut context: ToolPermissionContext,
+    definition: Option<&AgentDefinitionEntry>,
+) -> ToolPermissionContext {
+    let parent_mode = context.mode.clone();
+    let requested = agent_definition_permission_mode(definition);
+    context.mode = compose_agent_permission_mode(&parent_mode, requested);
+    context.pre_plan_mode = child_pre_plan_mode(&parent_mode, requested, &context.mode);
+    context
+}
+
+fn child_pre_plan_mode(
+    parent: &PermissionMode,
+    requested: Option<AgentPermissionMode>,
+    effective: &PermissionMode,
+) -> Option<PermissionMode> {
+    if effective != &PermissionMode::Plan {
+        return None;
+    }
+    if parent == &PermissionMode::Default && requested == Some(AgentPermissionMode::Plan) {
+        Some(PermissionMode::Default)
+    } else {
+        Some(PermissionMode::Plan)
+    }
+}
+
+fn agent_permission_mode_to_runtime(mode: AgentPermissionMode) -> PermissionMode {
+    match mode {
+        AgentPermissionMode::Default => PermissionMode::Default,
+        AgentPermissionMode::AcceptEdits => PermissionMode::AcceptEdits,
+        AgentPermissionMode::BypassPermissions => PermissionMode::Bypass,
+        AgentPermissionMode::Plan => PermissionMode::Plan,
+    }
 }
 
 fn dedupe_tools_by_name(tools: Tools) -> Tools {
@@ -370,6 +452,17 @@ fn tool_name_from_spec(spec: &str) -> &str {
         .split_once('(')
         .map(|(name, _)| name.trim())
         .unwrap_or(trimmed)
+}
+
+fn tool_matches_spec(tool_name: &str, spec: &str) -> bool {
+    let name = tool_name_from_spec(spec);
+    if name == "*" {
+        return true;
+    }
+    if let Some(prefix) = name.strip_suffix('*') {
+        return !prefix.is_empty() && tool_name.starts_with(prefix);
+    }
+    tool_name == name
 }
 
 // ---------------------------------------------------------------------------
@@ -498,5 +591,62 @@ mod child_tool_boundary_tests {
 
         assert_eq!(names, vec!["Read", "Bash"]);
         assert_eq!(names.iter().filter(|name| *name == "Read").count(), 1);
+    }
+
+    #[test]
+    fn custom_agent_disallowed_wildcard_hides_every_tool() {
+        let definition = test_definition(vec![], vec!["*"]);
+        let tools =
+            filter_tools_for_agent_definition(crate::tools::registry::get_all_tools(), &definition);
+
+        assert!(tools.is_empty(), "disallowedTools: * must deny all tools");
+    }
+
+    #[test]
+    fn custom_agent_tool_wildcards_match_mcp_prefixes() {
+        assert!(tool_matches_spec("mcp__demo__safe", "mcp__demo__*"));
+        assert!(tool_matches_spec("mcp__demo__safe", "mcp__demo__safe"));
+        assert!(!tool_matches_spec("mcp__other__safe", "mcp__demo__*"));
+        assert!(tool_matches_spec("Bash", "Bash(git status)"));
+    }
+
+    #[test]
+    fn custom_agent_permission_mode_applies_only_from_default_parent() {
+        assert_eq!(
+            compose_agent_permission_mode(
+                &PermissionMode::Default,
+                Some(AgentPermissionMode::AcceptEdits)
+            ),
+            PermissionMode::AcceptEdits
+        );
+        assert_eq!(
+            compose_agent_permission_mode(&PermissionMode::Auto, Some(AgentPermissionMode::Plan)),
+            PermissionMode::Auto
+        );
+        assert_eq!(
+            compose_agent_permission_mode(
+                &PermissionMode::Plan,
+                Some(AgentPermissionMode::BypassPermissions)
+            ),
+            PermissionMode::Plan
+        );
+        assert_eq!(
+            compose_agent_permission_mode(
+                &PermissionMode::DontAsk,
+                Some(AgentPermissionMode::AcceptEdits)
+            ),
+            PermissionMode::DontAsk
+        );
+    }
+
+    #[test]
+    fn plugin_agent_permission_mode_is_ignored() {
+        let mut definition = test_definition(vec![], vec![]);
+        definition.source = AgentDefinitionSource::Plugin {
+            id: "plugin-a".to_string(),
+        };
+        definition.permission_mode = Some(AgentPermissionMode::BypassPermissions);
+
+        assert_eq!(agent_definition_permission_mode(Some(&definition)), None);
     }
 }

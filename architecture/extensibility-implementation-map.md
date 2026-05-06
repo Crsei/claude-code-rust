@@ -1,5 +1,18 @@
 # Extensibility Implementation Map
 
+## 2026-05-06 Phase 5 Update - Custom Agent Safety
+
+Custom agent safety is now implemented for the active runtime path. Child
+agents inherit the parent `ToolPermissionContext`; user/project
+`permissionMode` applies only from the default parent mode; plugin
+`permissionMode` is ignored; `disallowedTools` wins over `tools`;
+`disallowedTools: *` denies all tools; `mcp__server__*` wildcard specs match
+namespaced MCP tools; editable definitions reject unknown `isolation` values
+and `maxTurns: 0`; model/background/isolation/mode/maxTurns defaults are
+applied at launch. Residual custom-agent fields (`skills`, `hooks`,
+`mcpServers`) remain parsed/round-tripped only and must use the same inherited
+permission context before any future runtime activation.
+
 ## 范围
 
 本文档只覆盖 `docs/bun-docs-documentation-plan.md` 中的 Extensibility 章节，对照 Bun 上游的以下五份文档，梳理 cc-rust 当前实现状态：
