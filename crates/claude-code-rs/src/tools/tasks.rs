@@ -921,6 +921,7 @@ fn task_to_json_from_store(task_store: &TaskStore, entry: &TaskEntry) -> Value {
 struct TaskRepository {
     dir: PathBuf,
     output_limit_bytes: usize,
+    id_reservation_lock: Mutex<()>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1011,6 +1012,7 @@ impl TaskRepository {
         Self {
             dir,
             output_limit_bytes: output_limit_bytes.max(1),
+            id_reservation_lock: Mutex::new(()),
         }
     }
 
@@ -1058,6 +1060,7 @@ impl TaskRepository {
     }
 
     fn reserve_next_task_id(&self, tasks: &HashMap<String, TaskEntry>) -> Result<String> {
+        let _process_guard = self.id_reservation_lock.lock();
         fs::create_dir_all(&self.dir)
             .with_context(|| format!("failed to create task dir {}", self.dir.display()))?;
 

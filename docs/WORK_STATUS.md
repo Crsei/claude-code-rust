@@ -58,6 +58,7 @@
 | 工具 | 文件 | 状态 |
 |------|------|------|
 | Agent 后台模式 | `src/tools/agent.rs` | ✅ — `run_in_background` 通过 tokio::spawn + mpsc 异步执行 |
+| Tasks V2 / TodoWrite | `src/tools/tasks.rs` | Complete - task-list isolation, monotonic IDs, locks, owner claim, activeForm/metadata, dependency updates, teammate owner release, and web provider-diff docs are closed |
 
 其余 29 个工具均已完整实现 (含 BriefTool, SleepTool)。
 
