@@ -163,3 +163,7 @@ fork 执行还会继承 skill 的 `allowed_tools` 和 `model` 配置，见 `crat
 1. 如果要继续补齐 Extensibility 章节，优先把 manager 级 reconnect 接到 `/mcp reconnect` / IPC 会话生命周期，再实现远程 HTTPS SSE / OAuth；当前只完成了 stdio、本地 loopback HTTP SSE、channel notification 路由、manager API 与短退避重试主路径。
 2. 如果后续发现 custom agents 还要补更细的安全约束，再补一轮 `engine/agent/*` 与 `ipc/agent_settings.rs` 的交叉核查。
 3. 其余三项（hooks、skills、MCP 配置）已经可以直接作为文档基线使用。
+
+## Phase 实施记录
+
+- 2026-05-06：Phase 0 已完成 baseline / scope lock。已记录测试基线与 transport/auth 实施顺序，见 `docs/archive/extensibility-phase0-baseline-scope-2026-05-06.md`。本阶段不改变运行时状态；下一阶段从 `/mcp reconnect` 与 IPC/runtime reconnect 语义接线开始。
