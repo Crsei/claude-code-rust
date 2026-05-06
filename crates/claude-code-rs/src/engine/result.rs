@@ -14,7 +14,7 @@ use crate::types::message::{ContentBlock, Message, MessageContent};
 ///
 /// Success conditions:
 /// - Assistant message whose last content block is Text, Thinking, or
-///   RedactedThinking.
+///   RedactedThinking; connector text is treated as text-like output.
 /// - User message where **all** content blocks are ToolResult.
 /// - `stop_reason == "end_turn"`.
 pub fn is_result_successful(message: Option<&Message>, stop_reason: Option<&str>) -> bool {
@@ -33,6 +33,7 @@ pub fn is_result_successful(message: Option<&Message>, stop_reason: Option<&str>
                 matches!(
                     last,
                     ContentBlock::Text { .. }
+                        | ContentBlock::ConnectorText { .. }
                         | ContentBlock::Thinking { .. }
                         | ContentBlock::RedactedThinking { .. }
                 )
@@ -79,6 +80,9 @@ pub fn extract_text_result(messages: &[Message]) -> (String, bool) {
                 .rev()
                 .find_map(|block| match block {
                     ContentBlock::Text { text } => Some(text.clone()),
+                    ContentBlock::ConnectorText { connector_text, .. } => {
+                        Some(connector_text.clone())
+                    }
                     _ => None,
                 })
                 .unwrap_or_default();

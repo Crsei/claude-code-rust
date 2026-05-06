@@ -68,9 +68,9 @@ Provider HTTP/SSE 或 synthesized response
 | `content_block_start` | 解析为 `ContentBlockStart`，`StreamAccumulator` 按 index 保存初始 block。 | 已实现 |
 | `content_block_delta.text_delta` | 追加到 `ContentBlock::Text.text`；TUI/headless 也能实时显示文本 delta。 | 已实现 |
 | `content_block_delta.thinking_delta` | 追加到 `ContentBlock::Thinking.thinking`；TUI/headless 能实时显示 thinking delta。 | 部分实现 |
-| `content_block_delta.signature_delta` | 写入 `ContentBlock::Thinking.signature`，fallback retry 前会移除旧模型签名块。 | 已实现 |
-| `content_block_delta.input_json_delta` | `StreamAccumulator` 拼接 `partial_json`，在 `content_block_stop` / final build 时回填完整 `ToolUse.input`。 | 已实现 |
-| `content_block_delta.connector_text_delta` | 没有对应内容块和 delta 累积逻辑。 | 未实现 |
+| `content_block_delta.signature_delta` | 写入 `ContentBlock::Thinking.signature` / `ContentBlock::ConnectorText.signature`，fallback retry 前会移除旧模型签名块。 | 已实现 |
+| `content_block_delta.input_json_delta` | `StreamAccumulator` 拼接 `partial_json`，在 `content_block_stop` / final build 时回填完整 `ToolUse.input` 或 `ServerToolUse.input`；`server_tool_use` 不会被当成本地工具执行。 | 已实现 |
+| `content_block_delta.connector_text_delta` | 追加到 `ContentBlock::ConnectorText.connector_text`；直接 TUI partial 渲染也按文本处理。 | 已实现 |
 | `content_block_stop` | 事件会转发；Rust 现阶段有意保留“stream event 实时输出 + message stream 结束后产出一个最终 `AssistantMessage`”的交付语义。 | Intentional / 暂不改 |
 | `message_delta` | 更新 `stop_reason` 和 usage；`max_tokens` 会触发后续恢复逻辑。 | 已实现 |
 | `message_stop` | 事件会转发；TUI/headless 用它结束当前流。 | 已实现 |
@@ -91,10 +91,10 @@ Provider HTTP/SSE 或 synthesized response
 
 | 消费者 | 当前行为 |
 | --- | --- |
-| TUI | `SdkMessage::StreamEvent` 维护 partial assistant，只实时追加 text/thinking；收到最终 `SdkMessage::Assistant` 后替换 partial。未看到 TUI 安装 tool progress callback。 |
+| TUI | `SdkMessage::StreamEvent` 维护 partial assistant，实时追加 text/thinking/connector_text；收到最终 `SdkMessage::Assistant` 后替换 partial。直接 Rust TUI 已安装 tool progress callback。 |
 | Headless JSONL IPC | 把 stream 映射为 `StreamStart`、`StreamDelta`、`ThinkingDelta`、`StreamEnd`；最终 assistant 中的 `ToolUse` 会单独发 `ToolUse`，Bash 进度通过 `ToolProgress` 推送。 |
 | Web SSE | 直接把 `SdkMessage` 序列化为 SSE，事件名包括 `stream_event`、`assistant`、`api_retry`、`tool_use_summary`、`result`。 |
-| Daemon SSE | 广播简化事件：`stream_start`、`stream_delta`、`assistant_message`、`stream_end` 等；当前跳过 `ApiRetry`、`CompactBoundary`、`ToolUseSummary`。 |
+| Daemon SSE | 广播简化事件：`stream_start`、`stream_delta`、`assistant_message`、`stream_end` 等；`ApiRetry`、`CompactBoundary`、`ToolUseSummary` 已作为 typed SSE 事件透传。 |
 
 ## 已实现
 
@@ -103,31 +103,30 @@ Provider HTTP/SSE 或 synthesized response
 - Provider 适配层已把 Anthropic、OpenAI-compatible、Google、Vertex、Bedrock 合成响应接入同一流式接口。
 - Query 主循环会边接收边转发 `QueryYield::Stream(event)`，并用 `StreamAccumulator` 生成最终 `AssistantMessage`。
 - SDK 层会把 stream event、最终 assistant、最终 result 统一输出给 TUI/headless/Web/daemon。
-- TUI 支持 text/thinking partial 渲染，最终 assistant 到达后替换 partial。
+- TUI 支持 text/thinking/connector_text partial 渲染，最终 assistant 到达后替换 partial。
 - Headless IPC 支持 text delta、thinking delta、stream start/end、tool_use、tool_result、tool_progress。
 - Bash 工具执行支持约 1 秒间隔的进度 callback，headless 端可收到 `ToolProgress`。
 - `message_delta.stop_reason` 和 usage 聚合已实现。
 - `max_tokens` 停止原因有恢复路径：先提升 max output tokens，再注入 continuation 消息，最多 3 次。
 - prompt-too-long 恢复链已经按 collapse drain -> reactive compact -> terminal 接入主 loop。
-- `input_json_delta.partial_json` 会累积到最终 `ToolUse.input`，`signature_delta` 会写入 thinking signature。
+- `input_json_delta.partial_json` 会累积到最终 `ToolUse.input` / `ServerToolUse.input`，`signature_delta` 会写入 thinking 或 connector text signature。
 - stream 建立前的 429、5xx、529 / overloaded / high-demand / capacity 和网络发送错误会按 `ApiClientConfig.max_retries` 退避重试；prompt-too-long、auth、invalid request 等不可恢复错误立即返回给上层恢复或 terminal 路径。
 - Query 主循环会在 stream 消费阶段执行主动 idle watchdog 和 passive stall 检测，默认 idle 120s / stall 60s，可通过 `CC_RUST_STREAM_IDLE_TIMEOUT_MS`、`CC_RUST_STREAM_STALL_TIMEOUT_MS` 调整。
-- stream 中途 capacity 失败触发 fallback 时，主 loop 会 tombstone 已累积 partial assistant；fallback retry 前会移除旧模型的 thinking / redacted-thinking signature blocks。
+- stream 中途 capacity 失败触发 fallback 时，主 loop 会 tombstone 已累积 partial assistant；fallback retry 前会移除旧模型的 thinking / redacted-thinking / connector_text signature blocks。
 - Query 主循环已区分 request-start failure、stream-interrupted failure 和正常 assistant `stop_reason`：可恢复 primary 错误在 fallback 成功时 withheld，fallback 耗尽后才释放最终 API error。
 - 工具执行已支持 stream 结束后的安全工具并发批处理和非安全工具串行执行。
 - `QueryGates.streaming_tool_execution` 已接入主 loop：默认关闭，可用 `CC_RUST_STREAMING_TOOL_EXECUTION=1` 打开；gate off 保留 post-stream 工具执行，gate on 时完整 safe `tool_use` block 在 `content_block_stop` 后通过 canonical `QueryDeps::execute_tool()` 提前启动，stream 结束后只等待已启动任务并补执行剩余工具。
 - stream 中途 fallback / tombstone 会 abort 当前 attempt 已启动的 stream-time tool task，旧 assistant 的工具结果不会进入 fallback transcript。
+- `server_tool_use` 和 `connector_text` 已建模并可 round-trip：`server_tool_use` 累积输入但不进入本地 tool executor，`connector_text` 作为签名文本块参与渲染、摘要、token 估算和 fallback 签名清理。
 
 ## 未实现 / 未对齐
 
 | 优先级 | 差距 | 影响 |
 | --- | --- | --- |
 | P1 | `StreamingToolExecutor` 主 loop 接入仍保留最终单 assistant 交付语义。 | safe 工具可在 stream 期间提前启动，但 SDK/session/TUI 仍等待最终 `AssistantMessage`；per-block assistant message 尚未启用。 |
-| P1 | `ApiRetry` 用户可见事件和非 streaming fallback 尚未完整对齐。 | stream 建立前 retry/backoff 和主 loop failure 分类已落地；但 retry 可见性、非 streaming fallback 策略和 daemon/TUI/headless 事件覆盖仍需在 7.6 等任务收敛。 |
-| P1 | `server_tool_use`、`connector_text` 未建模。 | Web search/server tool/connector 类内容无法按参考协议完整还原。 |
+| P1 | 非 streaming fallback 尚未完整对齐。 | stream 建立前 retry/backoff 和主 loop failure 分类已落地；daemon/TUI/headless 事件覆盖已收敛，但从 streaming 降级到非 streaming 的策略仍需补。 |
 | P1 | `content_block_stop` 不产出 per-block `AssistantMessage`。 | 这是当前有意保留的边界：SDK/session/TUI 仍以最终单 assistant 替换 partial stream；per-block assistant 需要和 `StreamingToolExecutor`、session tombstone/fallback 语义一起重新设计。 |
-| P2 | TUI 未观察到 tool progress callback 安装。 | TUI 可能只能看到工具最终结果，不能显示 Bash 长任务实时进度。 |
-| P2 | Daemon SSE 跳过部分 SDK 事件，permission endpoint 仍是 stub。 | daemon/Web 客户端能力不完整。 |
+| P2 | daemon permission endpoint 仍是 stub。 | daemon/Web 客户端权限交互能力不完整。 |
 | P2 | Google tool use、Bedrock AWS EventStream、Vertex service-account JWT exchange 等 provider 能力仍未补齐。 | 多 provider 行为还不是 full-build 对齐状态。 |
 | P2 | Azure provider 的命名、能力矩阵和 streaming 路由存在不一致。 | 可能导致 Azure OpenAI 与 Anthropic-compatible Azure endpoint 的预期混淆。 |
 | P2 | 针对 provider-specific streaming、retry 可见性和 daemon/TUI/headless 覆盖的回归测试不足。 | 后续补齐 provider 和表面事件时容易回归。 |
@@ -135,8 +134,8 @@ Provider HTTP/SSE 或 synthesized response
 ## 建议补齐顺序
 
 1. 继续保留最终单 `AssistantMessage` 交付语义；真正改成 per-block assistant 时，需要同步设计 SDK/session 持久化、fallback tombstone 和 UI partial replacement。
-2. 补 `ApiRetry` / `CompactBoundary` / `ToolUseSummary` 等事件在 daemon SSE、TUI、headless 中的可见性策略。
-3. 再扩展 provider：Bedrock EventStream、Google tool use、server tool/connector content。
+2. 补非 streaming fallback 策略，并确认 `ApiRetry` / `CompactBoundary` / `ToolUseSummary` 等事件在 TUI、headless、daemon SSE 中的用户可见文案。
+3. 再扩展 provider：Bedrock EventStream、Google tool use / thinking、Vertex service-account JWT exchange、Azure 命名与能力矩阵。
 
 ## 文档一致性提醒
 

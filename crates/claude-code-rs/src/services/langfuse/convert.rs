@@ -29,6 +29,9 @@ pub fn convert_assistant_output(message: &AssistantMessage) -> Value {
     for block in &message.content {
         match block {
             ContentBlock::Text { text } => text_parts.push(sanitize_global_string(text)),
+            ContentBlock::ConnectorText { connector_text, .. } => {
+                text_parts.push(sanitize_global_string(connector_text));
+            }
             ContentBlock::ToolUse { id, name, input } => tool_calls.push(json!({
                 "id": id,
                 "type": "function",
@@ -41,6 +44,9 @@ pub fn convert_assistant_output(message: &AssistantMessage) -> Value {
                 text_parts.push("[thinking redacted]".to_string());
             }
             ContentBlock::Image { .. } => text_parts.push("[image omitted]".to_string()),
+            ContentBlock::ServerToolUse { .. } => {
+                text_parts.push("[server tool use omitted]".to_string());
+            }
             ContentBlock::ToolResult { .. } => {}
         }
     }
@@ -99,6 +105,9 @@ fn convert_messages(messages: &[Message], system_prompt: &[String]) -> Value {
                             ContentBlock::Text { text } => {
                                 text_parts.push(sanitize_global_string(text));
                             }
+                            ContentBlock::ConnectorText { connector_text, .. } => {
+                                text_parts.push(sanitize_global_string(connector_text));
+                            }
                             ContentBlock::ToolResult {
                                 tool_use_id,
                                 content,
@@ -130,6 +139,9 @@ fn convert_messages(messages: &[Message], system_prompt: &[String]) -> Value {
                             ContentBlock::Image { .. } => {
                                 text_parts.push("[image omitted]".to_string());
                             }
+                            ContentBlock::ServerToolUse { .. } => {
+                                text_parts.push("[server tool use omitted]".to_string());
+                            }
                             ContentBlock::ToolUse { .. } => {}
                         }
                     }
@@ -149,6 +161,9 @@ fn convert_messages(messages: &[Message], system_prompt: &[String]) -> Value {
                         ContentBlock::Text { text } => {
                             text_parts.push(sanitize_global_string(text));
                         }
+                        ContentBlock::ConnectorText { connector_text, .. } => {
+                            text_parts.push(sanitize_global_string(connector_text));
+                        }
                         ContentBlock::ToolUse { id, name, input } => {
                             tool_names_by_id.insert(id.clone(), name.clone());
                             tool_calls.push(json!({
@@ -167,6 +182,9 @@ fn convert_messages(messages: &[Message], system_prompt: &[String]) -> Value {
                         }
                         ContentBlock::Image { .. } => {
                             text_parts.push("[image omitted]".to_string());
+                        }
+                        ContentBlock::ServerToolUse { .. } => {
+                            text_parts.push("[server tool use omitted]".to_string());
                         }
                         ContentBlock::ToolResult { .. } => {}
                     }

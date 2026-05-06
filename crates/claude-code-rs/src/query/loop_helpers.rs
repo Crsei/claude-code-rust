@@ -219,8 +219,9 @@ pub(crate) fn classify_model_call_failure(
 
 /// Return a fallback request history without model-bound signature blocks.
 ///
-/// Thinking and redacted-thinking blocks are signed against the model/key that
-/// produced them, so cross-model fallback must not replay them as context.
+/// Thinking, redacted-thinking, and connector-text blocks are signed against
+/// the model/key that produced them, so cross-model fallback must not replay
+/// them as context.
 pub(crate) fn strip_fallback_signature_blocks(messages: &[Message]) -> Vec<Message> {
     messages
         .iter()
@@ -230,7 +231,9 @@ pub(crate) fn strip_fallback_signature_blocks(messages: &[Message]) -> Vec<Messa
                 assistant.content.retain(|block| {
                     !matches!(
                         block,
-                        ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. }
+                        ContentBlock::Thinking { .. }
+                            | ContentBlock::RedactedThinking { .. }
+                            | ContentBlock::ConnectorText { .. }
                     )
                 });
                 Message::Assistant(assistant)
@@ -947,7 +950,7 @@ mod tests {
     }
 
     #[test]
-    fn fallback_signature_stripping_removes_thinking_blocks_only_from_assistant_messages() {
+    fn fallback_signature_stripping_removes_signature_blocks_only_from_assistant_messages() {
         let source = vec![
             Message::Assistant(AssistantMessage {
                 uuid: uuid::Uuid::new_v4(),
@@ -963,6 +966,10 @@ mod tests {
                     },
                     ContentBlock::RedactedThinking {
                         data: "redacted-signature-payload".to_string(),
+                    },
+                    ContentBlock::ConnectorText {
+                        connector_text: "signed connector output".to_string(),
+                        signature: Some("old-connector-signature".to_string()),
                     },
                     ContentBlock::ToolUse {
                         id: "toolu_1".to_string(),
@@ -1005,7 +1012,7 @@ mod tests {
         }
         assert!(matches!(
             &source[0],
-            Message::Assistant(assistant) if assistant.content.len() == 4
+            Message::Assistant(assistant) if assistant.content.len() == 5
         ));
         assert!(matches!(&stripped[1], Message::User(_)));
     }

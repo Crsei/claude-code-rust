@@ -16,6 +16,13 @@ pub enum ContentBlock {
         input: serde_json::Value,
     },
 
+    #[serde(rename = "server_tool_use")]
+    ServerToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+
     #[serde(rename = "tool_result")]
     ToolResult {
         tool_use_id: String,
@@ -32,6 +39,12 @@ pub enum ContentBlock {
 
     #[serde(rename = "redacted_thinking")]
     RedactedThinking { data: String },
+
+    #[serde(rename = "connector_text")]
+    ConnectorText {
+        connector_text: String,
+        signature: Option<String>,
+    },
 
     #[serde(rename = "image")]
     Image { source: ImageSource },

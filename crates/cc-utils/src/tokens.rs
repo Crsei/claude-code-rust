@@ -77,7 +77,8 @@ fn estimate_message_content_tokens(content: &MessageContent) -> u64 {
 fn estimate_content_block_tokens(block: &ContentBlock) -> u64 {
     match block {
         ContentBlock::Text { text } => estimate_tokens(text),
-        ContentBlock::ToolUse { id, name, input } => {
+        ContentBlock::ToolUse { id, name, input }
+        | ContentBlock::ServerToolUse { id, name, input } => {
             // Tool use has metadata overhead plus the JSON input
             let input_str = input.to_string();
             estimate_tokens(id) + estimate_tokens(name) + estimate_tokens(&input_str) + 10
@@ -86,6 +87,7 @@ fn estimate_content_block_tokens(block: &ContentBlock) -> u64 {
         ContentBlock::ToolResult { content, .. } => estimate_tool_result_content_tokens(content),
         ContentBlock::Thinking { thinking, .. } => estimate_tokens(thinking),
         ContentBlock::RedactedThinking { data } => estimate_tokens(data),
+        ContentBlock::ConnectorText { connector_text, .. } => estimate_tokens(connector_text),
         ContentBlock::Image { source } => {
             // Images are typically encoded as base64; the API counts them
             // differently. A rough estimate based on the encoded data size.

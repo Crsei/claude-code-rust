@@ -297,6 +297,26 @@ pub(super) fn handle_sdk_message(app: &mut App, msg: SdkMessage, ss: &mut Stream
                             }
                         }
                     }
+                    if !handled && stream_delta_type_matches(delta, "connector_text_delta") {
+                        if let Some(t) = delta.get("connector_text").and_then(|v| v.as_str()) {
+                            if let ContentBlock::ConnectorText { connector_text, .. } = ss
+                                .ensure_block(
+                                    index,
+                                    ContentBlock::ConnectorText {
+                                        connector_text: String::new(),
+                                        signature: None,
+                                    },
+                                )
+                            {
+                                connector_text.push_str(t);
+                            }
+                            if is_new_message {
+                                app.add_message(make_partial_assistant(&ss.blocks));
+                            } else {
+                                app.replace_last_message(make_partial_assistant(&ss.blocks));
+                            }
+                        }
+                    }
                 }
                 StreamEvent::MessageStop => {
                     // Stream complete; the full Assistant message follows.

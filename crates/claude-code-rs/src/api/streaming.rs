@@ -137,7 +137,7 @@ impl StreamAccumulator {
                             }
                             handled
                         }
-                        ContentBlock::ToolUse { .. } => {
+                        ContentBlock::ToolUse { .. } | ContentBlock::ServerToolUse { .. } => {
                             if delta_type_matches(delta, "input_json_delta") {
                                 if let Some(partial_json) =
                                     delta.get("partial_json").and_then(|v| v.as_str())
@@ -153,6 +153,27 @@ impl StreamAccumulator {
                             } else {
                                 false
                             }
+                        }
+                        ContentBlock::ConnectorText {
+                            connector_text,
+                            signature,
+                        } => {
+                            let mut handled = false;
+                            if delta_type_matches(delta, "connector_text_delta") {
+                                if let Some(t) =
+                                    delta.get("connector_text").and_then(|v| v.as_str())
+                                {
+                                    connector_text.push_str(t);
+                                    handled = true;
+                                }
+                            }
+                            if delta_type_matches(delta, "signature_delta") {
+                                if let Some(s) = delta.get("signature").and_then(|v| v.as_str()) {
+                                    signature.get_or_insert_with(String::new).push_str(s);
+                                    handled = true;
+                                }
+                            }
+                            handled
                         }
                         _ => false,
                     };
@@ -204,12 +225,17 @@ impl StreamAccumulator {
             return;
         };
 
-        if let Some(ContentBlock::ToolUse {
-            input: block_input, ..
-        }) = self.content_blocks.get_mut(index)
-        {
-            *block_input = input;
-            partial_json.clear();
+        match self.content_blocks.get_mut(index) {
+            Some(ContentBlock::ToolUse {
+                input: block_input, ..
+            })
+            | Some(ContentBlock::ServerToolUse {
+                input: block_input, ..
+            }) => {
+                *block_input = input;
+                partial_json.clear();
+            }
+            _ => {}
         }
     }
 
@@ -353,6 +379,93 @@ mod tests {
         assert_eq!(completed.name, "Read");
         assert_eq!(completed.input, json!({ "file_path": "src/main.rs" }));
         assert!(accumulator.completed_tool_use(1).is_none());
+    }
+
+    #[test]
+    fn accumulates_server_tool_use_input_without_marking_local_tool_complete() {
+        let mut accumulator = StreamAccumulator::new();
+
+        accumulator.process_event(&StreamEvent::ContentBlockStart {
+            index: 0,
+            content_block: ContentBlock::ServerToolUse {
+                id: "srvu_1".to_string(),
+                name: "web_search".to_string(),
+                input: json!({}),
+            },
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "input_json_delta",
+                "partial_json": "{\"query\":\"rust streaming"
+            }),
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "input_json_delta",
+                "partial_json": " accumulator\"}"
+            }),
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockStop { index: 0 });
+
+        assert!(accumulator.completed_tool_use(0).is_none());
+
+        let message = accumulator.build("claude-sonnet-4-20250514");
+        match &message.content[0] {
+            ContentBlock::ServerToolUse { id, name, input } => {
+                assert_eq!(id, "srvu_1");
+                assert_eq!(name, "web_search");
+                assert_eq!(input, &json!({ "query": "rust streaming accumulator" }));
+            }
+            other => panic!("expected server_tool_use block, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn accumulates_connector_text_and_signature() {
+        let mut accumulator = StreamAccumulator::new();
+
+        accumulator.process_event(&StreamEvent::ContentBlockStart {
+            index: 0,
+            content_block: ContentBlock::ConnectorText {
+                connector_text: String::new(),
+                signature: None,
+            },
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "connector_text_delta",
+                "connector_text": "first "
+            }),
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "connector_text_delta",
+                "connector_text": "second"
+            }),
+        });
+        accumulator.process_event(&StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: json!({
+                "type": "signature_delta",
+                "signature": "sig"
+            }),
+        });
+
+        let message = accumulator.build("claude-sonnet-4-20250514");
+        match &message.content[0] {
+            ContentBlock::ConnectorText {
+                connector_text,
+                signature,
+            } => {
+                assert_eq!(connector_text, "first second");
+                assert_eq!(signature.as_deref(), Some("sig"));
+            }
+            other => panic!("expected connector_text block, got {other:?}"),
+        }
     }
 
     #[test]

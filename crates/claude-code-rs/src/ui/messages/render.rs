@@ -281,12 +281,45 @@ fn render_assistant_message<'a>(
                 first_block = false;
             }
 
+            ContentBlock::ConnectorText { connector_text, .. } => {
+                let md_lines = markdown_to_lines(connector_text, theme);
+                if md_lines.is_empty() {
+                    if first_block {
+                        lines.push(Line::from(vec![prefix.clone()]));
+                    }
+                } else {
+                    for (i, md_line) in md_lines.into_iter().enumerate() {
+                        if i == 0 && first_block {
+                            let mut spans = vec![prefix.clone()];
+                            spans.extend(md_line.spans);
+                            lines.push(Line::from(spans));
+                        } else {
+                            let mut spans = vec![Span::raw("        ")];
+                            spans.extend(md_line.spans);
+                            lines.push(Line::from(spans));
+                        }
+                    }
+                }
+                first_block = false;
+            }
+
             ContentBlock::ToolUse { id: _, name, input } => {
                 // Show tool invocation: tool name + abbreviated input.
                 let input_summary = abbreviate_json(input, 80);
                 let tool_line = Line::from(vec![
                     Span::raw(if first_block { "" } else { "        " }),
                     Span::styled(format!("[{}] ", name), theme.tool_name),
+                    Span::styled(input_summary, theme.dim),
+                ]);
+                lines.push(tool_line);
+                first_block = false;
+            }
+
+            ContentBlock::ServerToolUse { id: _, name, input } => {
+                let input_summary = abbreviate_json(input, 80);
+                let tool_line = Line::from(vec![
+                    Span::raw(if first_block { "" } else { "        " }),
+                    Span::styled(format!("[server:{}] ", name), theme.tool_name),
                     Span::styled(input_summary, theme.dim),
                 ]);
                 lines.push(tool_line);
@@ -309,6 +342,9 @@ fn render_assistant_message<'a>(
                         .iter()
                         .map(|b| match b {
                             ContentBlock::Text { text } => text.clone(),
+                            ContentBlock::ConnectorText { connector_text, .. } => {
+                                connector_text.clone()
+                            }
                             ContentBlock::Image { source } => {
                                 format!("[image: {}]", source.media_type)
                             }

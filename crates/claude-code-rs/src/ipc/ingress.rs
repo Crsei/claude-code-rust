@@ -248,6 +248,9 @@ fn flatten_blocks(blocks: &[ContentBlock]) -> (String, Option<String>) {
     for block in blocks {
         match block {
             ContentBlock::Text { text } => text_parts.push(text.clone()),
+            ContentBlock::ConnectorText { connector_text, .. } => {
+                text_parts.push(connector_text.clone())
+            }
             ContentBlock::Thinking { thinking, .. } => thinking_parts.push(thinking.clone()),
             _ => {}
         }

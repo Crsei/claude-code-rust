@@ -144,7 +144,9 @@ fn estimate_message_chars(msg: &Message) -> usize {
 fn content_block_chars(block: &ContentBlock) -> usize {
     match block {
         ContentBlock::Text { text } => text.len(),
-        ContentBlock::ToolUse { input, .. } => input.to_string().len() + 50,
+        ContentBlock::ToolUse { input, .. } | ContentBlock::ServerToolUse { input, .. } => {
+            input.to_string().len() + 50
+        }
         ContentBlock::ToolResult { content, .. } => match content {
             cc_types::message::ToolResultContent::Text(t) => t.len(),
             cc_types::message::ToolResultContent::Blocks(bs) => {
@@ -153,6 +155,7 @@ fn content_block_chars(block: &ContentBlock) -> usize {
         },
         ContentBlock::Thinking { thinking, .. } => thinking.len(),
         ContentBlock::RedactedThinking { data } => data.len(),
+        ContentBlock::ConnectorText { connector_text, .. } => connector_text.len(),
         ContentBlock::Image { source } => source.data.len(),
     }
 }

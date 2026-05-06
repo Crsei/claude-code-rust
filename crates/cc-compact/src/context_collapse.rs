@@ -220,11 +220,17 @@ fn preview_content_blocks(blocks: &[ContentBlock]) -> String {
         match block {
             ContentBlock::Text { text } => parts.push(truncate(text, 120)),
             ContentBlock::ToolUse { name, .. } => parts.push(format!("tool_use:{name}")),
+            ContentBlock::ServerToolUse { name, .. } => {
+                parts.push(format!("server_tool_use:{name}"))
+            }
             ContentBlock::ToolResult { content, .. } => {
                 parts.push(format!("tool_result:{}", preview_tool_result(content)))
             }
             ContentBlock::Thinking { .. } => parts.push("thinking".to_string()),
             ContentBlock::RedactedThinking { .. } => parts.push("redacted_thinking".to_string()),
+            ContentBlock::ConnectorText { connector_text, .. } => {
+                parts.push(truncate(connector_text, 120))
+            }
             ContentBlock::Image { .. } => parts.push("image".to_string()),
         }
     }
