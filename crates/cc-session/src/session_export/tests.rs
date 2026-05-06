@@ -76,6 +76,14 @@ fn make_tool_result_msg(tool_use_id: &str, result: &str, is_error: bool) -> Mess
 }
 
 fn make_compact_boundary(pre: u64, post: u64) -> Message {
+    make_compact_boundary_with_segment(pre, post, None)
+}
+
+fn make_compact_boundary_with_segment(
+    pre: u64,
+    post: u64,
+    preserved_segment: Option<PreservedSegment>,
+) -> Message {
     Message::System(SystemMessage {
         uuid: Uuid::new_v4(),
         timestamp: 1700000004000,
@@ -83,7 +91,7 @@ fn make_compact_boundary(pre: u64, post: u64) -> Message {
             compact_metadata: Some(CompactMetadata {
                 pre_compact_token_count: pre,
                 post_compact_token_count: post,
-                preserved_segment: None,
+                preserved_segment,
             }),
         },
         content: format!("[Compacted: {} \u{2192} {} tokens]", pre, post),
@@ -160,6 +168,32 @@ fn test_extract_compact_boundaries() {
         compression.compact_boundaries[0].post_compact_tokens,
         Some(50000)
     );
+}
+
+#[test]
+fn test_extract_compact_boundaries_includes_preserved_segment() {
+    let summary_uuid = Uuid::new_v4().to_string();
+    let preserved_uuid = Uuid::new_v4().to_string();
+    let messages = vec![make_compact_boundary_with_segment(
+        150000,
+        50000,
+        Some(PreservedSegment {
+            summary_message_uuid: Some(summary_uuid.clone()),
+            preserved_message_uuids: vec![preserved_uuid.clone()],
+        }),
+    )];
+
+    let compression = extract_compression_events(&messages);
+    let segment = compression.compact_boundaries[0]
+        .preserved_segment
+        .as_ref()
+        .expect("preserved segment");
+
+    assert_eq!(
+        segment.summary_message_uuid.as_deref(),
+        Some(summary_uuid.as_str())
+    );
+    assert_eq!(segment.preserved_message_uuids, vec![preserved_uuid]);
 }
 
 #[test]

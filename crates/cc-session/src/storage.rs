@@ -534,12 +534,9 @@ fn messages_to_serializable(messages: &[Message]) -> Vec<SerializableMessage> {
                         "usage": a.usage,
                     }),
                 ),
-                Message::System(s) => (
-                    "system".to_string(),
-                    serde_json::json!({
-                        "content": s.content,
-                    }),
-                ),
+                Message::System(s) => {
+                    ("system".to_string(), system_message_to_serializable_data(s))
+                }
                 Message::Progress(p) => (
                     "progress".to_string(),
                     serde_json::json!({
@@ -562,6 +559,41 @@ fn messages_to_serializable(messages: &[Message]) -> Vec<SerializableMessage> {
             }
         })
         .collect()
+}
+
+fn system_message_to_serializable_data(
+    system: &cc_types::message::SystemMessage,
+) -> serde_json::Value {
+    use cc_types::message::SystemSubtype;
+
+    let mut data = serde_json::json!({
+        "content": system.content,
+    });
+    match &system.subtype {
+        SystemSubtype::CompactBoundary { compact_metadata } => {
+            data["subtype"] = serde_json::json!("CompactBoundary");
+            if let Some(metadata) = compact_metadata {
+                data["compact_metadata"] = serde_json::json!(metadata);
+            }
+        }
+        SystemSubtype::MicrocompactBoundary {
+            microcompact_metadata,
+        } => {
+            data["subtype"] = serde_json::json!("MicrocompactBoundary");
+            if let Some(metadata) = microcompact_metadata {
+                data["microcompact_metadata"] = serde_json::json!(metadata);
+            }
+        }
+        SystemSubtype::LocalCommand { content } => {
+            data["subtype"] = serde_json::json!("LocalCommand");
+            data["local_command_content"] = serde_json::json!(content);
+        }
+        SystemSubtype::Warning => {
+            data["subtype"] = serde_json::json!("Warning");
+        }
+        _ => {}
+    }
+    data
 }
 
 /// Convert serializable messages back to `Message` instances.
@@ -648,9 +680,7 @@ fn serializable_to_messages(msgs: &[SerializableMessage]) -> Vec<Message> {
                 "system" => Some(Message::System(SystemMessage {
                     uuid,
                     timestamp: sm.timestamp,
-                    subtype: SystemSubtype::Informational {
-                        level: InfoLevel::Info,
-                    },
+                    subtype: system_subtype_from_serialized_data(&sm.data),
                     content: sm
                         .data
                         .get("content")
@@ -664,6 +694,62 @@ fn serializable_to_messages(msgs: &[SerializableMessage]) -> Vec<Message> {
         .collect()
 }
 
+fn system_subtype_from_serialized_data(
+    data: &serde_json::Value,
+) -> cc_types::message::SystemSubtype {
+    use cc_types::message::{InfoLevel, SystemSubtype};
+
+    match data.get("subtype").and_then(|v| v.as_str()) {
+        Some("CompactBoundary") => SystemSubtype::CompactBoundary {
+            compact_metadata: data
+                .get("compact_metadata")
+                .and_then(compact_metadata_from_value),
+        },
+        Some("LocalCommand") => SystemSubtype::LocalCommand {
+            content: data
+                .get("local_command_content")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+        },
+        Some("Warning") => SystemSubtype::Warning,
+        _ => SystemSubtype::Informational {
+            level: InfoLevel::Info,
+        },
+    }
+}
+
+fn compact_metadata_from_value(
+    value: &serde_json::Value,
+) -> Option<cc_types::message::CompactMetadata> {
+    Some(cc_types::message::CompactMetadata {
+        pre_compact_token_count: value.get("pre_compact_token_count")?.as_u64()?,
+        post_compact_token_count: value.get("post_compact_token_count")?.as_u64()?,
+        preserved_segment: value
+            .get("preserved_segment")
+            .and_then(preserved_segment_from_value),
+    })
+}
+
+fn preserved_segment_from_value(
+    value: &serde_json::Value,
+) -> Option<cc_types::message::PreservedSegment> {
+    let preserved_message_uuids = value
+        .get("preserved_message_uuids")?
+        .as_array()?
+        .iter()
+        .filter_map(|v| v.as_str().map(ToString::to_string))
+        .collect::<Vec<_>>();
+
+    Some(cc_types::message::PreservedSegment {
+        summary_message_uuid: value
+            .get("summary_message_uuid")
+            .and_then(|v| v.as_str())
+            .map(ToString::to_string),
+        preserved_message_uuids,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -671,7 +757,9 @@ fn serializable_to_messages(msgs: &[SerializableMessage]) -> Vec<Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cc_types::message::{Message, MessageContent, SystemSubtype, UserMessage};
     use tempfile::tempdir;
+    use uuid::Uuid;
 
     #[test]
     fn test_session_dir_path() {
@@ -787,6 +875,18 @@ mod tests {
             timestamp: 0,
             data: serde_json::json!({ "content": text, "is_meta": false }),
         }
+    }
+
+    fn user_message(text: &str) -> Message {
+        Message::User(UserMessage {
+            uuid: Uuid::new_v4(),
+            timestamp: 0,
+            role: "user".into(),
+            content: MessageContent::Text(text.into()),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        })
     }
 
     #[test]
@@ -905,6 +1005,72 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().starts_with("s4.rewind-"))
             .collect();
         assert!(backups.is_empty(), "expected no backup when no truncation");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_partial_compact_resume_roundtrip_preserves_boundary_metadata() {
+        let temp = tempdir().unwrap();
+        let _g = HomeGuard::set(temp.path());
+
+        let anchor = user_message("anchor");
+        let anchor_uuid = anchor.uuid().to_string();
+        let tail = user_message("tail");
+        let tail_uuid = tail.uuid().to_string();
+        let messages = vec![
+            user_message(&format!("old {}", "x ".repeat(500))),
+            anchor,
+            tail,
+        ];
+        let result = cc_compact::partial_compact::partial_compact(
+            messages,
+            &cc_compact::partial_compact::PartialCompactConfig {
+                anchor_uuid: anchor_uuid.clone(),
+                direction: cc_compact::partial_compact::PartialCompactDirection::UpTo,
+                summary: "old segment summary".into(),
+            },
+        )
+        .expect("partial compact should apply");
+
+        save_session("partial-roundtrip", &result.messages, "/proj").unwrap();
+        let loaded = load_session("partial-roundtrip").unwrap();
+
+        assert_eq!(loaded.len(), result.messages.len());
+        assert!(!loaded.iter().any(|message| {
+            matches!(
+                message,
+                Message::User(UserMessage {
+                    content: MessageContent::Text(text),
+                    is_meta: false,
+                    ..
+                }) if text.contains("old ")
+            )
+        }));
+
+        let metadata = loaded
+            .iter()
+            .find_map(|message| {
+                if let Message::System(system) = message {
+                    if let SystemSubtype::CompactBoundary {
+                        compact_metadata: Some(metadata),
+                    } = &system.subtype
+                    {
+                        return Some(metadata);
+                    }
+                }
+                None
+            })
+            .expect("compact boundary metadata should round trip");
+        let segment = metadata
+            .preserved_segment
+            .as_ref()
+            .expect("preserved segment should round trip");
+
+        assert!(segment.summary_message_uuid.is_some());
+        assert_eq!(
+            segment.preserved_message_uuids,
+            vec![anchor_uuid, tail_uuid]
+        );
     }
 
     #[cfg(windows)]

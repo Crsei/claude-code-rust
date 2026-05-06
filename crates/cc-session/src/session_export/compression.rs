@@ -10,7 +10,7 @@ use super::builders::tool_result_content_to_json;
 use super::format_ts_millis;
 use super::{
     CompactBoundaryRecord, CompressionData, ContentReplacementRecord, MicrocompactRecord,
-    ToolCallRecord,
+    PreservedSegmentRecord, ToolCallRecord,
 };
 
 // ---------------------------------------------------------------------------
@@ -133,6 +133,13 @@ pub fn extract_compression_events(messages: &[Message]) -> CompressionData {
                     post_compact_tokens: compact_metadata
                         .as_ref()
                         .map(|m| m.post_compact_token_count),
+                    preserved_segment: compact_metadata
+                        .as_ref()
+                        .and_then(|m| m.preserved_segment.as_ref())
+                        .map(|segment| PreservedSegmentRecord {
+                            summary_message_uuid: segment.summary_message_uuid.clone(),
+                            preserved_message_uuids: segment.preserved_message_uuids.clone(),
+                        }),
                     boundary_text: s.content.clone(),
                 });
             }

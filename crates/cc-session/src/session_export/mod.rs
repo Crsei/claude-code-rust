@@ -114,7 +114,16 @@ pub struct CompactBoundaryRecord {
     pub timestamp: String,
     pub pre_compact_tokens: Option<u64>,
     pub post_compact_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preserved_segment: Option<PreservedSegmentRecord>,
     pub boundary_text: String,
+}
+
+/// The summary and retained message UUIDs associated with a compact boundary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PreservedSegmentRecord {
+    pub summary_message_uuid: Option<String>,
+    pub preserved_message_uuids: Vec<String>,
 }
 
 /// A content replacement record (tool result saved to disk).
