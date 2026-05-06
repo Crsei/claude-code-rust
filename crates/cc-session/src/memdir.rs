@@ -65,6 +65,9 @@ pub struct RelevantMemory {
     pub matched_terms: Vec<String>,
 }
 
+pub const MODEL_ASSISTED_RECALL_CANDIDATE_LIMIT: usize = 20;
+pub const MODEL_ASSISTED_RECALL_MAX_RESULTS: usize = 5;
+
 impl MemoryEntry {
     /// Effective closed taxonomy type, including legacy `category` fallback.
     pub fn effective_memory_type(&self) -> Option<MemoryType> {
@@ -617,7 +620,7 @@ pub fn recall_relevant_memories(
     Ok(relevant)
 }
 
-fn format_relevant_memory_context(relevant: &[RelevantMemory]) -> String {
+pub fn format_relevant_memory_context(relevant: &[RelevantMemory]) -> String {
     let mut sections = Vec::new();
     for scope in recall_scopes(true) {
         let memories = relevant
@@ -655,6 +658,152 @@ fn format_relevant_memory_context(relevant: &[RelevantMemory]) -> String {
             "<memory-context>\n## Relevant Memories\nUse these recalled memories only when they are relevant to the current request. If the user explicitly asks to ignore memory, do not use memory context.\n{}</memory-context>",
             sections.join("\n")
         )
+    }
+}
+
+pub fn build_model_assisted_recall_prompt(
+    query: &str,
+    candidates: &[RelevantMemory],
+    max_results: usize,
+) -> String {
+    let mut prompt = format!(
+        "Select up to {max_results} memories that are relevant to the user request.\n\
+         Return only a JSON array of memory identity strings, ordered by usefulness.\n\
+         Do not invent identities. Return [] if none are relevant.\n\n\
+         User request:\n{}\n\n\
+         Candidate memories:\n",
+        truncate_for_model_recall(query, 1200)
+    );
+
+    for memory in candidates {
+        let label = memory
+            .entry
+            .display_label()
+            .map(|label| format!(" [{label}]"))
+            .unwrap_or_default();
+        prompt.push_str(&format!(
+            "- identity: {}\n  key: {}{}\n  scope: {}\n  type: {}\n  score: {}\n  description: {}\n  value: {}\n",
+            memory.identity,
+            memory.entry.key,
+            label,
+            memory.scope.as_str(),
+            memory
+                .entry
+                .effective_memory_type()
+                .map(|memory_type| memory_type.as_str())
+                .unwrap_or(""),
+            memory.score,
+            memory.entry.description.as_deref().unwrap_or(""),
+            truncate_for_model_recall(&memory.entry.value, 500),
+        ));
+    }
+
+    prompt
+}
+
+pub fn parse_model_assisted_recall_selection(
+    response: &str,
+    candidates: &[RelevantMemory],
+    max_results: usize,
+) -> Vec<String> {
+    let candidate_identities = candidates
+        .iter()
+        .map(|memory| memory.identity.as_str())
+        .collect::<HashSet<_>>();
+
+    let mut selected = Vec::new();
+    for identity in parse_identity_candidates_from_response(response) {
+        if candidate_identities.contains(identity.as_str()) && !selected.contains(&identity) {
+            selected.push(identity);
+            if selected.len() >= max_results {
+                return selected;
+            }
+        }
+    }
+
+    if !selected.is_empty() {
+        return selected;
+    }
+
+    for memory in candidates {
+        if response.contains(&memory.identity)
+            || response.split_whitespace().any(|token| {
+                token.trim_matches(|ch: char| !ch.is_alphanumeric() && ch != '-' && ch != '_')
+                    == memory.entry.key
+            })
+        {
+            selected.push(memory.identity.clone());
+            if selected.len() >= max_results {
+                break;
+            }
+        }
+    }
+    selected
+}
+
+pub fn select_relevant_memories_by_identity(
+    candidates: &[RelevantMemory],
+    identities: &[String],
+    max_results: usize,
+) -> Vec<RelevantMemory> {
+    let mut selected = Vec::new();
+    for identity in identities {
+        if let Some(memory) = candidates
+            .iter()
+            .find(|memory| &memory.identity == identity)
+        {
+            if !selected
+                .iter()
+                .any(|selected_memory: &RelevantMemory| selected_memory.identity == memory.identity)
+            {
+                selected.push(memory.clone());
+                if selected.len() >= max_results {
+                    break;
+                }
+            }
+        }
+    }
+    selected
+}
+
+fn parse_identity_candidates_from_response(response: &str) -> Vec<String> {
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(response.trim()) {
+        return identity_candidates_from_json(&value);
+    }
+
+    if let (Some(start), Some(end)) = (response.find('['), response.rfind(']')) {
+        if start < end {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&response[start..=end]) {
+                return identity_candidates_from_json(&value);
+            }
+        }
+    }
+
+    Vec::new()
+}
+
+fn identity_candidates_from_json(value: &serde_json::Value) -> Vec<String> {
+    match value {
+        serde_json::Value::Array(values) => values
+            .iter()
+            .filter_map(|value| value.as_str().map(ToString::to_string))
+            .collect(),
+        serde_json::Value::Object(map) => ["selected", "memories", "ids"]
+            .iter()
+            .filter_map(|key| map.get(*key))
+            .flat_map(identity_candidates_from_json)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn truncate_for_model_recall(value: &str, max_chars: usize) -> String {
+    let mut chars = value.chars();
+    let truncated = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_some() {
+        format!("{truncated}...")
+    } else {
+        truncated
     }
 }
 
@@ -1145,9 +1294,11 @@ mod tests {
                 .unwrap();
 
         assert_eq!(results.len(), 5);
-        assert!(results
-            .iter()
-            .all(|memory| memory.entry.key.starts_with("rust-build-")));
+        assert!(
+            results
+                .iter()
+                .all(|memory| memory.entry.key.starts_with("rust-build-"))
+        );
 
         cleanup(&cwd);
     }
@@ -1247,6 +1398,63 @@ mod tests {
         assert!(context.contains("migration-risk"));
         assert!(!context.contains("unrelated"));
         assert_eq!(surfaced, vec!["project:migration-risk".to_string()]);
+
+        cleanup(&cwd);
+    }
+
+    #[test]
+    fn test_model_assisted_recall_prompt_and_selection_helpers() {
+        let cwd = make_temp_dir();
+        write_memory(
+            "migration-risk",
+            "Rust migration risk: keep session export round trips covered.",
+            "project",
+            MemoryScope::Project,
+            &cwd,
+        )
+        .unwrap();
+        write_memory(
+            "weekly-note",
+            "Weekly roadmap note.",
+            "project",
+            MemoryScope::Project,
+            &cwd,
+        )
+        .unwrap();
+
+        let candidates = recall_relevant_memories(
+            &cwd,
+            false,
+            "migration risk",
+            &[],
+            &HashSet::new(),
+            MODEL_ASSISTED_RECALL_CANDIDATE_LIMIT,
+        )
+        .unwrap();
+        let prompt = build_model_assisted_recall_prompt(
+            "migration risk",
+            &candidates,
+            MODEL_ASSISTED_RECALL_MAX_RESULTS,
+        );
+        assert!(prompt.contains("Return only a JSON array"));
+        assert!(prompt.contains("project:migration-risk"));
+
+        let identities = parse_model_assisted_recall_selection(
+            r#"{"selected":["project:migration-risk"]}"#,
+            &candidates,
+            MODEL_ASSISTED_RECALL_MAX_RESULTS,
+        );
+        let selected = select_relevant_memories_by_identity(
+            &candidates,
+            &identities,
+            MODEL_ASSISTED_RECALL_MAX_RESULTS,
+        );
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].identity, "project:migration-risk");
+        let context = format_relevant_memory_context(&selected);
+        assert!(context.contains("migration-risk"));
+        assert!(!context.contains("weekly-note"));
 
         cleanup(&cwd);
     }
