@@ -23,7 +23,7 @@
 | 搜索导航 | Glob / Grep / ToolSearch / LSP | `crates/claude-code-rs/src/tools/fs/glob_tool.rs`，`crates/claude-code-rs/src/tools/fs/grep.rs:1-218`，`crates/claude-code-rs/src/tools/tool_search.rs:504-627`，`crates/claude-code-rs/src/tools/lsp.rs:1-435` | 已实现 | Glob、Grep、ToolSearch、LSP 都已接入 registry；Glob 已按修改时间倒序返回，路径作为稳定兜底。Rust 额外提供 LSP code intelligence，属于 Bun 文档未单列的扩展能力。 |
 | Shell 执行 | BashTool | `crates/claude-code-rs/src/tools/exec/mod.rs:14-30`，`crates/claude-code-rs/src/tools/exec/bash.rs:134-668` | 已实现 | Bash 具备命令解析、危险命令检测、sandbox 预检、超时、进程组控制和实时输出流。Rust 还额外暴露了 PowerShell、Repl、Sleep。 |
 | 任务管理 | TodoWrite V1、Tasks V2 | `crates/claude-code-rs/src/tools/tasks.rs`，`crates/claude-code-rs/src/tools/registry.rs` | 已实现 | Rust 已提供 `TodoWrite` V1 兼容入口，以及 V2 任务体系：`TaskCreate`、`TaskGet`、`TaskUpdate`、`TaskList`、`TaskStop`、`TaskOutput`。新任务已使用递增 ID，并通过 `.highwatermark` 防止删除后复用；依赖真源仍是 `depends_on`，但已提供 Bun 兼容的 `blocked_by` / `blockedBy` 输入别名、`blocks` 反向输出、owner claim / agent-busy 检查、task-list 存储隔离、任务列表级 `.lock`、`activeForm` / `metadata` 和 teammate 退出后的 owner 释放。 |
-| 网络工具差异 | WebSearch / WebFetch | `crates/claude-code-rs/src/tools/web_search/tool.rs:1-258`，`crates/claude-code-rs/src/tools/web_fetch.rs:1-723`，`crates/claude-code-rs/src/tools/registry.rs:22-24,56-57` | 已实现 | Rust 端已提供 WebSearch 和 WebFetch，但实现路径不同于 Bun：WebSearch 走 Tavily / Brave provider，WebFetch 走 sandbox 网络策略、URL 归一化、同源重定向限制和内存缓存。 |
+| 网络工具差异 | WebSearch / WebFetch | `crates/claude-code-rs/src/tools/web_search/tool.rs:1-258`，`crates/claude-code-rs/src/tools/web_fetch.rs:1-723`，`crates/claude-code-rs/src/tools/registry.rs:22-24,56-57` | 已实现 | Rust 端已提供 WebSearch 和 WebFetch，但实现路径不同于 Bun：WebSearch 走 Tavily / Brave provider，WebFetch 走 sandbox 网络策略、URL 归一化、同源重定向限制和内存缓存；provider 差异见 `architecture/web-tools-provider-diff.md`。 |
 
 ## 逐文档分析
 
@@ -94,7 +94,7 @@
 - Rust 的 WebSearch 还支持 `allowed_domains` / `blocked_domains`、缓存和结果格式化，见 `crates/claude-code-rs/src/tools/web_search/tool.rs:68-73`、`crates/claude-code-rs/src/tools/web_search/tool.rs:166-215`。
 - Bun 的 WebFetch 文档强调网页抓取与内容提取；Rust 的 WebFetch 在此基础上加了 sandbox 网络策略检查、URL 归一化、同源重定向限制、响应缓存和二进制拒绝，见 `crates/claude-code-rs/src/tools/web_fetch.rs:199-326`、`crates/claude-code-rs/src/tools/web_fetch.rs:484-723`。
 - 状态：已实现。
-- 结论：网络工具在 Rust 里不是照搬 Bun 的后端调用方式，而是换成了本地 provider + sandbox policy 的实现路径；能力已具备，但实现细节不同。
+- 结论：网络工具在 Rust 里不是照搬 Bun 的后端调用方式，而是换成了本地 provider + sandbox policy 的实现路径；能力已具备，但实现细节不同。provider/runtime 对照已收口到 `architecture/web-tools-provider-diff.md`。
 
 ## 已实现汇总
 
@@ -125,7 +125,7 @@
 
 ## 后续动作
 
-1. 如果要继续细化网络工具差异，建议把 Bun 的 Anthropic WebSearch 路径和 Rust 的 Tavily / Brave 路径单独拆成对照表。
+- 当前工具实现地图中没有剩余的工具族群级后续动作；如产品要求 Anthropic server-tool WebSearch parity，应另开 provider 决策项。
 
 ## 实现推进记录
 
@@ -134,3 +134,4 @@
 - 2026-05-06：Phase 2 已完成任务列表级文件锁与原子 claim。新增 `.lock` 任务列表锁；create/update/stop/delete/claim 在写路径上持锁，claim 持锁后 live refresh 磁盘任务并原子检查 owner、terminal、blocked dependency、agent busy；list/get 使用 live refresh 避免 stale store；delete 会清理其它任务对被删任务的依赖引用。新增 `docs/archive/tools-phase2-task-list-lock-2026-05-06.md`。验证：`cargo test -p claude-code-rs tools::tasks` 通过，54 passed / 2 ignored；`rustfmt --edition 2021 --check crates/claude-code-rs/src/tools/tasks.rs` 通过。
 - 2026-05-06：Phase 3 已完成 Tasks V2 schema 与更新语义。`TaskEntry` / 持久化 schema 增加 `activeForm` 和通用 `metadata`；`TaskCreate` 支持写入二者；`TaskUpdate` 支持 subject、description、activeForm、owner、metadata merge/null-delete、`addBlocks`、`addBlockedBy` 和 `deleted`，并继续复用 Phase 2 的任务列表锁。新增 `docs/archive/tools-phase3-task-v2-schema-2026-05-06.md`。验证：`cargo test -p claude-code-rs tools::tasks` 通过，57 passed / 1 ignored；`rustfmt --edition 2021 --check crates/claude-code-rs/src/tools/tasks.rs` 通过。
 - 2026-05-06：Phase 4 已完成 teammate 退出 owner 释放。新增 `unassign_teammate_tasks()`，在 teammate shutdown、runner error、`team kill` 和 `team delete` 路径释放该 teammate id/name 持有的非 terminal 任务，重置为 `pending` 且清空 `owner`，并返回包含任务 ID / subject 的通知；terminal 任务保持归属不变。新增 `docs/archive/tools-phase4-teammate-unassign-2026-05-06.md`。验证：`cargo test -p claude-code-rs tools::tasks` 通过，58 passed；`cargo test -p claude-code-rs team_cmd` 通过，7 passed；`cargo test -p claude-code-rs teams::in_process` 通过，8 passed；`rustfmt --edition 2021 --check crates/claude-code-rs/src/tools/tasks.rs crates/claude-code-rs/src/teams/runner.rs crates/claude-code-rs/src/commands/team_cmd.rs` 通过。
+- 2026-05-06：Phase 5 已完成网络工具 provider 差异文档收口。新增 `architecture/web-tools-provider-diff.md` 和 `docs/archive/tools-phase5-web-provider-diff-2026-05-06.md`，明确 Bun WebSearch 依赖 Anthropic `web_search_20250305` server tool，而 cc-rust WebSearch 依赖 Tavily / Brave 本地 provider；WebFetch 保持工具能力但走本地 sandbox policy、URL 归一化、同源重定向限制、缓存和二进制拒绝。验证：`git diff --check -- architecture/tools-implementation-map.md architecture/web-tools-provider-diff.md docs/archive/tools-phase5-web-provider-diff-2026-05-06.md` 通过。
