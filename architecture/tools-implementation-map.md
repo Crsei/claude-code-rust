@@ -75,7 +75,7 @@
 - 上游主题同时包含 TodoWrite V1 和 Tasks V2。
 - Rust 现在同时提供 `TodoWrite` V1 兼容入口和任务 V2 体系，见 `crates/claude-code-rs/src/tools/tasks.rs` 与 `crates/claude-code-rs/src/tools/registry.rs`。
 - `TodoWrite` 采用 Bun V1 的全量替换语义：输入 `todos[]` 覆盖当前 session / agent todo 列表，全部 `completed` 时清空列表，并在 3 个以上任务全部完成但缺少验证项时返回验证提示。
-- 任务存储默认落在 `~/.cc-rust/tasks` 或 `$CC_RUST_HOME/tasks`，见 `crates/claude-code-rs/src/tools/tasks.rs:3-9`。
+- 任务存储默认落在 `~/.cc-rust/tasks/<task-list-id>/` 或 `$CC_RUST_HOME/tasks/<task-list-id>/`，默认列表为 `tasklist`；首次打开默认列表时会非破坏性复制旧 flat 目录任务，见 `crates/claude-code-rs/src/tools/tasks.rs`。
 - `TaskStore` / `TaskRepository` 负责持久化、恢复、输出保留和 schema 迁移，见 `crates/claude-code-rs/src/tools/tasks.rs:76-536`、`crates/claude-code-rs/src/tools/tasks.rs:550-931`。
 - `TaskCreate` 仍以 `depends_on` 为内部依赖真源，但接受 Bun 兼容的 `blocked_by` / `blockedBy` 输入别名；`task_to_json()` 会输出 `depends_on`、`blocked_by`、`blockedBy`，并计算反向 `blocks` 列表。
 - `TaskCreate`、`TaskGet`、`TaskUpdate`、`TaskList`、`TaskStop`、`TaskOutput` 的实现分别见 `crates/claude-code-rs/src/tools/tasks.rs:1640-2442`。
@@ -84,7 +84,7 @@
 - `TaskUpdate` 在完成态时会发 `TaskCompleted` hook，`TaskCreate` 会发 `TaskCreated` hook，见 `crates/claude-code-rs/src/tools/tasks.rs:2040-2056`、`crates/claude-code-rs/src/tools/tasks.rs:1846-1858`。
 - `TaskOutput` 支持阻塞等待、超时和 abort signal，见 `crates/claude-code-rs/src/tools/tasks.rs:2202-2442`。
 - 状态：部分实现。
-- 结论：V1 `TodoWrite` 入口已经补齐，V2 任务体系也已落地；依赖字段已有 Bun 兼容别名与反向输出，ID 分配、高水位语义和基础 owner claim / agent-busy 检查已对齐到 Bun 文档主路径。但当前 claim 仍是 `TaskStore` 内的进程级互斥，不是 Bun 的任务列表级跨进程文件锁；teammate 退出后的 `unassignTeammateTasks()`、`activeForm` 和完整 list-id 解析也仍未复刻，因此这章仍不能写成完全对齐。
+- 结论：V1 `TodoWrite` 入口已经补齐，V2 任务体系也已落地；依赖字段已有 Bun 兼容别名与反向输出，ID 分配、高水位语义、基础 owner claim / agent-busy 检查、task-list-id 解析和按列表存储隔离已对齐到 Bun 文档主路径。但当前 claim 仍是 `TaskStore` 内的进程级互斥，不是 Bun 的任务列表级跨进程文件锁；teammate 退出后的 `unassignTeammateTasks()` 和 `activeForm` 也仍未复刻，因此这章仍不能写成完全对齐。
 
 ### `网络工具差异`
 
@@ -101,7 +101,7 @@
 - 搜索导航已经覆盖 Glob、Grep、ToolSearch、LSP。
 - Shell 执行已经覆盖 Bash，并附带 PowerShell、Repl、Sleep。
 - 网络工具已经覆盖 WebSearch 和 WebFetch。
-- 任务管理已经覆盖 `TodoWrite` V1 兼容入口、V2 任务链路、递增 ID / 高水位、基础 owner claim / agent-busy 检查和输出留存。
+- 任务管理已经覆盖 `TodoWrite` V1 兼容入口、V2 任务链路、task-list-id 解析与存储隔离、递增 ID / 高水位、基础 owner claim / agent-busy 检查和输出留存。
 
 ## 未实现 / 部分实现 / 待确认
 
@@ -111,7 +111,7 @@
 
 ### 部分实现
 
-- 任务管理已有 `TodoWrite` 和 V2 Tasks，并已补入 `blocked_by` / `blockedBy` / `blocks` 依赖兼容面、递增 ID / 高水位以及基础 owner claim / agent-busy 检查；V2 仍未完整复刻 Bun 的跨进程任务列表锁、teammate 退出重置和完整 task-list-id 解析。
+- 任务管理已有 `TodoWrite` 和 V2 Tasks，并已补入 `blocked_by` / `blockedBy` / `blocks` 依赖兼容面、task-list-id 解析与存储隔离、递增 ID / 高水位以及基础 owner claim / agent-busy 检查；V2 仍未完整复刻 Bun 的跨进程任务列表锁、teammate 退出重置和 `activeForm` / `metadata` schema。
 
 ### 待确认
 
@@ -123,9 +123,10 @@
 
 ## 后续动作
 
-1. 如果要继续补齐任务管理文档，下一步应补齐 V2 的跨进程任务列表锁、teammate 退出时的 owner 重置，以及 Bun 的完整 task-list-id 解析优先级。
+1. 如果要继续补齐任务管理文档，下一步应补齐 V2 的跨进程任务列表锁、`activeForm` / `metadata` schema，以及 teammate 退出时的 owner 重置。
 2. 如果要继续细化网络工具差异，建议把 Bun 的 Anthropic WebSearch 路径和 Rust 的 Tavily / Brave 路径单独拆成对照表。
 
 ## 实现推进记录
 
 - 2026-05-06：Phase 0 已完成基线锁定。新增 `docs/archive/tools-phase0-baseline-2026-05-06.md` 记录决策；`crates/claude-code-rs/src/tools/tasks.rs` 增加 3 个 `#[ignore]` 缺口测试，分别锁定跨 store claim 竞争、Tasks V2 `activeForm` / `metadata` schema parity、task-list-id 与 teammate unassign 后续集成点。验证：`cargo test -p claude-code-rs tools::tasks` 通过，44 passed / 3 ignored。
+- 2026-05-06：Phase 1 已完成 task-list-id 与存储边界。`TaskCreate` / `TaskGet` / `TaskUpdate` / `TaskList` / `TaskStop` / `TaskOutput` 现在按 `CC_RUST_TASK_LIST_ID`、兼容 env、in-process teammate team、AppState team、legacy team env、session id、默认 `tasklist` 的优先级选择 store；默认列表落在 `$CC_RUST_HOME/tasks/tasklist/`，并会非破坏性复制旧 flat 目录任务。新增 `docs/archive/tools-phase1-task-list-storage-2026-05-06.md`。验证：`cargo test -p claude-code-rs tools::tasks` 通过，49 passed / 3 ignored。

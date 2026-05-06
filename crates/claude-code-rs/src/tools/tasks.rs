@@ -15,12 +15,12 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::time::{Duration, Instant, sleep};
+use tokio::time::{sleep, Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
 use crate::types::message::AssistantMessage;
@@ -36,6 +36,10 @@ const REMOTE_REVIEW_TIMEOUT_MS: i64 = 30 * 60 * 1000;
 const TASK_HIGHWATERMARK_FILE: &str = ".highwatermark";
 const TASK_HIGHWATERMARK_LOCK_FILE: &str = ".highwatermark.lock";
 const TASK_HIGHWATERMARK_LOCK_RETRIES: usize = 30;
+const DEFAULT_TASK_LIST_ID: &str = "tasklist";
+const CC_RUST_TASK_LIST_ID_ENV: &str = "CC_RUST_TASK_LIST_ID";
+const CLAUDE_CODE_TASK_LIST_ID_ENV: &str = "CLAUDE_CODE_TASK_LIST_ID";
+const CLAUDE_CODE_TEAM_NAME_ENV: &str = "CLAUDE_CODE_TEAM_NAME";
 const TASK_KIND_TOOL: &str = "tool";
 const TASK_KIND_LOCAL_BASH: &str = "local_bash";
 const TASK_KIND_LOCAL_AGENT: &str = "local_agent";
@@ -313,7 +317,7 @@ struct TodoWriteOutcome {
 
 impl TaskStore {
     pub fn new() -> Self {
-        Self::with_dir(crate::config::paths::tasks_dir())
+        Self::with_dir(task_list_dir(DEFAULT_TASK_LIST_ID))
     }
 
     pub fn with_dir(dir: impl Into<PathBuf>) -> Self {
@@ -638,9 +642,9 @@ impl TaskStore {
     }
 }
 
-fn task_to_json(entry: &TaskEntry) -> Value {
-    let blocked_dependencies = store().blocked_dependencies(entry);
-    let blocked_tasks = store().blocked_tasks(entry);
+fn task_to_json_from_store(task_store: &TaskStore, entry: &TaskEntry) -> Value {
+    let blocked_dependencies = task_store.blocked_dependencies(entry);
+    let blocked_tasks = task_store.blocked_tasks(entry);
     let blocked_by = entry.depends_on.clone();
     json!({
         "id": entry.id,
@@ -673,7 +677,7 @@ fn task_to_json(entry: &TaskEntry) -> Value {
         "cancel_requested_at": entry.cancel_requested_at,
         "recovered_at": entry.recovered_at,
         "previous_status": entry.previous_status.map(|s| s.as_str()),
-        "has_runtime_handle": store().has_runtime_handle(&entry.id),
+        "has_runtime_handle": task_store.has_runtime_handle(&entry.id),
     })
 }
 
@@ -1356,22 +1360,238 @@ fn remove_if_exists(path: &Path) -> Result<()> {
 // Global task store (lazy singleton)
 // =============================================================================
 
-#[cfg(not(test))]
-static GLOBAL_STORE: std::sync::LazyLock<TaskStore> = std::sync::LazyLock::new(TaskStore::new);
-
 #[cfg(test)]
-static GLOBAL_STORE: std::sync::LazyLock<TaskStore> = std::sync::LazyLock::new(|| {
-    TaskStore::with_dir(std::env::temp_dir().join(format!(
+static TEST_TASKS_ROOT: std::sync::LazyLock<PathBuf> = std::sync::LazyLock::new(|| {
+    std::env::temp_dir().join(format!(
         "cc-rust-test-global-tasks-{}",
         uuid::Uuid::new_v4()
-    )))
+    ))
 });
+
+static GLOBAL_STORES: std::sync::LazyLock<Mutex<HashMap<String, TaskStore>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 static TODO_STORE: std::sync::LazyLock<Mutex<HashMap<String, Vec<TodoItem>>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
-fn store() -> &'static TaskStore {
-    &GLOBAL_STORE
+fn task_lists_root() -> PathBuf {
+    #[cfg(test)]
+    {
+        if let Ok(root) = std::env::var("CC_RUST_HOME") {
+            if !root.trim().is_empty() {
+                return PathBuf::from(root).join("tasks");
+            }
+        }
+        return TEST_TASKS_ROOT.clone();
+    }
+
+    #[cfg(not(test))]
+    {
+        crate::config::paths::tasks_dir()
+    }
+}
+
+pub fn sanitize_task_list_id(input: &str) -> String {
+    let sanitized: String = input
+        .trim()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+
+    if sanitized.is_empty() {
+        DEFAULT_TASK_LIST_ID.to_string()
+    } else {
+        sanitized
+    }
+}
+
+pub fn task_list_dir(task_list_id: &str) -> PathBuf {
+    task_lists_root().join(sanitize_task_list_id(task_list_id))
+}
+
+fn default_task_list_has_json_files(dir: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return false;
+    };
+
+    entries.filter_map(std::result::Result::ok).any(|entry| {
+        let path = entry.path();
+        path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("json")
+    })
+}
+
+fn read_u64_file(path: &Path) -> u64 {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .unwrap_or(0)
+}
+
+fn migrate_legacy_flat_default_task_list(root: &Path, default_dir: &Path) {
+    if !root.exists() || default_task_list_has_json_files(default_dir) {
+        return;
+    }
+
+    let entries = match fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(err) => {
+            tracing::warn!(
+                path = %root.display(),
+                error = %err,
+                "failed to scan legacy flat task directory"
+            );
+            return;
+        }
+    };
+
+    let mut legacy_files = Vec::new();
+    let mut legacy_highwatermark = None;
+    for entry in entries.filter_map(std::result::Result::ok) {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if file_name == TASK_HIGHWATERMARK_FILE {
+            legacy_highwatermark = Some(path);
+        } else if file_name.ends_with(".json") || file_name.ends_with(".output.log") {
+            legacy_files.push(path);
+        }
+    }
+
+    if legacy_files.is_empty() && legacy_highwatermark.is_none() {
+        return;
+    }
+
+    if let Err(err) = fs::create_dir_all(default_dir) {
+        tracing::warn!(
+            path = %default_dir.display(),
+            error = %err,
+            "failed to create default task-list directory for legacy migration"
+        );
+        return;
+    }
+
+    let mut copied = 0usize;
+    for source in legacy_files {
+        let Some(file_name) = source.file_name() else {
+            continue;
+        };
+        let destination = default_dir.join(file_name);
+        if destination.exists() {
+            continue;
+        }
+        match fs::copy(&source, &destination) {
+            Ok(_) => copied += 1,
+            Err(err) => tracing::warn!(
+                source = %source.display(),
+                destination = %destination.display(),
+                error = %err,
+                "failed to copy legacy flat task file"
+            ),
+        }
+    }
+
+    if let Some(source) = legacy_highwatermark {
+        let destination = default_dir.join(TASK_HIGHWATERMARK_FILE);
+        let source_value = read_u64_file(&source);
+        let destination_value = read_u64_file(&destination);
+        if source_value > destination_value {
+            if let Err(err) = write_text_atomic(&destination, &format!("{source_value}\n")) {
+                tracing::warn!(
+                    source = %source.display(),
+                    destination = %destination.display(),
+                    error = %err,
+                    "failed to migrate legacy task high watermark"
+                );
+            }
+        }
+    }
+
+    if copied > 0 {
+        tracing::info!(
+            legacy_dir = %root.display(),
+            default_task_list_dir = %default_dir.display(),
+            copied,
+            "copied legacy flat tasks into default task list"
+        );
+    }
+}
+
+fn env_task_list_id(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+pub fn task_list_id_for_context(ctx: &ToolUseContext) -> String {
+    if let Some(id) = env_task_list_id(CC_RUST_TASK_LIST_ID_ENV)
+        .or_else(|| env_task_list_id(CLAUDE_CODE_TASK_LIST_ID_ENV))
+    {
+        return id;
+    }
+
+    if let Some(team_name) = crate::teams::context::try_get_team_name()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        return team_name;
+    }
+
+    let app_state = (ctx.get_app_state)();
+    if let Some(team_name) = app_state
+        .team_context
+        .as_ref()
+        .map(|team| team.team_name.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        return team_name;
+    }
+
+    if let Some(team_name) = env_task_list_id(CLAUDE_CODE_TEAM_NAME_ENV) {
+        return team_name;
+    }
+
+    let session_id = ctx.session_id.trim();
+    if session_id.is_empty() {
+        DEFAULT_TASK_LIST_ID.to_string()
+    } else {
+        session_id.to_string()
+    }
+}
+
+fn task_store_for_task_list_id(task_list_id: &str) -> TaskStore {
+    let key = sanitize_task_list_id(task_list_id);
+    let root = task_lists_root();
+    let dir = root.join(&key);
+    let registry_key = dir.to_string_lossy().to_string();
+    let mut stores = GLOBAL_STORES.lock();
+    stores
+        .entry(registry_key)
+        .or_insert_with(|| {
+            if key == DEFAULT_TASK_LIST_ID {
+                migrate_legacy_flat_default_task_list(&root, &dir);
+            }
+            TaskStore::with_dir(dir)
+        })
+        .clone()
+}
+
+fn store_for_context(ctx: &ToolUseContext) -> TaskStore {
+    task_store_for_task_list_id(&task_list_id_for_context(ctx))
+}
+
+fn store() -> TaskStore {
+    task_store_for_task_list_id(DEFAULT_TASK_LIST_ID)
 }
 
 fn todo_owner_key(ctx: &ToolUseContext) -> String {
@@ -1518,7 +1738,7 @@ fn task_update_check_agent_busy(input: &Value) -> bool {
 /// (`/tasks`) that want to enumerate tool-driven tasks without running a
 /// tool call. The store is cheap to clone: all interior state is behind `Arc`.
 pub fn global_store() -> TaskStore {
-    GLOBAL_STORE.clone()
+    store()
 }
 
 // =============================================================================
@@ -1815,8 +2035,9 @@ impl Tool for TaskCreateTool {
             || remote_task_metadata.is_some()
             || poll_started_at.is_some();
 
+        let task_store = store_for_context(ctx);
         let entry = if has_options {
-            store().create_with_options(
+            task_store.create_with_options(
                 subject,
                 description,
                 TaskCreateOptions {
@@ -1838,7 +2059,7 @@ impl Tool for TaskCreateTool {
                 },
             )
         } else {
-            store().create(subject, description)
+            task_store.create(subject, description)
         };
 
         let linked_plan_workflow = maybe_link_plan_workflow_task(ctx, &entry)?;
@@ -1859,7 +2080,7 @@ impl Tool for TaskCreateTool {
         }
 
         let mut data = json!({
-            "task": task_to_json(&entry),
+            "task": task_to_json_from_store(&task_store, &entry),
             "message": format!("Created task: {}", entry.subject)
         });
         if let Some(record) = linked_plan_workflow {
@@ -1920,15 +2141,16 @@ impl Tool for TaskGetTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
         let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
 
-        match store().get(id) {
+        let task_store = store_for_context(ctx);
+        match task_store.get(id) {
             Some(entry) => Ok(ToolResult {
-                data: json!({ "task": task_to_json(&entry) }),
+                data: json!({ "task": task_to_json_from_store(&task_store, &entry) }),
                 new_messages: vec![],
                 ..Default::default()
             }),
@@ -2015,10 +2237,11 @@ impl Tool for TaskUpdateTool {
         if status == TaskStatus::InProgress {
             let owner = task_update_owner(&input, ctx);
             let check_agent_busy = task_update_check_agent_busy(&input);
-            return match store().claim_task(id, &owner, check_agent_busy) {
+            let task_store = store_for_context(ctx);
+            return match task_store.claim_task(id, &owner, check_agent_busy) {
                 Ok(entry) => Ok(ToolResult {
                     data: json!({
-                        "task": task_to_json(&entry),
+                        "task": task_to_json_from_store(&task_store, &entry),
                         "message": format!("Task '{}' claimed by {}", entry.subject, owner)
                     }),
                     new_messages: vec![],
@@ -2035,7 +2258,8 @@ impl Tool for TaskUpdateTool {
             };
         }
 
-        match store().update_status(id, status) {
+        let task_store = store_for_context(ctx);
+        match task_store.update_status(id, status) {
             Some(entry) => {
                 // Fire TaskCompleted hook when status changes to completed.
                 if entry.status == TaskStatus::Completed {
@@ -2059,7 +2283,7 @@ impl Tool for TaskUpdateTool {
 
                 Ok(ToolResult {
                     data: json!({
-                        "task": task_to_json(&entry),
+                        "task": task_to_json_from_store(&task_store, &entry),
                         "message": format!("Task '{}' updated to {}", entry.subject, entry.status.as_str())
                     }),
                     new_messages: vec![],
@@ -2113,12 +2337,16 @@ impl Tool for TaskListTool {
     async fn call(
         &self,
         _input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let entries = store().list();
-        let tasks: Vec<Value> = entries.iter().map(task_to_json).collect();
+        let task_store = store_for_context(ctx);
+        let entries = task_store.list();
+        let tasks: Vec<Value> = entries
+            .iter()
+            .map(|entry| task_to_json_from_store(&task_store, entry))
+            .collect();
 
         Ok(ToolResult {
             data: json!({
@@ -2167,16 +2395,17 @@ impl Tool for TaskStopTool {
     async fn call(
         &self,
         input: Value,
-        _ctx: &ToolUseContext,
+        ctx: &ToolUseContext,
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
         let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
 
-        match store().stop(id) {
+        let task_store = store_for_context(ctx);
+        match task_store.stop(id) {
             Some(entry) => Ok(ToolResult {
                 data: json!({
-                    "task": task_to_json(&entry),
+                    "task": task_to_json_from_store(&task_store, &entry),
                     "message": format!("Task '{}' cancelled", entry.subject)
                 }),
                 new_messages: vec![],
@@ -2392,7 +2621,8 @@ impl Tool for TaskOutputTool {
         let block = input.get("block").and_then(|v| v.as_bool()).unwrap_or(true);
         let timeout_ms = parse_task_output_timeout_ms(&input)?;
 
-        let initial = store().get(id);
+        let task_store = store_for_context(ctx);
+        let initial = task_store.get(id);
         match initial {
             Some(entry) => Ok(ToolResult {
                 data: if !block {
@@ -2406,7 +2636,7 @@ impl Tool for TaskOutputTool {
                     task_output_payload(&entry, TaskOutputRetrievalStatus::Success)
                 } else {
                     match wait_for_task_output(
-                        store().clone(),
+                        task_store.clone(),
                         id,
                         timeout_ms,
                         ctx.abort_signal.clone(),
@@ -2449,7 +2679,9 @@ impl Tool for TaskOutputTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::app_state::AppState;
     use serde_json::json;
+    use std::ffi::OsString;
     use std::sync::Arc;
     use std::thread;
 
@@ -2463,6 +2695,246 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let store = TaskStore::with_dir_and_output_limit(tmp.path(), limit);
         (tmp, store)
+    }
+
+    fn test_context_with_app_state(app_state: AppState) -> ToolUseContext {
+        let (_tx, rx) = tokio::sync::watch::channel(false);
+        ToolUseContext {
+            options: ToolUseOptions {
+                debug: false,
+                main_loop_model: "test".into(),
+                verbose: false,
+                is_non_interactive_session: false,
+                custom_system_prompt: None,
+                append_system_prompt: None,
+                max_budget_usd: None,
+            },
+            abort_signal: rx,
+            read_file_state: FileStateCache::default(),
+            get_app_state: Arc::new(move || app_state.clone()),
+            set_app_state: Arc::new(|_| {}),
+            session_id: "test-session".to_string(),
+            langfuse_session_id: "test-session".to_string(),
+            messages: vec![],
+            agent_id: None,
+            agent_type: None,
+            query_tracking: None,
+            permission_callback: None,
+            ask_user_callback: None,
+            bg_agent_tx: None,
+            hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
+            command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
+        }
+    }
+
+    fn test_context() -> ToolUseContext {
+        test_context_with_app_state(AppState::default())
+    }
+
+    fn dummy_parent() -> AssistantMessage {
+        AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: vec![],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        }
+    }
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+            let previous = std::env::var_os(key);
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key, previous }
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let previous = std::env::var_os(key);
+            unsafe {
+                std::env::remove_var(key);
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.previous {
+                    Some(value) => std::env::set_var(self.key, value),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn task_list_id_prefers_explicit_env_over_team_context() {
+        let _cc_rust = EnvGuard::set(CC_RUST_TASK_LIST_ID_ENV, " explicit/list ");
+        let _claude = EnvGuard::remove(CLAUDE_CODE_TASK_LIST_ID_ENV);
+        let _team_env = EnvGuard::set(CLAUDE_CODE_TEAM_NAME_ENV, "env-team");
+        let mut app_state = AppState::default();
+        app_state.team_context = Some(cc_types::teams::TeamContext {
+            team_name: "state-team".to_string(),
+            ..Default::default()
+        });
+        let ctx = test_context_with_app_state(app_state);
+
+        assert_eq!(task_list_id_for_context(&ctx), "explicit/list");
+        assert_eq!(sanitize_task_list_id("explicit/list"), "explicit-list");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn task_list_id_uses_team_context_before_session_and_team_env() {
+        let _cc_rust = EnvGuard::remove(CC_RUST_TASK_LIST_ID_ENV);
+        let _claude = EnvGuard::remove(CLAUDE_CODE_TASK_LIST_ID_ENV);
+        let _team_env = EnvGuard::set(CLAUDE_CODE_TEAM_NAME_ENV, "env-team");
+        let mut app_state = AppState::default();
+        app_state.team_context = Some(cc_types::teams::TeamContext {
+            team_name: "state-team".to_string(),
+            ..Default::default()
+        });
+        let ctx = test_context_with_app_state(app_state);
+
+        assert_eq!(task_list_id_for_context(&ctx), "state-team");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn task_list_id_uses_in_process_teammate_team_name() {
+        let _cc_rust = EnvGuard::remove(CC_RUST_TASK_LIST_ID_ENV);
+        let _claude = EnvGuard::remove(CLAUDE_CODE_TASK_LIST_ID_ENV);
+        let ctx = test_context();
+        let identity = crate::teams::types::TeammateIdentity {
+            agent_id: "worker@scope-team".to_string(),
+            agent_name: "worker".to_string(),
+            team_name: "scope-team".to_string(),
+            color: None,
+            plan_mode_required: false,
+            parent_session_id: "leader-session".to_string(),
+        };
+
+        crate::teams::context::run_in_scope(identity, async {
+            assert_eq!(task_list_id_for_context(&ctx), "scope-team");
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn task_tools_use_task_list_scoped_store() {
+        let home = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", home.path());
+        let list_a = format!("phase1-a-{}", uuid::Uuid::new_v4());
+        let list_b = format!("phase1-b-{}", uuid::Uuid::new_v4());
+        let parent = dummy_parent();
+
+        {
+            let _list = EnvGuard::set(CC_RUST_TASK_LIST_ID_ENV, &list_a);
+            let ctx_a = test_context();
+            TaskCreateTool
+                .call(
+                    json!({ "subject": "only list a", "description": "scoped" }),
+                    &ctx_a,
+                    &parent,
+                    None,
+                )
+                .await
+                .expect("create task in list a");
+
+            let listed = TaskListTool
+                .call(json!({}), &ctx_a, &parent, None)
+                .await
+                .expect("list a");
+            let tasks = listed.data["tasks"].as_array().unwrap();
+            assert_eq!(tasks.len(), 1);
+            assert_eq!(tasks[0]["subject"], "only list a");
+        }
+
+        {
+            let _list = EnvGuard::set(CC_RUST_TASK_LIST_ID_ENV, &list_b);
+            let ctx_b = test_context();
+            let listed = TaskListTool
+                .call(json!({}), &ctx_b, &parent, None)
+                .await
+                .expect("list b before create");
+            assert_eq!(listed.data["count"], 0);
+
+            TaskCreateTool
+                .call(
+                    json!({ "subject": "only list b", "description": "scoped" }),
+                    &ctx_b,
+                    &parent,
+                    None,
+                )
+                .await
+                .expect("create task in list b");
+        }
+
+        {
+            let _list = EnvGuard::set(CC_RUST_TASK_LIST_ID_ENV, &list_a);
+            let ctx_a = test_context();
+            let listed = TaskListTool
+                .call(json!({}), &ctx_a, &parent, None)
+                .await
+                .expect("list a again");
+            let tasks = listed.data["tasks"].as_array().unwrap();
+            assert_eq!(tasks.len(), 1);
+            assert_eq!(tasks[0]["subject"], "only list a");
+        }
+
+        assert!(task_list_dir(&list_a).starts_with(home.path().join("tasks")));
+        assert!(task_list_dir(&list_b).starts_with(home.path().join("tasks")));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn default_task_list_store_copies_legacy_flat_tasks() {
+        let home = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", home.path());
+        let legacy_root = home.path().join("tasks");
+        fs::create_dir_all(&legacy_root).unwrap();
+        fs::write(
+            legacy_root.join("legacy-task.json"),
+            serde_json::to_string_pretty(&json!({
+                "id": "legacy-task",
+                "subject": "legacy flat task",
+                "description": "from pre-task-list storage",
+                "status": "pending",
+                "output": "legacy output",
+                "created_at": 1,
+                "updated_at": 2,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(legacy_root.join(TASK_HIGHWATERMARK_FILE), "9\n").unwrap();
+
+        let task_store = task_store_for_task_list_id(DEFAULT_TASK_LIST_ID);
+        let migrated = task_store.get("legacy-task").unwrap();
+
+        assert_eq!(migrated.subject, "legacy flat task");
+        assert_eq!(migrated.output, "legacy output");
+        assert!(legacy_root.join("legacy-task.json").exists());
+        assert!(task_list_dir(DEFAULT_TASK_LIST_ID)
+            .join("legacy-task.json")
+            .exists());
+
+        let next = task_store.create("next", "");
+        assert_eq!(next.id, "10");
     }
 
     #[test]
@@ -2654,6 +3126,52 @@ mod tests {
         assert_eq!(stopped.status, TaskStatus::Cancelled);
         assert!(stopped.cancel_requested_at.is_some());
         assert!(token.is_cancelled());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn task_list_and_task_stop_tools_cover_cancel_flow() {
+        let subject = format!("phase0-stop-{}", uuid::Uuid::new_v4());
+        let ctx = test_context();
+        let task_store = store_for_context(&ctx);
+        let task = task_store.create(&subject, "cancel through tool");
+        let parent = dummy_parent();
+
+        let listed = TaskListTool
+            .call(json!({}), &ctx, &parent, None)
+            .await
+            .expect("list tasks");
+        let tasks = listed.data["tasks"].as_array().expect("tasks array");
+        assert!(tasks.iter().any(|entry| {
+            entry["id"].as_str() == Some(task.id.as_str())
+                && entry["subject"].as_str() == Some(subject.as_str())
+                && entry["status"].as_str() == Some(TaskStatus::Pending.as_str())
+        }));
+
+        let stopped = TaskStopTool
+            .call(json!({ "task_id": task.id.clone() }), &ctx, &parent, None)
+            .await
+            .expect("stop task");
+        assert_eq!(stopped.data["task"]["id"].as_str(), Some(task.id.as_str()));
+        assert_eq!(
+            stopped.data["task"]["status"].as_str(),
+            Some(TaskStatus::Cancelled.as_str())
+        );
+        assert!(stopped.data["message"].as_str().unwrap().contains(&subject));
+
+        let missing = TaskStopTool
+            .call(
+                json!({ "task_id": format!("missing-{}", task.id) }),
+                &ctx,
+                &parent,
+                None,
+            )
+            .await
+            .expect("missing task response");
+        assert!(missing.data["error"]
+            .as_str()
+            .unwrap()
+            .contains("Task not found"));
     }
 
     #[test]
@@ -2931,20 +3449,16 @@ mod tests {
         let timed_out = store.get(&task.id).unwrap();
         assert_eq!(timed_out.status, TaskStatus::Failed);
         assert_eq!(timed_out.previous_status, Some(TaskStatus::InProgress));
-        assert!(
-            timed_out
-                .output
-                .contains("remote session exceeded 30 minutes")
-        );
+        assert!(timed_out
+            .output
+            .contains("remote session exceeded 30 minutes"));
 
         let restarted = TaskStore::with_dir(tmp.path());
         let restored = restarted.get(&task.id).unwrap();
         assert_eq!(restored.status, TaskStatus::Failed);
-        assert!(
-            restored
-                .output
-                .contains("remote session exceeded 30 minutes")
-        );
+        assert!(restored
+            .output
+            .contains("remote session exceeded 30 minutes"));
     }
 
     #[test]
@@ -2973,11 +3487,9 @@ mod tests {
     fn test_task_store_not_found() {
         let (_tmp, store) = temp_store();
         assert!(store.get("nonexistent").is_none());
-        assert!(
-            store
-                .update_status("nonexistent", TaskStatus::Completed)
-                .is_none()
-        );
+        assert!(store
+            .update_status("nonexistent", TaskStatus::Completed)
+            .is_none());
         assert!(store.stop("nonexistent").is_none());
     }
 
@@ -3064,18 +3576,14 @@ mod tests {
     #[test]
     fn test_todo_write_rejects_invalid_items() {
         assert!(parse_todo_items(&json!({})).is_err());
-        assert!(
-            parse_todo_items(&json!({
-                "todos": [{ "content": "", "status": "pending" }]
-            }))
-            .is_err()
-        );
-        assert!(
-            parse_todo_items(&json!({
-                "todos": [{ "content": "Run", "status": "running" }]
-            }))
-            .is_err()
-        );
+        assert!(parse_todo_items(&json!({
+            "todos": [{ "content": "", "status": "pending" }]
+        }))
+        .is_err());
+        assert!(parse_todo_items(&json!({
+            "todos": [{ "content": "Run", "status": "running" }]
+        }))
+        .is_err());
     }
 
     #[test]
@@ -3322,11 +3830,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Phase 1/4: replace with concrete task-list-id and teammate-unassign assertions"]
-    fn phase0_gap_task_list_id_and_teammate_unassign_are_not_wired() {
-        panic!(
-            "Phase 1 should add task-list-id resolution/isolation tests; Phase 4 should add teammate exit unassign tests"
-        );
+    #[ignore = "Phase 4: replace with concrete teammate-unassign assertions"]
+    fn phase0_gap_teammate_unassign_is_not_wired() {
+        panic!("Phase 4 should add teammate exit unassign tests once the reset hook exists");
     }
 
     #[tokio::test]
