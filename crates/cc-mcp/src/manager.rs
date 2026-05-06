@@ -6,10 +6,15 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
+use tokio::time::{Duration, sleep};
 use tracing::{info, warn};
 
 use super::client::McpClient;
 use super::{McpResource, McpServerConfig, McpToolDef};
+
+const CONNECT_RETRY_ATTEMPTS: usize = 3;
+const CONNECT_RETRY_BASE_DELAY_MS: u64 = 50;
+const CONNECT_RETRY_MAX_DELAY_MS: u64 = 250;
 
 /// Manages multiple MCP server connections.
 pub struct McpManager {
@@ -68,7 +73,7 @@ impl McpManager {
             return Ok(());
         }
 
-        let client = Self::connect_ready_client(config).await?;
+        let client = Self::connect_ready_client_with_retries(config).await?;
         self.clients.insert(name, client);
         Ok(())
     }
@@ -84,6 +89,32 @@ impl McpManager {
             error: None,
         });
         self.connect_server(config).await
+    }
+
+    async fn connect_ready_client_with_retries(config: McpServerConfig) -> Result<McpClient> {
+        let mut last_error = None;
+        for attempt in 0..CONNECT_RETRY_ATTEMPTS {
+            match Self::connect_ready_client(config.clone()).await {
+                Ok(client) => return Ok(client),
+                Err(err) => {
+                    let final_attempt = attempt + 1 >= CONNECT_RETRY_ATTEMPTS;
+                    warn!(
+                        server = %config.name,
+                        attempt = attempt + 1,
+                        max_attempts = CONNECT_RETRY_ATTEMPTS,
+                        error = %err,
+                        "MCP: connect attempt failed"
+                    );
+                    if final_attempt {
+                        return Err(err);
+                    }
+                    last_error = Some(err);
+                    sleep(Duration::from_millis(connect_retry_delay_ms(attempt))).await;
+                }
+            }
+        }
+
+        Err(last_error.expect("retry loop should have returned on final attempt"))
     }
 
     async fn connect_ready_client(config: McpServerConfig) -> Result<McpClient> {
@@ -183,6 +214,13 @@ impl McpManager {
             false
         }
     }
+}
+
+pub(crate) fn connect_retry_delay_ms(attempt: usize) -> u64 {
+    let factor = 1_u64 << attempt.min(8);
+    CONNECT_RETRY_BASE_DELAY_MS
+        .saturating_mul(factor)
+        .min(CONNECT_RETRY_MAX_DELAY_MS)
 }
 
 impl Default for McpManager {

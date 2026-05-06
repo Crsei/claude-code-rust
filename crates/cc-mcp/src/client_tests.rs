@@ -4,14 +4,14 @@ use crate::transport::dispatch_response;
 use crate::{JsonRpcError, JsonRpcResponse, McpConnectionState, McpServerConfig};
 
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use anyhow::Result;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{Mutex, oneshot};
 
 async fn read_http_request(stream: &mut TcpStream) -> (String, String) {
     let mut buffer = Vec::new();
@@ -82,6 +82,15 @@ fn test_mcp_manager_new() {
     assert!(manager.clients.is_empty());
     assert!(manager.all_tools().is_empty());
     assert!(manager.all_resources().is_empty());
+}
+
+#[test]
+fn test_mcp_connect_retry_delay_uses_capped_exponential_backoff() {
+    assert_eq!(crate::manager::connect_retry_delay_ms(0), 50);
+    assert_eq!(crate::manager::connect_retry_delay_ms(1), 100);
+    assert_eq!(crate::manager::connect_retry_delay_ms(2), 200);
+    assert_eq!(crate::manager::connect_retry_delay_ms(3), 250);
+    assert_eq!(crate::manager::connect_retry_delay_ms(20), 250);
 }
 
 #[tokio::test]
@@ -302,10 +311,12 @@ async fn test_connect_sse_rejects_https_until_tls_runtime_exists() {
     let mut client = McpClient::new(config);
     let result = client.connect().await;
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("HTTPS SSE transport is not yet implemented"));
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("HTTPS SSE transport is not yet implemented")
+    );
 }
 
 #[tokio::test]
