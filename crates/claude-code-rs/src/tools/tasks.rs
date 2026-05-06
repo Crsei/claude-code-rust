@@ -3274,6 +3274,61 @@ mod tests {
         assert_eq!(payload["agent_id"], "agent-1");
     }
 
+    #[test]
+    #[ignore = "Phase 2: enable after task-list-level cross-process claim locking lands"]
+    fn phase0_gap_cross_store_claim_requires_task_list_lock() {
+        let tmp = tempfile::tempdir().unwrap();
+        let seed = TaskStore::with_dir(tmp.path());
+        let task = seed.create("claim race", "");
+
+        let store_a = TaskStore::with_dir(tmp.path());
+        let store_b = TaskStore::with_dir(tmp.path());
+
+        let claimed_a = store_a
+            .claim_task(&task.id, "agent-a", true)
+            .expect("first claimant should win");
+        assert_eq!(claimed_a.owner.as_deref(), Some("agent-a"));
+
+        let claimed_b = store_b.claim_task(&task.id, "agent-b", true);
+        assert!(
+            claimed_b.is_err(),
+            "second store must observe the persisted owner and fail the claim"
+        );
+    }
+
+    #[test]
+    #[ignore = "Phase 3: enable after Tasks V2 activeForm/metadata/update schema parity lands"]
+    fn phase0_gap_task_v2_schema_requires_active_form_and_metadata() {
+        let create_schema = TaskCreateTool.input_json_schema();
+        let create_props = &create_schema["properties"];
+        assert!(create_props.get("activeForm").is_some());
+        assert!(create_props.get("metadata").is_some());
+
+        let update_schema = TaskUpdateTool.input_json_schema();
+        let update_props = &update_schema["properties"];
+        for field in [
+            "subject",
+            "description",
+            "activeForm",
+            "addBlocks",
+            "addBlockedBy",
+            "metadata",
+        ] {
+            assert!(
+                update_props.get(field).is_some(),
+                "TaskUpdate schema should expose {field}"
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "Phase 1/4: replace with concrete task-list-id and teammate-unassign assertions"]
+    fn phase0_gap_task_list_id_and_teammate_unassign_are_not_wired() {
+        panic!(
+            "Phase 1 should add task-list-id resolution/isolation tests; Phase 4 should add teammate exit unassign tests"
+        );
+    }
+
     #[tokio::test]
     async fn test_task_output_treats_recoverable_as_active_wait_state() {
         let (_tmp, store) = temp_store();

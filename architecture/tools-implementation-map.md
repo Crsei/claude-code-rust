@@ -125,3 +125,7 @@
 
 1. 如果要继续补齐任务管理文档，下一步应补齐 V2 的跨进程任务列表锁、teammate 退出时的 owner 重置，以及 Bun 的完整 task-list-id 解析优先级。
 2. 如果要继续细化网络工具差异，建议把 Bun 的 Anthropic WebSearch 路径和 Rust 的 Tavily / Brave 路径单独拆成对照表。
+
+## 实现推进记录
+
+- 2026-05-06：Phase 0 已完成基线锁定。新增 `docs/archive/tools-phase0-baseline-2026-05-06.md` 记录决策；`crates/claude-code-rs/src/tools/tasks.rs` 增加 3 个 `#[ignore]` 缺口测试，分别锁定跨 store claim 竞争、Tasks V2 `activeForm` / `metadata` schema parity、task-list-id 与 teammate unassign 后续集成点。验证：`cargo test -p claude-code-rs tools::tasks` 通过，44 passed / 3 ignored。
