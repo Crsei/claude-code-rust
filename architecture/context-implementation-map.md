@@ -27,7 +27,7 @@
 | Bun 文档 | cc-rust 主要入口 | 状态 | 核心结论 |
 | --- | --- | --- | --- |
 | `compaction.mdx` | [`cc-compact/src/pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`cc-compact/src/session_memory_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/session_memory_compact.rs), [`cc-compact/src/compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L99), [`claude-code-rs/src/query/loop_helpers.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/loop_helpers.rs#L202) | 部分实现 | 本地压缩、Session Memory Compact、boundary、preservedSegment 元数据、PTL 恢复、hook 已有；feature gate、Partial Compact 与 Bun 的完整恢复语义仍未完全同构。 |
-| `project-memory.mdx` | [`cc-session/src/memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L72), [`cc-config/src/claude_md.rs`](F:/AIclassmanager/cc/rust/crates/cc-config/src/claude_md.rs#L51), [`claude-code-rs/src/engine/system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs) | 部分实现 | 记忆 CRUD、`CLAUDE.md` 注入、Project/Global/Team memory 主提示词注入都存在；Auto memory 已由 `auto_memory_enabled` 门控注入，最近 session-insights 会按 workspace、时间窗口和可配置 tag 过滤回注；生命周期抽取已改用确定性 insight helper。 |
+| `project-memory.mdx` | [`cc-session/src/memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L72), [`cc-config/src/claude_md.rs`](F:/AIclassmanager/cc/rust/crates/cc-config/src/claude_md.rs#L51), [`claude-code-rs/src/engine/system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs) | 部分实现 | 记忆 CRUD、`CLAUDE.md` 注入、Project/Global/Team memory 主提示词注入都存在；Auto memory 已由 `auto_memory_enabled` 门控注入，最近 session-insights 会按 workspace、时间窗口、可配置 tag 和当前 session 排除规则回注；生命周期抽取已改用确定性 insight helper。 |
 | `system-prompt.mdx` | [`claude-code-rs/src/engine/system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs#L361), [`claude-code-rs/src/engine/prompt_sections.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/prompt_sections.rs#L17), [`claude-code-rs/src/engine/lifecycle/submit_message.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/submit_message.rs#L238) | 已实现 | 静态段、动态段、缓存边界、`CLAUDE.md` 注入、append/override 顺序都已落地。 |
 | `token-budget.mdx` | [`cc-utils/src/tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs), [`cc-compact/src/auto_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/auto_compact.rs), [`claude-code-rs/src/query/token_budget.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/token_budget.rs#L9) | 部分实现 | 预算判断、续跑逻辑、`CLAUDE_CODE_MAX_CONTEXT_TOKENS` 与 `[1m]` 窗口解析存在；仍主要依赖启发式估算，不是 Bun 文档里那种 provider 级精确 token 统计。 |
 
@@ -70,13 +70,13 @@
 - `build_system_prompt()` 现在会把 `build_memory_context_with()` 生成的 Project / Global / Team memory 注入到 `# Memory Context` 段落，并在 `auto_memory_enabled` 为 true 时纳入 Auto memory，形成主提示词端到端路径。[`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs)
 - `/memory` 命令已经把四个 scope 暴露到 UI/CLI，并支持查看、写入、删除、搜索和打开目录。[`commands/memory.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/memory.rs#L41), [`commands/memory.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/memory.rs#L214)
 - `build_claude_md_context()` 会把祖先目录里的 `CLAUDE.md` 合并进上下文，且 `build_system_prompt()` 会把这段内容注入到系统提示词里。[`claude_md.rs`](F:/AIclassmanager/cc/rust/crates/cc-config/src/claude_md.rs#L51), [`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs#L517)
-- 另有独立的 `SessionMemoryService`，会把对话中抽取的简要 insight 持久化到 `~/.cc-rust/session-insights/`，新条目记录 workspace；`submit_message` 和 `--dump-system-prompt` 会把当前 workspace 最近 5 条且默认 30 天内的条目格式化为 `<session-insights>` 并回注到 `# Memory Context`。回注层还支持 `context_include_tags` / `context_exclude_tags`，可用 tag allowlist/denylist 控制哪些 session-insights 进入提示词。[`session_memory.rs`](F:/AIclassmanager/cc/rust/crates/cc-services/src/session_memory.rs), [`mod.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/mod.rs), [`submit_message.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/submit_message.rs), [`fast_paths.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/startup/fast_paths.rs)
+- 另有独立的 `SessionMemoryService`，会把对话中抽取的简要 insight 持久化到 `~/.cc-rust/session-insights/`，新条目记录 workspace；`submit_message` 会把当前 workspace 最近 5 条、默认 30 天内、满足 tag include/exclude 规则且不属于当前 session 的条目格式化为 `<session-insights>` 并回注到 `# Memory Context`。`--dump-system-prompt` 没有活动 session，因此仍只按 workspace/time/tag 过滤。[`session_memory.rs`](F:/AIclassmanager/cc/rust/crates/cc-services/src/session_memory.rs#L243), [`submit_message.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/submit_message.rs#L356), [`deps.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/deps.rs#L289), [`fast_paths.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/startup/fast_paths.rs)
 - `cc-services::session_memory::extract_session_insight()` 已提供确定性抽取 helper：会把最近用户意图和 assistant 结论折叠为短 insight，跳过过短确认语，按关键字推断 `implementation`、`testing`、`debugging`、`architecture`、`mcp`、`memory` 等 tags，并按字符边界截断。`QueryEngine::try_extract_session_memory()` 已改用该 helper 保存条目。[`session_memory.rs`](F:/AIclassmanager/cc/rust/crates/cc-services/src/session_memory.rs), [`mod.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/mod.rs)
 
 **状态判断**
 
 - `部分实现`。
-- `CLAUDE.md`、Project / Global / Team memory、受 `auto_memory_enabled` 门控的 Auto memory 和当前 workspace 最近 session-insights 都已经接入主提示词；session-insights 回注已有 workspace、时间窗口与可配置 tag 过滤，生命周期抽取也已改用确定性 insight helper。剩余差异主要是是否要进一步按当前 session 过滤。
+- `CLAUDE.md`、Project / Global / Team memory、受 `auto_memory_enabled` 门控的 Auto memory 和当前 workspace 最近 session-insights 都已经接入主提示词；session-insights 回注已有 workspace、时间窗口、可配置 tag 与当前 session 排除过滤，生命周期抽取也已改用确定性 insight helper。剩余差异主要是 Bun 的智能记忆召回和更完整的 memory index 语义没有同构实现。
 
 ### `system-prompt.mdx`
 
@@ -120,7 +120,7 @@
 ## 已实现汇总
 
 - 系统提示词拼装链路已经落地：静态段、动态段、缓存边界、`CLAUDE.md` 注入、append/override 顺序都能在源码里直接定位。[`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs#L361), [`prompt_sections.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/prompt_sections.rs#L51)
-- 记忆存储、命令面和主提示词注入已经实现：`cc-session::memdir` 支持四个 scope 的 CRUD 和搜索，`/memory` 也能查看、编辑和打开这些目录；Project / Global / Team memory 会进入 `# Memory Context`，Auto memory 会在 `auto_memory_enabled` 开启时进入同一段落，当前 workspace、默认 30 天内且满足 tag include/exclude 规则的最近 session-insights 也会回放到同一段落。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L111), [`commands/memory.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/memory.rs#L41), [`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs), [`session_memory.rs`](F:/AIclassmanager/cc/rust/crates/cc-services/src/session_memory.rs)
+- 记忆存储、命令面和主提示词注入已经实现：`cc-session::memdir` 支持四个 scope 的 CRUD 和搜索，`/memory` 也能查看、编辑和打开这些目录；Project / Global / Team memory 会进入 `# Memory Context`，Auto memory 会在 `auto_memory_enabled` 开启时进入同一段落，当前 workspace、默认 30 天内且满足 tag include/exclude 规则、并排除当前 session 的最近 session-insights 也会回放到同一段落。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L111), [`commands/memory.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/memory.rs#L41), [`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs), [`session_memory.rs`](F:/AIclassmanager/cc/rust/crates/cc-services/src/session_memory.rs#L243)
 - 压缩主链路已经实现：tool result budget、snip、microcompact、Session Memory Compact、自动压缩、boundary、PTL 恢复和 hook 都有对应代码。[`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`session_memory_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/session_memory_compact.rs), [`compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L184)
 - token 预算已经接入主循环：任务预算继续/停止、max_output_tokens 恢复、自动压缩阈值都不是占位。[`token_budget.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/token_budget.rs#L9), [`loop_helpers.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/loop_helpers.rs#L202)
 
@@ -129,13 +129,13 @@
 ### 部分实现
 
 - `compaction.mdx`：已有完整压缩管线、Session Memory Compact 和手动 `/compact` boundary preservedSegment 元数据，但 Bun 文档里的 feature gate 组合、Partial Compact 与完整恢复语义还没有看到同构实现。[`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`session_memory_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/session_memory_compact.rs), [`compact.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/compact.rs#L67)
-- `project-memory.mdx`：记忆 CRUD、`CLAUDE.md` 注入、Project / Global / Team memory 主提示词注入、`auto_memory_enabled` 门控的 Auto memory 注入、workspace/time-window/tag scoped session-insights 回注，以及确定性生命周期抽取都存在；是否还要按当前 session 过滤仍需确认。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L248), [`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs), [`session_memory.rs`](F:/AIclassmanager/cc/rust/crates/cc-services/src/session_memory.rs), [`mod.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/mod.rs)
+- `project-memory.mdx`：记忆 CRUD、`CLAUDE.md` 注入、Project / Global / Team memory 主提示词注入、`auto_memory_enabled` 门控的 Auto memory 注入、workspace/time-window/tag scoped session-insights 回注、当前 session 排除过滤，以及确定性生命周期抽取都存在；Bun 的智能召回与完整 memory index 语义仍未同构。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L248), [`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs), [`session_memory.rs`](F:/AIclassmanager/cc/rust/crates/cc-services/src/session_memory.rs#L243), [`mod.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/mod.rs)
 - `token-budget.mdx`：有预算判断、动态窗口解析和恢复，但主要依赖启发式估算，不是精确 token 统计。[`tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs)
 
 ### 待确认
 
 - `build_system_prompt()` 返回的 `user_context` / `system_context` 当前只看到在 `QueryParams` 里流转；`build_messages_request()` 只序列化 `system_prompt`、messages 和 tools。需要确认这是有意保留的元数据，还是后续还要展开成独立输入层。[`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs#L552), [`helpers.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/helpers.rs#L100)
-- `SessionMemoryService` 当前会把当前 workspace、默认 30 天内且满足 tag include/exclude 规则的最近 5 条 session-insights 注入提示词；仍需确认 Bun 语义是否要求按当前 session 进一步过滤。[`session_memory.rs`](F:/AIclassmanager/cc/rust/crates/cc-services/src/session_memory.rs), [`mod.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/mod.rs)
+- 当前未发现需要继续标成“待确认”的 session-insights 回注过滤项；服务层已有 workspace/time/tag/current-session 过滤，dump-system-prompt 因无活动 session 只应用 workspace/time/tag 过滤。[`session_memory.rs`](F:/AIclassmanager/cc/rust/crates/cc-services/src/session_memory.rs#L243), [`submit_message.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/submit_message.rs#L356)
 
 ### 未实现
 
@@ -147,6 +147,6 @@
 
 ## 后续动作
 
-1. 如果要继续对齐 Bun 的 `project-memory` 语义，下一步应决定 session-insights 是否要按当前 session 进一步过滤，并补一轮端到端测试覆盖 prompt 回注。
+1. 如果要继续对齐 Bun 的 `project-memory` 语义，下一步应评估是否补 Bun 的智能相关记忆召回、MEMORY.md index 语义和更完整的 prompt 回注端到端测试。
 2. 如果要继续对齐 `token-budget` 语义，补齐精确 token 统计的 provider 路径，或者把“仅启发式估算”明确写成故意裁剪。
 3. 如果要继续写 `extensibility`、`safety`、`tools` 章节，建议沿用同样的结构：上游文档清单、实现映射表、逐文档分析、汇总、缺口、后续动作。

@@ -284,10 +284,13 @@ impl QueryDeps for QueryEngineDeps {
             if updated_tracking.compacted {
                 let session_memory_context = {
                     let state = self.state.read();
-                    state.session_memory.format_memory_context_for_workspace(
-                        5,
-                        Some(std::path::Path::new(&self.cwd)),
-                    )
+                    state
+                        .session_memory
+                        .format_memory_context_for_workspace_excluding_session(
+                            5,
+                            Some(std::path::Path::new(&self.cwd)),
+                            Some(self.audit_ctx.session_id.as_str()),
+                        )
                 };
                 if let Some(context) = session_memory_context.as_deref() {
                     if let Some(session_memory_result) =

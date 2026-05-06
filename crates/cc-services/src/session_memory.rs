@@ -235,11 +235,24 @@ impl SessionMemoryService {
         limit: usize,
         workspace: Option<&Path>,
     ) -> Option<String> {
+        self.format_memory_context_for_workspace_excluding_session(limit, workspace, None)
+    }
+
+    /// Format recent entries scoped to a workspace while excluding insights
+    /// extracted from the currently active session.
+    pub fn format_memory_context_for_workspace_excluding_session(
+        &self,
+        limit: usize,
+        workspace: Option<&Path>,
+        excluded_session_id: Option<&str>,
+    ) -> Option<String> {
         if !self.config.enabled {
             return None;
         }
 
         let workspace = workspace.map(|p| p.to_string_lossy().to_string());
+        let excluded_session_id =
+            excluded_session_id.and_then(|id| (!id.trim().is_empty()).then(|| id.trim()));
         let min_timestamp = self
             .config
             .max_context_age_seconds
@@ -249,6 +262,10 @@ impl SessionMemoryService {
             .iter()
             .filter(|entry| match workspace.as_deref() {
                 Some(expected) => entry.workspace.as_deref() == Some(expected),
+                None => true,
+            })
+            .filter(|entry| match excluded_session_id {
+                Some(session_id) => entry.session_id != session_id,
                 None => true,
             })
             .filter(|entry| match min_timestamp {
@@ -525,6 +542,33 @@ mod tests {
     }
 
     #[test]
+    fn format_memory_context_excludes_current_session_entries() {
+        let tmp = std::env::temp_dir().join("cc_rust_test_session_mem_session_filter");
+        let mut svc = SessionMemoryService::new(test_config(&tmp));
+        let workspace = tmp.join("workspace-a");
+
+        let mut current = make_entry("1", "current session insight", &[]);
+        current.session_id = "session-current".to_string();
+        current.workspace = Some(workspace.to_string_lossy().to_string());
+        svc.entries.push(current);
+
+        let mut previous = make_entry("2", "previous session insight", &[]);
+        previous.session_id = "session-previous".to_string();
+        previous.workspace = Some(workspace.to_string_lossy().to_string());
+        svc.entries.push(previous);
+
+        let ctx = svc
+            .format_memory_context_for_workspace_excluding_session(
+                5,
+                Some(&workspace),
+                Some("session-current"),
+            )
+            .unwrap();
+        assert!(ctx.contains("previous session insight"));
+        assert!(!ctx.contains("current session insight"));
+    }
+
+    #[test]
     fn format_memory_context_filters_old_entries_by_age() {
         let tmp = std::env::temp_dir().join("cc_rust_test_session_mem_age");
         let cfg = SessionMemoryConfig {
@@ -580,12 +624,16 @@ mod tests {
         )
         .unwrap();
 
-        assert!(insight
-            .content
-            .contains("Request: Please add MCP reconnect tests"));
-        assert!(insight
-            .content
-            .contains("Insight: Implemented the manager reconnect path."));
+        assert!(
+            insight
+                .content
+                .contains("Request: Please add MCP reconnect tests")
+        );
+        assert!(
+            insight
+                .content
+                .contains("Insight: Implemented the manager reconnect path.")
+        );
         assert!(insight.tags.contains(&"implementation".to_string()));
         assert!(insight.tags.contains(&"testing".to_string()));
         assert!(insight.tags.contains(&"mcp".to_string()));

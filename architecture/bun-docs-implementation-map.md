@@ -48,7 +48,7 @@
 | Agent | `sub-agents.mdx` | 已实现 | `AgentTool`、内置 agent、同步 / 后台生命周期、hooks、AgentTree、fork 与 worktree 侧路均有实现入口。 |
 | Agent | `worktree-isolation.mdx` | 部分实现 | 子 Agent worktree 隔离和清理已存在，但路径布局、hook 入口和恢复流程与 Bun 上游不同。 |
 | Context | `compaction.mdx` | 部分实现 | 本地压缩、Session Memory Compact、boundary、手动 `/compact` preservedSegment 元数据、PTL 恢复与 hook 路径存在；feature gate、Partial Compact 与完整恢复语义仍未完全同构。 |
-| Context | `project-memory.mdx` | 部分实现 | memory CRUD、`CLAUDE.md` 注入、Project / Global / Team memory 主提示词注入存在；Auto memory 已由 `auto_memory_enabled` 门控注入，最近 session-insights 会按 workspace、时间窗口和 tag 规则回注；生命周期抽取已改用确定性 insight helper。 |
+| Context | `project-memory.mdx` | 部分实现 | memory CRUD、`CLAUDE.md` 注入、Project / Global / Team memory 主提示词注入存在；Auto memory 已由 `auto_memory_enabled` 门控注入，最近 session-insights 会按 workspace、时间窗口、tag 和当前 session 排除规则回注；生命周期抽取已改用确定性 insight helper。 |
 | Context | `system-prompt.mdx` | 已实现 | 静态段、动态段、缓存边界、`CLAUDE.md` 注入、append / override 顺序均已落地。 |
 | Context | `token-budget.mdx` | 部分实现 | 预算判断、续跑逻辑、环境变量覆盖和 `[1m]` 窗口解析存在；仍主要依赖启发式估算，不是 provider 级精确 token 统计。 |
 | Extensibility | `custom-agents.mdx` | 部分实现 | 定义、编辑、运行链路已通；安全边界主要依赖通用工具过滤与隔离。 |
@@ -79,7 +79,7 @@
 
 - Agent Teams 是 Rust 的 in-process teammate / mailbox 版本，不是 Bun coordinator / swarm 的同构实现；tmux / iTerm2 等多终端后端属于故意裁剪。
 - Worktree isolation 已有核心隔离和清理，但 Bun 的 hook 驱动创建 / 销毁、目录布局和恢复流程没有一一对齐。
-- Context compaction、project memory、token budget 都已有主体能力，但 Partial Compact、session-insights 当前 session 过滤、provider 级 token 精确统计仍需补齐或明确裁剪；session-insights 回注已支持 workspace、时间窗口和 tag 过滤，生命周期抽取已改用确定性 helper；preservedSegment 目前已覆盖手动 `/compact` boundary，尚未扩展到所有压缩边界。
+- Context compaction、project memory、token budget 都已有主体能力，但 Partial Compact、provider 级 token 精确统计、Bun 智能记忆召回和完整 memory index 语义仍需补齐或明确裁剪；session-insights 回注已支持 workspace、时间窗口、tag 和当前 session 排除过滤，生命周期抽取已改用确定性 helper；preservedSegment 目前已覆盖手动 `/compact` boundary，尚未扩展到所有压缩边界。
 - Custom agents 已可定义、编辑、运行，但独立安全边界不如 hooks / skills 明确。
 - MCP 当前已有 stdio JSON-RPC、本地 loopback HTTP SSE 主路径与 manager 级 reconnect API；上层 `/mcp reconnect` 接线、远程 HTTPS SSE、OAuth、自动退避重试和完整 transport 矩阵仍不完整。
 - Auto mode 缺少 Bun 的 transcript / classifier 两阶段流程。
@@ -91,7 +91,7 @@
 
 1. 优先确认 Safety 的未实现项：Windows OS-level sandbox、`allowedPrompts` 通用 LLM classifier。
 2. 其次确认 MCP transport 与协议安全：`/mcp reconnect` 接入 manager API、远程 HTTPS SSE、OAuth、断线恢复、完整 server / resource 行为。
-3. 再确认 Context 端到端链路：Partial Compact、session-insights 当前 session 过滤、精确 token 统计，以及 preservedSegment 是否需要覆盖自动压缩和内部 snip / context-collapse 边界。
+3. 再确认 Context 端到端链路：Partial Compact、精确 token 统计、智能相关记忆召回，以及 preservedSegment 是否需要覆盖自动压缩和内部 snip / context-collapse 边界。
 4. 对 Agent Teams 明确产品边界：继续保留 in-process 版本，还是补 coordinator / swarm 同构模式。
 5. 对 Tools 差异建立单独 issue：V2 Tasks 是否要补 Bun 的跨进程任务列表锁、teammate 退出 owner 重置、完整 task-list-id 解析，WebFetch 是否需要 JS rendering。
 6. 后续进入实现补齐时，为每个改动建立单独任务，不在本文档中混入代码设计细节。
@@ -122,3 +122,4 @@
 | 2026-05-06 | Context / Session insight lifecycle extraction | 已完成 `try_extract_session_memory()` 接入确定性 insight helper；当前 session 过滤仍待确认 | `crates/claude-code-rs/src/engine/lifecycle/mod.rs` 从最近用户意图与 assistant 文本生成 session insight，保存 helper 推断的 tags | `cargo check -p claude-code-rs`；`cargo test -p claude-code-rs test_try_extract_session_memory_uses_structured_insight -- --nocapture`，1 passed |
 | 2026-05-06 | Tools / Task incremental IDs and highwater | 已完成 V2 Tasks 的递增 ID 与高水位防复用；任务认领竞争仍部分实现 | `crates/claude-code-rs/src/tools/tasks.rs` 通过 `.highwatermark` / `.highwatermark.lock` 分配新任务 ID，删除后不复用，旧 numeric task 可 bootstrap 下一 ID | `cargo check -p claude-code-rs`；`cargo test -p claude-code-rs tools::tasks::tests:: -- --nocapture`，40 passed |
 | 2026-05-06 | Tools / Task owner claim checks | 已完成基础 owner claim、blocked dependency 和 agent-busy 检查；跨进程任务列表锁仍部分实现 | `crates/claude-code-rs/src/tools/tasks.rs` 持久化 `owner`，`TaskUpdate(status="in_progress")` 走 `claim_task()`，返回 `task_not_found` / `already_claimed` / `already_resolved` / `blocked` / `agent_busy` 等 reason | `cargo test -p claude-code-rs tools::tasks::tests:: -- --nocapture`，43 passed；`cargo check -p claude-code-rs` 通过但当前工作树的 `api/google_provider.rs` 脏改动仍产生 4 个既有 warning |
+| 2026-05-06 | Context / Session insights current-session filter | 已完成 session-insights 回注排除当前 session；Bun 智能记忆召回仍部分实现 | `crates/cc-services/src/session_memory.rs` 新增 `format_memory_context_for_workspace_excluding_session()`，`submit_message.rs` 与 `deps.rs` 在正常提示词和 auto-compact 路径传入当前 session ID | `cargo test -p cc-services session_memory -- --nocapture`，13 passed；`cargo check -p cc-services`；`cargo check -p claude-code-rs` |
