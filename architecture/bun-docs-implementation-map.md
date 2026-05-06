@@ -58,7 +58,7 @@
 | Extensibility | `skills.mdx` | 已实现 | skills frontmatter、加载、注册、调用、fork 执行与命令入口已形成闭环。 |
 | Safety | `auto-mode.mdx` | 部分实现 | `PermissionMode::Auto` 与 fallback 存在；Bun 的 transcript / classifier 两阶段流程未完整落地。 |
 | Safety | `permission-model.mdx` | 已实现 | allow / ask / deny 规则、mode fallback、hook overlay、session grant 已落地。 |
-| Safety | `plan-mode.mdx` | 部分实现 | Enter / Exit plan mode、`/plan`、计划文件和工作流持久化存在；`allowedPrompts` 已接入确定性 Bash session allow 规则，语义 classifier 未实现。 |
+| Safety | `plan-mode.mdx` | 部分实现 | Enter / Exit plan mode、`/plan`、计划文件和工作流持久化存在；`allowedPrompts` 已接入 Bash pattern 与常见验证意图的确定性 session allow 规则，通用 LLM 语义 classifier 未实现。 |
 | Safety | `sandbox.mdx` | 部分实现 | Linux / macOS shell sandbox、网络 / 路径预检、`/sandbox` 命令存在；Windows OS-level sandbox 未实现。 |
 | Safety | `why-safety-matters.mdx` | 已实现 | prompt、permissions、hooks、sandbox、plan mode 的纵深防御链路已可映射。 |
 | Tools | `what-are-tools.mdx` | 已实现 | Tool trait、schema、registry、权限、结果处理已接入。 |
@@ -83,13 +83,13 @@
 - Custom agents 已可定义、编辑、运行，但独立安全边界不如 hooks / skills 明确。
 - MCP 当前以 stdio JSON-RPC 主路径为主；SSE URL/header 安全校验已补，SSE runtime、认证和完整 transport 矩阵仍不完整。
 - Auto mode 缺少 Bun 的 transcript / classifier 两阶段流程。
-- Plan mode 已补入 `allowedPrompts` 输入和 session allow bridge；仍缺 Bun 的自然语言语义 classifier。
+- Plan mode 已补入 `allowedPrompts` 输入、session allow bridge 和常见验证意图分类；仍缺 Bun 的通用 LLM 语义 classifier。
 - Windows OS-level sandbox 未实现；当前 Windows 侧主要是 Rust-level policy checks。
 - Tools 的 `TodoWrite` 与 V2 Tasks 均已接入；V2 仍与 Bun 的递增 ID、双向依赖和认领竞争模型不同。
 
 ## 后续动作
 
-1. 优先确认 Safety 的未实现项：Windows OS-level sandbox、`allowedPrompts` 自然语言 classifier。
+1. 优先确认 Safety 的未实现项：Windows OS-level sandbox、`allowedPrompts` 通用 LLM classifier。
 2. 其次确认 MCP transport 与协议安全：SSE runtime、认证、断线恢复、完整 server / resource 行为。
 3. 再确认 Context 端到端链路：Partial Compact、session-insights 抽取策略、精确 token 统计，以及 preservedSegment 是否需要覆盖自动压缩和内部 snip / context-collapse 边界。
 4. 对 Agent Teams 明确产品边界：继续保留 in-process 版本，还是补 coordinator / swarm 同构模式。
@@ -112,3 +112,4 @@
 | 2026-05-05 | Context / Dynamic context window | 已完成 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` 与 `[1m]` 窗口解析；provider 级精确 token 统计仍部分实现 | `crates/cc-utils/src/tokens.rs` 解析动态窗口，`crates/cc-compact/src/auto_compact.rs` 复用同一入口 | `cargo test -p cc-utils tokens -- --nocapture`，11 passed；`cargo test -p cc-compact auto_compact -- --nocapture`，6 passed |
 | 2026-05-05 | Context / Session Memory Compact | 已完成无 API 的 session-insights 压缩优先分支；preservedSegment 与 Partial Compact 仍部分实现 | `crates/cc-compact/src/session_memory_compact.rs` 生成 session-memory 摘要和最近窗口，`engine/lifecycle/deps.rs` 在 auto-compact 触发时优先接入 | `cargo test -p cc-compact session_memory_compact -- --nocapture`，3 passed；`cargo test -p claude-code-rs engine::lifecycle::deps -- --nocapture`，11 passed |
 | 2026-05-05 | Context / Compact preserved segment metadata | 已完成手动 `/compact` boundary 的 preservedSegment 注解；Partial Compact 与自动压缩边界覆盖仍部分实现 | `crates/cc-types/src/message.rs` 增加 `PreservedSegment`，`cc-compact/src/compaction.rs` 生成 preserved segment，`claude-code-rs/src/commands/compact.rs` 在 boundary 中记录摘要消息和保留消息 UUID | `cargo test -p cc-compact compaction -- --nocapture`，9 passed；`cargo test -p claude-code-rs commands::compact -- --nocapture`，4 passed；`cargo test -p claude-code-rs daemon::routes::tests::daemon_sse_broadcasts_compact_boundaries -- --nocapture`，1 passed；`cargo test -p cc-session session_export -- --nocapture`，13 passed |
+| 2026-05-05 | Safety / Plan mode `allowedPrompts` classifier | 已完成常见验证意图到 Cargo allow 规则的确定性分类；通用 LLM classifier 仍部分实现 | `crates/claude-code-rs/src/tools/plan_mode.rs` 将 “run tests and lint”等提示映射为 `Bash(cargo test*)` / `Bash(cargo clippy*)`，显式 Bash pattern 仍直通，否定意图会被拒绝 | `cargo test -p claude-code-rs tools::plan_mode::tests:: -- --nocapture`，13 passed；`cargo test -p cc-permissions session_grant -- --nocapture`，4 passed |

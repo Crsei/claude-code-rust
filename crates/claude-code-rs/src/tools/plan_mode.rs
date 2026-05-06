@@ -156,7 +156,7 @@ impl Tool for ExitPlanModeTool {
                 },
                 "allowedPrompts": {
                     "type": "array",
-                    "description": "Prompt-based permissions requested by the plan. cc-rust maps these conservatively to transient session allow rules.",
+                    "description": "Prompt-based permissions requested by the plan. cc-rust maps explicit Bash patterns and common verification prompts conservatively to transient session allow rules.",
                     "items": {
                         "type": "object",
                         "properties": {
@@ -167,7 +167,7 @@ impl Tool for ExitPlanModeTool {
                             },
                             "prompt": {
                                 "type": "string",
-                                "description": "Bash permission pattern such as 'cargo test*' or 'prefix:cargo'"
+                                "description": "Bash permission pattern such as 'cargo test*' or 'prefix:cargo', or a common verification prompt such as 'run tests'"
                             }
                         },
                         "required": ["tool", "prompt"],
@@ -320,7 +320,7 @@ fn allowed_prompt_rules(input: &Value) -> std::result::Result<Vec<String>, Strin
         .as_array()
         .ok_or_else(|| "allowedPrompts must be an array.".to_string())?;
 
-    let mut rules = Vec::with_capacity(prompts.len());
+    let mut rules = Vec::new();
     for (idx, prompt) in prompts.iter().enumerate() {
         let tool = prompt
             .get("tool")
@@ -337,14 +337,104 @@ fn allowed_prompt_rules(input: &Value) -> std::result::Result<Vec<String>, Strin
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| format!("allowedPrompts[{idx}].prompt must be a non-empty string."))?;
-        if pattern.contains('\n') || pattern.contains('\r') || pattern.contains(')') {
+        if pattern.contains('\n') || pattern.contains('\r') {
             return Err(format!(
-                "allowedPrompts[{idx}].prompt contains unsupported characters for a Bash permission pattern."
+                "allowedPrompts[{idx}].prompt contains unsupported line breaks."
             ));
         }
-        rules.push(format!("Bash({pattern})"));
+        let normalized_pattern = pattern.to_ascii_lowercase();
+        if has_negative_intent(&normalized_pattern) && !looks_like_bash_permission_pattern(pattern)
+        {
+            return Err(format!(
+                "allowedPrompts[{idx}].prompt describes a negative permission intent and cannot be turned into an allow rule."
+            ));
+        }
+        let derived_rules = classify_allowed_prompt(pattern);
+        if derived_rules.is_empty() {
+            if pattern.contains(')') {
+                return Err(format!(
+                    "allowedPrompts[{idx}].prompt contains unsupported characters for a Bash permission pattern."
+                ));
+            }
+            push_unique_rule(&mut rules, format!("Bash({pattern})"));
+        } else {
+            for rule in derived_rules {
+                push_unique_rule(&mut rules, rule);
+            }
+        }
     }
     Ok(rules)
+}
+
+fn classify_allowed_prompt(prompt: &str) -> Vec<String> {
+    let trimmed = prompt.trim();
+    if looks_like_bash_permission_pattern(trimmed) {
+        return vec![format!("Bash({trimmed})")];
+    }
+
+    let normalized = trimmed.to_ascii_lowercase();
+    if has_negative_intent(&normalized) {
+        return Vec::new();
+    }
+
+    let mut rules = Vec::new();
+    if contains_any(
+        &normalized,
+        &["test", "tests", "unit test", "integration test"],
+    ) {
+        push_unique_rule(&mut rules, "Bash(cargo test*)".to_string());
+    }
+    if contains_any(&normalized, &["lint", "clippy"]) {
+        push_unique_rule(&mut rules, "Bash(cargo clippy*)".to_string());
+    }
+    if contains_any(
+        &normalized,
+        &["typecheck", "type check", "cargo check", "check build"],
+    ) {
+        push_unique_rule(&mut rules, "Bash(cargo check*)".to_string());
+    }
+    if contains_any(&normalized, &["build", "compile"]) {
+        push_unique_rule(&mut rules, "Bash(cargo build*)".to_string());
+    }
+    if contains_any(&normalized, &["fmt", "format", "formatting"]) {
+        if contains_any(&normalized, &["check", "verify", "ci"]) {
+            push_unique_rule(&mut rules, "Bash(cargo fmt --check*)".to_string());
+        } else {
+            push_unique_rule(&mut rules, "Bash(cargo fmt*)".to_string());
+        }
+    }
+    if contains_any(&normalized, &["all checks", "ci checks", "verify changes"]) {
+        push_unique_rule(&mut rules, "Bash(cargo test*)".to_string());
+        push_unique_rule(&mut rules, "Bash(cargo clippy*)".to_string());
+        push_unique_rule(&mut rules, "Bash(cargo fmt --check*)".to_string());
+    }
+
+    rules
+}
+
+fn looks_like_bash_permission_pattern(prompt: &str) -> bool {
+    let normalized = prompt.trim_start().to_ascii_lowercase();
+    normalized.starts_with("prefix:")
+        || prompt.contains('*')
+        || [
+            "cargo", "npm", "pnpm", "yarn", "bun", "uv", "python", "pytest",
+        ]
+        .iter()
+        .any(|command| normalized == *command || normalized.starts_with(&format!("{command} ")))
+}
+
+fn has_negative_intent(normalized: &str) -> bool {
+    contains_any(normalized, &["do not", "don't", "dont", "never", "without"])
+}
+
+fn contains_any(haystack: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| haystack.contains(needle))
+}
+
+fn push_unique_rule(rules: &mut Vec<String>, rule: String) {
+    if !rules.iter().any(|existing| existing == &rule) {
+        rules.push(rule);
+    }
 }
 
 fn plan_cwd() -> PathBuf {
@@ -353,9 +443,30 @@ fn plan_cwd() -> PathBuf {
         return cwd;
     }
 
+    #[cfg(test)]
+    let fallback = std::env::temp_dir()
+        .join("cc-rust-plan-workflow")
+        .join(plan_test_thread_dir());
+    #[cfg(not(test))]
     let fallback = std::env::temp_dir().join("cc-rust-plan-workflow");
     let _ = std::fs::create_dir_all(fallback.join(".cc-rust"));
     fallback
+}
+
+#[cfg(test)]
+fn plan_test_thread_dir() -> String {
+    std::thread::current()
+        .name()
+        .unwrap_or("unnamed")
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn mutate_plan_workflow<F>(
@@ -646,6 +757,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_exit_plan_mode_classifies_common_allowed_prompts() {
+        let state = Arc::new(RwLock::new(AppState::default()));
+        {
+            let mut s = state.write();
+            s.tool_permission_context.mode = PermissionMode::Plan;
+            s.tool_permission_context.pre_plan_mode = Some(PermissionMode::Default);
+        }
+
+        let exit_tool = ExitPlanModeTool;
+        let dummy_msg = AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: vec![],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        };
+        let ctx = make_ctx(Arc::clone(&state));
+        let input = json!({
+            "plan": "Run verification after implementation.",
+            "allowedPrompts": [
+                {"tool": "Bash", "prompt": "run tests and lint"}
+            ]
+        });
+
+        let result = exit_tool.call(input, &ctx, &dummy_msg, None).await.unwrap();
+        let rules = result.data["allowed_prompt_rules"]
+            .as_array()
+            .expect("allowed prompt rules should be an array")
+            .iter()
+            .map(|value| value.as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        assert!(rules.iter().any(|rule| rule == "Bash(cargo test*)"));
+        assert!(rules.iter().any(|rule| rule == "Bash(cargo clippy*)"));
+
+        let s = state.read();
+        let decision = cc_permissions::decision::has_permissions_to_use_tool(
+            "Bash",
+            &json!({"command": "cargo clippy --all-targets"}),
+            &s.tool_permission_context,
+            None,
+        );
+        assert_eq!(
+            decision.behavior,
+            cc_permissions::decision::PermissionBehavior::Allow
+        );
+    }
+
+    #[test]
+    fn test_allowed_prompt_classifier_keeps_explicit_patterns() {
+        let rules = allowed_prompt_rules(
+            &json!({"allowedPrompts": [{"tool": "Bash", "prompt": "prefix:cargo"}]}),
+        )
+        .unwrap();
+        assert_eq!(rules, vec!["Bash(prefix:cargo)"]);
+    }
+
+    #[tokio::test]
     async fn test_exit_plan_mode_rejects_invalid_allowed_prompts() {
         let tool = ExitPlanModeTool;
         let state = Arc::new(RwLock::new(AppState::default()));
@@ -658,6 +830,28 @@ mod tests {
         let result = tool
             .validate_input(
                 &json!({"allowedPrompts": [{"tool": "Read", "prompt": "src/*"}]}),
+                &ctx,
+            )
+            .await;
+        assert!(matches!(
+            result,
+            ValidationResult::Error { error_code: 2, .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_exit_plan_mode_rejects_negative_allowed_prompt_intent() {
+        let tool = ExitPlanModeTool;
+        let state = Arc::new(RwLock::new(AppState::default()));
+        {
+            let mut s = state.write();
+            s.tool_permission_context.mode = PermissionMode::Plan;
+        }
+        let ctx = make_ctx(state);
+
+        let result = tool
+            .validate_input(
+                &json!({"allowedPrompts": [{"tool": "Bash", "prompt": "do not run tests"}]}),
                 &ctx,
             )
             .await;

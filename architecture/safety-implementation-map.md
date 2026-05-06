@@ -34,7 +34,7 @@
 | permissions | [`crates/cc-types/src/permissions.rs`](../crates/cc-types/src/permissions.rs), [`crates/cc-permissions/src/rules.rs`](../crates/cc-permissions/src/rules.rs), [`crates/cc-permissions/src/decision.rs`](../crates/cc-permissions/src/decision.rs) | 已实现 | 具备 `default/auto/bypass/plan/acceptEdits/dontAsk` 模式、allow/ask/deny 规则匹配、hook overlay、session grant、Auto mode fallback 和 DenialTracker。 |
 | hooks | [`crates/cc-types/src/hooks.rs`](../crates/cc-types/src/hooks.rs), [`crates/claude-code-rs/src/tools/hooks/mod.rs`](../crates/claude-code-rs/src/tools/hooks/mod.rs), [`crates/claude-code-rs/src/engine/lifecycle/deps.rs`](../crates/claude-code-rs/src/engine/lifecycle/deps.rs) | 已实现 | hooks 事件模型、`HookRunner` 接口、`PreToolUse` / `PostToolUse` / `PostToolUseFailure` / `PermissionRequest` / `PermissionDenied` / `Stop` 路径都已进入执行链路。 |
 | sandbox | [`crates/cc-config/src/settings.rs`](../crates/cc-config/src/settings.rs), [`crates/cc-sandbox/src/lib.rs`](../crates/cc-sandbox/src/lib.rs), [`crates/cc-sandbox/src/availability.rs`](../crates/cc-sandbox/src/availability.rs), [`crates/claude-code-rs/src/tools/exec/bash.rs`](../crates/claude-code-rs/src/tools/exec/bash.rs), [`crates/claude-code-rs/src/tools/exec/powershell.rs`](../crates/claude-code-rs/src/tools/exec/powershell.rs), [`crates/claude-code-rs/src/tools/execution/security.rs`](../crates/claude-code-rs/src/tools/execution/security.rs) | 部分实现 | Linux/macOS shell 沙箱、网络/路径预检、`failIfUnavailable`、`allowUnsandboxedCommands`、`excludedCommands`、`allowedCommands` 权限桥、`/sandbox` 命令都在；Windows OS-level 沙箱未实现。 |
-| plan mode | [`crates/claude-code-rs/src/tools/plan_mode.rs`](../crates/claude-code-rs/src/tools/plan_mode.rs), [`crates/claude-code-rs/src/plan_workflow.rs`](../crates/claude-code-rs/src/plan_workflow.rs), [`crates/claude-code-rs/src/commands/plan.rs`](../crates/claude-code-rs/src/commands/plan.rs) | 部分实现 | 进入 / 退出 plan mode、`pre_plan_mode` 保存与恢复、`.cc-rust/plan.md` 与 `plan-workflow.json` 持久化、`/plan` 命令都存在；`allowedPrompts` 已接入确定性 Bash session allow 规则，但 Bun 的语义 classifier 仍未接通。 |
+| plan mode | [`crates/claude-code-rs/src/tools/plan_mode.rs`](../crates/claude-code-rs/src/tools/plan_mode.rs), [`crates/claude-code-rs/src/plan_workflow.rs`](../crates/claude-code-rs/src/plan_workflow.rs), [`crates/claude-code-rs/src/commands/plan.rs`](../crates/claude-code-rs/src/commands/plan.rs) | 部分实现 | 进入 / 退出 plan mode、`pre_plan_mode` 保存与恢复、`.cc-rust/plan.md` 与 `plan-workflow.json` 持久化、`/plan` 命令都存在；`allowedPrompts` 已接入 Bash pattern 与常见验证意图的确定性 session allow 规则，但 Bun 的 LLM 语义 classifier 仍未接通。 |
 
 ## 逐文档分析
 
@@ -82,11 +82,12 @@
 新增实现：
 
 - `ExitPlanModeTool` 已接受 `allowedPrompts: [{ tool: "Bash", prompt: "<pattern>" }]`，并在用户批准计划后把这些条目转成 session 级 allow 规则 `Bash(<pattern>)`，见 [`crates/claude-code-rs/src/tools/plan_mode.rs`](../crates/claude-code-rs/src/tools/plan_mode.rs)。
-- 新增单元测试覆盖 schema、非法 tool 拒绝、批准后写入 `plan_allowed_prompts` session rules，以及后续 `Bash(command="cargo test --all")` 命中 `Bash(cargo test*)` 自动放行。
+- `allowedPrompts` 现在也能把常见自然语言验证意图映射到窄的 Cargo 规则，例如 “run tests and lint” 会生成 `Bash(cargo test*)` 与 `Bash(cargo clippy*)`；显式 `prefix:` / glob / 常见命令 pattern 仍保持直通。
+- 新增单元测试覆盖 schema、非法 tool 拒绝、批准后写入 `plan_allowed_prompts` session rules、显式 pattern 直通、自然语言验证提示分类，以及后续 `Bash(command="cargo clippy --all-targets")` 命中 session allow 自动放行。
 
 仍保留的缺口：
 
-- Bun 文档中的 `allowedPrompts` 是语义 classifier 驱动，可以把 “run tests” 这类自然语言描述映射到后续 Bash 命令。cc-rust 当前实现是保守的确定性规则映射，只支持已有 permission matcher 能理解的 Bash pattern，例如 `cargo test*`、`prefix:cargo`。
+- Bun 文档中的 `allowedPrompts` 是完整语义 classifier 驱动。cc-rust 当前实现仍是保守的确定性分类器：已支持常见 Rust 验证意图和显式 Bash pattern，但还不是模型驱动的通用自然语言 classifier。
 
 ### Sandbox
 
@@ -137,7 +138,7 @@
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
 | Auto mode transcript classifier / 两阶段分类流水线 | 部分实现 | `PermissionMode::Auto` 和回退逻辑存在，但 Bun 的分类器闭环没有在 cc-rust 中完整落地，见 [`crates/cc-permissions/src/decision.rs:390-408`](../crates/cc-permissions/src/decision.rs) 与 [`crates/claude-code-rs/src/plan_workflow.rs:261-262`](../crates/claude-code-rs/src/plan_workflow.rs) 。 |
-| Plan mode `allowedPrompts` 语义允许列表 | 部分实现 | `ExitPlanModeTool` 现在接受 `allowedPrompts` 并在计划批准后写入 transient session allow 规则；仍未实现 Bun 的自然语言语义 classifier，只支持确定性 Bash pattern 映射，见 [`crates/claude-code-rs/src/tools/plan_mode.rs`](../crates/claude-code-rs/src/tools/plan_mode.rs) 。 |
+| Plan mode `allowedPrompts` 语义允许列表 | 部分实现 | `ExitPlanModeTool` 现在接受 `allowedPrompts` 并在计划批准后写入 transient session allow 规则；已支持常见验证提示到 Cargo allow 规则的确定性分类，仍未实现 Bun 的通用 LLM 语义 classifier，见 [`crates/claude-code-rs/src/tools/plan_mode.rs`](../crates/claude-code-rs/src/tools/plan_mode.rs) 。 |
 | Windows OS-level sandbox | 未实现 | Windows 分支在可用性探测里直接返回不可用，见 [`crates/cc-sandbox/src/availability.rs:120-128`](../crates/cc-sandbox/src/availability.rs) 。 |
 | `allowedCommands` 自动放行到 permission decision | 已实现 | workspace sandbox 中匹配的 Bash / PowerShell 命令已接到 central permission 和 reference tool pipeline；deny / ask / hook / Plan mode 不会被覆盖，见 [`crates/claude-code-rs/src/tools/execution/security.rs`](../crates/claude-code-rs/src/tools/execution/security.rs)、[`crates/claude-code-rs/src/engine/lifecycle/deps.rs`](../crates/claude-code-rs/src/engine/lifecycle/deps.rs)、[`crates/claude-code-rs/src/tools/execution/pipeline.rs`](../crates/claude-code-rs/src/tools/execution/pipeline.rs) 。 |
 
@@ -145,5 +146,5 @@
 
 1. 如果目标是继续向 Bun 对齐，下一步应处理 Windows OS-level sandbox；`allowedCommands` 到权限决策闭环已完成。
 2. 如果要补齐 Bun 的 Auto mode 语义，再单独接 transcript classifier 和危险权限剥离路径。
-3. 如果要补齐 Bun 的 plan mode 语义，继续为 `allowedPrompts` 增加自然语言 classifier；当前只完成确定性 Bash pattern session allow bridge。
+3. 如果要补齐 Bun 的 plan mode 语义，继续把 `allowedPrompts` 从常见验证提示扩展到通用 LLM 语义 classifier；当前只完成确定性 session allow bridge。
 4. Windows 若要支持 OS-level sandbox，需要单独立项；当前实现只能按“Rust-level policy checks only”理解。
