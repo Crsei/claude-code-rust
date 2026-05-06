@@ -199,6 +199,10 @@ pub async fn try_reactive_compact(
     messages: Vec<Message>,
     model: &str,
 ) -> Option<ReactiveCompactResult> {
+    if !crate::gates::CompactionFeatureGates::from_env().reactive_compact {
+        return None;
+    }
+
     let initial_tokens = tokens::estimate_messages_tokens(&messages);
     let target = (auto_compact::get_context_window_size(model) as f64 * 0.6) as u64;
 

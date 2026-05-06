@@ -52,6 +52,10 @@ pub fn session_memory_compact_with_config(
     session_memory_context: &str,
     config: &SessionMemoryCompactConfig,
 ) -> Option<SessionMemoryCompactResult> {
+    if !crate::gates::CompactionFeatureGates::from_env().session_memory_compact {
+        return None;
+    }
+
     let session_memory_context = session_memory_context.trim();
     if session_memory_context.is_empty() || messages.len() <= 1 {
         return None;

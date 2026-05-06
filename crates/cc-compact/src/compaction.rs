@@ -110,6 +110,10 @@ pub fn should_auto_compact(
     tracking: Option<&AutoCompactTracking>,
     snip_tokens_freed: u64,
 ) -> bool {
+    if !crate::gates::CompactionFeatureGates::from_env().auto_compact {
+        return false;
+    }
+
     // Recursion guard
     if query_source == "compact" || query_source == "session_memory" {
         return false;

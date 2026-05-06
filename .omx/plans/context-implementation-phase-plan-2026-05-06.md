@@ -20,7 +20,12 @@ Source map: `architecture/context-implementation-map.md`
   - Main submit flow now passes prebuilt relevant memory context into system prompt assembly and tracks surfaced memory identities in `AppState`.
   - Remaining advanced parity gap: model-assisted side-query recall is not enabled by default because it adds provider latency and failure modes.
   - Verification: `cargo test -p cc-session memdir::tests`, `cargo test -p claude-code-rs test_prebuilt_memory_context_overrides_full_memory_scan`, and `cargo test -p claude-code-rs test_session_memory_context_injection`.
-- Phase 3 - Compaction Parity And Partial Compact: pending.
+- Phase 3 - Compaction Parity And Partial Compact: completed on 2026-05-06.
+  - Decision artifact: `docs/archive/context-phase3-partial-compact-2026-05-06.md`.
+  - Added core `cc_compact::partial_compact` primitives for `up_to(anchor)` and `from(anchor)`, preserving tool_use/tool_result API invariants and CompactBoundary preserved-segment metadata.
+  - Added explicit `CompactionFeatureGates` for auto, reactive, session-memory, and partial compact lanes; defaults preserve existing behavior.
+  - Remaining gap: no command/UI anchor selection surface or Partial Compact resume/export e2e yet.
+  - Verification: `cargo test -p cc-compact partial_compact`, `cargo test -p cc-compact gates::tests`, and full `cargo test -p cc-compact`.
 - Phase 4 - End-To-End Context Verification: pending.
 
 ## Requirements Summary
