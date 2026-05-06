@@ -148,6 +148,23 @@ pub struct MessagesRequest {
     pub advisor_model: Option<String>,
 }
 
+/// Provider-level token count returned by an exact count endpoint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExactTokenCount {
+    pub input_tokens: u64,
+    pub provider: String,
+}
+
+pub(crate) fn build_anthropic_count_tokens_body(request: &MessagesRequest) -> Value {
+    let mut body = serde_json::to_value(request).unwrap_or_else(|_| serde_json::json!({}));
+    if let Value::Object(map) = &mut body {
+        map.remove("stream");
+        map.remove("max_tokens");
+        map.remove("advisor_model");
+    }
+    body
+}
+
 /// Return `true` when the given provider supports the advisor-model field.
 ///
 /// Only the Anthropic Messages API currently recognizes `advisor_model`.
@@ -360,6 +377,124 @@ impl ApiClient {
 
     pub fn new(config: ApiClientConfig) -> Self {
         Self::try_new(config).expect("invalid API client configuration")
+    }
+
+    pub fn supports_exact_token_count(&self) -> bool {
+        matches!(
+            self.config.provider,
+            ApiProvider::Anthropic { .. } | ApiProvider::Azure { .. } | ApiProvider::Google { .. }
+        )
+    }
+
+    /// Count input tokens with a provider endpoint when one is available.
+    ///
+    /// Unsupported providers return an error so callers can fall back to
+    /// `cc-utils`' heuristic report without adding provider coupling there.
+    pub async fn count_input_tokens_exact(
+        &self,
+        request: &MessagesRequest,
+    ) -> Result<ExactTokenCount> {
+        match &self.config.provider {
+            ApiProvider::Anthropic { api_key, base_url } => {
+                self.count_anthropic_input_tokens(
+                    api_key,
+                    base_url.as_deref().unwrap_or("https://api.anthropic.com"),
+                    request,
+                    "anthropic",
+                )
+                .await
+            }
+            ApiProvider::Azure { endpoint, api_key } => {
+                self.count_anthropic_input_tokens(api_key, endpoint, request, "azure")
+                    .await
+            }
+            ApiProvider::Google { api_key, base_url } => {
+                let input_tokens = crate::api::google_provider::google_count_tokens(
+                    &self.http, base_url, api_key, request,
+                )
+                .await?;
+                Ok(ExactTokenCount {
+                    input_tokens,
+                    provider: "google".to_string(),
+                })
+            }
+            provider => bail!(
+                "provider `{}` does not support exact token counting",
+                provider.langfuse_provider_name()
+            ),
+        }
+    }
+
+    pub async fn count_token_usage_exact(
+        &self,
+        request: &MessagesRequest,
+    ) -> Result<cc_utils::tokens::TokenUsageReport> {
+        let count = self.count_input_tokens_exact(request).await?;
+        Ok(cc_utils::tokens::token_usage_report_from_count(
+            count.input_tokens,
+            &request.model,
+            cc_utils::tokens::TokenCountMethod::ProviderExact,
+            Some(count.provider),
+        ))
+    }
+
+    async fn count_anthropic_input_tokens(
+        &self,
+        api_key: &str,
+        base_url: &str,
+        request: &MessagesRequest,
+        provider: &str,
+    ) -> Result<ExactTokenCount> {
+        use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+
+        #[derive(serde::Deserialize)]
+        struct CountTokensResponse {
+            input_tokens: u64,
+        }
+
+        let url = format!(
+            "{}/v1/messages/count_tokens",
+            base_url.trim_end_matches('/')
+        );
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
+        headers.insert(
+            "anthropic-beta",
+            HeaderValue::from_static("interleaved-thinking-2025-05-14,prompt-caching-2024-07-16,token-counting-2024-11-01"),
+        );
+        if let Ok(val) = HeaderValue::from_str(api_key) {
+            headers.insert("x-api-key", val);
+        }
+
+        let body = build_anthropic_count_tokens_body(request);
+        let response = self
+            .http
+            .post(&url)
+            .headers(headers)
+            .json(&body)
+            .send()
+            .await
+            .context("failed to send Anthropic count_tokens request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_default();
+            bail!(
+                "Anthropic count_tokens error (HTTP {}): {}",
+                status,
+                error_body
+            );
+        }
+
+        let parsed: CountTokensResponse = response
+            .json()
+            .await
+            .context("failed to parse Anthropic count_tokens response")?;
+        Ok(ExactTokenCount {
+            input_tokens: parsed.input_tokens,
+            provider: provider.to_string(),
+        })
     }
 
     /// Build the messages endpoint URL based on provider.

@@ -9,7 +9,11 @@ Source map: `architecture/context-implementation-map.md`
   - Decision artifact: `docs/archive/context-phase0-decisions-2026-05-06.md`.
   - New regression lock: `test_context_maps_are_metadata_not_prompt_sections` in `crates/claude-code-rs/src/engine/system_prompt.rs`.
   - Verification: targeted baseline tests for token usage, memory context, session-insights filtering, system prompt context metadata, and compaction pipeline.
-- Phase 1 - Exact Token Counting Path: pending.
+- Phase 1 - Exact Token Counting Path: completed on 2026-05-06.
+  - Provider matrix: `docs/archive/context-phase1-token-count-provider-matrix-2026-05-06.md`.
+  - Added `TokenCountMethod::ProviderExact`, provider metadata on `TokenUsageReport`, and an async exact-count path for Anthropic/Azure/Gemini.
+  - Exact count is currently diagnostics-only behind `CC_RUST_EXACT_TOKEN_DIAGNOSTICS=1`; auto-compact remains heuristic until the near-threshold fallback tests are implemented.
+  - Verification: targeted cc-utils token report test plus Anthropic body-shape, provider support matrix, and Gemini countTokens body-shape tests.
 - Phase 2 - Relevant Memory Recall: pending.
 - Phase 3 - Compaction Parity And Partial Compact: pending.
 - Phase 4 - End-To-End Context Verification: pending.

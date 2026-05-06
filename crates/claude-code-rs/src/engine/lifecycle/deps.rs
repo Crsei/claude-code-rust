@@ -241,6 +241,28 @@ impl QueryDeps for QueryEngineDeps {
         }
 
         let request = build_messages_request(&params);
+        if crate::api::client::is_env_truthy("CC_RUST_EXACT_TOKEN_DIAGNOSTICS")
+            && client.supports_exact_token_count()
+        {
+            match client.count_token_usage_exact(&request).await {
+                Ok(report) => {
+                    tracing::debug!(
+                        provider = report.provider.as_deref().unwrap_or("unknown"),
+                        input_tokens = report.estimated_tokens,
+                        context_window = report.context_window,
+                        threshold_tokens = report.threshold_tokens,
+                        over_threshold = report.over_threshold,
+                        "provider exact token diagnostics"
+                    );
+                }
+                Err(error) => {
+                    tracing::debug!(
+                        %error,
+                        "provider exact token diagnostics unavailable; continuing with request"
+                    );
+                }
+            }
+        }
         client.messages_stream(request).await
     }
 

@@ -83,7 +83,7 @@ struct GeminiUsage {
 /// - Gemini uses "model" role instead of "assistant"
 /// - System prompt goes in `system_instruction` field
 /// - Consecutive same-role messages must be merged (Gemini requires alternating turns)
-fn build_gemini_request(request: &MessagesRequest) -> Value {
+pub(crate) fn build_gemini_request(request: &MessagesRequest) -> Value {
     let mut contents: Vec<Value> = Vec::new();
     let mut tool_names_by_id = HashMap::<String, String>::new();
 
@@ -173,6 +173,12 @@ fn build_gemini_request(request: &MessagesRequest) -> Value {
     }
 
     body
+}
+
+pub(crate) fn build_gemini_count_tokens_request(request: &MessagesRequest) -> Value {
+    json!({
+        "generateContentRequest": build_gemini_request(request),
+    })
 }
 
 fn gemini_parts_from_user_content(
@@ -438,6 +444,51 @@ pub(crate) async fn google_stream(
 
     let stream = parse_gemini_sse_byte_stream(response.bytes_stream());
     Ok(Box::pin(stream))
+}
+
+/// Count input tokens using Gemini's `models.countTokens` endpoint.
+pub(crate) async fn google_count_tokens(
+    http: &reqwest::Client,
+    base_url: &str,
+    api_key: &str,
+    request: &MessagesRequest,
+) -> Result<u64> {
+    #[derive(Deserialize)]
+    struct CountTokensResponse {
+        #[serde(rename = "totalTokens")]
+        total_tokens: u64,
+    }
+
+    let url = format!(
+        "{}/models/{}:countTokens?key={}",
+        base_url.trim_end_matches('/'),
+        request.model,
+        api_key,
+    );
+    let body = build_gemini_count_tokens_request(request);
+    let response = http
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .context("failed to send Google Gemini countTokens request")?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_body = response.text().await.unwrap_or_default();
+        anyhow::bail!(
+            "Google Gemini countTokens error (HTTP {}): {}",
+            status,
+            error_body
+        );
+    }
+
+    let parsed: CountTokensResponse = response
+        .json()
+        .await
+        .context("failed to parse Google Gemini countTokens response")?;
+    Ok(parsed.total_tokens)
 }
 
 /// Parse a Gemini SSE byte stream into StreamEvent values.
@@ -754,6 +805,33 @@ mod tests {
         let body = build_gemini_request(&req);
         assert_eq!(
             body["system_instruction"]["parts"][0]["text"],
+            "Be helpful."
+        );
+    }
+
+    #[test]
+    fn test_build_gemini_count_tokens_request_wraps_generate_content_request() {
+        let req = MessagesRequest {
+            model: "gemini-2.0-flash".to_string(),
+            messages: vec![json!({"role": "user", "content": "Hello"})],
+            system: Some(vec![json!({"type": "text", "text": "Be helpful."})]),
+            max_tokens: 1024,
+            tools: None,
+            stream: true,
+            thinking: None,
+            tool_choice: None,
+            advisor_model: None,
+        };
+
+        let body = build_gemini_count_tokens_request(&req);
+
+        assert!(body.get("generateContentRequest").is_some());
+        assert_eq!(
+            body["generateContentRequest"]["contents"][0]["parts"][0]["text"],
+            "Hello"
+        );
+        assert_eq!(
+            body["generateContentRequest"]["system_instruction"]["parts"][0]["text"],
             "Be helpful."
         );
     }

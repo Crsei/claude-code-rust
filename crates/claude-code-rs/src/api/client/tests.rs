@@ -972,6 +972,68 @@ fn test_messages_request_with_thinking() {
 }
 
 #[test]
+fn test_anthropic_count_tokens_body_omits_generation_only_fields() {
+    let req = MessagesRequest {
+        model: "claude-sonnet-4-20250514".to_string(),
+        messages: vec![serde_json::json!({"role": "user", "content": "Hello"})],
+        system: Some(vec![
+            serde_json::json!({"type": "text", "text": "Be brief."}),
+        ]),
+        max_tokens: 1024,
+        tools: Some(vec![serde_json::json!({
+            "name": "Read",
+            "description": "",
+            "input_schema": {"type": "object"}
+        })]),
+        stream: true,
+        thinking: Some(serde_json::json!({"type": "enabled", "budget_tokens": 1024})),
+        tool_choice: None,
+        advisor_model: Some("advisor".to_string()),
+    };
+
+    let body = build_anthropic_count_tokens_body(&req);
+
+    assert_eq!(body["model"], "claude-sonnet-4-20250514");
+    assert_eq!(body["messages"][0]["content"], "Hello");
+    assert_eq!(body["system"][0]["text"], "Be brief.");
+    assert!(body.get("tools").is_some());
+    assert!(body.get("thinking").is_some());
+    assert!(body.get("stream").is_none());
+    assert!(body.get("max_tokens").is_none());
+    assert!(body.get("advisor_model").is_none());
+}
+
+#[test]
+fn test_exact_token_count_support_matrix() {
+    let anthropic = ApiClient::new(anthropic_config());
+    assert!(anthropic.supports_exact_token_count());
+
+    let google = ApiClient::new(ApiClientConfig {
+        provider: ApiProvider::Google {
+            api_key: "google-key".to_string(),
+            base_url: "https://generativelanguage.googleapis.com/v1beta".to_string(),
+        },
+        default_model: "gemini-2.0-flash".to_string(),
+        max_retries: 3,
+        timeout_secs: 60,
+    });
+    assert!(google.supports_exact_token_count());
+
+    let openai = ApiClient::new(ApiClientConfig {
+        provider: ApiProvider::OpenAiCompat {
+            name: "openai".to_string(),
+            api_key: "sk-test".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
+            default_model: "gpt-4o".to_string(),
+        },
+        default_model: "gpt-4o".to_string(),
+        max_retries: 3,
+        timeout_secs: 60,
+    });
+    assert!(!openai.supports_exact_token_count());
+}
+
+#[test]
 fn test_messages_request_advisor_model_serializes_when_set() {
     let req = MessagesRequest {
         model: "claude-sonnet-4-20250514".to_string(),

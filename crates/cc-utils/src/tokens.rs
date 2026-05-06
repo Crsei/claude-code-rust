@@ -34,9 +34,10 @@ const CHARS_PER_TOKEN: f64 = 4.0;
 /// Overhead tokens per message (role metadata, formatting, etc.).
 const MESSAGE_OVERHEAD_TOKENS: u64 = 4;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenCountMethod {
     Heuristic,
+    ProviderExact,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,6 +50,7 @@ pub struct TokenUsageReport {
     pub over_threshold: bool,
     pub count_method: TokenCountMethod,
     pub exact_count_available: bool,
+    pub provider: Option<String>,
 }
 
 /// Estimate token count for a string using the ~4 chars per token heuristic.
@@ -140,24 +142,45 @@ pub fn is_over_token_limit(messages: &[Message], model: &str) -> bool {
 /// mistake cc-rust's hot-path estimate for a provider-level countTokens result.
 pub fn estimate_context_usage(messages: &[Message], model: &str) -> TokenUsageReport {
     let estimated_tokens = estimate_messages_tokens(messages);
+    token_usage_report_from_count(
+        estimated_tokens,
+        model,
+        TokenCountMethod::Heuristic,
+        None::<String>,
+    )
+}
+
+/// Build a structured usage report from an already-computed token count.
+///
+/// Provider-backed callers use this after an exact count API returns. The
+/// existing heuristic path also funnels through here so threshold math stays
+/// identical across methods.
+pub fn token_usage_report_from_count(
+    token_count: u64,
+    model: &str,
+    count_method: TokenCountMethod,
+    provider: Option<impl Into<String>>,
+) -> TokenUsageReport {
     let context_window = get_context_window_size(model);
     let threshold_tokens = (context_window as f64 * 0.8) as u64;
-    let remaining_until_threshold = threshold_tokens.saturating_sub(estimated_tokens);
+    let remaining_until_threshold = threshold_tokens.saturating_sub(token_count);
     let utilization_ratio = if context_window == 0 {
         0.0
     } else {
-        estimated_tokens as f64 / context_window as f64
+        token_count as f64 / context_window as f64
     };
+    let exact_count_available = count_method == TokenCountMethod::ProviderExact;
 
     TokenUsageReport {
-        estimated_tokens,
+        estimated_tokens: token_count,
         context_window,
         threshold_tokens,
         remaining_until_threshold,
         utilization_ratio,
-        over_threshold: estimated_tokens > threshold_tokens,
-        count_method: TokenCountMethod::Heuristic,
-        exact_count_available: false,
+        over_threshold: token_count > threshold_tokens,
+        count_method,
+        exact_count_available,
+        provider: provider.map(Into::into),
     }
 }
 
@@ -279,5 +302,25 @@ mod tests {
         assert!(!report.over_threshold);
         assert_eq!(report.count_method, TokenCountMethod::Heuristic);
         assert!(!report.exact_count_available);
+        assert_eq!(report.provider, None);
+    }
+
+    #[test]
+    fn test_token_usage_report_from_provider_count_marks_exact() {
+        let report = token_usage_report_from_count(
+            160_001,
+            "claude-sonnet-4-20250514",
+            TokenCountMethod::ProviderExact,
+            Some("anthropic"),
+        );
+
+        assert_eq!(report.estimated_tokens, 160_001);
+        assert_eq!(report.context_window, 200_000);
+        assert_eq!(report.threshold_tokens, 160_000);
+        assert_eq!(report.remaining_until_threshold, 0);
+        assert!(report.over_threshold);
+        assert_eq!(report.count_method, TokenCountMethod::ProviderExact);
+        assert!(report.exact_count_available);
+        assert_eq!(report.provider.as_deref(), Some("anthropic"));
     }
 }
