@@ -13,17 +13,21 @@ It also fixes a concurrency issue found during final verification: same-process 
 - Kept the existing `.highwatermark.lock` file guard for cross-process protection.
 - Updated `docs/WORK_STATUS.md` to mark Tasks V2 as complete in the tool status table.
 - Recorded final verification evidence and unrelated blockers.
+- Added a narrow build-stability follow-up so clean verification checkouts are self-contained: the tracked tree now includes `model_registry.rs` and exports the already referenced execution sandbox helper.
 
 ## Verification
 
 - `rustfmt --edition 2021 --check crates\claude-code-rs\src\tools\tasks.rs` passed.
 - `cargo test -p claude-code-rs tools::tasks` passed: 58 passed.
 - `cargo test -p claude-code-rs teams::mailbox::tests::test_mark_all_as_read -- --nocapture` passed after the broad team-filter run exposed a one-off path race.
+- Clean-checkout verification at `e28da8e` passed `cargo test -p claude-code-rs tools::tasks`: 58 passed.
+- Clean-checkout verification at `e28da8e` passed `cargo test -p claude-code-rs team -- --test-threads=1`: 119 passed.
+- Clean-checkout verification at `e28da8e` passed `cargo build --release`.
 
 ## Blockers Outside This Phase
 
-- `cargo fmt --check` failed on unrelated dirty files: `crates/cc-session/src/memdir.rs` and `crates/cc-session/src/session_export/builders.rs`.
-- `cargo test -p claude-code-rs team -- --test-threads=1` and `cargo build --release` are currently blocked by unrelated in-progress MCP work in `crates/cc-mcp/src/client.rs`, including missing `SseConnectTarget`, `redact_url_for_log`, `connect_loopback_sse_stream`, `connect_remote_https_sse_stream`, `spawn_sse_reader`, and `receive_sse_endpoint`.
+- Clean-checkout `cargo fmt --check` still fails on pre-existing formatting drift outside the tools phase. Examples include `crates/cc-mcp/src/manager.rs`, `crates/cc-permissions/src/dangerous.rs`, `crates/cc-sandbox/src/policy.rs`, `crates/cc-services/src/session_memory.rs`, `crates/cc-session/src/memdir.rs`, and several API/UI files. The main worktree has overlapping dirty changes in these files, so this phase did not auto-format them.
+- The live dirty worktree can still be blocked by unrelated in-progress work. During final audit, `cargo test -p claude-code-rs tools::tasks` in the live tree failed before tests because dirty `crates/cc-mcp/src/lib.rs` referenced a missing `auth` module; the clean checkout at `e28da8e` passed the same tools test.
 
 ## Result
 
