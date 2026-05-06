@@ -32,6 +32,14 @@ pub struct SessionMemoryConfig {
     /// `None` disables age filtering.
     #[serde(default = "default_max_context_age_seconds")]
     pub max_context_age_seconds: Option<i64>,
+    /// Optional allowlist for tags injected back into context. When non-empty,
+    /// entries must contain at least one matching tag.
+    #[serde(default)]
+    pub context_include_tags: Vec<String>,
+    /// Optional denylist for tags injected back into context. Matching entries
+    /// are never injected, even if they also match the include list.
+    #[serde(default)]
+    pub context_exclude_tags: Vec<String>,
 }
 
 impl Default for SessionMemoryConfig {
@@ -42,6 +50,8 @@ impl Default for SessionMemoryConfig {
             max_entries: 50,
             min_messages_before_extract: 5,
             max_context_age_seconds: default_max_context_age_seconds(),
+            context_include_tags: Vec::new(),
+            context_exclude_tags: Vec::new(),
         }
     }
 }
@@ -208,6 +218,7 @@ impl SessionMemoryService {
                 Some(min) => entry.timestamp >= min,
                 None => true,
             })
+            .filter(|entry| entry_matches_context_tags(entry, &self.config))
             .take(limit)
             .cloned()
             .collect();
@@ -244,6 +255,24 @@ impl SessionMemoryService {
     }
 }
 
+fn entry_matches_context_tags(entry: &MemoryEntry, config: &SessionMemoryConfig) -> bool {
+    if !config.context_exclude_tags.is_empty()
+        && entry_has_any_tag(entry, &config.context_exclude_tags)
+    {
+        return false;
+    }
+
+    config.context_include_tags.is_empty() || entry_has_any_tag(entry, &config.context_include_tags)
+}
+
+fn entry_has_any_tag(entry: &MemoryEntry, expected: &[String]) -> bool {
+    entry.tags.iter().any(|tag| {
+        expected
+            .iter()
+            .any(|candidate| tag.eq_ignore_ascii_case(candidate))
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -259,6 +288,8 @@ mod tests {
             max_entries: 5,
             min_messages_before_extract: 3,
             max_context_age_seconds: default_max_context_age_seconds(),
+            context_include_tags: Vec::new(),
+            context_exclude_tags: Vec::new(),
         }
     }
 
@@ -392,6 +423,31 @@ mod tests {
         let ctx = svc.format_memory_context(5).unwrap();
         assert!(ctx.contains("recent insight"));
         assert!(!ctx.contains("old insight"));
+    }
+
+    #[test]
+    fn format_memory_context_applies_include_and_exclude_tags() {
+        let tmp = std::env::temp_dir().join("cc_rust_test_session_mem_tags");
+        let cfg = SessionMemoryConfig {
+            context_include_tags: vec!["decision".to_string()],
+            context_exclude_tags: vec!["noisy".to_string()],
+            ..test_config(&tmp)
+        };
+        let mut svc = SessionMemoryService::new(cfg);
+        svc.entries
+            .push(make_entry("1", "keep this decision", &["Decision"]));
+        svc.entries
+            .push(make_entry("2", "drop because no include tag", &["testing"]));
+        svc.entries.push(make_entry(
+            "3",
+            "drop because excluded wins",
+            &["decision", "noisy"],
+        ));
+
+        let ctx = svc.format_memory_context(5).unwrap();
+        assert!(ctx.contains("keep this decision"));
+        assert!(!ctx.contains("drop because no include tag"));
+        assert!(!ctx.contains("drop because excluded wins"));
     }
 
     #[test]
