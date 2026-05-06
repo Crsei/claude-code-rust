@@ -91,6 +91,7 @@ pub struct TaskCreateOptions {
     pub kind: Option<String>,
     pub parent_id: Option<String>,
     pub depends_on: Vec<String>,
+    pub owner: Option<String>,
     pub tool_use_id: Option<String>,
     pub agent_id: Option<String>,
     pub supervisor_id: Option<String>,
@@ -133,6 +134,7 @@ pub struct TaskEntry {
     pub output_truncated: bool,
     pub parent_id: Option<String>,
     pub depends_on: Vec<String>,
+    pub owner: Option<String>,
     pub tool_use_id: Option<String>,
     pub agent_id: Option<String>,
     pub supervisor_id: Option<String>,
@@ -204,11 +206,89 @@ impl TaskStatus {
         matches!(self, TaskStatus::Completed)
     }
 
+    fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            TaskStatus::Completed
+                | TaskStatus::Failed
+                | TaskStatus::Cancelled
+                | TaskStatus::Interrupted
+                | TaskStatus::Stopped
+        )
+    }
+
     fn is_active_for_output_wait(self) -> bool {
         matches!(
             self,
             TaskStatus::Pending | TaskStatus::InProgress | TaskStatus::Recoverable
         )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskClaimFailureReason {
+    TaskNotFound,
+    AlreadyClaimed,
+    AlreadyResolved,
+    Blocked,
+    AgentBusy,
+    OwnerRequired,
+}
+
+impl TaskClaimFailureReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            TaskClaimFailureReason::TaskNotFound => "task_not_found",
+            TaskClaimFailureReason::AlreadyClaimed => "already_claimed",
+            TaskClaimFailureReason::AlreadyResolved => "already_resolved",
+            TaskClaimFailureReason::Blocked => "blocked",
+            TaskClaimFailureReason::AgentBusy => "agent_busy",
+            TaskClaimFailureReason::OwnerRequired => "owner_required",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TaskClaimFailure {
+    reason: TaskClaimFailureReason,
+    owner: Option<String>,
+    blocked_by: Vec<String>,
+    busy_task_id: Option<String>,
+}
+
+impl TaskClaimFailure {
+    fn new(reason: TaskClaimFailureReason) -> Self {
+        Self {
+            reason,
+            owner: None,
+            blocked_by: Vec::new(),
+            busy_task_id: None,
+        }
+    }
+
+    fn with_owner(mut self, owner: String) -> Self {
+        self.owner = Some(owner);
+        self
+    }
+
+    fn with_blocked_by(mut self, blocked_by: Vec<String>) -> Self {
+        self.blocked_by = blocked_by;
+        self
+    }
+
+    fn with_busy_task_id(mut self, busy_task_id: String) -> Self {
+        self.busy_task_id = Some(busy_task_id);
+        self
+    }
+
+    fn to_json(&self) -> Value {
+        json!({
+            "reason": self.reason.as_str(),
+            "owner": self.owner.clone(),
+            "blocked_by": self.blocked_by.clone(),
+            "blockedBy": self.blocked_by.clone(),
+            "busy_task_id": self.busy_task_id.clone(),
+        })
     }
 }
 
@@ -290,6 +370,7 @@ impl TaskStore {
             output_truncated: false,
             parent_id: options.parent_id.filter(|s| !s.trim().is_empty()),
             depends_on: normalize_dependencies(options.depends_on),
+            owner: normalize_optional_string(options.owner),
             tool_use_id: normalize_optional_string(options.tool_use_id),
             agent_id: normalize_optional_string(options.agent_id),
             supervisor_id: normalize_optional_string(options.supervisor_id),
@@ -335,6 +416,69 @@ impl TaskStore {
         } else {
             None
         }
+    }
+
+    fn claim_task(
+        &self,
+        id: &str,
+        owner: &str,
+        check_agent_busy: bool,
+    ) -> std::result::Result<TaskEntry, TaskClaimFailure> {
+        let owner = owner.trim();
+        if owner.is_empty() {
+            return Err(TaskClaimFailure::new(TaskClaimFailureReason::OwnerRequired));
+        }
+
+        let mut tasks = self.tasks.lock();
+        let Some(snapshot) = tasks.get(id).cloned() else {
+            return Err(TaskClaimFailure::new(TaskClaimFailureReason::TaskNotFound));
+        };
+
+        if snapshot.status.is_terminal() {
+            return Err(TaskClaimFailure::new(
+                TaskClaimFailureReason::AlreadyResolved,
+            ));
+        }
+
+        if let Some(existing_owner) = snapshot.owner.as_deref() {
+            if existing_owner != owner {
+                return Err(
+                    TaskClaimFailure::new(TaskClaimFailureReason::AlreadyClaimed)
+                        .with_owner(existing_owner.to_string()),
+                );
+            }
+        }
+
+        let blocked_by = blocked_dependencies_with_tasks(&tasks, &snapshot);
+        if !blocked_by.is_empty() {
+            return Err(
+                TaskClaimFailure::new(TaskClaimFailureReason::Blocked).with_blocked_by(blocked_by)
+            );
+        }
+
+        if check_agent_busy {
+            if let Some(busy_task_id) = tasks
+                .values()
+                .find(|candidate| {
+                    candidate.id != snapshot.id
+                        && candidate.owner.as_deref() == Some(owner)
+                        && !candidate.status.is_terminal()
+                })
+                .map(|candidate| candidate.id.clone())
+            {
+                return Err(TaskClaimFailure::new(TaskClaimFailureReason::AgentBusy)
+                    .with_busy_task_id(busy_task_id));
+            }
+        }
+
+        let entry = tasks.get_mut(id).expect("snapshot came from task map");
+        entry.owner = Some(owner.to_string());
+        entry.status = TaskStatus::InProgress;
+        entry.updated_at = chrono::Utc::now().timestamp();
+        let cloned = entry.clone();
+        drop(tasks);
+        self.persist_entry(&cloned);
+        Ok(cloned)
     }
 
     /// Append output text to a task's retained log.
@@ -431,17 +575,7 @@ impl TaskStore {
 
     pub fn blocked_dependencies(&self, entry: &TaskEntry) -> Vec<String> {
         let tasks = self.tasks.lock();
-        entry
-            .depends_on
-            .iter()
-            .filter(|id| {
-                tasks
-                    .get(*id)
-                    .map(|dep| !dep.status.is_success())
-                    .unwrap_or(true)
-            })
-            .cloned()
-            .collect()
+        blocked_dependencies_with_tasks(&tasks, entry)
     }
 
     pub fn blocked_tasks(&self, entry: &TaskEntry) -> Vec<String> {
@@ -521,6 +655,7 @@ fn task_to_json(entry: &TaskEntry) -> Value {
         "blocked_by": blocked_by.clone(),
         "blockedBy": blocked_by,
         "blocks": blocked_tasks,
+        "owner": entry.owner,
         "tool_use_id": entry.tool_use_id,
         "agent_id": entry.agent_id,
         "supervisor_id": entry.supervisor_id,
@@ -578,6 +713,8 @@ struct PersistedTaskRecord {
     parent_id: Option<String>,
     #[serde(default, alias = "blocked_by", alias = "blockedBy")]
     depends_on: Vec<String>,
+    #[serde(default)]
+    owner: Option<String>,
     #[serde(default)]
     tool_use_id: Option<String>,
     #[serde(default)]
@@ -720,6 +857,7 @@ impl TaskRepository {
                         output_truncated: false,
                         parent_id: None,
                         depends_on: Vec::new(),
+                        owner: None,
                         tool_use_id: None,
                         agent_id: None,
                         supervisor_id: None,
@@ -784,6 +922,7 @@ impl TaskRepository {
             output_truncated: record.output_truncated || output_truncated_now,
             parent_id: record.parent_id.filter(|s| !s.trim().is_empty()),
             depends_on: normalize_dependencies(record.depends_on),
+            owner: normalize_optional_string(record.owner),
             tool_use_id: normalize_optional_string(record.tool_use_id),
             agent_id: normalize_optional_string(record.agent_id),
             supervisor_id: normalize_optional_string(record.supervisor_id),
@@ -896,6 +1035,7 @@ impl PersistedTaskRecord {
             output_truncated: entry.output_truncated,
             parent_id: entry.parent_id.clone(),
             depends_on: entry.depends_on.clone(),
+            owner: entry.owner.clone(),
             tool_use_id: entry.tool_use_id.clone(),
             agent_id: entry.agent_id.clone(),
             supervisor_id: entry.supervisor_id.clone(),
@@ -1042,6 +1182,23 @@ fn normalize_dependencies(depends_on: Vec<String>) -> Vec<String> {
         deps.push(dep.to_string());
     }
     deps
+}
+
+fn blocked_dependencies_with_tasks(
+    tasks: &HashMap<String, TaskEntry>,
+    entry: &TaskEntry,
+) -> Vec<String> {
+    entry
+        .depends_on
+        .iter()
+        .filter(|id| {
+            tasks
+                .get(*id)
+                .map(|dep| !dep.status.is_success())
+                .unwrap_or(true)
+        })
+        .cloned()
+        .collect()
 }
 
 fn highest_numeric_task_id(tasks: &HashMap<String, TaskEntry>) -> u64 {
@@ -1332,6 +1489,31 @@ fn maybe_link_plan_workflow_task(
     Ok(record)
 }
 
+fn task_update_owner(input: &Value, ctx: &ToolUseContext) -> String {
+    input
+        .get("owner")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|owner| !owner.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| {
+            ctx.agent_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|owner| !owner.is_empty())
+                .map(ToString::to_string)
+        })
+        .unwrap_or_else(|| ctx.session_id.clone())
+}
+
+fn task_update_check_agent_busy(input: &Value) -> bool {
+    input
+        .get("check_agent_busy")
+        .or_else(|| input.get("checkAgentBusy"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
 /// Read-only handle to the global task store, exposed for command surfaces
 /// (`/tasks`) that want to enumerate tool-driven tasks without running a
 /// tool call. The store is cheap to clone: all interior state is behind `Arc`.
@@ -1503,6 +1685,10 @@ impl Tool for TaskCreateTool {
                     "items": { "type": "string" },
                     "description": "Bun-compatible camelCase alias for depends_on"
                 },
+                "owner": {
+                    "type": "string",
+                    "description": "Optional owner that has claimed this task"
+                },
                 "tool_use_id": {
                     "type": "string",
                     "description": "Optional upstream tool use ID associated with this task"
@@ -1573,6 +1759,10 @@ impl Tool for TaskCreateTool {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         let depends_on = dependency_ids_from_input(&input);
+        let owner = input
+            .get("owner")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         let tool_use_id = input
             .get("tool_use_id")
             .and_then(|v| v.as_str())
@@ -1613,6 +1803,7 @@ impl Tool for TaskCreateTool {
         let has_options = kind.is_some()
             || parent_id.is_some()
             || !depends_on.is_empty()
+            || owner.is_some()
             || tool_use_id.is_some()
             || agent_id.is_some()
             || supervisor_id.is_some()
@@ -1632,6 +1823,7 @@ impl Tool for TaskCreateTool {
                     kind,
                     parent_id,
                     depends_on,
+                    owner,
                     tool_use_id,
                     agent_id,
                     supervisor_id,
@@ -1781,6 +1973,18 @@ impl Tool for TaskUpdateTool {
                     "type": "string",
                     "enum": ["pending", "in_progress", "completed", "failed", "cancelled", "recoverable", "interrupted"],
                     "description": "New status for the task"
+                },
+                "owner": {
+                    "type": "string",
+                    "description": "Agent or session owner used when claiming a task with status=in_progress"
+                },
+                "check_agent_busy": {
+                    "type": "boolean",
+                    "description": "When claiming, fail if the same owner already has another unfinished task"
+                },
+                "checkAgentBusy": {
+                    "type": "boolean",
+                    "description": "Bun-compatible camelCase alias for check_agent_busy"
                 }
             },
             "required": ["task_id", "status"]
@@ -1807,6 +2011,29 @@ impl Tool for TaskUpdateTool {
                 ..Default::default()
             });
         };
+
+        if status == TaskStatus::InProgress {
+            let owner = task_update_owner(&input, ctx);
+            let check_agent_busy = task_update_check_agent_busy(&input);
+            return match store().claim_task(id, &owner, check_agent_busy) {
+                Ok(entry) => Ok(ToolResult {
+                    data: json!({
+                        "task": task_to_json(&entry),
+                        "message": format!("Task '{}' claimed by {}", entry.subject, owner)
+                    }),
+                    new_messages: vec![],
+                    ..Default::default()
+                }),
+                Err(failure) => Ok(ToolResult {
+                    data: json!({
+                        "error": format!("Task claim failed: {}", failure.reason.as_str()),
+                        "claim": failure.to_json(),
+                    }),
+                    new_messages: vec![],
+                    ..Default::default()
+                }),
+            };
+        }
 
         match store().update_status(id, status) {
             Some(entry) => {
@@ -2032,6 +2259,7 @@ fn task_output_payload(entry: &TaskEntry, retrieval_status: TaskOutputRetrievalS
         "description": entry.description,
         "output": output.clone(),
         "subject": entry.subject,
+        "owner": entry.owner,
         "tool_use_id": entry.tool_use_id,
         "agent_id": entry.agent_id,
         "supervisor_id": entry.supervisor_id,
@@ -2053,6 +2281,7 @@ fn task_output_payload(entry: &TaskEntry, retrieval_status: TaskOutputRetrievalS
         // Legacy flat fields remain for existing callers.
         "task_id": entry.id,
         "subject": entry.subject,
+        "owner": entry.owner,
         "tool_use_id": entry.tool_use_id,
         "agent_id": entry.agent_id,
         "supervisor_id": entry.supervisor_id,
@@ -2282,6 +2511,7 @@ mod tests {
             output_truncated: false,
             parent_id: None,
             depends_on: Vec::new(),
+            owner: None,
             tool_use_id: None,
             agent_id: None,
             supervisor_id: None,
@@ -2502,6 +2732,57 @@ mod tests {
     }
 
     #[test]
+    fn test_task_claim_respects_dependencies_and_owner() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path());
+        let dep = store.create("dep", "");
+        let child = store.create_with_options(
+            "child",
+            "",
+            TaskCreateOptions {
+                depends_on: vec![dep.id.clone()],
+                ..TaskCreateOptions::default()
+            },
+        );
+
+        let blocked = store
+            .claim_task(&child.id, "agent-a", false)
+            .expect_err("unfinished dependency should block claim");
+        assert_eq!(blocked.reason, TaskClaimFailureReason::Blocked);
+        assert_eq!(blocked.blocked_by, vec![dep.id.clone()]);
+
+        store.update_status(&dep.id, TaskStatus::Completed);
+        let claimed = store.claim_task(&child.id, "agent-a", false).unwrap();
+        assert_eq!(claimed.status, TaskStatus::InProgress);
+        assert_eq!(claimed.owner.as_deref(), Some("agent-a"));
+
+        let other_owner = store
+            .claim_task(&child.id, "agent-b", false)
+            .expect_err("different owner should not steal claim");
+        assert_eq!(other_owner.reason, TaskClaimFailureReason::AlreadyClaimed);
+        assert_eq!(other_owner.owner.as_deref(), Some("agent-a"));
+    }
+
+    #[test]
+    fn test_task_claim_agent_busy_mode_allows_one_unfinished_task_per_owner() {
+        let (_tmp, store) = temp_store();
+        let first = store.create("first", "");
+        let second = store.create("second", "");
+
+        store.claim_task(&first.id, "agent-a", true).unwrap();
+        let busy = store
+            .claim_task(&second.id, "agent-a", true)
+            .expect_err("agent already owns an unfinished task");
+
+        assert_eq!(busy.reason, TaskClaimFailureReason::AgentBusy);
+        assert_eq!(busy.busy_task_id.as_deref(), Some(first.id.as_str()));
+
+        store.update_status(&first.id, TaskStatus::Completed);
+        let claimed = store.claim_task(&second.id, "agent-a", true).unwrap();
+        assert_eq!(claimed.owner.as_deref(), Some("agent-a"));
+    }
+
+    #[test]
     fn test_agent_metadata_roundtrip() {
         let tmp = tempfile::tempdir().unwrap();
         let store = TaskStore::with_dir(tmp.path());
@@ -2510,6 +2791,7 @@ mod tests {
             "metadata",
             TaskCreateOptions {
                 kind: Some("local_agent".to_string()),
+                owner: Some("agent-owner".to_string()),
                 agent_id: Some("agent-1".to_string()),
                 supervisor_id: Some("supervisor-1".to_string()),
                 isolation: Some("worktree".to_string()),
@@ -2521,9 +2803,11 @@ mod tests {
 
         let by_agent = store.get_by_agent_id("agent-1").unwrap();
         assert_eq!(by_agent.id, task.id);
+        assert_eq!(by_agent.owner.as_deref(), Some("agent-owner"));
 
         let restarted = TaskStore::with_dir(tmp.path());
         let restored = restarted.get_by_agent_id("agent-1").unwrap();
+        assert_eq!(restored.owner.as_deref(), Some("agent-owner"));
         assert_eq!(restored.supervisor_id.as_deref(), Some("supervisor-1"));
         assert_eq!(restored.isolation.as_deref(), Some("worktree"));
         assert_eq!(
@@ -2890,6 +3174,7 @@ mod tests {
             "depends_on",
             "blocked_by",
             "blockedBy",
+            "owner",
             "tool_use_id",
             "agent_id",
             "supervisor_id",
@@ -2916,6 +3201,15 @@ mod tests {
                 "background-pr",
             ]
         );
+    }
+
+    #[test]
+    fn test_task_update_schema_exposes_claim_controls() {
+        let schema = TaskUpdateTool.input_json_schema();
+        let props = &schema["properties"];
+        assert!(props.get("owner").is_some());
+        assert!(props.get("check_agent_busy").is_some());
+        assert!(props.get("checkAgentBusy").is_some());
     }
 
     #[test]
@@ -3123,6 +3417,7 @@ mod tests {
             "blocked_by": blocked_by.clone(),
             "blockedBy": blocked_by,
             "blocks": blocked_tasks,
+            "owner": entry.owner,
             "tool_use_id": entry.tool_use_id,
             "agent_id": entry.agent_id,
             "supervisor_id": entry.supervisor_id,
