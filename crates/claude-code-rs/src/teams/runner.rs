@@ -20,8 +20,8 @@ use super::protocol::{self, ProtocolMessage};
 use super::types::*;
 
 use crate::engine::lifecycle::QueryEngine;
-use crate::types::config::{QueryEngineConfig, QuerySource};
-use crate::types::tool::PermissionMode;
+use crate::types::config::{AgentContext, QueryEngineConfig, QuerySource};
+use crate::types::tool::{PermissionMode, QueryChainTracking};
 
 // ---------------------------------------------------------------------------
 // Spawn entry point
@@ -32,7 +32,10 @@ pub struct InProcessRunnerConfig {
     pub identity: TeammateIdentity,
     pub task_id: String,
     pub prompt: String,
+    pub agent_type: Option<String>,
     pub model: Option<String>,
+    pub system_prompt: Option<String>,
+    pub system_prompt_mode: Option<SystemPromptMode>,
     pub cwd: String,
     pub cancellation: tokio_util::sync::CancellationToken,
 }
@@ -87,12 +90,17 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
         );
 
         // Build a child QueryEngine
-        let child_tools = crate::tools::registry::get_all_tools();
+        let child_tools =
+            crate::tools::registry::get_tools_for_policy(tool_policy_for_teammate(
+                config.agent_type.as_deref(),
+            ));
+        let (custom_system_prompt, append_system_prompt) =
+            teammate_system_prompt_parts(config.system_prompt.clone(), config.system_prompt_mode);
         let engine_config = QueryEngineConfig {
             cwd: config.cwd.clone(),
             tools: child_tools,
-            custom_system_prompt: None,
-            append_system_prompt: None,
+            custom_system_prompt,
+            append_system_prompt,
             user_specified_model: config.model.clone(),
             fallback_model: None,
             max_turns: Some(100),
@@ -107,7 +115,24 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
             persist_session: false,
             resolved_model: None,
             auto_save_session: false,
-            agent_context: None,
+            agent_context: Some(AgentContext {
+                agent_id: identity.agent_id.clone(),
+                query_tracking: QueryChainTracking {
+                    chain_id: task_id.clone(),
+                    depth: 1,
+                },
+                langfuse_session_id: identity.parent_session_id.clone(),
+                agent_type: config.agent_type.clone(),
+                team_context: Some(cc_types::teams::TeamContext {
+                    team_name: identity.team_name.clone(),
+                    lead_agent_id: crate::teams::identity::lead_agent_id(&identity.team_name),
+                    self_agent_id: Some(identity.agent_id.clone()),
+                    self_agent_name: Some(identity.agent_name.clone()),
+                    is_leader: Some(false),
+                    self_agent_color: identity.color.clone(),
+                    ..Default::default()
+                }),
+            }),
         };
 
         let mut engine = QueryEngine::new(engine_config);
@@ -189,6 +214,29 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
         Ok(())
     })
     .await
+}
+
+fn tool_policy_for_teammate(agent_type: Option<&str>) -> crate::tools::registry::ToolPolicy {
+    match agent_type.map(|value| value.trim()) {
+        Some(agent_type) if agent_type.eq_ignore_ascii_case("worker") => {
+            crate::tools::registry::ToolPolicy::CoordinatorWorker
+        }
+        _ => crate::tools::registry::ToolPolicy::InProcessTeammate,
+    }
+}
+
+fn teammate_system_prompt_parts(
+    system_prompt: Option<String>,
+    mode: Option<SystemPromptMode>,
+) -> (Option<String>, Option<String>) {
+    let Some(prompt) = system_prompt.filter(|value| !value.trim().is_empty()) else {
+        return (None, None);
+    };
+
+    match mode.unwrap_or(SystemPromptMode::Append) {
+        SystemPromptMode::Replace => (Some(prompt), None),
+        SystemPromptMode::Append | SystemPromptMode::Default => (None, Some(prompt)),
+    }
 }
 
 async fn drive_engine_turn(
@@ -456,6 +504,28 @@ fn send_idle_notification(
 mod tests {
     use super::*;
 
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
     #[test]
     fn test_runner_config_creation() {
         let config = InProcessRunnerConfig {
@@ -469,7 +539,10 @@ mod tests {
             },
             task_id: "task-1".into(),
             prompt: "Do work".into(),
+            agent_type: Some("worker".into()),
             model: None,
+            system_prompt: None,
+            system_prompt_mode: None,
             cwd: "/tmp".into(),
             cancellation: tokio_util::sync::CancellationToken::new(),
         };
@@ -496,6 +569,143 @@ mod tests {
         assert!(formatted.starts_with("Team mailbox messages:"));
         assert!(formatted.contains("- Message from lead: first"));
         assert!(formatted.contains("- Message from reviewer: second"));
+    }
+
+    #[test]
+    fn teammate_tool_policy_uses_worker_boundary_for_worker_agent_type() {
+        assert_eq!(
+            tool_policy_for_teammate(Some("worker")),
+            crate::tools::registry::ToolPolicy::CoordinatorWorker
+        );
+        assert_eq!(
+            tool_policy_for_teammate(Some("teammate")),
+            crate::tools::registry::ToolPolicy::InProcessTeammate
+        );
+        assert_eq!(
+            tool_policy_for_teammate(None),
+            crate::tools::registry::ToolPolicy::InProcessTeammate
+        );
+    }
+
+    #[test]
+    fn teammate_system_prompt_parts_respects_prompt_mode() {
+        assert_eq!(
+            teammate_system_prompt_parts(
+                Some("worker prompt".into()),
+                Some(SystemPromptMode::Append)
+            ),
+            (None, Some("worker prompt".into()))
+        );
+        assert_eq!(
+            teammate_system_prompt_parts(
+                Some("worker prompt".into()),
+                Some(SystemPromptMode::Replace)
+            ),
+            (Some("worker prompt".into()), None)
+        );
+        assert_eq!(teammate_system_prompt_parts(None, None), (None, None));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn process_mailbox_collects_plain_messages_and_marks_them_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        mailbox::write_to_mailbox(
+            "worker",
+            TeammateMessage {
+                from: crate::teams::constants::TEAM_LEAD_NAME.into(),
+                text: "continue with tests".into(),
+                timestamp: "2026-05-06T00:00:00Z".into(),
+                read: false,
+                color: None,
+                summary: None,
+            },
+            "phase0",
+        )
+        .unwrap();
+
+        let actions = process_mailbox("worker", "phase0", "worker@phase0", "task-1").unwrap();
+
+        assert!(!actions.shutdown_requested);
+        assert_eq!(
+            actions.plain_messages,
+            vec![format!(
+                "Message from {}: continue with tests",
+                crate::teams::constants::TEAM_LEAD_NAME
+            )]
+        );
+        let inbox = mailbox::read_mailbox("worker", "phase0").unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert!(inbox[0].read);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn shutdown_request_auto_approves_and_marks_runner_for_shutdown() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        InProcessBackend::clear_registry();
+        InProcessBackend::register_task(InProcessTeammateTaskState {
+            id: "task-1".into(),
+            status: TaskStatus::Running,
+            identity: TeammateIdentity {
+                agent_id: "worker@phase0".into(),
+                agent_name: "worker".into(),
+                team_name: "phase0".into(),
+                color: None,
+                plan_mode_required: false,
+                parent_session_id: "session".into(),
+            },
+            prompt: "initial".into(),
+            model: None,
+            abort_handle: None,
+            cancellation_token: None,
+            awaiting_plan_approval: false,
+            permission_mode: PermissionMode::Default,
+            error: None,
+            pending_user_messages: vec![],
+            is_idle: false,
+            shutdown_requested: false,
+            last_reported_tool_count: 0,
+            last_reported_token_count: 0,
+        });
+        let raw = serde_json::json!({
+            "type": "shutdown_request",
+            "requestId": "shutdown-worker-1",
+            "from": crate::teams::constants::TEAM_LEAD_NAME,
+            "reason": "phase0 test",
+            "timestamp": "2026-05-06T00:00:00Z",
+        })
+        .to_string();
+        mailbox::write_to_mailbox(
+            "worker",
+            TeammateMessage {
+                from: crate::teams::constants::TEAM_LEAD_NAME.into(),
+                text: raw,
+                timestamp: "2026-05-06T00:00:00Z".into(),
+                read: false,
+                color: None,
+                summary: Some("shutdown".into()),
+            },
+            "phase0",
+        )
+        .unwrap();
+
+        let actions = process_mailbox("worker", "phase0", "worker@phase0", "task-1").unwrap();
+
+        assert!(actions.shutdown_requested);
+        let snapshot = InProcessBackend::task_snapshots().remove(0);
+        assert_eq!(snapshot.status, TaskStatus::Stopped);
+        let leader_inbox =
+            mailbox::read_mailbox(crate::teams::constants::TEAM_LEAD_NAME, "phase0").unwrap();
+        assert_eq!(leader_inbox.len(), 1);
+        assert_eq!(
+            leader_inbox[0].summary.as_deref(),
+            Some("Shutdown approved")
+        );
+        assert!(leader_inbox[0].text.contains("shutdown_approved"));
+        InProcessBackend::clear_registry();
     }
 
     #[test]

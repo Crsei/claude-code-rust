@@ -49,7 +49,7 @@ pub fn run_claude_in_chrome_mcp() -> ExitCode {
 /// language/style) without running the full Phase B pipeline.
 pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
     crate::plugins::init_plugins();
-    let tools = registry::get_all_tools();
+    let tools = registry::get_tools_for_active_session();
     let provider_default =
         crate::api::client::ApiClient::from_env().map(|c| c.config().default_model.clone());
     let model_owned = cli

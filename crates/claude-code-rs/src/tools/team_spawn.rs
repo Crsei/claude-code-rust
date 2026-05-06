@@ -50,6 +50,9 @@ struct TeamSpawnInput {
     /// Optional permission mode for the teammate. `plan` requires plan approval.
     #[serde(default)]
     mode: Option<String>,
+    /// Optional agent definition used for system prompt/tool policy.
+    #[serde(default)]
+    agent_type: Option<String>,
 }
 
 #[async_trait]
@@ -99,6 +102,10 @@ impl Tool for TeamSpawnTool {
                     "type": "string",
                     "enum": ["default", "auto", "bypass", "plan", "acceptEdits", "dontAsk"],
                     "description": "Optional permission mode for the teammate. Use \"plan\" to require plan approval before edits."
+                },
+                "agent_type": {
+                    "type": "string",
+                    "description": "Optional built-in or custom agent type for the teammate. Coordinator mode defaults to worker."
                 }
             },
             "required": ["name", "prompt"]
@@ -223,11 +230,19 @@ impl Tool for TeamSpawnTool {
         let agent_id = identity::format_agent_id(&params.name, &team_name);
         let now = chrono::Utc::now().timestamp();
         let plan_mode_required = team_spawn_plan_mode_required(params.mode.as_deref());
+        let agent_type = resolve_team_spawn_agent_type(params.agent_type.as_deref());
+        let system_prompt = agent_type
+            .as_deref()
+            .and_then(crate::ipc::builtin_agents::builtin_agent_prompt)
+            .map(ToOwned::to_owned);
+        let system_prompt_mode = system_prompt
+            .as_ref()
+            .map(|_| crate::teams::types::SystemPromptMode::Append);
 
         let new_member = TeamMember {
             agent_id: agent_id.clone(),
             name: params.name.clone(),
-            agent_type: Some("teammate".into()),
+            agent_type: agent_type.clone(),
             model: params.model.clone(),
             prompt: Some(params.prompt.clone()),
             color: Some(color.clone()),
@@ -253,10 +268,11 @@ impl Tool for TeamSpawnTool {
                 color: Some(color.clone()),
                 plan_mode_required,
                 prompt: params.prompt.clone(),
+                agent_type: agent_type.clone(),
                 cwd: cwd.clone(),
                 model: params.model.clone(),
-                system_prompt: None,
-                system_prompt_mode: None,
+                system_prompt,
+                system_prompt_mode,
                 worktree_path: None,
                 parent_session_id: ctx.session_id.clone(),
                 permissions: vec![],
@@ -287,6 +303,7 @@ impl Tool for TeamSpawnTool {
         let tc_task_id = task_id.clone();
         let tc_description = params.description.clone();
         let tc_freshly_created = freshly_created;
+        let tc_agent_type = agent_type.clone();
         (ctx.set_app_state)(Box::new(move |mut state| {
             let tc = state.team_context.get_or_insert_with(|| TeamContext {
                 team_name: tc_team_name.clone(),
@@ -316,7 +333,7 @@ impl Tool for TeamSpawnTool {
                 tc_agent_id.clone(),
                 TeammateInfo {
                     name: tc_agent_name.clone(),
-                    agent_type: Some("teammate".into()),
+                    agent_type: tc_agent_type.clone(),
                     color: Some(tc_color.clone()),
                     tmux_session_name: String::new(),
                     tmux_pane_id: String::new(),
@@ -348,6 +365,7 @@ impl Tool for TeamSpawnTool {
                 "color": color,
                 "backend": backend_type.to_string(),
                 "plan_mode_required": plan_mode_required,
+                "agent_type": agent_type,
                 "implicitly_created_team": freshly_created,
             }),
             new_messages: vec![],
@@ -377,6 +395,17 @@ fn team_spawn_plan_mode_required(mode: Option<&str>) -> bool {
         == PermissionMode::Plan
 }
 
+fn resolve_team_spawn_agent_type(explicit: Option<&str>) -> Option<String> {
+    explicit
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            crate::teams::coordinator::is_coordinator_mode_enabled().then(|| "worker".to_string())
+        })
+        .or_else(|| Some("teammate".to_string()))
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -384,6 +413,17 @@ fn team_spawn_plan_mode_required(mode: Option<&str>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::features::{self, FeatureFlags};
+    use crate::types::app_state::AppState;
+    use std::sync::Arc;
+
+    struct FeatureOverrideGuard;
+
+    impl Drop for FeatureOverrideGuard {
+        fn drop(&mut self) {
+            features::clear_runtime_override();
+        }
+    }
 
     #[test]
     fn input_json_schema_requires_name_and_prompt() {
@@ -419,5 +459,82 @@ mod tests {
         assert!(team_spawn_plan_mode_required(Some("read-only")));
         assert!(!team_spawn_plan_mode_required(None));
         assert!(!team_spawn_plan_mode_required(Some("acceptEdits")));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn agent_type_defaults_to_worker_only_in_coordinator_mode() {
+        let _guard = FeatureOverrideGuard;
+        features::set_runtime_override(FeatureFlags::all_disabled());
+        assert_eq!(
+            resolve_team_spawn_agent_type(None),
+            Some("teammate".to_string())
+        );
+        assert_eq!(
+            resolve_team_spawn_agent_type(Some(" reviewer ")),
+            Some("reviewer".to_string())
+        );
+
+        let mut flags = FeatureFlags::all_disabled();
+        flags.coordinator = true;
+        features::set_runtime_override(flags);
+        assert_eq!(
+            resolve_team_spawn_agent_type(None),
+            Some("worker".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_rejects_unsupported_backend() {
+        let tool = TeamSpawnTool;
+        let ctx = create_test_context();
+        let input = json!({
+            "name": "worker",
+            "prompt": "Investigate the issue",
+            "backend": "tmux",
+        });
+
+        match tool.validate_input(&input, &ctx).await {
+            ValidationResult::Error {
+                message,
+                error_code,
+            } => {
+                assert_eq!(error_code, 400);
+                assert!(message.contains("tmux"));
+                assert!(message.contains("not supported"));
+                assert!(message.contains("in-process"));
+            }
+            other => panic!("expected unsupported backend error, got {other:?}"),
+        }
+    }
+
+    fn create_test_context() -> ToolUseContext {
+        let (_tx, rx) = tokio::sync::watch::channel(false);
+        ToolUseContext {
+            options: ToolUseOptions {
+                debug: false,
+                main_loop_model: "test".into(),
+                verbose: false,
+                is_non_interactive_session: false,
+                custom_system_prompt: None,
+                append_system_prompt: None,
+                max_budget_usd: None,
+            },
+            abort_signal: rx,
+            read_file_state: FileStateCache::default(),
+            get_app_state: Arc::new(AppState::default),
+            set_app_state: Arc::new(|_| {}),
+            session_id: "test-session".to_string(),
+            langfuse_session_id: "test-session".to_string(),
+            messages: vec![],
+            agent_id: None,
+            agent_type: None,
+            query_tracking: None,
+            permission_callback: None,
+            ask_user_callback: None,
+            bg_agent_tx: None,
+            hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
+            command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
+        }
     }
 }

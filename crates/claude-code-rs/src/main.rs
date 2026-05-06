@@ -28,6 +28,7 @@ mod computer_use;
 // existing `crate::config::...` paths continue to resolve.
 use cc_config as config;
 mod engine;
+mod model_registry;
 // `keybindings` lives in its own crate (`cc-keybindings`). Re-alias at the
 // crate root so existing `crate::keybindings::...` paths continue to resolve.
 use cc_keybindings as keybindings;
@@ -373,7 +374,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // B.3: Register tools
     plugins::init_plugins();
-    let mut tools = registry::get_all_tools();
+    let mut tools = registry::get_tools_for_active_session();
     info!(count = tools.len(), "tools registered");
 
     // B.3b: Initialize plugin system

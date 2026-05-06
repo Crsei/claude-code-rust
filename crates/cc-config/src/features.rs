@@ -1,6 +1,7 @@
 //! Feature gate system for KAIROS and related features.
 //!
-//! Each feature is controlled by an environment variable (`FEATURE_*`).
+//! Each feature is controlled by an environment variable (`FEATURE_*`), with
+//! Agent Teams also honoring the upstream `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`.
 //! Dependency rules enforce that child features require their parent:
 //! - `kairos_brief`, `kairos_channels`, `kairos_push_notification`,
 //!   `kairos_github_webhooks` all require `kairos`.
@@ -9,7 +10,7 @@
 //! A global singleton [`FLAGS`] is lazily initialised from real env vars.
 //! Use [`enabled`] for quick queries from anywhere in the crate.
 
-use std::sync::LazyLock;
+use std::sync::{LazyLock, RwLock};
 
 // ---------------------------------------------------------------------------
 // Feature enum
@@ -27,6 +28,83 @@ pub enum Feature {
     Proactive,
     TeamMemory,
     SubagentDashboard,
+    AgentTeams,
+    Coordinator,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FeatureDescriptor {
+    pub feature: Feature,
+    pub env_var: &'static str,
+    pub label: &'static str,
+    pub description: &'static str,
+}
+
+const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
+    FeatureDescriptor {
+        feature: Feature::Kairos,
+        env_var: "FEATURE_KAIROS",
+        label: "kairos",
+        description: "assistant mode and KAIROS daemon gate",
+    },
+    FeatureDescriptor {
+        feature: Feature::KairosBrief,
+        env_var: "FEATURE_KAIROS_BRIEF",
+        label: "kairos_brief",
+        description: "BriefTool-only response mode",
+    },
+    FeatureDescriptor {
+        feature: Feature::KairosChannels,
+        env_var: "FEATURE_KAIROS_CHANNELS",
+        label: "kairos_channels",
+        description: "connected assistant channels",
+    },
+    FeatureDescriptor {
+        feature: Feature::KairosPushNotification,
+        env_var: "FEATURE_KAIROS_PUSH_NOTIFICATION",
+        label: "kairos_push_notification",
+        description: "assistant push notification commands",
+    },
+    FeatureDescriptor {
+        feature: Feature::KairosGithubWebhooks,
+        env_var: "FEATURE_KAIROS_GITHUB_WEBHOOKS",
+        label: "kairos_github_webhooks",
+        description: "KAIROS GitHub webhook integration",
+    },
+    FeatureDescriptor {
+        feature: Feature::Proactive,
+        env_var: "FEATURE_PROACTIVE",
+        label: "proactive",
+        description: "proactive tick and sleep tooling",
+    },
+    FeatureDescriptor {
+        feature: Feature::TeamMemory,
+        env_var: "FEATURE_TEAMMEM",
+        label: "team_memory",
+        description: "team memory scope and daemon proxy",
+    },
+    FeatureDescriptor {
+        feature: Feature::SubagentDashboard,
+        env_var: "FEATURE_SUBAGENT_DASHBOARD",
+        label: "subagent_dashboard",
+        description: "subagent dashboard companion",
+    },
+    FeatureDescriptor {
+        feature: Feature::AgentTeams,
+        env_var: "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
+        label: "agent_teams",
+        description: "experimental Agent Teams slash command/tooling",
+    },
+    FeatureDescriptor {
+        feature: Feature::Coordinator,
+        env_var: "CLAUDE_CODE_COORDINATOR_MODE",
+        label: "coordinator",
+        description: "coordinator mode prompt and orchestration gate",
+    },
+];
+
+pub fn feature_descriptors() -> &'static [FeatureDescriptor] {
+    FEATURE_DESCRIPTORS
 }
 
 // ---------------------------------------------------------------------------
@@ -34,7 +112,7 @@ pub enum Feature {
 // ---------------------------------------------------------------------------
 
 /// Resolved set of feature flags.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FeatureFlags {
     pub kairos: bool,
     pub kairos_brief: bool,
@@ -44,6 +122,8 @@ pub struct FeatureFlags {
     pub proactive: bool,
     pub team_memory: bool,
     pub subagent_dashboard: bool,
+    pub agent_teams: bool,
+    pub coordinator: bool,
 }
 
 impl FeatureFlags {
@@ -63,13 +143,16 @@ impl FeatureFlags {
 
         let read = |key: &str| -> bool {
             env.get(key)
-                .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true"))
+                .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
                 .unwrap_or(false)
         };
 
         let kairos = read("FEATURE_KAIROS");
         let team_memory = read("FEATURE_TEAMMEM");
         let subagent_dashboard = read("FEATURE_SUBAGENT_DASHBOARD");
+        let agent_teams =
+            read("FEATURE_AGENT_TEAMS") || read("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS");
+        let coordinator = read("CLAUDE_CODE_COORDINATOR_MODE");
         let mut kairos_brief = read("FEATURE_KAIROS_BRIEF");
         let mut kairos_channels = read("FEATURE_KAIROS_CHANNELS");
         let mut kairos_push_notification = read("FEATURE_KAIROS_PUSH_NOTIFICATION");
@@ -123,7 +206,30 @@ impl FeatureFlags {
             proactive,
             team_memory,
             subagent_dashboard,
+            agent_teams,
+            coordinator,
         }
+    }
+
+    /// Enable every known experimental gate for the current process.
+    pub fn all_enabled() -> Self {
+        Self {
+            kairos: true,
+            kairos_brief: true,
+            kairos_channels: true,
+            kairos_push_notification: true,
+            kairos_github_webhooks: true,
+            proactive: true,
+            team_memory: true,
+            subagent_dashboard: true,
+            agent_teams: true,
+            coordinator: true,
+        }
+    }
+
+    /// Disable every known experimental gate for the current process.
+    pub fn all_disabled() -> Self {
+        Self::default()
     }
 
     /// Query whether a specific [`Feature`] is enabled.
@@ -137,6 +243,8 @@ impl FeatureFlags {
             Feature::Proactive => self.proactive,
             Feature::TeamMemory => self.team_memory,
             Feature::SubagentDashboard => self.subagent_dashboard,
+            Feature::AgentTeams => self.agent_teams,
+            Feature::Coordinator => self.coordinator,
         }
     }
 }
@@ -147,10 +255,36 @@ impl FeatureFlags {
 
 /// Global feature flags initialised once from environment variables.
 pub static FLAGS: LazyLock<FeatureFlags> = LazyLock::new(FeatureFlags::from_env);
+static RUNTIME_OVERRIDE: LazyLock<RwLock<Option<FeatureFlags>>> =
+    LazyLock::new(|| RwLock::new(None));
 
 /// Convenience: query the global singleton for a specific feature.
 pub fn enabled(feature: Feature) -> bool {
-    FLAGS.is_enabled(feature)
+    current().is_enabled(feature)
+}
+
+/// Effective flags after applying any session-local runtime override.
+pub fn current() -> FeatureFlags {
+    runtime_override().unwrap_or_else(|| FLAGS.clone())
+}
+
+/// Session-local runtime override used by `/experimental`.
+pub fn runtime_override() -> Option<FeatureFlags> {
+    RUNTIME_OVERRIDE.read().ok().and_then(|guard| guard.clone())
+}
+
+/// Replace the session-local runtime override.
+pub fn set_runtime_override(flags: FeatureFlags) {
+    if let Ok(mut guard) = RUNTIME_OVERRIDE.write() {
+        *guard = Some(flags);
+    }
+}
+
+/// Return feature gates to their startup environment values.
+pub fn clear_runtime_override() {
+    if let Ok(mut guard) = RUNTIME_OVERRIDE.write() {
+        *guard = None;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +310,8 @@ mod tests {
         assert!(!f.kairos_github_webhooks);
         assert!(!f.proactive);
         assert!(!f.subagent_dashboard);
+        assert!(!f.agent_teams);
+        assert!(!f.coordinator);
     }
 
     #[test]
@@ -252,6 +388,32 @@ mod tests {
         assert!(f.is_enabled(Feature::KairosBrief));
         assert!(!f.is_enabled(Feature::KairosChannels));
         assert!(f.is_enabled(Feature::Proactive));
+    }
+
+    #[test]
+    fn agent_teams_reads_upstream_env_var() {
+        let f = flags(&[("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "yes")]);
+        assert!(f.agent_teams);
+        assert!(f.is_enabled(Feature::AgentTeams));
+    }
+
+    #[test]
+    fn coordinator_reads_upstream_env_var() {
+        let f = flags(&[("CLAUDE_CODE_COORDINATOR_MODE", "true")]);
+        assert!(f.coordinator);
+        assert!(f.is_enabled(Feature::Coordinator));
+    }
+
+    #[test]
+    fn all_enabled_covers_feature_descriptors() {
+        let f = FeatureFlags::all_enabled();
+        for descriptor in feature_descriptors() {
+            assert!(
+                f.is_enabled(descriptor.feature),
+                "{} should be enabled",
+                descriptor.label
+            );
+        }
     }
 
     #[test]

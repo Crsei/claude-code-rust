@@ -506,6 +506,11 @@ pub fn build_system_prompt_with_session_memory(
                         .to_string(),
                 )
             }),
+            uncached_section(
+                "coordinator_mode",
+                crate::teams::coordinator::coordinator_prompt_section,
+                "coordinator mode can be toggled for the current session",
+            ),
             cached_section("subsystem_status", build_subsystem_status_reminder),
         ];
 
@@ -747,6 +752,7 @@ fn build_subsystem_status_reminder() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::features::{self, FeatureFlags};
     use std::fs;
     use std::path::Path;
 
@@ -769,6 +775,15 @@ mod tests {
                 Some(value) => std::env::set_var(self.key, value),
                 None => std::env::remove_var(self.key),
             }
+        }
+    }
+
+    struct FeatureOverrideGuard;
+
+    impl Drop for FeatureOverrideGuard {
+        fn drop(&mut self) {
+            features::clear_runtime_override();
+            prompt_sections::clear_cache();
         }
     }
 
@@ -917,6 +932,33 @@ mod tests {
             !joined.contains("# Output Style"),
             "output style should be omitted when None"
         );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_coordinator_mode_injects_prompt_section_when_enabled() {
+        let _guard = FeatureOverrideGuard;
+        let mut flags = FeatureFlags::all_disabled();
+        flags.coordinator = true;
+        features::set_runtime_override(flags);
+        prompt_sections::clear_cache();
+
+        let (parts, _, _) = build_system_prompt(
+            None,
+            None,
+            &[],
+            "claude-sonnet-4-20250514",
+            "/tmp",
+            None,
+            None,
+            false,
+        );
+        let joined = parts.join("\n");
+
+        assert!(joined.contains("# Coordinator Mode"));
+        assert!(joined.contains("SendMessage"));
+        assert!(joined.contains("TaskList"));
+        assert!(joined.contains("TaskStop"));
     }
 
     #[test]

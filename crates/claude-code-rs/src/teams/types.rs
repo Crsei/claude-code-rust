@@ -152,6 +152,7 @@ pub struct TeammateSpawnConfig {
     pub color: Option<String>,
     pub plan_mode_required: bool,
     pub prompt: String,
+    pub agent_type: Option<String>,
     pub cwd: String,
     pub model: Option<String>,
     pub system_prompt: Option<String>,

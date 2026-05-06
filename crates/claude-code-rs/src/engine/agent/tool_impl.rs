@@ -39,8 +39,7 @@ impl Tool for AgentTool {
                 },
                 "model": {
                     "type": "string",
-                    "enum": ["sonnet", "opus", "haiku"],
-                    "description": "Optional model override for this agent"
+                    "description": "Optional model override for this agent. Recommended public aliases: SOTA, MOTA, FOTA; full model IDs are also accepted."
                 },
                 "run_in_background": {
                     "type": "boolean",
@@ -131,6 +130,7 @@ impl Tool for AgentTool {
                 "prompt": params.prompt.clone(),
                 "description": description,
                 "team": spawn_request.team_name,
+                "agent_type": params.subagent_type.clone(),
                 "model": teammate_model,
                 "color": agent_definition.as_ref().and_then(|definition| definition.color.clone()),
                 "mode": params.mode.clone(),
@@ -571,11 +571,13 @@ mod tests {
     fn test_schema_model_enum() {
         let tool = AgentTool;
         let schema = tool.input_json_schema();
-        let model_enum = schema["properties"]["model"]["enum"].as_array().unwrap();
-        let variants: Vec<&str> = model_enum.iter().map(|v| v.as_str().unwrap()).collect();
-        assert!(variants.contains(&"sonnet"));
-        assert!(variants.contains(&"opus"));
-        assert!(variants.contains(&"haiku"));
+        assert!(schema["properties"]["model"]["enum"].is_null());
+        let description = schema["properties"]["model"]["description"]
+            .as_str()
+            .unwrap();
+        assert!(description.contains("SOTA"));
+        assert!(description.contains("MOTA"));
+        assert!(description.contains("FOTA"));
     }
 
     #[test]

@@ -110,6 +110,34 @@ Do NOT edit files. Just read and report."#,
     color: Some("orange"),
 };
 
+const WORKER_AGENT: BuiltinAgent = BuiltinAgent {
+    name: "worker",
+    description: "Coordinator-mode worker for bounded implementation, investigation, or verification tasks assigned by the team lead.",
+    system_prompt: r#"You are a coordinator-mode worker. You receive bounded assignments from a team lead and complete only your assigned slice.
+
+Responsibilities:
+- Stay inside the assigned ownership scope.
+- Use Read, Glob, Grep, Bash, Edit, and Write as needed to complete the concrete task.
+- Use TaskList and TaskUpdate to inspect and report task state when the lead asks you to.
+- Use SendMessage for concise status, blockers, and handoff notes.
+- Do not spawn additional agents or create a parallel team unless the lead explicitly asks.
+
+When finished, report exactly what changed, what you verified, and any remaining risks."#,
+    tools: &[
+        "Glob",
+        "Grep",
+        "Read",
+        "Bash",
+        "Edit",
+        "Write",
+        "TodoWrite",
+        "TaskList",
+        "TaskUpdate",
+        "SendMessage",
+    ],
+    color: Some("green"),
+};
+
 const STATUSLINE_SETUP: BuiltinAgent = BuiltinAgent {
     name: "statusline-setup",
     description: "Configure the user's Claude Code status line setting. Use when the user wants to customize their status-line, set up a custom command, or troubleshoot the statusline.",
@@ -136,6 +164,7 @@ const BUILTINS: &[&BuiltinAgent] = &[
     &EXPLORE_AGENT,
     &PLAN_AGENT,
     &CODE_REVIEWER,
+    &WORKER_AGENT,
     &STATUSLINE_SETUP,
 ];
 
@@ -199,6 +228,7 @@ mod tests {
         assert!(names.contains(&"Explore"));
         assert!(names.contains(&"Plan"));
         assert!(names.contains(&"code-reviewer"));
+        assert!(names.contains(&"worker"));
         assert!(names.contains(&"statusline-setup"));
     }
 
@@ -231,5 +261,19 @@ mod tests {
         let prompt = builtin_agent_prompt("general-purpose").unwrap();
         assert!(prompt.contains("agent for Claude Code"));
         assert!(builtin_agent_prompt("does-not-exist").is_none());
+    }
+
+    #[test]
+    fn worker_builtin_has_coordinator_safe_tool_boundary() {
+        let worker = builtin_agent_entries()
+            .into_iter()
+            .find(|entry| entry.name == "worker")
+            .expect("worker built-in agent");
+
+        assert!(worker.system_prompt.contains("coordinator-mode worker"));
+        assert!(worker.tools.contains(&"SendMessage".to_string()));
+        assert!(worker.tools.contains(&"TaskUpdate".to_string()));
+        assert!(!worker.tools.contains(&"Agent".to_string()));
+        assert!(!worker.tools.contains(&"TeamSpawn".to_string()));
     }
 }

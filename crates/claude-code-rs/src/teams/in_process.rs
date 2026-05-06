@@ -301,7 +301,10 @@ impl TeammateExecutor for InProcessBackend {
             identity: identity.clone(),
             task_id: task_id.clone(),
             prompt: config.prompt.clone(),
+            agent_type: config.agent_type.clone(),
             model: config.model.clone(),
+            system_prompt: config.system_prompt.clone(),
+            system_prompt_mode: config.system_prompt_mode,
             cwd: config.cwd.clone(),
             cancellation: cancellation.clone(),
         };
@@ -450,18 +453,21 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_backend_type() {
         let backend = InProcessBackend::new();
         assert_eq!(backend.backend_type(), BackendType::InProcess);
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_is_available() {
         let backend = InProcessBackend::new();
         assert!(backend.is_available().await);
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_spawn_and_active() {
         setup();
         let backend = InProcessBackend::new();
@@ -471,6 +477,7 @@ mod tests {
             color: Some("blue".into()),
             plan_mode_required: false,
             prompt: "Do something".into(),
+            agent_type: None,
             cwd: ".".into(),
             model: None,
             system_prompt: None,
@@ -494,6 +501,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_kill() {
         setup();
         let backend = InProcessBackend::new();
@@ -503,6 +511,7 @@ mod tests {
             color: None,
             plan_mode_required: false,
             prompt: "p".into(),
+            agent_type: None,
             cwd: ".".into(),
             model: None,
             system_prompt: None,
@@ -524,12 +533,14 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_has_working_teammates_empty() {
         setup();
         assert!(!InProcessBackend::has_working_teammates());
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_kill_nonexistent() {
         setup();
         let backend = InProcessBackend::new();
@@ -537,6 +548,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn pending_messages_are_drained_once() {
         setup();
         InProcessBackend::register_task(InProcessTeammateTaskState {

@@ -92,6 +92,7 @@ pub mod voice_cmd;
 
 // Export
 pub mod audit_export;
+pub mod experimental;
 pub mod export;
 pub mod session_export;
 
@@ -373,6 +374,12 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec![],
             description: "Export conversation to Markdown (.md)".into(),
             handler: Box::new(export::ExportHandler),
+        },
+        Command {
+            name: "experimental".into(),
+            aliases: vec!["experiments".into(), "exp".into()],
+            description: "Inspect or override experimental feature gates".into(),
+            handler: Box::new(experimental::ExperimentalHandler),
         },
         Command {
             name: "audit-export".into(),
@@ -704,6 +711,7 @@ mod tests {
         assert!(names.contains(&"skills"));
         assert!(names.contains(&"mcp"));
         assert!(names.contains(&"plugin"));
+        assert!(names.contains(&"experimental"));
         assert!(names.contains(&"review"));
         assert!(names.contains(&"security-review"));
         assert!(names.contains(&"recap"));
@@ -754,6 +762,8 @@ mod tests {
         assert!(find_command("perms").is_some());
         assert!(find_command("br").is_some());
         assert!(find_command("gitbranch").is_some());
+        assert!(find_command("exp").is_some());
+        assert!(find_command("experiments").is_some());
         assert!(find_command("mem").is_some());
         // New aliases (issues #58, #60, #63).
         assert!(find_command("cron").is_some());

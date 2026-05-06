@@ -26,6 +26,21 @@ use super::web_search::WebSearchTool;
 use super::worktree::{EnterWorktreeTool, ExitWorktreeTool};
 use super::{exec, fs};
 
+/// Runtime tool visibility profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolPolicy {
+    /// Default interactive/session tool pool.
+    DefaultAgent,
+    /// Coordinator lead tool pool. The lead delegates via Agent, communicates
+    /// through mailboxes, and can inspect/stop worker tasks.
+    Coordinator,
+    /// Dedicated coordinator worker pool.
+    CoordinatorWorker,
+    /// Generic in-process teammate pool. This intentionally excludes internal
+    /// team orchestration tools so teammates cannot recursively coordinate.
+    InProcessTeammate,
+}
+
 /// Get all base tool instances.
 ///
 /// Corresponds to TypeScript: tools.ts `getAllBaseTools()`.
@@ -97,9 +112,80 @@ pub fn get_all_tools() -> Tools {
     tools
 }
 
+/// Get tools for the active top-level session.
+pub fn get_tools_for_active_session() -> Tools {
+    if crate::teams::coordinator::is_coordinator_mode_enabled() {
+        get_tools_for_policy(ToolPolicy::Coordinator)
+    } else {
+        get_tools_for_policy(ToolPolicy::DefaultAgent)
+    }
+}
+
+/// Get tools filtered for a concrete runtime policy.
+pub fn get_tools_for_policy(policy: ToolPolicy) -> Tools {
+    filter_tools_for_policy(get_all_tools(), policy)
+}
+
+/// Filter an existing tool set for a runtime policy.
+pub fn filter_tools_for_policy(tools: Tools, policy: ToolPolicy) -> Tools {
+    let Some(allowed) = allowed_tools_for_policy(policy) else {
+        return tools;
+    };
+    tools
+        .into_iter()
+        .filter(|tool| allowed.iter().any(|name| *name == tool.name()))
+        .collect()
+}
+
+fn allowed_tools_for_policy(policy: ToolPolicy) -> Option<&'static [&'static str]> {
+    match policy {
+        ToolPolicy::DefaultAgent => None,
+        ToolPolicy::Coordinator => Some(&[
+            "Agent",
+            "SendMessage",
+            "TaskList",
+            "TaskStop",
+            "subscribe_pr_activity",
+            "unsubscribe_pr_activity",
+        ]),
+        ToolPolicy::CoordinatorWorker => Some(&[
+            "Glob",
+            "Grep",
+            "Read",
+            "Bash",
+            "Edit",
+            "Write",
+            "TodoWrite",
+            "TaskList",
+            "TaskUpdate",
+            "SendMessage",
+        ]),
+        ToolPolicy::InProcessTeammate => Some(&[
+            "Glob",
+            "Grep",
+            "Read",
+            "Bash",
+            "Edit",
+            "Write",
+            "TodoWrite",
+            "TaskList",
+            "TaskUpdate",
+            "TaskOutput",
+            "SendMessage",
+        ]),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tool_names(tools: Tools) -> Vec<String> {
+        tools
+            .into_iter()
+            .map(|tool| tool.name().to_string())
+            .collect()
+    }
 
     #[test]
     fn test_get_all_tools_not_empty() {
@@ -151,5 +237,44 @@ mod tests {
                 tool.name()
             );
         }
+    }
+
+    #[test]
+    fn coordinator_policy_exposes_only_lead_orchestration_tools() {
+        let names = tool_names(get_tools_for_policy(ToolPolicy::Coordinator));
+
+        assert!(names.contains(&"Agent".to_string()));
+        assert!(names.contains(&"SendMessage".to_string()));
+        assert!(names.contains(&"TaskList".to_string()));
+        assert!(names.contains(&"TaskStop".to_string()));
+        assert!(!names.contains(&"Bash".to_string()));
+        assert!(!names.contains(&"Write".to_string()));
+        assert!(!names.contains(&"TeamSpawn".to_string()));
+    }
+
+    #[test]
+    fn worker_policy_removes_internal_orchestration_tools() {
+        let names = tool_names(get_tools_for_policy(ToolPolicy::CoordinatorWorker));
+
+        assert!(names.contains(&"Read".to_string()));
+        assert!(names.contains(&"Bash".to_string()));
+        assert!(names.contains(&"Write".to_string()));
+        assert!(names.contains(&"SendMessage".to_string()));
+        assert!(names.contains(&"TaskUpdate".to_string()));
+        assert!(!names.contains(&"Agent".to_string()));
+        assert!(!names.contains(&"TeamSpawn".to_string()));
+        assert!(!names.contains(&"TaskStop".to_string()));
+    }
+
+    #[test]
+    fn in_process_teammate_policy_can_report_but_not_spawn_agents() {
+        let names = tool_names(get_tools_for_policy(ToolPolicy::InProcessTeammate));
+
+        assert!(names.contains(&"SendMessage".to_string()));
+        assert!(names.contains(&"TaskList".to_string()));
+        assert!(names.contains(&"TaskUpdate".to_string()));
+        assert!(names.contains(&"TaskOutput".to_string()));
+        assert!(!names.contains(&"Agent".to_string()));
+        assert!(!names.contains(&"TeamSpawn".to_string()));
     }
 }

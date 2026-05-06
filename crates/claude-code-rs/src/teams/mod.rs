@@ -46,6 +46,7 @@
 pub mod backend;
 pub mod constants;
 pub mod context;
+pub mod coordinator;
 pub mod helpers;
 pub mod identity;
 pub mod in_process;
@@ -54,28 +55,25 @@ pub mod protocol;
 pub mod runner;
 pub mod types;
 
-use std::env;
-
 // ---------------------------------------------------------------------------
 // Feature gate
 // ---------------------------------------------------------------------------
 
-/// Check if Agent Teams is enabled via the upstream env-var switch.
+/// Check if Agent Teams is enabled via the upstream env-var switch or a
+/// session-local experimental override.
 ///
 /// True when `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is set to a truthy value
 /// ("1", "true", "yes"). This is the quick static check — call sites that
 /// also want to honor a runtime-created team should use
 /// [`is_agent_teams_active`] instead.
 ///
-/// Corresponds to TS: `isAgentSwarmsEnabled()` (no GrowthBook; env var only).
+/// Corresponds to TS: `isAgentSwarmsEnabled()` (no GrowthBook; env var gate).
 ///
 /// Kept on the public API for compat with the upstream check and for any
 /// caller that needs a non-context variant (e.g. startup-time decisions).
 #[allow(dead_code)]
 pub fn is_agent_teams_enabled() -> bool {
-    env::var(constants::AGENT_TEAMS_ENV_VAR)
-        .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes"))
-        .unwrap_or(false)
+    crate::config::features::enabled(crate::config::features::Feature::AgentTeams)
 }
 
 /// Check if Agent Teams is active in the given app state.

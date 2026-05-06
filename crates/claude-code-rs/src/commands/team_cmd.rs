@@ -291,6 +291,7 @@ async fn spawn(ctx: &mut CommandContext, rest: &str) -> String {
             color: Some(color.clone()),
             plan_mode_required: false,
             prompt: prompt.into(),
+            agent_type: Some("teammate".into()),
             cwd: cwd.clone(),
             model: None,
             system_prompt: None,
