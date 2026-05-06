@@ -9,6 +9,7 @@ use std::collections::HashSet;
 use cc_types::message::{ContentBlock, Message, MessageContent};
 use cc_utils::tokens;
 
+use super::compaction::{create_compact_boundary_with_preserved_segment, create_preserved_segment};
 use super::messages as compact_messages;
 
 #[derive(Debug, Clone)]
@@ -63,8 +64,8 @@ pub fn session_memory_compact_with_config(
         return None;
     }
 
-    let mut compacted = Vec::with_capacity(messages.len() - keep_start + 1);
-    compacted.push(compact_messages::create_user_message(
+    let mut compacted_without_boundary = Vec::with_capacity(messages.len() - keep_start + 1);
+    compacted_without_boundary.push(compact_messages::create_user_message(
         &format!(
             "<session_memory_compaction>\n\
              The earlier conversation was compacted using persisted session insights. \
@@ -76,12 +77,26 @@ pub fn session_memory_compact_with_config(
         ),
         true,
     ));
-    compacted.extend(messages[keep_start..].iter().cloned());
+    compacted_without_boundary.extend(messages[keep_start..].iter().cloned());
 
-    let post_tokens = tokens::estimate_messages_tokens(&compacted);
+    let post_tokens = tokens::estimate_messages_tokens(&compacted_without_boundary);
     if post_tokens >= pre_tokens {
         return None;
     }
+
+    let preserved_segment = create_preserved_segment(
+        compacted_without_boundary.first(),
+        compacted_without_boundary.get(1..).unwrap_or(&[]),
+    );
+    let boundary = create_compact_boundary_with_preserved_segment(
+        pre_tokens,
+        post_tokens,
+        Some(preserved_segment),
+    );
+
+    let mut compacted = Vec::with_capacity(compacted_without_boundary.len() + 1);
+    compacted.push(boundary);
+    compacted.append(&mut compacted_without_boundary);
 
     Some(SessionMemoryCompactResult {
         messages: compacted,
@@ -212,7 +227,9 @@ fn assistant_has_tool_use(message: &Message, expected_id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cc_types::message::{AssistantMessage, MessageContent, ToolResultContent, UserMessage};
+    use cc_types::message::{
+        AssistantMessage, MessageContent, SystemSubtype, ToolResultContent, UserMessage,
+    };
     use uuid::Uuid;
 
     fn make_user(text: &str) -> Message {
@@ -309,6 +326,28 @@ mod tests {
         assert!(rendered.contains("recent request"));
         assert!(!rendered.contains("old question 0"));
         assert!(result.tokens_freed > 0);
+
+        let Message::System(system) = &result.messages[0] else {
+            panic!("expected compact boundary");
+        };
+        let SystemSubtype::CompactBoundary {
+            compact_metadata: Some(metadata),
+        } = &system.subtype
+        else {
+            panic!("expected compact metadata");
+        };
+        let segment = metadata.preserved_segment.as_ref().unwrap();
+        assert_eq!(
+            segment.summary_message_uuid,
+            Some(result.messages[1].uuid().to_string())
+        );
+        assert_eq!(
+            segment.preserved_message_uuids,
+            result.messages[2..]
+                .iter()
+                .map(|message| message.uuid().to_string())
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
