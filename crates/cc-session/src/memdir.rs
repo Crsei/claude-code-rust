@@ -15,6 +15,11 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+pub const MEMORY_ENTRYPOINT_NAME: &str = "MEMORY.md";
+pub const MEMORY_ENTRYPOINT_MAX_LINES: usize = 200;
+pub const MEMORY_ENTRYPOINT_MAX_BYTES: usize = 25_000;
+const MEMORY_INDEX_HOOK_MAX_CHARS: usize = 150;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -104,6 +109,190 @@ fn key_to_filename(key: &str) -> String {
     format!("{}.json", sanitized)
 }
 
+fn memory_entrypoint_path(scope: MemoryScope, cwd: &Path) -> Result<PathBuf> {
+    Ok(memory_dir(scope, cwd)?.join(MEMORY_ENTRYPOINT_NAME))
+}
+
+fn one_line_hook(value: &str) -> String {
+    let hook = value
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("");
+    truncate_chars(hook, MEMORY_INDEX_HOOK_MAX_CHARS)
+}
+
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    let mut truncated = String::new();
+    for (idx, ch) in value.chars().enumerate() {
+        if idx >= max_chars {
+            truncated.push_str("...");
+            return truncated;
+        }
+        truncated.push(ch);
+    }
+    truncated
+}
+
+fn escape_markdown_link_text(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('[', "\\[")
+        .replace(']', "\\]")
+}
+
+fn memory_index_line(entry: &MemoryEntry) -> String {
+    let title = escape_markdown_link_text(&entry.key);
+    let filename = key_to_filename(&entry.key);
+    let hook = one_line_hook(&entry.value);
+    let category = entry.category.trim();
+
+    if category.is_empty() {
+        format!("- [{title}]({filename}) - {hook}")
+    } else {
+        format!("- [{title}]({filename}) - {category}: {hook}")
+    }
+}
+
+fn truncate_memory_index_content(content: &str) -> String {
+    let mut output = String::new();
+    let mut line_count = 0usize;
+    let mut byte_count = 0usize;
+    let mut truncated = false;
+
+    for line in content.lines() {
+        let separator_len = usize::from(!output.is_empty());
+        let next_len = separator_len + line.len();
+
+        if line_count >= MEMORY_ENTRYPOINT_MAX_LINES
+            || byte_count + next_len > MEMORY_ENTRYPOINT_MAX_BYTES
+        {
+            truncated = true;
+            break;
+        }
+
+        if separator_len == 1 {
+            output.push('\n');
+            byte_count += 1;
+        }
+        output.push_str(line);
+        byte_count += line.len();
+        line_count += 1;
+    }
+
+    if truncated {
+        append_memory_index_warning(output)
+    } else {
+        output
+    }
+}
+
+fn append_memory_index_warning(mut output: String) -> String {
+    let warning = "- [truncated] MEMORY.md exceeded cc-rust index limits.";
+    let separator_len = usize::from(!output.is_empty());
+    let line_count = output.lines().count();
+
+    if line_count < MEMORY_ENTRYPOINT_MAX_LINES
+        && output.len() + separator_len + warning.len() <= MEMORY_ENTRYPOINT_MAX_BYTES
+    {
+        if separator_len == 1 {
+            output.push('\n');
+        }
+        output.push_str(warning);
+        return output;
+    }
+
+    if let Some(last_break) = output.rfind('\n') {
+        let prefix = &output[..last_break];
+        let candidate = if prefix.is_empty() {
+            warning.to_string()
+        } else {
+            format!("{prefix}\n{warning}")
+        };
+        if candidate.lines().count() <= MEMORY_ENTRYPOINT_MAX_LINES
+            && candidate.len() <= MEMORY_ENTRYPOINT_MAX_BYTES
+        {
+            return candidate;
+        }
+    }
+
+    if warning.len() <= MEMORY_ENTRYPOINT_MAX_BYTES {
+        warning.to_string()
+    } else {
+        output
+    }
+}
+
+fn build_memory_index_from_entries(entries: &[MemoryEntry]) -> String {
+    let lines = entries
+        .iter()
+        .map(memory_index_line)
+        .collect::<Vec<_>>()
+        .join("\n");
+    truncate_memory_index_content(&lines)
+}
+
+pub fn build_memory_index(scope: MemoryScope, cwd: &Path) -> Result<String> {
+    let entries = list_memories(scope, cwd)?;
+    Ok(build_memory_index_from_entries(&entries))
+}
+
+pub fn read_memory_index(scope: MemoryScope, cwd: &Path) -> Result<Option<String>> {
+    let path = memory_entrypoint_path(scope, cwd)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let content = std::fs::read_to_string(&path)
+        .with_context(|| format!("Failed to read memory index: {}", path.display()))?;
+    Ok(Some(truncate_memory_index_content(&content)))
+}
+
+pub fn refresh_memory_index(scope: MemoryScope, cwd: &Path) -> Result<Option<PathBuf>> {
+    let dir = ensure_memory_dir(scope, cwd)?;
+    let path = dir.join(MEMORY_ENTRYPOINT_NAME);
+    let entries = list_memories(scope, cwd)?;
+
+    if entries.is_empty() {
+        if path.exists() {
+            std::fs::remove_file(&path)
+                .with_context(|| format!("Failed to remove memory index: {}", path.display()))?;
+        }
+        return Ok(None);
+    }
+
+    let index = build_memory_index_from_entries(&entries);
+    std::fs::write(&path, index)
+        .with_context(|| format!("Failed to write memory index: {}", path.display()))?;
+    Ok(Some(path))
+}
+
+fn format_memory_context_section(
+    title: &str,
+    scope: MemoryScope,
+    cwd: &Path,
+    memories: &[MemoryEntry],
+) -> String {
+    let mut section = format!("## {title}\n");
+
+    let index = read_memory_index(scope, cwd)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| build_memory_index_from_entries(memories));
+
+    if !index.trim().is_empty() {
+        section.push_str("### MEMORY.md Index\n");
+        section.push_str(index.trim_end());
+        section.push('\n');
+    }
+
+    for mem in memories {
+        section.push_str(&format!("- **{}**: {}\n", mem.key, mem.value));
+    }
+
+    section
+}
+
 // ---------------------------------------------------------------------------
 // CRUD operations
 // ---------------------------------------------------------------------------
@@ -144,6 +333,8 @@ pub fn write_memory(
     std::fs::write(&file_path, json)
         .with_context(|| format!("Failed to write memory file: {}", file_path.display()))?;
 
+    refresh_memory_index(scope, cwd)?;
+
     Ok(entry)
 }
 
@@ -168,6 +359,7 @@ pub fn delete_memory(key: &str, scope: MemoryScope, cwd: &Path) -> Result<bool> 
     if file_path.exists() {
         std::fs::remove_file(&file_path)
             .with_context(|| format!("Failed to delete memory: {}", file_path.display()))?;
+        refresh_memory_index(scope, cwd)?;
         Ok(true)
     } else {
         Ok(false)
@@ -251,22 +443,24 @@ pub fn build_memory_context_with(cwd: &Path, include_auto: bool) -> Result<Strin
     // Collect project memories
     if let Ok(project_mems) = list_memories(MemoryScope::Project, cwd) {
         if !project_mems.is_empty() {
-            let mut s = String::from("## Project Memories\n");
-            for mem in &project_mems {
-                s.push_str(&format!("- **{}**: {}\n", mem.key, mem.value));
-            }
-            sections.push(s);
+            sections.push(format_memory_context_section(
+                "Project Memories",
+                MemoryScope::Project,
+                cwd,
+                &project_mems,
+            ));
         }
     }
 
     // Collect global memories
     if let Ok(global_mems) = list_memories(MemoryScope::Global, cwd) {
         if !global_mems.is_empty() {
-            let mut s = String::from("## Global Memories\n");
-            for mem in &global_mems {
-                s.push_str(&format!("- **{}**: {}\n", mem.key, mem.value));
-            }
-            sections.push(s);
+            sections.push(format_memory_context_section(
+                "Global Memories",
+                MemoryScope::Global,
+                cwd,
+                &global_mems,
+            ));
         }
     }
 
@@ -276,11 +470,12 @@ pub fn build_memory_context_with(cwd: &Path, include_auto: bool) -> Result<Strin
     if cc_config::features::enabled(cc_config::features::Feature::TeamMemory) {
         if let Ok(team_mems) = list_memories(MemoryScope::Team, cwd) {
             if !team_mems.is_empty() {
-                let mut s = String::from("## Team Memories\n");
-                for mem in &team_mems {
-                    s.push_str(&format!("- **{}**: {}\n", mem.key, mem.value));
-                }
-                sections.push(s);
+                sections.push(format_memory_context_section(
+                    "Team Memories",
+                    MemoryScope::Team,
+                    cwd,
+                    &team_mems,
+                ));
             }
         }
     }
@@ -289,11 +484,12 @@ pub fn build_memory_context_with(cwd: &Path, include_auto: bool) -> Result<Strin
     if include_auto {
         if let Ok(auto_mems) = list_memories(MemoryScope::Auto, cwd) {
             if !auto_mems.is_empty() {
-                let mut s = String::from("## Auto Memories\n");
-                for mem in &auto_mems {
-                    s.push_str(&format!("- **{}**: {}\n", mem.key, mem.value));
-                }
-                sections.push(s);
+                sections.push(format_memory_context_section(
+                    "Auto Memories",
+                    MemoryScope::Auto,
+                    cwd,
+                    &auto_mems,
+                ));
             }
         }
     }
@@ -437,6 +633,70 @@ mod tests {
     }
 
     #[test]
+    fn test_write_memory_refreshes_memory_md_index() {
+        let cwd = make_temp_dir();
+
+        write_memory(
+            "rust-setup",
+            "cargo build\nsecond line should not be in the hook",
+            "dev",
+            MemoryScope::Project,
+            &cwd,
+        )
+        .unwrap();
+        write_memory(
+            "release-notes",
+            "ship notes",
+            "",
+            MemoryScope::Project,
+            &cwd,
+        )
+        .unwrap();
+
+        let index_path = memory_entrypoint_path(MemoryScope::Project, &cwd).unwrap();
+        let index = std::fs::read_to_string(index_path).unwrap();
+
+        assert!(index.contains("- [rust-setup](rust-setup.json) - dev: cargo build"));
+        assert!(index.contains("- [release-notes](release-notes.json) - ship notes"));
+        assert!(!index.contains("second line should not be in the hook"));
+
+        cleanup(&cwd);
+    }
+
+    #[test]
+    fn test_delete_memory_removes_empty_memory_md_index() {
+        let cwd = make_temp_dir();
+
+        write_memory("temp", "temporary", "notes", MemoryScope::Project, &cwd).unwrap();
+        let index_path = memory_entrypoint_path(MemoryScope::Project, &cwd).unwrap();
+        assert!(index_path.exists());
+
+        assert!(delete_memory("temp", MemoryScope::Project, &cwd).unwrap());
+        assert!(!index_path.exists());
+
+        cleanup(&cwd);
+    }
+
+    #[test]
+    fn test_memory_md_index_obeys_entrypoint_limits() {
+        let entries = (0..250)
+            .map(|idx| MemoryEntry {
+                key: format!("memory-{idx}"),
+                value: "x".repeat(300),
+                category: "project".to_string(),
+                created_at: "2026-05-06T00:00:00Z".to_string(),
+                updated_at: "2026-05-06T00:00:00Z".to_string(),
+            })
+            .collect::<Vec<_>>();
+
+        let index = build_memory_index_from_entries(&entries);
+
+        assert!(index.lines().count() <= MEMORY_ENTRYPOINT_MAX_LINES);
+        assert!(index.len() <= MEMORY_ENTRYPOINT_MAX_BYTES);
+        assert!(index.contains("[truncated]"));
+    }
+
+    #[test]
     fn test_build_memory_context_empty() {
         let cwd = make_temp_dir();
         let ctx = build_memory_context(&cwd).unwrap();
@@ -452,6 +712,8 @@ mod tests {
 
         let ctx = build_memory_context(&cwd).unwrap();
         assert!(ctx.contains("<memory-context>"));
+        assert!(ctx.contains("### MEMORY.md Index"));
+        assert!(ctx.contains("[pref](pref.json) - ui: dark mode"));
         assert!(ctx.contains("pref"));
         assert!(ctx.contains("dark mode"));
 
