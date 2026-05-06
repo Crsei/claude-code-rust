@@ -86,6 +86,11 @@ pub enum McpSubsystemEvent {
         server_name: String,
         resources: Vec<McpResourceInfo>,
     },
+    ChannelNotification {
+        server_name: String,
+        content: String,
+        meta: Value,
+    },
 }
 
 type EventCallback = Box<dyn Fn(McpSubsystemEvent) + Send + Sync>;

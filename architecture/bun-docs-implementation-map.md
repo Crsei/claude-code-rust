@@ -53,8 +53,8 @@
 | Context | `token-budget.mdx` | 部分实现 | 预算判断、续跑逻辑、环境变量覆盖和 `[1m]` 窗口解析存在；`TokenUsageReport` 已暴露启发式预算诊断，但仍不是 provider 级精确 token 统计。 |
 | Extensibility | `custom-agents.mdx` | 部分实现 | 定义、编辑、运行链路已通；安全边界主要依赖通用工具过滤与隔离。 |
 | Extensibility | `hooks.mdx` | 已实现 | hooks 配置、执行和权限联动已形成闭环。 |
-| Extensibility | `mcp-configuration.mdx` | 部分实现 | MCP 配置、发现、管理可用；stdio、本地 loopback HTTP SSE、manager 级 connect/disconnect/reconnect 与短指数退避重试已接入，远程 HTTPS / OAuth / HTTP / WS 仍不完整。 |
-| Extensibility | `mcp-protocol.mdx` | 部分实现 | JSON-RPC stdio 主路径、本地 loopback SSE endpoint / POST 通道和 manager 级短退避重试存在；认证和完整 remote transport 覆盖仍不完整。 |
+| Extensibility | `mcp-configuration.mdx` | 部分实现 | MCP 配置、发现、管理可用；stdio、本地 loopback HTTP SSE、manager 级 connect/disconnect/reconnect、短指数退避重试与 channel notification 事件路由已接入，远程 HTTPS / OAuth / HTTP / WS 仍不完整。 |
+| Extensibility | `mcp-protocol.mdx` | 部分实现 | JSON-RPC stdio 主路径、本地 loopback SSE endpoint / POST 通道、`notifications/claude/channel` 路由和 manager 级短退避重试存在；认证和完整 remote transport 覆盖仍不完整。 |
 | Extensibility | `skills.mdx` | 已实现 | skills frontmatter、加载、注册、调用、fork 执行与命令入口已形成闭环。 |
 | Safety | `auto-mode.mdx` | 部分实现 | `PermissionMode::Auto` 与 fallback 存在；Bun 的 transcript / classifier 两阶段流程未完整落地。 |
 | Safety | `permission-model.mdx` | 已实现 | allow / ask / deny 规则、mode fallback、hook overlay、session grant 已落地。 |
@@ -81,7 +81,7 @@
 - Worktree isolation 已有核心隔离和清理，但 Bun 的 hook 驱动创建 / 销毁、目录布局和恢复流程没有一一对齐。
 - Context compaction、project memory、token budget 都已有主体能力，但 Partial Compact、provider 级 token 精确统计、Bun 智能记忆召回、近期工具去噪、已展示去重和封闭四类型分类法仍需补齐或明确裁剪；project memory 已有确定性 `MEMORY.md` 入口索引；token budget 已有结构化启发式诊断报告但 `exact_count_available=false`；session-insights 回注已支持 workspace、时间窗口、tag 和当前 session 排除过滤，生命周期抽取已改用确定性 helper；Microcompact Boundary 已记录就地工具结果压缩事件，preservedSegment 目前已覆盖手动 `/compact` boundary、Session Memory Compact boundary、自动模型摘要 boundary 以及内部 snip/context-collapse boundary。
 - Custom agents 已可定义、编辑、运行，但独立安全边界不如 hooks / skills 明确。
-- MCP 当前已有 stdio JSON-RPC、本地 loopback HTTP SSE 主路径、manager 级 reconnect API 与短指数退避重试；上层 `/mcp reconnect` 接线、远程 HTTPS SSE、OAuth、长线自动重连和完整 transport 矩阵仍不完整。
+- MCP 当前已有 stdio JSON-RPC、本地 loopback HTTP SSE 主路径、channel notification 事件路由、manager 级 reconnect API 与短指数退避重试；上层 `/mcp reconnect` 接线、远程 HTTPS SSE、OAuth、长线自动重连和完整 transport 矩阵仍不完整。
 - Auto mode 缺少 Bun 的 transcript / classifier 两阶段流程。
 - Plan mode 已补入 `allowedPrompts` 输入、session allow bridge 和常见验证意图分类；仍缺 Bun 的通用 LLM 语义 classifier。
 - Windows OS-level sandbox 未实现；当前 Windows 侧主要是 Rust-level policy checks。
@@ -130,3 +130,4 @@
 | 2026-05-06 | Extensibility / MCP manager retry backoff | 已完成 manager 级短指数退避重试；上层 reconnect 接线与长线断线恢复仍部分实现 | `crates/cc-mcp/src/manager.rs` 在 `connect_server()` 内通过 `connect_ready_client_with_retries()` 对连接/初始化失败重试 3 次，退避 50/100/200ms 并封顶 250ms | `cargo test -p cc-mcp manager -- --nocapture`，5 passed；`cargo test -p cc-mcp connect_retry_delay -- --nocapture`，1 passed；`cargo test -p cc-mcp --lib`，35 passed；`cargo check -p cc-mcp` |
 | 2026-05-06 | Context / Token usage report | 已完成结构化启发式 token 预算诊断；provider 级精确 `countTokens` 仍部分实现 | `crates/cc-utils/src/tokens.rs` 增加 `TokenUsageReport` / `TokenCountMethod` 与 `estimate_context_usage()`，报告估算量、窗口、阈值、剩余量、利用率、超阈值状态，并显式标记 `exact_count_available=false` | `cargo test -p cc-utils tokens -- --nocapture`，12 passed；`cargo check -p cc-utils`；`cargo check -p claude-code-rs` |
 | 2026-05-06 | Context / Memory entrypoint index | 已完成确定性 `MEMORY.md` 入口索引；Sonnet 智能召回与封闭四类型分类法仍部分实现 | `crates/cc-session/src/memdir.rs` 写入/删除记忆时刷新 `MEMORY.md`，索引限制 200 行 / 25KB 并在 `<memory-context>` 每个非空 scope 前注入 `### MEMORY.md Index` | `cargo test -p cc-session memdir -- --nocapture`，15 passed；`cargo test -p cc-session --lib`，71 passed；`cargo check -p cc-session`；`cargo check -p claude-code-rs` |
+| 2026-05-06 | Extensibility / MCP channel notifications | 已完成 `notifications/claude/channel` 事件路由；完整远程 transport / auth 仍部分实现 | `crates/cc-mcp/src/transport.rs` 在 stdio 与 SSE notification 路径解析 channel payload，`cc-mcp/src/lib.rs` 增加 `McpSubsystemEvent::ChannelNotification`，`ipc/runtime.rs` 适配为 `McpEvent::ChannelNotification` | `cargo test -p cc-mcp notification_event -- --nocapture`，3 passed；`cargo test -p cc-mcp --lib`，38 passed；`cargo check -p cc-mcp`；`cargo check -p claude-code-rs` |

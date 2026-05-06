@@ -134,6 +134,17 @@ impl HeadlessRuntime {
                             .collect(),
                     },
                 ),
+                cc_mcp::McpSubsystemEvent::ChannelNotification {
+                    server_name,
+                    content,
+                    meta,
+                } => super::subsystem_events::SubsystemEvent::Mcp(
+                    super::subsystem_events::McpEvent::ChannelNotification {
+                        server_name,
+                        content,
+                        meta,
+                    },
+                ),
             };
             let _ = mcp_tx.send(adapted);
         });

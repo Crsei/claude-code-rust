@@ -6,17 +6,18 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde_json::Value;
 
 type PendingRequest = oneshot::Sender<Result<Value>>;
 type PendingRequests = Arc<Mutex<HashMap<u64, PendingRequest>>>;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::TcpStream;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{Mutex, oneshot};
 use tracing::{debug, info, warn};
 
-use super::JsonRpcResponse;
+use super::channel::parse_channel_notification;
+use super::{JsonRpcResponse, McpSubsystemEvent};
 
 /// Background task that reads JSON-RPC responses from the MCP server's stdout.
 ///
@@ -56,11 +57,7 @@ pub(crate) async fn reader_loop(
                                 } else if let Some(method) =
                                     val.get("method").and_then(|m| m.as_str())
                                 {
-                                    debug!(
-                                        server = %server_name,
-                                        method = method,
-                                        "MCP: received server notification"
-                                    );
+                                    handle_json_notification(&server_name, method, &val);
                                 } else {
                                     debug!(
                                         server = %server_name,
@@ -214,11 +211,7 @@ async fn handle_sse_event(
                             "MCP: received malformed SSE response"
                         );
                     } else if let Some(method) = val.get("method").and_then(|m| m.as_str()) {
-                        debug!(
-                            server = %server_name,
-                            method = method,
-                            "MCP: received SSE server notification"
-                        );
+                        handle_json_notification(server_name, method, &val);
                     } else {
                         debug!(
                             server = %server_name,
@@ -244,6 +237,39 @@ async fn handle_sse_event(
             );
         }
     }
+}
+
+fn handle_json_notification(server_name: &str, method: &str, value: &Value) {
+    if let Some(event) = notification_event(server_name, value) {
+        debug!(
+            server = %server_name,
+            method = method,
+            "MCP: routed server notification"
+        );
+        super::emit_event(event);
+        return;
+    }
+
+    debug!(
+        server = %server_name,
+        method = method,
+        "MCP: received server notification"
+    );
+}
+
+pub(crate) fn notification_event(server_name: &str, value: &Value) -> Option<McpSubsystemEvent> {
+    let method = value.get("method").and_then(|m| m.as_str())?;
+    if method != "notifications/claude/channel" {
+        return None;
+    }
+
+    let params = value.get("params").unwrap_or(&Value::Null);
+    let notification = parse_channel_notification(params)?;
+    Some(McpSubsystemEvent::ChannelNotification {
+        server_name: server_name.to_string(),
+        content: notification.content,
+        meta: notification.meta,
+    })
 }
 
 /// Dispatch a parsed JSON-RPC response to the corresponding pending request.
@@ -284,5 +310,59 @@ pub(crate) async fn dispatch_response(
             id = id,
             "MCP: received response for unknown request id"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn notification_event_routes_channel_notification() {
+        let value = json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/claude/channel",
+            "params": {
+                "content": "Build finished",
+                "meta": {"priority": "normal"}
+            }
+        });
+
+        let event = notification_event("server-a", &value).unwrap();
+        match event {
+            McpSubsystemEvent::ChannelNotification {
+                server_name,
+                content,
+                meta,
+            } => {
+                assert_eq!(server_name, "server-a");
+                assert_eq!(content, "Build finished");
+                assert_eq!(meta["priority"], "normal");
+            }
+            other => panic!("unexpected event: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn notification_event_ignores_non_channel_notifications() {
+        let value = json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/progress",
+            "params": {"content": "ignored"}
+        });
+
+        assert!(notification_event("server-a", &value).is_none());
+    }
+
+    #[test]
+    fn notification_event_rejects_malformed_channel_payload() {
+        let value = json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/claude/channel",
+            "params": {"content": 42}
+        });
+
+        assert!(notification_event("server-a", &value).is_none());
     }
 }
