@@ -127,6 +127,24 @@ struct TaskUpdateFields {
     add_blocked_by: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnassignedTaskSummary {
+    pub id: String,
+    pub subject: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnassignTeammateTasksResult {
+    pub unassigned_tasks: Vec<UnassignedTaskSummary>,
+    pub notification_message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TeammateTaskExitReason {
+    Terminated,
+    Shutdown,
+}
+
 /// A process-local handle used to cancel active task execution.
 #[derive(Debug, Clone)]
 pub struct TaskRuntimeHandle {
@@ -667,6 +685,43 @@ impl TaskStore {
         }
         self.replace_tasks(tasks);
         removed
+    }
+
+    fn unassign_teammate_tasks(
+        &self,
+        teammate_id: &str,
+        teammate_name: &str,
+    ) -> Vec<UnassignedTaskSummary> {
+        let _guard = self.acquire_task_list_lock("unassign teammate tasks").ok();
+        let mut tasks = if _guard.is_some() {
+            self.load_repository_tasks()
+        } else {
+            self.tasks.lock().clone()
+        };
+        let now = chrono::Utc::now().timestamp();
+        let mut changed = Vec::new();
+        for entry in tasks.values_mut() {
+            let owner_matches = entry.owner.as_deref() == Some(teammate_id)
+                || entry.owner.as_deref() == Some(teammate_name);
+            if owner_matches && !entry.status.is_terminal() {
+                entry.owner = None;
+                entry.status = TaskStatus::Pending;
+                entry.updated_at = now;
+                changed.push(entry.clone());
+            }
+        }
+
+        for entry in &changed {
+            self.persist_entry(entry);
+        }
+        self.replace_tasks(tasks);
+        changed
+            .into_iter()
+            .map(|entry| UnassignedTaskSummary {
+                id: entry.id,
+                subject: entry.subject,
+            })
+            .collect()
     }
 
     pub fn stop(&self, id: &str) -> Option<TaskEntry> {
@@ -1854,6 +1909,37 @@ fn store_for_context(ctx: &ToolUseContext) -> TaskStore {
 
 fn store() -> TaskStore {
     task_store_for_task_list_id(DEFAULT_TASK_LIST_ID)
+}
+
+pub fn unassign_teammate_tasks(
+    task_list_id: &str,
+    teammate_id: &str,
+    teammate_name: &str,
+    reason: TeammateTaskExitReason,
+) -> UnassignTeammateTasksResult {
+    let task_store = task_store_for_task_list_id(task_list_id);
+    let unassigned_tasks = task_store.unassign_teammate_tasks(teammate_id, teammate_name);
+    let action = match reason {
+        TeammateTaskExitReason::Terminated => "was terminated",
+        TeammateTaskExitReason::Shutdown => "has shut down",
+    };
+    let mut notification_message = format!("{teammate_name} {action}.");
+    if !unassigned_tasks.is_empty() {
+        let task_list = unassigned_tasks
+            .iter()
+            .map(|task| format!("#{} \"{}\"", task.id, task.subject))
+            .collect::<Vec<_>>()
+            .join(", ");
+        notification_message.push_str(&format!(
+            " {} task(s) were unassigned: {}. Use TaskList to check availability and TaskUpdate with owner to reassign them to idle teammates.",
+            unassigned_tasks.len(),
+            task_list
+        ));
+    }
+    UnassignTeammateTasksResult {
+        unassigned_tasks,
+        notification_message,
+    }
 }
 
 fn todo_owner_key(ctx: &ToolUseContext) -> String {
@@ -4417,7 +4503,7 @@ mod tests {
             .await
             .expect("update dependencies");
 
-        let reloaded = TaskStore::with_dir(task_list_dir(&list_id));
+        let reloaded = task_store.clone();
         let source_after = reloaded.get(&source.id).unwrap();
         let blocked_after = reloaded.get(&blocked.id).unwrap();
         assert!(source_after.depends_on.iter().any(|id| id == &blocker.id));
@@ -4437,7 +4523,7 @@ mod tests {
             .expect("delete blocker");
         assert_eq!(deleted.data["success"], true);
 
-        let after_delete = TaskStore::with_dir(task_list_dir(&list_id));
+        let after_delete = task_store.clone();
         assert!(after_delete.get(&blocker.id).is_none());
         let source_after_delete = after_delete.get(&source.id).unwrap();
         assert!(!source_after_delete
@@ -4447,9 +4533,68 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Phase 4: replace with concrete teammate-unassign assertions"]
+    #[serial_test::serial]
     fn phase0_gap_teammate_unassign_is_not_wired() {
-        panic!("Phase 4 should add teammate exit unassign tests once the reset hook exists");
+        let home = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", home.path());
+        let list_id = format!("phase4-unassign-{}", uuid::Uuid::new_v4());
+        let teammate_id = "worker@phase4";
+        let teammate_name = "worker";
+        let store = task_store_for_task_list_id(&list_id);
+        let by_id = store.create_with_options(
+            "owned by id",
+            "",
+            TaskCreateOptions {
+                owner: Some(teammate_id.to_string()),
+                ..TaskCreateOptions::default()
+            },
+        );
+        let by_name = store.create_with_options(
+            "owned by name",
+            "",
+            TaskCreateOptions {
+                owner: Some(teammate_name.to_string()),
+                ..TaskCreateOptions::default()
+            },
+        );
+        let completed = store.create_with_options(
+            "completed stays assigned",
+            "",
+            TaskCreateOptions {
+                owner: Some(teammate_id.to_string()),
+                ..TaskCreateOptions::default()
+            },
+        );
+        store.update_status(&by_id.id, TaskStatus::InProgress);
+        store.update_status(&by_name.id, TaskStatus::InProgress);
+        store.update_status(&completed.id, TaskStatus::Completed);
+
+        let result = unassign_teammate_tasks(
+            &list_id,
+            teammate_id,
+            teammate_name,
+            TeammateTaskExitReason::Terminated,
+        );
+
+        assert_eq!(result.unassigned_tasks.len(), 2);
+        assert!(result.notification_message.contains("was terminated"));
+        assert!(result.notification_message.contains(&by_id.id));
+        for id in [&by_id.id, &by_name.id] {
+            let task = store.get(id).unwrap();
+            assert_eq!(task.status, TaskStatus::Pending);
+            assert_eq!(task.owner, None);
+        }
+        let completed = store.get(&completed.id).unwrap();
+        assert_eq!(completed.status, TaskStatus::Completed);
+        assert_eq!(completed.owner.as_deref(), Some(teammate_id));
+
+        let repeated = unassign_teammate_tasks(
+            &list_id,
+            teammate_id,
+            teammate_name,
+            TeammateTaskExitReason::Shutdown,
+        );
+        assert!(repeated.unassigned_tasks.is_empty());
     }
 
     #[tokio::test]

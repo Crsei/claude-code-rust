@@ -394,12 +394,25 @@ async fn kill(ctx: &mut CommandContext, rest: &str) -> String {
     let backend = InProcessBackend::new();
     let killed = backend.kill(&agent_id).await;
     if killed {
+        let unassigned = crate::tools::tasks::unassign_teammate_tasks(
+            &tc.team_name,
+            &agent_id,
+            name,
+            crate::tools::tasks::TeammateTaskExitReason::Terminated,
+        );
         // Flip is_active in team file and remove from teammates map.
         let _ = helpers::set_member_active(&tc.team_name, &agent_id, false);
         if let Some(tc_mut) = ctx.app_state.team_context.as_mut() {
             tc_mut.teammates.remove(&agent_id);
         }
-        format!("Killed '{}' ({}).", name, agent_id)
+        if unassigned.unassigned_tasks.is_empty() {
+            format!("Killed '{}' ({}).", name, agent_id)
+        } else {
+            format!(
+                "Killed '{}' ({}). {}",
+                name, agent_id, unassigned.notification_message
+            )
+        }
     } else {
         format!("No active teammate named '{}'.", name)
     }
@@ -425,10 +438,27 @@ async fn delete(ctx: &mut CommandContext, rest: &str) -> String {
     }
     if let Ok(team_file) = helpers::read_team_file(name) {
         let backend = InProcessBackend::new();
+        let mut unassigned_messages = Vec::new();
         for member in helpers::get_non_lead_members(&team_file) {
             if member.backend_type.unwrap_or(BackendType::InProcess) == BackendType::InProcess {
                 let _ = backend.kill(&member.agent_id).await;
+                let unassigned = crate::tools::tasks::unassign_teammate_tasks(
+                    name,
+                    &member.agent_id,
+                    &member.name,
+                    crate::tools::tasks::TeammateTaskExitReason::Terminated,
+                );
+                if !unassigned.unassigned_tasks.is_empty() {
+                    unassigned_messages.push(unassigned.notification_message);
+                }
             }
+        }
+        if !unassigned_messages.is_empty() {
+            tracing::info!(
+                team_name = %name,
+                messages = ?unassigned_messages,
+                "team delete unassigned teammate tasks"
+            );
         }
     }
     match helpers::cleanup_team_directories(name) {

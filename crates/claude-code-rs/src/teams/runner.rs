@@ -49,10 +49,15 @@ pub struct InProcessRunnerConfig {
 pub fn start_runner(config: InProcessRunnerConfig) -> tokio::task::JoinHandle<()> {
     let agent_id = config.identity.agent_id.clone();
     let task_id = config.task_id.clone();
+    let identity = config.identity.clone();
 
     let handle = tokio::spawn(async move {
         if let Err(e) = run_teammate(config).await {
             warn!(agent_id = %agent_id, error = %e, "teammate runner exited with error");
+            release_teammate_tasks(
+                &identity,
+                crate::tools::tasks::TeammateTaskExitReason::Terminated,
+            );
             InProcessBackend::mark_task_failed(&task_id, e.to_string());
         }
     });
@@ -159,6 +164,10 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
                 .await?;
                 if should_stop {
                     InProcessBackend::update_task_status(&task_id, TaskStatus::Stopped);
+                    release_teammate_tasks(
+                        &identity,
+                        crate::tools::tasks::TeammateTaskExitReason::Shutdown,
+                    );
                     break;
                 }
             }
@@ -179,6 +188,10 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
                     _ = cancellation.cancelled() => {
                         info!(agent_id = %identity.agent_id, "cancellation received");
                         InProcessBackend::update_task_status(&task_id, TaskStatus::Stopped);
+                        release_teammate_tasks(
+                            &identity,
+                            crate::tools::tasks::TeammateTaskExitReason::Terminated,
+                        );
                         return Ok(());
                     }
 
@@ -195,6 +208,10 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
                                 }
                                 if actions.shutdown_requested {
                                     InProcessBackend::update_task_status(&task_id, TaskStatus::Stopped);
+                                    release_teammate_tasks(
+                                        &identity,
+                                        crate::tools::tasks::TeammateTaskExitReason::Shutdown,
+                                    );
                                     return Ok(());
                                 }
                                 let queued = InProcessBackend::take_pending_user_messages(&task_id);
@@ -211,9 +228,35 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
         }
 
         info!(agent_id = %identity.agent_id, "teammate runner finished");
+        release_teammate_tasks(
+            &identity,
+            crate::tools::tasks::TeammateTaskExitReason::Shutdown,
+        );
         Ok(())
     })
     .await
+}
+
+fn release_teammate_tasks(
+    identity: &TeammateIdentity,
+    reason: crate::tools::tasks::TeammateTaskExitReason,
+) -> crate::tools::tasks::UnassignTeammateTasksResult {
+    let result = crate::tools::tasks::unassign_teammate_tasks(
+        &identity.team_name,
+        &identity.agent_id,
+        &identity.agent_name,
+        reason,
+    );
+    if !result.unassigned_tasks.is_empty() {
+        info!(
+            agent_id = %identity.agent_id,
+            team_name = %identity.team_name,
+            unassigned = result.unassigned_tasks.len(),
+            message = %result.notification_message,
+            "teammate tasks unassigned"
+        );
+    }
+    result
 }
 
 fn tool_policy_for_teammate(agent_type: Option<&str>) -> crate::tools::registry::ToolPolicy {
