@@ -36,6 +36,11 @@ const REMOTE_REVIEW_TIMEOUT_MS: i64 = 30 * 60 * 1000;
 const TASK_HIGHWATERMARK_FILE: &str = ".highwatermark";
 const TASK_HIGHWATERMARK_LOCK_FILE: &str = ".highwatermark.lock";
 const TASK_HIGHWATERMARK_LOCK_RETRIES: usize = 30;
+const TASK_LIST_LOCK_FILE: &str = ".lock";
+#[cfg(not(test))]
+const TASK_LIST_LOCK_RETRIES: usize = 30;
+#[cfg(test)]
+const TASK_LIST_LOCK_RETRIES: usize = 3;
 const DEFAULT_TASK_LIST_ID: &str = "tasklist";
 const CC_RUST_TASK_LIST_ID_ENV: &str = "CC_RUST_TASK_LIST_ID";
 const CLAUDE_CODE_TASK_LIST_ID_ENV: &str = "CLAUDE_CODE_TASK_LIST_ID";
@@ -237,6 +242,7 @@ enum TaskClaimFailureReason {
     Blocked,
     AgentBusy,
     OwnerRequired,
+    LockUnavailable,
 }
 
 impl TaskClaimFailureReason {
@@ -248,6 +254,7 @@ impl TaskClaimFailureReason {
             TaskClaimFailureReason::Blocked => "blocked",
             TaskClaimFailureReason::AgentBusy => "agent_busy",
             TaskClaimFailureReason::OwnerRequired => "owner_required",
+            TaskClaimFailureReason::LockUnavailable => "lock_unavailable",
         }
     }
 }
@@ -350,8 +357,13 @@ impl TaskStore {
         description: &str,
         options: TaskCreateOptions,
     ) -> TaskEntry {
+        let _guard = self.acquire_task_list_lock("create task").ok();
+        let mut tasks = if _guard.is_some() {
+            self.load_repository_tasks()
+        } else {
+            self.tasks.lock().clone()
+        };
         let now = chrono::Utc::now().timestamp();
-        let mut tasks = self.tasks.lock();
         let id = match self.repository.reserve_next_task_id(&tasks) {
             Ok(id) => id,
             Err(err) => {
@@ -396,17 +408,23 @@ impl TaskStore {
         refresh_output_metadata(&mut entry);
 
         tasks.insert(id, entry.clone());
-        drop(tasks);
         self.persist_entry(&entry);
+        self.replace_tasks(tasks);
         entry
     }
 
     pub fn get(&self, id: &str) -> Option<TaskEntry> {
+        self.refresh_from_repository();
         self.refresh_remote_review_timeout(id)
     }
 
     pub fn update_status(&self, id: &str, status: TaskStatus) -> Option<TaskEntry> {
-        let mut tasks = self.tasks.lock();
+        let _guard = self.acquire_task_list_lock("update task status").ok();
+        let mut tasks = if _guard.is_some() {
+            self.load_repository_tasks()
+        } else {
+            self.tasks.lock().clone()
+        };
         if let Some(entry) = tasks.get_mut(id) {
             entry.status = normalize_new_status(status);
             entry.updated_at = chrono::Utc::now().timestamp();
@@ -414,10 +432,11 @@ impl TaskStore {
                 entry.cancel_requested_at = Some(entry.updated_at);
             }
             let cloned = entry.clone();
-            drop(tasks);
             self.persist_entry(&cloned);
+            self.replace_tasks(tasks);
             Some(cloned)
         } else {
+            self.replace_tasks(tasks);
             None
         }
     }
@@ -433,12 +452,23 @@ impl TaskStore {
             return Err(TaskClaimFailure::new(TaskClaimFailureReason::OwnerRequired));
         }
 
-        let mut tasks = self.tasks.lock();
+        let _guard = self.acquire_task_list_lock("claim task").map_err(|err| {
+            tracing::warn!(
+                task_id = id,
+                owner,
+                error = %err,
+                "failed to acquire task-list lock for claim"
+            );
+            TaskClaimFailure::new(TaskClaimFailureReason::LockUnavailable)
+        })?;
+        let mut tasks = self.load_repository_tasks();
         let Some(snapshot) = tasks.get(id).cloned() else {
+            self.replace_tasks(tasks);
             return Err(TaskClaimFailure::new(TaskClaimFailureReason::TaskNotFound));
         };
 
         if snapshot.status.is_terminal() {
+            self.replace_tasks(tasks);
             return Err(TaskClaimFailure::new(
                 TaskClaimFailureReason::AlreadyResolved,
             ));
@@ -446,6 +476,7 @@ impl TaskStore {
 
         if let Some(existing_owner) = snapshot.owner.as_deref() {
             if existing_owner != owner {
+                self.replace_tasks(tasks);
                 return Err(
                     TaskClaimFailure::new(TaskClaimFailureReason::AlreadyClaimed)
                         .with_owner(existing_owner.to_string()),
@@ -455,6 +486,7 @@ impl TaskStore {
 
         let blocked_by = blocked_dependencies_with_tasks(&tasks, &snapshot);
         if !blocked_by.is_empty() {
+            self.replace_tasks(tasks);
             return Err(
                 TaskClaimFailure::new(TaskClaimFailureReason::Blocked).with_blocked_by(blocked_by)
             );
@@ -470,6 +502,7 @@ impl TaskStore {
                 })
                 .map(|candidate| candidate.id.clone())
             {
+                self.replace_tasks(tasks);
                 return Err(TaskClaimFailure::new(TaskClaimFailureReason::AgentBusy)
                     .with_busy_task_id(busy_task_id));
             }
@@ -480,8 +513,8 @@ impl TaskStore {
         entry.status = TaskStatus::InProgress;
         entry.updated_at = chrono::Utc::now().timestamp();
         let cloned = entry.clone();
-        drop(tasks);
         self.persist_entry(&cloned);
+        self.replace_tasks(tasks);
         Ok(cloned)
     }
 
@@ -513,6 +546,7 @@ impl TaskStore {
     }
 
     pub fn list(&self) -> Vec<TaskEntry> {
+        self.refresh_from_repository();
         self.refresh_remote_review_timeouts();
         let tasks = self.tasks.lock();
         let mut entries: Vec<TaskEntry> = tasks.values().cloned().collect();
@@ -521,13 +555,32 @@ impl TaskStore {
     }
 
     pub fn delete(&self, id: &str) -> Option<TaskEntry> {
-        let removed = self.tasks.lock().remove(id);
+        let _guard = self.acquire_task_list_lock("delete task").ok();
+        let mut tasks = if _guard.is_some() {
+            self.load_repository_tasks()
+        } else {
+            self.tasks.lock().clone()
+        };
+        let removed = tasks.remove(id);
         if removed.is_some() {
+            let mut changed = Vec::new();
+            for entry in tasks.values_mut() {
+                let before = entry.depends_on.len();
+                entry.depends_on.retain(|dep_id| dep_id != id);
+                if entry.depends_on.len() != before {
+                    entry.updated_at = chrono::Utc::now().timestamp();
+                    changed.push(entry.clone());
+                }
+            }
             self.runtime_handles.lock().remove(id);
             if let Err(err) = self.repository.delete(id) {
                 tracing::warn!(task_id = id, error = %err, "failed to delete persisted task");
             }
+            for entry in changed {
+                self.persist_entry(&entry);
+            }
         }
+        self.replace_tasks(tasks);
         removed
     }
 
@@ -537,16 +590,22 @@ impl TaskStore {
         }
 
         let now = chrono::Utc::now().timestamp();
-        let mut tasks = self.tasks.lock();
+        let _guard = self.acquire_task_list_lock("stop task").ok();
+        let mut tasks = if _guard.is_some() {
+            self.load_repository_tasks()
+        } else {
+            self.tasks.lock().clone()
+        };
         if let Some(entry) = tasks.get_mut(id) {
             entry.cancel_requested_at = Some(now);
             entry.status = TaskStatus::Cancelled;
             entry.updated_at = now;
             let cloned = entry.clone();
-            drop(tasks);
             self.persist_entry(&cloned);
+            self.replace_tasks(tasks);
             Some(cloned)
         } else {
+            self.replace_tasks(tasks);
             None
         }
     }
@@ -591,6 +650,37 @@ impl TaskStore {
             .collect();
         ids.sort();
         ids
+    }
+
+    fn acquire_task_list_lock(&self, operation: &str) -> Result<TaskListLock> {
+        TaskListLock::acquire(self.repository.dir.clone()).with_context(|| {
+            format!(
+                "failed to acquire task-list lock for {operation} in {}",
+                self.repository.dir.display()
+            )
+        })
+    }
+
+    fn load_repository_tasks(&self) -> HashMap<String, TaskEntry> {
+        match self.repository.load_for_live_refresh() {
+            Ok(tasks) => tasks,
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    "failed to refresh persisted tasks; keeping in-memory task state"
+                );
+                self.tasks.lock().clone()
+            }
+        }
+    }
+
+    fn refresh_from_repository(&self) {
+        let tasks = self.load_repository_tasks();
+        self.replace_tasks(tasks);
+    }
+
+    fn replace_tasks(&self, tasks: HashMap<String, TaskEntry>) {
+        *self.tasks.lock() = tasks;
     }
 
     fn persist_entry(&self, entry: &TaskEntry) {
@@ -779,6 +869,17 @@ impl TaskRepository {
     }
 
     fn load(&self) -> Result<HashMap<String, TaskEntry>> {
+        self.load_with_startup_recovery(true)
+    }
+
+    fn load_for_live_refresh(&self) -> Result<HashMap<String, TaskEntry>> {
+        self.load_with_startup_recovery(false)
+    }
+
+    fn load_with_startup_recovery(
+        &self,
+        recover_on_startup: bool,
+    ) -> Result<HashMap<String, TaskEntry>> {
         let mut tasks = HashMap::new();
         if !self.dir.exists() {
             return Ok(tasks);
@@ -793,7 +894,7 @@ impl TaskRepository {
                 continue;
             }
 
-            match self.load_entry(&path) {
+            match self.load_entry(&path, recover_on_startup) {
                 Ok(Some(task)) => {
                     tasks.insert(task.id.clone(), task);
                 }
@@ -836,7 +937,7 @@ impl TaskRepository {
         }
     }
 
-    fn load_entry(&self, path: &Path) -> Result<Option<TaskEntry>> {
+    fn load_entry(&self, path: &Path, recover_on_startup: bool) -> Result<Option<TaskEntry>> {
         let raw = fs::read_to_string(path)
             .with_context(|| format!("failed to read task file {}", path.display()))?;
         let on_disk: TaskFileOnDisk = serde_json::from_str(&raw)
@@ -885,7 +986,7 @@ impl TaskRepository {
         };
 
         let mut task = self.record_to_entry(record)?;
-        let was_recovered = recover_task_after_restart(&mut task);
+        let was_recovered = recover_on_startup && recover_task_after_restart(&mut task);
         refresh_output_metadata(&mut task);
 
         if needs_schema_rewrite || was_recovered {
@@ -1353,6 +1454,53 @@ fn remove_if_exists(path: &Path) -> Result<()> {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(err) => Err(err).with_context(|| format!("failed to remove {}", path.display())),
+    }
+}
+
+#[derive(Debug)]
+struct TaskListLock {
+    path: PathBuf,
+}
+
+impl TaskListLock {
+    fn acquire(dir: PathBuf) -> Result<Self> {
+        fs::create_dir_all(&dir)
+            .with_context(|| format!("failed to create task dir {}", dir.display()))?;
+        let path = dir.join(TASK_LIST_LOCK_FILE);
+        for attempt in 0..TASK_LIST_LOCK_RETRIES {
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(_) => return Ok(Self { path }),
+                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                    let backoff_ms = (5_u64 << attempt.min(8)).min(250);
+                    std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
+                }
+                Err(err) => {
+                    return Err(err).with_context(|| {
+                        format!("failed to create task-list lock {}", path.display())
+                    });
+                }
+            }
+        }
+
+        anyhow::bail!("timed out acquiring task-list lock {}", path.display())
+    }
+}
+
+impl Drop for TaskListLock {
+    fn drop(&mut self) {
+        if let Err(err) = fs::remove_file(&self.path) {
+            if err.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!(
+                    path = %self.path.display(),
+                    error = %err,
+                    "failed to remove task-list lock"
+                );
+            }
+        }
     }
 }
 
@@ -3783,14 +3931,11 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Phase 2: enable after task-list-level cross-process claim locking lands"]
     fn phase0_gap_cross_store_claim_requires_task_list_lock() {
         let tmp = tempfile::tempdir().unwrap();
-        let seed = TaskStore::with_dir(tmp.path());
-        let task = seed.create("claim race", "");
-
         let store_a = TaskStore::with_dir(tmp.path());
         let store_b = TaskStore::with_dir(tmp.path());
+        let task = store_a.create("claim race", "");
 
         let claimed_a = store_a
             .claim_task(&task.id, "agent-a", true)
@@ -3802,6 +3947,68 @@ mod tests {
             claimed_b.is_err(),
             "second store must observe the persisted owner and fail the claim"
         );
+    }
+
+    #[test]
+    fn task_list_lock_makes_agent_busy_check_cross_store_atomic() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store_a = TaskStore::with_dir(tmp.path());
+        let store_b = TaskStore::with_dir(tmp.path());
+        let first = store_a.create("first", "");
+        let second = store_a.create("second", "");
+
+        store_a
+            .claim_task(&first.id, "agent-a", true)
+            .expect("first claim should win");
+        let busy = store_b.claim_task(&second.id, "agent-a", true).unwrap_err();
+
+        assert_eq!(busy.reason, TaskClaimFailureReason::AgentBusy);
+        assert_eq!(busy.busy_task_id.as_deref(), Some(first.id.as_str()));
+    }
+
+    #[test]
+    fn task_claim_reports_lock_unavailable_when_list_lock_is_held() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path());
+        let task = store.create("locked", "");
+        fs::write(tmp.path().join(TASK_LIST_LOCK_FILE), "").unwrap();
+
+        let failure = store.claim_task(&task.id, "agent-a", true).unwrap_err();
+
+        assert_eq!(failure.reason, TaskClaimFailureReason::LockUnavailable);
+    }
+
+    #[test]
+    fn task_delete_removes_dependency_references_under_list_lock() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path());
+        let blocker = store.create("blocker", "");
+        let blocked = store.create_with_options(
+            "blocked",
+            "",
+            TaskCreateOptions {
+                depends_on: vec![blocker.id.clone()],
+                ..TaskCreateOptions::default()
+            },
+        );
+
+        store.delete(&blocker.id).expect("delete blocker");
+        let reloaded = TaskStore::with_dir(tmp.path());
+        let cleaned = reloaded.get(&blocked.id).unwrap();
+
+        assert!(cleaned.depends_on.is_empty());
+    }
+
+    #[test]
+    fn task_list_refreshes_tasks_created_by_other_store() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store_a = TaskStore::with_dir(tmp.path());
+        let store_b = TaskStore::with_dir(tmp.path());
+        let task = store_a.create("external", "");
+
+        let listed = store_b.list();
+
+        assert!(listed.iter().any(|entry| entry.id == task.id));
     }
 
     #[test]
