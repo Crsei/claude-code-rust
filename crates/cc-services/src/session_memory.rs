@@ -28,6 +28,10 @@ pub struct SessionMemoryConfig {
     pub max_entries: usize,
     /// Minimum messages in a conversation before extraction is triggered.
     pub min_messages_before_extract: usize,
+    /// Maximum age for entries injected back into context. Non-positive or
+    /// `None` disables age filtering.
+    #[serde(default = "default_max_context_age_seconds")]
+    pub max_context_age_seconds: Option<i64>,
 }
 
 impl Default for SessionMemoryConfig {
@@ -37,8 +41,13 @@ impl Default for SessionMemoryConfig {
             memory_dir: cc_config::paths::session_insights_dir(),
             max_entries: 50,
             min_messages_before_extract: 5,
+            max_context_age_seconds: default_max_context_age_seconds(),
         }
     }
+}
+
+fn default_max_context_age_seconds() -> Option<i64> {
+    Some(30 * 24 * 60 * 60)
 }
 
 // ---------------------------------------------------------------------------
@@ -184,11 +193,19 @@ impl SessionMemoryService {
         }
 
         let workspace = workspace.map(|p| p.to_string_lossy().to_string());
+        let min_timestamp = self
+            .config
+            .max_context_age_seconds
+            .and_then(|age| (age > 0).then(|| chrono::Utc::now().timestamp().saturating_sub(age)));
         let entries: Vec<MemoryEntry> = self
             .entries
             .iter()
             .filter(|entry| match workspace.as_deref() {
                 Some(expected) => entry.workspace.as_deref() == Some(expected),
+                None => true,
+            })
+            .filter(|entry| match min_timestamp {
+                Some(min) => entry.timestamp >= min,
                 None => true,
             })
             .take(limit)
@@ -241,6 +258,7 @@ mod tests {
             memory_dir: dir.to_path_buf(),
             max_entries: 5,
             min_messages_before_extract: 3,
+            max_context_age_seconds: default_max_context_age_seconds(),
         }
     }
 
@@ -351,6 +369,29 @@ mod tests {
             .unwrap();
         assert!(ctx.contains("workspace insight"));
         assert!(!ctx.contains("other workspace insight"));
+    }
+
+    #[test]
+    fn format_memory_context_filters_old_entries_by_age() {
+        let tmp = std::env::temp_dir().join("cc_rust_test_session_mem_age");
+        let cfg = SessionMemoryConfig {
+            max_context_age_seconds: Some(60),
+            ..test_config(&tmp)
+        };
+        let mut svc = SessionMemoryService::new(cfg);
+        let now = chrono::Utc::now().timestamp();
+
+        let mut recent = make_entry("1", "recent insight", &[]);
+        recent.timestamp = now - 30;
+        svc.entries.push(recent);
+
+        let mut old = make_entry("2", "old insight", &[]);
+        old.timestamp = now - 120;
+        svc.entries.push(old);
+
+        let ctx = svc.format_memory_context(5).unwrap();
+        assert!(ctx.contains("recent insight"));
+        assert!(!ctx.contains("old insight"));
     }
 
     #[test]
