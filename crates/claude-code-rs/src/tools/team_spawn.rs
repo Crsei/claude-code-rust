@@ -400,10 +400,7 @@ fn resolve_team_spawn_agent_type(explicit: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
-        .or_else(|| {
-            crate::teams::coordinator::is_coordinator_mode_enabled().then(|| "worker".to_string())
-        })
-        .or_else(|| Some("teammate".to_string()))
+        .or_else(|| Some(crate::teams::coordinator::default_teammate_agent_type().to_string()))
 }
 
 // ---------------------------------------------------------------------------

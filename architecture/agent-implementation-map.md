@@ -130,6 +130,7 @@
 - 2026-05-06：Phase 0 已开始落地，新增 `TeamSpawn` unsupported backend、`SendMessage` active team / 定向 / 广播、runner mailbox plain / shutdown、`TaskList` / `TaskStop` cancel flow、worktree fail-closed 相关回归测试；同时把依赖全局 worktree session 的测试标为串行，避免并行污染。
 - 2026-05-06：Phase 1 已落最小骨架，新增 `Coordinator` feature gate（`CLAUDE_CODE_COORDINATOR_MODE`）、`teams::coordinator` prompt builder，并在默认 system prompt 中按 gate 注入 `# Coordinator Mode` section。
 - 2026-05-06：Phase 2 已完成第一轮落地，新增 `ToolPolicy` 分层（`DefaultAgent` / `Coordinator` / `CoordinatorWorker` / `InProcessTeammate`），主会话在 coordinator gate 开启时切换到 lead 工具池，in-process teammate runner 切换到受限工具池，并在 coordinator 模式下默认用 `worker` agent prompt / 工具边界启动 teammate。
+- 2026-05-06：Phase 3 已完成最小运行时闭环，新增 `/coordinator` 命令入口，可在当前会话启停 coordinator gate、创建/绑定 active team、展示 lead 工具策略；`/team spawn` 与 `TeamSpawn` 在 coordinator 模式下默认创建 `worker` teammate，并继续复用现有 `SendMessage` / `TaskList` / `TaskStop` 通信和任务控制链路。
 
 ### Phase 0：锁定现有行为基线
 

@@ -7,6 +7,7 @@
 pub mod clear;
 pub mod config_cmd;
 pub mod context;
+pub mod coordinator;
 pub mod cost;
 pub mod diff;
 pub mod exit;
@@ -278,6 +279,12 @@ pub fn get_all_commands() -> Vec<Command> {
             aliases: vec!["ctx".into()],
             description: "Show context usage information".into(),
             handler: Box::new(context::ContextHandler),
+        },
+        Command {
+            name: "coordinator".into(),
+            aliases: vec!["coord".into()],
+            description: "Enable or inspect coordinator mode for Agent Teams".into(),
+            handler: Box::new(coordinator::CoordinatorHandler),
         },
         Command {
             name: "permissions".into(),
@@ -712,6 +719,7 @@ mod tests {
         assert!(names.contains(&"mcp"));
         assert!(names.contains(&"plugin"));
         assert!(names.contains(&"experimental"));
+        assert!(names.contains(&"coordinator"));
         assert!(names.contains(&"review"));
         assert!(names.contains(&"security-review"));
         assert!(names.contains(&"recap"));
@@ -759,6 +767,7 @@ mod tests {
         assert!(find_command("v").is_some());
         assert!(find_command("usage").is_some());
         assert!(find_command("ctx").is_some());
+        assert!(find_command("coord").is_some());
         assert!(find_command("perms").is_some());
         assert!(find_command("br").is_some());
         assert!(find_command("gitbranch").is_some());

@@ -260,11 +260,23 @@ async fn spawn(ctx: &mut CommandContext, rest: &str) -> String {
     let agent_id = identity::format_agent_id(name, &team_name);
     let now = chrono::Utc::now().timestamp();
     let cwd = ctx.cwd.to_string_lossy().into_owned();
+    let agent_type = crate::teams::coordinator::default_teammate_agent_type().to_string();
+    let system_prompt = (agent_type == crate::teams::coordinator::WORKER_AGENT_TYPE)
+        .then(|| {
+            crate::ipc::builtin_agents::builtin_agent_prompt(
+                crate::teams::coordinator::WORKER_AGENT_TYPE,
+            )
+            .map(ToOwned::to_owned)
+        })
+        .flatten();
+    let system_prompt_mode = system_prompt
+        .as_ref()
+        .map(|_| crate::teams::types::SystemPromptMode::Append);
 
     team_file.members.push(TeamMember {
         agent_id: agent_id.clone(),
         name: name.into(),
-        agent_type: Some("teammate".into()),
+        agent_type: Some(agent_type.clone()),
         model: None,
         prompt: Some(prompt.into()),
         color: Some(color.clone()),
@@ -291,11 +303,11 @@ async fn spawn(ctx: &mut CommandContext, rest: &str) -> String {
             color: Some(color.clone()),
             plan_mode_required: false,
             prompt: prompt.into(),
-            agent_type: Some("teammate".into()),
+            agent_type: Some(agent_type.clone()),
             cwd: cwd.clone(),
             model: None,
-            system_prompt: None,
-            system_prompt_mode: None,
+            system_prompt,
+            system_prompt_mode,
             worktree_path: None,
             parent_session_id: ctx.session_id.to_string(),
             permissions: vec![],
@@ -323,7 +335,7 @@ async fn spawn(ctx: &mut CommandContext, rest: &str) -> String {
             agent_id.clone(),
             TeammateInfo {
                 name: name.into(),
-                agent_type: Some("teammate".into()),
+                agent_type: Some(agent_type.clone()),
                 color: Some(color.clone()),
                 tmux_session_name: String::new(),
                 tmux_pane_id: String::new(),
