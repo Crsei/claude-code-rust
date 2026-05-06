@@ -28,9 +28,9 @@ use crate::types::message::{
     SystemSubtype,
 };
 
-use super::QueryEngine;
 use super::deps::QueryEngineDeps;
 use super::types::{AbortReason, UsageTracking};
+use super::QueryEngine;
 
 fn model_assisted_memory_recall_enabled() -> bool {
     std::env::var("CC_RUST_MODEL_ASSISTED_MEMORY_RECALL")

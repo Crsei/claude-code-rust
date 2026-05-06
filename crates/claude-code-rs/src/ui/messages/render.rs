@@ -11,7 +11,7 @@ use crate::ui::theme::Theme;
 use crate::ui::virtual_scroll::VirtualScroll;
 
 use super::file_edit_tool_updated_message::{
-    FileEditMessageStyle, FileEditToolUpdatedView, render_file_edit_tool_updated_message,
+    render_file_edit_tool_updated_message, FileEditMessageStyle, FileEditToolUpdatedView,
 };
 use super::wrap::wrap_line_to_width;
 

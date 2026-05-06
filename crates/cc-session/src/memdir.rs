@@ -1294,11 +1294,9 @@ mod tests {
                 .unwrap();
 
         assert_eq!(results.len(), 5);
-        assert!(
-            results
-                .iter()
-                .all(|memory| memory.entry.key.starts_with("rust-build-"))
-        );
+        assert!(results
+            .iter()
+            .all(|memory| memory.entry.key.starts_with("rust-build-")));
 
         cleanup(&cwd);
     }

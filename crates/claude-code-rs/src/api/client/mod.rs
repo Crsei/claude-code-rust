@@ -4,11 +4,11 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use futures::Stream;
 use serde_json::Value;
 
-use crate::api::retry::{RetryConfig, categorize_stream_start_error, retry_delay};
+use crate::api::retry::{categorize_stream_start_error, retry_delay, RetryConfig};
 use crate::types::message::{AssistantMessage, StreamEvent};
 
 // Re-export siblings for convenience within this module's tests.
@@ -485,7 +485,7 @@ impl ApiClient {
         request: &MessagesRequest,
         provider: &str,
     ) -> Result<ExactTokenCount> {
-        use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
+        use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 
         #[derive(serde::Deserialize)]
         struct CountTokensResponse {
@@ -878,7 +878,7 @@ impl ApiClient {
     /// Build the required HTTP headers for Anthropic-format providers.
     #[allow(dead_code)]
     pub fn build_headers(&self) -> reqwest::header::HeaderMap {
-        use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
+        use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));

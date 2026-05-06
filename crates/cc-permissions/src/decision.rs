@@ -1084,12 +1084,10 @@ mod tests {
         );
 
         assert_eq!(decision.behavior, PermissionBehavior::Ask);
-        assert!(
-            decision
-                .message
-                .unwrap()
-                .contains("temporarily unavailable")
-        );
+        assert!(decision
+            .message
+            .unwrap()
+            .contains("temporarily unavailable"));
     }
 
     #[test]

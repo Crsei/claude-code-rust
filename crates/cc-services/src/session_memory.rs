@@ -624,16 +624,12 @@ mod tests {
         )
         .unwrap();
 
-        assert!(
-            insight
-                .content
-                .contains("Request: Please add MCP reconnect tests")
-        );
-        assert!(
-            insight
-                .content
-                .contains("Insight: Implemented the manager reconnect path.")
-        );
+        assert!(insight
+            .content
+            .contains("Request: Please add MCP reconnect tests"));
+        assert!(insight
+            .content
+            .contains("Insight: Implemented the manager reconnect path."));
         assert!(insight.tags.contains(&"implementation".to_string()));
         assert!(insight.tags.contains(&"testing".to_string()));
         assert!(insight.tags.contains(&"mcp".to_string()));

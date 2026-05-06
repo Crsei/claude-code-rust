@@ -40,10 +40,10 @@
 use std::collections::HashMap;
 use std::pin::Pin;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use base64::Engine;
 use futures::{Stream, StreamExt};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::api::client::MessagesRequest;
 use crate::api::model_mapping::to_bedrock_model_id;

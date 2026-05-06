@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use cc_config::settings::SandboxSettings;
 
-use super::availability::{Availability, detect_availability};
+use super::availability::{detect_availability, Availability};
 use super::filesystem::PathResolver;
 use super::mode::SandboxMode;
 use super::network::NetworkPolicy;
