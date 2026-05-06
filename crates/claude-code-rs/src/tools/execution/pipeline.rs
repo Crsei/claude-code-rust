@@ -35,7 +35,7 @@ use super::security::{
     enforce_result_size, find_tool, is_plan_mode_plan_file_write, sandbox_allowed_command_applies,
     security_validate,
 };
-use super::{ToolExecutionResult, make_error_result};
+use super::{make_error_result, ToolExecutionResult};
 
 /// Execute a single tool call through the full pipeline.
 ///
@@ -214,6 +214,7 @@ pub async fn run_tool_use(
         }
     }
 
+    let app_state = (ctx.get_app_state)();
     let mut central_decision = if plan_file_write_allowed {
         PermissionDecision {
             behavior: PermissionBehavior::Allow,
@@ -224,7 +225,6 @@ pub async fn run_tool_use(
             },
         }
     } else {
-        let app_state = (ctx.get_app_state)();
         decision::has_permissions_to_use_tool_with_hook(
             tool_name,
             &effective_input,

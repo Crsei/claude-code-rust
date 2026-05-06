@@ -31,7 +31,8 @@ use crate::types::tool::ToolResult;
 pub use coordinator::{StreamingToolExecutor, TrackedTool, TrackedToolState};
 pub use pipeline::run_tool_use;
 pub(crate) use security::{
-    enforce_result_size, find_tool, is_plan_mode_plan_file_write, security_validate,
+    enforce_result_size, find_tool, is_plan_mode_plan_file_write, sandbox_allowed_command_applies,
+    security_validate,
 };
 
 // ---------------------------------------------------------------------------
