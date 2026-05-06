@@ -26,7 +26,7 @@ use tokio_util::sync::CancellationToken;
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
 
-const TASK_SCHEMA_VERSION: u32 = 4;
+const TASK_SCHEMA_VERSION: u32 = 5;
 const DEFAULT_OUTPUT_LIMIT_BYTES: usize = 64 * 1024;
 const OUTPUT_SUMMARY_MAX_CHARS: usize = 2_000;
 const DEFAULT_TASK_OUTPUT_TIMEOUT_MS: u64 = 30_000;
@@ -101,6 +101,8 @@ pub struct TaskCreateOptions {
     pub parent_id: Option<String>,
     pub depends_on: Vec<String>,
     pub owner: Option<String>,
+    pub active_form: Option<String>,
+    pub metadata: Option<Value>,
     pub tool_use_id: Option<String>,
     pub agent_id: Option<String>,
     pub supervisor_id: Option<String>,
@@ -111,6 +113,18 @@ pub struct TaskCreateOptions {
     pub remote_session_id: Option<String>,
     pub remote_task_metadata: Option<Value>,
     pub poll_started_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct TaskUpdateFields {
+    subject: Option<String>,
+    description: Option<String>,
+    active_form: Option<Option<String>>,
+    owner: Option<Option<String>>,
+    metadata_patch: Option<Value>,
+    status: Option<TaskStatus>,
+    add_blocks: Vec<String>,
+    add_blocked_by: Vec<String>,
 }
 
 /// A process-local handle used to cancel active task execution.
@@ -144,6 +158,8 @@ pub struct TaskEntry {
     pub parent_id: Option<String>,
     pub depends_on: Vec<String>,
     pub owner: Option<String>,
+    pub active_form: Option<String>,
+    pub metadata: Option<Value>,
     pub tool_use_id: Option<String>,
     pub agent_id: Option<String>,
     pub supervisor_id: Option<String>,
@@ -387,6 +403,8 @@ impl TaskStore {
             parent_id: options.parent_id.filter(|s| !s.trim().is_empty()),
             depends_on: normalize_dependencies(options.depends_on),
             owner: normalize_optional_string(options.owner),
+            active_form: normalize_optional_string(options.active_form),
+            metadata: options.metadata.filter(|value| !value.is_null()),
             tool_use_id: normalize_optional_string(options.tool_use_id),
             agent_id: normalize_optional_string(options.agent_id),
             supervisor_id: normalize_optional_string(options.supervisor_id),
@@ -439,6 +457,73 @@ impl TaskStore {
             self.replace_tasks(tasks);
             None
         }
+    }
+
+    fn update_fields(&self, id: &str, updates: TaskUpdateFields) -> Option<TaskEntry> {
+        let _guard = self.acquire_task_list_lock("update task fields").ok();
+        let mut tasks = if _guard.is_some() {
+            self.load_repository_tasks()
+        } else {
+            self.tasks.lock().clone()
+        };
+        let now = chrono::Utc::now().timestamp();
+        let mut changed_entries = Vec::new();
+        let updated = {
+            let entry = tasks.get_mut(id)?;
+            if let Some(subject) = updates.subject {
+                entry.subject = subject;
+            }
+            if let Some(description) = updates.description {
+                entry.description = description;
+            }
+            if let Some(active_form) = updates.active_form {
+                entry.active_form = active_form;
+            }
+            if let Some(owner) = updates.owner {
+                entry.owner = owner;
+            }
+            if let Some(metadata_patch) = updates.metadata_patch {
+                entry.metadata = merge_metadata(entry.metadata.clone(), &metadata_patch);
+            }
+            if let Some(status) = updates.status {
+                entry.status = normalize_new_status(status);
+                if entry.status == TaskStatus::Cancelled && entry.cancel_requested_at.is_none() {
+                    entry.cancel_requested_at = Some(now);
+                }
+            }
+            for dependency_id in normalize_dependencies(updates.add_blocked_by) {
+                if dependency_id != entry.id
+                    && !entry.depends_on.iter().any(|id| id == &dependency_id)
+                {
+                    entry.depends_on.push(dependency_id);
+                }
+            }
+            entry.depends_on = normalize_dependencies(std::mem::take(&mut entry.depends_on));
+            entry.updated_at = now;
+            entry.clone()
+        };
+
+        for blocked_task_id in normalize_dependencies(updates.add_blocks) {
+            if blocked_task_id == id {
+                continue;
+            }
+            if let Some(blocked_task) = tasks.get_mut(&blocked_task_id) {
+                if !blocked_task.depends_on.iter().any(|dep_id| dep_id == id) {
+                    blocked_task.depends_on.push(id.to_string());
+                    blocked_task.depends_on =
+                        normalize_dependencies(std::mem::take(&mut blocked_task.depends_on));
+                    blocked_task.updated_at = now;
+                    changed_entries.push(blocked_task.clone());
+                }
+            }
+        }
+
+        changed_entries.push(updated.clone());
+        for entry in changed_entries {
+            self.persist_entry(&entry);
+        }
+        self.replace_tasks(tasks);
+        Some(updated)
     }
 
     fn claim_task(
@@ -750,6 +835,8 @@ fn task_to_json_from_store(task_store: &TaskStore, entry: &TaskEntry) -> Value {
         "blockedBy": blocked_by,
         "blocks": blocked_tasks,
         "owner": entry.owner,
+        "activeForm": entry.active_form,
+        "metadata": entry.metadata,
         "tool_use_id": entry.tool_use_id,
         "agent_id": entry.agent_id,
         "supervisor_id": entry.supervisor_id,
@@ -809,6 +896,10 @@ struct PersistedTaskRecord {
     depends_on: Vec<String>,
     #[serde(default)]
     owner: Option<String>,
+    #[serde(default, rename = "activeForm")]
+    active_form: Option<String>,
+    #[serde(default)]
+    metadata: Option<Value>,
     #[serde(default)]
     tool_use_id: Option<String>,
     #[serde(default)]
@@ -963,6 +1054,8 @@ impl TaskRepository {
                         parent_id: None,
                         depends_on: Vec::new(),
                         owner: None,
+                        active_form: None,
+                        metadata: None,
                         tool_use_id: None,
                         agent_id: None,
                         supervisor_id: None,
@@ -1028,6 +1121,8 @@ impl TaskRepository {
             parent_id: record.parent_id.filter(|s| !s.trim().is_empty()),
             depends_on: normalize_dependencies(record.depends_on),
             owner: normalize_optional_string(record.owner),
+            active_form: normalize_optional_string(record.active_form),
+            metadata: record.metadata.filter(|value| !value.is_null()),
             tool_use_id: normalize_optional_string(record.tool_use_id),
             agent_id: normalize_optional_string(record.agent_id),
             supervisor_id: normalize_optional_string(record.supervisor_id),
@@ -1141,6 +1236,8 @@ impl PersistedTaskRecord {
             parent_id: entry.parent_id.clone(),
             depends_on: entry.depends_on.clone(),
             owner: entry.owner.clone(),
+            active_form: entry.active_form.clone(),
+            metadata: entry.metadata.clone(),
             tool_use_id: entry.tool_use_id.clone(),
             agent_id: entry.agent_id.clone(),
             supervisor_id: entry.supervisor_id.clone(),
@@ -1352,6 +1449,23 @@ fn normalize_optional_string(value: Option<String>) -> Option<String> {
             Some(trimmed.to_string())
         }
     })
+}
+
+fn merge_metadata(existing: Option<Value>, patch: &Value) -> Option<Value> {
+    let Some(patch_map) = patch.as_object() else {
+        return existing;
+    };
+    let mut merged = existing
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    for (key, value) in patch_map {
+        if value.is_null() {
+            merged.remove(key);
+        } else {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    Some(Value::Object(merged))
 }
 
 fn normalize_remote_task_type(value: Option<String>) -> Option<String> {
@@ -1857,6 +1971,21 @@ fn maybe_link_plan_workflow_task(
     Ok(record)
 }
 
+fn task_id_from_input(input: &Value) -> &str {
+    input
+        .get("task_id")
+        .or_else(|| input.get("taskId"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+}
+
+fn optional_string_update(input: &Value, field: &str) -> Option<String> {
+    input
+        .get(field)
+        .and_then(|value| value.as_str())
+        .map(ToString::to_string)
+}
+
 fn task_update_owner(input: &Value, ctx: &ToolUseContext) -> String {
     input
         .get("owner")
@@ -1880,6 +2009,47 @@ fn task_update_check_agent_busy(input: &Value) -> bool {
         .or_else(|| input.get("checkAgentBusy"))
         .and_then(Value::as_bool)
         .unwrap_or(false)
+}
+
+fn task_update_fields_from_input(input: &Value) -> TaskUpdateFields {
+    TaskUpdateFields {
+        subject: optional_string_update(input, "subject"),
+        description: optional_string_update(input, "description"),
+        active_form: input
+            .get("activeForm")
+            .map(|value| normalize_optional_string(value.as_str().map(ToString::to_string))),
+        owner: input
+            .get("owner")
+            .map(|value| normalize_optional_string(value.as_str().map(ToString::to_string))),
+        metadata_patch: input
+            .get("metadata")
+            .filter(|value| value.is_object())
+            .cloned(),
+        status: None,
+        add_blocks: string_array_field(input, "addBlocks"),
+        add_blocked_by: string_array_field(input, "addBlockedBy"),
+    }
+}
+
+fn task_updated_fields_from_input(input: &Value, status_value: Option<&str>) -> Vec<&'static str> {
+    let mut fields = Vec::new();
+    for (input_key, field_name) in [
+        ("subject", "subject"),
+        ("description", "description"),
+        ("activeForm", "activeForm"),
+        ("owner", "owner"),
+        ("metadata", "metadata"),
+        ("addBlocks", "blocks"),
+        ("addBlockedBy", "blockedBy"),
+    ] {
+        if input.get(input_key).is_some() {
+            fields.push(field_name);
+        }
+    }
+    if status_value.is_some() {
+        fields.push("status");
+    }
+    fields
 }
 
 /// Read-only handle to the global task store, exposed for command surfaces
@@ -2029,6 +2199,14 @@ impl Tool for TaskCreateTool {
                     "type": "string",
                     "description": "What needs to be done"
                 },
+                "activeForm": {
+                    "type": "string",
+                    "description": "Present continuous form shown while the task is in progress"
+                },
+                "metadata": {
+                    "type": "object",
+                    "description": "Arbitrary metadata to attach to the task"
+                },
                 "kind": {
                     "type": "string",
                     "description": "Stable task type for persisted records; legacy aliases are accepted and normalized",
@@ -2118,6 +2296,11 @@ impl Tool for TaskCreateTool {
             .get("description")
             .and_then(|v| v.as_str())
             .unwrap_or("");
+        let active_form = input
+            .get("activeForm")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let metadata = input.get("metadata").filter(|v| v.is_object()).cloned();
         let kind = input
             .get("kind")
             .and_then(|v| v.as_str())
@@ -2172,6 +2355,8 @@ impl Tool for TaskCreateTool {
             || parent_id.is_some()
             || !depends_on.is_empty()
             || owner.is_some()
+            || active_form.is_some()
+            || metadata.is_some()
             || tool_use_id.is_some()
             || agent_id.is_some()
             || supervisor_id.is_some()
@@ -2193,6 +2378,8 @@ impl Tool for TaskCreateTool {
                     parent_id,
                     depends_on,
                     owner,
+                    active_form,
+                    metadata,
                     tool_use_id,
                     agent_id,
                     supervisor_id,
@@ -2274,7 +2461,10 @@ impl Tool for TaskGetTool {
                     "description": "The task ID to look up"
                 }
             },
-            "required": ["task_id"]
+            "anyOf": [
+                { "required": ["task_id"] },
+                { "required": ["taskId"] }
+            ]
         })
     }
 
@@ -2339,14 +2529,44 @@ impl Tool for TaskUpdateTool {
                     "type": "string",
                     "description": "The task ID to update"
                 },
+                "taskId": {
+                    "type": "string",
+                    "description": "Bun-compatible alias for task_id"
+                },
+                "subject": {
+                    "type": "string",
+                    "description": "New subject for the task"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "New description for the task"
+                },
+                "activeForm": {
+                    "type": "string",
+                    "description": "Present continuous form shown while the task is in progress"
+                },
                 "status": {
                     "type": "string",
-                    "enum": ["pending", "in_progress", "completed", "failed", "cancelled", "recoverable", "interrupted"],
+                    "enum": ["pending", "in_progress", "completed", "failed", "cancelled", "recoverable", "interrupted", "deleted"],
                     "description": "New status for the task"
+                },
+                "addBlocks": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Task IDs that this task blocks"
+                },
+                "addBlockedBy": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Task IDs that block this task"
                 },
                 "owner": {
                     "type": "string",
-                    "description": "Agent or session owner used when claiming a task with status=in_progress"
+                    "description": "Agent or session owner for this task"
+                },
+                "metadata": {
+                    "type": "object",
+                    "description": "Metadata keys to merge into the task; null values delete keys"
                 },
                 "check_agent_busy": {
                     "type": "boolean",
@@ -2357,7 +2577,7 @@ impl Tool for TaskUpdateTool {
                     "description": "Bun-compatible camelCase alias for check_agent_busy"
                 }
             },
-            "required": ["task_id", "status"]
+            "required": ["task_id"]
         })
     }
 
@@ -2368,49 +2588,106 @@ impl Tool for TaskUpdateTool {
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
-        let status_str = input
-            .get("status")
-            .and_then(|v| v.as_str())
-            .unwrap_or("in_progress");
+        let id = task_id_from_input(&input);
+        let status_value = input.get("status").and_then(|v| v.as_str());
+        let status = match status_value {
+            Some("deleted") | None => None,
+            Some(status_str) => match TaskStatus::from_str(status_str) {
+                Some(status) => Some(status),
+                None => {
+                    return Ok(ToolResult {
+                        data: json!({ "error": format!("Invalid task status: {}", status_str) }),
+                        new_messages: vec![],
+                        ..Default::default()
+                    });
+                }
+            },
+        };
 
-        let Some(status) = TaskStatus::from_str(status_str) else {
+        let task_store = store_for_context(ctx);
+        let existing = task_store.get(id);
+        let Some(existing) = existing else {
             return Ok(ToolResult {
-                data: json!({ "error": format!("Invalid task status: {}", status_str) }),
+                data: json!({ "error": format!("Task not found: {}", id) }),
                 new_messages: vec![],
                 ..Default::default()
             });
         };
 
-        if status == TaskStatus::InProgress {
-            let owner = task_update_owner(&input, ctx);
-            let check_agent_busy = task_update_check_agent_busy(&input);
-            let task_store = store_for_context(ctx);
-            return match task_store.claim_task(id, &owner, check_agent_busy) {
-                Ok(entry) => Ok(ToolResult {
-                    data: json!({
-                        "task": task_to_json_from_store(&task_store, &entry),
-                        "message": format!("Task '{}' claimed by {}", entry.subject, owner)
-                    }),
-                    new_messages: vec![],
-                    ..Default::default()
+        if status_value == Some("deleted") {
+            let deleted = task_store.delete(id).is_some();
+            return Ok(ToolResult {
+                data: json!({
+                    "success": deleted,
+                    "task_id": id,
+                    "updated_fields": if deleted { vec!["deleted"] } else { Vec::<&str>::new() },
+                    "status_change": if deleted {
+                        json!({ "from": existing.status.as_str(), "to": "deleted" })
+                    } else {
+                        Value::Null
+                    },
+                    "message": if deleted {
+                        format!("Task '{}' deleted", existing.subject)
+                    } else {
+                        format!("Task not found: {}", id)
+                    },
                 }),
-                Err(failure) => Ok(ToolResult {
-                    data: json!({
-                        "error": format!("Task claim failed: {}", failure.reason.as_str()),
-                        "claim": failure.to_json(),
-                    }),
-                    new_messages: vec![],
-                    ..Default::default()
-                }),
-            };
+                new_messages: vec![],
+                ..Default::default()
+            });
         }
 
-        let task_store = store_for_context(ctx);
-        match task_store.update_status(id, status) {
+        if status == Some(TaskStatus::InProgress) {
+            let owner = task_update_owner(&input, ctx);
+            let check_agent_busy = task_update_check_agent_busy(&input);
+            let entry = match task_store.claim_task(id, &owner, check_agent_busy) {
+                Ok(entry) => entry,
+                Err(failure) => {
+                    return Ok(ToolResult {
+                        data: json!({
+                            "error": format!("Task claim failed: {}", failure.reason.as_str()),
+                            "claim": failure.to_json(),
+                        }),
+                        new_messages: vec![],
+                        ..Default::default()
+                    });
+                }
+            };
+            let mut updates = task_update_fields_from_input(&input);
+            updates.status = None;
+            updates.owner = None;
+            let entry = if updates.subject.is_some()
+                || updates.description.is_some()
+                || updates.active_form.is_some()
+                || updates.metadata_patch.is_some()
+                || !updates.add_blocks.is_empty()
+                || !updates.add_blocked_by.is_empty()
+            {
+                task_store.update_fields(id, updates).unwrap_or(entry)
+            } else {
+                entry
+            };
+            return Ok(ToolResult {
+                data: json!({
+                    "task": task_to_json_from_store(&task_store, &entry),
+                    "updated_fields": ["status", "owner"],
+                    "status_change": { "from": existing.status.as_str(), "to": TaskStatus::InProgress.as_str() },
+                    "message": format!("Task '{}' claimed by {}", entry.subject, owner)
+                }),
+                new_messages: vec![],
+                ..Default::default()
+            });
+        }
+
+        let mut updates = task_update_fields_from_input(&input);
+        updates.status = status;
+        let updated_fields = task_updated_fields_from_input(&input, status_value);
+
+        match task_store.update_fields(id, updates) {
             Some(entry) => {
                 // Fire TaskCompleted hook when status changes to completed.
-                if entry.status == TaskStatus::Completed {
+                if status == Some(TaskStatus::Completed) && existing.status != TaskStatus::Completed
+                {
                     let app_state = (ctx.get_app_state)();
                     let configs =
                         crate::tools::hooks::load_hook_configs(&app_state.hooks, "TaskCompleted");
@@ -2432,7 +2709,16 @@ impl Tool for TaskUpdateTool {
                 Ok(ToolResult {
                     data: json!({
                         "task": task_to_json_from_store(&task_store, &entry),
-                        "message": format!("Task '{}' updated to {}", entry.subject, entry.status.as_str())
+                        "updated_fields": updated_fields,
+                        "status_change": status.map(|new_status| json!({
+                            "from": existing.status.as_str(),
+                            "to": new_status.as_str()
+                        })),
+                        "message": if let Some(status) = status {
+                            format!("Task '{}' updated to {}", entry.subject, status.as_str())
+                        } else {
+                            format!("Task '{}' updated", entry.subject)
+                        }
                     }),
                     new_messages: vec![],
                     ..Default::default()
@@ -3132,6 +3418,8 @@ mod tests {
             parent_id: None,
             depends_on: Vec::new(),
             owner: None,
+            active_form: None,
+            metadata: None,
             tool_use_id: None,
             agent_id: None,
             supervisor_id: None,
@@ -4012,7 +4300,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Phase 3: enable after Tasks V2 activeForm/metadata/update schema parity lands"]
     fn phase0_gap_task_v2_schema_requires_active_form_and_metadata() {
         let create_schema = TaskCreateTool.input_json_schema();
         let create_props = &create_schema["properties"];
@@ -4034,6 +4321,129 @@ mod tests {
                 "TaskUpdate schema should expose {field}"
             );
         }
+        assert!(update_props["status"]["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| value.as_str() == Some("deleted")));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn task_create_and_update_persist_active_form_and_metadata() {
+        let home = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", home.path());
+        let list_id = format!("phase3-schema-{}", uuid::Uuid::new_v4());
+        let _list = EnvGuard::set(CC_RUST_TASK_LIST_ID_ENV, &list_id);
+        let ctx = test_context();
+        let parent = dummy_parent();
+
+        let created = TaskCreateTool
+            .call(
+                json!({
+                    "subject": "original",
+                    "description": "before",
+                    "activeForm": "Running original",
+                    "metadata": {
+                        "keep": 1,
+                        "drop": true
+                    }
+                }),
+                &ctx,
+                &parent,
+                None,
+            )
+            .await
+            .expect("create task");
+        let id = created.data["task"]["id"].as_str().unwrap().to_string();
+
+        let update = TaskUpdateTool
+            .call(
+                json!({
+                    "task_id": id,
+                    "subject": "renamed",
+                    "description": "after",
+                    "activeForm": "Running renamed",
+                    "metadata": {
+                        "drop": null,
+                        "add": 2
+                    }
+                }),
+                &ctx,
+                &parent,
+                None,
+            )
+            .await
+            .expect("update task");
+        assert_eq!(update.data["task"]["subject"], "renamed");
+        assert_eq!(update.data["task"]["activeForm"], "Running renamed");
+
+        let restarted = TaskStore::with_dir(task_list_dir(&list_id));
+        let persisted = restarted.get(&id).unwrap();
+        assert_eq!(persisted.subject, "renamed");
+        assert_eq!(persisted.description, "after");
+        assert_eq!(persisted.active_form.as_deref(), Some("Running renamed"));
+        let metadata = persisted.metadata.unwrap();
+        assert_eq!(metadata["keep"], 1);
+        assert_eq!(metadata["add"], 2);
+        assert!(metadata.get("drop").is_none());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn task_update_adds_dependency_edges_and_deleted_cleans_them() {
+        let home = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", home.path());
+        let list_id = format!("phase3-deps-{}", uuid::Uuid::new_v4());
+        let _list = EnvGuard::set(CC_RUST_TASK_LIST_ID_ENV, &list_id);
+        let ctx = test_context();
+        let parent = dummy_parent();
+        let task_store = store_for_context(&ctx);
+        let source = task_store.create("source", "");
+        let blocked = task_store.create("blocked", "");
+        let blocker = task_store.create("blocker", "");
+
+        TaskUpdateTool
+            .call(
+                json!({
+                    "task_id": source.id,
+                    "addBlocks": [blocked.id],
+                    "addBlockedBy": [blocker.id]
+                }),
+                &ctx,
+                &parent,
+                None,
+            )
+            .await
+            .expect("update dependencies");
+
+        let reloaded = TaskStore::with_dir(task_list_dir(&list_id));
+        let source_after = reloaded.get(&source.id).unwrap();
+        let blocked_after = reloaded.get(&blocked.id).unwrap();
+        assert!(source_after.depends_on.iter().any(|id| id == &blocker.id));
+        assert!(blocked_after.depends_on.iter().any(|id| id == &source.id));
+
+        let deleted = TaskUpdateTool
+            .call(
+                json!({
+                    "taskId": blocker.id,
+                    "status": "deleted"
+                }),
+                &ctx,
+                &parent,
+                None,
+            )
+            .await
+            .expect("delete blocker");
+        assert_eq!(deleted.data["success"], true);
+
+        let after_delete = TaskStore::with_dir(task_list_dir(&list_id));
+        assert!(after_delete.get(&blocker.id).is_none());
+        let source_after_delete = after_delete.get(&source.id).unwrap();
+        assert!(!source_after_delete
+            .depends_on
+            .iter()
+            .any(|id| id == &blocker.id));
     }
 
     #[test]
