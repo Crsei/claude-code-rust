@@ -30,19 +30,17 @@ pub enum StreamingSupport {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderSupportStatus {
     Supported,
-    Partial { reason: &'static str },
     Unsupported { reason: &'static str },
 }
 
 impl ProviderSupportStatus {
     pub fn is_usable(self) -> bool {
-        matches!(self, Self::Supported | Self::Partial { .. })
+        matches!(self, Self::Supported)
     }
 
     pub fn reason(self) -> Option<&'static str> {
         match self {
             Self::Supported => None,
-            Self::Partial { reason } => Some(reason),
             Self::Unsupported { reason } => Some(reason),
         }
     }
@@ -103,12 +101,11 @@ const AUTH_BEDROCK: &[&str] = &[
 const AUTH_VERTEX: &[&str] = &[
     "CLAUDE_CODE_VERTEX_ACCESS_TOKEN",
     "GOOGLE_OAUTH_ACCESS_TOKEN",
+    "GOOGLE_APPLICATION_CREDENTIALS",
     "gcloud application-default access token",
 ];
 const AUTH_FOUNDRY: &[&str] = &["CLAUDE_CODE_USE_FOUNDRY"];
 
-pub const VERTEX_PARTIAL_REASON: &str =
-    "Vertex supports OAuth access tokens and gcloud ADC fallback; direct service-account JWT exchange is still pending";
 pub const FOUNDRY_UNSUPPORTED_REASON: &str =
     "Foundry provider selection is known from the reference project, but cc-rust has no Foundry request/auth adapter yet";
 
@@ -332,9 +329,7 @@ pub fn capabilities_for_provider_name(name: &str) -> Option<ProviderCapabilities
             thinking: true,
             prompt_cache: false,
             advisor: true,
-            status: ProviderSupportStatus::Partial {
-                reason: VERTEX_PARTIAL_REASON,
-            },
+            status: ProviderSupportStatus::Supported,
         }),
         "foundry" => Some(ProviderCapabilities {
             name: "foundry",
@@ -476,16 +471,12 @@ mod tests {
     }
 
     #[test]
-    fn test_capabilities_for_vertex_are_partial() {
+    fn test_capabilities_for_vertex_are_supported() {
         let caps = capabilities_for_provider_name("vertex").unwrap();
         assert_eq!(caps.streaming, StreamingSupport::Native);
         assert!(caps.tool_use);
         assert!(caps.thinking);
-        assert!(matches!(
-            caps.status,
-            ProviderSupportStatus::Partial { reason }
-                if reason.contains("service-account")
-        ));
+        assert!(matches!(caps.status, ProviderSupportStatus::Supported));
         assert!(caps.is_usable());
     }
 

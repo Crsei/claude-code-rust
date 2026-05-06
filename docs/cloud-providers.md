@@ -96,6 +96,12 @@ See `src/api/model_mapping.rs` for the full list.
    # or GOOGLE_OAUTH_ACCESS_TOKEN=...
    ```
 
+   **Option C — service-account key file**:
+   ```bash
+   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+   # cc-rust signs an RS256 JWT and exchanges it for a cloud-platform token.
+   ```
+
 ### Model mapping
 
 | cc-rust input                   | Vertex wire ID                |
@@ -122,9 +128,6 @@ out of scope and tracked for Phase 2:
   not Bedrock's dedicated endpoint.
 - **Vertex per-model region override** — `CLOUD_ML_REGION` is the sole
   region source; there is no per-model override yet.
-- **Vertex service-account JSON → JWT → token exchange** — not implemented
-  in-process. Users with service accounts should exchange to an access token
-  externally (e.g. via `gcloud auth activate-service-account`).
 - **First-party-only features** (voice, bridge, some analytics) continue to
   operate as if first-party; feature gating per-provider is also Phase 2.
 

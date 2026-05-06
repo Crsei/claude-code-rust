@@ -11,7 +11,7 @@ Bring cc-rust provider support to a production-grade contract for Bedrock, Verte
 - `crates/cc-config/src/`
 - `crates/claude-code-rs/src/auth/`
 
-Current risk: provider variants exist in configuration/status documents, but Bedrock and Vertex are still recorded as incomplete. This makes provider selection a runtime failure risk instead of a validation-time decision.
+Current risk: provider variants exist in configuration/status documents, and real provider/e2e coverage still lags behind the adapter matrix. This makes provider selection validation stronger than before, but end-to-end provider drift can still escape unit tests.
 
 ## Bun Reference Surface
 
@@ -31,8 +31,8 @@ The Bun implementation separates provider command selection, provider-specific c
 | Concern | Rust target | Bun reference | Gap |
 | --- | --- | --- | --- |
 | Provider selection | config/auth/API factory | `commands/provider.ts` | Rust needs validation before runtime query execution. |
-| Bedrock | API client + auth resolver | `bedrockClient.ts`, `aws.ts` | Missing signing, region, body conversion, and test fixtures. |
-| Vertex | API client + auth resolver | provider/env branches in API layer | Needs project/location auth and error mapping. |
+| Bedrock | API client + auth resolver | `bedrockClient.ts`, `aws.ts` | Native AWS EventStream and auth are implemented; real provider smoke coverage still missing. |
+| Vertex | API client + auth resolver | provider/env branches in API layer | Project/location auth and service-account JWT exchange are implemented; real provider smoke coverage and error mapping still need expansion. |
 | Headers/betas | provider request builder | `claude.ts`, `constants/betas.ts` | Needs provider-specific beta compatibility. |
 | Tests | integration fixtures | provider `__tests__` | Need mocked provider coverage and real smoke hooks. |
 
@@ -41,8 +41,8 @@ The Bun implementation separates provider command selection, provider-specific c
 1. Define a provider capability matrix in Rust: auth source, streaming support, tool-use support, thinking support, prompt-cache support, and unsupported reason.
 2. Move provider selection into a fallible validation step before `ApiClient` construction.
 3. Add provider-specific request builders instead of branching inside one generic request path.
-4. Implement Bedrock with request signing, region/profile resolution, Anthropic-body conversion, and Bedrock error normalization.
-5. Implement Vertex only if product scope requires it; otherwise mark it as an intentional crop in `docs/IMPLEMENTATION_GAPS.md`.
+4. Keep Bedrock request signing, region/profile resolution, Anthropic-body conversion, EventStream parsing, and Bedrock error normalization covered by focused tests.
+5. Keep Vertex project/location auth, per-model region selection, service-account JWT exchange, and streamRawPredict conversion covered by focused tests.
 6. Add test fixtures for config validation, auth failure, throttling, malformed provider response, streaming chunks, and beta/header behavior.
 
 ## Verification
@@ -62,10 +62,10 @@ Implemented:
 - Added fallible API client construction paths so explicit Bedrock/Vertex selection fails early with actionable configuration errors instead of silently falling back.
 - Marked Bedrock and Vertex as partially supported, and Foundry as unsupported until a request/auth adapter exists.
 
-Deferred by request:
+Initially deferred by request:
 
-- Bedrock native AWS EventStream support.
-- Vertex service-account JWT exchange.
+- Bedrock native AWS EventStream support. Implemented on 2026-05-05 in Stage 8.1.
+- Vertex service-account JWT exchange. Implemented on 2026-05-05 in Stage 8.3.
 - Provider-specific mock integration fixtures.
 - Beta/header snapshot coverage.
 

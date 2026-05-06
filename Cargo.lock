@@ -929,6 +929,7 @@ dependencies = [
  "ratatui",
  "regex",
  "reqwest",
+ "ring",
  "rust-embed",
  "semver",
  "serde",

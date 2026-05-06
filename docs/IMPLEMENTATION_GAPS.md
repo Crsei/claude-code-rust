@@ -13,7 +13,7 @@
 
 | 范围 | 当前状态 | 说明 |
 |------|----------|------|
-| API providers | 部分完成 (单独立项) | Bedrock / Vertex 已有 provider adapter 与基础测试；Bedrock 仍缺原生 AWS EventStream，Vertex 仍缺 direct service-account JWT exchange。补齐或裁剪决策见 `architecture/mvp-optimization-plans/MVP-001-api-providers-plan.md` |
+| API providers | 部分完成 (单独立项) | Bedrock 原生 AWS EventStream、Vertex direct service-account JWT exchange 已补；仍需收束 Azure 命名/能力矩阵与真实 provider/e2e 覆盖。补齐或裁剪决策见 `architecture/mvp-optimization-plans/MVP-001-api-providers-plan.md` |
 | Team Memory 客户端同步 | 未实现 | 服务端代理已落地 (`src/daemon/team_memory_proxy.rs` + `ui/team-memory-server/`)；前端尚未调用，计划见 `superpowers/plans/2026-04-11-team-memory-sync.md` |
 
 > 以下项在历史文档中曾标注为 stub，经代码核对已在 `rust-lite` 分支中收口，保留在本节做历史追踪：
@@ -102,7 +102,7 @@ rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全�
 1. **TaskTools 后台任务 parity**：在现有持久化、取消、`TaskOutput` 阻塞/超时读取、上游 task type taxonomy、remote supervisor 元数据底座、remote restart recoverable marker、restore poll timer reset 和 remote review timeout guard 基础上，补远程/多类型后台任务 poller/reconnect runtime parity，并验证 `/tasks` UI 与 task store 的状态一致性。
 2. **PlanMode auto-mode parity**：在已有保守 classifier、计划持久化、审批状态、团队审批 mailbox flow、专用计划文件写入白名单与 `TaskCreate` 关联追踪基础上，补 full auto-mode LLM classifier parity；完成后用 plan 创建、恢复、审批、执行关联与 plan 文件增量维护的 e2e 覆盖。
 3. **WebFetch browser-grade 能力**：按 `architecture/mvp-optimization-plans/MVP-009-web-fetch-browser-grade-plan.md` 逐步补 JS 渲染；redirect budget / cross-host redirect diagnostic、Content-Type 基础分发、环境代理/`NO_PROXY` 和 Cookie/credential 安全边界已完成。
-4. **API providers 决策/实现**：按 `architecture/mvp-optimization-plans/MVP-001-api-providers-plan.md` 重评 Bedrock 原生 AWS EventStream 与 Vertex direct service-account JWT exchange；实现或写入 §7 Intentional 裁剪，不再停留在“部分完成”。
+4. **API providers 决策/实现**：Bedrock 原生 AWS EventStream 与 Vertex direct service-account JWT exchange 已实现；继续按 `architecture/mvp-optimization-plans/MVP-001-api-providers-plan.md` 收束 Azure 命名/能力矩阵与真实 provider/e2e 覆盖，不再停留在“部分完成”。
 5. **Team Memory 客户端同步**：接通 `src/daemon/team_memory_proxy.rs` / `ui/team-memory-server/` 的前端调用路径，补同步、断线恢复与冲突处理测试。
 6. **UI caveats 收束**：修复 §3 的终端 resize 回流与窄终端欢迎页布局；完成后迁移到 archive 或 `KNOWN_ISSUES.md` closed 记录。
 7. **活跃方案文档清理**：逐个复核 §4 文档，能落地的拆成实现任务，过期或已覆盖的归档，仍有效的保留 owner/下一步。

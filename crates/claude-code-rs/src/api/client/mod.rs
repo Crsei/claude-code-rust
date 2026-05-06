@@ -560,6 +560,7 @@ impl ApiClient {
     /// - `CLOUD_ML_REGION` — region (default: `us-east5`)
     /// - `ANTHROPIC_VERTEX_PROJECT_ID` / `GOOGLE_CLOUD_PROJECT` / `GCLOUD_PROJECT` — project ID
     /// - `CLAUDE_CODE_VERTEX_ACCESS_TOKEN` / `GOOGLE_OAUTH_ACCESS_TOKEN` — access token
+    /// - `GOOGLE_APPLICATION_CREDENTIALS` service-account JSON
     ///   (falls back to `gcloud auth application-default print-access-token` subprocess)
     ///
     /// Returns `None` if project ID or access token can't be resolved.
@@ -572,7 +573,7 @@ impl ApiClient {
         let region = crate::api::vertex::resolve_region();
         let access_token = crate::api::vertex::VertexAccessToken::from_env_or_gcloud().ok_or_else(|| {
             anyhow::anyhow!(
-                "Vertex provider was requested with CLAUDE_CODE_USE_VERTEX, but no OAuth access token was found. Set CLAUDE_CODE_VERTEX_ACCESS_TOKEN or GOOGLE_OAUTH_ACCESS_TOKEN, or run `gcloud auth application-default login`."
+                "Vertex provider was requested with CLAUDE_CODE_USE_VERTEX, but no OAuth access token was found. Set CLAUDE_CODE_VERTEX_ACCESS_TOKEN, GOOGLE_OAUTH_ACCESS_TOKEN, or GOOGLE_APPLICATION_CREDENTIALS, or run `gcloud auth application-default login`."
             )
         })?;
         let default_model = std::env::var("ANTHROPIC_MODEL")

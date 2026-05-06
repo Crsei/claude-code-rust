@@ -82,7 +82,7 @@ Provider HTTP/SSE 或 AWS EventStream
 | Provider 类别 | 当前 streaming 方式 | 已实现 | 主要差距 |
 | --- | --- | --- | --- |
 | Anthropic native / 当前 `ApiProvider::Azure` 路由 | `/v1/messages` SSE，按 Anthropic 事件解析。 | 文本、thinking、usage、stop_reason、tool input delta、thinking signature、tool block 完成边界。 | Azure 命名/能力矩阵与实际路由需再确认。 |
-| Vertex Anthropic | `streamRawPredict`，复用 Anthropic SSE 解析。 | native streaming 主链路、tool input delta、thinking signature。 | 认证仍偏环境/gcloud fallback。 |
+| Vertex Anthropic | `streamRawPredict`，复用 Anthropic SSE 解析。 | native streaming 主链路、tool input delta、thinking signature、环境 token / service-account JWT / gcloud ADC 认证链。 | 仍缺真实 Vertex provider/e2e 覆盖。 |
 | OpenAI-compatible / Codex / DeepSeek / Qwen 等 | OpenAI chat/completions SSE 转换为统一 `StreamEvent`。 | 文本 delta、usage、finish_reason 映射；DeepSeek `reasoning_content` 映射 thinking；tool calls 在 finish 时转为 `ToolUse` block。 | tool calls 不是实时 `input_json_delta`；thinking 仅覆盖特定兼容字段；代码注释提到 Azure OpenAI，但当前 `ApiProvider::Azure` 不走该分支。 |
 | Google Gemini | `streamGenerateContent?alt=sse`，将 Gemini text / thought / functionCall parts 映射为统一 `StreamEvent`。 | 文本 streaming、thinking delta/signature、tool schema/tool_choice 请求转换、functionCall -> `tool_use`。 | prompt cache 未支持；Gemini thoughtSignature 只保留在 thinking block，tool/text provider metadata 尚未持久化。 |
 | Bedrock | `/invoke-with-response-stream` AWS EventStream；`chunk` payload 复用 Anthropic Messages event JSON。 | 原生 streaming、SigV4/Bearer auth、tool input delta、thinking signature、CRC 校验。 | 仍缺真实 AWS provider/e2e 覆盖；后续按 Bedrock 新事件类型继续扩展。 |
@@ -128,7 +128,7 @@ Provider HTTP/SSE 或 AWS EventStream
 | P1 | 非 streaming fallback 尚未完整对齐。 | stream 建立前 retry/backoff 和主 loop failure 分类已落地；daemon/TUI/headless 事件覆盖已收敛，但从 streaming 降级到非 streaming 的策略仍需补。 |
 | P1 | `content_block_stop` 不产出 per-block `AssistantMessage`。 | 这是当前有意保留的边界：SDK/session/TUI 仍以最终单 assistant 替换 partial stream；per-block assistant 需要和 `StreamingToolExecutor`、session tombstone/fallback 语义一起重新设计。 |
 | P2 | daemon permission endpoint 仍是 stub。 | daemon/Web 客户端权限交互能力不完整。 |
-| P2 | Vertex service-account JWT exchange 等 provider 能力仍未补齐；Bedrock / Google 仍缺真实 provider/e2e 覆盖。 | 多 provider 行为还不是 full-build 对齐状态。 |
+| P2 | Bedrock / Google / Vertex 仍缺真实 provider/e2e 覆盖。 | 多 provider 行为还不是 full-build 验证状态。 |
 | P2 | Azure provider 的命名、能力矩阵和 streaming 路由存在不一致。 | 可能导致 Azure OpenAI 与 Anthropic-compatible Azure endpoint 的预期混淆。 |
 | P2 | 针对 provider-specific streaming、retry 可见性和 daemon/TUI/headless 覆盖的回归测试不足。 | 后续补齐 provider 和表面事件时容易回归。 |
 
@@ -136,7 +136,7 @@ Provider HTTP/SSE 或 AWS EventStream
 
 1. 继续保留最终单 `AssistantMessage` 交付语义；真正改成 per-block assistant 时，需要同步设计 SDK/session 持久化、fallback tombstone 和 UI partial replacement。
 2. 补非 streaming fallback 策略，并确认 `ApiRetry` / `CompactBoundary` / `ToolUseSummary` 等事件在 TUI、headless、daemon SSE 中的用户可见文案。
-3. 再扩展 provider：Vertex service-account JWT exchange、Azure 命名与能力矩阵，并为 Bedrock / Google 补真实 provider/e2e 覆盖。
+3. 再扩展 provider：Azure 命名与能力矩阵，并为 Bedrock / Google / Vertex 补真实 provider/e2e 覆盖。
 
 ## 文档一致性提醒
 

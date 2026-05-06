@@ -19,8 +19,8 @@
 
 | 提供商 | 文件 | 状态 | 说明 |
 |--------|------|------|------|
-| AWS Bedrock | `src/api/client.rs:151` | **未实现** | `unimplemented!()`，调用会 panic |
-| GCP Vertex AI | `src/api/client.rs:154` | **未实现** | `unimplemented!()`，调用会 panic |
+| AWS Bedrock | `crates/claude-code-rs/src/api/bedrock.rs` + `api/client/mod.rs` | ✅ Supported | `CLAUDE_CODE_USE_BEDROCK`; bearer token or SigV4; `/invoke-with-response-stream` AWS EventStream |
+| GCP Vertex AI | `crates/claude-code-rs/src/api/vertex.rs` + `api/client/mod.rs` | ✅ Supported | `CLAUDE_CODE_USE_VERTEX`; OAuth token/env, service-account JSON, or gcloud ADC; `:streamRawPredict` SSE |
 
 已完成: Anthropic 直连, OpenAI 兼容, Google Gemini, Azure
 
@@ -182,7 +182,7 @@
 
 - **斜杠命令**: 75/75 (含 `/login-code`, `/extra-usage`, `/rate-limit-options`)
 - **工具**: 30 个 (Bash, Read, Write, Edit, Grep, Glob, Agent, Skill, LSP, Tasks, Web, PowerShell, Brief, Sleep...)
-- **API 提供商**: 4/6 (Anthropic, OpenAI, Google, Azure)
+- **API 提供商**: 6/6 (Anthropic, OpenAI, Google, Azure, Bedrock, Vertex; real cloud provider/e2e coverage remains follow-up)
 - **认证**: API Key + Keychain + OAuth PKCE (Claude.ai Bearer / Console API Key)
 - **核心模块**: engine, query, compact, session, permissions, config, ipc, skills, plugins, mcp, lsp_service, daemon, ui
 - **新增功能**: Git 上下文注入 system prompt, Web 搜索 TTL 缓存, Agent 后台执行, Feature Gate 系统, Team Memory (Rust 代理 + TS/SQLite 服务)
@@ -193,7 +193,7 @@
 ## 5. 完成度总览
 
 ```
-  API 提供商    ████████████░░░░  4/6 (67%) — Bedrock/Vertex 单独立项
+  API 提供商    ████████████████  6/6 (100%) — real cloud provider/e2e coverage remains follow-up
   认证          ████████████████  4/4 (100%) ✅
   Teams 系统    ████████████████  in-process + /team + TeamSpawn + Dashboard ✅
   工具          ████████████████  30/30 (100%) ✅
