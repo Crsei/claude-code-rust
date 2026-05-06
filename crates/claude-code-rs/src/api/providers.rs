@@ -298,8 +298,8 @@ pub fn capabilities_for_provider_info(info: &ProviderInfo) -> ProviderCapabiliti
             auth_sources,
             protocol: info.protocol,
             streaming: StreamingSupport::Native,
-            tool_use: false,
-            thinking: false,
+            tool_use: true,
+            thinking: true,
             prompt_cache: false,
             advisor: false,
             status: ProviderSupportStatus::Supported,
@@ -450,6 +450,17 @@ mod tests {
         assert_eq!(caps.streaming, StreamingSupport::Native);
         assert!(caps.tool_use);
         assert!(!caps.thinking);
+        assert!(!caps.prompt_cache);
+        assert!(caps.is_usable());
+    }
+
+    #[test]
+    fn test_capabilities_for_google_supports_tools_and_thinking() {
+        let caps = capabilities_for_provider_name("google").unwrap();
+        assert_eq!(caps.protocol, ProviderProtocol::Google);
+        assert_eq!(caps.streaming, StreamingSupport::Native);
+        assert!(caps.tool_use);
+        assert!(caps.thinking);
         assert!(!caps.prompt_cache);
         assert!(caps.is_usable());
     }
