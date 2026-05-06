@@ -34,10 +34,90 @@ pub struct MemoryEntry {
     /// Category tag (e.g. "project", "preference", "context").
     #[serde(default)]
     pub category: String,
+    /// Closed memory taxonomy aligned with Bun's user / feedback / project /
+    /// reference types. Older entries may not have this field; in that case we
+    /// infer it from `category` when possible.
+    #[serde(
+        default,
+        rename = "type",
+        alias = "memory_type",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub memory_type: Option<MemoryType>,
     /// When this entry was created (ISO 8601).
     pub created_at: String,
     /// When this entry was last updated (ISO 8601).
     pub updated_at: String,
+}
+
+impl MemoryEntry {
+    /// Effective closed taxonomy type, including legacy `category` fallback.
+    pub fn effective_memory_type(&self) -> Option<MemoryType> {
+        self.memory_type
+            .or_else(|| MemoryType::parse(&self.category))
+    }
+
+    fn display_label(&self) -> Option<&str> {
+        self.effective_memory_type()
+            .map(MemoryType::as_str)
+            .or_else(|| {
+                let category = self.category.trim();
+                (!category.is_empty()).then_some(category)
+            })
+    }
+}
+
+/// Bun-compatible closed memory taxonomy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MemoryType {
+    User,
+    Feedback,
+    Project,
+    Reference,
+}
+
+impl MemoryType {
+    pub const ALL: [MemoryType; 4] = [
+        MemoryType::User,
+        MemoryType::Feedback,
+        MemoryType::Project,
+        MemoryType::Reference,
+    ];
+
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "user" => Some(MemoryType::User),
+            "feedback" => Some(MemoryType::Feedback),
+            "project" => Some(MemoryType::Project),
+            "reference" => Some(MemoryType::Reference),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MemoryType::User => "user",
+            MemoryType::Feedback => "feedback",
+            MemoryType::Project => "project",
+            MemoryType::Reference => "reference",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            MemoryType::User => "User role, preferences, goals, responsibilities, or background.",
+            MemoryType::Feedback => {
+                "User guidance about behavior to avoid or repeat, including corrections and validated approaches."
+            }
+            MemoryType::Project => {
+                "Project context, goals, deadlines, incidents, or motivations that cannot be inferred from code."
+            }
+            MemoryType::Reference => {
+                "Pointers to external systems or resources where current information can be found."
+            }
+        }
+    }
 }
 
 /// Scope of memory storage.
@@ -145,12 +225,11 @@ fn memory_index_line(entry: &MemoryEntry) -> String {
     let title = escape_markdown_link_text(&entry.key);
     let filename = key_to_filename(&entry.key);
     let hook = one_line_hook(&entry.value);
-    let category = entry.category.trim();
 
-    if category.is_empty() {
-        format!("- [{title}]({filename}) - {hook}")
+    if let Some(label) = entry.display_label() {
+        format!("- [{title}]({filename}) - {label}: {hook}")
     } else {
-        format!("- [{title}]({filename}) - {category}: {hook}")
+        format!("- [{title}]({filename}) - {hook}")
     }
 }
 
@@ -287,7 +366,11 @@ fn format_memory_context_section(
     }
 
     for mem in memories {
-        section.push_str(&format!("- **{}**: {}\n", mem.key, mem.value));
+        let label = mem
+            .display_label()
+            .map(|label| format!(" [{label}]"))
+            .unwrap_or_default();
+        section.push_str(&format!("- **{}**{}: {}\n", mem.key, label, mem.value));
     }
 
     section
@@ -325,6 +408,7 @@ pub fn write_memory(
         key: key.to_string(),
         value: value.to_string(),
         category: category.to_string(),
+        memory_type: MemoryType::parse(category),
         created_at,
         updated_at: now,
     };
@@ -412,6 +496,9 @@ pub fn search_memories(query: &str, scope: MemoryScope, cwd: &Path) -> Result<Ve
             e.key.to_lowercase().contains(&query_lower)
                 || e.value.to_lowercase().contains(&query_lower)
                 || e.category.to_lowercase().contains(&query_lower)
+                || e.effective_memory_type()
+                    .map(|memory_type| memory_type.as_str().contains(&query_lower))
+                    .unwrap_or(false)
         })
         .collect())
 }
@@ -684,6 +771,7 @@ mod tests {
                 key: format!("memory-{idx}"),
                 value: "x".repeat(300),
                 category: "project".to_string(),
+                memory_type: Some(MemoryType::Project),
                 created_at: "2026-05-06T00:00:00Z".to_string(),
                 updated_at: "2026-05-06T00:00:00Z".to_string(),
             })
@@ -716,6 +804,49 @@ mod tests {
         assert!(ctx.contains("[pref](pref.json) - ui: dark mode"));
         assert!(ctx.contains("pref"));
         assert!(ctx.contains("dark mode"));
+
+        cleanup(&cwd);
+    }
+
+    #[test]
+    fn test_memory_type_closed_taxonomy_parse() {
+        assert_eq!(MemoryType::ALL.len(), 4);
+        assert_eq!(MemoryType::parse("user"), Some(MemoryType::User));
+        assert_eq!(MemoryType::parse("feedback"), Some(MemoryType::Feedback));
+        assert_eq!(MemoryType::parse("project"), Some(MemoryType::Project));
+        assert_eq!(MemoryType::parse("reference"), Some(MemoryType::Reference));
+        assert_eq!(MemoryType::parse("preference"), None);
+    }
+
+    #[test]
+    fn test_write_memory_records_closed_memory_type() {
+        let cwd = make_temp_dir();
+
+        let entry = write_memory(
+            "testing-feedback",
+            "Prefer integration tests here.\n**Why:** catches migrations.",
+            "feedback",
+            MemoryScope::Project,
+            &cwd,
+        )
+        .unwrap();
+
+        assert_eq!(entry.memory_type, Some(MemoryType::Feedback));
+
+        let read = read_memory("testing-feedback", MemoryScope::Project, &cwd).unwrap();
+        assert_eq!(read.effective_memory_type(), Some(MemoryType::Feedback));
+
+        let raw = std::fs::read_to_string(
+            memory_dir(MemoryScope::Project, &cwd)
+                .unwrap()
+                .join(key_to_filename("testing-feedback")),
+        )
+        .unwrap();
+        assert!(raw.contains(r#""type": "feedback""#));
+
+        let ctx = build_memory_context(&cwd).unwrap();
+        assert!(ctx.contains("[testing-feedback](testing-feedback.json) - feedback:"));
+        assert!(ctx.contains("**testing-feedback** [feedback]:"));
 
         cleanup(&cwd);
     }
