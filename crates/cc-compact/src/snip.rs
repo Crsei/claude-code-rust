@@ -5,6 +5,8 @@ use uuid::Uuid;
 
 use cc_types::message::{CompactMetadata, ContentBlock, Message, SystemMessage, SystemSubtype};
 
+use crate::compaction::create_preserved_segment;
+
 /// Result of history snipping.
 #[derive(Debug)]
 pub struct SnipResult {
@@ -59,8 +61,14 @@ pub fn snip_compact_if_needed(messages: Vec<Message>, max_turns: usize) -> SnipR
     let removed_messages = &messages[preserve_first..cut_index];
     let tokens_freed = estimate_tokens_for_messages(removed_messages);
 
+    let mut preserved_messages = Vec::new();
+    if preserve_first > 0 {
+        preserved_messages.push(messages[0].clone());
+    }
+    preserved_messages.extend(messages[cut_index..].iter().cloned());
+
     // Build the boundary message
-    let boundary = Message::System(SystemMessage {
+    let mut boundary = Message::System(SystemMessage {
         uuid: Uuid::new_v4(),
         timestamp: Utc::now().timestamp_millis(),
         subtype: SystemSubtype::CompactBoundary {
@@ -76,6 +84,15 @@ pub fn snip_compact_if_needed(messages: Vec<Message>, max_turns: usize) -> SnipR
             tokens_freed
         ),
     });
+    let preserved_segment = create_preserved_segment(Some(&boundary), &preserved_messages);
+    if let Message::System(system) = &mut boundary {
+        if let SystemSubtype::CompactBoundary {
+            compact_metadata: Some(metadata),
+        } = &mut system.subtype
+        {
+            metadata.preserved_segment = Some(preserved_segment);
+        }
+    }
 
     // Construct result: first message + boundary + recent turns
     let mut result = Vec::new();
@@ -203,6 +220,8 @@ mod tests {
             messages.push(create_user_message(&format!("turn {}", i), false));
             messages.push(make_assistant_text(&format!("response {}", i)));
         }
+        let first_uuid = messages[0].uuid().to_string();
+        let removed_uuid = messages[2].uuid().to_string();
 
         let result = snip_compact_if_needed(messages, 3);
         // Should keep first message + boundary + last 3 turns (6 messages)
@@ -210,5 +229,24 @@ mod tests {
         assert!(result.boundary_message.is_some());
         // First message preserved, boundary inserted, then 3 turns * 2 messages
         assert_eq!(result.messages.len(), 1 + 1 + 6);
+
+        let boundary = result.boundary_message.as_ref().unwrap();
+        let Message::System(system) = boundary else {
+            panic!("expected snip boundary system message");
+        };
+        let SystemSubtype::CompactBoundary {
+            compact_metadata: Some(metadata),
+        } = &system.subtype
+        else {
+            panic!("expected compact metadata");
+        };
+        let segment = metadata.preserved_segment.as_ref().unwrap();
+        let boundary_uuid = boundary.uuid().to_string();
+        assert_eq!(
+            segment.summary_message_uuid.as_deref(),
+            Some(boundary_uuid.as_str())
+        );
+        assert!(segment.preserved_message_uuids.contains(&first_uuid));
+        assert!(!segment.preserved_message_uuids.contains(&removed_uuid));
     }
 }

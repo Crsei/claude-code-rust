@@ -47,14 +47,14 @@
 - `QueryEngineDeps::autocompact()` 在 auto-compact 触发且当前 workspace 有 session-insights 时，优先走 Session Memory Compact，再回退到模型摘要或本地管线。[`deps.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/deps.rs)
 - `build_post_compact_messages()` 会在摘要后重建上下文，并恢复最近文件引用。[`compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L139)
 - `create_compact_boundary()` 和 `get_messages_after_compact_boundary()` 已提供 boundary 生成与回溯能力。[`compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L184), [`messages.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/messages.rs#L106)
-- `CompactMetadata` 已包含 `preserved_segment`，手动 `/compact` 生成的 boundary 会记录摘要消息 UUID 和本地管线保留消息 UUID；snip / context-collapse 等内部 boundary 仍保持 `None`，未扩大到 Bun 的完整恢复语义。[`message.rs`](F:/AIclassmanager/cc/rust/crates/cc-types/src/message.rs#L130), [`compact.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/compact.rs#L67)
+- `CompactMetadata` 已包含 `preserved_segment`。手动 `/compact` 生成的 boundary 会记录摘要消息 UUID 和本地管线保留消息 UUID；snip 与 context-collapse 生成的内部 boundary 也会把 boundary UUID 作为 summary，并记录被保留的首条消息与最近窗口消息 UUID。[`message.rs`](F:/AIclassmanager/cc/rust/crates/cc-types/src/message.rs#L130), [`compact.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/compact.rs#L67), [`snip.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/snip.rs#L87), [`context_collapse.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/context_collapse.rs#L81)
 - `handle_prompt_too_long()` 提供 PTL 重试路径；`reactive_compact()` 失败时会回退到终态。[`loop_helpers.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/loop_helpers.rs#L202), [`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L154)
 - `QueryEngineDeps::autocompact()` 在有 API client 时会额外调用模型生成摘要，再拼出 post-compact 消息。[`deps.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/deps.rs#L258)
 
 **状态判断**
 
 - `部分实现`。
-- 原因不是“没有压缩”，而是压缩主链路、Session Memory Compact 和手动 `/compact` boundary 的 preservedSegment 注解都已经存在；差异点在于 Bun 文档里的 feature gate 组合、Partial Compact 和某些恢复策略，在当前 Rust 实现里没有看到完整的一一对应。
+- 原因不是“没有压缩”，而是压缩主链路、Session Memory Compact、手动 `/compact` boundary 和内部 snip/context-collapse boundary 的 preservedSegment 注解都已经存在；差异点在于 Bun 文档里的 feature gate 组合、Partial Compact 和某些恢复策略，在当前 Rust 实现里没有看到完整的一一对应。
 
 ### `project-memory.mdx`
 
@@ -121,14 +121,14 @@
 
 - 系统提示词拼装链路已经落地：静态段、动态段、缓存边界、`CLAUDE.md` 注入、append/override 顺序都能在源码里直接定位。[`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs#L361), [`prompt_sections.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/prompt_sections.rs#L51)
 - 记忆存储、命令面和主提示词注入已经实现：`cc-session::memdir` 支持四个 scope 的 CRUD 和搜索，`/memory` 也能查看、编辑和打开这些目录；Project / Global / Team memory 会进入 `# Memory Context`，Auto memory 会在 `auto_memory_enabled` 开启时进入同一段落，当前 workspace、默认 30 天内且满足 tag include/exclude 规则、并排除当前 session 的最近 session-insights 也会回放到同一段落。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L111), [`commands/memory.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/memory.rs#L41), [`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs), [`session_memory.rs`](F:/AIclassmanager/cc/rust/crates/cc-services/src/session_memory.rs#L243)
-- 压缩主链路已经实现：tool result budget、snip、microcompact、Session Memory Compact、自动压缩、boundary、PTL 恢复和 hook 都有对应代码。[`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`session_memory_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/session_memory_compact.rs), [`compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L184)
+- 压缩主链路已经实现：tool result budget、snip、microcompact、Session Memory Compact、自动压缩、boundary、preservedSegment、PTL 恢复和 hook 都有对应代码。[`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`session_memory_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/session_memory_compact.rs), [`compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L184), [`snip.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/snip.rs#L87), [`context_collapse.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/context_collapse.rs#L81)
 - token 预算已经接入主循环：任务预算继续/停止、max_output_tokens 恢复、自动压缩阈值都不是占位。[`token_budget.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/token_budget.rs#L9), [`loop_helpers.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/loop_helpers.rs#L202)
 
 ## 未实现 / 部分实现 / 待确认 / 故意裁剪
 
 ### 部分实现
 
-- `compaction.mdx`：已有完整压缩管线、Session Memory Compact 和手动 `/compact` boundary preservedSegment 元数据，但 Bun 文档里的 feature gate 组合、Partial Compact 与完整恢复语义还没有看到同构实现。[`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`session_memory_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/session_memory_compact.rs), [`compact.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/compact.rs#L67)
+- `compaction.mdx`：已有完整压缩管线、Session Memory Compact、手动 `/compact` boundary 和内部 snip/context-collapse boundary preservedSegment 元数据，但 Bun 文档里的 feature gate 组合、Partial Compact 与完整恢复语义还没有看到同构实现。[`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`session_memory_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/session_memory_compact.rs), [`compact.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/compact.rs#L67), [`snip.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/snip.rs#L87), [`context_collapse.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/context_collapse.rs#L81)
 - `project-memory.mdx`：记忆 CRUD、`CLAUDE.md` 注入、Project / Global / Team memory 主提示词注入、`auto_memory_enabled` 门控的 Auto memory 注入、workspace/time-window/tag scoped session-insights 回注、当前 session 排除过滤，以及确定性生命周期抽取都存在；Bun 的智能召回与完整 memory index 语义仍未同构。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L248), [`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs), [`session_memory.rs`](F:/AIclassmanager/cc/rust/crates/cc-services/src/session_memory.rs#L243), [`mod.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/mod.rs)
 - `token-budget.mdx`：有预算判断、动态窗口解析和恢复，但主要依赖启发式估算，不是精确 token 统计。[`tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs)
 

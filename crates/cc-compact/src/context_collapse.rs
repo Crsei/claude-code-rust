@@ -8,6 +8,7 @@ use cc_types::message::{
 use cc_utils::tokens;
 
 use super::auto_compact;
+use crate::compaction::create_preserved_segment;
 
 #[derive(Debug)]
 pub struct ContextCollapseResult {
@@ -59,7 +60,13 @@ pub fn context_collapse_if_needed(messages: Vec<Message>, model: &str) -> Contex
         result.push(messages[0].clone());
     }
 
-    let boundary = Message::System(SystemMessage {
+    let mut preserved_messages = Vec::new();
+    if preserve_first {
+        preserved_messages.push(messages[0].clone());
+    }
+    preserved_messages.extend(messages[cut_index..].iter().cloned());
+
+    let mut boundary = Message::System(SystemMessage {
         uuid: Uuid::new_v4(),
         timestamp: Utc::now().timestamp_millis(),
         subtype: SystemSubtype::CompactBoundary {
@@ -71,6 +78,15 @@ pub fn context_collapse_if_needed(messages: Vec<Message>, model: &str) -> Contex
         },
         content: format!("<context_collapse>\n{}\n</context_collapse>", summary),
     });
+    let preserved_segment = create_preserved_segment(Some(&boundary), &preserved_messages);
+    if let Message::System(system) = &mut boundary {
+        if let SystemSubtype::CompactBoundary {
+            compact_metadata: Some(metadata),
+        } = &mut system.subtype
+        {
+            metadata.preserved_segment = Some(preserved_segment);
+        }
+    }
     result.push(boundary.clone());
     result.extend(messages[cut_index..].iter().cloned());
 
@@ -332,6 +348,8 @@ mod tests {
                 "y".repeat(120)
             )));
         }
+        let first_uuid = messages[0].uuid().to_string();
+        let removed_uuid = messages[2].uuid().to_string();
 
         let result = context_collapse_if_needed(messages, "claude-sonnet-4-20250514");
 
@@ -346,6 +364,20 @@ mod tests {
                     system.subtype,
                     SystemSubtype::CompactBoundary { .. }
                 ));
+                let SystemSubtype::CompactBoundary {
+                    compact_metadata: Some(metadata),
+                } = &system.subtype
+                else {
+                    panic!("expected compact metadata");
+                };
+                let segment = metadata.preserved_segment.as_ref().unwrap();
+                let boundary_uuid = result.messages[1].uuid().to_string();
+                assert_eq!(
+                    segment.summary_message_uuid.as_deref(),
+                    Some(boundary_uuid.as_str())
+                );
+                assert!(segment.preserved_message_uuids.contains(&first_uuid));
+                assert!(!segment.preserved_message_uuids.contains(&removed_uuid));
             }
             other => panic!("expected compact boundary, got {other:?}"),
         }
