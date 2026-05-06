@@ -24,7 +24,7 @@ use crate::query::loop_impl;
 use crate::session::transcript;
 use crate::types::config::{QueryParams, QuerySource};
 use crate::types::message::{
-    Attachment, Message, MessageContent, QueryYield, StreamEvent, SystemSubtype,
+    Attachment, ContentBlock, Message, MessageContent, QueryYield, StreamEvent, SystemSubtype,
 };
 
 use super::deps::QueryEngineDeps;
@@ -346,23 +346,59 @@ impl QueryEngine {
                 cfg_output_style,
                 include_auto_memory,
                 session_memory_context,
+                memory_query_text,
+                recent_tool_names,
+                already_surfaced_memory_keys,
             ) = {
                 let s = state_ref.read();
                 (
                     s.app_state.settings.language.clone(),
                     s.app_state.settings.output_style.clone(),
                     s.app_state.settings.auto_memory_enabled.unwrap_or(false),
-                    s.session_memory
-                        .format_memory_context_for_workspace_excluding_session(
+                    s.session_memory.format_memory_context_for_workspace_excluding_session(
                             5,
                             Some(std::path::Path::new(&config.cwd)),
                             Some(session_id.as_str()),
                         ),
+                    latest_user_query_text(&s.messages).unwrap_or_else(|| prompt.clone()),
+                    recent_tool_names(&s.messages, 8),
+                    s.app_state.surfaced_memory_keys.clone(),
                 )
             };
+            let ignore_memory =
+                cc_session::memdir::query_requests_memory_ignore(&memory_query_text);
+            let session_memory_context = if ignore_memory {
+                None
+            } else {
+                session_memory_context
+            };
+            let (memory_context_override, newly_surfaced_memory_keys) =
+                match cc_session::memdir::build_relevant_memory_context_with(
+                    std::path::Path::new(&config.cwd),
+                    include_auto_memory,
+                    &memory_query_text,
+                    &recent_tool_names,
+                    &already_surfaced_memory_keys,
+                    5,
+                ) {
+                    Ok((context, surfaced)) => (Some(context), surfaced),
+                    Err(error) => {
+                        debug!(
+                            error = %error,
+                            "failed to build relevant memory context; falling back to full memory context"
+                        );
+                        (None, Vec::new())
+                    }
+                };
+            if !newly_surfaced_memory_keys.is_empty() {
+                let mut s = state_ref.write();
+                s.app_state
+                    .surfaced_memory_keys
+                    .extend(newly_surfaced_memory_keys);
+            }
 
             let (system_prompt_parts, user_context, system_context) =
-                system_prompt::build_system_prompt_with_session_memory(
+                system_prompt::build_system_prompt_with_memory_contexts(
                     config.custom_system_prompt.as_deref(),
                     config.append_system_prompt.as_deref(),
                     &tools_snapshot,
@@ -371,6 +407,7 @@ impl QueryEngine {
                     cfg_language.as_deref(),
                     cfg_output_style.as_deref(),
                     include_auto_memory,
+                    memory_context_override.as_deref(),
                     session_memory_context.as_deref(),
                 );
 
@@ -973,4 +1010,57 @@ impl QueryEngine {
         };
         Box::pin(stream)
     }
+}
+
+fn latest_user_query_text(messages: &[Message]) -> Option<String> {
+    messages.iter().rev().find_map(|message| {
+        let Message::User(user) = message else {
+            return None;
+        };
+        if user.is_meta {
+            return None;
+        }
+        user_message_text(&user.content).filter(|text| !text.trim().is_empty())
+    })
+}
+
+fn user_message_text(content: &MessageContent) -> Option<String> {
+    match content {
+        MessageContent::Text(text) => Some(text.clone()),
+        MessageContent::Blocks(blocks) => {
+            let text = blocks
+                .iter()
+                .filter_map(|block| match block {
+                    ContentBlock::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            (!text.trim().is_empty()).then_some(text)
+        }
+    }
+}
+
+fn recent_tool_names(messages: &[Message], limit: usize) -> Vec<String> {
+    let mut names = Vec::new();
+    for message in messages.iter().rev() {
+        let Message::Assistant(assistant) = message else {
+            continue;
+        };
+        for block in assistant.content.iter().rev() {
+            let name = match block {
+                ContentBlock::ToolUse { name, .. } | ContentBlock::ServerToolUse { name, .. } => {
+                    name
+                }
+                _ => continue,
+            };
+            if !names.iter().any(|existing| existing == name) {
+                names.push(name.clone());
+                if names.len() >= limit {
+                    return names;
+                }
+            }
+        }
+    }
+    names
 }

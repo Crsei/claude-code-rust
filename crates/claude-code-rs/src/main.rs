@@ -638,6 +638,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         team_context: None,
         hooks: merged_config.hooks.clone(),
         plan_workflow: persisted_plan_workflow,
+        surfaced_memory_keys: std::collections::HashSet::new(),
         kairos_active: false,
         is_brief_only: false,
         is_assistant_mode: false,

@@ -402,6 +402,38 @@ pub fn build_system_prompt_with_session_memory(
     HashMap<String, String>,
     HashMap<String, String>,
 ) {
+    build_system_prompt_with_memory_contexts(
+        custom_prompt,
+        append_prompt,
+        tools,
+        model,
+        cwd,
+        language,
+        output_style,
+        include_auto_memory,
+        None,
+        session_memory_context,
+    )
+}
+
+/// Build the default system prompt parts with optional prebuilt memory context
+/// and session insights.
+pub fn build_system_prompt_with_memory_contexts(
+    custom_prompt: Option<&str>,
+    append_prompt: Option<&str>,
+    tools: &[Arc<dyn Tool>],
+    model: &str,
+    cwd: &str,
+    language: Option<&str>,
+    output_style: Option<&str>,
+    include_auto_memory: bool,
+    memory_context_override: Option<&str>,
+    session_memory_context: Option<&str>,
+) -> (
+    Vec<String>,
+    HashMap<String, String>,
+    HashMap<String, String>,
+) {
     let mut parts: Vec<String> = Vec::new();
 
     if let Some(custom) = custom_prompt {
@@ -581,7 +613,12 @@ pub fn build_system_prompt_with_session_memory(
 
     // ── Memory context injection ──
     let mut memory_context_parts = Vec::new();
-    match cc_session::memdir::build_memory_context_with(cwd_path, include_auto_memory) {
+    let memory_context_result = memory_context_override
+        .map(|context| Ok(context.to_string()))
+        .unwrap_or_else(|| {
+            cc_session::memdir::build_memory_context_with(cwd_path, include_auto_memory)
+        });
+    match memory_context_result {
         Ok(context) if !context.is_empty() => {
             debug!(
                 cwd = cwd,
@@ -1165,6 +1202,46 @@ mod tests {
         assert!(joined.contains("<memory-context>"));
         assert!(joined.contains("api-contract"));
         assert!(joined.contains("stable v2 endpoint"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_prebuilt_memory_context_overrides_full_memory_scan() {
+        prompt_sections::clear_cache();
+        let dir = std::env::temp_dir().join(format!(
+            "sysprompt_memory_override_{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        cc_session::memdir::write_memory(
+            "full-memory",
+            "This entry should not be injected when recall has already selected memory.",
+            "project",
+            cc_session::memdir::MemoryScope::Project,
+            &dir,
+        )
+        .unwrap();
+
+        let cwd = dir.to_str().unwrap();
+        let (parts, _, _) = build_system_prompt_with_memory_contexts(
+            None,
+            None,
+            &[],
+            "test",
+            cwd,
+            None,
+            None,
+            false,
+            Some("<memory-context>\n## Relevant Memories\n- **selected**: use this\n</memory-context>"),
+            Some("<session-insights>\n- Keep session detail.\n</session-insights>"),
+        );
+        let joined = parts.join("\n");
+
+        assert!(joined.contains("## Relevant Memories"));
+        assert!(joined.contains("selected"));
+        assert!(joined.contains("<session-insights>"));
+        assert!(!joined.contains("full-memory"));
 
         let _ = fs::remove_dir_all(&dir);
     }

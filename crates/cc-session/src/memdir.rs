@@ -8,7 +8,7 @@
 
 #![allow(unused)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -25,7 +25,7 @@ const MEMORY_INDEX_HOOK_MAX_CHARS: usize = 150;
 // ---------------------------------------------------------------------------
 
 /// A single memory entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryEntry {
     /// Unique key for this memory.
     pub key: String,
@@ -44,10 +44,25 @@ pub struct MemoryEntry {
         skip_serializing_if = "Option::is_none"
     )]
     pub memory_type: Option<MemoryType>,
+    /// Optional short description used by relevant-memory recall.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Optional search terms used by relevant-memory recall.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub search_terms: Vec<String>,
     /// When this entry was created (ISO 8601).
     pub created_at: String,
     /// When this entry was last updated (ISO 8601).
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelevantMemory {
+    pub identity: String,
+    pub scope: MemoryScope,
+    pub entry: MemoryEntry,
+    pub score: u32,
+    pub matched_terms: Vec<String>,
 }
 
 impl MemoryEntry {
@@ -146,6 +161,15 @@ impl MemoryScope {
             MemoryScope::Project => "project",
             MemoryScope::Team => "team",
             MemoryScope::Auto => "auto",
+        }
+    }
+
+    fn context_title(self) -> &'static str {
+        match self {
+            MemoryScope::Global => "Global Memories",
+            MemoryScope::Project => "Project Memories",
+            MemoryScope::Team => "Team Memories",
+            MemoryScope::Auto => "Auto Memories",
         }
     }
 }
@@ -376,6 +400,288 @@ fn format_memory_context_section(
     section
 }
 
+fn memory_identity(scope: MemoryScope, entry: &MemoryEntry) -> String {
+    format!("{}:{}", scope.as_str(), entry.key)
+}
+
+pub fn query_requests_memory_ignore(query: &str) -> bool {
+    let normalized = query.to_ascii_lowercase();
+    normalized.contains("ignore memory")
+        || normalized.contains("ignore memories")
+        || normalized.contains("do not use memory")
+        || normalized.contains("don't use memory")
+        || normalized.contains("dont use memory")
+        || normalized.contains("without memory")
+}
+
+fn recall_scopes(include_auto: bool) -> Vec<MemoryScope> {
+    let mut scopes = vec![MemoryScope::Project, MemoryScope::Global];
+    if cc_config::features::enabled(cc_config::features::Feature::TeamMemory) {
+        scopes.push(MemoryScope::Team);
+    }
+    if include_auto {
+        scopes.push(MemoryScope::Auto);
+    }
+    scopes
+}
+
+fn tokenize_for_recall(value: &str) -> Vec<String> {
+    let mut terms = Vec::new();
+    let mut current = String::new();
+
+    for ch in value.chars() {
+        if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+            current.push(ch.to_ascii_lowercase());
+        } else if current.len() >= 3 {
+            terms.push(current.clone());
+            current.clear();
+        } else {
+            current.clear();
+        }
+    }
+
+    if current.len() >= 3 {
+        terms.push(current);
+    }
+
+    terms.sort();
+    terms.dedup();
+    terms
+}
+
+fn entry_recall_text(entry: &MemoryEntry) -> String {
+    let mut text = format!("{} {} {}", entry.key, entry.category, entry.value);
+    if let Some(memory_type) = entry.effective_memory_type() {
+        text.push(' ');
+        text.push_str(memory_type.as_str());
+    }
+    if let Some(description) = &entry.description {
+        text.push(' ');
+        text.push_str(description);
+    }
+    for term in &entry.search_terms {
+        text.push(' ');
+        text.push_str(term);
+    }
+    text
+}
+
+fn score_memory_for_query(entry: &MemoryEntry, query: &str) -> Option<(u32, Vec<String>)> {
+    let query_terms = tokenize_for_recall(query);
+    if query_terms.is_empty() {
+        return None;
+    }
+
+    let key = entry.key.to_ascii_lowercase();
+    let category = entry.category.to_ascii_lowercase();
+    let value = entry.value.to_ascii_lowercase();
+    let description = entry
+        .description
+        .as_deref()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let search_terms = entry
+        .search_terms
+        .iter()
+        .map(|term| term.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    let memory_type = entry
+        .effective_memory_type()
+        .map(|memory_type| memory_type.as_str().to_string())
+        .unwrap_or_default();
+
+    let mut score = 0u32;
+    let mut matched = Vec::new();
+    for term in query_terms {
+        let mut term_score = 0u32;
+        if key.contains(&term) {
+            term_score += 8;
+        }
+        if category.contains(&term) || memory_type.contains(&term) {
+            term_score += 5;
+        }
+        if description.contains(&term) || search_terms.iter().any(|value| value.contains(&term)) {
+            term_score += 4;
+        }
+        if value.contains(&term) {
+            term_score += 2;
+        }
+
+        if term_score > 0 {
+            score += term_score;
+            matched.push(term);
+        }
+    }
+
+    let query_lower = query.trim().to_ascii_lowercase();
+    if query_lower.len() >= 8
+        && entry_recall_text(entry)
+            .to_ascii_lowercase()
+            .contains(&query_lower)
+    {
+        score += 12;
+    }
+
+    (score > 0).then_some((score, matched))
+}
+
+fn is_generic_recent_tool_memory(entry: &MemoryEntry, recent_tool_names: &[String]) -> bool {
+    if recent_tool_names.is_empty() {
+        return false;
+    }
+
+    let text = entry_recall_text(entry).to_ascii_lowercase();
+    let high_value_markers = [
+        "avoid", "bug", "danger", "do not", "error", "failure", "issue", "known", "pitfall",
+        "risk", "security", "warning",
+    ];
+    if high_value_markers
+        .iter()
+        .any(|marker| text.contains(marker))
+    {
+        return false;
+    }
+
+    let generic_markers = [
+        "docs",
+        "example",
+        "examples",
+        "guide",
+        "how to",
+        "manual",
+        "reference",
+        "syntax",
+        "tool",
+        "usage",
+    ];
+    let looks_generic = generic_markers.iter().any(|marker| text.contains(marker))
+        || entry.effective_memory_type() == Some(MemoryType::Reference);
+    if !looks_generic {
+        return false;
+    }
+
+    recent_tool_names.iter().any(|tool| {
+        let tool = tool.trim().to_ascii_lowercase();
+        !tool.is_empty() && text.contains(&tool)
+    })
+}
+
+/// Recall at most `max_results` memories relevant to the current query.
+///
+/// This deterministic path is the offline fallback for Bun-style relevant
+/// memory recall. It scans all enabled scopes, scores key/category/type/value
+/// plus optional description/search terms, skips generic docs for recently used
+/// tools, and excludes session-surfaced identities.
+pub fn recall_relevant_memories(
+    cwd: &Path,
+    include_auto: bool,
+    query: &str,
+    recent_tool_names: &[String],
+    already_surfaced: &HashSet<String>,
+    max_results: usize,
+) -> Result<Vec<RelevantMemory>> {
+    if max_results == 0 || query.trim().is_empty() || query_requests_memory_ignore(query) {
+        return Ok(Vec::new());
+    }
+
+    let mut relevant = Vec::new();
+    for scope in recall_scopes(include_auto) {
+        for entry in list_memories(scope, cwd).unwrap_or_default() {
+            let identity = memory_identity(scope, &entry);
+            if already_surfaced.contains(&identity)
+                || is_generic_recent_tool_memory(&entry, recent_tool_names)
+            {
+                continue;
+            }
+
+            let Some((score, matched_terms)) = score_memory_for_query(&entry, query) else {
+                continue;
+            };
+            relevant.push(RelevantMemory {
+                identity,
+                scope,
+                entry,
+                score,
+                matched_terms,
+            });
+        }
+    }
+
+    relevant.sort_by(|a, b| {
+        b.score
+            .cmp(&a.score)
+            .then_with(|| b.entry.updated_at.cmp(&a.entry.updated_at))
+            .then_with(|| a.identity.cmp(&b.identity))
+    });
+    relevant.truncate(max_results);
+    Ok(relevant)
+}
+
+fn format_relevant_memory_context(relevant: &[RelevantMemory]) -> String {
+    let mut sections = Vec::new();
+    for scope in recall_scopes(true) {
+        let memories = relevant
+            .iter()
+            .filter(|memory| memory.scope == scope)
+            .collect::<Vec<_>>();
+        if memories.is_empty() {
+            continue;
+        }
+
+        let mut section = format!("## {}\n", scope.context_title());
+        for memory in memories {
+            let label = memory
+                .entry
+                .display_label()
+                .map(|label| format!(" [{label}]"))
+                .unwrap_or_default();
+            let matched = if memory.matched_terms.is_empty() {
+                String::new()
+            } else {
+                format!(" matched: {}", memory.matched_terms.join(", "))
+            };
+            section.push_str(&format!(
+                "- **{}**{} ({}; score {}{}): {}\n",
+                memory.entry.key, label, memory.identity, memory.score, matched, memory.entry.value
+            ));
+        }
+        sections.push(section);
+    }
+
+    if sections.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<memory-context>\n## Relevant Memories\nUse these recalled memories only when they are relevant to the current request. If the user explicitly asks to ignore memory, do not use memory context.\n{}</memory-context>",
+            sections.join("\n")
+        )
+    }
+}
+
+/// Build query-scoped memory context and return the surfaced identities.
+pub fn build_relevant_memory_context_with(
+    cwd: &Path,
+    include_auto: bool,
+    query: &str,
+    recent_tool_names: &[String],
+    already_surfaced: &HashSet<String>,
+    max_results: usize,
+) -> Result<(String, Vec<String>)> {
+    let relevant = recall_relevant_memories(
+        cwd,
+        include_auto,
+        query,
+        recent_tool_names,
+        already_surfaced,
+        max_results,
+    )?;
+    let surfaced = relevant
+        .iter()
+        .map(|memory| memory.identity.clone())
+        .collect::<Vec<_>>();
+    Ok((format_relevant_memory_context(&relevant), surfaced))
+}
+
 // ---------------------------------------------------------------------------
 // CRUD operations
 // ---------------------------------------------------------------------------
@@ -409,6 +715,8 @@ pub fn write_memory(
         value: value.to_string(),
         category: category.to_string(),
         memory_type: MemoryType::parse(category),
+        description: None,
+        search_terms: Vec::new(),
         created_at,
         updated_at: now,
     };
@@ -772,6 +1080,8 @@ mod tests {
                 value: "x".repeat(300),
                 category: "project".to_string(),
                 memory_type: Some(MemoryType::Project),
+                description: None,
+                search_terms: Vec::new(),
                 created_at: "2026-05-06T00:00:00Z".to_string(),
                 updated_at: "2026-05-06T00:00:00Z".to_string(),
             })
@@ -806,6 +1116,183 @@ mod tests {
         assert!(ctx.contains("dark mode"));
 
         cleanup(&cwd);
+    }
+
+    #[test]
+    fn test_recall_relevant_memories_scores_and_limits_results() {
+        let cwd = make_temp_dir();
+        for idx in 0..6 {
+            write_memory(
+                &format!("rust-build-{idx}"),
+                "Use cargo test before cargo build when touching Rust context code.",
+                "project",
+                MemoryScope::Project,
+                &cwd,
+            )
+            .unwrap();
+        }
+        write_memory(
+            "unrelated-design",
+            "Figma spacing notes for dashboard screens.",
+            "reference",
+            MemoryScope::Project,
+            &cwd,
+        )
+        .unwrap();
+
+        let results =
+            recall_relevant_memories(&cwd, false, "rust build context", &[], &HashSet::new(), 5)
+                .unwrap();
+
+        assert_eq!(results.len(), 5);
+        assert!(results
+            .iter()
+            .all(|memory| memory.entry.key.starts_with("rust-build-")));
+
+        cleanup(&cwd);
+    }
+
+    #[test]
+    fn test_recall_relevant_memories_filters_already_surfaced() {
+        let cwd = make_temp_dir();
+        write_memory(
+            "rust-build",
+            "Use cargo test before cargo build.",
+            "project",
+            MemoryScope::Project,
+            &cwd,
+        )
+        .unwrap();
+
+        let already = HashSet::from(["project:rust-build".to_string()]);
+        let results =
+            recall_relevant_memories(&cwd, false, "rust build", &[], &already, 5).unwrap();
+
+        assert!(results.is_empty());
+        cleanup(&cwd);
+    }
+
+    #[test]
+    fn test_recall_relevant_memories_denoises_recent_tool_docs_but_keeps_warnings() {
+        let cwd = make_temp_dir();
+        write_memory(
+            "bash-reference",
+            "Bash tool usage guide and examples.",
+            "reference",
+            MemoryScope::Project,
+            &cwd,
+        )
+        .unwrap();
+        write_memory(
+            "bash-warning",
+            "Bash warning: avoid destructive git commands in dirty worktrees.",
+            "reference",
+            MemoryScope::Project,
+            &cwd,
+        )
+        .unwrap();
+
+        let recent_tools = vec!["Bash".to_string()];
+        let results = recall_relevant_memories(
+            &cwd,
+            false,
+            "bash git commands",
+            &recent_tools,
+            &HashSet::new(),
+            5,
+        )
+        .unwrap();
+
+        let keys = results
+            .iter()
+            .map(|memory| memory.entry.key.as_str())
+            .collect::<Vec<_>>();
+        assert!(!keys.contains(&"bash-reference"));
+        assert!(keys.contains(&"bash-warning"));
+
+        cleanup(&cwd);
+    }
+
+    #[test]
+    fn test_build_relevant_memory_context_returns_surfaced_identities() {
+        let cwd = make_temp_dir();
+        write_memory(
+            "migration-risk",
+            "Rust migration risk: keep session export round trips covered.",
+            "project",
+            MemoryScope::Project,
+            &cwd,
+        )
+        .unwrap();
+        write_memory(
+            "unrelated",
+            "Weekly roadmap note.",
+            "project",
+            MemoryScope::Project,
+            &cwd,
+        )
+        .unwrap();
+
+        let (context, surfaced) = build_relevant_memory_context_with(
+            &cwd,
+            false,
+            "migration risk",
+            &[],
+            &HashSet::new(),
+            5,
+        )
+        .unwrap();
+
+        assert!(context.contains("## Relevant Memories"));
+        assert!(context.contains("migration-risk"));
+        assert!(!context.contains("unrelated"));
+        assert_eq!(surfaced, vec!["project:migration-risk".to_string()]);
+
+        cleanup(&cwd);
+    }
+
+    #[test]
+    fn test_recall_relevant_memories_respects_ignore_memory_request() {
+        let cwd = make_temp_dir();
+        write_memory(
+            "rust-build",
+            "Use cargo test before cargo build.",
+            "project",
+            MemoryScope::Project,
+            &cwd,
+        )
+        .unwrap();
+
+        let results = recall_relevant_memories(
+            &cwd,
+            false,
+            "ignore memory and explain rust build",
+            &[],
+            &HashSet::new(),
+            5,
+        )
+        .unwrap();
+
+        assert!(results.is_empty());
+        cleanup(&cwd);
+    }
+
+    #[test]
+    fn test_legacy_memory_entries_without_recall_metadata_still_load() {
+        let raw = r#"{
+          "key": "legacy",
+          "value": "legacy value",
+          "category": "project",
+          "created_at": "2026-05-06T00:00:00Z",
+          "updated_at": "2026-05-06T00:00:00Z"
+        }"#;
+
+        let entry: MemoryEntry = serde_json::from_str(raw).unwrap();
+
+        assert_eq!(entry.key, "legacy");
+        assert_eq!(entry.description, None);
+        assert!(entry.search_terms.is_empty());
+        assert_eq!(entry.effective_memory_type(), Some(MemoryType::Project));
     }
 
     #[test]

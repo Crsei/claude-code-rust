@@ -1,5 +1,5 @@
 use super::tool::{PermissionMode, ToolPermissionContext};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Runtime settings projection — moved to `cc-config` in Phase 3 (issue #72).
 ///
@@ -48,6 +48,9 @@ pub struct AppState {
     /// permission mode gates tool execution, while this record tracks approval
     /// state, plan artifact path, and implementation evidence.
     pub plan_workflow: Option<cc_types::plan_workflow::PlanWorkflowRecord>,
+    /// Memory identities already surfaced by relevant-memory recall in this
+    /// session. Stored as `<scope>:<key>` to avoid repeating the same recall.
+    pub surfaced_memory_keys: HashSet<String>,
     /// Whether KAIROS daemon mode is running
     pub kairos_active: bool,
     /// Whether output is routed through BriefTool only
@@ -95,6 +98,7 @@ impl Default for AppState {
             team_context: None,
             hooks: HashMap::new(),
             plan_workflow: None,
+            surfaced_memory_keys: HashSet::new(),
             kairos_active: false,
             is_brief_only: false,
             is_assistant_mode: false,

@@ -14,7 +14,12 @@ Source map: `architecture/context-implementation-map.md`
   - Added `TokenCountMethod::ProviderExact`, provider metadata on `TokenUsageReport`, and an async exact-count path for Anthropic/Azure/Gemini.
   - Exact count is currently diagnostics-only behind `CC_RUST_EXACT_TOKEN_DIAGNOSTICS=1`; auto-compact remains heuristic until the near-threshold fallback tests are implemented.
   - Verification: targeted cc-utils token report test plus Anthropic body-shape, provider support matrix, and Gemini countTokens body-shape tests.
-- Phase 2 - Relevant Memory Recall: pending.
+- Phase 2 - Relevant Memory Recall: completed on 2026-05-06.
+  - Decision artifact: `docs/archive/context-phase2-memory-recall-2026-05-06.md`.
+  - Added deterministic relevant-memory recall with optional description/search terms, max-5 selection, recent-tool generic-doc denoising, session surfaced-memory dedupe, and "ignore memory" handling.
+  - Main submit flow now passes prebuilt relevant memory context into system prompt assembly and tracks surfaced memory identities in `AppState`.
+  - Remaining advanced parity gap: model-assisted side-query recall is not enabled by default because it adds provider latency and failure modes.
+  - Verification: `cargo test -p cc-session memdir::tests`, `cargo test -p claude-code-rs test_prebuilt_memory_context_overrides_full_memory_scan`, and `cargo test -p claude-code-rs test_session_memory_context_injection`.
 - Phase 3 - Compaction Parity And Partial Compact: pending.
 - Phase 4 - End-To-End Context Verification: pending.
 
