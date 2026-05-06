@@ -430,6 +430,17 @@ impl TaskStore {
             .collect()
     }
 
+    pub fn blocked_tasks(&self, entry: &TaskEntry) -> Vec<String> {
+        let tasks = self.tasks.lock();
+        let mut ids: Vec<String> = tasks
+            .values()
+            .filter(|candidate| candidate.depends_on.iter().any(|id| id == &entry.id))
+            .map(|candidate| candidate.id.clone())
+            .collect();
+        ids.sort();
+        ids
+    }
+
     fn persist_entry(&self, entry: &TaskEntry) {
         if let Err(err) = self.repository.persist_entry(entry) {
             tracing::warn!(
@@ -481,6 +492,8 @@ impl TaskStore {
 
 fn task_to_json(entry: &TaskEntry) -> Value {
     let blocked_dependencies = store().blocked_dependencies(entry);
+    let blocked_tasks = store().blocked_tasks(entry);
+    let blocked_by = entry.depends_on.clone();
     json!({
         "id": entry.id,
         "kind": entry.kind,
@@ -490,7 +503,10 @@ fn task_to_json(entry: &TaskEntry) -> Value {
         "created_at": entry.created_at,
         "updated_at": entry.updated_at,
         "parent_id": entry.parent_id,
-        "depends_on": entry.depends_on,
+        "depends_on": blocked_by.clone(),
+        "blocked_by": blocked_by.clone(),
+        "blockedBy": blocked_by,
+        "blocks": blocked_tasks,
         "tool_use_id": entry.tool_use_id,
         "agent_id": entry.agent_id,
         "supervisor_id": entry.supervisor_id,
@@ -546,7 +562,7 @@ struct PersistedTaskRecord {
     output_truncated: bool,
     #[serde(default)]
     parent_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "blocked_by", alias = "blockedBy")]
     depends_on: Vec<String>,
     #[serde(default)]
     tool_use_id: Option<String>,
@@ -942,6 +958,26 @@ fn normalize_dependencies(depends_on: Vec<String>) -> Vec<String> {
         deps.push(dep.to_string());
     }
     deps
+}
+
+fn dependency_ids_from_input(input: &Value) -> Vec<String> {
+    let mut ids = Vec::new();
+    for field in ["depends_on", "blocked_by", "blockedBy"] {
+        ids.extend(string_array_field(input, field));
+    }
+    normalize_dependencies(ids)
+}
+
+fn string_array_field(input: &Value, field: &str) -> Vec<String> {
+    input
+        .get(field)
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn normalize_optional_string(value: Option<String>) -> Option<String> {
@@ -1356,6 +1392,16 @@ impl Tool for TaskCreateTool {
                     "items": { "type": "string" },
                     "description": "Task IDs that should complete before this task"
                 },
+                "blocked_by": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Bun-compatible alias for depends_on"
+                },
+                "blockedBy": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Bun-compatible camelCase alias for depends_on"
+                },
                 "tool_use_id": {
                     "type": "string",
                     "description": "Optional upstream tool use ID associated with this task"
@@ -1425,15 +1471,7 @@ impl Tool for TaskCreateTool {
             .get("parent_id")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        let depends_on: Vec<String> = input
-            .get("depends_on")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let depends_on = dependency_ids_from_input(&input);
         let tool_use_id = input
             .get("tool_use_id")
             .and_then(|v| v.as_str())
@@ -2250,12 +2288,36 @@ mod tests {
         assert_eq!(child.parent_id.as_deref(), Some(dep.id.as_str()));
         assert_eq!(child.depends_on, vec![dep.id.clone()]);
         assert_eq!(store.blocked_dependencies(&child), vec![dep.id.clone()]);
+        assert_eq!(store.blocked_tasks(&dep), vec![child.id.clone()]);
 
         store.update_status(&dep.id, TaskStatus::Completed);
         let restarted = TaskStore::with_dir(tmp.path());
         let child = restarted.get(&child.id).unwrap();
         assert_eq!(child.depends_on, vec![dep.id.clone()]);
         assert!(restarted.blocked_dependencies(&child).is_empty());
+    }
+
+    #[test]
+    fn test_task_json_exposes_bun_dependency_aliases() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path());
+        let dep = store.create("dep", "");
+        let child = store.create_with_options(
+            "child",
+            "",
+            TaskCreateOptions {
+                depends_on: vec![dep.id.clone()],
+                ..TaskCreateOptions::default()
+            },
+        );
+
+        let dep_json = task_to_json_for_store(&store, &dep);
+        assert_eq!(dep_json["blocks"], json!([child.id.clone()]));
+
+        let child_json = task_to_json_for_store(&store, &child);
+        assert_eq!(child_json["depends_on"], json!([dep.id.clone()]));
+        assert_eq!(child_json["blocked_by"], json!([dep.id.clone()]));
+        assert_eq!(child_json["blockedBy"], json!([dep.id.clone()]));
     }
 
     #[test]
@@ -2634,6 +2696,9 @@ mod tests {
         let schema = TaskCreateTool.input_json_schema();
         let props = &schema["properties"];
         for field in [
+            "depends_on",
+            "blocked_by",
+            "blockedBy",
             "tool_use_id",
             "agent_id",
             "supervisor_id",
@@ -2660,6 +2725,16 @@ mod tests {
                 "background-pr",
             ]
         );
+    }
+
+    #[test]
+    fn test_task_create_dependency_aliases_normalize() {
+        let deps = dependency_ids_from_input(&json!({
+            "depends_on": ["a", "b"],
+            "blocked_by": ["b", "c"],
+            "blockedBy": ["c", "d"]
+        }));
+        assert_eq!(deps, vec!["a", "b", "c", "d"]);
     }
 
     #[test]
@@ -2842,6 +2917,8 @@ mod tests {
 
     fn task_to_json_for_store(store: &TaskStore, entry: &TaskEntry) -> Value {
         let blocked_dependencies = store.blocked_dependencies(entry);
+        let blocked_tasks = store.blocked_tasks(entry);
+        let blocked_by = entry.depends_on.clone();
         json!({
             "id": entry.id,
             "kind": entry.kind,
@@ -2851,7 +2928,10 @@ mod tests {
             "created_at": entry.created_at,
             "updated_at": entry.updated_at,
             "parent_id": entry.parent_id,
-            "depends_on": entry.depends_on,
+            "depends_on": blocked_by.clone(),
+            "blocked_by": blocked_by.clone(),
+            "blockedBy": blocked_by,
+            "blocks": blocked_tasks,
             "tool_use_id": entry.tool_use_id,
             "agent_id": entry.agent_id,
             "supervisor_id": entry.supervisor_id,

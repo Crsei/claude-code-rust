@@ -65,7 +65,7 @@
 | Tools | `file-operations.mdx` | 已实现 | Read / Edit / Write、安全写入、变更检测、历史保护均有实现。 |
 | Tools | `search-and-navigation.mdx` | 已实现 | Glob、Grep、ToolSearch、LSP、WebSearch、WebFetch 已接入；Glob 已按修改时间倒序返回。 |
 | Tools | `shell-execution.mdx` | 已实现 | Bash 具备危险命令检测、sandbox 预检、超时、进程控制和输出流；Rust 额外提供 PowerShell / Repl / Sleep。 |
-| Tools | `task-management.mdx` | 部分实现 | Rust 已有 `TodoWrite` V1 兼容入口和 V2 Tasks 工具体系；V2 的 ID 与依赖模型仍不同。 |
+| Tools | `task-management.mdx` | 部分实现 | Rust 已有 `TodoWrite` V1 兼容入口和 V2 Tasks 工具体系；依赖模型已暴露 Bun 兼容别名，V2 的 ID 与认领并发模型仍不同。 |
 
 ## 已实现能力汇总
 
@@ -85,7 +85,7 @@
 - Auto mode 缺少 Bun 的 transcript / classifier 两阶段流程。
 - Plan mode 已补入 `allowedPrompts` 输入、session allow bridge 和常见验证意图分类；仍缺 Bun 的通用 LLM 语义 classifier。
 - Windows OS-level sandbox 未实现；当前 Windows 侧主要是 Rust-level policy checks。
-- Tools 的 `TodoWrite` 与 V2 Tasks 均已接入；V2 仍与 Bun 的递增 ID、双向依赖和认领竞争模型不同。
+- Tools 的 `TodoWrite` 与 V2 Tasks 均已接入；V2 已补入双向依赖兼容输出，但仍与 Bun 的递增 ID 和认领竞争模型不同。
 
 ## 后续动作
 
@@ -93,7 +93,7 @@
 2. 其次确认 MCP transport 与协议安全：SSE runtime、认证、断线恢复、完整 server / resource 行为。
 3. 再确认 Context 端到端链路：Partial Compact、session-insights 抽取内容策略、精确 token 统计，以及 preservedSegment 是否需要覆盖自动压缩和内部 snip / context-collapse 边界。
 4. 对 Agent Teams 明确产品边界：继续保留 in-process 版本，还是补 coordinator / swarm 同构模式。
-5. 对 Tools 差异建立单独 issue：V2 Tasks 是否要补 Bun 的递增 ID / 双向依赖模型、WebFetch 是否需要 JS rendering。
+5. 对 Tools 差异建立单独 issue：V2 Tasks 是否要补 Bun 的递增 ID / 高水位 / 认领竞争模型、WebFetch 是否需要 JS rendering。
 6. 后续进入实现补齐时，为每个改动建立单独任务，不在本文档中混入代码设计细节。
 
 ## 实施进度
@@ -114,3 +114,4 @@
 | 2026-05-05 | Context / Compact preserved segment metadata | 已完成手动 `/compact` boundary 的 preservedSegment 注解；Partial Compact 与自动压缩边界覆盖仍部分实现 | `crates/cc-types/src/message.rs` 增加 `PreservedSegment`，`cc-compact/src/compaction.rs` 生成 preserved segment，`claude-code-rs/src/commands/compact.rs` 在 boundary 中记录摘要消息和保留消息 UUID | `cargo test -p cc-compact compaction -- --nocapture`，9 passed；`cargo test -p claude-code-rs commands::compact -- --nocapture`，4 passed；`cargo test -p claude-code-rs daemon::routes::tests::daemon_sse_broadcasts_compact_boundaries -- --nocapture`，1 passed；`cargo test -p cc-session session_export -- --nocapture`，13 passed |
 | 2026-05-05 | Safety / Plan mode `allowedPrompts` classifier | 已完成常见验证意图到 Cargo allow 规则的确定性分类；通用 LLM classifier 仍部分实现 | `crates/claude-code-rs/src/tools/plan_mode.rs` 将 “run tests and lint”等提示映射为 `Bash(cargo test*)` / `Bash(cargo clippy*)`，显式 Bash pattern 仍直通，否定意图会被拒绝 | `cargo test -p claude-code-rs tools::plan_mode::tests:: -- --nocapture`，13 passed；`cargo test -p cc-permissions session_grant -- --nocapture`，4 passed |
 | 2026-05-05 | Context / Session insights age window | 已完成 session-insights 回注的默认 30 天时间窗口；抽取内容策略仍部分实现 | `crates/cc-services/src/session_memory.rs` 为 `SessionMemoryConfig` 增加 `max_context_age_seconds`，`format_memory_context_for_workspace()` 同时按 workspace 与年龄过滤 | `cargo test -p cc-services session_memory -- --nocapture`，8 passed |
+| 2026-05-05 | Tools / Task dependency aliases | 已完成 V2 Tasks 的 Bun 依赖兼容面；递增 ID / 高水位 / 认领竞争仍部分实现 | `crates/claude-code-rs/src/tools/tasks.rs` 接受 `blocked_by` / `blockedBy` 创建别名，并在任务 JSON 中输出 `depends_on`、`blocked_by`、`blockedBy` 与反向 `blocks` | `cargo test -p claude-code-rs tools::tasks::tests:: -- --nocapture` 被当前工作树未提交的 `ToolExecResult.hook_stopped_continuation` 构造点缺字段错误阻塞 |
