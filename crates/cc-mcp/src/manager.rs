@@ -32,77 +32,112 @@ impl McpManager {
     pub async fn connect_all(&mut self, configs: Vec<McpServerConfig>) -> Result<()> {
         for config in configs {
             let name = config.name.clone();
-            // Respect the soft-disable flag from settings. Keeping the entry
-            // out of `self.clients` means `list_tools`, `all_tools`, etc. all
-            // behave as if the server does not exist for this session, while
-            // the on-disk config is preserved for a later re-enable.
-            if config.disabled.unwrap_or(false) {
-                tracing::info!(server = %name, "MCP: server disabled in settings, skipping");
-                super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
-                    server_name: name,
-                    state: "disabled".to_string(),
-                    error: None,
-                });
-                continue;
-            }
-            let mut client = McpClient::new(config);
-
-            match client.connect().await {
-                Ok(()) => {
-                    match client.initialize().await {
-                        Ok(()) => {
-                            // Discover tools if supported
-                            if client.supports_tools() {
-                                if let Err(e) = client.list_tools().await {
-                                    warn!(
-                                        server = %name,
-                                        error = %e,
-                                        "MCP: failed to list tools"
-                                    );
-                                }
-                            }
-
-                            // Discover resources if supported
-                            if client.supports_resources() {
-                                if let Err(e) = client.list_resources().await {
-                                    warn!(
-                                        server = %name,
-                                        error = %e,
-                                        "MCP: failed to list resources"
-                                    );
-                                }
-                            }
-
-                            info!(
-                                server = %name,
-                                tools = client.tools.len(),
-                                resources = client.resources.len(),
-                                "MCP: server ready"
-                            );
-
-                            self.clients.insert(name, client);
-                        }
-                        Err(e) => {
-                            warn!(
-                                server = %name,
-                                error = %e,
-                                "MCP: failed to initialize server"
-                            );
-                            client.disconnect().await;
-                        }
-                    }
-                }
-                Err(e) => {
-                    warn!(
-                        server = %name,
-                        error = %e,
-                        "MCP: failed to connect to server"
-                    );
-                }
+            if let Err(e) = self.connect_server(config).await {
+                warn!(
+                    server = %name,
+                    error = %e,
+                    "MCP: failed to connect to server"
+                );
             }
         }
 
         Ok(())
+    }
+
+    /// Connect a single configured server and replace any existing client with
+    /// the same name.
+    ///
+    /// Disabled configs remove any live client and emit a `disabled` state.
+    /// Failed connection or initialization attempts leave no stale client in
+    /// the manager.
+    pub async fn connect_server(&mut self, config: McpServerConfig) -> Result<()> {
+        let name = config.name.clone();
+        self.disconnect_server(&name).await;
+
+        // Respect the soft-disable flag from settings. Keeping the entry out
+        // of `self.clients` means `list_tools`, `all_tools`, etc. behave as if
+        // the server does not exist for this session, while the on-disk config
+        // is preserved for a later re-enable.
+        if config.disabled.unwrap_or(false) {
+            tracing::info!(server = %name, "MCP: server disabled in settings, skipping");
+            super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
+                server_name: name,
+                state: "disabled".to_string(),
+                error: None,
+            });
+            return Ok(());
+        }
+
+        let client = Self::connect_ready_client(config).await?;
+        self.clients.insert(name, client);
+        Ok(())
+    }
+
+    /// Reconnect a single server by dropping any current client before trying
+    /// the new configuration.
+    pub async fn reconnect_server(&mut self, config: McpServerConfig) -> Result<()> {
+        let name = config.name.clone();
+        self.disconnect_server(&name).await;
+        super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
+            server_name: name,
+            state: "pending".to_string(),
+            error: None,
+        });
+        self.connect_server(config).await
+    }
+
+    async fn connect_ready_client(config: McpServerConfig) -> Result<McpClient> {
+        let name = config.name.clone();
+        let mut client = McpClient::new(config);
+
+        client.connect().await?;
+
+        if let Err(e) = client.initialize().await {
+            let error = e.to_string();
+            warn!(
+                server = %name,
+                error = %error,
+                "MCP: failed to initialize server"
+            );
+            super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
+                server_name: name,
+                state: "error".to_string(),
+                error: Some(error),
+            });
+            client.disconnect().await;
+            return Err(e);
+        }
+
+        // Discover tools if supported
+        if client.supports_tools() {
+            if let Err(e) = client.list_tools().await {
+                warn!(
+                    server = %name,
+                    error = %e,
+                    "MCP: failed to list tools"
+                );
+            }
+        }
+
+        // Discover resources if supported
+        if client.supports_resources() {
+            if let Err(e) = client.list_resources().await {
+                warn!(
+                    server = %name,
+                    error = %e,
+                    "MCP: failed to list resources"
+                );
+            }
+        }
+
+        info!(
+            server = %name,
+            tools = client.tools.len(),
+            resources = client.resources.len(),
+            "MCP: server ready"
+        );
+
+        Ok(client)
     }
 
     /// Get all tools from all connected servers.
@@ -135,9 +170,17 @@ impl McpManager {
     pub async fn disconnect_all(&mut self) {
         let names: Vec<String> = self.clients.keys().cloned().collect();
         for name in names {
-            if let Some(mut client) = self.clients.remove(&name) {
-                client.disconnect().await;
-            }
+            self.disconnect_server(&name).await;
+        }
+    }
+
+    /// Disconnect a single server. Returns `true` if a live client existed.
+    pub async fn disconnect_server(&mut self, name: &str) -> bool {
+        if let Some(mut client) = self.clients.remove(name) {
+            client.disconnect().await;
+            true
+        } else {
+            false
         }
     }
 }

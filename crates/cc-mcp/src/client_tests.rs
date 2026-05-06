@@ -84,6 +84,98 @@ fn test_mcp_manager_new() {
     assert!(manager.all_resources().is_empty());
 }
 
+#[tokio::test]
+async fn test_mcp_manager_disconnect_server_removes_client() {
+    let mut manager = McpManager::new();
+    let config = McpServerConfig {
+        name: "disconnect-me".to_string(),
+        transport: "stdio".to_string(),
+        command: Some("echo".to_string()),
+        args: None,
+        url: None,
+        headers: None,
+        env: None,
+        browser_mcp: None,
+        disabled: None,
+    };
+    manager
+        .clients
+        .insert("disconnect-me".to_string(), McpClient::new(config));
+
+    assert!(manager.disconnect_server("disconnect-me").await);
+    assert!(manager.clients.is_empty());
+    assert!(!manager.disconnect_server("disconnect-me").await);
+}
+
+#[tokio::test]
+async fn test_mcp_manager_connect_disabled_removes_existing_client() {
+    let mut manager = McpManager::new();
+    let existing = McpServerConfig {
+        name: "disabled-server".to_string(),
+        transport: "stdio".to_string(),
+        command: Some("echo".to_string()),
+        args: None,
+        url: None,
+        headers: None,
+        env: None,
+        browser_mcp: None,
+        disabled: None,
+    };
+    manager
+        .clients
+        .insert("disabled-server".to_string(), McpClient::new(existing));
+
+    let disabled = McpServerConfig {
+        name: "disabled-server".to_string(),
+        transport: "stdio".to_string(),
+        command: Some("echo".to_string()),
+        args: None,
+        url: None,
+        headers: None,
+        env: None,
+        browser_mcp: None,
+        disabled: Some(true),
+    };
+
+    manager.connect_server(disabled).await.unwrap();
+    assert!(manager.clients.is_empty());
+}
+
+#[tokio::test]
+async fn test_mcp_manager_reconnect_invalid_config_drops_stale_client() {
+    let mut manager = McpManager::new();
+    let existing = McpServerConfig {
+        name: "reconnect-me".to_string(),
+        transport: "stdio".to_string(),
+        command: Some("echo".to_string()),
+        args: None,
+        url: None,
+        headers: None,
+        env: None,
+        browser_mcp: None,
+        disabled: None,
+    };
+    manager
+        .clients
+        .insert("reconnect-me".to_string(), McpClient::new(existing));
+
+    let invalid = McpServerConfig {
+        name: "reconnect-me".to_string(),
+        transport: "stdio".to_string(),
+        command: None,
+        args: None,
+        url: None,
+        headers: None,
+        env: None,
+        browser_mcp: None,
+        disabled: None,
+    };
+
+    let error = manager.reconnect_server(invalid).await.unwrap_err();
+    assert!(error.to_string().contains("command"));
+    assert!(manager.clients.is_empty());
+}
+
 #[test]
 fn test_jsonrpc_request_ids_increment() {
     let config = McpServerConfig {

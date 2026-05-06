@@ -36,7 +36,7 @@
 | --- | ---: | --- | --- |
 | Agent | 3 | [`agent-implementation-map.md`](agent-implementation-map.md) | 1 已实现，2 部分实现；存在故意裁剪 |
 | Context | 4 | [`context-implementation-map.md`](context-implementation-map.md) | 1 已实现，3 部分实现 |
-| Extensibility | 5 | [`extensibility-implementation-map.md`](extensibility-implementation-map.md) | 2 已实现，3 部分实现；本地 loopback SSE 已接入，远程认证仍未完整 |
+| Extensibility | 5 | [`extensibility-implementation-map.md`](extensibility-implementation-map.md) | 2 已实现，3 部分实现；本地 loopback SSE 与 manager reconnect API 已接入，远程认证仍未完整 |
 | Safety | 5 | [`safety-implementation-map.md`](safety-implementation-map.md) | 2 已实现，3 部分实现；存在明确未实现项 |
 | Tools | 5 | [`tools-implementation-map.md`](tools-implementation-map.md) | 4 已实现，1 部分实现 |
 
@@ -53,7 +53,7 @@
 | Context | `token-budget.mdx` | 部分实现 | 预算判断、续跑逻辑、环境变量覆盖和 `[1m]` 窗口解析存在；仍主要依赖启发式估算，不是 provider 级精确 token 统计。 |
 | Extensibility | `custom-agents.mdx` | 部分实现 | 定义、编辑、运行链路已通；安全边界主要依赖通用工具过滤与隔离。 |
 | Extensibility | `hooks.mdx` | 已实现 | hooks 配置、执行和权限联动已形成闭环。 |
-| Extensibility | `mcp-configuration.mdx` | 部分实现 | MCP 配置、发现、管理可用；stdio 与本地 loopback HTTP SSE 主路径已接入，远程 HTTPS / OAuth / HTTP / WS 仍不完整。 |
+| Extensibility | `mcp-configuration.mdx` | 部分实现 | MCP 配置、发现、管理可用；stdio、本地 loopback HTTP SSE 与 manager 级 connect/disconnect/reconnect 已接入，远程 HTTPS / OAuth / HTTP / WS 仍不完整。 |
 | Extensibility | `mcp-protocol.mdx` | 部分实现 | JSON-RPC stdio 主路径和本地 loopback SSE endpoint / POST 通道存在；认证和完整 remote transport 覆盖仍不完整。 |
 | Extensibility | `skills.mdx` | 已实现 | skills frontmatter、加载、注册、调用、fork 执行与命令入口已形成闭环。 |
 | Safety | `auto-mode.mdx` | 部分实现 | `PermissionMode::Auto` 与 fallback 存在；Bun 的 transcript / classifier 两阶段流程未完整落地。 |
@@ -81,7 +81,7 @@
 - Worktree isolation 已有核心隔离和清理，但 Bun 的 hook 驱动创建 / 销毁、目录布局和恢复流程没有一一对齐。
 - Context compaction、project memory、token budget 都已有主体能力，但 Partial Compact、session-insights 抽取内容策略、provider 级 token 精确统计仍需补齐或明确裁剪；preservedSegment 目前已覆盖手动 `/compact` boundary，尚未扩展到所有压缩边界。
 - Custom agents 已可定义、编辑、运行，但独立安全边界不如 hooks / skills 明确。
-- MCP 当前已有 stdio JSON-RPC 与本地 loopback HTTP SSE 主路径；远程 HTTPS SSE、OAuth、自动重连和完整 transport 矩阵仍不完整。
+- MCP 当前已有 stdio JSON-RPC、本地 loopback HTTP SSE 主路径与 manager 级 reconnect API；上层 `/mcp reconnect` 接线、远程 HTTPS SSE、OAuth、自动退避重试和完整 transport 矩阵仍不完整。
 - Auto mode 缺少 Bun 的 transcript / classifier 两阶段流程。
 - Plan mode 已补入 `allowedPrompts` 输入、session allow bridge 和常见验证意图分类；仍缺 Bun 的通用 LLM 语义 classifier。
 - Windows OS-level sandbox 未实现；当前 Windows 侧主要是 Rust-level policy checks。
@@ -90,7 +90,7 @@
 ## 后续动作
 
 1. 优先确认 Safety 的未实现项：Windows OS-level sandbox、`allowedPrompts` 通用 LLM classifier。
-2. 其次确认 MCP transport 与协议安全：远程 HTTPS SSE、OAuth、断线恢复、完整 server / resource 行为。
+2. 其次确认 MCP transport 与协议安全：`/mcp reconnect` 接入 manager API、远程 HTTPS SSE、OAuth、断线恢复、完整 server / resource 行为。
 3. 再确认 Context 端到端链路：Partial Compact、session-insights 抽取内容策略、精确 token 统计，以及 preservedSegment 是否需要覆盖自动压缩和内部 snip / context-collapse 边界。
 4. 对 Agent Teams 明确产品边界：继续保留 in-process 版本，还是补 coordinator / swarm 同构模式。
 5. 对 Tools 差异建立单独 issue：V2 Tasks 是否要补 Bun 的递增 ID / 高水位 / 认领竞争模型、WebFetch 是否需要 JS rendering。
@@ -116,3 +116,4 @@
 | 2026-05-05 | Context / Session insights age window | 已完成 session-insights 回注的默认 30 天时间窗口；抽取内容策略仍部分实现 | `crates/cc-services/src/session_memory.rs` 为 `SessionMemoryConfig` 增加 `max_context_age_seconds`，`format_memory_context_for_workspace()` 同时按 workspace 与年龄过滤 | `cargo test -p cc-services session_memory -- --nocapture`，8 passed |
 | 2026-05-05 | Tools / Task dependency aliases | 已完成 V2 Tasks 的 Bun 依赖兼容面；递增 ID / 高水位 / 认领竞争仍部分实现 | `crates/claude-code-rs/src/tools/tasks.rs` 接受 `blocked_by` / `blockedBy` 创建别名，并在任务 JSON 中输出 `depends_on`、`blocked_by`、`blockedBy` 与反向 `blocks` | `cargo test -p claude-code-rs tools::tasks::tests:: -- --nocapture` 被当前工作树未提交的 `ToolExecResult.hook_stopped_continuation` 构造点缺字段错误阻塞 |
 | 2026-05-06 | Extensibility / MCP loopback SSE runtime | 已完成本地 loopback HTTP SSE endpoint / POST 主路径；远程 HTTPS / OAuth / reconnect 仍部分实现 | `crates/cc-mcp/src/client.rs` 支持 loopback SSE GET、endpoint 解析、JSON-RPC POST；`crates/cc-mcp/src/transport.rs` 分发 SSE `message` 响应 | `cargo check -p cc-mcp`；`cargo test -p cc-mcp sse -- --nocapture`，5 passed；`cargo test -p cc-mcp --lib`，31 passed |
+| 2026-05-06 | Extensibility / MCP manager reconnect API | 已完成 manager 层单服务 connect/disconnect/reconnect；上层 `/mcp reconnect` / IPC 接线仍部分实现 | `crates/cc-mcp/src/manager.rs` 暴露 `connect_server()`、`disconnect_server()`、`reconnect_server()`，重连失败不会保留 stale client | `cargo check -p cc-mcp`；`cargo test -p cc-mcp manager -- --nocapture`，5 passed；`cargo test -p cc-mcp --lib`，34 passed |
