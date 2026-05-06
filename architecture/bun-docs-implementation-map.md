@@ -50,7 +50,7 @@
 | Context | `compaction.mdx` | 部分实现 | 本地压缩、Microcompact Boundary、Session Memory Compact、boundary、手动 `/compact` / Session Memory Compact / 自动模型摘要 / 内部 snip/context-collapse preservedSegment 元数据、PTL 恢复与 hook 路径存在；feature gate、Partial Compact 与完整恢复语义仍未完全同构。 |
 | Context | `project-memory.mdx` | 部分实现 | memory CRUD、`CLAUDE.md` 注入、Project / Global / Team memory 主提示词注入存在；Auto memory 已由 `auto_memory_enabled` 门控注入，最近 session-insights 会按 workspace、时间窗口、tag 和当前 session 排除规则回注；生命周期抽取已改用确定性 insight helper。 |
 | Context | `system-prompt.mdx` | 已实现 | 静态段、动态段、缓存边界、`CLAUDE.md` 注入、append / override 顺序均已落地。 |
-| Context | `token-budget.mdx` | 部分实现 | 预算判断、续跑逻辑、环境变量覆盖和 `[1m]` 窗口解析存在；仍主要依赖启发式估算，不是 provider 级精确 token 统计。 |
+| Context | `token-budget.mdx` | 部分实现 | 预算判断、续跑逻辑、环境变量覆盖和 `[1m]` 窗口解析存在；`TokenUsageReport` 已暴露启发式预算诊断，但仍不是 provider 级精确 token 统计。 |
 | Extensibility | `custom-agents.mdx` | 部分实现 | 定义、编辑、运行链路已通；安全边界主要依赖通用工具过滤与隔离。 |
 | Extensibility | `hooks.mdx` | 已实现 | hooks 配置、执行和权限联动已形成闭环。 |
 | Extensibility | `mcp-configuration.mdx` | 部分实现 | MCP 配置、发现、管理可用；stdio、本地 loopback HTTP SSE、manager 级 connect/disconnect/reconnect 与短指数退避重试已接入，远程 HTTPS / OAuth / HTTP / WS 仍不完整。 |
@@ -79,7 +79,7 @@
 
 - Agent Teams 是 Rust 的 in-process teammate / mailbox 版本，不是 Bun coordinator / swarm 的同构实现；tmux / iTerm2 等多终端后端属于故意裁剪。
 - Worktree isolation 已有核心隔离和清理，但 Bun 的 hook 驱动创建 / 销毁、目录布局和恢复流程没有一一对齐。
-- Context compaction、project memory、token budget 都已有主体能力，但 Partial Compact、provider 级 token 精确统计、Bun 智能记忆召回和完整 memory index 语义仍需补齐或明确裁剪；session-insights 回注已支持 workspace、时间窗口、tag 和当前 session 排除过滤，生命周期抽取已改用确定性 helper；Microcompact Boundary 已记录就地工具结果压缩事件，preservedSegment 目前已覆盖手动 `/compact` boundary、Session Memory Compact boundary、自动模型摘要 boundary 以及内部 snip/context-collapse boundary。
+- Context compaction、project memory、token budget 都已有主体能力，但 Partial Compact、provider 级 token 精确统计、Bun 智能记忆召回和完整 memory index 语义仍需补齐或明确裁剪；token budget 已有结构化启发式诊断报告但 `exact_count_available=false`；session-insights 回注已支持 workspace、时间窗口、tag 和当前 session 排除过滤，生命周期抽取已改用确定性 helper；Microcompact Boundary 已记录就地工具结果压缩事件，preservedSegment 目前已覆盖手动 `/compact` boundary、Session Memory Compact boundary、自动模型摘要 boundary 以及内部 snip/context-collapse boundary。
 - Custom agents 已可定义、编辑、运行，但独立安全边界不如 hooks / skills 明确。
 - MCP 当前已有 stdio JSON-RPC、本地 loopback HTTP SSE 主路径、manager 级 reconnect API 与短指数退避重试；上层 `/mcp reconnect` 接线、远程 HTTPS SSE、OAuth、长线自动重连和完整 transport 矩阵仍不完整。
 - Auto mode 缺少 Bun 的 transcript / classifier 两阶段流程。
@@ -128,3 +128,4 @@
 | 2026-05-06 | Context / Session Memory Compact boundary | 已完成无 API session-insights 压缩 boundary preservedSegment；Partial Compact 仍部分实现 | `crates/cc-compact/src/session_memory_compact.rs` 返回 boundary + session-insights 摘要 + 最近窗口，boundary preservedSegment 记录摘要消息 UUID 和保留窗口 UUID | `cargo test -p cc-compact session_memory_compact -- --nocapture`，3 passed；`cargo test -p cc-compact compaction -- --nocapture`，10 passed；`cargo check -p cc-compact`；`cargo check -p claude-code-rs` |
 | 2026-05-06 | Context / Microcompact Boundary | 已完成旧工具结果就地压缩的轻量 boundary；Partial Compact 仍部分实现 | `cc-types/src/message.rs` 增加 `MicrocompactBoundary` / `MicrocompactMetadata`，`cc-compact/src/microcompact.rs` 在替换旧大型 tool_result 后追加 boundary 并记录 `compacted_tool_ids` | `cargo test -p cc-compact microcompact -- --nocapture`，3 passed；`cargo test -p cc-compact pipeline -- --nocapture`，5 passed；`cargo check -p cc-compact`；`cargo check -p cc-session`；`cargo check -p claude-code-rs` |
 | 2026-05-06 | Extensibility / MCP manager retry backoff | 已完成 manager 级短指数退避重试；上层 reconnect 接线与长线断线恢复仍部分实现 | `crates/cc-mcp/src/manager.rs` 在 `connect_server()` 内通过 `connect_ready_client_with_retries()` 对连接/初始化失败重试 3 次，退避 50/100/200ms 并封顶 250ms | `cargo test -p cc-mcp manager -- --nocapture`，5 passed；`cargo test -p cc-mcp connect_retry_delay -- --nocapture`，1 passed；`cargo test -p cc-mcp --lib`，35 passed；`cargo check -p cc-mcp` |
+| 2026-05-06 | Context / Token usage report | 已完成结构化启发式 token 预算诊断；provider 级精确 `countTokens` 仍部分实现 | `crates/cc-utils/src/tokens.rs` 增加 `TokenUsageReport` / `TokenCountMethod` 与 `estimate_context_usage()`，报告估算量、窗口、阈值、剩余量、利用率、超阈值状态，并显式标记 `exact_count_available=false` | `cargo test -p cc-utils tokens -- --nocapture`，12 passed；`cargo check -p cc-utils`；`cargo check -p claude-code-rs` |

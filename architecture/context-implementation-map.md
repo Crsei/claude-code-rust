@@ -29,7 +29,7 @@
 | `compaction.mdx` | [`cc-compact/src/pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`cc-compact/src/session_memory_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/session_memory_compact.rs), [`cc-compact/src/compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L99), [`claude-code-rs/src/query/loop_helpers.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/loop_helpers.rs#L202) | 部分实现 | 本地压缩、Microcompact Boundary、Session Memory Compact、boundary、手动 `/compact` / Session Memory Compact / 自动模型摘要 / 内部 snip/context-collapse preservedSegment 元数据、PTL 恢复、hook 已有；feature gate、Partial Compact 与 Bun 的完整恢复语义仍未完全同构。 |
 | `project-memory.mdx` | [`cc-session/src/memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L72), [`cc-config/src/claude_md.rs`](F:/AIclassmanager/cc/rust/crates/cc-config/src/claude_md.rs#L51), [`claude-code-rs/src/engine/system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs) | 部分实现 | 记忆 CRUD、`CLAUDE.md` 注入、Project/Global/Team memory 主提示词注入都存在；Auto memory 已由 `auto_memory_enabled` 门控注入，最近 session-insights 会按 workspace、时间窗口、可配置 tag 和当前 session 排除规则回注；生命周期抽取已改用确定性 insight helper。 |
 | `system-prompt.mdx` | [`claude-code-rs/src/engine/system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs#L361), [`claude-code-rs/src/engine/prompt_sections.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/prompt_sections.rs#L17), [`claude-code-rs/src/engine/lifecycle/submit_message.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/submit_message.rs#L238) | 已实现 | 静态段、动态段、缓存边界、`CLAUDE.md` 注入、append/override 顺序都已落地。 |
-| `token-budget.mdx` | [`cc-utils/src/tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs), [`cc-compact/src/auto_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/auto_compact.rs), [`claude-code-rs/src/query/token_budget.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/token_budget.rs#L9) | 部分实现 | 预算判断、续跑逻辑、`CLAUDE_CODE_MAX_CONTEXT_TOKENS` 与 `[1m]` 窗口解析存在；仍主要依赖启发式估算，不是 Bun 文档里那种 provider 级精确 token 统计。 |
+| `token-budget.mdx` | [`cc-utils/src/tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs), [`cc-compact/src/auto_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/auto_compact.rs), [`claude-code-rs/src/query/token_budget.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/token_budget.rs#L9) | 部分实现 | 预算判断、续跑逻辑、`CLAUDE_CODE_MAX_CONTEXT_TOKENS` 与 `[1m]` 窗口解析存在；`estimate_context_usage()` 已返回结构化启发式诊断，但 `exact_count_available=false`，仍不是 Bun 文档里那种 provider 级精确 token 统计。 |
 
 ## 逐文档分析
 
@@ -107,6 +107,7 @@
 **cc-rust 当前实现**
 
 - `estimate_messages_tokens()` 使用启发式 token 估算，`is_over_token_limit()` 用 80% 窗口阈值判断是否超限；窗口大小支持 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` 覆盖和模型名 `[1m]` 后缀。[`tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs)
+- `estimate_context_usage()` 已把当前预算状态暴露为 `TokenUsageReport`：包含估算 token、context window、80% 阈值、距阈值剩余量、利用率、是否超阈值、计数方法和是否有精确计数；当前方法明确标记为 `TokenCountMethod::Heuristic` 且 `exact_count_available=false`。[`tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs#L38), [`tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs#L141)
 - `should_auto_compact()` 也采用 80% 阈值，并复用 `cc-utils` 的动态窗口解析，因此 1M 模型不会在 200K 附近误触发压缩。[`auto_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/auto_compact.rs)
 - `check_token_budget()` 处理任务预算：低于阈值时发出 nudge 继续，高于阈值时停止，并记录连续继续与递减收益。[`token_budget.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/token_budget.rs#L9), [`state.rs`](F:/AIclassmanager/cc/rust/crates/cc-types/src/state.rs#L68)
 - `query/loop_impl.rs` 在主循环里调用 `check_token_budget()`，并把 `Continue::TokenBudgetContinuation` 注入回消息流。[`loop_impl.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/loop_impl.rs#L622)
@@ -116,14 +117,14 @@
 **状态判断**
 
 - `部分实现`。
-- 当前实现已经有预算判断、动态窗口解析和恢复动作，但仍是启发式估算为主，没有看到 Bun 文档里那种 provider 级精确计数入口。
+- 当前实现已经有预算判断、动态窗口解析、结构化启发式诊断和恢复动作，但仍是启发式估算为主，没有看到 Bun 文档里那种 provider 级精确计数入口。
 
 ## 已实现汇总
 
 - 系统提示词拼装链路已经落地：静态段、动态段、缓存边界、`CLAUDE.md` 注入、append/override 顺序都能在源码里直接定位。[`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs#L361), [`prompt_sections.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/prompt_sections.rs#L51)
 - 记忆存储、命令面和主提示词注入已经实现：`cc-session::memdir` 支持四个 scope 的 CRUD 和搜索，`/memory` 也能查看、编辑和打开这些目录；Project / Global / Team memory 会进入 `# Memory Context`，Auto memory 会在 `auto_memory_enabled` 开启时进入同一段落，当前 workspace、默认 30 天内且满足 tag include/exclude 规则、并排除当前 session 的最近 session-insights 也会回放到同一段落。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L111), [`commands/memory.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/memory.rs#L41), [`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs), [`session_memory.rs`](F:/AIclassmanager/cc/rust/crates/cc-services/src/session_memory.rs#L243)
 - 压缩主链路已经实现：tool result budget、snip、microcompact、Microcompact Boundary、Session Memory Compact、自动压缩、boundary、preservedSegment、PTL 恢复和 hook 都有对应代码。[`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`microcompact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/microcompact.rs#L26), [`session_memory_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/session_memory_compact.rs), [`compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L188), [`snip.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/snip.rs#L87), [`context_collapse.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/context_collapse.rs#L81)
-- token 预算已经接入主循环：任务预算继续/停止、max_output_tokens 恢复、自动压缩阈值都不是占位。[`token_budget.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/token_budget.rs#L9), [`loop_helpers.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/loop_helpers.rs#L202)
+- token 预算已经接入主循环：任务预算继续/停止、max_output_tokens 恢复、自动压缩阈值和 `TokenUsageReport` 结构化启发式诊断都不是占位。[`token_budget.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/token_budget.rs#L9), [`loop_helpers.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/query/loop_helpers.rs#L202), [`tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs#L141)
 
 ## 未实现 / 部分实现 / 待确认 / 故意裁剪
 
@@ -131,7 +132,7 @@
 
 - `compaction.mdx`：已有完整压缩管线、Microcompact Boundary、Session Memory Compact、手动 `/compact` boundary、Session Memory Compact boundary、自动模型摘要 boundary 和内部 snip/context-collapse boundary preservedSegment 元数据，但 Bun 文档里的 feature gate 组合、Partial Compact 与完整恢复语义还没有看到同构实现。[`pipeline.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/pipeline.rs#L65), [`microcompact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/microcompact.rs#L26), [`session_memory_compact.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/session_memory_compact.rs#L87), [`compact.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/commands/compact.rs#L67), [`compaction.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/compaction.rs#L188), [`snip.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/snip.rs#L87), [`context_collapse.rs`](F:/AIclassmanager/cc/rust/crates/cc-compact/src/context_collapse.rs#L81)
 - `project-memory.mdx`：记忆 CRUD、`CLAUDE.md` 注入、Project / Global / Team memory 主提示词注入、`auto_memory_enabled` 门控的 Auto memory 注入、workspace/time-window/tag scoped session-insights 回注、当前 session 排除过滤，以及确定性生命周期抽取都存在；Bun 的智能召回与完整 memory index 语义仍未同构。[`memdir.rs`](F:/AIclassmanager/cc/rust/crates/cc-session/src/memdir.rs#L248), [`system_prompt.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/system_prompt.rs), [`session_memory.rs`](F:/AIclassmanager/cc/rust/crates/cc-services/src/session_memory.rs#L243), [`mod.rs`](F:/AIclassmanager/cc/rust/crates/claude-code-rs/src/engine/lifecycle/mod.rs)
-- `token-budget.mdx`：有预算判断、动态窗口解析和恢复，但主要依赖启发式估算，不是精确 token 统计。[`tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs)
+- `token-budget.mdx`：有预算判断、动态窗口解析、结构化启发式诊断和恢复，但主要依赖启发式估算，不是精确 token 统计。[`tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs)
 
 ### 待确认
 
@@ -140,7 +141,7 @@
 
 ### 未实现
 
-- 在本次 `context` 范围内，没有看到 Bun 文档那种 provider 级精确 token 计数入口或 `countTokens` 同构实现。当前路径仍是动态窗口 + 估算与阈值判断。[`tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs)
+- 在本次 `context` 范围内，没有看到 Bun 文档那种 provider 级精确 token 计数入口或 `countTokens` 同构实现。当前路径仍是动态窗口 + 结构化启发式估算与阈值判断。[`tokens.rs`](F:/AIclassmanager/cc/rust/crates/cc-utils/src/tokens.rs)
 
 ### 故意裁剪
 

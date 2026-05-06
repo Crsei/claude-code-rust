@@ -34,6 +34,23 @@ const CHARS_PER_TOKEN: f64 = 4.0;
 /// Overhead tokens per message (role metadata, formatting, etc.).
 const MESSAGE_OVERHEAD_TOKENS: u64 = 4;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenCountMethod {
+    Heuristic,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TokenUsageReport {
+    pub estimated_tokens: u64,
+    pub context_window: u64,
+    pub threshold_tokens: u64,
+    pub remaining_until_threshold: u64,
+    pub utilization_ratio: f64,
+    pub over_threshold: bool,
+    pub count_method: TokenCountMethod,
+    pub exact_count_available: bool,
+}
+
 /// Estimate token count for a string using the ~4 chars per token heuristic.
 pub fn estimate_tokens(text: &str) -> u64 {
     if text.is_empty() {
@@ -114,10 +131,34 @@ fn estimate_tool_result_content_tokens(content: &ToolResultContent) -> u64 {
 ///
 /// This is used to determine if compaction should be triggered.
 pub fn is_over_token_limit(messages: &[Message], model: &str) -> bool {
-    let estimated = estimate_messages_tokens(messages);
+    estimate_context_usage(messages, model).over_threshold
+}
+
+/// Return a structured context-usage report for the current heuristic estimator.
+///
+/// This deliberately marks `exact_count_available=false` so callers do not
+/// mistake cc-rust's hot-path estimate for a provider-level countTokens result.
+pub fn estimate_context_usage(messages: &[Message], model: &str) -> TokenUsageReport {
+    let estimated_tokens = estimate_messages_tokens(messages);
     let context_window = get_context_window_size(model);
-    let threshold = (context_window as f64 * 0.8) as u64;
-    estimated > threshold
+    let threshold_tokens = (context_window as f64 * 0.8) as u64;
+    let remaining_until_threshold = threshold_tokens.saturating_sub(estimated_tokens);
+    let utilization_ratio = if context_window == 0 {
+        0.0
+    } else {
+        estimated_tokens as f64 / context_window as f64
+    };
+
+    TokenUsageReport {
+        estimated_tokens,
+        context_window,
+        threshold_tokens,
+        remaining_until_threshold,
+        utilization_ratio,
+        over_threshold: estimated_tokens > threshold_tokens,
+        count_method: TokenCountMethod::Heuristic,
+        exact_count_available: false,
+    }
 }
 
 #[cfg(test)]
@@ -223,5 +264,20 @@ mod tests {
             &messages,
             "claude-sonnet-4-20250514[1m]"
         ));
+    }
+
+    #[test]
+    fn test_estimate_context_usage_reports_threshold_and_method() {
+        let messages = vec![make_user_message(&"a".repeat(400), false)];
+        let report = estimate_context_usage(&messages, "claude-sonnet-4-20250514");
+
+        assert_eq!(report.estimated_tokens, 104);
+        assert_eq!(report.context_window, 200_000);
+        assert_eq!(report.threshold_tokens, 160_000);
+        assert_eq!(report.remaining_until_threshold, 159_896);
+        assert!((report.utilization_ratio - 0.00052).abs() < f64::EPSILON);
+        assert!(!report.over_threshold);
+        assert_eq!(report.count_method, TokenCountMethod::Heuristic);
+        assert!(!report.exact_count_available);
     }
 }
