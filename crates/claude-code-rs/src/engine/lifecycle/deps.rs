@@ -13,6 +13,7 @@ use anyhow::Result;
 use futures::Stream;
 use uuid::Uuid;
 
+use crate::compact::compaction::build_post_compact_messages_with_boundary;
 use crate::query::deps::{
     CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
 };
@@ -369,10 +370,11 @@ impl QueryDeps for QueryEngineDeps {
                             };
 
                             let post_messages =
-                                crate::compact::compaction::build_post_compact_messages(
+                                build_post_compact_messages_with_boundary(
                                     &summary_text,
                                     &messages,
                                     &config,
+                                    pre_tokens,
                                 );
 
                             let post_tokens =

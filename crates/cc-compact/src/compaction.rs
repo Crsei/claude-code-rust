@@ -181,6 +181,32 @@ pub fn build_post_compact_messages(
     result
 }
 
+/// Build post-compact messages and prepend a compact boundary.
+///
+/// This is used by model-summary auto compaction where the post-compact
+/// conversation is only the generated summary plus recovered context.
+pub fn build_post_compact_messages_with_boundary(
+    summary: &str,
+    pre_compact_messages: &[Message],
+    config: &CompactionConfig,
+    pre_compact_tokens: u64,
+) -> Vec<Message> {
+    let mut post_messages = build_post_compact_messages(summary, pre_compact_messages, config);
+    let post_compact_tokens = tokens::estimate_messages_tokens(&post_messages);
+    let preserved_segment =
+        create_preserved_segment(post_messages.first(), post_messages.get(1..).unwrap_or(&[]));
+    let boundary = create_compact_boundary_with_preserved_segment(
+        pre_compact_tokens,
+        post_compact_tokens,
+        Some(preserved_segment),
+    );
+
+    let mut result = Vec::with_capacity(post_messages.len() + 1);
+    result.push(boundary);
+    result.append(&mut post_messages);
+    result
+}
+
 /// Create a compact boundary system message.
 pub fn create_compact_boundary(pre_compact_tokens: u64, post_compact_tokens: u64) -> Message {
     create_compact_boundary_with_preserved_segment(pre_compact_tokens, post_compact_tokens, None)
@@ -430,6 +456,43 @@ mod tests {
         };
         let messages = build_post_compact_messages("Summary text", &[], &config);
         assert!(!messages.is_empty());
+    }
+
+    #[test]
+    fn test_build_post_compact_messages_with_boundary_tracks_preserved_segment() {
+        let config = CompactionConfig {
+            model: "claude-sonnet".into(),
+            session_id: "test".into(),
+            query_source: "repl".into(),
+        };
+        let pre_messages = vec![make_assistant_with_tool("/tmp/foo.rs")];
+        let messages =
+            build_post_compact_messages_with_boundary("Summary text", &pre_messages, &config, 100);
+
+        assert!(matches!(&messages[0], Message::System(_)));
+        assert!(matches!(&messages[1], Message::User(_)));
+
+        let Message::System(system) = &messages[0] else {
+            panic!("expected compact boundary");
+        };
+        let SystemSubtype::CompactBoundary {
+            compact_metadata: Some(metadata),
+        } = &system.subtype
+        else {
+            panic!("expected compact metadata");
+        };
+        let segment = metadata.preserved_segment.as_ref().unwrap();
+        assert_eq!(
+            segment.summary_message_uuid,
+            Some(messages[1].uuid().to_string())
+        );
+        assert_eq!(
+            segment.preserved_message_uuids,
+            messages[2..]
+                .iter()
+                .map(|message| message.uuid().to_string())
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
