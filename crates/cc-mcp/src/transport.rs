@@ -181,6 +181,73 @@ pub(crate) async fn sse_reader_loop<R>(
     }
 }
 
+/// Background reader for the optional Streamable HTTP GET SSE stream.
+///
+/// Unlike the legacy SSE transport reader, this stream is not the ownership
+/// boundary for client-to-server requests. If it exits, in-flight POST
+/// requests may still complete through their own response bodies, so pending
+/// requests are not failed here.
+pub(crate) async fn streamable_http_sse_reader_loop<R>(
+    mut reader: R,
+    pending: PendingRequests,
+    server_name: String,
+) where
+    R: AsyncBufRead + Unpin,
+{
+    let mut event_name = String::new();
+    let mut data_lines: Vec<String> = Vec::new();
+    let mut endpoint_sender: Option<oneshot::Sender<Result<String>>> = None;
+
+    loop {
+        let mut line = String::new();
+        match reader.read_line(&mut line).await {
+            Ok(0) => {
+                info!(
+                    server = %server_name,
+                    "MCP: Streamable HTTP GET stream closed (EOF)"
+                );
+                break;
+            }
+            Ok(_) => {
+                let line = line.trim_end_matches(['\r', '\n']);
+                if line.is_empty() {
+                    handle_sse_event(
+                        &server_name,
+                        &pending,
+                        &event_name,
+                        &data_lines,
+                        &mut endpoint_sender,
+                    )
+                    .await;
+                    event_name.clear();
+                    data_lines.clear();
+                    continue;
+                }
+
+                if line.starts_with(':') {
+                    continue;
+                }
+
+                let (field, value) = line.split_once(':').unwrap_or((line, ""));
+                let value = value.strip_prefix(' ').unwrap_or(value);
+                match field {
+                    "event" => event_name = value.to_string(),
+                    "data" => data_lines.push(value.to_string()),
+                    _ => {}
+                }
+            }
+            Err(e) => {
+                warn!(
+                    server = %server_name,
+                    error = %e,
+                    "MCP: error reading Streamable HTTP GET stream"
+                );
+                break;
+            }
+        }
+    }
+}
+
 async fn handle_sse_event(
     server_name: &str,
     pending: &PendingRequests,

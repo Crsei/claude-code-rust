@@ -14,7 +14,7 @@
 //! - `/mcp`                 - show usage help
 //!
 //! The `add` / `edit` variants accept repeatable `--command=VALUE`,
-//! `--arg=VALUE`, `--env=K=V`, `--url=VALUE`, `--transport=stdio|sse`,
+//! `--arg=VALUE`, `--env=K=V`, `--url=VALUE`, `--transport=stdio|sse|streamable-http`,
 //! `--scope=user|project`, and `--browser` flags.
 
 use std::collections::HashMap;
@@ -82,8 +82,8 @@ fn help_text() -> String {
        --command=<cmd>     executable (stdio transport)\n  \
        --arg=<arg>         positional argument (repeatable)\n  \
        --env=<K=V>         environment variable (repeatable)\n  \
-       --url=<url>         URL (sse transport)\n  \
-       --transport=stdio|sse   transport kind (default: stdio)\n  \
+       --url=<url>         URL (sse / streamable-http transports)\n  \
+       --transport=stdio|sse|streamable-http   transport kind (default: stdio)\n  \
        --scope=user|project    persistence scope (default: user for add, auto for edit)\n  \
        --oauth-auth-server-metadata-url=<url>  OAuth RFC 8414 metadata URL\n  \
        --oauth-client-id=<id>                  OAuth public client id\n  \
@@ -238,14 +238,15 @@ fn handle_add(rest: &[&str], ctx: &mut CommandContext) -> Result<CommandResult> 
     };
     if entry.transport == "stdio" && entry.command.is_none() {
         return Ok(CommandResult::Output(
-            "`stdio` transport requires --command=<cmd>. Use --transport=sse with --url=<url> for SSE servers."
+            "`stdio` transport requires --command=<cmd>. Use --transport=sse or --transport=streamable-http with --url=<url> for remote servers."
                 .to_string(),
         ));
     }
-    if entry.transport == "sse" && entry.url.is_none() {
-        return Ok(CommandResult::Output(
-            "`sse` transport requires --url=<url>.".to_string(),
-        ));
+    if matches!(entry.transport.as_str(), "sse" | "streamable-http") && entry.url.is_none() {
+        return Ok(CommandResult::Output(format!(
+            "`{}` transport requires --url=<url>.",
+            entry.transport
+        )));
     }
 
     persist_upsert(&ctx.cwd, entry).map(CommandResult::Output)
@@ -320,6 +321,12 @@ fn handle_edit(rest: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
         browser_mcp,
         disabled: current.disabled,
     };
+    if matches!(entry.transport.as_str(), "sse" | "streamable-http") && entry.url.is_none() {
+        return Ok(CommandResult::Output(format!(
+            "`{}` transport requires --url=<url>.",
+            entry.transport
+        )));
+    }
     persist_upsert(&ctx.cwd, entry).map(CommandResult::Output)
 }
 
@@ -1369,6 +1376,20 @@ mod tests {
         let mut ctx = test_ctx(PathBuf::from("/tmp"));
         let res = handler
             .execute("add sse-only --transport=sse", &mut ctx)
+            .await
+            .unwrap();
+        match res {
+            CommandResult::Output(text) => assert!(text.contains("requires --url")),
+            _ => panic!("expected Output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn mcp_streamable_http_requires_url() {
+        let handler = McpHandler;
+        let mut ctx = test_ctx(PathBuf::from("/tmp"));
+        let res = handler
+            .execute("add http-only --transport=streamable-http", &mut ctx)
             .await
             .unwrap();
         match res {

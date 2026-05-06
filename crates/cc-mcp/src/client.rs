@@ -1,11 +1,11 @@
-//! MCP client -- communicates with MCP servers over stdio (subprocess) or SSE.
+//! MCP client -- communicates with MCP servers over stdio, SSE, or Streamable HTTP.
 //!
 //! The stdio transport spawns a subprocess and exchanges line-delimited
 //! JSON-RPC 2.0 messages over stdin/stdout. A background reader task
 //! dispatches incoming responses to waiting request futures.
 //!
 //! Lifecycle:
-//!   1. `McpClient::connect()` -- spawn process, start reader task
+//!   1. `McpClient::connect()` -- spawn process or prepare HTTP transport
 //!   2. `McpClient::initialize()` -- JSON-RPC `initialize` + `notifications/initialized`
 //!   3. `McpClient::list_tools()` / `call_tool()` / `list_resources()` / `read_resource()`
 //!   4. `McpClient::disconnect()` -- graceful shutdown
@@ -32,13 +32,23 @@ use tracing::{debug, info, warn};
 use url::Url;
 
 use super::{
-    CallToolResult, InitializeResult, JsonRpcNotification, JsonRpcRequest, ListResourcesResult,
-    ListToolsResult, McpConnectionState, McpResource, McpServerConfig, McpToolDef,
-    ReadResourceResult, ServerCapabilities, ServerInfo, ToolCallContent, CLIENT_NAME,
+    CallToolResult, InitializeResult, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
+    ListResourcesResult, ListToolsResult, McpConnectionState, McpResource, McpServerConfig,
+    McpToolDef, ReadResourceResult, ServerCapabilities, ServerInfo, ToolCallContent, CLIENT_NAME,
     CLIENT_VERSION, CONNECT_TIMEOUT_SECS, PROTOCOL_VERSION, TOOL_CALL_TIMEOUT_SECS,
 };
 
-use super::transport::{reader_loop, sse_reader_loop};
+use super::transport::{
+    dispatch_response, notification_event, reader_loop, sse_reader_loop,
+    streamable_http_sse_reader_loop,
+};
+
+const STREAMABLE_HTTP_PROTOCOL_VERSION: &str = "2025-11-25";
+const HEADER_MCP_SESSION_ID: &str = "mcp-session-id";
+const HEADER_MCP_PROTOCOL_VERSION: &str = "mcp-protocol-version";
+
+type PendingRequest = oneshot::Sender<Result<Value>>;
+type PendingRequests = Arc<Mutex<HashMap<u64, PendingRequest>>>;
 
 #[derive(Debug, Clone)]
 struct McpAuthNeededError {
@@ -97,10 +107,12 @@ pub struct McpClient {
     child: Option<tokio::process::Child>,
     /// HTTP POST sender for SSE transport.
     sse_sender: Option<SseHttpSender>,
+    /// HTTP sender for MCP Streamable HTTP transport.
+    streamable_http_sender: Option<StreamableHttpSender>,
     /// Monotonically increasing request ID counter.
     pub(crate) next_id: Arc<AtomicU64>,
     /// Pending requests: id -> oneshot sender for the response.
-    pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value>>>>>,
+    pending: PendingRequests,
 }
 
 impl McpClient {
@@ -118,6 +130,7 @@ impl McpClient {
             reader_handle: None,
             child: None,
             sse_sender: None,
+            streamable_http_sender: None,
             next_id: Arc::new(AtomicU64::new(1)),
             pending: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -132,6 +145,7 @@ impl McpClient {
         let result = match self.config.transport.as_str() {
             "stdio" => self.connect_stdio().await,
             "sse" => self.connect_sse().await,
+            "streamable-http" => self.connect_streamable_http().await,
             other => bail!("unknown MCP transport type: '{}'", other),
         };
 
@@ -243,7 +257,7 @@ impl McpClient {
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("sse transport requires 'url' field"))?;
         let base_target = SseConnectTarget::parse(url)?;
-        let headers = normalized_sse_headers_with_auth(&self.config).await?;
+        let headers = normalized_http_transport_headers_with_auth(&self.config).await?;
 
         super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
             server_name: self.config.name.clone(),
@@ -302,14 +316,69 @@ impl McpClient {
         Ok(())
     }
 
+    /// Connect via MCP Streamable HTTP transport.
+    ///
+    /// Streamable HTTP is request-oriented: initialization and subsequent
+    /// JSON-RPC messages are POSTed to the configured endpoint. Servers may
+    /// answer with a normal JSON response or an SSE response stream for that
+    /// request. A long-lived GET stream is opened after initialization only
+    /// when the server accepts it.
+    async fn connect_streamable_http(&mut self) -> Result<()> {
+        validate_streamable_http_config(&self.config)?;
+        let url = self
+            .config
+            .url
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("streamable-http transport requires 'url' field"))?;
+        let target = StreamableHttpTarget::parse(url)?;
+        let headers = normalized_http_transport_headers_with_auth(&self.config).await?;
+        let http_client = streamable_http_client()?;
+
+        super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
+            server_name: self.config.name.clone(),
+            state: "connecting".to_string(),
+            error: None,
+        });
+
+        info!(
+            server = %self.config.name,
+            url = %redact_url_for_log(url),
+            "MCP: preparing Streamable HTTP server"
+        );
+
+        self.streamable_http_sender = Some(StreamableHttpSender::new(
+            target,
+            headers,
+            self.config.name.clone(),
+            http_client,
+            self.pending.clone(),
+        ));
+        self.state = McpConnectionState::Connected;
+
+        super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
+            server_name: self.config.name.clone(),
+            state: "connected".to_string(),
+            error: None,
+        });
+
+        debug!(server = %self.config.name, "MCP: Streamable HTTP server ready");
+        Ok(())
+    }
+
     /// Initialize the MCP connection -- exchange capabilities with the server.
     pub async fn initialize(&mut self) -> Result<()> {
         if self.state != McpConnectionState::Connected {
             bail!("cannot initialize: not connected (state: {:?})", self.state);
         }
 
+        let protocol_version = if self.config.transport == "streamable-http" {
+            STREAMABLE_HTTP_PROTOCOL_VERSION
+        } else {
+            PROTOCOL_VERSION
+        };
+
         let params = json!({
-            "protocolVersion": PROTOCOL_VERSION,
+            "protocolVersion": protocol_version,
             "capabilities": {
                 "roots": {}
             },
@@ -331,6 +400,12 @@ impl McpClient {
         self.server_info = init_result.server_info.clone();
         self.instructions = init_result.instructions;
 
+        if let Some(sender) = &self.streamable_http_sender {
+            sender
+                .set_protocol_version(init_result.protocol_version.clone())
+                .await;
+        }
+
         info!(
             server = %self.config.name,
             protocol_version = %init_result.protocol_version,
@@ -342,6 +417,22 @@ impl McpClient {
         self.send_notification("notifications/initialized", None)
             .await?;
 
+        if let Some(sender) = &self.streamable_http_sender {
+            match sender.open_get_stream().await {
+                Ok(Some(handle)) => {
+                    self.reader_handle = Some(handle);
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    warn!(
+                        server = %self.config.name,
+                        error = %error,
+                        "MCP: Streamable HTTP GET listener unavailable"
+                    );
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -351,6 +442,15 @@ impl McpClient {
 
         self.stdin_writer.take();
         self.sse_sender.take();
+        if let Some(sender) = self.streamable_http_sender.take() {
+            if let Err(error) = sender.terminate_session().await {
+                warn!(
+                    server = %self.config.name,
+                    error = %error,
+                    "MCP: failed to terminate Streamable HTTP session"
+                );
+            }
+        }
 
         if let Some(handle) = self.reader_handle.take() {
             handle.abort();
@@ -563,7 +663,10 @@ impl McpClient {
             pending.insert(id, tx);
         }
 
-        if let Err(error) = self.write_line(&request_json).await {
+        if let Err(error) = self
+            .write_line_with_timeout(&request_json, timeout_secs)
+            .await
+        {
             let mut pending = self.pending.lock().await;
             pending.remove(&id);
             return Err(error);
@@ -609,6 +712,30 @@ impl McpClient {
 
     /// Write a JSON-RPC line to the active transport.
     async fn write_line(&self, line: &str) -> Result<()> {
+        self.write_line_with_timeout(line, CONNECT_TIMEOUT_SECS)
+            .await
+    }
+
+    /// Write a JSON-RPC line to the active transport with an HTTP read bound.
+    async fn write_line_with_timeout(&self, line: &str, timeout_secs: u64) -> Result<()> {
+        if let Some(sender) = &self.streamable_http_sender {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(timeout_secs),
+                sender.post_json(line),
+            )
+            .await
+            {
+                Ok(result) => return result,
+                Err(_) => {
+                    bail!(
+                        "MCP Streamable HTTP request to server '{}' timed out after {}s",
+                        self.config.name,
+                        timeout_secs
+                    );
+                }
+            }
+        }
+
         if let Some(sender) = &self.sse_sender {
             return sender.post_json(line).await;
         }
@@ -667,6 +794,388 @@ fn validate_sse_config(config: &McpServerConfig) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn validate_streamable_http_config(config: &McpServerConfig) -> Result<()> {
+    let url = config
+        .url
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("streamable-http transport requires 'url' field"))?;
+    validate_streamable_http_url(url)?;
+
+    if let Some(headers) = &config.headers {
+        for (name, value) in headers {
+            validate_header_name(name)?;
+            validate_header_value(name, value)?;
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct StreamableHttpTarget {
+    url: Url,
+}
+
+impl StreamableHttpTarget {
+    fn parse(url: &str) -> Result<Self> {
+        let mut url = Url::parse(url).context("invalid Streamable HTTP URL")?;
+        validate_streamable_http_url(url.as_str())?;
+        url.set_fragment(None);
+        Ok(Self { url })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct StreamableHttpSender {
+    target: StreamableHttpTarget,
+    headers: Vec<(String, String)>,
+    server_name: String,
+    http_client: reqwest::Client,
+    pending: PendingRequests,
+    session_id: Arc<Mutex<Option<String>>>,
+    protocol_version: Arc<Mutex<String>>,
+}
+
+impl StreamableHttpSender {
+    fn new(
+        target: StreamableHttpTarget,
+        headers: Vec<(String, String)>,
+        server_name: String,
+        http_client: reqwest::Client,
+        pending: PendingRequests,
+    ) -> Self {
+        Self {
+            target,
+            headers,
+            server_name,
+            http_client,
+            pending,
+            session_id: Arc::new(Mutex::new(None)),
+            protocol_version: Arc::new(Mutex::new(STREAMABLE_HTTP_PROTOCOL_VERSION.to_string())),
+        }
+    }
+
+    async fn set_protocol_version(&self, protocol_version: String) {
+        *self.protocol_version.lock().await = protocol_version;
+    }
+
+    async fn post_json(&self, body: &str) -> Result<()> {
+        let expected_id = json_rpc_request_id(body);
+        let request = self
+            .http_client
+            .post(self.target.url.clone())
+            .headers(reqwest_header_map(&self.headers)?)
+            .body(body.to_string());
+        let request = self
+            .with_streamable_headers(
+                request,
+                Some("application/json"),
+                "application/json, text/event-stream",
+            )
+            .await?;
+
+        let response = request.send().await.with_context(|| {
+            format!(
+                "failed to POST MCP Streamable HTTP JSON-RPC for server '{}'",
+                self.server_name
+            )
+        })?;
+        self.capture_session_id(response.headers()).await?;
+        handle_streamable_http_status(response.status(), &self.server_name)?;
+
+        if response.status() == StatusCode::ACCEPTED {
+            if expected_id.is_some() {
+                bail!(
+                    "MCP Streamable HTTP server '{}' accepted request without returning a JSON-RPC response",
+                    self.server_name
+                );
+            }
+            return Ok(());
+        }
+
+        if is_event_stream_response(response.headers()) {
+            let body_stream = response.bytes_stream().map_err(reqwest_error_to_io);
+            let reader = BufReader::new(StreamReader::new(body_stream));
+            process_streamable_http_event_stream(
+                reader,
+                self.pending.clone(),
+                &self.server_name,
+                expected_id,
+            )
+            .await
+        } else {
+            let response_value = response.json::<Value>().await.with_context(|| {
+                format!(
+                    "failed to parse MCP Streamable HTTP JSON response for server '{}'",
+                    self.server_name
+                )
+            })?;
+            dispatch_streamable_http_json_message(
+                response_value,
+                self.pending.clone(),
+                &self.server_name,
+                expected_id,
+            )
+            .await
+            .map(|_| ())
+        }
+    }
+
+    async fn open_get_stream(&self) -> Result<Option<tokio::task::JoinHandle<()>>> {
+        let request = self
+            .http_client
+            .get(self.target.url.clone())
+            .headers(reqwest_header_map(&self.headers)?);
+        let request = self
+            .with_streamable_headers(request, None, "text/event-stream")
+            .await?;
+        let response = request.send().await.with_context(|| {
+            format!(
+                "failed to open MCP Streamable HTTP GET stream for server '{}'",
+                self.server_name
+            )
+        })?;
+
+        match response.status() {
+            StatusCode::METHOD_NOT_ALLOWED | StatusCode::NOT_FOUND => return Ok(None),
+            status => handle_streamable_http_status(status, &self.server_name)?,
+        }
+
+        if !is_event_stream_response(response.headers()) {
+            bail!(
+                "MCP Streamable HTTP server '{}' returned non-SSE GET content type",
+                self.server_name
+            );
+        }
+
+        let body_stream = response.bytes_stream().map_err(reqwest_error_to_io);
+        let reader = BufReader::new(StreamReader::new(body_stream));
+        let pending = self.pending.clone();
+        let server_name = self.server_name.clone();
+        let handle = tokio::spawn(async move {
+            streamable_http_sse_reader_loop(reader, pending, server_name).await;
+        });
+        Ok(Some(handle))
+    }
+
+    async fn terminate_session(&self) -> Result<()> {
+        if self.session_id.lock().await.is_none() {
+            return Ok(());
+        }
+
+        let request = self
+            .http_client
+            .delete(self.target.url.clone())
+            .headers(reqwest_header_map(&self.headers)?);
+        let request = self.with_streamable_headers(request, None, "*/*").await?;
+        let response = request.send().await.with_context(|| {
+            format!(
+                "failed to terminate MCP Streamable HTTP session for server '{}'",
+                self.server_name
+            )
+        })?;
+        match response.status() {
+            StatusCode::METHOD_NOT_ALLOWED | StatusCode::NOT_FOUND => {}
+            status => handle_streamable_http_status(status, &self.server_name)?,
+        }
+        *self.session_id.lock().await = None;
+        Ok(())
+    }
+
+    async fn with_streamable_headers(
+        &self,
+        request: reqwest::RequestBuilder,
+        content_type: Option<&'static str>,
+        accept: &'static str,
+    ) -> Result<reqwest::RequestBuilder> {
+        let protocol_version = self.protocol_version.lock().await.clone();
+        validate_header_value(HEADER_MCP_PROTOCOL_VERSION, &protocol_version)?;
+        let mut request = request
+            .header(ACCEPT, accept)
+            .header(
+                reqwest::header::HeaderName::from_static(HEADER_MCP_PROTOCOL_VERSION),
+                protocol_version,
+            )
+            .header(USER_AGENT, format!("{CLIENT_NAME}/{CLIENT_VERSION}"));
+        if let Some(content_type) = content_type {
+            request = request.header(CONTENT_TYPE, content_type);
+        }
+        if let Some(session_id) = self.session_id.lock().await.clone() {
+            validate_session_id(&session_id)?;
+            request = request.header(
+                reqwest::header::HeaderName::from_static(HEADER_MCP_SESSION_ID),
+                session_id,
+            );
+        }
+        Ok(request)
+    }
+
+    async fn capture_session_id(&self, headers: &HeaderMap) -> Result<()> {
+        if let Some(value) = headers.get(HEADER_MCP_SESSION_ID) {
+            let value = value
+                .to_str()
+                .context("invalid MCP-Session-Id response header")?;
+            validate_session_id(value)?;
+            *self.session_id.lock().await = Some(value.to_string());
+        }
+        Ok(())
+    }
+}
+
+async fn process_streamable_http_event_stream<R>(
+    mut reader: R,
+    pending: PendingRequests,
+    server_name: &str,
+    expected_id: Option<u64>,
+) -> Result<()>
+where
+    R: tokio::io::AsyncBufRead + Unpin,
+{
+    let mut event_name = String::new();
+    let mut data_lines: Vec<String> = Vec::new();
+
+    loop {
+        let mut line = String::new();
+        match reader.read_line(&mut line).await {
+            Ok(0) => break,
+            Ok(_) => {
+                let line = line.trim_end_matches(['\r', '\n']);
+                if line.is_empty() {
+                    let matched = handle_streamable_http_sse_event(
+                        server_name,
+                        &pending,
+                        &event_name,
+                        &data_lines,
+                        expected_id,
+                    )
+                    .await?;
+                    event_name.clear();
+                    data_lines.clear();
+                    if matched {
+                        return Ok(());
+                    }
+                    continue;
+                }
+
+                if line.starts_with(':') {
+                    continue;
+                }
+
+                let (field, value) = line.split_once(':').unwrap_or((line, ""));
+                let value = value.strip_prefix(' ').unwrap_or(value);
+                match field {
+                    "event" => event_name = value.to_string(),
+                    "data" => data_lines.push(value.to_string()),
+                    _ => {}
+                }
+            }
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!(
+                        "failed to read MCP Streamable HTTP event stream for server '{}'",
+                        server_name
+                    )
+                });
+            }
+        }
+    }
+
+    if expected_id.is_some() {
+        bail!(
+            "MCP Streamable HTTP server '{}' closed event stream before returning a JSON-RPC response",
+            server_name
+        );
+    }
+    Ok(())
+}
+
+async fn handle_streamable_http_sse_event(
+    server_name: &str,
+    pending: &PendingRequests,
+    event_name: &str,
+    data_lines: &[String],
+    expected_id: Option<u64>,
+) -> Result<bool> {
+    if data_lines.is_empty() {
+        return Ok(false);
+    }
+
+    let data = data_lines.join("\n");
+    match event_name {
+        "" | "message" => {
+            let value: Value = serde_json::from_str(&data).with_context(|| {
+                format!(
+                    "failed to parse MCP Streamable HTTP SSE JSON message from server '{}'",
+                    server_name
+                )
+            })?;
+            dispatch_streamable_http_json_message(value, pending.clone(), server_name, expected_id)
+                .await
+        }
+        other => {
+            debug!(
+                server = %server_name,
+                event = other,
+                "MCP: ignoring Streamable HTTP SSE event"
+            );
+            Ok(false)
+        }
+    }
+}
+
+async fn dispatch_streamable_http_json_message(
+    value: Value,
+    pending: PendingRequests,
+    server_name: &str,
+    expected_id: Option<u64>,
+) -> Result<bool> {
+    if let Ok(response) = serde_json::from_value::<JsonRpcResponse>(value.clone()) {
+        let matched = expected_id
+            .map(|id| response.id.as_u64() == Some(id))
+            .unwrap_or(false);
+        dispatch_response(&pending, server_name, response).await;
+        if expected_id.is_some() && !matched {
+            bail!(
+                "MCP Streamable HTTP server '{}' returned a response with an unexpected id",
+                server_name
+            );
+        }
+        return Ok(matched);
+    }
+
+    if let Some(event) = notification_event(server_name, &value) {
+        debug!(
+            server = %server_name,
+            "MCP: routed Streamable HTTP server notification"
+        );
+        super::emit_event(event);
+        return Ok(false);
+    }
+
+    if value
+        .get("method")
+        .and_then(|method| method.as_str())
+        .is_some()
+    {
+        debug!(
+            server = %server_name,
+            "MCP: received Streamable HTTP server notification"
+        );
+        return Ok(false);
+    }
+
+    bail!(
+        "MCP Streamable HTTP server '{}' returned malformed JSON-RPC message",
+        server_name
+    );
+}
+
+fn json_rpc_request_id(body: &str) -> Option<u64> {
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|value| value.get("id").and_then(Value::as_u64))
 }
 
 #[derive(Debug, Clone)]
@@ -975,6 +1484,14 @@ fn remote_sse_http_client() -> Result<reqwest::Client> {
         .context("failed to build remote MCP SSE HTTP client")
 }
 
+fn streamable_http_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS))
+        .build()
+        .context("failed to build MCP Streamable HTTP client")
+}
+
 fn spawn_sse_reader<R>(
     reader: R,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value>>>>>,
@@ -1088,13 +1605,49 @@ fn handle_sse_post_status(status: StatusCode, server_name: &str) -> Result<()> {
     Ok(())
 }
 
+fn handle_streamable_http_status(status: StatusCode, server_name: &str) -> Result<()> {
+    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+        super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
+            server_name: server_name.to_string(),
+            state: "auth-needed".to_string(),
+            error: Some(
+                McpAuthNeededError {
+                    server_name: server_name.to_string(),
+                    status,
+                }
+                .to_string(),
+            ),
+        });
+        return Err(McpAuthNeededError {
+            server_name: server_name.to_string(),
+            status,
+        }
+        .into());
+    }
+    if status.is_redirection() {
+        bail!(
+            "MCP Streamable HTTP server '{}' returned HTTP {}; redirects are disabled",
+            server_name,
+            status.as_u16()
+        );
+    }
+    if !status.is_success() {
+        bail!(
+            "MCP Streamable HTTP server '{}' returned HTTP {}",
+            server_name,
+            status.as_u16()
+        );
+    }
+    Ok(())
+}
+
 fn reqwest_header_map(headers: &[(String, String)]) -> Result<HeaderMap> {
     let mut map = HeaderMap::new();
     for (name, value) in headers {
         let header_name = HeaderName::from_bytes(name.as_bytes())
-            .with_context(|| format!("invalid SSE header name '{}'", name))?;
+            .with_context(|| format!("invalid MCP HTTP header name '{}'", name))?;
         let header_value = HeaderValue::from_str(value)
-            .with_context(|| format!("invalid SSE header value for '{}'", name))?;
+            .with_context(|| format!("invalid MCP HTTP header value for '{}'", name))?;
         map.insert(header_name, header_value);
     }
     Ok(map)
@@ -1142,7 +1695,7 @@ fn strip_fragment(value: &str) -> &str {
     value.split('#').next().unwrap_or(value)
 }
 
-fn normalized_sse_headers(config: &McpServerConfig) -> Vec<(String, String)> {
+fn normalized_http_transport_headers(config: &McpServerConfig) -> Vec<(String, String)> {
     let mut headers = config
         .headers
         .as_ref()
@@ -1158,10 +1711,10 @@ fn normalized_sse_headers(config: &McpServerConfig) -> Vec<(String, String)> {
     headers
 }
 
-async fn normalized_sse_headers_with_auth(
+async fn normalized_http_transport_headers_with_auth(
     config: &McpServerConfig,
 ) -> Result<Vec<(String, String)>> {
-    let mut headers = normalized_sse_headers(config);
+    let mut headers = normalized_http_transport_headers(config);
     let has_explicit_authorization = headers
         .iter()
         .any(|(name, _)| name.eq_ignore_ascii_case("authorization"));
@@ -1275,6 +1828,22 @@ fn validate_sse_url(url: &str) -> Result<()> {
     bail!("sse transport requires an http:// or https:// URL");
 }
 
+fn validate_streamable_http_url(url: &str) -> Result<()> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() || trimmed != url {
+        bail!("streamable-http url must be a non-empty URL without surrounding whitespace");
+    }
+    let parsed = Url::parse(trimmed).context("invalid Streamable HTTP URL")?;
+    match parsed.scheme() {
+        "https" => validate_remote_https_url(&parsed),
+        "http" if is_loopback_url(&parsed) => Ok(()),
+        "http" => {
+            bail!("streamable-http transport requires https URLs unless the host is loopback")
+        }
+        _ => bail!("streamable-http transport requires an http:// or https:// URL"),
+    }
+}
+
 fn validate_header_name(name: &str) -> Result<()> {
     if name.is_empty()
         || !name
@@ -1283,9 +1852,9 @@ fn validate_header_name(name: &str) -> Result<()> {
     {
         bail!("invalid SSE header name '{}'", name);
     }
-    if is_reserved_sse_header(name) {
+    if is_reserved_http_transport_header(name) {
         bail!(
-            "unsafe SSE header '{}' is managed by the MCP transport",
+            "unsafe MCP HTTP header '{}' is managed by the MCP transport",
             name
         );
     }
@@ -1301,13 +1870,20 @@ fn validate_header_value(name: &str, value: &str) -> Result<()> {
 
 fn validate_remote_https_url(url: &Url) -> Result<()> {
     if url.scheme() != "https" {
-        bail!("remote SSE transport requires https URLs");
+        bail!("remote MCP HTTP transport requires https URLs");
     }
     if url.host_str().is_none() {
-        bail!("remote SSE URL must include a host");
+        bail!("remote MCP HTTP URL must include a host");
     }
     if !url.username().is_empty() || url.password().is_some() {
-        bail!("remote SSE URL must not include embedded credentials");
+        bail!("remote MCP HTTP URL must not include embedded credentials");
+    }
+    Ok(())
+}
+
+fn validate_session_id(value: &str) -> Result<()> {
+    if value.is_empty() || value.contains('\r') || value.contains('\n') || value.contains('\0') {
+        bail!("invalid MCP-Session-Id header value");
     }
     Ok(())
 }
@@ -1318,11 +1894,42 @@ fn same_origin(left: &Url, right: &Url) -> bool {
         && left.port_or_known_default() == right.port_or_known_default()
 }
 
-fn is_reserved_sse_header(name: &str) -> bool {
+fn is_loopback_url(url: &Url) -> bool {
+    url.host_str().map(is_loopback_host).unwrap_or(false)
+}
+
+fn is_reserved_http_transport_header(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "host" | "connection" | "content-length" | "transfer-encoding"
+        "accept"
+            | "connection"
+            | "content-length"
+            | "content-type"
+            | "host"
+            | "mcp-protocol-version"
+            | "mcp-session-id"
+            | "transfer-encoding"
     )
+}
+
+fn is_event_stream_response(headers: &HeaderMap) -> bool {
+    response_content_type(headers)
+        .map(|content_type| content_type.eq_ignore_ascii_case("text/event-stream"))
+        .unwrap_or(false)
+}
+
+fn response_content_type(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| {
+            value
+                .split(';')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_string()
+        })
 }
 
 fn redact_url_for_log(url: &str) -> String {

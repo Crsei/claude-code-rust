@@ -56,6 +56,37 @@ fn find_header_end(buffer: &[u8]) -> Option<usize> {
     buffer.windows(4).position(|window| window == b"\r\n\r\n")
 }
 
+fn header_value(head: &str, name: &str) -> Option<String> {
+    head.lines().find_map(|line| {
+        let (header_name, value) = line.split_once(':')?;
+        if header_name.eq_ignore_ascii_case(name) {
+            Some(value.trim().to_string())
+        } else {
+            None
+        }
+    })
+}
+
+async fn write_http_response(
+    stream: &mut TcpStream,
+    status: &str,
+    headers: &[(&str, &str)],
+    body: &str,
+) {
+    let mut response = format!("HTTP/1.1 {}\r\nContent-Length: {}\r\n", status, body.len());
+    for (name, value) in headers {
+        response.push_str(name);
+        response.push_str(": ");
+        response.push_str(value);
+        response.push_str("\r\n");
+    }
+    response.push_str("\r\n");
+    response.push_str(body);
+    stream.write_all(response.as_bytes()).await.unwrap();
+    stream.flush().await.unwrap();
+    let _ = stream.shutdown().await;
+}
+
 #[test]
 fn test_mcp_client_new() {
     let config = McpServerConfig {
@@ -539,6 +570,187 @@ async fn test_connect_sse_rejects_missing_url() {
     let result = client.connect().await;
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("url"));
+}
+
+#[tokio::test]
+async fn test_streamable_http_loopback_initializes_and_lists_tools() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let server = tokio::spawn(async move {
+        let (mut init_stream, _) = listener.accept().await.unwrap();
+        let (init_head, init_body) = read_http_request(&mut init_stream).await;
+        let init_request: Value =
+            serde_json::from_str(&init_body).unwrap_or_else(|_| json!({"id": 1}));
+        let init_id = init_request["id"].as_u64().unwrap();
+        let init_response = json!({
+            "jsonrpc": "2.0",
+            "id": init_id,
+            "result": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": { "tools": {} },
+                "serverInfo": { "name": "stream-http", "version": "1.0.0" }
+            }
+        });
+        write_http_response(
+            &mut init_stream,
+            "200 OK",
+            &[
+                ("Content-Type", "application/json"),
+                ("MCP-Session-Id", "session-1"),
+            ],
+            &serde_json::to_string(&init_response).unwrap(),
+        )
+        .await;
+        assert!(init_head.starts_with("POST /mcp HTTP/1.1"));
+        assert!(header_value(&init_head, "accept")
+            .unwrap()
+            .contains("application/json"));
+        assert_eq!(
+            header_value(&init_head, super::HEADER_MCP_PROTOCOL_VERSION).unwrap(),
+            "2025-11-25"
+        );
+        assert_eq!(init_request["method"], "initialize");
+        assert_eq!(init_request["params"]["protocolVersion"], "2025-11-25");
+
+        let (mut initialized_stream, _) = listener.accept().await.unwrap();
+        let (initialized_head, initialized_body) = read_http_request(&mut initialized_stream).await;
+        write_http_response(&mut initialized_stream, "202 Accepted", &[], "").await;
+        assert_eq!(
+            header_value(&initialized_head, super::HEADER_MCP_SESSION_ID).unwrap(),
+            "session-1"
+        );
+        let initialized_notification: Value = serde_json::from_str(&initialized_body).unwrap();
+        assert_eq!(
+            initialized_notification["method"],
+            "notifications/initialized"
+        );
+
+        let (mut get_stream, _) = listener.accept().await.unwrap();
+        let (get_head, get_body) = read_http_request(&mut get_stream).await;
+        write_http_response(&mut get_stream, "405 Method Not Allowed", &[], "").await;
+        assert!(get_head.starts_with("GET /mcp HTTP/1.1"));
+        assert_eq!(
+            header_value(&get_head, super::HEADER_MCP_SESSION_ID).unwrap(),
+            "session-1"
+        );
+        assert_eq!(
+            header_value(&get_head, "accept").unwrap(),
+            "text/event-stream"
+        );
+        assert!(get_body.is_empty());
+
+        let (mut tools_stream, _) = listener.accept().await.unwrap();
+        let (tools_head, tools_body) = read_http_request(&mut tools_stream).await;
+        let tools_request: Value =
+            serde_json::from_str(&tools_body).unwrap_or_else(|_| json!({"id": 2}));
+        let tools_id = tools_request["id"].as_u64().unwrap();
+        let tools_response = json!({
+            "jsonrpc": "2.0",
+            "id": tools_id,
+            "result": {
+                "tools": [{
+                    "name": "search",
+                    "description": "search things",
+                    "inputSchema": {"type": "object"}
+                }]
+            }
+        });
+        let channel_notification = json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/claude/channel",
+            "params": {
+                "content": "ready",
+                "meta": {"transport": "streamable-http"}
+            }
+        });
+        let body = format!(
+            "event: message\r\ndata: {}\r\n\r\nevent: message\r\ndata: {}\r\n\r\n",
+            serde_json::to_string(&channel_notification).unwrap(),
+            serde_json::to_string(&tools_response).unwrap()
+        );
+        write_http_response(
+            &mut tools_stream,
+            "200 OK",
+            &[("Content-Type", "text/event-stream")],
+            &body,
+        )
+        .await;
+        assert!(tools_head.starts_with("POST /mcp HTTP/1.1"));
+        assert_eq!(
+            header_value(&tools_head, super::HEADER_MCP_SESSION_ID).unwrap(),
+            "session-1"
+        );
+        assert_eq!(tools_request["method"], "tools/list");
+    });
+
+    let config = McpServerConfig {
+        name: "stream-http".to_string(),
+        transport: "streamable-http".to_string(),
+        command: None,
+        args: None,
+        url: Some(format!("http://127.0.0.1:{}/mcp", addr.port())),
+        headers: None,
+        oauth: None,
+        env: None,
+        browser_mcp: None,
+        disabled: None,
+    };
+
+    let mut client = McpClient::new(config);
+    client.connect().await.unwrap();
+    client.initialize().await.unwrap();
+    let tools = client.list_tools().await.unwrap();
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0].name, "search");
+    assert_eq!(tools[0].server_name, "stream-http");
+    client.disconnect().await;
+
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn test_connect_streamable_http_rejects_insecure_remote_http() {
+    let config = McpServerConfig {
+        name: "stream-http".to_string(),
+        transport: "streamable-http".to_string(),
+        command: None,
+        args: None,
+        url: Some("http://example.com/mcp".to_string()),
+        headers: None,
+        oauth: None,
+        env: None,
+        browser_mcp: None,
+        disabled: None,
+    };
+
+    let mut client = McpClient::new(config);
+    let result = client.connect().await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("https"));
+}
+
+#[tokio::test]
+async fn test_connect_streamable_http_rejects_reserved_header_override() {
+    let mut headers = HashMap::new();
+    headers.insert("Accept".to_string(), "text/plain".to_string());
+    let config = McpServerConfig {
+        name: "stream-http".to_string(),
+        transport: "streamable-http".to_string(),
+        command: None,
+        args: None,
+        url: Some("https://example.com/mcp".to_string()),
+        headers: Some(headers),
+        oauth: None,
+        env: None,
+        browser_mcp: None,
+        disabled: None,
+    };
+
+    let mut client = McpClient::new(config);
+    let result = client.connect().await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("managed"));
 }
 
 #[tokio::test]

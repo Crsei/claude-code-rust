@@ -553,6 +553,7 @@
   - `/mcp list`
   - `/mcp ls`
   - `/mcp status`
+  - `/mcp add <name> --transport=streamable-http --url=<url>`
   - `/mcp connect <name>`
   - `/mcp disconnect <name>`
   - `/mcp reconnect <name>`
@@ -564,6 +565,7 @@
   - `connect` / `disconnect` / `reconnect` route through the shared runtime MCP manager.
   - `auth start` / `auth complete` perform manual OAuth PKCE setup for OAuth-enabled MCP servers; tokens are stored under `~/.cc-rust/` or `CC_RUST_HOME`, not echoed in command output.
   - `auth status` / `auth clear` show redacted credential state or remove stored OAuth state.
+  - `streamable-http` is the current standard MCP HTTP transport; legacy `sse` remains supported for compatibility.
 - Behavior:
   - 无参数时显示帮助和 `mcpServers` 配置示例
   - `list`：列出当前发现到的 MCP servers
@@ -572,6 +574,8 @@
   - `/mcp`
   - `/mcp list`
   - `/mcp status`
+  - `/mcp add remote --transport=streamable-http --url=https://mcp.example.com/mcp`
+  - `/mcp auth status context7`
 
 ### `/plugin`
 

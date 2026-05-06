@@ -3,7 +3,8 @@
 //!
 //! MCP allows Claude Code to communicate with external tool servers via:
 //! - **stdio**: spawn a subprocess, communicate via stdin/stdout (primary)
-//! - **sse**: HTTP Server-Sent Events (requires network feature)
+//! - **sse**: legacy HTTP Server-Sent Events + POST compatibility path
+//! - **streamable-http**: current MCP HTTP transport
 //!
 //! Protocol specification: https://modelcontextprotocol.io/specification/2025-03-26/
 
@@ -142,7 +143,7 @@ pub struct McpServerConfig {
     /// Server name (the key in the mcpServers map).
     #[serde(default)]
     pub name: String,
-    /// Transport type: "stdio" (default) or "sse".
+    /// Transport type: "stdio" (default), "sse", or "streamable-http".
     #[serde(rename = "type", default = "default_transport")]
     pub transport: String,
     /// Command to launch (for stdio transport).
@@ -150,9 +151,9 @@ pub struct McpServerConfig {
     /// Command arguments (for stdio transport).
     #[serde(default)]
     pub args: Option<Vec<String>>,
-    /// URL (for SSE transport).
+    /// URL (for SSE / Streamable HTTP transports).
     pub url: Option<String>,
-    /// Additional HTTP headers (for SSE transport).
+    /// Additional HTTP headers (for SSE / Streamable HTTP transports).
     pub headers: Option<HashMap<String, String>>,
     /// OAuth metadata used for remote MCP authentication. Tokens are stored
     /// separately under the cc-rust data root and are never serialized into

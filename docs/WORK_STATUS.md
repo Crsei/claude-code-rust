@@ -1,9 +1,15 @@
 # cc-rust 工作状态总览
 
+## 2026-05-06 Extensibility MCP Phase 4
+
+- MCP Streamable HTTP is complete for the current standard HTTP transport: POST JSON-RPC, JSON or SSE response bodies, `MCP-Session-Id`, `MCP-Protocol-Version`, optional GET SSE listener, DELETE session cleanup, OAuth header reuse, and secure remote HTTPS / loopback HTTP validation.
+- WebSocket is documented as unsupported/custom because the current official MCP transport matrix standardizes stdio and Streamable HTTP; legacy SSE remains compatibility support.
+- Remaining extensibility work: runtime tool-registry refresh for newly connected MCP servers, custom-agent safety contract, and integration closure.
+
 ## 2026-05-06 Extensibility MCP Phase 3
 
 - MCP OAuth / interactive auth is complete for the remote SSE auth contract: config metadata, manual PKCE start/complete, redacted status/clear, token refresh, IPC auth events, and `Authorization` injection all use cc-rust isolated paths.
-- Remaining extensibility MCP work: Streamable HTTP / WebSocket / IDE transport matrix, and runtime tool-registry refresh for newly connected MCP servers.
+- Remaining extensibility MCP work after this phase was Streamable HTTP / WebSocket / IDE transport matrix, and runtime tool-registry refresh for newly connected MCP servers.
 
 ## 2026-05-06 Extensibility MCP Phase 2
 

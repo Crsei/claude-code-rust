@@ -28,8 +28,8 @@
 | --- | --- | --- | --- | --- |
 | `custom-agents.mdx` | 已实现 | 已实现 | 部分实现 | 自定义 agent 定义链路已接通，安全边界主要靠通用工具过滤与可编辑范围限制 |
 | `hooks.mdx` | 已实现 | 已实现 | 已实现 | hooks 配置、执行与权限联动已经形成闭环 |
-| `mcp-configuration.mdx` | 部分实现 | 部分实现 | 部分实现 | MCP 配置与管理可用；stdio、本地 loopback HTTP SSE、远程 HTTPS SSE、MCP OAuth / interactive auth、manager 级 connect/disconnect/reconnect、短指数退避重试和 channel notification 事件路由可运行，但 Streamable HTTP / WebSocket / IDE transport 矩阵仍不完整 |
-| `mcp-protocol.mdx` | 部分实现 | 部分实现 | 部分实现 | JSON-RPC 协议骨架、stdio 通道、本地/远程 SSE endpoint / POST 通道、OAuth token refresh / redaction 和 `notifications/claude/channel` 路由可用；Streamable HTTP / WebSocket / IDE transport 覆盖仍不完整 |
+| `mcp-configuration.mdx` | 部分实现 | 部分实现 | 部分实现 | MCP 配置与管理可用；stdio、本地 loopback HTTP SSE、远程 HTTPS SSE、MCP OAuth / interactive auth、Streamable HTTP、manager 级 connect/disconnect/reconnect、短指数退避重试和 channel notification 事件路由可运行；WebSocket 按当前官方规格记录为 unsupported/custom，剩余 gap 收窄为 late-connect tool registry refresh 与 custom-agent safety |
+| `mcp-protocol.mdx` | 部分实现 | 部分实现 | 部分实现 | JSON-RPC 协议骨架、stdio 通道、本地/远程 SSE endpoint / POST 通道、Streamable HTTP POST JSON-RPC / session header / optional GET SSE、OAuth token refresh / redaction 和 `notifications/claude/channel` 路由可用；WebSocket 非当前标准 transport |
 | `skills.mdx` | 已实现 | 已实现 | 已实现 | skills 的加载、调用、fork 执行与命令入口已形成完整链路 |
 
 ## 逐文档分析
@@ -94,7 +94,7 @@ MCP 的配置形态已经进入设置层与发现层。`McpServerConfig` 定义�
 
 这里的安全主要依赖作用域与显式禁用，而不是更细的策略引擎。`discover_mcp_servers_scoped()` 会保留来源作用域，见 `crates/cc-mcp/src/discovery.rs:143-191`；`/mcp` 只允许编辑可写作用域，`crates/claude-code-rs/src/commands/mcp_cmd.rs:272-306` 与 `crates/claude-code-rs/src/commands/mcp_cmd.rs:415-430` 会拒绝只读来源。运行时还会跳过 `disabled` 的服务，见 `crates/cc-mcp/src/manager.rs:39-43` 和 `crates/claude-code-rs/src/ipc/subsystem_handlers.rs:685-722`。
 
-补充：SSE transport 已覆盖本地 loopback HTTP 与远程 `https://`。`connect_sse()` 会读取 `endpoint` 事件，再通过 HTTP POST 发送 JSON-RPC；远程路径使用 reqwest、禁用 redirect、同源 endpoint 校验、header 注入防护和 URL 脱敏。MCP OAuth / interactive auth 现在由 `crates/cc-mcp/src/auth.rs` 提供 PKCE start/complete、token refresh、clear/status 和 redaction，并由 `crates/cc-mcp/src/client.rs` 注入 `Authorization` header。manager 层已有真实 reconnect API 和短指数退避重试，transport 层已把 channel notification 路由到 IPC 事件；非 SSE 的 Streamable HTTP / WebSocket / IDE transport 仍未实现。
+补充：SSE transport 已覆盖本地 loopback HTTP 与远程 `https://`。`connect_sse()` 会读取 `endpoint` 事件，再通过 HTTP POST 发送 JSON-RPC；远程路径使用 reqwest、禁用 redirect、同源 endpoint 校验、header 注入防护和 URL 脱敏。MCP OAuth / interactive auth 现在由 `crates/cc-mcp/src/auth.rs` 提供 PKCE start/complete、token refresh、clear/status 和 redaction，并由 `crates/cc-mcp/src/client.rs` 注入 `Authorization` header。Streamable HTTP 现在由同一 client 支持 POST JSON-RPC、`application/json` / `text/event-stream` 响应、`MCP-Session-Id`、`MCP-Protocol-Version`、可选 GET SSE listener 与 DELETE session cleanup。manager 层已有真实 reconnect API 和短指数退避重试，transport 层已把 channel notification 路由到 IPC 事件；WebSocket 按当前官方规格不属于标准 transport，IDE bridge 仍通过 scoped stdio discovery 覆盖。
 
 结论：`mcp-configuration.mdx` 的配置与管理能力可用，SSE 配置安全已有基础保护，但传输与策略覆盖还不完整，因此记为 `部分实现`。
 
@@ -104,7 +104,7 @@ MCP 的配置形态已经进入设置层与发现层。`McpServerConfig` 定义�
 
 协议层的骨架已经存在于 `crates/cc-mcp/src/lib.rs:1-37` 与 `crates/cc-mcp/src/lib.rs:175-363`：这里定义了 JSON-RPC 消息、初始化结果、工具/资源返回值，以及 `McpServerConfig` 的协议相关字段。`McpClient` 的说明也明确了协议流程：连接、`initialize`、`tools/list`、`tools/call`、`resources/list`、`resources/read`，见 `crates/cc-mcp/src/client.rs:1-11`。
 
-协议配置的形态声明了 `stdio` 与 `sse`。当前可用路径包括 stdio、本地 loopback HTTP SSE、远程 HTTPS SSE，以及远程 SSE 使用的 MCP OAuth auth contract：SSE 连接会先校验 URL 与 headers，再读取 SSE `endpoint` 事件，并把 JSON-RPC 请求 POST 到该 endpoint；响应由 SSE `message` 事件回到 pending request，`notifications/claude/channel` 会转成 subsystem channel 事件，见 `crates/cc-mcp/src/client.rs`、`crates/cc-mcp/src/transport.rs` 与 `crates/claude-code-rs/src/ipc/runtime.rs`。Streamable HTTP、WebSocket 和 IDE 专用 transport 仍未落地。
+协议配置的形态声明了 `stdio`、`sse` 与 `streamable-http`。当前可用路径包括 stdio、本地 loopback HTTP SSE、远程 HTTPS SSE、远程 SSE 使用的 MCP OAuth auth contract，以及当前标准 Streamable HTTP：SSE 连接会先校验 URL 与 headers，再读取 SSE `endpoint` 事件，并把 JSON-RPC 请求 POST 到该 endpoint；Streamable HTTP 直接 POST 到配置 URL，并从 JSON 或 SSE response body 分发 JSON-RPC response / notification；`notifications/claude/channel` 会转成 subsystem channel 事件，见 `crates/cc-mcp/src/client.rs`、`crates/cc-mcp/src/transport.rs` 与 `crates/claude-code-rs/src/ipc/runtime.rs`。WebSocket 未作为当前标准 MCP transport 实现。
 
 #### 运行时层
 
@@ -112,7 +112,7 @@ MCP 的配置形态已经进入设置层与发现层。`McpServerConfig` 定义�
 
 #### 安全层
 
-协议层看到了超时、断开清理、SSE 配置安全校验、本地/远程 SSE endpoint / message 分发、MCP OAuth token storage / refresh / redaction、channel notification 事件路由，以及 manager 级短指数退避重试。请求超时与 pending 回收在 `crates/cc-mcp/src/client.rs`，断开逻辑在 `crates/cc-mcp/src/client.rs`，SSE URL / header 校验、HTTP GET / POST 与 endpoint 解析在 `crates/cc-mcp/src/client.rs`，OAuth contract 在 `crates/cc-mcp/src/auth.rs`，SSE event 解析、JSON-RPC response 分发与 channel notification 路由在 `crates/cc-mcp/src/transport.rs`，退避重试在 `crates/cc-mcp/src/manager.rs:94-112`。由于自动长线重连与完整传输矩阵没有完成，这一层仍记为 `部分实现`。
+协议层看到了超时、断开清理、SSE 配置安全校验、本地/远程 SSE endpoint / message 分发、Streamable HTTP session / protocol headers / JSON-or-SSE response 分发、MCP OAuth token storage / refresh / redaction、channel notification 事件路由，以及 manager 级短指数退避重试。请求超时与 pending 回收在 `crates/cc-mcp/src/client.rs`，断开逻辑在 `crates/cc-mcp/src/client.rs`，SSE URL / header 校验、HTTP GET / POST 与 endpoint 解析在 `crates/cc-mcp/src/client.rs`，Streamable HTTP POST / optional GET / DELETE session 在 `crates/cc-mcp/src/client.rs`，OAuth contract 在 `crates/cc-mcp/src/auth.rs`，SSE event 解析、JSON-RPC response 分发与 channel notification 路由在 `crates/cc-mcp/src/transport.rs`，退避重试在 `crates/cc-mcp/src/manager.rs:94-112`。由于运行时新增 MCP 工具后的 registry refresh 与 custom-agent safety 仍未完成，这一层仍记为 `部分实现`。
 
 结论：`mcp-protocol.mdx` 的核心 JSON-RPC 主路径已经存在，但完整度还不够，所以总体记为 `部分实现`。
 
@@ -153,14 +153,14 @@ fork 执行还会继承 skill 的 `allowed_tools` 和 `model` 配置，见 `crat
 | 文档 | 当前状态 | 主要原因 |
 | --- | --- | --- |
 | `custom-agents.mdx` | 部分实现 | 定义、编辑、调用链路已通，但安全边界主要依赖通用工具过滤与隔离，没有看到独立的 agent 安全子系统 |
-| `mcp-configuration.mdx` | 部分实现 | 发现、编辑、连接已具备；stdio、本地 loopback HTTP SSE、远程 HTTPS SSE、OAuth / interactive auth、manager 级 reconnect、短指数退避重试和 channel notification 事件路由可运行，但 Streamable HTTP / WebSocket / IDE transport 矩阵未落地 |
-| `mcp-protocol.mdx` | 部分实现 | stdio JSON-RPC 主路径、本地/远程 SSE endpoint / POST 通道、OAuth token refresh / redaction、channel notification 路由和 manager 级短退避重试可用；Streamable HTTP / WebSocket / IDE transport 覆盖仍未完成 |
+| `mcp-configuration.mdx` | 部分实现 | 发现、编辑、连接已具备；stdio、本地 loopback HTTP SSE、远程 HTTPS SSE、OAuth / interactive auth、Streamable HTTP、manager 级 reconnect、短指数退避重试和 channel notification 事件路由可运行；WebSocket 非当前标准 transport，剩余 gap 是 late-connect tool registry refresh 与 custom-agent safety |
+| `mcp-protocol.mdx` | 部分实现 | stdio JSON-RPC 主路径、本地/远程 SSE endpoint / POST 通道、Streamable HTTP POST / session / optional GET SSE、OAuth token refresh / redaction、channel notification 路由和 manager 级短退避重试可用；WebSocket 非当前标准 transport |
 
 `未实现` 与 `故意裁剪` 在这次核查里没有找到可直接落表的明确项。
 
 ## 后续动作
 
-1. 如果要继续补齐 Extensibility 章节，下一优先级是 Streamable HTTP / WebSocket / IDE transport matrix；当前已完成 stdio、本地 loopback HTTP SSE、远程 HTTPS SSE、MCP OAuth / interactive auth、channel notification 路由、manager API 与短退避重试主路径。
+1. 如果要继续补齐 Extensibility 章节，下一优先级是运行时新增 MCP 工具后的 registry refresh 与 custom-agent safety；当前已完成 stdio、本地 loopback HTTP SSE、远程 HTTPS SSE、Streamable HTTP、MCP OAuth / interactive auth、channel notification 路由、manager API 与短退避重试主路径。WebSocket 按当前官方规格记录为 unsupported/custom。
 2. 如果后续发现 custom agents 还要补更细的安全约束，再补一轮 `engine/agent/*` 与 `ipc/agent_settings.rs` 的交叉核查。
 3. 其余三项（hooks、skills、MCP 配置）已经可以直接作为文档基线使用。
 
@@ -170,3 +170,4 @@ fork 执行还会继承 skill 的 `allowed_tools` 和 `model` 配置，见 `crat
 - 2026-05-06：Phase 1 已完成 MCP lifecycle/reconnect integration。`/mcp connect`、`/mcp disconnect`、`/mcp reconnect` 与 IPC MCP lifecycle commands 现在调用同一个运行时 `McpManager` 句柄；状态快照会读取 live manager、disabled config 与最后一次 runtime state。验证记录见 `docs/archive/extensibility-phase1-mcp-lifecycle-2026-05-06.md`。剩余 MCP gap 收窄为 remote HTTPS SSE、OAuth / interactive auth 与完整 transport matrix。
 - 2026-05-06：Phase 2 已完成 remote HTTPS SSE compatibility。`type = "sse"` 现在支持远程 `https://` 事件流、同源 endpoint event 解析、JSON-RPC POST、禁用 redirect、header 注入防护、URL 日志脱敏与 401/403 `auth-needed` 状态分类；本地 loopback SSE 路径保持原 `TcpStream` 实现。验证记录见 `docs/archive/extensibility-phase2-remote-https-sse-2026-05-06.md`。剩余 MCP gap 收窄为 OAuth / interactive auth、Streamable HTTP / WebSocket / IDE transport matrix，以及运行时新增 MCP 工具后的 tool registry refresh。
 - 2026-05-06：Phase 3 已完成 MCP OAuth / interactive auth。`McpServerConfig` 现在支持 `oauth` metadata；`crates/cc-mcp/src/auth.rs` 提供 OAuth metadata discovery、manual PKCE start/complete、token storage、refresh、clear/status 和 redaction；`/mcp auth start|complete|status|clear` 与 IPC auth commands 暴露 redacted interaction surface；remote SSE 会注入 stored bearer token。验证记录见 `docs/archive/extensibility-phase3-mcp-oauth-2026-05-06.md`。剩余 MCP gap 收窄为 Streamable HTTP / WebSocket / IDE transport matrix，以及运行时新增 MCP 工具后的 tool registry refresh。
+- 2026-05-06：Phase 4 已完成 MCP Streamable HTTP transport。`type = "streamable-http"` 现在支持当前标准 MCP HTTP transport：POST JSON-RPC、JSON 或 SSE response body、`MCP-Session-Id`、`MCP-Protocol-Version`、optional GET SSE listener、DELETE session cleanup、OAuth header 注入和 loopback HTTP / remote HTTPS URL 校验；`/mcp add|edit` 也接受 `--transport=streamable-http`。当前官方 transport matrix 为 stdio + Streamable HTTP；legacy SSE 作为兼容路径保留，WebSocket 记录为 unsupported/custom。验证记录见 `docs/archive/extensibility-phase4-mcp-streamable-http-2026-05-06.md`。剩余 gap 收窄为运行时新增 MCP 工具后的 tool registry refresh 与 custom-agent safety。
