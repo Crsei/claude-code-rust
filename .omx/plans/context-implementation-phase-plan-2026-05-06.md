@@ -26,7 +26,10 @@ Source map: `architecture/context-implementation-map.md`
   - Added explicit `CompactionFeatureGates` for auto, reactive, session-memory, and partial compact lanes; defaults preserve existing behavior.
   - Remaining gap: no command/UI anchor selection surface or Partial Compact resume/export e2e yet.
   - Verification: `cargo test -p cc-compact partial_compact`, `cargo test -p cc-compact gates::tests`, and full `cargo test -p cc-compact`.
-- Phase 4 - End-To-End Context Verification: pending.
+- Phase 4 - End-To-End Context Verification: completed on 2026-05-06.
+  - Verification artifact: `docs/archive/context-phase4-verification-2026-05-06.md`.
+  - Passed targeted cross-phase tests, `cargo build --release`, and `cargo test --workspace --lib`.
+  - Residual parity gaps are documented in the verification artifact and `architecture/context-implementation-map.md`.
 
 ## Requirements Summary
 
