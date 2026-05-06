@@ -82,6 +82,43 @@ pub struct MemoryEntry {
     pub tags: Vec<String>,
 }
 
+/// Deterministic insight extracted from a conversation turn.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtractedSessionInsight {
+    pub content: String,
+    pub tags: Vec<String>,
+}
+
+/// Build a durable session insight from the latest user request and assistant
+/// answer. This is intentionally local and deterministic; it avoids persisting
+/// short acknowledgements while keeping enough user intent to make the insight
+/// useful when replayed in a later session.
+pub fn extract_session_insight(
+    user_prompt: Option<&str>,
+    assistant_text: &str,
+) -> Option<ExtractedSessionInsight> {
+    let assistant = normalize_insight_text(assistant_text);
+    if !is_meaningful_insight(&assistant) {
+        return None;
+    }
+
+    let assistant_summary = first_sentences(&assistant, 2, 420);
+    let user = user_prompt
+        .map(normalize_insight_text)
+        .filter(|text| text.len() >= 8)
+        .map(|text| truncate_chars(&text, 160));
+
+    let content = match user {
+        Some(user) => format!("Request: {} | Insight: {}", user, assistant_summary),
+        None => assistant_summary,
+    };
+
+    Some(ExtractedSessionInsight {
+        tags: infer_insight_tags(&content),
+        content,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -273,6 +310,91 @@ fn entry_has_any_tag(entry: &MemoryEntry, expected: &[String]) -> bool {
     })
 }
 
+fn normalize_insight_text(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn is_meaningful_insight(text: &str) -> bool {
+    if text.chars().count() < 24 {
+        return false;
+    }
+
+    let lower = text.to_lowercase();
+    !matches!(
+        lower.trim_matches(['.', '!', '?', '。', '！', '？']),
+        "ok" | "okay" | "done" | "finished" | "conversation cleared"
+    )
+}
+
+fn first_sentences(text: &str, max_sentences: usize, max_chars: usize) -> String {
+    let mut sentence_count = 0;
+    for (idx, ch) in text.char_indices() {
+        if matches!(ch, '.' | '!' | '?' | '。' | '！' | '？') {
+            sentence_count += 1;
+            if sentence_count >= max_sentences {
+                return truncate_chars(&text[..idx + ch.len_utf8()], max_chars);
+            }
+        }
+    }
+    truncate_chars(text, max_chars)
+}
+
+fn truncate_chars(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+
+    let mut truncated = text.chars().take(max_chars).collect::<String>();
+    truncated.push_str("...");
+    truncated
+}
+
+fn infer_insight_tags(content: &str) -> Vec<String> {
+    let lower = content.to_lowercase();
+    let mut tags = vec!["auto-extract".to_string()];
+
+    push_tag_if_any(
+        &mut tags,
+        &lower,
+        "implementation",
+        &["implemented", "added", "updated", "refactor", "wired"],
+    );
+    push_tag_if_any(
+        &mut tags,
+        &lower,
+        "testing",
+        &["test", "cargo test", "pytest", "verify", "verified"],
+    );
+    push_tag_if_any(
+        &mut tags,
+        &lower,
+        "debugging",
+        &["bug", "error", "failed", "panic", "fix"],
+    );
+    push_tag_if_any(
+        &mut tags,
+        &lower,
+        "architecture",
+        &[
+            "architecture",
+            "boundary",
+            "protocol",
+            "transport",
+            "lifecycle",
+        ],
+    );
+    push_tag_if_any(&mut tags, &lower, "mcp", &["mcp"]);
+    push_tag_if_any(&mut tags, &lower, "memory", &["memory", "session-insights"]);
+
+    tags
+}
+
+fn push_tag_if_any(tags: &mut Vec<String>, content: &str, tag: &str, needles: &[&str]) {
+    if needles.iter().any(|needle| content.contains(needle)) && !tags.iter().any(|t| t == tag) {
+        tags.push(tag.to_string());
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -448,6 +570,39 @@ mod tests {
         assert!(ctx.contains("keep this decision"));
         assert!(!ctx.contains("drop because no include tag"));
         assert!(!ctx.contains("drop because excluded wins"));
+    }
+
+    #[test]
+    fn extract_session_insight_keeps_user_intent_and_tags() {
+        let insight = extract_session_insight(
+            Some("Please add MCP reconnect tests"),
+            "Implemented the manager reconnect path. cargo test -p cc-mcp manager passed.",
+        )
+        .unwrap();
+
+        assert!(insight
+            .content
+            .contains("Request: Please add MCP reconnect tests"));
+        assert!(insight
+            .content
+            .contains("Insight: Implemented the manager reconnect path."));
+        assert!(insight.tags.contains(&"implementation".to_string()));
+        assert!(insight.tags.contains(&"testing".to_string()));
+        assert!(insight.tags.contains(&"mcp".to_string()));
+    }
+
+    #[test]
+    fn extract_session_insight_skips_short_acknowledgements() {
+        assert!(extract_session_insight(Some("ship it"), "Done.").is_none());
+        assert!(extract_session_insight(None, "ok").is_none());
+    }
+
+    #[test]
+    fn extract_session_insight_truncates_on_char_boundaries() {
+        let assistant = "这是一个用于验证截断逻辑的中文 insight".repeat(80);
+        let insight = extract_session_insight(None, &assistant).unwrap();
+        assert!(insight.content.ends_with("..."));
+        assert!(insight.content.is_char_boundary(insight.content.len()));
     }
 
     #[test]
