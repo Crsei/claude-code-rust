@@ -102,7 +102,10 @@ fn test_build_url_bedrock_returns_aws_endpoint() {
         url.starts_with("https://bedrock-runtime.us-east-1.amazonaws.com/model/"),
         "unexpected URL: {url}"
     );
-    assert!(url.ends_with("/invoke"), "unexpected URL: {url}");
+    assert!(
+        url.ends_with("/invoke-with-response-stream"),
+        "unexpected URL: {url}"
+    );
     // Default model gets translated to its Bedrock ID.
     assert!(
         url.contains("us.anthropic.claude-sonnet-4-5-20250929-v1"),
@@ -127,6 +130,10 @@ fn test_build_url_bedrock_with_override() {
     assert!(
         url.starts_with("https://proxy.example.com/model/"),
         "override should be used, got: {url}"
+    );
+    assert!(
+        url.ends_with("/invoke-with-response-stream"),
+        "unexpected URL: {url}"
     );
 }
 

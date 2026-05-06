@@ -7,7 +7,7 @@
 //!
 //! # Endpoint
 //!
-//! `POST https://bedrock-runtime.{region}.amazonaws.com/model/{model_id}/invoke`
+//! `POST https://bedrock-runtime.{region}.amazonaws.com/model/{model_id}/invoke-with-response-stream`
 //!
 //! With `ANTHROPIC_BEDROCK_BASE_URL` set, the base is overridden (useful for
 //! proxies / mock servers).
@@ -26,25 +26,26 @@
 //! - `anthropic_version: "bedrock-2023-05-31"` is required.
 //! - `stream` is removed (endpoint suffix determines streaming).
 //!
-//! # Streaming (MVP note)
+//! # Streaming
 //!
-//! MVP uses Bedrock's non-streaming `/invoke` endpoint and synthesizes a
-//! stream of `StreamEvent`s from the single JSON response. True server-side
-//! streaming via `invoke-with-response-stream` (AWS EventStream binary format)
-//! is a Phase-2 enhancement. This satisfies the MVP goal of "basic Claude
-//! conversation works" with the existing accumulator/stream pipeline
-//! unchanged.
+//! Bedrock returns AWS EventStream frames from `/invoke-with-response-stream`.
+//! Each `chunk` payload is an Anthropic Messages stream event encoded as JSON,
+//! so this module decodes the EventStream envelope and then reuses the common
+//! Anthropic event parser.
 
+use std::collections::HashMap;
 use std::pin::Pin;
 
 use anyhow::{bail, Context, Result};
-use futures::Stream;
+use base64::Engine;
+use futures::{Stream, StreamExt};
 use serde_json::{json, Value};
 
 use crate::api::client::MessagesRequest;
 use crate::api::model_mapping::to_bedrock_model_id;
 use crate::api::sigv4::{self, AwsCredentials, SignRequest};
-use crate::types::message::{ContentBlock, MessageDelta, StreamEvent, Usage};
+use crate::api::streaming::parse_sse_event;
+use crate::types::message::StreamEvent;
 
 pub const BEDROCK_ANTHROPIC_VERSION: &str = "bedrock-2023-05-31";
 
@@ -89,15 +90,22 @@ pub fn resolve_region() -> String {
         .unwrap_or_else(|| "us-east-1".to_string())
 }
 
-/// Build the Bedrock invoke URL for a given model ID.
-pub fn build_invoke_url(region: &str, model_id: &str, base_url_override: Option<&str>) -> String {
+/// Build the Bedrock streaming invoke URL for a given model ID.
+pub fn build_invoke_stream_url(
+    region: &str,
+    model_id: &str,
+    base_url_override: Option<&str>,
+) -> String {
     let model_id_encoded = urlencoding::encode(model_id);
     if let Some(base) = base_url_override {
         let base = base.trim_end_matches('/');
-        return format!("{}/model/{}/invoke", base, model_id_encoded);
+        return format!(
+            "{}/model/{}/invoke-with-response-stream",
+            base, model_id_encoded
+        );
     }
     format!(
-        "https://bedrock-runtime.{}.amazonaws.com/model/{}/invoke",
+        "https://bedrock-runtime.{}.amazonaws.com/model/{}/invoke-with-response-stream",
         region, model_id_encoded
     )
 }
@@ -124,134 +132,232 @@ fn to_bedrock_body(request: &MessagesRequest) -> Result<Vec<u8>> {
     serde_json::to_vec(&body).context("failed to serialize Bedrock request body")
 }
 
-/// Parsed `/invoke` response used to synthesize stream events.
-struct InvokeResponse {
-    content: Vec<ContentBlock>,
-    stop_reason: Option<String>,
-    usage: Usage,
+#[derive(Debug)]
+struct EventStreamMessage {
+    headers: HashMap<String, String>,
+    payload: Vec<u8>,
 }
 
-fn parse_invoke_response(json_str: &str) -> Result<InvokeResponse> {
-    let v: Value =
-        serde_json::from_str(json_str).context("failed to parse Bedrock JSON response")?;
+fn parse_eventstream_byte_stream<S>(
+    byte_stream: S,
+) -> impl Stream<Item = Result<StreamEvent>> + Send
+where
+    S: Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send + 'static,
+{
+    async_stream::try_stream! {
+        let mut byte_stream = std::pin::pin!(byte_stream);
+        let mut buffer = Vec::<u8>::new();
 
-    let stop_reason = v
-        .get("stop_reason")
-        .and_then(|s| s.as_str())
-        .map(|s| s.to_string());
+        while let Some(chunk_result) = byte_stream.next().await {
+            let chunk = chunk_result.context("error reading Bedrock event stream chunk")?;
+            buffer.extend_from_slice(&chunk);
 
-    let content: Vec<ContentBlock> = v
-        .get("content")
-        .and_then(|c| c.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|block| serde_json::from_value(block.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
+            while let Some(frame) = take_complete_eventstream_frame(&mut buffer)? {
+                let message = decode_eventstream_message(&frame)?;
+                for event in bedrock_message_to_stream_events(message)? {
+                    yield event;
+                }
+            }
+        }
 
-    let usage: Usage = v
-        .get("usage")
-        .and_then(|u| serde_json::from_value(u.clone()).ok())
-        .unwrap_or_default();
-
-    Ok(InvokeResponse {
-        content,
-        stop_reason,
-        usage,
-    })
+        if !buffer.is_empty() {
+            Err(anyhow::anyhow!("truncated Bedrock event stream frame"))?;
+        }
+    }
 }
 
-/// Turn a single invoke response into the equivalent sequence of
-/// `StreamEvent`s, so downstream consumers see Bedrock as a streaming
-/// provider even though MVP uses the non-streaming `/invoke` endpoint.
-fn synthesize_stream_events(resp: InvokeResponse) -> Vec<StreamEvent> {
-    let mut events = Vec::new();
+fn take_complete_eventstream_frame(buffer: &mut Vec<u8>) -> Result<Option<Vec<u8>>> {
+    if buffer.len() < 12 {
+        return Ok(None);
+    }
 
-    // Input tokens go on MessageStart; output tokens on MessageDelta.
-    let mut start_usage = resp.usage.clone();
-    start_usage.output_tokens = 0;
-    events.push(StreamEvent::MessageStart { usage: start_usage });
+    let total_len = u32::from_be_bytes(buffer[0..4].try_into().expect("slice length")) as usize;
+    let headers_len = u32::from_be_bytes(buffer[4..8].try_into().expect("slice length")) as usize;
+    if total_len < 16 {
+        bail!("invalid Bedrock event stream frame length {}", total_len);
+    }
+    if headers_len > total_len.saturating_sub(16) {
+        bail!(
+            "invalid Bedrock event stream headers length {} for frame {}",
+            headers_len,
+            total_len
+        );
+    }
+    if buffer.len() < total_len {
+        return Ok(None);
+    }
 
-    for (idx, block) in resp.content.iter().enumerate() {
-        match block {
-            ContentBlock::Text { text } => {
-                events.push(StreamEvent::ContentBlockStart {
-                    index: idx,
-                    content_block: ContentBlock::Text {
-                        text: String::new(),
-                    },
-                });
-                if !text.is_empty() {
-                    events.push(StreamEvent::ContentBlockDelta {
-                        index: idx,
-                        delta: json!({"type": "text_delta", "text": text}),
-                    });
-                }
-                events.push(StreamEvent::ContentBlockStop { index: idx });
+    Ok(Some(buffer.drain(..total_len).collect()))
+}
+
+fn decode_eventstream_message(frame: &[u8]) -> Result<EventStreamMessage> {
+    if frame.len() < 16 {
+        bail!("Bedrock event stream frame is too short");
+    }
+
+    let total_len = u32::from_be_bytes(frame[0..4].try_into().expect("slice length")) as usize;
+    let headers_len = u32::from_be_bytes(frame[4..8].try_into().expect("slice length")) as usize;
+    if total_len != frame.len() {
+        bail!(
+            "Bedrock event stream frame length mismatch: header {}, actual {}",
+            total_len,
+            frame.len()
+        );
+    }
+
+    let expected_prelude_crc = u32::from_be_bytes(frame[8..12].try_into().expect("slice length"));
+    let actual_prelude_crc = crc32(&frame[0..8]);
+    if expected_prelude_crc != actual_prelude_crc {
+        bail!("Bedrock event stream prelude CRC mismatch");
+    }
+
+    let expected_message_crc = u32::from_be_bytes(
+        frame[frame.len() - 4..frame.len()]
+            .try_into()
+            .expect("slice length"),
+    );
+    let actual_message_crc = crc32(&frame[..frame.len() - 4]);
+    if expected_message_crc != actual_message_crc {
+        bail!("Bedrock event stream message CRC mismatch");
+    }
+
+    let headers_start = 12;
+    let headers_end = headers_start + headers_len;
+    if headers_end > frame.len().saturating_sub(4) {
+        bail!("Bedrock event stream headers exceed frame length");
+    }
+    let payload_end = frame.len() - 4;
+    let headers = decode_eventstream_headers(&frame[headers_start..headers_end])?;
+    let payload = frame[headers_end..payload_end].to_vec();
+
+    Ok(EventStreamMessage { headers, payload })
+}
+
+fn decode_eventstream_headers(bytes: &[u8]) -> Result<HashMap<String, String>> {
+    let mut headers = HashMap::new();
+    let mut offset = 0usize;
+
+    while offset < bytes.len() {
+        let name_len = read_u8(bytes, &mut offset)? as usize;
+        let name_bytes = read_bytes(bytes, &mut offset, name_len)?;
+        let name = std::str::from_utf8(name_bytes)
+            .context("Bedrock event stream header name is not UTF-8")?
+            .to_string();
+        let value_type = read_u8(bytes, &mut offset)?;
+
+        match value_type {
+            0 => {
+                headers.insert(name, "true".to_string());
             }
-            ContentBlock::Thinking {
-                thinking,
-                signature,
-            } => {
-                events.push(StreamEvent::ContentBlockStart {
-                    index: idx,
-                    content_block: ContentBlock::Thinking {
-                        thinking: String::new(),
-                        signature: signature.clone(),
-                    },
-                });
-                if !thinking.is_empty() {
-                    events.push(StreamEvent::ContentBlockDelta {
-                        index: idx,
-                        delta: json!({"type": "thinking_delta", "thinking": thinking}),
-                    });
-                }
-                events.push(StreamEvent::ContentBlockStop { index: idx });
+            1 => {
+                headers.insert(name, "false".to_string());
             }
-            ContentBlock::ToolUse { id, name, input } => {
-                events.push(StreamEvent::ContentBlockStart {
-                    index: idx,
-                    content_block: ContentBlock::ToolUse {
-                        id: id.clone(),
-                        name: name.clone(),
-                        input: json!({}),
-                    },
-                });
-                events.push(StreamEvent::ContentBlockDelta {
-                    index: idx,
-                    delta: json!({
-                        "type": "input_json_delta",
-                        "partial_json": serde_json::to_string(input).unwrap_or_default(),
-                    }),
-                });
-                events.push(StreamEvent::ContentBlockStop { index: idx });
+            2 => {
+                let _ = read_u8(bytes, &mut offset)?;
             }
-            other => {
-                events.push(StreamEvent::ContentBlockStart {
-                    index: idx,
-                    content_block: other.clone(),
-                });
-                events.push(StreamEvent::ContentBlockStop { index: idx });
+            3 => {
+                let _ = read_bytes(bytes, &mut offset, 2)?;
             }
+            4 => {
+                let _ = read_bytes(bytes, &mut offset, 4)?;
+            }
+            5 | 8 => {
+                let _ = read_bytes(bytes, &mut offset, 8)?;
+            }
+            6 => {
+                let len = read_u16(bytes, &mut offset)? as usize;
+                let _ = read_bytes(bytes, &mut offset, len)?;
+            }
+            7 => {
+                let len = read_u16(bytes, &mut offset)? as usize;
+                let value_bytes = read_bytes(bytes, &mut offset, len)?;
+                let value = std::str::from_utf8(value_bytes)
+                    .context("Bedrock event stream string header is not UTF-8")?
+                    .to_string();
+                headers.insert(name, value);
+            }
+            9 => {
+                let _ = read_bytes(bytes, &mut offset, 16)?;
+            }
+            other => bail!("unsupported Bedrock event stream header type {}", other),
         }
     }
 
-    let end_usage = Usage {
-        output_tokens: resp.usage.output_tokens,
-        cache_creation_input_tokens: resp.usage.cache_creation_input_tokens,
-        cache_read_input_tokens: resp.usage.cache_read_input_tokens,
-        ..Default::default()
-    };
-    events.push(StreamEvent::MessageDelta {
-        delta: MessageDelta {
-            stop_reason: resp.stop_reason,
-        },
-        usage: Some(end_usage),
-    });
-    events.push(StreamEvent::MessageStop);
+    Ok(headers)
+}
 
-    events
+fn bedrock_message_to_stream_events(message: EventStreamMessage) -> Result<Vec<StreamEvent>> {
+    let event_type = message.headers.get(":event-type").map(String::as_str);
+    let message_type = message.headers.get(":message-type").map(String::as_str);
+
+    if event_type == Some("chunk") {
+        return anthropic_json_payload_to_stream_event(&message.payload)
+            .map(|event| event.into_iter().collect());
+    }
+
+    let payload = String::from_utf8_lossy(&message.payload);
+    match (message_type, event_type) {
+        (Some("exception"), Some(kind)) => {
+            bail!("Bedrock event stream exception {kind}: {payload}")
+        }
+        (_, Some(kind)) => bail!("unsupported Bedrock event stream event {kind}: {payload}"),
+        _ => bail!("Bedrock event stream message missing :event-type: {payload}"),
+    }
+}
+
+fn anthropic_json_payload_to_stream_event(payload: &[u8]) -> Result<Option<StreamEvent>> {
+    let text = std::str::from_utf8(payload).context("Bedrock chunk payload is not UTF-8")?;
+    let value: Value =
+        serde_json::from_str(text).context("failed to parse Bedrock chunk payload JSON")?;
+
+    if let Some(encoded) = value.get("bytes").and_then(|v| v.as_str()).or_else(|| {
+        value
+            .get("chunk")
+            .and_then(|chunk| chunk.get("bytes"))
+            .and_then(|v| v.as_str())
+    }) {
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .context("failed to decode Bedrock chunk bytes")?;
+        return anthropic_json_payload_to_stream_event(&decoded);
+    }
+
+    let Some(event_type) = value.get("type").and_then(|v| v.as_str()) else {
+        return Ok(None);
+    };
+    parse_sse_event(event_type, text)
+}
+
+fn read_u8<'a>(bytes: &'a [u8], offset: &mut usize) -> Result<u8> {
+    let raw = read_bytes(bytes, offset, 1)?;
+    Ok(raw[0])
+}
+
+fn read_u16(bytes: &[u8], offset: &mut usize) -> Result<u16> {
+    let raw = read_bytes(bytes, offset, 2)?;
+    Ok(u16::from_be_bytes(raw.try_into().expect("slice length")))
+}
+
+fn read_bytes<'a>(bytes: &'a [u8], offset: &mut usize, len: usize) -> Result<&'a [u8]> {
+    let end = offset.saturating_add(len);
+    if end > bytes.len() {
+        bail!("truncated Bedrock event stream header");
+    }
+    let out = &bytes[*offset..end];
+    *offset = end;
+    Ok(out)
+}
+
+fn crc32(bytes: &[u8]) -> u32 {
+    let mut crc = 0xffff_ffffu32;
+    for byte in bytes {
+        crc ^= *byte as u32;
+        for _ in 0..8 {
+            let mask = (crc & 1).wrapping_neg();
+            crc = (crc >> 1) ^ (0xedb8_8320 & mask);
+        }
+    }
+    !crc
 }
 
 /// Bedrock stream provider (implements `StreamProvider`).
@@ -269,7 +375,7 @@ impl crate::api::stream_provider::StreamProvider for BedrockStreamProvider {
         request: &MessagesRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         let bedrock_model = to_bedrock_model_id(&request.model);
-        let url = build_invoke_url(
+        let url = build_invoke_stream_url(
             &self.region,
             &bedrock_model,
             self.base_url_override.as_deref(),
@@ -279,7 +385,7 @@ impl crate::api::stream_provider::StreamProvider for BedrockStreamProvider {
         let mut builder = http
             .post(&url)
             .header("content-type", "application/json")
-            .header("accept", "application/json")
+            .header("accept", "application/vnd.amazon.eventstream")
             .body(body.clone());
 
         match &self.auth {
@@ -318,25 +424,22 @@ impl crate::api::stream_provider::StreamProvider for BedrockStreamProvider {
         let response = builder
             .send()
             .await
-            .context("failed to send Bedrock invoke request")?;
+            .context("failed to send Bedrock streaming invoke request")?;
         let status = response.status();
-        let body_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| String::from("(failed to read Bedrock response body)"));
 
         if !status.is_success() {
+            let body_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| String::from("(failed to read Bedrock response body)"));
             bail!(
-                "Bedrock invoke error (HTTP {}): {}",
+                "Bedrock streaming invoke error (HTTP {}): {}",
                 status.as_u16(),
                 body_text
             );
         }
 
-        let parsed = parse_invoke_response(&body_text)?;
-        let events = synthesize_stream_events(parsed);
-
-        let stream = futures::stream::iter(events.into_iter().map(Ok));
+        let stream = parse_eventstream_byte_stream(response.bytes_stream());
         Ok(Box::pin(stream))
     }
 }
@@ -363,22 +466,25 @@ mod tests {
     }
 
     #[test]
-    fn url_uses_region_and_model() {
-        let url = build_invoke_url(
+    fn stream_url_uses_region_and_model() {
+        let url = build_invoke_stream_url(
             "eu-west-1",
             "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
             None,
         );
         assert_eq!(
             url,
-            "https://bedrock-runtime.eu-west-1.amazonaws.com/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/invoke"
+            "https://bedrock-runtime.eu-west-1.amazonaws.com/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/invoke-with-response-stream"
         );
     }
 
     #[test]
-    fn url_override_from_base_url() {
-        let url = build_invoke_url("us-east-1", "foo", Some("https://proxy.example.com"));
-        assert_eq!(url, "https://proxy.example.com/model/foo/invoke");
+    fn stream_url_override_from_base_url() {
+        let url = build_invoke_stream_url("us-east-1", "foo", Some("https://proxy.example.com"));
+        assert_eq!(
+            url,
+            "https://proxy.example.com/model/foo/invoke-with-response-stream"
+        );
     }
 
     #[test]
@@ -403,77 +509,86 @@ mod tests {
     }
 
     #[test]
-    fn parse_invoke_response_extracts_content() {
-        let json = r#"{
-            "id":"msg_123",
-            "role":"assistant",
-            "model":"claude-sonnet-4-5",
-            "content":[{"type":"text","text":"Hello!"}],
-            "stop_reason":"end_turn",
-            "usage":{"input_tokens":10,"output_tokens":3}
-        }"#;
-        let resp = parse_invoke_response(json).unwrap();
-        assert_eq!(resp.content.len(), 1);
-        assert_eq!(resp.stop_reason.as_deref(), Some("end_turn"));
-        assert_eq!(resp.usage.input_tokens, 10);
-        assert_eq!(resp.usage.output_tokens, 3);
+    fn eventstream_chunk_decodes_to_stream_event() {
+        let payload = br#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"#;
+        let frame = encode_eventstream_message(
+            &[
+                (":message-type", "event"),
+                (":event-type", "chunk"),
+                (":content-type", "application/json"),
+            ],
+            payload,
+        );
+
+        let decoded = decode_eventstream_message(&frame).unwrap();
+        let events = bedrock_message_to_stream_events(decoded).unwrap();
+
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            StreamEvent::ContentBlockDelta { index, delta } => {
+                assert_eq!(*index, 0);
+                assert_eq!(delta["text"], "hi");
+            }
+            other => panic!("expected content block delta, got {other:?}"),
+        }
     }
 
     #[test]
-    fn synthesize_events_yields_complete_stream() {
-        let resp = InvokeResponse {
-            content: vec![ContentBlock::Text {
-                text: "Hello".to_string(),
-            }],
-            stop_reason: Some("end_turn".to_string()),
-            usage: Usage {
-                input_tokens: 10,
-                output_tokens: 1,
-                cache_read_input_tokens: 0,
-                cache_creation_input_tokens: 0,
-            },
-        };
-        let events = synthesize_stream_events(resp);
-        assert!(matches!(
-            events.first(),
-            Some(StreamEvent::MessageStart { .. })
-        ));
-        assert!(matches!(events.last(), Some(StreamEvent::MessageStop)));
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, StreamEvent::ContentBlockDelta { .. })));
+    fn eventstream_base64_wrapper_decodes_to_stream_event() {
+        let inner = br#"{"type":"message_stop"}"#;
+        let payload = json!({
+            "bytes": base64::engine::general_purpose::STANDARD.encode(inner),
+        })
+        .to_string();
+        let frame = encode_eventstream_message(
+            &[
+                (":message-type", "event"),
+                (":event-type", "chunk"),
+                (":content-type", "application/json"),
+            ],
+            payload.as_bytes(),
+        );
+
+        let decoded = decode_eventstream_message(&frame).unwrap();
+        let events = bedrock_message_to_stream_events(decoded).unwrap();
+
+        assert!(matches!(events.as_slice(), [StreamEvent::MessageStop]));
     }
 
     #[test]
-    fn synthesized_stream_accumulates_to_text() {
-        let resp = InvokeResponse {
-            content: vec![ContentBlock::Text {
-                text: "Hello, world!".to_string(),
-            }],
-            stop_reason: Some("end_turn".to_string()),
-            usage: Usage {
-                input_tokens: 5,
-                output_tokens: 3,
-                cache_read_input_tokens: 0,
-                cache_creation_input_tokens: 0,
-            },
-        };
-        let events = synthesize_stream_events(resp);
+    fn eventstream_rejects_bad_crc() {
+        let mut frame = encode_eventstream_message(
+            &[(":message-type", "event"), (":event-type", "chunk")],
+            br#"{"type":"message_stop"}"#,
+        );
+        let last = frame.len() - 1;
+        frame[last] ^= 0xff;
 
-        let mut acc = crate::api::streaming::StreamAccumulator::new();
-        for ev in &events {
-            acc.process_event(ev);
+        let err = decode_eventstream_message(&frame).unwrap_err().to_string();
+        assert!(err.contains("CRC mismatch"));
+    }
+
+    fn encode_eventstream_message(headers: &[(&str, &str)], payload: &[u8]) -> Vec<u8> {
+        let mut header_bytes = Vec::new();
+        for (name, value) in headers {
+            header_bytes.push(name.len() as u8);
+            header_bytes.extend_from_slice(name.as_bytes());
+            header_bytes.push(7);
+            header_bytes.extend_from_slice(&(value.len() as u16).to_be_bytes());
+            header_bytes.extend_from_slice(value.as_bytes());
         }
-        let msg = acc.build("claude-sonnet-4-5-20250929");
-        assert_eq!(msg.content.len(), 1);
-        if let ContentBlock::Text { text } = &msg.content[0] {
-            assert_eq!(text, "Hello, world!");
-        } else {
-            panic!("expected Text block");
-        }
-        assert_eq!(msg.stop_reason.as_deref(), Some("end_turn"));
-        assert_eq!(msg.usage.as_ref().unwrap().input_tokens, 5);
-        assert_eq!(msg.usage.as_ref().unwrap().output_tokens, 3);
+
+        let total_len = 12 + header_bytes.len() + payload.len() + 4;
+        let mut frame = Vec::with_capacity(total_len);
+        frame.extend_from_slice(&(total_len as u32).to_be_bytes());
+        frame.extend_from_slice(&(header_bytes.len() as u32).to_be_bytes());
+        let prelude_crc = crc32(&frame);
+        frame.extend_from_slice(&prelude_crc.to_be_bytes());
+        frame.extend_from_slice(&header_bytes);
+        frame.extend_from_slice(payload);
+        let message_crc = crc32(&frame);
+        frame.extend_from_slice(&message_crc.to_be_bytes());
+        frame
     }
 
     #[test]

@@ -386,7 +386,7 @@ impl ApiClient {
                 region,
                 base_url_override,
                 ..
-            } => crate::api::bedrock::build_invoke_url(
+            } => crate::api::bedrock::build_invoke_stream_url(
                 region,
                 &crate::api::model_mapping::to_bedrock_model_id(&self.config.default_model),
                 base_url_override.as_deref(),

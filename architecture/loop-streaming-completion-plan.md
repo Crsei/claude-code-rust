@@ -80,6 +80,7 @@
 | 7.4 QueryGates 行为收敛 | 已完成 | 2026-05-05 | `cargo test -p cc-engine query_gates`，3 passed；`cargo test -p claude-code-rs tool_use_summary_gate`，2 passed；`cargo test -p claude-code-rs query::loop_impl::loop_tests`，24 passed。 | `QueryGates` 默认全部关闭，`fast_mode_enabled` 由调用方传入，`CC_RUST_STREAMING_TOOL_EXECUTION` 和 `CC_RUST_EMIT_TOOL_USE_SUMMARIES` 分别打开 streaming tool execution 与 typed `ToolUseSummary` 输出；summary gate 关闭时 query loop 不产生 summary 事件。 |
 | 7.5 TUI tool progress callback | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs tui_tool_progress`，1 passed；`cargo test -p claude-code-rs tui::tests`，10 passed。 | Headless/IPC 已有 `ToolProgress -> BackendMessage::ToolProgress`；直接 Rust TUI 现在也安装 tool progress callback，把 Bash 等长任务进度转成 spinner 文本和 `ProgressMessage`，同一 `tool_use_id` 的进度会替换上一条进度消息。 |
 | 7.6 daemon SSE 事件覆盖 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs daemon::routes::tests`，3 passed。 | daemon SSE 不再过滤 `ApiRetry`、`CompactBoundary`、`ToolUseSummary`；事件名分别为 `api_retry`、`compact_boundary`、`tool_use_summary`，payload 保留 `message_id`、`session_id` 和对应关键字段。 |
+| 8.1 Bedrock AWS EventStream | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs api::bedrock::tests`，8 passed；`cargo test -p claude-code-rs test_build_url_bedrock`，2 passed；`cargo test -p claude-code-rs test_capabilities_for_bedrock`，1 passed。 | Bedrock provider 现在调用 `/invoke-with-response-stream`，解码 AWS EventStream frame、验证 prelude/message CRC，并把 `chunk` payload 中的 Anthropic event JSON 交给统一 `StreamEvent` parser；capability matrix 标记为 native streaming / supported。 |
 | 8.5 `server_tool_use` / `connector_text` 建模 | 已完成 | 2026-05-05 | `cargo test -p claude-code-rs api::streaming::tests`，8 passed；`cargo test -p cc-utils tokens`，11 passed；`cargo test -p cc-compact context_collapse`，3 passed；`cargo test -p claude-code-rs fallback_signature_stripping`，1 passed；`cargo test -p claude-code-rs engine::result::tests`，8 passed。 | `ContentBlock` 新增 `ServerToolUse` 与 `ConnectorText`；`StreamAccumulator` 支持 `server_tool_use` 的 `input_json_delta` 和 `connector_text_delta` / connector signature round-trip。`ServerToolUse` 不会进入本地 `completed_tool_use()`；connector text 作为可见文本参与 TUI partial、结果提取、Langfuse 转换、token/compact 估算，并在 fallback retry 前按签名块移除。 |
 
 ## Subagent 并行拆分规则
@@ -210,7 +211,7 @@
 
 - Anthropic-style tool_use：`content_block_start` 初始 input `{}`，多个 `input_json_delta` 后最终 input 完整。
 - Thinking：`thinking_delta` + `signature_delta` 后最终 thinking block 完整。
-- Bedrock synthesized tool_use 不再因为 `input_json_delta` 未累积而丢参数。
+- Bedrock EventStream tool_use 不再因为 `input_json_delta` 未累积而丢参数。
 
 ## 阶段 2：工具执行 canonical path
 

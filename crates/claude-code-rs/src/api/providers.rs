@@ -19,12 +19,10 @@ pub enum ProviderProtocol {
     Google,
 }
 
-/// Whether a provider returns native server-side streaming or cc-rust adapts
-/// a non-streaming response into the unified `StreamEvent` shape.
+/// Whether a provider has a native server-side streaming implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamingSupport {
     Native,
-    Synthesized,
     None,
 }
 
@@ -109,8 +107,6 @@ const AUTH_VERTEX: &[&str] = &[
 ];
 const AUTH_FOUNDRY: &[&str] = &["CLAUDE_CODE_USE_FOUNDRY"];
 
-pub const BEDROCK_PARTIAL_REASON: &str =
-    "Bedrock uses the non-streaming invoke endpoint and synthesizes StreamEvent output; native AWS EventStream support is still pending";
 pub const VERTEX_PARTIAL_REASON: &str =
     "Vertex supports OAuth access tokens and gcloud ADC fallback; direct service-account JWT exchange is still pending";
 pub const FOUNDRY_UNSUPPORTED_REASON: &str =
@@ -320,14 +316,12 @@ pub fn capabilities_for_provider_name(name: &str) -> Option<ProviderCapabilities
             name: "bedrock",
             auth_sources: AUTH_BEDROCK,
             protocol: ProviderProtocol::Anthropic,
-            streaming: StreamingSupport::Synthesized,
+            streaming: StreamingSupport::Native,
             tool_use: true,
             thinking: true,
             prompt_cache: false,
             advisor: true,
-            status: ProviderSupportStatus::Partial {
-                reason: BEDROCK_PARTIAL_REASON,
-            },
+            status: ProviderSupportStatus::Supported,
         }),
         "vertex" => Some(ProviderCapabilities {
             name: "vertex",
@@ -461,16 +455,12 @@ mod tests {
     }
 
     #[test]
-    fn test_capabilities_for_bedrock_are_partial() {
+    fn test_capabilities_for_bedrock_are_supported() {
         let caps = capabilities_for_provider_name("bedrock").unwrap();
-        assert_eq!(caps.streaming, StreamingSupport::Synthesized);
+        assert_eq!(caps.streaming, StreamingSupport::Native);
         assert!(caps.tool_use);
         assert!(caps.thinking);
-        assert!(matches!(
-            caps.status,
-            ProviderSupportStatus::Partial { reason }
-                if reason.contains("AWS EventStream")
-        ));
+        assert!(matches!(caps.status, ProviderSupportStatus::Supported));
         assert!(caps.is_usable());
     }
 
