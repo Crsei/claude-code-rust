@@ -53,6 +53,114 @@ pub enum PermissionBehavior {
     Ask,
 }
 
+/// Stage that produced an Auto mode classifier result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoClassifierStage {
+    /// Fast yes/no classifier path.
+    Fast,
+    /// Slower classifier path with more reasoning.
+    Thinking,
+}
+
+impl AutoClassifierStage {
+    fn as_str(self) -> &'static str {
+        match self {
+            AutoClassifierStage::Fast => "fast",
+            AutoClassifierStage::Thinking => "thinking",
+        }
+    }
+}
+
+/// Classifier verdict for an Auto mode tool call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoClassifierVerdict {
+    Allow,
+    Deny,
+    Ask,
+}
+
+/// Result produced by an Auto mode transcript classifier.
+///
+/// cc-rust does not yet run Bun's LLM classifier in this crate. This type is
+/// the permission-layer adapter: callers can pass a real transcript
+/// classifier result here, while the existing no-classifier path keeps the
+/// historical Auto mode fallback behavior.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AutoClassifierDecision {
+    pub verdict: AutoClassifierVerdict,
+    pub reason: String,
+    pub model: String,
+    pub stage: Option<AutoClassifierStage>,
+    pub thinking: Option<String>,
+    pub unavailable: bool,
+    pub transcript_too_long: bool,
+}
+
+impl AutoClassifierDecision {
+    pub fn allow(model: impl Into<String>, stage: AutoClassifierStage) -> Self {
+        Self {
+            verdict: AutoClassifierVerdict::Allow,
+            reason: "classified as safe for auto mode".to_string(),
+            model: model.into(),
+            stage: Some(stage),
+            thinking: None,
+            unavailable: false,
+            transcript_too_long: false,
+        }
+    }
+
+    pub fn deny(
+        model: impl Into<String>,
+        stage: AutoClassifierStage,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self {
+            verdict: AutoClassifierVerdict::Deny,
+            reason: reason.into(),
+            model: model.into(),
+            stage: Some(stage),
+            thinking: None,
+            unavailable: false,
+            transcript_too_long: false,
+        }
+    }
+
+    pub fn ask(
+        model: impl Into<String>,
+        stage: AutoClassifierStage,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self {
+            verdict: AutoClassifierVerdict::Ask,
+            reason: reason.into(),
+            model: model.into(),
+            stage: Some(stage),
+            thinking: None,
+            unavailable: false,
+            transcript_too_long: false,
+        }
+    }
+
+    pub fn unavailable(model: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self {
+            verdict: AutoClassifierVerdict::Ask,
+            reason: reason.into(),
+            model: model.into(),
+            stage: None,
+            thinking: None,
+            unavailable: true,
+            transcript_too_long: false,
+        }
+    }
+
+    pub fn transcript_too_long(model: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self {
+            transcript_too_long: true,
+            ..Self::unavailable(model, reason)
+        }
+    }
+}
+
 /// How a permission decision was reached (for audit/debugging).
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -253,6 +361,26 @@ pub fn has_permissions_to_use_tool_with_hook(
     hook: Option<&HookPermissionDecision>,
     denial_tracker: Option<&mut DenialTracker>,
 ) -> PermissionDecision {
+    has_permissions_to_use_tool_with_hook_and_auto_classifier(
+        tool_name,
+        input,
+        ctx,
+        hook,
+        None,
+        denial_tracker,
+    )
+}
+
+/// Like [`has_permissions_to_use_tool_with_hook`] but folds in an optional
+/// Auto mode classifier result during mode fallback.
+pub fn has_permissions_to_use_tool_with_hook_and_auto_classifier(
+    tool_name: &str,
+    input: &Value,
+    ctx: &ToolPermissionContext,
+    hook: Option<&HookPermissionDecision>,
+    auto_classifier: Option<&AutoClassifierDecision>,
+    mut denial_tracker: Option<&mut DenialTracker>,
+) -> PermissionDecision {
     let updated_input = hook.and_then(|h| h.updated_input.clone());
 
     // ── Phase 1a: Hook deny — short-circuit even before deny rules.
@@ -388,7 +516,7 @@ pub fn has_permissions_to_use_tool_with_hook(
             }
         }
         PermissionMode::Auto => {
-            if let Some(tracker) = denial_tracker {
+            if let Some(tracker) = denial_tracker.as_mut() {
                 if tracker.should_fallback_to_interactive() {
                     return PermissionDecision {
                         behavior: PermissionBehavior::Ask,
@@ -402,6 +530,18 @@ pub fn has_permissions_to_use_tool_with_hook(
                         },
                     };
                 }
+            }
+
+            if let Some(classifier) = auto_classifier {
+                return auto_classifier_decision(
+                    tool_name,
+                    updated_input,
+                    classifier,
+                    denial_tracker,
+                );
+            }
+
+            if let Some(tracker) = denial_tracker {
                 tracker.record_allow();
             }
             PermissionDecision {
@@ -474,6 +614,85 @@ pub fn has_permissions_to_use_tool_with_hook(
             reason: PermissionDecisionReason::Mode {
                 mode: "dontAsk".into(),
             },
+        },
+    }
+}
+
+fn auto_classifier_decision(
+    tool_name: &str,
+    updated_input: Option<Value>,
+    classifier: &AutoClassifierDecision,
+    denial_tracker: Option<&mut DenialTracker>,
+) -> PermissionDecision {
+    let mode = classifier
+        .stage
+        .map(|stage| format!("auto_classifier_{}", stage.as_str()))
+        .unwrap_or_else(|| "auto_classifier".to_string());
+
+    if classifier.unavailable || classifier.transcript_too_long {
+        let unavailable_reason = if classifier.transcript_too_long {
+            format!(
+                "{} could not classify `{}` because the transcript is too long: {}",
+                classifier.model, tool_name, classifier.reason
+            )
+        } else {
+            format!(
+                "{} is temporarily unavailable, so auto mode cannot determine the safety of `{}` right now: {}",
+                classifier.model, tool_name, classifier.reason
+            )
+        };
+        return PermissionDecision {
+            behavior: PermissionBehavior::Ask,
+            updated_input,
+            message: Some(unavailable_reason),
+            reason: PermissionDecisionReason::Mode {
+                mode: "auto_classifier_unavailable".into(),
+            },
+        };
+    }
+
+    match classifier.verdict {
+        AutoClassifierVerdict::Allow => {
+            if let Some(tracker) = denial_tracker {
+                tracker.record_allow();
+            }
+            PermissionDecision {
+                behavior: PermissionBehavior::Allow,
+                updated_input,
+                message: None,
+                reason: PermissionDecisionReason::Mode { mode },
+            }
+        }
+        AutoClassifierVerdict::Deny => {
+            let fallback = denial_tracker
+                .map(|tracker| tracker.record_denial())
+                .unwrap_or(false);
+            if fallback {
+                PermissionDecision {
+                    behavior: PermissionBehavior::Ask,
+                    updated_input,
+                    message: Some(format!(
+                        "Auto mode fallback after repeated classifier denials for `{}`: {}",
+                        tool_name, classifier.reason
+                    )),
+                    reason: PermissionDecisionReason::Mode {
+                        mode: "auto_fallback".into(),
+                    },
+                }
+            } else {
+                PermissionDecision {
+                    behavior: PermissionBehavior::Deny,
+                    updated_input,
+                    message: Some(classifier.reason.clone()),
+                    reason: PermissionDecisionReason::Mode { mode },
+                }
+            }
+        }
+        AutoClassifierVerdict::Ask => PermissionDecision {
+            behavior: PermissionBehavior::Ask,
+            updated_input,
+            message: Some(classifier.reason.clone()),
+            reason: PermissionDecisionReason::Mode { mode },
         },
     }
 }
@@ -766,6 +985,111 @@ mod tests {
         ctx.mode = PermissionMode::Auto;
         let decision = has_permissions_to_use_tool("SomeTool", &Value::Null, &ctx, None);
         assert_eq!(decision.behavior, PermissionBehavior::Allow);
+    }
+
+    #[test]
+    fn test_auto_mode_classifier_allow_resets_denials() {
+        let mut ctx = default_ctx();
+        ctx.mode = PermissionMode::Auto;
+        let classifier = AutoClassifierDecision::allow("sonnet-test", AutoClassifierStage::Fast);
+        let mut tracker = DenialTracker::default();
+        tracker.record_denial();
+
+        let decision = has_permissions_to_use_tool_with_hook_and_auto_classifier(
+            "Bash",
+            &serde_json::json!({"command": "cargo test"}),
+            &ctx,
+            None,
+            Some(&classifier),
+            Some(&mut tracker),
+        );
+
+        assert_eq!(decision.behavior, PermissionBehavior::Allow);
+        assert_eq!(tracker.consecutive_denials, 0);
+        if let PermissionDecisionReason::Mode { mode } = decision.reason {
+            assert_eq!(mode, "auto_classifier_fast");
+        } else {
+            panic!("expected classifier mode reason");
+        }
+    }
+
+    #[test]
+    fn test_auto_mode_classifier_deny_blocks_and_records_denial() {
+        let mut ctx = default_ctx();
+        ctx.mode = PermissionMode::Auto;
+        let classifier = AutoClassifierDecision::deny(
+            "sonnet-test",
+            AutoClassifierStage::Thinking,
+            "command modifies production resources",
+        );
+        let mut tracker = DenialTracker::default();
+
+        let decision = has_permissions_to_use_tool_with_hook_and_auto_classifier(
+            "Bash",
+            &serde_json::json!({"command": "kubectl delete pod prod"}),
+            &ctx,
+            None,
+            Some(&classifier),
+            Some(&mut tracker),
+        );
+
+        assert_eq!(decision.behavior, PermissionBehavior::Deny);
+        assert_eq!(tracker.consecutive_denials, 1);
+        assert_eq!(
+            decision.message.as_deref(),
+            Some("command modifies production resources")
+        );
+    }
+
+    #[test]
+    fn test_auto_mode_classifier_repeated_denials_fall_back_to_ask() {
+        let mut ctx = default_ctx();
+        ctx.mode = PermissionMode::Auto;
+        let classifier = AutoClassifierDecision::deny(
+            "sonnet-test",
+            AutoClassifierStage::Thinking,
+            "still unsafe",
+        );
+        let mut tracker = DenialTracker::default();
+        tracker.record_denial();
+        tracker.record_denial();
+
+        let decision = has_permissions_to_use_tool_with_hook_and_auto_classifier(
+            "Bash",
+            &serde_json::json!({"command": "rm -rf data"}),
+            &ctx,
+            None,
+            Some(&classifier),
+            Some(&mut tracker),
+        );
+
+        assert_eq!(decision.behavior, PermissionBehavior::Ask);
+        assert_eq!(tracker.consecutive_denials, 3);
+        assert!(decision.message.unwrap().contains("fallback"));
+    }
+
+    #[test]
+    fn test_auto_mode_classifier_unavailable_falls_back_to_ask() {
+        let mut ctx = default_ctx();
+        ctx.mode = PermissionMode::Auto;
+        let classifier = AutoClassifierDecision::unavailable("sonnet-test", "rate limited");
+
+        let decision = has_permissions_to_use_tool_with_hook_and_auto_classifier(
+            "Write",
+            &serde_json::json!({"file_path": "src/lib.rs"}),
+            &ctx,
+            None,
+            Some(&classifier),
+            None,
+        );
+
+        assert_eq!(decision.behavior, PermissionBehavior::Ask);
+        assert!(
+            decision
+                .message
+                .unwrap()
+                .contains("temporarily unavailable")
+        );
     }
 
     #[test]

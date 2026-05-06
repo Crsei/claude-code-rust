@@ -56,7 +56,7 @@
 | Extensibility | `mcp-configuration.mdx` | 部分实现 | MCP 配置、发现、管理可用；stdio、本地 loopback HTTP SSE、manager 级 connect/disconnect/reconnect、短指数退避重试与 channel notification 事件路由已接入，远程 HTTPS / OAuth / HTTP / WS 仍不完整。 |
 | Extensibility | `mcp-protocol.mdx` | 部分实现 | JSON-RPC stdio 主路径、本地 loopback SSE endpoint / POST 通道、`notifications/claude/channel` 路由和 manager 级短退避重试存在；认证和完整 remote transport 覆盖仍不完整。 |
 | Extensibility | `skills.mdx` | 已实现 | skills frontmatter、加载、注册、调用、fork 执行与命令入口已形成闭环。 |
-| Safety | `auto-mode.mdx` | 部分实现 | `PermissionMode::Auto` 与 fallback 存在；Bun 的 transcript / classifier 两阶段流程未完整落地。 |
+| Safety | `auto-mode.mdx` | 部分实现 | `PermissionMode::Auto`、fallback 与 classifier result adapter 存在；权限层可消费 fast / thinking 分类结果，但 Bun 的 LLM transcript classifier runner 未完整落地。 |
 | Safety | `permission-model.mdx` | 已实现 | allow / ask / deny 规则、mode fallback、hook overlay、session grant 已落地。 |
 | Safety | `plan-mode.mdx` | 部分实现 | Enter / Exit plan mode、`/plan`、计划文件和工作流持久化存在；`allowedPrompts` 已接入 Bash pattern 与常见验证意图的确定性 session allow 规则，通用 LLM 语义 classifier 未实现。 |
 | Safety | `sandbox.mdx` | 部分实现 | Linux / macOS shell sandbox、网络 / 路径预检、`/sandbox` 命令存在；Windows OS-level sandbox 未实现。 |
@@ -82,7 +82,7 @@
 - Context compaction、project memory、token budget 都已有主体能力，但 Partial Compact、provider 级 token 精确统计、Bun 智能记忆召回、近期工具去噪、已展示去重和封闭四类型分类法仍需补齐或明确裁剪；project memory 已有确定性 `MEMORY.md` 入口索引；token budget 已有结构化启发式诊断报告但 `exact_count_available=false`；session-insights 回注已支持 workspace、时间窗口、tag 和当前 session 排除过滤，生命周期抽取已改用确定性 helper；Microcompact Boundary 已记录就地工具结果压缩事件，preservedSegment 目前已覆盖手动 `/compact` boundary、Session Memory Compact boundary、自动模型摘要 boundary 以及内部 snip/context-collapse boundary。
 - Custom agents 已可定义、编辑、运行，但独立安全边界不如 hooks / skills 明确。
 - MCP 当前已有 stdio JSON-RPC、本地 loopback HTTP SSE 主路径、channel notification 事件路由、manager 级 reconnect API 与短指数退避重试；上层 `/mcp reconnect` 接线、远程 HTTPS SSE、OAuth、长线自动重连和完整 transport 矩阵仍不完整。
-- Auto mode 缺少 Bun 的 transcript / classifier 两阶段流程。
+- Auto mode 已有 classifier result adapter，可消费 fast / thinking 的 allow / deny / ask / unavailable 结果；仍缺 Bun 的 LLM transcript classifier runner、prompt 模板和 API 调用链。
 - Plan mode 已补入 `allowedPrompts` 输入、session allow bridge 和常见验证意图分类；仍缺 Bun 的通用 LLM 语义 classifier。
 - Windows OS-level sandbox 未实现；当前 Windows 侧主要是 Rust-level policy checks。
 - Tools 的 `TodoWrite` 与 V2 Tasks 均已接入；V2 已补入双向依赖兼容输出、递增 ID、高水位文件和基础 owner claim / agent-busy 检查，但仍与 Bun 的跨进程任务列表锁、teammate 退出重置和完整 task-list-id 解析不同。
@@ -131,3 +131,4 @@
 | 2026-05-06 | Context / Token usage report | 已完成结构化启发式 token 预算诊断；provider 级精确 `countTokens` 仍部分实现 | `crates/cc-utils/src/tokens.rs` 增加 `TokenUsageReport` / `TokenCountMethod` 与 `estimate_context_usage()`，报告估算量、窗口、阈值、剩余量、利用率、超阈值状态，并显式标记 `exact_count_available=false` | `cargo test -p cc-utils tokens -- --nocapture`，12 passed；`cargo check -p cc-utils`；`cargo check -p claude-code-rs` |
 | 2026-05-06 | Context / Memory entrypoint index | 已完成确定性 `MEMORY.md` 入口索引；Sonnet 智能召回与封闭四类型分类法仍部分实现 | `crates/cc-session/src/memdir.rs` 写入/删除记忆时刷新 `MEMORY.md`，索引限制 200 行 / 25KB 并在 `<memory-context>` 每个非空 scope 前注入 `### MEMORY.md Index` | `cargo test -p cc-session memdir -- --nocapture`，15 passed；`cargo test -p cc-session --lib`，71 passed；`cargo check -p cc-session`；`cargo check -p claude-code-rs` |
 | 2026-05-06 | Extensibility / MCP channel notifications | 已完成 `notifications/claude/channel` 事件路由；完整远程 transport / auth 仍部分实现 | `crates/cc-mcp/src/transport.rs` 在 stdio 与 SSE notification 路径解析 channel payload，`cc-mcp/src/lib.rs` 增加 `McpSubsystemEvent::ChannelNotification`，`ipc/runtime.rs` 适配为 `McpEvent::ChannelNotification` | `cargo test -p cc-mcp notification_event -- --nocapture`，3 passed；`cargo test -p cc-mcp --lib`，38 passed；`cargo check -p cc-mcp`；`cargo check -p claude-code-rs` |
+| 2026-05-06 | Safety / Auto mode classifier adapter | 已完成权限层 classifier result adapter；LLM transcript classifier runner 仍部分实现 | `crates/cc-permissions/src/decision.rs` 增加 `AutoClassifierDecision` / `AutoClassifierStage` / `AutoClassifierVerdict` 与 `has_permissions_to_use_tool_with_hook_and_auto_classifier()`，支持 allow / deny / ask / unavailable / transcript-too-long 到权限决策的降级映射 | `cargo test -p cc-permissions auto_mode_classifier -- --nocapture`，4 passed；`cargo test -p cc-permissions --lib`，98 passed；`cargo check -p cc-permissions`；`cargo check -p claude-code-rs` |
