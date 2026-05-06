@@ -100,7 +100,7 @@ pub(crate) fn format_conversation_for_summary(messages: &[Message]) -> String {
 pub(crate) fn build_messages_request(
     params: &crate::query::deps::ModelCallParams,
 ) -> crate::api::client::MessagesRequest {
-    use crate::types::message::{Message, MessageContent};
+    use crate::types::message::{Attachment, Message, MessageContent};
 
     // Convert Message list to API JSON format
     let api_messages: Vec<serde_json::Value> = params
@@ -126,7 +126,22 @@ pub(crate) fn build_messages_request(
                     "content": content,
                 }))
             }
-            // System, Progress, Attachment messages are not sent to the API
+            Message::Attachment(attachment) => match &attachment.attachment {
+                Attachment::QueuedCommand { prompt, .. } => Some(serde_json::json!({
+                    "role": "user",
+                    "content": prompt,
+                })),
+                Attachment::NestedMemory { path, content } => Some(serde_json::json!({
+                    "role": "user",
+                    "content": format!("[Memory from {}]:\n{}", path, content),
+                })),
+                Attachment::EditedTextFile { .. }
+                | Attachment::MaxTurnsReached { .. }
+                | Attachment::StructuredOutput { .. }
+                | Attachment::HookStoppedContinuation
+                | Attachment::SkillDiscovery { .. } => None,
+            },
+            // System and Progress messages are not sent to the API.
             _ => None,
         })
         .collect();
@@ -255,6 +270,7 @@ mod clamp_tests {
 mod tests {
     use super::*;
     use crate::query::deps::ModelCallParams;
+    use crate::types::message::{Attachment, AttachmentMessage, Message};
 
     fn base_params() -> ModelCallParams {
         ModelCallParams {
@@ -322,5 +338,52 @@ mod tests {
 
         let req = build_messages_request(&p);
         assert!(req.thinking.is_none());
+    }
+
+    #[test]
+    fn attachment_policy_sends_only_model_context_attachments_to_api() {
+        let mut p = base_params();
+        p.messages = vec![
+            Message::Attachment(AttachmentMessage {
+                uuid: uuid::Uuid::new_v4(),
+                timestamp: 0,
+                attachment: Attachment::QueuedCommand {
+                    prompt: "run this next".to_string(),
+                    source_uuid: Some("source".to_string()),
+                },
+            }),
+            Message::Attachment(AttachmentMessage {
+                uuid: uuid::Uuid::new_v4(),
+                timestamp: 0,
+                attachment: Attachment::NestedMemory {
+                    path: "CLAUDE.md".to_string(),
+                    content: "remember this".to_string(),
+                },
+            }),
+            Message::Attachment(AttachmentMessage {
+                uuid: uuid::Uuid::new_v4(),
+                timestamp: 0,
+                attachment: Attachment::EditedTextFile {
+                    path: "src/main.rs".to_string(),
+                },
+            }),
+            Message::Attachment(AttachmentMessage {
+                uuid: uuid::Uuid::new_v4(),
+                timestamp: 0,
+                attachment: Attachment::SkillDiscovery {
+                    skills: vec!["rust".to_string()],
+                },
+            }),
+        ];
+
+        let req = build_messages_request(&p);
+
+        assert_eq!(req.messages.len(), 2);
+        assert_eq!(req.messages[0]["role"], "user");
+        assert_eq!(req.messages[0]["content"], "run this next");
+        assert_eq!(
+            req.messages[1]["content"],
+            "[Memory from CLAUDE.md]:\nremember this"
+        );
     }
 }

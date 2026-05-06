@@ -43,6 +43,7 @@ struct MockDeps {
     tool_executed_before_stream_finished: AtomicBool,
     tool_execution_count: AtomicUsize,
     tool_completed_count: AtomicUsize,
+    hook_stopped_tool_execution: AtomicBool,
     active_tools: AtomicUsize,
     max_active_tools: AtomicUsize,
     tool_delay: Duration,
@@ -73,6 +74,7 @@ impl MockDeps {
             tool_executed_before_stream_finished: AtomicBool::new(false),
             tool_execution_count: AtomicUsize::new(0),
             tool_completed_count: AtomicUsize::new(0),
+            hook_stopped_tool_execution: AtomicBool::new(false),
             active_tools: AtomicUsize::new(0),
             max_active_tools: AtomicUsize::new(0),
             tool_delay: Duration::ZERO,
@@ -105,6 +107,11 @@ impl MockDeps {
 
     fn set_hook_runner(&self, runner: Arc<dyn HookRunner>) {
         *self.hook_runner.lock() = runner;
+    }
+
+    fn stop_after_tool_execution(&self) {
+        self.hook_stopped_tool_execution
+            .store(true, Ordering::SeqCst);
     }
 
     fn pop_stream_step(&self) -> Result<MockStreamStep> {
@@ -244,6 +251,7 @@ impl QueryDeps for MockDeps {
                 ..Default::default()
             },
             is_error: false,
+            hook_stopped_continuation: self.hook_stopped_tool_execution.load(Ordering::SeqCst),
         })
     }
 
@@ -1658,6 +1666,59 @@ async fn test_max_turns_limit() {
 }
 
 #[tokio::test]
+async fn test_hook_stopped_tool_execution_yields_attachment_and_stops() {
+    let tool_response = ModelResponse {
+        assistant_message: AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: chrono::Utc::now().timestamp_millis(),
+            role: "assistant".to_string(),
+            content: vec![ContentBlock::ToolUse {
+                id: "tu_1".to_string(),
+                name: "Bash".to_string(),
+                input: serde_json::json!({"command": "ls"}),
+            }],
+            usage: Some(Usage::default()),
+            stop_reason: Some("tool_use".to_string()),
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        },
+        stream_events: vec![],
+        usage: Usage::default(),
+    };
+
+    let deps = Arc::new(MockDeps::new(vec![
+        tool_response,
+        make_text_response("must not run"),
+    ]));
+    deps.stop_after_tool_execution();
+
+    let stream = query(
+        make_query_params(vec![make_user_message_for_test("run a tool")]),
+        deps.clone(),
+    );
+    let items: Vec<QueryYield> = stream.collect().await;
+
+    assert_eq!(
+        request_start_count(&items),
+        1,
+        "hook stopped continuation should not start another model request"
+    );
+    assert!(
+        items.iter().any(|item| {
+            matches!(
+                item,
+                QueryYield::Message(Message::Attachment(AttachmentMessage {
+                    attachment: Attachment::HookStoppedContinuation,
+                    ..
+                }))
+            )
+        }),
+        "expected HookStoppedContinuation attachment"
+    );
+}
+
+#[tokio::test]
 async fn test_abort_before_api_call() {
     let deps = Arc::new(MockDeps::new(vec![]));
     deps.aborted
@@ -1801,6 +1862,7 @@ impl QueryDeps for ImageMockDeps {
                 new_messages: vec![],
             },
             is_error: false,
+            hook_stopped_continuation: false,
         })
     }
 
@@ -2070,6 +2132,7 @@ impl QueryDeps for CuMockDeps {
             tool_name: request.tool_name,
             result,
             is_error: false,
+            hook_stopped_continuation: false,
         })
     }
 

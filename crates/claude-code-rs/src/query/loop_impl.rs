@@ -799,6 +799,21 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
 
                 // ── STEP 8: CONTINUE -- refresh tools, check maxTurns ──
 
+                if tool_results
+                    .iter()
+                    .any(|result| result.hook_stopped_continuation)
+                {
+                    let attachment_msg = AttachmentMessage {
+                        uuid: Uuid::parse_str(&deps.uuid()).unwrap_or_else(|_| Uuid::new_v4()),
+                        timestamp: chrono::Utc::now().timestamp_millis(),
+                        attachment: Attachment::HookStoppedContinuation,
+                    };
+                    let msg = Message::Attachment(attachment_msg);
+                    yield QueryYield::Message(msg.clone());
+                    state.messages.push(msg);
+                    break;
+                }
+
                 if let Some(max) = max_turns {
                     if state.turn_count >= max {
                         info!(turns = state.turn_count, max = max, "max turns reached");

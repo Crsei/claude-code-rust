@@ -192,7 +192,7 @@ impl Tool for FileWriteTool {
                     "Successfully wrote {} bytes ({} lines) to {}",
                     byte_count, line_count, file_path
                 ),
-                "path": file_path,
+                "path": file_path.clone(),
                 "safe_write": {
                     "atomic": true,
                     "created": report.created,
@@ -205,7 +205,7 @@ impl Tool for FileWriteTool {
                     "target_path": report.target_path.display().to_string(),
                 },
             }),
-            new_messages: vec![],
+            new_messages: vec![super::edited_text_file_message(file_path)],
             ..Default::default()
         })
     }
@@ -401,6 +401,15 @@ mod tests {
             Some(true)
         );
         assert_eq!(safe_write.get("bytes").and_then(|v| v.as_u64()), Some(11));
+        assert!(matches!(
+            result.new_messages.as_slice(),
+            [crate::types::message::Message::Attachment(attachment)]
+                if matches!(
+                    &attachment.attachment,
+                    crate::types::message::Attachment::EditedTextFile { path }
+                        if path == &expected_path
+                )
+        ));
     }
 
     #[tokio::test]

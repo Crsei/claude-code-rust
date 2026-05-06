@@ -51,6 +51,7 @@ pub struct ToolExecResult {
     pub tool_name: String,
     pub result: ToolResult,
     pub is_error: bool,
+    pub hook_stopped_continuation: bool,
 }
 
 /// ModelCallParams — 调用模型时需要的全部参数

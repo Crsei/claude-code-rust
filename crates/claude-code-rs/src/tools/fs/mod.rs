@@ -9,6 +9,7 @@
 
 use std::sync::Arc;
 
+use crate::types::message::{Attachment, AttachmentMessage, Message};
 use crate::types::tool::Tools;
 
 pub mod file_edit;
@@ -30,4 +31,12 @@ pub fn tools() -> Tools {
         Arc::new(glob_tool::GlobTool::new()),
         Arc::new(grep::GrepTool),
     ]
+}
+
+pub(crate) fn edited_text_file_message(path: impl Into<String>) -> Message {
+    Message::Attachment(AttachmentMessage {
+        uuid: uuid::Uuid::new_v4(),
+        timestamp: chrono::Utc::now().timestamp_millis(),
+        attachment: Attachment::EditedTextFile { path: path.into() },
+    })
 }

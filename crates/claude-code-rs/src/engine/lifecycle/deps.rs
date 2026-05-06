@@ -141,6 +141,7 @@ fn tool_execution_result_to_exec_result(result: ToolExecutionResult) -> ToolExec
         tool_name: result.tool_name,
         result: tool_result,
         is_error: result.is_error,
+        hook_stopped_continuation: result.hook_stopped_continuation,
     }
 }
 
@@ -599,6 +600,7 @@ impl QueryDeps for QueryEngineDeps {
                         ..Default::default()
                     },
                     is_error: true,
+                    hook_stopped_continuation: false,
                 });
             }
         }
@@ -640,6 +642,7 @@ impl QueryDeps for QueryEngineDeps {
                         ..Default::default()
                     },
                     is_error: true,
+                    hook_stopped_continuation: false,
                 });
             }
             Err(e) => {
@@ -687,6 +690,7 @@ impl QueryDeps for QueryEngineDeps {
                     ..Default::default()
                 },
                 is_error: true,
+                hook_stopped_continuation: false,
             });
         }
 
@@ -749,6 +753,7 @@ impl QueryDeps for QueryEngineDeps {
                             ..Default::default()
                         },
                         is_error: true,
+                        hook_stopped_continuation: false,
                     });
                 }
                 PermissionResult::Ask { message } => {
@@ -822,6 +827,7 @@ impl QueryDeps for QueryEngineDeps {
                                                 ..Default::default()
                                             },
                                             is_error: true,
+                                            hook_stopped_continuation: false,
                                         });
                                     }
                                     _ => {} // unknown decision, continue with normal prompt
@@ -924,6 +930,7 @@ impl QueryDeps for QueryEngineDeps {
                                             ..Default::default()
                                         },
                                         is_error: true,
+                                        hook_stopped_continuation: false,
                                     });
                                 }
                             }
@@ -954,6 +961,7 @@ impl QueryDeps for QueryEngineDeps {
                                     ..Default::default()
                                 },
                                 is_error: true,
+                                hook_stopped_continuation: false,
                             });
                         }
                     } // if !hook_allowed
@@ -1048,6 +1056,7 @@ impl QueryDeps for QueryEngineDeps {
                 }
 
                 // Run post-tool hooks on success
+                let mut hook_stopped_continuation = false;
                 if !post_configs.is_empty() {
                     if let Ok(PostToolHookResult::StopContinuation { message }) = hooks
                         .run_post_tool_hooks(
@@ -1062,6 +1071,7 @@ impl QueryDeps for QueryEngineDeps {
                             message = %message,
                             "post-tool hook stopped continuation"
                         );
+                        hook_stopped_continuation = true;
                     }
                 }
 
@@ -1072,6 +1082,7 @@ impl QueryDeps for QueryEngineDeps {
                     tool_name: request.tool_name,
                     result,
                     is_error: false,
+                    hook_stopped_continuation,
                 })
             }
             Err(e) => {
@@ -1118,6 +1129,7 @@ impl QueryDeps for QueryEngineDeps {
                         ..Default::default()
                     },
                     is_error: true,
+                    hook_stopped_continuation: false,
                 })
             }
         }

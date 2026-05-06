@@ -658,7 +658,7 @@ impl Tool for FileEditTool {
                 }),
                 model_content: Some(ToolResultContent::Text(output)),
                 display_preview: Some(display_preview),
-                new_messages: vec![],
+                new_messages: vec![super::edited_text_file_message(file_path)],
             })
         }
     }
@@ -1004,6 +1004,16 @@ fn main() {
             .unwrap();
         assert_eq!(first_edit.data["replacements"], 1);
         assert_eq!(first_edit.data["edit_history"]["atomic"], true);
+        let expected_path = file_path.to_string_lossy().to_string();
+        assert!(matches!(
+            first_edit.new_messages.as_slice(),
+            [crate::types::message::Message::Attachment(attachment)]
+                if matches!(
+                    &attachment.attachment,
+                    crate::types::message::Attachment::EditedTextFile { path }
+                        if path == &expected_path
+                )
+        ));
         match first_edit.model_content {
             Some(ToolResultContent::Text(ref text)) => {
                 assert!(text.contains("Successfully replaced 1 occurrence(s)"));

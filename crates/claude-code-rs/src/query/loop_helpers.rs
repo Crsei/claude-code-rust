@@ -452,6 +452,7 @@ pub(crate) async fn execute_tool_calls(
                                 ..Default::default()
                             },
                             is_error: true,
+                            hook_stopped_continuation: false,
                         });
                     }
                     Err(e) => {
@@ -484,6 +485,7 @@ pub(crate) async fn execute_tool_calls(
                                 ..Default::default()
                             },
                             is_error: true,
+                            hook_stopped_continuation: false,
                         });
                     }
                 }
@@ -509,6 +511,7 @@ fn internal_tool_error_result(
             ..Default::default()
         },
         is_error: true,
+        hook_stopped_continuation: false,
     }
 }
 
@@ -860,6 +863,7 @@ mod tests {
                     ..Default::default()
                 },
                 is_error: false,
+                hook_stopped_continuation: false,
             })
         }
 
@@ -1090,6 +1094,7 @@ mod tests {
                 ..Default::default()
             },
             is_error: false,
+            hook_stopped_continuation: false,
         };
 
         let user_msg = make_tool_result_user_message(&deps, &exec_result, source_uuid);
@@ -1138,6 +1143,7 @@ mod tests {
                 new_messages: vec![],
             },
             is_error: false,
+            hook_stopped_continuation: false,
         };
 
         let user_msg = make_tool_result_user_message(&deps, &exec_result, source_uuid);
@@ -1179,6 +1185,7 @@ mod tests {
                 new_messages: vec![],
             },
             is_error: true,
+            hook_stopped_continuation: false,
         };
 
         let user_msg = make_tool_result_user_message(&deps, &exec_result, source_uuid);
