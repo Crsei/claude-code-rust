@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 
+use cc_mcp::McpOAuthConfig;
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -213,6 +214,10 @@ pub struct McpServerConfigEntry {
     /// HTTP headers for `sse` / `streamable-http` transports.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub headers: Option<HashMap<String, String>>,
+    /// OAuth metadata for remote MCP auth. Tokens are intentionally stored
+    /// outside this IPC payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<McpOAuthConfig>,
     /// Environment variables for `stdio`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub env: Option<HashMap<String, String>>,
@@ -637,6 +642,7 @@ mod tests {
             args: Some(vec!["-y".into(), "context7".into()]),
             url: None,
             headers: None,
+            oauth: None,
             env: Some(HashMap::from([("NODE_ENV".into(), "production".into())])),
             browser_mcp: None,
             disabled: None,
@@ -668,6 +674,7 @@ mod tests {
             args: None,
             url: Some("https://example.com/mcp".into()),
             headers: Some(HashMap::from([("Authorization".into(), "Bearer x".into())])),
+            oauth: None,
             env: None,
             browser_mcp: Some(true),
             disabled: None,

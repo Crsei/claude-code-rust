@@ -50,9 +50,11 @@ impl fmt::Display for McpAuthNeededError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "MCP server '{}' requires authentication (HTTP {}); OAuth/interactive auth is not implemented yet",
+            "MCP server '{}' requires authentication (HTTP {}); run `/mcp auth start {}` and then `/mcp auth complete {} --code=<code>`",
             self.server_name,
-            self.status.as_u16()
+            self.status.as_u16(),
+            self.server_name,
+            self.server_name
         )
     }
 }
@@ -241,7 +243,7 @@ impl McpClient {
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("sse transport requires 'url' field"))?;
         let base_target = SseConnectTarget::parse(url)?;
-        let headers = normalized_sse_headers(&self.config);
+        let headers = normalized_sse_headers_with_auth(&self.config).await?;
 
         super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
             server_name: self.config.name.clone(),
@@ -1154,6 +1156,22 @@ fn normalized_sse_headers(config: &McpServerConfig) -> Vec<(String, String)> {
 
     headers.sort_by(|(left, _), (right, _)| left.cmp(right));
     headers
+}
+
+async fn normalized_sse_headers_with_auth(
+    config: &McpServerConfig,
+) -> Result<Vec<(String, String)>> {
+    let mut headers = normalized_sse_headers(config);
+    let has_explicit_authorization = headers
+        .iter()
+        .any(|(name, _)| name.eq_ignore_ascii_case("authorization"));
+    if !has_explicit_authorization {
+        if let Some(value) = super::auth::authorization_header(config).await? {
+            headers.push(("Authorization".to_string(), value));
+            headers.sort_by(|(left, _), (right, _)| left.cmp(right));
+        }
+    }
+    Ok(headers)
 }
 
 fn build_sse_get_request(target: &SseHttpTarget, headers: &[(String, String)]) -> String {

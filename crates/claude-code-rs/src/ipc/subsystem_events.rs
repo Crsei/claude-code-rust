@@ -121,6 +121,23 @@ pub enum McpEvent {
     },
     /// Config validation / persistence failure.
     ConfigError { server_name: String, error: String },
+    /// OAuth authorization URL generated for an MCP server. Contains no token.
+    AuthStarted {
+        server_name: String,
+        authorization_url: String,
+        state: String,
+        redirect_uri: String,
+        token_store_path: String,
+    },
+    /// Redacted OAuth credential status for an MCP server.
+    AuthStatus {
+        server_name: String,
+        configured: bool,
+        authorized: bool,
+        expired: bool,
+        can_refresh: bool,
+        token_store_path: String,
+    },
 }
 
 /// Events emitted by the plugin subsystem.
@@ -345,6 +362,25 @@ pub enum McpCommand {
         server_name: String,
         #[serde(default)]
         scope: Option<ConfigScope>,
+    },
+    /// Start OAuth for a configured MCP server and return an authorization URL.
+    StartAuth {
+        server_name: String,
+    },
+    /// Complete OAuth using a code returned by the authorization server.
+    CompleteAuth {
+        server_name: String,
+        code: String,
+        #[serde(default)]
+        state: Option<String>,
+    },
+    /// Clear stored OAuth token and any pending OAuth state.
+    ClearAuth {
+        server_name: String,
+    },
+    /// Return redacted OAuth credential status.
+    QueryAuth {
+        server_name: String,
     },
 }
 
@@ -757,6 +793,7 @@ mod tests {
                 args: None,
                 url: None,
                 headers: None,
+                oauth: None,
                 env: None,
                 browser_mcp: None,
                 disabled: None,
@@ -1063,6 +1100,25 @@ mod tests {
         let json = r#"{"kind":"query_status"}"#;
         let cmd: McpCommand = serde_json::from_str(json).expect("deserialize");
         assert!(matches!(cmd, McpCommand::QueryStatus));
+    }
+
+    #[test]
+    fn mcp_command_complete_auth_deserializes() {
+        let json =
+            r#"{"kind":"complete_auth","server_name":"remote","code":"abc","state":"state-1"}"#;
+        let cmd: McpCommand = serde_json::from_str(json).expect("deserialize");
+        match cmd {
+            McpCommand::CompleteAuth {
+                server_name,
+                code,
+                state,
+            } => {
+                assert_eq!(server_name, "remote");
+                assert_eq!(code, "abc");
+                assert_eq!(state.as_deref(), Some("state-1"));
+            }
+            other => panic!("unexpected variant: {:?}", other),
+        }
     }
 
     #[test]

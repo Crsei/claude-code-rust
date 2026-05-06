@@ -553,6 +553,17 @@
   - `/mcp list`
   - `/mcp ls`
   - `/mcp status`
+  - `/mcp connect <name>`
+  - `/mcp disconnect <name>`
+  - `/mcp reconnect <name>`
+  - `/mcp auth start <name>`
+  - `/mcp auth complete <name> --code=<code> [--state=<state>]`
+  - `/mcp auth status <name>`
+  - `/mcp auth clear <name>`
+- Notes:
+  - `connect` / `disconnect` / `reconnect` route through the shared runtime MCP manager.
+  - `auth start` / `auth complete` perform manual OAuth PKCE setup for OAuth-enabled MCP servers; tokens are stored under `~/.cc-rust/` or `CC_RUST_HOME`, not echoed in command output.
+  - `auth status` / `auth clear` show redacted credential state or remove stored OAuth state.
 - Behavior:
   - 无参数时显示帮助和 `mcpServers` 配置示例
   - `list`：列出当前发现到的 MCP servers

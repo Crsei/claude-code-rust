@@ -7,6 +7,7 @@
 //!
 //! Protocol specification: https://modelcontextprotocol.io/specification/2025-03-26/
 
+pub mod auth;
 pub mod channel;
 pub mod client;
 pub mod discovery;
@@ -153,6 +154,11 @@ pub struct McpServerConfig {
     pub url: Option<String>,
     /// Additional HTTP headers (for SSE transport).
     pub headers: Option<HashMap<String, String>>,
+    /// OAuth metadata used for remote MCP authentication. Tokens are stored
+    /// separately under the cc-rust data root and are never serialized into
+    /// settings or IPC config payloads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<McpOAuthConfig>,
     /// Environment variables to set for the subprocess.
     pub env: Option<HashMap<String, String>>,
     /// Opt-in flag: treat every tool from this server as a browser MCP tool
@@ -171,6 +177,34 @@ pub struct McpServerConfig {
 
 fn default_transport() -> String {
     "stdio".to_string()
+}
+
+/// OAuth configuration for an MCP server.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpOAuthConfig {
+    /// Public OAuth client identifier. When omitted, cc-rust uses a stable
+    /// default public-client id (`cc-rust`).
+    #[serde(default, rename = "clientId", skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+    /// Loopback callback port to place in the OAuth redirect URI.
+    #[serde(
+        default,
+        rename = "callbackPort",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub callback_port: Option<u16>,
+    /// Authorization-server metadata URL (RFC 8414). If absent, discovery tries
+    /// the MCP resource metadata endpoint first and then the origin's default
+    /// authorization-server metadata path.
+    #[serde(
+        default,
+        rename = "authServerMetadataUrl",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub auth_server_metadata_url: Option<String>,
+    /// OAuth scopes to request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scopes: Option<Vec<String>>,
 }
 
 // ---------------------------------------------------------------------------

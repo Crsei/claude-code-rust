@@ -147,6 +147,7 @@ mod tests {
             args: None,
             url: None,
             headers: None,
+            oauth: None,
             env: None,
             browser_mcp: Some(true),
             disabled: None,

@@ -390,6 +390,12 @@ pub async fn handle_mcp_command_with_runtime(
                 event: McpEvent::ServerList { servers },
             }]
         }
+        McpCommand::StartAuth { server_name } => start_mcp_auth(cwd, &server_name).await,
+        McpCommand::CompleteAuth {
+            server_name,
+            code,
+            state,
+        } => complete_mcp_auth(cwd, &server_name, &code, state.as_deref()).await,
         other => handle_mcp_command_at_cwd(other, cwd),
     }
 }
@@ -624,6 +630,111 @@ fn handle_mcp_command_at_cwd(
                 }
             }
         }
+        McpCommand::ClearAuth { server_name } => clear_mcp_auth(cwd, &server_name),
+        McpCommand::QueryAuth { server_name } => query_mcp_auth(cwd, &server_name),
+        McpCommand::StartAuth { server_name } | McpCommand::CompleteAuth { server_name, .. } => {
+            vec![BackendMessage::McpEvent {
+                event: McpEvent::ConfigError {
+                    server_name,
+                    error: "MCP OAuth command requires the async runtime handler".to_string(),
+                },
+            }]
+        }
+    }
+}
+
+async fn start_mcp_auth(cwd: &Path, server_name: &str) -> Vec<BackendMessage> {
+    let config = match find_mcp_runtime_config(cwd, server_name) {
+        Ok(config) => config,
+        Err(message) => return vec![mcp_config_error_message(server_name, message)],
+    };
+    match crate::mcp::auth::start_authorization(&config).await {
+        Ok(start) => vec![
+            BackendMessage::McpEvent {
+                event: McpEvent::AuthStarted {
+                    server_name: server_name.to_string(),
+                    authorization_url: start.authorization_url,
+                    state: start.state,
+                    redirect_uri: start.redirect_uri,
+                    token_store_path: start.token_store_path.display().to_string(),
+                },
+            },
+            BackendMessage::SystemInfo {
+                text: format!(
+                    "OAuth authorization started for MCP server `{}`. Complete it with the returned code.",
+                    server_name
+                ),
+                level: "info".to_string(),
+            },
+        ],
+        Err(err) => vec![mcp_config_error_message(server_name, err.to_string())],
+    }
+}
+
+async fn complete_mcp_auth(
+    cwd: &Path,
+    server_name: &str,
+    code: &str,
+    state: Option<&str>,
+) -> Vec<BackendMessage> {
+    let config = match find_mcp_runtime_config(cwd, server_name) {
+        Ok(config) => config,
+        Err(message) => return vec![mcp_config_error_message(server_name, message)],
+    };
+    match crate::mcp::auth::complete_authorization(&config, code, state).await {
+        Ok(_) => {
+            let mut messages = query_mcp_auth(cwd, server_name);
+            messages.push(BackendMessage::SystemInfo {
+                text: format!(
+                    "Stored OAuth credentials for MCP server `{}` in {}.",
+                    server_name,
+                    crate::mcp::auth::token_store_path().display()
+                ),
+                level: "info".to_string(),
+            });
+            messages
+        }
+        Err(err) => vec![mcp_config_error_message(server_name, err.to_string())],
+    }
+}
+
+fn clear_mcp_auth(cwd: &Path, server_name: &str) -> Vec<BackendMessage> {
+    let config = match find_mcp_runtime_config(cwd, server_name) {
+        Ok(config) => config,
+        Err(message) => return vec![mcp_config_error_message(server_name, message)],
+    };
+    match crate::mcp::auth::clear_stored_token(&config) {
+        Ok(_) => query_mcp_auth(cwd, server_name),
+        Err(err) => vec![mcp_config_error_message(server_name, err.to_string())],
+    }
+}
+
+fn query_mcp_auth(cwd: &Path, server_name: &str) -> Vec<BackendMessage> {
+    let config = match find_mcp_runtime_config(cwd, server_name) {
+        Ok(config) => config,
+        Err(message) => return vec![mcp_config_error_message(server_name, message)],
+    };
+    match crate::mcp::auth::credential_status(&config) {
+        Ok(status) => vec![BackendMessage::McpEvent {
+            event: McpEvent::AuthStatus {
+                server_name: server_name.to_string(),
+                configured: status.configured,
+                authorized: status.authorized,
+                expired: status.expired,
+                can_refresh: status.can_refresh,
+                token_store_path: status.token_store_path.display().to_string(),
+            },
+        }],
+        Err(err) => vec![mcp_config_error_message(server_name, err.to_string())],
+    }
+}
+
+fn mcp_config_error_message(server_name: &str, error: String) -> BackendMessage {
+    BackendMessage::McpEvent {
+        event: McpEvent::ConfigError {
+            server_name: server_name.to_string(),
+            error,
+        },
     }
 }
 
@@ -1006,6 +1117,7 @@ pub fn build_mcp_server_config_entries(cwd: &std::path::Path) -> Vec<McpServerCo
             args: s.config.args,
             url: s.config.url,
             headers: s.config.headers,
+            oauth: s.config.oauth,
             env: s.config.env,
             browser_mcp: s.config.browser_mcp,
             disabled: s.config.disabled,
@@ -1251,6 +1363,7 @@ fn entry_to_settings_value(entry: &McpServerConfigEntry) -> serde_json::Value {
         args: entry.args.clone(),
         url: entry.url.clone(),
         headers: entry.headers.clone(),
+        oauth: entry.oauth.clone(),
         env: entry.env.clone(),
         browser_mcp: entry.browser_mcp,
         disabled: entry.disabled,
@@ -1618,6 +1731,7 @@ mod tests {
             args: Some(vec!["-y".to_string(), "ctx7".to_string()]),
             url: None,
             headers: None,
+            oauth: None,
             env: None,
             browser_mcp: None,
             disabled: None,
@@ -1652,6 +1766,7 @@ mod tests {
             args: None,
             url: None,
             headers: None,
+            oauth: None,
             env: None,
             browser_mcp: None,
             disabled: None,
@@ -1683,6 +1798,7 @@ mod tests {
             args: None,
             url: None,
             headers: None,
+            oauth: None,
             env: None,
             browser_mcp: None,
             disabled: None,
@@ -1708,6 +1824,7 @@ mod tests {
             args: None,
             url: None,
             headers: None,
+            oauth: None,
             env: None,
             browser_mcp: None,
             disabled: None,
@@ -1768,6 +1885,7 @@ mod tests {
             args: None,
             url: None,
             headers: None,
+            oauth: None,
             env: None,
             browser_mcp: None,
             disabled: None,
@@ -1805,6 +1923,7 @@ mod tests {
             args: None,
             url: None,
             headers: None,
+            oauth: None,
             env: None,
             browser_mcp: None,
             disabled: None,
@@ -1847,6 +1966,7 @@ mod tests {
             args: None,
             url: None,
             headers: None,
+            oauth: None,
             env: None,
             browser_mcp: None,
             disabled: None,
@@ -1913,6 +2033,7 @@ mod tests {
             args: None,
             url: None,
             headers: None,
+            oauth: None,
             env: None,
             browser_mcp: None,
             disabled: None,

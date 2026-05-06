@@ -440,6 +440,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                         args: Some(vec!["--claude-in-chrome-mcp".to_string()]),
                         url: None,
                         headers: None,
+                        oauth: None,
                         env: None,
                         browser_mcp: Some(true),
                         disabled: None,

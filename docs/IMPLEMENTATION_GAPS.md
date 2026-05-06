@@ -4,7 +4,8 @@
 
 - Phase 1 completed: `/mcp connect`, `/mcp disconnect`, `/mcp reconnect`, and IPC MCP lifecycle commands now call the shared runtime `McpManager`.
 - Phase 2 completed: remote `https://` SSE now supports secure endpoint validation, redirect rejection, redacted URL logging, header injection protection, JSON-RPC POST routing, and `auth-needed` classification for HTTP 401/403.
-- Remaining MCP extensibility gaps: OAuth / interactive auth, Streamable HTTP / WebSocket / IDE transport coverage, and runtime tool-registry rebuild for MCP servers first connected after startup.
+- Phase 3 completed: MCP OAuth metadata, manual PKCE auth start/complete, token storage/refresh/clear/status, redaction, IPC auth events, and remote SSE `Authorization` header injection are now implemented under cc-rust isolated paths.
+- Remaining MCP extensibility gaps: Streamable HTTP / WebSocket / IDE transport coverage, and runtime tool-registry rebuild for MCP servers first connected after startup.
 
 > **阶段切换 (2026-04-22)**：本仓库已从 "rust-lite 精简版" 切换到 **全量构建 (Full Build)** 阶段。
 > 本文原先承担的角色是"登记已接受的缩减/延期"，现在重新定义为：**对上游完整版尚未对齐的 TODO 清单**。

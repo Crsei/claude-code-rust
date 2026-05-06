@@ -29,7 +29,7 @@ use crate::ipc::subsystem_handlers::{
     run_mcp_runtime_operation, McpRuntimeOperation,
 };
 use crate::ipc::subsystem_types::{ConfigScope, McpServerConfigEntry};
-use crate::mcp::McpServerConfig;
+use crate::mcp::{McpOAuthConfig, McpServerConfig};
 
 /// Handler for the `/mcp` slash command.
 pub struct McpHandler;
@@ -51,6 +51,7 @@ impl CommandHandler for McpHandler {
             Some("connect") => handle_connect(&parts[1..], ctx).await,
             Some("disconnect") => handle_disconnect(&parts[1..], ctx).await,
             Some("reconnect") => handle_reconnect(&parts[1..], ctx).await,
+            Some("auth") => handle_auth(&parts[1..], ctx).await,
             Some(sub) => Ok(CommandResult::Output(format!(
                 "Unknown mcp subcommand: '{}'.\n\n{}",
                 sub,
@@ -72,7 +73,11 @@ fn help_text() -> String {
        /mcp reject <name...>           reject .mcp.json project server(s)\n  \
        /mcp connect <name>             connect an existing server\n  \
        /mcp disconnect <name>          disconnect a connected server\n  \
-       /mcp reconnect <name>           reconnect a server\n\n\
+       /mcp reconnect <name>           reconnect a server\n  \
+       /mcp auth start <name>          print OAuth authorization URL\n  \
+       /mcp auth complete <name> --code=<code> [--state=<state>] store OAuth token\n  \
+       /mcp auth status <name>         show redacted OAuth credential status\n  \
+       /mcp auth clear <name>          clear stored OAuth token\n\n\
      Flags for add/edit:\n  \
        --command=<cmd>     executable (stdio transport)\n  \
        --arg=<arg>         positional argument (repeatable)\n  \
@@ -80,6 +85,10 @@ fn help_text() -> String {
        --url=<url>         URL (sse transport)\n  \
        --transport=stdio|sse   transport kind (default: stdio)\n  \
        --scope=user|project    persistence scope (default: user for add, auto for edit)\n  \
+       --oauth-auth-server-metadata-url=<url>  OAuth RFC 8414 metadata URL\n  \
+       --oauth-client-id=<id>                  OAuth public client id\n  \
+       --oauth-callback-port=<port>            OAuth loopback redirect port\n  \
+       --oauth-scope=<scope>                   OAuth scope (repeatable)\n  \
        --browser           tag this server as a browser-MCP server\n\n\
      Discovery sources (low → high precedence):\n\
      - plugin-contributed MCP servers\n\
@@ -222,6 +231,7 @@ fn handle_add(rest: &[&str], ctx: &mut CommandContext) -> Result<CommandResult> 
         args: (!flags.args.is_empty()).then(|| flags.args.clone()),
         url: flags.url.clone(),
         headers: None,
+        oauth: oauth_from_flags(&flags, None),
         env: (!flags.env.is_empty()).then(|| flags.env.clone()),
         browser_mcp: flags.browser,
         disabled: None,
@@ -294,6 +304,7 @@ fn handle_edit(rest: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
     let transport = flags.transport.clone().unwrap_or(current.transport.clone());
     let command = flags.command.clone().or(current.command.clone());
     let url = flags.url.clone().or(current.url.clone());
+    let oauth = oauth_from_flags(&flags, current.oauth.as_ref()).or(current.oauth.clone());
     let browser_mcp = flags.browser.or(current.browser_mcp);
 
     let entry = McpServerConfigEntry {
@@ -304,6 +315,7 @@ fn handle_edit(rest: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
         args,
         url,
         headers: current.headers.clone(),
+        oauth,
         env,
         browser_mcp,
         disabled: current.disabled,
@@ -518,6 +530,141 @@ async fn handle_reconnect(rest: &[&str], ctx: &CommandContext) -> Result<Command
     }
 }
 
+async fn handle_auth(rest: &[&str], ctx: &CommandContext) -> Result<CommandResult> {
+    match rest.first().copied() {
+        Some("start") => {
+            let Some(name) = rest.get(1) else {
+                return Ok(CommandResult::Output(
+                    "Usage: /mcp auth start <name>".to_string(),
+                ));
+            };
+            let config = match find_mcp_config(&ctx.cwd, name) {
+                Ok(config) => config,
+                Err(message) => return Ok(CommandResult::Output(message)),
+            };
+            match crate::mcp::auth::start_authorization(&config).await {
+                Ok(start) => Ok(CommandResult::Output(format!(
+                    "OAuth authorization started for MCP server `{}`.\n\
+                     Open this URL in a browser:\n{}\n\n\
+                     Redirect URI: {}\n\
+                     Then run: /mcp auth complete {} --code=<code> --state={}\n\
+                     Token store: {}",
+                    config.name,
+                    start.authorization_url,
+                    start.redirect_uri,
+                    config.name,
+                    start.state,
+                    start.token_store_path.display()
+                ))),
+                Err(err) => Ok(CommandResult::Output(format!(
+                    "Failed to start OAuth for MCP server `{}`: {}",
+                    config.name, err
+                ))),
+            }
+        }
+        Some("complete") => {
+            let Some(name) = rest.get(1) else {
+                return Ok(CommandResult::Output(
+                    "Usage: /mcp auth complete <name> --code=<code> [--state=<state>]".to_string(),
+                ));
+            };
+            let parsed = parse_auth_complete_args(&rest[2..]);
+            if let Some(error) = parsed.error {
+                return Ok(CommandResult::Output(format!(
+                    "{}\n\nUsage: /mcp auth complete <name> --code=<code> [--state=<state>]",
+                    error
+                )));
+            }
+            let Some(code) = parsed.code else {
+                return Ok(CommandResult::Output(
+                    "Usage: /mcp auth complete <name> --code=<code> [--state=<state>]".to_string(),
+                ));
+            };
+            let config = match find_mcp_config(&ctx.cwd, name) {
+                Ok(config) => config,
+                Err(message) => return Ok(CommandResult::Output(message)),
+            };
+            match crate::mcp::auth::complete_authorization(&config, &code, parsed.state.as_deref())
+                .await
+            {
+                Ok(_) => Ok(CommandResult::Output(format!(
+                    "Stored OAuth credentials for MCP server `{}` in {}. Access token: {}",
+                    config.name,
+                    crate::mcp::auth::token_store_path().display(),
+                    crate::mcp::auth::redact_secret(&code)
+                ))),
+                Err(err) => Ok(CommandResult::Output(format!(
+                    "Failed to complete OAuth for MCP server `{}`: {}",
+                    config.name, err
+                ))),
+            }
+        }
+        Some("clear") => {
+            let Some(name) = rest.get(1) else {
+                return Ok(CommandResult::Output(
+                    "Usage: /mcp auth clear <name>".to_string(),
+                ));
+            };
+            let config = match find_mcp_config(&ctx.cwd, name) {
+                Ok(config) => config,
+                Err(message) => return Ok(CommandResult::Output(message)),
+            };
+            match crate::mcp::auth::clear_stored_token(&config) {
+                Ok(true) => Ok(CommandResult::Output(format!(
+                    "Cleared OAuth credentials for MCP server `{}`.",
+                    config.name
+                ))),
+                Ok(false) => Ok(CommandResult::Output(format!(
+                    "No stored OAuth credentials found for MCP server `{}`.",
+                    config.name
+                ))),
+                Err(err) => Ok(CommandResult::Output(format!(
+                    "Failed to clear OAuth credentials for MCP server `{}`: {}",
+                    config.name, err
+                ))),
+            }
+        }
+        Some("status") => {
+            let Some(name) = rest.get(1) else {
+                return Ok(CommandResult::Output(
+                    "Usage: /mcp auth status <name>".to_string(),
+                ));
+            };
+            let config = match find_mcp_config(&ctx.cwd, name) {
+                Ok(config) => config,
+                Err(message) => return Ok(CommandResult::Output(message)),
+            };
+            match crate::mcp::auth::credential_status(&config) {
+                Ok(status) => Ok(CommandResult::Output(format!(
+                    "OAuth status for MCP server `{}`: configured={} authorized={} expired={} refreshable={}\nToken store: {}",
+                    config.name,
+                    status.configured,
+                    status.authorized,
+                    status.expired,
+                    status.can_refresh,
+                    status.token_store_path.display()
+                ))),
+                Err(err) => Ok(CommandResult::Output(format!(
+                    "Failed to read OAuth status for MCP server `{}`: {}",
+                    config.name, err
+                ))),
+            }
+        }
+        _ => Ok(CommandResult::Output(
+            "Usage: /mcp auth start|complete|status|clear <name>".to_string(),
+        )),
+    }
+}
+
+fn find_mcp_config(cwd: &std::path::Path, server_name: &str) -> Result<McpServerConfig, String> {
+    let configs = crate::mcp::discovery::discover_mcp_servers(cwd)
+        .map_err(|err| format!("Failed to discover MCP servers: {err}"))?;
+    configs
+        .into_iter()
+        .find(|cfg| cfg.name == server_name)
+        .ok_or_else(|| format!("No MCP server named `{}` found.", server_name))
+}
+
 // ---------------------------------------------------------------------------
 // Flag parsing helpers
 // ---------------------------------------------------------------------------
@@ -530,6 +677,10 @@ struct ParsedFlags {
     url: Option<String>,
     transport: Option<String>,
     scope: Option<ConfigScope>,
+    oauth_auth_server_metadata_url: Option<String>,
+    oauth_client_id: Option<String>,
+    oauth_callback_port: Option<u16>,
+    oauth_scopes: Vec<String>,
     browser: Option<bool>,
     error: Option<String>,
 }
@@ -539,6 +690,22 @@ struct ParsedMcpjsonDecisionArgs {
     names: Vec<String>,
     all_project: bool,
     error: Option<String>,
+}
+
+#[derive(Default, Debug, Clone)]
+struct ParsedAuthCompleteArgs {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+}
+
+impl ParsedFlags {
+    fn oauth_touched(&self) -> bool {
+        self.oauth_auth_server_metadata_url.is_some()
+            || self.oauth_client_id.is_some()
+            || self.oauth_callback_port.is_some()
+            || !self.oauth_scopes.is_empty()
+    }
 }
 
 fn parse_flags(rest: &[&str]) -> ParsedFlags {
@@ -576,6 +743,26 @@ fn parse_flags(rest: &[&str]) -> ParsedFlags {
                     ConfigScope::User
                 }
             });
+        } else if let Some(stripped) = raw.strip_prefix("--oauth-auth-server-metadata-url=") {
+            out.oauth_auth_server_metadata_url = Some(stripped.to_string());
+        } else if let Some(stripped) = raw.strip_prefix("--oauth-client-id=") {
+            out.oauth_client_id = Some(stripped.to_string());
+        } else if let Some(stripped) = raw.strip_prefix("--oauth-callback-port=") {
+            match stripped.parse::<u16>() {
+                Ok(port) => out.oauth_callback_port = Some(port),
+                Err(_) => {
+                    out.error = Some(format!(
+                        "invalid --oauth-callback-port `{}` (expected 1-65535)",
+                        stripped
+                    ));
+                }
+            }
+        } else if let Some(stripped) = raw.strip_prefix("--oauth-scope=") {
+            if stripped.trim().is_empty() {
+                out.error = Some("--oauth-scope must not be empty".to_string());
+            } else {
+                out.oauth_scopes.push(stripped.to_string());
+            }
         } else if raw == "--browser" {
             out.browser = Some(true);
         } else if let Some(stripped) = raw.strip_prefix("--browser=") {
@@ -593,6 +780,51 @@ fn parse_flags(rest: &[&str]) -> ParsedFlags {
     }
 
     out
+}
+
+fn parse_auth_complete_args(rest: &[&str]) -> ParsedAuthCompleteArgs {
+    let mut out = ParsedAuthCompleteArgs::default();
+    for raw in rest {
+        let raw = raw.trim();
+        if raw.is_empty() {
+            continue;
+        }
+        if let Some(stripped) = raw.strip_prefix("--code=") {
+            out.code = Some(stripped.to_string());
+        } else if let Some(stripped) = raw.strip_prefix("--state=") {
+            out.state = Some(stripped.to_string());
+        } else if raw.starts_with("--") {
+            out.error = Some(format!("unknown flag `{}`", raw));
+        } else if out.code.is_none() {
+            out.code = Some(raw.to_string());
+        } else {
+            out.error = Some(format!("unexpected OAuth auth argument `{}`", raw));
+        }
+    }
+    out
+}
+
+fn oauth_from_flags(
+    flags: &ParsedFlags,
+    current: Option<&McpOAuthConfig>,
+) -> Option<McpOAuthConfig> {
+    if !flags.oauth_touched() {
+        return None;
+    }
+    let mut oauth = current.cloned().unwrap_or_default();
+    if let Some(value) = &flags.oauth_auth_server_metadata_url {
+        oauth.auth_server_metadata_url = Some(value.clone());
+    }
+    if let Some(value) = &flags.oauth_client_id {
+        oauth.client_id = Some(value.clone());
+    }
+    if let Some(value) = flags.oauth_callback_port {
+        oauth.callback_port = Some(value);
+    }
+    if !flags.oauth_scopes.is_empty() {
+        oauth.scopes = Some(flags.oauth_scopes.clone());
+    }
+    Some(oauth)
 }
 
 fn parse_mcpjson_decision_args(rest: &[&str]) -> ParsedMcpjsonDecisionArgs {
@@ -631,6 +863,9 @@ fn describe_entry(entry: &McpServerConfigEntry) -> String {
     }
     if let Some(url) = &entry.url {
         parts.push(format!("url=\"{}\"", url));
+    }
+    if entry.oauth.is_some() {
+        parts.push("oauth=configured".to_string());
     }
     if let Some(env) = &entry.env {
         if !env.is_empty() {
@@ -756,6 +991,7 @@ fn entry_to_settings_value(entry: &McpServerConfigEntry) -> serde_json::Value {
         args: entry.args.clone(),
         url: entry.url.clone(),
         headers: entry.headers.clone(),
+        oauth: entry.oauth.clone(),
         env: entry.env.clone(),
         browser_mcp: entry.browser_mcp,
         disabled: entry.disabled,
@@ -894,6 +1130,36 @@ mod tests {
         assert_eq!(disk["mcpServers"]["ctx7"]["command"], "npx");
         assert_eq!(disk["mcpServers"]["ctx7"]["args"][1], "ctx7");
         assert_eq!(disk["mcpServers"]["ctx7"]["env"]["FOO"], "bar");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn mcp_add_persists_oauth_metadata_without_tokens() {
+        let home = tempfile::tempdir().unwrap();
+        let cwd = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+
+        let handler = McpHandler;
+        let mut ctx = test_ctx(cwd.path().to_path_buf());
+        handler
+            .execute(
+                "add remote --transport=sse --url=https://mcp.example.com/sse \
+                 --oauth-auth-server-metadata-url=https://auth.example.com/.well-known/oauth-authorization-server \
+                 --oauth-client-id=cc-rust-test --oauth-callback-port=18888 --oauth-scope=tools.read",
+                &mut ctx,
+            )
+            .await
+            .unwrap();
+
+        let settings = home.path().join("settings.json");
+        let disk: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        let oauth = &disk["mcpServers"]["remote"]["oauth"];
+        assert_eq!(oauth["clientId"], "cc-rust-test");
+        assert_eq!(oauth["callbackPort"], 18888);
+        assert_eq!(oauth["scopes"][0], "tools.read");
+        assert!(oauth.get("accessToken").is_none());
+        assert!(oauth.get("refreshToken").is_none());
     }
 
     #[tokio::test]

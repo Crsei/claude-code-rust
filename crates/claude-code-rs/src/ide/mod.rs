@@ -382,6 +382,7 @@ pub fn ide_mcp_config(id: &str) -> Option<McpServerConfig> {
         args: Some(args),
         url: None,
         headers: None,
+        oauth: None,
         env: None,
         browser_mcp: None,
         disabled: None,

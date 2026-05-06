@@ -581,6 +581,7 @@ pub fn discover_plugin_mcp_servers_scoped() -> Vec<(String, crate::mcp::McpServe
                     args: Some(mcp.args),
                     url: None,
                     headers: None,
+                    oauth: None,
                     env,
                     browser_mcp: None,
                     disabled: None,
