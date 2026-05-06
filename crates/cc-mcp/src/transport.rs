@@ -6,12 +6,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use serde_json::Value;
 
 type PendingRequest = oneshot::Sender<Result<Value>>;
 type PendingRequests = Arc<Mutex<HashMap<u64, PendingRequest>>>;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::net::TcpStream;
 use tokio::sync::{oneshot, Mutex};
 use tracing::{debug, info, warn};
 
@@ -102,6 +103,146 @@ pub(crate) async fn reader_loop(
             "MCP server '{}' closed connection",
             server_name
         )));
+    }
+}
+
+/// Background task that reads JSON-RPC responses from an HTTP SSE stream.
+///
+/// The MCP SSE transport sends an initial `endpoint` event containing the
+/// HTTP POST target for client-to-server JSON-RPC messages. Later `message`
+/// events carry normal JSON-RPC responses and notifications.
+pub(crate) async fn sse_reader_loop(
+    mut reader: BufReader<TcpStream>,
+    pending: PendingRequests,
+    server_name: String,
+    mut endpoint_sender: Option<oneshot::Sender<Result<String>>>,
+) {
+    let mut event_name = String::new();
+    let mut data_lines: Vec<String> = Vec::new();
+
+    loop {
+        let mut line = String::new();
+        match reader.read_line(&mut line).await {
+            Ok(0) => {
+                info!(server = %server_name, "MCP: SSE stream closed (EOF)");
+                break;
+            }
+            Ok(_) => {
+                let line = line.trim_end_matches(['\r', '\n']);
+                if line.is_empty() {
+                    handle_sse_event(
+                        &server_name,
+                        &pending,
+                        &event_name,
+                        &data_lines,
+                        &mut endpoint_sender,
+                    )
+                    .await;
+                    event_name.clear();
+                    data_lines.clear();
+                    continue;
+                }
+
+                if line.starts_with(':') {
+                    continue;
+                }
+
+                let (field, value) = line.split_once(':').unwrap_or((line, ""));
+                let value = value.strip_prefix(' ').unwrap_or(value);
+                match field {
+                    "event" => event_name = value.to_string(),
+                    "data" => data_lines.push(value.to_string()),
+                    _ => {}
+                }
+            }
+            Err(e) => {
+                warn!(
+                    server = %server_name,
+                    error = %e,
+                    "MCP: error reading SSE stream"
+                );
+                break;
+            }
+        }
+    }
+
+    if let Some(sender) = endpoint_sender.take() {
+        let _ = sender.send(Err(anyhow!(
+            "MCP SSE server '{}' closed stream before endpoint event",
+            server_name
+        )));
+    }
+
+    let mut pending = pending.lock().await;
+    for (id, sender) in pending.drain() {
+        debug!(server = %server_name, id = id, "MCP: failing pending request (SSE stream exited)");
+        let _ = sender.send(Err(anyhow!(
+            "MCP SSE server '{}' closed connection",
+            server_name
+        )));
+    }
+}
+
+async fn handle_sse_event(
+    server_name: &str,
+    pending: &PendingRequests,
+    event_name: &str,
+    data_lines: &[String],
+    endpoint_sender: &mut Option<oneshot::Sender<Result<String>>>,
+) {
+    if data_lines.is_empty() {
+        return;
+    }
+
+    let data = data_lines.join("\n");
+    match event_name {
+        "endpoint" => {
+            if let Some(sender) = endpoint_sender.take() {
+                let _ = sender.send(Ok(data));
+            }
+        }
+        "" | "message" => match serde_json::from_str::<JsonRpcResponse>(&data) {
+            Ok(response) => {
+                dispatch_response(pending, server_name, response).await;
+            }
+            Err(_) => match serde_json::from_str::<Value>(&data) {
+                Ok(val) => {
+                    if val.get("id").is_some() {
+                        warn!(
+                            server = %server_name,
+                            data = %data,
+                            "MCP: received malformed SSE response"
+                        );
+                    } else if let Some(method) = val.get("method").and_then(|m| m.as_str()) {
+                        debug!(
+                            server = %server_name,
+                            method = method,
+                            "MCP: received SSE server notification"
+                        );
+                    } else {
+                        debug!(
+                            server = %server_name,
+                            "MCP: received unknown SSE JSON message"
+                        );
+                    }
+                }
+                Err(e) => {
+                    debug!(
+                        server = %server_name,
+                        error = %e,
+                        data = %data,
+                        "MCP: non-JSON SSE message"
+                    );
+                }
+            },
+        },
+        other => {
+            debug!(
+                server = %server_name,
+                event = other,
+                "MCP: ignoring SSE event"
+            );
+        }
     }
 }
 

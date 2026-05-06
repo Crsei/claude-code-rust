@@ -9,7 +9,52 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use serde_json::{json, Value};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{oneshot, Mutex};
+
+async fn read_http_request(stream: &mut TcpStream) -> (String, String) {
+    let mut buffer = Vec::new();
+    let header_end = loop {
+        if let Some(index) = find_header_end(&buffer) {
+            break index;
+        }
+
+        let mut chunk = [0_u8; 512];
+        let read = stream.read(&mut chunk).await.unwrap();
+        assert!(read > 0, "connection closed before HTTP headers completed");
+        buffer.extend_from_slice(&chunk[..read]);
+    };
+
+    let head = String::from_utf8(buffer[..header_end].to_vec()).unwrap();
+    let body_start = header_end + 4;
+    let content_length = head
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            if name.eq_ignore_ascii_case("content-length") {
+                value.trim().parse::<usize>().ok()
+            } else {
+                None
+            }
+        })
+        .unwrap_or(0);
+
+    let mut body = buffer[body_start..].to_vec();
+    while body.len() < content_length {
+        let mut chunk = vec![0_u8; content_length - body.len()];
+        let read = stream.read(&mut chunk).await.unwrap();
+        assert!(read > 0, "connection closed before HTTP body completed");
+        body.extend_from_slice(&chunk[..read]);
+    }
+
+    body.truncate(content_length);
+    (head, String::from_utf8(body).unwrap())
+}
+
+fn find_header_end(buffer: &[u8]) -> Option<usize> {
+    buffer.windows(4).position(|window| window == b"\r\n\r\n")
+}
 
 #[test]
 fn test_mcp_client_new() {
@@ -149,13 +194,13 @@ async fn test_connect_stdio_missing_command() {
 }
 
 #[tokio::test]
-async fn test_connect_sse_not_implemented() {
+async fn test_connect_sse_rejects_https_until_tls_runtime_exists() {
     let config = McpServerConfig {
         name: "sse-server".to_string(),
         transport: "sse".to_string(),
         command: None,
         args: None,
-        url: Some("http://localhost:8080".to_string()),
+        url: Some("https://example.com/mcp".to_string()),
         headers: None,
         env: None,
         browser_mcp: None,
@@ -165,7 +210,95 @@ async fn test_connect_sse_not_implemented() {
     let mut client = McpClient::new(config);
     let result = client.connect().await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("SSE"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("HTTPS SSE transport is not yet implemented"));
+}
+
+#[tokio::test]
+async fn test_connect_sse_loopback_initializes_over_endpoint() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let server = tokio::spawn(async move {
+        let (mut sse_stream, _) = listener.accept().await.unwrap();
+        let (get_head, get_body) = read_http_request(&mut sse_stream).await;
+        assert!(get_head.starts_with("GET /sse?token=ok HTTP/1.1"));
+        assert!(get_head.contains("Accept: text/event-stream"));
+        assert!(get_head.contains("Authorization: Bearer local"));
+        assert!(get_body.is_empty());
+        sse_stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\nevent: endpoint\r\ndata: /messages\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        sse_stream.flush().await.unwrap();
+
+        let (mut post_stream, _) = listener.accept().await.unwrap();
+        let (post_head, post_body) = read_http_request(&mut post_stream).await;
+        assert!(post_head.starts_with("POST /messages HTTP/1.1"));
+        assert!(post_head.contains("Authorization: Bearer local"));
+        let init_request: Value = serde_json::from_str(&post_body).unwrap();
+        assert_eq!(init_request["method"], "initialize");
+        let request_id = init_request["id"].as_u64().unwrap();
+        post_stream
+            .write_all(b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n")
+            .await
+            .unwrap();
+        post_stream.flush().await.unwrap();
+
+        let response = json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": { "tools": {} },
+                "serverInfo": { "name": "local-sse", "version": "1.0.0" }
+            }
+        });
+        let frame = format!(
+            "event: message\r\ndata: {}\r\n\r\n",
+            serde_json::to_string(&response).unwrap()
+        );
+        sse_stream.write_all(frame.as_bytes()).await.unwrap();
+        sse_stream.flush().await.unwrap();
+
+        let (mut notify_stream, _) = listener.accept().await.unwrap();
+        let (notify_head, notify_body) = read_http_request(&mut notify_stream).await;
+        assert!(notify_head.starts_with("POST /messages HTTP/1.1"));
+        let notification: Value = serde_json::from_str(&notify_body).unwrap();
+        assert_eq!(notification["method"], "notifications/initialized");
+        notify_stream
+            .write_all(b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n")
+            .await
+            .unwrap();
+        notify_stream.flush().await.unwrap();
+    });
+
+    let mut headers = HashMap::new();
+    headers.insert("Authorization".to_string(), "Bearer local".to_string());
+    let config = McpServerConfig {
+        name: "sse-server".to_string(),
+        transport: "sse".to_string(),
+        command: None,
+        args: None,
+        url: Some(format!("http://127.0.0.1:{}/sse?token=ok", addr.port())),
+        headers: Some(headers),
+        env: None,
+        browser_mcp: None,
+        disabled: None,
+    };
+
+    let mut client = McpClient::new(config);
+    client.connect().await.unwrap();
+    client.initialize().await.unwrap();
+    assert_eq!(client.state, McpConnectionState::Connected);
+    assert!(client.supports_tools());
+    client.disconnect().await;
+
+    server.await.unwrap();
 }
 
 #[tokio::test]

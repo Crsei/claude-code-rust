@@ -28,8 +28,8 @@
 | --- | --- | --- | --- | --- |
 | `custom-agents.mdx` | 已实现 | 已实现 | 部分实现 | 自定义 agent 定义链路已接通，安全边界主要靠通用工具过滤与可编辑范围限制 |
 | `hooks.mdx` | 已实现 | 已实现 | 已实现 | hooks 配置、执行与权限联动已经形成闭环 |
-| `mcp-configuration.mdx` | 部分实现 | 部分实现 | 部分实现 | MCP 配置与管理可用；SSE URL/header 安全校验已接入，但运行时仍只完成 stdio 主路径 |
-| `mcp-protocol.mdx` | 部分实现 | 部分实现 | 部分实现 | JSON-RPC 协议骨架和 stdio 通道可用；SSE 配置安全已补，但远程 transport / auth 覆盖仍不完整 |
+| `mcp-configuration.mdx` | 部分实现 | 部分实现 | 部分实现 | MCP 配置与管理可用；stdio 与本地 loopback HTTP SSE 主路径可运行，但远程 HTTPS / OAuth / 完整传输矩阵仍不完整 |
+| `mcp-protocol.mdx` | 部分实现 | 部分实现 | 部分实现 | JSON-RPC 协议骨架、stdio 通道和本地 loopback SSE endpoint / POST 通道可用；远程 transport / auth 覆盖仍不完整 |
 | `skills.mdx` | 已实现 | 已实现 | 已实现 | skills 的加载、调用、fork 执行与命令入口已形成完整链路 |
 
 ## 逐文档分析
@@ -92,7 +92,7 @@ MCP 的配置形态已经进入设置层与发现层。`McpServerConfig` 定义�
 
 这里的安全主要依赖作用域与显式禁用，而不是更细的策略引擎。`discover_mcp_servers_scoped()` 会保留来源作用域，见 `crates/cc-mcp/src/discovery.rs:143-191`；`/mcp` 只允许编辑可写作用域，`crates/claude-code-rs/src/commands/mcp_cmd.rs:272-306` 与 `crates/claude-code-rs/src/commands/mcp_cmd.rs:415-430` 会拒绝只读来源。运行时还会跳过 `disabled` 的服务，见 `crates/cc-mcp/src/manager.rs:39-43` 和 `crates/claude-code-rs/src/ipc/subsystem_handlers.rs:685-722`。
 
-补充：SSE transport 在运行时仍未实现，但连接前已经校验远程配置，拒绝缺失 URL、非 loopback 明文 HTTP、以及 CR/LF header 注入，见 `crates/cc-mcp/src/client.rs`。
+补充：SSE transport 已有一个无新增依赖的本地 loopback HTTP 运行时：`connect_sse()` 会打开 `http://localhost` / `127.0.0.1` / `::1` 的 SSE stream，读取 `endpoint` 事件，再通过 HTTP POST 发送 JSON-RPC；实现入口在 `crates/cc-mcp/src/client.rs` 与 `crates/cc-mcp/src/transport.rs`。远程 `https://` SSE、OAuth / interactive auth、重试和非 SSE 的 HTTP / WS 传输仍未实现。
 
 结论：`mcp-configuration.mdx` 的配置与管理能力可用，SSE 配置安全已有基础保护，但传输与策略覆盖还不完整，因此记为 `部分实现`。
 
@@ -102,7 +102,7 @@ MCP 的配置形态已经进入设置层与发现层。`McpServerConfig` 定义�
 
 协议层的骨架已经存在于 `crates/cc-mcp/src/lib.rs:1-37` 与 `crates/cc-mcp/src/lib.rs:175-363`：这里定义了 JSON-RPC 消息、初始化结果、工具/资源返回值，以及 `McpServerConfig` 的协议相关字段。`McpClient` 的说明也明确了协议流程：连接、`initialize`、`tools/list`、`tools/call`、`resources/list`、`resources/read`，见 `crates/cc-mcp/src/client.rs:1-11`。
 
-协议配置的形态声明了 `stdio` 与 `sse`。当前真正可用的仍只有 stdio 路径；SSE runtime 仍返回 unsupported，但连接前已经校验 URL 与 headers，拒绝非 loopback 的明文 HTTP、缺失 URL、CR/LF header 注入等不安全配置，见 `crates/cc-mcp/src/client.rs`。
+协议配置的形态声明了 `stdio` 与 `sse`。当前可用路径包括 stdio 以及本地 loopback HTTP SSE：SSE 连接会先校验 URL 与 headers，再读取 SSE `endpoint` 事件，并把 JSON-RPC 请求 POST 到该 endpoint；响应由 SSE `message` 事件回到 pending request，见 `crates/cc-mcp/src/client.rs` 与 `crates/cc-mcp/src/transport.rs`。远程 HTTPS、OAuth、Streamable HTTP、WebSocket 和 IDE 专用 transport 仍未落地。
 
 #### 运行时层
 
@@ -110,7 +110,7 @@ MCP 的配置形态已经进入设置层与发现层。`McpServerConfig` 定义�
 
 #### 安全层
 
-协议层看到了超时、断开清理和 SSE 配置安全校验，但没有看到独立的协议级认证/授权框架。请求超时与 pending 回收在 `crates/cc-mcp/src/client.rs:423-478`，断开逻辑在 `crates/cc-mcp/src/client.rs:239-266`，SSE URL / header 校验在 `crates/cc-mcp/src/client.rs`。由于 SSE runtime、认证与完整传输矩阵没有完成，这一层仍记为 `部分实现`。
+协议层看到了超时、断开清理、SSE 配置安全校验，以及本地 loopback SSE endpoint / message 分发。请求超时与 pending 回收在 `crates/cc-mcp/src/client.rs`，断开逻辑在 `crates/cc-mcp/src/client.rs`，SSE URL / header 校验、HTTP GET / POST 与 endpoint 解析在 `crates/cc-mcp/src/client.rs`，SSE event 解析与 JSON-RPC response 分发在 `crates/cc-mcp/src/transport.rs`。由于远程 HTTPS/OAuth、自动重连与完整传输矩阵没有完成，这一层仍记为 `部分实现`。
 
 结论：`mcp-protocol.mdx` 的核心 JSON-RPC 主路径已经存在，但完整度还不够，所以总体记为 `部分实现`。
 
@@ -151,13 +151,13 @@ fork 执行还会继承 skill 的 `allowed_tools` 和 `model` 配置，见 `crat
 | 文档 | 当前状态 | 主要原因 |
 | --- | --- | --- |
 | `custom-agents.mdx` | 部分实现 | 定义、编辑、调用链路已通，但安全边界主要依赖通用工具过滤与隔离，没有看到独立的 agent 安全子系统 |
-| `mcp-configuration.mdx` | 部分实现 | 发现、编辑、连接已具备；SSE 配置安全校验已接入，但 SSE runtime 与更完整的配置矩阵未落地 |
-| `mcp-protocol.mdx` | 部分实现 | stdio JSON-RPC 主路径可用，SSE URL/header 安全校验已接入；认证、远程 transport runtime 和完整传输覆盖仍未完成 |
+| `mcp-configuration.mdx` | 部分实现 | 发现、编辑、连接已具备；stdio 与本地 loopback HTTP SSE 可运行，但远程 HTTPS / OAuth / HTTP / WS 等更完整配置矩阵未落地 |
+| `mcp-protocol.mdx` | 部分实现 | stdio JSON-RPC 主路径和本地 loopback SSE endpoint / POST 通道可用；认证、远程 transport runtime 和完整传输覆盖仍未完成 |
 
 `未实现` 与 `故意裁剪` 在这次核查里没有找到可直接落表的明确项。
 
 ## 后续动作
 
-1. 如果要继续补齐 Extensibility 章节，优先实现 `mcp-protocol.mdx` 的 SSE runtime / 认证 / reconnect；当前只完成了远程 SSE 配置安全校验。
+1. 如果要继续补齐 Extensibility 章节，优先实现 `mcp-protocol.mdx` 的远程 HTTPS SSE / OAuth / reconnect；当前只完成了 stdio 与本地 loopback HTTP SSE 主路径。
 2. 如果后续发现 custom agents 还要补更细的安全约束，再补一轮 `engine/agent/*` 与 `ipc/agent_settings.rs` 的交叉核查。
 3. 其余三项（hooks、skills、MCP 配置）已经可以直接作为文档基线使用。

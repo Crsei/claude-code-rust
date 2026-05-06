@@ -18,6 +18,7 @@ use std::sync::Arc;
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpStream;
 use tokio::sync::{oneshot, Mutex};
 use tracing::{debug, info, warn};
 
@@ -28,7 +29,7 @@ use super::{
     CLIENT_VERSION, CONNECT_TIMEOUT_SECS, PROTOCOL_VERSION, TOOL_CALL_TIMEOUT_SECS,
 };
 
-use super::transport::reader_loop;
+use super::transport::{reader_loop, sse_reader_loop};
 
 // ---------------------------------------------------------------------------
 // McpClient
@@ -60,6 +61,8 @@ pub struct McpClient {
     reader_handle: Option<tokio::task::JoinHandle<()>>,
     /// Handle to the child process.
     child: Option<tokio::process::Child>,
+    /// HTTP POST sender for SSE transport.
+    sse_sender: Option<SseHttpSender>,
     /// Monotonically increasing request ID counter.
     pub(crate) next_id: Arc<AtomicU64>,
     /// Pending requests: id -> oneshot sender for the response.
@@ -80,6 +83,7 @@ impl McpClient {
             stdin_writer: None,
             reader_handle: None,
             child: None,
+            sse_sender: None,
             next_id: Arc::new(AtomicU64::new(1)),
             pending: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -187,16 +191,105 @@ impl McpClient {
         Ok(())
     }
 
-    /// Validate SSE transport configuration before returning the current
-    /// unsupported-transport error. This keeps remote MCP settings from
-    /// accepting insecure URLs or header-injection payloads while the runtime
-    /// transport is still being implemented.
+    /// Connect via HTTP SSE transport.
+    ///
+    /// This intentionally supports only cleartext loopback URLs for now. That
+    /// gives local MCP servers a working SSE path without adding a TLS/HTTP
+    /// dependency; HTTPS/OAuth remote transports remain a later implementation
+    /// step.
     async fn connect_sse(&mut self) -> Result<()> {
         validate_sse_config(&self.config)?;
-        bail!(
-            "SSE transport is not yet implemented. \
-             Use stdio transport instead."
+        let url = self
+            .config
+            .url
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("sse transport requires 'url' field"))?;
+        let base_target = SseHttpTarget::parse(url)?;
+        let headers = normalized_sse_headers(&self.config);
+
+        info!(
+            server = %self.config.name,
+            url = %url,
+            "MCP: connecting to SSE server"
+        );
+
+        let mut stream = TcpStream::connect(base_target.socket_addr())
+            .await
+            .with_context(|| format!("failed to connect to MCP SSE server: {}", url))?;
+        let request = build_sse_get_request(&base_target, &headers);
+        stream
+            .write_all(request.as_bytes())
+            .await
+            .context("failed to send MCP SSE GET request")?;
+        stream
+            .flush()
+            .await
+            .context("failed to flush MCP SSE GET request")?;
+
+        let mut reader = BufReader::new(stream);
+        let status = read_http_response_head(&mut reader)
+            .await
+            .context("failed to read MCP SSE response headers")?;
+        if !(200..300).contains(&status) {
+            bail!(
+                "MCP SSE server '{}' returned HTTP {} for event stream",
+                self.config.name,
+                status
+            );
+        }
+
+        let (endpoint_tx, endpoint_rx) = oneshot::channel();
+        let pending = self.pending.clone();
+        let server_name = self.config.name.clone();
+        let reader_handle = tokio::spawn(async move {
+            sse_reader_loop(reader, pending, server_name, Some(endpoint_tx)).await;
+        });
+
+        let endpoint_data = match tokio::time::timeout(
+            std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS),
+            endpoint_rx,
         )
+        .await
+        {
+            Ok(Ok(Ok(endpoint))) => endpoint,
+            Ok(Ok(Err(e))) => {
+                reader_handle.abort();
+                return Err(e);
+            }
+            Ok(Err(_)) => {
+                reader_handle.abort();
+                bail!(
+                    "MCP SSE server '{}' closed before sending endpoint event",
+                    self.config.name
+                );
+            }
+            Err(_) => {
+                reader_handle.abort();
+                bail!(
+                    "MCP SSE server '{}' did not send endpoint event within {}s",
+                    self.config.name,
+                    CONNECT_TIMEOUT_SECS
+                );
+            }
+        };
+
+        let post_target = base_target.resolve_endpoint(&endpoint_data)?;
+        self.sse_sender = Some(SseHttpSender {
+            target: post_target,
+            headers,
+            server_name: self.config.name.clone(),
+        });
+        self.reader_handle = Some(reader_handle);
+        self.state = McpConnectionState::Connected;
+
+        super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
+            server_name: self.config.name.clone(),
+            state: "connected".to_string(),
+            error: None,
+        });
+
+        debug!(server = %self.config.name, "MCP: SSE server connected");
+        Ok(())
     }
 
     /// Initialize the MCP connection -- exchange capabilities with the server.
@@ -247,6 +340,7 @@ impl McpClient {
         info!(server = %self.config.name, "MCP: disconnecting");
 
         self.stdin_writer.take();
+        self.sse_sender.take();
 
         if let Some(handle) = self.reader_handle.take() {
             handle.abort();
@@ -459,7 +553,11 @@ impl McpClient {
             pending.insert(id, tx);
         }
 
-        self.write_line(&request_json).await?;
+        if let Err(error) = self.write_line(&request_json).await {
+            let mut pending = self.pending.lock().await;
+            pending.remove(&id);
+            return Err(error);
+        }
 
         let timeout = std::time::Duration::from_secs(timeout_secs);
         match tokio::time::timeout(timeout, rx).await {
@@ -499,12 +597,18 @@ impl McpClient {
         self.write_line(&json).await
     }
 
-    /// Write a line to the subprocess stdin.
+    /// Write a JSON-RPC line to the active transport.
     async fn write_line(&self, line: &str) -> Result<()> {
-        let writer = self
-            .stdin_writer
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("MCP server stdin not available"))?;
+        if let Some(sender) = &self.sse_sender {
+            return sender.post_json(line).await;
+        }
+
+        let writer = self.stdin_writer.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "MCP transport writer not available for server '{}'",
+                self.config.name
+            )
+        })?;
 
         let mut writer = writer.lock().await;
         writer
@@ -553,6 +657,259 @@ fn validate_sse_config(config: &McpServerConfig) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct SseHttpTarget {
+    host: String,
+    port: u16,
+    authority: String,
+    path_and_query: String,
+}
+
+impl SseHttpTarget {
+    fn parse(url: &str) -> Result<Self> {
+        validate_sse_url(url)?;
+
+        if url.starts_with("https://") {
+            bail!(
+                "HTTPS SSE transport is not yet implemented; use a loopback http:// SSE MCP server or stdio"
+            );
+        }
+
+        let rest = url
+            .strip_prefix("http://")
+            .ok_or_else(|| anyhow::anyhow!("sse transport requires an http:// URL"))?;
+        let rest = rest.split('#').next().unwrap_or(rest);
+        let split_at = rest.find(['/', '?']).unwrap_or(rest.len());
+        let authority = &rest[..split_at];
+        if authority.is_empty() {
+            bail!("sse url must include a host");
+        }
+        let suffix = &rest[split_at..];
+        let path_and_query = if suffix.is_empty() {
+            "/".to_string()
+        } else if suffix.starts_with('/') {
+            suffix.to_string()
+        } else {
+            format!("/{}", suffix)
+        };
+
+        let (host, port) = parse_authority(authority)?;
+        if !is_loopback_host(&host) {
+            bail!("sse transport requires loopback http URLs in the current runtime");
+        }
+
+        Ok(Self {
+            host,
+            port,
+            authority: authority.to_string(),
+            path_and_query,
+        })
+    }
+
+    fn socket_addr(&self) -> String {
+        if self.host.contains(':') {
+            format!("[{}]:{}", self.host, self.port)
+        } else {
+            format!("{}:{}", self.host, self.port)
+        }
+    }
+
+    fn resolve_endpoint(&self, endpoint: &str) -> Result<Self> {
+        let endpoint = endpoint.trim();
+        if endpoint.is_empty() {
+            bail!("MCP SSE endpoint event was empty");
+        }
+        if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
+            return Self::parse(endpoint);
+        }
+        if endpoint.starts_with('/') {
+            let mut target = self.clone();
+            target.path_and_query = strip_fragment(endpoint).to_string();
+            return Ok(target);
+        }
+        bail!(
+            "MCP SSE endpoint event must be an absolute loopback URL or absolute path, got '{}'",
+            endpoint
+        );
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SseHttpSender {
+    target: SseHttpTarget,
+    headers: Vec<(String, String)>,
+    server_name: String,
+}
+
+impl SseHttpSender {
+    async fn post_json(&self, body: &str) -> Result<()> {
+        let mut stream = TcpStream::connect(self.target.socket_addr())
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to connect to MCP SSE endpoint for server '{}'",
+                    self.server_name
+                )
+            })?;
+        let request = build_sse_post_request(&self.target, &self.headers, body);
+        stream
+            .write_all(request.as_bytes())
+            .await
+            .context("failed to send MCP SSE POST request")?;
+        stream
+            .flush()
+            .await
+            .context("failed to flush MCP SSE POST request")?;
+
+        let mut reader = BufReader::new(stream);
+        let status = read_http_response_head(&mut reader)
+            .await
+            .context("failed to read MCP SSE POST response headers")?;
+        if status == 401 || status == 403 {
+            bail!(
+                "MCP SSE server '{}' returned HTTP {}; OAuth/interactive auth is not implemented yet",
+                self.server_name,
+                status
+            );
+        }
+        if !(200..300).contains(&status) {
+            bail!(
+                "MCP SSE server '{}' returned HTTP {} for JSON-RPC POST",
+                self.server_name,
+                status
+            );
+        }
+
+        Ok(())
+    }
+}
+
+fn parse_authority(authority: &str) -> Result<(String, u16)> {
+    if let Some(after_bracket) = authority.strip_prefix('[') {
+        let (host, rest) = after_bracket
+            .split_once(']')
+            .ok_or_else(|| anyhow::anyhow!("invalid IPv6 host in SSE URL"))?;
+        let port = if let Some(port) = rest.strip_prefix(':') {
+            parse_port(port)?
+        } else if rest.is_empty() {
+            80
+        } else {
+            bail!("invalid IPv6 authority in SSE URL");
+        };
+        return Ok((host.to_string(), port));
+    }
+
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((host, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => {
+            (host, parse_port(port)?)
+        }
+        _ => (authority, 80),
+    };
+
+    Ok((host.to_string(), port))
+}
+
+fn parse_port(port: &str) -> Result<u16> {
+    port.parse::<u16>()
+        .with_context(|| format!("invalid port '{}' in SSE URL", port))
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    matches!(host, "localhost" | "127.0.0.1" | "::1")
+}
+
+fn strip_fragment(value: &str) -> &str {
+    value.split('#').next().unwrap_or(value)
+}
+
+fn normalized_sse_headers(config: &McpServerConfig) -> Vec<(String, String)> {
+    let mut headers = config
+        .headers
+        .as_ref()
+        .map(|headers| {
+            headers
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    headers.sort_by(|(left, _), (right, _)| left.cmp(right));
+    headers
+}
+
+fn build_sse_get_request(target: &SseHttpTarget, headers: &[(String, String)]) -> String {
+    let mut request = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nAccept: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\n",
+        target.path_and_query, target.authority
+    );
+    append_user_headers(&mut request, headers);
+    request.push_str("\r\n");
+    request
+}
+
+fn build_sse_post_request(
+    target: &SseHttpTarget,
+    headers: &[(String, String)],
+    body: &str,
+) -> String {
+    let mut request = format!(
+        "POST {} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n",
+        target.path_and_query,
+        target.authority,
+        body.as_bytes().len()
+    );
+    append_user_headers(&mut request, headers);
+    request.push_str("\r\n");
+    request.push_str(body);
+    request
+}
+
+fn append_user_headers(request: &mut String, headers: &[(String, String)]) {
+    for (name, value) in headers {
+        request.push_str(name);
+        request.push_str(": ");
+        request.push_str(value);
+        request.push_str("\r\n");
+    }
+}
+
+async fn read_http_response_head(reader: &mut BufReader<TcpStream>) -> Result<u16> {
+    let mut status_line = String::new();
+    if reader
+        .read_line(&mut status_line)
+        .await
+        .context("failed to read HTTP status line")?
+        == 0
+    {
+        bail!("HTTP server closed connection before status line");
+    }
+
+    let status = status_line
+        .split_whitespace()
+        .nth(1)
+        .ok_or_else(|| anyhow::anyhow!("invalid HTTP status line: {}", status_line.trim()))?
+        .parse::<u16>()
+        .with_context(|| format!("invalid HTTP status line: {}", status_line.trim()))?;
+
+    loop {
+        let mut line = String::new();
+        if reader
+            .read_line(&mut line)
+            .await
+            .context("failed to read HTTP response header")?
+            == 0
+        {
+            bail!("HTTP server closed connection before response headers completed");
+        }
+        if line.trim_end_matches(['\r', '\n']).is_empty() {
+            break;
+        }
+    }
+
+    Ok(status)
 }
 
 fn validate_sse_url(url: &str) -> Result<()> {
