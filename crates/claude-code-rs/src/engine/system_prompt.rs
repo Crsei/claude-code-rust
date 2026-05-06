@@ -935,6 +935,27 @@ mod tests {
     }
 
     #[test]
+    fn test_context_maps_are_metadata_not_prompt_sections() {
+        prompt_sections::clear_cache();
+        let cwd = "/tmp/context-metadata-contract";
+        let (parts, user_context, system_context) =
+            build_system_prompt(None, None, &[], "test-model", cwd, None, None, false);
+
+        assert_eq!(user_context.get("cwd"), Some(&cwd.to_string()));
+        assert_eq!(user_context.get("model"), Some(&"test-model".to_string()));
+        assert!(user_context.contains_key("date"));
+        assert!(user_context.contains_key("platform"));
+        assert!(
+            system_context.is_empty(),
+            "system_context is currently reserved metadata"
+        );
+
+        let joined = parts.join("\n");
+        assert!(!joined.contains("user_context"));
+        assert!(!joined.contains("system_context"));
+    }
+
+    #[test]
     #[serial_test::serial]
     fn test_coordinator_mode_injects_prompt_section_when_enabled() {
         let _guard = FeatureOverrideGuard;
