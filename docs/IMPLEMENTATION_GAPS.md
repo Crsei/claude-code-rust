@@ -7,7 +7,8 @@
 - Phase 3 completed: MCP OAuth metadata, manual PKCE auth start/complete, token storage/refresh/clear/status, redaction, IPC auth events, and remote SSE `Authorization` header injection are now implemented under cc-rust isolated paths.
 - Phase 4 completed: MCP Streamable HTTP now supports POST JSON-RPC, JSON or SSE response bodies, `MCP-Session-Id`, `MCP-Protocol-Version`, optional GET SSE listener, DELETE session cleanup, OAuth header reuse, and secure loopback/remote URL validation. WebSocket is documented as unsupported/custom because it is not a current standard MCP transport.
 - Phase 5 completed: custom agents now inherit parent tool permission context, apply user/project `permissionMode` only from default parent mode, ignore plugin `permissionMode`, normalize and enforce `tools` / `disallowedTools`, support deny-all and namespaced MCP wildcards, validate editable `isolation`, and reject `maxTurns: 0`.
-- Remaining extensibility gaps: runtime tool-registry rebuild for MCP servers first connected after startup, plus Phase 6 integration verification and documentation closure.
+- Phase 6 completed: runtime MCP tool-registry refresh now rebuilds dynamic MCP wrappers from the shared runtime `McpManager`, preserves native MCP-named tools, refreshes ToolSearch, and runs before model calls so MCP servers first connected after startup are visible on the next turn.
+- Remaining extensibility gaps: none for the active client-side Extensibility runtime. WebSocket remains documented as unsupported/custom because it is outside the current standard MCP transport matrix; custom-agent `skills` / `hooks` / `plugin` / `mcpServers` fields remain parsed-but-inactive future fields.
 
 > **阶段切换 (2026-04-22)**：本仓库已从 "rust-lite 精简版" 切换到 **全量构建 (Full Build)** 阶段。
 > 本文原先承担的角色是"登记已接受的缩减/延期"，现在重新定义为：**对上游完整版尚未对齐的 TODO 清单**。

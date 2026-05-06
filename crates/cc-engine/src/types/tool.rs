@@ -262,6 +262,15 @@ pub trait Tool: Send + Sync {
         self.name().to_string()
     }
 
+    /// MCP server that owns this tool when it is a dynamic MCP wrapper.
+    ///
+    /// Native tools may still use MCP-style names (for example Computer Use),
+    /// so registry refresh code must use this marker instead of matching
+    /// `mcp__*` name prefixes.
+    fn mcp_server_name(&self) -> Option<&str> {
+        None
+    }
+
     /// 工具结果最大字符数 (超过则持久化到磁盘)
     fn max_result_size_chars(&self) -> usize {
         100_000

@@ -209,6 +209,15 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             // STEP 3: API CALL -- streaming model call
             // ──────────────────────────────────────────────────────
 
+            match deps.refresh_tools().await {
+                Ok(_refreshed) => {
+                    debug!("tools refreshed successfully before model call");
+                }
+                Err(e) => {
+                    debug!(error = %e, "tool refresh failed before model call, continuing with existing tools");
+                }
+            }
+
             let tools = deps.get_tools();
 
             let call_params = ModelCallParams {

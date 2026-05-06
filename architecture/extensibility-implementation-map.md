@@ -1,5 +1,22 @@
 # Extensibility Implementation Map
 
+## 2026-05-06 Phase 6 Update - Integration Closure
+
+Runtime MCP tool registry refresh is now implemented. `QueryEngineDeps`
+rebuilds dynamic MCP tool wrappers from the shared runtime `McpManager`,
+preserves native tools even when they use MCP-style names such as
+`mcp__computer-use__*`, refreshes `ToolSearch`, and the query loop refreshes
+before each model call so servers first connected after startup are visible on
+the next turn.
+
+The active Extensibility runtime is closed for the current standard surface:
+hooks and skills remain implemented baselines; custom agents are implemented
+for the active runtime with `skills` / `hooks` / `plugin` / `mcpServers`
+recorded as parsed-but-inactive future fields; MCP client transports cover
+stdio, local/remote SSE compatibility, and current-standard Streamable HTTP
+with OAuth. WebSocket remains documented as unsupported/custom because it is
+not part of the current standard MCP transport matrix.
+
 ## 2026-05-06 Phase 5 Update - Custom Agent Safety
 
 Custom agent safety is now implemented for the active runtime path. Child
@@ -41,8 +58,8 @@ permission context before any future runtime activation.
 | --- | --- | --- | --- | --- |
 | `custom-agents.mdx` | 已实现 | 已实现 | 部分实现 | 自定义 agent 定义链路已接通，安全边界主要靠通用工具过滤与可编辑范围限制 |
 | `hooks.mdx` | 已实现 | 已实现 | 已实现 | hooks 配置、执行与权限联动已经形成闭环 |
-| `mcp-configuration.mdx` | 部分实现 | 部分实现 | 部分实现 | MCP 配置与管理可用；stdio、本地 loopback HTTP SSE、远程 HTTPS SSE、MCP OAuth / interactive auth、Streamable HTTP、manager 级 connect/disconnect/reconnect、短指数退避重试和 channel notification 事件路由可运行；WebSocket 按当前官方规格记录为 unsupported/custom，剩余 gap 收窄为 late-connect tool registry refresh 与 custom-agent safety |
-| `mcp-protocol.mdx` | 部分实现 | 部分实现 | 部分实现 | JSON-RPC 协议骨架、stdio 通道、本地/远程 SSE endpoint / POST 通道、Streamable HTTP POST JSON-RPC / session header / optional GET SSE、OAuth token refresh / redaction 和 `notifications/claude/channel` 路由可用；WebSocket 非当前标准 transport |
+| `mcp-configuration.mdx` | 已实现 | 已实现 | 已实现 | MCP 配置与管理可用；stdio、本地 loopback HTTP SSE、远程 HTTPS SSE、MCP OAuth / interactive auth、Streamable HTTP、manager 级 connect/disconnect/reconnect、短指数退避重试、channel notification 事件路由和 late-connect tool registry refresh 可运行；WebSocket 按当前官方规格记录为 unsupported/custom |
+| `mcp-protocol.mdx` | 已实现 | 已实现 | 已实现 | JSON-RPC 协议骨架、stdio 通道、本地/远程 SSE endpoint / POST 通道、Streamable HTTP POST JSON-RPC / session header / optional GET SSE、OAuth token refresh / redaction、`notifications/claude/channel` 路由和动态 MCP tool registry refresh 可用；WebSocket 非当前标准 transport |
 | `skills.mdx` | 已实现 | 已实现 | 已实现 | skills 的加载、调用、fork 执行与命令入口已形成完整链路 |
 
 ## 逐文档分析
@@ -125,7 +142,7 @@ MCP 的配置形态已经进入设置层与发现层。`McpServerConfig` 定义�
 
 #### 安全层
 
-协议层看到了超时、断开清理、SSE 配置安全校验、本地/远程 SSE endpoint / message 分发、Streamable HTTP session / protocol headers / JSON-or-SSE response 分发、MCP OAuth token storage / refresh / redaction、channel notification 事件路由，以及 manager 级短指数退避重试。请求超时与 pending 回收在 `crates/cc-mcp/src/client.rs`，断开逻辑在 `crates/cc-mcp/src/client.rs`，SSE URL / header 校验、HTTP GET / POST 与 endpoint 解析在 `crates/cc-mcp/src/client.rs`，Streamable HTTP POST / optional GET / DELETE session 在 `crates/cc-mcp/src/client.rs`，OAuth contract 在 `crates/cc-mcp/src/auth.rs`，SSE event 解析、JSON-RPC response 分发与 channel notification 路由在 `crates/cc-mcp/src/transport.rs`，退避重试在 `crates/cc-mcp/src/manager.rs:94-112`。由于运行时新增 MCP 工具后的 registry refresh 与 custom-agent safety 仍未完成，这一层仍记为 `部分实现`。
+协议层看到了超时、断开清理、SSE 配置安全校验、本地/远程 SSE endpoint / message 分发、Streamable HTTP session / protocol headers / JSON-or-SSE response 分发、MCP OAuth token storage / refresh / redaction、channel notification 事件路由，以及 manager 级短指数退避重试。请求超时与 pending 回收在 `crates/cc-mcp/src/client.rs`，断开逻辑在 `crates/cc-mcp/src/client.rs`，SSE URL / header 校验、HTTP GET / POST 与 endpoint 解析在 `crates/cc-mcp/src/client.rs`，Streamable HTTP POST / optional GET / DELETE session 在 `crates/cc-mcp/src/client.rs`，OAuth contract 在 `crates/cc-mcp/src/auth.rs`，SSE event 解析、JSON-RPC response 分发与 channel notification 路由在 `crates/cc-mcp/src/transport.rs`，退避重试在 `crates/cc-mcp/src/manager.rs:94-112`。运行时新增 MCP 工具后的 registry refresh 已由 `QueryEngineDeps::refresh_tools()` 和 query loop pre-call refresh 覆盖；WebSocket 仍按当前官方规格记录为 unsupported/custom。
 
 结论：`mcp-protocol.mdx` 的核心 JSON-RPC 主路径已经存在，但完整度还不够，所以总体记为 `部分实现`。
 
@@ -166,14 +183,14 @@ fork 执行还会继承 skill 的 `allowed_tools` 和 `model` 配置，见 `crat
 | 文档 | 当前状态 | 主要原因 |
 | --- | --- | --- |
 | `custom-agents.mdx` | 部分实现 | 定义、编辑、调用链路已通，但安全边界主要依赖通用工具过滤与隔离，没有看到独立的 agent 安全子系统 |
-| `mcp-configuration.mdx` | 部分实现 | 发现、编辑、连接已具备；stdio、本地 loopback HTTP SSE、远程 HTTPS SSE、OAuth / interactive auth、Streamable HTTP、manager 级 reconnect、短指数退避重试和 channel notification 事件路由可运行；WebSocket 非当前标准 transport，剩余 gap 是 late-connect tool registry refresh 与 custom-agent safety |
-| `mcp-protocol.mdx` | 部分实现 | stdio JSON-RPC 主路径、本地/远程 SSE endpoint / POST 通道、Streamable HTTP POST / session / optional GET SSE、OAuth token refresh / redaction、channel notification 路由和 manager 级短退避重试可用；WebSocket 非当前标准 transport |
+| `mcp-configuration.mdx` | 已实现 | 发现、编辑、连接已具备；stdio、本地 loopback HTTP SSE、远程 HTTPS SSE、OAuth / interactive auth、Streamable HTTP、manager 级 reconnect、短指数退避重试、channel notification 事件路由和 late-connect registry refresh 可运行；WebSocket 非当前标准 transport |
+| `mcp-protocol.mdx` | 已实现 | stdio JSON-RPC 主路径、本地/远程 SSE endpoint / POST 通道、Streamable HTTP POST / session / optional GET SSE、OAuth token refresh / redaction、channel notification 路由、manager 级短退避重试和动态 MCP tool registry refresh 可用；WebSocket 非当前标准 transport |
 
 `未实现` 与 `故意裁剪` 在这次核查里没有找到可直接落表的明确项。
 
 ## 后续动作
 
-1. 如果要继续补齐 Extensibility 章节，下一优先级是运行时新增 MCP 工具后的 registry refresh 与 custom-agent safety；当前已完成 stdio、本地 loopback HTTP SSE、远程 HTTPS SSE、Streamable HTTP、MCP OAuth / interactive auth、channel notification 路由、manager API 与短退避重试主路径。WebSocket 按当前官方规格记录为 unsupported/custom。
+1. Extensibility 章节当前已完成 active runtime 主路径：stdio、本地 loopback HTTP SSE、远程 HTTPS SSE、Streamable HTTP、MCP OAuth / interactive auth、channel notification 路由、manager API、短退避重试、late-connect MCP tool registry refresh、hooks、skills 和 custom-agent safety。WebSocket 按当前官方规格记录为 unsupported/custom。
 2. 如果后续发现 custom agents 还要补更细的安全约束，再补一轮 `engine/agent/*` 与 `ipc/agent_settings.rs` 的交叉核查。
 3. 其余三项（hooks、skills、MCP 配置）已经可以直接作为文档基线使用。
 
@@ -184,3 +201,4 @@ fork 执行还会继承 skill 的 `allowed_tools` 和 `model` 配置，见 `crat
 - 2026-05-06：Phase 2 已完成 remote HTTPS SSE compatibility。`type = "sse"` 现在支持远程 `https://` 事件流、同源 endpoint event 解析、JSON-RPC POST、禁用 redirect、header 注入防护、URL 日志脱敏与 401/403 `auth-needed` 状态分类；本地 loopback SSE 路径保持原 `TcpStream` 实现。验证记录见 `docs/archive/extensibility-phase2-remote-https-sse-2026-05-06.md`。剩余 MCP gap 收窄为 OAuth / interactive auth、Streamable HTTP / WebSocket / IDE transport matrix，以及运行时新增 MCP 工具后的 tool registry refresh。
 - 2026-05-06：Phase 3 已完成 MCP OAuth / interactive auth。`McpServerConfig` 现在支持 `oauth` metadata；`crates/cc-mcp/src/auth.rs` 提供 OAuth metadata discovery、manual PKCE start/complete、token storage、refresh、clear/status 和 redaction；`/mcp auth start|complete|status|clear` 与 IPC auth commands 暴露 redacted interaction surface；remote SSE 会注入 stored bearer token。验证记录见 `docs/archive/extensibility-phase3-mcp-oauth-2026-05-06.md`。剩余 MCP gap 收窄为 Streamable HTTP / WebSocket / IDE transport matrix，以及运行时新增 MCP 工具后的 tool registry refresh。
 - 2026-05-06：Phase 4 已完成 MCP Streamable HTTP transport。`type = "streamable-http"` 现在支持当前标准 MCP HTTP transport：POST JSON-RPC、JSON 或 SSE response body、`MCP-Session-Id`、`MCP-Protocol-Version`、optional GET SSE listener、DELETE session cleanup、OAuth header 注入和 loopback HTTP / remote HTTPS URL 校验；`/mcp add|edit` 也接受 `--transport=streamable-http`。当前官方 transport matrix 为 stdio + Streamable HTTP；legacy SSE 作为兼容路径保留，WebSocket 记录为 unsupported/custom。验证记录见 `docs/archive/extensibility-phase4-mcp-streamable-http-2026-05-06.md`。剩余 gap 收窄为运行时新增 MCP 工具后的 tool registry refresh 与 custom-agent safety。
+- 2026-05-06：Phase 6 已完成 integration closure。`QueryEngineDeps::refresh_tools()` 现在从 runtime `McpManager` 重建动态 MCP 工具并刷新 ToolSearch；query loop 会在模型调用前刷新工具表，确保启动后首次连接的 MCP server 在下一轮可见，同时保留原生 `mcp__computer-use__*` 工具。验证记录见 `docs/archive/extensibility-phase6-integration-closure-2026-05-06.md`。

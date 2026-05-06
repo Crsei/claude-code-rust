@@ -316,6 +316,10 @@ impl Tool for SkillTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::LazyLock;
+
+    static SKILL_REGISTRY_TEST_LOCK: LazyLock<tokio::sync::Mutex<()>> =
+        LazyLock::new(|| tokio::sync::Mutex::new(()));
 
     #[test]
     fn test_skill_tool_name() {
@@ -372,6 +376,8 @@ mod tests {
 
     #[test]
     fn test_build_skills_listing() {
+        let _guard = SKILL_REGISTRY_TEST_LOCK.blocking_lock();
+
         // Clear and register a test skill
         skills::clear_skills();
         skills::register_skill(SkillDefinition {
@@ -397,6 +403,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_missing_skill_name() {
+        let _guard = SKILL_REGISTRY_TEST_LOCK.lock().await;
+
         let tool = SkillTool;
         let state = std::sync::Arc::new(parking_lot::RwLock::new(
             crate::types::app_state::AppState::default(),
@@ -470,6 +478,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_existing_skill() {
+        let _guard = SKILL_REGISTRY_TEST_LOCK.lock().await;
+
         // Register a unique skill name to avoid race conditions with other tests
         let unique_name = format!("test-skill-{}", uuid::Uuid::new_v4());
         skills::register_skill(SkillDefinition {

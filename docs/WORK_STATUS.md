@@ -1,16 +1,21 @@
 # cc-rust 工作状态总览
 
+## 2026-05-06 Extensibility Phase 6 Integration Closure
+
+- Runtime MCP tool-registry refresh is complete: `QueryEngineDeps::refresh_tools()` rebuilds dynamic MCP wrappers from the shared runtime `McpManager`, preserves native MCP-named tools such as Computer Use, refreshes ToolSearch, and the query loop refreshes before model calls so servers first connected after startup are visible on the next turn.
+- Extensibility closure status: hooks and skills remain implemented baselines; custom-agent safety is complete for the active runtime; MCP client configuration/protocol support covers stdio, local/remote SSE compatibility, Streamable HTTP, OAuth, reconnect, retry, channel notifications, and late-connect tool refresh. WebSocket remains unsupported/custom because it is outside the current standard MCP transport matrix.
+
 ## 2026-05-06 Extensibility Custom Agent Phase 5
 
 - Custom agent safety contract is complete for the current runtime path: child agents inherit parent tool permission context, user/project `permissionMode` applies only from default parent mode, plugin `permissionMode` is ignored, `disallowedTools` wins over `tools`, `disallowedTools: *` denies all tools, and `mcp__server__*` wildcard specs match namespaced tools.
 - Agent definitions now normalize security lists and `isolation: worktree`, reject unknown editable `isolation` values and `maxTurns: 0`, and apply definition defaults for model, background execution, isolation, teammate mode, and child `maxTurns`.
-- Remaining extensibility work: runtime tool-registry refresh for MCP servers first connected after startup, plus Phase 6 integration verification and documentation closure.
+- Superseded by Phase 6: runtime tool-registry refresh and integration documentation closure are complete.
 
 ## 2026-05-06 Extensibility MCP Phase 4
 
 - MCP Streamable HTTP is complete for the current standard HTTP transport: POST JSON-RPC, JSON or SSE response bodies, `MCP-Session-Id`, `MCP-Protocol-Version`, optional GET SSE listener, DELETE session cleanup, OAuth header reuse, and secure remote HTTPS / loopback HTTP validation.
 - WebSocket is documented as unsupported/custom because the current official MCP transport matrix standardizes stdio and Streamable HTTP; legacy SSE remains compatibility support.
-- Remaining extensibility work: runtime tool-registry refresh for newly connected MCP servers, custom-agent safety contract, and integration closure.
+- Superseded by Phases 5-6: custom-agent safety, runtime tool-registry refresh for newly connected MCP servers, and integration closure are complete.
 
 ## 2026-05-06 Extensibility MCP Phase 3
 

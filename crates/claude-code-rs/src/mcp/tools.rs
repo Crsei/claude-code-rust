@@ -145,6 +145,10 @@ impl Tool for McpToolWrapper {
     fn user_facing_name(&self, _input: Option<&Value>) -> String {
         format!("mcp__{}__{}", self.server_name, self.def.name)
     }
+
+    fn mcp_server_name(&self) -> Option<&str> {
+        Some(&self.server_name)
+    }
 }
 
 // ---------------------------------------------------------------------------

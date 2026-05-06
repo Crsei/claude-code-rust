@@ -5,9 +5,10 @@
 //! for making Anthropic API calls.
 
 use parking_lot::RwLock;
+use std::collections::HashSet;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::Result;
 use futures::Stream;
@@ -18,16 +19,16 @@ use crate::query::deps::{
     CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
 };
 use crate::tools::execution::{
-    enforce_result_size, find_tool, is_plan_mode_plan_file_write, sandbox_allowed_command_applies,
-    security_validate, ToolExecutionResult,
+    ToolExecutionResult, enforce_result_size, find_tool, is_plan_mode_plan_file_write,
+    sandbox_allowed_command_applies, security_validate,
 };
 use crate::types::app_state::AppState;
 use crate::types::message::{Message, StreamEvent};
 use crate::types::state::AutoCompactTracking;
 use crate::types::tool::{PermissionMode, ToolProgress, Tools, ValidationResult};
 
-use super::helpers::{build_messages_request, format_conversation_for_summary};
 use super::QueryEngineState;
+use super::helpers::{build_messages_request, format_conversation_for_summary};
 
 /// Dependency injection bridge: provides the query loop with access to the
 /// engine's shared state (abort flag, app state, tools) and, optionally, a
@@ -167,6 +168,28 @@ fn tool_execution_result_to_exec_result(result: ToolExecutionResult) -> ToolExec
         is_error: result.is_error,
         hook_stopped_continuation: result.hook_stopped_continuation,
     }
+}
+
+fn merge_refreshed_mcp_tools(existing_tools: Tools, refreshed_mcp_tools: Tools) -> Tools {
+    let mut seen = HashSet::new();
+    let mut merged = Vec::with_capacity(existing_tools.len() + refreshed_mcp_tools.len());
+
+    for tool in existing_tools {
+        if tool.mcp_server_name().is_some() {
+            continue;
+        }
+        if seen.insert(tool.name().to_string()) {
+            merged.push(tool);
+        }
+    }
+
+    for tool in refreshed_mcp_tools {
+        if seen.insert(tool.name().to_string()) {
+            merged.push(tool);
+        }
+    }
+
+    merged
 }
 
 #[async_trait::async_trait]
@@ -1256,7 +1279,25 @@ impl QueryDeps for QueryEngineDeps {
     }
 
     async fn refresh_tools(&self) -> Result<Tools> {
-        Ok(self.state.read().tools.clone())
+        let Some(manager) = crate::mcp::runtime::current_manager() else {
+            return Ok(self.state.read().tools.clone());
+        };
+
+        let mcp_tool_defs = {
+            let manager_guard = manager.lock().await;
+            manager_guard.all_tools()
+        };
+        let mcp_tools = crate::mcp::tools::mcp_tools_to_tools(mcp_tool_defs, manager);
+
+        let refreshed = {
+            let mut state = self.state.write();
+            let refreshed = merge_refreshed_mcp_tools(state.tools.clone(), mcp_tools);
+            state.tools = refreshed.clone();
+            refreshed
+        };
+
+        crate::tools::tool_search::install_runtime_tool_catalog(&refreshed);
+        Ok(refreshed)
     }
 
     fn drain_background_results(
@@ -1293,7 +1334,7 @@ mod tests {
     use crate::types::tool::{
         PermissionCallback, PermissionMode, PermissionResult, Tool, ToolResult, ToolUseContext,
     };
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     struct CanonicalTool {
         name: &'static str,
@@ -1455,6 +1496,43 @@ mod tests {
         })
     }
 
+    fn mcp_tool(server_name: &str, tool_name: &str) -> Arc<dyn Tool> {
+        Arc::new(crate::mcp::tools::McpToolWrapper {
+            def: crate::mcp::McpToolDef {
+                name: tool_name.to_string(),
+                description: format!("{server_name} tool"),
+                input_schema: json!({"type": "object"}),
+                server_name: server_name.to_string(),
+            },
+            server_name: server_name.to_string(),
+            manager: Arc::new(tokio::sync::Mutex::new(
+                crate::mcp::manager::McpManager::new(),
+            )),
+        })
+    }
+
+    #[test]
+    fn refreshed_mcp_merge_replaces_wrapped_tools_without_prefix_guessing() {
+        let seen_input = Arc::new(parking_lot::Mutex::new(None));
+        let native_mcp_named_tool: Arc<dyn Tool> =
+            canonical_tool("mcp__computer-use__screenshot", seen_input);
+        let stale_mcp_tool = mcp_tool("old-server", "mcp__old-server__stale");
+        let fresh_mcp_tool = mcp_tool("new-server", "mcp__new-server__fresh");
+
+        let merged = merge_refreshed_mcp_tools(
+            vec![native_mcp_named_tool, stale_mcp_tool],
+            vec![fresh_mcp_tool],
+        );
+        let names = merged.iter().map(|tool| tool.name()).collect::<Vec<_>>();
+
+        assert_eq!(
+            names,
+            vec!["mcp__computer-use__screenshot", "mcp__new-server__fresh"]
+        );
+        assert_eq!(merged[0].mcp_server_name(), None);
+        assert_eq!(merged[1].mcp_server_name(), Some("new-server"));
+    }
+
     #[test]
     fn exact_auto_compact_trigger_keeps_heuristic_when_report_missing() {
         assert!(exact_auto_compact_triggered(true, None));
@@ -1600,11 +1678,13 @@ mod tests {
             .unwrap();
 
         assert!(result.is_error);
-        assert!(result
-            .result
-            .data
-            .as_str()
-            .is_some_and(|text| text.contains("Input validation error")));
+        assert!(
+            result
+                .result
+                .data
+                .as_str()
+                .is_some_and(|text| text.contains("Input validation error"))
+        );
         assert!(
             seen_input.lock().is_none(),
             "validation failure must stop before Tool::call"
@@ -1682,11 +1762,13 @@ mod tests {
             .unwrap();
 
         assert!(result.is_error);
-        assert!(result
-            .result
-            .data
-            .as_str()
-            .is_some_and(|text| text.contains("Dangerous command blocked")));
+        assert!(
+            result
+                .result
+                .data
+                .as_str()
+                .is_some_and(|text| text.contains("Dangerous command blocked"))
+        );
         assert!(
             seen_input.lock().is_none(),
             "security validation must stop before Tool::call"
@@ -1720,11 +1802,13 @@ mod tests {
             .unwrap();
 
         assert!(result.is_error);
-        assert!(result
-            .result
-            .data
-            .as_str()
-            .is_some_and(|text| text.contains("Permission denied: blocked by test")));
+        assert!(
+            result
+                .result
+                .data
+                .as_str()
+                .is_some_and(|text| text.contains("Permission denied: blocked by test"))
+        );
         assert!(
             seen_input.lock().is_none(),
             "permission denial must stop before Tool::call"

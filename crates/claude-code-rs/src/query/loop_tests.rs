@@ -48,6 +48,8 @@ struct MockDeps {
     max_active_tools: AtomicUsize,
     tool_delay: Duration,
     tools: Tools,
+    refreshed_tools: parking_lot::Mutex<Option<Tools>>,
+    refresh_seen: AtomicBool,
     hook_runner: parking_lot::Mutex<Arc<dyn HookRunner>>,
 }
 
@@ -79,12 +81,19 @@ impl MockDeps {
             max_active_tools: AtomicUsize::new(0),
             tool_delay: Duration::ZERO,
             tools: vec![],
+            refreshed_tools: parking_lot::Mutex::new(None),
+            refresh_seen: AtomicBool::new(false),
             hook_runner: parking_lot::Mutex::new(Arc::new(cc_types::hooks::NoopHookRunner)),
         }
     }
 
     fn with_tools(mut self, tools: Tools) -> Self {
         self.tools = tools;
+        self
+    }
+
+    fn with_refreshed_tools(self, tools: Tools) -> Self {
+        *self.refreshed_tools.lock() = Some(tools);
         self
     }
 
@@ -268,11 +277,21 @@ impl QueryDeps for MockDeps {
     }
 
     fn get_tools(&self) -> Tools {
+        if self.refresh_seen.load(Ordering::SeqCst) {
+            if let Some(tools) = self.refreshed_tools.lock().as_ref() {
+                return tools.clone();
+            }
+        }
         self.tools.clone()
     }
 
     async fn refresh_tools(&self) -> Result<Tools> {
-        Ok(self.tools.clone())
+        self.refresh_seen.store(true, Ordering::SeqCst);
+        Ok(self
+            .refreshed_tools
+            .lock()
+            .clone()
+            .unwrap_or_else(|| self.tools.clone()))
     }
 
     fn hook_runner(&self) -> Arc<dyn HookRunner> {
@@ -469,6 +488,30 @@ fn has_api_error_containing(items: &[QueryYield], needle: &str) -> bool {
             false
         }
     })
+}
+
+#[tokio::test]
+async fn query_refreshes_tools_before_first_model_call() {
+    let refreshed_tool: Arc<dyn Tool> = Arc::new(LoopTestTool {
+        name: "mcp__late__fresh",
+        concurrency_safe: true,
+    });
+    let deps = Arc::new(
+        MockDeps::new(vec![make_text_response("done")]).with_refreshed_tools(vec![refreshed_tool]),
+    );
+
+    let items: Vec<QueryYield> = query(
+        make_query_params(vec![make_user_message_for_test("use the late tool")]),
+        deps.clone(),
+    )
+    .collect()
+    .await;
+    assert_eq!(request_start_count(&items), 1);
+
+    let recorded = deps.recorded_params();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].tools.len(), 1);
+    assert_eq!(recorded[0].tools[0].name(), "mcp__late__fresh");
 }
 
 struct StopContinuationHookRunner {
