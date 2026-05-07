@@ -19,6 +19,10 @@ detection:
 Truthy values: `1`, `true`, `yes`, `on` (case-insensitive). Matches the
 `isEnvTruthy` behavior in `claude-code-bun`.
 
+For the current REPL process, `/login bedrock` and `/login vertex` set the
+same provider flags in-process. Persist the environment variables before
+launching cc-rust if you want future sessions to use the same cloud provider.
+
 ## AWS Bedrock
 
 ### Setup
@@ -60,12 +64,13 @@ IDs on the wire. You can also pass Bedrock IDs directly.
 | `claude-sonnet-4-5-20250929`    | `us.anthropic.claude-sonnet-4-5-20250929-v1:0`    |
 | `claude-haiku-4-5-20251001`     | `us.anthropic.claude-haiku-4-5-20251001-v1:0`     |
 | `claude-opus-4-5-20251101`      | `us.anthropic.claude-opus-4-5-20251101-v1:0`      |
+| `claude-opus-4-7`               | `us.anthropic.claude-opus-4-7`                    |
 | `claude-3-7-sonnet-20250219`    | `us.anthropic.claude-3-7-sonnet-20250219-v1:0`    |
 | `anthropic.claude-…-v2:0`       | *(passthrough)*                                    |
 | `eu.anthropic.claude-…-v1:0`    | *(passthrough)*                                    |
 | `arn:aws:bedrock:…`             | *(passthrough)* — supply your own inference profile ARN |
 
-See `src/api/model_mapping.rs` for the full list.
+See `crates/claude-code-rs/src/api/model_mapping.rs` for the full list.
 
 ## GCP Vertex AI
 
@@ -81,6 +86,16 @@ See `src/api/model_mapping.rs` for the full list.
    ```bash
    export CLOUD_ML_REGION=europe-west4
    ```
+   Per-model overrides are also supported:
+   `VERTEX_REGION_CLAUDE_HAIKU_4_5`,
+   `VERTEX_REGION_CLAUDE_3_5_HAIKU`,
+   `VERTEX_REGION_CLAUDE_3_5_SONNET`,
+   `VERTEX_REGION_CLAUDE_3_7_SONNET`,
+   `VERTEX_REGION_CLAUDE_4_1_OPUS`,
+   `VERTEX_REGION_CLAUDE_4_0_OPUS`,
+   `VERTEX_REGION_CLAUDE_4_6_SONNET`,
+   `VERTEX_REGION_CLAUDE_4_5_SONNET`,
+   and `VERTEX_REGION_CLAUDE_4_0_SONNET`.
 4. Provide an access token:
 
    **Option A — gcloud CLI (recommended)**:
@@ -110,6 +125,7 @@ See `src/api/model_mapping.rs` for the full list.
 | `claude-haiku-4-5-20251001`     | `claude-haiku-4-5@20251001`   |
 | `claude-opus-4-5-20251101`      | `claude-opus-4-5@20251101`    |
 | `claude-opus-4-6`               | `claude-opus-4-6`             |
+| `claude-opus-4-7`               | `claude-opus-4-7`             |
 | `claude-…@YYYYMMDD`             | *(passthrough)*               |
 
 ## Known limits (MVP)
@@ -117,17 +133,10 @@ See `src/api/model_mapping.rs` for the full list.
 Phase 1 ships basic Claude conversation support. The following are intentionally
 out of scope and tracked for Phase 2:
 
-- **Bedrock streaming transport** — MVP calls the non-streaming `/invoke`
-  endpoint and synthesizes `StreamEvent`s from the single JSON response. True
-  server-side streaming via `invoke-with-response-stream` (AWS EventStream
-  binary format) is not yet implemented. User-visible behavior is identical:
-  the existing stream accumulator / UI sees a valid event sequence.
 - **Bedrock inference profile ARN discovery** — you can pass ARNs directly,
   but there is no automatic profile listing (`bedrock:ListInferenceProfiles`).
 - **Bedrock CountTokens parity** — token counting uses the shared estimator,
   not Bedrock's dedicated endpoint.
-- **Vertex per-model region override** — `CLOUD_ML_REGION` is the sole
-  region source; there is no per-model override yet.
 - **First-party-only features** (voice, bridge, some analytics) continue to
   operate as if first-party; feature gating per-provider is also Phase 2.
 
@@ -148,8 +157,8 @@ CLAUDE_CODE_USE_VERTEX=1 ANTHROPIC_VERTEX_PROJECT_ID=my-proj \
 
 ## Source files
 
-- `src/api/client/mod.rs` — `ApiProvider::{Bedrock, Vertex}` variants and `from_{bedrock,vertex}_env()`
-- `src/api/bedrock.rs` — Bedrock request flow + synthesized streaming
-- `src/api/vertex.rs` — Vertex request flow (real SSE streaming)
-- `src/api/sigv4.rs` — Minimal AWS SigV4 signer (sha2 + hmac, no SDK dep)
-- `src/api/model_mapping.rs` — First-party ↔ provider model ID translation
+- `crates/claude-code-rs/src/api/client/mod.rs` - `ApiProvider::{Bedrock, Vertex}` variants and `from_{bedrock,vertex}_env()`
+- `crates/claude-code-rs/src/api/bedrock.rs` - Bedrock request flow + synthesized streaming
+- `crates/claude-code-rs/src/api/vertex.rs` - Vertex request flow (real SSE streaming)
+- `crates/claude-code-rs/src/api/sigv4.rs` - Minimal AWS SigV4 signer (sha2 + hmac, no SDK dep)
+- `crates/claude-code-rs/src/api/model_mapping.rs` - First-party to provider model ID translation

@@ -87,7 +87,7 @@
   - `backend` 会走规范化逻辑：`codex` 保留为 `codex`，其他值会回退成 `native`
 - Examples:
   - `/config`
-  - `/config set model claude-sonnet-4-20250514`
+  - `/config set model MOTA`
   - `/config set backend codex`
   - `/config set verbose true`
   - `/config reset`
@@ -97,16 +97,18 @@
 - Aliases: none
 - Syntax:
   - `/model`
-  - `/model <name-or-alias>`
+  - `/model <model-id|SOTA|MOTA|FOTA>`
 - Supported aliases:
-  - `opus` → `claude-opus-4-20250514`
-  - `sonnet` → `claude-sonnet-4-20250514`
-  - `haiku` → `claude-haiku-3-5-20241022`
+  - `SOTA` → `claude-opus-4-20250514`
+  - `MOTA` → `claude-sonnet-4-20250514`
+  - `FOTA` → `claude-haiku-3-5-20241022`
 - Notes:
-  - 任意未知名字都会被当成原始模型字符串直接写入，不做校验
+  - 旧的 `opus` / `sonnet` / `haiku` 家族别名已移除；请使用 `SOTA` / `MOTA` / `FOTA` 或完整模型 ID
+  - 空的 `availableModels` 表示不限制；非空时 `/model`、Web 设置和 `/config set model` 都会拒绝列表之外的模型
+  - 未知名字会被当成自定义模型 ID；但已移除的旧别名不会透传给 provider
 - Examples:
   - `/model`
-  - `/model opus`
+  - `/model MOTA`
   - `/model gpt-5.4`
 
 ### `/model-add`
@@ -404,18 +406,25 @@
   - `/login 5`
   - `/login codex`
   - `/login codex-cli`
+  - `/login bedrock`
+  - `/login vertex`
+  - `/login cloud`
 - Meaning of numbered entries:
   - `1`：手动粘贴 Anthropic API Key
   - `2`：Claude.ai OAuth
   - `3`：Console OAuth
   - `4` / `codex`：OpenAI Codex OAuth
   - `5` / `codex-cli`：检查并尝试导入 / 刷新 `~/.codex/auth.json`
+  - `6` / `bedrock`：当前 REPL 进程启用 AWS Bedrock provider
+  - `7` / `vertex`：当前 REPL 进程启用 GCP Vertex AI provider
 - Examples:
   - `/login`
   - `/login status`
   - `/login sk-ant-api03-...`
   - `/login 4`
   - `/login codex-cli`
+  - `/login bedrock`
+  - `/login vertex`
 
 ### `/login-code`
 

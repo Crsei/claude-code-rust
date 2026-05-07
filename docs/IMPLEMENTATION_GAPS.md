@@ -1,196 +1,87 @@
 # cc-rust 未完备项与全量构建 TODO
 
-## 2026-05-06 Extensibility MCP Phase Notes
+> 更新日期: 2026-05-07 | 当前阶段: 全量构建 / Full Build
 
-- Phase 1 completed: `/mcp connect`, `/mcp disconnect`, `/mcp reconnect`, and IPC MCP lifecycle commands now call the shared runtime `McpManager`.
-- Phase 2 completed: remote `https://` SSE now supports secure endpoint validation, redirect rejection, redacted URL logging, header injection protection, JSON-RPC POST routing, and `auth-needed` classification for HTTP 401/403.
-- Phase 3 completed: MCP OAuth metadata, manual PKCE auth start/complete, token storage/refresh/clear/status, redaction, IPC auth events, and remote SSE `Authorization` header injection are now implemented under cc-rust isolated paths.
-- Phase 4 completed: MCP Streamable HTTP now supports POST JSON-RPC, JSON or SSE response bodies, `MCP-Session-Id`, `MCP-Protocol-Version`, optional GET SSE listener, DELETE session cleanup, OAuth header reuse, and secure loopback/remote URL validation. WebSocket is documented as unsupported/custom because it is not a current standard MCP transport.
-- Phase 5 completed: custom agents now inherit parent tool permission context, apply user/project `permissionMode` only from default parent mode, ignore plugin `permissionMode`, normalize and enforce `tools` / `disallowedTools`, support deny-all and namespaced MCP wildcards, validate editable `isolation`, and reject `maxTurns: 0`.
-- Phase 6 completed: runtime MCP tool-registry refresh now rebuilds dynamic MCP wrappers from the shared runtime `McpManager`, preserves native MCP-named tools, refreshes ToolSearch, and runs before model calls so MCP servers first connected after startup are visible on the next turn.
-- Remaining extensibility gaps: none for the active client-side Extensibility runtime. WebSocket remains documented as unsupported/custom because it is outside the current standard MCP transport matrix; custom-agent `skills` / `hooks` / `plugin` / `mcpServers` fields remain parsed-but-inactive future fields.
+本文只登记仍未补齐、仍需重评或明确 intentional crop 的内容。已确认实现或已关闭的历史记录已迁移到：
 
-> **阶段切换 (2026-04-22)**：本仓库已从 "rust-lite 精简版" 切换到 **全量构建 (Full Build)** 阶段。
-> 本文原先承担的角色是"登记已接受的缩减/延期"，现在重新定义为：**对上游完整版尚未对齐的 TODO 清单**。
-> 原 §2、§5 中的条目默认视为待补齐，不再等于"不做"。具体规则见 [`../CLAUDE.md`](../CLAUDE.md) 顶部"当前阶段"说明。
->
-> 本文把 `docs/` 中分散的"缩减实现 / 设计限制 / 未完备项"集中到一个入口。
-> 当前完成度基线看 [`WORK_STATUS.md`](WORK_STATUS.md)，用户可感知问题看 [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)，历史已完成方案与变更记录已归档到 [`archive/`](archive/)。
->
-> 若要看与 `claude-code-bun` 的对标差异、`run in chrome` 判断、Web UI 评估和 REPL 结构规划，见 [`claude-code-bun-gap-plan.md`](claude-code-bun-gap-plan.md)。
+- [archive/COMPLETED_FULL.md](archive/COMPLETED_FULL.md)
+- [archive/COMPLETED_SIMPLIFIED.md](archive/COMPLETED_SIMPLIFIED.md)
+- [archive/completed-gap-closures-2026-05-07.md](archive/completed-gap-closures-2026-05-07.md)
+
+开放问题与代码审查发现统一看 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)。当前完成度基线看 [WORK_STATUS.md](WORK_STATUS.md)。
 
 ## 1. 当前仍未完成或仅部分完成
 
 | 范围 | 当前状态 | 说明 |
-|------|----------|------|
-| API providers | 部分完成 (单独立项) | Bedrock 原生 AWS EventStream、Vertex direct service-account JWT exchange 已补；仍需收束 Azure 命名/能力矩阵与真实 provider/e2e 覆盖。补齐或裁剪决策见 `architecture/mvp-optimization-plans/MVP-001-api-providers-plan.md` |
-| Team Memory 客户端同步 | 未实现 | 服务端代理已落地 (`src/daemon/team_memory_proxy.rs` + `ui/team-memory-server/`)；前端尚未调用，计划见 `superpowers/plans/2026-04-11-team-memory-sync.md` |
+| --- | --- | --- |
+| API providers | 部分完成 | Bedrock 原生 AWS EventStream、Vertex direct service-account JWT exchange 已补；仍需收束 Azure 命名/能力矩阵与真实 provider/e2e 覆盖。 |
+| Team Memory 客户端同步 | 代码已接通，待验证/文档收口 | `ui/team-memory-server/sync.ts` / `watcher.ts` 与 Rust daemon spawn 参数已接通；仍需同步、断线恢复、冲突处理 e2e。 |
+| TaskTools remote/multi-type runtime | 基础完成，runtime parity 未完 | 持久化、依赖字段、输出保留、`TaskOutput` 阻塞/超时、task taxonomy、remote metadata、recoverable marker、restore timer reset、remote review timeout guard、local-agent 取消和 `/tasks` UI 基础已完成；仍需 remote/multi-type poller/reconnect runtime parity。 |
+| PlanMode auto-mode parity | 基础完成，classifier parity 未完 | 保守 classifier、计划持久化、approval lifecycle、实现任务关联、团队审批 mailbox、plan file 写入白名单已落地；仍需 full auto-mode LLM classifier parity 和 `allowedPrompts` 语义分类收口。 |
+| WebFetch browser-grade 能力 | 部分完成 | redirect budget / cross-host diagnostic、Content-Type 分发、环境代理/`NO_PROXY`、Cookie/credential 边界已完成；JS 渲染仍待实现或裁剪决策。 |
+| Daemon supervisor/worker ownership | 阶段主干完成，完整 ownership 未完 | 当前 HTTP/SSE 控制面已读 supervisor/worker 状态并写入 command/event 协议；真实 submit/abort 执行 ownership 仍有兼容路径。 |
 
-> 以下项在历史文档中曾标注为 stub，经代码核对已在 `rust-lite` 分支中收口，保留在本节做历史追踪：
->
-> - **IPC `clear_messages`** — 已由 `QueryEngine::clear_messages()` (`crates/claude-code-rs/src/engine/lifecycle/mod.rs:245`) 实现，`/clear` 路径在 `crates/claude-code-rs/src/ipc/ingress.rs:332-339` 调用 engine 清空并回传 `conversation_replaced`。
-> - **权限 Phase 2 Hook 拦截** — `crates/claude-code-rs/src/tools/execution/pipeline.rs:124-211` 先跑 `run_pre_tool_hooks`，再把结果折进 `has_permissions_to_use_tool_with_hook` (`crates/claude-code-rs/src/permissions/decision.rs:259-362`)，hook 的 deny/ask/allow 会按规范顺序生效。
-> - **Vim 状态机** — `ui/src/vim/state-machine.ts` 已覆盖 normal/insert/visual 三模式、导航 (h/l/0/$/^/w/b/e)、operator (d/y/c)、单键 (x/X/p/u/D/C) 与 visual 选区操作；KNOWN_ISSUES 中目前无相关 open 项。
-> - **Agent Teams 用户面** — `/team` 斜杠命令 + `TeamSpawn` 工具 + Team Dashboard 已落地，详见 §1.1。
-
-### 1.1 Agent Teams 收口状态
-
-rust-lite 对 Agent Teams 的最终收口是"**in-process 闭环 + 用户面全量**"（2026-05-05 核验通过）：
-
-- **闭环核心** — `crates/claude-code-rs/src/teams/` 的 10 个子模块 (types/protocol/mailbox/context/identity/in_process/helpers/constants/runner/backend) 驱动同进程多代理 mailbox，teammate 作为 tokio 任务在 `task_local!` 身份隔离下运行。`runner.rs` 顶部仍有 `#![allow(unused)]`，存在未收束的死代码/符号（见 TECH_DEBT）。
-- **工具层** — `SendMessage` 工具 (`crates/claude-code-rs/src/tools/send_message.rs:67`) `is_enabled()` 总返回 `true`，call 时检查 team_context 做优雅拒绝；`TeamSpawn` 工具 (`crates/claude-code-rs/src/tools/team_spawn.rs:150`) 让模型从对话里直接拉起新 teammate，必要时自动创建 session 绑定的团队。
-- **REPL 层** — `/team` 斜杠命令家族 (`crates/claude-code-rs/src/commands/team_cmd.rs`) 覆盖 `create / list / status / spawn / send / kill / leave / delete` 8 个子命令。
-- **UI 层** — `ui/src/components/TeamPanel.tsx` 订阅 `BackendMessage::TeamEvent`（通过 `protocol.ts:674` 的 `team_event` 类型），展示活跃 team、成员在线状态、未读计数、最近消息。
-- **IPC 层** — `crates/claude-code-rs/src/ipc/agent_handlers.rs:132` 的 `build_team_status_events()` 读盘后发出 `TeamEvent::StatusSnapshot`；`crates/claude-code-rs/src/ipc/ingress.rs:420-431` 在 `/team` 命令执行后同步 `team_context` 并推送状态快照。
-- **启用条件** — `is_agent_teams_active(app_state)` (`crates/claude-code-rs/src/teams/mod.rs:87`) 同时接受 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var 与 `AppState::team_context` 存在两种启用方式，后者让 `/team create` 或 `TeamSpawn` 调用在会话内就能解锁 team 功能。
-
-**MVP-005 后端策略 (2026-04-28)**：tmux / iTerm2 终端 pane 后端正式登记为 §7 Intentional 裁剪。cc-rust 只支持 in-process backend；`backend::PaneBackend` trait 作为上游对齐审查边界保留，但 `backend::SUPPORTED_BACKENDS` (`crates/claude-code-rs/src/teams/backend.rs:23`) 只包含 `InProcess`，所有 runtime spawn 路径都通过 `InProcessBackend` 执行。
-
-## 2. 全量构建待补齐 TODO（原「已完成但仍为缩减实现」）
-
-> **状态反转**：下表条目**不再**被视为"已接受的 Lite 缩减"。它们是全量构建阶段需要按上游对齐的 TODO。触及以下模块时，默认按上游完整行为补齐，而不是"保持现状"。详细的原版代码路径/行数对照见 [`archive/COMPLETED_SIMPLIFIED.md`](archive/COMPLETED_SIMPLIFIED.md)。
-
-### 2.1 已补齐或基本补齐（2026-05-05 代码核对）
-
-| 模块 | 当前结论 | 证据 / 备注 |
-|------|----------|-------------|
-| FileWriteTool | 已补齐 | `crates/claude-code-rs/src/tools/fs/safe_write.rs` 已覆盖临时文件 + rename、恢复备份、大小限制、权限保持、二进制拒绝；`crates/claude-code-rs/src/tools/fs/file_write.rs` 返回 safe_write 诊断 |
-| FileReadTool | 已补齐 | `crates/claude-code-rs/src/tools/fs/file_read.rs` 已覆盖 symlink canonicalize/metadata、UTF-8/UTF-16/BOM 检测、UTF-8 lossy fallback、大文件默认分页与 `next_offset` |
-| SkillTool | 核心已补齐 | `crates/cc-skills/src/lib.rs` / `loader.rs` 已覆盖依赖解析、版本冲突、兼容版本、hot reload、frontmatter 诊断；若后续需要上游 MCP skill builder，可按插件/脚手架能力单独立项 |
-| LSP | 已补齐 | `crates/claude-code-rs/src/lsp_service/client.rs` 已实现 `didChange` ranged updates 与 `publishDiagnostics` 被动接收；`crates/claude-code-rs/src/tools/lsp.rs` / `crates/claude-code-rs/src/lsp_service/mod.rs` 已提供 completion 与 diagnostics snapshot |
-| BashTool heredoc 校验 | 已补齐子项 | `crates/cc-utils/src/bash.rs` 的 `validate_heredocs()` 已覆盖未闭合 delimiter、quoted delimiter、`<<-`、同一命令行多个 heredoc、quoted text / arithmetic shift 规避；`BashTool::validate_input()` 执行前拒绝畸形 heredoc |
-| BashTool Git 操作跟踪 | 已补齐子项 | `crates/cc-utils/src/git_operation_tracking.rs` 已对齐上游 shell-agnostic 检测，覆盖 commit/amend/cherry-pick、push branch、merge/rebase、`gh pr`、`glab mr create` 与 curl PR endpoint；`BashTool` / `PowerShellTool` 成功结果会附带 `git_operations` 元数据 |
-| BashTool 进程树/取消语义 | 已补齐子项 | `crates/claude-code-rs/src/tools/exec/process_control.rs` 为 Bash/PowerShell 统一配置 Unix process group / Windows `taskkill /T /F`，超时和 abort signal 会终止进程树并返回 `termination` 元数据；PowerShell 已从 `cmd.output()` 改为显式 spawn 以复用同一终止语义 |
-| Bash/PowerShell 危险命令拒绝列表 | 已补齐子项 | `crates/cc-permissions/src/dangerous.rs` 已补齐上游 destructive warning 覆盖面：`git push --force-with-lease`、`git clean` dry-run 例外、`git stash drop/clear`、SQL drop/truncate、PowerShell `Remove-Item`/`Clear-Content`/磁盘与系统 cmdlet；`PowerShellTool` 通过执行安全门调用 PowerShell 专用检测 |
-| PowerShell security validator 高风险规则 | 已补齐子项 | `crates/cc-permissions/src/dangerous.rs` 已覆盖上游 `powershellSecurity.ts` 第一批高风险拦截：`Invoke-Expression`/`iex`、嵌套 `powershell`/`pwsh`、download cradle、`Add-Type`、COM object、`Start-Process` 提权或再拉 PowerShell；WMI/CIM 现在按上游安全发现 #34 对 `Invoke-WmiMethod`/`iwmi`/`Invoke-CimMethod` 任意调用 fail-closed，避免 `$class`/`$method` 动态参数绕过 `Win32_Process Create` 文本匹配；执行安全门测试覆盖 PowerShell 拦截路径 |
-| PowerShell security validator 高风险规则（二） | 已补齐子项 | `crates/cc-permissions/src/dangerous.rs` 继续覆盖 standalone download utilities（`Start-BitsTransfer`/`certutil -urlcache`/`bitsadmin /transfer`）、script file execution、`ForEach-Object -MemberName`、`Invoke-Item`、scheduled task persistence、env scope mutation、module/script loading、alias/variable runtime-state mutation 与 PowerShell alternative parameter prefixes |
-| PowerShell security validator 目标语法规则 | 已补齐子项 | `crates/cc-permissions/src/dangerous.rs` 以执行前硬拦形式覆盖动态调用 `Invoke-Expression`、危险 cmdlet script block、`ForEach-Object` script block、stop-parsing `--%` 与明显危险的 .NET static method 调用（Process/Assembly/Marshal/WebClient）；`PowerShellTool` 现在还会用原生 AST metadata gate 复核结构化语义 |
-| PowerShell security validator AST 启发式规则 | 已补齐子项 | `crates/cc-permissions/src/dangerous.rs` 增加 quote-aware 扫描与 CLM allowlist，覆盖一般 dynamic command name（`& $cmd` / `& (...)`）、dot-sourced dynamic command、`$()` subexpression、expandable string、splatting、member/static member invocation 与非 CLM allowlist type literal；原生 AST metadata gate 已补齐结构化复核 |
-| PowerShell `nameType=application` 命令名 guard 子集 | 已补齐子项 | `crates/cc-permissions/src/dangerous.rs` 现在会在执行安全门中拒绝直接执行本地脚本/应用形式的 PowerShell command name（如 `.\payload.ps1`、`scripts\Out-Null.ps1`、`. .\profile.ps1`、路径限定 `.exe`），覆盖上游 `nameType='application'` 防止脚本路径伪装成安全 cmdlet 的关键语义；原生 AST metadata gate 也会拒绝路径式 command name |
-| PowerShell `securityPatterns.hasScriptBlocks` 子集 | 已补齐子项 | `crates/cc-permissions/src/dangerous.rs` 现在会 fail-closed 拒绝非安全消费者的 script block，仅允许 `Where-Object` / `Sort-Object` / `Select-Object` / `Group-Object` / `Format-*` 等上游安全过滤/输出消费者；原生 AST metadata gate 已接入 statement-level `securityPatterns` |
-| PowerShell parser-invalid fail-closed | 已补齐子项 | `crates/claude-code-rs/src/tools/exec/powershell.rs` 在 `validate_input()` 中调用 PowerShell 原生 `[System.Management.Automation.Language.Parser]::ParseInput()`，完整 parser errors 在执行前 fail-closed；`crates/cc-permissions/src/dangerous.rs` 仍保留明显未闭合 quote/paren/brace/type literal 与 mismatched delimiter 的轻量 fallback |
-| PowerShell 原生 AST metadata 执行前安全门 | 已补齐子项 | `crates/claude-code-rs/src/tools/exec/powershell_parser.rs` 复用 PowerShell 原生 AST 输出 `elementTypes`、colon-bound `children`、raw command-name classification 与 statement `securityPatterns`，并在 `PowerShellTool::validate_input()` 中拒绝动态 command name、路径式 command name、colon-bound 表达式、splatting、stop-parsing、`using` / `#Requires` 与非安全 script block 等结构化风险；测试覆盖安全过滤 script block、动态 command name、colon-bound expression 与 path-like name |
-| PowerShell 参数绑定安全规则 | 已补齐子项 | `crates/cc-permissions/src/dangerous.rs` 继续补上上游 AST validator 的参数绑定语义子集：`Start-Process -Verb:RunAs` 冒号/quote/backtick 形式、`Start-Job`/`Start-ThreadJob` 等位置脚本文件参数、`ForEach-Object` / `%` 位置 `MemberName` 参数；原生 AST metadata gate 已接入 `children` / `elementTypes` 复核 |
-| PowerShell `New-Object` TypeName CLM 校验 | 已补齐子项 | `crates/cc-permissions/src/dangerous.rs` 现在会解析 `New-Object` 的 `-TypeName` / `-t:` / 位置 TypeName 参数，并按上游 ConstrainedLanguage allowlist 拒绝 `System.Net.WebClient`、`System.Diagnostics.Process`、`System.IO.FileInfo` 等非 allowlist .NET 类型；原生 AST metadata gate 已补齐结构化 parser 安全门 |
-| Bash/PowerShell sandbox 文件系统 preflight | 已补齐子项 | `crates/cc-sandbox/src/runner.rs` 的 `preflight_shell_command()` 已接入显式写目标检查，覆盖 shell redirection、常见 Bash 写命令与 PowerShell 写 cmdlet，并按 read-only/workspace/allowWrite/denyWrite 返回 sandbox policy error |
-| Bash/PowerShell sandbox fail-closed 用户面 | 已补齐子项 | `crates/cc-sandbox/src/runner.rs` 已在 OS primitive 不可用且 `sandbox.failIfUnavailable=true` 时硬失败；`/sandbox require` / `/sandbox optional` 现在可在会话内切换 fail-closed 与 best-effort fallback，并在 `/sandbox` 状态中暴露当前边界 |
-| FileEditTool 读后冲突检测 | 已补齐子项 | `Read` 完整文本读取会写入共享 `FileStateCache`；`Edit` 校验和写入前按文件内容 hash 拒绝未读文件或读后被外部修改的文件，并在成功编辑后刷新缓存，避免覆盖用户/格式化器改动 |
-| FileEditTool 文件锁/readonly 写前检查 | 已补齐子项 | `Edit` 在 validate/call 阶段尝试以读写句柄打开目标文件，提前拒绝 readonly、PermissionDenied、WouldBlock 与 Windows sharing violation（5/32/33）等锁定或不可写状态，避免等到覆盖写入时才失败 |
-| FileEditTool 编辑历史备份 | 已补齐子项 | `Edit` 写入改走 `safe_write_text()`，每次覆盖前创建恢复备份并在 tool result / FileChanged hook payload 暴露 `edit_history.backup_path`，同时保留 atomic replace 与权限保持诊断 |
-| FileEditTool 自动缩进修正 | 已补齐子项 | `Edit` 在 `old_string` 精确匹配失败时会查找唯一的“去除 leading whitespace 后等价”代码块，并把 `new_string` 的 leading whitespace 映射到文件中的实际缩进；歧义匹配保持拒绝 |
-| FileEditTool live transcript 接线 | 已补齐子项 | `Edit` 成功结果把 concise model content 与 UI-only `display_preview` 分离；`SdkUserReplay` / headless IPC / Rust TUI 保留 `tool_use_result`，并用 `file_edit_tool_updated_message` 在 prompt/transcript 中渲染结构化 diff 预览 |
-| AgentTool 工具白名单与去重 | 已补齐子项 | `crates/claude-code-rs/src/engine/agent/mod.rs` 创建 child `QueryEngineConfig` 前会按 `subagent_type` 解析内置/用户/项目 agent 定义，应用 `tools` allow-list、`disallowedTools` deny-list、`Bash(...)` 等规则规格的基础工具名解析，并按工具名去重；Explore/Plan/code-reviewer 等只读内置 agent 不再继承全量工具 |
-| AgentTool 团队上下文继承 | 已补齐子项 | `crates/cc-engine/src/types/config.rs` 的 `AgentContext` 携带父会话 `team_context`，`QueryEngine::new()` 初始化子 agent AppState 时恢复该上下文，`build_child_config()` 从父 `ToolUseContext` 注入当前团队；子 agent 中的 `SendMessage` 不再因默认 AppState 丢失团队上下文 |
-| AgentTool 多 agent 调度入口 | 已补齐子项 | `Agent` schema 对齐上游 `name` / `team_name` / `mode` 参数；提供 `name` 时走现有 `TeamSpawn` in-process teammate 路径，继承显式或当前 team context，输出 `status: "teammate_spawned"` / `teammate_id` / `team_name`，并把 `mode: "plan"` 传递为 teammate plan-mode requirement；tmux/iTerm2 pane 后端仍按 §7 Intentional 裁剪 |
-| WebFetch redirect policy | 已补齐子项 | `WebFetch` 已改为手动 redirect 处理：最多 10 跳，仅自动跟随同 scheme、同显式 port、同 host/`www.` 变体且无凭据的 redirect；跨 host / scheme / port / credential redirect 会返回 `redirect_detected` 诊断和目标 URL，避免静默跨站抓取 |
-| WebFetch Content-Type 基础分发 | 已补齐子项 | `WebFetch` 现在按 MIME 分发响应：HTML（大小写不敏感）继续提取文本，`application/json` / `+json` pretty-print，text/XML/JS/form 等文本直出，PDF/Office/image/audio/video 等二进制 MIME 返回 `binary: true` 诊断而不把 raw bytes 塞进模型上下文 |
-| WebFetch 环境代理支持 | 已补齐子项 | `WebFetch` 构建 HTTP client 时会显式读取 `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY`（含小写变体），按请求 scheme 选择代理，并支持 `NO_PROXY` / `no_proxy` 的 exact、domain suffix、host:port 与 `*` 绕过规则 |
-| WebFetch Cookie/credential 安全边界 | 已补齐子项 | 对齐上游 `validateURL()` 的“未支持 cookies/internal domains”边界，`WebFetch` 现在在 URL 规范化与输入校验阶段拒绝 `https://user:pass@host` 等 embedded credentials；Rust reqwest client 不启用 cookie store，避免静默携带 cookie / Basic Auth 语义 |
-| TaskTools `TaskOutput` 阻塞/超时读取 | 已补齐子项 | `TaskOutput` schema 已补 `block` / `timeout`（0..600000ms，默认 30000ms）并返回上游兼容 `retrieval_status: success / timeout / not_ready` + nested `task`；保留旧 flat output 字段给既有调用方；等待循环会轮询 task store 并响应 abort signal |
-| TaskTools 上游 task type taxonomy | 已补齐子项 | `TaskCreate.kind` schema 对齐上游 task type：`local_bash` / `local_agent` / `remote_agent` / `in_process_teammate` / `local_workflow` / `monitor_mcp` / `dream`（保留 Rust generic `tool`）；历史 `local_shell` / `workflow` / `monitor` / `team` 等 alias 会在创建和持久化恢复时 canonicalize |
-| TaskTools remote/multi-type supervisor metadata | 已补齐子项 | `TaskStore` schema v4 持久化 `tool_use_id`、`remote_task_type`、`remote_session_id`、`remote_task_metadata`、`poll_started_at` 等上游 remote supervisor 恢复所需字段；`TaskCreate` schema、`TaskGet`/`TaskList` JSON、`TaskOutput` payload 与 `/tasks show` 均暴露这些元数据 |
-| TaskTools remote restart recoverable marker | 已补齐子项 | `TaskStore` 重启加载时会把携带 `remote_agent` / `remote_session_id` / `remote_task_type` 身份的未完成任务标记为 `recoverable`，保留 `previous_status` / `recovered_at` 与 remote metadata；`TaskOutput` 会把 `recoverable` 视为仍未就绪，等待后续 poller reconnect 或用户停止 |
-| TaskTools remote restore poll timer reset | 已补齐子项 | 对齐上游 `RemoteAgentTask` restore 语义：remote task 在重启恢复为 `recoverable` 时把 `poll_started_at` 重置为当前恢复时间，避免 remote review 因离线时间超过 30 分钟而一恢复就触发超时；终态 remote task 保持原始 `poll_started_at` |
-| TaskTools remote review timeout guard | 已补齐子项 | 对齐上游 `REMOTE_REVIEW_TIMEOUT_MS = 30min` 语义：`TaskStore` 在读取/list 时会刷新 `ultrareview` / `isRemoteReview` 任务，若仍处于 active/recoverable 且 `poll_started_at` 超过 30 分钟，则持久化为 `failed` 并写入 remote review timeout retained output |
-| PlanMode 保守 classifier / 计划持久化 | 已补齐子项 | `crates/claude-code-rs/src/plan_workflow.rs` 已集中管理 plan workflow，IPC / daemon 用户入口会通过保守关键词 classifier 进入 Plan mode；`.cc-rust/current-plan-workflow.json` 持久化 `PlanWorkflowRecord`，记录 draft / approval / rejected / approved 状态与 trace |
-| PlanMode 实现任务关联追踪 | 已补齐子项 | `TaskCreate` 创建实现任务后会把已批准或执行中的 `PlanWorkflowRecord` link 到 task id，将状态推进到 `implementing` 并持久化；tool result 暴露更新后的 `plan_workflow`，覆盖 plan→approval→implementation evidence 闭环 |
-| PlanMode 团队审批 mailbox flow | 已补齐子项 | `SendMessage` 现在处理 `plan_approval_request` / `plan_approval_response` 协议消息：请求会标记 teammate `awaiting_plan_approval`，响应会清除 pending、应用返回的 `permissionMode`，runner 会把批准/驳回反馈注入 teammate 下一轮消息；`/tasks` surface 可显示等待审批与 permission mode |
-| PlanMode 专用计划文件写入白名单 | 已补齐子项 | Stage 3c Plan gate 现在只允许 `Write` / `Edit` / `FileWrite` / `FileEdit` 维护当前解析出的 plan 文件（项目 `.cc-rust/plan.md` 或全局 plan fallback），其余非只读工具继续拒绝；execution pipeline 对该专用 plan file 写入跳过普通 Plan-mode prompt，使非交互 Plan mode 可增量维护计划但不能写其他文件 |
-
-### 2.2 仍需补齐的工具 parity
-
-| 模块 | 待补齐的行为（参考上游） |
-|------|----------|
-| TaskTools | 远程/多类型后台任务 poller/reconnect runtime parity；磁盘持久化、基础依赖字段、输出保留、`TaskOutput` 阻塞/超时读取、上游 task type taxonomy、remote supervisor 元数据底座、remote restart recoverable marker、remote restore poll timer reset、remote review timeout guard、后台 local-agent 取消和 `/tasks` 独立 UI 基础已完成 |
-| PlanMode | full auto-mode LLM classifier parity；保守 classifier gate、计划工作流持久化、ExitPlanMode approval lifecycle、实现任务关联追踪、团队审批 mailbox flow、专用计划文件写入白名单已落地；Phase 2 shared classifier foundation 已存在但尚未接入 Plan `allowedPrompts` 语义分类 |
-| WebFetch | JS 渲染；redirect budget / cross-host redirect diagnostic、Content-Type 基础分发、环境代理/`NO_PROXY` 与 Cookie/credential 安全边界子项已落地 |
-
-### 2.3 更新后的顺序执行计划（逐项领取）
-
-每个条目完成时都按同一收口流程处理：读上游实现 → 改 Rust 端 → 补单元/e2e → `cargo fmt --all --check` + 对应构建 → 更新本文件与 archive → 单独提交。
-
-1. **TaskTools 后台任务 parity**：在现有持久化、取消、`TaskOutput` 阻塞/超时读取、上游 task type taxonomy、remote supervisor 元数据底座、remote restart recoverable marker、restore poll timer reset 和 remote review timeout guard 基础上，补远程/多类型后台任务 poller/reconnect runtime parity，并验证 `/tasks` UI 与 task store 的状态一致性。
-2. **PlanMode auto-mode parity**：在已有保守 classifier、计划持久化、审批状态、团队审批 mailbox flow、专用计划文件写入白名单、`TaskCreate` 关联追踪与 Phase 2 shared classifier foundation 基础上，补 full auto-mode LLM classifier parity；完成后用 plan 创建、恢复、审批、执行关联与 plan 文件增量维护的 e2e 覆盖。
-3. **WebFetch browser-grade 能力**：按 `architecture/mvp-optimization-plans/MVP-009-web-fetch-browser-grade-plan.md` 逐步补 JS 渲染；redirect budget / cross-host redirect diagnostic、Content-Type 基础分发、环境代理/`NO_PROXY` 和 Cookie/credential 安全边界已完成。
-4. **API providers 决策/实现**：Bedrock 原生 AWS EventStream 与 Vertex direct service-account JWT exchange 已实现；继续按 `architecture/mvp-optimization-plans/MVP-001-api-providers-plan.md` 收束 Azure 命名/能力矩阵与真实 provider/e2e 覆盖，不再停留在“部分完成”。
-5. **Team Memory 客户端同步**：接通 `src/daemon/team_memory_proxy.rs` / `ui/team-memory-server/` 的前端调用路径，补同步、断线恢复与冲突处理测试。
-6. **UI caveats 收束**：修复 §3 的终端 resize 回流与窄终端欢迎页布局；完成后迁移到 archive 或 `KNOWN_ISSUES.md` closed 记录。
-7. **活跃方案文档清理**：逐个复核 §4 文档，能落地的拆成实现任务，过期或已覆盖的归档，仍有效的保留 owner/下一步。
-8. **历史 Deferred 重评**：按 §5 类别决定实现、延期或 §7 Intentional 裁剪；不得继续用 "lite 不做" 作为理由。
-9. **最终全量复核**：跑覆盖相关工具面的单元/e2e 与 release build，确认本节没有残留 TODO，更新 `WORK_STATUS.md` / archive 后收尾。
-
-补齐流程：
-1. 读上游实现（`F:\AIclassmanager\cc\src\tools\<name>\**` 或 `claude-code-bun` 同名模块）。
-2. 改 Rust 端实现，补测试。
-3. 条目从本表删除，迁移到 [`archive/COMPLETED_FULL.md`](archive/COMPLETED_FULL.md)。
-4. 同步更新 [`archive/COMPLETED_SIMPLIFIED.md`](archive/COMPLETED_SIMPLIFIED.md) 里该模块的状态行。
-
-如某项确实要"故意保留缩减"（平台差异、许可、明确裁剪），把它从本表移到新的 §7 "Intentional 裁剪"，并在 PR 说明理由——不要悄悄留在本节。
-
-## 3. 已知设计限制与运行时 caveats
-
-这些问题已经在文档中明确记录，但尚未补齐：
-
-| 范围 | 状态 | 说明 |
-|------|------|------|
-| UI resize 回流 | Open | 终端缩放后内容不会可靠重排 |
-| 窄终端欢迎页布局 | Open | Tips 文本截断、ASCII logo 破碎 |
-
-> Background agent + worktree、权限回调、取消/退出清理已由 `crates/claude-code-rs/src/engine/agent/supervisor.rs` 收口；历史 caveat 不再作为 Open 项保留。如后续发现回归，再写入本节。
-
-## 4. 仍在进行或仅有方案文档的工作
+## 2. 活跃方案文档
 
 以下文档仍是活跃入口，不应归档为“已完成”：
 
-- [`computer-use-implementation-checklist.md`](computer-use-implementation-checklist.md)：Computer Use 落地清单，仍是待实施能力
-- [`session-export-implementation-guide.md`](session-export-implementation-guide.md)：目标明确，但 Rust 侧仍缺基础设施
-- [`ipc-refactor-plan.md`](ipc-refactor-plan.md)：IPC 结构重构计划，尚未完全收束
-- [`traceable-logging-plan.md`](traceable-logging-plan.md)：可追溯日志体系，仍是 Draft
-- [`superpowers/plans/2026-04-11-team-memory-sync.md`](superpowers/plans/2026-04-11-team-memory-sync.md)：Team Memory 客户端同步待做
-- [`superpowers/specs/2026-04-11-team-memory-sync-design.md`](superpowers/specs/2026-04-11-team-memory-sync-design.md)：对应设计仍是现行参考
-- [`superpowers/plans/2026-04-12-tools-commands-test-coverage.md`](superpowers/plans/2026-04-12-tools-commands-test-coverage.md)：测试覆盖补齐计划仍有效
-- [`superpowers/plans/2026-04-09-pty-commands-and-multi-turn.md`](superpowers/plans/2026-04-09-pty-commands-and-multi-turn.md)：PTY 交互测试扩展计划仍有效
+- [computer-use-implementation-checklist.md](computer-use-implementation-checklist.md): Computer Use 落地清单，仍是待实施能力。
+- [session-export-implementation-guide.md](session-export-implementation-guide.md): Rust 侧仍缺完整导出基础设施。
+- [ipc-refactor-plan.md](ipc-refactor-plan.md): IPC 结构重构计划尚未完全收束。
+- [traceable-logging-plan.md](traceable-logging-plan.md): 可追溯日志体系仍是 Draft。
+- [daemon-usability-plan.md](daemon-usability-plan.md): daemon 可用化主干已分阶段落地，但仍有 worker/route ownership 余量。
+- [superpowers/plans/2026-04-11-team-memory-sync.md](superpowers/plans/2026-04-11-team-memory-sync.md): Team Memory 客户端同步仍需 e2e 与文档收口。
+- [superpowers/specs/2026-04-11-team-memory-sync-design.md](superpowers/specs/2026-04-11-team-memory-sync-design.md): Team Memory 验证清单仍有效。
+- [superpowers/plans/2026-04-12-tools-commands-test-coverage.md](superpowers/plans/2026-04-12-tools-commands-test-coverage.md): 测试覆盖补齐计划仍有效。
+- [superpowers/plans/2026-04-09-pty-commands-and-multi-turn.md](superpowers/plans/2026-04-09-pty-commands-and-multi-turn.md): PTY 交互测试扩展计划仍有效。
+- [superpowers/specs/2026-04-20-workspace-split-design.md](superpowers/specs/2026-04-20-workspace-split-design.md): workspace split 后续 phase 仍开放。
 
-## 5. 历史 Deferred 清单（进入全量构建后需要重评）
+## 3. 已知设计限制与 runtime caveats
 
-> **状态反转**：下列能力原先被登记为"`rust-lite` 明确不做"。进入全量构建阶段后，这些**不再自动等于"不实现"**——任何触及它们的新工作默认按上游完整版对齐，除非重新评估后确认保留延期并写入 §7 "Intentional 裁剪"。
+| 范围 | 状态 | 说明 |
+| --- | --- | --- |
+| UI resize 回流 | 部分收口 | Rust TUI 已有 width-aware virtual scroll 回归；TS/OpenTUI fullscreen/maximize 白行问题仍在 [KNOWN_ISSUES.md](KNOWN_ISSUES.md) 跟踪。 |
+| Rust TUI shell output | 基础完成，自动策略未完 | renderer 已支持 expanded/collapsed/detail view；最新 shell output 自动展开仍待 runtime context 接线。 |
+| Rust TUI Ctrl+R history | 基础完成，持久历史未完 | 当前只搜索本次 TUI session prompt；跨会话历史 reader/API 未接。 |
+| Browser MCP real-server path | 未验证 | 配置/提示/渲染基础存在，但尚未对真实 browser MCP server 做截图/console/network 端到端验证。 |
 
-原 lite 延期范围，保留作为历史对照：
+## 4. 历史 Deferred 重评队列
 
-- 远程控制与多端集成：`/remote-control`、`/desktop`、`/mobile`、`bridge/`、`remote/`
-- 服务端/传输扩展：`server/`、SSE/WebSocket/Worker transport、MCP server mode
-- 远程/运营能力：`Monitor`、`PushNotification`、`SubscribePR`、`Workflow`、遥测与 MDM 同步
-- Ant-only 命令与内部工具：`/agents-platform`、`/ant-trace`、`CtxInspect`、`OverflowTest`、`Tungsten` 等
+历史 `rust-lite` deferred 不再自动等于“不实现”。触及时按以下类别处理：
 
-完整列表以 [`WORK_STATUS.md`](WORK_STATUS.md) §3 为准。重评时按模块类别单独判断：
-- **Ant-only 内部工具**：继续不实现的可信度高；仍建议写入 §7。
-- **远程/多端/服务端扩展**：默认按上游补齐；如决定延期，必须有明确理由与截止期。
-- **遥测 / MDM / analytics**：看后续产品路线重评，不再默认视为"永远不做"。
+- 远程控制与多端集成：`/remote-control`、`/desktop`、`/mobile`、`bridge/`、`remote/`。
+- 服务端/传输扩展：`server/`、SSE/WebSocket/Worker transport、MCP server mode。
+- 远程/运营能力：`Monitor`、`PushNotification`、`SubscribePR`、`Workflow`、遥测与 MDM 同步。
+- Ant-only 命令与内部工具：`/agents-platform`、`/ant-trace`、`CtxInspect`、`OverflowTest`、`Tungsten` 等。
 
-## 6. 代码层技术债入口
+重评规则：
 
-`TECH_DEBT.md` 里的这些问题仍然是活跃债务来源：
+1. 默认按上游完整行为补齐。
+2. 若决定延期，必须有明确理由与复审条件。
+3. 若决定不跟随上游，必须登记到 §6 "Intentional 裁剪"。
+4. 不允许仅以 "lite 版本不做" 作为理由。
 
-- `#![allow(unused)]` 清理仍未做完
-- `test_ctx()` 等测试样板仍未完全收束到共享 helper
-- 模型别名映射仍未完全合并到单一查找表
-- 工具输入解析风格仍不统一
-- IPC 协议仍缺显式版本策略
+## 5. 代码层技术债入口
 
-如果只想看"现在不能指望它已经完善"的地方，优先读本文；如果要进入修复实施，再去看对应的源文档。
+`TECH_DEBT.md` 中仍然活跃的债务来源包括：
 
-## 7. Intentional 裁剪（明确不跟随上游）
+- `#![allow(unused)]` 清理未完成。
+- `test_ctx()` 等测试样板未完全收束到共享 helper。
+- 模型别名映射未完全合并到单一查找表。
+- 工具输入解析风格不统一。
+- IPC 协议缺显式版本策略。
 
-> 本节用于登记**全量构建阶段确认不跟随上游**的裁剪项。与 §2 / §5 的区别：§2 / §5 是"尚未对齐的 TODO"，本节是"经评估后决定不做"。
+## 6. Intentional 裁剪
 
-条目格式：`- <模块/功能>：裁剪理由 | 决策者 | 日期 | 复审触发条件`
+本节登记全量构建阶段确认不跟随上游的裁剪项。格式：
 
-示例（占位，按需新增，避免空泛）：
+`- <模块/功能>: <裁剪理由> | <决策者> | <日期> | <复审触发条件>`
 
-- Agent Teams tmux/iTerm2 pane backend：cc-rust 当前主运行环境包含 Windows，外部 pane 后端会引入 tmux/iTerm2/窗口管理器耦合、跨平台清理语义和额外交互面；MVP-005 决定不实现外部 pane backend，而是把 in-process backend 做成唯一受支持路径并补齐生命周期控制。`PaneBackend` trait 保留为未来上游 parity 审查边界。| Codex | 2026-04-28 | 用户明确需要可见终端 pane、上游 pane protocol 成为产品必需项，或 cc-rust roadmap 切换到 Unix terminal-pane 优先发布
-- BashTool Windows Restricted Token / Job Object OS-level primitive：上游 `@anthropic-ai/sandbox-runtime` 当前只对 macOS、Linux 与 WSL2 暴露 sandbox 支持，PowerShell permission UI 明确没有 sandbox toggle（Windows 不支持 sandbox）；cc-rust 不自研 Windows token/job sandbox，保留 Rust-level FS/network preflight、`/sandbox require` fail-closed 与 unavailable 诊断。| Codex | 2026-05-05 | 上游发布 Windows sandbox-runtime backend、PowerShell sandbox toggle 成为产品必需项，或安全策略要求 Windows OS-level enforcement
+- Agent Teams tmux/iTerm2 pane backend: cc-rust 当前主运行环境包含 Windows，外部 pane backend 会引入 tmux/iTerm2/窗口管理器耦合、跨平台清理语义和额外交互面；MVP-005 决定不实现外部 pane backend，而是把 in-process backend 做成唯一受支持路径并补齐生命周期控制。`PaneBackend` trait 保留为未来上游 parity 审查边界。 | Codex | 2026-04-28 | 用户明确需要可见终端 pane、上游 pane protocol 成为产品必需项，或 cc-rust roadmap 切换到 Unix terminal-pane 优先发布。
+- BashTool Windows Restricted Token / Job Object OS-level primitive: 上游 `@anthropic-ai/sandbox-runtime` 当前只对 macOS、Linux 与 WSL2 暴露 sandbox 支持，PowerShell permission UI 明确没有 sandbox toggle；cc-rust 不自研 Windows token/job sandbox，保留 Rust-level FS/network preflight、`/sandbox require` fail-closed 与 unavailable 诊断。 | Codex | 2026-05-05 | 上游发布 Windows sandbox-runtime backend、PowerShell sandbox toggle 成为产品必需项，或安全策略要求 Windows OS-level enforcement。
 
 新增规则：
-1. 任何进入本节的条目必须在 PR 里说明理由，并列出未来需要复审的触发条件（例如"上游发布 v2 协议后复审"）。
-2. 不允许仅以"lite 版本不做"作为裁剪理由——那是阶段语境，不再成立。
-3. 每季度至少复审一次本节，过期未复审的条目自动回落到 §2 / §5 的 TODO 队列。
+
+1. 任何进入本节的条目必须在 PR 中说明理由，并列出未来复审触发条件。
+2. 每季度至少复审一次本节。
+3. 过期未复审的条目回落到 TODO 队列。

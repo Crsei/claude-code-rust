@@ -1,238 +1,56 @@
 # cc-rust 工作状态总览
 
-## 2026-05-06 Extensibility Phase 6 Integration Closure
+> 更新日期: 2026-05-07 | 分支历史名: `rust-lite` | 当前阶段: 全量构建 / Full Build
 
-- Runtime MCP tool-registry refresh is complete: `QueryEngineDeps::refresh_tools()` rebuilds dynamic MCP wrappers from the shared runtime `McpManager`, preserves native MCP-named tools such as Computer Use, refreshes ToolSearch, and the query loop refreshes before model calls so servers first connected after startup are visible on the next turn.
-- Extensibility closure status: hooks and skills remain implemented baselines; custom-agent safety is complete for the active runtime; MCP client configuration/protocol support covers stdio, local/remote SSE compatibility, Streamable HTTP, OAuth, reconnect, retry, channel notifications, and late-connect tool refresh. WebSocket remains unsupported/custom because it is outside the current standard MCP transport matrix.
+本文件只保留当前阶段仍需要判断和执行的状态。已经确认实现、已关闭或只具历史价值的阶段记录统一看：
 
-## 2026-05-06 Extensibility Custom Agent Phase 5
+- [archive/COMPLETED_FULL.md](archive/COMPLETED_FULL.md)
+- [archive/completed-gap-closures-2026-05-07.md](archive/completed-gap-closures-2026-05-07.md)
+- [archive/issues/](archive/issues/)
 
-- Custom agent safety contract is complete for the current runtime path: child agents inherit parent tool permission context, user/project `permissionMode` applies only from default parent mode, plugin `permissionMode` is ignored, `disallowedTools` wins over `tools`, `disallowedTools: *` denies all tools, and `mcp__server__*` wildcard specs match namespaced tools.
-- Agent definitions now normalize security lists and `isolation: worktree`, reject unknown editable `isolation` values and `maxTurns: 0`, and apply definition defaults for model, background execution, isolation, teammate mode, and child `maxTurns`.
-- Superseded by Phase 6: runtime tool-registry refresh and integration documentation closure are complete.
+缩减实现、未完备项和 intentional crop 统一看 [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md)。开放问题与代码审查发现统一看 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)。
 
-## 2026-05-06 Extensibility MCP Phase 4
+## 当前结论
 
-- MCP Streamable HTTP is complete for the current standard HTTP transport: POST JSON-RPC, JSON or SSE response bodies, `MCP-Session-Id`, `MCP-Protocol-Version`, optional GET SSE listener, DELETE session cleanup, OAuth header reuse, and secure remote HTTPS / loopback HTTP validation.
-- WebSocket is documented as unsupported/custom because the current official MCP transport matrix standardizes stdio and Streamable HTTP; legacy SSE remains compatibility support.
-- Superseded by Phases 5-6: custom-agent safety, runtime tool-registry refresh for newly connected MCP servers, and integration closure are complete.
+cc-rust 已不再按历史 "Lite" 边界维护。触及上游能力时，默认按 `F:\AIclassmanager\cc\src\**` 或 `F:\AIclassmanager\cc\claude-code-bun\**` 的完整行为对齐；确需保留裁剪时，必须写入 [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md) 的 "Intentional 裁剪"。
 
-## 2026-05-06 Extensibility MCP Phase 3
+当前已确认完成并归档的主线包括：
 
-- MCP OAuth / interactive auth is complete for the remote SSE auth contract: config metadata, manual PKCE start/complete, redacted status/clear, token refresh, IPC auth events, and `Authorization` injection all use cc-rust isolated paths.
-- Remaining extensibility MCP work after this phase was Streamable HTTP / WebSocket / IDE transport matrix, and runtime tool-registry refresh for newly connected MCP servers.
+- API 基线：Anthropic、OpenAI compatible、Google Gemini、Azure、Bedrock、Vertex 均有运行时支持；真实 provider/e2e 覆盖仍是后续质量门。
+- 认证：API key、系统 Keychain、OAuth PKCE、token 持久化与刷新已落地。
+- 工具基线：Bash、PowerShell、Read、Write、Edit、Grep、Glob、Agent、Skill、LSP、Tasks、Web、Brief、Sleep 等主路径已落地。
+- Agent Teams：in-process backend、`/team`、`TeamSpawn`、`SendMessage`、Team Dashboard 已收口；tmux/iTerm2 pane backend 是 intentional crop。
+- Extensibility：hooks、skills、custom-agent active runtime safety、MCP stdio/local SSE/remote SSE/Streamable HTTP/OAuth/reconnect/tool refresh 已按当前标准面闭环。
+- Ratatui UI：P0/P1 基础面已完成，残余项转入 [KNOWN_ISSUES.md](KNOWN_ISSUES.md) 跟踪。
+- Runtime storage：`CC_RUST_HOME` / `~/.cc-rust/` 路径隔离已落地，旧计划归档。
 
-## 2026-05-06 Extensibility MCP Phase 2
+## 活跃待办
 
-- Remote `https://` SSE compatibility is complete for the existing `type = "sse"` transport: no redirects, same-origin endpoint events, protected protocol headers, redacted URL logging, JSON-RPC POST reuse, and `auth-needed` classification on HTTP 401/403.
-- Remaining extensibility MCP work after this phase was OAuth / interactive auth, Streamable HTTP / WebSocket / IDE transport matrix, and runtime tool-registry refresh for newly connected MCP servers.
+| 范围 | 当前状态 | 下一步 |
+| --- | --- | --- |
+| API providers | 基线完成，质量门未完全收束 | 收束 Azure 命名/能力矩阵与真实 Bedrock/Vertex/Azure provider e2e 覆盖。 |
+| Team Memory 客户端同步 | 代码路径已接通，验证与文档收口未完 | 补同步、断线恢复、冲突处理 e2e；通过后归档旧 Team Memory plan/spec。 |
+| TaskTools | 多数基础已完成，remote/multi-type poller parity 仍开放 | 对齐远程/多类型后台任务 poller/reconnect runtime。 |
+| PlanMode | 保守 classifier、持久化、审批和 plan file 白名单已完成 | 补 full auto-mode LLM classifier parity，并覆盖 plan 创建/恢复/审批/e2e。 |
+| WebFetch | redirect/MIME/proxy/credential 边界已完成 | 补 browser-grade JS 渲染或明确裁剪。 |
+| Daemon | Phase 1-7 主干记录已落地，仍有 worker/route ownership 余量 | 继续把真实 submit/abort 与 scheduler ownership 从兼容路径迁入 supervisor/worker 架构。 |
+| UI/runtime issues | P0/P1 基础完成，存在 residuals | 见 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)。 |
+| 文档状态一致性 | 本轮已收敛顶层入口 | 后续每完成一个模块，都同步迁移完成记录到 archive，避免活跃 TODO 文档堆积完成历史。 |
 
-## 2026-05-06 Extensibility MCP Phase 1
+## 活跃文档入口
 
-- MCP lifecycle integration is complete for `/mcp connect`, `/mcp disconnect`, `/mcp reconnect`, and IPC MCP lifecycle commands. All route through the shared runtime `McpManager` and report live status snapshots.
-- Remaining extensibility MCP work: remote HTTPS SSE, OAuth / interactive auth, full HTTP/WS transport matrix, and runtime tool-registry refresh for newly connected MCP servers.
+- [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md): 未完备项、全量构建 TODO、intentional crop。
+- [KNOWN_ISSUES.md](KNOWN_ISSUES.md): 当前开放问题、代码审查发现、文档状态问题。
+- [COMMAND_REFERENCE.md](COMMAND_REFERENCE.md), [CLI_REFERENCE.md](CLI_REFERENCE.md), [USAGE_GUIDE.md](USAGE_GUIDE.md): 用户命令与使用说明。
+- [DAEMON_OPERATIONS.md](DAEMON_OPERATIONS.md), [daemon-usability-plan.md](daemon-usability-plan.md): daemon 当前操作面与后续计划。
+- [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md), [ui-parity-update-plan.md](ui-parity-update-plan.md): Rust TUI 对标与后续 UI parity。
+- [STORAGE.md](STORAGE.md): cc-rust 路径隔离与数据目录规则。
+- [traceable-logging-plan.md](traceable-logging-plan.md): 可追溯日志体系 draft。
 
-> 更新日期: 2026-05-06 | 分支: `rust-lite`（历史名称，当前阶段：**全量构建 / Full Build**）
->
-> **阶段说明**：本仓库已从 "rust-lite 精简版" 切换到**全量构建**。§3 原"显式延期 (Deferred)"清单不再默认等于"不做"，触及这些条目的新工作默认按上游完整实现对齐，除非重新评估后登记到 [`IMPLEMENTATION_GAPS.md`](IMPLEMENTATION_GAPS.md) §7 "Intentional 裁剪"。详细规则见 [`../CLAUDE.md`](../CLAUDE.md) 顶部"当前阶段"说明。
->
-> 本文档合并了原 `UNIMPLEMENTED_CHECKLIST.md`、`sdk-work-tracker.md`、`unfinished-features.md`
-> 三份文档，作为唯一的状态跟踪入口。
->
-> 缩减实现、设计限制与注意事项统一汇总见 [`IMPLEMENTATION_GAPS.md`](IMPLEMENTATION_GAPS.md)。
->
-> 与 `claude-code-bun` 的差异、Web UI 进行度、REPL 结构对比与后续路线图见 [`claude-code-bun-gap-plan.md`](claude-code-bun-gap-plan.md)。
+## 历史 Deferred
 
----
+历史 deferred 不再等于 "不做"。远程控制、多端集成、服务端扩展、遥测/MDM、Ant-only 命令和内部工具都需要在触及时重新评估：
 
-## 1. 未完成功能 (需实现)
-
-### 1.1 API 提供商
-
-| 提供商 | 文件 | 状态 | 说明 |
-|--------|------|------|------|
-| AWS Bedrock | `crates/claude-code-rs/src/api/bedrock.rs` + `api/client/mod.rs` | ✅ Supported | `CLAUDE_CODE_USE_BEDROCK`; bearer token or SigV4; `/invoke-with-response-stream` AWS EventStream |
-| GCP Vertex AI | `crates/claude-code-rs/src/api/vertex.rs` + `api/client/mod.rs` | ✅ Supported | `CLAUDE_CODE_USE_VERTEX`; OAuth token/env, service-account JSON, or gcloud ADC; `:streamRawPredict` SSE |
-
-已完成: Anthropic 直连, OpenAI 兼容, Google Gemini, Azure
-
-### 1.2 认证 ✅ 全部完成
-
-~~OAuth 登录/刷新/登出~~ — **2026-04-11 已实现**
-
-已完成: API Key 环境变量, 系统 Keychain, OAuth PKCE (Claude.ai + Console), Token 持久化 + 自动刷新
-
-### 1.3 Agent Teams / Coordinator Mode
-
-**收口状态**：in-process 闭环 + 用户面全量已落地。env var 不再是唯一开关，`/team create` 或 `TeamSpawn` 工具会在会话内即时解锁 team 功能。MVP-005 已明确 backend 策略：cc-rust 只支持 in-process；tmux/iTerm2 pane backend 记录为 intentional crop。
-
-| 子模块 | 文件 | 状态 |
-|--------|------|------|
-| in-process runner | `src/teams/runner.rs` | ✅ — 驱动子 QueryEngine，处理 mailbox 协议消息；首轮完成后保持 idle loop，后续 mailbox 普通消息会继续进入同一 teammate 会话 |
-| `SendMessage` 工具 | `src/tools/send_message.rs` | ✅ — 对话内消息路由；`is_enabled` 总返回 true，call 时检查 team_context |
-| `TeamSpawn` 工具 | `src/tools/team_spawn.rs` | ✅ — 对话内拉起 teammate，缺 team 时自动建 session 团队 |
-| `/team` 斜杠命令 | `src/commands/team_cmd.rs` | ✅ — `create / list / status / spawn / send / kill / leave / delete` |
-| Team Dashboard | `ui/src/components/TeamPanel.tsx` | ✅ — 订阅 `BackendMessage::TeamEvent`，展示成员/未读/最近消息 |
-| IPC QueryTeamStatus | `src/ipc/agent_handlers.rs` | ✅ — `build_team_status_events` 读盘后发 `StatusSnapshot` |
-| 终端后端 trait | `src/teams/backend.rs` | **Intentional crop** — `SUPPORTED_BACKENDS` 仅包含 `in-process`；`PaneBackend` trait 只保留为未来 parity 审查边界 |
-
-- 激活入口：`crate::teams::is_agent_teams_active(&app_state)` — env var 或 `team_context` 任一满足即启用
-- ingress 同步：`src/ipc/ingress.rs` 斜杠命令执行后把 `app_state.team_context` 同步回 engine
-- 已完成 (10/11 含 runner/backend + SendMessage + TeamSpawn + /team 命令 + TeamPanel); Phase 6 e2e 已补齐 coordinator/team/tasks headless 回归、PR webhook 模拟回归与 worktree hook 回归
-
-### 1.4 工具
-
-| 工具 | 文件 | 状态 |
-|------|------|------|
-| Agent 后台模式 | `src/tools/agent.rs` | ✅ — `run_in_background` 通过 tokio::spawn + mpsc 异步执行 |
-| Tasks V2 / TodoWrite | `src/tools/tasks.rs` | Complete - task-list isolation, monotonic IDs, locks, owner claim, activeForm/metadata, dependency updates, teammate owner release, and web provider-diff docs are closed |
-
-其余 29 个工具均已完整实现 (含 BriefTool, SleepTool)。
-
-### 1.5 权限系统
-
-| 阶段 | 文件 | 状态 |
-|------|------|------|
-| Phase 2 (Hook 拦截) | `src/permissions/decision.rs:259-362` + `src/tools/execution/pipeline.rs:124-211` | ✅ — 预执行 hook 结果经 `HookPermissionDecision` 折入中心决策，deny/ask/allow 按 spec 顺序生效 |
-
-已完成: Phase 1a/1b 规则匹配, Phase 2 hook 拦截, Phase 3 模式检查。
-
-### 1.6 IPC
-
-| 功能 | 文件 | 状态 |
-|------|------|------|
-| clear_messages | `src/engine/lifecycle/mod.rs:245` + `src/ipc/ingress.rs:332-339` | ✅ — `/clear` 命令调用 `engine.clear_messages()` 真清空后端历史，再广播 `conversation_replaced` 给前端 |
-
-### 1.7 前端 (终端 UI)
-
-| 功能 | 文件 | 状态 |
-|------|------|------|
-| Vim 状态机 | `ui/src/vim/state-machine.ts` | ✅ — normal/insert/visual 三模式；导航 (h/l/0/$/^/w/b/e)、operator (d/y/c)、单键 (x/X/p/u/D/C) 与 visual 选区；不计划扩展到完整 Vim 语义 |
-| 终端 resize 回流 | `src/ui/tui.rs` + `src/ui/virtual_scroll.rs` | ✅ (Rust TUI 端 2026-04-19) / **Open** (TS/OpenTUI 端) — 见 KNOWN_ISSUES #1 |
-| ratatui UI parity P0/P1 | `docs/RATATUI_UI_PARITY.md` + `crates/claude-code-rs/src/ui/**` | ✅ (2026-05-04 milestone) — P0 shell/diff/search/history/progress/tool-activity foundation and P1 settings/tasks/status/MCP/file-edit render surfaces are complete; live shell auto-expand, persistent Ctrl+R history, live IDE/PR indicators, Claude Desktop MCP discovery, and file-edit transcript event wiring remain explicit backend-gated residuals |
-| 窄终端布局降级 | — | **Open** — KNOWN_ISSUES #4, #5 |
-
-14 个核心组件均已完成。
-
----
-
-## 2. SDK 对标路线图
-
-> 对标: OpenAI Codex SDK (`docs/reference/Codex_SDK_Features.md`)
-
-### P0 — 安全加固 ✅ 全部完成
-
-| # | 功能 | 完成日期 |
-|---|------|----------|
-| P0-1 | 危险命令拦截 (Stage 3c.2) | 2026-04-10 |
-| P0-2 | 路径边界检查 (Stage 3c.3) | 2026-04-10 |
-| P0-3 | Plan 模式写入拦截 (Stage 3c.1) | 2026-04-10 |
-
-### P1 — 实用性
-
-| # | 功能 | 状态 |
-|---|------|------|
-| P1-1 | Git 上下文注入 system prompt | ✅ |
-| P1-2 | `--ephemeral` 临时会话 | ❌ |
-| P1-3 | Web 搜索缓存层 | ✅ |
-| P1-4 | LSP 9/9 方法实现 | ✅ |
-| P1-5 | Team Memory 团队共享记忆 | ✅ (服务端最小实现, 客户端同步待做) |
-
-### P2 — 生态扩展
-
-| # | 功能 | 状态 |
-|---|------|------|
-| P2-1 | MCP 服务器模式 (暴露工具给外部客户端) | ❌ |
-| P2-2 | JSON-RPC v2 App-Server (IDE 集成) | ❌ |
-| P2-3 | OS 级沙盒 (Windows Restricted Token) | Intentional crop（见 `IMPLEMENTATION_GAPS.md` §7） |
-| P2-4 | 网络访问控制 (`--no-network` / 白名单) | ❌ |
-| P2-5 | 沙盒模式 (read-only / workspace / full) | ❌ |
-
-### P3 — 功能完善
-
-| # | 功能 | 状态 |
-|---|------|------|
-| P3-1 | 会话回滚 / 快照 | ❌ |
-| P3-2 | Tree-sitter AST 感知编辑 | ❌ |
-| P3-3 | API 级 JSON Schema 约束输出 | ❌ |
-| P3-4 | 配置 Schema 自动生成 | ❌ |
-| P3-5 | Web 搜索 live/cached 切换 | ❌ |
-
----
-
-## 3. 历史 Deferred 清单（进入全量构建后需逐项重评）
-
-> **状态反转**：以下条目历史上登记为"`rust-lite` 范围外"。进入全量构建阶段后，它们**不再自动等于"不实现"**。规则：
->
-> - **默认行为**：触及任一条目的新工作按上游完整版对齐。
-> - **如要继续延期**：在 [`IMPLEMENTATION_GAPS.md`](IMPLEMENTATION_GAPS.md) §7 "Intentional 裁剪"里登记理由与复审条件，再从本节删除。
-> - **Ant-only 内部工具**：继续不实现的可信度高；仍需迁移到 §7 以正式化。
-> - **远程控制 / 服务端扩展 / 多端集成**：按路线图重评，默认进入 TODO 队列。
-
-保留作为历史对照 →
-
-### 历史延期命令（需重评）
-
-`/remote-control`, `/web-setup`, `/chrome`, `/desktop`, `/mobile`,
-`/remote-env`, `/release-notes`, `/stickers`, `/terminal-setup`, `/usage`
-
-### 历史延期工具（需重评）
-
-`RemoteTrigger`, `CronCreate/Delete/List`, `WebBrowser`, `McpAuthTool`,
-`Monitor`, `ListPeers`, `Workflow`, `TerminalCapture`, `SubscribePR`,
-`PushNotification`, `SendUserFile`, `SuggestBackgroundPR`
-
-### 历史延期模块（需重评）
-
-| 模块 | 说明 |
-|------|------|
-| `bridge/` | 远程控制桥接 |
-| `cli/transports/` | SSE, WebSocket, Worker 传输 |
-| `server/` | 服务器模式 |
-| `remote/` | 云容器 (CCR) |
-| `services/remoteManagedSettings/` | MDM + 远程设置同步 |
-| `services/analytics/` | 遥测管道 |
-| Desktop / Mobile 集成 | — |
-
-### 内部 / Ant-Only 命令（建议保留延期，但仍需正式登记到 Intentional 裁剪）
-
-`/agents-platform`, `/ant-trace`, `/autofix-pr`, `/backfill-sessions`,
-`/break-cache`, `/bridge-kick`, `/bughunter`, `/ctx-viz`,
-`/debug-tool-call`, `/env`, `/good-claude`, `/init-verifiers`,
-`/issue`, `/mock-limits`, `/oauth-refresh`, `/onboarding`,
-`/perf-issue`, `/reset-limits`, `/share`, `/summary`,
-`/teleport`, `/heapdump`
-
-### 内部工具（建议保留延期，但仍需正式登记到 Intentional 裁剪）
-
-`CtxInspect`, `OverflowTest`, `VerifyPlanExecution`, `Tungsten`
-
----
-
-## 4. 已完成基线
-
-> 详细清单见 [`archive/COMPLETED_FULL.md`](archive/COMPLETED_FULL.md) 和 [`archive/COMPLETED_SIMPLIFIED.md`](archive/COMPLETED_SIMPLIFIED.md)。
-
-- **斜杠命令**: 75/75 (含 `/login-code`, `/extra-usage`, `/rate-limit-options`)
-- **工具**: 30 个 (Bash, Read, Write, Edit, Grep, Glob, Agent, Skill, LSP, Tasks, Web, PowerShell, Brief, Sleep...)
-- **API 提供商**: 6/6 (Anthropic, OpenAI, Google, Azure, Bedrock, Vertex; real cloud provider/e2e coverage remains follow-up)
-- **认证**: API Key + Keychain + OAuth PKCE (Claude.ai Bearer / Console API Key)
-- **核心模块**: engine, query, compact, session, permissions, config, ipc, skills, plugins, mcp, lsp_service, daemon, ui
-- **新增功能**: Git 上下文注入 system prompt, Web 搜索 TTL 缓存, Agent 后台执行, Feature Gate 系统, Team Memory (Rust 代理 + TS/SQLite 服务)
-- **前端组件**: 14/14 (App, Header, MessageList, InputPrompt, MessageBubble, ToolUse/Result, PermissionDialog, Suggestions, WelcomeScreen, StatusBar, Spinner, ThinkingBlock, DiffView)
-
----
-
-## 5. 完成度总览
-
-```
-  API 提供商    ████████████████  6/6 (100%) — real cloud provider/e2e coverage remains follow-up
-  认证          ████████████████  4/4 (100%) ✅
-  Teams 系统    ████████████████  in-process + /team + TeamSpawn + Dashboard ✅
-  工具          ████████████████  30/30 (100%) ✅
-  权限          ████████████████  3/3 phases ✅ (Phase 2 hook 已接入中心决策)
-  斜杠命令      ████████████████  75/75 (100%)
-  IPC           ████████████████  clear_messages 已落地
-  前端组件      ████████████████  14/14 (100%)
-  Vim 模式      ████████████████  ~90% (normal/insert/visual + motions/ops)
-```
+- 要实现：补到对应 plan / implementation task。
+- 要延期：保留在 [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md) TODO 区。
+- 要裁剪：写入 [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md) "Intentional 裁剪"，说明理由、决策者、日期和复审触发条件。

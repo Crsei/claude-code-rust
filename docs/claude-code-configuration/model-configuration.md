@@ -4,13 +4,15 @@
 
 # Model configuration
 
-> Learn about the Claude Code model configuration, including model aliases like `opusplan`
+> cc-rust model configuration. cc-rust intentionally uses neutral public aliases
+> `SOTA`, `MOTA`, and `FOTA`; removed Claude Code family aliases such as
+> `opus`, `sonnet`, and `haiku` are rejected instead of being passed to providers.
 
 ## Available models
 
 For the `model` setting in Claude Code, you can configure either:
 
-* A **model alias**
+* A **cc-rust model alias** (`SOTA`, `MOTA`, or `FOTA`)
 * A **model name**
   * Anthropic API: A full **[model name](https://platform.claude.com/docs/en/about-claude/models/overview)**
   * Bedrock: an inference profile ARN
@@ -22,37 +24,33 @@ For the `model` setting in Claude Code, you can configure either:
 Model aliases provide a convenient way to select model settings without
 remembering exact version numbers:
 
-| Model alias      | Behavior                                                                                                                                                             |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`default`**    | Special value that clears any model override and reverts to the recommended model for your account type. Not itself a model alias                                    |
-| **`best`**       | Uses the most capable available model, currently equivalent to `opus`                                                                                                |
-| **`sonnet`**     | Uses the latest Sonnet model (currently Sonnet 4.6) for daily coding tasks                                                                                           |
-| **`opus`**       | Uses the latest Opus model (currently Opus 4.6) for complex reasoning tasks                                                                                          |
-| **`haiku`**      | Uses the fast and efficient Haiku model for simple tasks                                                                                                             |
-| **`sonnet[1m]`** | Uses Sonnet with a [1 million token context window](https://platform.claude.com/docs/en/build-with-claude/context-windows#1m-token-context-window) for long sessions |
-| **`opus[1m]`**   | Uses Opus with a [1 million token context window](https://platform.claude.com/docs/en/build-with-claude/context-windows#1m-token-context-window) for long sessions   |
-| **`opusplan`**   | Special mode that uses `opus` during plan mode, then switches to `sonnet` for execution                                                                              |
+| Model alias | Current target | Behavior |
+| ------------ | -------------- | -------- |
+| **`SOTA`** | `claude-opus-4-20250514` | Highest-capability work |
+| **`MOTA`** | `claude-sonnet-4-20250514` | Balanced capability and speed |
+| **`FOTA`** | `claude-haiku-3-5-20241022` | Fast lightweight work |
 
-Aliases always point to the latest version. To pin to a specific version, use the full model name (for example, `claude-opus-4-6`) or set the corresponding environment variable like `ANTHROPIC_DEFAULT_OPUS_MODEL`.
+The old family aliases `opus`, `sonnet`, and `haiku` are no longer accepted as
+public aliases. Use `SOTA`, `MOTA`, `FOTA`, or a full provider/model ID.
 
 ### Setting your model
 
 You can configure your model in several ways, listed in order of priority:
 
-1. **During session** - Use `/model <alias|name>` to switch models mid-session
-2. **At startup** - Launch with `claude --model <alias|name>`
-3. **Environment variable** - Set `ANTHROPIC_MODEL=<alias|name>`
+1. **During session** - Use `/model <SOTA|MOTA|FOTA|name>` to switch models mid-session
+2. **At startup** - Launch with `claude --model <SOTA|MOTA|FOTA|name>`
+3. **Environment variable** - Set `ANTHROPIC_MODEL=<SOTA|MOTA|FOTA|name>`
 4. **Settings** - Configure permanently in your settings file using the `model`
    field.
 
 Example usage:
 
 ```bash theme={null}
-# Start with Opus
-claude --model opus
+# Start with the highest-capability cc-rust alias
+claude --model SOTA
 
-# Switch to Sonnet during session
-/model sonnet
+# Switch to the balanced cc-rust alias during session
+/model MOTA
 ```
 
 Example settings file:
@@ -62,7 +60,7 @@ Example settings file:
     "permissions": {
         ...
     },
-    "model": "opus"
+    "model": "SOTA"
 }
 ```
 
@@ -74,7 +72,7 @@ When `availableModels` is set, users cannot switch to models not in the list via
 
 ```json theme={null}
 {
-  "availableModels": ["sonnet", "haiku"]
+  "availableModels": ["MOTA", "FOTA"]
 }
 ```
 
@@ -92,21 +90,18 @@ To fully control the model experience, combine three settings:
 
 * **`availableModels`**: restricts which named models users can switch to
 * **`model`**: sets the initial model selection when a session starts
-* **`ANTHROPIC_DEFAULT_SONNET_MODEL`** / **`ANTHROPIC_DEFAULT_OPUS_MODEL`** / **`ANTHROPIC_DEFAULT_HAIKU_MODEL`**: control what the Default option and the `sonnet`, `opus`, and `haiku` aliases resolve to
+* **Full model IDs or cc-rust aliases**: use `SOTA`, `MOTA`, `FOTA`, or full model IDs. The removed `sonnet`, `opus`, and `haiku` aliases are not accepted.
 
-This example starts users on Sonnet 4.5, limits the picker to Sonnet and Haiku, and pins Default to resolve to Sonnet 4.5 rather than the latest release:
+This example starts users on Sonnet 4.5 and limits the picker to Sonnet 4.5 and the fast cc-rust alias:
 
 ```json theme={null}
 {
   "model": "claude-sonnet-4-5",
-  "availableModels": ["claude-sonnet-4-5", "haiku"],
-  "env": {
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-5"
-  }
+  "availableModels": ["claude-sonnet-4-5", "FOTA"]
 }
 ```
 
-Without the `env` block, a user who selects Default in the picker would get the latest Sonnet release, bypassing the version pin in `model` and `availableModels`.
+Use full model IDs when you need exact version pins.
 
 ### Merge behavior
 
@@ -114,7 +109,7 @@ When `availableModels` is set at multiple levels, such as user settings and proj
 
 ### Mantle model IDs
 
-When the [Bedrock Mantle endpoint](/en/amazon-bedrock#use-the-mantle-endpoint) is enabled, entries in `availableModels` that start with `anthropic.` are added to the `/model` picker as custom options and routed to the Mantle endpoint. This is an exception to the alias-only matching described in [Pin models for third-party deployments](#pin-models-for-third-party-deployments). The setting still restricts the picker to listed entries, so include the standard aliases alongside any Mantle IDs.
+When the [Bedrock Mantle endpoint](/en/amazon-bedrock#use-the-mantle-endpoint) is enabled, entries in `availableModels` that start with `anthropic.` are added to the `/model` picker as custom options and routed to the Mantle endpoint. The setting still restricts the picker to listed entries, so include the cc-rust aliases (`SOTA`, `MOTA`, `FOTA`) alongside any Mantle IDs you want available.
 
 ## Special model behavior
 
@@ -128,17 +123,11 @@ The behavior of `default` depends on your account type:
 
 Claude Code may automatically fall back to Sonnet if you hit a usage threshold with Opus.
 
-### `opusplan` model setting
+### Removed family aliases
 
-The `opusplan` model alias provides an automated hybrid approach:
-
-* **In plan mode** - Uses `opus` for complex reasoning and architecture
-  decisions
-* **In execution mode** - Automatically switches to `sonnet` for code generation
-  and implementation
-
-This gives you the best of both worlds: Opus's superior reasoning for planning,
-and Sonnet's efficiency for execution.
+cc-rust does not implement the upstream `opusplan`, `opus`, `sonnet`, or
+`haiku` compatibility aliases. Use `SOTA`, `MOTA`, `FOTA`, or explicit model IDs
+for both runtime model selection and configuration allowlists.
 
 ### Adjust effort level
 
@@ -185,14 +174,9 @@ The 1M context window uses standard model pricing with no premium for tokens bey
 
 If your account supports 1M context, the option appears in the model picker (`/model`) in the latest versions of Claude Code. If you don't see it, try restarting your session.
 
-You can also use the `[1m]` suffix with model aliases or full model names:
+Use the provider-supported full model name when selecting extended context:
 
 ```bash theme={null}
-# Use the opus[1m] or sonnet[1m] alias
-/model opus[1m]
-/model sonnet[1m]
-
-# Or append [1m] to a full model name
 /model claude-opus-4-6[1m]
 ```
 
@@ -221,14 +205,14 @@ Claude Code skips validation for the model ID set in `ANTHROPIC_CUSTOM_MODEL_OPT
 
 ## Environment variables
 
-You can use the following environment variables, which must be full **model
-names** (or equivalent for your API provider), to control the model names that the aliases map to.
+cc-rust does not remap the removed family aliases. Use full **model names** (or
+equivalent provider IDs) in provider environment variables.
 
 | Environment variable             | Description                                                                                   |
 | -------------------------------- | --------------------------------------------------------------------------------------------- |
-| `ANTHROPIC_DEFAULT_OPUS_MODEL`   | The model to use for `opus`, or for `opusplan` when Plan Mode is active.                      |
-| `ANTHROPIC_DEFAULT_SONNET_MODEL` | The model to use for `sonnet`, or for `opusplan` when Plan Mode is not active.                |
-| `ANTHROPIC_DEFAULT_HAIKU_MODEL`  | The model to use for `haiku`, or [background functionality](/en/costs#background-token-usage) |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL`   | Upstream family default variable; cc-rust model selection should use full IDs or `SOTA` instead of `opus`. |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL` | Upstream family default variable; cc-rust model selection should use full IDs or `MOTA` instead of `sonnet`. |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL`  | Upstream family default variable; cc-rust model selection should use full IDs or `FOTA` instead of `haiku`. |
 | `CLAUDE_CODE_SUBAGENT_MODEL`     | The model to use for [subagents](/en/sub-agents)                                              |
 
 Note: `ANTHROPIC_SMALL_FAST_MODEL` is deprecated in favor of
@@ -238,7 +222,10 @@ Note: `ANTHROPIC_SMALL_FAST_MODEL` is deprecated in favor of
 
 When deploying Claude Code through [Bedrock](/en/amazon-bedrock), [Vertex AI](/en/google-vertex-ai), or [Foundry](/en/microsoft-foundry), pin model versions before rolling out to users.
 
-Without pinning, Claude Code uses model aliases (`sonnet`, `opus`, `haiku`) that resolve to the latest version. When Anthropic releases a new model that isn't yet enabled in a user's account, Bedrock and Vertex AI users see a notice and fall back to the previous version for that session, while Foundry users see errors because Foundry has no equivalent startup check.
+Without pinning, upstream Claude Code may use family aliases. cc-rust avoids
+that compatibility path: configure `SOTA`, `MOTA`, `FOTA`, or explicit model IDs
+so provider requests never receive removed aliases like `sonnet`, `opus`, or
+`haiku`.
 
 <Warning>
   Set all three model environment variables to specific version IDs as part of your initial setup. Pinning lets you control when your users move to a new model.
@@ -260,10 +247,10 @@ To enable [extended context](#extended-context) for a pinned model, append `[1m]
 export ANTHROPIC_DEFAULT_OPUS_MODEL='claude-opus-4-6[1m]'
 ```
 
-The `[1m]` suffix applies the 1M context window to all usage of that alias, including `opusplan`. Claude Code strips the suffix before sending the model ID to your provider. Only append `[1m]` when the underlying model supports 1M context, such as Opus 4.6 or Sonnet 4.6.
+The `[1m]` suffix applies the 1M context window to the configured model ID. Only append `[1m]` when the underlying model supports 1M context, such as Opus 4.6 or Sonnet 4.6.
 
 <Note>
-  The `settings.availableModels` allowlist still applies when using third-party providers. Filtering matches on the model alias (`opus`, `sonnet`, `haiku`), not the provider-specific model ID.
+  The `settings.availableModels` allowlist still applies when using third-party providers. In cc-rust, filtering matches `SOTA`, `MOTA`, `FOTA`, and full model IDs; removed legacy aliases (`opus`, `sonnet`, `haiku`) do not match.
 </Note>
 
 ### Customize pinned model display and capabilities
@@ -325,7 +312,9 @@ Keys must be Anthropic model IDs as listed in the [Models overview](https://plat
 
 Overrides replace the built-in model IDs that back each entry in the `/model` picker. On Bedrock, overrides take precedence over any inference profiles that Claude Code discovers automatically at startup. Values you supply directly through `ANTHROPIC_MODEL`, `--model`, or the `ANTHROPIC_DEFAULT_*_MODEL` environment variables are passed to the provider as-is and are not transformed by `modelOverrides`.
 
-`modelOverrides` works alongside `availableModels`. The allowlist is evaluated against the Anthropic model ID, not the override value, so an entry like `"opus"` in `availableModels` continues to match even when Opus versions are mapped to ARNs.
+`modelOverrides` works alongside `availableModels`. In cc-rust, use `SOTA`,
+`MOTA`, `FOTA`, or explicit model IDs in `availableModels`; an entry like
+`"opus"` is a removed legacy alias and will not match.
 
 ### Prompt caching configuration
 

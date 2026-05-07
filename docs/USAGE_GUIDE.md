@@ -435,10 +435,12 @@ for event in streamed.events:
 
 | 命令 | 说明 |
 |------|------|
-| `/login` | 认证引导 — 选择登录方式 (API Key / Claude.ai OAuth / Console OAuth) |
+| `/login` | 认证引导 — 选择登录方式 (API Key / Claude.ai OAuth / Console OAuth / cloud providers) |
 | `/login 1` | 直接输入 API Key |
 | `/login 2` | Claude.ai OAuth 登录 (Pro/Max 订阅用户，Bearer Token 模式) |
 | `/login 3` | Console OAuth 登录 (API 计费用户，自动创建 API Key) |
+| `/login bedrock` | 当前会话启用 AWS Bedrock provider 并显示缺失环境变量 |
+| `/login vertex` | 当前会话启用 GCP Vertex AI provider 并显示缺失环境变量 |
 | `/login-code <code>` | 完成 OAuth 登录 — 粘贴授权后获得的 code |
 | `/login status` | 查看当前认证状态 |
 | `/logout` | 清除所有认证凭据 (Keychain + OAuth tokens) |

@@ -132,6 +132,7 @@
 - 2026-05-06：Phase 3 已完成最小运行时闭环，新增 `/coordinator` 命令入口，可在当前会话启停 coordinator gate、创建/绑定 active team、展示 lead 工具策略；`/team spawn` 与 `TeamSpawn` 在 coordinator 模式下默认创建 `worker` teammate，并继续复用现有 `SendMessage` / `TaskList` / `TaskStop` 通信和任务控制链路。
 - 2026-05-06：Phase 4 已完成本地可测的 PR activity subscription 闭环，新增 `subscribe_pr_activity` / `unsubscribe_pr_activity` coordinator-only 工具、`{CC_RUST_HOME}/pr-activity-subscriptions.json` 隔离存储，以及 `/webhook/github` 对 pull request / review / issue comment 事件的订阅匹配和 mailbox 投递；真实 GitHub App / MCP 传输仍作为后续集成点。
 - 2026-05-06：Phase 5 已完成 worktree hook parity 的可测骨架，新增 `WorktreeCreate` / `WorktreeRemove` 事件入口和共享 hook schema，用户 `EnterWorktree` / `ExitWorktree`、同步 Agent worktree、后台 supervisor worktree 创建/清理路径均接入 hook；默认 worktree 根切换到 `{CC_RUST_HOME}/worktrees`，删除路径在路径越界、hook remove 未明确处理或清理无法验证时保留 worktree。
+- 2026-05-06：Phase 6 已完成 coordinator/team/tasks headless 回归、PR webhook 模拟回归与 worktree hook 实际路径回归，并同步收口 `WORK_STATUS.md` / `IMPLEMENTATION_GAPS.md`。
 
 ### Phase 0：锁定现有行为基线
 
@@ -202,15 +203,15 @@
 
 验收：hook create、hook remove、hook 缺失 fallback、hook 失败 fallback、路径越界、变更未清理等场景都有测试；现有 worktree 清理安全行为不回退。
 
-### Phase 6：端到端验证与文档收口
+### Phase 6：端到端验证与文档收口（已完成）
 
 目标：把 coordinator、worker、PR subscription、worktree hook 的新增行为串成可回归的用户路径。
 
-- 增加 headless 或命令级 e2e：启动 coordinator、spawn worker、发送消息、列任务、停止任务。
-- 增加 PR subscription e2e 或模拟 webhook 测试，覆盖 coordinator 收到 PR 事件通知。
-- 增加 worktree hook e2e，覆盖 hook-based create/remove 和 git fallback 两条路径。
-- 更新 `docs/WORK_STATUS.md`、`docs/IMPLEMENTATION_GAPS.md`、`docs/KNOWN_ISSUES.md` 或 archive 文档，把已补齐项从 gap 迁移到 completed。
-- 最终执行 `cargo fmt`、`cargo test`、`cargo build --release`；若某些平台相关测试无法在 Windows 跑通，记录 `Not-tested`。
+- Headless 回归已补齐：`crates/claude-code-rs/tests/e2e_terminal/phase6.rs` 覆盖 coordinator 启停、worker spawn/send、`/tasks` 列表与 mailbox 落盘。
+- PR subscription / webhook 回归已覆盖：`crates/claude-code-rs/src/daemon/routes.rs` 的 GitHub webhook 测试验证 PR activity 订阅匹配与 mailbox 投递。
+- worktree hook 回归已补齐：`crates/claude-code-rs/src/tools/worktree.rs` 覆盖 hook-backed create/remove 以及 git fallback 两条路径。
+- 文档已同步：`docs/WORK_STATUS.md` 记录 phase 6 完成口径，`docs/IMPLEMENTATION_GAPS.md` 记录 phase 6 不再视为 gap。
+- 最终验证已执行：`cargo fmt --all`、定向 `cargo test`、`cargo build --release`。
 
 验收：新增功能有测试证据，文档状态与实现一致，release build 无 warning。
 

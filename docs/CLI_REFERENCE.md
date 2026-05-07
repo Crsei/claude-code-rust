@@ -304,7 +304,7 @@ FEATURE_KAIROS=1 claude-code-rs --daemon --port 19836
 
 | 命令 | 别名 | 说明 |
 |------|------|------|
-| `/login` | — | 认证入口：API Key / Anthropic OAuth / OpenAI Codex OAuth / Codex CLI 导入 |
+| `/login` | — | 认证入口：API Key / Anthropic OAuth / OpenAI Codex OAuth / Codex CLI 导入 / Bedrock / Vertex |
 | `/login-code` | — | 用授权码完成 OAuth 登录 |
 | `/logout` | — | 清除已保存凭据 |
 
@@ -320,6 +320,9 @@ FEATURE_KAIROS=1 claude-code-rs --daemon --port 19836
 | `/login 3` | Console OAuth |
 | `/login 4` 或 `/login codex` | OpenAI Codex OAuth |
 | `/login 5` 或 `/login codex-cli` | 从 `~/.codex/auth.json` 导入 / 刷新 |
+| `/login 6` 或 `/login bedrock` | 当前会话启用 AWS Bedrock provider 并显示配置状态 |
+| `/login 7` 或 `/login vertex` | 当前会话启用 GCP Vertex AI provider 并显示配置状态 |
+| `/login cloud` | 显示 Bedrock / Vertex 环境变量配置提示 |
 
 ### 6.5 Git / 输出导出
 

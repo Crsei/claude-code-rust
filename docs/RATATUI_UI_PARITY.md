@@ -546,10 +546,10 @@
 
 | 项目 | 里程碑状态 |
 |------|------------|
-| Shell 输出展开/格式化 | 基础完成：已补齐 expanded option、ANSI/JSON/宽度截断、elapsed/timeout footer。残余：最新 shell 输出自动展开上下文仍待 runtime/event 接线，见 `docs/KNOWN_ISSUES.md` #21 |
+| Shell 输出展开/格式化 | 基础完成：已补齐 expanded option、ANSI/JSON/宽度截断、elapsed/timeout footer。残余：最新 shell 输出自动展开上下文仍待 runtime/event 接线，见 `docs/KNOWN_ISSUES.md` `UI-002` |
 | 结构化 Diff (hunks) | 完成：已补齐 `diff/structured_diff.rs` 与 `diff/file_edit_diff.rs`，支持 unified diff hunk 解析、old/new gutter、multi-hunk 分隔、no-newline/large/truncated snapshot 覆盖，并复用于文件编辑 permission/update surfaces |
 | 搜索框 (`SearchBox`) | 完成：已补齐共享文本渲染 primitive，并接入 `SelectionSurface` 头部 |
-| 历史搜索 (`HistorySearchDialog`) | 基础完成：已补齐 Ctrl+R in-session 历史搜索、SearchBox、exact-first/fuzzy-second 过滤、窄/宽预览、空态与 key handling。残余：Rust 端暂无持久 timestamped history reader，当前从本次会话 `push_history` 条目生成时间戳，见 `docs/KNOWN_ISSUES.md` #22 |
+| 历史搜索 (`HistorySearchDialog`) | 基础完成：已补齐 Ctrl+R in-session 历史搜索、SearchBox、exact-first/fuzzy-second 过滤、窄/宽预览、空态与 key handling。残余：Rust 端暂无持久 timestamped history reader，当前从本次会话 `push_history` 条目生成时间戳，见 `docs/KNOWN_ISSUES.md` `UI-003` |
 | 进度条 (`ProgressBar`) | 完成：已补齐共享 1/8 block 渲染，并接入任务/shell surface |
 | Tool 活动渲染完善 | 完成：已补齐统一 `ToolActivity` 模型与 grouped/task/message 复用，覆盖 queued/running/succeeded/failed/cancelled、参数摘要、progress、错误和输出预览 snapshot |
 

@@ -152,7 +152,7 @@ Verification before production:
 | Type | resolved former happy-path |
 | Severity | P1 required before launch |
 | Status | Resolved 2026-04-28 |
-| Evidence | `docs/IMPLEMENTATION_GAPS.md` §3, `docs/KNOWN_ISSUES.md` #6-#8 |
+| Evidence | `docs/IMPLEMENTATION_GAPS.md` §3, `docs/archive/resolved-known-issues-2026-05-07.md` #6-#8 |
 | Code paths | `crates/claude-code-rs/src/engine/agent/supervisor.rs`, `crates/claude-code-rs/src/engine/agent/tool_impl.rs`, `crates/claude-code-rs/src/tools/tasks.rs`, `crates/claude-code-rs/src/ipc/agent_handlers.rs`, `crates/claude-code-rs/src/ipc/runtime.rs`, `crates/claude-code-rs/src/shutdown.rs` |
 
 Previous MVP behavior:
@@ -429,7 +429,7 @@ Verification before production:
 | Category | UX and product completeness |
 | Type | happy-path |
 | Severity | P2 hardening |
-| Evidence | `docs/KNOWN_ISSUES.md` #1, #4, #5, #17 |
+| Evidence | `docs/KNOWN_ISSUES.md` `UI-001`, `docs/archive/resolved-known-issues-2026-05-07.md` welcome-screen resolved entries |
 | Code paths | `ui/src/components/App.tsx`, `ui/src/components/resize-sync.ts` |
 
 Current MVP behavior:

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust 2021, `dirs` crate, `tracing`, `serial_test` (dev-only, new), existing `tempfile` test infra.
 
-**Spec reference:** [docs/superpowers/specs/2026-04-18-phase1-runtime-storage-unification-design.md](../specs/2026-04-18-phase1-runtime-storage-unification-design.md).
+**Spec reference:** [docs/archive/superpowers/specs/2026-04-18-phase1-runtime-storage-unification-design.md](../specs/2026-04-18-phase1-runtime-storage-unification-design.md).
 
 ---
 
@@ -1612,7 +1612,7 @@ Implements Phase 1 of [GitHub issue #1](https://github.com/crsei/cc-rust/issues/
 - ~9 call sites migrated from hardcoded `dirs::home_dir().join(".cc-rust")` to `paths::` functions.
 - Dashboard subagent events now write to `\$ROOT/runs/{session_id}/subagent-events.ndjson` (was `{cwd}/.logs/`).
 - `main.rs` no longer falls back to repo-local `.logs/` when home isn't writable; uses `std::env::temp_dir()` fallback instead.
-- Spec: [docs/superpowers/specs/2026-04-18-phase1-runtime-storage-unification-design.md](docs/superpowers/specs/2026-04-18-phase1-runtime-storage-unification-design.md).
+- Spec: [docs/archive/superpowers/specs/2026-04-18-phase1-runtime-storage-unification-design.md](../specs/2026-04-18-phase1-runtime-storage-unification-design.md).
 - User-facing doc: [docs/STORAGE.md](docs/STORAGE.md).
 
 ## Test plan
