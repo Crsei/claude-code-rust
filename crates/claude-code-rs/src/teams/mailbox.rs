@@ -17,7 +17,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use tracing::{debug, warn};
+use tracing::debug;
 
 use super::constants::*;
 use super::types::TeammateMessage;
@@ -111,13 +111,9 @@ pub fn write_to_mailbox(agent_name: &str, message: TeammateMessage, team_name: &
     }
 
     with_lock(&path, || {
-        // Re-read to capture concurrent writes
-        let mut messages = if path.exists() {
-            let content = fs::read_to_string(&path).unwrap_or_else(|_| "[]".into());
-            serde_json::from_str::<Vec<TeammateMessage>>(&content).unwrap_or_default()
-        } else {
-            vec![]
-        };
+        // Re-read to capture concurrent writes. Existing invalid content must
+        // remain visible instead of being reset to an empty mailbox.
+        let mut messages = read_mailbox(agent_name, team_name)?;
 
         messages.push(message);
 
@@ -234,18 +230,11 @@ where
     }
 
     if !acquired {
-        // Force-remove stale lock as last resort
-        warn!(
-            "force-removing mailbox lock after {} retries",
-            MAILBOX_LOCK_RETRIES
+        anyhow::bail!(
+            "timed out acquiring mailbox lock after {} retries: {}",
+            MAILBOX_LOCK_RETRIES,
+            lock.display()
         );
-        let _ = fs::remove_file(&lock);
-        // Try once more
-        fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&lock)
-            .context("failed to acquire mailbox lock")?;
     }
 
     // Execute under lock
@@ -262,7 +251,7 @@ fn is_stale_lock(lock: &Path) -> bool {
     fs::metadata(lock)
         .and_then(|m| m.modified())
         .map(|modified| modified.elapsed().map(|d| d.as_secs() > 5).unwrap_or(false))
-        .unwrap_or(true) // If we can't read metadata, treat as stale
+        .unwrap_or(false)
 }
 
 // ---------------------------------------------------------------------------
@@ -392,6 +381,30 @@ mod tests {
 
         let messages = read_mailbox(&agent, &team).unwrap();
         assert_eq!(messages.len(), 3);
+
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn test_write_rejects_corrupt_mailbox_without_resetting() {
+        let (team, agent, dir) = test_team();
+        let path = inbox_path(&agent, &team);
+        fs::create_dir_all(path.parent().expect("inbox parent")).unwrap();
+        fs::write(&path, "{not valid json").unwrap();
+
+        let msg = TeammateMessage {
+            from: "sender".into(),
+            text: "Hello!".into(),
+            timestamp: "2026-04-01T12:00:00Z".into(),
+            read: false,
+            color: None,
+            summary: None,
+        };
+
+        let err = write_to_mailbox(&agent, msg, &team).unwrap_err();
+
+        assert!(err.to_string().contains("failed to parse mailbox"));
+        assert_eq!(fs::read_to_string(&path).unwrap(), "{not valid json");
 
         cleanup(&dir);
     }

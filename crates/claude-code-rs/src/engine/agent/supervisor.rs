@@ -130,7 +130,7 @@ pub(super) async fn spawn_background_agent(
     );
 
     let task_store = global_store();
-    let task_entry = task_store.create_with_options(
+    let task_entry = task_store.try_create_with_options(
         &description,
         &params.prompt,
         TaskCreateOptions {
@@ -151,9 +151,9 @@ pub(super) async fn spawn_background_agent(
             worktree_branch: prepared.worktree.as_ref().map(|wt| wt.branch_name.clone()),
             ..TaskCreateOptions::default()
         },
-    );
+    )?;
     let task_id = task_entry.id.clone();
-    task_store.update_status(&task_id, TaskStatus::InProgress);
+    task_store.try_update_status(&task_id, TaskStatus::InProgress)?;
 
     let cancellation_token = CancellationToken::new();
     task_store.register_runtime_handle(&task_id, cancellation_token.clone());
@@ -212,9 +212,13 @@ pub(super) async fn spawn_background_agent(
 pub(crate) fn cancel_agent(agent_id: &str) -> Option<String> {
     let task_id = BACKGROUND_SUPERVISOR.cancel_agent(agent_id);
     if let Some(task_id) = &task_id {
-        let _ = global_store().stop(task_id);
+        if let Err(err) = global_store().try_stop(task_id) {
+            warn!(task_id, error = %err, "failed to stop background agent task");
+        }
     } else if let Some(task) = global_store().get_by_agent_id(agent_id) {
-        let _ = global_store().stop(&task.id);
+        if let Err(err) = global_store().try_stop(&task.id) {
+            warn!(task_id = %task.id, error = %err, "failed to stop background agent task");
+        }
         return Some(task.id);
     }
     task_id
@@ -234,7 +238,13 @@ pub(crate) async fn shutdown_all(reason: &str) -> usize {
             &job.task_id,
             &format!("[Supervisor: cancelled during shutdown: {}]", reason),
         );
-        let _ = global_store().stop(&job.task_id);
+        if let Err(err) = global_store().try_stop(&job.task_id) {
+            warn!(
+                task_id = %job.task_id,
+                error = %err,
+                "failed to stop background agent task during shutdown"
+            );
+        }
 
         if let Some(handle) = job.handle.take() {
             let abort_handle = handle.abort_handle();
@@ -402,7 +412,13 @@ impl AgentRuntime {
         };
 
         self.task_store.append_output(&self.task_id, &result_text);
-        self.task_store.update_status(&self.task_id, final_status);
+        if let Err(err) = self.task_store.try_update_status(&self.task_id, final_status) {
+            warn!(
+                task_id = %self.task_id,
+                error = %err,
+                "failed to persist background agent final status"
+            );
+        }
         self.task_store.unregister_runtime_handle(&self.task_id);
         BACKGROUND_SUPERVISOR.complete(&self.agent_id);
 

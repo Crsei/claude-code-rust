@@ -301,22 +301,35 @@ impl TaskStore {
         }
     }
 
-    pub fn create(&self, subject: &str, description: &str) -> TaskEntry {
-        self.create_with_options(subject, description, TaskCreateOptions::default())
+    pub fn try_create(&self, subject: &str, description: &str) -> Result<TaskEntry> {
+        self.try_create_with_options(subject, description, TaskCreateOptions::default())
     }
 
+    #[cfg(test)]
+    pub fn create(&self, subject: &str, description: &str) -> TaskEntry {
+        self.try_create(subject, description)
+            .expect("failed to create task")
+    }
+
+    #[cfg(test)]
     pub fn create_with_options(
         &self,
         subject: &str,
         description: &str,
         options: TaskCreateOptions,
     ) -> TaskEntry {
-        let _guard = self.acquire_task_list_lock("create task").ok();
-        let mut tasks = if _guard.is_some() {
-            self.load_repository_tasks()
-        } else {
-            self.tasks.lock().clone()
-        };
+        self.try_create_with_options(subject, description, options)
+            .expect("failed to create task")
+    }
+
+    pub fn try_create_with_options(
+        &self,
+        subject: &str,
+        description: &str,
+        options: TaskCreateOptions,
+    ) -> Result<TaskEntry> {
+        let _guard = self.acquire_task_list_lock("create task")?;
+        let mut tasks = self.load_repository_tasks_strict()?;
         let now = chrono::Utc::now().timestamp();
         let id = match self.repository.reserve_next_task_id(&tasks) {
             Ok(id) => id,
@@ -364,9 +377,9 @@ impl TaskStore {
         refresh_output_metadata(&mut entry);
 
         tasks.insert(id, entry.clone());
-        self.persist_entry(&entry);
+        self.persist_entry_strict(&entry)?;
         self.replace_tasks(tasks);
-        entry
+        Ok(entry)
     }
 
     pub fn get(&self, id: &str) -> Option<TaskEntry> {
@@ -374,13 +387,14 @@ impl TaskStore {
         self.refresh_remote_review_timeout(id)
     }
 
+    #[cfg(test)]
     pub fn update_status(&self, id: &str, status: TaskStatus) -> Option<TaskEntry> {
-        let _guard = self.acquire_task_list_lock("update task status").ok();
-        let mut tasks = if _guard.is_some() {
-            self.load_repository_tasks()
-        } else {
-            self.tasks.lock().clone()
-        };
+        self.try_update_status(id, status).ok().flatten()
+    }
+
+    pub fn try_update_status(&self, id: &str, status: TaskStatus) -> Result<Option<TaskEntry>> {
+        let _guard = self.acquire_task_list_lock("update task status")?;
+        let mut tasks = self.load_repository_tasks_strict()?;
         if let Some(entry) = tasks.get_mut(id) {
             entry.status = normalize_new_status(status);
             entry.updated_at = chrono::Utc::now().timestamp();
@@ -388,26 +402,29 @@ impl TaskStore {
                 entry.cancel_requested_at = Some(entry.updated_at);
             }
             let cloned = entry.clone();
-            self.persist_entry(&cloned);
+            self.persist_entry_strict(&cloned)?;
             self.replace_tasks(tasks);
-            Some(cloned)
+            Ok(Some(cloned))
         } else {
             self.replace_tasks(tasks);
-            None
+            Ok(None)
         }
     }
 
-    pub(super) fn update_fields(&self, id: &str, updates: TaskUpdateFields) -> Option<TaskEntry> {
-        let _guard = self.acquire_task_list_lock("update task fields").ok();
-        let mut tasks = if _guard.is_some() {
-            self.load_repository_tasks()
-        } else {
-            self.tasks.lock().clone()
-        };
+    pub(super) fn try_update_fields(
+        &self,
+        id: &str,
+        updates: TaskUpdateFields,
+    ) -> Result<Option<TaskEntry>> {
+        let _guard = self.acquire_task_list_lock("update task fields")?;
+        let mut tasks = self.load_repository_tasks_strict()?;
         let now = chrono::Utc::now().timestamp();
         let mut changed_entries = Vec::new();
         let updated = {
-            let entry = tasks.get_mut(id)?;
+            let Some(entry) = tasks.get_mut(id) else {
+                self.replace_tasks(tasks);
+                return Ok(None);
+            };
             if let Some(subject) = updates.subject {
                 entry.subject = subject;
             }
@@ -458,10 +475,10 @@ impl TaskStore {
 
         changed_entries.push(updated.clone());
         for entry in changed_entries {
-            self.persist_entry(&entry);
+            self.persist_entry_strict(&entry)?;
         }
         self.replace_tasks(tasks);
-        Some(updated)
+        Ok(Some(updated))
     }
 
     pub(super) fn claim_task(
@@ -577,13 +594,9 @@ impl TaskStore {
         entries
     }
 
-    pub fn delete(&self, id: &str) -> Option<TaskEntry> {
-        let _guard = self.acquire_task_list_lock("delete task").ok();
-        let mut tasks = if _guard.is_some() {
-            self.load_repository_tasks()
-        } else {
-            self.tasks.lock().clone()
-        };
+    pub fn try_delete(&self, id: &str) -> Result<Option<TaskEntry>> {
+        let _guard = self.acquire_task_list_lock("delete task")?;
+        let mut tasks = self.load_repository_tasks_strict()?;
         let removed = tasks.remove(id);
         if removed.is_some() {
             let mut changed = Vec::new();
@@ -596,15 +609,18 @@ impl TaskStore {
                 }
             }
             self.runtime_handles.lock().remove(id);
-            if let Err(err) = self.repository.delete(id) {
-                tracing::warn!(task_id = id, error = %err, "failed to delete persisted task");
-            }
+            self.repository.delete(id)?;
             for entry in changed {
-                self.persist_entry(&entry);
+                self.persist_entry_strict(&entry)?;
             }
         }
         self.replace_tasks(tasks);
-        removed
+        Ok(removed)
+    }
+
+    #[cfg(test)]
+    pub fn delete(&self, id: &str) -> Option<TaskEntry> {
+        self.try_delete(id).ok().flatten()
     }
 
     pub(super) fn unassign_teammate_tasks(
@@ -612,12 +628,17 @@ impl TaskStore {
         teammate_id: &str,
         teammate_name: &str,
     ) -> Vec<UnassignedTaskSummary> {
-        let _guard = self.acquire_task_list_lock("unassign teammate tasks").ok();
-        let mut tasks = if _guard.is_some() {
-            self.load_repository_tasks()
-        } else {
-            self.tasks.lock().clone()
-        };
+        self.try_unassign_teammate_tasks(teammate_id, teammate_name)
+            .unwrap_or_default()
+    }
+
+    pub(super) fn try_unassign_teammate_tasks(
+        &self,
+        teammate_id: &str,
+        teammate_name: &str,
+    ) -> Result<Vec<UnassignedTaskSummary>> {
+        let _guard = self.acquire_task_list_lock("unassign teammate tasks")?;
+        let mut tasks = self.load_repository_tasks_strict()?;
         let now = chrono::Utc::now().timestamp();
         let mut changed = Vec::new();
         for entry in tasks.values_mut() {
@@ -632,41 +653,42 @@ impl TaskStore {
         }
 
         for entry in &changed {
-            self.persist_entry(entry);
+            self.persist_entry_strict(entry)?;
         }
         self.replace_tasks(tasks);
-        changed
+        Ok(changed
             .into_iter()
             .map(|entry| UnassignedTaskSummary {
                 id: entry.id,
                 subject: entry.subject,
             })
-            .collect()
+            .collect())
     }
 
+    #[cfg(test)]
     pub fn stop(&self, id: &str) -> Option<TaskEntry> {
+        self.try_stop(id).ok().flatten()
+    }
+
+    pub fn try_stop(&self, id: &str) -> Result<Option<TaskEntry>> {
         if let Some(handle) = self.runtime_handles.lock().get(id).cloned() {
             handle.cancel();
         }
 
         let now = chrono::Utc::now().timestamp();
-        let _guard = self.acquire_task_list_lock("stop task").ok();
-        let mut tasks = if _guard.is_some() {
-            self.load_repository_tasks()
-        } else {
-            self.tasks.lock().clone()
-        };
+        let _guard = self.acquire_task_list_lock("stop task")?;
+        let mut tasks = self.load_repository_tasks_strict()?;
         if let Some(entry) = tasks.get_mut(id) {
             entry.cancel_requested_at = Some(now);
             entry.status = TaskStatus::Cancelled;
             entry.updated_at = now;
             let cloned = entry.clone();
-            self.persist_entry(&cloned);
+            self.persist_entry_strict(&cloned)?;
             self.replace_tasks(tasks);
-            Some(cloned)
+            Ok(Some(cloned))
         } else {
             self.replace_tasks(tasks);
-            None
+            Ok(None)
         }
     }
 
@@ -734,6 +756,12 @@ impl TaskStore {
         }
     }
 
+    pub(super) fn load_repository_tasks_strict(&self) -> Result<HashMap<String, TaskEntry>> {
+        self.repository
+            .load_for_live_refresh()
+            .context("failed to refresh persisted tasks")
+    }
+
     pub(super) fn refresh_from_repository(&self) {
         let tasks = self.load_repository_tasks();
         self.replace_tasks(tasks);
@@ -751,6 +779,12 @@ impl TaskStore {
                 "failed to persist task"
             );
         }
+    }
+
+    pub(super) fn persist_entry_strict(&self, entry: &TaskEntry) -> Result<()> {
+        self.repository
+            .persist_entry(entry)
+            .with_context(|| format!("failed to persist task {}", entry.id))
     }
 
     pub(super) fn refresh_remote_review_timeouts(&self) {

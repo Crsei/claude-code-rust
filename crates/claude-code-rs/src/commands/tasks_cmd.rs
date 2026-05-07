@@ -296,12 +296,16 @@ fn render_team_detail(task: &TeammateTaskSnapshot) -> String {
 }
 
 fn stop_task(id: &str) -> String {
-    if let Some(entry) = global_store().stop(id) {
-        return format!(
-            "Cancelled tool task '{}' (now {}).",
-            entry.subject,
-            entry.status.as_str()
-        );
+    match global_store().try_stop(id) {
+        Ok(Some(entry)) => {
+            return format!(
+                "Cancelled tool task '{}' (now {}).",
+                entry.subject,
+                entry.status.as_str()
+            );
+        }
+        Ok(None) => {}
+        Err(err) => return format!("Failed to stop task '{}': {err}", id),
     }
     if InProcessBackend::task_snapshots()
         .iter()
@@ -320,8 +324,10 @@ fn stop_task(id: &str) -> String {
 }
 
 fn delete_task(id: &str) -> String {
-    if let Some(entry) = global_store().delete(id) {
-        return format!("Deleted persisted tool task '{}'.", entry.subject);
+    match global_store().try_delete(id) {
+        Ok(Some(entry)) => return format!("Deleted persisted tool task '{}'.", entry.subject),
+        Ok(None) => {}
+        Err(err) => return format!("Failed to delete task '{}': {err}", id),
     }
     if InProcessBackend::task_snapshots()
         .iter()

@@ -340,7 +340,16 @@ fn test_concurrent_task_creates_use_unique_incrementing_ids() {
     for index in 0..8 {
         let store = Arc::clone(&store);
         threads.push(thread::spawn(move || {
-            store.create(&format!("task {index}"), "").id
+            for _ in 0..20 {
+                if let Ok(entry) = store.try_create(&format!("task {index}"), "") {
+                    return entry.id;
+                }
+                thread::sleep(std::time::Duration::from_millis(10));
+            }
+            store
+                .try_create(&format!("task {index}"), "")
+                .expect("create after retries")
+                .id
         }));
     }
 
@@ -1150,6 +1159,24 @@ fn task_claim_reports_lock_unavailable_when_list_lock_is_held() {
     let failure = store.claim_task(&task.id, "agent-a", true).unwrap_err();
 
     assert_eq!(failure.reason, TaskClaimFailureReason::LockUnavailable);
+}
+
+#[test]
+fn task_write_paths_return_error_when_list_lock_is_held() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = TaskStore::with_dir(tmp.path());
+    let task = store.create("locked", "");
+    fs::write(tmp.path().join(TASK_LIST_LOCK_FILE), "").unwrap();
+
+    assert!(store.try_create("new task", "").is_err());
+    assert!(store
+        .try_update_status(&task.id, TaskStatus::Completed)
+        .is_err());
+    assert!(store.try_delete(&task.id).is_err());
+    assert!(store.try_stop(&task.id).is_err());
+
+    let unchanged = store.get(&task.id).expect("task remains");
+    assert_eq!(unchanged.status, TaskStatus::Pending);
 }
 
 #[test]

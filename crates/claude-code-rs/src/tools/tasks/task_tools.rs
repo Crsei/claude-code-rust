@@ -307,7 +307,7 @@ impl Tool for TaskCreateTool {
 
         let task_store = store_for_context(ctx);
         let entry = if has_options {
-            task_store.create_with_options(
+            task_store.try_create_with_options(
                 subject,
                 description,
                 TaskCreateOptions {
@@ -330,8 +330,8 @@ impl Tool for TaskCreateTool {
                 },
             )
         } else {
-            task_store.create(subject, description)
-        };
+            task_store.try_create(subject, description)
+        }?;
 
         let linked_plan_workflow = maybe_link_plan_workflow_task(ctx, &entry)?;
 
@@ -551,7 +551,7 @@ impl Tool for TaskUpdateTool {
         };
 
         if status_value == Some("deleted") {
-            let deleted = task_store.delete(id).is_some();
+            let deleted = task_store.try_delete(id)?.is_some();
             return Ok(ToolResult {
                 data: json!({
                     "success": deleted,
@@ -599,7 +599,7 @@ impl Tool for TaskUpdateTool {
                 || !updates.add_blocks.is_empty()
                 || !updates.add_blocked_by.is_empty()
             {
-                task_store.update_fields(id, updates).unwrap_or(entry)
+                task_store.try_update_fields(id, updates)?.unwrap_or(entry)
             } else {
                 entry
             };
@@ -619,7 +619,7 @@ impl Tool for TaskUpdateTool {
         updates.status = status;
         let updated_fields = task_updated_fields_from_input(&input, status_value);
 
-        match task_store.update_fields(id, updates) {
+        match task_store.try_update_fields(id, updates)? {
             Some(entry) => {
                 // Fire TaskCompleted hook when status changes to completed.
                 if status == Some(TaskStatus::Completed) && existing.status != TaskStatus::Completed
@@ -772,7 +772,7 @@ impl Tool for TaskStopTool {
         let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
 
         let task_store = store_for_context(ctx);
-        match task_store.stop(id) {
+        match task_store.try_stop(id)? {
             Some(entry) => Ok(ToolResult {
                 data: json!({
                     "task": task_to_json_from_store(&task_store, &entry),
