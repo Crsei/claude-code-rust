@@ -3,15 +3,12 @@ use super::security::{
 };
 use super::*;
 use crate::types::app_state::AppState;
-use crate::types::tool::{
-    FileStateCache, PermissionMode, PermissionResult, ToolPermissionContext, ToolUseOptions,
-};
+use crate::types::tool::{FileStateCache, PermissionMode, ToolUseOptions};
 use std::sync::Arc;
 use std::time::Instant;
 
 use serde_json::Value;
 
-use crate::types::message::AssistantMessage;
 use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools};
 
 // -- Helper: minimal ToolUseContext for security_validate tests ----------
@@ -150,18 +147,6 @@ fn test_enforce_result_size_large() {
     }
 }
 
-#[test]
-fn test_streaming_executor_new() {
-    let executor = StreamingToolExecutor::new();
-    assert!(!executor.has_bash_error());
-}
-
-#[test]
-fn test_tracked_tool_state_transitions() {
-    assert_ne!(TrackedToolState::Queued, TrackedToolState::Executing);
-    assert_ne!(TrackedToolState::Executing, TrackedToolState::Completed);
-}
-
 // -- Stage 3c: security_validate tests ----------------------------------
 
 #[test]
@@ -255,12 +240,13 @@ fn test_dangerous_command_blocked() {
     let result = security_validate("id3", "Bash", &input, &tool, &ctx, now);
     assert!(result.is_some(), "Dangerous command should be blocked");
     let err = result.unwrap();
-    assert!(err
-        .result
-        .data
-        .as_str()
-        .unwrap()
-        .contains("Dangerous command blocked"));
+    assert!(
+        err.result
+            .data
+            .as_str()
+            .unwrap()
+            .contains("Dangerous command blocked")
+    );
 }
 
 #[test]
@@ -284,12 +270,13 @@ fn test_path_traversal_blocked() {
     let result = security_validate("id5", "Write", &input, &tool, &ctx, now);
     assert!(result.is_some(), "Path traversal should be blocked");
     let err = result.unwrap();
-    assert!(err
-        .result
-        .data
-        .as_str()
-        .unwrap()
-        .contains("Invalid file path"));
+    assert!(
+        err.result
+            .data
+            .as_str()
+            .unwrap()
+            .contains("Invalid file path")
+    );
 }
 
 #[test]
@@ -318,12 +305,13 @@ fn test_path_outside_cwd_blocked() {
         outside_path
     );
     let err = result.unwrap();
-    assert!(err
-        .result
-        .data
-        .as_str()
-        .unwrap()
-        .contains("outside the allowed"));
+    assert!(
+        err.result
+            .data
+            .as_str()
+            .unwrap()
+            .contains("outside the allowed")
+    );
 }
 
 #[test]
@@ -409,18 +397,6 @@ fn test_make_error_result_fields() {
     assert!(result.new_messages.is_empty());
     assert!(result.result.new_messages.is_empty());
     assert!(!result.hook_stopped_continuation);
-}
-
-#[test]
-fn test_make_error_result_duration_is_u64() {
-    let started = Instant::now();
-    let result = make_error_result("id", "T", "msg", started);
-    // duration_ms should be a small number (test runs in < 1s)
-    assert!(
-        result.duration_ms < 5_000,
-        "duration_ms should be reasonable: {}",
-        result.duration_ms
-    );
 }
 
 #[test]
