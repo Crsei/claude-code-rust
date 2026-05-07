@@ -110,9 +110,12 @@ pub trait QueryDeps: Send + Sync {
     async fn microcompact(&self, messages: Vec<Message>) -> Result<Vec<Message>>;
 
     /// 自动压缩: 达到 token 阈值时压缩历史
+    /// Receives the request-shaped parameters for the current turn so exact
+    /// token preflight can count the same system prompt, tools, model, and
+    /// thinking settings that the provider request will use.
     async fn autocompact(
         &self,
-        messages: Vec<Message>,
+        params: ModelCallParams,
         tracking: Option<AutoCompactTracking>,
     ) -> Result<Option<CompactionResult>>;
 
@@ -134,12 +137,11 @@ pub trait QueryDeps: Send + Sync {
     /// 执行单个工具
     /// Canonical query-loop tool execution boundary.
     ///
-    /// Main-loop batching and future stream-time schedulers should route tool
-    /// calls through this method instead of calling `tools::execution::run_tool_use`
-    /// directly. The production implementation owns lifecycle state, interactive
-    /// permission callbacks, progress forwarding, audit/Langfuse spans, and
-    /// structured `ToolResult` preservation. Stage 2 folds the remaining
-    /// validation/security/result-size behavior into this boundary.
+    /// Main-loop batching and future stream-time schedulers must route tool
+    /// calls through this method. The production implementation owns lifecycle
+    /// state, interactive permission callbacks, progress forwarding,
+    /// audit/Langfuse spans, validation/security checks, result-size
+    /// enforcement, and structured `ToolResult` preservation.
     async fn execute_tool(
         &self,
         request: ToolExecRequest,

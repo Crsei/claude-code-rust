@@ -11,7 +11,7 @@ use super::{CommandContext, CommandHandler, CommandResult};
 use crate::auth::{self, AuthMethod};
 use crate::config::settings::{self, RawSettings};
 use crate::voice::audio::{AudioUnavailable, NullAudioBackend};
-use crate::voice::feasibility::{check_feasibility, Feasibility, FeasibilityReason};
+use crate::voice::feasibility::{Feasibility, FeasibilityReason, check_feasibility};
 use crate::voice::language::normalize_language_for_stt;
 use crate::voice::stt::{NullTranscriptionClient, SttUnavailable};
 
@@ -330,7 +330,9 @@ mod tests {
                 assert!(s.contains("stored enabled:    true"));
                 assert!(s.contains("dictation lang:    en"));
                 assert!(s.contains("fallback from \"klingon\""));
-                assert!(s.contains("voiceEnabled is stored, but runtime voice remains unavailable"));
+                assert!(
+                    s.contains("voiceEnabled is stored, but runtime voice remains unavailable")
+                );
             }
             _ => panic!("expected Output"),
         }

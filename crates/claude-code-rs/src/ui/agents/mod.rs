@@ -34,14 +34,14 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::agent_detail::render_agent_detail;
-    use super::agent_editor::{render_save_change_summary, AgentEditorState, AgentSaveChanges};
+    use super::agent_editor::{AgentEditorState, AgentSaveChanges, render_save_change_summary};
     use super::agent_file_utils::{format_agent_as_markdown, render_agent_file_summary};
     use super::agent_navigation_footer::AgentNavigationFooter;
     use super::agents_list::AgentsListState;
     use super::agents_menu::AgentsMenuState;
     use super::color_picker::ColorPickerState;
     use super::generate_agent::{
-        generate_agent_draft, render_generated_agent_preview, GenerateAgentRequest,
+        GenerateAgentRequest, generate_agent_draft, render_generated_agent_preview,
     };
     use super::model_selector::render_model_selector;
     use super::new_agent_creation::create_agent_wizard::render_create_agent_wizard;
@@ -57,7 +57,7 @@ mod tests {
     use super::new_agent_creation::wizard_steps::tools_step::render_tools_step;
     use super::new_agent_creation::wizard_steps::type_step::render_type_step;
     use super::new_agent_creation::{AgentCreationMethod, AgentWizardData};
-    use super::tool_selector::{default_agent_tools, ToolSelectorState};
+    use super::tool_selector::{ToolSelectorState, default_agent_tools};
     use super::types::{AgentDefinition, AgentMemoryScope, AgentSource, AgentSourceFilter};
     use super::validate_agent::{render_validation_result, validate_agent_definition};
 
@@ -71,7 +71,7 @@ mod tests {
             AgentSource::Project,
         )
         .with_tools(["Read", "Grep", "Bash"])
-        .with_model("sonnet")
+        .with_model("MOTA")
         .with_memory(AgentMemoryScope::Project)
         .with_color("blue")
         .with_base_dir("./.cc-rust/agents")
@@ -115,7 +115,7 @@ mod tests {
         let save = AgentSaveChanges {
             tools: Some(vec!["Read".to_string(), "Grep".to_string()]),
             color: Some("green".to_string()),
-            model: Some("opus".to_string()),
+            model: Some("SOTA".to_string()),
         };
 
         let rendered = [
@@ -165,7 +165,7 @@ mod tests {
         data.system_prompt = Some(draft.agent.system_prompt.clone());
         data.when_to_use = Some(draft.agent.when_to_use.clone());
         data.tools = draft.agent.tools.clone();
-        data.model = Some("sonnet".to_string());
+        data.model = Some("MOTA".to_string());
         data.color = Some("purple".to_string());
         data.memory = Some(AgentMemoryScope::Project);
 

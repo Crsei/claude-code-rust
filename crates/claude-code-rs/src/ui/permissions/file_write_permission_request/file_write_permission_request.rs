@@ -2,7 +2,7 @@
 
 use super::file_write_tool_diff::render_file_write_tool_diff;
 use crate::ui::permissions::file_permission_dialog::permission_options::file_permission_options;
-use crate::ui::permissions::utils::{render_permission_request, PermissionRequestView};
+use crate::ui::permissions::utils::{PermissionRequestView, render_permission_request};
 
 pub fn render_file_write_permission_request(
     path: &str,

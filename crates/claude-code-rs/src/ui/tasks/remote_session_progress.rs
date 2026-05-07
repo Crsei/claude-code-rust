@@ -1,7 +1,7 @@
 //! Remote session progress rendering.
 
-use super::task_status_utils::state_label;
 use super::TaskStatus;
+use super::task_status_utils::state_label;
 
 pub fn render_remote_session_progress(task: &TaskStatus) -> String {
     format!(

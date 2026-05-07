@@ -3,7 +3,7 @@ use std::path::Path;
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::ui::command_surface::adapters::mcp::{build_mcp_servers, selected_server_command};
-use crate::ui::command_surface::{cycle_index, render_tabs, CommandSurfaceOutcome};
+use crate::ui::command_surface::{CommandSurfaceOutcome, cycle_index, render_tabs};
 use crate::ui::mcp::mcp_list_panel::McpListPanelState;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpSurface {
@@ -22,7 +22,10 @@ impl McpSurface {
     pub(crate) fn render(&self) -> String {
         format!(
             "{}\n{}\n\nLeft/Right switch action tabs | Up/Down navigate | Enter select | a add | Esc close",
-            render_tabs(&["Status", "Edit", "Reconnect", "Remove"], self.action_index),
+            render_tabs(
+                &["Status", "Edit", "Reconnect", "Remove"],
+                self.action_index
+            ),
             self.state.render()
         )
     }

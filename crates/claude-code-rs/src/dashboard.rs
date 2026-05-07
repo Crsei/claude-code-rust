@@ -5,7 +5,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{LazyLock, Mutex, OnceLock};
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use serde_json::Value;
 use tracing::{debug, info};

@@ -18,7 +18,7 @@ pub mod manifest;
 pub mod refresh;
 pub mod tools;
 
-pub use refresh::{reload_plugins, ReloadReport};
+pub use refresh::{ReloadReport, reload_plugins};
 
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -764,9 +764,11 @@ mod tests {
         let pd = plugins_dir();
         assert!(pd.to_string_lossy().contains(".cc-rust"));
         assert!(cache_dir().to_string_lossy().contains("cache"));
-        assert!(installed_plugins_path()
-            .to_string_lossy()
-            .contains("installed_plugins"));
+        assert!(
+            installed_plugins_path()
+                .to_string_lossy()
+                .contains("installed_plugins")
+        );
         if let Some(v) = old {
             std::env::set_var("CC_RUST_HOME", v);
         }

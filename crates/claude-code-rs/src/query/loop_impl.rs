@@ -40,12 +40,12 @@ use crate::services::tool_use_summary::{self, ToolInfo};
 
 use super::deps::{ModelCallParams, QueryDeps};
 use super::loop_helpers::{
-    backfill_observable_tool_inputs, classify_model_call_failure, execute_tool_calls,
-    handle_max_output_tokens, handle_prompt_too_long, is_stream_progress_event, make_abort_message,
-    make_error_message, make_tool_result_user_message, make_user_message,
+    MaxTokensRecovery, ModelCallFailureRecovery, ModelCallFailureStage, PromptRecovery,
+    StreamingToolExecutor, backfill_observable_tool_inputs, classify_model_call_failure,
+    execute_tool_calls, handle_max_output_tokens, handle_prompt_too_long, is_stream_progress_event,
+    make_abort_message, make_error_message, make_tool_result_user_message, make_user_message,
     merge_tool_results_by_tool_use_order, stream_idle_timeout, stream_stall_timeout,
-    strip_fallback_signature_blocks, MaxTokensRecovery, ModelCallFailureRecovery,
-    ModelCallFailureStage, PromptRecovery, StreamingToolExecutor,
+    strip_fallback_signature_blocks,
 };
 use super::stop_hooks::{self, StopHookResult};
 use super::token_budget::check_token_budget;
@@ -61,6 +61,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
         // ──────────────────────────────────────────────────────────
 
         let mut state = QueryLoopState::initial(params.messages);
+        state.max_output_tokens_override = params.max_output_tokens_override;
         let system_prompt = params.system_prompt;
         let max_turns = params.max_turns;
         let task_budget = params.task_budget.as_ref().map(|b| b.total);
@@ -169,8 +170,35 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 }
             }
 
+            match deps.refresh_tools().await {
+                Ok(_refreshed) => {
+                    debug!("tools refreshed successfully before context and model call");
+                }
+                Err(e) => {
+                    debug!(error = %e, "tool refresh failed before context and model call, continuing with existing tools");
+                }
+            }
+
+            let tools_for_request = deps.get_tools();
+            let app_state_for_request = deps.get_app_state();
+            let request_model = app_state_for_request.main_loop_model.clone();
+            let request_thinking_enabled = app_state_for_request.thinking_enabled;
+            let request_effort_value = app_state_for_request.effort_value.clone();
+            let request_advisor_model = app_state_for_request.advisor_model.clone();
+            let autocompact_params = ModelCallParams {
+                messages: messages.clone(),
+                system_prompt: system_prompt.clone(),
+                tools: tools_for_request.clone(),
+                model: Some(request_model.clone()),
+                max_output_tokens: state.max_output_tokens_override,
+                skip_cache_write,
+                thinking_enabled: request_thinking_enabled,
+                effort_value: request_effort_value.clone(),
+                advisor_model: request_advisor_model.clone(),
+            };
+
             let (messages, auto_compact_tracking) = match deps
-                .autocompact(messages.clone(), state.auto_compact_tracking.clone())
+                .autocompact(autocompact_params, state.auto_compact_tracking.clone())
                 .await
             {
                 Ok(Some(result)) => {
@@ -209,27 +237,18 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             // STEP 3: API CALL -- streaming model call
             // ──────────────────────────────────────────────────────
 
-            match deps.refresh_tools().await {
-                Ok(_refreshed) => {
-                    debug!("tools refreshed successfully before model call");
-                }
-                Err(e) => {
-                    debug!(error = %e, "tool refresh failed before model call, continuing with existing tools");
-                }
-            }
-
-            let tools = deps.get_tools();
+            let tools = tools_for_request;
 
             let call_params = ModelCallParams {
                 messages: state.messages.clone(),
                 system_prompt: system_prompt.clone(),
                 tools: tools.clone(),
-                model: Some(deps.get_app_state().main_loop_model.clone()),
+                model: Some(request_model.clone()),
                 max_output_tokens: state.max_output_tokens_override,
                 skip_cache_write,
-                thinking_enabled: deps.get_app_state().thinking_enabled,
-                effort_value: deps.get_app_state().effort_value.clone(),
-                advisor_model: deps.get_app_state().advisor_model.clone(),
+                thinking_enabled: request_thinking_enabled,
+                effort_value: request_effort_value,
+                advisor_model: request_advisor_model,
             };
             let provider_for_langfuse = deps
                 .langfuse_provider_name()

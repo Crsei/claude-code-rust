@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use crossterm::event::KeyCode;
+use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::Terminal;
 
 use crate::commands;
 use crate::ui::theme::Theme;
@@ -12,7 +12,7 @@ use crate::ui::theme::Theme;
 use super::edit_targets::{display_path, file_uri};
 use super::metadata::command_meta;
 use super::render::visible_window_start;
-use super::{CommandPalette, ARG_HELP_BASE_HEIGHT, MAX_EDIT_ROWS, MAX_ROWS};
+use super::{ARG_HELP_BASE_HEIGHT, CommandPalette, MAX_EDIT_ROWS, MAX_ROWS};
 #[test]
 fn slash_opens_filtered_palette() {
     let mut palette = CommandPalette::new();
@@ -36,6 +36,22 @@ fn selected_command_keeps_space_for_arguments() {
 }
 
 #[test]
+fn experimental_command_is_visible_in_slash_palette() {
+    let mut palette = CommandPalette::new();
+    palette.sync_from_input("/exp", Path::new("/repo"));
+    assert!(
+        palette
+            .filtered
+            .iter()
+            .any(|item| item.name == "experimental")
+    );
+    assert_eq!(
+        CommandPalette::argument_hint("/experimental ", Path::new("/repo")).as_deref(),
+        Some("/experimental [status|list|on|off|reset]")
+    );
+}
+
+#[test]
 fn complex_commands_show_edit_targets() {
     let mut palette = CommandPalette::new();
     palette.sync_from_input("/plugin", Path::new("/repo"));
@@ -44,10 +60,11 @@ fn complex_commands_show_edit_targets() {
         .iter()
         .find(|item| item.name == "plugin")
         .expect("plugin command");
-    assert!(item
-        .edit_targets
-        .iter()
-        .any(|target| target.display.ends_with("installed_plugins.json")));
+    assert!(
+        item.edit_targets
+            .iter()
+            .any(|target| target.display.ends_with("installed_plugins.json"))
+    );
 }
 
 #[test]

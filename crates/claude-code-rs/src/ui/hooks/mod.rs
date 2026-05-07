@@ -15,12 +15,12 @@ pub mod view_hook_mode;
 
 #[cfg(test)]
 mod tests {
-    use super::hooks_config_menu::{render_hooks_config_menu, HookConfigSummary};
+    use super::hooks_config_menu::{HookConfigSummary, render_hooks_config_menu};
     use super::prompt_dialog::PromptDialogState;
-    use super::select_event_mode::{render_select_event_mode, HookEvent};
-    use super::select_hook_mode::{render_select_hook_mode, HookCommand};
-    use super::select_matcher_mode::{render_select_matcher_mode, HookMatcher};
-    use super::view_hook_mode::{render_view_hook_mode, HookView};
+    use super::select_event_mode::{HookEvent, render_select_event_mode};
+    use super::select_hook_mode::{HookCommand, render_select_hook_mode};
+    use super::select_matcher_mode::{HookMatcher, render_select_matcher_mode};
+    use super::view_hook_mode::{HookView, render_view_hook_mode};
 
     #[test]
     fn snapshot_hooks_surfaces() {

@@ -367,15 +367,21 @@ mod tests {
 
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
         let events = c.drain_events();
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, VoiceEvent::StateChanged(VoiceState::Recording))));
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, VoiceEvent::StateChanged(VoiceState::Transcribing))));
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, VoiceEvent::Transcription(t) if t == "hello world")));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, VoiceEvent::StateChanged(VoiceState::Recording)))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, VoiceEvent::StateChanged(VoiceState::Transcribing)))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, VoiceEvent::Transcription(t) if t == "hello world"))
+        );
         assert_eq!(c.state(), VoiceState::Idle);
     }
 
@@ -397,12 +403,16 @@ mod tests {
 
         tokio::time::sleep(std::time::Duration::from_millis(40)).await;
         let events = c.drain_events();
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, VoiceEvent::StateChanged(VoiceState::Idle))));
-        assert!(!events
-            .iter()
-            .any(|e| matches!(e, VoiceEvent::Transcription(t) if t == "ignored")));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, VoiceEvent::StateChanged(VoiceState::Idle)))
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, VoiceEvent::Transcription(t) if t == "ignored"))
+        );
         assert_eq!(c.state(), VoiceState::Idle);
     }
 }

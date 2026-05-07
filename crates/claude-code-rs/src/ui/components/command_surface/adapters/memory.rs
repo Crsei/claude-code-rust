@@ -62,9 +62,5 @@ pub(crate) fn memory_options(cwd: &Path, home: &Path) -> Vec<MemoryFileOption> {
 pub(crate) fn file_option(path: PathBuf, kind: MemoryFileKind) -> MemoryFileOption {
     let exists = path.exists();
     let option = MemoryFileOption::new(path, kind);
-    if exists {
-        option
-    } else {
-        option.missing()
-    }
+    if exists { option } else { option.missing() }
 }

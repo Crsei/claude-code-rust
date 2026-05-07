@@ -8,17 +8,13 @@ use std::sync::Arc;
 /// Copied from upstream shared message constants.
 pub const INTERRUPT_MESSAGE_FOR_TOOL_USE: &str = "[Request interrupted by user for tool use]";
 /// Copied from upstream shared message constants.
-pub const CANCEL_MESSAGE: &str =
-    "The user doesn't want to take this action right now. STOP what you are doing and wait for the user to tell you how to proceed.";
+pub const CANCEL_MESSAGE: &str = "The user doesn't want to take this action right now. STOP what you are doing and wait for the user to tell you how to proceed.";
 /// Copied from upstream shared message constants.
-pub const REJECT_MESSAGE: &str =
-    "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
+pub const REJECT_MESSAGE: &str = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
 /// Copied from upstream shared message constants.
-pub const PLAN_REJECTION_PREFIX: &str =
-    "The agent proposed a plan that was rejected by the user. The user chose to stay in plan mode rather than proceed with implementation.\n\nRejected plan:\n";
+pub const PLAN_REJECTION_PREFIX: &str = "The agent proposed a plan that was rejected by the user. The user chose to stay in plan mode rather than proceed with implementation.\n\nRejected plan:\n";
 /// Copied from upstream shared message constants.
-pub const REJECT_MESSAGE_WITH_REASON_PREFIX: &str =
-    "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\n";
+pub const REJECT_MESSAGE_WITH_REASON_PREFIX: &str = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\n";
 /// Classifier-denial marker used by the tool-call error formatter.
 pub const CLASSIFIER_DENIAL_PREFIX: &str = "Permission for this action has been denied. Reason: ";
 

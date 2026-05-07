@@ -1654,7 +1654,7 @@ fn reqwest_header_map(headers: &[(String, String)]) -> Result<HeaderMap> {
 }
 
 fn reqwest_error_to_io(error: reqwest::Error) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, error)
+    io::Error::other(error)
 }
 
 fn parse_authority(authority: &str) -> Result<(String, u16)> {
@@ -1746,7 +1746,7 @@ fn build_sse_post_request(
         "POST {} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n",
         target.path_and_query,
         target.authority,
-        body.as_bytes().len()
+        body.len()
     );
     append_user_headers(&mut request, headers);
     request.push_str("\r\n");

@@ -5,14 +5,14 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::types::message::{AssistantMessage, ContentBlock, ImageSource, ToolResultContent};
 use crate::types::tool::{
     PermissionResult, Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult,
 };
 
-use super::detection::{classify_risk, extract_cu_action, CuRiskLevel};
+use super::detection::{CuRiskLevel, classify_risk, extract_cu_action};
 use super::input::{InputAction, MouseButton};
 use super::screenshot;
 

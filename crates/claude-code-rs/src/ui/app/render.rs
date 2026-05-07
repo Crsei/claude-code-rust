@@ -1,9 +1,9 @@
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::prelude::Widget;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
-use ratatui::Frame;
 
 use super::App;
 use crate::ui::command_palette::CommandPalette;
@@ -454,11 +454,16 @@ fn render_workspace_trust_prompt(
     let no_marker = if selected == 1 { "\u{276f}" } else { " " };
 
     let lines = vec![
-        Line::from(Span::styled(separator, Style::default().fg(Color::DarkGray))),
+        Line::from(Span::styled(
+            separator,
+            Style::default().fg(Color::DarkGray),
+        )),
         Line::from(""),
         Line::from(Span::styled(
             " Accessing workspace:",
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from(Span::styled(
@@ -483,14 +488,22 @@ fn render_workspace_trust_prompt(
         Line::from(vec![
             Span::styled(
                 format!(" {} ", yes_marker),
-                Style::default().fg(if selected == 0 { Color::Green } else { Color::White }),
+                Style::default().fg(if selected == 0 {
+                    Color::Green
+                } else {
+                    Color::White
+                }),
             ),
             Span::raw("1. Yes, I trust this folder"),
         ]),
         Line::from(vec![
             Span::styled(
                 format!(" {} ", no_marker),
-                Style::default().fg(if selected == 1 { Color::Red } else { Color::White }),
+                Style::default().fg(if selected == 1 {
+                    Color::Red
+                } else {
+                    Color::White
+                }),
             ),
             Span::raw("2. No, exit"),
         ]),

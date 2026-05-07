@@ -11,7 +11,7 @@ mod render;
 #[cfg(test)]
 mod tests;
 
-use edit_targets::{has_edit_target_picker, EditTarget};
+use edit_targets::{EditTarget, has_edit_target_picker};
 use filter::{command_from_argument_input, filtered_commands};
 use render::{argument_edit_row_count, palette_detail_rows};
 

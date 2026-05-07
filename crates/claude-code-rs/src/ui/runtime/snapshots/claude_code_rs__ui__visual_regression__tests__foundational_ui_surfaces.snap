@@ -9,7 +9,7 @@ allow once  [always allow]  deny
 default: deny
 
 ## composer
-effect=Queued("/model opus")
+effect=Queued("/model SOTA")
 composer mode=Busy busy; 1 queued
 >
 

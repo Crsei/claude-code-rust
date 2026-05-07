@@ -175,7 +175,7 @@ pub fn ensure_and_open(path: &Path, template: &str) -> OpenOutcome {
         Err(e) => {
             return OpenOutcome::CreateFailed {
                 error: e.to_string(),
-            }
+            };
         }
     };
 

@@ -1,6 +1,6 @@
 //! Add permission rules rendering.
 
-use super::permission_rule_input::{render_permission_rule_input, PermissionRuleInputState};
+use super::permission_rule_input::{PermissionRuleInputState, render_permission_rule_input};
 
 pub fn render_add_permission_rules(inputs: &[PermissionRuleInputState]) -> String {
     let mut lines = vec![format!("Add permission rules ({})", inputs.len())];

@@ -67,11 +67,17 @@ struct AgentInput {
 const MAX_AGENT_DEPTH: usize = 5;
 
 /// Resolve a public model alias to a full model ID.
-fn resolve_model_alias(alias: &str, _fallback: &str) -> String {
-    if alias.trim().eq_ignore_ascii_case("inherit") {
-        return _fallback.to_string();
+fn resolve_model_alias(alias: &str, fallback: &str) -> Result<String> {
+    let trimmed = alias.trim();
+    if trimmed.eq_ignore_ascii_case("inherit") {
+        return Ok(fallback.to_string());
     }
-    crate::model_registry::resolve_model_alias(alias)
+    if crate::model_registry::is_removed_legacy_model_alias(trimmed) {
+        bail!(crate::model_registry::removed_legacy_model_alias_error(
+            trimmed
+        ));
+    }
+    Ok(crate::model_registry::resolve_model_alias(trimmed))
 }
 
 // ---------------------------------------------------------------------------
@@ -650,5 +656,15 @@ mod child_tool_boundary_tests {
         definition.permission_mode = Some(AgentPermissionMode::BypassPermissions);
 
         assert_eq!(agent_definition_permission_mode(Some(&definition)), None);
+    }
+
+    #[tokio::test]
+    async fn worktree_change_count_returns_none_for_unverifiable_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let missing = tmp.path().join("missing-worktree");
+
+        let changes = count_worktree_changes(&missing, Some("abc123")).await;
+
+        assert!(changes.is_none());
     }
 }

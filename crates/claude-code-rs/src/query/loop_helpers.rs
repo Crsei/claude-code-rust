@@ -824,7 +824,7 @@ mod tests {
 
         async fn autocompact(
             &self,
-            _messages: Vec<Message>,
+            _params: ModelCallParams,
             _tracking: Option<AutoCompactTracking>,
         ) -> Result<Option<CompactionResult>> {
             Ok(None)

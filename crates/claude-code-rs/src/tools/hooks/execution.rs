@@ -269,11 +269,13 @@ mod tests {
             Ok(output) => {
                 assert!(output.should_continue);
                 assert!(output.additional_context.is_some());
-                assert!(output
-                    .additional_context
-                    .as_ref()
-                    .unwrap()
-                    .contains("hello_world"));
+                assert!(
+                    output
+                        .additional_context
+                        .as_ref()
+                        .unwrap()
+                        .contains("hello_world")
+                );
             }
             Err(e) => {
                 eprintln!("Skipping test_execute_command_hook_plain_text: {}", e);

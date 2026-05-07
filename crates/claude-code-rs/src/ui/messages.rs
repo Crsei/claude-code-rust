@@ -89,8 +89,8 @@ mod tests {
     use super::collapsed_read_search_content::render_collapsed_read_search_content;
     use super::compact_boundary_message::render_compact_boundary_message;
     use super::file_edit_tool_updated_message::{
-        render_file_edit_tool_canceled_message, render_file_edit_tool_rejected_message,
-        render_file_edit_tool_updated_message, FileEditMessageStyle, FileEditToolUpdatedView,
+        FileEditMessageStyle, FileEditToolUpdatedView, render_file_edit_tool_canceled_message,
+        render_file_edit_tool_rejected_message, render_file_edit_tool_updated_message,
     };
     use super::grouped_tool_use_content::render_grouped_tool_use_content;
     use super::highlighted_thinking_text::render_highlighted_thinking_text;
@@ -107,8 +107,8 @@ mod tests {
     use super::user_agent_notification_message::render_user_agent_notification_message;
     use super::user_bash_input_message::render_user_bash_input_message;
     use super::user_bash_output_message::{
-        render_user_bash_output_message, render_user_bash_output_message_with_options,
-        ShellOutputRenderOptions,
+        ShellOutputRenderOptions, render_user_bash_output_message,
+        render_user_bash_output_message_with_options,
     };
     use super::user_channel_message::render_user_channel_message;
     use super::user_command_message::render_user_command_message;

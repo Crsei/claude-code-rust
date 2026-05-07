@@ -8,10 +8,10 @@
 //! - Structured shutdown request/response
 //! - Plan approval response
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use async_trait::async_trait;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tracing::{debug, info};
 
 use crate::teams::in_process::InProcessBackend;
@@ -473,8 +473,11 @@ mod tests {
     use super::*;
     use crate::teams::in_process::InProcessBackend;
     use crate::teams::types::{
-        InProcessTeammateTaskState, TaskStatus, TeamContext, TeammateIdentity,
+        BackendType, InProcessTeammateTaskState, TaskStatus, TeamContext, TeamMember,
+        TeammateIdentity,
     };
+    use crate::types::app_state::AppState;
+    use std::sync::Arc;
 
     struct EnvGuard {
         key: &'static str,
@@ -555,6 +558,99 @@ mod tests {
         assert_eq!(
             tool.user_facing_name(Some(&input)),
             "SendMessage(to: researcher)"
+        );
+    }
+
+    #[tokio::test]
+    async fn call_without_active_team_returns_error() {
+        let tool = SendMessageTool;
+        let ctx = create_test_context();
+        let result = tool
+            .call(
+                json!({"to": "worker", "message": "hello"}),
+                &ctx,
+                &dummy_parent(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.data["error"], "No active team. Create a team first.");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn single_message_writes_to_target_mailbox() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let team_name = create_team_with_members(vec![team_member("worker", true)]);
+
+        let result = handle_single_message(
+            constants::TEAM_LEAD_NAME,
+            "worker",
+            "Review this patch",
+            Some("review patch"),
+            &team_name,
+        )
+        .unwrap();
+
+        assert_eq!(result.data["sent"], true);
+        assert_eq!(result.data["to"], "worker");
+
+        let inbox = mailbox::read_mailbox("worker", &team_name).unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].from, constants::TEAM_LEAD_NAME);
+        assert_eq!(inbox[0].text, "Review this patch");
+        assert_eq!(inbox[0].summary.as_deref(), Some("review patch"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn broadcast_skips_sender_and_inactive_members() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let team_name = create_team_with_members(vec![
+            team_member("worker", true),
+            team_member("reviewer", true),
+            team_member("inactive", false),
+        ]);
+
+        let result = handle_broadcast(
+            constants::TEAM_LEAD_NAME,
+            "Status check",
+            Some("daily check"),
+            &team_name,
+        )
+        .unwrap();
+
+        let recipients = result.data["recipients"].as_array().unwrap();
+        assert_eq!(recipients.len(), 2);
+        assert!(recipients.iter().any(|name| name == "worker"));
+        assert!(recipients.iter().any(|name| name == "reviewer"));
+        assert!(!recipients.iter().any(|name| name == "inactive"));
+        assert!(
+            !recipients
+                .iter()
+                .any(|name| name == constants::TEAM_LEAD_NAME)
+        );
+
+        assert_eq!(
+            mailbox::read_mailbox("worker", &team_name).unwrap().len(),
+            1
+        );
+        assert_eq!(
+            mailbox::read_mailbox("reviewer", &team_name).unwrap().len(),
+            1
+        );
+        assert!(
+            mailbox::read_mailbox("inactive", &team_name)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            mailbox::read_mailbox(constants::TEAM_LEAD_NAME, &team_name)
+                .unwrap()
+                .is_empty()
         );
     }
 
@@ -664,9 +760,6 @@ mod tests {
     }
 
     fn create_test_context() -> ToolUseContext {
-        use crate::types::app_state::AppState;
-        use std::sync::Arc;
-
         let (_tx, rx) = tokio::sync::watch::channel(false);
         ToolUseContext {
             options: ToolUseOptions {
@@ -693,6 +786,50 @@ mod tests {
             bg_agent_tx: None,
             hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
             command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
+        }
+    }
+
+    fn create_team_with_members(members: Vec<TeamMember>) -> String {
+        let team = helpers::create_team("phase0-routing", None, Some("session".into()), ".")
+            .expect("create test team");
+        for member in members {
+            helpers::add_member(&team.name, member).expect("add test member");
+        }
+        team.name
+    }
+
+    fn team_member(name: &str, active: bool) -> TeamMember {
+        TeamMember {
+            agent_id: identity::format_agent_id(name, "phase0-routing"),
+            name: name.to_string(),
+            agent_type: Some("teammate".into()),
+            model: None,
+            prompt: Some("test worker".into()),
+            color: None,
+            plan_mode_required: None,
+            joined_at: chrono::Utc::now().timestamp(),
+            tmux_pane_id: String::new(),
+            cwd: ".".into(),
+            worktree_path: None,
+            session_id: None,
+            subscriptions: vec![],
+            backend_type: Some(BackendType::InProcess),
+            is_active: Some(active),
+            mode: None,
+        }
+    }
+
+    fn dummy_parent() -> AssistantMessage {
+        AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: vec![],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
         }
     }
 }

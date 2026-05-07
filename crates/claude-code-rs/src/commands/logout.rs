@@ -310,9 +310,11 @@ mod tests {
     fn status_detail_strings_are_informative() {
         assert_eq!(StepStatus::NoOp.detail(), "nothing to clear");
         assert_eq!(StepStatus::Cleared.detail(), "cleared");
-        assert!(StepStatus::Failed("disk full".into())
-            .detail()
-            .contains("disk full"));
+        assert!(
+            StepStatus::Failed("disk full".into())
+                .detail()
+                .contains("disk full")
+        );
     }
 
     #[test]

@@ -3,7 +3,7 @@
 //! All LSP positions are **0-based**; our [`SourceLocation`] is **1-based**.
 //! Every conversion adds 1 to line and character values.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
 use crate::lsp_service::types::{CompletionItemInfo, HoverInfo, SourceLocation, SymbolInfo};

@@ -19,17 +19,17 @@ use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use async_trait::async_trait;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tracing::{debug, info, warn};
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
 use crate::worktree_hooks::{
-    default_user_worktree_path, ensure_worktree_parent, run_worktree_create_hook,
-    run_worktree_remove_hook, validate_allowed_worktree_path, WorktreeRemoveHookOutcome,
+    WorktreeRemoveHookOutcome, default_user_worktree_path, ensure_worktree_parent,
+    run_worktree_create_hook, run_worktree_remove_hook, validate_allowed_worktree_path,
 };
 
 // ---------------------------------------------------------------------------
@@ -693,13 +693,177 @@ impl Tool for ExitWorktreeTool {
 mod tests {
     use super::*;
     use crate::types::app_state::AppState;
+    use crate::worktree_hooks::{WORKTREE_CREATE_EVENT, WORKTREE_REMOVE_EVENT};
+    use async_trait::async_trait;
+    use cc_types::hooks::{HookEventConfig, HookOutput, HookRunner, HooksMap, NoopHookRunner};
     use parking_lot::RwLock;
+    use serde_json::{Value, json};
+    use serial_test::serial;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
     use std::sync::Arc;
+    use tempfile::TempDir;
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
+    struct CurrentDirGuard {
+        previous: PathBuf,
+    }
+
+    impl CurrentDirGuard {
+        fn set(path: &Path) -> Self {
+            let previous = std::env::current_dir().expect("read current dir");
+            std::env::set_current_dir(path).expect("set current dir");
+            Self { previous }
+        }
+    }
+
+    impl Drop for CurrentDirGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.previous);
+        }
+    }
+
+    struct WorktreeSessionGuard;
+
+    impl Drop for WorktreeSessionGuard {
+        fn drop(&mut self) {
+            set_worktree_session(None);
+        }
+    }
+
+    #[derive(Default)]
+    struct Phase6HookRunner;
+
+    #[async_trait]
+    impl HookRunner for Phase6HookRunner {
+        fn load_hook_configs(
+            &self,
+            hooks_value: &HooksMap,
+            event_name: &str,
+        ) -> Vec<HookEventConfig> {
+            hooks_value
+                .get(event_name)
+                .and_then(|value| serde_json::from_value(value.clone()).ok())
+                .unwrap_or_default()
+        }
+
+        async fn run_pre_tool_hooks(
+            &self,
+            _tool_name: &str,
+            _input: &Value,
+            _hook_configs: &[HookEventConfig],
+        ) -> anyhow::Result<cc_types::hooks::PreToolHookResult> {
+            Ok(cc_types::hooks::PreToolHookResult::Continue {
+                updated_input: None,
+                permission_override: None,
+            })
+        }
+
+        async fn run_post_tool_hooks(
+            &self,
+            _tool_name: &str,
+            _input: &Value,
+            _tool_result_data: &Value,
+            _hook_configs: &[HookEventConfig],
+        ) -> anyhow::Result<cc_types::hooks::PostToolHookResult> {
+            Ok(cc_types::hooks::PostToolHookResult::Continue)
+        }
+
+        async fn run_post_tool_failure_hooks(
+            &self,
+            _tool_name: &str,
+            _input: &Value,
+            _error: &str,
+            _hook_configs: &[HookEventConfig],
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn run_event_hooks(
+            &self,
+            event_name: &str,
+            payload: &Value,
+            _hook_configs: &[HookEventConfig],
+        ) -> anyhow::Result<HookOutput> {
+            match event_name {
+                WORKTREE_CREATE_EVENT => {
+                    let worktree_path = PathBuf::from(
+                        payload
+                            .get("proposed_worktree_path")
+                            .and_then(Value::as_str)
+                            .unwrap_or(""),
+                    );
+                    fs::create_dir_all(&worktree_path)?;
+                    Ok(HookOutput {
+                        updated_input: Some(json!({
+                            "worktree_path": worktree_path.display().to_string(),
+                            "branch_name": "hook-branch",
+                        })),
+                        ..HookOutput::default()
+                    })
+                }
+                WORKTREE_REMOVE_EVENT => {
+                    let worktree_path = PathBuf::from(
+                        payload
+                            .get("worktree_path")
+                            .and_then(Value::as_str)
+                            .unwrap_or(""),
+                    );
+                    if worktree_path.exists() {
+                        fs::remove_dir_all(&worktree_path)?;
+                    }
+                    Ok(HookOutput {
+                        decision: Some("handled".to_string()),
+                        updated_input: Some(json!({
+                            "handled": true,
+                            "removed": true,
+                        })),
+                        ..HookOutput::default()
+                    })
+                }
+                _ => Ok(HookOutput::default()),
+            }
+        }
+
+        async fn run_stop_hooks(
+            &self,
+            _hook_configs: &[HookEventConfig],
+        ) -> anyhow::Result<cc_types::hooks::PostToolHookResult> {
+            Ok(cc_types::hooks::PostToolHookResult::Continue)
+        }
+    }
 
     fn make_ctx() -> ToolUseContext {
+        make_ctx_with(AppState::default(), Arc::new(NoopHookRunner::new()))
+    }
+
+    fn make_ctx_with(app_state: AppState, hook_runner: Arc<dyn HookRunner>) -> ToolUseContext {
         let state = Arc::new(RwLock::new(AppState::default()));
         let state_r = Arc::clone(&state);
         let state_w = Arc::clone(&state);
+        *state.write() = app_state;
 
         ToolUseContext {
             options: ToolUseOptions {
@@ -728,9 +892,47 @@ mod tests {
             permission_callback: None,
             ask_user_callback: None,
             bg_agent_tx: None,
-            hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
+            hook_runner,
             command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
         }
+    }
+
+    fn parent_message() -> AssistantMessage {
+        AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: vec![],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        }
+    }
+
+    fn run_git(repo: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .output()
+            .expect("run git command");
+        assert!(
+            output.status.success(),
+            "git command failed: {:?}\nstderr: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn init_git_repo(repo: &Path) {
+        fs::create_dir_all(repo).expect("create repo dir");
+        run_git(repo, &["init"]);
+        run_git(repo, &["config", "user.email", "phase6@example.com"]);
+        run_git(repo, &["config", "user.name", "Phase Six"]);
+        fs::write(repo.join("README.md"), "phase 6\n").expect("write repo file");
+        run_git(repo, &["add", "README.md"]);
+        run_git(repo, &["commit", "-m", "initial commit"]);
     }
 
     #[test]
@@ -875,10 +1077,12 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.data["removed"], false);
-        assert!(result.data["message"]
-            .as_str()
-            .unwrap()
-            .contains("outside the cc-rust worktree root"));
+        assert!(
+            result.data["message"]
+                .as_str()
+                .unwrap()
+                .contains("outside the cc-rust worktree root")
+        );
         assert!(get_current_worktree_session().is_some());
 
         set_worktree_session(None);
@@ -924,5 +1128,103 @@ mod tests {
         ));
 
         set_worktree_session(None);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_worktree_hooks_create_and_remove_path() {
+        let _session_guard = WorktreeSessionGuard;
+        set_worktree_session(None);
+
+        let home = TempDir::new().unwrap();
+        let cwd = TempDir::new().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _cwd = CurrentDirGuard::set(cwd.path());
+
+        let mut hooks = AppState::default();
+        hooks.hooks.insert(
+            WORKTREE_CREATE_EVENT.to_string(),
+            json!([{ "hooks": [{ "type": "command", "command": "create" }] }]),
+        );
+        hooks.hooks.insert(
+            WORKTREE_REMOVE_EVENT.to_string(),
+            json!([{ "hooks": [{ "type": "command", "command": "remove" }] }]),
+        );
+
+        let ctx = make_ctx_with(hooks, Arc::new(Phase6HookRunner::default()));
+        let parent = parent_message();
+
+        let enter = EnterWorktreeTool
+            .call(json!({"name": "hooked"}), &ctx, &parent, None)
+            .await
+            .unwrap();
+
+        let worktree_path = PathBuf::from(enter.data["worktree_path"].as_str().unwrap());
+        assert_eq!(enter.data["created_by"], "WorktreeCreate hook");
+        assert_eq!(enter.data["branch"], "hook-branch");
+        assert!(worktree_path.exists(), "hook should create worktree path");
+        assert!(get_current_worktree_session().is_some());
+
+        let exit = ExitWorktreeTool
+            .call(
+                json!({"action": "remove", "discard_changes": true}),
+                &ctx,
+                &parent,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(exit.data["action"], "remove");
+        assert_eq!(exit.data["removed"], true);
+        assert_eq!(exit.data["removed_by"], "WorktreeRemove hook");
+        assert!(
+            !worktree_path.exists(),
+            "hook remove should delete the worktree path"
+        );
+        assert!(get_current_worktree_session().is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_worktree_git_fallback_creates_and_removes_real_worktree() {
+        let _session_guard = WorktreeSessionGuard;
+        set_worktree_session(None);
+
+        let home = TempDir::new().unwrap();
+        let repo = TempDir::new().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        init_git_repo(repo.path());
+        let _cwd = CurrentDirGuard::set(repo.path());
+
+        let ctx = make_ctx();
+        let parent = parent_message();
+
+        let enter = EnterWorktreeTool
+            .call(json!({"name": "fallback-git"}), &ctx, &parent, None)
+            .await
+            .unwrap();
+
+        let worktree_path = PathBuf::from(enter.data["worktree_path"].as_str().unwrap());
+        assert_eq!(enter.data["created_by"], "git worktree");
+        assert!(
+            worktree_path.exists(),
+            "git fallback should create worktree"
+        );
+        assert!(get_current_worktree_session().is_some());
+
+        let exit = ExitWorktreeTool
+            .call(json!({"action": "remove"}), &ctx, &parent, None)
+            .await
+            .unwrap();
+
+        assert_eq!(exit.data["action"], "remove");
+        assert_eq!(exit.data["removed"], true);
+        assert_eq!(exit.data["removed_by"], "git worktree");
+        assert!(
+            !worktree_path.exists(),
+            "git fallback removal should delete the worktree"
+        );
+        assert!(get_current_worktree_session().is_none());
     }
 }

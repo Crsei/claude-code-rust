@@ -18,7 +18,7 @@ use ratatui::text::{Line, Span};
 use similar::{ChangeTag, TextDiff};
 use unicode_width::UnicodeWidthChar;
 
-use self::structured_diff::{parse_structured_hunks, StructuredDiffHunk};
+use self::structured_diff::{StructuredDiffHunk, parse_structured_hunks};
 use super::theme::Theme;
 
 pub const MAX_VISIBLE_FILES: usize = 5;

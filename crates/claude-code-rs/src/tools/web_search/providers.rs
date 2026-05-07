@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 use serde_json::json;
 
 use super::{
-    BraveSearchResponse, SearchProvider, SearchResultEntry, TavilySearchResponse,
-    BRAVE_API_KEY_ENV, BRAVE_API_URL, TAVILY_API_KEY_ENV, TAVILY_API_URL,
+    BRAVE_API_KEY_ENV, BRAVE_API_URL, BraveSearchResponse, SearchProvider, SearchResultEntry,
+    TAVILY_API_KEY_ENV, TAVILY_API_URL, TavilySearchResponse,
 };
 
 pub(super) fn detect_provider() -> Option<SearchProvider> {

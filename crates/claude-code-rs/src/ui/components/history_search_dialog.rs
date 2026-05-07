@@ -460,9 +460,11 @@ mod tests {
 
         dialog.handle_key(key(KeyCode::Char('c')));
         dialog.handle_key(key(KeyCode::Char('a')));
-        assert!(dialog
-            .selected_prompt()
-            .is_some_and(|prompt| prompt.starts_with("cargo test")));
+        assert!(
+            dialog
+                .selected_prompt()
+                .is_some_and(|prompt| prompt.starts_with("cargo test"))
+        );
 
         dialog.handle_key(key(KeyCode::Backspace));
         assert_eq!(dialog.query(), "c");

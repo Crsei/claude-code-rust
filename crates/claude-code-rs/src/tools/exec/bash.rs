@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
@@ -24,7 +24,7 @@ use crate::utils::git_operation_tracking::track_git_operations_json;
 use crate::utils::shell::{build_shell_env, detect_default_shell};
 
 use super::process_control::{
-    configure_process_group, wait_for_exit_or_termination, ControlledExit,
+    ControlledExit, configure_process_group, wait_for_exit_or_termination,
 };
 
 /// Truncate output using head+tail strategy.

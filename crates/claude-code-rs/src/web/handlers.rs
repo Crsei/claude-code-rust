@@ -1,14 +1,14 @@
 //! Axum route handlers for the web chat API.
 
 use std::path::Path;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use axum::{
+    Json,
     extract::{Path as AxumPath, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -775,9 +775,9 @@ fn stored_message_from(msg: &Message) -> StoredMessage {
 mod tests {
     use super::*;
     use axum::body::to_bytes;
-    use serde_json::{json, Value};
-    use std::sync::atomic::AtomicBool;
+    use serde_json::{Value, json};
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
 
     fn make_web_state() -> WebState {
         let engine = Arc::new(QueryEngine::new(QueryEngineConfig {
@@ -822,7 +822,7 @@ mod tests {
             State(state.clone()),
             Json(SettingsRequest {
                 action: "set_model".to_string(),
-                value: json!("opus"),
+                value: json!("SOTA"),
             }),
         )
         .await
@@ -831,10 +831,12 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = response_json(response).await;
         assert_eq!(body["ok"], json!(false));
-        assert!(body["message"]
-            .as_str()
-            .expect("message")
-            .contains("not in availableModels"));
+        assert!(
+            body["message"]
+                .as_str()
+                .expect("message")
+                .contains("not in availableModels")
+        );
         assert_ne!(
             state.engine().app_state().main_loop_model,
             "claude-opus-4-20250514"
@@ -852,7 +854,7 @@ mod tests {
             State(state.clone()),
             Json(SettingsRequest {
                 action: "set_model".to_string(),
-                value: json!("opus"),
+                value: json!("SOTA"),
             }),
         )
         .await

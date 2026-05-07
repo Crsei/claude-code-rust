@@ -31,8 +31,10 @@ mod tests {
 
     #[test]
     fn fast_mode_tooltip_takes_priority() {
-        assert!(get_tooltip(Some("pro"), true)
-            .unwrap()
-            .contains("Fast mode"));
+        assert!(
+            get_tooltip(Some("pro"), true)
+                .unwrap()
+                .contains("Fast mode")
+        );
     }
 }

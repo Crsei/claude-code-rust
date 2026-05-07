@@ -13,11 +13,11 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::sandbox::{policy_from_app_state, NetworkDecision};
+use crate::sandbox::{NetworkDecision, policy_from_app_state};
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
 
@@ -217,7 +217,9 @@ fn normalise_url(raw: &str) -> Result<String> {
     // Basic parse check
     let parsed = url::Url::parse(&url).context("Invalid URL")?;
     if !parsed.username().is_empty() || parsed.password().is_some() {
-        bail!("URL contains embedded credentials; WebFetch does not support cookie or credentialed URL fetches");
+        bail!(
+            "URL contains embedded credentials; WebFetch does not support cookie or credentialed URL fetches"
+        );
     }
     Ok(url)
 }

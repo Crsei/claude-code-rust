@@ -654,10 +654,14 @@ mod tests {
         assert_eq!(usage.cache_creation_input_tokens, 2);
 
         match &message.content[..] {
-            [ContentBlock::Text { text }, ContentBlock::Thinking {
-                thinking,
-                signature,
-            }, ContentBlock::ToolUse { id, name, input }] => {
+            [
+                ContentBlock::Text { text },
+                ContentBlock::Thinking {
+                    thinking,
+                    signature,
+                },
+                ContentBlock::ToolUse { id, name, input },
+            ] => {
                 assert_eq!(text, "hello");
                 assert_eq!(thinking, "considering");
                 assert_eq!(signature.as_deref(), Some("sig"));

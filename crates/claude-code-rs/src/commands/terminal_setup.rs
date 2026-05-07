@@ -23,7 +23,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::ui::terminal_env::{parse_editor_command, TerminalEnvConfig};
+use crate::ui::terminal_env::{TerminalEnvConfig, parse_editor_command};
 
 pub struct TerminalSetupHandler;
 
@@ -187,9 +187,7 @@ impl TerminalLabel {
             TerminalLabel::Alacritty => {
                 "alacritty.toml: `[[keyboard.bindings]] key=\"Return\" mods=\"Shift\" chars=\"\\x1b[27;2;13~\"`."
             }
-            TerminalLabel::Kitty => {
-                "kitty.conf: `map shift+enter send_text all \\x1b[27;2;13~`."
-            }
+            TerminalLabel::Kitty => "kitty.conf: `map shift+enter send_text all \\x1b[27;2;13~`.",
             TerminalLabel::Ghostty => {
                 "Ghostty honors `keybind = shift+enter=text:\\x1b[27;2;13~` in config.toml."
             }

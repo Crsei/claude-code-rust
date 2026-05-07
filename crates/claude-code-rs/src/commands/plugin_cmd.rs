@@ -21,7 +21,7 @@
 //! - `/plugin uninstall <plugin-id>`      — drop from installed_plugins.json
 //! - `/plugin uninstall <id> --purge`     — also delete the cache dir
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
@@ -500,11 +500,13 @@ mod tests {
         let mut ctx = test_ctx();
         let result = handler.execute("enable", &mut ctx).await;
         assert!(result.is_err());
-        assert!(result
-            .err()
-            .unwrap()
-            .to_string()
-            .contains("Usage: /plugin enable"));
+        assert!(
+            result
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("Usage: /plugin enable")
+        );
     }
 
     #[tokio::test]
@@ -513,11 +515,13 @@ mod tests {
         let mut ctx = test_ctx();
         let result = handler.execute("uninstall", &mut ctx).await;
         assert!(result.is_err());
-        assert!(result
-            .err()
-            .unwrap()
-            .to_string()
-            .contains("Usage: /plugin uninstall"));
+        assert!(
+            result
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("Usage: /plugin uninstall")
+        );
     }
 
     /// Synchronously run a handler's async execute — used inside a blocking

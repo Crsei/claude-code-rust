@@ -25,9 +25,9 @@ impl ModelOption {
 
 pub fn default_model_options() -> Vec<ModelOption> {
     vec![
-        ModelOption::new("sonnet", "Sonnet", "Balanced reasoning and speed"),
-        ModelOption::new("opus", "Opus", "Highest capability for difficult work"),
-        ModelOption::new("haiku", "Haiku", "Fast low-latency work"),
+        ModelOption::new("MOTA", "MOTA", "Balanced capability and speed"),
+        ModelOption::new("SOTA", "SOTA", "Highest capability work"),
+        ModelOption::new("FOTA", "FOTA", "Fast lightweight work"),
     ]
 }
 
@@ -45,7 +45,7 @@ pub fn model_options_with_current(initial_model: Option<&str>) -> Vec<ModelOptio
 }
 
 pub fn render_model_selector(initial_model: Option<&str>) -> String {
-    let default_value = initial_model.unwrap_or("sonnet");
+    let default_value = initial_model.unwrap_or("MOTA");
     let options = model_options_with_current(initial_model);
     let mut lines =
         vec!["Model determines the agent's reasoning capabilities and speed.".to_string()];

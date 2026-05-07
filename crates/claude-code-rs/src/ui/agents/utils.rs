@@ -108,11 +108,7 @@ pub fn memory_label(agent: &AgentDefinition) -> String {
 }
 
 pub fn selection_marker(selected: bool) -> &'static str {
-    if selected {
-        ">"
-    } else {
-        " "
-    }
+    if selected { ">" } else { " " }
 }
 
 pub fn truncate_middle(value: &str, max_chars: usize) -> String {

@@ -11,7 +11,7 @@ use tracing::{debug, info, warn};
 use crate::types::config::QuerySource;
 
 use super::memory_log::append_log_entry;
-use super::state::{next_event_id, DaemonState, SseEvent};
+use super::state::{DaemonState, SseEvent, next_event_id};
 
 const DEFAULT_TICK_INTERVAL_MS: u64 = 30_000;
 

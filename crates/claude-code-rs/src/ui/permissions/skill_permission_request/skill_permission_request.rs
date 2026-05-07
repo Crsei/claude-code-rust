@@ -1,7 +1,7 @@
 //! Skill permission request rendering.
 
 use crate::ui::permissions::utils::{
-    default_permission_options, render_permission_request, PermissionRequestView,
+    PermissionRequestView, default_permission_options, render_permission_request,
 };
 
 pub fn render_skill_permission_request(

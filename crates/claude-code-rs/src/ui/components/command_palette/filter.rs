@@ -3,8 +3,8 @@ use std::path::Path;
 use crate::commands;
 use crate::ui::fuzzy_match::best_fuzzy_match;
 
-use super::metadata::command_meta;
 use super::CommandItem;
+use super::metadata::command_meta;
 
 pub(super) fn filtered_commands(query: &str, cwd: &Path) -> Vec<CommandItem> {
     let mut items: Vec<(usize, usize, CommandItem)> = commands::get_all_commands()

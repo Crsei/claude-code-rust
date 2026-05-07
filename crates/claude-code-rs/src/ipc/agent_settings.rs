@@ -15,7 +15,7 @@
 //! name: reviewer
 //! description: "Reviews code against the plan"
 //! tools: Read, Grep
-//! model: sonnet
+//! model: MOTA
 //! color: blue
 //! permissionMode: acceptEdits
 //! memory: project
@@ -730,11 +730,7 @@ fn open_in_editor(file_path: &str) -> Result<(), String> {
 }
 
 fn default_editor() -> &'static str {
-    if cfg!(windows) {
-        "notepad"
-    } else {
-        "vi"
-    }
+    if cfg!(windows) { "notepad" } else { "vi" }
 }
 
 fn is_inside_agents_dir(path: &Path) -> bool {
@@ -775,7 +771,7 @@ mod tests {
             system_prompt: "You are a helpful agent.\n\nDo your best work.\n".to_string(),
             tools: vec!["Read".to_string(), "Grep".to_string()],
             disallowed_tools: vec![],
-            model: Some("sonnet".to_string()),
+            model: Some("MOTA".to_string()),
             color: Some("blue".to_string()),
             permission_mode: Some(AgentPermissionMode::AcceptEdits),
             memory: Some(AgentMemoryScope::Project),
@@ -825,7 +821,7 @@ mod tests {
         assert_eq!(back.name, "reviewer");
         assert_eq!(back.description, "Agent reviewer description");
         assert_eq!(back.tools, vec!["Read".to_string(), "Grep".to_string()]);
-        assert_eq!(back.model.as_deref(), Some("sonnet"));
+        assert_eq!(back.model.as_deref(), Some("MOTA"));
         assert_eq!(back.color.as_deref(), Some("blue"));
         assert_eq!(back.permission_mode, Some(AgentPermissionMode::AcceptEdits));
         assert_eq!(back.memory, Some(AgentMemoryScope::Project));
@@ -865,7 +861,7 @@ mod tests {
 
     #[test]
     fn parse_agent_file_extracts_all_frontmatter_fields() {
-        let raw = "---\nname: foo\ndescription: \"A foo agent\"\ntools: Read, Bash\nmodel: opus\ncolor: red\npermissionMode: plan\nmemory: user\nmaxTurns: 20\neffort: high\nbackground: true\nisolation: worktree\nskills: simplify, loop\n---\n\nBody text here.\n";
+        let raw = "---\nname: foo\ndescription: \"A foo agent\"\ntools: Read, Bash\nmodel: SOTA\ncolor: red\npermissionMode: plan\nmemory: user\nmaxTurns: 20\neffort: high\nbackground: true\nisolation: worktree\nskills: simplify, loop\n---\n\nBody text here.\n";
         let parsed = parse_agent_file(
             &PathBuf::from("/tmp/foo.md"),
             raw,
@@ -875,7 +871,7 @@ mod tests {
         assert_eq!(parsed.name, "foo");
         assert_eq!(parsed.description, "A foo agent");
         assert_eq!(parsed.tools, vec!["Read".to_string(), "Bash".to_string()]);
-        assert_eq!(parsed.model.as_deref(), Some("opus"));
+        assert_eq!(parsed.model.as_deref(), Some("SOTA"));
         assert_eq!(parsed.color.as_deref(), Some("red"));
         assert_eq!(parsed.permission_mode, Some(AgentPermissionMode::Plan));
         assert_eq!(parsed.memory, Some(AgentMemoryScope::User));
@@ -975,7 +971,7 @@ mod tests {
         assert!(rendered.starts_with("---\n"));
         assert!(rendered.contains("name: rtrip"));
         assert!(rendered.contains("tools: Read, Grep"));
-        assert!(rendered.contains("model: sonnet"));
+        assert!(rendered.contains("model: MOTA"));
         assert!(rendered.contains("color: blue"));
         assert!(rendered.contains("permissionMode: acceptEdits"));
         assert!(rendered.contains("memory: project"));

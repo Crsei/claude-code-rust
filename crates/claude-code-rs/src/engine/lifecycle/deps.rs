@@ -192,6 +192,66 @@ fn merge_refreshed_mcp_tools(existing_tools: Tools, refreshed_mcp_tools: Tools) 
     merged
 }
 
+fn prepare_model_call_params_for_client(
+    params: &mut ModelCallParams,
+    app_model: &str,
+    client: &crate::api::client::ApiClient,
+) {
+    if params.model.as_deref().unwrap_or_default().is_empty() {
+        params.model = Some(if app_model.is_empty() {
+            client.config().default_model.clone()
+        } else {
+            app_model.to_string()
+        });
+    }
+
+    if !crate::api::client::provider_supports_advisor(&client.config().provider)
+        && params.advisor_model.is_some()
+    {
+        tracing::debug!(
+            provider = client.langfuse_provider_name(),
+            "dropping advisor_model - provider does not support it"
+        );
+        params.advisor_model = None;
+    }
+}
+
+fn model_for_autocompact(
+    params: &mut ModelCallParams,
+    app_model: &str,
+    client: Option<&crate::api::client::ApiClient>,
+) -> String {
+    if let Some(client) = client {
+        prepare_model_call_params_for_client(params, app_model, client);
+        return params
+            .model
+            .clone()
+            .unwrap_or_else(|| client.config().default_model.clone());
+    }
+
+    let model = if let Some(model) = params.model.as_deref().filter(|model| !model.is_empty()) {
+        model.to_string()
+    } else if app_model.is_empty() {
+        "claude-sonnet-4-20250514".to_string()
+    } else {
+        app_model.to_string()
+    };
+    params.model = Some(model.clone());
+    model
+}
+
+fn build_auto_compact_exact_count_request(
+    base_params: &ModelCallParams,
+    messages: Vec<Message>,
+    model: &str,
+) -> crate::api::client::MessagesRequest {
+    let mut count_params = base_params.clone();
+    count_params.messages = messages;
+    count_params.model = Some(model.to_string());
+    count_params.skip_cache_write = Some(true);
+    build_messages_request(&count_params)
+}
+
 #[async_trait::async_trait]
 impl QueryDeps for QueryEngineDeps {
     fn tool_progress_callback(&self) -> Option<Arc<dyn Fn(ToolProgress) + Send + Sync>> {
@@ -207,15 +267,8 @@ impl QueryDeps for QueryEngineDeps {
             )
         })?;
 
-        // Fill model: AppState (user/config/env) > provider default
-        if params.model.is_none() {
-            let app_model = self.state.read().app_state.main_loop_model.clone();
-            params.model = Some(if app_model.is_empty() {
-                client.config().default_model.clone()
-            } else {
-                app_model
-            });
-        }
+        let app_model = self.state.read().app_state.main_loop_model.clone();
+        prepare_model_call_params_for_client(&mut params, &app_model, client);
 
         // Strip advisor_model for providers that don't support it (issue #33).
         if !crate::api::client::provider_supports_advisor(&client.config().provider)
@@ -265,15 +318,8 @@ impl QueryDeps for QueryEngineDeps {
             )
         })?;
 
-        // Fill model: AppState (user/config/env) > provider default
-        if params.model.is_none() {
-            let app_model = self.state.read().app_state.main_loop_model.clone();
-            params.model = Some(if app_model.is_empty() {
-                client.config().default_model.clone()
-            } else {
-                app_model
-            });
-        }
+        let app_model = self.state.read().app_state.main_loop_model.clone();
+        prepare_model_call_params_for_client(&mut params, &app_model, client);
 
         // Strip advisor_model for providers that don't support it (issue #33).
         if !crate::api::client::provider_supports_advisor(&client.config().provider)
@@ -325,24 +371,20 @@ impl QueryDeps for QueryEngineDeps {
 
     async fn autocompact(
         &self,
-        messages: Vec<Message>,
+        mut params: ModelCallParams,
         tracking: Option<AutoCompactTracking>,
     ) -> Result<Option<CompactionResult>> {
-        let model = {
-            let app = &self.state.read().app_state;
-            if app.main_loop_model.is_empty() {
-                self.api_client
-                    .as_ref()
-                    .map(|c| c.config().default_model.clone())
-                    .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string())
-            } else {
-                app.main_loop_model.clone()
-            }
-        };
+        let original_messages = params.messages.clone();
+        let app_model = self.state.read().app_state.main_loop_model.clone();
+        let model = model_for_autocompact(
+            &mut params,
+            &app_model,
+            self.api_client.as_ref().map(|client| client.as_ref()),
+        );
 
         // Run the local context pipeline (budget -> snip -> microcompact -> auto-compact check)
         let pipeline_result = crate::compact::pipeline::run_context_pipeline(
-            messages.clone(),
+            original_messages.clone(),
             tracking.clone(),
             &model,
         )
@@ -360,18 +402,11 @@ impl QueryDeps for QueryEngineDeps {
                 .as_ref()
                 .filter(|client| client.supports_exact_token_count())
             {
-                let count_params = ModelCallParams {
-                    messages: pipeline_result.messages.clone(),
-                    system_prompt: vec![],
-                    tools: vec![],
-                    model: Some(model.clone()),
-                    max_output_tokens: Some(1),
-                    skip_cache_write: Some(true),
-                    thinking_enabled: None,
-                    effort_value: None,
-                    advisor_model: None,
-                };
-                let count_request = build_messages_request(&count_params);
+                let count_request = build_auto_compact_exact_count_request(
+                    &params,
+                    pipeline_result.messages.clone(),
+                    &model,
+                );
                 match client.count_token_usage_exact(&count_request).await {
                     Ok(report) => {
                         let exact_triggered =
@@ -444,7 +479,7 @@ impl QueryDeps for QueryEngineDeps {
             // Try model-based summarization if API client is available
             if let Some(ref _client) = self.api_client {
                 let summary_prompt = crate::compact::compaction::build_compaction_prompt();
-                let pre_tokens = crate::utils::tokens::estimate_messages_tokens(&messages);
+                let pre_tokens = crate::utils::tokens::estimate_messages_tokens(&original_messages);
 
                 // Build a summarization request
                 let summary_messages = vec![Message::User(crate::types::message::UserMessage {
@@ -452,7 +487,7 @@ impl QueryDeps for QueryEngineDeps {
                     timestamp: chrono::Utc::now().timestamp_millis(),
                     role: "user".into(),
                     content: crate::types::message::MessageContent::Text(
-                        format_conversation_for_summary(&messages),
+                        format_conversation_for_summary(&original_messages),
                     ),
                     is_meta: true,
                     tool_use_result: None,
@@ -495,7 +530,7 @@ impl QueryDeps for QueryEngineDeps {
 
                         let post_messages = build_post_compact_messages_with_boundary(
                             &summary_text,
-                            &messages,
+                            &original_messages,
                             &config,
                             pre_tokens,
                         );
@@ -630,9 +665,9 @@ impl QueryDeps for QueryEngineDeps {
     }
 
     // Production implementation of the canonical query-loop tool execution
-    // boundary declared in `QueryDeps`. Stage 2 keeps main-loop and future
-    // stream-time scheduling routed here while folding in the remaining
-    // validation/security/result-size stages from `tools::execution::run_tool_use`.
+    // boundary declared in `QueryDeps`. Main-loop and future stream-time
+    // scheduling must stay routed here so permission, hook, progress, audit,
+    // security, and result handling remain single-sourced.
     async fn execute_tool(
         &self,
         request: ToolExecRequest,
@@ -1330,7 +1365,7 @@ mod tests {
     use super::*;
     use crate::engine::lifecycle::QueryEngine;
     use crate::types::config::QueryEngineConfig;
-    use crate::types::message::{AssistantMessage, ToolResultContent};
+    use crate::types::message::{AssistantMessage, MessageContent, ToolResultContent, UserMessage};
     use crate::types::tool::{
         PermissionCallback, PermissionMode, PermissionResult, Tool, ToolResult, ToolUseContext,
     };
@@ -1477,6 +1512,18 @@ mod tests {
         }
     }
 
+    fn user_message(text: &str) -> Message {
+        Message::User(UserMessage {
+            uuid: Uuid::new_v4(),
+            timestamp: 0,
+            role: "user".to_string(),
+            content: MessageContent::Text(text.to_string()),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        })
+    }
+
     fn canonical_tool(
         name: &'static str,
         seen_input: Arc<parking_lot::Mutex<Option<Value>>>,
@@ -1556,6 +1603,42 @@ mod tests {
 
         assert!(!exact_auto_compact_triggered(true, Some(&below)));
         assert!(exact_auto_compact_triggered(false, Some(&above)));
+    }
+
+    #[test]
+    fn auto_compact_exact_count_request_uses_final_request_boundary() {
+        let seen_input = Arc::new(parking_lot::Mutex::new(None));
+        let tool: Arc<dyn Tool> = canonical_tool("BoundaryTool", seen_input);
+        let params = ModelCallParams {
+            messages: vec![user_message("pre-pipeline")],
+            system_prompt: vec!["system boundary".to_string()],
+            tools: vec![tool],
+            model: Some("claude-sonnet-4-20250514".to_string()),
+            max_output_tokens: Some(123),
+            skip_cache_write: None,
+            thinking_enabled: Some(true),
+            effort_value: Some("low".to_string()),
+            advisor_model: Some("advisor-model".to_string()),
+        };
+
+        let request = build_auto_compact_exact_count_request(
+            &params,
+            vec![user_message("post-pipeline")],
+            "claude-sonnet-4-20250514",
+        );
+
+        assert_eq!(request.messages[0]["content"], json!("post-pipeline"));
+        assert_eq!(
+            request.system.as_ref().unwrap()[0]["text"],
+            json!("system boundary")
+        );
+        assert_eq!(
+            request.tools.as_ref().unwrap()[0]["name"],
+            json!("BoundaryTool")
+        );
+        assert_eq!(request.max_tokens, 123);
+        assert!(request.thinking.is_some());
+        assert_eq!(request.advisor_model.as_deref(), Some("advisor-model"));
     }
 
     #[test]
@@ -1743,6 +1826,53 @@ mod tests {
             result.result.model_content,
             Some(ToolResultContent::Text(ref text)) if text == "model content"
         ));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn execute_tool_allows_plan_file_write_in_plan_mode() {
+        struct OriginalCwdGuard(std::path::PathBuf);
+
+        impl Drop for OriginalCwdGuard {
+            fn drop(&mut self) {
+                crate::bootstrap::PROCESS_STATE.write().original_cwd = self.0.clone();
+            }
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(temp.path().join(".cc-rust")).unwrap();
+        let original_cwd = crate::bootstrap::PROCESS_STATE.read().original_cwd.clone();
+        let _guard = OriginalCwdGuard(original_cwd);
+        crate::bootstrap::PROCESS_STATE.write().original_cwd = temp.path().to_path_buf();
+
+        let plan_path = crate::config::paths::current_plan_file_path(temp.path());
+        let plan_path_string = plan_path.to_string_lossy().into_owned();
+        let content = "## Plan\n- verify canonical plan file write";
+        let tool: Arc<dyn Tool> = Arc::new(crate::tools::fs::file_write::FileWriteTool::new());
+        let deps = make_deps(vec![tool], PermissionMode::Plan);
+
+        let result = deps
+            .execute_tool(
+                tool_request(
+                    "Write",
+                    json!({
+                        "file_path": plan_path_string,
+                        "content": content,
+                    }),
+                ),
+                &deps.get_tools(),
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error,
+            "canonical plan file write should not require a prompt: {:?}",
+            result.result.data
+        );
+        assert_eq!(std::fs::read_to_string(plan_path).unwrap(), content);
     }
 
     #[tokio::test]

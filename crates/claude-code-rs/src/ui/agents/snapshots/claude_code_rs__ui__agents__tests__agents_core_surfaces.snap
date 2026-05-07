@@ -13,7 +13,7 @@ Agents
 Agents
   Create new agent
 Project:
-> reviewer - sonnet - project memory
+> reviewer - MOTA - project memory
 Built-in:
   general-purpose - default
 
@@ -24,7 +24,7 @@ Description
   Use when code changes need a focused review before commit.
 
 Tools            Read, Grep, Bash
-Model            sonnet
+Model            MOTA
 Permission mode  ask
 Memory           project
 Hooks            PreToolUse
@@ -53,7 +53,7 @@ memory: project
 name: reviewer
 description: "Use when code changes need a focused review before commit."
 tools: Read, Grep, Bash
-model: sonnet
+model: MOTA
 color: blue
 memory: project
 permission_mode: ask
@@ -77,9 +77,9 @@ preview: @reviewer (purple)
 ## model
 Model determines the agent's reasoning capabilities and speed.
 > custom-model-id Current model (custom ID)
-  Sonnet       Balanced reasoning and speed
-  Opus         Highest capability for difficult work
-  Haiku        Fast low-latency work
+  MOTA         Balanced capability and speed
+  SOTA         Highest capability work
+  FOTA         Fast lightweight work
 
 ## tools
 2 of 8 tools selected
@@ -105,5 +105,5 @@ status: valid
 ## save
 agent: reviewer
 tools: Read, Grep
-model: opus
+model: SOTA
 color: green

@@ -9,7 +9,7 @@ use std::pin::Pin;
 use anyhow::{Context, Result};
 use futures::Stream;
 
-use crate::api::client::{parse_sse_byte_stream, MessagesRequest};
+use crate::api::client::{MessagesRequest, parse_sse_byte_stream};
 use crate::api::retry::categorize_api_error;
 use crate::types::message::StreamEvent;
 
@@ -40,7 +40,7 @@ impl StreamProvider for AnthropicStreamProvider {
         http: &reqwest::Client,
         request: &MessagesRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
-        use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+        use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 
         let url = format!("{}/v1/messages", self.base_url.trim_end_matches('/'));
 

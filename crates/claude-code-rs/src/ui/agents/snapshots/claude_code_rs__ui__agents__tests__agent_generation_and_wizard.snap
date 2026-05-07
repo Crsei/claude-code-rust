@@ -75,9 +75,9 @@ MCP tools (0/1)
 Model
 status: complete
 Model determines the agent's reasoning capabilities and speed.
-> Sonnet       Balanced reasoning and speed
-  Opus         Highest capability for difficult work
-  Haiku        Fast low-latency work
+> MOTA         Balanced capability and speed
+  SOTA         Highest capability work
+  FOTA         Fast lightweight work
 
 ## color
 Color
@@ -111,7 +111,7 @@ markdown:
 name: review-unsafe-rust
 description: "Use when the task is to review unsafe Rust changes."
 tools: Read, Grep
-model: sonnet
+model: MOTA
 color: purple
 memory: project
 ---

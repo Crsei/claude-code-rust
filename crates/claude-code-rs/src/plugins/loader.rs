@@ -11,8 +11,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use tracing::warn;
 
-use super::manifest::{load_manifest, PluginManifest};
-use super::{cache_dir, installed_plugins_path, PluginEntry, PluginSource, PluginStatus};
+use super::manifest::{PluginManifest, load_manifest};
+use super::{PluginEntry, PluginSource, PluginStatus, cache_dir, installed_plugins_path};
 
 // ---------------------------------------------------------------------------
 // Installed plugins persistence (installed_plugins.json)

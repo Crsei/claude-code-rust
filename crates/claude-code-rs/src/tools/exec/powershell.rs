@@ -7,7 +7,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -24,7 +24,7 @@ use crate::utils::shell::build_shell_env;
 use super::bash::truncate_output;
 use super::powershell_parser;
 use super::process_control::{
-    configure_process_group, wait_for_exit_or_termination, ControlledExit,
+    ControlledExit, configure_process_group, wait_for_exit_or_termination,
 };
 
 /// PowerShellTool -- execute PowerShell commands.

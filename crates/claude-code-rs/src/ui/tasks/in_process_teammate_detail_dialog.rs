@@ -1,7 +1,7 @@
 //! In-process teammate detail dialog.
 
-use super::task_status_utils::task_header;
 use super::TaskStatus;
+use super::task_status_utils::task_header;
 
 pub fn render_in_process_teammate_detail_dialog(task: &TaskStatus, teammate_name: &str) -> String {
     format!(

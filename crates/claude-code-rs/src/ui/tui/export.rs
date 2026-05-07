@@ -52,7 +52,7 @@ pub(super) async fn export_to_editor(body: &str) -> anyhow::Result<std::path::Pa
                     "{} exited with status {}",
                     ed,
                     s.code().unwrap_or(-1)
-                ))
+                ));
             }
             Err(e) => return Err(anyhow::anyhow!("could not launch '{}': {}", ed, e)),
         }

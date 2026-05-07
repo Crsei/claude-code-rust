@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::engine::lifecycle::QueryEngine;
-use crate::tools::tasks::{global_store, TaskCreateOptions, TaskEntry, TaskStatus};
+use crate::tools::tasks::{TaskCreateOptions, TaskEntry, TaskStatus, global_store};
 use crate::types::config::{QueryEngineConfig, QuerySource};
 use crate::types::tool::*;
 use crate::utils::bash::validate_working_directory;
@@ -27,8 +27,8 @@ use crate::worktree_hooks::{
 };
 
 use super::{
-    build_child_config, count_worktree_changes, find_git_root, get_head_sha, sdk_to_agent_event,
-    AgentInput, AgentTool,
+    AgentInput, AgentTool, build_child_config, count_worktree_changes, find_git_root, get_head_sha,
+    sdk_to_agent_event,
 };
 
 const SHUTDOWN_WAIT_PER_AGENT: Duration = Duration::from_secs(5);
@@ -867,9 +867,11 @@ mod tests {
 
     #[test]
     fn cancel_missing_agent_returns_none() {
-        assert!(BACKGROUND_SUPERVISOR
-            .cancel_agent("missing-agent")
-            .is_none());
+        assert!(
+            BACKGROUND_SUPERVISOR
+                .cancel_agent("missing-agent")
+                .is_none()
+        );
     }
 
     #[test]

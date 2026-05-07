@@ -1,9 +1,9 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::ui::command_surface::adapters::tasks::task_surface_items;
-use crate::ui::command_surface::{cycle_index, CommandSurfaceOutcome};
-use crate::ui::tasks::background_tasks_dialog::render_background_tasks_dialog;
+use crate::ui::command_surface::{CommandSurfaceOutcome, cycle_index};
 use crate::ui::tasks::TaskStatus as UiTaskStatus;
+use crate::ui::tasks::background_tasks_dialog::render_background_tasks_dialog;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TasksSurface {
     pub(crate) items: Vec<TaskSurfaceItem>,

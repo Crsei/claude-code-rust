@@ -114,23 +114,24 @@ impl Tool for AgentTool {
         // preserving the existing environment fallback.
         let parent_model = ctx.options.main_loop_model.clone();
         let env_model = std::env::var("CLAUDE_MODEL").ok().filter(|s| !s.is_empty());
-        let agent_model = params
-            .model
-            .as_deref()
-            .map(|m| resolve_model_alias(m, &parent_model))
-            .unwrap_or_else(|| env_model.unwrap_or_else(|| parent_model.clone()));
+        let agent_model = match params.model.as_deref() {
+            Some(model) => resolve_model_alias(model, &parent_model)?,
+            None => match env_model {
+                Some(model) => resolve_model_alias(&model, &parent_model)?,
+                None => parent_model.clone(),
+            },
+        };
 
         if let Some(spawn_request) = teammate_spawn_request(&params, &(ctx.get_app_state)())? {
-            let teammate_model = params
-                .model
-                .as_deref()
-                .and_then(|model| resolve_optional_teammate_model(model, &parent_model))
-                .or_else(|| {
-                    agent_definition
-                        .as_ref()
-                        .and_then(|definition| definition.model.as_deref())
-                        .and_then(|model| resolve_optional_teammate_model(model, &parent_model))
-                });
+            let teammate_model = match params.model.as_deref() {
+                Some(model) => resolve_optional_teammate_model(model, &parent_model)?,
+                None => agent_definition
+                    .as_ref()
+                    .and_then(|definition| definition.model.as_deref())
+                    .map(|model| resolve_optional_teammate_model(model, &parent_model))
+                    .transpose()?
+                    .flatten(),
+            };
             let spawn_input = json!({
                 "name": spawn_request.name,
                 "prompt": params.prompt.clone(),
@@ -363,15 +364,15 @@ fn teammate_spawn_request(
     }))
 }
 
-fn resolve_optional_teammate_model(raw_model: &str, parent_model: &str) -> Option<String> {
+fn resolve_optional_teammate_model(raw_model: &str, parent_model: &str) -> Result<Option<String>> {
     let model = raw_model.trim();
     if model.is_empty() {
-        return None;
+        return Ok(None);
     }
     if model.eq_ignore_ascii_case("inherit") {
-        return Some(parent_model.to_string());
+        return Ok(Some(parent_model.to_string()));
     }
-    Some(resolve_model_alias(model, parent_model))
+    resolve_model_alias(model, parent_model).map(Some)
 }
 
 fn apply_agent_definition_defaults(

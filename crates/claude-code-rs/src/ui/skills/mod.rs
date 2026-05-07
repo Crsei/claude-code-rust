@@ -5,7 +5,7 @@ pub mod skills_menu;
 
 #[cfg(test)]
 mod tests {
-    use super::skills_menu::{render_skills_menu, SkillMenuItem};
+    use super::skills_menu::{SkillMenuItem, render_skills_menu};
 
     #[test]
     fn snapshot_skills_menu() {

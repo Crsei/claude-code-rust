@@ -3,7 +3,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{get_all_commands, CommandContext, CommandHandler, CommandResult};
+use super::{CommandContext, CommandHandler, CommandResult, get_all_commands};
 
 /// Handler for the `/help` slash command.
 pub struct HelpHandler;

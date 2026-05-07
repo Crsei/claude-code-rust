@@ -17,7 +17,7 @@ expression: normalize_snapshot_text(rendered)
 ## /advisor
 ┌ /advisor arguments ────────────────────────────────────────────────────────────────────────────────────────┐
 │Usage: /advisor <model|clear|off>                                                                           │
-│Example: /advisor sonnet                                                                                    │
+│Example: /advisor MOTA                                                                                      │
 │About: Show, set, or clear the advisor model                                                                │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /agents
@@ -89,7 +89,7 @@ expression: normalize_snapshot_text(rendered)
 ## /config
 ┌ /config arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
 │Usage: /config <show|sources|schema|set|reset> [key] [value]                                                │
-│Example: /config set model claude-sonnet-4                                                                  │
+│Example: /config set model MOTA                                                                             │
 │About: Show or modify configuration settings                                                                │
 │Edit: user: ~/.cc-rust/settings.json | project: ./.cc-rust/settings.json                                    │
 │                                                                                                            │
@@ -148,6 +148,12 @@ expression: normalize_snapshot_text(rendered)
 │Usage: /exit                                                                                                │
 │Example: /exit                                                                                              │
 │About: Exit the REPL                                                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /experimental
+┌ /experimental arguments ───────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /experimental [status|list|on|off|reset]                                                             │
+│Example: /experimental status                                                                               │
+│About: Inspect or override experimental feature gates                                                       │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /export
 ┌ /export arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -216,9 +222,9 @@ expression: normalize_snapshot_text(rendered)
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /login
 ┌ /login arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
-│Usage: /login [anthropic|codex|api-key]                                                                     │
+│Usage: /login [anthropic|codex|api-key|bedrock|vertex|cloud]                                                │
 │Example: /login                                                                                             │
-│About: Authenticate (API key, Anthropic OAuth, OpenAI Codex OAuth)                                          │
+│About: Authenticate (API key, Anthropic OAuth, OpenAI Codex OAuth, Bedrock, Vertex)                         │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /login-code
 ┌ /login-code arguments ─────────────────────────────────────────────────────────────────────────────────────┐
@@ -259,7 +265,7 @@ expression: normalize_snapshot_text(rendered)
 ## /model
 ┌ /model arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
 │Usage: /model [model-id|alias]                                                                              │
-│Example: /model sonnet                                                                                      │
+│Example: /model MOTA                                                                                        │
 │About: Show or switch the active model                                                                      │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /model-add

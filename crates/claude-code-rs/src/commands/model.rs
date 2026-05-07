@@ -4,38 +4,39 @@
 //! - `/model`            -- show the currently active model
 //! - `/model <name>`     -- switch to the named model
 //!
-//! Multi-vendor note: aliases are intentionally minimal because this fork
-//! talks to several upstream vendors. Users supply full model identifiers;
-//! `availableModels` (from settings) gates which IDs are accepted.
+//! Multi-vendor note: aliases are intentionally minimal and neutral because
+//! this fork talks to several upstream vendors. Users can supply full model
+//! identifiers; `availableModels` (from settings) gates which IDs are accepted.
 
 use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
 
-/// Minimal alias set shared with `/model` and web `set_model`.
-/// Kept short on purpose: this fork supports non-Anthropic providers where
-/// larger Anthropic-specific alias sets would be misleading.
-pub const MODEL_ALIASES: &[(&str, &str)] = &[
-    ("opus", "claude-opus-4-20250514"),
-    ("sonnet", "claude-sonnet-4-20250514"),
-    ("haiku", "claude-haiku-3-5-20241022"),
-];
+pub use crate::model_registry::resolve_model_alias;
 
-/// Resolve a model alias to its full identifier, or return the input as-is.
-pub fn resolve_model_alias(name: &str) -> String {
-    let trimmed = name.trim();
-    for (alias, full) in MODEL_ALIASES {
-        if trimmed.eq_ignore_ascii_case(alias) {
-            return full.to_string();
-        }
-    }
-    trimmed.to_string()
+pub fn removed_legacy_model_alias_error(name: &str) -> String {
+    crate::model_registry::removed_legacy_model_alias_error(name)
+}
+
+pub fn is_removed_legacy_model_alias(name: &str) -> bool {
+    crate::model_registry::is_removed_legacy_model_alias(name)
 }
 
 fn available_model_matches(allowed: &str, resolved_target: &str) -> bool {
     let trimmed = allowed.trim();
-    !trimmed.is_empty() && resolve_model_alias(trimmed) == resolved_target
+    !trimmed.is_empty()
+        && !is_removed_legacy_model_alias(trimmed)
+        && resolve_model_alias(trimmed) == resolved_target
+}
+
+pub fn resolve_model_list_entry(entry: &str) -> Option<String> {
+    let trimmed = entry.trim();
+    if trimmed.is_empty() || is_removed_legacy_model_alias(trimmed) {
+        None
+    } else {
+        Some(resolve_model_alias(trimmed))
+    }
 }
 
 /// Check whether `model` is allowed by the configured `availableModels` list.
@@ -43,6 +44,9 @@ fn available_model_matches(allowed: &str, resolved_target: &str) -> bool {
 /// Returns `Ok(())` when the list is empty (no restriction) or `model`
 /// appears in it. Returns `Err(message)` describing the violation otherwise.
 pub fn check_available(model: &str, available: &[String]) -> Result<(), String> {
+    if is_removed_legacy_model_alias(model) {
+        return Err(removed_legacy_model_alias_error(model));
+    }
     if available.is_empty() {
         return Ok(());
     }
@@ -62,6 +66,9 @@ pub fn resolve_and_validate_model(name: &str, available: &[String]) -> Result<St
     let trimmed = name.trim();
     if trimmed.is_empty() {
         return Err("model name required".to_string());
+    }
+    if is_removed_legacy_model_alias(trimmed) {
+        return Err(removed_legacy_model_alias_error(trimmed));
     }
 
     let resolved = resolve_model_alias(trimmed);
@@ -92,7 +99,8 @@ impl CommandHandler for ModelHandler {
                 }
             }
             lines.push(String::new());
-            lines.push("Usage: /model <model-id>".into());
+            lines.push("Aliases: SOTA, MOTA, FOTA".into());
+            lines.push("Usage: /model <model-id|SOTA|MOTA|FOTA>".into());
             return Ok(CommandResult::Output(lines.join("\n")));
         }
 
@@ -148,7 +156,7 @@ mod tests {
     async fn test_model_switch_by_alias() {
         let handler = ModelHandler;
         let mut ctx = test_ctx();
-        let result = handler.execute("opus", &mut ctx).await.unwrap();
+        let result = handler.execute("SOTA", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("claude-opus-4-20250514"));
@@ -174,8 +182,9 @@ mod tests {
 
     #[test]
     fn test_resolve_alias() {
-        assert_eq!(resolve_model_alias("opus"), "claude-opus-4-20250514");
-        assert_eq!(resolve_model_alias("Sonnet"), "claude-sonnet-4-20250514");
+        assert_eq!(resolve_model_alias("SOTA"), "claude-opus-4-20250514");
+        assert_eq!(resolve_model_alias("mota"), "claude-sonnet-4-20250514");
+        assert_eq!(resolve_model_alias("opus"), "opus");
         assert_eq!(resolve_model_alias("unknown"), "unknown");
     }
 
@@ -185,15 +194,32 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_and_validate_model_rejects_removed_legacy_aliases() {
+        for legacy in ["opus", "sonnet", "haiku"] {
+            let err = resolve_and_validate_model(legacy, &[]).unwrap_err();
+            assert!(err.contains("Legacy model alias"));
+            assert!(err.contains("SOTA") || err.contains("MOTA") || err.contains("FOTA"));
+        }
+    }
+
+    #[test]
+    fn test_removed_legacy_available_models_do_not_match_literals() {
+        let allowed = vec!["sonnet".to_string(), "haiku".to_string()];
+        assert!(check_available("sonnet", &allowed).is_err());
+        assert!(check_available("claude-sonnet-4-20250514", &allowed).is_err());
+        assert_eq!(resolve_model_list_entry("sonnet"), None);
+    }
+
+    #[test]
     fn test_check_available_accepts_alias_entries() {
-        let allowed = vec!["opus".to_string(), "gpt-4o".to_string()];
+        let allowed = vec!["SOTA".to_string(), "gpt-4o".to_string()];
         assert!(check_available("claude-opus-4-20250514", &allowed).is_ok());
     }
 
     #[test]
     fn test_check_available_accepts_full_id_entries_for_alias_input() {
         let allowed = vec!["claude-opus-4-20250514".to_string()];
-        assert!(check_available(&resolve_model_alias("opus"), &allowed).is_ok());
+        assert!(check_available(&resolve_model_alias("SOTA"), &allowed).is_ok());
     }
 
     #[test]
@@ -221,7 +247,7 @@ mod tests {
         let handler = ModelHandler;
         let mut ctx = test_ctx();
         ctx.app_state.settings.available_models = vec!["gpt-4o".to_string()];
-        let result = handler.execute("opus", &mut ctx).await.unwrap();
+        let result = handler.execute("SOTA", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("Rejected"));
@@ -236,7 +262,7 @@ mod tests {
     async fn test_model_switch_allowed_when_in_available_models() {
         let handler = ModelHandler;
         let mut ctx = test_ctx();
-        ctx.app_state.settings.available_models = vec!["opus".to_string()];
+        ctx.app_state.settings.available_models = vec!["SOTA".to_string()];
         let result = handler
             .execute("claude-opus-4-20250514", &mut ctx)
             .await

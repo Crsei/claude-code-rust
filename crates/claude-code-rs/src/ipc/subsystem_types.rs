@@ -426,7 +426,7 @@ pub struct AgentDefinitionEntry {
     /// Tool deny-list applied on top of `tools`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub disallowed_tools: Vec<String>,
-    /// Optional model override (e.g. `"sonnet"`, `"opus"`, `"inherit"`, or a
+    /// Optional model override (e.g. `"MOTA"`, `"SOTA"`, `"inherit"`, or a
     /// full ID).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
@@ -601,10 +601,12 @@ mod tests {
         assert!(ConfigScope::User.is_editable());
         assert!(ConfigScope::Project.is_editable());
         assert!(!ConfigScope::Plugin { id: "p".into() }.is_editable());
-        assert!(!ConfigScope::Ide {
-            id: "vscode".into()
-        }
-        .is_editable());
+        assert!(
+            !ConfigScope::Ide {
+                id: "vscode".into()
+            }
+            .is_editable()
+        );
     }
 
     #[test]

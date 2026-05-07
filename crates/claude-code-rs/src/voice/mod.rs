@@ -42,6 +42,6 @@ pub use controller::{VoiceController, VoiceEvent, VoiceState};
 #[allow(unused_imports)]
 pub use feasibility::{Feasibility, FeasibilityReason};
 #[allow(unused_imports)]
-pub use language::{normalize_language_for_stt, NormalizedLanguage};
+pub use language::{NormalizedLanguage, normalize_language_for_stt};
 #[allow(unused_imports)]
 pub use stt::{NullTranscriptionClient, TranscriptionClient, TranscriptionResult};

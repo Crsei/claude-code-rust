@@ -16,11 +16,11 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::auth::{resolve_auth, AuthMethod};
+use crate::auth::{AuthMethod, resolve_auth};
 use crate::config::paths;
-use crate::config::settings::{load_effective, SettingsSource};
-use crate::config::validation::{validate_settings, WarningSeverity};
-use crate::ui::browser::{render_with_footer, shorten_path, TreeNode};
+use crate::config::settings::{SettingsSource, load_effective};
+use crate::config::validation::{WarningSeverity, validate_settings};
+use crate::ui::browser::{TreeNode, render_with_footer, shorten_path};
 
 use super::terminal_setup::TerminalLabel;
 

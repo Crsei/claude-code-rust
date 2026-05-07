@@ -18,7 +18,7 @@ pub fn check_token_budget(
         _ => {
             return TokenBudgetDecision::Stop {
                 completion_event: None,
-            }
+            };
         }
     };
 

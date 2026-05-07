@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::ui::command_surface::{cycle_index, CommandSurfaceOutcome};
-use crate::ui::skills::skills_menu::{render_skills_menu, SkillMenuItem};
+use crate::ui::command_surface::{CommandSurfaceOutcome, cycle_index};
+use crate::ui::skills::skills_menu::{SkillMenuItem, render_skills_menu};
 use crate::ui::skills_helpers::{skill_description, skill_display_name};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillsSurface {

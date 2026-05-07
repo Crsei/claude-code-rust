@@ -27,7 +27,7 @@ pub struct QueryConfig {
 }
 
 /// 运行时特性开关 (env/statsig 快照)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct QueryGates {
     /// 流式工具执行 (边流式边执行已完成的工具)
     pub streaming_tool_execution: bool,
@@ -35,16 +35,6 @@ pub struct QueryGates {
     pub emit_tool_use_summaries: bool,
     /// 快速模式
     pub fast_mode_enabled: bool,
-}
-
-impl Default for QueryGates {
-    fn default() -> Self {
-        Self {
-            streaming_tool_execution: false,
-            emit_tool_use_summaries: false,
-            fast_mode_enabled: false,
-        }
-    }
 }
 
 impl QueryGates {

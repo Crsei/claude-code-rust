@@ -15,9 +15,9 @@ use std::pin::Pin;
 
 use anyhow::{Context, Result};
 use futures::Stream;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::api::client::{build_openai_compat_url, MessagesRequest, OPENAI_CODEX_PROVIDER_NAME};
+use crate::api::client::{MessagesRequest, OPENAI_CODEX_PROVIDER_NAME, build_openai_compat_url};
 use crate::types::message::{ContentBlock, MessageDelta, StreamEvent, Usage};
 
 // ---------------------------------------------------------------------------

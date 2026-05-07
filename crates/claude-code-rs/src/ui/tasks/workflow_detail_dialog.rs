@@ -1,7 +1,7 @@
 //! Workflow detail dialog.
 
-use super::task_status_utils::state_label;
 use super::TaskStatus;
+use super::task_status_utils::state_label;
 
 pub fn render_workflow_detail_dialog(tasks: &[TaskStatus], workflow_name: &str) -> String {
     let mut lines = vec![format!("Workflow: {workflow_name}")];

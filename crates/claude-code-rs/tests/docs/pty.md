@@ -303,7 +303,7 @@ tests/pty_ui/
 | `slash_status_shows_session_info` | `/status` 显示会话状态 |
 | `slash_unknown_command_shows_error` | 未知命令不崩溃 |
 | `slash_empty_does_not_crash` | 空斜杠 `/` 不崩溃 |
-| `slash_model_with_arg_switches_model` | `/model sonnet` 切换模型 |
+| `slash_model_with_arg_switches_model` | `/model MOTA` 切换模型 |
 | `slash_clear_resets_conversation` | `/clear` 清除后仍可输入 |
 | `slash_context_shows_info` | `/context` 显示上下文信息 |
 | `slash_skills_lists_skills` | `/skills` 列出技能 |

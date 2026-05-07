@@ -1,5 +1,5 @@
 use super::structured_diff::{parse_structured_hunks, render_structured_diff_hunks};
-use super::{truncate_by_width, DiffFile};
+use super::{DiffFile, truncate_by_width};
 
 const MAX_CONTEXT_LINES: usize = 400;
 const LARGE_FILE_LIMIT_NOTE: &str = "Large file - diff exceeds 1 MB limit";
@@ -74,7 +74,7 @@ pub fn render_diff_detail_view_lines(
 
 #[cfg(test)]
 mod tests {
-    use super::{render_diff_detail_view_lines, DiffFile};
+    use super::{DiffFile, render_diff_detail_view_lines};
     use insta::assert_snapshot;
 
     #[test]

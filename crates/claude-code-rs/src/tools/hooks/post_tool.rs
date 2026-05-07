@@ -6,7 +6,7 @@ use tracing::{debug, warn};
 
 use super::execution::execute_command_hook;
 use super::{
-    load_hook_configs, matches_tool, HookEntry, HookEventConfig, HookOutput, PostToolHookResult,
+    HookEntry, HookEventConfig, HookOutput, PostToolHookResult, load_hook_configs, matches_tool,
 };
 use crate::types::tool::ToolResult;
 

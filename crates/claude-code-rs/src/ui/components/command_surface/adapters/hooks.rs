@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::ui::hooks::hooks_config_menu::HookConfigSummary;
-use crate::ui::hooks::select_event_mode::{HookEvent, HOOK_EVENTS};
+use crate::ui::hooks::select_event_mode::{HOOK_EVENTS, HookEvent};
 pub(crate) fn hook_summary(event: HookEvent, value: Option<&Value>) -> HookConfigSummary {
     let Some(configs) = value.and_then(Value::as_array) else {
         return HookConfigSummary {

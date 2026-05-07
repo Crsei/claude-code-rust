@@ -121,20 +121,36 @@ fn resolve_startup_model(
 ) -> String {
     for candidate in [requested, provider_default, Some(hardcoded_default)] {
         let Some(candidate) = candidate else { continue };
+        if crate::commands::model::is_removed_legacy_model_alias(candidate) {
+            warn!(
+                model = %candidate,
+                replacement = ?crate::model_registry::replacement_for_removed_legacy_alias(candidate),
+                "legacy model alias ignored during startup"
+            );
+            continue;
+        }
         if let Ok(model) = crate::commands::model::resolve_and_validate_model(candidate, available)
         {
             return model;
         }
     }
 
-    if let Some(first_allowed) = available.first() {
+    if let Some(first_allowed) = available
+        .iter()
+        .find_map(|entry| crate::commands::model::resolve_model_list_entry(entry))
+    {
         warn!(
             fallback = %first_allowed,
             "no requested/default model satisfied availableModels; falling back to the first allowed entry"
         );
-        return crate::commands::model::resolve_model_alias(first_allowed);
+        return first_allowed;
     }
 
+    if !available.is_empty() {
+        warn!(
+            "availableModels contained no usable model entries; using the hardcoded default model"
+        );
+    }
     crate::commands::model::resolve_model_alias(hardcoded_default)
 }
 
@@ -219,7 +235,7 @@ fn main() -> ExitCode {
                 return Some(format!(
                     "Allow desktop control action '{}' {}?",
                     action, risk_tag
-                ))
+                ));
             }
         };
         Some(format!("Allow {} {}?", description, risk_tag))

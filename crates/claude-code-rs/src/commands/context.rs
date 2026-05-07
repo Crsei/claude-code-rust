@@ -16,7 +16,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use cc_compact::context_analysis::{analyze_context_usage, ContextAnalysis, ContextAnalysisInput};
+use cc_compact::context_analysis::{ContextAnalysis, ContextAnalysisInput, analyze_context_usage};
 
 use super::{CommandContext, CommandHandler, CommandResult};
 

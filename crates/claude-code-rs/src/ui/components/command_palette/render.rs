@@ -9,7 +9,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 use crate::ui::selection_surface::SelectionSurface;
 use crate::ui::theme::Theme;
 
-use super::edit_targets::{has_edit_target_picker, EditTarget};
+use super::edit_targets::{EditTarget, has_edit_target_picker};
 use super::filter::command_from_argument_input;
 use super::{
     CommandItem, CommandPalette, DETAIL_ROWS, MAX_EDIT_ROWS, MAX_EDIT_TARGET_ROWS, MAX_ROWS,

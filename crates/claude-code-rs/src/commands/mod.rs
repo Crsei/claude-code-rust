@@ -301,7 +301,9 @@ pub fn get_all_commands() -> Vec<Command> {
         Command {
             name: "login".into(),
             aliases: vec![],
-            description: "Authenticate (API key, Anthropic OAuth, OpenAI Codex OAuth)".into(),
+            description:
+                "Authenticate (API key, Anthropic OAuth, OpenAI Codex OAuth, Bedrock, Vertex)"
+                    .into(),
             handler: Box::new(login::LoginHandler),
         },
         Command {
@@ -782,7 +784,7 @@ mod tests {
     #[test]
     fn test_parse_command_input() {
         assert!(parse_command_input("/help").is_some());
-        assert!(parse_command_input("/config set model opus").is_some());
+        assert!(parse_command_input("/config set model SOTA").is_some());
         assert!(parse_command_input("not a command").is_none());
         assert!(parse_command_input("").is_none());
     }

@@ -40,7 +40,7 @@ pub mod utils;
 #[cfg(test)]
 mod tests {
     use super::capabilities_section::render_capabilities_section;
-    use super::elicitation_dialog::{render_elicitation_dialog, ElicitationField};
+    use super::elicitation_dialog::{ElicitationField, render_elicitation_dialog};
     use super::index::{McpCapability, McpServer, McpServerKind, McpServerStatus, McpTool};
     use super::mcp_agent_server_menu::render_mcp_agent_server_menu;
     use super::mcp_list_panel::render_mcp_list_panel;
@@ -50,14 +50,14 @@ mod tests {
     use super::mcp_server_approval_dialog::render_mcp_server_approval_dialog;
     use super::mcp_server_card::render_mcp_server_card;
     use super::mcp_server_desktop_import_dialog::{
-        render_mcp_server_desktop_import_dialog, DesktopMcpImportServer,
-        McpServerDesktopImportState,
+        DesktopMcpImportServer, McpServerDesktopImportState,
+        render_mcp_server_desktop_import_dialog,
     };
     use super::mcp_server_dialog_copy::render_mcp_server_dialog_copy;
     use super::mcp_server_multiselect_dialog::{
-        render_mcp_server_multiselect_dialog, McpServerMultiselectState,
+        McpServerMultiselectState, render_mcp_server_multiselect_dialog,
     };
-    use super::mcp_settings::{render_mcp_settings, McpSettingsSummary};
+    use super::mcp_settings::{McpSettingsSummary, render_mcp_settings};
     use super::mcp_stdio_server_menu::render_mcp_stdio_server_menu;
     use super::mcp_tool_detail_view::render_mcp_tool_detail_view;
     use super::mcp_tool_list_view::render_mcp_tool_list_view;

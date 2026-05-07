@@ -37,6 +37,9 @@ pub const MODEL_ALIASES: &[ModelAlias] = &[
     },
 ];
 
+pub const REMOVED_LEGACY_MODEL_ALIASES: &[(&str, &str)] =
+    &[("opus", "SOTA"), ("sonnet", "MOTA"), ("haiku", "FOTA")];
+
 pub fn resolve_model_alias(name: &str) -> String {
     let trimmed = name.trim();
     MODEL_ALIASES
@@ -44,6 +47,34 @@ pub fn resolve_model_alias(name: &str) -> String {
         .find(|entry| trimmed.eq_ignore_ascii_case(entry.alias))
         .map(|entry| entry.target.to_string())
         .unwrap_or_else(|| trimmed.to_string())
+}
+
+pub fn alias_for_model(model: &str) -> Option<&'static str> {
+    MODEL_ALIASES
+        .iter()
+        .find_map(|entry| (entry.target == model).then_some(entry.alias))
+}
+
+pub fn replacement_for_removed_legacy_alias(name: &str) -> Option<&'static str> {
+    let trimmed = name.trim();
+    REMOVED_LEGACY_MODEL_ALIASES
+        .iter()
+        .find_map(|(legacy, replacement)| {
+            trimmed.eq_ignore_ascii_case(legacy).then_some(*replacement)
+        })
+}
+
+pub fn is_removed_legacy_model_alias(name: &str) -> bool {
+    replacement_for_removed_legacy_alias(name).is_some()
+}
+
+pub fn removed_legacy_model_alias_error(name: &str) -> String {
+    let trimmed = name.trim();
+    let replacement = replacement_for_removed_legacy_alias(trimmed).unwrap_or("MOTA");
+    format!(
+        "Legacy model alias '{}' is no longer supported in cc-rust. Use '{}' or a full model ID instead.",
+        trimmed, replacement
+    )
 }
 
 #[cfg(test)]
@@ -62,6 +93,9 @@ mod tests {
         assert_eq!(resolve_model_alias("opus"), "opus");
         assert_eq!(resolve_model_alias("sonnet"), "sonnet");
         assert_eq!(resolve_model_alias("haiku"), "haiku");
+        assert_eq!(replacement_for_removed_legacy_alias("opus"), Some("SOTA"));
+        assert_eq!(replacement_for_removed_legacy_alias("sonnet"), Some("MOTA"));
+        assert_eq!(replacement_for_removed_legacy_alias("haiku"), Some("FOTA"));
     }
 
     #[test]

@@ -4,7 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::Value;
 
 use crate::ui::command_surface::adapters::hooks::{hook_event_order, hook_summary};
-use crate::ui::command_surface::{cycle_index, render_tabs, CommandSurfaceOutcome};
+use crate::ui::command_surface::{CommandSurfaceOutcome, cycle_index, render_tabs};
 use crate::ui::hooks::hooks_config_menu::{HookConfigSummary, HooksConfigMenuState};
 use crate::ui::hooks::select_event_mode::HOOK_EVENTS;
 #[derive(Debug, Clone, PartialEq, Eq)]

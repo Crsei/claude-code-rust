@@ -6,15 +6,15 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use serde_json::Value;
 use tokio::process::Command;
 use tracing::{debug, warn};
 
+use super::LspServerConfig;
 use super::transport::{self, JsonRpcTransport};
 use super::types::{DocumentChange, DocumentSyncState};
-use super::LspServerConfig;
 
 // ---------------------------------------------------------------------------
 // LSP Client
@@ -543,7 +543,9 @@ impl LspClient {
                 }
             }
             "workspace/configuration" => {
-                debug!("received workspace/configuration request; response handling is not implemented on this transport");
+                debug!(
+                    "received workspace/configuration request; response handling is not implemented on this transport"
+                );
             }
             _ => {
                 debug!(method = method_str, "skipping server notification");

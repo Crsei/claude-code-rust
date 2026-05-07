@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 // ---------------------------------------------------------------------------
 // Source tracking
@@ -166,7 +166,7 @@ impl PermissionsSettings {
             && self
                 .auto_mode
                 .as_ref()
-                .map_or(true, AutoModeSettings::is_effectively_empty)
+                .is_none_or(AutoModeSettings::is_effectively_empty)
             && self.extra.is_empty()
     }
 }

@@ -1,7 +1,7 @@
 use crossterm::event::KeyEvent;
 
-use crate::commands::model::{resolve_model_alias, MODEL_ALIASES};
 use crate::engine::effort::effort_to_budget_tokens;
+use crate::model_registry;
 use crate::types::app_state::AppState;
 use crate::ui::command_surface::CommandSurfaceOutcome;
 use crate::ui::form_navigation::{FormOption, FormTab, TabbedFormEvent, TabbedFormState};
@@ -235,24 +235,24 @@ fn build_model_picker(state: &AppState) -> SelectionSurface {
     let mut items = Vec::new();
 
     if state.settings.available_models.is_empty() {
-        for (alias, model) in MODEL_ALIASES {
+        for entry in model_registry::MODEL_ALIASES {
             push_model_item(
                 &mut items,
-                model,
+                entry.target,
                 &current,
-                Some(alias),
+                Some(entry.alias),
                 "built-in alias",
                 effort,
             );
         }
     } else {
         for configured in &state.settings.available_models {
-            let resolved = resolve_model_alias(configured);
+            let resolved = model_registry::resolve_model_alias(configured);
             push_model_item(
                 &mut items,
                 &resolved,
                 &current,
-                alias_for_model(&resolved),
+                model_registry::alias_for_model(&resolved),
                 "configured",
                 effort,
             );
@@ -264,7 +264,7 @@ fn build_model_picker(state: &AppState) -> SelectionSurface {
             &mut items,
             &current,
             &current,
-            alias_for_model(&current),
+            model_registry::alias_for_model(&current),
             "current custom",
             effort,
         );
@@ -308,12 +308,6 @@ fn push_model_item(
         description: description.join("; "),
         enabled: true,
     });
-}
-
-fn alias_for_model(model: &str) -> Option<&'static str> {
-    MODEL_ALIASES
-        .iter()
-        .find_map(|(alias, full)| (*full == model).then_some(*alias))
 }
 
 fn build_theme_picker(state: &AppState) -> SelectionSurface {

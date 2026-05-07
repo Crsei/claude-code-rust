@@ -1,10 +1,11 @@
-//! `/login` command — authenticate with an LLM provider.
+//! `/login` command - authenticate with an LLM provider.
 //!
 //! Usage:
-//!   /login              — interactive login (choose method)
-//!   /login status       — show current auth status
-//!   /login sk-ant-...   — store API key directly
-//!   /login 1|2|3|4      — select login method
+//!   /login                  - interactive login (choose method)
+//!   /login status           - show current auth status
+//!   /login sk-ant-...       - store API key directly
+//!   /login 1..7             - select login/provider method
+//!   /login bedrock|vertex   - enable a cloud provider for this process
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -47,6 +48,11 @@ impl CommandHandler for LoginHandler {
                 OAuthMethod::OpenAiCodex,
             ))),
             "5" | "codex-cli" => Ok(CommandResult::Output(check_codex_cli())),
+            "6" | "bedrock" | "aws" => Ok(CommandResult::Output(enable_bedrock_session())),
+            "7" | "vertex" | "vertex-ai" | "gcp" => {
+                Ok(CommandResult::Output(enable_vertex_session()))
+            }
+            "cloud" | "platform" | "platforms" => Ok(CommandResult::Output(cloud_setup_text())),
             _ => Ok(CommandResult::Output(format!(
                 "Unknown option: \"{}\"\n\n{}",
                 args,
@@ -63,11 +69,17 @@ fn login_menu() -> String {
      \n  [3] Console OAuth (API billing)\
      \n  [4] OpenAI Codex OAuth (ChatGPT subscription)\
      \n  [5] Import from Codex CLI (~/.codex/auth.json)\
-     \n\nType /login 1, /login 2, /login 3, /login 4, or /login 5"
+     \n  [6] AWS Bedrock (session env provider)\
+     \n  [7] GCP Vertex AI (session env provider)\
+     \n\nType /login 1..7, /login bedrock, /login vertex, or /login cloud"
         .to_string()
 }
 
 fn auth_status_text() -> String {
+    if let Some(cloud_status) = cloud_auth_status_text() {
+        return cloud_status;
+    }
+
     if let Some(codex_status) = codex_auth_status_text() {
         return codex_status;
     }
@@ -97,6 +109,160 @@ fn auth_status_text() -> String {
         }
         auth::AuthMethod::None => "Not authenticated".to_string(),
     }
+}
+
+fn cloud_auth_status_text() -> Option<String> {
+    if crate::api::client::is_env_truthy("CLAUDE_CODE_USE_BEDROCK") {
+        return Some(bedrock_status_text());
+    }
+    if crate::api::client::is_env_truthy("CLAUDE_CODE_USE_VERTEX") {
+        return Some(vertex_status_text());
+    }
+    None
+}
+
+fn enable_bedrock_session() -> String {
+    std::env::set_var("CLAUDE_CODE_USE_BEDROCK", "1");
+    std::env::remove_var("CLAUDE_CODE_USE_VERTEX");
+
+    let mut lines = vec![
+        "AWS Bedrock provider enabled for this cc-rust session.".to_string(),
+        "Next non-command prompt will use Bedrock because API clients are rebuilt per turn."
+            .to_string(),
+        String::new(),
+        bedrock_status_text(),
+    ];
+    if crate::api::bedrock::BedrockAuth::from_env().is_none() {
+        lines.push(String::new());
+        lines.push(bedrock_setup_text());
+    } else {
+        lines.push(String::new());
+        lines.push(
+            "For future sessions, set CLAUDE_CODE_USE_BEDROCK=1 before launching cc-rust."
+                .to_string(),
+        );
+    }
+    lines.join("\n")
+}
+
+fn enable_vertex_session() -> String {
+    std::env::set_var("CLAUDE_CODE_USE_VERTEX", "1");
+    std::env::remove_var("CLAUDE_CODE_USE_BEDROCK");
+
+    let mut lines = vec![
+        "GCP Vertex AI provider enabled for this cc-rust session.".to_string(),
+        "Next non-command prompt will use Vertex because API clients are rebuilt per turn."
+            .to_string(),
+        String::new(),
+        vertex_status_text(),
+    ];
+    if crate::api::vertex::resolve_project_id().is_none()
+        || crate::api::vertex::VertexAccessToken::from_env_or_gcloud().is_none()
+    {
+        lines.push(String::new());
+        lines.push(vertex_setup_text());
+    } else {
+        lines.push(String::new());
+        lines.push(
+            "For future sessions, set CLAUDE_CODE_USE_VERTEX=1 before launching cc-rust."
+                .to_string(),
+        );
+    }
+    lines.join("\n")
+}
+
+fn bedrock_status_text() -> String {
+    let region = crate::api::bedrock::resolve_region();
+    let base_url = std::env::var("ANTHROPIC_BEDROCK_BASE_URL")
+        .ok()
+        .filter(|v| !v.trim().is_empty());
+    let model = std::env::var("ANTHROPIC_MODEL")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| "claude-sonnet-4-5-20250929".to_string());
+
+    let auth = match crate::api::bedrock::BedrockAuth::from_env() {
+        Some(crate::api::bedrock::BedrockAuth::BearerToken(token)) => {
+            format!("Bearer token {}", mask_secret(&token))
+        }
+        Some(crate::api::bedrock::BedrockAuth::AwsCredentials(creds)) => {
+            let session = if creds.session_token.is_some() {
+                " + AWS_SESSION_TOKEN"
+            } else {
+                ""
+            };
+            format!(
+                "SigV4 credentials {}{}",
+                mask_secret(&creds.access_key_id),
+                session
+            )
+        }
+        None => {
+            "missing (set AWS_BEARER_TOKEN_BEDROCK or AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY)"
+                .to_string()
+        }
+    };
+
+    format!(
+        "Provider: AWS Bedrock\n\
+         Enabled: {}\n\
+         Region: {}\n\
+         Auth: {}\n\
+         Model: {}\n\
+         Base URL: {}",
+        crate::api::client::is_env_truthy("CLAUDE_CODE_USE_BEDROCK"),
+        region,
+        auth,
+        model,
+        base_url.unwrap_or_else(|| "default bedrock-runtime endpoint".to_string())
+    )
+}
+
+fn vertex_status_text() -> String {
+    let default_region = crate::api::vertex::resolve_region();
+    let model = std::env::var("ANTHROPIC_MODEL")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| "claude-sonnet-4-5-20250929".to_string());
+    let region =
+        crate::api::vertex::resolve_region_for_model_with_default(Some(&model), &default_region);
+    let project_id = crate::api::vertex::resolve_project_id()
+        .unwrap_or_else(|| "missing (set ANTHROPIC_VERTEX_PROJECT_ID)".to_string());
+    let token_source = vertex_token_source();
+
+    format!(
+        "Provider: GCP Vertex AI\n\
+         Enabled: {}\n\
+         Project: {}\n\
+         Region: {}\n\
+         Auth: {}\n\
+         Model: {}",
+        crate::api::client::is_env_truthy("CLAUDE_CODE_USE_VERTEX"),
+        project_id,
+        region,
+        token_source,
+        model
+    )
+}
+
+fn vertex_token_source() -> String {
+    if std::env::var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN")
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false)
+    {
+        return "CLAUDE_CODE_VERTEX_ACCESS_TOKEN".to_string();
+    }
+    if std::env::var("GOOGLE_OAUTH_ACCESS_TOKEN")
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false)
+    {
+        return "GOOGLE_OAUTH_ACCESS_TOKEN".to_string();
+    }
+    if crate::api::vertex::VertexAccessToken::from_env_or_gcloud().is_some() {
+        return "gcloud application-default access token".to_string();
+    }
+    "missing (set CLAUDE_CODE_VERTEX_ACCESS_TOKEN or run gcloud auth application-default login)"
+        .to_string()
 }
 
 fn codex_auth_status_text() -> Option<String> {
@@ -135,6 +301,34 @@ fn codex_auth_status_text() -> Option<String> {
     }
 
     None
+}
+
+fn cloud_setup_text() -> String {
+    format!("{}\n\n{}", bedrock_setup_text(), vertex_setup_text())
+}
+
+fn bedrock_setup_text() -> String {
+    "AWS Bedrock setup:\n\
+     1. Set CLAUDE_CODE_USE_BEDROCK=1.\n\
+     2. Set AWS_REGION or AWS_DEFAULT_REGION (default: us-east-1).\n\
+     3. Use one auth mode:\n\
+        - AWS_BEARER_TOKEN_BEDROCK=<bedrock-api-key>\n\
+        - AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY (+ AWS_SESSION_TOKEN if needed)\n\
+     4. Optional: ANTHROPIC_MODEL and ANTHROPIC_BEDROCK_BASE_URL.\n\
+     Current session shortcut: /login bedrock"
+        .to_string()
+}
+
+fn vertex_setup_text() -> String {
+    "GCP Vertex AI setup:\n\
+     1. Set CLAUDE_CODE_USE_VERTEX=1.\n\
+     2. Set ANTHROPIC_VERTEX_PROJECT_ID (or GOOGLE_CLOUD_PROJECT / GCLOUD_PROJECT).\n\
+     3. Set CLOUD_ML_REGION (default: us-east5) or per-model VERTEX_REGION_* overrides.\n\
+     4. Provide auth with CLAUDE_CODE_VERTEX_ACCESS_TOKEN, GOOGLE_OAUTH_ACCESS_TOKEN,\n\
+        or `gcloud auth application-default login`.\n\
+     5. Optional: ANTHROPIC_MODEL.\n\
+     Current session shortcut: /login vertex"
+        .to_string()
 }
 
 fn check_codex_cli() -> String {
@@ -181,6 +375,14 @@ fn store_api_key(key: &str) -> String {
     }
 }
 
+fn mask_secret(value: &str) -> String {
+    if value.len() > 12 {
+        format!("{}...{}", &value[..4], &value[value.len() - 4..])
+    } else {
+        "****".to_string()
+    }
+}
+
 fn mask_key(key: &str) -> String {
     if key.len() > 12 {
         format!("{}...{}", &key[..7], &key[key.len() - 4..])
@@ -192,6 +394,33 @@ fn mask_key(key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: Option<&str>) -> Self {
+            let previous = std::env::var(key).ok();
+            match value {
+                Some(value) => std::env::set_var(key, value),
+                None => std::env::remove_var(key),
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     #[test]
     fn test_mask_key_long() {
@@ -216,9 +445,51 @@ mod tests {
         assert!(menu.contains("[3]"));
         assert!(menu.contains("[4]"));
         assert!(menu.contains("[5]"));
+        assert!(menu.contains("[6]"));
+        assert!(menu.contains("[7]"));
         assert!(menu.contains("API Key"));
         assert!(menu.contains("OAuth"));
         assert!(menu.contains("Codex CLI"));
+        assert!(menu.contains("Bedrock"));
+        assert!(menu.contains("Vertex"));
+    }
+
+    #[test]
+    fn test_enable_bedrock_session_sets_flag_and_reports_status() {
+        let _lock = ENV_LOCK.lock().expect("env lock poisoned");
+        let _bedrock = EnvGuard::set("CLAUDE_CODE_USE_BEDROCK", None);
+        let _vertex = EnvGuard::set("CLAUDE_CODE_USE_VERTEX", Some("1"));
+        let _bearer = EnvGuard::set("AWS_BEARER_TOKEN_BEDROCK", Some("bedrock-token-1234"));
+        let _region = EnvGuard::set("AWS_REGION", Some("us-west-2"));
+
+        let text = enable_bedrock_session();
+
+        assert!(crate::api::client::is_env_truthy("CLAUDE_CODE_USE_BEDROCK"));
+        assert!(!crate::api::client::is_env_truthy("CLAUDE_CODE_USE_VERTEX"));
+        assert!(text.contains("AWS Bedrock provider enabled"));
+        assert!(text.contains("Region: us-west-2"));
+        assert!(text.contains("Bearer token"));
+    }
+
+    #[test]
+    fn test_enable_vertex_session_sets_flag_and_reports_status() {
+        let _lock = ENV_LOCK.lock().expect("env lock poisoned");
+        let _bedrock = EnvGuard::set("CLAUDE_CODE_USE_BEDROCK", Some("1"));
+        let _vertex = EnvGuard::set("CLAUDE_CODE_USE_VERTEX", None);
+        let _project = EnvGuard::set("ANTHROPIC_VERTEX_PROJECT_ID", Some("proj-123"));
+        let _token = EnvGuard::set("CLAUDE_CODE_VERTEX_ACCESS_TOKEN", Some("vertex-token"));
+        let _region = EnvGuard::set("CLOUD_ML_REGION", Some("europe-west4"));
+
+        let text = enable_vertex_session();
+
+        assert!(crate::api::client::is_env_truthy("CLAUDE_CODE_USE_VERTEX"));
+        assert!(!crate::api::client::is_env_truthy(
+            "CLAUDE_CODE_USE_BEDROCK"
+        ));
+        assert!(text.contains("GCP Vertex AI provider enabled"));
+        assert!(text.contains("Project: proj-123"));
+        assert!(text.contains("Region: europe-west4"));
+        assert!(text.contains("CLAUDE_CODE_VERTEX_ACCESS_TOKEN"));
     }
 
     #[test]

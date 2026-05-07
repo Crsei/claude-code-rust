@@ -31,11 +31,7 @@ impl DiffSource {
 }
 
 fn pluralize(count: usize, singular: &str) -> &str {
-    if count == 1 {
-        singular
-    } else {
-        "files"
-    }
+    if count == 1 { singular } else { "files" }
 }
 
 fn stats_line(stats: Option<&DiffStats>) -> String {
@@ -195,7 +191,7 @@ pub fn render_diff_dialog_lines(
 #[cfg(test)]
 mod tests {
     use super::super::{DiffData, DiffFile, DiffStats};
-    use super::{render_diff_dialog_lines, DiffDialogMode, DiffSource};
+    use super::{DiffDialogMode, DiffSource, render_diff_dialog_lines};
     use insta::assert_snapshot;
     use std::collections::HashMap;
 

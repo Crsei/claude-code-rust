@@ -3,8 +3,8 @@
 use similar::TextDiff;
 
 use super::structured_diff::{
-    parse_structured_hunks, render_structured_diff_hunks, StructuredDiffHunk,
-    StructuredDiffLineKind,
+    StructuredDiffHunk, StructuredDiffLineKind, parse_structured_hunks,
+    render_structured_diff_hunks,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

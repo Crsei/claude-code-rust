@@ -238,7 +238,7 @@ fn collect_write_command_targets(words: &[String], targets: &mut Vec<String>) {
     }
 }
 
-fn collect_path_args<'a>(args: &'a [String], targets: &mut Vec<String>) {
+fn collect_path_args(args: &[String], targets: &mut Vec<String>) {
     let mut idx = 0;
     let mut saw_named_path = false;
     while idx < args.len() {
@@ -961,19 +961,15 @@ mod tests {
         let settings = cc_config::settings::SandboxSettings::default();
         let policy =
             policy_from_app_state(&ctx, &settings, std::path::PathBuf::from("/proj"), false);
-        assert!(
-            policy
-                .paths
-                .allow_read_paths()
-                .iter()
-                .any(|p| p == &std::path::PathBuf::from("/opt/tools"))
-        );
-        assert!(
-            policy
-                .paths
-                .allow_write_paths()
-                .iter()
-                .any(|p| p == &std::path::PathBuf::from("/tmp/work"))
-        );
+        assert!(policy
+            .paths
+            .allow_read_paths()
+            .iter()
+            .any(|p| p == &std::path::PathBuf::from("/opt/tools")));
+        assert!(policy
+            .paths
+            .allow_write_paths()
+            .iter()
+            .any(|p| p == &std::path::PathBuf::from("/tmp/work")));
     }
 }

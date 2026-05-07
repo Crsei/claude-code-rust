@@ -4,8 +4,8 @@ use crate::types::app_state::AppState;
 use crate::types::message::{MessageContent, UserMessage};
 use crate::types::tool::PermissionMode;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
-use ratatui::backend::TestBackend;
 use ratatui::Terminal;
+use ratatui::backend::TestBackend;
 use serial_test::serial;
 use std::path::Path;
 

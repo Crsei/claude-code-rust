@@ -3,10 +3,10 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
 
-use cc_config::constants::files::{has_binary_extension, is_binary_content, BINARY_CHECK_SIZE};
+use cc_config::constants::files::{BINARY_CHECK_SIZE, has_binary_extension, is_binary_content};
 
 pub const DEFAULT_MAX_WRITE_BYTES: usize = 10 * 1024 * 1024;
 
@@ -675,9 +675,11 @@ mod tests {
 
         assert!(report.symlink_resolved);
         assert_eq!(fs::read_to_string(&target).unwrap(), "new");
-        assert!(fs::symlink_metadata(&link)
-            .unwrap()
-            .file_type()
-            .is_symlink());
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
     }
 }

@@ -5,7 +5,7 @@ use crate::ui::history_search_dialog::{HistorySearchDialog, HistorySearchDialogE
 use crate::ui::transcript::ViewMode;
 use crate::ui::vim::VimAction;
 
-use super::{current_unix_secs, App, AppAction};
+use super::{App, AppAction, current_unix_secs};
 
 impl App {
     pub fn handle_key_event(&mut self, key: KeyEvent) -> AppAction {
@@ -478,7 +478,7 @@ impl App {
                 return Some(
                     self.take_prompt_submission()
                         .map_or(AppAction::None, AppAction::Submit),
-                )
+                );
             }
             "voice:pushToTalk" => {
                 if self.is_voice_ready() {

@@ -94,10 +94,7 @@ fn slash_model_shows_current_model() {
 
     // Should show model name or "model" keyword
     session.send_line("/model");
-    let found = session.wait_for_any(
-        &["model", "claude", "sonnet", "opus", "haiku"],
-        QUICK_TIMEOUT,
-    );
+    let found = session.wait_for_any(&["model", "claude", "SOTA", "MOTA", "FOTA"], QUICK_TIMEOUT);
 
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(300));
@@ -180,9 +177,9 @@ fn slash_model_with_arg_switches_model() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
 
-    // Try switching to sonnet alias
-    session.send_line("/model sonnet");
-    let found = session.wait_for_any(&["sonnet", "model", "switch", "changed"], QUICK_TIMEOUT);
+    // Try switching to the balanced public alias.
+    session.send_line("/model MOTA");
+    let found = session.wait_for_any(&["MOTA", "model", "switch", "changed"], QUICK_TIMEOUT);
 
     session.send_ctrl_c();
     std::thread::sleep(Duration::from_millis(300));
@@ -191,7 +188,7 @@ fn slash_model_with_arg_switches_model() {
 
     assert!(
         found.is_some(),
-        "/model sonnet should acknowledge model change"
+        "/model MOTA should acknowledge model change"
     );
 }
 

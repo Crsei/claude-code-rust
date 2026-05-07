@@ -410,7 +410,11 @@ fn handle_set(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
     let in_memory_msg = apply_set_in_memory(key, &value, ctx)?;
 
     // 2. Persist to the chosen scope's file (with backup).
-    let file_msg = persist_set(scope, key, &value, &ctx.cwd)?;
+    let persist_value = match key {
+        "model" => ctx.app_state.main_loop_model.clone(),
+        _ => value.clone(),
+    };
+    let file_msg = persist_set(scope, key, &persist_value, &ctx.cwd)?;
 
     // 3. Update the source map so /config sources reflects the change.
     let src = match scope {
@@ -434,9 +438,12 @@ fn apply_set_in_memory(key: &str, value: &str, ctx: &mut CommandContext) -> Resu
 
     match key {
         "model" => {
-            ctx.app_state.main_loop_model = value.to_string();
-            s.model = Some(value.to_string());
-            Ok(format!("Model set to: {}", value))
+            let available = s.available_models.clone();
+            let resolved = crate::commands::model::resolve_and_validate_model(value, &available)
+                .map_err(anyhow::Error::msg)?;
+            ctx.app_state.main_loop_model = resolved.clone();
+            s.model = Some(resolved.clone());
+            Ok(format!("Model set to: {}", resolved))
         }
         "backend" => {
             let normalized = crate::engine::codex_exec::normalize_backend(Some(value));
@@ -710,6 +717,19 @@ mod tests {
         }
         assert_eq!(ctx.app_state.main_loop_model, "claude-opus");
         assert!(dir.path().join("settings.json").exists());
+    }
+
+    #[tokio::test]
+    async fn test_config_set_model_rejects_removed_legacy_alias() {
+        let handler = ConfigHandler;
+        let mut ctx = test_ctx();
+        let result = handler.execute("set model sonnet", &mut ctx).await;
+
+        match result {
+            Ok(_) => panic!("legacy alias should be rejected"),
+            Err(err) => assert!(err.to_string().contains("Legacy model alias")),
+        }
+        assert_ne!(ctx.app_state.main_loop_model, "sonnet");
     }
 
     #[tokio::test]

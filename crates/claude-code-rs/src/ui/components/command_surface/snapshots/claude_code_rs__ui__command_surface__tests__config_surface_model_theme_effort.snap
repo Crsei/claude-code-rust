@@ -15,7 +15,7 @@ Config
 Current effort: medium (10240 tokens)
 Model / Filter...
 > custom-model - configured; current; effort=medium
-  opus (claude-opus-4-20250514) - configured; effort=medium
+  SOTA (claude-opus-4-20250514) - configured; effort=medium
 Left/Right switch tabs | Type filter | Up/Down navigate | Enter select | Esc close
 
 -- theme --

@@ -1,7 +1,7 @@
 //! Background tasks dialog.
 
-use super::background_task::render_background_task;
 use super::TaskStatus;
+use super::background_task::render_background_task;
 
 pub fn render_background_tasks_dialog(tasks: &[TaskStatus], selected_index: usize) -> String {
     let mut lines = vec![format!("Background tasks ({})", tasks.len())];

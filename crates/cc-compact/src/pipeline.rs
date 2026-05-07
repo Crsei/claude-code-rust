@@ -37,7 +37,7 @@ pub struct PipelineResult {
     /// Estimated tokens after compaction.
     pub estimated_tokens: u64,
     /// Estimated tokens used for the auto-compact threshold after this
-    /// pipeline's local token savings are credited.
+    /// pipeline's local compaction has already been applied.
     pub auto_compact_estimated_tokens: u64,
     /// Estimated tokens freed by history snipping.
     pub snip_tokens_freed: u64,
@@ -138,7 +138,7 @@ pub async fn run_context_pipeline(
     let total_tokens_freed = snip_tokens_freed
         .saturating_add(microcompact_tokens_freed)
         .saturating_add(context_collapse_tokens_freed);
-    let auto_compact_estimated_tokens = estimated.saturating_sub(total_tokens_freed);
+    let auto_compact_estimated_tokens = estimated;
     let auto_compact_triggered =
         auto_compact::should_auto_compact(auto_compact_estimated_tokens, model);
     let updated_tracking = if auto_compact_triggered {
@@ -373,7 +373,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_pipeline_credits_local_freed_tokens_before_autocompact_threshold() {
+    async fn test_pipeline_does_not_double_credit_local_freed_tokens_before_autocompact_threshold()
+    {
         let model = "claude-sonnet-4-20250514";
         let mut messages = vec![make_user("initial context")];
         let large_tool_result = "x".repeat(75_000);
@@ -391,9 +392,12 @@ mod tests {
 
         assert!(result.microcompact_tokens_freed > 0);
         assert!(result.estimated_tokens > 160_000);
-        assert!(result.auto_compact_estimated_tokens < 160_000);
-        assert!(result.tracking.is_none());
-        assert!(!result.auto_compact_triggered);
+        assert_eq!(
+            result.auto_compact_estimated_tokens,
+            result.estimated_tokens
+        );
+        assert!(result.tracking.is_some());
+        assert!(result.auto_compact_triggered);
     }
 
     #[tokio::test]

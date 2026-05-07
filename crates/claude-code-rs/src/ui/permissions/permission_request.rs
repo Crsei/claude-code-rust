@@ -1,6 +1,6 @@
 //! Generic permission request surface.
 
-use super::utils::{render_permission_request, PermissionRequestView};
+use super::utils::{PermissionRequestView, render_permission_request};
 
 pub fn render_permission_request_surface(view: &PermissionRequestView) -> String {
     render_permission_request(view)

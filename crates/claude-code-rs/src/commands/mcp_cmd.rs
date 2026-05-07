@@ -25,8 +25,8 @@ use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::ipc::subsystem_handlers::{
-    build_mcp_server_config_entries, build_mcp_server_info_list_for_cwd_async,
-    run_mcp_runtime_operation, McpRuntimeOperation,
+    McpRuntimeOperation, build_mcp_server_config_entries, build_mcp_server_info_list_for_cwd_async,
+    run_mcp_runtime_operation,
 };
 use crate::ipc::subsystem_types::{ConfigScope, McpServerConfigEntry};
 use crate::mcp::{McpOAuthConfig, McpServerConfig};

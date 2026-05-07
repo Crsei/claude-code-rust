@@ -26,7 +26,7 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         "add-dir" => simple_meta("/add-dir <path>", &["/add-dir ../shared"]),
         "advisor" => simple_meta(
             "/advisor <model|clear|off>",
-            &["/advisor sonnet", "/advisor clear"],
+            &["/advisor MOTA", "/advisor clear"],
         ),
         "agents" => simple_meta(
             "/agents <list|show> [name]",
@@ -55,6 +55,10 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         "effort" => simple_meta("/effort <low|medium|high>", &["/effort medium"]),
         "exit" => simple_meta("/exit", &["/exit"]),
         "export" => simple_meta("/export [path]", &["/export session.md"]),
+        "experimental" => simple_meta(
+            "/experimental [status|list|on|off|reset]",
+            &["/experimental status", "/experimental on"],
+        ),
         "extra-usage" => simple_meta("/extra-usage", &["/extra-usage"]),
         "fast" => simple_meta("/fast [on|off|status]", &["/fast on"]),
         "files" => simple_meta("/files", &["/files"]),
@@ -62,7 +66,10 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         "help" => simple_meta("/help [command]", &["/help mcp"]),
         "hooks" => CommandMeta {
             usage: "/hooks <list|path|open> [event|layer]".to_string(),
-            examples: vec!["/hooks list PreToolUse".to_string(), "/hooks open project".to_string()],
+            examples: vec![
+                "/hooks list PreToolUse".to_string(),
+                "/hooks open project".to_string(),
+            ],
             edit_targets: vec![
                 EditTarget::new(
                     "managed",
@@ -97,8 +104,8 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         "init" => simple_meta("/init", &["/init"]),
         "insights" => simple_meta("/insights [fast|full]", &["/insights"]),
         "login" => simple_meta(
-            "/login [anthropic|codex|api-key]",
-            &["/login", "/login codex"],
+            "/login [anthropic|codex|api-key|bedrock|vertex|cloud]",
+            &["/login", "/login codex", "/login bedrock", "/login vertex"],
         ),
         "login-code" => simple_meta("/login-code <authorization-code>", &["/login-code abc123"]),
         "logout" => simple_meta("/logout", &["/logout"]),
@@ -107,9 +114,8 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
             &["/loop 5m /status"],
         ),
         "mcp" => CommandMeta {
-            usage:
-                "/mcp <list|status|add|edit|remove|approve|reject|connect|disconnect|reconnect>"
-                    .to_string(),
+            usage: "/mcp <list|status|add|edit|remove|approve|reject|connect|disconnect|reconnect>"
+                .to_string(),
             examples: vec![
                 "/mcp add ctx7 --command=npx --arg=-y --arg=@upstash/context7-mcp".to_string(),
                 "/mcp approve playwright --all-project".to_string(),
@@ -135,7 +141,7 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
                 ),
             ],
         },
-        "model" => simple_meta("/model [model-id|alias]", &["/model sonnet"]),
+        "model" => simple_meta("/model [model-id|alias]", &["/model MOTA"]),
         "model-add" => simple_meta(
             "/model-add <name> [input_price output_price]",
             &["/model-add gpt-4o 2.50 10.00"],
@@ -207,12 +213,7 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
             examples: vec!["/skills".to_string()],
             edit_targets: vec![
                 EditTarget::new("user", cc_config::paths::skills_dir_global(), cwd, ""),
-                EditTarget::new(
-                    "project",
-                    cwd.join(".cc-rust").join("skills"),
-                    cwd,
-                    "",
-                ),
+                EditTarget::new("project", cwd.join(".cc-rust").join("skills"), cwd, ""),
             ],
         },
         "sleep" => simple_meta("/sleep <seconds>", &["/sleep 60"]),
@@ -230,15 +231,11 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
             &["/team create ui-fix", "/team status"],
         ),
         "team-onboarding" => simple_meta("/team-onboarding [team-name]", &["/team-onboarding"]),
-        "terminal-setup" => simple_meta(
-            "/terminal-setup [env|tips|all]",
-            &["/terminal-setup tips"],
-        ),
+        "terminal-setup" => {
+            simple_meta("/terminal-setup [env|tips|all]", &["/terminal-setup tips"])
+        }
         "version" => simple_meta("/version", &["/version"]),
-        "voice" => simple_meta(
-            "/voice [status|on|off|toggle|diagnose]",
-            &["/voice status"],
-        ),
+        "voice" => simple_meta("/voice [status|on|off|toggle|diagnose]", &["/voice status"]),
         "keybindings" => CommandMeta {
             usage: "/keybindings [open|status|list|reload|path]".to_string(),
             examples: vec!["/keybindings".to_string()],
@@ -251,9 +248,14 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         },
         "config" => CommandMeta {
             usage: "/config <show|sources|schema|set|reset> [key] [value]".to_string(),
-            examples: vec!["/config set model claude-sonnet-4".to_string()],
+            examples: vec!["/config set model MOTA".to_string()],
             edit_targets: vec![
-                EditTarget::new("user", cc_config::settings::user_settings_path(), cwd, "--user"),
+                EditTarget::new(
+                    "user",
+                    cc_config::settings::user_settings_path(),
+                    cwd,
+                    "--user",
+                ),
                 EditTarget::new(
                     "project",
                     cc_config::settings::project_settings_path(cwd),

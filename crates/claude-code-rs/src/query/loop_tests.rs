@@ -1,7 +1,7 @@
 use super::*;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -34,6 +34,7 @@ enum MockStreamStep {
 struct MockDeps {
     stream_steps: parking_lot::Mutex<Vec<MockStreamStep>>,
     call_params: parking_lot::Mutex<Vec<ModelCallParams>>,
+    autocompact_params: parking_lot::Mutex<Vec<ModelCallParams>>,
     collapse_drain_result: parking_lot::Mutex<Option<CompactionResult>>,
     collapse_drain_calls: AtomicUsize,
     reactive_compact_result: parking_lot::Mutex<Option<CompactionResult>>,
@@ -67,6 +68,7 @@ impl MockDeps {
         Self {
             stream_steps: parking_lot::Mutex::new(stream_steps),
             call_params: parking_lot::Mutex::new(Vec::new()),
+            autocompact_params: parking_lot::Mutex::new(Vec::new()),
             collapse_drain_result: parking_lot::Mutex::new(None),
             collapse_drain_calls: AtomicUsize::new(0),
             reactive_compact_result: parking_lot::Mutex::new(None),
@@ -104,6 +106,10 @@ impl MockDeps {
 
     fn recorded_params(&self) -> Vec<ModelCallParams> {
         self.call_params.lock().clone()
+    }
+
+    fn recorded_autocompact_params(&self) -> Vec<ModelCallParams> {
+        self.autocompact_params.lock().clone()
     }
 
     fn set_reactive_compact_result(&self, result: Option<CompactionResult>) {
@@ -211,9 +217,10 @@ impl QueryDeps for MockDeps {
 
     async fn autocompact(
         &self,
-        _messages: Vec<Message>,
+        params: ModelCallParams,
         _tracking: Option<AutoCompactTracking>,
     ) -> Result<Option<CompactionResult>> {
+        self.autocompact_params.lock().push(params);
         Ok(None)
     }
 
@@ -512,6 +519,35 @@ async fn query_refreshes_tools_before_first_model_call() {
     assert_eq!(recorded.len(), 1);
     assert_eq!(recorded[0].tools.len(), 1);
     assert_eq!(recorded[0].tools[0].name(), "mcp__late__fresh");
+}
+
+#[tokio::test]
+async fn query_shapes_autocompact_with_final_request_context() {
+    let refreshed_tool: Arc<dyn Tool> = Arc::new(LoopTestTool {
+        name: "mcp__late__fresh",
+        concurrency_safe: true,
+    });
+    let deps = Arc::new(
+        MockDeps::new(vec![make_text_response("done")]).with_refreshed_tools(vec![refreshed_tool]),
+    );
+    let mut params = make_query_params(vec![make_user_message_for_test("count the full request")]);
+    params.system_prompt = vec!["system boundary".to_string()];
+    params.max_output_tokens_override = Some(1234);
+    params.skip_cache_write = Some(true);
+
+    let items: Vec<QueryYield> = query(params, deps.clone()).collect().await;
+    assert_eq!(request_start_count(&items), 1);
+
+    let recorded = deps.recorded_autocompact_params();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(
+        recorded[0].system_prompt,
+        vec!["system boundary".to_string()]
+    );
+    assert_eq!(recorded[0].tools.len(), 1);
+    assert_eq!(recorded[0].tools[0].name(), "mcp__late__fresh");
+    assert_eq!(recorded[0].max_output_tokens, Some(1234));
+    assert_eq!(recorded[0].skip_cache_write, Some(true));
 }
 
 struct StopContinuationHookRunner {
@@ -1249,7 +1285,7 @@ async fn test_tool_use_then_text_response() {
     );
 }
 
-async fn run_tool_use_summary_gate_case(emit_tool_use_summaries: bool) -> Vec<QueryYield> {
+async fn tool_use_summary_gate_case(emit_tool_use_summaries: bool) -> Vec<QueryYield> {
     let tool_response = ModelResponse {
         assistant_message: AssistantMessage {
             uuid: uuid::Uuid::new_v4(),
@@ -1285,7 +1321,7 @@ async fn run_tool_use_summary_gate_case(emit_tool_use_summaries: bool) -> Vec<Qu
 
 #[tokio::test]
 async fn tool_use_summary_gate_defaults_off() {
-    let items = run_tool_use_summary_gate_case(false).await;
+    let items = tool_use_summary_gate_case(false).await;
 
     assert!(
         !items
@@ -1297,7 +1333,7 @@ async fn tool_use_summary_gate_defaults_off() {
 
 #[tokio::test]
 async fn tool_use_summary_gate_yields_summary_when_enabled() {
-    let items = run_tool_use_summary_gate_case(true).await;
+    let items = tool_use_summary_gate_case(true).await;
     let summary = items
         .iter()
         .find_map(|item| {
@@ -1864,7 +1900,7 @@ impl QueryDeps for ImageMockDeps {
 
     async fn autocompact(
         &self,
-        _messages: Vec<Message>,
+        _params: ModelCallParams,
         _tracking: Option<AutoCompactTracking>,
     ) -> Result<Option<CompactionResult>> {
         Ok(None)
@@ -2127,7 +2163,7 @@ impl QueryDeps for CuMockDeps {
 
     async fn autocompact(
         &self,
-        _messages: Vec<Message>,
+        _params: ModelCallParams,
         _tracking: Option<AutoCompactTracking>,
     ) -> Result<Option<CompactionResult>> {
         Ok(None)

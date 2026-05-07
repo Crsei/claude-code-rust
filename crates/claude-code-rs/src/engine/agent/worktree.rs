@@ -11,13 +11,13 @@ use crate::types::config::QuerySource;
 use crate::types::tool::*;
 
 use super::{
-    build_child_config, collect_stream_result, count_worktree_changes, find_git_root, get_head_sha,
-    AgentInput, AgentTool,
+    AgentInput, AgentTool, build_child_config, collect_stream_result, count_worktree_changes,
+    find_git_root, get_head_sha,
 };
 use crate::engine::lifecycle::QueryEngine;
 use crate::worktree_hooks::{
-    default_agent_worktree_path, ensure_worktree_parent, run_worktree_create_hook,
-    run_worktree_remove_hook, validate_allowed_worktree_path, WorktreeRemoveHookOutcome,
+    WorktreeRemoveHookOutcome, default_agent_worktree_path, ensure_worktree_parent,
+    run_worktree_create_hook, run_worktree_remove_hook, validate_allowed_worktree_path,
 };
 
 impl AgentTool {

@@ -15,7 +15,7 @@ use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::browser::common::{
-    supports_claude_in_chrome, CHROME_EXTENSION_URL, CHROME_PERMISSIONS_URL, CHROME_RECONNECT_URL,
+    CHROME_EXTENSION_URL, CHROME_PERMISSIONS_URL, CHROME_RECONNECT_URL, supports_claude_in_chrome,
 };
 use crate::browser::session::{ChromeEnablement, ChromeSession};
 use crate::browser::state::{self, ChromeConnectionState};

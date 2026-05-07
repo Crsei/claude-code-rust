@@ -11,10 +11,10 @@
 use base64::Engine as _;
 #[cfg(all(not(target_os = "android"), unix))]
 use std::fs::OpenOptions;
-#[cfg(all(not(target_os = "android"), windows))]
-use std::io::stdout;
 #[cfg(not(target_os = "android"))]
 use std::io::Write;
+#[cfg(all(not(target_os = "android"), windows))]
+use std::io::stdout;
 #[cfg(not(target_os = "android"))]
 use std::process::{Command, Stdio};
 

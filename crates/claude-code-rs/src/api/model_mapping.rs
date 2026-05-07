@@ -23,6 +23,11 @@ pub struct ModelConfig {
 /// when the input is already in a provider-specific format.
 pub const CLAUDE_MODELS: &[ModelConfig] = &[
     ModelConfig {
+        first_party: "claude-opus-4-7",
+        bedrock: "us.anthropic.claude-opus-4-7",
+        vertex: "claude-opus-4-7",
+    },
+    ModelConfig {
         first_party: "claude-opus-4-6",
         bedrock: "us.anthropic.claude-opus-4-6-v1",
         vertex: "claude-opus-4-6",
@@ -182,6 +187,19 @@ mod tests {
     #[test]
     fn first_party_to_vertex_opus46() {
         assert_eq!(to_vertex_model_id("claude-opus-4-6"), "claude-opus-4-6");
+    }
+
+    #[test]
+    fn first_party_to_bedrock_opus47() {
+        assert_eq!(
+            to_bedrock_model_id("claude-opus-4-7"),
+            "us.anthropic.claude-opus-4-7"
+        );
+    }
+
+    #[test]
+    fn first_party_to_vertex_opus47() {
+        assert_eq!(to_vertex_model_id("claude-opus-4-7"), "claude-opus-4-7");
     }
 
     #[test]

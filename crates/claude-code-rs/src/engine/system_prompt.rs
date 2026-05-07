@@ -21,7 +21,7 @@ use std::sync::Arc;
 use tracing::debug;
 
 use crate::config::claude_md;
-use crate::engine::prompt_sections::{self, cached_section, uncached_section, DYNAMIC_BOUNDARY};
+use crate::engine::prompt_sections::{self, DYNAMIC_BOUNDARY, cached_section, uncached_section};
 use crate::types::tool::Tool;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -342,8 +342,7 @@ fn mcp_instructions_section() -> Option<String> {
 }
 
 /// Corresponds to TS: `SUMMARIZE_TOOL_RESULTS_SECTION`
-const SUMMARIZE_TOOL_RESULTS: &str =
-    "When working with tool results, write down any important information you might need later \
+const SUMMARIZE_TOOL_RESULTS: &str = "When working with tool results, write down any important information you might need later \
      in your response, as the original tool result may be cleared later.";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1233,7 +1232,9 @@ mod tests {
             None,
             None,
             false,
-            Some("<memory-context>\n## Relevant Memories\n- **selected**: use this\n</memory-context>"),
+            Some(
+                "<memory-context>\n## Relevant Memories\n- **selected**: use this\n</memory-context>",
+            ),
             Some("<session-insights>\n- Keep session detail.\n</session-insights>"),
         );
         let joined = parts.join("\n");

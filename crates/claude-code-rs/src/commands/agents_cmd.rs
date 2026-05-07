@@ -24,7 +24,7 @@ use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::skills::{self, SkillContext, SkillDefinition, SkillSource};
-use crate::ui::browser::{render_with_footer, shorten_path, TreeNode};
+use crate::ui::browser::{TreeNode, render_with_footer, shorten_path};
 
 pub struct AgentsHandler;
 

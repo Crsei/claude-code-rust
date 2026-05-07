@@ -13,10 +13,10 @@
 //!   falls back to inline).
 
 #[allow(unused_imports)]
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use async_trait::async_trait;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tracing::{debug, info};
 use uuid::Uuid;
 

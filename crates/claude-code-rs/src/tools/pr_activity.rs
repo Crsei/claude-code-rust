@@ -2,10 +2,10 @@
 
 use std::fs;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::teams::{constants, mailbox, types::TeammateMessage};
 use crate::types::message::AssistantMessage;

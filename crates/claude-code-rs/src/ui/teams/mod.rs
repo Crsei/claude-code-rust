@@ -8,7 +8,7 @@ pub mod teams_dialog;
 #[cfg(test)]
 mod tests {
     use super::team_status::render_team_status;
-    use super::teams_dialog::{render_teams_dialog, TeamSummary, TeammateStatus};
+    use super::teams_dialog::{TeamSummary, TeammateStatus, render_teams_dialog};
 
     #[test]
     fn snapshot_team_surfaces() {

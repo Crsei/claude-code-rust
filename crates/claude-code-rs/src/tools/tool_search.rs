@@ -12,7 +12,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use parking_lot::RwLock;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools, ValidationResult};

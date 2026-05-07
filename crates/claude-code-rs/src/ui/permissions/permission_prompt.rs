@@ -1,6 +1,6 @@
 //! Permission prompt text and option rendering.
 
-use super::utils::{render_permission_options, PermissionOption};
+use super::utils::{PermissionOption, render_permission_options};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PermissionPromptState {

@@ -6,21 +6,24 @@ use uuid::Uuid;
 #[test]
 fn test_resolve_model_alias() {
     assert_eq!(
-        resolve_model_alias("SOTA", "fallback"),
+        resolve_model_alias("SOTA", "fallback").unwrap(),
         "claude-opus-4-20250514"
     );
     assert_eq!(
-        resolve_model_alias("MOTA", "fallback"),
+        resolve_model_alias("MOTA", "fallback").unwrap(),
         "claude-sonnet-4-20250514"
     );
     assert_eq!(
-        resolve_model_alias("FOTA", "fallback"),
+        resolve_model_alias("FOTA", "fallback").unwrap(),
         "claude-haiku-3-5-20241022"
     );
-    assert_eq!(resolve_model_alias("opus", "fallback"), "opus");
-    assert_eq!(resolve_model_alias("inherit", "fallback"), "fallback");
+    assert!(resolve_model_alias("opus", "fallback").is_err());
     assert_eq!(
-        resolve_model_alias("custom-model", "fallback"),
+        resolve_model_alias("inherit", "fallback").unwrap(),
+        "fallback"
+    );
+    assert_eq!(
+        resolve_model_alias("custom-model", "fallback").unwrap(),
         "custom-model"
     );
 }

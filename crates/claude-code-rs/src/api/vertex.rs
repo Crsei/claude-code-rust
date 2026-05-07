@@ -35,15 +35,15 @@ use std::pin::Pin;
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use base64::{
-    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
     Engine as _,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use futures::Stream;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::api::client::{parse_sse_byte_stream, MessagesRequest};
+use crate::api::client::{MessagesRequest, parse_sse_byte_stream};
 use crate::api::model_mapping::to_vertex_model_id;
 use crate::api::retry::categorize_api_error;
 use crate::types::message::StreamEvent;
@@ -370,11 +370,7 @@ fn fetch_gcloud_token() -> Option<String> {
         return None;
     }
     let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if token.is_empty() {
-        None
-    } else {
-        Some(token)
-    }
+    if token.is_empty() { None } else { Some(token) }
 }
 
 /// Resolve the project ID from environment.

@@ -106,8 +106,7 @@ const AUTH_VERTEX: &[&str] = &[
 ];
 const AUTH_FOUNDRY: &[&str] = &["CLAUDE_CODE_USE_FOUNDRY"];
 
-pub const FOUNDRY_UNSUPPORTED_REASON: &str =
-    "Foundry provider selection is known from the reference project, but cc-rust has no Foundry request/auth adapter yet";
+pub const FOUNDRY_UNSUPPORTED_REASON: &str = "Foundry provider selection is known from the reference project, but cc-rust has no Foundry request/auth adapter yet";
 
 /// All supported providers — ordered by detection priority.
 ///
@@ -316,7 +315,7 @@ pub fn capabilities_for_provider_name(name: &str) -> Option<ProviderCapabilities
             streaming: StreamingSupport::Native,
             tool_use: true,
             thinking: true,
-            prompt_cache: false,
+            prompt_cache: true,
             advisor: true,
             status: ProviderSupportStatus::Supported,
         }),
@@ -327,7 +326,7 @@ pub fn capabilities_for_provider_name(name: &str) -> Option<ProviderCapabilities
             streaming: StreamingSupport::Native,
             tool_use: true,
             thinking: true,
-            prompt_cache: false,
+            prompt_cache: true,
             advisor: true,
             status: ProviderSupportStatus::Supported,
         }),
@@ -466,6 +465,7 @@ mod tests {
         assert_eq!(caps.streaming, StreamingSupport::Native);
         assert!(caps.tool_use);
         assert!(caps.thinking);
+        assert!(caps.prompt_cache);
         assert!(matches!(caps.status, ProviderSupportStatus::Supported));
         assert!(caps.is_usable());
     }
@@ -476,6 +476,7 @@ mod tests {
         assert_eq!(caps.streaming, StreamingSupport::Native);
         assert!(caps.tool_use);
         assert!(caps.thinking);
+        assert!(caps.prompt_cache);
         assert!(matches!(caps.status, ProviderSupportStatus::Supported));
         assert!(caps.is_usable());
     }

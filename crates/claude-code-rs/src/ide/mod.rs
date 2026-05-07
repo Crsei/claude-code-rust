@@ -45,7 +45,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use parking_lot::Mutex;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::LazyLock;
 use tokio::sync::broadcast;
 use tracing::warn;

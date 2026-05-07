@@ -18,8 +18,8 @@ use crossterm::terminal::{
     LeaveAlternateScreen,
 };
 use crossterm::{cursor, execute};
-use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
@@ -38,11 +38,11 @@ mod terminal_guard;
 #[path = "tui/tests.rs"]
 mod tests;
 
-use commands::{query_prompt_text, try_execute_command, CmdAction};
+use commands::{CmdAction, query_prompt_text, try_execute_command};
 use engine_events::{
-    create_user_message, handle_sdk_message, handle_tool_progress, install_tui_permission_callback,
-    install_tui_tool_progress_callback, now_ts, permission_choice_to_decision, spawn_engine_query,
-    EngineEvent, StreamingState,
+    EngineEvent, StreamingState, create_user_message, handle_sdk_message, handle_tool_progress,
+    install_tui_permission_callback, install_tui_tool_progress_callback, now_ts,
+    permission_choice_to_decision, spawn_engine_query,
 };
 use export::export_to_editor;
 use subsystem_events::{

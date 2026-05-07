@@ -162,11 +162,7 @@ fn cycle_index(current: usize, len: usize, direction: isize) -> usize {
         return 0;
     }
     if direction < 0 {
-        if current == 0 {
-            len - 1
-        } else {
-            current - 1
-        }
+        if current == 0 { len - 1 } else { current - 1 }
     } else {
         (current + 1) % len
     }

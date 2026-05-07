@@ -262,11 +262,10 @@ fn memory_index_line(entry: &MemoryEntry) -> String {
 
 fn truncate_memory_index_content(content: &str) -> String {
     let mut output = String::new();
-    let mut line_count = 0usize;
     let mut byte_count = 0usize;
     let mut truncated = false;
 
-    for line in content.lines() {
+    for (line_count, line) in content.lines().enumerate() {
         let separator_len = usize::from(!output.is_empty());
         let next_len = separator_len + line.len();
 
@@ -283,7 +282,6 @@ fn truncate_memory_index_content(content: &str) -> String {
         }
         output.push_str(line);
         byte_count += line.len();
-        line_count += 1;
     }
 
     if truncated {

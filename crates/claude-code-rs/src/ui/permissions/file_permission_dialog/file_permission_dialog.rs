@@ -3,7 +3,7 @@
 use super::permission_options::file_permission_options;
 use super::use_file_permission_dialog::FilePermissionDialogState;
 use crate::ui::permissions::utils::{
-    path_action_summary, render_permission_request, PermissionRequestView,
+    PermissionRequestView, path_action_summary, render_permission_request,
 };
 
 pub fn render_file_permission_dialog(

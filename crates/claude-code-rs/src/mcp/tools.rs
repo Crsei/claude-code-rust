@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::sync::Mutex;
 use tracing::debug;
 
@@ -168,7 +168,7 @@ fn browser_display_preview(
     content: &[ToolCallContent],
     has_image: bool,
 ) -> Option<String> {
-    use crate::browser::detection::{is_browser_server, BROWSER_TOOL_BASENAMES};
+    use crate::browser::detection::{BROWSER_TOOL_BASENAMES, is_browser_server};
     use crate::browser::tool_rendering::{infer_kind, short_summary};
 
     let is_known_action = BROWSER_TOOL_BASENAMES.contains(&tool_basename);

@@ -1,7 +1,7 @@
 //! Rust-side helper for grouped tool-use output.
 
 use crate::ui::theme::Theme;
-use crate::ui::tool_activity::{render_grouped_activity, ToolActivity, ToolState};
+use crate::ui::tool_activity::{ToolActivity, ToolState, render_grouped_activity};
 
 pub fn render_grouped_tool_use_content(tool_names: &[&str], _theme: &Theme) -> String {
     let activities = tool_names

@@ -21,7 +21,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::commands::model::resolve_model_alias;
+use crate::commands::model::resolve_and_validate_model;
 
 pub struct AdvisorHandler;
 
@@ -99,13 +99,11 @@ fn set_advisor_with_persist<F>(
 where
     F: FnOnce(&std::path::Path, Option<&str>) -> Result<std::path::PathBuf>,
 {
-    let resolved = resolve_model_alias(raw);
+    let resolved = match resolve_and_validate_model(raw, &[]) {
+        Ok(model) => model,
+        Err(message) => return Ok(CommandResult::Output(format!("Rejected: {}", message))),
+    };
     let trimmed = resolved.trim();
-    if trimmed.is_empty() {
-        return Ok(CommandResult::Output(
-            "Rejected: advisor model id cannot be empty.".to_string(),
-        ));
-    }
 
     let previous = ctx.app_state.advisor_model.clone();
     ctx.app_state.advisor_model = Some(trimmed.to_string());
@@ -183,7 +181,7 @@ fn persist_advisor_to_path(
     path: &std::path::Path,
     new_value: Option<&str>,
 ) -> Result<std::path::PathBuf> {
-    use cc_config::settings::{write_settings_file, RawSettings};
+    use cc_config::settings::{RawSettings, write_settings_file};
     let mut raw: RawSettings = if path.exists() {
         let s = std::fs::read_to_string(path)?;
         serde_json::from_str(&s).unwrap_or_default()
@@ -241,7 +239,7 @@ mod tests {
     #[tokio::test]
     async fn set_mutates_app_state_and_settings() {
         let mut ctx = test_ctx();
-        let result = set_advisor_with_persist(&mut ctx, "opus", noop_persist).unwrap();
+        let result = set_advisor_with_persist(&mut ctx, "SOTA", noop_persist).unwrap();
         match result {
             CommandResult::Output(text) => assert!(text.contains("claude-opus-4-20250514")),
             _ => panic!("expected Output"),
@@ -312,6 +310,20 @@ mod tests {
             CommandResult::Output(text) => assert!(text.contains("Rejected")),
             _ => panic!("expected Output"),
         }
+    }
+
+    #[tokio::test]
+    async fn legacy_alias_set_rejected() {
+        let mut ctx = test_ctx();
+        let result = set_advisor(&mut ctx, "sonnet").unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(text.contains("Rejected"));
+                assert!(text.contains("MOTA"));
+            }
+            _ => panic!("expected Output"),
+        }
+        assert!(ctx.app_state.advisor_model.is_none());
     }
 
     #[test]
