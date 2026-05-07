@@ -6,6 +6,23 @@
 
 ---
 
+## 2026-05-07 P1 后续拆分记录
+
+本轮已继续拆分 Query turn / lifecycle 主流程中的长闭包：
+
+- `query/loop_impl.rs`：抽出 `QueryRunContext` 与 `prepare_model_request()`，把每轮模型请求前的 microcompact、PreCompact/PostCompact hook、tool refresh、autocompact 与 `ModelCallParams` 组装移出主循环。
+- `engine/lifecycle/submit_message.rs`：抽出 `SubmitTurnState`、本地 slash command 分发、`/clear` 会话切换、系统提示词构建、memory recall 分支与 `InstructionsLoaded` hook 触发。
+
+剩余拆分步骤按优先级保留：
+
+1. **Lifecycle Phase D 前置准备**：继续从 `submit_message()` 抽出 API client / Langfuse trace 初始化。建议 helper 返回 `Result<ApiSetup, SdkMessage>`，保持“缺失 API provider 时立即 yield Result 并返回”的现有行为。
+2. **Query inner stream 事件处理**：将 `while let Some(item) = inner_stream.next().await` 中的 `QueryYield` 分发拆成效果处理器。建议先引入小枚举表达 `Emit` / `Finish` / `Continue`，避免 helper 直接拥有 async stream 的 `yield` 语义。
+3. **Result 构造去重**：在 `submit_message.rs` 中提取本地命令结果、最大轮次、预算耗尽、缺失 provider 等 `SdkResult` 构造 helper。保持 helper 只承载字段一致性，不提前抽象业务分支。
+4. **边界文件再收敛**：如果 `submit_message.rs` 继续增长，将本地命令处理迁入独立 `lifecycle/local_command.rs`，系统提示词构建迁入 `lifecycle/system_prompt_build.rs`。本次暂不移动文件，避免扩大 diff。
+5. **回归保护补充**：为 slash command fast path、`/clear` session rotation、memory ignore、model-assisted memory fallback、PreCompact/PostCompact hook 顺序补充更细粒度测试，再继续拆 Phase D 的高风险流式分支。
+
+---
+
 ## 目录
 
 - [CRITICAL — 必须优先修复](#critical--必须优先修复)

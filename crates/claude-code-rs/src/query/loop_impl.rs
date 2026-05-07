@@ -33,22 +33,23 @@ use crate::types::message::{
     AssistantMessage, Attachment, AttachmentMessage, ContentBlock, Message, RequestStartEvent,
     StreamEvent, TombstoneMessage, ToolUseSummaryMessage, Usage,
 };
-use crate::types::state::{BudgetTracker, QueryLoopState, TokenBudgetDecision};
+use crate::types::state::{BudgetTracker, TokenBudgetDecision};
 use crate::types::transitions::Continue;
 
 use crate::services::tool_use_summary::{self, ToolInfo};
 
-use super::deps::{ModelCallParams, QueryDeps};
+use super::deps::QueryDeps;
 use super::loop_helpers::{
-    MaxTokensRecovery, ModelCallFailureRecovery, ModelCallFailureStage, PromptRecovery,
-    StreamingToolExecutor, backfill_observable_tool_inputs, classify_model_call_failure,
-    execute_tool_calls, handle_max_output_tokens, handle_prompt_too_long, is_stream_progress_event,
-    make_abort_message, make_error_message, make_tool_result_user_message, make_user_message,
+    backfill_observable_tool_inputs, classify_model_call_failure, execute_tool_calls,
+    handle_max_output_tokens, handle_prompt_too_long, is_stream_progress_event, make_abort_message,
+    make_error_message, make_tool_result_user_message, make_user_message,
     merge_tool_results_by_tool_use_order, stream_idle_timeout, stream_stall_timeout,
-    strip_fallback_signature_blocks,
+    strip_fallback_signature_blocks, MaxTokensRecovery, ModelCallFailureRecovery,
+    ModelCallFailureStage, PromptRecovery, StreamingToolExecutor,
 };
 use super::stop_hooks::{self, StopHookResult};
 use super::token_budget::check_token_budget;
+use super::turn_context::{prepare_model_request, QueryRunContext};
 
 /// query() -- core query loop.
 ///
@@ -60,15 +61,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
         // Initialization
         // ──────────────────────────────────────────────────────────
 
-        let mut state = QueryLoopState::initial(params.messages);
-        state.max_output_tokens_override = params.max_output_tokens_override;
-        let system_prompt = params.system_prompt;
-        let max_turns = params.max_turns;
-        let task_budget = params.task_budget.as_ref().map(|b| b.total);
-        let query_source = params.query_source;
-        let skip_cache_write = params.skip_cache_write;
-        let fallback_model = params.fallback_model;
-        let gates = params.gates;
+        let (turn_context, mut state) = QueryRunContext::from_params(params);
         let mut budget_tracker = BudgetTracker::new();
         let mut cumulative_usage = Usage::default();
 
@@ -147,109 +140,15 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             // STEP 2: CONTEXT -- microcompact + autocompact
             // ──────────────────────────────────────────────────────
 
-            let messages = match deps.microcompact(state.messages.clone()).await {
-                Ok(msgs) => msgs,
-                Err(e) => {
-                    warn!(error = %e, "microcompact failed, using original messages");
-                    state.messages.clone()
-                }
-            };
-
-            let message_count_before = messages.len();
-
-            // Fire PreCompact hook before autocompact
-            {
-                let hooks_map = deps.get_app_state().hooks;
-                let runner = deps.hook_runner();
-                let compact_pre_configs = runner.load_hook_configs(&hooks_map, "PreCompact");
-                if !compact_pre_configs.is_empty() {
-                    let payload = serde_json::json!({
-                        "message_count": message_count_before,
-                    });
-                    let _ = runner.run_event_hooks("PreCompact", &payload, &compact_pre_configs).await;
-                }
-            }
-
-            match deps.refresh_tools().await {
-                Ok(_refreshed) => {
-                    debug!("tools refreshed successfully before context and model call");
-                }
-                Err(e) => {
-                    debug!(error = %e, "tool refresh failed before context and model call, continuing with existing tools");
-                }
-            }
-
-            let tools_for_request = deps.get_tools();
-            let app_state_for_request = deps.get_app_state();
-            let request_model = app_state_for_request.main_loop_model.clone();
-            let request_thinking_enabled = app_state_for_request.thinking_enabled;
-            let request_effort_value = app_state_for_request.effort_value.clone();
-            let request_advisor_model = app_state_for_request.advisor_model.clone();
-            let autocompact_params = ModelCallParams {
-                messages: messages.clone(),
-                system_prompt: system_prompt.clone(),
-                tools: tools_for_request.clone(),
-                model: Some(request_model.clone()),
-                max_output_tokens: state.max_output_tokens_override,
-                skip_cache_write,
-                thinking_enabled: request_thinking_enabled,
-                effort_value: request_effort_value.clone(),
-                advisor_model: request_advisor_model.clone(),
-            };
-
-            let (messages, auto_compact_tracking) = match deps
-                .autocompact(autocompact_params, state.auto_compact_tracking.clone())
-                .await
-            {
-                Ok(Some(result)) => {
-                    debug!("autocompact produced compacted messages");
-
-                    // Fire PostCompact hook after successful compaction
-                    {
-                        let hooks_map = deps.get_app_state().hooks;
-                        let runner = deps.hook_runner();
-                        let compact_post_configs = runner.load_hook_configs(&hooks_map, "PostCompact");
-                        if !compact_post_configs.is_empty() {
-                            let message_count_after = result.messages.len();
-                            let messages_freed = message_count_before.saturating_sub(message_count_after);
-                            let payload = serde_json::json!({
-                                "message_count_before": message_count_before,
-                                "message_count_after": message_count_after,
-                                "messages_freed": messages_freed,
-                            });
-                            let _ = runner.run_event_hooks("PostCompact", &payload, &compact_post_configs).await;
-                        }
-                    }
-
-                    (result.messages, Some(result.tracking))
-                }
-                Ok(None) => (messages, state.auto_compact_tracking.clone()),
-                Err(e) => {
-                    warn!(error = %e, "autocompact failed, using original messages");
-                    (messages, state.auto_compact_tracking.clone())
-                }
-            };
-
-            state.messages = messages;
-            state.auto_compact_tracking = auto_compact_tracking;
+            let prepared_request =
+                prepare_model_request(&deps, &mut state, &turn_context).await;
 
             // ──────────────────────────────────────────────────────
             // STEP 3: API CALL -- streaming model call
             // ──────────────────────────────────────────────────────
 
-            let tools = tools_for_request;
-
-            let call_params = ModelCallParams {
-                messages: state.messages.clone(),
-                system_prompt: system_prompt.clone(),
-                tools: tools.clone(),
-                model: Some(request_model.clone()),
-                max_output_tokens: state.max_output_tokens_override,
-                skip_cache_write,
-                thinking_enabled: request_thinking_enabled,
-                effort_value: request_effort_value,
-                advisor_model: request_advisor_model,
-            };
+            let tools = prepared_request.tools;
+            let call_params = prepared_request.call_params;
             let provider_for_langfuse = deps
                 .langfuse_provider_name()
                 .unwrap_or_else(|| "unknown".to_string());
@@ -313,7 +212,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
 
                         let recovery = classify_model_call_failure(
                             ModelCallFailureStage::RequestStart,
-                            fallback_model.as_deref(),
+                            turn_context.fallback_model.as_deref(),
                             &attempt_model,
                             &error_str,
                         );
@@ -393,7 +292,8 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     api_error: None,
                     cost_usd: 0.0,
                 };
-                let mut streaming_tool_executor = gates
+                let mut streaming_tool_executor = turn_context
+                    .gates
                     .streaming_tool_execution
                     .then(StreamingToolExecutor::new);
                 let mut stream_error: Option<String> = None;
@@ -505,7 +405,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
 
                     let recovery = classify_model_call_failure(
                         ModelCallFailureStage::StreamInterrupted,
-                        fallback_model.as_deref(),
+                        turn_context.fallback_model.as_deref(),
                         &attempt_model,
                         err,
                     );
@@ -594,7 +494,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             }
 
             // Inject pending tool use summary as system message
-            if gates.emit_tool_use_summaries {
+            if turn_context.gates.emit_tool_use_summaries {
                 if let Some(summary) = state.pending_tool_use_summary.take() {
                     debug!(summary = %crate::utils::messages::truncate_text(&summary, 200), "injecting tool use summary");
                     let sys_msg = Message::System(crate::types::message::SystemMessage {
@@ -696,8 +596,8 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 let global_turn_tokens = cumulative_usage.output_tokens;
                 let budget_decision = check_token_budget(
                     &mut budget_tracker,
-                    if query_source.starts_with_agent() { Some("agent") } else { None },
-                    task_budget,
+                    turn_context.token_budget_scope(),
+                    turn_context.task_budget_total,
                     global_turn_tokens,
                 );
 
@@ -784,7 +684,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 }
 
                 // ── STEP 6b: Generate tool use summary ──
-                if gates.emit_tool_use_summaries {
+                if turn_context.gates.emit_tool_use_summaries {
                     let tool_infos: Vec<ToolInfo> = tool_results
                         .iter()
                         .map(|r| ToolInfo {
@@ -842,7 +742,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     break;
                 }
 
-                if let Some(max) = max_turns {
+                if let Some(max) = turn_context.max_turns {
                     if state.turn_count >= max {
                         info!(turns = state.turn_count, max = max, "max turns reached");
                         let attachment_msg = AttachmentMessage {

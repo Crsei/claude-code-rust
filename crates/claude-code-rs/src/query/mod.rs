@@ -11,6 +11,7 @@ pub(crate) mod loop_helpers;
 pub mod loop_impl;
 pub mod stop_hooks;
 pub mod token_budget;
+pub(crate) mod turn_context;
 
 // 重导出核心函数, 方便外部使用
 #[allow(unused_imports)]

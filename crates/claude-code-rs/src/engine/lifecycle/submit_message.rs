@@ -28,9 +28,9 @@ use crate::types::message::{
     SystemSubtype,
 };
 
-use super::QueryEngine;
 use super::deps::QueryEngineDeps;
 use super::types::{AbortReason, UsageTracking};
+use super::QueryEngine;
 
 fn model_assisted_memory_recall_enabled() -> bool {
     std::env::var("CC_RUST_MODEL_ASSISTED_MEMORY_RECALL")
@@ -196,6 +196,363 @@ mod model_assisted_memory_recall_tests {
     }
 }
 
+struct SubmitTurnState {
+    started_at: Instant,
+    last_stop_reason: Option<String>,
+    structured_output: Option<serde_json::Value>,
+    turn_count_this_submit: usize,
+    collected_errors: Vec<String>,
+}
+
+impl SubmitTurnState {
+    fn new() -> Self {
+        Self {
+            started_at: Instant::now(),
+            last_stop_reason: None,
+            structured_output: None,
+            turn_count_this_submit: 0,
+            collected_errors: Vec::new(),
+        }
+    }
+
+    fn duration_ms(&self) -> u64 {
+        self.started_at.elapsed().as_millis() as u64
+    }
+}
+
+struct LocalCommandOutcome {
+    is_error: bool,
+    session_id: crate::bootstrap::SessionId,
+}
+
+impl LocalCommandOutcome {
+    fn new(session_id: crate::bootstrap::SessionId) -> Self {
+        Self {
+            is_error: false,
+            session_id,
+        }
+    }
+}
+
+async fn handle_parsed_command(
+    processed: &mut input_processing::ProcessedInput,
+    current_messages: &[Message],
+    config: &crate::types::config::QueryEngineConfig,
+    state_ref: &Arc<parking_lot::RwLock<super::QueryEngineState>>,
+    active_session_id_ref: &Arc<parking_lot::RwLock<crate::bootstrap::SessionId>>,
+    session_id: &crate::bootstrap::SessionId,
+    command_dispatcher: &dyn cc_types::commands::CommandDispatcher,
+) -> LocalCommandOutcome {
+    let mut outcome = LocalCommandOutcome::new(session_id.clone());
+    let Some(parsed_command) = processed.parsed_command.take() else {
+        return outcome;
+    };
+
+    let mut commands = crate::commands::get_all_commands();
+    let command_name = command_dispatcher
+        .command_name(parsed_command.index)
+        .unwrap_or_else(|| format!("#{}", parsed_command.index));
+    let Some(command) = commands.get_mut(parsed_command.index) else {
+        outcome.is_error = true;
+        processed.result_text = Some(format!("Unknown command: /{}", command_name));
+        processed.should_query = false;
+        processed.messages.clear();
+        return outcome;
+    };
+
+    let mut ctx = CommandContext {
+        messages: current_messages.to_vec(),
+        cwd: std::path::PathBuf::from(&config.cwd),
+        app_state: state_ref.read().app_state.clone(),
+        session_id: session_id.clone(),
+    };
+
+    match command
+        .handler
+        .execute(&parsed_command.args, &mut ctx)
+        .await
+    {
+        Ok(CommandResult::Output(text)) => {
+            apply_command_state(state_ref, ctx);
+            processed.result_text = Some(text);
+            processed.should_query = false;
+            processed.messages.clear();
+        }
+        Ok(CommandResult::Query(messages)) => {
+            apply_command_state(state_ref, ctx);
+            processed.messages = messages;
+            processed.should_query = true;
+            processed.result_text = None;
+        }
+        Ok(CommandResult::Clear) => {
+            outcome.session_id =
+                clear_command_session(state_ref, active_session_id_ref, config, ctx);
+            processed.result_text = Some("Conversation cleared.".to_string());
+            processed.should_query = false;
+            processed.messages.clear();
+        }
+        Ok(CommandResult::Exit(text)) => {
+            apply_command_state(state_ref, ctx);
+            processed.result_text = Some(text);
+            processed.should_query = false;
+            processed.messages.clear();
+        }
+        Ok(CommandResult::None) => {
+            apply_command_state(state_ref, ctx);
+            processed.result_text = Some(String::new());
+            processed.should_query = false;
+            processed.messages.clear();
+        }
+        Err(err) => {
+            outcome.is_error = true;
+            processed.result_text = Some(format!("Command /{} failed: {}", command_name, err));
+            processed.should_query = false;
+            processed.messages.clear();
+        }
+    }
+
+    outcome
+}
+
+fn apply_command_state(
+    state_ref: &Arc<parking_lot::RwLock<super::QueryEngineState>>,
+    ctx: CommandContext,
+) {
+    let mut state = state_ref.write();
+    state.messages = ctx.messages;
+    state.app_state = ctx.app_state;
+}
+
+fn clear_command_session(
+    state_ref: &Arc<parking_lot::RwLock<super::QueryEngineState>>,
+    active_session_id_ref: &Arc<parking_lot::RwLock<crate::bootstrap::SessionId>>,
+    config: &crate::types::config::QueryEngineConfig,
+    ctx: CommandContext,
+) -> crate::bootstrap::SessionId {
+    let previous_id = active_session_id_ref.read().clone();
+    if config.auto_save_session && !ctx.messages.is_empty() {
+        if let Err(err) =
+            crate::session::storage::save_session(previous_id.as_str(), &ctx.messages, &config.cwd)
+        {
+            warn!(
+                error = %err,
+                session = %previous_id,
+                "failed to save previous session before command clear"
+            );
+        }
+    }
+
+    let new_session_id = crate::bootstrap::SessionId::new();
+    {
+        let mut state = state_ref.write();
+        state.messages.clear();
+        state.usage = UsageTracking::default();
+        state.permission_denials.clear();
+        state.total_turn_count = 0;
+        state.app_state = ctx.app_state;
+    }
+    *active_session_id_ref.write() = new_session_id.clone();
+    crate::bootstrap::PROCESS_STATE.write().session_id = new_session_id.clone();
+    new_session_id
+}
+
+struct SubmitSystemPrompt {
+    system_prompt_parts: Vec<String>,
+    user_context: std::collections::HashMap<String, String>,
+    system_context: std::collections::HashMap<String, String>,
+}
+
+async fn build_submit_system_prompt(
+    prompt: &str,
+    config: &crate::types::config::QueryEngineConfig,
+    session_id: &crate::bootstrap::SessionId,
+    state_ref: &Arc<parking_lot::RwLock<super::QueryEngineState>>,
+    hook_runner: &Arc<dyn cc_types::hooks::HookRunner>,
+    tools_snapshot: &crate::types::tool::Tools,
+    model_name: &str,
+    backend_name: &str,
+) -> SubmitSystemPrompt {
+    // Pull live language/output_style off AppState so /config set takes effect
+    // on the next submit without restarting the engine.
+    let (
+        cfg_language,
+        cfg_output_style,
+        include_auto_memory,
+        session_memory_context,
+        memory_query_text,
+        recent_tool_names,
+        already_surfaced_memory_keys,
+        model_assisted_memory_recall,
+    ) = {
+        let state = state_ref.read();
+        (
+            state.app_state.settings.language.clone(),
+            state.app_state.settings.output_style.clone(),
+            state
+                .app_state
+                .settings
+                .auto_memory_enabled
+                .unwrap_or(false),
+            state
+                .session_memory
+                .format_memory_context_for_workspace_excluding_session(
+                    5,
+                    Some(std::path::Path::new(&config.cwd)),
+                    Some(session_id.as_str()),
+                ),
+            latest_user_query_text(&state.messages).unwrap_or_else(|| prompt.to_string()),
+            recent_tool_names(&state.messages, 8),
+            state.app_state.surfaced_memory_keys.clone(),
+            model_assisted_memory_recall_enabled(),
+        )
+    };
+
+    let ignore_memory = cc_session::memdir::query_requests_memory_ignore(&memory_query_text);
+    let session_memory_context = if ignore_memory {
+        None
+    } else {
+        session_memory_context
+    };
+    let (memory_context_override, newly_surfaced_memory_keys) = resolve_memory_context_override(
+        config,
+        include_auto_memory,
+        &memory_query_text,
+        &recent_tool_names,
+        &already_surfaced_memory_keys,
+        backend_name,
+        model_name,
+        model_assisted_memory_recall,
+        ignore_memory,
+    )
+    .await;
+
+    if !newly_surfaced_memory_keys.is_empty() {
+        state_ref
+            .write()
+            .app_state
+            .surfaced_memory_keys
+            .extend(newly_surfaced_memory_keys);
+    }
+
+    let (system_prompt_parts, user_context, system_context) =
+        system_prompt::build_system_prompt_with_memory_contexts(
+            config.custom_system_prompt.as_deref(),
+            config.append_system_prompt.as_deref(),
+            tools_snapshot,
+            model_name,
+            &config.cwd,
+            cfg_language.as_deref(),
+            cfg_output_style.as_deref(),
+            include_auto_memory,
+            memory_context_override.as_deref(),
+            session_memory_context.as_deref(),
+        );
+
+    fire_instructions_loaded_hook(state_ref, hook_runner, &system_prompt_parts, &config.cwd).await;
+
+    SubmitSystemPrompt {
+        system_prompt_parts,
+        user_context,
+        system_context,
+    }
+}
+
+async fn resolve_memory_context_override(
+    config: &crate::types::config::QueryEngineConfig,
+    include_auto_memory: bool,
+    memory_query_text: &str,
+    recent_tool_names: &[String],
+    already_surfaced_memory_keys: &std::collections::HashSet<String>,
+    backend_name: &str,
+    model_name: &str,
+    model_assisted_memory_recall: bool,
+    ignore_memory: bool,
+) -> (Option<String>, Vec<String>) {
+    if ignore_memory {
+        debug!("memory recall skipped because the user requested memory ignore");
+        return (None, Vec::new());
+    }
+
+    if !model_assisted_memory_recall {
+        debug!("using deterministic memory recall");
+        return deterministic_memory_context(
+            &config.cwd,
+            include_auto_memory,
+            memory_query_text,
+            recent_tool_names,
+            already_surfaced_memory_keys,
+        );
+    }
+
+    match build_model_assisted_memory_context(
+        &config.cwd,
+        include_auto_memory,
+        memory_query_text,
+        recent_tool_names,
+        already_surfaced_memory_keys,
+        backend_name,
+        model_name,
+    )
+    .await
+    {
+        Ok(Some((context, surfaced))) => {
+            debug!(
+                surfaced_count = surfaced.len(),
+                "model-assisted memory recall completed"
+            );
+            (Some(context), surfaced)
+        }
+        Ok(None) => {
+            debug!("model-assisted memory recall unavailable; using deterministic recall");
+            deterministic_memory_context(
+                &config.cwd,
+                include_auto_memory,
+                memory_query_text,
+                recent_tool_names,
+                already_surfaced_memory_keys,
+            )
+        }
+        Err(error) => {
+            debug!(
+                error = %error,
+                "model-assisted memory recall failed; using deterministic recall"
+            );
+            deterministic_memory_context(
+                &config.cwd,
+                include_auto_memory,
+                memory_query_text,
+                recent_tool_names,
+                already_surfaced_memory_keys,
+            )
+        }
+    }
+}
+
+async fn fire_instructions_loaded_hook(
+    state_ref: &Arc<parking_lot::RwLock<super::QueryEngineState>>,
+    hook_runner: &Arc<dyn cc_types::hooks::HookRunner>,
+    system_prompt_parts: &[String],
+    cwd: &str,
+) {
+    let content_length: usize = system_prompt_parts.iter().map(|part| part.len()).sum();
+    if content_length == 0 {
+        return;
+    }
+
+    let hooks_map = state_ref.read().app_state.hooks.clone();
+    let configs = hook_runner.load_hook_configs(&hooks_map, "InstructionsLoaded");
+    if !configs.is_empty() {
+        let payload = serde_json::json!({
+            "source": "system_prompt",
+            "content_length": content_length,
+            "cwd": cwd,
+        });
+        let _ = hook_runner
+            .run_event_hooks("InstructionsLoaded", &payload, &configs)
+            .await;
+    }
+}
+
 impl QueryEngine {
     /// Submit a user message and return a stream of `SdkMessage` items.
     ///
@@ -227,11 +584,7 @@ impl QueryEngine {
         let command_dispatcher = self.command_dispatcher.clone();
 
         let stream = async_stream::stream! {
-            let started_at = Instant::now();
-            let mut last_stop_reason: Option<String> = None;
-            let mut structured_output: Option<serde_json::Value> = None;
-            let mut turn_count_this_submit: usize = 0;
-            let mut collected_errors: Vec<String> = Vec::new();
+            let mut submit_turn = SubmitTurnState::new();
 
             // Emit submit.received audit event
             {
@@ -273,7 +626,7 @@ impl QueryEngine {
                                 yield SdkMessage::Result(SdkResult {
                                     subtype: ResultSubtype::Success,
                                     is_error: false,
-                                    duration_ms: started_at.elapsed().as_millis() as u64,
+                                    duration_ms: submit_turn.duration_ms(),
                                     duration_api_ms: 0,
                                     num_turns: 0,
                                     result: reason,
@@ -305,8 +658,6 @@ impl QueryEngine {
 
             // A.2: Process user input (delegate to input_processing module)
             let current_msgs_snapshot = state_ref.read().messages.clone();
-            let mut local_result_is_error = false;
-            let mut local_result_session_id = session_id.clone();
             let mut processed = input_processing::process_user_input(
                 &prompt,
                 &current_msgs_snapshot,
@@ -314,107 +665,16 @@ impl QueryEngine {
                 command_dispatcher.as_ref(),
             );
 
-            if let Some(parsed_command) = processed.parsed_command.clone() {
-                let mut commands = crate::commands::get_all_commands();
-                let command_name = command_dispatcher
-                    .command_name(parsed_command.index)
-                    .unwrap_or_else(|| format!("#{}", parsed_command.index));
-                if let Some(command) = commands.get_mut(parsed_command.index) {
-                    let mut ctx = CommandContext {
-                        messages: current_msgs_snapshot.clone(),
-                        cwd: std::path::PathBuf::from(&config.cwd),
-                        app_state: state_ref.read().app_state.clone(),
-                        session_id: session_id.clone(),
-                    };
-
-                    match command.handler.execute(&parsed_command.args, &mut ctx).await {
-                        Ok(result) => {
-                            match result {
-                                CommandResult::Output(text) => {
-                                    let mut s = state_ref.write();
-                                    s.messages = ctx.messages;
-                                    s.app_state = ctx.app_state;
-                                    processed.result_text = Some(text);
-                                    processed.should_query = false;
-                                    processed.messages.clear();
-                                }
-                                CommandResult::Query(messages) => {
-                                    let mut s = state_ref.write();
-                                    s.messages = ctx.messages;
-                                    s.app_state = ctx.app_state;
-                                    processed.messages = messages;
-                                    processed.should_query = true;
-                                    processed.result_text = None;
-                                }
-                                CommandResult::Clear => {
-                                    let previous_id = active_session_id_ref.read().clone();
-                                    if config.auto_save_session && !ctx.messages.is_empty() {
-                                        if let Err(err) = crate::session::storage::save_session(
-                                            previous_id.as_str(),
-                                            &ctx.messages,
-                                            &config.cwd,
-                                        ) {
-                                            warn!(
-                                                error = %err,
-                                                session = %previous_id,
-                                                "failed to save previous session before command clear"
-                                            );
-                                        }
-                                    }
-
-                                    let new_session_id = crate::bootstrap::SessionId::new();
-                                    {
-                                        let mut s = state_ref.write();
-                                        s.messages.clear();
-                                        s.usage = UsageTracking::default();
-                                        s.permission_denials.clear();
-                                        s.total_turn_count = 0;
-                                        s.app_state = ctx.app_state;
-                                    }
-                                    *active_session_id_ref.write() = new_session_id.clone();
-                                    crate::bootstrap::PROCESS_STATE.write().session_id =
-                                        new_session_id.clone();
-                                    local_result_session_id = new_session_id;
-
-                                    processed.result_text = Some("Conversation cleared.".to_string());
-                                    processed.should_query = false;
-                                    processed.messages.clear();
-                                }
-                                CommandResult::Exit(text) => {
-                                    let mut s = state_ref.write();
-                                    s.messages = ctx.messages;
-                                    s.app_state = ctx.app_state;
-                                    processed.result_text = Some(text);
-                                    processed.should_query = false;
-                                    processed.messages.clear();
-                                }
-                                CommandResult::None => {
-                                    let mut s = state_ref.write();
-                                    s.messages = ctx.messages;
-                                    s.app_state = ctx.app_state;
-                                    processed.result_text = Some(String::new());
-                                    processed.should_query = false;
-                                    processed.messages.clear();
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            local_result_is_error = true;
-                            processed.result_text =
-                                Some(format!("Command /{} failed: {}", command_name, err));
-                            processed.should_query = false;
-                            processed.messages.clear();
-                        }
-                    }
-                    processed.parsed_command = None;
-                } else {
-                    local_result_is_error = true;
-                    processed.result_text = Some(format!("Unknown command: /{}", command_name));
-                    processed.should_query = false;
-                    processed.messages.clear();
-                    processed.parsed_command = None;
-                }
-            }
+            let local_command = handle_parsed_command(
+                &mut processed,
+                &current_msgs_snapshot,
+                &config,
+                &state_ref,
+                &active_session_id_ref,
+                &session_id,
+                command_dispatcher.as_ref(),
+            )
+            .await;
 
             // A.3: Push processed messages into mutable_messages
             {
@@ -474,24 +734,24 @@ impl QueryEngine {
                     .unwrap_or_default();
 
                 yield SdkMessage::Result(SdkResult {
-                    subtype: if local_result_is_error {
+                    subtype: if local_command.is_error {
                         ResultSubtype::ErrorDuringExecution
                     } else {
                         ResultSubtype::Success
                     },
-                    is_error: local_result_is_error,
-                    duration_ms: started_at.elapsed().as_millis() as u64,
+                    is_error: local_command.is_error,
+                    duration_ms: submit_turn.duration_ms(),
                     duration_api_ms: 0,
                     num_turns: 0,
                     result: local_text.clone(),
                     stop_reason: None,
-                    session_id: local_result_session_id.to_string(),
+                    session_id: local_command.session_id.to_string(),
                     total_cost_usd: 0.0,
                     usage: UsageTracking::default(),
                     permission_denials: vec![],
                     structured_output: None,
                     uuid: Uuid::new_v4(),
-                    errors: if local_result_is_error {
+                    errors: if local_command.is_error {
                         vec![local_text.clone()]
                     } else {
                         vec![]
@@ -504,137 +764,17 @@ impl QueryEngine {
             // PHASE B: System Prompt Build
             // ================================================================
 
-            // Pull live language/output_style off AppState so /config set
-            // takes effect on the next submit without restarting the engine.
-            let (
-                cfg_language,
-                cfg_output_style,
-                include_auto_memory,
-                session_memory_context,
-                memory_query_text,
-                recent_tool_names,
-                already_surfaced_memory_keys,
-                model_assisted_memory_recall,
-            ) = {
-                let s = state_ref.read();
-                (
-                    s.app_state.settings.language.clone(),
-                    s.app_state.settings.output_style.clone(),
-                    s.app_state.settings.auto_memory_enabled.unwrap_or(false),
-                    s.session_memory.format_memory_context_for_workspace_excluding_session(
-                            5,
-                            Some(std::path::Path::new(&config.cwd)),
-                            Some(session_id.as_str()),
-                    ),
-                    latest_user_query_text(&s.messages).unwrap_or_else(|| prompt.clone()),
-                    recent_tool_names(&s.messages, 8),
-                    s.app_state.surfaced_memory_keys.clone(),
-                    model_assisted_memory_recall_enabled(),
-                )
-            };
-            let ignore_memory =
-                cc_session::memdir::query_requests_memory_ignore(&memory_query_text);
-            let session_memory_context = if ignore_memory {
-                None
-            } else {
-                session_memory_context
-            };
-            let (memory_context_override, newly_surfaced_memory_keys) = if ignore_memory {
-                debug!("memory recall skipped because the user requested memory ignore");
-                (None, Vec::new())
-            } else if model_assisted_memory_recall {
-                match build_model_assisted_memory_context(
-                    &config.cwd,
-                    include_auto_memory,
-                    &memory_query_text,
-                    &recent_tool_names,
-                    &already_surfaced_memory_keys,
-                    &backend_name,
-                    &model_name,
-                )
-                .await
-                {
-                    Ok(Some((context, surfaced))) => {
-                        debug!(
-                            surfaced_count = surfaced.len(),
-                            "model-assisted memory recall completed"
-                        );
-                        (Some(context), surfaced)
-                    }
-                    Ok(None) => {
-                        debug!("model-assisted memory recall unavailable; using deterministic recall");
-                        deterministic_memory_context(
-                            &config.cwd,
-                            include_auto_memory,
-                            &memory_query_text,
-                            &recent_tool_names,
-                            &already_surfaced_memory_keys,
-                        )
-                    }
-                    Err(error) => {
-                        debug!(
-                            error = %error,
-                            "model-assisted memory recall failed; using deterministic recall"
-                        );
-                        deterministic_memory_context(
-                            &config.cwd,
-                            include_auto_memory,
-                            &memory_query_text,
-                            &recent_tool_names,
-                            &already_surfaced_memory_keys,
-                        )
-                    }
-                }
-            } else {
-                debug!("using deterministic memory recall");
-                deterministic_memory_context(
-                    &config.cwd,
-                    include_auto_memory,
-                    &memory_query_text,
-                    &recent_tool_names,
-                    &already_surfaced_memory_keys,
-                )
-            };
-            if !newly_surfaced_memory_keys.is_empty() {
-                let mut s = state_ref.write();
-                s.app_state
-                    .surfaced_memory_keys
-                    .extend(newly_surfaced_memory_keys);
-            }
-
-            let (system_prompt_parts, user_context, system_context) =
-                system_prompt::build_system_prompt_with_memory_contexts(
-                    config.custom_system_prompt.as_deref(),
-                    config.append_system_prompt.as_deref(),
-                    &tools_snapshot,
-                    &model_name,
-                    &config.cwd,
-                    cfg_language.as_deref(),
-                    cfg_output_style.as_deref(),
-                    include_auto_memory,
-                    memory_context_override.as_deref(),
-                    session_memory_context.as_deref(),
-                );
-
-            // Fire InstructionsLoaded hook if CLAUDE.md context was injected
-            {
-                let content_length: usize = system_prompt_parts.iter().map(|p| p.len()).sum();
-                if content_length > 0 {
-                    let hooks_map = state_ref.read().app_state.hooks.clone();
-                    let configs =
-                        hook_runner.load_hook_configs(&hooks_map, "InstructionsLoaded");
-                    if !configs.is_empty() {
-                        let payload = serde_json::json!({
-                            "source": "system_prompt",
-                            "content_length": content_length,
-                            "cwd": &config.cwd,
-                        });
-                        let _ = hook_runner
-                            .run_event_hooks("InstructionsLoaded", &payload, &configs)
-                            .await;
-                    }
-                }
-            }
+            let prompt_build = build_submit_system_prompt(
+                &prompt,
+                &config,
+                &session_id,
+                &state_ref,
+                &hook_runner,
+                &tools_snapshot,
+                &model_name,
+                &backend_name,
+            )
+            .await;
 
             // ================================================================
             // PHASE D: Query Loop -- full message dispatch
@@ -644,9 +784,9 @@ impl QueryEngine {
 
             let params = QueryParams {
                 messages: current_messages,
-                system_prompt: system_prompt_parts,
-                user_context,
-                system_context,
+                system_prompt: prompt_build.system_prompt_parts,
+                user_context: prompt_build.user_context,
+                system_context: prompt_build.system_context,
                 fallback_model: config.fallback_model.clone(),
                 query_source: query_source.clone(),
                 max_output_tokens_override: None,
@@ -678,7 +818,7 @@ impl QueryEngine {
                 yield SdkMessage::Result(SdkResult {
                     subtype: ResultSubtype::ErrorDuringExecution,
                     is_error: true,
-                    duration_ms: started_at.elapsed().as_millis() as u64,
+                    duration_ms: submit_turn.duration_ms(),
                     duration_api_ms: 0,
                     num_turns: 0,
                     result: result.clone(),
@@ -687,7 +827,7 @@ impl QueryEngine {
                     total_cost_usd: 0.0,
                     usage: UsageTracking::default(),
                     permission_denials: vec![],
-                    structured_output: structured_output.clone(),
+                    structured_output: submit_turn.structured_output.clone(),
                     uuid: Uuid::new_v4(),
                     errors: vec![result],
                 });
@@ -756,7 +896,7 @@ impl QueryEngine {
                     // --------------------------------------------------------
                     QueryYield::Message(Message::Assistant(ref assistant_msg)) => {
                         if let Some(ref sr) = assistant_msg.stop_reason {
-                            last_stop_reason = Some(sr.clone());
+                            submit_turn.last_stop_reason = Some(sr.clone());
                         }
 
                         {
@@ -792,7 +932,7 @@ impl QueryEngine {
                     // D.2: User message (tool results, continuation messages)
                     // --------------------------------------------------------
                     QueryYield::Message(Message::User(ref user_msg)) => {
-                        turn_count_this_submit += 1;
+                        submit_turn.turn_count_this_submit += 1;
 
                         {
                             let mut s = state_ref.write();
@@ -871,7 +1011,7 @@ impl QueryEngine {
                                     system_msg.clone(),
                                 ));
 
-                                collected_errors.push(error.message.clone());
+                                submit_turn.collected_errors.push(error.message.clone());
 
                                 yield SdkMessage::ApiRetry(SdkApiRetry {
                                     attempt: *retry_attempt,
@@ -918,31 +1058,28 @@ impl QueryEngine {
                                 yield SdkMessage::Result(SdkResult {
                                     subtype: ResultSubtype::ErrorMaxTurns,
                                     is_error: true,
-                                    duration_ms: started_at
-                                        .elapsed()
-                                        .as_millis()
-                                        as u64,
+                                    duration_ms: submit_turn.duration_ms(),
                                     duration_api_ms: api_started_at
                                         .elapsed()
                                         .as_millis()
                                         as u64,
                                     num_turns: *turn_count,
                                     result: result_text,
-                                    stop_reason: last_stop_reason.clone(),
+                                    stop_reason: submit_turn.last_stop_reason.clone(),
                                     session_id: session_id.to_string(),
                                     total_cost_usd: usage_snap.total_cost_usd,
                                     usage: usage_snap,
                                     permission_denials: denials_snap,
-                                    structured_output: structured_output
+                                    structured_output: submit_turn.structured_output
                                         .clone(),
                                     uuid: Uuid::new_v4(),
-                                    errors: collected_errors.clone(),
+                                    errors: submit_turn.collected_errors.clone(),
                                 });
                                 return;
                             }
 
                             Attachment::StructuredOutput { data } => {
-                                structured_output = Some(data.clone());
+                                submit_turn.structured_output = Some(data.clone());
                             }
 
                             Attachment::QueuedCommand {
@@ -999,7 +1136,7 @@ impl QueryEngine {
                                 usage: _delta_usage,
                             } => {
                                 if let Some(ref sr) = delta.stop_reason {
-                                    last_stop_reason = Some(sr.clone());
+                                    submit_turn.last_stop_reason = Some(sr.clone());
                                 }
                             }
                             StreamEvent::MessageStop => {}
@@ -1105,24 +1242,21 @@ impl QueryEngine {
                         yield SdkMessage::Result(SdkResult {
                             subtype: ResultSubtype::ErrorMaxBudgetUsd,
                             is_error: true,
-                            duration_ms: started_at
-                                .elapsed()
-                                .as_millis()
-                                as u64,
+                            duration_ms: submit_turn.duration_ms(),
                             duration_api_ms: api_started_at
                                 .elapsed()
                                 .as_millis()
                                 as u64,
-                            num_turns: turn_count_this_submit,
+                            num_turns: submit_turn.turn_count_this_submit,
                             result: result_text,
-                            stop_reason: last_stop_reason.clone(),
+                            stop_reason: submit_turn.last_stop_reason.clone(),
                             session_id: session_id.to_string(),
                             total_cost_usd: current_cost,
                             usage: usage_snap,
                             permission_denials: denials_snap,
-                            structured_output: structured_output.clone(),
+                            structured_output: submit_turn.structured_output.clone(),
                             uuid: Uuid::new_v4(),
-                            errors: collected_errors.clone(),
+                            errors: submit_turn.collected_errors.clone(),
                         });
                         return;
                     }
@@ -1139,7 +1273,7 @@ impl QueryEngine {
                 result::find_terminal_message(&final_messages);
             let is_success = result::is_result_successful(
                 terminal_msg,
-                last_stop_reason.as_deref(),
+                submit_turn.last_stop_reason.as_deref(),
             );
             let (text_result, is_api_error) =
                 result::extract_text_result(&final_messages);
@@ -1155,7 +1289,7 @@ impl QueryEngine {
                 ResultSubtype::ErrorDuringExecution
             };
 
-            let mut errors = collected_errors;
+            let mut errors = std::mem::take(&mut submit_turn.collected_errors);
             if is_api_error {
                 errors.push(text_result.clone());
             }
@@ -1176,9 +1310,9 @@ impl QueryEngine {
                     Stage::Submit,
                     AuditLevel::Info,
                     outcome,
-                    Some(started_at.elapsed().as_millis() as u64),
+                    Some(submit_turn.duration_ms()),
                     Some(serde_json::json!({
-                        "num_turns": turn_count_this_submit,
+                        "num_turns": submit_turn.turn_count_this_submit,
                         "cost_usd": usage_snap.total_cost_usd,
                         "is_error": !is_success,
                     })),
@@ -1199,16 +1333,16 @@ impl QueryEngine {
             yield SdkMessage::Result(SdkResult {
                 subtype,
                 is_error: !is_success,
-                duration_ms: started_at.elapsed().as_millis() as u64,
+                duration_ms: submit_turn.duration_ms(),
                 duration_api_ms: api_started_at.elapsed().as_millis() as u64,
-                num_turns: turn_count_this_submit,
+                num_turns: submit_turn.turn_count_this_submit,
                 result: text_result,
-                stop_reason: last_stop_reason,
+                stop_reason: submit_turn.last_stop_reason,
                 session_id: session_id.to_string(),
                 total_cost_usd: usage_snap.total_cost_usd,
                 usage: usage_snap,
                 permission_denials: denials_snap,
-                structured_output,
+                structured_output: submit_turn.structured_output,
                 uuid: Uuid::new_v4(),
                 errors,
             });
