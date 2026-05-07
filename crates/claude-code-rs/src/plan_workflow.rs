@@ -14,6 +14,7 @@ use serde_json::json;
 
 use crate::config::paths as cfg_paths;
 use crate::engine::lifecycle::QueryEngine;
+use crate::permissions::dangerous::set_permission_mode_with_auto_mode_safety;
 use crate::types::app_state::AppState;
 use crate::types::tool::PermissionMode;
 
@@ -70,7 +71,10 @@ pub fn enter_plan_mode_state(
     if app_state.tool_permission_context.mode != PermissionMode::Plan {
         app_state.tool_permission_context.pre_plan_mode =
             Some(app_state.tool_permission_context.mode.clone());
-        app_state.tool_permission_context.mode = PermissionMode::Plan;
+        set_permission_mode_with_auto_mode_safety(
+            &mut app_state.tool_permission_context,
+            PermissionMode::Plan,
+        );
     }
 
     let plan_file = cfg_paths::current_plan_file_path(cwd);
@@ -127,7 +131,7 @@ pub fn approve_and_exit_state(
         .pre_plan_mode
         .take()
         .unwrap_or(PermissionMode::Default);
-    app_state.tool_permission_context.mode = restore_mode;
+    set_permission_mode_with_auto_mode_safety(&mut app_state.tool_permission_context, restore_mode);
     app_state.plan_workflow = Some(record.clone());
     record
 }

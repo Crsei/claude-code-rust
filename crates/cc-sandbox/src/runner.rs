@@ -802,6 +802,8 @@ mod tests {
             always_deny_rules: std::collections::HashMap::new(),
             always_ask_rules: std::collections::HashMap::new(),
             session_allow_rules: std::collections::HashMap::new(),
+            auto_mode_stripped_always_allow_rules: Vec::new(),
+            auto_mode_stripped_session_allow_rules: Vec::new(),
             is_bypass_permissions_mode_available: false,
             is_auto_mode_available: None,
             pre_plan_mode: None,
@@ -959,15 +961,19 @@ mod tests {
         let settings = cc_config::settings::SandboxSettings::default();
         let policy =
             policy_from_app_state(&ctx, &settings, std::path::PathBuf::from("/proj"), false);
-        assert!(policy
-            .paths
-            .allow_read_paths()
-            .iter()
-            .any(|p| p == &std::path::PathBuf::from("/opt/tools")));
-        assert!(policy
-            .paths
-            .allow_write_paths()
-            .iter()
-            .any(|p| p == &std::path::PathBuf::from("/tmp/work")));
+        assert!(
+            policy
+                .paths
+                .allow_read_paths()
+                .iter()
+                .any(|p| p == &std::path::PathBuf::from("/opt/tools"))
+        );
+        assert!(
+            policy
+                .paths
+                .allow_write_paths()
+                .iter()
+                .any(|p| p == &std::path::PathBuf::from("/tmp/work"))
+        );
     }
 }

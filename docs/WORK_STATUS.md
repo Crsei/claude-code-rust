@@ -78,7 +78,7 @@
 
 - 激活入口：`crate::teams::is_agent_teams_active(&app_state)` — env var 或 `team_context` 任一满足即启用
 - ingress 同步：`src/ipc/ingress.rs` 斜杠命令执行后把 `app_state.team_context` 同步回 engine
-- 已完成 (10/11 含 runner/backend + SendMessage + TeamSpawn + /team 命令 + TeamPanel)
+- 已完成 (10/11 含 runner/backend + SendMessage + TeamSpawn + /team 命令 + TeamPanel); Phase 6 e2e 已补齐 coordinator/team/tasks headless 回归、PR webhook 模拟回归与 worktree hook 回归
 
 ### 1.4 工具
 
@@ -144,7 +144,7 @@
 |---|------|------|
 | P2-1 | MCP 服务器模式 (暴露工具给外部客户端) | ❌ |
 | P2-2 | JSON-RPC v2 App-Server (IDE 集成) | ❌ |
-| P2-3 | OS 级沙盒 (Windows Restricted Token) | ❌ |
+| P2-3 | OS 级沙盒 (Windows Restricted Token) | Intentional crop（见 `IMPLEMENTATION_GAPS.md` §7） |
 | P2-4 | 网络访问控制 (`--no-network` / 白名单) | ❌ |
 | P2-5 | 沙盒模式 (read-only / workspace / full) | ❌ |
 

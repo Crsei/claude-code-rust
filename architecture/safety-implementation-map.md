@@ -33,7 +33,7 @@
 | prompt | [`crates/claude-code-rs/src/engine/system_prompt.rs`](../crates/claude-code-rs/src/engine/system_prompt.rs) | 已实现 | 系统提示词里明确要求用户批准风险操作、识别 hooks 返回、避免 prompt injection，并对安全编码保持警惕，见 `system_prompt.rs:58-65,78-79,99-106`。 |
 | permissions | [`crates/cc-types/src/permissions.rs`](../crates/cc-types/src/permissions.rs), [`crates/cc-permissions/src/rules.rs`](../crates/cc-permissions/src/rules.rs), [`crates/cc-permissions/src/decision.rs`](../crates/cc-permissions/src/decision.rs) | 已实现 | 具备 `default/auto/bypass/plan/acceptEdits/dontAsk` 模式、allow/ask/deny 规则匹配、hook overlay、session grant、Auto mode fallback 和 DenialTracker。 |
 | hooks | [`crates/cc-types/src/hooks.rs`](../crates/cc-types/src/hooks.rs), [`crates/claude-code-rs/src/tools/hooks/mod.rs`](../crates/claude-code-rs/src/tools/hooks/mod.rs), [`crates/claude-code-rs/src/engine/lifecycle/deps.rs`](../crates/claude-code-rs/src/engine/lifecycle/deps.rs) | 已实现 | hooks 事件模型、`HookRunner` 接口、`PreToolUse` / `PostToolUse` / `PostToolUseFailure` / `PermissionRequest` / `PermissionDenied` / `Stop` 路径都已进入执行链路。 |
-| sandbox | [`crates/cc-config/src/settings.rs`](../crates/cc-config/src/settings.rs), [`crates/cc-sandbox/src/lib.rs`](../crates/cc-sandbox/src/lib.rs), [`crates/cc-sandbox/src/availability.rs`](../crates/cc-sandbox/src/availability.rs), [`crates/claude-code-rs/src/tools/exec/bash.rs`](../crates/claude-code-rs/src/tools/exec/bash.rs), [`crates/claude-code-rs/src/tools/exec/powershell.rs`](../crates/claude-code-rs/src/tools/exec/powershell.rs), [`crates/claude-code-rs/src/tools/execution/security.rs`](../crates/claude-code-rs/src/tools/execution/security.rs) | 部分实现 | Linux/macOS shell 沙箱、网络/路径预检、`failIfUnavailable`、`allowUnsandboxedCommands`、`excludedCommands`、`allowedCommands` 权限桥、`/sandbox` 命令都在；Windows OS-level 沙箱未实现。 |
+| sandbox | [`crates/cc-config/src/settings.rs`](../crates/cc-config/src/settings.rs), [`crates/cc-sandbox/src/lib.rs`](../crates/cc-sandbox/src/lib.rs), [`crates/cc-sandbox/src/availability.rs`](../crates/cc-sandbox/src/availability.rs), [`crates/claude-code-rs/src/tools/exec/bash.rs`](../crates/claude-code-rs/src/tools/exec/bash.rs), [`crates/claude-code-rs/src/tools/exec/powershell.rs`](../crates/claude-code-rs/src/tools/exec/powershell.rs), [`crates/claude-code-rs/src/tools/execution/security.rs`](../crates/claude-code-rs/src/tools/execution/security.rs) | 部分实现 | Linux/macOS shell 沙箱、网络/路径预检、`failIfUnavailable`、`allowUnsandboxedCommands`、`excludedCommands`、`allowedCommands` 权限桥、`/sandbox` 命令都在；Windows OS-level 沙箱按 [`docs/IMPLEMENTATION_GAPS.md`](../docs/IMPLEMENTATION_GAPS.md) §7 记为故意裁剪，除非复审触发条件成立。 |
 | plan mode | [`crates/claude-code-rs/src/tools/plan_mode.rs`](../crates/claude-code-rs/src/tools/plan_mode.rs), [`crates/claude-code-rs/src/plan_workflow.rs`](../crates/claude-code-rs/src/plan_workflow.rs), [`crates/claude-code-rs/src/commands/plan.rs`](../crates/claude-code-rs/src/commands/plan.rs) | 部分实现 | 进入 / 退出 plan mode、`pre_plan_mode` 保存与恢复、`.cc-rust/plan.md` 与 `plan-workflow.json` 持久化、`/plan` 命令都存在；`allowedPrompts` 已接入 Bash pattern 与常见验证意图的确定性 session allow 规则，但 Bun 的 LLM 语义 classifier 仍未接通。 |
 
 ## 逐文档分析
@@ -48,12 +48,12 @@
 - 权限引擎在 Auto mode 下默认放行，并保留拒绝计数回退到交互式确认的机制，见 [`crates/cc-permissions/src/rules.rs:138-155`](../crates/cc-permissions/src/rules.rs) 与 [`crates/cc-permissions/src/decision.rs`](../crates/cc-permissions/src/decision.rs)。
 - `cc-permissions` 现在提供 `AutoClassifierDecision` / `AutoClassifierStage` / `AutoClassifierVerdict` 和 `has_permissions_to_use_tool_with_hook_and_auto_classifier()`，能接收外部 transcript classifier 的 allow / deny / ask / unavailable / transcript-too-long 结果，并在 Auto mode fallback 处转成权限决策；fast / thinking 阶段会记录在 decision reason 中，分类器不可用或 transcript 过长时降级为 `Ask`。[`decision.rs`](../crates/cc-permissions/src/decision.rs)
 - `cc-permissions` 现在提供 `strip_dangerous_permissions_for_auto_mode()` / `restore_dangerous_permissions_after_auto_mode()`，会在权限规则层移除会绕过 Auto classifier 的宽泛 `Bash` / `PowerShell` / `Agent` allow 规则，以及 `python` / `node` / `npm run` / `npx` / `ssh` / `sudo` / `Invoke-Expression` / `Start-Process` / `Add-Type` 等 shell code execution 或 elevation 前缀，并覆盖 PowerShell `.exe` 形态；同时保留 `Bash(cargo test*)`、`Bash(prefix:git)`、`Read` 等窄规则，见 [`crates/cc-permissions/src/dangerous.rs`](../crates/cc-permissions/src/dangerous.rs)。
+- 2026-05-07 Phase 1 已把危险 allow 规则剥离/恢复接到运行时 mode transition：进入 Auto mode 会临时移除宽泛 always/session allow 规则，退出 Auto mode 会恢复；`/permissions mode`、`/config permissionMode`、Web settings、Plan mode restore、startup、子 agent 与 read-only plugin tool 上下文都走同一安全 helper。
 - 配置与运行时都保留了 Auto mode 可用性开关，见 [`crates/cc-config/src/settings.rs:120-139`](../crates/cc-config/src/settings.rs)、[`crates/claude-code-rs/src/startup/runtime_config.rs:119-122`](../crates/claude-code-rs/src/startup/runtime_config.rs)、[`crates/claude-code-rs/src/commands/permissions_cmd.rs:138-242`](../crates/claude-code-rs/src/commands/permissions_cmd.rs)。
 
 缺口：
 
 - Bun 文档里的 transcript classifier / two-stage 分类流水线还没有在 cc-rust 中形成端到端闭环；当前权限层已经能消费 fast / thinking classifier 结果，但还没有真正的 LLM transcript classifier runner、prompt 模板和 API 调用链。
-- 危险 allow 规则剥离/恢复目前是权限层 helper，还没有接到进入 / 退出 Auto mode 的运行时状态切换，因此 settings 或 session allow rules 不会自动被改写。
 - `crates/claude-code-rs/src/plan_workflow.rs:261-262` 明确写着“full auto-mode LLM classifier is ported”之前的保守入口仍未完成，说明自动化分类层还在未完全迁移状态。
 
 ### Permission Model
@@ -104,10 +104,10 @@
 - Bash 与 PowerShell 工具都在执行前做 sandbox gate、`dangerouslyDisableSandbox` gate 和 `sandbox_blocked` 回报，见 [`crates/claude-code-rs/src/tools/exec/bash.rs:279-407`](../crates/claude-code-rs/src/tools/exec/bash.rs) 与 [`crates/claude-code-rs/src/tools/exec/powershell.rs:156-262`](../crates/claude-code-rs/src/tools/exec/powershell.rs)。
 - `/sandbox` 命令能切换 on/off/mode/require/optional/no-network，并显示当前 policy，见 [`crates/claude-code-rs/src/commands/sandbox_cmd.rs:4-16,34-140,149-215`](../crates/claude-code-rs/src/commands/sandbox_cmd.rs)。
 
-缺口：
+故意裁剪 / 平台边界：
 
-- Windows 原生 OS-level sandbox 未实现。`cc-sandbox/src/availability.rs:120-128` 明确写明 Windows Restricted Token + Job Object support not implemented，[`crates/cc-sandbox/src/lib.rs:21-27`](../crates/cc-sandbox/src/lib.rs) 也把 Windows 归为“Rust-level policy checks only”。
-- `claude-code-rs` 目标测试当前受工作树里 `crates/cc-compact/src/context_collapse.rs` 的既有编译错误阻塞；`cc-sandbox` policy 层的 `allowedCommands` matcher 测试通过。
+- Windows 原生 OS-level sandbox 不作为默认补齐项。`cc-sandbox/src/availability.rs:120-128` 明确写明 Windows Restricted Token + Job Object support not implemented，[`crates/cc-sandbox/src/lib.rs:21-27`](../crates/cc-sandbox/src/lib.rs) 也把 Windows 归为“Rust-level policy checks only”；该边界已在 [`docs/IMPLEMENTATION_GAPS.md`](../docs/IMPLEMENTATION_GAPS.md) §7 记为故意裁剪，复审触发条件是上游发布 Windows sandbox-runtime backend、PowerShell sandbox toggle 成为产品必需项，或安全策略要求 Windows OS-level enforcement。
+- 2026-05-07 Phase 0 复核：`cargo check -p claude-code-rs --message-format short` 通过，旧的 `crates/cc-compact/src/context_collapse.rs` 编译阻塞当前不再复现；`cc-sandbox` policy 层测试也通过。
 
 ### Why Safety Matters
 
@@ -140,14 +140,13 @@
 
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
-| Auto mode transcript classifier / 两阶段分类流水线 | 部分实现 | `PermissionMode::Auto`、回退逻辑、classifier result adapter 和危险 allow 规则剥离/恢复 helper 存在；权限层能消费 fast / thinking 的 allow / deny / ask / unavailable 结果，也能移除会绕过 classifier 的宽泛 shell / Agent allow 规则。但 Bun 的 LLM transcript classifier runner、prompt 模板、API 调用链，以及进入 / 退出 Auto mode 时自动 strip / restore 的运行时接线还没有在 cc-rust 中完整落地，见 [`crates/cc-permissions/src/decision.rs`](../crates/cc-permissions/src/decision.rs)、[`crates/cc-permissions/src/dangerous.rs`](../crates/cc-permissions/src/dangerous.rs) 与 [`crates/claude-code-rs/src/plan_workflow.rs:261-262`](../crates/claude-code-rs/src/plan_workflow.rs) 。 |
+| Auto mode transcript classifier / 两阶段分类流水线 | 部分实现 | `PermissionMode::Auto`、回退逻辑、classifier result adapter、危险 allow 规则剥离/恢复 helper 与进入 / 退出 Auto mode 的运行时接线已存在；权限层能消费 fast / thinking 的 allow / deny / ask / unavailable 结果，也能临时移除会绕过 classifier 的宽泛 shell / Agent always/session allow 规则。但 Bun 的 LLM transcript classifier runner、prompt 模板和 API 调用链还没有在 cc-rust 中完整落地，见 [`crates/cc-permissions/src/decision.rs`](../crates/cc-permissions/src/decision.rs)、[`crates/cc-permissions/src/dangerous.rs`](../crates/cc-permissions/src/dangerous.rs) 与 [`crates/claude-code-rs/src/plan_workflow.rs:261-262`](../crates/claude-code-rs/src/plan_workflow.rs) 。 |
 | Plan mode `allowedPrompts` 语义允许列表 | 部分实现 | `ExitPlanModeTool` 现在接受 `allowedPrompts` 并在计划批准后写入 transient session allow 规则；已支持常见验证提示到 Cargo allow 规则的确定性分类，仍未实现 Bun 的通用 LLM 语义 classifier，见 [`crates/claude-code-rs/src/tools/plan_mode.rs`](../crates/claude-code-rs/src/tools/plan_mode.rs) 。 |
-| Windows OS-level sandbox | 未实现 | Windows 分支在可用性探测里直接返回不可用，见 [`crates/cc-sandbox/src/availability.rs:120-128`](../crates/cc-sandbox/src/availability.rs) 。 |
+| Windows OS-level sandbox | 故意裁剪 | Windows 分支在可用性探测里直接返回不可用，见 [`crates/cc-sandbox/src/availability.rs:120-128`](../crates/cc-sandbox/src/availability.rs)；当前按 [`docs/IMPLEMENTATION_GAPS.md`](../docs/IMPLEMENTATION_GAPS.md) §7 保留 Rust-level policy checks、`/sandbox require` fail-closed 与 unavailable 诊断，只有上游或安全策略触发复审时才单独重开。 |
 | `allowedCommands` 自动放行到 permission decision | 已实现 | workspace sandbox 中匹配的 Bash / PowerShell 命令已接到 central permission 和 reference tool pipeline；deny / ask / hook / Plan mode 不会被覆盖，见 [`crates/claude-code-rs/src/tools/execution/security.rs`](../crates/claude-code-rs/src/tools/execution/security.rs)、[`crates/claude-code-rs/src/engine/lifecycle/deps.rs`](../crates/claude-code-rs/src/engine/lifecycle/deps.rs)、[`crates/claude-code-rs/src/tools/execution/pipeline.rs`](../crates/claude-code-rs/src/tools/execution/pipeline.rs) 。 |
 
 ## 后续动作
 
-1. 如果目标是继续向 Bun 对齐，下一步应处理 Windows OS-level sandbox；`allowedCommands` 到权限决策闭环已完成。
-2. 如果要补齐 Bun 的 Auto mode 语义，再单独接真正的 LLM transcript classifier runner、prompt 模板、API 调用链，并把危险 allow 规则剥离/恢复 helper 接入进入 / 退出 Auto mode 的运行时状态切换；权限层 classifier result adapter 与 strip/restore helper 已可承接结果。
-3. 如果要补齐 Bun 的 plan mode 语义，继续把 `allowedPrompts` 从常见验证提示扩展到通用 LLM 语义 classifier；当前只完成确定性 session allow bridge。
-4. Windows 若要支持 OS-level sandbox，需要单独立项；当前实现只能按“Rust-level policy checks only”理解。
+1. 默认下一步应补齐 Bun 的 Auto mode 语义：接真正的 LLM transcript classifier runner、prompt 模板和 API 调用链；权限层 classifier result adapter 与运行时 strip/restore 接线已可承接结果。
+2. 如果要补齐 Bun 的 plan mode 语义，继续把 `allowedPrompts` 从常见验证提示扩展到通用 LLM 语义 classifier；当前只完成确定性 session allow bridge。
+3. Windows OS-level sandbox 当前按故意裁剪处理；若上游或安全策略触发复审，再作为单独立项处理。

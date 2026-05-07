@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
@@ -79,10 +79,14 @@ impl PluginToolWrapper {
         let mut permission_ctx = app_state.tool_permission_context;
 
         if self.contribution.read_only {
-            permission_ctx.mode = match permission_ctx.mode {
+            let mode = match &permission_ctx.mode {
                 PermissionMode::Default | PermissionMode::Plan => PermissionMode::Auto,
-                other => other,
+                other => other.clone(),
             };
+            crate::permissions::dangerous::set_permission_mode_with_auto_mode_safety(
+                &mut permission_ctx,
+                mode,
+            );
         }
 
         permission_ctx

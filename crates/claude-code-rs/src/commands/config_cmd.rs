@@ -457,8 +457,11 @@ fn apply_set_in_memory(key: &str, value: &str, ctx: &mut CommandContext) -> Resu
         "permissionMode" | "permission_mode" => {
             s.permission_mode = Some(value.to_string());
             s.permissions.default_mode = Some(value.to_string());
-            ctx.app_state.tool_permission_context.mode =
-                crate::types::tool::PermissionMode::parse(value);
+            let mode = crate::types::tool::PermissionMode::parse(value);
+            crate::permissions::dangerous::set_permission_mode_with_auto_mode_safety(
+                &mut ctx.app_state.tool_permission_context,
+                mode,
+            );
             Ok(format!("Permission mode set to: {}", value))
         }
         "outputStyle" | "output_style" => {

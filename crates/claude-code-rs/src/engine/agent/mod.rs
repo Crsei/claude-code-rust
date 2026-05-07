@@ -23,6 +23,7 @@ use anyhow::{Result, bail};
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::permissions::dangerous::set_permission_mode_with_auto_mode_safety;
 use crate::types::config::{AgentContext, QueryEngineConfig};
 use crate::types::tool::*;
 
@@ -409,7 +410,8 @@ fn child_agent_permission_context(
 ) -> ToolPermissionContext {
     let parent_mode = context.mode.clone();
     let requested = agent_definition_permission_mode(definition);
-    context.mode = compose_agent_permission_mode(&parent_mode, requested);
+    let effective = compose_agent_permission_mode(&parent_mode, requested);
+    set_permission_mode_with_auto_mode_safety(&mut context, effective);
     context.pre_plan_mode = child_pre_plan_mode(&parent_mode, requested, &context.mode);
     context
 }

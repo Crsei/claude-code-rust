@@ -267,7 +267,10 @@ pub async fn settings_handler(
                 _ => PermissionMode::Default,
             };
             state.engine().update_app_state(|s| {
-                s.tool_permission_context.mode = mode.clone();
+                crate::permissions::dangerous::set_permission_mode_with_auto_mode_safety(
+                    &mut s.tool_permission_context,
+                    mode.clone(),
+                );
             });
             (
                 StatusCode::OK,

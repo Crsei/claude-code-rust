@@ -21,8 +21,12 @@ use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::config::settings;
+use crate::permissions::dangerous::{
+    AutoModeRuntimeTransition, set_permission_mode_with_auto_mode_safety,
+    strip_dangerous_permissions_for_active_auto_mode,
+};
 use crate::plan_workflow;
-use crate::types::tool::PermissionMode;
+use crate::types::tool::{PermissionMode, ToolPermissionContext};
 
 #[derive(Debug, Clone, Copy)]
 enum PersistScope {
@@ -183,6 +187,8 @@ fn handle_show(ctx: &CommandContext) -> Result<CommandResult> {
         lines.push("  No custom permission rules configured.".into());
     }
 
+    render_auto_mode_stripped_rules(perm, &mut lines);
+
     Ok(CommandResult::Output(lines.join("\n")))
 }
 
@@ -205,6 +211,52 @@ fn render_rules(
             lines.push(format!("    {:<40} (from {})", rule, source));
         }
     }
+}
+
+fn render_auto_mode_stripped_rules(perm: &ToolPermissionContext, lines: &mut Vec<String>) {
+    let always_count = perm.auto_mode_stripped_always_allow_rules.len();
+    let session_count = perm.auto_mode_stripped_session_allow_rules.len();
+    if always_count == 0 && session_count == 0 {
+        return;
+    }
+
+    lines.push(String::new());
+    lines.push("  Auto mode stripped allow rules:".into());
+    if always_count > 0 {
+        lines.push(format!(
+            "    always_allow: {} rule(s) temporarily withheld",
+            always_count
+        ));
+    }
+    if session_count > 0 {
+        lines.push(format!(
+            "    session_allow: {} rule(s) temporarily withheld",
+            session_count
+        ));
+    }
+}
+
+fn format_auto_mode_transition(transition: &AutoModeRuntimeTransition) -> String {
+    let stripped = transition.stripped_always_allow_count + transition.stripped_session_allow_count;
+    let restored = transition.restored_always_allow_count + transition.restored_session_allow_count;
+    if stripped == 0 && restored == 0 {
+        return String::new();
+    }
+
+    let mut parts = Vec::new();
+    if stripped > 0 {
+        parts.push(format!(
+            "stripped {} broad allow rule(s) for Auto mode classifier review",
+            stripped
+        ));
+    }
+    if restored > 0 {
+        parts.push(format!(
+            "restored {} Auto mode stripped allow rule(s)",
+            restored
+        ));
+    }
+    format!("\nAuto mode safety: {}.", parts.join("; "))
 }
 
 // ---------------------------------------------------------------------------
@@ -266,10 +318,14 @@ fn handle_mode(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult
     }
 
     ctx.app_state.tool_permission_context.pre_plan_mode = None;
-    ctx.app_state.tool_permission_context.mode = requested.clone();
+    let transition = set_permission_mode_with_auto_mode_safety(
+        &mut ctx.app_state.tool_permission_context,
+        requested.clone(),
+    );
     Ok(CommandResult::Output(format!(
-        "Permission mode set to: {}",
+        "Permission mode set to: {}{}",
         requested.as_str(),
+        format_auto_mode_transition(&transition),
     )))
 }
 
@@ -308,6 +364,11 @@ fn handle_add(kind: RuleKind, parts: &[&str], ctx: &mut CommandContext) -> Resul
         .entry(scope.source_label().to_string())
         .or_default()
         .push(rule.clone());
+    let transition = if matches!(kind, RuleKind::Allow) {
+        strip_dangerous_permissions_for_active_auto_mode(&mut ctx.app_state.tool_permission_context)
+    } else {
+        AutoModeRuntimeTransition::default()
+    };
 
     // 2. Persist to disk for non-session scopes.
     let persist_msg = match scope {
@@ -316,11 +377,12 @@ fn handle_add(kind: RuleKind, parts: &[&str], ctx: &mut CommandContext) -> Resul
     };
 
     Ok(CommandResult::Output(format!(
-        "{} rule '{}' added (scope={}). {}",
+        "{} rule '{}' added (scope={}). {}{}",
         kind.label(),
         rule,
         scope.source_label(),
         persist_msg,
+        format_auto_mode_transition(&transition),
     )))
 }
 
@@ -373,9 +435,13 @@ fn handle_session_grant(parts: &[&str], ctx: &mut CommandContext) -> Result<Comm
     ctx.app_state
         .tool_permission_context
         .grant_session_allow(tool);
+    let transition = strip_dangerous_permissions_for_active_auto_mode(
+        &mut ctx.app_state.tool_permission_context,
+    );
     Ok(CommandResult::Output(format!(
-        "Session grant added for '{}' (transient — cleared on session end).",
+        "Session grant added for '{}' (transient — cleared on session end).{}",
         tool,
+        format_auto_mode_transition(&transition),
     )))
 }
 
@@ -464,6 +530,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_permissions_mode_auto_strips_and_restores_broad_allow_rules() {
+        let handler = PermissionsHandler;
+        let mut ctx = test_ctx();
+        ctx.app_state
+            .tool_permission_context
+            .always_allow_rules
+            .insert(
+                "user".into(),
+                vec!["Bash".into(), "Bash(cargo test*)".into()],
+            );
+
+        let result = handler.execute("mode auto", &mut ctx).await.unwrap();
+        let CommandResult::Output(text) = result else {
+            panic!("expected output")
+        };
+        assert!(text.contains("Auto mode safety"));
+        assert_eq!(
+            ctx.app_state.tool_permission_context.mode,
+            PermissionMode::Auto
+        );
+        assert_eq!(
+            ctx.app_state
+                .tool_permission_context
+                .always_allow_rules
+                .get("user")
+                .unwrap(),
+            &vec!["Bash(cargo test*)".to_string()]
+        );
+        assert_eq!(
+            ctx.app_state
+                .tool_permission_context
+                .auto_mode_stripped_always_allow_rules
+                .len(),
+            1
+        );
+
+        let show = handler.execute("", &mut ctx).await.unwrap();
+        let CommandResult::Output(show_text) = show else {
+            panic!("expected output")
+        };
+        assert!(show_text.contains("Auto mode stripped allow rules"));
+
+        handler.execute("mode default", &mut ctx).await.unwrap();
+        assert_eq!(
+            ctx.app_state.tool_permission_context.mode,
+            PermissionMode::Default
+        );
+        assert!(
+            ctx.app_state
+                .tool_permission_context
+                .auto_mode_stripped_always_allow_rules
+                .is_empty()
+        );
+        assert_eq!(
+            ctx.app_state
+                .tool_permission_context
+                .always_allow_rules
+                .get("user")
+                .unwrap(),
+            &vec!["Bash(cargo test*)".to_string(), "Bash".to_string()]
+        );
+    }
+
+    #[tokio::test]
     #[serial_test::serial]
     async fn test_permissions_mode_plan_records_workflow_at_workspace_root() {
         let dir = tempfile::tempdir().unwrap();
@@ -491,10 +621,12 @@ mod tests {
             ctx.app_state.tool_permission_context.pre_plan_mode,
             Some(PermissionMode::AcceptEdits)
         );
-        assert!(project_root
-            .join(".cc-rust")
-            .join("plan-workflow.json")
-            .is_file());
+        assert!(
+            project_root
+                .join(".cc-rust")
+                .join("plan-workflow.json")
+                .is_file()
+        );
         assert!(!nested.join(".cc-rust").join("plan-workflow.json").exists());
     }
 
@@ -506,19 +638,50 @@ mod tests {
             .execute("session-grant Bash", &mut ctx)
             .await
             .unwrap();
-        assert!(ctx
-            .app_state
-            .tool_permission_context
-            .has_session_grant("Bash"));
+        assert!(
+            ctx.app_state
+                .tool_permission_context
+                .has_session_grant("Bash")
+        );
 
         handler
             .execute("clear-session-grants", &mut ctx)
             .await
             .unwrap();
-        assert!(!ctx
-            .app_state
-            .tool_permission_context
-            .has_session_grant("Bash"));
+        assert!(
+            !ctx.app_state
+                .tool_permission_context
+                .has_session_grant("Bash")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_permissions_session_grant_is_stripped_in_auto_mode() {
+        let handler = PermissionsHandler;
+        let mut ctx = test_ctx();
+        ctx.app_state.tool_permission_context.mode = PermissionMode::Auto;
+
+        let result = handler
+            .execute("session-grant Bash", &mut ctx)
+            .await
+            .unwrap();
+        let CommandResult::Output(text) = result else {
+            panic!("expected output")
+        };
+
+        assert!(text.contains("Auto mode safety"));
+        assert!(
+            !ctx.app_state
+                .tool_permission_context
+                .has_session_grant("Bash")
+        );
+        assert_eq!(
+            ctx.app_state
+                .tool_permission_context
+                .auto_mode_stripped_session_allow_rules
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]

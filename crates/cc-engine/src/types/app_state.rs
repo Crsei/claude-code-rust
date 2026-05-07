@@ -88,6 +88,8 @@ impl Default for AppState {
                 always_deny_rules: HashMap::new(),
                 always_ask_rules: HashMap::new(),
                 session_allow_rules: HashMap::new(),
+                auto_mode_stripped_always_allow_rules: Vec::new(),
+                auto_mode_stripped_session_allow_rules: Vec::new(),
                 is_bypass_permissions_mode_available: false,
                 is_auto_mode_available: None,
                 pre_plan_mode: None,

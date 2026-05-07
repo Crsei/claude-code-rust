@@ -76,6 +76,10 @@ pub struct ToolPermissionContext {
     /// Used for Computer Use "always allow" to avoid permanent rules
     /// for high-risk desktop control tools.
     pub session_allow_rules: ToolPermissionRulesBySource,
+    /// Persistent allow rules temporarily removed while Auto mode is active.
+    pub auto_mode_stripped_always_allow_rules: Vec<StrippedPermissionRule>,
+    /// Session allow rules temporarily removed while Auto mode is active.
+    pub auto_mode_stripped_session_allow_rules: Vec<StrippedPermissionRule>,
     pub is_bypass_permissions_mode_available: bool,
     pub is_auto_mode_available: Option<bool>,
     /// The permission mode in effect before plan mode was entered
@@ -102,6 +106,7 @@ impl ToolPermissionContext {
     /// Clear all session-level grants (called on session end).
     pub fn clear_session_grants(&mut self) {
         self.session_allow_rules.clear();
+        self.auto_mode_stripped_session_allow_rules.clear();
     }
 }
 
@@ -113,3 +118,11 @@ pub struct AdditionalWorkingDirectory {
 
 /// Permission rules grouped by origin (settings layer, session, etc.).
 pub type ToolPermissionRulesBySource = HashMap<String, Vec<String>>;
+
+/// A permission allow rule temporarily removed while Auto mode is active.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StrippedPermissionRule {
+    pub source: String,
+    pub rule: String,
+    pub reason: String,
+}

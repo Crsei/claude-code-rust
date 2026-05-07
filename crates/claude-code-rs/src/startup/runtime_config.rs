@@ -110,15 +110,20 @@ pub fn build_tool_permission_context(
         }
     }
 
-    ToolPermissionContext {
+    let mut ctx = ToolPermissionContext {
         mode,
         additional_working_directories,
         always_allow_rules,
         always_deny_rules,
         always_ask_rules,
         session_allow_rules: HashMap::new(),
+        auto_mode_stripped_always_allow_rules: Vec::new(),
+        auto_mode_stripped_session_allow_rules: Vec::new(),
         is_bypass_permissions_mode_available: merged.permissions.enable_bypass_mode.unwrap_or(true),
         is_auto_mode_available: Some(merged.permissions.enable_auto_mode.unwrap_or(true)),
         pre_plan_mode: None,
-    }
+    };
+    let mode = ctx.mode.clone();
+    crate::permissions::dangerous::set_permission_mode_with_auto_mode_safety(&mut ctx, mode);
+    ctx
 }

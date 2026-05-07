@@ -96,7 +96,7 @@ pub struct ToolProgress {
 #[allow(unused_imports)]
 pub use cc_types::permissions::ToolPermissionRulesBySource;
 pub use cc_types::permissions::{
-    AdditionalWorkingDirectory, PermissionMode, ToolPermissionContext,
+    AdditionalWorkingDirectory, PermissionMode, StrippedPermissionRule, ToolPermissionContext,
 };
 
 /// 文件状态缓存 (LRU, 追踪工具已读/已写的文件)

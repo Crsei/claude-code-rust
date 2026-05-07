@@ -15,7 +15,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -620,10 +620,12 @@ mod tests {
             .call(json!({}), &ctx, &dummy_msg, None)
             .await
             .unwrap();
-        assert!(result.data["message"]
-            .as_str()
-            .unwrap()
-            .contains("plan mode"));
+        assert!(
+            result.data["message"]
+                .as_str()
+                .unwrap()
+                .contains("plan mode")
+        );
 
         // Verify state changed
         {
@@ -676,6 +678,10 @@ mod tests {
             let mut s = state.write();
             s.tool_permission_context.mode = PermissionMode::Plan;
             s.tool_permission_context.pre_plan_mode = Some(PermissionMode::Auto);
+            s.tool_permission_context.always_allow_rules.insert(
+                "user".into(),
+                vec!["Bash".into(), "Bash(cargo test*)".into()],
+            );
         }
 
         let exit_tool = ExitPlanModeTool;
@@ -699,6 +705,19 @@ mod tests {
 
         let s = state.read();
         assert_eq!(s.tool_permission_context.mode, PermissionMode::Auto);
+        assert_eq!(
+            s.tool_permission_context
+                .always_allow_rules
+                .get("user")
+                .unwrap(),
+            &vec!["Bash(cargo test*)".to_string()]
+        );
+        assert_eq!(
+            s.tool_permission_context
+                .auto_mode_stripped_always_allow_rules
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]
