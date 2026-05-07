@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 // ---------------------------------------------------------------------------
 // Source tracking
@@ -101,6 +101,30 @@ pub type SourceMap = BTreeMap<String, SettingsSource>;
 // Typed sub-structures for richer settings
 // ---------------------------------------------------------------------------
 
+/// Prose policy used by the Auto mode classifier.
+///
+/// This mirrors Claude Code's `permissions.autoMode` surface. The rules are
+/// intentionally prose, not permission-rule patterns: the classifier reads
+/// them as extra environment, allow, and soft-deny guidance.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AutoModeSettings {
+    pub environment: Vec<String>,
+    pub allow: Vec<String>,
+    pub soft_deny: Vec<String>,
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
+}
+
+impl AutoModeSettings {
+    pub fn is_effectively_empty(&self) -> bool {
+        self.environment.is_empty()
+            && self.allow.is_empty()
+            && self.soft_deny.is_empty()
+            && self.extra.is_empty()
+    }
+}
+
 /// Permissions section of settings.json.
 ///
 /// Mirrors the Claude Code TS `PermissionsSettings` shape at a high level.
@@ -123,6 +147,8 @@ pub struct PermissionsSettings {
     pub enable_bypass_mode: Option<bool>,
     /// Whether `auto` mode should be allowed at runtime.
     pub enable_auto_mode: Option<bool>,
+    /// Prose policy for Auto mode's classifier.
+    pub auto_mode: Option<AutoModeSettings>,
     /// Unknown fields so forward-compat is preserved.
     #[serde(flatten)]
     pub extra: HashMap<String, Value>,
@@ -137,6 +163,10 @@ impl PermissionsSettings {
             && self.additional_directories.is_empty()
             && self.enable_bypass_mode.is_none()
             && self.enable_auto_mode.is_none()
+            && self
+                .auto_mode
+                .as_ref()
+                .map_or(true, AutoModeSettings::is_effectively_empty)
             && self.extra.is_empty()
     }
 }
@@ -552,6 +582,20 @@ fn merge_permissions(
     if over.enable_auto_mode.is_some() {
         out.enable_auto_mode = over.enable_auto_mode;
     }
+    if let Some(auto_mode) = over.auto_mode {
+        out.auto_mode = Some(merge_auto_mode(out.auto_mode.take(), auto_mode));
+    }
+    for (k, v) in over.extra {
+        out.extra.insert(k, v);
+    }
+    out
+}
+
+fn merge_auto_mode(base: Option<AutoModeSettings>, over: AutoModeSettings) -> AutoModeSettings {
+    let mut out = base.unwrap_or_default();
+    out.environment = merge_str_lists(Some(&out.environment), Some(&over.environment));
+    out.allow = merge_str_lists(Some(&out.allow), Some(&over.allow));
+    out.soft_deny = merge_str_lists(Some(&out.soft_deny), Some(&over.soft_deny));
     for (k, v) in over.extra {
         out.extra.insert(k, v);
     }
@@ -1210,7 +1254,16 @@ pub fn settings_schema() -> Value {
                         "type": "array", "items": { "type": "string" }
                     },
                     "enableBypassMode": { "type": "boolean" },
-                    "enableAutoMode": { "type": "boolean" }
+                    "enableAutoMode": { "type": "boolean" },
+                    "autoMode": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "properties": {
+                            "environment": { "type": "array", "items": { "type": "string" } },
+                            "allow": { "type": "array", "items": { "type": "string" } },
+                            "softDeny": { "type": "array", "items": { "type": "string" } }
+                        }
+                    }
                 }
             },
             "sandbox": {
@@ -1384,6 +1437,72 @@ mod tests {
         let eff = EffectiveSettings::from_raw(raw);
         assert_eq!(eff.permissions.default_mode.as_deref(), Some("bypass"));
         assert!(eff.permissions.allow.contains(&"Grep".to_string()));
+    }
+
+    #[test]
+    fn permissions_auto_mode_parses_and_preserves_extra() {
+        let raw: RawSettings = serde_json::from_str(
+            r#"{
+                "permissions": {
+                    "autoMode": {
+                        "environment": ["Trusted repo: github.example.com/acme"],
+                        "allow": ["Read project docs"],
+                        "softDeny": ["Avoid package manager install commands"],
+                        "futurePolicy": {"owner": "security"}
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let auto = raw
+            .permissions
+            .as_ref()
+            .and_then(|p| p.auto_mode.as_ref())
+            .expect("auto mode settings parsed");
+        assert_eq!(
+            auto.environment,
+            vec!["Trusted repo: github.example.com/acme".to_string()]
+        );
+        assert_eq!(auto.allow, vec!["Read project docs".to_string()]);
+        assert_eq!(
+            auto.soft_deny,
+            vec!["Avoid package manager install commands".to_string()]
+        );
+        assert!(auto.extra.contains_key("futurePolicy"));
+    }
+
+    #[test]
+    fn permissions_auto_mode_merges_lists_and_extra() {
+        let base = PermissionsSettings {
+            auto_mode: Some(AutoModeSettings {
+                environment: vec!["Trusted repo".into()],
+                allow: vec!["Run cargo test".into()],
+                soft_deny: vec!["Network writes".into()],
+                extra: HashMap::from([("baseOnly".to_string(), json!(true))]),
+            }),
+            ..Default::default()
+        };
+        let over = PermissionsSettings {
+            auto_mode: Some(AutoModeSettings {
+                environment: vec!["Trusted repo".into(), "CI machine".into()],
+                allow: vec!["Run cargo test".into(), "Read docs".into()],
+                soft_deny: vec!["Privilege escalation".into()],
+                extra: HashMap::from([("overrideOnly".to_string(), json!("x"))]),
+            }),
+            ..Default::default()
+        };
+
+        let merged = merge_permissions(Some(base), over);
+        let auto = merged.auto_mode.expect("auto mode merged");
+        assert_eq!(auto.environment, vec!["Trusted repo", "CI machine"]);
+        assert_eq!(auto.allow, vec!["Run cargo test", "Read docs"]);
+        assert_eq!(
+            auto.soft_deny,
+            vec!["Network writes", "Privilege escalation"]
+        );
+        assert_eq!(auto.extra.get("baseOnly"), Some(&json!(true)));
+        assert_eq!(auto.extra.get("overrideOnly"), Some(&json!("x")));
     }
 
     #[test]

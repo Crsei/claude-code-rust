@@ -38,6 +38,7 @@ mod query;
 // `sandbox` lives in its own crate (`cc-sandbox`). Re-alias at the crate
 // root so existing `crate::sandbox::...` paths continue to resolve.
 use cc_sandbox as sandbox;
+mod safety;
 // `session` lives in its own crate (`cc-session`).
 use cc_session as session;
 mod startup;

@@ -28,7 +28,16 @@
         "deny": { "type": "array", "items": { "type": "string" } },
         "additionalDirectories": { "type": "array", "items": { "type": "string" } },
         "enableBypassMode": { "type": "boolean" },
-        "enableAutoMode": { "type": "boolean" }
+        "enableAutoMode": { "type": "boolean" },
+        "autoMode": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "environment": { "type": "array", "items": { "type": "string" } },
+            "allow": { "type": "array", "items": { "type": "string" } },
+            "softDeny": { "type": "array", "items": { "type": "string" } }
+          }
+        }
       }
     },
     "sandbox": {

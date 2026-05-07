@@ -51,9 +51,10 @@
 - 2026-05-07 Phase 1 已把危险 allow 规则剥离/恢复接到运行时 mode transition：进入 Auto mode 会临时移除宽泛 always/session allow 规则，退出 Auto mode 会恢复；`/permissions mode`、`/config permissionMode`、Web settings、Plan mode restore、startup、子 agent 与 read-only plugin tool 上下文都走同一安全 helper。
 - 配置与运行时都保留了 Auto mode 可用性开关，见 [`crates/cc-config/src/settings.rs:120-139`](../crates/cc-config/src/settings.rs)、[`crates/claude-code-rs/src/startup/runtime_config.rs:119-122`](../crates/claude-code-rs/src/startup/runtime_config.rs)、[`crates/claude-code-rs/src/commands/permissions_cmd.rs:138-242`](../crates/claude-code-rs/src/commands/permissions_cmd.rs)。
 
+- 2026-05-07 Phase 2：shared classifier foundation 已落地。`permissions.autoMode` 现在有 typed config；[`crates/claude-code-rs/src/safety/classifier.rs`](../crates/claude-code-rs/src/safety/classifier.rs) 覆盖 prompt 构建、确定性 redaction、transcript / prompt 预算保护、严格 JSON verdict 解析、fast -> thinking 升级、`QueryDeps` model adapter 与 mock 测试。central tool permission paths 尚未调用该 foundation。
 缺口：
 
-- Bun 文档里的 transcript classifier / two-stage 分类流水线还没有在 cc-rust 中形成端到端闭环；当前权限层已经能消费 fast / thinking classifier 结果，但还没有真正的 LLM transcript classifier runner、prompt 模板和 API 调用链。
+- Bun 文档里的 transcript classifier / two-stage 分类流水线还没有在 cc-rust 中形成端到端闭环；当前权限层已经能消费 fast / thinking classifier 结果，Phase 2 也已有共享 classifier foundation，但 `engine/lifecycle/deps.rs` 与 `tools/execution/pipeline.rs` 还没有在 Auto mode tool execution 时调用它。
 - `crates/claude-code-rs/src/plan_workflow.rs:261-262` 明确写着“full auto-mode LLM classifier is ported”之前的保守入口仍未完成，说明自动化分类层还在未完全迁移状态。
 
 ### Permission Model
@@ -140,13 +141,13 @@
 
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
-| Auto mode transcript classifier / 两阶段分类流水线 | 部分实现 | `PermissionMode::Auto`、回退逻辑、classifier result adapter、危险 allow 规则剥离/恢复 helper 与进入 / 退出 Auto mode 的运行时接线已存在；权限层能消费 fast / thinking 的 allow / deny / ask / unavailable 结果，也能临时移除会绕过 classifier 的宽泛 shell / Agent always/session allow 规则。但 Bun 的 LLM transcript classifier runner、prompt 模板和 API 调用链还没有在 cc-rust 中完整落地，见 [`crates/cc-permissions/src/decision.rs`](../crates/cc-permissions/src/decision.rs)、[`crates/cc-permissions/src/dangerous.rs`](../crates/cc-permissions/src/dangerous.rs) 与 [`crates/claude-code-rs/src/plan_workflow.rs:261-262`](../crates/claude-code-rs/src/plan_workflow.rs) 。 |
+| Auto mode transcript classifier / 两阶段分类流水线 | 部分实现 | `PermissionMode::Auto`、回退逻辑、classifier result adapter、危险 allow 规则剥离/恢复 helper、进入 / 退出 Auto mode 的运行时接线，以及 Phase 2 shared classifier foundation 已存在；权限层能消费 fast / thinking 的 allow / deny / ask / unavailable 结果，也能临时移除会绕过 classifier 的宽泛 shell / Agent always/session allow 规则。剩余缺口是 central tool permission paths 尚未在 Auto mode tool execution 时调用 [`crates/claude-code-rs/src/safety/classifier.rs`](../crates/claude-code-rs/src/safety/classifier.rs)，见 [`crates/cc-permissions/src/decision.rs`](../crates/cc-permissions/src/decision.rs)、[`crates/cc-permissions/src/dangerous.rs`](../crates/cc-permissions/src/dangerous.rs) 与 [`crates/claude-code-rs/src/plan_workflow.rs:261-262`](../crates/claude-code-rs/src/plan_workflow.rs) 。 |
 | Plan mode `allowedPrompts` 语义允许列表 | 部分实现 | `ExitPlanModeTool` 现在接受 `allowedPrompts` 并在计划批准后写入 transient session allow 规则；已支持常见验证提示到 Cargo allow 规则的确定性分类，仍未实现 Bun 的通用 LLM 语义 classifier，见 [`crates/claude-code-rs/src/tools/plan_mode.rs`](../crates/claude-code-rs/src/tools/plan_mode.rs) 。 |
 | Windows OS-level sandbox | 故意裁剪 | Windows 分支在可用性探测里直接返回不可用，见 [`crates/cc-sandbox/src/availability.rs:120-128`](../crates/cc-sandbox/src/availability.rs)；当前按 [`docs/IMPLEMENTATION_GAPS.md`](../docs/IMPLEMENTATION_GAPS.md) §7 保留 Rust-level policy checks、`/sandbox require` fail-closed 与 unavailable 诊断，只有上游或安全策略触发复审时才单独重开。 |
 | `allowedCommands` 自动放行到 permission decision | 已实现 | workspace sandbox 中匹配的 Bash / PowerShell 命令已接到 central permission 和 reference tool pipeline；deny / ask / hook / Plan mode 不会被覆盖，见 [`crates/claude-code-rs/src/tools/execution/security.rs`](../crates/claude-code-rs/src/tools/execution/security.rs)、[`crates/claude-code-rs/src/engine/lifecycle/deps.rs`](../crates/claude-code-rs/src/engine/lifecycle/deps.rs)、[`crates/claude-code-rs/src/tools/execution/pipeline.rs`](../crates/claude-code-rs/src/tools/execution/pipeline.rs) 。 |
 
 ## 后续动作
 
-1. 默认下一步应补齐 Bun 的 Auto mode 语义：接真正的 LLM transcript classifier runner、prompt 模板和 API 调用链；权限层 classifier result adapter 与运行时 strip/restore 接线已可承接结果。
+1. 默认下一步应补齐 Bun 的 Auto mode 语义：把 Phase 2 shared classifier foundation 接入 `engine/lifecycle/deps.rs` 与 `tools/execution/pipeline.rs` 的 Auto mode permission flow；权限层 classifier result adapter 与运行时 strip/restore 接线已可承接结果。
 2. 如果要补齐 Bun 的 plan mode 语义，继续把 `allowedPrompts` 从常见验证提示扩展到通用 LLM 语义 classifier；当前只完成确定性 session allow bridge。
 3. Windows OS-level sandbox 当前按故意裁剪处理；若上游或安全策略触发复审，再作为单独立项处理。
