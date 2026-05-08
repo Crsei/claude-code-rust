@@ -9,7 +9,7 @@ use axum::Router;
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
-use super::{routes, sse, state::DaemonState};
+use super::{gateway_routes, routes, sse, state::DaemonState};
 
 /// Start the daemon HTTP server on the given port.
 ///
@@ -23,7 +23,8 @@ pub async fn serve_http(state: DaemonState, port: u16) -> anyhow::Result<()> {
         .route("/health", axum::routing::get(routes::health))
         .route("/events", axum::routing::get(sse::sse_handler))
         .layer(CorsLayer::permissive())
-        .with_state(state);
+        .with_state(state)
+        .merge(gateway_routes::gateway_routes());
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     info!("daemon HTTP server listening on {}", addr);

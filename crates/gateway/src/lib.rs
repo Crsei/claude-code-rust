@@ -6,6 +6,8 @@
 //! adapter modules so dependency direction stays one-way.
 
 pub mod adapters;
+pub mod api;
+pub mod auth;
 pub mod config;
 pub mod events;
 pub mod policy;
@@ -19,6 +21,8 @@ pub use adapters::{
     AdapterProvider, AdapterRegistry, AdapterState, AdapterStatus, AdapterTestMessage,
     RemoteAdapter,
 };
+pub use api::{GatewayApiState, GatewayBusySnapshotProvider, StaticBusySnapshotProvider};
+pub use auth::{GatewayAuthMode, GatewayAuthVerifier};
 pub use config::{GatewayConfig, GatewayLimits, GatewayPersistence};
 pub use events::{RunEvent, RunEventKind};
 pub use policy::{BusyDecision, BusySnapshot, GatewayPolicy};

@@ -1547,6 +1547,7 @@ dependencies = [
 name = "gateway"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "cc-config",
  "hex",
  "serde",

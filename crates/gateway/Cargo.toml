@@ -5,6 +5,7 @@ edition = "2021"
 description = "Remote-control gateway models and foundations for cc-rust"
 
 [dependencies]
+axum = { workspace = true }
 cc-config = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
