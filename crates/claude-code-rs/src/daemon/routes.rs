@@ -288,7 +288,7 @@ async fn submit_authorized(state: DaemonState, body: SubmitRequest) -> Json<Valu
 }
 
 /// `POST /api/abort` -- abort the currently running query.
-async fn abort(State(state): State<DaemonState>, headers: HeaderMap) -> Json<Value> {
+async fn abort(State(_state): State<DaemonState>, headers: HeaderMap) -> Json<Value> {
     if let Err(response) = require_control_token(&headers) {
         return response;
     }
@@ -307,7 +307,6 @@ async fn abort(State(state): State<DaemonState>, headers: HeaderMap) -> Json<Val
             }));
         }
     };
-    state.engine.abort();
     Json(json!({ "status": "ok", "command_id": command.command_id }))
 }
 
