@@ -2,6 +2,7 @@ use gateway::{
     BusyPolicy, CreateRunOutcome, GatewayPersistence, GatewayStore, RemoteSource, RemoteTransport,
     RunEvent, RunEventKind, RunPolicy, RunRequest, RunStatus, SessionKeyPolicy,
 };
+use std::sync::{Arc, Barrier};
 
 fn persistence(root: &std::path::Path) -> GatewayPersistence {
     GatewayPersistence {
@@ -58,6 +59,30 @@ fn store_creates_run_under_gateway_root() {
 }
 
 #[test]
+fn store_rejects_persistence_paths_outside_gateway_root() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = GatewayStore::new(
+        GatewayPersistence {
+            gateway_dir: tmp.path().join("gateway"),
+            runs_dir: tmp.path().join("outside-runs"),
+            adapters_dir: tmp.path().join("gateway").join("adapters"),
+            webhooks_dir: tmp.path().join("gateway").join("webhooks"),
+        },
+        SessionKeyPolicy::default(),
+    );
+
+    let err = match store.create_run(request(None)) {
+        Ok(_) => panic!("expected path escape rejection"),
+        Err(error) => error,
+    };
+    assert_eq!(err.diagnostic().code, "store_path_escape");
+    assert!(err
+        .diagnostic()
+        .action
+        .contains("cc-rust gateway directory"));
+}
+
+#[test]
 fn duplicate_idempotency_returns_existing_run() {
     let tmp = tempfile::tempdir().unwrap();
     let store = GatewayStore::new(persistence(tmp.path()), SessionKeyPolicy::default());
@@ -70,6 +95,46 @@ fn duplicate_idempotency_returns_existing_run() {
         panic!("expected existing run");
     };
     assert_eq!(first.meta().run_id, existing.run_id);
+}
+
+#[test]
+fn concurrent_duplicate_idempotency_creates_one_run() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = Arc::new(GatewayStore::new(
+        persistence(tmp.path()),
+        SessionKeyPolicy::default(),
+    ));
+    let barrier = Arc::new(Barrier::new(8));
+
+    let handles: Vec<_> = (0..8)
+        .map(|_| {
+            let store = Arc::clone(&store);
+            let barrier = Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier.wait();
+                store.create_run(request(Some("provider-1"))).unwrap()
+            })
+        })
+        .collect();
+
+    let outcomes: Vec<_> = handles
+        .into_iter()
+        .map(|handle| handle.join().unwrap())
+        .collect();
+    let first_run_id = outcomes[0].meta().run_id.clone();
+
+    assert!(outcomes
+        .iter()
+        .any(|outcome| matches!(outcome, CreateRunOutcome::Created(_))));
+    assert!(outcomes
+        .iter()
+        .all(|outcome| outcome.meta().run_id == first_run_id));
+
+    let runs: Vec<_> = std::fs::read_dir(tmp.path().join("gateway").join("runs"))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(runs.len(), 1);
 }
 
 #[test]

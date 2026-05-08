@@ -5,8 +5,9 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::io::{BufRead, BufReader, ErrorKind, Write};
+use std::path::PathBuf;
+use std::time::Duration;
 
 const META_FILE: &str = "meta.json";
 const EVENTS_FILE: &str = "events.ndjson";
@@ -38,6 +39,9 @@ impl GatewayStore {
 
         let run_id = RunId::new();
         let meta = RunMeta::new(run_id.clone(), request.clone(), &self.session_policy);
+        if let Some(existing) = self.reserve_idempotency_index(&request, &meta)? {
+            return Ok(CreateRunOutcome::Existing(existing));
+        }
         let run_dir = self.run_dir(&run_id);
         fs::create_dir_all(&run_dir).map_err(|error| {
             GatewayError::io(
@@ -50,7 +54,6 @@ impl GatewayStore {
         })?;
         self.write_meta(&meta)?;
         self.append_event(&RunEvent::new(run_id.clone(), 1, RunEventKind::Created))?;
-        self.write_idempotency_index(&request, &meta)?;
         Ok(CreateRunOutcome::Created(meta))
     }
 
@@ -196,6 +199,17 @@ impl GatewayStore {
     }
 
     fn ensure_layout(&self) -> Result<(), GatewayError> {
+        self.persistence.validate_layout().map_err(|error| {
+            GatewayError::new(
+                GatewayDiagnostic::new(
+                    "store_path_escape",
+                    "The gateway persistence paths are outside the gateway root.",
+                    "Keep gateway runs, adapters, and webhooks under the cc-rust gateway directory.",
+                )
+                .with_context(error),
+            )
+        })?;
+
         for path in [
             &self.persistence.gateway_dir,
             &self.persistence.runs_dir,
@@ -307,21 +321,70 @@ impl GatewayStore {
                 "Inspect or remove the corrupt idempotency index entry.",
             )));
         }
-        self.load_run(&record.run_id).map(Some)
+        self.load_reserved_run(&record.run_id).map(Some)
     }
 
-    fn write_idempotency_index(
+    fn reserve_idempotency_index(
         &self,
         request: &RunRequest,
         meta: &RunMeta,
-    ) -> Result<(), GatewayError> {
+    ) -> Result<Option<RunMeta>, GatewayError> {
         let Some(path) = self.idempotency_path(request) else {
-            return Ok(());
+            return Ok(None);
         };
+
         let record = IdempotencyRecord {
             run_id: meta.run_id.clone(),
         };
-        write_json(&path, &record, "idempotency_write_failed")
+        let tmp_path = path.with_extension(format!("{}.tmp", meta.run_id.as_str()));
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)
+            .map_err(|error| {
+                GatewayError::io(
+                    "idempotency_write_failed",
+                    "The gateway could not write a temporary idempotency index.",
+                    "Check permissions for the gateway idempotency directory.",
+                    &tmp_path,
+                    &error,
+                )
+            })?;
+        serde_json::to_writer_pretty(file, &record).map_err(|error| {
+            GatewayError::new(
+                GatewayDiagnostic::new(
+                    "idempotency_write_failed",
+                    "The gateway could not encode the idempotency index.",
+                    "Check the idempotency payload.",
+                )
+                .with_context(format!(
+                    "path={}, error={}",
+                    tmp_path.display(),
+                    error
+                )),
+            )
+        })?;
+
+        match fs::hard_link(&tmp_path, &path) {
+            Ok(()) => {
+                let _ = fs::remove_file(&tmp_path);
+                Ok(None)
+            }
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+                let _ = fs::remove_file(&tmp_path);
+                self.find_idempotent_run(request)
+            }
+            Err(error) => {
+                let _ = fs::remove_file(&tmp_path);
+                Err(GatewayError::io(
+                    "idempotency_write_failed",
+                    "The gateway could not reserve the idempotency index.",
+                    "Check permissions for the gateway idempotency directory.",
+                    &path,
+                    &error,
+                ))
+            }
+        }
     }
 }
 
@@ -331,24 +394,26 @@ struct IdempotencyRecord {
     run_id: RunId,
 }
 
-fn write_json<T: Serialize>(path: &Path, value: &T, code: &str) -> Result<(), GatewayError> {
-    let file = File::create(path).map_err(|error| {
-        GatewayError::io(
-            code,
-            "The gateway could not write a persistence index.",
-            "Check permissions for the cc-rust gateway directory.",
-            path,
-            &error,
-        )
-    })?;
-    serde_json::to_writer_pretty(file, value).map_err(|error| {
-        GatewayError::new(
-            GatewayDiagnostic::new(
-                code,
-                "The gateway could not encode a persistence index.",
-                "Check the persistence payload.",
-            )
-            .with_context(format!("path={}, error={}", path.display(), error)),
-        )
-    })
+impl GatewayStore {
+    fn load_reserved_run(&self, run_id: &RunId) -> Result<RunMeta, GatewayError> {
+        let mut last_error = None;
+        for _ in 0..20 {
+            match self.load_run(run_id) {
+                Ok(meta) => return Ok(meta),
+                Err(error) if error.diagnostic().code == "run_not_found" => {
+                    last_error = Some(error);
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| {
+            GatewayError::new(GatewayDiagnostic::new(
+                "idempotency_lookup_failed",
+                "The gateway idempotency index could not be resolved.",
+                "Retry the request or inspect the gateway idempotency directory.",
+            ))
+        }))
+    }
 }

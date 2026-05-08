@@ -69,6 +69,31 @@ impl GatewayConfig {
     }
 }
 
+impl GatewayPersistence {
+    pub fn validate_layout(&self) -> Result<(), String> {
+        validate_child("runs_dir", &self.runs_dir, &self.gateway_dir)?;
+        validate_child("adapters_dir", &self.adapters_dir, &self.gateway_dir)?;
+        validate_child("webhooks_dir", &self.webhooks_dir, &self.gateway_dir)?;
+        Ok(())
+    }
+}
+
+fn validate_child(
+    label: &str,
+    child: &std::path::Path,
+    parent: &std::path::Path,
+) -> Result<(), String> {
+    if child.starts_with(parent) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{label} must stay under gateway_dir; child={}, gateway_dir={}",
+            child.display(),
+            parent.display()
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
