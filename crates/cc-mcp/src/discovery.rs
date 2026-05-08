@@ -1,7 +1,7 @@
 //! MCP server discovery - finds configured servers from settings and plugins.
 
 use super::McpServerConfig;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use parking_lot::Mutex;
 use std::path::Path;
 use std::sync::LazyLock;
@@ -134,8 +134,10 @@ fn ide_servers() -> Vec<McpServerConfig> {
 pub fn discover_mcp_servers(cwd: &Path) -> Result<Vec<McpServerConfig>> {
     let scoped = discover_mcp_servers_scoped(cwd)?;
     let mut merged: Vec<McpServerConfig> = Vec::new();
+    let mut diagnostics: Vec<String> = Vec::new();
     for entry in scoped {
-        if entry.error.is_some() {
+        if let Some(error) = entry.error {
+            diagnostics.push(error);
             continue;
         }
         if let Some(existing) = merged.iter_mut().find(|s| s.name == entry.config.name) {
@@ -143,6 +145,9 @@ pub fn discover_mcp_servers(cwd: &Path) -> Result<Vec<McpServerConfig>> {
         } else {
             merged.push(entry.config);
         }
+    }
+    if !diagnostics.is_empty() {
+        bail!("MCP discovery diagnostics: {}", diagnostics.join("; "));
     }
     Ok(merged)
 }
@@ -469,8 +474,8 @@ mod tests {
         assert_eq!(bad.scope, DiscoveryScope::User);
         assert!(bad.error.as_deref().unwrap_or("").contains("bad-server"));
 
-        let merged = discover_mcp_servers(cwd.path()).expect("legacy discovery filters bad row");
-        assert!(merged.iter().any(|server| server.name == "good-server"));
-        assert!(!merged.iter().any(|server| server.name == "bad-server"));
+        let err =
+            discover_mcp_servers(cwd.path()).expect_err("legacy discovery must surface bad row");
+        assert!(err.to_string().contains("bad-server"));
     }
 }

@@ -55,7 +55,8 @@ fn usage(other: &str) -> String {
 fn render_status(ctx: &CommandContext) -> String {
     let enabled = ctx.app_state.settings.voice_enabled.unwrap_or(false);
     let lang = normalize_language_for_stt(ctx.app_state.settings.language.as_deref());
-    let feas = current_feasibility();
+    let (auth, auth_diagnostic) = resolve_auth_for_voice();
+    let feas = current_feasibility_for_auth(&auth);
 
     let mut out = String::new();
     out.push_str("Voice dictation\n");
@@ -94,6 +95,9 @@ fn render_status(ctx: &CommandContext) -> String {
     out.push_str("  config path:       ");
     out.push_str(&settings::user_settings_path().display().to_string());
     out.push('\n');
+    if let Some(diagnostic) = auth_diagnostic {
+        out.push_str(&format!("  auth diagnostic:   {}\n", diagnostic));
+    }
     out
 }
 
@@ -102,8 +106,11 @@ fn render_diagnose(ctx: &CommandContext) -> String {
     out.push('\n');
     out.push_str("Environment\n");
     out.push_str("-----------\n");
-    let auth = auth::try_resolve_auth().unwrap_or(auth::AuthMethod::None);
+    let (auth, auth_diagnostic) = resolve_auth_for_voice();
     out.push_str(&format!("  auth method:       {}\n", auth_label(&auth)));
+    if let Some(diagnostic) = auth_diagnostic {
+        out.push_str(&format!("  auth diagnostic:   {}\n", diagnostic));
+    }
     out.push_str(&format!(
         "  CC_RUST_REMOTE:    {}\n",
         std::env::var("CC_RUST_REMOTE").unwrap_or_else(|_| "(unset)".into())
@@ -207,10 +214,21 @@ fn format_blocked(reason: &FeasibilityReason) -> String {
 /// Produce a [`Feasibility`] snapshot using the live auth and the
 /// shipped unsupported backends.
 pub fn current_feasibility() -> Feasibility {
-    let auth = auth::try_resolve_auth().unwrap_or(auth::AuthMethod::None);
+    let (auth, _) = resolve_auth_for_voice();
+    current_feasibility_for_auth(&auth)
+}
+
+fn current_feasibility_for_auth(auth: &AuthMethod) -> Feasibility {
     let audio = NullAudioBackend::new();
     let stt = NullTranscriptionClient::new();
-    check_feasibility(&auth, &audio, &stt)
+    check_feasibility(auth, &audio, &stt)
+}
+
+fn resolve_auth_for_voice() -> (AuthMethod, Option<String>) {
+    match auth::try_resolve_auth() {
+        Ok(auth) => (auth, None),
+        Err(error) => (AuthMethod::None, Some(format!("{error:#}"))),
+    }
 }
 
 fn is_build_unsupported(reason: &FeasibilityReason) -> bool {
@@ -361,6 +379,24 @@ mod tests {
                 assert!(s.contains("language setting:"));
                 assert!(s.contains("Compatibility note:"));
                 assert!(!s.contains("follow-up"));
+            }
+            _ => panic!("expected Output"),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn diagnose_surfaces_invalid_present_auth_instead_of_plain_none() {
+        let _api = EnvGuard::set("ANTHROPIC_API_KEY", Some("not-a-valid-key"));
+        let _token = EnvGuard::set("ANTHROPIC_AUTH_TOKEN", None);
+        let handler = VoiceHandler;
+        let mut ctx = make_ctx();
+        let r = handler.execute("diagnose", &mut ctx).await.unwrap();
+        match r {
+            CommandResult::Output(s) => {
+                assert!(s.contains("auth method:       none"));
+                assert!(s.contains("auth diagnostic:"));
+                assert!(s.contains("ANTHROPIC_API_KEY"));
             }
             _ => panic!("expected Output"),
         }

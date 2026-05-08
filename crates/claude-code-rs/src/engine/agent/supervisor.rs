@@ -937,6 +937,24 @@ mod tests {
         }
     }
 
+    struct CurrentDirGuard {
+        previous: std::path::PathBuf,
+    }
+
+    impl CurrentDirGuard {
+        fn set(path: &std::path::Path) -> Self {
+            let previous = std::env::current_dir().unwrap();
+            std::env::set_current_dir(path).unwrap();
+            Self { previous }
+        }
+    }
+
+    impl Drop for CurrentDirGuard {
+        fn drop(&mut self) {
+            std::env::set_current_dir(&self.previous).unwrap();
+        }
+    }
+
     #[test]
     fn preview_respects_char_boundary() {
         let text = format!("{}{}", "a".repeat(199), "é".repeat(10));
@@ -984,5 +1002,62 @@ mod tests {
     fn worktree_fallback_policy_accepts_true() {
         let _fallback = EnvGuard::set("CC_RUST_ALLOW_WORKTREE_FALLBACK", "true");
         assert!(worktree_fallback_enabled());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn worktree_setup_failure_is_visible_when_fallback_disabled() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _cwd = CurrentDirGuard::set(tmp.path());
+        let _fallback = EnvGuard::remove("CC_RUST_ALLOW_WORKTREE_FALLBACK");
+
+        let err = match prepare_runtime(
+            true,
+            "agent-1",
+            "test worktree",
+            "test-model",
+            0,
+            None,
+            Arc::new(cc_types::hooks::NoopHookRunner::new()),
+            cc_types::hooks::HooksMap::default(),
+        )
+        .await
+        {
+            Ok(_) => panic!("worktree setup failure should be visible without fallback"),
+            Err(err) => err,
+        };
+        let message = err.to_string();
+
+        assert!(message.contains("background worktree isolation required but setup failed"));
+        assert!(message.contains("CC_RUST_ALLOW_WORKTREE_FALLBACK=true"));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn worktree_setup_failure_fallback_returns_visible_warning_when_enabled() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _cwd = CurrentDirGuard::set(tmp.path());
+        let _fallback = EnvGuard::set("CC_RUST_ALLOW_WORKTREE_FALLBACK", "true");
+
+        let runtime = prepare_runtime(
+            true,
+            "agent-1",
+            "test worktree",
+            "test-model",
+            0,
+            None,
+            Arc::new(cc_types::hooks::NoopHookRunner::new()),
+            cc_types::hooks::HooksMap::default(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(runtime.child_cwd, tmp.path().display().to_string());
+        assert!(runtime.worktree.is_none());
+        assert!(runtime
+            .startup_warning
+            .as_deref()
+            .unwrap_or_default()
+            .contains("worktree isolation skipped"));
     }
 }

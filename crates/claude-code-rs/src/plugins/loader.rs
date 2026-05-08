@@ -10,11 +10,11 @@ use anyhow::{Context, Result};
 use tracing::warn;
 
 use super::manifest::{load_manifest, PluginManifest};
-use super::{cache_dir, installed_plugins_path, PluginEntry, PluginSource, PluginStatus};
+use super::{cache_dir, installed_plugins_path, PluginEntry, PluginStatus};
 
 /// Structured diagnostic emitted when plugin metadata exists but cannot be
 /// read, traversed, parsed, or validated.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PluginDiagnostic {
     pub kind: PluginDiagnosticKind,
     pub path: PathBuf,
@@ -22,7 +22,8 @@ pub struct PluginDiagnostic {
     pub message: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PluginDiagnosticKind {
     InstalledPluginsUnreadable,
     InstalledPluginsMalformed,
@@ -44,28 +45,6 @@ impl PluginDiagnostic {
             message: message.into(),
         }
     }
-
-    /// Convert a global metadata diagnostic into an error entry that status
-    /// surfaces can render through the existing plugin status model.
-    pub fn to_metadata_entry(&self, index: usize) -> PluginEntry {
-        PluginEntry {
-            id: format!("plugin-metadata-invalid-{}", index + 1),
-            name: "Plugin metadata invalid".to_string(),
-            version: "0.0.0".to_string(),
-            description: self.message.clone(),
-            source: PluginSource::Local {
-                path: self.path.to_string_lossy().to_string(),
-            },
-            status: PluginStatus::Error(self.message.clone()),
-            marketplace: None,
-            cache_path: None,
-            tools: Vec::new(),
-            skills: Vec::new(),
-            mcp_servers: Vec::new(),
-            installed_at: None,
-            updated_at: None,
-        }
-    }
 }
 
 /// Result of loading installed plugin metadata.
@@ -84,7 +63,8 @@ impl LoadedPlugins {
 /// Result of scanning the plugin cache.
 #[derive(Debug, Clone, Default)]
 pub struct CachedPluginDiscovery {
-    #[allow(dead_code)] // Cache discovery currently reports diagnostics; plugin registration stays installed-metadata driven.
+    #[allow(dead_code)]
+    // Cache discovery currently reports diagnostics; plugin registration stays installed-metadata driven.
     pub plugins: Vec<(PluginManifest, PathBuf)>,
     pub diagnostics: Vec<PluginDiagnostic>,
 }
@@ -385,7 +365,7 @@ pub fn manifest_to_entry(
             .unwrap_or_else(|| manifest.name.clone()),
         version: manifest.version.clone(),
         description: manifest.description.clone(),
-        source: PluginSource::Local {
+        source: crate::plugins::PluginSource::Local {
             path: cache_path.to_string_lossy().to_string(),
         },
         status: PluginStatus::Installed,
@@ -411,6 +391,7 @@ pub fn manifest_to_entry(
 mod tests {
     use super::*;
     use crate::plugins::manifest::*;
+    use crate::plugins::PluginSource;
     use std::collections::HashMap;
     use std::io::Write;
     use std::path::Path;

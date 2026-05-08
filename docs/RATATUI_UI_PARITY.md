@@ -3,7 +3,11 @@
 > 对比 `ui/src/components/` (TypeScript/OpenTUI 前端, ~301 文件) 与
 > `crates/claude-code-rs/src/ui/` (Rust/ratatui 后端, ~164 源文件)
 >
-> 生成日期: 2026-05-04 | 上游参考: `F:\AIclassmanager\cc\src\**`
+> 生成日期: 2026-05-08 | 上游参考: `F:\AIclassmanager\cc\src\**`
+>
+> 最近复核范围：2026-05-04 P0 milestone 之后的 ratatui/direct TUI 更新，重点包括
+> server-side streaming block 保留、direct TUI tool progress、replayed file-edit
+> result 渲染，以及 UI snapshot 审阅导出工具。
 
 ---
 
@@ -37,6 +41,7 @@
 | 已加载线程 | — | `app/loaded_threads.rs` | ✅ | |
 | 服务端适配 | — | `app/app_server_adapter.rs` | ✅ | |
 | 可视化回归 | — | `runtime/visual_regression.rs` | ✅ | 含 insta snapshot |
+| Snapshot 审阅导出 | — | `runtime/snapshot_export.rs` + `scripts/export-ui-snapshots.ps1` | ⚠️ | 本地已补导出入口，可汇总 accepted UI snapshots 到 `target/ui-snapshots/`；脚本/导出模块需确认纳入版本控制 |
 
 ---
 
@@ -69,7 +74,7 @@
 | compact_boundary | `messages/CompactBoundaryMessage.tsx` | `messages/compact_boundary_message.rs` | ✅ |
 | tool_group | `messages/ToolGroupMessage.tsx` | `messages/grouped_tool_use_content.rs` | ✅ |
 | tool_result_orphan | `messages/ToolResultOrphanMessage.tsx` | (handled by render pipeline) | ✅ |
-| streaming | `messages/StreamingMessage.tsx` | `rendering/markdown_stream.rs` | ✅ |
+| streaming | `messages/StreamingMessage.tsx` | `rendering/markdown_stream.rs` + `tui/engine_events.rs` | ✅ direct TUI 已保留 server-side content blocks，覆盖 text/thinking/tool_use streaming 接线 |
 | advisor | — | `messages/advisor_message.rs` | ✅ |
 | attachment | — | `messages/attachment_message.rs` | ✅ |
 | collapsed_read_search | — | `messages/collapsed_read_search_content.rs` | ✅ |
@@ -82,7 +87,7 @@
 | task_assignment | — | `messages/task_assignment_message.rs` | ✅ |
 | team_mem_collapsed | — | `messages/team_mem_collapsed.rs` | ✅ |
 | team_mem_saved | — | `messages/team_mem_saved.rs` | ✅ |
-| file_edit_preview | `messages/FileEditToolPreview.tsx` | — | ❌ |
+| file_edit_preview | `messages/FileEditToolPreview.tsx` | `messages/render.rs` + `messages/file_edit_tool_updated_message.rs` | ⚠️ replayed `tool_use_result kind=file_edit` 已可渲染 hunk preview；非 replay/live 结构化事件仍依赖后端数据流 |
 
 > Rust 消息渲染 **非常完整**——32 种消息类型的 snapshot 测试齐全。TS 端 11 个消息文件，Rust 端 34 个（含 render/wrap 框架层）。
 
@@ -262,7 +267,7 @@
 | Diff 详情视图 | `diff/DiffDetailView.tsx` | `diff/diff_detail_view.rs` | ✅ |
 | 结构化 Diff hunks | `StructuredDiff/hunks.ts` | `diff/structured_diff.rs` | ✅ |
 | 文件编辑 Diff | `FileEditToolDiff.tsx` | `diff/file_edit_diff.rs` + `diff/structured_diff.rs` + `permissions/file_edit_permission_request/file_edit_tool_diff.rs` | ✅ |
-| 文件编辑更新消息 | `FileEditToolUpdatedMessage.tsx` | `messages/file_edit_tool_updated_message.rs` | ⚠️ renderer/snapshot 已补齐；live transcript 接线依赖 backend file-edit event data |
+| 文件编辑更新消息 | `FileEditToolUpdatedMessage.tsx` | `messages/file_edit_tool_updated_message.rs` + `messages/render.rs` | ⚠️ renderer/snapshot 与 replayed tool-result path 已补齐；非 replay/live transcript 接线仍依赖 backend file-edit event data |
 | Diff 内联视图 | `DiffView.tsx` | `diff/file_edit_diff.rs` + `diff/diff_detail_view.rs` | ⚠️ 共享 renderer 已补齐；未单独引入 React 式 `DiffView` 组件 |
 
 ---
@@ -517,7 +522,7 @@
 | 功能 | Rust 端 | 状态 |
 |------|---------|------|
 | Markdown 渲染 | `rendering/markdown.rs` | ✅ |
-| Markdown 流式渲染 | `rendering/markdown_stream.rs` | ✅ |
+| Markdown 流式渲染 | `rendering/markdown_stream.rs` + `tui/engine_events.rs` | ✅ direct TUI 已保留 text/thinking/tool_use content blocks |
 | Markdown 渲染核心 | `rendering/markdown_render.rs` | ✅ |
 | 虚拟滚动 | `rendering/virtual_scroll.rs` | ✅ |
 | 主题系统 | `rendering/theme.rs` | ✅ |
@@ -526,6 +531,7 @@
 | Git Diff 获取 | `rendering/get_git_diff.rs` | ✅ |
 | 工具活动渲染 | `rendering/tool_activity.rs` | ✅ 已补齐 user-facing 名称、参数摘要、状态、elapsed、progress、错误摘要与输出预览 |
 | 历史单元格 | `rendering/history_cell.rs` | ✅ |
+| Snapshot 审阅导出 | `runtime/snapshot_export.rs` + `scripts/export-ui-snapshots.ps1` | ⚠️ 可导出 accepted insta snapshots 到平铺目录；当前脚本/导出模块需确认是否纳入 git 跟踪 |
 
 ---
 
@@ -551,13 +557,13 @@
 | 搜索框 (`SearchBox`) | 完成：已补齐共享文本渲染 primitive，并接入 `SelectionSurface` 头部 |
 | 历史搜索 (`HistorySearchDialog`) | 基础完成：已补齐 Ctrl+R in-session 历史搜索、SearchBox、exact-first/fuzzy-second 过滤、窄/宽预览、空态与 key handling。残余：Rust 端暂无持久 timestamped history reader，当前从本次会话 `push_history` 条目生成时间戳，见 `docs/KNOWN_ISSUES.md` `UI-003` |
 | 进度条 (`ProgressBar`) | 完成：已补齐共享 1/8 block 渲染，并接入任务/shell surface |
-| Tool 活动渲染完善 | 完成：已补齐统一 `ToolActivity` 模型与 grouped/task/message 复用，覆盖 queued/running/succeeded/failed/cancelled、参数摘要、progress、错误和输出预览 snapshot |
+| Tool 活动渲染完善 | 完成：已补齐统一 `ToolActivity` 模型与 grouped/task/message 复用，覆盖 queued/running/succeeded/failed/cancelled、参数摘要、progress、错误和输出预览 snapshot；direct TUI 已通过 tool progress callback 将长任务进度写入 `Message::Progress`，同一 `tool_use_id` 会更新上一条进度消息 |
 
 P0 milestone residual risks:
 
 - 最新 shell 输出尚未根据实时 shell 上下文自动展开；当前 renderer 已支持展开/折叠和完整 detail view，但自动策略等待事件接线。
 - Ctrl+R 历史搜索当前只覆盖本次 TUI 会话内提交的 prompt；跨会话持久历史需要后续 reader/API。
-- 文件编辑成功/拒绝/取消 render surface 已补齐；live transcript 接线仍依赖后端提供结构化 file-edit event 数据流，不阻塞 P0 hunk renderer 基础。
+- 文件编辑成功/拒绝/取消 render surface 已补齐；direct TUI replay path 已可从 `tool_use_result kind=file_edit` 渲染 hunk preview；非 replay/live transcript 结构化事件仍依赖后端提供 file-edit event 数据流，不阻塞 P0 hunk renderer 基础。
 
 #### P1 — 影响功能完整性
 
@@ -566,7 +572,7 @@ P0 milestone residual risks:
 | 设置页完善 (ModelPicker, ThemePicker 等) | 已补 `/config` Model/Theme/Effort picker 基础，复用 `SelectionSurface` 与 `/config set` 持久化；standalone picker、live theme preview、syntax toggle 仍待后续增强 |
 | 任务面板完善 (BackgroundTask, ShellProgress) | 已完成集成复核：`/tasks` command surface 汇总 tool/team task，列表显示 kind/state/elapsed/progress/summary，并覆盖 tool/team action snapshot；shell 最新输出自动展开仍按 P0 residual #21 跟踪 |
 | 状态行增强 | 已接 `/statusline` custom command runner/payload；fallback footer 同步 permission/sandbox/effort；`StatusSnapshot` 支持 subsystem/IDE/memory/PR 等 optional indicators 并覆盖 present/absent snapshot；live IDE/PR 后端数据不在本步强行引入 |
-| 文件编辑 diff 完善 | 已补齐 shared file-edit diff preview、permission hunk 展开、updated/rejected/canceled render snapshots；live transcript 接线取决于 backend file-edit event data |
+| 文件编辑 diff 完善 | 已补齐 shared file-edit diff preview、permission hunk 展开、updated/rejected/canceled render snapshots，并补齐 direct TUI replayed tool-result preview；非 replay/live transcript 接线取决于 backend file-edit event data |
 | 模糊选择器 (`FuzzyPicker`) | fuzzy scorer 与 SelectionSurface/command palette 排序已补齐；完整 preview/action picker 仍待后续步骤 |
 | MCP 审批/导入对话框 | 审批、拷贝、多选、服务器卡片已补齐；Desktop 导入 UI surface 已补齐，自动发现 Claude Desktop 配置仍待后端数据源 |
 

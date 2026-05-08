@@ -5,6 +5,7 @@ This directory separates active status documents from historical records.
 ## Active entry points
 
 - [WORK_STATUS.md](WORK_STATUS.md): current project status and active work areas.
+- [FINAL_RELEASE_PLAN.md](FINAL_RELEASE_PLAN.md): final release sequencing, gates, remaining gaps, and expected release effects.
 - [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md): remaining Full Build TODOs, runtime caveats, and intentional crops.
 - [KNOWN_ISSUES.md](KNOWN_ISSUES.md): single active issue and review-finding tracker.
 - [COMMAND_REFERENCE.md](COMMAND_REFERENCE.md), [CLI_REFERENCE.md](CLI_REFERENCE.md), [USAGE_GUIDE.md](USAGE_GUIDE.md): command and user-facing usage references.

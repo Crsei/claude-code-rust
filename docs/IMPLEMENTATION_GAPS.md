@@ -1,6 +1,6 @@
 # cc-rust 未完备项与全量构建 TODO
 
-> 更新日期: 2026-05-07 | 当前阶段: 全量构建 / Full Build
+> 更新日期: 2026-05-08 | 当前阶段: 全量构建 / Full Build
 
 本文只登记仍未补齐、仍需重评或明确 intentional crop 的内容。已确认实现或已关闭的历史记录已迁移到：
 
@@ -8,7 +8,7 @@
 - [archive/COMPLETED_SIMPLIFIED.md](archive/COMPLETED_SIMPLIFIED.md)
 - [archive/completed-gap-closures-2026-05-07.md](archive/completed-gap-closures-2026-05-07.md)
 
-开放问题与代码审查发现统一看 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)。当前完成度基线看 [WORK_STATUS.md](WORK_STATUS.md)。
+开放问题与代码审查发现统一看 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)。当前完成度基线看 [WORK_STATUS.md](WORK_STATUS.md)。最终发布阶段、门禁和预期效果看 [FINAL_RELEASE_PLAN.md](FINAL_RELEASE_PLAN.md)。
 
 ## 1. 当前仍未完成或仅部分完成
 

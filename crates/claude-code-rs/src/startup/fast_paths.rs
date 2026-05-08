@@ -85,7 +85,13 @@ pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
     // authoritative; the heuristic half would need connected tools and
     // isn't exercised here; use `--init-only` for that path.
     let cwd_path = std::path::Path::new(&cwd);
-    let server_configs = crate::mcp::discovery::discover_mcp_servers(cwd_path).unwrap_or_default();
+    let server_configs = match discover_mcp_servers_for_fast_path(cwd_path) {
+        Ok(configs) => configs,
+        Err(e) => {
+            eprintln!("MCP discovery error: {e:#}");
+            return ExitCode::FAILURE;
+        }
+    };
     let mut browser_servers =
         crate::browser::detection::detect_browser_servers(&server_configs, &tools);
     // Mirror the full-init path: when Chrome subsystem is requested via
@@ -141,4 +147,72 @@ pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
         println!("{}", part);
     }
     ExitCode::SUCCESS
+}
+
+fn discover_mcp_servers_for_fast_path(
+    cwd_path: &Path,
+) -> anyhow::Result<Vec<crate::mcp::McpServerConfig>> {
+    crate::mcp::discovery::discover_mcp_servers(cwd_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::discover_mcp_servers_for_fast_path;
+    use serial_test::serial;
+    use tempfile::TempDir;
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn fast_path_missing_mcp_settings_remains_empty() {
+        let cc_rust_home = TempDir::new().expect("cc_rust_home tempdir");
+        let cwd = TempDir::new().expect("cwd tempdir");
+        let _home = EnvGuard::set(
+            "CC_RUST_HOME",
+            cc_rust_home.path().to_str().expect("utf8 tempdir"),
+        );
+
+        let configs =
+            discover_mcp_servers_for_fast_path(cwd.path()).expect("missing settings is allowed");
+        assert!(configs.is_empty());
+    }
+
+    #[test]
+    #[serial]
+    fn fast_path_existing_invalid_mcp_settings_returns_diagnostic() {
+        let cc_rust_home = TempDir::new().expect("cc_rust_home tempdir");
+        let cwd = TempDir::new().expect("cwd tempdir");
+        let _home = EnvGuard::set(
+            "CC_RUST_HOME",
+            cc_rust_home.path().to_str().expect("utf8 tempdir"),
+        );
+
+        std::fs::write(cc_rust_home.path().join("settings.json"), "{not-json")
+            .expect("write malformed settings");
+
+        let err = discover_mcp_servers_for_fast_path(cwd.path())
+            .expect_err("existing invalid settings must be diagnostic");
+        assert!(err.to_string().contains("failed to parse MCP settings"));
+    }
 }

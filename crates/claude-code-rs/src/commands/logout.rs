@@ -29,8 +29,9 @@ pub struct LogoutHandler;
 #[async_trait]
 impl CommandHandler for LogoutHandler {
     async fn execute(&self, _args: &str, _ctx: &mut CommandContext) -> Result<CommandResult> {
-        let current_auth = auth::try_resolve_auth().unwrap_or(auth::AuthMethod::None);
-        let report = run_logout(&current_auth, &OnboardingStore::open_default());
+        let auth_resolution = auth::try_resolve_auth().map_err(|e| format!("{e:#}"));
+        let report =
+            run_logout_after_auth_resolution(auth_resolution, &OnboardingStore::open_default());
         Ok(CommandResult::Output(report.render()))
     }
 }
@@ -44,6 +45,7 @@ impl CommandHandler for LogoutHandler {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LogoutReport {
     pub was_authenticated: bool,
+    pub auth_resolution_diagnostic: Option<String>,
     pub auth_cleared: StepStatus,
     pub onboarding_cleared: StepStatus,
     pub env_override_warning: Option<String>,
@@ -83,7 +85,11 @@ impl LogoutReport {
     pub fn render(&self) -> String {
         let mut out = String::new();
 
-        if !self.was_authenticated && matches!(self.onboarding_cleared, StepStatus::NoOp) {
+        if !self.was_authenticated
+            && self.auth_resolution_diagnostic.is_none()
+            && matches!(self.auth_cleared, StepStatus::NoOp)
+            && matches!(self.onboarding_cleared, StepStatus::NoOp)
+        {
             out.push_str(
                 "Not currently authenticated and no onboarding state — nothing to clear.\n",
             );
@@ -94,13 +100,21 @@ impl LogoutReport {
         out.push_str(&format!(
             "  {} Auth credentials ({}, {})\n",
             self.auth_cleared.tag(),
-            if self.was_authenticated {
+            if self.auth_resolution_diagnostic.is_some() {
+                "present but invalid"
+            } else if self.was_authenticated {
                 "keychain + credentials.json"
             } else {
                 "none was present"
             },
             self.auth_cleared.detail()
         ));
+        if let Some(diagnostic) = &self.auth_resolution_diagnostic {
+            out.push_str(&format!(
+                "    diagnostic: auth resolution failed: {}\n",
+                diagnostic
+            ));
+        }
         out.push_str(&format!(
             "  {} Onboarding state ({}, {})\n",
             self.onboarding_cleared.tag(),
@@ -131,10 +145,48 @@ impl LogoutReport {
 /// Run the full logout sequence. Parameterized for testability — unit tests
 /// substitute a tempdir-backed `OnboardingStore` and a pre-built auth state.
 fn run_logout(current_auth: &auth::AuthMethod, onboarding: &OnboardingStore) -> LogoutReport {
-    let was_authenticated = current_auth.is_authenticated();
+    run_logout_with_diagnostic(current_auth, None, onboarding)
+}
 
-    let auth_cleared = if was_authenticated {
-        match auth::oauth_logout() {
+fn run_logout_after_auth_resolution(
+    auth_resolution: Result<auth::AuthMethod, String>,
+    onboarding: &OnboardingStore,
+) -> LogoutReport {
+    match auth_resolution {
+        Ok(current_auth) => run_logout(&current_auth, onboarding),
+        Err(diagnostic) => {
+            run_logout_with_diagnostic(&auth::AuthMethod::None, Some(diagnostic), onboarding)
+        }
+    }
+}
+
+fn run_logout_with_diagnostic(
+    current_auth: &auth::AuthMethod,
+    auth_resolution_diagnostic: Option<String>,
+    onboarding: &OnboardingStore,
+) -> LogoutReport {
+    run_logout_with_auth_clearer(
+        current_auth,
+        auth_resolution_diagnostic,
+        onboarding,
+        auth::oauth_logout,
+    )
+}
+
+fn run_logout_with_auth_clearer<F>(
+    current_auth: &auth::AuthMethod,
+    auth_resolution_diagnostic: Option<String>,
+    onboarding: &OnboardingStore,
+    clear_auth: F,
+) -> LogoutReport
+where
+    F: FnOnce() -> anyhow::Result<()>,
+{
+    let was_authenticated = current_auth.is_authenticated();
+    let has_invalid_present_auth = auth_resolution_diagnostic.is_some();
+
+    let auth_cleared = if was_authenticated || has_invalid_present_auth {
+        match clear_auth() {
             Ok(_) => StepStatus::Cleared,
             Err(e) => StepStatus::Failed(e.to_string()),
         }
@@ -164,6 +216,7 @@ fn run_logout(current_auth: &auth::AuthMethod, onboarding: &OnboardingStore) -> 
 
     LogoutReport {
         was_authenticated,
+        auth_resolution_diagnostic,
         auth_cleared,
         onboarding_cleared,
         env_override_warning,
@@ -274,6 +327,7 @@ mod tests {
     fn render_lists_every_step() {
         let report = LogoutReport {
             was_authenticated: true,
+            auth_resolution_diagnostic: None,
             auth_cleared: StepStatus::Cleared,
             onboarding_cleared: StepStatus::Cleared,
             env_override_warning: None,
@@ -305,6 +359,26 @@ mod tests {
         let text = report.render();
         assert!(text.contains("Managed (policy) settings"));
         assert!(text.contains("NOT touched"));
+    }
+
+    #[test]
+    fn auth_resolution_diagnostic_is_visible_and_still_attempts_clear() {
+        let dir = tempdir().unwrap();
+        let store = OnboardingStore::new(dir.path().join("onboarding.json"));
+        let report = run_logout_with_auth_clearer(
+            &auth::AuthMethod::None,
+            Some("ANTHROPIC_API_KEY is present but has an invalid API key format".into()),
+            &store,
+            || Ok(()),
+        );
+
+        assert!(!report.was_authenticated);
+        assert!(report.auth_resolution_diagnostic.is_some());
+        assert!(matches!(report.auth_cleared, StepStatus::Cleared));
+        let text = report.render();
+        assert!(text.contains("present but invalid"));
+        assert!(text.contains("ANTHROPIC_API_KEY"));
+        assert!(text.starts_with("Logout complete."));
     }
 
     #[test]

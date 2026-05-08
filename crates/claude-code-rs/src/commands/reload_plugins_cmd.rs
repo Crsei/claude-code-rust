@@ -57,10 +57,9 @@ impl CommandHandler for ReloadPluginsHandler {
 /// Reloaded {count} plugin(s) in {duration_ms}ms.
 /// ```
 ///
-/// When `report.errors` is non-empty, each `(id, error)` pair is appended on
-/// its own line prefixed with `"  - "`, followed by a trailing summary line
-/// of the form `"1 plugin(s) failed to load."` so the error count is obvious
-/// even if the per-plugin list is long.
+/// When `report.errors` or `report.global_errors` is non-empty, each diagnostic
+/// is appended on its own line, followed by summary lines so the error count is
+/// obvious even if the diagnostic list is long.
 fn format_report(
     report: &plugins::ReloadReport,
     skill_report: &crate::skills::SkillLoadReport,
@@ -76,7 +75,21 @@ fn format_report(
             out.push_str(&format!("  - {}: {}", id, err));
         }
         out.push('\n');
-        out.push_str(&format!("{} plugin(s) failed to load.", report.error_count));
+        out.push_str(&format!(
+            "{} plugin(s) failed to load.",
+            report.errors.len()
+        ));
+    }
+    if !report.global_errors.is_empty() {
+        for err in &report.global_errors {
+            out.push('\n');
+            out.push_str(&format!("  - plugin metadata/cache: {}", err));
+        }
+        out.push('\n');
+        out.push_str(&format!(
+            "{} plugin metadata/cache diagnostic(s).",
+            report.global_errors.len()
+        ));
     }
 
     out.push_str(&format!(
@@ -99,7 +112,7 @@ mod tests {
     use super::*;
     use crate::bootstrap::SessionId;
     use crate::plugins::{
-        clear_plugins, register_plugin, PluginEntry, PluginSource, PluginStatus, ReloadReport,
+        PluginEntry, PluginSource, PluginStatus, ReloadReport, clear_plugins, register_plugin,
     };
     use crate::types::app_state::AppState;
     use parking_lot::Mutex;
@@ -159,6 +172,7 @@ mod tests {
             count: 3,
             error_count: 0,
             errors: vec![],
+            global_errors: vec![],
             duration_ms: 42,
         };
         let out = format_report(&report, &empty_skill_report());
@@ -174,6 +188,7 @@ mod tests {
             count: 0,
             error_count: 0,
             errors: vec![],
+            global_errors: vec![],
             duration_ms: 7,
         };
         let out = format_report(&report, &empty_skill_report());
@@ -190,6 +205,7 @@ mod tests {
             count: 2,
             error_count: 1,
             errors: vec![("broken@local".into(), "manifest parse failed".into())],
+            global_errors: vec![],
             duration_ms: 11,
         };
         let out = format_report(&report, &empty_skill_report());
@@ -208,12 +224,36 @@ mod tests {
                 ("a@local".into(), "err a".into()),
                 ("b@local".into(), "err b".into()),
             ],
+            global_errors: vec![],
             duration_ms: 3,
         };
         let out = format_report(&report, &empty_skill_report());
         assert!(out.contains("  - a@local: err a"));
         assert!(out.contains("  - b@local: err b"));
         assert!(out.contains("2 plugin(s) failed to load."));
+    }
+
+    #[test]
+    fn format_report_includes_global_diagnostics_without_plugin_id() {
+        let report = ReloadReport {
+            count: 0,
+            error_count: 1,
+            errors: vec![],
+            global_errors: vec![
+                "/tmp/.cc-rust/plugins/installed_plugins.json: Failed to parse installed_plugins.json"
+                    .into(),
+            ],
+            duration_ms: 5,
+        };
+        let out = format_report(&report, &empty_skill_report());
+
+        assert!(out.starts_with("Reloaded 0 plugin(s) in 5ms."));
+        assert!(out.contains(
+            "  - plugin metadata/cache: /tmp/.cc-rust/plugins/installed_plugins.json: Failed to parse installed_plugins.json"
+        ));
+        assert!(out.contains("1 plugin metadata/cache diagnostic(s)."));
+        assert!(out.contains("Reloaded 0 skill package(s) at revision 0."));
+        assert!(!out.contains("plugin(s) failed to load."));
     }
 
     // -----------------------------------------------------------------------
@@ -269,6 +309,7 @@ mod tests {
             count: plugins::get_all_plugins().len(),
             error_count: errors.len(),
             errors,
+            global_errors: vec![],
             duration_ms: 0,
         };
         let out = format_report(&simulated, &empty_skill_report());

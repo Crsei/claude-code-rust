@@ -1,6 +1,6 @@
 # cc-rust 工作状态总览
 
-> 更新日期: 2026-05-07 | 分支历史名: `rust-lite` | 当前阶段: 全量构建 / Full Build
+> 更新日期: 2026-05-08 | 分支历史名: `rust-lite` | 当前阶段: 全量构建 / Full Build
 
 本文件只保留当前阶段仍需要判断和执行的状态。已经确认实现、已关闭或只具历史价值的阶段记录统一看：
 
@@ -8,7 +8,7 @@
 - [archive/completed-gap-closures-2026-05-07.md](archive/completed-gap-closures-2026-05-07.md)
 - [archive/issues/](archive/issues/)
 
-缩减实现、未完备项和 intentional crop 统一看 [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md)。开放问题与代码审查发现统一看 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)。
+缩减实现、未完备项和 intentional crop 统一看 [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md)。开放问题与代码审查发现统一看 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)。最终发布顺序、发布门禁和预期效果看 [FINAL_RELEASE_PLAN.md](FINAL_RELEASE_PLAN.md)。
 
 ## 当前结论
 
@@ -40,6 +40,7 @@ cc-rust 已不再按历史 "Lite" 边界维护。触及上游能力时，默认�
 ## 活跃文档入口
 
 - [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md): 未完备项、全量构建 TODO、intentional crop。
+- [FINAL_RELEASE_PLAN.md](FINAL_RELEASE_PLAN.md): 最终发布顺序、门禁、未实现/不完美项和预期效果。
 - [KNOWN_ISSUES.md](KNOWN_ISSUES.md): 当前开放问题、代码审查发现、文档状态问题。
 - [COMMAND_REFERENCE.md](COMMAND_REFERENCE.md), [CLI_REFERENCE.md](CLI_REFERENCE.md), [USAGE_GUIDE.md](USAGE_GUIDE.md): 用户命令与使用说明。
 - [DAEMON_OPERATIONS.md](DAEMON_OPERATIONS.md), [daemon-usability-plan.md](daemon-usability-plan.md): daemon 当前操作面与后续计划。

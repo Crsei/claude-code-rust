@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use tracing::{info, warn};
 
-use super::{clear_plugins, init_plugins, loader, PluginStatus};
+use super::{PluginStatus, clear_plugins, init_plugins, loader};
 use crate::ipc::subsystem_events::{PluginEvent, SubsystemEvent};
 
 /// Summary of a plugin reload cycle.
@@ -25,10 +25,12 @@ use crate::ipc::subsystem_events::{PluginEvent, SubsystemEvent};
 pub struct ReloadReport {
     /// Total plugins now in the registry.
     pub count: usize,
-    /// Number of plugins that entered an error state during reload.
+    /// Number of plugin and global diagnostics observed during reload.
     pub error_count: usize,
     /// Per-plugin error messages, keyed by plugin id.
     pub errors: Vec<(String, String)>,
+    /// Global metadata/cache diagnostics that are not tied to a plugin id.
+    pub global_errors: Vec<String>,
     /// How long the reload cycle took.
     pub duration_ms: u128,
 }
@@ -72,19 +74,24 @@ pub fn reload_plugins() -> ReloadReport {
             errors.push((plugin.id.clone(), msg.clone()));
         }
     }
-    for (index, diagnostic) in on_disk.diagnostics.iter().enumerate() {
+    let mut global_errors = Vec::new();
+    for diagnostic in super::get_plugin_diagnostics() {
         warn!(
             path = %diagnostic.path.display(),
             plugin_id = diagnostic.plugin_id.as_deref().unwrap_or("<metadata>"),
             error = %diagnostic.message,
             "plugin reload: metadata diagnostic"
         );
-        let diagnostic_id = diagnostic
-            .plugin_id
-            .clone()
-            .unwrap_or_else(|| format!("plugin-metadata-invalid-{}", index + 1));
-        if seen_error_ids.insert(diagnostic_id.clone()) {
-            errors.push((diagnostic_id, diagnostic.message.clone()));
+        if let Some(plugin_id) = &diagnostic.plugin_id {
+            if seen_error_ids.insert(plugin_id.clone()) {
+                errors.push((plugin_id.clone(), diagnostic.message.clone()));
+            }
+        } else {
+            global_errors.push(format!(
+                "{}: {}",
+                diagnostic.path.display(),
+                diagnostic.message
+            ));
         }
     }
 
@@ -100,14 +107,17 @@ pub fn reload_plugins() -> ReloadReport {
 
     let report = ReloadReport {
         count,
-        error_count: errors.len(),
+        error_count: errors.len() + global_errors.len(),
         errors,
+        global_errors,
         duration_ms: start.elapsed().as_millis(),
     };
 
+    let diagnostic_count = super::get_plugin_diagnostics().len();
     info!(
         count = report.count,
         errors = report.error_count,
+        diagnostics = diagnostic_count,
         duration_ms = report.duration_ms,
         "plugins reloaded"
     );
@@ -128,14 +138,39 @@ pub fn reload_plugins() -> ReloadReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugins::{register_plugin, PluginEntry, PluginSource};
+    use crate::plugins::{
+        PluginEntry, PluginSource, installed_plugins_path, plugins_dir, register_plugin,
+    };
     use parking_lot::Mutex;
+    use std::fs;
+    use std::path::Path;
     use std::sync::LazyLock;
 
     /// Serialize tests that touch the global plugin registry — otherwise
     /// `clear_plugins` / `reload_plugins` in one test races with
     /// `register_plugin` in another.
     static REGISTRY_GUARD: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    struct EnvGuard {
+        old: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set_cc_rust_home(path: &Path) -> Self {
+            let old = std::env::var("CC_RUST_HOME").ok();
+            std::env::set_var("CC_RUST_HOME", path);
+            Self { old }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.old {
+                Some(value) => std::env::set_var("CC_RUST_HOME", value),
+                None => std::env::remove_var("CC_RUST_HOME"),
+            }
+        }
+    }
 
     fn make_plugin(id: &str, status: PluginStatus) -> PluginEntry {
         PluginEntry {
@@ -186,8 +221,37 @@ mod tests {
         let empty = reload_plugins();
         // After reload from a clean disk there may or may not be plugins,
         // but there should be no error count for plugins we didn't register.
-        assert_eq!(empty.error_count, empty.errors.len());
+        assert_eq!(
+            empty.error_count,
+            empty.errors.len() + empty.global_errors.len()
+        );
         assert_eq!(empty.had_error(), empty.error_count > 0);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn report_surfaces_global_metadata_diagnostics() {
+        let _guard = REGISTRY_GUARD.lock();
+        let home = std::env::temp_dir().join(format!(
+            "cc_rust_reload_global_diagnostic_{}",
+            uuid::Uuid::new_v4()
+        ));
+        let _env = EnvGuard::set_cc_rust_home(&home);
+        clear_plugins();
+        fs::create_dir_all(plugins_dir()).unwrap();
+        fs::write(installed_plugins_path(), "{ broken json").unwrap();
+
+        let report = reload_plugins();
+
+        assert_eq!(report.count, 0);
+        assert_eq!(report.errors.len(), 0);
+        assert_eq!(report.global_errors.len(), 1);
+        assert!(report.global_errors[0].contains("installed_plugins.json"));
+        assert_eq!(report.error_count, 1);
+        assert!(report.had_error());
+
+        clear_plugins();
+        let _ = fs::remove_dir_all(&home);
     }
 
     #[test]

@@ -16,6 +16,7 @@ pub mod manifest;
 pub mod refresh;
 pub mod tools;
 
+pub use loader::PluginDiagnostic;
 pub use refresh::{reload_plugins, ReloadReport};
 
 use parking_lot::Mutex;
@@ -164,6 +165,9 @@ pub fn known_marketplaces_path() -> PathBuf {
 static REGISTRY: LazyLock<Mutex<HashMap<String, PluginEntry>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+static DIAGNOSTICS: LazyLock<Mutex<Vec<PluginDiagnostic>>> =
+    LazyLock::new(|| Mutex::new(Vec::new()));
+
 // ---------------------------------------------------------------------------
 // Subsystem event emission
 // ---------------------------------------------------------------------------
@@ -223,6 +227,11 @@ pub fn register_plugin(plugin: PluginEntry) {
 /// Get all registered plugins.
 pub fn get_all_plugins() -> Vec<PluginEntry> {
     REGISTRY.lock().values().cloned().collect()
+}
+
+/// Get global plugin metadata/cache diagnostics from the latest load cycle.
+pub fn get_plugin_diagnostics() -> Vec<PluginDiagnostic> {
+    DIAGNOSTICS.lock().clone()
 }
 
 /// Find a plugin by ID.
@@ -288,6 +297,7 @@ pub fn unregister_plugin(id: &str) -> Option<PluginEntry> {
 /// Clear all plugins (for testing or refresh).
 pub fn clear_plugins() {
     REGISTRY.lock().clear();
+    DIAGNOSTICS.lock().clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -514,15 +524,7 @@ pub fn init_plugins() {
         register_plugin(plugin);
     }
 
-    let mut diagnostic_index = 0usize;
-    for diagnostic in installed
-        .diagnostics
-        .iter()
-        .filter(|diagnostic| diagnostic.plugin_id.is_none())
-    {
-        register_plugin(diagnostic.to_metadata_entry(diagnostic_index));
-        diagnostic_index += 1;
-    }
+    let mut diagnostics = installed.diagnostics.clone();
 
     let cached = loader::discover_cached_plugins_report();
     for diagnostic in &cached.diagnostics {
@@ -532,9 +534,9 @@ pub fn init_plugins() {
             error = %diagnostic.message,
             "Plugin: cache diagnostic during initialization"
         );
-        register_plugin(diagnostic.to_metadata_entry(diagnostic_index));
-        diagnostic_index += 1;
     }
+    diagnostics.extend(cached.diagnostics);
+    *DIAGNOSTICS.lock() = diagnostics;
 }
 
 /// Discover executable runtime tools contributed by enabled plugins.
@@ -849,7 +851,7 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn init_plugins_surfaces_corrupt_installed_metadata_as_error_entry() {
+    fn init_plugins_surfaces_corrupt_installed_metadata_as_diagnostic() {
         let home = std::env::temp_dir().join(format!(
             "cc_rust_init_corrupt_plugins_{}",
             uuid::Uuid::new_v4()
@@ -862,15 +864,73 @@ mod tests {
         init_plugins();
 
         let plugins = get_all_plugins();
-        let metadata_error = plugins
-            .iter()
-            .find(|plugin| plugin.id.starts_with("plugin-metadata-invalid-"));
-        assert!(metadata_error.is_some());
-        assert!(matches!(
-            metadata_error.unwrap().status,
-            PluginStatus::Error(ref message) if message.contains("installed_plugins.json")
-        ));
+        assert!(
+            plugins.is_empty(),
+            "global metadata failures should not become synthetic plugin entries"
+        );
+        let diagnostics = get_plugin_diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].kind,
+            loader::PluginDiagnosticKind::InstalledPluginsMalformed
+        );
+        assert!(diagnostics[0].message.contains("installed_plugins.json"));
         assert!(needs_refresh().unwrap().contains("plugin metadata invalid"));
+
+        clear_plugins();
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn init_plugins_keeps_installed_manifest_errors_on_plugin_and_diagnostics() {
+        let home = std::env::temp_dir().join(format!(
+            "cc_rust_init_bad_manifest_{}",
+            uuid::Uuid::new_v4()
+        ));
+        let _guard = EnvGuard::set_cc_rust_home(&home);
+        clear_plugins();
+        let plugin_dir = cache_dir().join("local").join("bad-plugin").join("1.0.0");
+        fs::create_dir_all(&plugin_dir).unwrap();
+        fs::write(
+            plugin_dir.join("plugin.json"),
+            r#"{"name": "", "version": "1.0.0"}"#,
+        )
+        .unwrap();
+
+        loader::save_installed_plugins(&[PluginEntry {
+            id: "bad-plugin@local".to_string(),
+            name: "Bad Plugin".to_string(),
+            version: "1.0.0".to_string(),
+            description: "bad".to_string(),
+            source: PluginSource::Local {
+                path: plugin_dir.to_string_lossy().to_string(),
+            },
+            status: PluginStatus::Installed,
+            marketplace: Some("local".to_string()),
+            cache_path: Some(plugin_dir.clone()),
+            tools: vec![],
+            skills: vec![],
+            mcp_servers: vec![],
+            installed_at: None,
+            updated_at: None,
+        }])
+        .unwrap();
+
+        init_plugins();
+
+        let plugin = find_plugin("bad-plugin@local").expect("plugin should remain visible");
+        assert!(matches!(
+            plugin.status,
+            PluginStatus::Error(ref message) if message.contains("invalid manifest")
+        ));
+        let diagnostics = get_plugin_diagnostics();
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.plugin_id.as_deref() == Some("bad-plugin@local")),
+            "installed manifest diagnostic should remain attributed to the plugin"
+        );
 
         clear_plugins();
         let _ = fs::remove_dir_all(&home);

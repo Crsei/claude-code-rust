@@ -1,6 +1,6 @@
 # cc-rust 技术债务
 
-> 更新日期: 2026-05-07 | 当前阶段: 全量构建 / Full Build
+> 更新日期: 2026-05-08 | 当前阶段: 全量构建 / Full Build
 >
 > 本文件只保留仍需要执行、重评或继续验证的代码层技术债。已经实现、已勘误或已被当前代码结构超越的历史条目已迁移到 [archive/TECH_DEBT.md](archive/TECH_DEBT.md)。
 >
@@ -44,11 +44,11 @@ Detailed completion records for the fail-fast implementation phases are archived
 
 ### Remaining P1 follow-ups
 
-- `crates/claude-code-rs/src/startup/fast_paths.rs` still has an MCP discovery fallback that should be revisited in a startup-specific pass; Phase 4A intentionally did not edit startup fast paths.
-- Hook IO failures are currently observable through tracing, not persisted into public hook result data.
-- Plugin metadata/cache diagnostics are surfaced as synthetic error plugin entries because status surfaces do not yet expose a dedicated diagnostics schema.
+- 2026-05-08 follow-up closure sessions resolved and archived the MCP startup diagnostics, auth command diagnostic surfaces, hook IO public diagnostics, and team smoke coverage follow-ups. Evidence is recorded in `target/codex-runs/session-01-mcp-startup-diagnostics/task-01.last-message.txt` through `target/codex-runs/session-05-team-e2e-coverage/task-01.last-message.txt`, with Review B in `target/codex-runs/review-b-final-integration/task-01.last-message.txt`.
+- 2026-05-08 residual Review B closure sessions resolved and archived the critical post-tool/post-failure hook propagation gap and the `/reload_plugins` global diagnostics visibility gap. Evidence is recorded in `target/codex-runs/p1-review-b-residual-session-01-hook-propagation/task-01.last-message.txt`, `target/codex-runs/p1-review-b-residual-session-02-plugin-reload-diagnostics/task-01.last-message.txt`, and `target/codex-runs/p1-review-b-residual-review-a/task-01.last-message.txt`.
 - Legacy auth compatibility wrappers still log and return unauthenticated for external callers that have not moved to the diagnostic `try_*` APIs.
-- Broader team E2E coverage was not run as part of Phase 6; only the requested `teams::runner` and `engine::agent` filtered suites are recorded.
+- Plugin filtered tests passed in Session 4 and the residual reload-output visibility gap was later closed, but keep an eye on global registry/env isolation in plugin tests if that path is touched again.
+- Session 5 added filtered/unit-smoke coverage for worktree isolation fallback visibility, but a full multi-process team E2E run is still not recorded.
 - Broad lint allows remain in modules outside the completed phase touch set and should be handled by the general code hygiene track, not this fail-fast closure.
 
 ### Phase 1 status detail - 2026-05-07

@@ -27,6 +27,7 @@ pub(super) async fn execute_command_hook(
     timeout_secs: u64,
 ) -> Result<HookOutput> {
     let mut child = spawn_shell_command(command)?;
+    let mut io_diagnostics = Vec::new();
 
     // Write JSON to stdin and close it before waiting for output.
     // This must be done before reading stdout to avoid deadlocks
@@ -35,12 +36,15 @@ pub(super) async fn execute_command_hook(
         let json_bytes =
             serde_json::to_vec(stdin_json).context("failed to serialize hook stdin")?;
         if let Err(e) = stdin.write_all(&json_bytes).await {
+            io_diagnostics.push(format!("failed to write hook stdin JSON: {e}"));
             warn!(command = command, error = %e, "failed to write hook stdin JSON");
         }
         if let Err(e) = stdin.write_all(b"\n").await {
+            io_diagnostics.push(format!("failed to write hook stdin newline: {e}"));
             warn!(command = command, error = %e, "failed to write hook stdin newline");
         }
         if let Err(e) = stdin.flush().await {
+            io_diagnostics.push(format!("failed to flush hook stdin: {e}"));
             warn!(command = command, error = %e, "failed to flush hook stdin");
         }
         // Explicitly drop to close the write end of the pipe
@@ -97,9 +101,11 @@ pub(super) async fn execute_command_hook(
             let stderr = String::from_utf8_lossy(&stderr_bytes).to_string();
 
             if let Some(e) = stdout_read_error {
+                io_diagnostics.push(format!("failed to read hook stdout: {e}"));
                 warn!(command = command, error = %e, "failed to read hook stdout");
             }
             if let Some(e) = stderr_read_error {
+                io_diagnostics.push(format!("failed to read hook stderr: {e}"));
                 warn!(command = command, error = %e, "failed to read hook stderr");
             }
 
@@ -115,25 +121,37 @@ pub(super) async fn execute_command_hook(
                     }
                 }
                 Err(e) => {
+                    io_diagnostics.push(format!("hook command wait error: {e}"));
                     warn!(command = command, error = %e, "hook command wait error");
                 }
             }
 
-            parse_hook_output(&stdout)
+            parse_hook_output_with_diagnostics(&stdout, &io_diagnostics)
         }
         Err(_) => {
             // Timeout expired — kill the child process.
-            if let Err(e) = child.kill().await {
+            let kill_diagnostic = if let Err(e) = child.kill().await {
                 warn!(
                     command = command,
                     error = %e,
                     "failed to kill timed-out hook command"
                 );
+                Some(format!("failed to kill timed-out hook command: {e}"))
+            } else {
+                None
+            };
+            if let Some(kill_diagnostic) = kill_diagnostic {
+                Err(anyhow::anyhow!(
+                    "hook command timed out after {}s; {}",
+                    timeout_secs,
+                    kill_diagnostic
+                ))
+            } else {
+                Err(anyhow::anyhow!(
+                    "hook command timed out after {}s",
+                    timeout_secs
+                ))
             }
-            Err(anyhow::anyhow!(
-                "hook command timed out after {}s",
-                timeout_secs
-            ))
         }
     }
 }
@@ -188,32 +206,68 @@ fn spawn_shell_command(command: &str) -> Result<tokio::process::Child> {
 ///
 /// If the first non-empty line starts with `{`, parse it as JSON.
 /// Otherwise, return a default HookOutput with additional_context = stdout.
+#[cfg(test)]
 fn parse_hook_output(stdout: &str) -> Result<HookOutput> {
+    parse_hook_output_with_diagnostics(stdout, &[])
+}
+
+fn parse_hook_output_with_diagnostics(
+    stdout: &str,
+    io_diagnostics: &[String],
+) -> Result<HookOutput> {
     let trimmed = stdout.trim();
 
-    if trimmed.is_empty() {
-        return Ok(HookOutput::default());
-    }
+    let mut output = if trimmed.is_empty() {
+        HookOutput::default()
+    } else {
+        // Find the first non-empty line
+        let first_line = trimmed.lines().next().unwrap_or("");
 
-    // Find the first non-empty line
-    let first_line = trimmed.lines().next().unwrap_or("");
-
-    if first_line.trim_start().starts_with('{') {
-        match serde_json::from_str::<HookOutput>(first_line) {
-            Ok(output) => Ok(output),
-            Err(e) => {
-                debug!(error = %e, "failed to parse hook output as JSON, treating as plain text");
-                Ok(HookOutput {
-                    additional_context: Some(trimmed.to_string()),
-                    ..Default::default()
-                })
+        if first_line.trim_start().starts_with('{') {
+            match serde_json::from_str::<HookOutput>(first_line) {
+                Ok(output) => output,
+                Err(e) => {
+                    debug!(error = %e, "failed to parse hook output as JSON, treating as plain text");
+                    HookOutput {
+                        additional_context: Some(trimmed.to_string()),
+                        ..Default::default()
+                    }
+                }
+            }
+        } else {
+            HookOutput {
+                additional_context: Some(trimmed.to_string()),
+                ..Default::default()
             }
         }
-    } else {
-        Ok(HookOutput {
-            additional_context: Some(trimmed.to_string()),
-            ..Default::default()
-        })
+    };
+
+    append_io_diagnostics(&mut output, io_diagnostics);
+    Ok(output)
+}
+
+fn append_io_diagnostics(output: &mut HookOutput, io_diagnostics: &[String]) {
+    if io_diagnostics.is_empty() {
+        return;
+    }
+
+    let mut diagnostic_context = String::from("Hook IO diagnostics:");
+    for diagnostic in io_diagnostics {
+        diagnostic_context.push_str("\n- ");
+        diagnostic_context.push_str(diagnostic);
+    }
+
+    match &mut output.additional_context {
+        Some(context) if !context.is_empty() => {
+            context.push_str("\n\n");
+            context.push_str(&diagnostic_context);
+        }
+        Some(context) => {
+            *context = diagnostic_context;
+        }
+        None => {
+            output.additional_context = Some(diagnostic_context);
+        }
     }
 }
 
@@ -261,6 +315,37 @@ mod tests {
         let output = parse_hook_output(stdout).unwrap();
         assert!(output.should_continue);
         assert_eq!(output.updated_input, Some(json!({"command": "ls -la"})));
+    }
+
+    #[test]
+    fn test_parse_hook_output_adds_io_diagnostics_to_json_output() {
+        let diagnostics = vec![
+            "failed to write hook stdin JSON: broken pipe".to_string(),
+            "failed to read hook stderr: stream closed".to_string(),
+        ];
+
+        let output =
+            parse_hook_output_with_diagnostics(r#"{"continue":true,"reason":"ok"}"#, &diagnostics)
+                .unwrap();
+
+        assert_eq!(output.reason.as_deref(), Some("ok"));
+        let context = output.additional_context.unwrap();
+        assert!(context.contains("Hook IO diagnostics:"));
+        assert!(context.contains("failed to write hook stdin JSON: broken pipe"));
+        assert!(context.contains("failed to read hook stderr: stream closed"));
+    }
+
+    #[test]
+    fn test_parse_hook_output_appends_io_diagnostics_to_plain_text() {
+        let diagnostics = vec!["hook command wait error: no child".to_string()];
+
+        let output =
+            parse_hook_output_with_diagnostics("plain hook context", &diagnostics).unwrap();
+
+        let context = output.additional_context.unwrap();
+        assert!(context.starts_with("plain hook context"));
+        assert!(context.contains("Hook IO diagnostics:"));
+        assert!(context.contains("hook command wait error: no child"));
     }
 
     // -- integration test: execute_command_hook --

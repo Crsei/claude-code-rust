@@ -155,7 +155,7 @@ fn central_permission_result_for_tool(
     }
 }
 
-fn pre_tool_hook_error_is_critical(
+fn hook_error_is_critical(
     tool_name: &str,
     hook_configs: &[cc_types::hooks::HookEventConfig],
 ) -> bool {
@@ -821,7 +821,7 @@ impl QueryDeps for QueryEngineDeps {
                 });
             }
             Err(e) => {
-                if pre_tool_hook_error_is_critical(&request.tool_name, &pre_configs) {
+                if hook_error_is_critical(&request.tool_name, &pre_configs) {
                     tracing::warn!(error = %e, tool = %request.tool_name, "critical pre-tool hook error, blocking tool execution");
                     return Ok(ToolExecResult {
                         tool_use_id: request.tool_use_id,
@@ -1251,7 +1251,7 @@ impl QueryDeps for QueryEngineDeps {
                 // Run post-tool hooks on success
                 let mut hook_stopped_continuation = false;
                 if !post_configs.is_empty() {
-                    if let Ok(PostToolHookResult::StopContinuation { message }) = hooks
+                    match hooks
                         .run_post_tool_hooks(
                             &request.tool_name,
                             &effective_input,
@@ -1260,11 +1260,34 @@ impl QueryDeps for QueryEngineDeps {
                         )
                         .await
                     {
-                        tracing::debug!(
-                            message = %message,
-                            "post-tool hook stopped continuation"
-                        );
-                        hook_stopped_continuation = true;
+                        Ok(PostToolHookResult::Continue) => {}
+                        Ok(PostToolHookResult::StopContinuation { message }) => {
+                            tracing::debug!(
+                                message = %message,
+                                "post-tool hook stopped continuation"
+                            );
+                            hook_stopped_continuation = true;
+                        }
+                        Err(e) if hook_error_is_critical(&request.tool_name, &post_configs) => {
+                            tracing::warn!(error = %e, tool = %request.tool_name, "critical post-tool hook error, failing tool execution");
+                            return Ok(ToolExecResult {
+                                tool_use_id: request.tool_use_id,
+                                tool_name: request.tool_name,
+                                result: crate::types::tool::ToolResult {
+                                    data: serde_json::json!(format!(
+                                        "Critical post-tool hook failed: {}",
+                                        e
+                                    )),
+                                    new_messages: vec![],
+                                    ..Default::default()
+                                },
+                                is_error: true,
+                                hook_stopped_continuation: false,
+                            });
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, tool = %request.tool_name, "optional post-tool hook error, continuing");
+                        }
                     }
                 }
 
@@ -1303,14 +1326,39 @@ impl QueryDeps for QueryEngineDeps {
 
                 // Run post-failure hooks on error
                 if !failure_configs.is_empty() {
-                    let _ = hooks
+                    match hooks
                         .run_post_tool_failure_hooks(
                             &request.tool_name,
                             &effective_input,
                             &e.to_string(),
                             &failure_configs,
                         )
-                        .await;
+                        .await
+                    {
+                        Ok(()) => {}
+                        Err(hook_error)
+                            if hook_error_is_critical(&request.tool_name, &failure_configs) =>
+                        {
+                            tracing::warn!(error = %hook_error, tool = %request.tool_name, "critical post-failure hook error, failing tool execution");
+                            return Ok(ToolExecResult {
+                                tool_use_id: request.tool_use_id,
+                                tool_name: request.tool_name,
+                                result: crate::types::tool::ToolResult {
+                                    data: serde_json::json!(format!(
+                                        "Critical post-failure hook failed after tool error ({}): {}",
+                                        e, hook_error
+                                    )),
+                                    new_messages: vec![],
+                                    ..Default::default()
+                                },
+                                is_error: true,
+                                hook_stopped_continuation: false,
+                            });
+                        }
+                        Err(hook_error) => {
+                            tracing::warn!(error = %hook_error, tool = %request.tool_name, "optional post-failure hook error, continuing");
+                        }
+                    }
                 }
 
                 Ok(ToolExecResult {
@@ -1475,6 +1523,55 @@ mod tests {
         }
     }
 
+    struct FailingTool {
+        name: &'static str,
+        seen_input: Arc<parking_lot::Mutex<Option<Value>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl Tool for FailingTool {
+        fn name(&self) -> &str {
+            self.name
+        }
+
+        async fn description(&self, _input: &Value) -> String {
+            String::new()
+        }
+
+        fn input_json_schema(&self) -> Value {
+            json!({})
+        }
+
+        async fn validate_input(&self, _input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
+            ValidationResult::Ok
+        }
+
+        async fn check_permissions(
+            &self,
+            input: &Value,
+            _ctx: &ToolUseContext,
+        ) -> PermissionResult {
+            PermissionResult::Allow {
+                updated_input: input.clone(),
+            }
+        }
+
+        async fn call(
+            &self,
+            input: Value,
+            _ctx: &ToolUseContext,
+            _parent_message: &AssistantMessage,
+            _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
+        ) -> Result<ToolResult> {
+            *self.seen_input.lock() = Some(input);
+            Err(anyhow::anyhow!("tool failed for test"))
+        }
+
+        async fn prompt(&self) -> String {
+            String::new()
+        }
+    }
+
     fn make_config(tools: Tools) -> QueryEngineConfig {
         QueryEngineConfig {
             cwd: ".".to_string(),
@@ -1626,6 +1723,89 @@ mod tests {
             _hook_configs: &[cc_types::hooks::HookEventConfig],
         ) -> anyhow::Result<()> {
             Ok(())
+        }
+
+        async fn run_event_hooks(
+            &self,
+            _event_name: &str,
+            _payload: &Value,
+            _hook_configs: &[cc_types::hooks::HookEventConfig],
+        ) -> anyhow::Result<cc_types::hooks::HookOutput> {
+            Ok(cc_types::hooks::HookOutput::default())
+        }
+
+        async fn run_stop_hooks(
+            &self,
+            _hook_configs: &[cc_types::hooks::HookEventConfig],
+        ) -> anyhow::Result<cc_types::hooks::PostToolHookResult> {
+            Ok(cc_types::hooks::PostToolHookResult::Continue)
+        }
+    }
+
+    struct FailingPostToolHookRunner {
+        event_name: &'static str,
+        critical: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl cc_types::hooks::HookRunner for FailingPostToolHookRunner {
+        fn load_hook_configs(
+            &self,
+            _hooks_value: &cc_types::hooks::HooksMap,
+            event_name: &str,
+        ) -> Vec<cc_types::hooks::HookEventConfig> {
+            if event_name == self.event_name {
+                vec![cc_types::hooks::HookEventConfig {
+                    matcher: Some("HookedTool".to_string()),
+                    critical: self.critical,
+                    hooks: vec![cc_types::hooks::HookEntry::Command {
+                        command: "failing-test-hook".to_string(),
+                        timeout: 1,
+                    }],
+                }]
+            } else {
+                vec![]
+            }
+        }
+
+        async fn run_pre_tool_hooks(
+            &self,
+            _tool_name: &str,
+            _input: &Value,
+            _hook_configs: &[cc_types::hooks::HookEventConfig],
+        ) -> anyhow::Result<cc_types::hooks::PreToolHookResult> {
+            Ok(cc_types::hooks::PreToolHookResult::Continue {
+                updated_input: None,
+                permission_override: None,
+            })
+        }
+
+        async fn run_post_tool_hooks(
+            &self,
+            _tool_name: &str,
+            _input: &Value,
+            _tool_result_data: &Value,
+            _hook_configs: &[cc_types::hooks::HookEventConfig],
+        ) -> anyhow::Result<cc_types::hooks::PostToolHookResult> {
+            if self.event_name == "PostToolUse" {
+                Err(anyhow::anyhow!("post hook failed for test"))
+            } else {
+                Ok(cc_types::hooks::PostToolHookResult::Continue)
+            }
+        }
+
+        async fn run_post_tool_failure_hooks(
+            &self,
+            _tool_name: &str,
+            _input: &Value,
+            _error: &str,
+            _hook_configs: &[cc_types::hooks::HookEventConfig],
+        ) -> anyhow::Result<()> {
+            if self.event_name == "PostToolUseFailure" {
+                Err(anyhow::anyhow!("post failure hook failed for test"))
+            } else {
+                Ok(())
+            }
         }
 
         async fn run_event_hooks(
@@ -1885,6 +2065,119 @@ mod tests {
             seen_input.lock().is_none(),
             "critical pre-hook failure must stop before Tool::call"
         );
+    }
+
+    #[tokio::test]
+    async fn execute_tool_optional_post_hook_error_keeps_tool_success() {
+        let seen_input = Arc::new(parking_lot::Mutex::new(None));
+        let tool = canonical_tool("HookedTool", seen_input.clone());
+        let mut deps = make_deps(vec![tool], PermissionMode::Bypass);
+        deps.hook_runner = Arc::new(FailingPostToolHookRunner {
+            event_name: "PostToolUse",
+            critical: false,
+        });
+
+        let result = deps
+            .execute_tool(
+                tool_request("HookedTool", json!({"value": true})),
+                &deps.get_tools(),
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.is_error);
+        assert_eq!(result.result.data, json!("ok"));
+        assert_eq!(seen_input.lock().clone(), Some(json!({"value": true})));
+    }
+
+    #[tokio::test]
+    async fn execute_tool_critical_post_hook_error_returns_failed_result() {
+        let seen_input = Arc::new(parking_lot::Mutex::new(None));
+        let tool = canonical_tool("HookedTool", seen_input.clone());
+        let mut deps = make_deps(vec![tool], PermissionMode::Bypass);
+        deps.hook_runner = Arc::new(FailingPostToolHookRunner {
+            event_name: "PostToolUse",
+            critical: true,
+        });
+
+        let result = deps
+            .execute_tool(
+                tool_request("HookedTool", json!({"value": true})),
+                &deps.get_tools(),
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_error);
+        assert!(result.result.data.as_str().is_some_and(|text| {
+            text.contains("Critical post-tool hook failed")
+                && text.contains("post hook failed for test")
+        }));
+        assert_eq!(seen_input.lock().clone(), Some(json!({"value": true})));
+    }
+
+    #[tokio::test]
+    async fn execute_tool_optional_post_failure_hook_error_keeps_tool_error() {
+        let seen_input = Arc::new(parking_lot::Mutex::new(None));
+        let tool: Arc<dyn Tool> = Arc::new(FailingTool {
+            name: "HookedTool",
+            seen_input: seen_input.clone(),
+        });
+        let mut deps = make_deps(vec![tool], PermissionMode::Bypass);
+        deps.hook_runner = Arc::new(FailingPostToolHookRunner {
+            event_name: "PostToolUseFailure",
+            critical: false,
+        });
+
+        let result = deps
+            .execute_tool(
+                tool_request("HookedTool", json!({"value": true})),
+                &deps.get_tools(),
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_error);
+        assert_eq!(result.result.data, json!("Error: tool failed for test"));
+        assert_eq!(seen_input.lock().clone(), Some(json!({"value": true})));
+    }
+
+    #[tokio::test]
+    async fn execute_tool_critical_post_failure_hook_error_returns_hook_failure() {
+        let seen_input = Arc::new(parking_lot::Mutex::new(None));
+        let tool: Arc<dyn Tool> = Arc::new(FailingTool {
+            name: "HookedTool",
+            seen_input: seen_input.clone(),
+        });
+        let mut deps = make_deps(vec![tool], PermissionMode::Bypass);
+        deps.hook_runner = Arc::new(FailingPostToolHookRunner {
+            event_name: "PostToolUseFailure",
+            critical: true,
+        });
+
+        let result = deps
+            .execute_tool(
+                tool_request("HookedTool", json!({"value": true})),
+                &deps.get_tools(),
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_error);
+        assert!(result.result.data.as_str().is_some_and(|text| {
+            text.contains("Critical post-failure hook failed")
+                && text.contains("tool failed for test")
+                && text.contains("post failure hook failed for test")
+        }));
+        assert_eq!(seen_input.lock().clone(), Some(json!({"value": true})));
     }
 
     #[tokio::test]
