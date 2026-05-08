@@ -19,6 +19,18 @@ impl AdapterProvider {
             Self::Telegram => "telegram",
         }
     }
+
+    pub fn parse(value: &str) -> Result<Self, GatewayError> {
+        match value {
+            "lark" => Ok(Self::Lark),
+            "telegram" => Ok(Self::Telegram),
+            _ => Err(GatewayError::new(GatewayDiagnostic::new(
+                "adapter_unsupported",
+                "The requested adapter provider is not supported.",
+                "Use one of the providers returned by GET /remote-control/v1/adapters.",
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
