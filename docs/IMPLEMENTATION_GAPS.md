@@ -20,6 +20,9 @@
 | PlanMode auto-mode parity | 基础完成，classifier parity 未完 | 保守 classifier、计划持久化、approval lifecycle、实现任务关联、团队审批 mailbox、plan file 写入白名单已落地；仍需 full auto-mode LLM classifier parity 和 `allowedPrompts` 语义分类收口。 |
 | WebFetch browser-grade 能力 | 部分完成 | redirect budget / cross-host diagnostic、Content-Type 分发、环境代理/`NO_PROXY`、Cookie/credential 边界已完成；JS 渲染仍待实现或裁剪决策。 |
 | Daemon supervisor/worker ownership | 阶段主干完成，完整 ownership 未完 | 当前 HTTP/SSE 控制面已读 supervisor/worker 状态并写入 command/event 协议；真实 submit/abort 执行 ownership 仍有兼容路径。 |
+| Remote-control gateway control plane | 未实现，Phase 0 边界已冻结 | 计划新增 `crates/gateway` 作为控制面，负责 `/remote-control/v1/**`、RemoteSource/session/run、auth、adapter registry、durable events、delivery 和 recovery；现有 daemon `/api/*` 不是公网 remote-control API。 |
+| Telegram/Lark gateway adapter connectivity | 未实现，范围限定 | 第一版只做连接、健康检查、provider-neutral 状态诊断和测试发送；不做 inbound conversation、完整远程会话控制或绕过 gateway runner 触发模型。 |
+| Local `/remote` and TUI remote surface | 未实现 | 当前无 `/remote` slash command、无 `RemoteSurface`、无 remote status indicator；后续必须在 `claude-code-rs` 接线层实现，不能只交付 HTTP API。 |
 
 ## 2. 活跃方案文档
 
@@ -30,6 +33,7 @@
 - [ipc-refactor-plan.md](ipc-refactor-plan.md): IPC 结构重构计划尚未完全收束。
 - [traceable-logging-plan.md](traceable-logging-plan.md): 可追溯日志体系仍是 Draft。
 - [daemon-usability-plan.md](daemon-usability-plan.md): daemon 可用化主干已分阶段落地，但仍有 worker/route ownership 余量。
+- [reference/remote-control-current-state.md](reference/remote-control-current-state.md): remote-control gateway / daemon / ipc / `/remote` / Telegram/Lark adapter 边界已冻结，后续实现需保持该职责划分。
 - [superpowers/plans/2026-04-11-team-memory-sync.md](superpowers/plans/2026-04-11-team-memory-sync.md): Team Memory 客户端同步仍需 e2e 与文档收口。
 - [superpowers/specs/2026-04-11-team-memory-sync-design.md](superpowers/specs/2026-04-11-team-memory-sync-design.md): Team Memory 验证清单仍有效。
 - [superpowers/plans/2026-04-12-tools-commands-test-coverage.md](superpowers/plans/2026-04-12-tools-commands-test-coverage.md): 测试覆盖补齐计划仍有效。
@@ -50,6 +54,7 @@
 历史 `rust-lite` deferred 不再自动等于“不实现”。触及时按以下类别处理：
 
 - 远程控制与多端集成：`/remote-control`、`/desktop`、`/mobile`、`bridge/`、`remote/`。
+  - 当前 remote-control 计划已明确拆分为 gateway 控制面、daemon 执行宿主、ipc 本地 headless bridge、`/remote`/TUI 本地操作面，以及 Telegram/Lark adapter 连通性；不得把现有 `/api/*` 直接当作公网 remote-control API。
 - 服务端/传输扩展：`server/`、SSE/WebSocket/Worker transport、MCP server mode。
 - 远程/运营能力：`Monitor`、`PushNotification`、`SubscribePR`、`Workflow`、遥测与 MDM 同步。
 - Ant-only 命令与内部工具：`/agents-platform`、`/ant-trace`、`CtxInspect`、`OverflowTest`、`Tungsten` 等。

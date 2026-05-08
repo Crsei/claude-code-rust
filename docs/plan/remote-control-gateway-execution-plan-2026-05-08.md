@@ -344,6 +344,15 @@ Telegram/Lark 第一版只要求连接能力，不要求完整远程会话闭环
 
 目标：先把现有 daemon/headless/web 的职责写清楚，避免远程控制计划与已有计划冲突。
 
+本阶段已冻结的边界：
+
+- `crates/gateway` 是 remote-control 控制面，负责 RemoteSource/session/run、`/remote-control/v1/**`、auth、adapter registry、durable events、delivery 和 recovery。
+- `crates/claude-code-rs/src/daemon` 是执行宿主和接线层，负责把 gateway command/event 映射到 daemon worker protocol 和 `QueryEngine`；不承载 remote-control 策略、adapter 业务或 durable run store。
+- `crates/claude-code-rs/src/ipc` 继续作为本地 headless JSONL UI bridge；gateway 不复用 `ipc::headless::run_headless`，也不把 Telegram/Lark 事件伪装成 `FrontendMessage`。
+- 现有 daemon `/api/*` 是本地 daemon control API，不是公网 remote-control API；稳定外部控制面必须走 `/remote-control/v1/**`。
+- `/remote` slash command、TUI `RemoteSurface` 和 remote status indicator 属于 `claude-code-rs` 本地用户入口，必须通过 local gateway client / loopback gateway API 操作，不直接写 worker command 文件。
+- Telegram/Lark 第一版只承诺连接、健康检查、状态诊断和测试发送；完整 inbound conversation control、远程会话 parity 和模型触发闭环均为后续增强。
+
 改动：
 
 - 更新或新增 `docs/reference/remote-control-current-state.md`。
