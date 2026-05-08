@@ -134,8 +134,7 @@ pub fn router(state: GatewayApiState) -> Router {
         .with_state(state)
 }
 
-async fn capabilities(State(state): State<GatewayApiState>, headers: HeaderMap) -> Response {
-    authorize_or_return!(state, headers);
+async fn capabilities(State(state): State<GatewayApiState>) -> Response {
     Json(capabilities_body(&state)).into_response()
 }
 
@@ -183,12 +182,14 @@ async fn get_run_events(
 ) -> Response {
     authorize_or_return!(state, headers);
     let run_id = run_id_or_return!(run_id);
-    match GatewayStore::new(
+    let store = GatewayStore::new(
         state.config.persistence.clone(),
         SessionKeyPolicy::default(),
-    )
-    .read_events(&run_id)
-    {
+    );
+    if let Err(error) = store.load_run(&run_id) {
+        return error_response(error);
+    }
+    match store.read_events(&run_id) {
         Ok(events) => Json(json!({ "events": events })).into_response(),
         Err(error) => error_response(error),
     }
@@ -373,6 +374,10 @@ fn create_run_body(submission: GatewayRunSubmission) -> Value {
 }
 
 fn status_for_submission(submission: &GatewayRunSubmission) -> StatusCode {
+    if let Some(diagnostic) = &submission.diagnostic {
+        return status_for_diagnostic(diagnostic);
+    }
+
     match submission.action {
         GatewayRunAction::Started | GatewayRunAction::Queued | GatewayRunAction::Interrupted => {
             StatusCode::ACCEPTED
@@ -417,12 +422,14 @@ fn status_for_diagnostic(diagnostic: &GatewayDiagnostic) -> StatusCode {
         "missing_control_token" | "invalid_control_token" => StatusCode::UNAUTHORIZED,
         "invalid_run_id" => StatusCode::BAD_REQUEST,
         "run_not_found" => StatusCode::NOT_FOUND,
+        "replay_unavailable" => StatusCode::SERVICE_UNAVAILABLE,
         "approval_id_missing"
         | "question_id_missing"
         | "adapter_unsupported"
         | "telegram_target_missing"
         | "lark_target_missing" => StatusCode::BAD_REQUEST,
         "busy" | "stale_response" => StatusCode::CONFLICT,
+        "run_already_terminal" => StatusCode::CONFLICT,
         "telegram_target_blocked" | "lark_target_blocked" => StatusCode::FORBIDDEN,
         "queue_full" => StatusCode::TOO_MANY_REQUESTS,
         "unsupported" | "telegram_transport_unavailable" | "lark_transport_unavailable" => {

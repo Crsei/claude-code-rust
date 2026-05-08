@@ -53,6 +53,14 @@ impl GatewayPolicy {
         policy: BusyPolicy,
         snapshot: BusySnapshot,
     ) -> Result<BusyDecision, GatewayError> {
+        if matches!(policy, BusyPolicy::Steer) && !self.supports_steer {
+            return Err(GatewayError::new(GatewayDiagnostic::new(
+                "unsupported",
+                "Mid-turn steer is not supported by this gateway.",
+                "Use queue, reject, or interrupt until steer is implemented.",
+            )));
+        }
+
         if snapshot.running < self.max_running {
             return Ok(BusyDecision::StartNow);
         }
@@ -75,17 +83,7 @@ impl GatewayPolicy {
                 }
             }
             BusyPolicy::Interrupt => Ok(BusyDecision::Interrupt),
-            BusyPolicy::Steer => {
-                if self.supports_steer {
-                    Ok(BusyDecision::StartNow)
-                } else {
-                    Err(GatewayError::new(GatewayDiagnostic::new(
-                        "unsupported",
-                        "Mid-turn steer is not supported by this gateway.",
-                        "Use queue, reject, or interrupt until steer is implemented.",
-                    )))
-                }
-            }
+            BusyPolicy::Steer => Ok(BusyDecision::StartNow),
         }
     }
 
@@ -133,6 +131,15 @@ mod tests {
                     ..BusySnapshot::default()
                 },
             )
+            .unwrap_err();
+
+        assert_eq!(err.diagnostic().code, "unsupported");
+    }
+
+    #[test]
+    fn steer_is_unsupported_even_when_idle() {
+        let err = GatewayPolicy::default()
+            .evaluate_busy(BusyPolicy::Steer, BusySnapshot::default())
             .unwrap_err();
 
         assert_eq!(err.diagnostic().code, "unsupported");

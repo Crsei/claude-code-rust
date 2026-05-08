@@ -12,7 +12,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use gateway::{
     GatewayCommand, GatewayCommandKind, GatewayCommandReceipt, GatewayCommandSink,
-    GatewayDiagnostic, GatewayError,
+    GatewayDiagnostic, GatewayError, RunEventKind, RunStatus,
 };
 use serde_json::{json, Value};
 use tokio_stream::StreamExt;
@@ -20,6 +20,9 @@ use tokio_stream::StreamExt;
 use crate::engine::lifecycle::QueryEngine;
 use crate::types::config::{QueryEngineConfig, QuerySource};
 
+use super::gateway_run_events::{
+    append_gateway_event, append_gateway_sdk_event, update_gateway_status,
+};
 use super::protocol::{self, DaemonCommandKind};
 use super::routes::sdk_message_to_sse;
 use super::supervisor::ASSISTANT_WORKER_ID;
@@ -136,6 +139,18 @@ pub async fn handle_worker_command(
     match command.kind {
         protocol::DaemonCommandKind::Submit => {
             if let Err(err) = runtime.execute_submit(worker_id, &command).await {
+                append_gateway_event(
+                    &command,
+                    RunEventKind::Diagnostic {
+                        diagnostic: GatewayDiagnostic::new(
+                            "daemon_command_failed",
+                            "The daemon worker failed while executing the gateway run.",
+                            "Inspect daemon worker events and retry if the run is recoverable.",
+                        )
+                        .with_context(format!("command_id={}, error={err:#}", command.command_id)),
+                    },
+                )?;
+                update_gateway_status(&command, RunStatus::Failed)?;
                 protocol::append_event(
                     worker_id,
                     Some(&command.command_id),
@@ -254,6 +269,14 @@ impl AssistantWorkerRuntime {
                 "gateway": command.payload.get("gateway").cloned(),
             }),
         )?;
+        append_gateway_event(
+            command,
+            RunEventKind::Custom {
+                name: "submit_started".to_string(),
+                payload: json!({ "messageId": message_id }),
+            },
+        )?;
+        update_gateway_status(command, RunStatus::Running)?;
 
         self.engine.wake_up();
         let stream = self
@@ -262,6 +285,7 @@ impl AssistantWorkerRuntime {
         tokio::pin!(stream);
         while let Some(sdk_msg) = stream.next().await {
             if let Some(event) = sdk_message_to_sse(&sdk_msg, message_id) {
+                append_gateway_sdk_event(command, &event.event_type, event.data.clone())?;
                 protocol::append_event(
                     worker_id,
                     Some(&command.command_id),
@@ -277,6 +301,14 @@ impl AssistantWorkerRuntime {
             "submit_completed",
             json!({ "message_id": message_id }),
         )?;
+        append_gateway_event(
+            command,
+            RunEventKind::Custom {
+                name: "submit_completed".to_string(),
+                payload: json!({ "messageId": message_id }),
+            },
+        )?;
+        update_gateway_status(command, RunStatus::Completed)?;
         Ok(())
     }
 
@@ -288,6 +320,7 @@ impl AssistantWorkerRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gateway::{GatewayStore, SessionKeyPolicy};
     use serial_test::serial;
     use std::path::Path;
 
@@ -337,5 +370,60 @@ mod tests {
         assert_eq!(command.payload["text"], "hello");
         assert_eq!(command.payload["idempotencyKey"], "delivery-1");
         assert_eq!(command.payload["gateway"]["runId"], "run_bridge123");
+    }
+
+    #[test]
+    #[serial]
+    fn bridge_appends_gateway_events_to_durable_run_log() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let store = GatewayStore::default_with_policy(SessionKeyPolicy::default());
+        let source = gateway::RemoteSource::new(
+            gateway::RemoteTransport::Http,
+            "local",
+            "F:/AIclassmanager/cc/rust",
+            "client",
+            "user",
+            "thread",
+        );
+        let created = store
+            .create_run(gateway::RunRequest {
+                prompt: "hello".to_string(),
+                source,
+                policy: gateway::RunPolicy::default(),
+                idempotency_key: None,
+            })
+            .unwrap();
+        let run_id = created.meta().run_id.clone();
+        let command = protocol::enqueue_command(
+            "assistant-session-1",
+            DaemonCommandKind::Submit,
+            json!({
+                "text": "hello",
+                "gateway": {
+                    "runId": run_id.to_string(),
+                    "sessionKey": created.meta().session_key.to_string(),
+                }
+            }),
+            None,
+        )
+        .unwrap();
+
+        append_gateway_event(
+            &command,
+            RunEventKind::Custom {
+                name: "stream_delta".to_string(),
+                payload: json!({ "text": "partial" }),
+            },
+        )
+        .unwrap();
+        update_gateway_status(&command, RunStatus::Running).unwrap();
+
+        let events = store.read_events(&run_id).unwrap();
+        assert!(events.iter().any(|event| matches!(
+            &event.kind,
+            RunEventKind::Custom { name, .. } if name == "stream_delta"
+        )));
+        assert_eq!(store.load_run(&run_id).unwrap().status, RunStatus::Running);
     }
 }

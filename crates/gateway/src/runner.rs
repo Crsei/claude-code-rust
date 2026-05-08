@@ -224,7 +224,9 @@ impl GatewayRunner {
         sink: &(impl GatewayCommandSink + ?Sized),
     ) -> Result<GatewayRunSubmission, GatewayError> {
         let meta = self.store.load_run(run_id)?;
-        if !self.has_pending_approval(run_id, tool_use_id)? {
+        if meta.status != RunStatus::WaitingApproval
+            || !self.has_pending_approval(run_id, tool_use_id)?
+        {
             return Ok(stale_response(meta, run_id));
         }
 
@@ -233,6 +235,18 @@ impl GatewayRunner {
             tool_use_id,
             approved,
             reason,
+        ))?;
+        let sequence = self.store.read_events(run_id)?.len() as u64 + 1;
+        self.store.append_event(&RunEvent::new(
+            run_id.clone(),
+            sequence,
+            RunEventKind::Custom {
+                name: "approval_response".to_string(),
+                payload: json!({
+                    "toolUseId": tool_use_id,
+                    "approved": approved,
+                }),
+            },
         ))?;
         let meta = self.store.update_status(run_id, RunStatus::Running)?;
         Ok(GatewayRunSubmission {
@@ -251,7 +265,9 @@ impl GatewayRunner {
         sink: &(impl GatewayCommandSink + ?Sized),
     ) -> Result<GatewayRunSubmission, GatewayError> {
         let meta = self.store.load_run(run_id)?;
-        if !self.has_pending_question(run_id, question_id)? {
+        if meta.status != RunStatus::WaitingUser
+            || !self.has_pending_question(run_id, question_id)?
+        {
             return Ok(stale_response(meta, run_id));
         }
 
@@ -259,6 +275,17 @@ impl GatewayRunner {
             &meta,
             question_id,
             response,
+        ))?;
+        let sequence = self.store.read_events(run_id)?.len() as u64 + 1;
+        self.store.append_event(&RunEvent::new(
+            run_id.clone(),
+            sequence,
+            RunEventKind::Custom {
+                name: "ask_user_response".to_string(),
+                payload: json!({
+                    "questionId": question_id,
+                }),
+            },
         ))?;
         let meta = self.store.update_status(run_id, RunStatus::Running)?;
         Ok(GatewayRunSubmission {

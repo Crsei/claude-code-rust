@@ -1,9 +1,9 @@
 use gateway::auth::AllowAllGatewayAuth;
 use gateway::{
     AdapterProvider, BusyPolicy, BusySnapshot, GatewayApiState, GatewayCommand, GatewayCommandKind,
-    GatewayCommandReceipt, GatewayCommandSink, GatewayConfig, GatewayError, GatewayPersistence,
-    GatewayPolicy, GatewayRunAction, GatewayRunner, GatewayStore, RemoteSource, RemoteTransport,
-    RunEvent, RunEventKind, RunPolicy, RunRequest, RunStatus, SessionKeyPolicy,
+    GatewayCommandReceipt, GatewayCommandSink, GatewayConfig, GatewayDiagnostic, GatewayError,
+    GatewayPersistence, GatewayPolicy, GatewayRunAction, GatewayRunner, GatewayStore, RemoteSource,
+    RemoteTransport, RunEvent, RunEventKind, RunPolicy, RunRequest, RunStatus, SessionKeyPolicy,
     StaticBusySnapshotProvider,
 };
 use std::sync::{Arc, Mutex};
@@ -91,6 +91,20 @@ fn adapter_provider_parse_rejects_unknown_provider() {
 }
 
 #[test]
+fn api_error_response_uses_stable_contract_statuses() {
+    for (code, status) in [
+        ("queue_full", axum::http::StatusCode::TOO_MANY_REQUESTS),
+        ("unsupported", axum::http::StatusCode::NOT_IMPLEMENTED),
+        ("run_already_terminal", axum::http::StatusCode::CONFLICT),
+    ] {
+        let response = gateway::api::error_response(GatewayError::new(GatewayDiagnostic::new(
+            code, "message", "action",
+        )));
+        assert_eq!(response.status(), status);
+    }
+}
+
+#[test]
 fn runner_dispatches_run_scoped_approval_response() {
     let tmp = tempfile::tempdir().unwrap();
     let sink = RecordingSink::default();
@@ -129,6 +143,43 @@ fn runner_dispatches_run_scoped_approval_response() {
         sink.commands().last().unwrap().payload["toolUseId"],
         "tool-1"
     );
+}
+
+#[test]
+fn runner_rejects_duplicate_approval_response() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sink = RecordingSink::default();
+    let runner = runner(tmp.path());
+    let store = GatewayStore::new(persistence(tmp.path()), SessionKeyPolicy::default());
+    let created = runner
+        .submit_run(
+            request(BusyPolicy::Queue, None),
+            BusySnapshot::default(),
+            &sink,
+        )
+        .unwrap();
+    store
+        .update_status(&created.meta.run_id, RunStatus::WaitingApproval)
+        .unwrap();
+    store
+        .append_event(&RunEvent::new(
+            created.meta.run_id.clone(),
+            4,
+            RunEventKind::ApprovalRequested {
+                tool_use_id: "tool-1".to_string(),
+            },
+        ))
+        .unwrap();
+
+    runner
+        .approve_run(&created.meta.run_id, "tool-1", true, None, &sink)
+        .unwrap();
+    let duplicate = runner
+        .approve_run(&created.meta.run_id, "tool-1", true, None, &sink)
+        .unwrap();
+
+    assert_eq!(duplicate.action, GatewayRunAction::Rejected);
+    assert_eq!(duplicate.diagnostic.unwrap().code, "stale_response");
 }
 
 #[test]

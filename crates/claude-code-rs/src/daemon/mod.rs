@@ -2,6 +2,7 @@
 pub mod channels;
 pub mod gateway_bridge;
 pub mod gateway_routes;
+mod gateway_run_events;
 pub mod memory_log;
 pub mod notification;
 pub mod process_state;
