@@ -1,5 +1,6 @@
 ---
 source: crates/claude-code-rs/src/ui/components/command_palette/tests.rs
+assertion_line: 213
 expression: normalize_snapshot_text(rendered)
 ---
 ## /init
@@ -100,6 +101,12 @@ expression: normalize_snapshot_text(rendered)
 │Usage: /context [json|raw|tui|full]                                                                         │
 │Example: /context json                                                                                      │
 │About: Show context usage information                                                                       │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /coordinator
+┌ /coordinator arguments ────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /coordinator                                                                                         │
+│Example: /coordinator                                                                                       │
+│About: Enable or inspect coordinator mode for Agent Teams                                                   │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /copy
 ┌ /copy arguments ───────────────────────────────────────────────────────────────────────────────────────────┐
@@ -319,6 +326,12 @@ expression: normalize_snapshot_text(rendered)
 │Usage: /reload-plugins                                                                                      │
 │Example: /reload-plugins                                                                                    │
 │About: Hot-refresh the plugin registry                                                                      │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /remote
+┌ /remote arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /remote <status|adapters|connect|test-message|runs|show|events|stop|doctor> ...                      │
+│Example: /remote status                                                                                     │
+│About: Inspect and control the local remote-control gateway                                                 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /rename
 ┌ /rename arguments ─────────────────────────────────────────────────────────────────────────────────────────┐

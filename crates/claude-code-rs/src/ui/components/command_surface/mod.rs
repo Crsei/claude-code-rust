@@ -18,6 +18,7 @@ pub use surfaces::login::LoginSurface;
 pub use surfaces::lsp_recommendation::LspRecommendationSurface;
 pub use surfaces::mcp::McpSurface;
 pub use surfaces::memory::MemorySurface;
+pub use surfaces::remote::RemoteSurface;
 pub use surfaces::sandbox::SandboxSurface;
 pub use surfaces::skills::SkillsSurface;
 pub use surfaces::tasks::TasksSurface;
@@ -46,6 +47,7 @@ pub enum CommandSurface {
     Login(LoginSurface),
     Mcp(McpSurface),
     Memory(MemorySurface),
+    Remote(RemoteSurface),
     Sandbox(SandboxSurface),
     Skills(SkillsSurface),
     Tasks(TasksSurface),
@@ -67,6 +69,7 @@ impl CommandSurface {
             "login" => Some(Self::Login(LoginSurface::new())),
             "mcp" => Some(Self::Mcp(McpSurface::new(cwd))),
             "memory" => Some(Self::Memory(MemorySurface::new(cwd))),
+            "remote" => Some(Self::Remote(RemoteSurface::new())),
             "sandbox" => Some(Self::Sandbox(SandboxSurface::new(state))),
             "skills" => Some(Self::Skills(SkillsSurface::new())),
             "tasks" => Some(Self::Tasks(TasksSurface::new())),
@@ -88,6 +91,7 @@ impl CommandSurface {
             Self::Login(_) => "Login",
             Self::Mcp(_) => "MCP",
             Self::Memory(_) => "Memory",
+            Self::Remote(_) => "Remote",
             Self::Sandbox(_) => "Sandbox",
             Self::Skills(_) => "Skills",
             Self::Tasks(_) => "Tasks",
@@ -105,6 +109,7 @@ impl CommandSurface {
             Self::Login(surface) => surface.render(),
             Self::Mcp(surface) => surface.render(),
             Self::Memory(surface) => surface.render(),
+            Self::Remote(surface) => surface.render(),
             Self::Sandbox(surface) => surface.render(),
             Self::Skills(surface) => surface.render(),
             Self::Tasks(surface) => surface.render(),
@@ -132,6 +137,7 @@ impl CommandSurface {
             Self::Login(surface) => surface.handle_key(key),
             Self::Mcp(surface) => surface.handle_key(key),
             Self::Memory(surface) => surface.handle_key(key),
+            Self::Remote(surface) => surface.handle_key(key),
             Self::Sandbox(surface) => surface.handle_key(key),
             Self::Skills(surface) => surface.handle_key(key),
             Self::Tasks(surface) => surface.handle_key(key),

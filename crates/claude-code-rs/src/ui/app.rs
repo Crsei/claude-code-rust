@@ -97,6 +97,7 @@ pub struct App {
     permission_mode_label: String,
     sandbox_label: String,
     effort_label: Option<String>,
+    remote_indicator_label: Option<String>,
     session_cost_usd: f64,
     /// Whether the welcome screen is currently shown.
     show_welcome: bool,
@@ -181,6 +182,7 @@ impl App {
             permission_mode_label: String::new(),
             sandbox_label: String::new(),
             effort_label: None,
+            remote_indicator_label: None,
             session_cost_usd: 0.0,
             show_welcome: true,
             workspace_trust_pending: false,

@@ -49,6 +49,14 @@ impl StatusIndicator {
         }
     }
 
+    pub fn remote(value: impl Into<String>, severity: StatusSeverity) -> Self {
+        Self {
+            label: "remote".to_string(),
+            value: value.into(),
+            severity,
+        }
+    }
+
     fn render_inline(&self) -> String {
         match self.severity.label() {
             Some(severity) => format!("{}={}/{}", self.label, self.value, severity),
@@ -148,6 +156,7 @@ mod tests {
                 StatusIndicator::warning("memory", "1.4 GiB"),
                 StatusIndicator::new("pr", "#42 approved"),
                 StatusIndicator::error("mcp", "github"),
+                StatusIndicator::remote("attention", super::StatusSeverity::Warning),
             ],
         };
 

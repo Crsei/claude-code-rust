@@ -266,6 +266,9 @@ impl App {
         if let Some(effort) = &self.effort_label {
             parts.push(format!("effort:{effort}"));
         }
+        if let Some(remote) = &self.remote_indicator_label {
+            parts.push(format!("remote:{remote}"));
+        }
         parts.push(mode.to_string());
         parts.push(format!(
             "Ctrl+C {}",

@@ -88,6 +88,7 @@ fn status_bar_renders_runtime_context_indicators() {
     state.settings.sandbox.mode = Some("workspace".to_string());
     state.settings.sandbox.network.disabled = Some(true);
     state.effort_value = Some("medium".to_string());
+    state.kairos_active = true;
     app.sync_status_context_from_state(&state);
 
     let mut terminal = Terminal::new(TestBackend::new(120, 24)).expect("terminal");
@@ -97,6 +98,7 @@ fn status_bar_renders_runtime_context_indicators() {
     assert!(content.contains("perm:acceptEdits"));
     assert!(content.contains("sandbox:workspace,no-net"));
     assert!(content.contains("effort:medium"));
+    assert!(content.contains("remote:"));
 }
 
 #[test]

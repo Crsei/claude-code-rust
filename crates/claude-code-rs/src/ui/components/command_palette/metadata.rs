@@ -184,6 +184,14 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         "recap" => simple_meta("/recap [short|long]", &["/recap short"]),
         "reload-plugins" => simple_meta("/reload-plugins", &["/reload-plugins"]),
         "rename" => simple_meta("/rename [title|clear]", &["/rename UI command fixes"]),
+        "remote" => simple_meta(
+            "/remote <status|adapters|connect|test-message|runs|show|events|stop|doctor> ...",
+            &[
+                "/remote status",
+                "/remote connect telegram",
+                "/remote runs",
+            ],
+        ),
         "resume" => simple_meta("/resume <session-id|recent>", &["/resume recent"]),
         "review" => simple_meta("/review <pr-number|url|branch>", &["/review 123"]),
         "rewind" => simple_meta("/rewind <turn|message-id>", &["/rewind 2"]),

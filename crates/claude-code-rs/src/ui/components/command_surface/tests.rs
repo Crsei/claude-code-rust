@@ -78,7 +78,7 @@ fn slash_command_surfaces_open_only_for_empty_interactive_commands() {
 
     for command in [
         "agents", "config", "diff", "hooks", "login", "mcp", "memory", "sandbox", "skills",
-        "tasks", "team",
+        "remote", "tasks", "team",
     ] {
         assert!(
             CommandSurface::for_slash_command(command, "", &state, &cwd).is_some(),

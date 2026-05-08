@@ -1,4 +1,5 @@
 use crate::config::settings::StatusLineSettings;
+use crate::daemon::process_state::{self, DaemonStatusSnapshot};
 use crate::ui::status_line::{
     build_payload_from_snapshot, payload, StatusLinePayload, StatusLineRunner, StatusLineSnapshot,
 };
@@ -60,14 +61,17 @@ impl App {
             .or_else(|| state.settings.effort_level.clone())
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
+        let remote_indicator = remote_indicator_label(state);
 
         if self.permission_mode_label != permission_mode
             || self.sandbox_label != sandbox
             || self.effort_label != effort
+            || self.remote_indicator_label != remote_indicator
         {
             self.permission_mode_label = permission_mode;
             self.sandbox_label = sandbox;
             self.effort_label = effort;
+            self.remote_indicator_label = remote_indicator;
             self.dirty = true;
         }
     }
@@ -126,6 +130,19 @@ impl App {
             .status_line_runner
             .refresh(&self.status_line_settings, &payload);
     }
+}
+
+fn remote_indicator_label(state: &crate::types::app_state::AppState) -> Option<String> {
+    if !state.kairos_active {
+        return Some("off".to_string());
+    }
+
+    Some(match process_state::status_snapshot() {
+        Ok(DaemonStatusSnapshot::Running(_)) => "ok".to_string(),
+        Ok(DaemonStatusSnapshot::Stale(_)) => "attention".to_string(),
+        Ok(DaemonStatusSnapshot::Stopped) => "off".to_string(),
+        Err(_) => "error".to_string(),
+    })
 }
 
 fn sandbox_label(settings: &crate::config::settings::SandboxSettings) -> String {

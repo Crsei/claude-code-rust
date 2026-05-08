@@ -6,6 +6,7 @@ pub(super) mod login;
 pub(super) mod lsp_recommendation;
 pub(super) mod mcp;
 pub(super) mod memory;
+pub(super) mod remote;
 pub(super) mod sandbox;
 pub(super) mod skills;
 pub(super) mod tasks;
