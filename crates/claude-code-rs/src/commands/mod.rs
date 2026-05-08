@@ -122,6 +122,7 @@ pub mod channels;
 pub mod daemon_cmd;
 pub mod dream;
 pub mod notify;
+pub mod remote_cmd;
 pub mod sleep_cmd;
 
 use std::path::PathBuf;
@@ -481,6 +482,12 @@ pub fn get_all_commands() -> Vec<Command> {
             notify::NotifyHandler,
         ),
         command(
+            "remote",
+            &[],
+            "Inspect and control the local remote-control gateway",
+            remote_cmd::RemoteHandler,
+        ),
+        command(
             "channels",
             &[],
             "View connected channels",
@@ -727,6 +734,7 @@ mod tests {
         assert!(names.contains(&"schedule"));
         // Team onboarding (issue #63).
         assert!(names.contains(&"team-onboarding"));
+        assert!(names.contains(&"remote"));
     }
 
     #[test]
