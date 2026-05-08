@@ -52,3 +52,32 @@ Then run:
 - `-ReasoningEffort`: pass through `codex exec --config model_reasoning_effort="..."`; valid values are `minimal`, `low`, `medium`, `high`, and `xhigh`
 - `-ContinueOnError`: keep going after a failed task
 - `-Profile` and `-Sandbox`: pass through Codex CLI settings
+
+## `run-ratatui-ui-parity-omx.ps1`
+
+Run the ratatui UI parity execution lane through `omx exec`, using
+`codex-task-sequence.ps1` as the per-task transport.
+
+The wrapper fixes model and reasoning to `gpt-5.5` + `medium`, batches tasks
+dynamically, writes batch summaries under `target/codex-runs/ratatui-ui-parity-omx`,
+runs diff/refactor guards, and commits green batches without staging paths that
+were already dirty when the wrapper started.
+
+Dry run:
+
+```powershell
+.\scripts\run-ratatui-ui-parity-omx.ps1 -DryRun
+```
+
+Execute:
+
+```powershell
+.\scripts\run-ratatui-ui-parity-omx.ps1
+```
+
+Useful options:
+
+- `-TasksFile`: defaults to `docs/scripts/ratatui-ui-parity-omx-tasks.txt`
+- `-SkipCommit`: run tasks and guards without automatic commits
+- `-ContinueOnError`: continue after a failed batch to collect more diagnostics
+- `-MaxBatchSize`, `-MinBatchSize`, `-InitialBatchSize`: tune dynamic batch sizing

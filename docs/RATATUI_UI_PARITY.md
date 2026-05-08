@@ -608,7 +608,7 @@ P0 milestone residual risks:
 
 ## 下一步建议
 
-1. **立即**: 进入 P1 文档/里程碑 gate，统一 `WORK_STATUS` / `IMPLEMENTATION_GAPS` / archive 记录
+1. **立即**: 按 [`docs/plan/ratatui-ui-parity-untracked-gap-plan-2026-05-08.md`](plan/ratatui-ui-parity-untracked-gap-plan-2026-05-08.md) 给所有 `⚠️ 部分` / `❌ 缺失` 条目补 tracking owner，并统一 `WORK_STATUS` / `IMPLEMENTATION_GAPS` / archive 记录
 2. **短期**: 将 fuzzy/search foundation 继续复用到 Agent 选择面
 3. **中期**: Claude Desktop MCP 配置自动发现、live file-edit transcript event 接线
 4. **长期**: IDE 集成、远程功能 (视路线图)
