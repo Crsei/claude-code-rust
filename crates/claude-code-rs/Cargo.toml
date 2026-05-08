@@ -150,6 +150,7 @@ cc-permissions = { workspace = true }
 cc-browser = { workspace = true }
 cc-session = { workspace = true }
 cc-engine = { workspace = true }
+gateway = { workspace = true }
 
 # Daemon
 axum = { workspace = true }

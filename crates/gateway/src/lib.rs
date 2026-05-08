@@ -10,6 +10,7 @@ pub mod config;
 pub mod events;
 pub mod policy;
 pub mod run;
+pub mod runner;
 pub mod session_key;
 pub mod source;
 pub mod store;
@@ -24,6 +25,10 @@ pub use policy::{BusyDecision, BusySnapshot, GatewayPolicy};
 pub use run::{
     BusyPolicy, CreateRunOutcome, GatewayDiagnostic, GatewayError, RunId, RunMeta, RunPolicy,
     RunRequest, RunStatus,
+};
+pub use runner::{
+    GatewayCommand, GatewayCommandKind, GatewayCommandReceipt, GatewayCommandSink,
+    GatewayRunAction, GatewayRunSubmission, GatewayRunner,
 };
 pub use session_key::{SessionKey, SessionKeyPolicy};
 pub use source::{RemoteSource, RemoteSourceMetadata, RemoteTransport};

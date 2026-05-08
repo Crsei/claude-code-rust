@@ -914,6 +914,7 @@ dependencies = [
  "dotenvy",
  "eventsource-stream",
  "futures",
+ "gateway",
  "git2",
  "glob",
  "hex",

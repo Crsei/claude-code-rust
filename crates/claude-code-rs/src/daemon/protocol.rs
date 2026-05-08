@@ -200,12 +200,18 @@ pub fn process_pending_commands(
 
         match command.kind {
             DaemonCommandKind::Submit => {
+                let gateway_run_id = command
+                    .payload
+                    .get("gateway")
+                    .and_then(|gateway| gateway.get("runId"))
+                    .cloned();
                 append_event(
                     worker_id,
                     Some(&command.command_id),
                     "command_deferred",
                     json!({
                         "kind": "submit",
+                        "gateway_run_id": gateway_run_id,
                         "reason": "assistant execution remains in the HTTP supervisor until Phase 4",
                     }),
                 )?;
@@ -467,5 +473,25 @@ mod tests {
         assert_eq!(result.handled, 1);
         assert_eq!(stored.status, DaemonCommandStatus::Handled);
         assert!(events.iter().any(|event| event.event_type == "abort_ack"));
+    }
+
+    #[test]
+    fn submit_payload_can_carry_optional_gateway_context() {
+        let command = DaemonCommand {
+            schema_version: SCHEMA_VERSION,
+            command_id: "cmd-1".to_string(),
+            idempotency_key: None,
+            target_worker_id: WORKER_ID.to_string(),
+            kind: DaemonCommandKind::Submit,
+            payload: json!({ "text": "hello", "gateway": { "runId": "run_abc123" } }),
+            status: DaemonCommandStatus::Pending,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            acked_at: None,
+            handled_at: None,
+            error: None,
+        };
+
+        assert_eq!(command.payload["gateway"]["runId"], "run_abc123");
     }
 }
