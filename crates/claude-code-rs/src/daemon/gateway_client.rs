@@ -372,22 +372,77 @@ fn status_code(status: StatusCode) -> u16 {
 
 pub fn redact_text(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
+    let mut redact_next = false;
     for part in value.split_whitespace() {
-        let lower = part.to_ascii_lowercase();
-        let redacted = lower.contains("authorization")
-            || lower.starts_with("bearer")
-            || lower.contains("token")
-            || lower.contains("secret")
-            || lower.contains("credential")
-            || lower.contains("signature");
         if !out.is_empty() {
             out.push(' ');
         }
-        if redacted {
+
+        if redact_next {
             out.push_str("<redacted>");
+            redact_next = false;
+            continue;
+        }
+
+        let lower = part.to_ascii_lowercase();
+        if lower == "bearer" {
+            out.push_str(part);
+            redact_next = true;
+            continue;
+        }
+
+        if let Some(redacted) = redact_key_value(part) {
+            out.push_str(&redacted);
         } else {
             out.push_str(part);
         }
     }
     out
+}
+
+fn redact_key_value(part: &str) -> Option<String> {
+    let split_at = part.find('=').or_else(|| part.find(':'))?;
+    let (key, rest) = part.split_at(split_at);
+    if !is_sensitive_key(key) {
+        return None;
+    }
+
+    let delimiter = rest.chars().next().unwrap_or('=');
+    Some(format!("{key}{delimiter}<redacted>"))
+}
+
+fn is_sensitive_key(key: &str) -> bool {
+    let normalized = key
+        .trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_' && ch != '-')
+        .to_ascii_lowercase()
+        .replace('-', "_");
+    normalized == "authorization"
+        || normalized == "apikey"
+        || normalized == "password"
+        || normalized.contains("token")
+        || normalized.contains("secret")
+        || normalized.contains("credential")
+        || normalized.contains("signature")
+        || normalized.ends_with("_key")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redact_text;
+
+    #[test]
+    fn redacts_credentials_without_hiding_diagnostic_codes() {
+        let text = "code=control_token_missing Authorization: Bearer abc123 api_key=sk-test client-secret:top refresh_token=raw";
+        let redacted = redact_text(text);
+
+        assert!(redacted.contains("code=control_token_missing"));
+        assert!(redacted.contains("Authorization:<redacted>"));
+        assert!(redacted.contains("Bearer <redacted>"));
+        assert!(redacted.contains("api_key=<redacted>"));
+        assert!(redacted.contains("client-secret:<redacted>"));
+        assert!(redacted.contains("refresh_token=<redacted>"));
+        for secret in ["abc123", "sk-test", "top", "raw"] {
+            assert!(!redacted.contains(secret));
+        }
+    }
 }

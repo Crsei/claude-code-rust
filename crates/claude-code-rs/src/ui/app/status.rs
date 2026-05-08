@@ -1,5 +1,4 @@
 use crate::config::settings::StatusLineSettings;
-use crate::daemon::process_state::{self, DaemonStatusSnapshot};
 use crate::ui::status_line::{
     build_payload_from_snapshot, payload, StatusLinePayload, StatusLineRunner, StatusLineSnapshot,
 };
@@ -137,12 +136,7 @@ fn remote_indicator_label(state: &crate::types::app_state::AppState) -> Option<S
         return Some("off".to_string());
     }
 
-    Some(match process_state::status_snapshot() {
-        Ok(DaemonStatusSnapshot::Running(_)) => "ok".to_string(),
-        Ok(DaemonStatusSnapshot::Stale(_)) => "attention".to_string(),
-        Ok(DaemonStatusSnapshot::Stopped) => "off".to_string(),
-        Err(_) => "error".to_string(),
-    })
+    Some("attention".to_string())
 }
 
 fn sandbox_label(settings: &crate::config::settings::SandboxSettings) -> String {

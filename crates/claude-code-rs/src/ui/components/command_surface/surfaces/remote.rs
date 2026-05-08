@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::ui::command_surface::adapters::remote::{
-    remote_surface_snapshot, truncate_middle, RemoteSurfaceSnapshot,
+    remote_surface_initial_snapshot, truncate_middle, RemoteSurfaceSnapshot,
 };
 use crate::ui::command_surface::{cycle_index, render_tabs, CommandSurfaceOutcome};
 
@@ -15,7 +15,7 @@ pub struct RemoteSurface {
 impl RemoteSurface {
     pub(crate) fn new() -> Self {
         Self {
-            snapshot: remote_surface_snapshot(8),
+            snapshot: remote_surface_initial_snapshot(),
             tab_index: 0,
             selected_index: 0,
         }
@@ -190,6 +190,9 @@ fn marker(selected: bool) -> &'static str {
 #[cfg(test)]
 mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+    use gateway::{RemoteSource, RemoteTransport, RunPolicy, RunRequest};
+    use serial_test::serial;
+    use std::path::Path;
 
     use super::*;
     use crate::ui::command_surface::adapters::remote::{
@@ -230,6 +233,29 @@ mod tests {
         }
     }
 
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &Path) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = &self.previous {
+                std::env::set_var(self.key, previous);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
     #[test]
     fn remote_surface_renders_status_without_network_io() {
         let surface = RemoteSurface {
@@ -240,6 +266,22 @@ mod tests {
 
         assert!(surface.render().contains("Remote control gateway"));
         assert!(surface.render().contains("[Status]"));
+        assert!(surface.render().contains("/remote status"));
+    }
+
+    #[test]
+    #[serial]
+    fn remote_surface_new_uses_nonblocking_placeholder_snapshot() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let store =
+            gateway::GatewayStore::default_with_policy(gateway::SessionKeyPolicy::default());
+        store.create_run(request()).unwrap();
+
+        let surface = RemoteSurface::new();
+
+        assert_eq!(surface.snapshot.daemon.state, "unknown");
+        assert!(surface.snapshot.runs.is_empty());
         assert!(surface.render().contains("/remote status"));
     }
 
@@ -264,5 +306,21 @@ mod tests {
             surface.handle_key(key(KeyCode::Char('k'))),
             CommandSurfaceOutcome::Submit("/remote stop run_1234567890".to_string())
         );
+    }
+
+    fn request() -> RunRequest {
+        RunRequest {
+            prompt: "hello from remote surface".to_string(),
+            source: RemoteSource::new(
+                RemoteTransport::Local,
+                "local",
+                "workspace",
+                "remote-surface-test",
+                "user",
+                "thread",
+            ),
+            policy: RunPolicy::default(),
+            idempotency_key: None,
+        }
     }
 }
