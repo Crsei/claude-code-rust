@@ -2,17 +2,20 @@ use crate::{GatewayDiagnostic, GatewayError};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub mod lark;
 pub mod telegram;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AdapterProvider {
+    Lark,
     Telegram,
 }
 
 impl AdapterProvider {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Lark => "lark",
             Self::Telegram => "telegram",
         }
     }

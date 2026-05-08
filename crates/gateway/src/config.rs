@@ -76,6 +76,8 @@ impl GatewayConfig {
 #[serde(rename_all = "camelCase")]
 pub struct GatewayAdaptersConfig {
     #[serde(default)]
+    pub lark: LarkAdapterConfig,
+    #[serde(default)]
     pub telegram: TelegramAdapterConfig,
 }
 
@@ -108,6 +110,40 @@ impl Default for TelegramAdapterConfig {
 
 fn default_telegram_api_base_url() -> String {
     "https://api.telegram.org".to_string()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LarkAdapterConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_lark_api_base_url")]
+    pub api_base_url: String,
+    #[serde(default)]
+    pub test_target_allowlist: Vec<String>,
+    #[serde(default, skip_serializing)]
+    pub app_id: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub app_secret: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub outbound_webhook_url: Option<String>,
+}
+
+impl Default for LarkAdapterConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            api_base_url: default_lark_api_base_url(),
+            test_target_allowlist: Vec::new(),
+            app_id: None,
+            app_secret: None,
+            outbound_webhook_url: None,
+        }
+    }
+}
+
+fn default_lark_api_base_url() -> String {
+    "https://open.larksuite.com".to_string()
 }
 
 impl GatewayPersistence {
@@ -208,5 +244,19 @@ mod tests {
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("raw-secret-token"));
         assert!(!json.contains("123456:"));
+    }
+
+    #[test]
+    fn config_does_not_serialize_lark_credentials() {
+        let mut config = GatewayConfig::default();
+        config.adapters.lark.app_id = Some("cli_a_secret_app".to_string());
+        config.adapters.lark.app_secret = Some("raw-lark-secret".to_string());
+        config.adapters.lark.outbound_webhook_url =
+            Some("https://open.larksuite.com/open-apis/bot/v2/hook/raw-webhook-secret".to_string());
+
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(!json.contains("cli_a_secret_app"));
+        assert!(!json.contains("raw-lark-secret"));
+        assert!(!json.contains("raw-webhook-secret"));
     }
 }

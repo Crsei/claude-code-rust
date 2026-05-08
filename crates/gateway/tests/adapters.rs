@@ -1,3 +1,4 @@
+use gateway::adapters::lark::{LarkAdapter, LarkTransport};
 use gateway::adapters::telegram::{TelegramAdapter, TelegramTransport};
 use gateway::{
     AdapterProvider, AdapterRegistry, AdapterState, AdapterTestMessage, GatewayError, RemoteAdapter,
@@ -43,6 +44,85 @@ fn telegram_config(token: Option<&str>) -> gateway::config::TelegramAdapterConfi
     }
 }
 
+#[derive(Clone)]
+struct RecordingLarkTransport {
+    calls: Arc<Mutex<Vec<(String, Value)>>>,
+    token_responses: Arc<Mutex<Vec<Value>>>,
+}
+
+impl RecordingLarkTransport {
+    fn new(token_responses: Vec<Value>) -> Self {
+        Self {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            token_responses: Arc::new(Mutex::new(token_responses)),
+        }
+    }
+
+    fn calls(&self) -> Vec<(String, Value)> {
+        self.calls.lock().unwrap().clone()
+    }
+}
+
+impl LarkTransport for RecordingLarkTransport {
+    fn tenant_access_token(&self, app_id: &str, app_secret: &str) -> Result<Value, GatewayError> {
+        self.calls.lock().unwrap().push((
+            "tenant_access_token".to_string(),
+            json!({ "app_id": app_id, "app_secret": app_secret }),
+        ));
+        Ok(self.token_responses.lock().unwrap().remove(0))
+    }
+
+    fn probe_webhook(&self, webhook_url: &str) -> Result<(), GatewayError> {
+        self.calls.lock().unwrap().push((
+            "probe_webhook".to_string(),
+            json!({ "webhook_url": webhook_url }),
+        ));
+        Ok(())
+    }
+
+    fn send_webhook(&self, webhook_url: &str, text: &str) -> Result<(), GatewayError> {
+        self.calls.lock().unwrap().push((
+            "send_webhook".to_string(),
+            json!({ "webhook_url": webhook_url, "text": text }),
+        ));
+        Ok(())
+    }
+
+    fn send_app_message(
+        &self,
+        tenant_access_token: &str,
+        target: &str,
+        text: &str,
+    ) -> Result<(), GatewayError> {
+        self.calls.lock().unwrap().push((
+            "send_app_message".to_string(),
+            json!({ "tenant_access_token": tenant_access_token, "target": target, "text": text }),
+        ));
+        Ok(())
+    }
+}
+
+fn lark_config_with_app_credentials() -> gateway::config::LarkAdapterConfig {
+    gateway::config::LarkAdapterConfig {
+        enabled: true,
+        app_id: Some("cli_a_raw_app_id".to_string()),
+        app_secret: Some("raw-lark-secret".to_string()),
+        test_target_allowlist: vec!["chat-1".to_string()],
+        ..Default::default()
+    }
+}
+
+fn lark_config_with_webhook() -> gateway::config::LarkAdapterConfig {
+    gateway::config::LarkAdapterConfig {
+        enabled: true,
+        outbound_webhook_url: Some(
+            "https://open.larksuite.com/open-apis/bot/v2/hook/raw-webhook-secret".to_string(),
+        ),
+        test_target_allowlist: vec!["hook-1".to_string()],
+        ..Default::default()
+    }
+}
+
 #[test]
 fn registry_reports_registered_adapter_status() {
     let mut registry = AdapterRegistry::new();
@@ -50,11 +130,24 @@ fn registry_reports_registered_adapter_status() {
         telegram_config(None),
         RecordingTelegramTransport::new(vec![]),
     ));
+    registry.register(LarkAdapter::with_transport(
+        gateway::config::LarkAdapterConfig {
+            enabled: true,
+            ..Default::default()
+        },
+        RecordingLarkTransport::new(vec![]),
+    ));
 
     let statuses = registry.statuses();
-    assert_eq!(statuses.len(), 1);
-    assert_eq!(statuses[0].provider, AdapterProvider::Telegram);
-    assert_eq!(statuses[0].state, AdapterState::Unconfigured);
+    assert_eq!(statuses.len(), 2);
+    assert!(statuses
+        .iter()
+        .any(|status| status.provider == AdapterProvider::Telegram
+            && status.state == AdapterState::Unconfigured));
+    assert!(statuses
+        .iter()
+        .any(|status| status.provider == AdapterProvider::Lark
+            && status.state == AdapterState::Blocked));
 }
 
 #[test]
@@ -140,4 +233,122 @@ fn telegram_api_failure_diagnostic_is_redacted() {
     assert!(json.contains("telegram_error_code=401"));
     assert!(!json.contains("raw-secret-token"));
     assert!(!json.contains("123456:"));
+}
+
+#[test]
+fn lark_missing_credentials_returns_blocked_reason() {
+    let adapter = LarkAdapter::with_transport(
+        gateway::config::LarkAdapterConfig {
+            enabled: true,
+            ..Default::default()
+        },
+        RecordingLarkTransport::new(vec![]),
+    );
+
+    let status = adapter.status();
+    assert_eq!(status.provider, AdapterProvider::Lark);
+    assert_eq!(status.state, AdapterState::Blocked);
+    assert_eq!(
+        status.diagnostic.as_ref().unwrap().code,
+        "lark_credentials_missing"
+    );
+
+    let err = adapter.connect().unwrap_err();
+    assert_eq!(err.diagnostic().code, "lark_credentials_missing");
+}
+
+#[test]
+fn lark_connect_with_app_credentials_is_outbound_only_and_redacted() {
+    let transport = RecordingLarkTransport::new(vec![json!({
+        "code": 0,
+        "tenant_access_token": "tenant-raw-token"
+    })]);
+    let adapter =
+        LarkAdapter::with_transport(lark_config_with_app_credentials(), transport.clone());
+
+    let status = adapter.connect().unwrap();
+
+    assert_eq!(status.state, AdapterState::ConnectedOutboundOnly);
+    let calls = transport.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, "tenant_access_token");
+    let json = serde_json::to_string(&status).unwrap();
+    assert!(json.contains("outbound"));
+    assert!(!json.contains("raw-lark-secret"));
+    assert!(!json.contains("tenant-raw-token"));
+    assert!(!json.contains("cli_a_raw_app_id"));
+}
+
+#[test]
+fn lark_webhook_connect_is_outbound_only_without_inbound_claim() {
+    let transport = RecordingLarkTransport::new(vec![]);
+    let adapter = LarkAdapter::with_transport(lark_config_with_webhook(), transport.clone());
+
+    let status = adapter.connect().unwrap();
+
+    assert_eq!(status.state, AdapterState::ConnectedOutboundOnly);
+    assert!(status
+        .message
+        .contains("inbound event control is not enabled"));
+    let calls = transport.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, "probe_webhook");
+    let json = serde_json::to_string(&status).unwrap();
+    assert!(!json.contains("raw-webhook-secret"));
+}
+
+#[test]
+fn lark_test_message_enforces_allowlist() {
+    let adapter = LarkAdapter::with_transport(
+        lark_config_with_webhook(),
+        RecordingLarkTransport::new(vec![]),
+    );
+
+    let err = adapter
+        .test_message(AdapterTestMessage {
+            target: "hook-2".to_string(),
+            text: "hello".to_string(),
+        })
+        .unwrap_err();
+
+    assert_eq!(err.diagnostic().code, "lark_target_blocked");
+    let json = serde_json::to_string(err.diagnostic()).unwrap();
+    assert!(!json.contains("raw-webhook-secret"));
+}
+
+#[test]
+fn lark_test_message_uses_webhook_outbound_path() {
+    let transport = RecordingLarkTransport::new(vec![]);
+    let adapter = LarkAdapter::with_transport(lark_config_with_webhook(), transport.clone());
+
+    let status = adapter
+        .test_message(AdapterTestMessage {
+            target: "hook-1".to_string(),
+            text: "gateway smoke".to_string(),
+        })
+        .unwrap();
+
+    assert_eq!(status.state, AdapterState::ConnectedOutboundOnly);
+    let calls = transport.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, "send_webhook");
+    assert_eq!(calls[0].1["text"], "gateway smoke");
+}
+
+#[test]
+fn lark_api_failure_diagnostic_is_redacted() {
+    let transport = RecordingLarkTransport::new(vec![json!({
+        "code": 99991663,
+        "msg": "invalid app_secret"
+    })]);
+    let adapter = LarkAdapter::with_transport(lark_config_with_app_credentials(), transport);
+
+    let err = adapter.connect().unwrap_err();
+    let diagnostic = err.diagnostic();
+
+    assert_eq!(diagnostic.code, "lark_api_rejected");
+    let json = serde_json::to_string(diagnostic).unwrap();
+    assert!(json.contains("lark_code=99991663"));
+    assert!(!json.contains("raw-lark-secret"));
+    assert!(!json.contains("cli_a_raw_app_id"));
 }
