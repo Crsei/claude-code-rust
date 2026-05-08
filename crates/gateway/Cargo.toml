@@ -2,7 +2,14 @@
 name = "gateway"
 version = "0.1.0"
 edition = "2021"
-description = "Remote control gateway scaffolding for cc-rust"
+description = "Remote-control gateway models and foundations for cc-rust"
 
 [dependencies]
+cc-config = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
 
+[dev-dependencies]
+tempfile = { workspace = true }

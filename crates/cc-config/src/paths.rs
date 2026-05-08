@@ -56,6 +56,22 @@ pub fn daemon_dir() -> PathBuf {
     data_root().join("daemon")
 }
 
+pub fn gateway_dir() -> PathBuf {
+    data_root().join("gateway")
+}
+
+pub fn gateway_runs_dir() -> PathBuf {
+    gateway_dir().join("runs")
+}
+
+pub fn gateway_adapters_dir() -> PathBuf {
+    gateway_dir().join("adapters")
+}
+
+pub fn gateway_webhooks_dir() -> PathBuf {
+    gateway_dir().join("webhooks")
+}
+
 /// `{data_root}/logs/YYYY/MM/YYYY-MM-DD.md` — daemon daily log layout.
 pub fn daily_log_path(now: DateTime<Local>) -> PathBuf {
     logs_dir()
@@ -345,6 +361,38 @@ mod tests {
             base.join("pr-activity-subscriptions.json")
         );
         assert_eq!(daemon_dir(), base.join("daemon"));
+        assert_eq!(gateway_dir(), base.join("gateway"));
+        assert_eq!(gateway_runs_dir(), base.join("gateway").join("runs"));
+        assert_eq!(
+            gateway_adapters_dir(),
+            base.join("gateway").join("adapters")
+        );
+        assert_eq!(
+            gateway_webhooks_dir(),
+            base.join("gateway").join("webhooks")
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn gateway_paths_are_isolated_under_cc_rust_home() {
+        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/cc-rust-gateway-paths");
+        assert_eq!(
+            gateway_dir(),
+            PathBuf::from("/tmp/cc-rust-gateway-paths/gateway")
+        );
+        assert_eq!(
+            gateway_runs_dir(),
+            PathBuf::from("/tmp/cc-rust-gateway-paths/gateway/runs")
+        );
+        assert_eq!(
+            gateway_adapters_dir(),
+            PathBuf::from("/tmp/cc-rust-gateway-paths/gateway/adapters")
+        );
+        assert_eq!(
+            gateway_webhooks_dir(),
+            PathBuf::from("/tmp/cc-rust-gateway-paths/gateway/webhooks")
+        );
     }
 
     #[test]

@@ -1,6 +1,14 @@
-//! Remote control gateway crate.
+//! Remote-control gateway foundation.
 //!
-//! This crate is intentionally minimal for now so the workspace can resolve
-//! `crates/gateway` while the remote-control gateway implementation is staged
-//! in follow-up work.
+//! This crate owns remote source identity, deterministic session-key
+//! derivation, and gateway-local configuration models. Runtime daemon,
+//! TUI, IPC, and `QueryEngine` integration belong in `claude-code-rs`
+//! adapter modules so dependency direction stays one-way.
 
+pub mod config;
+pub mod session_key;
+pub mod source;
+
+pub use config::{GatewayConfig, GatewayLimits, GatewayPersistence};
+pub use session_key::{SessionKey, SessionKeyPolicy};
+pub use source::{RemoteSource, RemoteSourceMetadata, RemoteTransport};
