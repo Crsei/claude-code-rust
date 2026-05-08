@@ -304,7 +304,7 @@ impl Drop for FileLockGuard<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::scheduler::{TaskPayload, parse_interval};
+    use crate::services::scheduler::{parse_interval, TaskPayload};
     use tempfile::tempdir;
 
     fn fresh_store() -> (tempfile::TempDir, SchedulerStore) {

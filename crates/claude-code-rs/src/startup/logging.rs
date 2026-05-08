@@ -32,9 +32,9 @@ fn cleanup_old_logs(log_dir: &std::path::Path, retention_days: u64) {
 /// housekeeping, and return a guard that must stay alive for the life of
 /// the process so the non-blocking file writer can flush on drop.
 pub fn init_tracing(verbose: bool) -> WorkerGuard {
-    use tracing_subscriber::Layer;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
+    use tracing_subscriber::Layer;
 
     // stderr layer respects --verbose / RUST_LOG; file layer always debug.
     let log_level = if verbose { "debug" } else { "warn" };

@@ -1,15 +1,15 @@
 //! Tool trait implementation for AgentTool.
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
 
-use super::{AgentInput, AgentTool, MAX_AGENT_DEPTH, resolve_model_alias};
+use super::{resolve_model_alias, AgentInput, AgentTool, MAX_AGENT_DEPTH};
 
 #[async_trait]
 impl Tool for AgentTool {

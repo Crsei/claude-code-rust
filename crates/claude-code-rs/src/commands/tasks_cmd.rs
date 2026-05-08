@@ -12,8 +12,8 @@ use chrono::{DateTime, Local, TimeZone};
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::teams::in_process::{InProcessBackend, TeammateTaskSnapshot};
 use crate::teams::types::TaskStatus as TeamTaskStatus;
-use crate::tools::tasks::{TaskEntry, TaskStatus as ToolTaskStatus, global_store};
-use crate::ui::browser::{TreeNode, render_with_footer};
+use crate::tools::tasks::{global_store, TaskEntry, TaskStatus as ToolTaskStatus};
+use crate::ui::browser::{render_with_footer, TreeNode};
 
 pub struct TasksHandler;
 

@@ -181,7 +181,7 @@ fn persist_advisor_to_path(
     path: &std::path::Path,
     new_value: Option<&str>,
 ) -> Result<std::path::PathBuf> {
-    use cc_config::settings::{RawSettings, write_settings_file};
+    use cc_config::settings::{write_settings_file, RawSettings};
     let mut raw: RawSettings = if path.exists() {
         let s = std::fs::read_to_string(path)?;
         serde_json::from_str(&s).unwrap_or_default()

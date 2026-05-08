@@ -601,12 +601,10 @@ mod tests {
         assert!(ConfigScope::User.is_editable());
         assert!(ConfigScope::Project.is_editable());
         assert!(!ConfigScope::Plugin { id: "p".into() }.is_editable());
-        assert!(
-            !ConfigScope::Ide {
-                id: "vscode".into()
-            }
-            .is_editable()
-        );
+        assert!(!ConfigScope::Ide {
+            id: "vscode".into()
+        }
+        .is_editable());
     }
 
     #[test]

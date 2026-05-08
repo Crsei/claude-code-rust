@@ -5,7 +5,7 @@ pub mod lsp_recommendation_menu;
 
 #[cfg(test)]
 mod tests {
-    use super::lsp_recommendation_menu::{LspRecommendation, render_lsp_recommendation_menu};
+    use super::lsp_recommendation_menu::{render_lsp_recommendation_menu, LspRecommendation};
 
     #[test]
     fn snapshot_lsp_recommendation_menu() {

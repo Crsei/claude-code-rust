@@ -22,7 +22,6 @@ pub mod exec;
 pub mod execution;
 pub mod hooks;
 pub(crate) mod observable_input;
-pub mod orchestration;
 pub mod registry;
 
 // --- Single-tool / small-cluster modules -------------------------------------

@@ -18,7 +18,7 @@ use crate::types::message::{ContentBlock, Message, StreamEvent, ToolResultConten
 
 use super::protocol::{BackendMessage, ToolResultContentInfo};
 use super::sink::FrontendSink;
-use crate::ui::status_line::payload::{StatusLineSnapshot, build_payload_from_snapshot};
+use crate::ui::status_line::payload::{build_payload_from_snapshot, StatusLineSnapshot};
 
 // ---------------------------------------------------------------------------
 // SdkMessage → BackendMessage mapping

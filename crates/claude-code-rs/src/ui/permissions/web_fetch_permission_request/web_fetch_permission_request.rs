@@ -1,7 +1,7 @@
 //! Web-fetch permission request rendering.
 
 use crate::ui::permissions::utils::{
-    PermissionRequestView, default_permission_options, render_permission_request,
+    default_permission_options, render_permission_request, PermissionRequestView,
 };
 
 pub fn render_web_fetch_permission_request(

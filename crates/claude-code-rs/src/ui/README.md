@@ -82,3 +82,18 @@ These folders own larger user-facing areas and usually expose their own `mod.rs`
 - `teams/`
 
 Feature domains may depend on shared `components`, `input`, and `rendering` helpers. Shared helpers should not depend back on feature domains unless the coupling is intentionally local and documented.
+
+## Snapshot Review Export
+
+Use the workspace script to regenerate accepted UI snapshots and collect them
+into one flat review folder:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\export-ui-snapshots.ps1
+```
+
+Default output is `target/ui-snapshots/`. Each file is named
+`<module>__NN__<snapshot>.txt`, and `index.md` lists the source module for quick
+navigation. Pass `-CheckOnly` to verify existing snapshots without accepting
+new render output, or `-SkipTests` to only re-export already accepted `.snap`
+files.

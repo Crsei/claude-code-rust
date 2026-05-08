@@ -240,13 +240,12 @@ fn test_dangerous_command_blocked() {
     let result = security_validate("id3", "Bash", &input, &tool, &ctx, now);
     assert!(result.is_some(), "Dangerous command should be blocked");
     let err = result.unwrap();
-    assert!(
-        err.result
-            .data
-            .as_str()
-            .unwrap()
-            .contains("Dangerous command blocked")
-    );
+    assert!(err
+        .result
+        .data
+        .as_str()
+        .unwrap()
+        .contains("Dangerous command blocked"));
 }
 
 #[test]
@@ -270,13 +269,12 @@ fn test_path_traversal_blocked() {
     let result = security_validate("id5", "Write", &input, &tool, &ctx, now);
     assert!(result.is_some(), "Path traversal should be blocked");
     let err = result.unwrap();
-    assert!(
-        err.result
-            .data
-            .as_str()
-            .unwrap()
-            .contains("Invalid file path")
-    );
+    assert!(err
+        .result
+        .data
+        .as_str()
+        .unwrap()
+        .contains("Invalid file path"));
 }
 
 #[test]
@@ -305,13 +303,12 @@ fn test_path_outside_cwd_blocked() {
         outside_path
     );
     let err = result.unwrap();
-    assert!(
-        err.result
-            .data
-            .as_str()
-            .unwrap()
-            .contains("outside the allowed")
-    );
+    assert!(err
+        .result
+        .data
+        .as_str()
+        .unwrap()
+        .contains("outside the allowed"));
 }
 
 #[test]

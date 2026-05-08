@@ -99,7 +99,7 @@ mod tests {
     use super::*;
     use crate::bootstrap::SessionId;
     use crate::plugins::{
-        PluginEntry, PluginSource, PluginStatus, ReloadReport, clear_plugins, register_plugin,
+        clear_plugins, register_plugin, PluginEntry, PluginSource, PluginStatus, ReloadReport,
     };
     use crate::types::app_state::AppState;
     use parking_lot::Mutex;

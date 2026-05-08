@@ -6,15 +6,15 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use serde_json::Value;
 use tokio::process::Command;
 use tracing::{debug, warn};
 
-use super::LspServerConfig;
 use super::transport::{self, JsonRpcTransport};
 use super::types::{DocumentChange, DocumentSyncState};
+use super::LspServerConfig;
 
 // ---------------------------------------------------------------------------
 // LSP Client

@@ -6,7 +6,7 @@
 //! Axum router stays valid either way.
 
 use axum::{
-    http::{StatusCode, Uri, header},
+    http::{header, StatusCode, Uri},
     response::IntoResponse,
 };
 

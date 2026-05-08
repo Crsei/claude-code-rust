@@ -1,7 +1,7 @@
 //! Monitor permission request rendering.
 
 use crate::ui::permissions::utils::{
-    PermissionRequestView, default_permission_options, render_permission_request,
+    default_permission_options, render_permission_request, PermissionRequestView,
 };
 
 pub fn render_monitor_permission_request(

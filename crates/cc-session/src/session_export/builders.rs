@@ -8,7 +8,7 @@ use cc_compact::auto_compact::get_context_window_size;
 use cc_types::message::{ContentBlock, Message, MessageContent, ToolResultContent};
 use cc_utils::tokens::estimate_messages_tokens;
 
-use super::{ContextSnapshot, SessionMeta, TranscriptData, format_ts_millis};
+use super::{format_ts_millis, ContextSnapshot, SessionMeta, TranscriptData};
 
 // ---------------------------------------------------------------------------
 // Session metadata
@@ -31,7 +31,11 @@ pub(super) fn build_session_meta(session_id: &str, messages: &[Message], cwd: &s
             .project_root
             .to_string_lossy()
             .to_string();
-        if p.is_empty() { None } else { Some(p) }
+        if p.is_empty() {
+            None
+        } else {
+            Some(p)
+        }
     };
 
     let started_at = messages.first().map(|m| format_ts_millis(m.timestamp()));

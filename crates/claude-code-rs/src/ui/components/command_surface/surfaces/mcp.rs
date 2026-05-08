@@ -3,7 +3,7 @@ use std::path::Path;
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::ui::command_surface::adapters::mcp::{build_mcp_servers, selected_server_command};
-use crate::ui::command_surface::{CommandSurfaceOutcome, cycle_index, render_tabs};
+use crate::ui::command_surface::{cycle_index, render_tabs, CommandSurfaceOutcome};
 use crate::ui::mcp::mcp_list_panel::McpListPanelState;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpSurface {

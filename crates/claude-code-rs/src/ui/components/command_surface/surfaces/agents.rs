@@ -6,7 +6,7 @@ use crate::ui::agents::agents_list::AgentsListState;
 use crate::ui::agents::types::{AgentDefinition, AgentSourceFilter};
 use crate::ui::agents::utils::get_agent_source_display_name;
 use crate::ui::command_surface::adapters::agents::{agent_entry_to_ui, agent_source_tabs};
-use crate::ui::command_surface::{CommandSurfaceOutcome, cycle_index, render_tabs};
+use crate::ui::command_surface::{cycle_index, render_tabs, CommandSurfaceOutcome};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentsSurface {
     pub(crate) state: AgentsListState,

@@ -129,7 +129,11 @@ fn truncate_str(s: &str, max_width: usize) -> String {
 
 /// Preferred minimum height of the welcome screen.
 pub fn welcome_height_for(width: u16) -> u16 {
-    if width < 20 { 1 } else { PANEL_HEIGHT }
+    if width < 20 {
+        1
+    } else {
+        PANEL_HEIGHT
+    }
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 //! Fallback permission request rendering.
 
-use super::utils::{PermissionRequestView, render_permission_request};
+use super::utils::{render_permission_request, PermissionRequestView};
 
 pub fn render_fallback_permission_request(
     tool_name: &str,

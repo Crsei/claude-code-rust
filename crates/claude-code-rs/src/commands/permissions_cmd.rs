@@ -22,8 +22,8 @@ use async_trait::async_trait;
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::config::settings;
 use crate::permissions::dangerous::{
-    AutoModeRuntimeTransition, set_permission_mode_with_auto_mode_safety,
-    strip_dangerous_permissions_for_active_auto_mode,
+    set_permission_mode_with_auto_mode_safety, strip_dangerous_permissions_for_active_auto_mode,
+    AutoModeRuntimeTransition,
 };
 use crate::plan_workflow;
 use crate::types::tool::{PermissionMode, ToolPermissionContext};
@@ -577,12 +577,11 @@ mod tests {
             ctx.app_state.tool_permission_context.mode,
             PermissionMode::Default
         );
-        assert!(
-            ctx.app_state
-                .tool_permission_context
-                .auto_mode_stripped_always_allow_rules
-                .is_empty()
-        );
+        assert!(ctx
+            .app_state
+            .tool_permission_context
+            .auto_mode_stripped_always_allow_rules
+            .is_empty());
         assert_eq!(
             ctx.app_state
                 .tool_permission_context
@@ -621,12 +620,10 @@ mod tests {
             ctx.app_state.tool_permission_context.pre_plan_mode,
             Some(PermissionMode::AcceptEdits)
         );
-        assert!(
-            project_root
-                .join(".cc-rust")
-                .join("plan-workflow.json")
-                .is_file()
-        );
+        assert!(project_root
+            .join(".cc-rust")
+            .join("plan-workflow.json")
+            .is_file());
         assert!(!nested.join(".cc-rust").join("plan-workflow.json").exists());
     }
 
@@ -638,21 +635,19 @@ mod tests {
             .execute("session-grant Bash", &mut ctx)
             .await
             .unwrap();
-        assert!(
-            ctx.app_state
-                .tool_permission_context
-                .has_session_grant("Bash")
-        );
+        assert!(ctx
+            .app_state
+            .tool_permission_context
+            .has_session_grant("Bash"));
 
         handler
             .execute("clear-session-grants", &mut ctx)
             .await
             .unwrap();
-        assert!(
-            !ctx.app_state
-                .tool_permission_context
-                .has_session_grant("Bash")
-        );
+        assert!(!ctx
+            .app_state
+            .tool_permission_context
+            .has_session_grant("Bash"));
     }
 
     #[tokio::test]
@@ -670,11 +665,10 @@ mod tests {
         };
 
         assert!(text.contains("Auto mode safety"));
-        assert!(
-            !ctx.app_state
-                .tool_permission_context
-                .has_session_grant("Bash")
-        );
+        assert!(!ctx
+            .app_state
+            .tool_permission_context
+            .has_session_grant("Bash"));
         assert_eq!(
             ctx.app_state
                 .tool_permission_context

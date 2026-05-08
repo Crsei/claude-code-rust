@@ -20,8 +20,7 @@ mod post_tool;
 mod pre_tool;
 
 pub use post_tool::{
-    fire_notification_hook, run_event_hooks, run_post_tool_failure_hooks, run_post_tool_hooks,
-    run_stop_hooks,
+    fire_notification_hook, run_event_hooks, run_post_tool_failure_hooks, run_stop_hooks,
 };
 pub use pre_tool::run_pre_tool_hooks;
 
@@ -209,6 +208,7 @@ mod tests {
                 },
                 {
                     "matcher": "*",
+                    "critical": true,
                     "hooks": [
                         {
                             "type": "command",
@@ -222,6 +222,10 @@ mod tests {
         let configs = load_hook_configs(&hooks_value, "PreToolUse");
         assert_eq!(configs.len(), 2);
         assert_eq!(configs[0].matcher.as_deref(), Some("Bash"));
+        assert!(
+            !configs[0].critical,
+            "existing hook configs without critical remain optional"
+        );
         assert_eq!(configs[0].hooks.len(), 1);
         match &configs[0].hooks[0] {
             HookEntry::Command { command, timeout } => {
@@ -230,6 +234,10 @@ mod tests {
             }
         }
         assert_eq!(configs[1].matcher.as_deref(), Some("*"));
+        assert!(
+            configs[1].critical,
+            "critical hook configs parse the fail-closed flag"
+        );
         match &configs[1].hooks[0] {
             HookEntry::Command { command, timeout } => {
                 assert_eq!(command, "echo audit");

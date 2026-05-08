@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};

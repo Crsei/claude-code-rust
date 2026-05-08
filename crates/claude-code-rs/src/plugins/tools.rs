@@ -5,11 +5,10 @@
 //! `Tool` trait so they flow through the normal tool pipeline.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
@@ -18,8 +17,8 @@ use crate::tools::exec::bash::truncate_output;
 use crate::types::app_state::AppState;
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{
-    FileStateCache, InterruptBehavior, PermissionMode, PermissionResult, Tool, ToolProgress,
-    ToolResult, ToolUseContext, ToolUseOptions,
+    InterruptBehavior, PermissionMode, PermissionResult, Tool, ToolProgress, ToolResult,
+    ToolUseContext,
 };
 use crate::utils::bash::resolve_timeout;
 
@@ -342,7 +341,9 @@ impl Tool for PluginToolWrapper {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::message::AssistantMessage;
+    use std::sync::Arc;
+
+    use crate::types::tool::{FileStateCache, ToolUseOptions};
     use uuid::Uuid;
 
     fn dummy_ctx() -> ToolUseContext {

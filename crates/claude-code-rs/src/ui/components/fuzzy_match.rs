@@ -89,7 +89,7 @@ fn subsequence_score(candidate: &str, query: &str) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FuzzyMatchKind, best_fuzzy_match, fuzzy_match};
+    use super::{best_fuzzy_match, fuzzy_match, FuzzyMatchKind};
 
     #[test]
     fn ranks_exact_prefix_contains_then_subsequence() {

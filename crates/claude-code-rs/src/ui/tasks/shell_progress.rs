@@ -1,7 +1,7 @@
 //! Shell task progress rendering.
 
-use super::TaskStatus;
 use super::task_status_utils::{format_elapsed, progress_bar, state_label};
+use super::TaskStatus;
 
 pub fn render_shell_progress(task: &TaskStatus) -> String {
     format!(

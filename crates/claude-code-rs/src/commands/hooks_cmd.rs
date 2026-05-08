@@ -29,10 +29,10 @@ use serde_json::Value;
 
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::config::settings::{
-    SettingsSource, load_effective, local_settings_path, managed_settings_path,
-    project_settings_path, user_settings_path,
+    load_effective, local_settings_path, managed_settings_path, project_settings_path,
+    user_settings_path, SettingsSource,
 };
-use crate::ui::browser::{TreeNode, ensure_and_open, format_open_outcome, render_with_footer};
+use crate::ui::browser::{ensure_and_open, format_open_outcome, render_with_footer, TreeNode};
 
 /// Recognised hook event names the tree groups on. Unknown events are still
 /// rendered — this list only controls the display order and helps us render

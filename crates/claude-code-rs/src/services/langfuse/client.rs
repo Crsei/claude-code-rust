@@ -1,13 +1,13 @@
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use opentelemetry::KeyValue;
 use opentelemetry::trace::TracerProvider as _;
+use opentelemetry::KeyValue;
 use opentelemetry_langfuse::ExporterBuilder;
-use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::runtime::Tokio;
 use opentelemetry_sdk::trace::span_processor_with_async_runtime::BatchSpanProcessor;
 use opentelemetry_sdk::trace::{BatchConfigBuilder, SdkTracer, SdkTracerProvider};
+use opentelemetry_sdk::Resource;
 use parking_lot::Mutex;
 
 static LANGFUSE_PROVIDER: OnceLock<Mutex<Option<SdkTracerProvider>>> = OnceLock::new();

@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use ignore::WalkBuilder;
 use regex::Regex;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::process::Command;
 
 use crate::types::message::AssistantMessage;

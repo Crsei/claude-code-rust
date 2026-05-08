@@ -570,6 +570,7 @@ impl HookRunner for StopContinuationHookRunner {
         if event_name == "Stop" {
             vec![HookEventConfig {
                 matcher: None,
+                critical: false,
                 hooks: Vec::new(),
             }]
         } else {

@@ -175,7 +175,7 @@ fn truncate_to_width(text: &str, max_width: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ShellOutputRenderOptions, render_user_bash_output_message_with_options};
+    use super::{render_user_bash_output_message_with_options, ShellOutputRenderOptions};
 
     #[test]
     fn collapses_to_recent_lines_with_footer() {

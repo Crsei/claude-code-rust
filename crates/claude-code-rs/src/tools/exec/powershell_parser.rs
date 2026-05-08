@@ -6,7 +6,7 @@
 //! statement-level security patterns. This module keeps the Rust tool on the
 //! same side of that boundary for execution-time validation.
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
@@ -668,10 +668,10 @@ mod tests {
         assert!(application_command_name_rejection(".\\payload.ps1").is_some());
         assert!(application_command_name_rejection("C:\\tmp\\payload.exe").is_some());
         assert!(application_command_name_rejection("where.exe").is_none());
-        assert!(
-            application_command_name_rejection("Microsoft.PowerShell.Management\\Get-ChildItem")
-                .is_none()
-        );
+        assert!(application_command_name_rejection(
+            "Microsoft.PowerShell.Management\\Get-ChildItem"
+        )
+        .is_none());
     }
 
     #[test]
@@ -688,11 +688,9 @@ mod tests {
         let mut diagnostics = Vec::new();
         let mut seen = HashSet::new();
         validate_command(&command, &mut diagnostics, &mut seen);
-        assert!(
-            diagnostics
-                .iter()
-                .any(|message| message.contains("dynamic expression"))
-        );
+        assert!(diagnostics
+            .iter()
+            .any(|message| message.contains("dynamic expression")));
     }
 
     #[test]
@@ -720,10 +718,8 @@ mod tests {
         let mut diagnostics = Vec::new();
         let mut seen = HashSet::new();
         validate_command(&command, &mut diagnostics, &mut seen);
-        assert!(
-            diagnostics
-                .iter()
-                .any(|message| message.contains("colon-bound parameter"))
-        );
+        assert!(diagnostics
+            .iter()
+            .any(|message| message.contains("colon-bound parameter")));
     }
 }

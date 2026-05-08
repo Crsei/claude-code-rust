@@ -2,13 +2,13 @@ use std::path::Path;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
 
 use super::safe_write::{
-    DEFAULT_MAX_WRITE_BYTES, SafeWriteOptions, safe_write_text, validate_write_request,
+    safe_write_text, validate_write_request, SafeWriteOptions, DEFAULT_MAX_WRITE_BYTES,
 };
 
 /// FileWriteTool — Write content to a file
@@ -381,14 +381,12 @@ mod tests {
             result.data.get("path").and_then(|v| v.as_str()),
             Some(expected_path.as_str())
         );
-        assert!(
-            result
-                .data
-                .get("output")
-                .and_then(|v| v.as_str())
-                .unwrap()
-                .contains("Successfully wrote")
-        );
+        assert!(result
+            .data
+            .get("output")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .contains("Successfully wrote"));
 
         let safe_write = result
             .data

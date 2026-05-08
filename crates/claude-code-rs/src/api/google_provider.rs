@@ -15,7 +15,7 @@ use std::pin::Pin;
 use anyhow::{Context, Result};
 use futures::Stream;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::api::client::MessagesRequest;
@@ -742,7 +742,11 @@ fn text_delta_for_block(
         text.to_string()
     };
 
-    if delta.is_empty() { None } else { Some(delta) }
+    if delta.is_empty() {
+        None
+    } else {
+        Some(delta)
+    }
 }
 
 fn map_gemini_finish_reason(reason: Option<&str>, saw_tool_use: bool) -> String {
@@ -939,8 +943,8 @@ mod tests {
             json!({"includeThoughts": true, "thinkingBudget": 512})
         );
         assert_eq!(
-            body["tools"][0]["functionDeclarations"][0]["parametersJsonSchema"]["properties"]["path"]
-                ["type"],
+            body["tools"][0]["functionDeclarations"][0]["parametersJsonSchema"]["properties"]
+                ["path"]["type"],
             "string"
         );
         assert_eq!(

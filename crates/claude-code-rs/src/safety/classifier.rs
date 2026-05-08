@@ -6,14 +6,14 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use cc_config::settings::AutoModeSettings;
 use cc_permissions::decision::{
     AutoClassifierDecision, AutoClassifierStage, AutoClassifierVerdict,
 };
 use regex::Regex;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::query::deps::{ModelCallParams, QueryDeps};

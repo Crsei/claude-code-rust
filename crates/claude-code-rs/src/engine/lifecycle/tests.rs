@@ -284,16 +284,12 @@ mod tests {
 
         let entries = engine.state.read().session_memory.get_memory_context(1);
         assert_eq!(entries.len(), 1);
-        assert!(
-            entries[0]
-                .content
-                .contains("Request: Please add MCP reconnect tests")
-        );
-        assert!(
-            entries[0]
-                .content
-                .contains("Insight: Implemented the manager reconnect path.")
-        );
+        assert!(entries[0]
+            .content
+            .contains("Request: Please add MCP reconnect tests"));
+        assert!(entries[0]
+            .content
+            .contains("Insight: Implemented the manager reconnect path."));
         assert!(entries[0].tags.contains(&"implementation".to_string()));
         assert!(entries[0].tags.contains(&"testing".to_string()));
         assert!(entries[0].tags.contains(&"mcp".to_string()));

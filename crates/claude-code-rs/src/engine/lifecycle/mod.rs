@@ -27,15 +27,15 @@ pub use types::{AbortReason, PermissionDenial, UsageTracking};
 
 use parking_lot::RwLock;
 use std::collections::HashSet;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use tracing::{info, warn};
 
 use crate::bootstrap::SessionId;
 use crate::observability::AuditContext;
 use crate::services::session_memory::{
-    SessionMemoryConfig, SessionMemoryService, extract_session_insight,
+    extract_session_insight, SessionMemoryConfig, SessionMemoryService,
 };
 use crate::types::app_state::AppState;
 use crate::types::config::QueryEngineConfig;
@@ -474,7 +474,11 @@ impl QueryEngine {
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
-                if text.is_empty() { None } else { Some(text) }
+                if text.is_empty() {
+                    None
+                } else {
+                    Some(text)
+                }
             }
             _ => None,
         });

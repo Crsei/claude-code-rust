@@ -29,7 +29,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::engine::agent::fork::{ForkOutcome, ForkParams, run_fork};
+use crate::engine::agent::fork::{run_fork, ForkOutcome, ForkParams};
 use crate::skills;
 
 const SIMPLIFY_SKILL: &str = "simplify";

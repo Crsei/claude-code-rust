@@ -3,8 +3,8 @@ use std::path::Path;
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::ui::command_surface::adapters::diff::build_diff_sources;
-use crate::ui::command_surface::{CommandSurfaceOutcome, cycle_index};
-use crate::ui::diff::diff_dialog::{DiffDialogMode, DiffSource, render_diff_dialog_lines};
+use crate::ui::command_surface::{cycle_index, CommandSurfaceOutcome};
+use crate::ui::diff::diff_dialog::{render_diff_dialog_lines, DiffDialogMode, DiffSource};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiffSurface {
     pub(crate) sources: Vec<DiffSource>,

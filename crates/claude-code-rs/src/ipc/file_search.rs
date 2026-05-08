@@ -20,7 +20,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use tracing::{debug, warn};
 
 use super::protocol::{BackendMessage, FileSearchMatch};

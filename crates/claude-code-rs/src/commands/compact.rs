@@ -538,11 +538,10 @@ mod tests {
         assert!(contains_user_text(&ctx.messages, "anchor message"));
         assert!(contains_user_text(&ctx.messages, "tail message"));
         assert!(!contains_user_text(&ctx.messages, "old one"));
-        assert!(
-            ctx.messages
-                .iter()
-                .any(|message| message.uuid().to_string() == anchor_uuid)
-        );
+        assert!(ctx
+            .messages
+            .iter()
+            .any(|message| message.uuid().to_string() == anchor_uuid));
     }
 
     #[tokio::test]
@@ -573,11 +572,10 @@ mod tests {
         assert!(contains_user_text(&ctx.messages, "start message"));
         assert!(contains_user_text(&ctx.messages, "anchor message"));
         assert!(!contains_user_text(&ctx.messages, "later one"));
-        assert!(
-            ctx.messages
-                .iter()
-                .any(|message| message.uuid().to_string() == anchor_uuid)
-        );
+        assert!(ctx
+            .messages
+            .iter()
+            .any(|message| message.uuid().to_string() == anchor_uuid));
     }
 
     #[tokio::test]

@@ -214,16 +214,12 @@ mod tests {
         let signed1 = sign(&req, &creds).unwrap();
         let signed2 = sign(&req, &creds).unwrap();
         assert_eq!(signed1.authorization, signed2.authorization);
-        assert!(
-            signed1
-                .authorization
-                .starts_with("AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/")
-        );
-        assert!(
-            signed1
-                .authorization
-                .contains("SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date")
-        );
+        assert!(signed1
+            .authorization
+            .starts_with("AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/"));
+        assert!(signed1
+            .authorization
+            .contains("SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date"));
     }
 
     #[test]

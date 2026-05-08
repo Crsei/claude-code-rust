@@ -161,6 +161,9 @@ pub mod frame_requester;
 #[path = "runtime/session_log.rs"]
 pub mod session_log;
 #[allow(dead_code)]
+#[path = "runtime/snapshot_export.rs"]
+pub mod snapshot_export;
+#[allow(dead_code)]
 #[path = "runtime/streaming_controller.rs"]
 pub mod streaming_controller;
 #[path = "runtime/transcript.rs"]

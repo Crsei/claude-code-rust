@@ -28,7 +28,7 @@ use async_trait::async_trait;
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::config::settings::{self, RawSettings, StatusLineSettings};
 use crate::types::message::Message;
-use crate::ui::status_line::payload::{StatusLineSnapshot, build_payload_from_snapshot};
+use crate::ui::status_line::payload::{build_payload_from_snapshot, StatusLineSnapshot};
 use crate::ui::status_line::{StatusLineOutput, StatusLinePayload, StatusLineRunner};
 
 pub struct StatusLineHandler;

@@ -265,18 +265,14 @@ fn test_build_headers_has_required() {
     assert_eq!(headers.get("content-type").unwrap(), "application/json");
     assert_eq!(headers.get("anthropic-version").unwrap(), "2023-06-01");
     assert_eq!(headers.get("x-api-key").unwrap(), "sk-test-key-123");
-    assert!(
-        headers
-            .get("anthropic-beta")
-            .unwrap()
-            .contains("interleaved-thinking")
-    );
-    assert!(
-        headers
-            .get("anthropic-beta")
-            .unwrap()
-            .contains("prompt-caching")
-    );
+    assert!(headers
+        .get("anthropic-beta")
+        .unwrap()
+        .contains("interleaved-thinking"));
+    assert!(headers
+        .get("anthropic-beta")
+        .unwrap()
+        .contains("prompt-caching"));
 }
 
 #[test]
@@ -1131,7 +1127,7 @@ fn test_messages_request_advisor_model_serializes_when_set() {
 
 #[test]
 fn test_provider_supports_advisor_matrix() {
-    use crate::api::client::{ApiProvider, provider_supports_advisor};
+    use crate::api::client::{provider_supports_advisor, ApiProvider};
     assert!(provider_supports_advisor(&ApiProvider::Anthropic {
         api_key: "k".into(),
         base_url: None,

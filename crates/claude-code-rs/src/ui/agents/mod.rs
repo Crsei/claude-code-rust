@@ -34,14 +34,14 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::agent_detail::render_agent_detail;
-    use super::agent_editor::{AgentEditorState, AgentSaveChanges, render_save_change_summary};
+    use super::agent_editor::{render_save_change_summary, AgentEditorState, AgentSaveChanges};
     use super::agent_file_utils::{format_agent_as_markdown, render_agent_file_summary};
     use super::agent_navigation_footer::AgentNavigationFooter;
     use super::agents_list::AgentsListState;
     use super::agents_menu::AgentsMenuState;
     use super::color_picker::ColorPickerState;
     use super::generate_agent::{
-        GenerateAgentRequest, generate_agent_draft, render_generated_agent_preview,
+        generate_agent_draft, render_generated_agent_preview, GenerateAgentRequest,
     };
     use super::model_selector::render_model_selector;
     use super::new_agent_creation::create_agent_wizard::render_create_agent_wizard;
@@ -57,7 +57,7 @@ mod tests {
     use super::new_agent_creation::wizard_steps::tools_step::render_tools_step;
     use super::new_agent_creation::wizard_steps::type_step::render_type_step;
     use super::new_agent_creation::{AgentCreationMethod, AgentWizardData};
-    use super::tool_selector::{ToolSelectorState, default_agent_tools};
+    use super::tool_selector::{default_agent_tools, ToolSelectorState};
     use super::types::{AgentDefinition, AgentMemoryScope, AgentSource, AgentSourceFilter};
     use super::validate_agent::{render_validation_result, validate_agent_definition};
 

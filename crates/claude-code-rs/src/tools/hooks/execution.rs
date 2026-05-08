@@ -5,7 +5,7 @@ use std::process::Stdio;
 use anyhow::{Context, Result};
 use serde_json::Value;
 use tokio::io::AsyncWriteExt;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use super::HookOutput;
 
@@ -34,10 +34,15 @@ pub(super) async fn execute_command_hook(
     if let Some(mut stdin) = child.stdin.take() {
         let json_bytes =
             serde_json::to_vec(stdin_json).context("failed to serialize hook stdin")?;
-        // Best-effort write; if the process exits early, ignore the error
-        let _ = stdin.write_all(&json_bytes).await;
-        let _ = stdin.write_all(b"\n").await;
-        let _ = stdin.flush().await;
+        if let Err(e) = stdin.write_all(&json_bytes).await {
+            warn!(command = command, error = %e, "failed to write hook stdin JSON");
+        }
+        if let Err(e) = stdin.write_all(b"\n").await {
+            warn!(command = command, error = %e, "failed to write hook stdin newline");
+        }
+        if let Err(e) = stdin.flush().await {
+            warn!(command = command, error = %e, "failed to flush hook stdin");
+        }
         // Explicitly drop to close the write end of the pipe
         drop(stdin);
     }
@@ -54,30 +59,49 @@ pub(super) async fn execute_command_hook(
 
         let stdout_fut = async {
             let mut buf = Vec::new();
+            let mut read_error = None;
             if let Some(ref mut r) = stdout_reader {
-                r.read_to_end(&mut buf).await.ok();
+                if let Err(e) = r.read_to_end(&mut buf).await {
+                    read_error = Some(e);
+                }
             }
-            buf
+            (buf, read_error)
         };
         let stderr_fut = async {
             let mut buf = Vec::new();
+            let mut read_error = None;
             if let Some(ref mut r) = stderr_reader {
-                r.read_to_end(&mut buf).await.ok();
+                if let Err(e) = r.read_to_end(&mut buf).await {
+                    read_error = Some(e);
+                }
             }
-            buf
+            (buf, read_error)
         };
         let wait_fut = child.wait();
 
-        let (stdout_bytes, stderr_bytes, wait_result) =
+        let ((stdout_bytes, stdout_read_error), (stderr_bytes, stderr_read_error), wait_result) =
             tokio::join!(stdout_fut, stderr_fut, wait_fut);
 
-        (stdout_bytes, stderr_bytes, wait_result)
+        (
+            stdout_bytes,
+            stdout_read_error,
+            stderr_bytes,
+            stderr_read_error,
+            wait_result,
+        )
     };
 
     match tokio::time::timeout(timeout_duration, collect).await {
-        Ok((stdout_bytes, stderr_bytes, wait_result)) => {
+        Ok((stdout_bytes, stdout_read_error, stderr_bytes, stderr_read_error, wait_result)) => {
             let stdout = String::from_utf8_lossy(&stdout_bytes).to_string();
             let stderr = String::from_utf8_lossy(&stderr_bytes).to_string();
+
+            if let Some(e) = stdout_read_error {
+                warn!(command = command, error = %e, "failed to read hook stdout");
+            }
+            if let Some(e) = stderr_read_error {
+                warn!(command = command, error = %e, "failed to read hook stderr");
+            }
 
             match wait_result {
                 Ok(status) => {
@@ -91,7 +115,7 @@ pub(super) async fn execute_command_hook(
                     }
                 }
                 Err(e) => {
-                    debug!(command = command, error = %e, "hook command wait error");
+                    warn!(command = command, error = %e, "hook command wait error");
                 }
             }
 
@@ -99,7 +123,13 @@ pub(super) async fn execute_command_hook(
         }
         Err(_) => {
             // Timeout expired — kill the child process.
-            let _ = child.kill().await;
+            if let Err(e) = child.kill().await {
+                warn!(
+                    command = command,
+                    error = %e,
+                    "failed to kill timed-out hook command"
+                );
+            }
             Err(anyhow::anyhow!(
                 "hook command timed out after {}s",
                 timeout_secs
@@ -269,13 +299,11 @@ mod tests {
             Ok(output) => {
                 assert!(output.should_continue);
                 assert!(output.additional_context.is_some());
-                assert!(
-                    output
-                        .additional_context
-                        .as_ref()
-                        .unwrap()
-                        .contains("hello_world")
-                );
+                assert!(output
+                    .additional_context
+                    .as_ref()
+                    .unwrap()
+                    .contains("hello_world"));
             }
             Err(e) => {
                 eprintln!("Skipping test_execute_command_hook_plain_text: {}", e);

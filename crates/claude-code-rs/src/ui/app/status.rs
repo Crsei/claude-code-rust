@@ -1,6 +1,6 @@
 use crate::config::settings::StatusLineSettings;
 use crate::ui::status_line::{
-    StatusLinePayload, StatusLineRunner, StatusLineSnapshot, build_payload_from_snapshot, payload,
+    build_payload_from_snapshot, payload, StatusLinePayload, StatusLineRunner, StatusLineSnapshot,
 };
 
 use super::App;

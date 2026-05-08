@@ -19,7 +19,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::sandbox::{Availability, Mechanism, SandboxMode, policy_from_app_state};
+use crate::sandbox::{policy_from_app_state, Availability, Mechanism, SandboxMode};
 
 pub struct SandboxHandler;
 

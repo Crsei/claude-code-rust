@@ -29,8 +29,8 @@ use uuid::Uuid;
 
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::services::scheduler::{
-    ScheduledTask, SchedulerError, SchedulerKind, SchedulerStore, TaskId, TaskPayload,
-    parse_interval,
+    parse_interval, ScheduledTask, SchedulerError, SchedulerKind, SchedulerStore, TaskId,
+    TaskPayload,
 };
 use crate::types::message::{Message, MessageContent, UserMessage};
 

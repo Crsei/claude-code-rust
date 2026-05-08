@@ -1,6 +1,6 @@
+use super::truncate_start_to_width;
 use super::DiffFile;
 use super::MAX_VISIBLE_FILES;
-use super::truncate_start_to_width;
 
 const PATH_PADDING: usize = 20;
 const POINTER_WIDTH: usize = 2;

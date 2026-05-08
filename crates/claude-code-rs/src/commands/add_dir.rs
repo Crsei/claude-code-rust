@@ -208,12 +208,11 @@ mod tests {
         }
 
         // Verify it was added to state
-        assert!(
-            !ctx.app_state
-                .tool_permission_context
-                .additional_working_directories
-                .is_empty()
-        );
+        assert!(!ctx
+            .app_state
+            .tool_permission_context
+            .additional_working_directories
+            .is_empty());
 
         let _ = fs::remove_dir_all(&tmp);
     }

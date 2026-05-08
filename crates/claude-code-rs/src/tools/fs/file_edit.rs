@@ -5,7 +5,7 @@ use std::time::UNIX_EPOCH;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use similar::TextDiff;
 
 use crate::types::message::{AssistantMessage, ToolResultContent};
@@ -14,7 +14,7 @@ use crate::types::tool::{
     ValidationResult,
 };
 
-use super::safe_write::{SafeWriteOptions, safe_write_text};
+use super::safe_write::{safe_write_text, SafeWriteOptions};
 
 /// FileEditTool — Edit a file by replacing exact string matches
 ///
@@ -961,12 +961,10 @@ fn main() {
         permissions.set_readonly(false);
         std::fs::set_permissions(&file_path, permissions).unwrap();
 
-        assert!(
-            result.data["error"]
-                .as_str()
-                .unwrap()
-                .contains("readonly or locked")
-        );
+        assert!(result.data["error"]
+            .as_str()
+            .unwrap()
+            .contains("readonly or locked"));
         assert_eq!(
             tokio::fs::read_to_string(&file_path).await.unwrap(),
             "alpha\n"
@@ -1029,13 +1027,11 @@ fn main() {
             .expect("edit should expose a UI display preview");
         assert_eq!(display_preview["kind"], "file_edit");
         assert_eq!(display_preview["replacements"], 1);
-        assert!(
-            display_preview["hunk_lines"]
-                .as_array()
-                .expect("preview has hunk lines")
-                .iter()
-                .any(|line| line.as_str().is_some_and(|line| line.contains("gamma")))
-        );
+        assert!(display_preview["hunk_lines"]
+            .as_array()
+            .expect("preview has hunk lines")
+            .iter()
+            .any(|line| line.as_str().is_some_and(|line| line.contains("gamma"))));
         let backup_path = first_edit.data["edit_history"]["backup_path"]
             .as_str()
             .expect("edit should create a recovery backup");

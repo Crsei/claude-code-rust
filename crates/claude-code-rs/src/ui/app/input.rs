@@ -5,7 +5,7 @@ use crate::ui::history_search_dialog::{HistorySearchDialog, HistorySearchDialogE
 use crate::ui::transcript::ViewMode;
 use crate::ui::vim::VimAction;
 
-use super::{App, AppAction, current_unix_secs};
+use super::{current_unix_secs, App, AppAction};
 
 impl App {
     pub fn handle_key_event(&mut self, key: KeyEvent) -> AppAction {

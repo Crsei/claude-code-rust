@@ -1,6 +1,6 @@
 //! Computer-use approval rendering.
 
-use crate::ui::permissions::utils::{PermissionRequestView, render_permission_request};
+use crate::ui::permissions::utils::{render_permission_request, PermissionRequestView};
 
 pub fn render_computer_use_approval(
     action: &str,

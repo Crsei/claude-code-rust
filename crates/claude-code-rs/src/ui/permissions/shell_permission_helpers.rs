@@ -1,7 +1,7 @@
 //! Shell permission classification and preview helpers.
 
 use super::utils::{
-    PermissionDecision, PermissionOption, PermissionScope, command_preview, shell_risk_hint,
+    command_preview, shell_risk_hint, PermissionDecision, PermissionOption, PermissionScope,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

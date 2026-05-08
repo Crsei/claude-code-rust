@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::ui::command_surface::{CommandSurfaceOutcome, cycle_index, render_tabs};
+use crate::ui::command_surface::{cycle_index, render_tabs, CommandSurfaceOutcome};
 
 const LOGIN_ACTIONS: &[LoginAction] = &[
     LoginAction {

@@ -13,11 +13,11 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
-use crate::sandbox::{NetworkDecision, policy_from_app_state};
+use crate::sandbox::{policy_from_app_state, NetworkDecision};
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
 

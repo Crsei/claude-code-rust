@@ -5,4 +5,4 @@
 //! working.
 
 #[allow(unused_imports)]
-pub use cc_types::agent_channel::{AgentIpcEvent, AgentReceiver, AgentSender, agent_channel};
+pub use cc_types::agent_channel::{agent_channel, AgentIpcEvent, AgentReceiver, AgentSender};

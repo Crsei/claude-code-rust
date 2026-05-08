@@ -4,7 +4,7 @@ use std::time::UNIX_EPOCH;
 use anyhow::Result;
 use async_trait::async_trait;
 use base64::Engine as _;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{

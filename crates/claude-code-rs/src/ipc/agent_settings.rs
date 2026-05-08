@@ -730,7 +730,11 @@ fn open_in_editor(file_path: &str) -> Result<(), String> {
 }
 
 fn default_editor() -> &'static str {
-    if cfg!(windows) { "notepad" } else { "vi" }
+    if cfg!(windows) {
+        "notepad"
+    } else {
+        "vi"
+    }
 }
 
 fn is_inside_agents_dir(path: &Path) -> bool {

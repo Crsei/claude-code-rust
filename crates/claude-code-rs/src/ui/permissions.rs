@@ -79,7 +79,7 @@ mod tests {
     use super::ask_user_question_permission_request::question_view::render_question_view;
     use super::ask_user_question_permission_request::submit_questions_view::render_submit_questions_view;
     use super::ask_user_question_permission_request::use_multiple_choice_state::{
-        MultipleChoiceState, render_multiple_choice_state,
+        render_multiple_choice_state, MultipleChoiceState,
     };
     use super::bash_permission_request::bash_permission_request::render_bash_permission_request;
     use super::bash_permission_request::bash_tool_use_options::render_bash_tool_use_options;
@@ -91,23 +91,23 @@ mod tests {
         render_file_edit_permission_request, render_file_edit_permission_request_with_diff,
     };
     use super::file_permission_dialog::file_permission_dialog::render_file_permission_dialog;
-    use super::file_permission_dialog::ide_diff_config::{IdeDiffConfig, render_ide_diff_config};
+    use super::file_permission_dialog::ide_diff_config::{render_ide_diff_config, IdeDiffConfig};
     use super::file_permission_dialog::permission_options::file_permission_options;
     use super::file_permission_dialog::use_file_permission_dialog::FilePermissionDialogState;
     use super::file_permission_dialog::use_permission_handler::{
-        FilePermissionDecision, describe_file_permission_decision,
+        describe_file_permission_decision, FilePermissionDecision,
     };
     use super::file_write_permission_request::file_write_permission_request::render_file_write_permission_request;
     use super::file_write_permission_request::file_write_tool_diff::render_file_write_tool_diff;
     use super::filesystem_permission_request::filesystem_permission_request::render_filesystem_permission_request;
-    use super::hooks::{PermissionHookEvent, render_permission_hook_event};
+    use super::hooks::{render_permission_hook_event, PermissionHookEvent};
     use super::monitor_permission_request::monitor_permission_request::render_monitor_permission_request;
     use super::notebook_edit_permission_request::notebook_edit_permission_request::render_notebook_edit_permission_request;
     use super::notebook_edit_permission_request::notebook_edit_tool_diff::render_notebook_edit_tool_diff;
     use super::permission_decision_debug_info::render_permission_decision_debug_info;
     use super::permission_dialog::render_permission_dialog_summary;
     use super::permission_explanation::render_permission_explanation;
-    use super::permission_prompt::{PermissionPromptState, render_permission_prompt};
+    use super::permission_prompt::{render_permission_prompt, PermissionPromptState};
     use super::permission_request::{basic_permission_request, render_permission_request_surface};
     use super::permission_request_title::render_permission_request_title;
     use super::permission_rule_explanation::render_permission_rule_explanation;
@@ -118,7 +118,7 @@ mod tests {
     use super::rules::add_workspace_directory::render_add_workspace_directory;
     use super::rules::permission_rule_description::render_permission_rule_description;
     use super::rules::permission_rule_input::{
-        PermissionRuleInputState, render_permission_rule_input, validate_rule_pattern,
+        render_permission_rule_input, validate_rule_pattern, PermissionRuleInputState,
     };
     use super::rules::permission_rule_list::render_permission_rule_list;
     use super::rules::recent_denials_tab::render_recent_denials_tab;
@@ -128,17 +128,17 @@ mod tests {
     use super::sandbox_permission_request::render_sandbox_permission_request;
     use super::sed_edit_permission_request::sed_edit_permission_request::render_sed_edit_permission_request;
     use super::shell_permission_helpers::{
-        ShellKind, render_shell_permission_details, shell_permission_options,
+        render_shell_permission_details, shell_permission_options, ShellKind,
     };
     use super::skill_permission_request::skill_permission_request::render_skill_permission_request;
     use super::use_shell_permission_feedback::{
-        ShellPermissionFeedback, render_shell_permission_feedback,
+        render_shell_permission_feedback, ShellPermissionFeedback,
     };
     use super::utils::{
-        PermissionDecision, PermissionRequestView, PermissionScope, command_preview,
-        default_permission_options, normalize_multiline, path_action_summary, render_bullets,
-        render_key_values, render_permission_options, render_permission_request, shell_risk_hint,
-        truncate_middle,
+        command_preview, default_permission_options, normalize_multiline, path_action_summary,
+        render_bullets, render_key_values, render_permission_options, render_permission_request,
+        shell_risk_hint, truncate_middle, PermissionDecision, PermissionRequestView,
+        PermissionScope,
     };
     use super::web_fetch_permission_request::web_fetch_permission_request::render_web_fetch_permission_request;
     use super::worker_badge::render_worker_badge;

@@ -1,7 +1,7 @@
 //! Wizard step for tool selection.
 
 use super::render_step_frame;
-use crate::ui::agents::tool_selector::{ToolSelectorState, default_agent_tools};
+use crate::ui::agents::tool_selector::{default_agent_tools, ToolSelectorState};
 
 pub fn render_tools_step(
     selected_tools: Option<Vec<String>>,

@@ -12,7 +12,7 @@ use crate::types::app_state::AppState;
 use crate::types::tool::ToolUseContext;
 use crate::types::tool::{PermissionMode, Tool, Tools};
 
-use super::{ToolExecutionResult, make_error_result};
+use super::{make_error_result, ToolExecutionResult};
 
 /// Centralized security checks run before hooks and permission evaluation.
 ///

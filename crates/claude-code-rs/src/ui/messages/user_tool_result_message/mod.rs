@@ -28,8 +28,8 @@ mod tests {
     use super::user_tool_result_message::render_user_tool_result_message;
     use super::user_tool_success_message::render_user_tool_success_message;
     use super::utils::{
-        CANCEL_MESSAGE, CLASSIFIER_DENIAL_PREFIX, PLAN_REJECTION_PREFIX, ToolResultBlock,
-        UserToolResultLookups, line_to_text,
+        line_to_text, ToolResultBlock, UserToolResultLookups, CANCEL_MESSAGE,
+        CLASSIFIER_DENIAL_PREFIX, PLAN_REJECTION_PREFIX,
     };
     use crate::ui::theme::Theme;
 

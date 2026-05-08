@@ -15,7 +15,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -620,12 +620,10 @@ mod tests {
             .call(json!({}), &ctx, &dummy_msg, None)
             .await
             .unwrap();
-        assert!(
-            result.data["message"]
-                .as_str()
-                .unwrap()
-                .contains("plan mode")
-        );
+        assert!(result.data["message"]
+            .as_str()
+            .unwrap()
+            .contains("plan mode"));
 
         // Verify state changed
         {

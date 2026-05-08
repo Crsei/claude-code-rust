@@ -9,7 +9,7 @@ use crate::types::config::QuerySource;
 use crate::types::tool::*;
 use crate::utils::bash::validate_working_directory;
 
-use super::{AgentInput, AgentTool, build_child_config, collect_stream_result};
+use super::{build_child_config, collect_stream_result, AgentInput, AgentTool};
 
 impl AgentTool {
     /// Run the agent without worktree isolation (normal mode).

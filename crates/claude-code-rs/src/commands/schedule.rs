@@ -36,8 +36,8 @@ use chrono::Utc;
 
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::services::scheduler::{
-    Interval, ScheduledTask, SchedulerError, SchedulerKind, SchedulerStore, TaskId, TaskPayload,
-    parse_interval,
+    parse_interval, Interval, ScheduledTask, SchedulerError, SchedulerKind, SchedulerStore, TaskId,
+    TaskPayload,
 };
 
 pub struct ScheduleHandler;

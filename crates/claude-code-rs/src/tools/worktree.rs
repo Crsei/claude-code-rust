@@ -19,17 +19,17 @@ use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tracing::{debug, info, warn};
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
 use crate::worktree_hooks::{
-    WorktreeRemoveHookOutcome, default_user_worktree_path, ensure_worktree_parent,
-    run_worktree_create_hook, run_worktree_remove_hook, validate_allowed_worktree_path,
+    default_user_worktree_path, ensure_worktree_parent, run_worktree_create_hook,
+    run_worktree_remove_hook, validate_allowed_worktree_path, WorktreeRemoveHookOutcome,
 };
 
 // ---------------------------------------------------------------------------
@@ -697,7 +697,7 @@ mod tests {
     use async_trait::async_trait;
     use cc_types::hooks::{HookEventConfig, HookOutput, HookRunner, HooksMap, NoopHookRunner};
     use parking_lot::RwLock;
-    use serde_json::{Value, json};
+    use serde_json::{json, Value};
     use serial_test::serial;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -1077,12 +1077,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.data["removed"], false);
-        assert!(
-            result.data["message"]
-                .as_str()
-                .unwrap()
-                .contains("outside the cc-rust worktree root")
-        );
+        assert!(result.data["message"]
+            .as_str()
+            .unwrap()
+            .contains("outside the cc-rust worktree root"));
         assert!(get_current_worktree_session().is_some());
 
         set_worktree_session(None);

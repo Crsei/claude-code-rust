@@ -1,411 +1,241 @@
-# cc-rust 技术债务审计报告
+# cc-rust 技术债务
 
-> 审计日期: 2026-04-08 | 分支: rust-lite
+> 更新日期: 2026-05-07 | 当前阶段: 全量构建 / Full Build
 >
-> **修复记录**: 第一批 (安全性) 和第二批 (可维护性) 已完成 — 详见 [已修复](#已修复的问题)
+> 本文件只保留仍需要执行、重评或继续验证的代码层技术债。已经实现、已勘误或已被当前代码结构超越的历史条目已迁移到 [archive/TECH_DEBT.md](archive/TECH_DEBT.md)。
+>
+> 功能缺口与 intentional crop 看 [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md)，用户可感知问题和审查发现看 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)。
 
 ---
 
-## 2026-05-07 P1 后续拆分记录
+## 当前优先级
 
-本轮已继续拆分 Query turn / lifecycle 主流程中的长闭包：
+| 优先级 | 范围 | 当前状态 | 下一步 |
+| --- | --- | --- | --- |
+| P0 | Query / lifecycle / tool execution 主流程 | `query/loop_impl.rs` 与 `engine/lifecycle/submit_message.rs` 已继续拆分，但 `engine/lifecycle/deps.rs`、Phase D 前置准备、inner stream 事件分发和 `SdkResult` 构造仍偏大 | 先补回归测试，再按“helper 提取，不改协议/行为”的方式继续拆分 |
+| P1 | IPC subsystem handlers/types/events | `headless.rs` 已是薄入口，但 subsystem 层仍把 LSP/MCP/Plugin/IDE/Skill/AgentSettings 聚合在大文件里 | 为 IPC JSON 协议补 serialization/roundtrip contract tests，再机械拆到 per-subsystem 模块 |
+| P1 | 过度防御性容错 / 静默降级 | 多处把锁失败、已有配置解析失败、认证读取失败或持久化状态损坏折成默认值/空列表/无认证 | 按边界分级：状态写入和安全/认证路径失败必须显式返回错误；可选文件缺失才允许默认值 |
+| P1 | API provider 与 streaming 转换 | 已有 `StreamProvider` 抽象和 `RetryConfig`/错误分类，但 provider 内部消息转换、SSE/event 语义仍分散 | 收束 provider-local 转换边界，避免跨 provider 行为漂移 |
+| P2 | 全局状态与 runtime registry | `PROCESS_STATE` 已使用 `parking_lot::RwLock` 和部分 accessor，但字段仍大量 `pub`；LSP/plugin registry 仍是全局 `LazyLock` | 逐步转 runtime-owned service / getter-setter，减少多 session 测试污染 |
+| P2 | 代码卫生 | `#![allow(unused)]` / `#[allow(dead_code)]`、重复 `test_ctx()`、通配符导入、工具输入解析风格不统一仍存在 | 按模块小批量清理，保留行为测试 |
+| P2 | 协议与文档一致性 | IPC 协议缺显式版本策略；文档和注释中仍有历史 Lite/乱码残留 | 补协议版本/兼容策略；继续清理 mojibake 和过期文档结论 |
 
-- `query/loop_impl.rs`：抽出 `QueryRunContext` 与 `prepare_model_request()`，把每轮模型请求前的 microcompact、PreCompact/PostCompact hook、tool refresh、autocompact 与 `ModelCallParams` 组装移出主循环。
-- `engine/lifecycle/submit_message.rs`：抽出 `SubmitTurnState`、本地 slash command 分发、`/clear` 会话切换、系统提示词构建、memory recall 分支与 `InstructionsLoaded` hook 触发。
+---
 
-剩余拆分步骤按优先级保留：
+## P1: 过度防御性容错 / 静默降级
+
+审计日期：2026-05-07。扫描信号包括 `.ok()`、`unwrap_or_default()`、`let _ =`、`Err(_) => ...` 与 `allow(dead_code/unused)`。这些信号本身不等于问题；本节只保留人工确认后会改变用户可见行为、数据一致性或诊断能力的点。
+
+执行计划：[`docs/plan/p1-defensive-fail-fast-execution-plan-2026-05-07.md`](plan/p1-defensive-fail-fast-execution-plan-2026-05-07.md)。该计划把本节拆成可按测试驱动执行的阶段，并先给出统一 fail-fast 判定表，减少实现时的开放式推理。
+
+### Phase 1 status - 2026-05-07
+
+### Phase 2-6 closure status - 2026-05-07
+
+Detailed completion records for the fail-fast implementation phases are archived in [archive/TECH_DEBT.md](archive/TECH_DEBT.md). The active P1 fail-fast debt is no longer the completed behavior changes; it is limited to the remaining risks below and future follow-up hardening.
+
+| Phase | Status | Changed files | Verification recorded |
+| --- | --- | --- | --- |
+| Phase 2 - Hook criticality and fail-closed policy | Completed | `crates/cc-types/src/hooks.rs`; `crates/claude-code-rs/src/tools/hooks/{mod.rs,pre_tool.rs,post_tool.rs,execution.rs}`; `crates/claude-code-rs/src/engine/lifecycle/deps.rs`; `crates/claude-code-rs/src/query/loop_tests.rs` | `cargo test -p claude-code-rs tools::hooks -- --nocapture`; `cargo test -p claude-code-rs engine::lifecycle -- --nocapture`; `cargo check -p claude-code-rs --message-format short` |
+| Phase 3 - Single canonical tool execution path | Completed | `crates/claude-code-rs/src/tools/mod.rs`; deleted `crates/claude-code-rs/src/tools/orchestration.rs`; `crates/claude-code-rs/src/tools/hooks/{mod.rs,post_tool.rs}` | `cargo test -p claude-code-rs tools::execution -- --nocapture`; `cargo test -p claude-code-rs query::loop_helpers -- --nocapture`; `cargo test -p claude-code-rs tools::hooks -- --nocapture`; `cargo check -p claude-code-rs --message-format short` |
+| Phase 4 - Existing config/data must not masquerade as missing | Completed | `crates/cc-mcp/src/discovery.rs`; `crates/cc-auth/src/{lib.rs,codex_cli.rs}`; `crates/cc-types/src/permissions.rs`; `crates/claude-code-rs/src/{main.rs,engine/system_prompt.rs,ipc/subsystem_handlers.rs,plugins/loader.rs,plugins/mod.rs,plugins/refresh.rs,commands/memory.rs,commands/model_add.rs,commands/doctor.rs,commands/login.rs,commands/logout.rs,commands/voice_cmd.rs,startup/mod.rs,startup/runtime_config.rs,api/client/mod.rs}` | `cargo test -p cc-mcp discovery -- --nocapture`; `cargo test -p claude-code-rs plugins -- --nocapture`; `cargo test -p claude-code-rs commands::memory -- --nocapture`; `cargo test -p claude-code-rs commands::model_add -- --nocapture`; `cargo test -p claude-code-rs startup -- --nocapture`; `cargo test -p cc-types permissions -- --nocapture`; `cargo test -p cc-auth --lib`; `cargo check -p claude-code-rs --message-format short` |
+| Phase 5 - Protocol and runtime result cardinality | Completed | `crates/claude-code-rs/src/query/loop_helpers.rs`; `crates/claude-code-rs/src/api/streaming.rs`; `crates/claude-code-rs/src/engine/output_style.rs`; `crates/claude-code-rs/src/engine/system_prompt.rs`; `crates/claude-code-rs/src/commands/config_cmd.rs` | `cargo test -p claude-code-rs query::loop_helpers -- --nocapture`; `cargo test -p claude-code-rs api::streaming -- --nocapture`; `cargo test -p claude-code-rs engine::output_style -- --nocapture`; `cargo check -p claude-code-rs --message-format short` |
+| Phase 6 - Team coordination and worktree isolation | Completed | `crates/claude-code-rs/src/teams/runner.rs`; `crates/claude-code-rs/src/engine/agent/supervisor.rs` | `cargo test -p claude-code-rs teams::runner -- --nocapture`; `cargo test -p claude-code-rs engine::agent -- --nocapture`; `cargo check -p claude-code-rs --message-format short` |
+
+### Remaining P1 follow-ups
+
+- `crates/claude-code-rs/src/startup/fast_paths.rs` still has an MCP discovery fallback that should be revisited in a startup-specific pass; Phase 4A intentionally did not edit startup fast paths.
+- Hook IO failures are currently observable through tracing, not persisted into public hook result data.
+- Plugin metadata/cache diagnostics are surfaced as synthetic error plugin entries because status surfaces do not yet expose a dedicated diagnostics schema.
+- Legacy auth compatibility wrappers still log and return unauthenticated for external callers that have not moved to the diagnostic `try_*` APIs.
+- Broader team E2E coverage was not run as part of Phase 6; only the requested `teams::runner` and `engine::agent` filtered suites are recorded.
+- Broad lint allows remain in modules outside the completed phase touch set and should be handled by the general code hygiene track, not this fail-fast closure.
+
+### Phase 1 status detail - 2026-05-07
+
+The original scan tables after this status note are retained only as source context for completed Phase 1-6 work. They should not be treated as the current active fail-fast TODO list; completed records live in [archive/TECH_DEBT.md](archive/TECH_DEBT.md), and the remaining active follow-ups are listed above.
+
+- Status: implemented strict persistence/lock boundaries for TaskStore write operations and mailbox append.
+- Changed files: `crates/claude-code-rs/src/tools/tasks/store.rs`, `crates/claude-code-rs/src/tools/tasks/task_tools.rs`, `crates/claude-code-rs/src/tools/tasks/tests.rs`, `crates/claude-code-rs/src/teams/mailbox.rs`, `crates/claude-code-rs/src/engine/agent/supervisor.rs`, `crates/claude-code-rs/src/commands/tasks_cmd.rs`.
+- Evidence: `cargo test -p claude-code-rs tools::tasks:: -- --nocapture`; `cargo test -p claude-code-rs teams::mailbox -- --nocapture`; `cargo check -p claude-code-rs --message-format short`.
+- Remaining risk: global teammate unassign still returns the legacy summary shape, so caller-level propagation for that coordination path should be handled with the later team coordination phase.
+
+### 判定标准
+
+- 可选文件不存在时返回默认值是合理容错。
+- 已存在的配置/凭据/状态文件读取或解析失败后直接按默认值继续，是过度防御。
+- 清理临时文件、向已关闭 channel 发送通知这类 best-effort 操作不列入本节。
+- 状态写入、锁、认证、安全和协议边界失败不应静默降级。
+
+### 已确认问题
+
+| 优先级 | 范围 | 证据 | 风险 | 建议 |
+| --- | --- | --- | --- | --- |
+| P1 | TaskStore 写入路径拿不到任务锁后继续写 | `crates/claude-code-rs/src/tools/tasks/store.rs:314`、`:378`、`:401`、`:581`、`:615`、`:653` 都把 `acquire_task_list_lock(...).ok()` 转为可选 guard；而 `claim_task()` 在 `:478` 已经把锁失败显式映射为 `LockUnavailable` | 锁超时或创建失败时，create/update/delete/stop 会退回内存快照继续写，绕过 repository refresh，可能覆盖并发 teammate/agent 的任务状态 | 写操作统一返回 `Result` 或工具错误；只允许显式 stale-lock recovery，不允许持久化写入退回内存态 |
+| P1 | MCP 配置发现把已有配置错误折成“没有服务器” | `crates/cc-mcp/src/discovery.rs:175` 和 `:188` 对 user/project settings 使用 `if let Ok(configs)`；`:211` 解析单个 server 失败直接跳过；调用端如 `crates/claude-code-rs/src/main.rs:438`、`startup/fast_paths.rs:68`、`ipc/subsystem_handlers.rs:1016`、`:1027`、`:1109`、`engine/system_prompt.rs:755` 再用 `unwrap_or_default()` | `settings.json` 存在但 JSON 或某个 server 配置损坏时，MCP server 会从启动、状态面板和系统提示中静默消失，用户只看到“没配置” | 缺失文件返回空；已存在文件的读/解析错误必须产生日志和 UI/IPC 诊断；单个 server 无效时保留 name/scope/error |
+| P1 | 配置写入前的 load-or-default 可能覆盖坏配置 | `crates/claude-code-rs/src/commands/memory.rs:508` 在 `/memory auto` 写入前对 `load_global_config()` 使用 `unwrap_or_default()`；`crates/claude-code-rs/src/commands/model_add.rs:122` 读取 `.env` 失败时按空文件继续保留/重写 | 全局 settings 或 `.env` 已存在但不可读/非法时，后续写入会按空配置重建，丢失原字段、注释或用户手写内容 | 区分“文件不存在”和“存在但读/解析失败”；后者应中止 mutation 并返回可操作错误 |
+| P2 | Auth resolution 把凭据错误折成无认证 | `crates/cc-auth/src/lib.rs:132`、`:146` 只接受 `Ok(Some(...))`；`:181` 对 `load_token()` 使用 `.ok().flatten()`；`:320`-`:323` 在刷新失败时清除 credentials 并返回 `Ok(None)` | 凭据文件损坏、keychain 读取失败或临时网络/服务错误看起来都像未登录；refresh 临时失败可能删除仍可诊断的 token | 引入带 warnings 的 auth resolution 结果；只在确认 revoked/invalid_grant 时清凭据，其他错误应保留凭据并提示 |
+| P2 | Team mailbox 写入路径会把坏 mailbox 重置为空 | `crates/claude-code-rs/src/teams/mailbox.rs:115`-`:118` 写入前读/解析失败时使用 `"[]"` 或 `unwrap_or_default()`；同文件 `read_mailbox()` 在 `:76`-`:87` 已经是严格错误返回 | mailbox 文件一旦损坏，下次写入会覆盖为只含新消息，历史消息丢失；严格读和宽松写行为不一致 | 写入路径复用严格读取；解析失败时保留原文件，写入 `.corrupt`/backup 或直接返回错误 |
+| P2 | Hook 执行 IO 过度 best-effort | `crates/claude-code-rs/src/tools/hooks/execution.rs:37`-`:40` 忽略 stdin 写入/flush 错误，`:58`、`:65` 忽略 stdout/stderr 读取错误，`:102` 超时 kill 也忽略结果 | hook 进程未收到输入、输出被截断或 kill 失败时，调用方只能看到不完整 hook 结果；权限/安全类 hook 难以 fail closed | 保留“进程提前退出”的宽容分支，但把 IO 错误记录到 hook 结果或 tracing；安全相关 hook 失败应可配置为 fail closed |
+| P2 | 大范围 lint allow 掩盖未完成边界 | 本次扫描命中约 211 处 `allow(dead_code/unused/unused_imports)`，例如 `crates/claude-code-rs/src/ipc/subsystem_events.rs:12`、`subsystem_types.rs:13`、`plugins/mod.rs:14`、`teams/runner.rs:8`、`tools/orchestration.rs:1` | 编译器无法帮助发现旧 facade、未接线类型和已经失效的兼容分支；Full Build 阶段容易把“未来会用”误当已实现 | 模块级 allow 改成最小作用域；每个保留项附 issue/计划；每清一个边界先跑对应模块测试 |
+
+### Subagent 补充：过度设计 / fail-fast 债务
+
+2026-05-07 追加。按用户要求构建 3 个 subagent 分别检查 config/auth/MCP/startup、task/team/mailbox/coordination、query/tool execution/hooks/API streaming。以下条目与上表重叠时不重复展开，只补充更明确的 fail-fast 收敛点。
+
+| 优先级 | 范围 | 证据 | 风险 | 建议 |
+| --- | --- | --- | --- | --- |
+| P1 | Hook 策略整体 fail-open | `crates/claude-code-rs/src/tools/hooks/pre_tool.rs:92`-`:99` 和 `engine/lifecycle/deps.rs:786`-`:814` 对 pre-tool hook 错误只 warn 后继续；`tools/hooks/post_tool.rs:141`-`:148`、`:179`-`:197`、`:239`-`:246` 对 post/failure/stop/notification hook 错误也继续 | Hook 很可能承载权限、安全、审计或团队策略；配置错误、脚本不可执行、运行时错误会被包装成“策略未触发”，问题不会在第一现场暴露 | 给 hook 配置增加 critical/optional 语义；critical hook 失败时中止当前 step/tool，optional hook 才允许 warn-only |
+| P1 | 旧工具执行管线与 canonical 管线并存 | `crates/claude-code-rs/src/tools/orchestration.rs:1` 使用 `#![allow(unused)]`；`tools/mod.rs:25` 仍导出该模块；而 `tools/execution/mod.rs:1`-`:6` 已声明 `QueryDeps::execute_tool` 是完整执行入口；`tools/orchestration.rs:113`-`:240` 仍重复 validation、hook、permission、tool-call、post-hook 逻辑 | 两套执行路径会漂移：hook 错误、权限错误、结果截断、审计记录可能出现不一致；未使用代码被 allow 掩盖后难以及时删除 | 删除旧 orchestration，或改成明确的 test-only fixture；生产路径只保留 `QueryDeps::execute_tool` |
+| P1 | 并发工具 JoinError 丢失 tool result | `crates/claude-code-rs/src/query/loop_helpers.rs:431`-`:464` 中 spawned task panic/JoinError 只记录 `tool task panicked`，没有为原始 `tool_use_id` 生成失败结果；`Ok(Err(e))` 分支还使用 `unknown` tool id/name | 模型发出的 tool_use 数量和返回的 tool_result 数量可能不匹配；panic 被日志吞掉后，下一轮对话上下文缺失失败结果 | spawn 前把 `tool_use_id`、`tool_name` 带入 join context；任何 JoinError 都合成对应失败 `ToolExecResult` |
+| P1 | Startup/env/auth/permission 配置错误被当作默认状态 | `crates/claude-code-rs/src/startup/mod.rs:22`-`:30` 对 `.env` 加载使用 `let _ =`；`crates/cc-types/src/permissions.rs:39`-`:46` 把未知 permission mode 解析为 `Default`；`crates/cc-auth/src/lib.rs:118`-`:119`、`:350` 将无效 key 或缺 Tokio runtime 继续折成无认证/无 refresh | 用户明明配置了值，但拼写、权限或运行时问题会表现为“没配置”或默认权限，排查成本高，安全边界也不清晰 | 对“文件存在但不可读/非法”“环境变量存在但非法”“枚举值未知”统一返回诊断；只有真正缺失才使用默认值 |
+| P1 | Plugin loader 把元数据损坏折成无插件 | `crates/claude-code-rs/src/plugins/loader.rs:31`-`:60` 读取或解析 `installed_plugins.json` 失败时返回空列表；`:99`-`:133` 扫 cache 目录时对遍历和 manifest 错误继续；`plugins/mod.rs:488`-`:494` 只注册 loader 返回值；`plugins/refresh.rs:53`-`:56` 还备注 init 会吞错误 | 插件元数据损坏、磁盘权限错误或 manifest 破损会让插件静默消失；刷新逻辑看到的是“没有插件”，不是“插件状态不可用” | loader 返回 `Result<LoadedPlugins, Diagnostics>`；startup/IPC 状态面板展示损坏项，避免自动覆盖或静默清空 |
+| P1 | Team 协调路径过度宽松 | `crates/claude-code-rs/src/teams/mailbox.rs:71`-`:76` 明确 no locking/best-effort 读取；`:105`-`:118` 写入前把坏 mailbox 当空列表；`:190`-`:258` 重试后会强制移除 lock；`teams/runner.rs:224` mailbox 错误只 warn；`:423`-`:459` 对 `ShutdownRequest` 自动批准；`engine/agent/supervisor.rs:575`-`:604` worktree 隔离失败后退回 normal cwd | 团队协作、shutdown 和 worktree isolation 都是高风险边界；失败后继续可能让多个 agent 在错误状态下协同写入或失去隔离 | mailbox 读写统一加锁和严格解析；runner 对协调状态错误 fail task；worktree fallback 需要显式 opt-in 和用户可见 warning |
+| P2 | API streaming parser 对 required fields 使用默认值 | `crates/claude-code-rs/src/api/streaming.rs:21`-`:33`、`:39`-`:50` 对 usage、index、content_block、delta 等字段使用 `unwrap_or_default()` / `unwrap_or(0)` | 上游 SSE 协议漂移或响应损坏时会被映射到 index 0/default block，后续状态机可能在错误上下文里继续 | required 字段解析失败应返回 stream parse error；只对协议明确 optional 的字段保留默认值 |
+| P2 | Output style 配置错误静默回到 Default | `crates/claude-code-rs/src/engine/output_style.rs:45`-`:66` 中未知 style 会尝试磁盘查找，找不到自定义文件时回到 `Default`；`crates/cc-config/src/validation.rs:277`-`:299` 对未知 style 仅给 Info | 用户拼错 style 或自定义文件丢失时，系统提示词悄悄变回默认风格，实际行为和配置界面不一致 | `resolve` 返回带 warning/error 的结果；prompt/status 面板显示当前 style 是否由 fallback 得到 |
+
+### 收敛顺序
+
+1. 先修 TaskStore 锁失败继续写：这是状态一致性风险，且 `claim_task()` 已提供显式失败模式。
+2. 紧接收束 Hook 策略和旧 `tools/orchestration.rs`：一个关系到策略 fail-closed，一个关系到执行路径漂移。
+3. 再修 startup/MCP/plugin/config/auth 的“已有文件或已有值错误被当成缺失”：这些是用户最难自查的静默失败。
+4. 然后修 mailbox/team/worktree isolation：协调和隔离失败不能默认继续协同写入。
+5. 最后处理 API streaming、output style 和 lint allow：先加诊断，再按模块收窄。
+
+---
+
+## P0: Query / lifecycle / tool execution 主流程
+
+### 已完成的本轮拆分
+
+- `query/loop_impl.rs`：已抽出 `QueryRunContext` 与 `prepare_model_request()`，把每轮模型请求前的 microcompact、PreCompact/PostCompact hook、tool refresh、autocompact 与 `ModelCallParams` 组装移出主循环。
+- `engine/lifecycle/submit_message.rs`：已抽出 `SubmitTurnState`、本地 slash command 分发、`/clear` 会话切换、系统提示词构建、memory recall 分支与 `InstructionsLoaded` hook 触发。
+
+### 仍需继续拆分
 
 1. **Lifecycle Phase D 前置准备**：继续从 `submit_message()` 抽出 API client / Langfuse trace 初始化。建议 helper 返回 `Result<ApiSetup, SdkMessage>`，保持“缺失 API provider 时立即 yield Result 并返回”的现有行为。
 2. **Query inner stream 事件处理**：将 `while let Some(item) = inner_stream.next().await` 中的 `QueryYield` 分发拆成效果处理器。建议先引入小枚举表达 `Emit` / `Finish` / `Continue`，避免 helper 直接拥有 async stream 的 `yield` 语义。
 3. **Result 构造去重**：在 `submit_message.rs` 中提取本地命令结果、最大轮次、预算耗尽、缺失 provider 等 `SdkResult` 构造 helper。保持 helper 只承载字段一致性，不提前抽象业务分支。
-4. **边界文件再收敛**：如果 `submit_message.rs` 继续增长，将本地命令处理迁入独立 `lifecycle/local_command.rs`，系统提示词构建迁入 `lifecycle/system_prompt_build.rs`。本次暂不移动文件，避免扩大 diff。
-5. **回归保护补充**：为 slash command fast path、`/clear` session rotation、memory ignore、model-assisted memory fallback、PreCompact/PostCompact hook 顺序补充更细粒度测试，再继续拆 Phase D 的高风险流式分支。
+4. **边界文件再收敛**：如果 `submit_message.rs` 继续增长，将本地命令处理迁入独立 `lifecycle/local_command.rs`，系统提示词构建迁入 `lifecycle/system_prompt_build.rs`。移动前先确保测试覆盖 slash command fast path、`/clear` session rotation、memory recall 和 hook 顺序。
+5. **Tool execution / deps 边界**：`engine/lifecycle/deps.rs` 仍承载 ToolUseContext 组装、validation/security、pre/post hooks、权限询问、工具调用、result size enforcement 和审计。继续拆分前先锁定 `query::loop_helpers`、`engine::lifecycle::deps` 与 `tools::execution` 回归。
 
 ---
 
-## 目录
+## P1: IPC subsystem 聚合
 
-- [CRITICAL — 必须优先修复](#critical--必须优先修复)
-- [HIGH — 严重影响可维护性](#high--严重影响可维护性)
-- [MEDIUM — 代码异味与一致性问题](#medium--代码异味与一致性问题)
-- [严重程度汇总](#严重程度汇总)
-- [建议修复路线图](#建议修复路线图)
+来源：`docs/tmp/claude-code-rs-refactor-audit-2026-05-07.md`
 
----
+### 受影响文件
 
-## CRITICAL — 必须优先修复
+- `crates/claude-code-rs/src/ipc/subsystem_handlers.rs`
+- `crates/claude-code-rs/src/ipc/subsystem_events.rs`
+- `crates/claude-code-rs/src/ipc/subsystem_types.rs`
+- `crates/claude-code-rs/src/ipc/agent_settings.rs`
 
-### ~~1. `query/loop_impl.rs` — 1105 行巨型异步生成器~~ ✅ 已修复
+### 证据
 
-> **已拆分为 3 个文件**: `loop_impl.rs` (451行, 核心 stream 循环) + `loop_helpers.rs` (253行, 辅助函数) + `loop_tests.rs` (369行, 测试)
->
-> 辅助函数 `handle_prompt_too_long()`, `handle_max_output_tokens()`, `execute_tool_calls()`, `make_abort_message()`, `make_error_message()`, `make_user_message()` 已提取到 `loop_helpers.rs`。
+- `subsystem_handlers.rs` 同时处理 LSP、MCP、Plugin、IDE、Skill、AgentSettings 命令和 status snapshot builder。
+- `subsystem_events.rs` 同时定义多个 subsystem 的 event enum、command enum 和 event bus。
+- `subsystem_types.rs` 与 `subsystem_events.rs` 仍用 `#![allow(dead_code)]` 预定义未来扩展类型。
+- `ipc/headless.rs` 已经是薄入口，但 subsystem 层没有完成同等拆分。
+- `docs/ipc-refactor-plan.md` 仍是活跃计划，但内容早于当前结构，不能当作完成状态。
 
----
+### 建议切法
 
-### ~~2. `engine/lifecycle.rs` — 1703 行上帝文件~~ ✅ 已修复
-
-> **已拆分为 `engine/lifecycle/` 目录模块 (6 个文件)**:
-> - `mod.rs` (201行) — QueryEngine struct + 构造器 + pub 方法 + re-exports
-> - `submit_message.rs` (637行) — Phase A-E 主流式管道
-> - `deps.rs` (399行) — QueryEngineDeps struct + QueryDeps trait 实现
-> - `helpers.rs` (194行) — format_conversation_for_summary, build_messages_request
-> - `types.rs` (61行) — UsageTracking, PermissionDenial, AbortReason
-> - `tests.rs` (197行) — 所有测试
+1. 建立 `ipc/subsystems/{lsp,mcp,plugin,ide,skill,agent_settings}/`。
+2. 每个子域自带 `types.rs`、`events.rs`、`handlers.rs`，顶层只保留统一 `SubsystemEvent` 和 event bus。
+3. 先补 serialization/roundtrip contract tests，再机械迁移。不要同时修改 JSON 协议。
 
 ---
 
-### 3. 命令处理器中的系统性 `panic!()` — 26+ 处
+## P1: API provider 与 streaming 转换
 
-**受影响文件**: `commands/` 目录下 20+ 个文件
+### 当前状态
 
-```rust
-// 当前代码 (出现在 compact.rs, config_cmd.rs, context.rs, copy.rs,
-// cost.rs, exit.rs, extra_usage.rs, fast.rs 等)
-match result {
-    CommandResult::Output(text) => { /* ... */ },
-    _ => panic!("Expected Output result"),  // 生产代码中的 panic!
-}
-```
+- `api/stream_provider.rs` 已提供 `StreamProvider` trait，解决了早期 provider routing 大量 match 的问题。
+- `api/retry.rs` 已有 `RetryConfig`、`ApiErrorCategory` 与 `categorize_stream_start_error()`，早期“重试循环重复 ~90 行”的结论已归档。
+- Provider 内部的消息转换、SSE event 语义和错误字符串解析仍分散在 `api/google_provider.rs`、`api/openai_compat.rs`、`api/bedrock.rs`、`api/vertex.rs` 等文件中。
 
-**影响**: 如果 `CommandResult` 枚举新增变体或逻辑变更，进程直接崩溃而非优雅降级。
+### 剩余风险
 
-**建议**:
-```rust
-// 修复方案
-match result {
-    CommandResult::Output(text) => { /* ... */ },
-    other => return Err(anyhow::anyhow!("Expected Output result, got: {:?}", other)),
-}
-```
+- 每接一个 provider 或修一个 stream event 语义，都容易引入跨 provider 行为漂移。
+- `api/retry.rs` 仍有字符串匹配错误分类，例如 prompt-too-long / max-tokens 等分支依赖响应文本。
 
 ---
 
-### 4. API 客户端中的 `panic!()` — 5 处
+## P2: 全局状态与 registry
 
-**文件**: `src/api/client.rs:800+`
+### `PROCESS_STATE`
 
-```rust
-panic!("expected OpenAiCompat");
-panic!("expected Anthropic provider, got {:?}", other);
-```
+`crates/cc-bootstrap/src/state.rs` 已从 `std::sync::RwLock` 迁到 `parking_lot::RwLock`，并有部分 convenience accessors；但以下债务仍存在：
 
-**影响**: 如果 API 服务器返回异常格式或 provider 配置错误，整个进程崩溃。
+- `ProcessState` 仍有大量 `pub` 字段，跨模块可直接修改。
+- `total_cost_usd` 仍是 `f64` 字段，写入需要持有全局写锁。
+- 代码注释仍强调 “DO NOT ADD MORE STATE HERE”，说明该单例应继续保持收敛。
 
-**建议**: 替换为 `Result` 返回，上层统一处理。
+建议继续增加小粒度 accessor/mutator，并把频繁更新字段迁出全局写锁路径。
 
----
+### LSP / plugin registry
 
-## HIGH — 严重影响可维护性
+- `lsp_service/mod.rs` 仍维护 `LSP_CLIENTS`、`DIAGNOSTICS`、`DELIVERED_DIAGNOSTICS`、`EVENT_TX` 等全局 `LazyLock`。
+- `plugins/mod.rs` 仍维护全局 `REGISTRY` 和 `EVENT_TX`。
 
-### 5. QueryEngine 的 10 个 `Arc<Mutex/RwLock>` 字段
-
-**文件**: `src/engine/lifecycle/mod.rs:56-88`
-
-```rust
-pub struct QueryEngine {
-    mutable_messages: Arc<RwLock<Vec<Message>>>,
-    abort_reason: Arc<Mutex<Option<AbortReason>>>,
-    aborted: Arc<AtomicBool>,
-    usage: Arc<Mutex<UsageTracking>>,
-    permission_denials: Arc<Mutex<Vec<PermissionDenial>>>,
-    total_turn_count: Arc<Mutex<usize>>,
-    app_state: Arc<RwLock<AppState>>,
-    tools: Arc<RwLock<Tools>>,
-    discovered_skill_names: Arc<Mutex<HashSet<String>>>,
-    loaded_nested_memory_paths: Arc<Mutex<HashSet<String>>>,
-}
-```
-
-**问题**:
-- 每个字段独立加锁，`submit_message` 闭包中逐一 clone (lines 210-224)
-- 无法保证跨字段的一致性（需要修改 A 和 B 时，它们各自独立加锁）
-- 潜在的锁竞争和死锁风险
-
-**建议**: 合并为单一状态结构:
-```rust
-struct QueryEngineState {
-    messages: Vec<Message>,
-    abort_reason: Option<AbortReason>,
-    usage: UsageTracking,
-    permission_denials: Vec<PermissionDenial>,
-    // ...
-}
-
-pub struct QueryEngine {
-    state: Arc<RwLock<QueryEngineState>>,
-    aborted: Arc<AtomicBool>,  // 保留独立，因为需要无锁检查
-}
-```
+这些全局状态让单测和多 session 隔离变难。短期可以接受，长期应改为 runtime-owned service，并通过 headless/TUI runtime 注入。
 
 ---
 
-### 6. 全局 `PROCESS_STATE` 单例
+## P2: 代码卫生
 
-**文件**: `src/bootstrap/state.rs:21-26`
+### `#![allow(unused)]` / `#[allow(dead_code)]`
 
-```rust
-pub static PROCESS_STATE: LazyLock<RwLock<ProcessState>> =
-    LazyLock::new(|| RwLock::new(ProcessState::default()));
-```
+当前仍能在 plugins、teams、engine、ipc、daemon、tools 等模块中看到 allow 指令。清理策略：
 
-**问题**:
-- 从 async 流式闭包内写入 `total_cost_usd`，存在锁竞争
-- 15+ 个 `pub` 字段，无任何封装
-- 5 处 `.expect("PROCESS_STATE poisoned")` — RwLock poison 时直接 panic
-- 代码注释承认: "DO NOT ADD MORE STATE HERE"
+1. 先分模块确认是未来扩展、测试可见性还是已死代码。
+2. 已死代码优先删除。
+3. 未来扩展保留时需要写明调用计划或 issue/plan 引用。
 
-**建议**: 
-- 使用 `parking_lot::RwLock` (不会 poison)
-- 将频繁更新的字段（如 `total_cost_usd`）改用 `AtomicF64` 或独立的 `Arc<Mutex<f64>>`
-- 添加 getter/setter 方法封装字段访问
+### 重复测试样板
 
----
+多个 command 测试仍各自定义 `test_ctx()`。建议收敛到 command test helper，避免以后新增字段时重复改几十处。
 
-### 7. API 重试逻辑代码重复 ~90 行
+### 通配符导入
 
-**文件**: `src/api/client.rs:409-499`
+`use crate::types::tool::*` 仍出现在 agent、MCP、web、task、fs 等路径中。建议按文件逐步改为显式导入，降低依赖面噪音。
 
-`messages_stream_with_retry` 和 `messages_with_retry` 包含几乎相同的重试循环:
+### 工具输入解析方式不一致
 
-```rust
-// 两处独立维护的相同逻辑:
-let is_retryable = err_msg.contains("RateLimit")
-    || err_msg.contains("Overloaded")
-    || err_msg.contains("ServerError")
-    || err_msg.contains("HTTP 429")
-    || err_msg.contains("HTTP 500")
-    || err_msg.contains("HTTP 502")
-    || err_msg.contains("HTTP 503")
-    || err_msg.contains("HTTP 529");
-```
+当前仍混用手写 `parse_input()`、`call()` 内联解析和 serde 结构体反序列化。新工具优先使用 serde 结构体；旧工具迁移时按风险和测试覆盖分批处理。
 
-**双重问题**:
-1. ~90 行重复代码
-2. 错误检测靠**字符串匹配 HTTP 状态码**，极其脆弱
+### 模型元数据 registry 未完全统一
 
-**建议**: 提取 `RetryPolicy` 结构体，使用类型化的错误分类（而非字符串匹配）。
+模型别名已收敛到 `model_registry.rs`，但 marketing name / knowledge cutoff 仍在 `cc-config::constants` 中独立维护。后续可以把 alias、展示名、cutoff 等合并为单一 `ModelInfo` 表，减少漂移。
 
 ---
 
-### 8. API 提供商抽象不足
+## P2: 协议与文档一致性
 
-**文件**: `src/api/client.rs`, `src/api/google_provider.rs`, `src/api/openai_compat.rs`
+### IPC 协议版本策略
 
-**问题**:
-- 三个提供商各自实现消息格式转换，存在大量重复逻辑
-- Provider routing 通过散落在多个函数中的 match 语句实现 (client.rs:302-370)
-- `ApiProvider` 枚举字段命名不一致: `base_url` vs `endpoint` vs `project_id`
-- `Bedrock` 和 `Vertex` 变体标记 `#[allow(dead_code)]` — 未实现的空壳
+`ipc/protocol` 仍缺显式协议版本和兼容策略。当前后端消息中仍有泛型 `serde_json::Value` 载荷，前后端可能在无感知情况下漂移。
 
-**建议**: 定义 `trait ApiProviderImpl`，每个提供商独立实现，通过 trait object 分发。
+### UI facade 清理
 
----
+Rust TUI 已有更清晰的目录职责，早期“大文件问题”大多转为 facade 和 `dead_code` 清理问题。优先级低于 Query/tool execution 与 IPC，但后续改 UI 时应顺手减少 path facade。
 
-### ~~9. `mcp/client.rs` — 1008 行混合 6 种职责~~ ✅ 已修复
+### 编码和文档债
 
-> **已拆分为 4 个文件**:
-> - `client.rs` (502行) — McpClient struct + 连接/初始化/断开 + 工具/资源操作 + JSON-RPC 消息
-> - `transport.rs` (142行) — reader_loop + dispatch_response (后台 I/O)
-> - `manager.rs` (127行) — McpManager (多服务器编排)
-> - `client_tests.rs` (234行) — 所有测试
+多个代码注释和文档仍有历史 mojibake、Lite wording 或过期行数。后续整理规则：
+
+- 活跃 TODO 只保留在 `TECH_DEBT.md`、`IMPLEMENTATION_GAPS.md`、`KNOWN_ISSUES.md` 等入口。
+- 已完成内容迁入 `docs/archive/`。
+- 触及历史 Lite 结论时按 Full Build 语义重评。
 
 ---
 
-## MEDIUM — 代码异味与一致性问题
+## 归档规则
 
-### 10. 广泛的 `#![allow(unused)]` 指令
+完成任何本文件条目后：
 
-- **commands/**: 20/32 个文件顶部有此指令
-- **tools/**: 7/20+ 个文件顶部有此指令
-
-**影响**: 掩盖了真正的未使用代码和导入警告，累积死代码。
-
----
-
-### 11. 测试样板代码重复 — 13+ 处
-
-`test_ctx()` 辅助函数在 13+ 个命令文件中完全相同地复制粘贴:
-
-```rust
-// 在 help.rs, config_cmd.rs, context.rs, copy.rs, fast.rs,
-// init.rs, model.rs, mcp_cmd.rs, permissions_cmd.rs,
-// resume.rs, session.rs, skills_cmd.rs, status.rs 中重复
-fn test_ctx() -> CommandContext {
-    CommandContext {
-        messages: Vec::new(),
-        cwd: PathBuf::from("."),
-        app_state: AppState::default(),
-        session_id: SessionId::from_string("test-session"),
-    }
-}
-```
-
-**建议**: 提取到 `commands/test_utils.rs` 或 `#[cfg(test)] mod test_helpers`。
-
----
-
-### 12. 通配符导入 `use crate::types::tool::*`
-
-**受影响文件**: `tools/agent.rs`, `tools/grep.rs`, `tools/lsp.rs`, `tools/plan_mode.rs`, `tools/config_tool.rs` 等
-
-**影响**: 降低依赖可见性，难以追踪实际使用了哪些类型。
-
----
-
-### 13. 模型别名硬编码重复 — 3 处
-
-同一组模型 ID 映射出现在:
-
-| 位置 | 内容 |
-|------|------|
-| `tools/agent.rs:49-57` | `resolve_model_alias()` |
-| `commands/model.rs:18-22` | 模型别名映射 |
-| `config/constants.rs:26-68` | 3 个几乎相同的 if-else 链 (`marketing_name_for_model`, `knowledge_cutoff` 等) |
-
-**建议**: 使用单一的 `ModelInfo` 查找表:
-```rust
-struct ModelInfo {
-    canonical: &'static str,
-    alias: &'static str,
-    marketing_name: &'static str,
-    knowledge_cutoff: &'static str,
-}
-static MODELS: &[ModelInfo] = &[ /* ... */ ];
-```
-
----
-
-### 14. 工具输入解析方式不一致
-
-| 方式 | 使用的工具 |
-|------|-----------|
-| 手动 `fn parse_input()` | bash, file_read, glob_tool, file_write, file_edit |
-| `call()` 中内联解析 | 多数小型工具 |
-| serde 反序列化到结构体 | grep, agent, skill |
-
-**影响**: 新工具作者无法参考一致的模式，增加出错概率。
-
----
-
-### 15. `QueryDeps` trait 过于宽泛
-
-**文件**: `src/query/deps.rs:82-147`
-
-9 个方法混合了 4 种职责:
-- 模型调用 (2 methods)
-- 上下文压缩 (3 methods)
-- 工具执行 (1 method)
-- 状态访问 (3 methods)
-
-**影响**: 测试时需要 mock 全部 9 个方法，即使只测试某一阶段。
-
-**建议**: 拆分为 `ModelCaller`、`Compactor`、`ToolExecutor` 等独立 trait。
-
----
-
-### 16. 字符串匹配做错误分类
-
-**文件**: `src/api/retry.rs:69-71`
-
-```rust
-if body.contains("prompt is too long") || body.contains("too many tokens") {
-    ApiErrorCategory::PromptTooLong
-}
-```
-
-**影响**: API 返回消息格式变化（多语言、大小写、措辞调整）就会导致分类失败。
-
----
-
-### 17. Google Provider 中的 `.unwrap()` 调用
-
-**文件**: `src/api/google_provider.rs:149, 159, 160, 167`
-
-对 JSON 数组/对象访问直接 `.unwrap()`，如果 API 返回格式异常会 panic。
-
----
-
-### 18. IPC 协议无版本策略
-
-**文件**: `src/ipc/protocol.rs`
-
-- 后端消息使用泛型 `serde_json::Value`
-- 无版本号字段
-- 前后端可以在无感知的情况下协议不同步
-
----
-
-### ~~19. 运行时正则编译~~ ✅ 已在第一批修复
-
-> 4 处 `Regex::new().unwrap()` 已改为 `static LazyLock<Regex>`。
-
----
-
-### 20. `ProcessState` 字段全部 pub 暴露
-
-**文件**: `src/bootstrap/state.rs`
-
-15+ 个字段直接 `pub`，无封装，鼓励跨模块边界的直接修改。types/ 下的大多数类型也有同样问题。
-
----
-
-## 严重程度汇总
-
-| 等级 | 总问题数 | 已修复 | 剩余 | 典型代表 |
-|------|---------|--------|------|----------|
-| **CRITICAL** | 4 | 2 ✅ | 2 | ~~巨型函数~~、生产代码 panic 26+ 处 (测试中) |
-| **HIGH** | 5 | 1 ✅ | 4 | ~~mcp/client.rs~~、Arc 泛滥、全局状态、重试代码重复 |
-| **MEDIUM** | 11 | 1 ✅ | 10 | ~~运行时正则~~、allow(unused)、测试样板重复 |
-
----
-
-## 建议修复路线图
-
-### ~~第一批: 安全性~~ — 已修复 {#已修复的问题}
-
-> **勘误**: 原始审计将命令处理器和 API 客户端中的 `panic!()` 错误归类为生产代码，
-> 实际上它们**全部在 `#[cfg(test)]` 测试模块中**。真正的生产代码问题是散布在多个
-> 模块中的裸 `.unwrap()` 调用。
-
-**已修复内容:**
-
-| 修复 | 影响文件 | 变更 |
-|------|---------|------|
-| 运行时正则 → `LazyLock<Regex>` | `utils/bash.rs` | 4 处 `Regex::new().unwrap()` → 4 个 static LazyLock |
-| `engine/lifecycle.rs` 54 处裸 `.unwrap()` | `engine/lifecycle.rs` | 全部替换为 `.expect("descriptive message")` |
-| `utils/cwd.rs` 3 处裸 `.lock().unwrap()` | `utils/cwd.rs` | → `.lock().expect("CWD lock poisoned")` |
-| `utils/abort.rs` 2 处裸 `.lock().unwrap()` | `utils/abort.rs` | → `.lock().expect("abort reason lock poisoned")` |
-| `tools/tasks.rs` 5 处裸 `.lock().unwrap()` | `tools/tasks.rs` | → `.lock().expect("task store lock poisoned")` |
-| `query/token_budget.rs` unsafe unwrap 模式 | `query/token_budget.rs` | `budget.unwrap()` → `match` 安全解构 |
-| `services/prompt_suggestion.rs` NaN 风险 | `prompt_suggestion.rs` | `partial_cmp().unwrap()` → `.unwrap_or(Equal)` |
-| `session/audit_export.rs` 2 处 | `audit_export.rs` | `last().unwrap()` → `last().map().unwrap_or_else()` |
-| `tools/config_tool.rs` 1 处 | `config_tool.rs` | `.as_object_mut().unwrap()` → `.expect("guaranteed object")` |
-| `tools/worktree.rs` 1 处 | `worktree.rs` | `session.unwrap()` → `.expect("guaranteed Some")` |
-
-### ~~第二批: 可维护性~~ — 已修复
-
-**已修复内容:**
-
-| 修复 | 原始行数 | 拆分后 | 最大单文件 |
-|------|---------|--------|-----------|
-| `engine/lifecycle.rs` → `lifecycle/` 目录模块 (6 文件) | 1703 | 1689 | 637 (submit_message.rs) |
-| `query/loop_impl.rs` → 核心 + helpers + tests (3 文件) | 1105 | 1073 | 451 (loop_impl.rs) |
-| `mcp/client.rs` → client + transport + manager + tests (4 文件) | 1008 | 1005 | 502 (client.rs) |
-
-### ~~第三批: 架构改善~~ — 大部分已修复
-
-| 任务 | 状态 | 说明 |
-|------|------|------|
-| ~~合并 QueryEngine 的 10 个 Arc 字段~~ | ✅ | 已合并为 `QueryEngineState` struct (lifecycle/mod.rs) |
-| 提取重试逻辑到 `RetryPolicy` | — | `retry.rs` 已有 `RetryConfig` + `categorize_api_error`，不再重复 |
-| ~~重构 API 提供商为 trait 抽象~~ | ✅ | 已有 `trait StreamProvider` (stream_provider.rs) |
-
-### 第四批: 代码卫生 (预计影响: 全局)
-
-| 任务 | 影响文件数 | 复杂度 |
-|------|-----------|--------|
-| 清理 `#![allow(unused)]` | ~27 | 低 |
-| 提取 `test_ctx()` 到共享模块 | ~13 | 低 |
-| 统一模型别名到查找表 | 3-4 | 低 |
-| 统一工具输入解析模式 | ~15 | 中 |
+1. 在同一 PR 中把完成记录移到 [archive/TECH_DEBT.md](archive/TECH_DEBT.md)。
+2. 写清楚完成证据：关键文件、测试或构建命令、剩余风险。
+3. 如果条目只是误报或被新的架构超越，也归档，但标记为“已勘误”或“已过期”，不要继续留在活跃债务入口。

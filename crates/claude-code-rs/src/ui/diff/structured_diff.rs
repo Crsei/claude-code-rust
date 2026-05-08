@@ -246,7 +246,7 @@ fn parse_range(raw: &str) -> Option<(usize, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{StructuredDiffLineKind, parse_structured_hunks, render_structured_diff_hunks};
+    use super::{parse_structured_hunks, render_structured_diff_hunks, StructuredDiffLineKind};
     use insta::assert_snapshot;
 
     #[test]

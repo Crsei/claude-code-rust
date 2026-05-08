@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::types::{AGENT_FOLDER_NAME, AGENTS_DIR, AgentDefinition, AgentSource};
+use super::types::{AgentDefinition, AgentSource, AGENTS_DIR, AGENT_FOLDER_NAME};
 use super::utils::{memory_label, tools_label};
 
 pub fn format_agent_as_markdown(agent: &AgentDefinition) -> String {

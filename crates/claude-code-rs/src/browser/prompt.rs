@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use crate::types::tool::Tool;
 
-use super::detection::{BrowserToolInfo, detect_browser_tools};
+use super::detection::{detect_browser_tools, BrowserToolInfo};
 use super::permissions::classify_browser_action;
 
 /// Build the system prompt section for browser MCP capabilities.

@@ -4,8 +4,8 @@ use crate::types::tool::Tool;
 use crate::ui::messages::user_tool_result_message::{
     rejected_plan_message::render_rejected_plan_message,
     utils::{
-        CLASSIFIER_DENIAL_PREFIX, PLAN_REJECTION_PREFIX, REJECT_MESSAGE_WITH_REASON_PREFIX,
-        format_tool_output, tool_display_name,
+        format_tool_output, tool_display_name, CLASSIFIER_DENIAL_PREFIX, PLAN_REJECTION_PREFIX,
+        REJECT_MESSAGE_WITH_REASON_PREFIX,
     },
 };
 use crate::ui::theme::Theme;

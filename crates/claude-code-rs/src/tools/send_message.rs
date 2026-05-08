@@ -8,10 +8,10 @@
 //! - Structured shutdown request/response
 //! - Plan approval response
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tracing::{debug, info};
 
 use crate::teams::in_process::InProcessBackend;
@@ -628,11 +628,9 @@ mod tests {
         assert!(recipients.iter().any(|name| name == "worker"));
         assert!(recipients.iter().any(|name| name == "reviewer"));
         assert!(!recipients.iter().any(|name| name == "inactive"));
-        assert!(
-            !recipients
-                .iter()
-                .any(|name| name == constants::TEAM_LEAD_NAME)
-        );
+        assert!(!recipients
+            .iter()
+            .any(|name| name == constants::TEAM_LEAD_NAME));
 
         assert_eq!(
             mailbox::read_mailbox("worker", &team_name).unwrap().len(),
@@ -642,16 +640,12 @@ mod tests {
             mailbox::read_mailbox("reviewer", &team_name).unwrap().len(),
             1
         );
-        assert!(
-            mailbox::read_mailbox("inactive", &team_name)
-                .unwrap()
-                .is_empty()
-        );
-        assert!(
-            mailbox::read_mailbox(constants::TEAM_LEAD_NAME, &team_name)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(mailbox::read_mailbox("inactive", &team_name)
+            .unwrap()
+            .is_empty());
+        assert!(mailbox::read_mailbox(constants::TEAM_LEAD_NAME, &team_name)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

@@ -10,7 +10,7 @@
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use cc_types::hooks::{HookOutput, HookRunner, HooksMap};
 use serde_json::json;
 

@@ -1,7 +1,7 @@
 //! Shared state for the web server layer.
 
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use parking_lot::RwLock;
 

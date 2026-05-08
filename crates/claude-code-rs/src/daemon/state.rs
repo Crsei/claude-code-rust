@@ -6,8 +6,8 @@
 #![allow(dead_code)]
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
 use serde::Serialize;

@@ -1,5 +1,5 @@
 use opentelemetry::trace::Status;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::types::message::Usage;

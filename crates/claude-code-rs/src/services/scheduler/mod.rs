@@ -23,6 +23,6 @@ pub mod interval;
 pub mod store;
 pub mod task;
 
-pub use interval::{Interval, parse_interval};
+pub use interval::{parse_interval, Interval};
 pub use store::{SchedulerError, SchedulerStore};
 pub use task::{ScheduledTask, SchedulerKind, TaskId, TaskPayload};

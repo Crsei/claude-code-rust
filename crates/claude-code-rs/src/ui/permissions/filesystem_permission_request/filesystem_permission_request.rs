@@ -1,8 +1,8 @@
 //! Filesystem permission request rendering.
 
 use crate::ui::permissions::utils::{
-    PermissionRequestView, default_permission_options, path_action_summary,
-    render_permission_request,
+    default_permission_options, path_action_summary, render_permission_request,
+    PermissionRequestView,
 };
 
 pub fn render_filesystem_permission_request(

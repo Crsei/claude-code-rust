@@ -92,11 +92,9 @@ mod tests {
         let claude_md = tmp.join("CLAUDE.md");
         assert!(settings.exists());
         assert!(claude_md.exists());
-        assert!(
-            fs::read_to_string(&claude_md)
-                .unwrap()
-                .contains("Project instructions")
-        );
+        assert!(fs::read_to_string(&claude_md)
+            .unwrap()
+            .contains("Project instructions"));
 
         fs::write(&claude_md, "# Existing instructions\n").unwrap();
 

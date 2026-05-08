@@ -37,10 +37,8 @@ impl SandboxSurface {
                     FormTab::new(
                         "status",
                         "Status",
-                        vec![
-                            FormOption::new("status", "Show sandbox status")
-                                .with_description(format!("sandbox={enabled}; mode={mode}")),
-                        ],
+                        vec![FormOption::new("status", "Show sandbox status")
+                            .with_description(format!("sandbox={enabled}; mode={mode}"))],
                     ),
                     FormTab::new(
                         "mode",

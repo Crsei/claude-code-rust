@@ -4,16 +4,16 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
 
 use super::providers::{detect_provider, search_brave, search_tavily};
 use super::{
-    BRAVE_API_KEY_ENV, DEFAULT_MAX_RESULTS, MAX_QUERY_LENGTH, MAX_RESULTS_CAP, SEARCH_CACHE,
-    SEARCH_TIMEOUT, SearchProvider, SearchResultEntry, TAVILY_API_KEY_ENV, build_cache_key,
-    cache_ttl_secs, filter_results_unified, format_results_text,
+    build_cache_key, cache_ttl_secs, filter_results_unified, format_results_text, SearchProvider,
+    SearchResultEntry, BRAVE_API_KEY_ENV, DEFAULT_MAX_RESULTS, MAX_QUERY_LENGTH, MAX_RESULTS_CAP,
+    SEARCH_CACHE, SEARCH_TIMEOUT, TAVILY_API_KEY_ENV,
 };
 
 // ---------------------------------------------------------------------------

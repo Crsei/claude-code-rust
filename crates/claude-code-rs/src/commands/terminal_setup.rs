@@ -23,7 +23,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::ui::terminal_env::{TerminalEnvConfig, parse_editor_command};
+use crate::ui::terminal_env::{parse_editor_command, TerminalEnvConfig};
 
 pub struct TerminalSetupHandler;
 

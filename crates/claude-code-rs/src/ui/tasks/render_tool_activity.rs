@@ -2,7 +2,7 @@
 
 use super::task_status_utils::kind_label;
 use super::{TaskState, TaskStatus};
-use crate::ui::tool_activity::{ToolActivity, ToolState, render_grouped_activity};
+use crate::ui::tool_activity::{render_grouped_activity, ToolActivity, ToolState};
 
 pub fn render_task_tool_activity(tasks: &[TaskStatus]) -> String {
     if tasks.is_empty() {
