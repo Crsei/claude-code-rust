@@ -5,6 +5,7 @@
 //! TUI, IPC, and `QueryEngine` integration belong in `claude-code-rs`
 //! adapter modules so dependency direction stays one-way.
 
+pub mod adapters;
 pub mod config;
 pub mod events;
 pub mod policy;
@@ -13,6 +14,10 @@ pub mod session_key;
 pub mod source;
 pub mod store;
 
+pub use adapters::{
+    AdapterProvider, AdapterRegistry, AdapterState, AdapterStatus, AdapterTestMessage,
+    RemoteAdapter,
+};
 pub use config::{GatewayConfig, GatewayLimits, GatewayPersistence};
 pub use events::{RunEvent, RunEventKind};
 pub use policy::{BusyDecision, BusySnapshot, GatewayPolicy};

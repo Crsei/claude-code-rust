@@ -47,6 +47,8 @@ pub struct GatewayConfig {
     pub enabled: bool,
     pub persistence: GatewayPersistence,
     pub limits: GatewayLimits,
+    #[serde(default)]
+    pub adapters: GatewayAdaptersConfig,
 }
 
 impl Default for GatewayConfig {
@@ -55,6 +57,7 @@ impl Default for GatewayConfig {
             enabled: false,
             persistence: GatewayPersistence::default(),
             limits: GatewayLimits::default(),
+            adapters: GatewayAdaptersConfig::default(),
         }
     }
 }
@@ -67,6 +70,44 @@ impl GatewayConfig {
     pub fn tokens_path() -> PathBuf {
         paths::gateway_dir().join("tokens.json")
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayAdaptersConfig {
+    #[serde(default)]
+    pub telegram: TelegramAdapterConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TelegramAdapterConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_telegram_api_base_url")]
+    pub api_base_url: String,
+    #[serde(default)]
+    pub test_chat_allowlist: Vec<String>,
+    #[serde(default)]
+    pub probe_updates: bool,
+    #[serde(default, skip_serializing)]
+    pub bot_token: Option<String>,
+}
+
+impl Default for TelegramAdapterConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            api_base_url: default_telegram_api_base_url(),
+            test_chat_allowlist: Vec::new(),
+            probe_updates: false,
+            bot_token: None,
+        }
+    }
+}
+
+fn default_telegram_api_base_url() -> String {
+    "https://api.telegram.org".to_string()
 }
 
 impl GatewayPersistence {
@@ -157,5 +198,15 @@ mod tests {
             .get("limits")
             .and_then(|limits| limits.get("maxPayloadBytes"))
             .is_some());
+    }
+
+    #[test]
+    fn config_does_not_serialize_telegram_token() {
+        let mut config = GatewayConfig::default();
+        config.adapters.telegram.bot_token = Some("123456:raw-secret-token".to_string());
+
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(!json.contains("raw-secret-token"));
+        assert!(!json.contains("123456:"));
     }
 }
