@@ -4,7 +4,7 @@
 
 参考来源：`F:/AIclassmanager/cc/codex/docs/reference/remote-control/hermes-gateway-design.md`
 
-范围：新增 `crates/gateway/**`，并在 `crates/claude-code-rs/src/daemon/**`、`crates/cc-config/src/paths.rs`、必要的 CLI / docs / tests 中接线。`crates/gateway` 不能反向依赖 `claude-code-rs` 内部模块；真实 `QueryEngine` / `SdkMessage` / daemon event 的映射放在 `claude-code-rs` 接线层。
+范围：新增 `crates/gateway/**`，并在 `crates/claude-code-rs/src/daemon/**`、`crates/claude-code-rs/src/commands/**`、`crates/claude-code-rs/src/ui/**`、`crates/cc-config/src/paths.rs`、必要的 CLI / docs / tests 中接线。`crates/gateway` 不能反向依赖 `claude-code-rs` 内部模块；真实 `QueryEngine` / `SdkMessage` / daemon event、`/remote` slash command 和 TUI 展示的映射都放在 `claude-code-rs` 接线层。
 
 目标：在 cc-rust 中建立一个可恢复、可审计、可安全暴露的远程控制网关。它不复制 Hermes 的 Python gateway，也不直接把当前 daemon HTTP API 当公网 API 使用；它吸收 Hermes 的控制面方法，把外部输入归一化为稳定的 source/session/run 模型，再通过现有 daemon worker command/event 和 `QueryEngine` 执行。
 
@@ -38,6 +38,8 @@ HTTP / webhook / future WS / remote channel input
 - `ChannelManager` 已有外部消息 allowlist 和 `ChannelEvent`，但只覆盖 MCP/webhook 到 XML 包装的轻量路径，见 `crates/claude-code-rs/src/daemon/channels.rs:18`-`:61`。
 - 所有运行时数据已有 `CC_RUST_HOME` / `~/.cc-rust` 路径隔离基础，见 `crates/cc-config/src/paths.rs:20`-`:55`、`:80`。
 - TaskTools 已有 remote task metadata、recoverable 和 remote review timeout 基础，见 `crates/claude-code-rs/src/tools/tasks/store.rs:32`-`:34`、`:790`-`:819`。
+- slash command 注册集中在 `crates/claude-code-rs/src/commands/mod.rs` 的 `get_all_commands()` / `/help` 路径中，新增用户命令应走同一注册表。
+- TUI slash 命令提示由 `crates/claude-code-rs/src/ui/components/command_palette/metadata.rs` 提供，交互式命令面板由 `crates/claude-code-rs/src/ui/components/command_surface/**` 提供，状态条可通过 `crates/claude-code-rs/src/ui/components/status_widget.rs` 增加可选 indicator。
 
 ### 2.2 明确缺口
 
@@ -48,6 +50,8 @@ HTTP / webhook / future WS / remote channel input
 - `/api/resize` 是 no-op，`/api/history` 返回空 history 加 SSE/daemon events，见 `crates/claude-code-rs/src/daemon/routes.rs:545`-`:563`。
 - daemon 和 web server 当前都使用 permissive CORS，虽然默认 loopback，但不能直接升级为远程控制公网入口，见 `crates/claude-code-rs/src/daemon/server.rs:25` 和 `crates/claude-code-rs/src/web/mod.rs:42`。
 - `QueryEngine` 有 abort/reset/submit/session 切换能力，但未看到 mid-turn `steer` 语义；`steer` 应作为协议保留项或后续增强，不应在第一阶段伪实现。
+- 当前 cc-rust 未注册 `/remote` slash command；已有 `/channels` 只是 KAIROS channel 占位，`/daemon` 只管理 daemon 进程状态，不能替代 remote-control 操作面。
+- 当前 TUI 没有 remote-control 专属 command surface 或状态 indicator；如果计划只提供 HTTP API，TUI 用户只能依赖 curl/外部 UI，能力不可发现。
 
 ## 3. 设计原则
 
@@ -59,6 +63,7 @@ HTTP / webhook / future WS / remote channel input
 6. 忙碌语义必须命名：`queue`、`interrupt`、`reject` 先落地，`steer` 仅在底层支持后启用。
 7. 事件可恢复：SSE ring buffer 只是热路径，持久化 run event 才是恢复和审计依据。
 8. 所有持久化继续写入 `~/.cc-rust`，不读写上游 Claude/Codex 路径。
+9. 本地可发现：remote-control 必须有 `/remote` slash command、命令面板提示和 TUI 状态展示；HTTP API 不是本地用户的唯一入口。
 
 ## 4. 目标架构
 
@@ -164,6 +169,56 @@ pub fn gateway_webhooks_dir() -> PathBuf {
 └── webhooks/
     └── <route-id>.json
 ```
+
+### 4.3 `/remote` 命令与 TUI 展示接线
+
+`crates/gateway` 只提供控制面模型、HTTP API、adapter registry 和状态快照；`/remote` 命令和 TUI 展示属于 `claude-code-rs` 本地用户入口，放在现有 slash command / TUI 体系内。
+
+目标接线：
+
+```text
+crates/claude-code-rs/src/commands/
+├── mod.rs
+└── remote_cmd.rs
+
+crates/claude-code-rs/src/daemon/
+└── gateway_client.rs          # 或等价 local client，读取 daemon status/token 并调用 loopback gateway API
+
+crates/claude-code-rs/src/ui/components/
+├── command_palette/metadata.rs
+├── command_surface/
+│   ├── mod.rs
+│   ├── adapters/remote.rs
+│   └── surfaces/remote.rs
+└── status_widget.rs
+```
+
+`/remote` 命令族第一版：
+
+- `/remote`、`/remote status`：展示 gateway enablement、daemon running/stale/stopped、bind address、auth mode、queue depth、active run、pending approval、Telegram/Lark 状态。
+- `/remote adapters`：列出 Telegram/Lark 的 configured / connected / connected_outbound_only / blocked / failed 状态和最近错误。
+- `/remote connect telegram|lark`：调用本地 gateway adapter connect endpoint，返回 provider-neutral 诊断。
+- `/remote test-message telegram|lark [target]`：调用 adapter test-message，目标必须通过 allowlist 或 provider 配置解析。
+- `/remote runs [--limit N]`：列出最近 run，包含 status、source、session key 摘要和最后事件时间。
+- `/remote show <run_id>`：展示单个 run 的 meta、policy、终态和最近事件。
+- `/remote events <run_id>`：读取 durable event replay，默认裁剪到最近 N 条。
+- `/remote stop <run_id>`：停止指定 run。
+- `/remote doctor`：诊断 feature gate、daemon、gateway config、auth、CORS/origin、adapter config 和持久化目录权限。
+
+TUI 第一版：
+
+- `/remote` 空参数在 TUI 中打开 `RemoteSurface`；带参数时继续走普通 slash-command handler。
+- `RemoteSurface` 使用 tabs：`Status`、`Adapters`、`Runs`、`Security`。`Webhooks` 可以在 Phase 6 后加入，不在第一版阻塞。
+- `Status` tab 展示 daemon/gateway 总览，不显示 token、secret、provider 原始凭据。
+- `Adapters` tab 支持选择 Telegram/Lark，快捷键触发 `/remote connect <provider>` 和 `/remote test-message <provider>`。
+- `Runs` tab 支持选择 run，快捷键触发 `/remote show <run_id>`、`/remote events <run_id>`、`/remote stop <run_id>`。
+- `status_widget` 增加可选 `remote=off|ok|attention|error` indicator；不得每帧同步轮询网络，只能使用已有 `AppState` 快照、定时轻量刷新或 `/remote` 操作后的缓存。
+
+边界：
+
+- `/remote` 不直接调用 `QueryEngine`，也不直接读写 provider token。
+- `/remote` 的 mutating 操作通过 loopback gateway API 和本地 token/auth helper 完成，行为与外部 API 一致。
+- 如果实现时发现上游完整版已有 `/remote` 语义，应优先对齐上游命令名和输出结构；当前 cc-rust 基线未注册 `/remote`，因此本计划按新增 `remote_cmd.rs` 处理。
 
 ## 5. 外部 API 草案
 
@@ -298,10 +353,12 @@ Telegram/Lark 第一版只要求连接能力，不要求完整远程会话闭环
   - `docs/reference/DAEMON_OPERATIONS.md`
   - 本计划
 - 在 `docs/IMPLEMENTATION_GAPS.md` 中把 “gateway 控制面” 与 “Telegram/Lark adapter 连通性” 区分开。
+- 记录当前无 `/remote` 命令、无 remote command surface、无 remote status indicator，避免后续只交付 API 而漏掉本地操作面。
 
 验收：
 
 - 文档明确：`crates/gateway` 是控制面；Telegram/Lark 是首批 adapter；daemon 是执行宿主；`ipc` 是本地 headless UI bridge。
+- 文档明确：`/remote` slash command 和 TUI 展示由 `claude-code-rs` 接线层实现，不放入 `crates/gateway`。
 - 没有声称现有 `/api/*` 已可作为安全远程公网 API。
 
 验证：
@@ -461,6 +518,9 @@ cargo test -p gateway policy
   - `/remote-control/v1/runs/{run_id}/stop`
   - `/remote-control/v1/runs/{run_id}/approval`
   - `/remote-control/v1/runs/{run_id}/ask-user`
+  - `/remote-control/v1/adapters`
+  - `/remote-control/v1/adapters/{provider}/connect`
+  - `/remote-control/v1/adapters/{provider}/test-message`
 - SSE 事件源从 run store replay，再订阅热事件。
 - `capabilities` 必须报告 `steer=false`，直到底层支持。
 - API 不直接复用 daemon control token 文件；remote token 可以从 daemon token 派生，但需要独立 auth mode 和配置。
@@ -471,6 +531,7 @@ cargo test -p gateway policy
 - `GET /capabilities` 在未认证时只返回非敏感信息。
 - `POST /runs` 返回 `run_id`，`GET /runs/{run_id}` 可轮询状态。
 - `GET /runs/{run_id}/events?last_event_id=...` 能 replay durable events。
+- `/adapters` 系列 endpoint 可供 `/remote` 命令和 TUI 复用，返回稳定、redacted 的 provider status。
 - `/api/*` 保持兼容，不因新增 `/remote-control/*` 改变现有行为。
 
 验证：
@@ -490,6 +551,81 @@ cargo run -p claude-code-rs -- daemon start --port 21990
 $TOKEN = cargo run -p claude-code-rs -- daemon token
 curl.exe -H "Authorization: Bearer $TOKEN" http://127.0.0.1:21990/remote-control/v1/capabilities
 curl.exe -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" -d "{\"prompt\":\"ping\",\"source\":{\"transport\":\"http\",\"tenant\":\"local\",\"workspace\":\"F:/AIclassmanager/cc/rust\",\"client_id\":\"smoke\",\"thread_id\":\"default\"},\"policy\":{\"busy\":\"reject\"}}" http://127.0.0.1:21990/remote-control/v1/runs
+cargo run -p claude-code-rs -- daemon stop
+```
+
+### Phase 4.5：`/remote` slash command 与 TUI 展示
+
+目标：让本地 TUI 用户能发现、配置、诊断和观察 remote-control，而不是只能通过 curl 或外部 UI 调用 `/remote-control/v1/**`。
+
+改动：
+
+- 新增 `crates/claude-code-rs/src/commands/remote_cmd.rs`：
+  - 实现 `/remote` 命令族：`status`、`adapters`、`connect`、`test-message`、`runs`、`show`、`events`、`stop`、`doctor`。
+  - 默认 `/remote` 等价于 `/remote status`；TUI 空参数路径可打开 `RemoteSurface`。
+  - daemon 未运行时输出可操作诊断，不 panic，不要求用户先知道 daemon token。
+  - 所有输出必须 redacted：不打印 Authorization、remote token、provider token、Lark secret、Telegram bot token。
+- 更新 `crates/claude-code-rs/src/commands/mod.rs`：
+  - `pub mod remote_cmd;`
+  - 注册 `command("remote", &[], "Remote-control gateway status and adapters", remote_cmd::RemoteHandler)`。
+  - 扩展 registry 测试，保证 `/remote` 出现在 `/help` 和 command list。
+- 新增 `crates/claude-code-rs/src/daemon/gateway_client.rs` 或等价 local client：
+  - 从 daemon `process_state` 读取 loopback URL；
+  - 读取本地 daemon/gateway auth helper；
+  - 封装 capabilities、adapter connect/test、run list/show/events/stop；
+  - daemon stopped/stale 时返回 typed diagnostic，供 `/remote` 和 TUI 复用。
+- 更新 `crates/claude-code-rs/src/ui/components/command_palette/metadata.rs`：
+  - 增加 `/remote <status|adapters|connect|test-message|runs|show|events|stop|doctor> ...` usage；
+  - examples 至少包含 `/remote status`、`/remote connect telegram`、`/remote runs`。
+- 新增 `crates/claude-code-rs/src/ui/components/command_surface/adapters/remote.rs`：
+  - 把 gateway status snapshot 转成 UI rows；
+  - 统一裁剪 run id、session key、thread id；
+  - 敏感字段只显示 `configured` / `missing` / `redacted`。
+- 新增 `crates/claude-code-rs/src/ui/components/command_surface/surfaces/remote.rs`：
+  - tabs：`Status`、`Adapters`、`Runs`、`Security`；
+  - `Enter` 对选中项执行 show/connect/test/stop；
+  - `r` 刷新：提交 `/remote` 或调用缓存刷新 command；
+  - `Esc` 关闭，行为与现有 `TasksSurface` / `McpSurface` 一致。
+- 更新 `crates/claude-code-rs/src/ui/components/command_surface/mod.rs`：
+  - 加入 `Remote(RemoteSurface)` enum variant；
+  - `for_slash_command("remote", "", state, cwd)` 打开 surface；
+  - `/remote status` 等带参数输入继续走普通 slash handler。
+- 更新 `crates/claude-code-rs/src/ui/components/status_widget.rs` 和 `crates/claude-code-rs/src/ui/app/status.rs`：
+  - 增加可选 `remote` indicator；
+  - 状态只来自快照/缓存，不在 render path 中做阻塞 IO；
+  - 显示规则：disabled/off、ok、attention、error，并在 detail 中列出 adapter/run 摘要。
+
+验收：
+
+- `/help remote` 展示 `/remote` 说明，`/help` 总列表包含 `/remote`。
+- `/remote status` 在 daemon stopped / stale / running 三种状态下都有稳定输出。
+- `/remote adapters` 能显示 Telegram/Lark 的 configured、connected、blocked reason、last error，且无 token 原文。
+- `/remote connect telegram|lark` 调用 gateway adapter connect endpoint；provider 错误以 blocked/failed reason 展示。
+- `/remote test-message telegram|lark` 只对 allowlist/已配置目标发送，未配置时返回可执行的配置诊断。
+- `/remote runs` / `/remote show <run_id>` / `/remote events <run_id>` 能读取 durable run 状态和最近事件。
+- `/remote stop <run_id>` 不直接操作 worker 文件，必须通过 gateway API 或 runner helper。
+- TUI 输入 `/remote` 打开 `RemoteSurface`；输入 `/remote status` 仍按 slash command 输出。
+- command palette 能提示 `/remote` usage；status widget 能显示 remote indicator 且不泄漏 secret。
+
+验证：
+
+```bash
+cargo test -p claude-code-rs remote_cmd
+cargo test -p claude-code-rs commands::tests::test_all_commands_registered
+cargo test -p claude-code-rs ui::components::command_palette
+cargo test -p claude-code-rs ui::components::command_surface
+cargo test -p claude-code-rs ui::components::status_widget
+cargo test -p claude-code-rs ui::app::tests
+```
+
+手工 smoke：
+
+```bash
+$env:FEATURE_KAIROS="1"
+$env:CC_RUST_HOME="$env:TEMP\\cc-rust-remote-control-tui"
+cargo run -p claude-code-rs -- daemon start --port 21990
+cargo run -p claude-code-rs -- --print /remote status
+cargo run -p claude-code-rs -- --print /remote adapters
 cargo run -p claude-code-rs -- daemon stop
 ```
 
@@ -678,6 +814,7 @@ crates/claude-code-rs/tests/e2e_gateway.rs
 - 更新 `docs/CLI_REFERENCE.md`：
   - remote-control feature gate；
   - daemon token；
+  - `/remote` 命令族、TUI command surface 和 status indicator；
   - smoke commands。
 - 更新 `docs/FINAL_RELEASE_PLAN.md`：
   - remote-control gateway 发布门槛；
@@ -688,13 +825,14 @@ crates/claude-code-rs/tests/e2e_gateway.rs
 验收：
 
 - 文档里的每个 endpoint 都有示例请求和错误码。
+- 文档里的 `/remote` 子命令都有用途、参数、示例输出和安全说明。
 - 发布计划明确 remote-control 的测试门槛。
 - 文档明确 Telegram/Lark 当前只承诺连接、健康检查、状态诊断和测试发送；完整远程会话控制是后续增强。
 
 验证：
 
 ```bash
-rg -n "gateway|RemoteSource|run_id|busy|webhook|delivery|Telegram|Lark|ipc" docs crates/gateway crates/claude-code-rs/src/daemon
+rg -n "gateway|RemoteSource|run_id|busy|webhook|delivery|Telegram|Lark|ipc|/remote|RemoteSurface" docs crates/gateway crates/claude-code-rs/src
 ```
 
 ## 8. 测试矩阵
@@ -709,6 +847,10 @@ rg -n "gateway|RemoteSource|run_id|busy|webhook|delivery|Telegram|Lark|ipc" docs
 - `gateway::webhook`：HMAC、rate limit、idempotency、event filter。
 - `gateway::delivery`：target parse、callback allowlist、失败事件。
 - `gateway::adapters`：Telegram/Lark 连接、健康检查、状态诊断、token redaction。
+- `commands::remote_cmd`：status/adapters/connect/test-message/runs/show/events/stop/doctor 输出、错误分支和 redaction。
+- `ui::components::command_palette`：`/remote` usage、examples、argument help。
+- `ui::components::command_surface`：`RemoteSurface` tabs、选择行为、快捷键 command routing。
+- `ui::components::status_widget`：remote indicator 渲染、detail 输出和缺省状态。
 
 ### 集成测试
 
@@ -717,10 +859,14 @@ rg -n "gateway|RemoteSource|run_id|busy|webhook|delivery|Telegram|Lark|ipc" docs
 - `daemon::sse`：旧 SSE replay 不变。
 - `daemon::supervisor`：worker restart 后 remote run 恢复。
 - `ipc`：headless protocol 不被 gateway 修改影响。
+- `/remote` local client：daemon stopped/stale/running 与 gateway API 错误映射。
+- TUI：`/remote` 空参数打开 `RemoteSurface`，带参数保持普通 slash command 路径。
 
 ### E2E / smoke
 
 - loopback daemon + gateway/remote-control token + run create + event stream。
+- `/remote status`、`/remote adapters`、`/remote runs` 对同一 loopback daemon 返回可读状态。
+- TUI command palette 输入 `/rem` 能发现 `/remote`，输入 `/remote` 能打开 remote surface。
 - Telegram/Lark adapter connect endpoint 返回稳定状态。
 - duplicate idempotency 不重复执行。
 - busy reject 返回 409。
@@ -742,6 +888,9 @@ rg -n "gateway|RemoteSource|run_id|busy|webhook|delivery|Telegram|Lark|ipc" docs
 | run event 与 daemon event 双写漂移 | 恢复和排障困难 | 定义唯一映射层 `events.rs`，测试覆盖 daemon event -> run event |
 | 敏感 source metadata 入日志或 prompt | token/PII 泄漏 | redaction 在 `RemoteSource` 序列化前执行，日志只写 hash/route id |
 | 队列无限增长 | 长期 daemon 内存/磁盘膨胀 | 每 session/global queue 上限，过期清理和可见 `queue_full` |
+| `/remote` 或 TUI 直接绕过 gateway auth/runner | 本地命令与外部 API 行为漂移 | `/remote` mutating 操作通过 gateway API/local client；禁止直接写 worker command 文件 |
+| TUI status render path 阻塞轮询 gateway | 输入卡顿、刷新不稳定 | remote indicator 只读快照/缓存；网络 IO 放在 command/action/定时轻量刷新 |
+| `/remote` 输出泄漏 token 或 provider secret | 凭据泄漏 | command、surface、snapshot 测试覆盖 Authorization/Bearer/token/secret redaction |
 
 ## 10. 非目标
 
@@ -762,18 +911,21 @@ rg -n "gateway|RemoteSource|run_id|busy|webhook|delivery|Telegram|Lark|ipc" docs
 3. Phase 2 Telegram/Lark adapter 连通性，证明 Hermes-style adapter 边界。
 4. Phase 3 runner + daemon worker ownership，解决执行边界。
 5. Phase 4 HTTP/SSE run API，给外部 UI 最小可用控制面。
-6. Phase 5 安全硬化，必须在任何非 loopback 使用前完成。
-7. Phase 6 webhook declarative routes。
-8. Phase 7 delivery router。
-9. Phase 8 恢复和长期运行。
-10. Phase 9 docs/release gate。
+6. Phase 4.5 `/remote` command + TUI 展示，让本地用户可发现、可诊断、可操作。
+7. Phase 5 安全硬化，必须在任何非 loopback 使用前完成。
+8. Phase 6 webhook declarative routes。
+9. Phase 7 delivery router。
+10. Phase 8 恢复和长期运行。
+11. Phase 9 docs/release gate。
 
-最小可交付切片建议到 Phase 5 为止：
+最小可交付切片建议到 Phase 5 为止，并包含 Phase 4.5 的本地 `/remote` / TUI 操作面：
 
 - loopback remote-control API；
 - token auth；
 - run create/status/events/stop/approval；
 - Telegram/Lark connect/status/test-message；
+- `/remote status|adapters|connect|runs|show|events|stop|doctor`；
+- TUI command palette、`RemoteSurface`、remote status indicator；
 - queue/reject/interrupt；
 - durable run events；
 - 明确 `steer=false`；
@@ -785,10 +937,14 @@ remote-control gateway 进入可用状态必须满足：
 
 - 所有 gateway 状态写入 `~/.cc-rust/gateway` 或既有 `~/.cc-rust/daemon`，不写上游路径。
 - 外部客户端只依赖 `run_id` 和 `/remote-control/v1/**`，不需要直接操作 daemon command 文件。
+- 本地用户可通过 `/remote` 命令和 TUI `RemoteSurface` 查看 gateway/adapters/runs/security 状态并执行 connect/test/stop 等操作。
+- TUI command palette 能发现 `/remote`，status widget 能显示 redacted remote indicator。
 - Telegram/Lark adapter 可连接并输出状态，但不会绕过 gateway runner 直接触发模型。
 - daemon 重启后 run 状态可解释：completed、failed、cancelled、recoverable 或 queued。
 - 无 token / bad token / bad origin / bad HMAC / duplicate idempotency / queue full 都有稳定响应。
 - permission 和 ask-user response 不会串到其他 run。
 - `cargo test -p gateway` 通过。
 - `cargo test -p claude-code-rs daemon::protocol daemon::routes daemon::sse daemon::supervisor` 通过。
+- `cargo test -p claude-code-rs remote_cmd ui::components::command_palette ui::components::command_surface ui::components::status_widget` 通过。
 - 至少一个 loopback smoke 证明 start -> create run -> events -> stop 闭环。
+- 至少一个本地 smoke 证明 `/remote status`、`/remote adapters`、`/remote runs` 在 daemon running/stopped 状态下输出稳定。
