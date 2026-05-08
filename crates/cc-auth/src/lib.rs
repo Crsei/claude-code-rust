@@ -39,7 +39,7 @@ pub fn set_credentials_path(path: PathBuf) {
 /// Return the registered credentials path, falling back to
 /// `{CC_RUST_HOME | ~/.cc-rust | $TMP/cc-rust}/credentials.json` when the host
 /// hasn't registered one. Kept in sync with `config::paths::data_root` in the
-/// root crate — a small duplication that decouples cc-auth from it.
+/// root crate, a small duplication that decouples cc-auth from it.
 pub(crate) fn credentials_path() -> PathBuf {
     if let Some(p) = CREDENTIALS_PATH.read().clone() {
         return p;
@@ -114,42 +114,58 @@ impl AuthMethod {
 /// 4. API key from system keychain
 /// 5. `AuthMethod::None`
 pub fn resolve_auth() -> AuthMethod {
+    match try_resolve_auth() {
+        Ok(auth) => auth,
+        Err(error) => {
+            tracing::warn!(%error, "Auth resolution failed");
+            AuthMethod::None
+        }
+    }
+}
+
+/// Resolve authentication, preserving diagnostics for present-but-invalid
+/// credentials and runtime/infrastructure failures.
+pub fn try_resolve_auth() -> anyhow::Result<AuthMethod> {
     // 1. ANTHROPIC_API_KEY
     if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-        if !key.is_empty() && api_key::validate_api_key(&key) {
-            return AuthMethod::ApiKey(key);
+        if !key.is_empty() {
+            if api_key::validate_api_key(&key) {
+                return Ok(AuthMethod::ApiKey(key));
+            }
+            anyhow::bail!("ANTHROPIC_API_KEY is present but has an invalid API key format");
         }
     }
 
     // 2. ANTHROPIC_AUTH_TOKEN
     if let Ok(token) = std::env::var("ANTHROPIC_AUTH_TOKEN") {
         if !token.is_empty() {
-            return AuthMethod::ExternalToken(token);
+            return Ok(AuthMethod::ExternalToken(token));
         }
     }
 
     // 3. OAuth token from disk (with auto-refresh if expired)
-    if let Ok(Some((access_token, method))) = try_resolve_oauth() {
+    if let Some((access_token, method)) = try_resolve_oauth()? {
         if method == "console" || method == "openai_codex" {
             // Console mode: API key is in keychain (created at login).
             // OpenAI Codex mode: handled by resolve_codex_auth_token().
             // Fall through to keychain check below.
         } else {
-            return AuthMethod::OAuthToken {
+            return Ok(AuthMethod::OAuthToken {
                 access_token,
                 method,
-            };
+            });
         }
     }
 
     // 4. Keychain
-    if let Ok(Some(key)) = api_key::load_api_key() {
-        if api_key::validate_api_key(&key) {
-            return AuthMethod::ApiKey(key);
+    if let Some(key) = api_key::load_api_key()? {
+        if !api_key::validate_api_key(&key) {
+            anyhow::bail!("system keychain contains an invalid API key format");
         }
+        return Ok(AuthMethod::ApiKey(key));
     }
 
-    AuthMethod::None
+    Ok(AuthMethod::None)
 }
 
 /// Resolve OpenAI Codex auth token.
@@ -159,17 +175,29 @@ pub fn resolve_auth() -> AuthMethod {
 /// 2. OAuth token from `~/.cc-rust/credentials.json` when method is `openai_codex`
 /// 3. Codex CLI credentials from `~/.codex/auth.json` (fallback)
 pub fn resolve_codex_auth_token() -> Option<String> {
+    match try_resolve_codex_auth_token() {
+        Ok(token) => token,
+        Err(error) => {
+            tracing::warn!(%error, "OpenAI Codex auth resolution failed");
+            None
+        }
+    }
+}
+
+/// Resolve OpenAI Codex auth token, preserving diagnostics for invalid stored
+/// credentials and refresh infrastructure failures.
+pub fn try_resolve_codex_auth_token() -> anyhow::Result<Option<String>> {
     // 1. Environment variable
     if let Ok(token) = std::env::var(OPENAI_CODEX_AUTH_TOKEN_ENV) {
         let trimmed = token.trim();
         if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
+            return Ok(Some(trimmed.to_string()));
         }
     }
 
     // 2. cc-rust credentials.json
-    if let Some(token) = try_resolve_codex_from_credentials() {
-        return Some(token);
+    if let Some(token) = try_resolve_codex_from_credentials()? {
+        return Ok(Some(token));
     }
 
     // 3. Codex CLI fallback (~/.codex/auth.json)
@@ -177,38 +205,39 @@ pub fn resolve_codex_auth_token() -> Option<String> {
 }
 
 /// Try to resolve Codex token from cc-rust's own `credentials.json`.
-fn try_resolve_codex_from_credentials() -> Option<String> {
-    let stored = token::load_token().ok().flatten()?;
+fn try_resolve_codex_from_credentials() -> anyhow::Result<Option<String>> {
+    let stored = match token::load_token()? {
+        Some(stored) => stored,
+        None => return Ok(None),
+    };
     let method = stored.oauth_method.clone().unwrap_or_default();
     if !method.eq_ignore_ascii_case("openai_codex") {
-        return None;
+        return Ok(None);
     }
 
     if !token::is_token_expired(&stored) {
-        return Some(stored.access_token);
+        return Ok(Some(stored.access_token));
     }
 
     let refresh_tok = match &stored.refresh_token {
         Some(t) if !t.trim().is_empty() => t.clone(),
-        _ => {
-            let _ = token::remove_token();
-            return None;
-        }
+        _ => anyhow::bail!("OpenAI Codex credentials are expired and have no refresh token"),
     };
 
     let scopes: Vec<String> = stored.scopes.clone();
     match try_refresh_sync(&refresh_tok, &scopes, &stored) {
         Ok(Some((access_token, refreshed_method))) if refreshed_method == "openai_codex" => {
-            Some(access_token)
+            Ok(Some(access_token))
         }
-        Ok(Some(_)) | Ok(None) => {
-            let _ = token::remove_token();
-            None
+        Ok(Some(_)) => {
+            anyhow::bail!("OpenAI Codex refresh returned credentials for another OAuth method")
         }
+        Ok(None) => Ok(None),
         Err(e) => {
-            tracing::warn!(error = %e, "OpenAI Codex OAuth auto-refresh failed");
-            let _ = token::remove_token();
-            None
+            if is_revoked_or_invalid_grant(&e) {
+                let _ = token::remove_token();
+            }
+            Err(e.context("OpenAI Codex OAuth auto-refresh failed"))
         }
     }
 }
@@ -217,22 +246,25 @@ fn try_resolve_codex_from_credentials() -> Option<String> {
 ///
 /// If the token is expired, attempt refresh using the Codex CLI client_id
 /// and save the refreshed token to cc-rust's `credentials.json`.
-fn try_resolve_codex_cli() -> Option<String> {
-    let cred = codex_cli::read_codex_cli_credential()?;
+fn try_resolve_codex_cli() -> anyhow::Result<Option<String>> {
+    let cred = match codex_cli::read_codex_cli_credential()? {
+        Some(cred) => cred,
+        None => return Ok(None),
+    };
 
     if !codex_cli::is_credential_expired(&cred) {
-        return Some(cred.access_token);
+        return Ok(Some(cred.access_token));
     }
 
-    // Token expired — try to refresh
+    // Token expired; try to refresh.
     let refresh_tok = match &cred.refresh_token {
         Some(t) if !t.trim().is_empty() => t.clone(),
-        _ => return None,
+        _ => anyhow::bail!("Codex CLI credentials are expired and have no refresh token"),
     };
 
     let handle = match tokio::runtime::Handle::try_current() {
         Ok(h) => h,
-        Err(_) => return None,
+        Err(e) => anyhow::bail!("Codex CLI token refresh requires a Tokio runtime: {e}"),
     };
 
     let client_id = cred.client_id.clone();
@@ -254,8 +286,7 @@ fn try_resolve_codex_cli() -> Option<String> {
         })
     })
     .join()
-    .ok()?
-    .ok()?;
+    .map_err(|_| anyhow::anyhow!("Codex CLI token refresh thread panicked"))??;
 
     // Save refreshed token to cc-rust's credentials.json
     let expires_at = chrono::Utc::now().timestamp() + result.expires_in as i64;
@@ -281,7 +312,7 @@ fn try_resolve_codex_cli() -> Option<String> {
     };
     let _ = token::save_token(&stored);
     tracing::info!("Codex CLI token refreshed and saved to cc-rust credentials");
-    Some(result.access_token)
+    Ok(Some(result.access_token))
 }
 
 // ---------------------------------------------------------------------------
@@ -303,26 +334,29 @@ fn try_resolve_oauth() -> anyhow::Result<Option<(String, String)>> {
         return Ok(Some((stored.access_token, method)));
     }
 
-    // Token expired — try synchronous refresh via a blocking runtime.
+    // Token expired; try synchronous refresh via a blocking runtime.
     // If we're already inside a tokio runtime, spawn a blocking task;
     // otherwise create a temporary one.
     let refresh_tok = match &stored.refresh_token {
         Some(t) => t.clone(),
-        None => {
-            let _ = token::remove_token();
-            return Ok(None);
-        }
+        None => anyhow::bail!("OAuth credentials are expired and have no refresh token"),
     };
 
     let scopes: Vec<String> = stored.scopes.clone();
     match try_refresh_sync(&refresh_tok, &scopes, &stored) {
         Ok(result) => Ok(result),
         Err(e) => {
-            tracing::warn!(error = %e, "OAuth auto-refresh failed, clearing credentials");
-            let _ = token::remove_token();
-            Ok(None)
+            if is_revoked_or_invalid_grant(&e) {
+                let _ = token::remove_token();
+            }
+            Err(e.context("OAuth auto-refresh failed"))
         }
     }
+}
+
+fn is_revoked_or_invalid_grant(error: &anyhow::Error) -> bool {
+    let text = format!("{error:#}").to_ascii_lowercase();
+    text.contains("invalid_grant") || text.contains("revoked")
 }
 
 /// Synchronous wrapper for token refresh (called from `resolve_auth()`).
@@ -347,7 +381,7 @@ fn try_refresh_sync(
     // Use tokio Handle if available, otherwise skip refresh
     let handle = match tokio::runtime::Handle::try_current() {
         Ok(h) => h,
-        Err(_) => return Ok(None), // No async runtime — can't refresh
+        Err(e) => anyhow::bail!("OAuth token refresh requires a Tokio runtime: {e}"),
     };
 
     let refresh_tok = refresh_tok.to_string();
@@ -407,6 +441,8 @@ pub fn oauth_logout() -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_auth_method_api_key() {
         let auth = AuthMethod::ApiKey("sk-ant-test-key-123456789".into());
@@ -440,5 +476,133 @@ mod tests {
         assert!(auth.is_authenticated());
         assert_eq!(auth.api_key(), None);
         assert_eq!(auth.bearer_token(), Some("oauth-test-token"));
+    }
+
+    #[test]
+    fn corrupt_credentials_file_is_diagnostic_not_missing() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("credentials.json");
+        std::fs::write(&path, "{not-json").unwrap();
+        set_credentials_path(path.clone());
+
+        let err = try_resolve_oauth().expect_err("corrupt existing credentials must be diagnostic");
+
+        assert!(
+            err.to_string().contains("expected")
+                || err.to_string().contains("key")
+                || err.to_string().contains("JSON"),
+            "unexpected error: {err:#}"
+        );
+        assert!(path.exists(), "diagnostic read failure must not clear credentials");
+    }
+
+    #[test]
+    fn expired_oauth_refresh_without_runtime_is_diagnostic_and_preserves_credentials() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("credentials.json");
+        set_credentials_path(path.clone());
+        token::save_token(&expired_token(Some("refresh-token"), "claude_ai")).unwrap();
+
+        let err =
+            try_resolve_oauth().expect_err("refresh infrastructure failure must not be Ok(None)");
+
+        let diagnostic = format!("{err:#}");
+        assert!(
+            diagnostic.contains("Tokio"),
+            "unexpected error: {diagnostic}"
+        );
+        assert!(path.exists(), "infrastructure failure must not clear credentials");
+    }
+
+    #[test]
+    fn expired_oauth_without_refresh_token_is_diagnostic_and_preserves_credentials() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("credentials.json");
+        set_credentials_path(path.clone());
+        token::save_token(&expired_token(None, "claude_ai")).unwrap();
+
+        let err = try_resolve_oauth().expect_err("expired present credentials are invalid");
+
+        assert!(
+            err.to_string().contains("no refresh token"),
+            "unexpected error: {err:#}"
+        );
+        assert!(path.exists(), "invalid present credentials are diagnostic, not auto-cleared");
+    }
+
+    #[test]
+    fn expired_codex_credentials_refresh_without_runtime_is_diagnostic_and_preserves_credentials() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("credentials.json");
+        set_credentials_path(path.clone());
+        token::save_token(&expired_token(Some("refresh-token"), "openai_codex")).unwrap();
+
+        let err = try_resolve_codex_from_credentials()
+            .expect_err("Codex refresh infrastructure failure must not be Ok(None)");
+
+        assert!(
+            err.to_string().contains("OAuth auto-refresh failed"),
+            "unexpected error: {err:#}"
+        );
+        assert!(path.exists(), "Codex refresh infrastructure failure must not clear credentials");
+    }
+
+    #[test]
+    fn invalid_present_env_api_key_is_diagnostic() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _api_key = EnvGuard::set("ANTHROPIC_API_KEY", "not-a-valid-key");
+        let _auth_token = EnvGuard::remove("ANTHROPIC_AUTH_TOKEN");
+        let dir = tempfile::TempDir::new().unwrap();
+        set_credentials_path(dir.path().join("credentials.json"));
+
+        let err = try_resolve_auth().expect_err("invalid present env API key must be diagnostic");
+
+        assert!(
+            err.to_string().contains("ANTHROPIC_API_KEY"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    fn expired_token(refresh_token: Option<&str>, method: &str) -> token::StoredToken {
+        token::StoredToken {
+            access_token: "expired-access".into(),
+            refresh_token: refresh_token.map(str::to_string),
+            expires_at: Some(chrono::Utc::now().timestamp() - 60),
+            token_type: "bearer".into(),
+            scopes: vec!["user:profile".into()],
+            oauth_method: Some(method.to_string()),
+        }
+    }
+
+    struct EnvGuard {
+        key: &'static str,
+        prev: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let prev = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, prev }
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let prev = std::env::var(key).ok();
+            std::env::remove_var(key);
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
     }
 }

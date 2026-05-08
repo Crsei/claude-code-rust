@@ -12,8 +12,6 @@
 //!   5. Memory context injection
 //!   6. Append prompt (if any)
 
-#![allow(unused)]
-
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -21,7 +19,7 @@ use std::sync::Arc;
 use tracing::debug;
 
 use crate::config::claude_md;
-use crate::engine::prompt_sections::{self, DYNAMIC_BOUNDARY, cached_section, uncached_section};
+use crate::engine::prompt_sections::{self, cached_section, uncached_section, DYNAMIC_BOUNDARY};
 use crate::types::tool::Tool;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -153,8 +151,7 @@ fn using_tools_section(enabled_tools: &[&str]) -> String {
 
     let bullets: Vec<String> = items
         .iter()
-        .enumerate()
-        .map(|(i, item)| {
+        .map(|item| {
             if item.starts_with("  - ") {
                 item.clone()
             } else {
@@ -342,7 +339,8 @@ fn mcp_instructions_section() -> Option<String> {
 }
 
 /// Corresponds to TS: `SUMMARIZE_TOOL_RESULTS_SECTION`
-const SUMMARIZE_TOOL_RESULTS: &str = "When working with tool results, write down any important information you might need later \
+const SUMMARIZE_TOOL_RESULTS: &str =
+    "When working with tool results, write down any important information you might need later \
      in your response, as the original tool result may be cleared later.";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -358,6 +356,7 @@ const SUMMARIZE_TOOL_RESULTS: &str = "When working with tool results, write down
 /// `# Language` and `# Output Style: <name>` section respectively.
 ///
 /// Returns `(system_prompt_parts, user_context, system_context)`.
+#[cfg(test)]
 pub fn build_system_prompt(
     custom_prompt: Option<&str>,
     append_prompt: Option<&str>,
@@ -475,8 +474,9 @@ pub fn build_system_prompt_with_memory_contexts(
                 "output_style",
                 move || {
                     let name = output_style_owned.as_deref()?;
-                    let style = crate::engine::output_style::resolve(name, &cwd_for_style);
-                    crate::engine::output_style::style_section(&style)
+                    let resolution =
+                        crate::engine::output_style::resolve_with_diagnostic(name, &cwd_for_style);
+                    crate::engine::output_style::resolution_section(&resolution)
                 },
                 "output style files are read from disk per session",
             ),
@@ -689,6 +689,7 @@ pub fn build_system_prompt_with_memory_contexts(
 ///   2. custom_prompt — replaces default
 ///   3. default_prompt — standard prompt
 ///   + append_prompt always added at end (unless override)
+#[cfg(test)]
 pub fn build_effective_system_prompt(
     default_prompt: Vec<String>,
     custom_prompt: Option<&str>,
@@ -751,10 +752,15 @@ fn format_sub_bullets(items: &[&str]) -> String {
 /// Returns `None` when no subsystems are active beyond defaults.
 fn build_subsystem_status_reminder() -> Option<String> {
     let lsp_configs = crate::lsp_service::default_server_configs().len();
-    let mcp_count =
-        crate::mcp::discovery::discover_mcp_servers(&std::env::current_dir().unwrap_or_default())
-            .map(|v| v.len())
-            .unwrap_or(0);
+    let (mcp_count, mcp_error) = match crate::mcp::discovery::discover_mcp_servers(
+        &std::env::current_dir().unwrap_or_default(),
+    ) {
+        Ok(servers) => (servers.len(), None),
+        Err(err) => {
+            tracing::warn!(error = %err, "MCP server discovery failed while building system prompt");
+            (0, Some(format!("MCP discovery failed: {err:#}")))
+        }
+    };
     let plugin_count = crate::plugins::get_enabled_plugins().len();
     let skill_count = crate::skills::get_all_skills().len();
     let agent_count = crate::ipc::agent_tree::AGENT_TREE
@@ -762,7 +768,7 @@ fn build_subsystem_status_reminder() -> Option<String> {
         .active_agents()
         .len();
 
-    if mcp_count + plugin_count + skill_count == 0 && agent_count == 0 {
+    if mcp_count + plugin_count + skill_count == 0 && agent_count == 0 && mcp_error.is_none() {
         return None;
     }
 
@@ -776,6 +782,9 @@ fn build_subsystem_status_reminder() -> Option<String> {
     );
     if agent_count > 0 {
         text.push_str(&format!("- Agents: {} active\n", agent_count));
+    }
+    if let Some(error) = mcp_error {
+        text.push_str(&format!("- MCP diagnostic: {}\n", error));
     }
     text.push_str("Use the SystemStatus tool for detailed information.\n");
     Some(text)
@@ -932,7 +941,7 @@ mod tests {
     #[test]
     fn test_default_prompt_has_all_sections() {
         prompt_sections::clear_cache();
-        let (parts, ctx, _) = build_system_prompt(
+        let (parts, _ctx, _) = build_system_prompt(
             None,
             None,
             &[],

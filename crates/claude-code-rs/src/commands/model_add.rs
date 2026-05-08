@@ -9,7 +9,7 @@
 //!
 //! Prices are in USD per 1M tokens.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -64,7 +64,7 @@ impl CommandHandler for ModelAddHandler {
 
         // Write to .env in cwd
         let env_path = ctx.cwd.join(".env");
-        let mut env_vars = load_env_file(&env_path);
+        let mut env_vars = load_env_file(&env_path)?;
         env_vars.insert("CLAUDE_MODEL".into(), model_name.into());
         env_vars.insert("MODEL_INPUT_PRICE".into(), format_price(input_price));
         env_vars.insert("MODEL_OUTPUT_PRICE".into(), format_price(output_price));
@@ -100,26 +100,30 @@ fn format_price(price: f64) -> String {
 }
 
 /// Load existing .env file into an ordered map, preserving unknown keys.
-fn load_env_file(path: &Path) -> BTreeMap<String, String> {
+fn load_env_file(path: &Path) -> Result<BTreeMap<String, String>> {
     let mut map = BTreeMap::new();
-    if let Ok(content) = std::fs::read_to_string(path) {
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                continue;
-            }
-            if let Some((key, value)) = trimmed.split_once('=') {
-                map.insert(key.trim().to_string(), value.trim().to_string());
-            }
-        }
+    if !path.exists() {
+        return Ok(map);
     }
-    map
+    for item in dotenvy::from_path_iter(path)
+        .with_context(|| format!("Failed to load existing .env {}", path.display()))?
+    {
+        let (key, value) =
+            item.with_context(|| format!("Failed to parse existing .env {}", path.display()))?;
+        map.insert(key, value);
+    }
+    Ok(map)
 }
 
 /// Write env vars back to .env file.
 fn write_env_file(path: &Path, vars: &BTreeMap<String, String>) -> Result<()> {
     // Read existing file to preserve comments and ordering
-    let existing = std::fs::read_to_string(path).unwrap_or_default();
+    let existing = if path.exists() {
+        std::fs::read_to_string(path)
+            .with_context(|| format!("Failed to read existing .env {}", path.display()))?
+    } else {
+        String::new()
+    };
     let mut lines: Vec<String> = Vec::new();
     let mut written_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -294,5 +298,29 @@ mod tests {
         assert!(env_content.contains("AZURE_API_KEY=secret123"));
         assert!(env_content.contains("CLAUDE_MODEL=new-model"));
         assert!(!env_content.contains("old-model"));
+    }
+
+    #[tokio::test]
+    async fn test_model_add_invalid_existing_env_aborts_without_rewrite() {
+        let _guard = EnvGuard::new(ENV_KEYS);
+        let tmp = TempDir::new().unwrap();
+        let env_path = tmp.path().join(".env");
+        let original = "AZURE_API_KEY=secret123\nBROKEN=\"unterminated\n";
+        std::fs::write(&env_path, original).unwrap();
+
+        let handler = ModelAddHandler;
+        let mut ctx = test_ctx(tmp.path().to_path_buf());
+        let err = match handler.execute("new-model 1.0 2.0", &mut ctx).await {
+            Ok(_) => panic!("expected invalid .env to abort"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string().contains("Failed to parse existing .env")
+                || format!("{err:#}").contains("Failed to parse existing .env"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(std::fs::read_to_string(&env_path).unwrap(), original);
+        assert_ne!(ctx.app_state.main_loop_model, "new-model");
     }
 }

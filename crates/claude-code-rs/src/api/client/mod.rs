@@ -4,11 +4,11 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use futures::Stream;
 use serde_json::Value;
 
-use crate::api::retry::{RetryConfig, categorize_stream_start_error, retry_delay};
+use crate::api::retry::{categorize_stream_start_error, retry_delay, RetryConfig};
 use crate::types::message::{AssistantMessage, StreamEvent};
 
 // Re-export siblings for convenience within this module's tests.
@@ -485,7 +485,7 @@ impl ApiClient {
         request: &MessagesRequest,
         provider: &str,
     ) -> Result<ExactTokenCount> {
-        use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
+        use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 
         #[derive(serde::Deserialize)]
         struct CountTokensResponse {
@@ -782,9 +782,24 @@ impl ApiClient {
     /// Optional:
     /// - `OPENAI_CODEX_BASE_URL` (default: https://chatgpt.com/backend-api)
     /// - `OPENAI_CODEX_MODEL` (default: gpt-5.4)
+    #[allow(dead_code)]
     pub fn from_codex_auth() -> Option<Self> {
-        let info = crate::api::providers::get_provider(OPENAI_CODEX_PROVIDER_NAME)?;
-        let api_key = crate::auth::resolve_codex_auth_token()?;
+        match Self::from_codex_auth_result() {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::warn!(%error, "OpenAI Codex auth configuration rejected");
+                None
+            }
+        }
+    }
+
+    pub fn from_codex_auth_result() -> Result<Option<Self>> {
+        let Some(info) = crate::api::providers::get_provider(OPENAI_CODEX_PROVIDER_NAME) else {
+            return Ok(None);
+        };
+        let Some(api_key) = crate::auth::try_resolve_codex_auth_token()? else {
+            return Ok(None);
+        };
 
         let base_url = std::env::var(OPENAI_CODEX_BASE_URL_ENV)
             .ok()
@@ -808,7 +823,7 @@ impl ApiClient {
             max_retries: 3,
             timeout_secs: 120,
         })
-        .ok()
+        .map(Some)
     }
 
     /// Construct an `ApiClient` for a specific backend.
@@ -817,7 +832,7 @@ impl ApiClient {
     /// - other backends: use the standard auth chain.
     pub fn from_backend_result(backend: Option<&str>) -> Result<Option<Self>> {
         if backend.is_some_and(crate::engine::codex_exec::is_codex_backend) {
-            return Ok(Self::from_codex_auth());
+            return Self::from_codex_auth_result();
         }
         Self::from_auth_result()
     }
@@ -846,8 +861,8 @@ impl ApiClient {
             return Ok(Some(client));
         }
 
-        // 2. Fall back to auth::resolve_auth() (keychain, external token, OAuth)
-        let auth = crate::auth::resolve_auth();
+        // 2. Fall back to auth resolution (keychain, external token, OAuth)
+        let auth = crate::auth::try_resolve_auth()?;
         let Some(api_key) = auth
             .api_key()
             .or_else(|| auth.bearer_token())
@@ -878,7 +893,7 @@ impl ApiClient {
     /// Build the required HTTP headers for Anthropic-format providers.
     #[allow(dead_code)]
     pub fn build_headers(&self) -> reqwest::header::HeaderMap {
-        use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
+        use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));

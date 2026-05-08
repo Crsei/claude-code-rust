@@ -286,6 +286,10 @@ fn main() -> ExitCode {
         return startup::fast_paths::run_claude_in_chrome_mcp();
     }
 
+    if let Some(output_dir) = cli.export_ui_snapshots.as_deref() {
+        return startup::fast_paths::run_export_ui_snapshots(output_dir);
+    }
+
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     let _tracing_guard = {
         let _enter = rt.enter();
@@ -380,7 +384,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     let permission_mode = resolve_permission_mode(
         cli.permission_mode.as_deref(),
         merged_config.permission_mode.as_deref(),
-    );
+    )?;
     let chrome_enablement = crate::browser::session::resolve_enablement(
         chrome_cli_override(&cli),
         merged_config.claude_in_chrome_default_enabled,
@@ -435,7 +439,13 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         use crate::mcp::tools::mcp_tools_to_tools;
 
         let cwd_path = std::path::Path::new(&cwd);
-        let mut server_configs = discover_mcp_servers(cwd_path).unwrap_or_default();
+        let mut server_configs = match discover_mcp_servers(cwd_path) {
+            Ok(configs) => configs,
+            Err(err) => {
+                warn!(error = %err, "MCP server discovery failed");
+                Vec::new()
+            }
+        };
         let mcp_manager = Arc::new(tokio::sync::Mutex::new(McpManager::new()));
 
         // First-party Chrome integration: when --chrome is on (or env opts in),

@@ -30,6 +30,13 @@ pub enum OutputStyle {
     Custom { name: String, body: String },
 }
 
+/// Resolved style plus any user-visible fallback diagnostic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutputStyleResolution {
+    pub style: OutputStyle,
+    pub fallback_diagnostic: Option<String>,
+}
+
 impl OutputStyle {
     /// Stable canonical name used in `/config show` and the schema.
     pub fn name(&self) -> &str {
@@ -46,14 +53,22 @@ impl OutputStyle {
 ///
 /// Built-in names always win over custom files of the same name (so
 /// users cannot accidentally shadow `default`). Unknown names fall
-/// back to a disk lookup; if the file is missing, we silently return
-/// `Default` rather than failing the prompt build.
+/// back to a disk lookup; if the file is missing, we return `Default`.
 pub fn resolve(name: &str, cwd: &Path) -> OutputStyle {
+    resolve_with_diagnostic(name, cwd).style
+}
+
+/// Resolve the named output style and report when a configured custom style
+/// could not be loaded. Explicit `Default` remains a quiet no-op.
+pub fn resolve_with_diagnostic(name: &str, cwd: &Path) -> OutputStyleResolution {
     let trimmed = name.trim();
     if trimmed.is_empty() {
-        return OutputStyle::Default;
+        return OutputStyleResolution {
+            style: OutputStyle::Default,
+            fallback_diagnostic: None,
+        };
     }
-    match trimmed.to_ascii_lowercase().as_str() {
+    let style = match trimmed.to_ascii_lowercase().as_str() {
         "default" | "" => OutputStyle::Default,
         "explanatory" => OutputStyle::Explanatory,
         "learning" => OutputStyle::Learning,
@@ -62,8 +77,21 @@ pub fn resolve(name: &str, cwd: &Path) -> OutputStyle {
                 name: trimmed.to_string(),
                 body,
             },
-            None => OutputStyle::Default,
+            None => {
+                return OutputStyleResolution {
+                    style: OutputStyle::Default,
+                    fallback_diagnostic: Some(format!(
+                        "Configured output style `{}` was not found in project or user \
+                         output-styles directories; using Default.",
+                        trimmed
+                    )),
+                };
+            }
         },
+    };
+    OutputStyleResolution {
+        style,
+        fallback_diagnostic: None,
     }
 }
 
@@ -99,6 +127,17 @@ pub fn style_section(style: &OutputStyle) -> Option<String> {
             }
         }
     }
+}
+
+/// Render the prompt section for a resolved style, including fallback
+/// diagnostics for missing configured custom styles.
+pub fn resolution_section(resolution: &OutputStyleResolution) -> Option<String> {
+    style_section(&resolution.style).or_else(|| {
+        resolution
+            .fallback_diagnostic
+            .as_ref()
+            .map(|diagnostic| format!("# Output Style Fallback\n{}", diagnostic))
+    })
 }
 
 /// Search project-local then user-global directories for a custom
@@ -160,6 +199,34 @@ mod tests {
     fn unknown_name_falls_back_to_default() {
         let cwd = Path::new("/nonexistent-tmpdir");
         assert_eq!(resolve("nonsense", cwd), OutputStyle::Default);
+    }
+
+    #[test]
+    fn unknown_name_reports_fallback_diagnostic() {
+        let cwd = Path::new("/nonexistent-tmpdir");
+        let resolution = resolve_with_diagnostic("nonsense", cwd);
+
+        assert_eq!(resolution.style, OutputStyle::Default);
+        let diagnostic = resolution
+            .fallback_diagnostic
+            .as_deref()
+            .expect("fallback diagnostic");
+        assert!(diagnostic.contains("nonsense"));
+        assert!(diagnostic.contains("using Default"));
+
+        let section = resolution_section(&resolution).expect("diagnostic section");
+        assert!(section.starts_with("# Output Style Fallback"));
+        assert!(section.contains("nonsense"));
+    }
+
+    #[test]
+    fn explicit_default_has_no_fallback_diagnostic() {
+        let cwd = Path::new("/nonexistent-tmpdir");
+        let resolution = resolve_with_diagnostic("Default", cwd);
+
+        assert_eq!(resolution.style, OutputStyle::Default);
+        assert!(resolution.fallback_diagnostic.is_none());
+        assert!(resolution_section(&resolution).is_none());
     }
 
     #[test]
@@ -225,8 +292,12 @@ mod tests {
     #[test]
     fn missing_custom_file_falls_back_to_default() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let style = resolve("does-not-exist", dir.path());
-        assert_eq!(style, OutputStyle::Default);
+        let resolution = resolve_with_diagnostic("does-not-exist", dir.path());
+        assert_eq!(resolution.style, OutputStyle::Default);
+        assert!(resolution
+            .fallback_diagnostic
+            .as_deref()
+            .is_some_and(|diagnostic| diagnostic.contains("does-not-exist")));
     }
 
     #[test]

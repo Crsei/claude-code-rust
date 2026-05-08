@@ -7,8 +7,8 @@
 use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use anyhow::Result;
 use futures::Stream;
@@ -19,16 +19,16 @@ use crate::query::deps::{
     CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
 };
 use crate::tools::execution::{
-    ToolExecutionResult, enforce_result_size, find_tool, is_plan_mode_plan_file_write,
-    sandbox_allowed_command_applies, security_validate,
+    enforce_result_size, find_tool, is_plan_mode_plan_file_write, sandbox_allowed_command_applies,
+    security_validate, ToolExecutionResult,
 };
 use crate::types::app_state::AppState;
 use crate::types::message::{Message, StreamEvent};
 use crate::types::state::AutoCompactTracking;
 use crate::types::tool::{PermissionMode, ToolProgress, Tools, ValidationResult};
 
-use super::QueryEngineState;
 use super::helpers::{build_messages_request, format_conversation_for_summary};
+use super::QueryEngineState;
 
 /// Dependency injection bridge: provides the query loop with access to the
 /// engine's shared state (abort flag, app state, tools) and, optionally, a
@@ -153,6 +153,19 @@ fn central_permission_result_for_tool(
             message: message.unwrap_or_else(|| format!("Allow tool '{}'?", tool_name)),
         },
     }
+}
+
+fn pre_tool_hook_error_is_critical(
+    tool_name: &str,
+    hook_configs: &[cc_types::hooks::HookEventConfig],
+) -> bool {
+    hook_configs.iter().any(|config| {
+        config.critical
+            && match config.matcher.as_deref() {
+                None | Some("*") => true,
+                Some(pattern) => tool_name == pattern || tool_name.starts_with(pattern),
+            }
+    })
 }
 
 fn tool_execution_result_to_exec_result(result: ToolExecutionResult) -> ToolExecResult {
@@ -808,8 +821,26 @@ impl QueryDeps for QueryEngineDeps {
                 });
             }
             Err(e) => {
-                tracing::warn!(error = %e, "pre-tool hook error, continuing");
-                (sanitized_input, None)
+                if pre_tool_hook_error_is_critical(&request.tool_name, &pre_configs) {
+                    tracing::warn!(error = %e, tool = %request.tool_name, "critical pre-tool hook error, blocking tool execution");
+                    return Ok(ToolExecResult {
+                        tool_use_id: request.tool_use_id,
+                        tool_name: request.tool_name,
+                        result: crate::types::tool::ToolResult {
+                            data: serde_json::json!(format!(
+                                "Critical pre-tool hook failed: {}",
+                                e
+                            )),
+                            new_messages: vec![],
+                            ..Default::default()
+                        },
+                        is_error: true,
+                        hook_stopped_continuation: false,
+                    });
+                } else {
+                    tracing::warn!(error = %e, "optional pre-tool hook error, continuing");
+                    (sanitized_input, None)
+                }
             }
         };
 
@@ -1369,7 +1400,7 @@ mod tests {
     use crate::types::tool::{
         PermissionCallback, PermissionMode, PermissionResult, Tool, ToolResult, ToolUseContext,
     };
-    use serde_json::{Value, json};
+    use serde_json::{json, Value};
 
     struct CanonicalTool {
         name: &'static str,
@@ -1541,6 +1572,77 @@ mod tests {
             seen_input,
             progress_payload: None,
         })
+    }
+
+    struct FailingPreToolHookRunner {
+        critical: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl cc_types::hooks::HookRunner for FailingPreToolHookRunner {
+        fn load_hook_configs(
+            &self,
+            _hooks_value: &cc_types::hooks::HooksMap,
+            event_name: &str,
+        ) -> Vec<cc_types::hooks::HookEventConfig> {
+            if event_name == "PreToolUse" {
+                vec![cc_types::hooks::HookEventConfig {
+                    matcher: Some("HookedTool".to_string()),
+                    critical: self.critical,
+                    hooks: vec![cc_types::hooks::HookEntry::Command {
+                        command: "failing-test-hook".to_string(),
+                        timeout: 1,
+                    }],
+                }]
+            } else {
+                vec![]
+            }
+        }
+
+        async fn run_pre_tool_hooks(
+            &self,
+            _tool_name: &str,
+            _input: &Value,
+            _hook_configs: &[cc_types::hooks::HookEventConfig],
+        ) -> anyhow::Result<cc_types::hooks::PreToolHookResult> {
+            Err(anyhow::anyhow!("pre hook failed for test"))
+        }
+
+        async fn run_post_tool_hooks(
+            &self,
+            _tool_name: &str,
+            _input: &Value,
+            _tool_result_data: &Value,
+            _hook_configs: &[cc_types::hooks::HookEventConfig],
+        ) -> anyhow::Result<cc_types::hooks::PostToolHookResult> {
+            Ok(cc_types::hooks::PostToolHookResult::Continue)
+        }
+
+        async fn run_post_tool_failure_hooks(
+            &self,
+            _tool_name: &str,
+            _input: &Value,
+            _error: &str,
+            _hook_configs: &[cc_types::hooks::HookEventConfig],
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn run_event_hooks(
+            &self,
+            _event_name: &str,
+            _payload: &Value,
+            _hook_configs: &[cc_types::hooks::HookEventConfig],
+        ) -> anyhow::Result<cc_types::hooks::HookOutput> {
+            Ok(cc_types::hooks::HookOutput::default())
+        }
+
+        async fn run_stop_hooks(
+            &self,
+            _hook_configs: &[cc_types::hooks::HookEventConfig],
+        ) -> anyhow::Result<cc_types::hooks::PostToolHookResult> {
+            Ok(cc_types::hooks::PostToolHookResult::Continue)
+        }
     }
 
     fn mcp_tool(server_name: &str, tool_name: &str) -> Arc<dyn Tool> {
@@ -1737,6 +1839,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn execute_tool_optional_pre_hook_error_continues_to_tool_call() {
+        let seen_input = Arc::new(parking_lot::Mutex::new(None));
+        let tool = canonical_tool("HookedTool", seen_input.clone());
+        let mut deps = make_deps(vec![tool], PermissionMode::Bypass);
+        deps.hook_runner = Arc::new(FailingPreToolHookRunner { critical: false });
+
+        let result = deps
+            .execute_tool(
+                tool_request("HookedTool", json!({"value": true})),
+                &deps.get_tools(),
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.is_error);
+        assert_eq!(seen_input.lock().clone(), Some(json!({"value": true})));
+    }
+
+    #[tokio::test]
+    async fn execute_tool_critical_pre_hook_error_blocks_tool_call() {
+        let seen_input = Arc::new(parking_lot::Mutex::new(None));
+        let tool = canonical_tool("HookedTool", seen_input.clone());
+        let mut deps = make_deps(vec![tool], PermissionMode::Bypass);
+        deps.hook_runner = Arc::new(FailingPreToolHookRunner { critical: true });
+
+        let result = deps
+            .execute_tool(
+                tool_request("HookedTool", json!({"value": true})),
+                &deps.get_tools(),
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_error);
+        assert!(result.result.data.as_str().is_some_and(|text| {
+            text.contains("Critical pre-tool hook failed")
+                && text.contains("pre hook failed for test")
+        }));
+        assert!(
+            seen_input.lock().is_none(),
+            "critical pre-hook failure must stop before Tool::call"
+        );
+    }
+
+    #[tokio::test]
     async fn execute_tool_rejects_validation_error_before_call() {
         let seen_input = Arc::new(parking_lot::Mutex::new(None));
         let tool = Arc::new(CanonicalTool {
@@ -1761,13 +1912,11 @@ mod tests {
             .unwrap();
 
         assert!(result.is_error);
-        assert!(
-            result
-                .result
-                .data
-                .as_str()
-                .is_some_and(|text| text.contains("Input validation error"))
-        );
+        assert!(result
+            .result
+            .data
+            .as_str()
+            .is_some_and(|text| text.contains("Input validation error")));
         assert!(
             seen_input.lock().is_none(),
             "validation failure must stop before Tool::call"
@@ -1892,13 +2041,11 @@ mod tests {
             .unwrap();
 
         assert!(result.is_error);
-        assert!(
-            result
-                .result
-                .data
-                .as_str()
-                .is_some_and(|text| text.contains("Dangerous command blocked"))
-        );
+        assert!(result
+            .result
+            .data
+            .as_str()
+            .is_some_and(|text| text.contains("Dangerous command blocked")));
         assert!(
             seen_input.lock().is_none(),
             "security validation must stop before Tool::call"
@@ -1932,13 +2079,11 @@ mod tests {
             .unwrap();
 
         assert!(result.is_error);
-        assert!(
-            result
-                .result
-                .data
-                .as_str()
-                .is_some_and(|text| text.contains("Permission denied: blocked by test"))
-        );
+        assert!(result
+            .result
+            .data
+            .as_str()
+            .is_some_and(|text| text.contains("Permission denied: blocked by test")));
         assert!(
             seen_input.lock().is_none(),
             "permission denial must stop before Tool::call"

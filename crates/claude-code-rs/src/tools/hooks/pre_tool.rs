@@ -5,7 +5,7 @@ use serde_json::Value;
 use tracing::{debug, warn};
 
 use super::execution::execute_command_hook;
-use super::{HookEntry, HookEventConfig, PermissionOverride, PreToolHookResult, matches_tool};
+use super::{matches_tool, HookEntry, HookEventConfig, PermissionOverride, PreToolHookResult};
 
 // ---------------------------------------------------------------------------
 // Pre-tool hooks
@@ -90,12 +90,21 @@ pub async fn run_pre_tool_hooks(
                     }
                 }
                 Err(e) => {
-                    warn!(
-                        tool = tool_name,
-                        command = command,
-                        error = %e,
-                        "pre-tool hook error, continuing"
-                    );
+                    if config.critical {
+                        return Err(anyhow::anyhow!(
+                            "critical pre-tool hook failed for tool '{}' (command '{}'): {}",
+                            tool_name,
+                            command,
+                            e
+                        ));
+                    } else {
+                        warn!(
+                            tool = tool_name,
+                            command = command,
+                            error = %e,
+                            "optional pre-tool hook error, continuing"
+                        );
+                    }
                 }
             }
         }
@@ -133,6 +142,7 @@ mod tests {
     fn make_hook_config(command: &str) -> HookEventConfig {
         HookEventConfig {
             matcher: Some("*".to_string()),
+            critical: false,
             hooks: vec![HookEntry::Command {
                 command: command.to_string(),
                 timeout: 10,
@@ -144,9 +154,26 @@ mod tests {
     fn make_hook_config_for_tool(tool: &str, command: &str) -> HookEventConfig {
         HookEventConfig {
             matcher: Some(tool.to_string()),
+            critical: false,
             hooks: vec![HookEntry::Command {
                 command: command.to_string(),
                 timeout: 10,
+            }],
+        }
+    }
+
+    fn make_hook_config_for_tool_with_timeout(
+        tool: &str,
+        command: &str,
+        timeout: u64,
+        critical: bool,
+    ) -> HookEventConfig {
+        HookEventConfig {
+            matcher: Some(tool.to_string()),
+            critical,
+            hooks: vec![HookEntry::Command {
+                command: command.to_string(),
+                timeout,
             }],
         }
     }
@@ -253,5 +280,45 @@ mod tests {
                 permission_override: None,
             }
         ));
+    }
+
+    #[tokio::test]
+    async fn test_optional_pre_tool_hook_error_continues() {
+        let configs = vec![make_hook_config_for_tool_with_timeout(
+            "Bash",
+            "echo optional",
+            0,
+            false,
+        )];
+
+        let result = run_pre_tool_hooks("Bash", &json!({"command": "ls"}), &configs)
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            result,
+            PreToolHookResult::Continue {
+                updated_input: None,
+                permission_override: None,
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_critical_pre_tool_hook_error_blocks() {
+        let configs = vec![make_hook_config_for_tool_with_timeout(
+            "Bash",
+            "echo critical",
+            0,
+            true,
+        )];
+
+        let error = run_pre_tool_hooks("Bash", &json!({"command": "ls"}), &configs)
+            .await
+            .unwrap_err();
+
+        let message = error.to_string();
+        assert!(message.contains("critical pre-tool hook failed"));
+        assert!(message.contains("Bash"));
     }
 }

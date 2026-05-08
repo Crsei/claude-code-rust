@@ -84,7 +84,10 @@ fn auth_status_text() -> String {
         return codex_status;
     }
 
-    let current = auth::resolve_auth();
+    let current = match auth::try_resolve_auth() {
+        Ok(current) => current,
+        Err(error) => return format!("Authentication error: {error}"),
+    };
     match &current {
         auth::AuthMethod::ApiKey(key) => {
             let source = if std::env::var("ANTHROPIC_API_KEY")
@@ -286,18 +289,25 @@ fn codex_auth_status_text() -> Option<String> {
     }
 
     // Check Codex CLI fallback
-    if let Some(cred) = auth::codex_cli::read_codex_cli_credential() {
-        return if auth::codex_cli::is_credential_expired(&cred) {
-            Some(
-                "OpenAI Codex OAuth (from Codex CLI) is expired. \
-                 Run /login 5 to refresh or /login 4 for a fresh login."
-                    .to_string(),
-            )
-        } else {
-            Some(
-                "Authenticated: OpenAI Codex OAuth (from Codex CLI ~/.codex/auth.json)".to_string(),
-            )
-        };
+    match auth::codex_cli::read_codex_cli_credential() {
+        Ok(Some(cred)) => {
+            return if auth::codex_cli::is_credential_expired(&cred) {
+                Some(
+                    "OpenAI Codex OAuth (from Codex CLI) is expired. \
+                     Run /login 5 to refresh or /login 4 for a fresh login."
+                        .to_string(),
+                )
+            } else {
+                Some(
+                    "Authenticated: OpenAI Codex OAuth (from Codex CLI ~/.codex/auth.json)"
+                        .to_string(),
+                )
+            };
+        }
+        Ok(None) => {}
+        Err(error) => {
+            return Some(format!("Codex CLI auth.json is not usable: {error}"));
+        }
     }
 
     None
@@ -333,8 +343,8 @@ fn vertex_setup_text() -> String {
 
 fn check_codex_cli() -> String {
     let cred = match auth::codex_cli::read_codex_cli_credential() {
-        Some(c) => c,
-        None => {
+        Ok(Some(c)) => c,
+        Ok(None) => {
             // Distinguish: file doesn't exist vs. wrong auth_mode
             if auth::codex_cli::codex_cli_auth_path().is_none() {
                 return "Codex CLI not found. Install Codex CLI and run \
@@ -346,6 +356,9 @@ fn check_codex_cli() -> String {
                     Use /login 1 to paste your API key, or /login 4 for OAuth."
                 .to_string();
         }
+        Err(error) => {
+            return format!("Codex CLI auth.json is not usable: {error}");
+        }
     };
 
     if !auth::codex_cli::is_credential_expired(&cred) {
@@ -355,13 +368,14 @@ fn check_codex_cli() -> String {
     }
 
     // Expired — try to refresh now
-    match auth::resolve_codex_auth_token() {
-        Some(_) => "Codex CLI token was expired but has been refreshed successfully. \
+    match auth::try_resolve_codex_auth_token() {
+        Ok(Some(_)) => "Codex CLI token was expired but has been refreshed successfully. \
              cc-rust will use it automatically."
             .to_string(),
-        None => "Codex CLI token is expired and refresh failed. \
+        Ok(None) => "Codex CLI token is expired and refresh failed. \
              Run /login 4 for a fresh OAuth login, or re-login in Codex CLI."
             .to_string(),
+        Err(error) => format!("Codex CLI token refresh failed: {error}"),
     }
 }
 

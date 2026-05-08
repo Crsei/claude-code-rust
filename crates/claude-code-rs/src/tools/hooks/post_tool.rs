@@ -1,13 +1,14 @@
 //! Post-tool, failure, stop, and event hook execution.
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use serde_json::Value;
 use tracing::{debug, warn};
 
 use super::execution::execute_command_hook;
 use super::{
-    HookEntry, HookEventConfig, HookOutput, PostToolHookResult, load_hook_configs, matches_tool,
+    load_hook_configs, matches_tool, HookEntry, HookEventConfig, HookOutput, PostToolHookResult,
 };
+#[cfg(test)]
 use crate::types::tool::ToolResult;
 
 /// Value-only variant of [`run_post_tool_hooks`] used by `ShellHookRunner`.
@@ -63,12 +64,21 @@ pub(crate) async fn run_post_tool_hooks_data(
                     }
                 }
                 Err(e) => {
-                    warn!(
-                        tool = tool_name,
-                        command = command,
-                        error = %e,
-                        "post-tool hook error, continuing"
-                    );
+                    if config.critical {
+                        return Err(anyhow!(
+                            "critical post-tool hook failed for tool '{}' (command '{}'): {}",
+                            tool_name,
+                            command,
+                            e
+                        ));
+                    } else {
+                        warn!(
+                            tool = tool_name,
+                            command = command,
+                            error = %e,
+                            "optional post-tool hook error, continuing"
+                        );
+                    }
                 }
             }
         }
@@ -87,7 +97,8 @@ pub(crate) async fn run_post_tool_hooks_data(
 ///
 /// Stdin includes `tool_result` field in addition to tool_name and tool_input.
 /// If any hook returns `stop_reason`, returns `StopContinuation`.
-pub async fn run_post_tool_hooks(
+#[cfg(test)]
+async fn run_post_tool_hooks(
     tool_name: &str,
     input: &Value,
     result: &ToolResult,
@@ -139,12 +150,21 @@ pub async fn run_post_tool_failure_hooks(
             );
 
             if let Err(e) = execute_command_hook(command, &stdin_json, *timeout).await {
-                warn!(
-                    tool = tool_name,
-                    command = command,
-                    error = %e,
-                    "post-tool failure hook error"
-                );
+                if config.critical {
+                    return Err(anyhow!(
+                        "critical post-tool failure hook failed for tool '{}' (command '{}'): {}",
+                        tool_name,
+                        command,
+                        e
+                    ));
+                } else {
+                    warn!(
+                        tool = tool_name,
+                        command = command,
+                        error = %e,
+                        "optional post-tool failure hook error, continuing"
+                    );
+                }
             }
         }
     }
@@ -193,7 +213,19 @@ pub async fn run_stop_hooks(hook_configs: &[HookEventConfig]) -> Result<PostTool
                     }
                 }
                 Err(e) => {
-                    warn!(command = command, error = %e, "stop hook error, continuing");
+                    if config.critical {
+                        return Err(anyhow!(
+                            "critical stop hook failed (command '{}'): {}",
+                            command,
+                            e
+                        ));
+                    } else {
+                        warn!(
+                            command = command,
+                            error = %e,
+                            "optional stop hook error, continuing"
+                        );
+                    }
                 }
             }
         }
@@ -288,9 +320,26 @@ mod tests {
     fn make_hook_config(command: &str) -> HookEventConfig {
         HookEventConfig {
             matcher: Some("*".to_string()),
+            critical: false,
             hooks: vec![HookEntry::Command {
                 command: command.to_string(),
                 timeout: 10,
+            }],
+        }
+    }
+
+    fn make_hook_config_with_timeout(
+        matcher: Option<&str>,
+        command: &str,
+        timeout: u64,
+        critical: bool,
+    ) -> HookEventConfig {
+        HookEventConfig {
+            matcher: matcher.map(str::to_string),
+            critical,
+            hooks: vec![HookEntry::Command {
+                command: command.to_string(),
+                timeout,
             }],
         }
     }
@@ -333,6 +382,7 @@ mod tests {
         // A config with matcher "Bash" should be skipped for non-tool events
         let configs = vec![HookEventConfig {
             matcher: Some("Bash".to_string()),
+            critical: false,
             hooks: vec![HookEntry::Command {
                 command: r#"echo '{"continue":false,"reason":"should not fire"}'"#.to_string(),
                 timeout: 10,
@@ -344,6 +394,98 @@ mod tests {
         let output = result.unwrap();
         // Should still be the default (continue=true) because the matcher was skipped
         assert!(output.should_continue);
+    }
+
+    #[tokio::test]
+    async fn test_optional_post_tool_hook_error_continues() {
+        let configs = vec![make_hook_config_with_timeout(
+            Some("Bash"),
+            "echo optional",
+            0,
+            false,
+        )];
+        let tool_result = ToolResult {
+            data: json!("ok"),
+            new_messages: vec![],
+            ..Default::default()
+        };
+
+        let result = run_post_tool_hooks("Bash", &json!({"command": "ls"}), &tool_result, &configs)
+            .await
+            .unwrap();
+
+        assert!(matches!(result, PostToolHookResult::Continue));
+    }
+
+    #[tokio::test]
+    async fn test_critical_post_tool_hook_error_is_visible() {
+        let configs = vec![make_hook_config_with_timeout(
+            Some("Bash"),
+            "echo critical",
+            0,
+            true,
+        )];
+        let tool_result = ToolResult {
+            data: json!("ok"),
+            new_messages: vec![],
+            ..Default::default()
+        };
+
+        let error = run_post_tool_hooks("Bash", &json!({"command": "ls"}), &tool_result, &configs)
+            .await
+            .unwrap_err();
+
+        let message = error.to_string();
+        assert!(message.contains("critical post-tool hook failed"));
+        assert!(message.contains("Bash"));
+    }
+
+    #[tokio::test]
+    async fn test_optional_post_tool_failure_hook_error_continues() {
+        let configs = vec![make_hook_config_with_timeout(
+            Some("Bash"),
+            "echo optional",
+            0,
+            false,
+        )];
+
+        let result =
+            run_post_tool_failure_hooks("Bash", &json!({"command": "ls"}), "boom", &configs).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_critical_post_tool_failure_hook_error_is_visible() {
+        let configs = vec![make_hook_config_with_timeout(
+            Some("Bash"),
+            "echo critical",
+            0,
+            true,
+        )];
+
+        let error =
+            run_post_tool_failure_hooks("Bash", &json!({"command": "ls"}), "boom", &configs)
+                .await
+                .unwrap_err();
+
+        let message = error.to_string();
+        assert!(message.contains("critical post-tool failure hook failed"));
+        assert!(message.contains("Bash"));
+    }
+
+    #[tokio::test]
+    async fn test_critical_stop_hook_error_is_visible() {
+        let configs = vec![make_hook_config_with_timeout(
+            None,
+            "echo critical",
+            0,
+            true,
+        )];
+
+        let error = run_stop_hooks(&configs).await.unwrap_err();
+
+        assert!(error.to_string().contains("critical stop hook failed"));
     }
 
     // =========================================================================
@@ -403,6 +545,7 @@ mod tests {
     async fn test_stop_hook_prevents_stop() {
         let configs = vec![HookEventConfig {
             matcher: None,
+            critical: false,
             hooks: vec![HookEntry::Command {
                 command: r#"echo '{"continue":false,"stop_reason":"not done yet"}'"#.to_string(),
                 timeout: 10,

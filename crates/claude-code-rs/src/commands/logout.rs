@@ -29,7 +29,8 @@ pub struct LogoutHandler;
 #[async_trait]
 impl CommandHandler for LogoutHandler {
     async fn execute(&self, _args: &str, _ctx: &mut CommandContext) -> Result<CommandResult> {
-        let report = run_logout(&auth::resolve_auth(), &OnboardingStore::open_default());
+        let current_auth = auth::try_resolve_auth().unwrap_or(auth::AuthMethod::None);
+        let report = run_logout(&current_auth, &OnboardingStore::open_default());
         Ok(CommandResult::Output(report.render()))
     }
 }
@@ -310,11 +311,9 @@ mod tests {
     fn status_detail_strings_are_informative() {
         assert_eq!(StepStatus::NoOp.detail(), "nothing to clear");
         assert_eq!(StepStatus::Cleared.detail(), "cleared");
-        assert!(
-            StepStatus::Failed("disk full".into())
-                .detail()
-                .contains("disk full")
-        );
+        assert!(StepStatus::Failed("disk full".into())
+            .detail()
+            .contains("disk full"));
     }
 
     #[test]

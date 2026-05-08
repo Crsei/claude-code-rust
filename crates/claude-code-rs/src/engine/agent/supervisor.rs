@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::engine::lifecycle::QueryEngine;
-use crate::tools::tasks::{TaskCreateOptions, TaskEntry, TaskStatus, global_store};
+use crate::tools::tasks::{global_store, TaskCreateOptions, TaskEntry, TaskStatus};
 use crate::types::config::{QueryEngineConfig, QuerySource};
 use crate::types::tool::*;
 use crate::utils::bash::validate_working_directory;
@@ -27,8 +27,8 @@ use crate::worktree_hooks::{
 };
 
 use super::{
-    AgentInput, AgentTool, build_child_config, count_worktree_changes, find_git_root, get_head_sha,
-    sdk_to_agent_event,
+    build_child_config, count_worktree_changes, find_git_root, get_head_sha, sdk_to_agent_event,
+    AgentInput, AgentTool,
 };
 
 const SHUTDOWN_WAIT_PER_AGENT: Duration = Duration::from_secs(5);
@@ -412,7 +412,10 @@ impl AgentRuntime {
         };
 
         self.task_store.append_output(&self.task_id, &result_text);
-        if let Err(err) = self.task_store.try_update_status(&self.task_id, final_status) {
+        if let Err(err) = self
+            .task_store
+            .try_update_status(&self.task_id, final_status)
+        {
             warn!(
                 task_id = %self.task_id,
                 error = %err,
@@ -596,6 +599,28 @@ async fn prepare_runtime(
     {
         Ok(runtime) => Ok(runtime),
         Err(err) => {
+            if !worktree_fallback_enabled() {
+                let message = format!(
+                    "background worktree isolation required but setup failed: {err}. Set CC_RUST_ALLOW_WORKTREE_FALLBACK=true to run without isolation."
+                );
+                warn!(
+                    agent_id = %agent_id,
+                    error = %err,
+                    "background worktree isolation failed; fallback disabled"
+                );
+                let _ = crate::dashboard::emit_subagent_event(
+                    "error",
+                    agent_id,
+                    parent_agent_id,
+                    Some(description),
+                    Some(agent_model),
+                    current_depth + 1,
+                    true,
+                    Some(json!({ "message": message })),
+                );
+                return Err(anyhow::anyhow!(message));
+            }
+
             warn!(
                 agent_id = %agent_id,
                 error = %err,
@@ -619,6 +644,17 @@ async fn prepare_runtime(
             })
         }
     }
+}
+
+fn worktree_fallback_enabled() -> bool {
+    std::env::var("CC_RUST_ALLOW_WORKTREE_FALLBACK")
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes"
+            )
+        })
+        .unwrap_or(false)
 }
 
 async fn prepare_worktree_runtime(
@@ -873,6 +909,34 @@ fn preview(result_text: &str) -> String {
 mod tests {
     use super::*;
 
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::remove_var(key);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
     #[test]
     fn preview_respects_char_boundary() {
         let text = format!("{}{}", "a".repeat(199), "é".repeat(10));
@@ -883,11 +947,9 @@ mod tests {
 
     #[test]
     fn cancel_missing_agent_returns_none() {
-        assert!(
-            BACKGROUND_SUPERVISOR
-                .cancel_agent("missing-agent")
-                .is_none()
-        );
+        assert!(BACKGROUND_SUPERVISOR
+            .cancel_agent("missing-agent")
+            .is_none());
     }
 
     #[test]
@@ -908,5 +970,19 @@ mod tests {
 
         assert_eq!(cancelled_task_id.as_deref(), Some(task_id.as_str()));
         assert!(token.is_cancelled());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn worktree_fallback_requires_explicit_policy() {
+        let _fallback = EnvGuard::remove("CC_RUST_ALLOW_WORKTREE_FALLBACK");
+        assert!(!worktree_fallback_enabled());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn worktree_fallback_policy_accepts_true() {
+        let _fallback = EnvGuard::set("CC_RUST_ALLOW_WORKTREE_FALLBACK", "true");
+        assert!(worktree_fallback_enabled());
     }
 }

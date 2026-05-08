@@ -11,7 +11,7 @@ use super::{CommandContext, CommandHandler, CommandResult};
 use crate::auth::{self, AuthMethod};
 use crate::config::settings::{self, RawSettings};
 use crate::voice::audio::{AudioUnavailable, NullAudioBackend};
-use crate::voice::feasibility::{Feasibility, FeasibilityReason, check_feasibility};
+use crate::voice::feasibility::{check_feasibility, Feasibility, FeasibilityReason};
 use crate::voice::language::normalize_language_for_stt;
 use crate::voice::stt::{NullTranscriptionClient, SttUnavailable};
 
@@ -102,7 +102,7 @@ fn render_diagnose(ctx: &CommandContext) -> String {
     out.push('\n');
     out.push_str("Environment\n");
     out.push_str("-----------\n");
-    let auth = auth::resolve_auth();
+    let auth = auth::try_resolve_auth().unwrap_or(auth::AuthMethod::None);
     out.push_str(&format!("  auth method:       {}\n", auth_label(&auth)));
     out.push_str(&format!(
         "  CC_RUST_REMOTE:    {}\n",
@@ -207,7 +207,7 @@ fn format_blocked(reason: &FeasibilityReason) -> String {
 /// Produce a [`Feasibility`] snapshot using the live auth and the
 /// shipped unsupported backends.
 pub fn current_feasibility() -> Feasibility {
-    let auth = auth::resolve_auth();
+    let auth = auth::try_resolve_auth().unwrap_or(auth::AuthMethod::None);
     let audio = NullAudioBackend::new();
     let stt = NullTranscriptionClient::new();
     check_feasibility(&auth, &audio, &stt)
@@ -330,9 +330,7 @@ mod tests {
                 assert!(s.contains("stored enabled:    true"));
                 assert!(s.contains("dictation lang:    en"));
                 assert!(s.contains("fallback from \"klingon\""));
-                assert!(
-                    s.contains("voiceEnabled is stored, but runtime voice remains unavailable")
-                );
+                assert!(s.contains("voiceEnabled is stored, but runtime voice remains unavailable"));
             }
             _ => panic!("expected Output"),
         }

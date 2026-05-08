@@ -1,7 +1,7 @@
 //! MCP server discovery - finds configured servers from settings and plugins.
 
 use super::McpServerConfig;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use parking_lot::Mutex;
 use std::path::Path;
 use std::sync::LazyLock;
@@ -33,6 +33,10 @@ pub enum DiscoveryScope {
 pub struct ScopedMcpServer {
     pub scope: DiscoveryScope,
     pub config: McpServerConfig,
+    /// Present when the settings entry existed but could not be decoded as a
+    /// usable MCP server. The `config` field then carries only the preserved
+    /// name plus a disabled placeholder so callers can show the bad row.
+    pub error: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -131,6 +135,9 @@ pub fn discover_mcp_servers(cwd: &Path) -> Result<Vec<McpServerConfig>> {
     let scoped = discover_mcp_servers_scoped(cwd)?;
     let mut merged: Vec<McpServerConfig> = Vec::new();
     for entry in scoped {
+        if entry.error.is_some() {
+            continue;
+        }
         if let Some(existing) = merged.iter_mut().find(|s| s.name == entry.config.name) {
             *existing = entry.config;
         } else {
@@ -157,6 +164,7 @@ pub fn discover_mcp_servers_scoped(cwd: &Path) -> Result<Vec<ScopedMcpServer>> {
         out.push(ScopedMcpServer {
             scope: DiscoveryScope::Plugin(plugin_id),
             config,
+            error: None,
         });
     }
 
@@ -169,54 +177,86 @@ pub fn discover_mcp_servers_scoped(cwd: &Path) -> Result<Vec<ScopedMcpServer>> {
         out.push(ScopedMcpServer {
             scope: DiscoveryScope::Ide(String::new()),
             config,
+            error: None,
         });
     }
 
     // Global config: {data_root}/settings.json
     let global_settings = cc_config::paths::data_root().join("settings.json");
-    if let Ok(configs) = load_mcp_from_settings(&global_settings) {
-        for config in configs {
-            out.push(ScopedMcpServer {
-                scope: DiscoveryScope::User,
-                config,
-            });
-        }
+    for entry in load_mcp_from_settings(&global_settings, DiscoveryScope::User)? {
+        out.push(entry);
     }
 
     // Highest precedence: project config .cc-rust/settings.json
     let project_settings = cwd.join(".cc-rust").join("settings.json");
-    if let Ok(configs) = load_mcp_from_settings(&project_settings) {
-        for config in configs {
-            out.push(ScopedMcpServer {
-                scope: DiscoveryScope::Project,
-                config,
-            });
-        }
+    for entry in load_mcp_from_settings(&project_settings, DiscoveryScope::Project)? {
+        out.push(entry);
     }
 
     Ok(out)
 }
 
-fn load_mcp_from_settings(path: &Path) -> Result<Vec<McpServerConfig>> {
-    if !path.exists() {
+fn load_mcp_from_settings(path: &Path, scope: DiscoveryScope) -> Result<Vec<ScopedMcpServer>> {
+    if !path
+        .try_exists()
+        .with_context(|| format!("failed to inspect MCP settings {}", path.display()))?
+    {
         return Ok(Vec::new());
     }
 
-    let content = std::fs::read_to_string(path)?;
-    let settings: serde_json::Value = serde_json::from_str(&content)?;
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read MCP settings {}", path.display()))?;
+    let settings: serde_json::Value = serde_json::from_str(&content)
+        .with_context(|| format!("failed to parse MCP settings {}", path.display()))?;
 
-    let mut configs = Vec::new();
-    if let Some(mcp_servers) = settings.get("mcpServers").and_then(|v| v.as_object()) {
+    let mut entries = Vec::new();
+    if let Some(raw_mcp_servers) = settings.get("mcpServers") {
+        let mcp_servers = raw_mcp_servers.as_object().with_context(|| {
+            format!(
+                "invalid MCP settings {}: mcpServers must be an object",
+                path.display()
+            )
+        })?;
         for (name, config) in mcp_servers {
-            if let Ok(mut server_config) = serde_json::from_value::<McpServerConfig>(config.clone())
-            {
-                server_config.name = name.clone();
-                configs.push(server_config);
+            match serde_json::from_value::<McpServerConfig>(config.clone()) {
+                Ok(mut server_config) => {
+                    server_config.name = name.clone();
+                    entries.push(ScopedMcpServer {
+                        scope: scope.clone(),
+                        config: server_config,
+                        error: None,
+                    });
+                }
+                Err(err) => entries.push(ScopedMcpServer {
+                    scope: scope.clone(),
+                    config: invalid_server_placeholder(name),
+                    error: Some(format!(
+                        "invalid MCP server `{}` in {}: {}",
+                        name,
+                        path.display(),
+                        err
+                    )),
+                }),
             }
         }
     }
 
-    Ok(configs)
+    Ok(entries)
+}
+
+fn invalid_server_placeholder(name: &str) -> McpServerConfig {
+    McpServerConfig {
+        name: name.to_string(),
+        transport: "invalid".to_string(),
+        command: None,
+        args: None,
+        url: None,
+        headers: None,
+        oauth: None,
+        env: None,
+        browser_mcp: None,
+        disabled: Some(true),
+    }
 }
 
 #[cfg(test)]
@@ -366,5 +406,71 @@ mod tests {
 
         assert_eq!(server.command.as_deref(), Some("from-cc-rust-home"));
         assert_eq!(server.args.as_ref(), Some(&vec!["--flag".to_string()]));
+    }
+
+    #[test]
+    #[serial]
+    fn missing_settings_files_return_empty_discovery() {
+        let cc_rust_home = TempDir::new().expect("cc_rust_home tempdir");
+        let cwd = TempDir::new().expect("cwd tempdir");
+        let _home = EnvGuard::set(
+            "CC_RUST_HOME",
+            cc_rust_home.path().to_str().expect("utf8 tempdir"),
+        );
+
+        let servers = discover_mcp_servers(cwd.path()).expect("missing settings is allowed");
+        assert!(servers.is_empty());
+    }
+
+    #[test]
+    #[serial]
+    fn malformed_existing_settings_file_returns_error() {
+        let cc_rust_home = TempDir::new().expect("cc_rust_home tempdir");
+        let cwd = TempDir::new().expect("cwd tempdir");
+        let _home = EnvGuard::set(
+            "CC_RUST_HOME",
+            cc_rust_home.path().to_str().expect("utf8 tempdir"),
+        );
+
+        std::fs::write(cc_rust_home.path().join("settings.json"), "{not-json")
+            .expect("write malformed settings");
+
+        let err = discover_mcp_servers(cwd.path()).expect_err("malformed settings must fail");
+        assert!(err.to_string().contains("failed to parse MCP settings"));
+    }
+
+    #[test]
+    #[serial]
+    fn malformed_single_server_preserves_name_scope_and_error() {
+        let cc_rust_home = TempDir::new().expect("cc_rust_home tempdir");
+        let cwd = TempDir::new().expect("cwd tempdir");
+        let _home = EnvGuard::set(
+            "CC_RUST_HOME",
+            cc_rust_home.path().to_str().expect("utf8 tempdir"),
+        );
+
+        std::fs::write(
+            cc_rust_home.path().join("settings.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "mcpServers": {
+                    "bad-server": "not an object",
+                    "good-server": {"transport": "stdio", "command": "ok"}
+                }
+            }))
+            .expect("serialize settings"),
+        )
+        .expect("write settings");
+
+        let scoped = discover_mcp_servers_scoped(cwd.path()).expect("scoped discovery");
+        let bad = scoped
+            .iter()
+            .find(|entry| entry.config.name == "bad-server")
+            .expect("bad server diagnostic entry");
+        assert_eq!(bad.scope, DiscoveryScope::User);
+        assert!(bad.error.as_deref().unwrap_or("").contains("bad-server"));
+
+        let merged = discover_mcp_servers(cwd.path()).expect("legacy discovery filters bad row");
+        assert!(merged.iter().any(|server| server.name == "good-server"));
+        assert!(!merged.iter().any(|server| server.name == "bad-server"));
     }
 }

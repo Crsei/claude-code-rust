@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 
+use anyhow::Context as _;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::Deserialize;
 
@@ -85,47 +86,45 @@ pub fn codex_cli_auth_path() -> Option<PathBuf> {
 
 /// Read and parse a [`CodexCliCredential`] from Codex CLI's `auth.json`.
 ///
-/// Returns `None` when:
-/// - The file does not exist or cannot be read
+/// Returns `Ok(None)` when:
+/// - The file does not exist
 /// - `auth_mode` is not `"chatgpt"`
 /// - `tokens` is absent or `access_token` is empty
-pub fn read_codex_cli_credential() -> Option<CodexCliCredential> {
-    let path = codex_cli_auth_path()?;
-    let content = match std::fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::debug!(path = %path.display(), error = %e, "cannot read Codex CLI auth.json");
-            return None;
-        }
+///
+/// Returns `Err` when an existing file cannot be read or parsed.
+pub fn read_codex_cli_credential() -> anyhow::Result<Option<CodexCliCredential>> {
+    let path = match codex_cli_auth_path() {
+        Some(path) => path,
+        None => return Ok(None),
     };
+    let content = std::fs::read_to_string(&path)
+        .with_context(|| format!("cannot read Codex CLI auth.json at {}", path.display()))?;
 
-    let auth_file: CodexCliAuthFile = match serde_json::from_str(&content) {
-        Ok(f) => f,
-        Err(e) => {
-            tracing::debug!(error = %e, "cannot parse Codex CLI auth.json");
-            return None;
-        }
-    };
+    let auth_file: CodexCliAuthFile = serde_json::from_str(&content)
+        .with_context(|| format!("cannot parse Codex CLI auth.json at {}", path.display()))?;
 
     if !auth_file.auth_mode.eq_ignore_ascii_case("chatgpt") {
         tracing::debug!(auth_mode = %auth_file.auth_mode, "Codex CLI auth_mode is not chatgpt");
-        return None;
+        return Ok(None);
     }
 
-    let tokens = auth_file.tokens?;
+    let tokens = match auth_file.tokens {
+        Some(tokens) => tokens,
+        None => return Ok(None),
+    };
     if tokens.access_token.trim().is_empty() {
         tracing::debug!("Codex CLI access_token is empty");
-        return None;
+        return Ok(None);
     }
 
     let expires_at = decode_jwt_exp(&tokens.access_token);
 
-    Some(CodexCliCredential {
+    Ok(Some(CodexCliCredential {
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
         client_id: CODEX_CLI_CLIENT_ID.to_string(),
         expires_at,
-    })
+    }))
 }
 
 /// Check whether a [`CodexCliCredential`] has expired (with 5-minute buffer).
@@ -271,7 +270,9 @@ mod tests {
         std::fs::write(&auth_path, json).unwrap();
 
         let cred = with_codex_home(dir.path(), || {
-            read_codex_cli_credential().expect("should parse valid auth.json")
+            read_codex_cli_credential()
+                .unwrap()
+                .expect("should parse valid auth.json")
         });
         assert_eq!(cred.access_token, token);
         assert_eq!(cred.refresh_token.as_deref(), Some("refresh-tok"));
@@ -287,7 +288,7 @@ mod tests {
         std::fs::write(&auth_path, json).unwrap();
 
         with_codex_home(dir.path(), || {
-            assert!(read_codex_cli_credential().is_none());
+            assert!(read_codex_cli_credential().unwrap().is_none());
         });
     }
 
@@ -298,7 +299,7 @@ mod tests {
         std::fs::write(&auth_path, r#"{"auth_mode":"chatgpt"}"#).unwrap();
 
         with_codex_home(dir.path(), || {
-            assert!(read_codex_cli_credential().is_none());
+            assert!(read_codex_cli_credential().unwrap().is_none());
         });
     }
 
@@ -310,8 +311,23 @@ mod tests {
         std::fs::write(&auth_path, json).unwrap();
 
         with_codex_home(dir.path(), || {
-            assert!(read_codex_cli_credential().is_none());
+            assert!(read_codex_cli_credential().unwrap().is_none());
         });
+    }
+
+    #[test]
+    fn test_parse_malformed_auth_json_returns_error() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let auth_path = dir.path().join(CODEX_CLI_AUTH_FILE);
+        std::fs::write(&auth_path, "{not-json").unwrap();
+
+        let err = with_codex_home(dir.path(), || {
+            read_codex_cli_credential().expect_err("malformed auth.json must be diagnostic")
+        });
+        assert!(
+            err.to_string().contains("cannot parse Codex CLI auth.json"),
+            "unexpected error: {err:#}"
+        );
     }
 
     // ---- codex_cli_auth_path ----

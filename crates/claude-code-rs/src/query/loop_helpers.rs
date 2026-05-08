@@ -423,6 +423,8 @@ pub(crate) async fn execute_tool_calls(
             // Concurrent execution
             let mut handles = Vec::new();
             for (id, name, input) in batch {
+                let tool_use_id = id.clone();
+                let tool_name = name.clone();
                 let deps = deps.clone();
                 let parent = parent_message.clone();
                 let tools = tools.clone();
@@ -438,34 +440,27 @@ pub(crate) async fn execute_tool_calls(
                     deps.execute_tool(req, &tools, &parent, on_progress_clone)
                         .await
                 });
-                handles.push(handle);
+                handles.push((tool_use_id, tool_name, handle));
             }
 
-            for handle in handles {
+            for (tool_use_id, tool_name, handle) in handles {
                 match handle.await {
                     Ok(Ok(result)) => results.push(result),
                     Ok(Err(e)) => {
-                        warn!(error = %e, "tool execution error");
-                        results.push(ToolExecResult {
-                            tool_use_id: "unknown".to_string(),
-                            tool_name: "unknown".to_string(),
-                            result: crate::types::tool::ToolResult {
-                                data: serde_json::json!(format!("Internal error: {}", e)),
-                                new_messages: vec![],
-                                ..Default::default()
-                            },
-                            is_error: true,
-                            hook_stopped_continuation: false,
-                        });
+                        warn!(error = %e, tool = %tool_name, "tool execution error");
+                        results.push(internal_tool_error_result(tool_use_id, tool_name, e));
                     }
                     Err(e) => {
-                        warn!(error = %e, "tool task panicked");
+                        warn!(error = %e, tool = %tool_name, "tool task aborted or panicked");
+                        results.push(internal_tool_error_result(tool_use_id, tool_name, e));
                     }
                 }
             }
         } else {
             // Serial execution
             for (id, name, input) in batch {
+                let tool_use_id = id.clone();
+                let tool_name = name.clone();
                 let req = ToolExecRequest {
                     tool_use_id: id,
                     tool_name: name,
@@ -478,18 +473,8 @@ pub(crate) async fn execute_tool_calls(
                 {
                     Ok(result) => results.push(result),
                     Err(e) => {
-                        warn!(error = %e, "tool execution error");
-                        results.push(ToolExecResult {
-                            tool_use_id: "unknown".to_string(),
-                            tool_name: "unknown".to_string(),
-                            result: crate::types::tool::ToolResult {
-                                data: serde_json::json!(format!("Internal error: {}", e)),
-                                new_messages: vec![],
-                                ..Default::default()
-                            },
-                            is_error: true,
-                            hook_stopped_continuation: false,
-                        });
+                        warn!(error = %e, tool = %tool_name, "tool execution error");
+                        results.push(internal_tool_error_result(tool_use_id, tool_name, e));
                     }
                 }
             }
@@ -788,6 +773,7 @@ mod tests {
         max_active: AtomicUsize,
         events: parking_lot::Mutex<Vec<String>>,
         aborted: AtomicBool,
+        panic_tool_use_id: Option<&'static str>,
     }
 
     impl RecordingDeps {
@@ -797,6 +783,14 @@ mod tests {
                 max_active: AtomicUsize::new(0),
                 events: parking_lot::Mutex::new(Vec::new()),
                 aborted: AtomicBool::new(false),
+                panic_tool_use_id: None,
+            }
+        }
+
+        fn panicking_on(tool_use_id: &'static str) -> Self {
+            Self {
+                panic_tool_use_id: Some(tool_use_id),
+                ..Self::new()
             }
         }
 
@@ -844,6 +838,10 @@ mod tests {
             _parent: &AssistantMessage,
             _on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
         ) -> Result<ToolExecResult> {
+            if self.panic_tool_use_id == Some(request.tool_use_id.as_str()) {
+                panic!("intentional test panic for {}", request.tool_use_id);
+            }
+
             let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
             self.max_active.fetch_max(active, Ordering::SeqCst);
             self.events
@@ -1305,5 +1303,41 @@ mod tests {
             "later safe tool must wait behind preceding unsafe tool: {:?}",
             events
         );
+    }
+
+    #[tokio::test]
+    async fn execute_tool_calls_synthesizes_failed_result_for_spawned_tool_panic() {
+        let deps: Arc<dyn QueryDeps> = Arc::new(RecordingDeps::panicking_on("panic_tool"));
+        let tools: Tools = vec![Arc::new(BatchTool {
+            name: "Safe",
+            concurrency_safe: true,
+        })];
+        let tool_uses = vec![
+            (
+                "panic_tool".to_string(),
+                "Safe".to_string(),
+                serde_json::json!({}),
+            ),
+            (
+                "ok_tool".to_string(),
+                "Safe".to_string(),
+                serde_json::json!({}),
+            ),
+        ];
+
+        let results = execute_tool_calls(&deps, &tool_uses, &tools, &parent_message(), None).await;
+
+        assert_eq!(results.len(), 2);
+        let panic_result = results
+            .iter()
+            .find(|result| result.tool_use_id == "panic_tool")
+            .expect("panicking tool should still emit a result");
+        assert_eq!(panic_result.tool_name, "Safe");
+        assert!(panic_result.is_error);
+        assert!(panic_result
+            .result
+            .data
+            .as_str()
+            .is_some_and(|text| text.contains("Internal error:")));
     }
 }

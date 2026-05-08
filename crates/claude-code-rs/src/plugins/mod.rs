@@ -11,14 +11,12 @@
 //! 2. **Materialization** — `~/.cc-rust/plugins/` contains cached files
 //! 3. **Active** — loaded into memory and available to the engine
 
-#![allow(unused)]
-
 pub mod loader;
 pub mod manifest;
 pub mod refresh;
 pub mod tools;
 
-pub use refresh::{ReloadReport, reload_plugins};
+pub use refresh::{reload_plugins, ReloadReport};
 
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -104,6 +102,7 @@ pub struct PluginEntry {
 }
 
 /// A marketplace that hosts plugins.
+#[allow(dead_code)] // Marketplace registry shape is retained for marketplace metadata support.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketplaceEntry {
     /// Marketplace name (e.g. "official-marketplace").
@@ -144,6 +143,7 @@ pub fn cache_dir() -> PathBuf {
     plugins_dir().join("cache")
 }
 
+#[allow(dead_code)] // Marketplace cache support is not wired into the current refresh path yet.
 pub fn marketplaces_dir() -> PathBuf {
     plugins_dir().join("marketplaces")
 }
@@ -152,6 +152,7 @@ pub fn installed_plugins_path() -> PathBuf {
     plugins_dir().join("installed_plugins.json")
 }
 
+#[allow(dead_code)] // Marketplace cache support is not wired into the current refresh path yet.
 pub fn known_marketplaces_path() -> PathBuf {
     plugins_dir().join("known_marketplaces.json")
 }
@@ -319,7 +320,8 @@ impl DriftReport {
 pub(crate) fn compute_drift() -> DriftReport {
     use std::collections::{HashMap, HashSet};
 
-    let disk_plugins = loader::load_installed_plugins();
+    let disk_report = loader::load_installed_plugins_report();
+    let disk_plugins = disk_report.plugins;
     let in_memory = get_all_plugins();
 
     let disk_by_id: HashMap<String, &PluginEntry> =
@@ -375,6 +377,17 @@ fn status_variant_differs(a: &PluginStatus, b: &PluginStatus) -> bool {
 /// Called by `/plugin status` and after any mutation that persists state so
 /// the caller can emit `PluginEvent::RefreshNeeded`.
 pub fn needs_refresh() -> Option<String> {
+    let load_report = loader::load_installed_plugins_report();
+    if load_report.has_diagnostics() {
+        let details = load_report
+            .diagnostics
+            .iter()
+            .map(|diag| diag.message.clone())
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Some(format!("plugin metadata invalid ({})", details));
+    }
+
     let drift = compute_drift();
     if drift.is_empty() {
         return None;
@@ -487,9 +500,40 @@ fn cache_path_for(entry: &PluginEntry) -> Option<PathBuf> {
 
 /// Initialize the plugin system — loads installed plugins from disk.
 pub fn init_plugins() {
-    let installed = loader::load_installed_plugins();
-    for plugin in installed {
+    let installed = loader::load_installed_plugins_report();
+    for diagnostic in &installed.diagnostics {
+        warn!(
+            path = %diagnostic.path.display(),
+            plugin_id = diagnostic.plugin_id.as_deref().unwrap_or("<metadata>"),
+            error = %diagnostic.message,
+            "Plugin: metadata diagnostic during initialization"
+        );
+    }
+
+    for plugin in installed.plugins {
         register_plugin(plugin);
+    }
+
+    let mut diagnostic_index = 0usize;
+    for diagnostic in installed
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.plugin_id.is_none())
+    {
+        register_plugin(diagnostic.to_metadata_entry(diagnostic_index));
+        diagnostic_index += 1;
+    }
+
+    let cached = loader::discover_cached_plugins_report();
+    for diagnostic in &cached.diagnostics {
+        warn!(
+            path = %diagnostic.path.display(),
+            plugin_id = diagnostic.plugin_id.as_deref().unwrap_or("<cache>"),
+            error = %diagnostic.message,
+            "Plugin: cache diagnostic during initialization"
+        );
+        register_plugin(diagnostic.to_metadata_entry(diagnostic_index));
+        diagnostic_index += 1;
     }
 }
 
@@ -654,8 +698,28 @@ pub fn discover_plugin_skills() -> Vec<crate::skills::SkillDefinition> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugins::manifest::{StdioToolRuntime, ToolContribution, ToolRuntime};
     use std::fs;
+
+    struct EnvGuard {
+        old: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set_cc_rust_home(path: &std::path::Path) -> Self {
+            let old = std::env::var("CC_RUST_HOME").ok();
+            std::env::set_var("CC_RUST_HOME", path);
+            Self { old }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.old {
+                Some(value) => std::env::set_var("CC_RUST_HOME", value),
+                None => std::env::remove_var("CC_RUST_HOME"),
+            }
+        }
+    }
 
     fn make_plugin(id: &str) -> PluginEntry {
         PluginEntry {
@@ -764,11 +828,9 @@ mod tests {
         let pd = plugins_dir();
         assert!(pd.to_string_lossy().contains(".cc-rust"));
         assert!(cache_dir().to_string_lossy().contains("cache"));
-        assert!(
-            installed_plugins_path()
-                .to_string_lossy()
-                .contains("installed_plugins")
-        );
+        assert!(installed_plugins_path()
+            .to_string_lossy()
+            .contains("installed_plugins"));
         if let Some(v) = old {
             std::env::set_var("CC_RUST_HOME", v);
         }
@@ -783,6 +845,35 @@ mod tests {
         let updated = set_plugin_status("status-target", PluginStatus::Disabled);
         assert!(updated.is_some());
         assert_eq!(updated.unwrap().status, PluginStatus::Disabled);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn init_plugins_surfaces_corrupt_installed_metadata_as_error_entry() {
+        let home = std::env::temp_dir().join(format!(
+            "cc_rust_init_corrupt_plugins_{}",
+            uuid::Uuid::new_v4()
+        ));
+        let _guard = EnvGuard::set_cc_rust_home(&home);
+        clear_plugins();
+        fs::create_dir_all(plugins_dir()).unwrap();
+        fs::write(installed_plugins_path(), "{ broken json").unwrap();
+
+        init_plugins();
+
+        let plugins = get_all_plugins();
+        let metadata_error = plugins
+            .iter()
+            .find(|plugin| plugin.id.starts_with("plugin-metadata-invalid-"));
+        assert!(metadata_error.is_some());
+        assert!(matches!(
+            metadata_error.unwrap().status,
+            PluginStatus::Error(ref message) if message.contains("installed_plugins.json")
+        ));
+        assert!(needs_refresh().unwrap().contains("plugin metadata invalid"));
+
+        clear_plugins();
+        let _ = fs::remove_dir_all(&home);
     }
 
     #[test]

@@ -4,6 +4,7 @@
 //! `Cli::parse()` owns argument shape, everything else owns behaviour.
 
 use clap::Parser;
+use std::path::PathBuf;
 
 /// Claude Code CLI - Rust implementation
 #[derive(Parser, Debug)]
@@ -77,6 +78,10 @@ pub struct Cli {
     /// Headless mode: run without TUI, communicate via JSON on stdin/stdout
     #[arg(long, hide = true)]
     pub headless: bool,
+
+    /// INTERNAL: export accepted Rust TUI insta snapshots into one review folder.
+    #[arg(long = "export-ui-snapshots", value_name = "DIR", hide = true)]
+    pub export_ui_snapshots: Option<PathBuf>,
 
     /// Run as a background daemon with HTTP server (KAIROS mode).
     #[arg(long, hide = true)]

@@ -43,9 +43,8 @@ pub fn chrome_requested(cli: &Cli, config_default: Option<bool>) -> bool {
 pub fn resolve_permission_mode(
     cli_mode: Option<&str>,
     config_mode: Option<&str>,
-) -> PermissionMode {
-    let mode_str = cli_mode.or(config_mode).unwrap_or("default");
-    PermissionMode::parse(mode_str)
+) -> anyhow::Result<PermissionMode> {
+    PermissionMode::parse_configured(cli_mode.or(config_mode))
 }
 
 /// Build the [`ToolPermissionContext`] from layered settings.

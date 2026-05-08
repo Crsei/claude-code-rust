@@ -172,8 +172,14 @@ fn handle_show(parts: &[&str], ctx: &CommandContext) -> Result<CommandResult> {
     // the file can't be loaded).
     if let Some(name) = state.settings.output_style.as_deref() {
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let resolved = crate::engine::output_style::resolve(name, &cwd);
-        lines.push(format!("  outputStyle (resolved): {}", resolved.name()));
+        let resolution = crate::engine::output_style::resolve_with_diagnostic(name, &cwd);
+        lines.push(format!(
+            "  outputStyle (resolved): {}",
+            resolution.style.name()
+        ));
+        if let Some(diagnostic) = resolution.fallback_diagnostic {
+            lines.push(format!("  outputStyle diagnostic: {}", diagnostic));
+        }
     }
     row(
         "language",

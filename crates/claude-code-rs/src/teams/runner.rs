@@ -5,8 +5,6 @@
 //! Runs a teammate's QueryEngine inside a `task_local!` scope,
 //! processing messages from the mailbox and handling protocol messages.
 
-#![allow(unused)]
-
 use std::time::Duration;
 
 use anyhow::Result;
@@ -221,7 +219,14 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
                                     break;
                                 }
                             }
-                            Err(e) => warn!(error = %e, "mailbox processing error"),
+                            Err(e) => {
+                                let error = mark_mailbox_processing_failure(&task_id, e);
+                                release_teammate_tasks(
+                                    &identity,
+                                    crate::tools::tasks::TeammateTaskExitReason::Terminated,
+                                );
+                                return Err(anyhow::anyhow!(error));
+                            }
                         }
                     }
                 }
@@ -335,12 +340,17 @@ async fn drive_engine_turn(
             }
 
             _ = poll_interval.tick() => {
-                let actions = process_mailbox(
+                let actions = match process_mailbox(
                     agent_name,
                     team_name,
                     &identity.agent_id,
                     task_id,
-                )?;
+                ) {
+                    Ok(actions) => actions,
+                    Err(e) => {
+                        return Err(anyhow::anyhow!(mark_mailbox_processing_failure(task_id, e)));
+                    }
+                };
                 for message in actions.plain_messages {
                     InProcessBackend::push_pending_user_message(task_id, message);
                 }
@@ -411,6 +421,12 @@ fn process_mailbox(
     Ok(actions)
 }
 
+fn mark_mailbox_processing_failure(task_id: &str, error: impl std::fmt::Display) -> String {
+    let error = format!("mailbox coordination failure: {error}");
+    InProcessBackend::mark_task_failed(task_id, error.clone());
+    error
+}
+
 /// Handle a structured protocol message.
 fn handle_protocol_message(
     msg: ProtocolMessage,
@@ -430,8 +446,19 @@ fn handle_protocol_message(
                 "received shutdown request"
             );
 
-            // Auto-approve shutdown for simplicity
-            // (A full implementation would let the model decide)
+            if !shutdown_auto_approval_enabled() {
+                let error =
+                    format!("shutdown request {request_id} requires explicit auto-approval policy");
+                warn!(
+                    agent_id,
+                    request_id = %request_id,
+                    "shutdown request not auto-approved"
+                );
+                InProcessBackend::mark_task_failed(task_id, error.clone());
+                send_shutdown_rejected(agent_name, team_name, &request_id, &error)?;
+                return Ok(false);
+            }
+
             let now = chrono::Utc::now();
             let approval = serde_json::json!({
                 "type": "shutdown_approved",
@@ -508,6 +535,47 @@ fn handle_protocol_message(
     Ok(false)
 }
 
+fn shutdown_auto_approval_enabled() -> bool {
+    std::env::var("CC_RUST_AUTO_APPROVE_SHUTDOWN_REQUESTS")
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes"
+            )
+        })
+        .unwrap_or(false)
+}
+
+fn send_shutdown_rejected(
+    agent_name: &str,
+    team_name: &str,
+    request_id: &str,
+    reason: &str,
+) -> Result<()> {
+    let now = chrono::Utc::now();
+    let rejection = serde_json::json!({
+        "type": "shutdown_rejected",
+        "requestId": request_id,
+        "from": agent_name,
+        "timestamp": now.to_rfc3339(),
+        "backendType": "in-process",
+        "reason": reason,
+    });
+
+    mailbox::write_to_mailbox(
+        super::constants::TEAM_LEAD_NAME,
+        TeammateMessage {
+            from: agent_name.into(),
+            text: rejection.to_string(),
+            timestamp: now.to_rfc3339(),
+            read: false,
+            color: None,
+            summary: Some("Shutdown auto-approval disabled".into()),
+        },
+        team_name,
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Notification helpers
 // ---------------------------------------------------------------------------
@@ -557,6 +625,12 @@ mod tests {
         fn set(key: &'static str, value: &str) -> Self {
             let previous = std::env::var(key).ok();
             std::env::set_var(key, value);
+            Self { key, previous }
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::remove_var(key);
             Self { key, previous }
         }
     }
@@ -686,9 +760,84 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn shutdown_request_auto_approves_and_marks_runner_for_shutdown() {
+    fn shutdown_request_requires_explicit_auto_approval_policy() {
         let tmp = tempfile::tempdir().unwrap();
         let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _approval = EnvGuard::remove("CC_RUST_AUTO_APPROVE_SHUTDOWN_REQUESTS");
+        InProcessBackend::clear_registry();
+        InProcessBackend::register_task(InProcessTeammateTaskState {
+            id: "task-1".into(),
+            status: TaskStatus::Running,
+            identity: TeammateIdentity {
+                agent_id: "worker@phase0".into(),
+                agent_name: "worker".into(),
+                team_name: "phase0".into(),
+                color: None,
+                plan_mode_required: false,
+                parent_session_id: "session".into(),
+            },
+            prompt: "initial".into(),
+            model: None,
+            abort_handle: None,
+            cancellation_token: None,
+            awaiting_plan_approval: false,
+            permission_mode: PermissionMode::Default,
+            error: None,
+            pending_user_messages: vec![],
+            is_idle: false,
+            shutdown_requested: false,
+            last_reported_tool_count: 0,
+            last_reported_token_count: 0,
+        });
+        let raw = serde_json::json!({
+            "type": "shutdown_request",
+            "requestId": "shutdown-worker-1",
+            "from": crate::teams::constants::TEAM_LEAD_NAME,
+            "reason": "phase0 test",
+            "timestamp": "2026-05-06T00:00:00Z",
+        })
+        .to_string();
+        mailbox::write_to_mailbox(
+            "worker",
+            TeammateMessage {
+                from: crate::teams::constants::TEAM_LEAD_NAME.into(),
+                text: raw,
+                timestamp: "2026-05-06T00:00:00Z".into(),
+                read: false,
+                color: None,
+                summary: Some("shutdown".into()),
+            },
+            "phase0",
+        )
+        .unwrap();
+
+        let actions = process_mailbox("worker", "phase0", "worker@phase0", "task-1").unwrap();
+
+        assert!(!actions.shutdown_requested);
+        let snapshot = InProcessBackend::task_snapshots().remove(0);
+        assert_eq!(snapshot.status, TaskStatus::Stopped);
+        assert!(snapshot
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("requires explicit auto-approval policy"));
+        let leader_inbox =
+            mailbox::read_mailbox(crate::teams::constants::TEAM_LEAD_NAME, "phase0").unwrap();
+        assert_eq!(leader_inbox.len(), 1);
+        assert_eq!(
+            leader_inbox[0].summary.as_deref(),
+            Some("Shutdown auto-approval disabled")
+        );
+        assert!(leader_inbox[0].text.contains("shutdown_rejected"));
+        InProcessBackend::clear_registry();
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn shutdown_request_auto_approves_when_policy_enabled() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _approval = EnvGuard::set("CC_RUST_AUTO_APPROVE_SHUTDOWN_REQUESTS", "true");
         InProcessBackend::clear_registry();
         InProcessBackend::register_task(InProcessTeammateTaskState {
             id: "task-1".into(),
@@ -749,6 +898,57 @@ mod tests {
             Some("Shutdown approved")
         );
         assert!(leader_inbox[0].text.contains("shutdown_approved"));
+        InProcessBackend::clear_registry();
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn mailbox_processing_error_marks_task_failed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        InProcessBackend::clear_registry();
+        InProcessBackend::register_task(InProcessTeammateTaskState {
+            id: "task-1".into(),
+            status: TaskStatus::Running,
+            identity: TeammateIdentity {
+                agent_id: "worker@phase0".into(),
+                agent_name: "worker".into(),
+                team_name: "phase0".into(),
+                color: None,
+                plan_mode_required: false,
+                parent_session_id: "session".into(),
+            },
+            prompt: "initial".into(),
+            model: None,
+            abort_handle: None,
+            cancellation_token: None,
+            awaiting_plan_approval: false,
+            permission_mode: PermissionMode::Default,
+            error: None,
+            pending_user_messages: vec![],
+            is_idle: false,
+            shutdown_requested: false,
+            last_reported_tool_count: 0,
+            last_reported_token_count: 0,
+        });
+
+        let inbox = mailbox::inbox_path("worker", "phase0");
+        std::fs::create_dir_all(inbox.parent().unwrap()).unwrap();
+        std::fs::write(&inbox, "{not valid json").unwrap();
+
+        let err = match process_mailbox("worker", "phase0", "worker@phase0", "task-1") {
+            Ok(_) => panic!("corrupt mailbox should fail"),
+            Err(err) => err,
+        };
+        mark_mailbox_processing_failure("task-1", err);
+
+        let snapshot = InProcessBackend::task_snapshots().remove(0);
+        assert_eq!(snapshot.status, TaskStatus::Stopped);
+        assert!(snapshot
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("mailbox coordination failure"));
         InProcessBackend::clear_registry();
     }
 

@@ -6,6 +6,7 @@
 //! special-purpose bridge (`--chrome-native-host`,
 //! `--claude-in-chrome-mcp`).
 
+use std::path::Path;
 use std::process::ExitCode;
 
 use crate::cli::Cli;
@@ -42,6 +43,25 @@ pub fn run_claude_in_chrome_mcp() -> ExitCode {
             }
         }
     })
+}
+
+/// Export accepted Rust TUI snapshots into a single human-review folder.
+pub fn run_export_ui_snapshots(output_dir: &Path) -> ExitCode {
+    match crate::ui::snapshot_export::export_ui_snapshots(output_dir) {
+        Ok(report) => {
+            println!(
+                "exported {} Rust TUI snapshots to {}",
+                report.snapshot_count,
+                report.output_dir.display()
+            );
+            println!("index: {}", report.index_path.display());
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("export-ui-snapshots error: {e:#}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// Print the resolved system prompt and exit. Populates the minimum state

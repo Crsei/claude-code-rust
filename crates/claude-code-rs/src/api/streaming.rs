@@ -1,5 +1,5 @@
 //! SSE (Server-Sent Events) stream parser for the Anthropic Messages API
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
 use crate::types::message::{AssistantMessage, ContentBlock, MessageDelta, StreamEvent, Usage};
@@ -18,45 +18,77 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<Option<StreamEven
 
     match event_type {
         "message_start" => {
-            let usage_val = parsed.get("message").and_then(|m| m.get("usage"));
-            let usage = if let Some(u) = usage_val {
-                serde_json::from_value(u.clone()).unwrap_or_default()
-            } else {
-                Usage::default()
-            };
+            let usage = parse_required_usage(&parsed, "message.usage")?;
             Ok(Some(StreamEvent::MessageStart { usage }))
         }
         "content_block_start" => {
-            let index = parsed.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+            let index = required_index(&parsed)?;
             let block: ContentBlock =
-                serde_json::from_value(parsed.get("content_block").cloned().unwrap_or_default())?;
+                serde_json::from_value(required_field(&parsed, "content_block")?)
+                    .context("malformed required SSE field `content_block`")?;
             Ok(Some(StreamEvent::ContentBlockStart {
                 index,
                 content_block: block,
             }))
         }
         "content_block_delta" => {
-            let index = parsed.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            let delta = parsed.get("delta").cloned().unwrap_or_default();
+            let index = required_index(&parsed)?;
+            let delta = required_object_field(&parsed, "delta")?;
             Ok(Some(StreamEvent::ContentBlockDelta { index, delta }))
         }
         "content_block_stop" => {
-            let index = parsed.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+            let index = required_index(&parsed)?;
             Ok(Some(StreamEvent::ContentBlockStop { index }))
         }
         "message_delta" => {
-            let delta: MessageDelta =
-                serde_json::from_value(parsed.get("delta").cloned().unwrap_or_default())
-                    .unwrap_or(MessageDelta { stop_reason: None });
+            let delta: MessageDelta = serde_json::from_value(required_field(&parsed, "delta")?)
+                .context("malformed required SSE field `delta`")?;
             let usage = parsed
                 .get("usage")
-                .and_then(|u| serde_json::from_value(u.clone()).ok());
+                .map(|u| {
+                    serde_json::from_value(u.clone())
+                        .context("malformed optional SSE field `usage`")
+                })
+                .transpose()?;
             Ok(Some(StreamEvent::MessageDelta { delta, usage }))
         }
         "message_stop" => Ok(Some(StreamEvent::MessageStop)),
         "ping" | "error" => Ok(None),
         _ => Ok(None),
     }
+}
+
+fn required_field(parsed: &Value, field: &str) -> Result<Value> {
+    let mut current = parsed;
+    for part in field.split('.') {
+        current = current
+            .get(part)
+            .with_context(|| format!("missing required SSE field `{field}`"))?;
+    }
+    Ok(current.clone())
+}
+
+fn required_object_field(parsed: &Value, field: &str) -> Result<Value> {
+    let value = required_field(parsed, field)?;
+    if !value.is_object() {
+        bail!("malformed required SSE field `{field}`: expected object");
+    }
+    Ok(value)
+}
+
+fn parse_required_usage(parsed: &Value, field: &str) -> Result<Usage> {
+    serde_json::from_value(required_field(parsed, field)?)
+        .with_context(|| format!("malformed required SSE field `{field}`"))
+}
+
+fn required_index(parsed: &Value) -> Result<usize> {
+    let Some(index) = parsed.get("index") else {
+        bail!("missing required SSE field `index`");
+    };
+    let Some(index) = index.as_u64() else {
+        bail!("malformed required SSE field `index`: expected non-negative integer");
+    };
+    usize::try_from(index).context("malformed required SSE field `index`: value is too large")
 }
 
 /// Accumulate stream events into a complete AssistantMessage
@@ -654,14 +686,10 @@ mod tests {
         assert_eq!(usage.cache_creation_input_tokens, 2);
 
         match &message.content[..] {
-            [
-                ContentBlock::Text { text },
-                ContentBlock::Thinking {
-                    thinking,
-                    signature,
-                },
-                ContentBlock::ToolUse { id, name, input },
-            ] => {
+            [ContentBlock::Text { text }, ContentBlock::Thinking {
+                thinking,
+                signature,
+            }, ContentBlock::ToolUse { id, name, input }] => {
                 assert_eq!(text, "hello");
                 assert_eq!(thinking, "considering");
                 assert_eq!(signature.as_deref(), Some("sig"));
@@ -670,6 +698,70 @@ mod tests {
                 assert_eq!(input["file_path"], "Cargo.toml");
             }
             other => panic!("unexpected content blocks: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_errors_when_content_block_start_missing_required_index() {
+        let error = parse_sse_event(
+            "content_block_start",
+            r#"{"content_block":{"type":"text","text":""}}"#,
+        )
+        .expect_err("missing index should fail");
+
+        assert!(error
+            .to_string()
+            .contains("missing required SSE field `index`"));
+    }
+
+    #[test]
+    fn parse_errors_when_content_block_start_has_malformed_content_block() {
+        let error = parse_sse_event(
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"tool_use","id":"toolu_1"}}"#,
+        )
+        .expect_err("malformed content block should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("malformed required SSE field `content_block`"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn parse_errors_when_content_block_delta_missing_required_delta() {
+        let error = parse_sse_event("content_block_delta", r#"{"index":0}"#)
+            .expect_err("missing delta should fail");
+
+        assert!(error
+            .to_string()
+            .contains("missing required SSE field `delta`"));
+    }
+
+    #[test]
+    fn parse_errors_when_message_start_missing_required_usage() {
+        let error = parse_sse_event("message_start", r#"{"message":{"id":"msg_1"}}"#)
+            .expect_err("missing usage should fail");
+
+        assert!(error
+            .to_string()
+            .contains("missing required SSE field `message.usage`"));
+    }
+
+    #[test]
+    fn parse_message_delta_allows_missing_optional_usage() {
+        let event = parse_sse_event("message_delta", r#"{"delta":{"stop_reason":"end_turn"}}"#)
+            .expect("valid event")
+            .expect("stream event");
+
+        match event {
+            StreamEvent::MessageDelta { delta, usage } => {
+                assert_eq!(delta.stop_reason.as_deref(), Some("end_turn"));
+                assert!(usage.is_none());
+            }
+            other => panic!("expected message_delta, got {other:?}"),
         }
     }
 }

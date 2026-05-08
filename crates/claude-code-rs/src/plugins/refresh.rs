@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use tracing::{info, warn};
 
-use super::{PluginStatus, clear_plugins, init_plugins, loader};
+use super::{clear_plugins, init_plugins, loader, PluginStatus};
 use crate::ipc::subsystem_events::{PluginEvent, SubsystemEvent};
 
 /// Summary of a plugin reload cycle.
@@ -53,7 +53,7 @@ pub fn reload_plugins() -> ReloadReport {
     // 1. Snapshot the on-disk state before touching the registry, so we
     //    can surface per-plugin load errors even if `init_plugins` swallows
     //    them internally.
-    let on_disk = loader::load_installed_plugins();
+    let on_disk = loader::load_installed_plugins_report();
 
     // 2. Wipe + repopulate. This is intentionally synchronous: callers
     //    already expect a short blocking refresh, and keeping it sync means
@@ -64,15 +64,32 @@ pub fn reload_plugins() -> ReloadReport {
 
     // 3. Collect error diagnostics by walking the fresh registry.
     let mut errors = Vec::new();
+    let mut seen_error_ids = std::collections::HashSet::new();
     for plugin in super::get_all_plugins() {
         if let PluginStatus::Error(msg) = plugin.status {
             warn!(plugin = %plugin.id, error = %msg, "plugin reload: entered error state");
+            seen_error_ids.insert(plugin.id.clone());
             errors.push((plugin.id.clone(), msg.clone()));
+        }
+    }
+    for (index, diagnostic) in on_disk.diagnostics.iter().enumerate() {
+        warn!(
+            path = %diagnostic.path.display(),
+            plugin_id = diagnostic.plugin_id.as_deref().unwrap_or("<metadata>"),
+            error = %diagnostic.message,
+            "plugin reload: metadata diagnostic"
+        );
+        let diagnostic_id = diagnostic
+            .plugin_id
+            .clone()
+            .unwrap_or_else(|| format!("plugin-metadata-invalid-{}", index + 1));
+        if seen_error_ids.insert(diagnostic_id.clone()) {
+            errors.push((diagnostic_id, diagnostic.message.clone()));
         }
     }
 
     let count = super::get_all_plugins().len();
-    let expected = on_disk.len();
+    let expected = on_disk.plugins.len();
     if count < expected {
         warn!(
             expected,
@@ -111,7 +128,7 @@ pub fn reload_plugins() -> ReloadReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugins::{PluginEntry, PluginSource, register_plugin};
+    use crate::plugins::{register_plugin, PluginEntry, PluginSource};
     use parking_lot::Mutex;
     use std::sync::LazyLock;
 

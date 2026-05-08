@@ -66,6 +66,10 @@ pub struct HookEventConfig {
     /// Tool name matcher (e.g., "Bash", "Read", "*").
     /// None or "*" matches all tools.
     pub matcher: Option<String>,
+    /// Whether this hook config is policy-critical and should fail closed.
+    /// Existing configs omit this field and remain optional/best-effort.
+    #[serde(default)]
+    pub critical: bool,
     /// List of hook entries to run when this config matches.
     pub hooks: Vec<HookEntry>,
 }

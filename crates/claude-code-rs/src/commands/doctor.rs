@@ -16,11 +16,11 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::auth::{AuthMethod, resolve_auth};
+use crate::auth::{try_resolve_auth, AuthMethod};
 use crate::config::paths;
-use crate::config::settings::{SettingsSource, load_effective};
-use crate::config::validation::{WarningSeverity, validate_settings};
-use crate::ui::browser::{TreeNode, render_with_footer, shorten_path};
+use crate::config::settings::{load_effective, SettingsSource};
+use crate::config::validation::{validate_settings, WarningSeverity};
+use crate::ui::browser::{render_with_footer, shorten_path, TreeNode};
 
 use super::terminal_setup::TerminalLabel;
 
@@ -273,7 +273,28 @@ fn build_install_section() -> Section {
 
 fn build_auth_section() -> Section {
     let mut rows = Vec::new();
-    let method = resolve_auth();
+    let method = match try_resolve_auth() {
+        Ok(method) => method,
+        Err(error) => {
+            rows.push(Row::new(
+                "credential",
+                Status::Fail,
+                format!("credential error: {error}"),
+            ));
+            let cred_path = paths::credentials_path();
+            if cred_path.exists() {
+                rows.push(Row::new(
+                    "credentials.json",
+                    Status::Info,
+                    shorten_path(&cred_path),
+                ));
+            }
+            return Section {
+                name: "Auth".to_string(),
+                rows,
+            };
+        }
+    };
     let (status, detail) = match &method {
         AuthMethod::ApiKey(_) => (Status::Ok, "ANTHROPIC_API_KEY / keychain".to_string()),
         AuthMethod::ExternalToken(_) => (Status::Ok, "ANTHROPIC_AUTH_TOKEN".to_string()),

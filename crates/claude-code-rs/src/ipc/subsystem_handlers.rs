@@ -1013,24 +1013,90 @@ pub fn build_mcp_server_info_list() -> Vec<McpServerStatusInfo> {
 }
 
 pub fn build_mcp_server_info_list_for_cwd(cwd: &Path) -> Vec<McpServerStatusInfo> {
-    let configs = crate::mcp::discovery::discover_mcp_servers(cwd).unwrap_or_default();
+    let (configs, mut diagnostics) = match discover_mcp_runtime_configs_with_diagnostics(cwd) {
+        Ok(discovery) => discovery,
+        Err(err) => return vec![mcp_discovery_error_status(err)],
+    };
     if let Some(manager) = crate::mcp::runtime::current_manager() {
         if let Ok(manager) = manager.try_lock() {
-            return build_mcp_server_info_list_from_configs(configs, Some(&manager));
+            let mut rows = build_mcp_server_info_list_from_configs(configs, Some(&manager));
+            rows.append(&mut diagnostics);
+            return rows;
         }
     }
 
-    build_mcp_server_info_list_from_configs(configs, None)
+    let mut rows = build_mcp_server_info_list_from_configs(configs, None);
+    rows.append(&mut diagnostics);
+    rows
 }
 
 pub async fn build_mcp_server_info_list_for_cwd_async(cwd: &Path) -> Vec<McpServerStatusInfo> {
-    let configs = crate::mcp::discovery::discover_mcp_servers(cwd).unwrap_or_default();
+    let (configs, mut diagnostics) = match discover_mcp_runtime_configs_with_diagnostics(cwd) {
+        Ok(discovery) => discovery,
+        Err(err) => return vec![mcp_discovery_error_status(err)],
+    };
     if let Some(manager) = crate::mcp::runtime::current_manager() {
         let manager = manager.lock().await;
-        return build_mcp_server_info_list_from_configs(configs, Some(&manager));
+        let mut rows = build_mcp_server_info_list_from_configs(configs, Some(&manager));
+        rows.append(&mut diagnostics);
+        return rows;
     }
 
-    build_mcp_server_info_list_from_configs(configs, None)
+    let mut rows = build_mcp_server_info_list_from_configs(configs, None);
+    rows.append(&mut diagnostics);
+    rows
+}
+
+fn mcp_discovery_error_status(err: anyhow::Error) -> McpServerStatusInfo {
+    McpServerStatusInfo {
+        name: "discovery".to_string(),
+        state: "error".to_string(),
+        transport: "settings".to_string(),
+        tools_count: 0,
+        resources_count: 0,
+        server_info: None,
+        instructions: None,
+        error: Some(format!("Failed to discover MCP servers: {err:#}")),
+    }
+}
+
+fn discover_mcp_runtime_configs_with_diagnostics(
+    cwd: &Path,
+) -> anyhow::Result<(Vec<crate::mcp::McpServerConfig>, Vec<McpServerStatusInfo>)> {
+    let scoped = crate::mcp::discovery::discover_mcp_servers_scoped(cwd)?;
+    let mut configs: Vec<crate::mcp::McpServerConfig> = Vec::new();
+    let mut diagnostics = Vec::new();
+
+    for entry in scoped {
+        if let Some(error) = entry.error {
+            diagnostics.push(McpServerStatusInfo {
+                name: entry.config.name,
+                state: "error".to_string(),
+                transport: entry.config.transport,
+                tools_count: 0,
+                resources_count: 0,
+                server_info: None,
+                instructions: None,
+                error: Some(format!(
+                    "{} scope: {}",
+                    scope_from_discovery(&entry.scope).label(),
+                    error
+                )),
+            });
+            continue;
+        }
+
+        if let Some(existing) = configs
+            .iter_mut()
+            .find(|config| config.name == entry.config.name)
+        {
+            *existing = entry.config;
+        } else {
+            configs.push(entry.config);
+        }
+    }
+
+    Ok((configs, diagnostics))
 }
 
 fn build_mcp_server_info_list_from_configs(
@@ -1106,7 +1172,25 @@ fn build_mcp_server_info(
 /// per scope so the same logical server can appear in multiple scopes (e.g.
 /// "same name in user + project").
 pub fn build_mcp_server_config_entries(cwd: &std::path::Path) -> Vec<McpServerConfigEntry> {
-    let scoped = crate::mcp::discovery::discover_mcp_servers_scoped(cwd).unwrap_or_default();
+    let scoped = match crate::mcp::discovery::discover_mcp_servers_scoped(cwd) {
+        Ok(scoped) => scoped,
+        Err(err) => {
+            tracing::warn!(error = %err, "Failed to discover scoped MCP server configs");
+            return vec![McpServerConfigEntry {
+                name: "discovery".to_string(),
+                transport: "settings".to_string(),
+                command: None,
+                args: None,
+                url: None,
+                headers: None,
+                oauth: None,
+                env: None,
+                browser_mcp: None,
+                disabled: Some(true),
+                scope: ConfigScope::User,
+            }];
+        }
+    };
     scoped
         .into_iter()
         .map(|s| McpServerConfigEntry {

@@ -7,6 +7,7 @@
 //! `cc-sandbox` and `cc-permissions` can be workspace leaves without a
 //! cycle through the root crate.
 
+use anyhow::{bail, Result};
 use std::collections::HashMap;
 
 /// Permission mode.
@@ -33,18 +34,42 @@ pub enum PermissionMode {
 }
 
 impl PermissionMode {
+    fn parse_known(value: &str) -> Option<PermissionMode> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "default" | "ask" => Some(PermissionMode::Default),
+            "auto" => Some(PermissionMode::Auto),
+            "bypass" | "bypasspermissions" | "bypass-permissions" => Some(PermissionMode::Bypass),
+            "plan" | "readonly" | "read-only" => Some(PermissionMode::Plan),
+            "acceptedits" | "accept-edits" | "accept_edits" => Some(PermissionMode::AcceptEdits),
+            "dontask" | "dont-ask" | "dont_ask" | "no-ask" => Some(PermissionMode::DontAsk),
+            _ => None,
+        }
+    }
+
     /// Parse a mode string. Accepts both kebab-case and camelCase tokens
     /// from the permissions docs as well as the legacy lower-case forms.
     /// Unknown / empty values fall back to [`PermissionMode::Default`].
+    ///
+    /// Use [`PermissionMode::parse_configured`] for persisted configuration,
+    /// where an unknown existing value must surface as a diagnostic instead of
+    /// silently selecting the default mode.
     pub fn parse(value: &str) -> PermissionMode {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "auto" => PermissionMode::Auto,
-            "bypass" | "bypasspermissions" | "bypass-permissions" => PermissionMode::Bypass,
-            "plan" | "readonly" | "read-only" => PermissionMode::Plan,
-            "acceptedits" | "accept-edits" | "accept_edits" => PermissionMode::AcceptEdits,
-            "dontask" | "dont-ask" | "dont_ask" | "no-ask" => PermissionMode::DontAsk,
-            _ => PermissionMode::Default,
+        Self::parse_known(value).unwrap_or(PermissionMode::Default)
+    }
+
+    /// Parse a configured permission mode. An absent value defaults, but a
+    /// present unknown value is an error so invalid settings fail fast.
+    pub fn parse_configured(value: Option<&str>) -> Result<PermissionMode> {
+        let Some(value) = value else {
+            return Ok(PermissionMode::Default);
+        };
+        if let Some(mode) = Self::parse_known(value) {
+            return Ok(mode);
         }
+        bail!(
+            "Unknown permission mode '{}'. Known modes: default, ask, auto, bypass, plan, acceptEdits, dontAsk",
+            value
+        )
     }
 
     /// Stable lower-case identifier (camelCase) used for source-map tagging
@@ -125,4 +150,40 @@ pub struct StrippedPermissionRule {
     pub source: String,
     pub rule: String,
     pub reason: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PermissionMode;
+
+    #[test]
+    fn permissions_absent_configured_mode_defaults() {
+        assert_eq!(
+            PermissionMode::parse_configured(None).unwrap(),
+            PermissionMode::Default
+        );
+    }
+
+    #[test]
+    fn permissions_unknown_configured_mode_errors() {
+        let err = PermissionMode::parse_configured(Some("surprise")).unwrap_err();
+        assert!(
+            err.to_string().contains("Unknown permission mode"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn permissions_empty_configured_mode_errors() {
+        let err = PermissionMode::parse_configured(Some(" ")).unwrap_err();
+        assert!(
+            err.to_string().contains("Unknown permission mode"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn permissions_legacy_parse_still_defaults_unknown_runtime_input() {
+        assert_eq!(PermissionMode::parse("surprise"), PermissionMode::Default);
+    }
 }
