@@ -104,3 +104,4 @@ ApiClient::from_backend()
 - Codex backend 当前行为看 `docs/codex-backend.md`；历史调研笔记已归档到 `docs/archive/implemented/codex-agent.md`
 - 注意目前阶段修改 UI 代码只修改 `crates/claude-code-rs/src/ui/` 端的代码
 - Windows 环境下如果 `omx explore` 的只读 harness 不可用，直接用 PowerShell + `rg` 做等价只读定位，不要把它当成仓库问题
+- 文档更新按任务拆分，每完成一个文档更新任务就单独 commit；commit 描述保持一句话，直接说明这次提交的目的即可
