@@ -6,13 +6,22 @@
 
 #![allow(dead_code)]
 
+use std::path::Path;
+use std::sync::Arc;
+
+use anyhow::{Context, Result};
 use gateway::{
     GatewayCommand, GatewayCommandKind, GatewayCommandReceipt, GatewayCommandSink,
     GatewayDiagnostic, GatewayError,
 };
 use serde_json::{json, Value};
+use tokio_stream::StreamExt;
+
+use crate::engine::lifecycle::QueryEngine;
+use crate::types::config::{QueryEngineConfig, QuerySource};
 
 use super::protocol::{self, DaemonCommandKind};
+use super::routes::sdk_message_to_sse;
 use super::supervisor::ASSISTANT_WORKER_ID;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -117,6 +126,163 @@ fn enqueue_error(command: &GatewayCommand, error: anyhow::Error) -> GatewayError
             command.run_id, command.kind, error
         )),
     )
+}
+
+pub async fn handle_worker_command(
+    worker_id: &str,
+    runtime: &mut AssistantWorkerRuntime,
+    command: protocol::DaemonCommand,
+) -> Result<bool> {
+    match command.kind {
+        protocol::DaemonCommandKind::Submit => {
+            if let Err(err) = runtime.execute_submit(worker_id, &command).await {
+                protocol::append_event(
+                    worker_id,
+                    Some(&command.command_id),
+                    "command_failed",
+                    json!({
+                        "kind": "submit",
+                        "error": err.to_string(),
+                    }),
+                )?;
+                protocol::mark_command_failed(command, err.to_string())?;
+            } else {
+                protocol::mark_command_handled(command)?;
+            }
+            Ok(false)
+        }
+        protocol::DaemonCommandKind::Abort => {
+            runtime.abort();
+            let command = protocol::mark_command_handled(command)?;
+            protocol::append_event(
+                worker_id,
+                Some(&command.command_id),
+                "abort_ack",
+                json!({ "handled": true }),
+            )?;
+            Ok(false)
+        }
+        protocol::DaemonCommandKind::PermissionResponse
+        | protocol::DaemonCommandKind::AskUserResponse
+        | protocol::DaemonCommandKind::ReloadConfig => {
+            let command = protocol::mark_command_handled(command)?;
+            protocol::append_event(
+                worker_id,
+                Some(&command.command_id),
+                "command_handled",
+                json!({ "kind": command.kind.as_str() }),
+            )?;
+            Ok(false)
+        }
+        protocol::DaemonCommandKind::Shutdown => {
+            let command = protocol::mark_command_handled(command)?;
+            protocol::append_event(
+                worker_id,
+                Some(&command.command_id),
+                "worker_shutdown_ack",
+                json!({ "handled": true }),
+            )?;
+            Ok(true)
+        }
+    }
+}
+
+pub struct AssistantWorkerRuntime {
+    engine: Arc<QueryEngine>,
+}
+
+impl AssistantWorkerRuntime {
+    pub fn new(cwd: &Path) -> Self {
+        crate::plugins::init_plugins();
+        let tools = crate::tools::registry::get_tools_for_active_session();
+        crate::tools::tool_search::install_runtime_tool_catalog(&tools);
+        let mut engine = QueryEngine::new(QueryEngineConfig {
+            cwd: cwd.to_string_lossy().into_owned(),
+            tools,
+            custom_system_prompt: None,
+            append_system_prompt: None,
+            user_specified_model: None,
+            fallback_model: None,
+            max_turns: None,
+            max_budget_usd: None,
+            task_budget: None,
+            verbose: false,
+            initial_messages: None,
+            commands: crate::commands::get_all_commands()
+                .iter()
+                .map(|command| command.name.clone())
+                .collect(),
+            thinking_config: None,
+            json_schema: None,
+            replay_user_messages: false,
+            persist_session: true,
+            resolved_model: None,
+            auto_save_session: true,
+            agent_context: None,
+        });
+        engine.set_hook_runner(Arc::new(crate::tools::hooks::ShellHookRunner::new()));
+        engine.set_command_dispatcher(Arc::new(crate::commands::DefaultCommandDispatcher::new()));
+
+        Self {
+            engine: Arc::new(engine),
+        }
+    }
+
+    async fn execute_submit(
+        &self,
+        worker_id: &str,
+        command: &protocol::DaemonCommand,
+    ) -> Result<()> {
+        let text = command
+            .payload
+            .get("text")
+            .and_then(|value| value.as_str())
+            .context("submit command payload missing text")?;
+        let message_id = command
+            .payload
+            .get("message_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or(&command.command_id);
+
+        protocol::append_event(
+            worker_id,
+            Some(&command.command_id),
+            "submit_started",
+            json!({
+                "message_id": message_id,
+                "source": command.payload.get("source").cloned().unwrap_or_else(|| json!("worker")),
+                "gateway": command.payload.get("gateway").cloned(),
+            }),
+        )?;
+
+        self.engine.wake_up();
+        let stream = self
+            .engine
+            .submit_message(text, QuerySource::ReplMainThread);
+        tokio::pin!(stream);
+        while let Some(sdk_msg) = stream.next().await {
+            if let Some(event) = sdk_message_to_sse(&sdk_msg, message_id) {
+                protocol::append_event(
+                    worker_id,
+                    Some(&command.command_id),
+                    &event.event_type,
+                    event.data,
+                )?;
+            }
+        }
+
+        protocol::append_event(
+            worker_id,
+            Some(&command.command_id),
+            "submit_completed",
+            json!({ "message_id": message_id }),
+        )?;
+        Ok(())
+    }
+
+    fn abort(&self) {
+        self.engine.abort();
+    }
 }
 
 #[cfg(test)]

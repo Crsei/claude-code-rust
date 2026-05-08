@@ -16,16 +16,14 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
 use crate::commands::{self, CommandContext, CommandResult};
 use crate::engine::sdk_types::SdkMessage;
-use crate::types::config::QuerySource;
 use crate::types::plan_workflow::PlanWorkflowRecord;
 
 use super::process_state::{self, DaemonStatusSnapshot, DaemonWorkerSummary};
-use super::protocol::{self, DaemonCommandKind};
+use super::protocol::{self, DaemonCommandKind, DaemonCommandStatus};
 use super::state::{DaemonState, SseEvent};
 use super::supervisor::ASSISTANT_WORKER_ID;
 use super::team_memory_proxy;
@@ -236,7 +234,7 @@ fn extract_control_token(headers: &HeaderMap) -> Option<&str> {
         })
 }
 
-/// `POST /api/submit` -- submit a user message and begin streaming.
+/// `POST /api/submit` -- enqueue a user message for the assistant worker.
 async fn submit(
     State(state): State<DaemonState>,
     headers: HeaderMap,
@@ -280,48 +278,6 @@ async fn submit_authorized(state: DaemonState, body: SubmitRequest) -> Json<Valu
             "worker_id": command.target_worker_id,
             "kind": "submit",
         }),
-    });
-
-    let classifier = crate::plan_workflow::classify_plan_entry(&text, &state.engine.app_state());
-    if classifier.should_enter {
-        match crate::plan_workflow::enter_engine_plan_mode(
-            &state.engine,
-            "daemon_classifier",
-            Some(&text),
-            Some(&classifier.reason),
-        ) {
-            Ok(record) => {
-                state.broadcast(SseEvent {
-                    id: String::new(),
-                    event_type: "plan_workflow_event".to_string(),
-                    data: crate::plan_workflow::event_payload(
-                        &record,
-                        "classifier_entered",
-                        &crate::plan_workflow::summarize(&record),
-                    ),
-                });
-            }
-            Err(err) => warn!(error = %err, "daemon plan classifier sync failed"),
-        }
-    }
-
-    // Wake engine, set running flag, spawn async task.
-    state.engine.wake_up();
-    state.is_query_running.store(true, Ordering::SeqCst);
-
-    let engine = state.engine.clone();
-    let state_clone = state.clone();
-    let mid = message_id.clone();
-
-    tokio::spawn(async move {
-        let stream = engine.submit_message(&text, QuerySource::ReplMainThread);
-        tokio::pin!(stream);
-        while let Some(sdk_msg) = stream.next().await {
-            if let Some(sse_event) = sdk_message_to_sse(&sdk_msg, &mid) {
-                state_clone.broadcast(sse_event);
-            }
-        }
-        state_clone.is_query_running.store(false, Ordering::SeqCst);
     });
 
     Json(json!({
@@ -503,7 +459,7 @@ async fn status(State(state): State<DaemonState>) -> Json<StatusResponse> {
     Json(StatusResponse {
         kairos_active: state.features.kairos,
         proactive: state.features.proactive,
-        query_running: state.is_query_running.load(Ordering::SeqCst),
+        query_running: state.is_query_running.load(Ordering::SeqCst) || assistant_command_active(),
         clients_connected: state.clients.read().len(),
         sleeping: state.engine.is_sleeping() || daemon_sleep.is_some(),
         daemon_sleep_until: daemon_sleep
@@ -521,6 +477,20 @@ async fn status(State(state): State<DaemonState>) -> Json<StatusResponse> {
             .display()
             .to_string(),
     })
+}
+
+fn assistant_command_active() -> bool {
+    protocol::read_worker_commands(ASSISTANT_WORKER_ID)
+        .map(|commands| {
+            commands.into_iter().any(|command| {
+                command.kind == DaemonCommandKind::Submit
+                    && matches!(
+                        command.status,
+                        DaemonCommandStatus::Pending | DaemonCommandStatus::Acked
+                    )
+            })
+        })
+        .unwrap_or(false)
 }
 
 /// `POST /api/attach` -- re-attach a client and return missed events.

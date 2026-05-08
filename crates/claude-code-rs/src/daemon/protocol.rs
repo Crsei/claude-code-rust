@@ -1,9 +1,4 @@
 //! Filesystem command/event protocol for daemon supervisor workers.
-//!
-//! Commands are durable JSON files under `~/.cc-rust/daemon/commands/<worker>/`.
-//! Workers only process `pending` commands, so an acknowledged command is not
-//! repeated after a restart. Events are appended as NDJSON per worker for the
-//! control plane to replay in later phases.
 
 use std::fs;
 use std::io::Write;
@@ -76,14 +71,6 @@ pub struct DaemonEvent {
     pub event_type: String,
     pub data: Value,
     pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CommandProcessingResult {
-    pub inspected: usize,
-    pub acked: usize,
-    pub handled: usize,
-    pub shutdown_requested: bool,
 }
 
 pub fn commands_dir() -> PathBuf {
@@ -167,19 +154,11 @@ pub fn read_command(worker_id: &str, command_id: &str) -> Result<Option<DaemonCo
     read_command_file(&path).map(Some)
 }
 
-pub fn process_pending_commands(
+pub fn claim_next_pending_command(
     worker_id: &str,
     worker_kind: &str,
-) -> Result<CommandProcessingResult> {
-    let commands = read_worker_commands(worker_id)?;
-    let mut result = CommandProcessingResult {
-        inspected: commands.len(),
-        acked: 0,
-        handled: 0,
-        shutdown_requested: false,
-    };
-
-    for command in commands {
+) -> Result<Option<DaemonCommand>> {
+    for command in read_worker_commands(worker_id)? {
         if command.status != DaemonCommandStatus::Pending {
             continue;
         }
@@ -187,7 +166,6 @@ pub fn process_pending_commands(
         let mut command = transition_command(command, DaemonCommandStatus::Acked, None);
         command.acked_at = Some(Utc::now());
         write_command(&command)?;
-        result.acked += 1;
         append_event(
             worker_id,
             Some(&command.command_id),
@@ -197,62 +175,24 @@ pub fn process_pending_commands(
                 "worker_kind": worker_kind,
             }),
         )?;
-
-        match command.kind {
-            DaemonCommandKind::Submit => {
-                let gateway_run_id = command
-                    .payload
-                    .get("gateway")
-                    .and_then(|gateway| gateway.get("runId"))
-                    .cloned();
-                append_event(
-                    worker_id,
-                    Some(&command.command_id),
-                    "command_deferred",
-                    json!({
-                        "kind": "submit",
-                        "gateway_run_id": gateway_run_id,
-                        "reason": "assistant execution remains in the HTTP supervisor until Phase 4",
-                    }),
-                )?;
-            }
-            DaemonCommandKind::Abort => {
-                let command = mark_handled(command)?;
-                result.handled += 1;
-                append_event(
-                    worker_id,
-                    Some(&command.command_id),
-                    "abort_ack",
-                    json!({ "handled": true }),
-                )?;
-            }
-            DaemonCommandKind::PermissionResponse
-            | DaemonCommandKind::AskUserResponse
-            | DaemonCommandKind::ReloadConfig => {
-                let command = mark_handled(command)?;
-                result.handled += 1;
-                append_event(
-                    worker_id,
-                    Some(&command.command_id),
-                    "command_handled",
-                    json!({ "kind": command.kind.as_str() }),
-                )?;
-            }
-            DaemonCommandKind::Shutdown => {
-                let command = mark_handled(command)?;
-                result.handled += 1;
-                result.shutdown_requested = true;
-                append_event(
-                    worker_id,
-                    Some(&command.command_id),
-                    "worker_shutdown_ack",
-                    json!({ "handled": true }),
-                )?;
-            }
-        }
+        return Ok(Some(command));
     }
 
-    Ok(result)
+    Ok(None)
+}
+
+pub fn mark_command_handled(command: DaemonCommand) -> Result<DaemonCommand> {
+    mark_handled(command)
+}
+
+pub fn mark_command_failed(
+    command: DaemonCommand,
+    error: impl Into<String>,
+) -> Result<DaemonCommand> {
+    let mut command = transition_command(command, DaemonCommandStatus::Failed, Some(error.into()));
+    command.handled_at = Some(Utc::now());
+    write_command(&command)?;
+    Ok(command)
 }
 
 pub fn append_event(
@@ -431,7 +371,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn process_pending_commands_acks_submit_once() {
+    fn claim_next_pending_command_transitions_to_acked() {
         let temp = tempfile::tempdir().unwrap();
         let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
         let command = enqueue_command(
@@ -442,17 +382,21 @@ mod tests {
         )
         .unwrap();
 
-        let first = process_pending_commands(WORKER_ID, "assistant-session").unwrap();
-        let second = process_pending_commands(WORKER_ID, "assistant-session").unwrap();
+        let claimed = claim_next_pending_command(WORKER_ID, "assistant-session")
+            .unwrap()
+            .unwrap();
+        let second = claim_next_pending_command(WORKER_ID, "assistant-session").unwrap();
         let stored = read_command(WORKER_ID, &command.command_id)
             .unwrap()
             .unwrap();
-        let events = read_worker_events(WORKER_ID).unwrap();
 
-        assert_eq!(first.acked, 1);
-        assert_eq!(second.acked, 0);
+        assert_eq!(claimed.command_id, command.command_id);
         assert_eq!(stored.status, DaemonCommandStatus::Acked);
-        assert!(events.iter().any(|event| event.event_type == "command_ack"));
+        assert!(second.is_none());
+        assert!(read_worker_events(WORKER_ID)
+            .unwrap()
+            .iter()
+            .any(|event| event.event_type == "command_ack"));
     }
 
     #[test]
@@ -463,14 +407,22 @@ mod tests {
         let command =
             enqueue_command(WORKER_ID, DaemonCommandKind::Abort, json!({}), None).unwrap();
 
-        let result = process_pending_commands(WORKER_ID, "assistant-session").unwrap();
+        let claimed = claim_next_pending_command(WORKER_ID, "assistant-session")
+            .unwrap()
+            .unwrap();
+        let handled = mark_command_handled(claimed).unwrap();
+        append_event(
+            WORKER_ID,
+            Some(&handled.command_id),
+            "abort_ack",
+            json!({ "handled": true }),
+        )
+        .unwrap();
         let stored = read_command(WORKER_ID, &command.command_id)
             .unwrap()
             .unwrap();
         let events = read_worker_events(WORKER_ID).unwrap();
 
-        assert_eq!(result.acked, 1);
-        assert_eq!(result.handled, 1);
         assert_eq!(stored.status, DaemonCommandStatus::Handled);
         assert!(events.iter().any(|event| event.event_type == "abort_ack"));
     }

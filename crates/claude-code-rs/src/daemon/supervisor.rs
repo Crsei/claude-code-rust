@@ -16,6 +16,7 @@ use chrono::Utc;
 use tracing::{info, warn};
 
 use super::{
+    gateway_bridge::{handle_worker_command, AssistantWorkerRuntime},
     process_state::{self, DaemonWorkerStatus},
     protocol,
 };
@@ -226,6 +227,7 @@ pub async fn run_supervisor_loop(cwd: PathBuf, port: u16) -> Result<()> {
 
 pub async fn run_worker_mode(kind: &str, worker_id: &str, cwd: PathBuf) -> Result<()> {
     let kind = WorkerKind::parse(kind)?;
+    let mut runtime = AssistantWorkerRuntime::new(&cwd);
     if process_state::read_worker_state(worker_id)?.is_none() {
         let log_path = process_state::worker_log_path(worker_id);
         process_state::write_worker_running(
@@ -247,18 +249,21 @@ pub async fn run_worker_mode(kind: &str, worker_id: &str, cwd: PathBuf) -> Resul
             return Ok(());
         }
         process_state::write_worker_heartbeat(worker_id)?;
-        let command_result = protocol::process_pending_commands(worker_id, kind.as_str())?;
-        if command_result.acked > 0 {
+        let mut processed = 0usize;
+        while let Some(command) = protocol::claim_next_pending_command(worker_id, kind.as_str())? {
+            processed += 1;
+            let shutdown_requested =
+                handle_worker_command(worker_id, &mut runtime, command).await?;
+            if shutdown_requested {
+                process_state::write_worker_stopped(worker_id, None)?;
+                return Ok(());
+            }
+        }
+        if processed > 0 {
             info!(
                 worker_id,
-                acked = command_result.acked,
-                handled = command_result.handled,
-                "daemon worker processed command files"
+                processed, "daemon worker processed command files"
             );
-        }
-        if command_result.shutdown_requested {
-            process_state::write_worker_stopped(worker_id, None)?;
-            return Ok(());
         }
     }
 }
