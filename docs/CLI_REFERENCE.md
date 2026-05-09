@@ -366,3 +366,47 @@ FEATURE_KAIROS=1 claude-code-rs --daemon --port 19836
 - 旧文档中提到的前端名称、二进制名称、部分登录方式和模式说明已经过时，应以本文为准
 
 后续如果继续整理，可以把每个斜杠命令的子参数和示例再单独拆成 `COMMAND_REFERENCE.md`。
+
+## 8. Remote-Control Gateway CLI Release Gate (2026-05-08)
+
+The remote-control gateway is available through the daemon and local slash-command surfaces. It is gated by the KAIROS daemon runtime:
+
+```powershell
+$env:FEATURE_KAIROS = "1"
+cargo run -p claude-code-rs -- daemon start --port 19836
+```
+
+The loopback gateway uses the daemon control token published under `~/.cc-rust/daemon/**`. Non-loopback remote-control operation requires a configured remote token and must fail closed without one.
+
+### `/remote` Slash Command
+
+| Command | Purpose | Notes |
+| --- | --- | --- |
+| `/remote` | Open the TUI `RemoteSurface` when entered with no arguments. | No blocking network I/O is performed in the render path. |
+| `/remote status` | Show daemon/gateway status, auth mode, capacity, endpoint count, and steer support. | Reports stopped/stale daemon states with actionable diagnostics. |
+| `/remote adapters` | List Telegram and Lark adapter configuration/status. | Output is redacted and provider-neutral. |
+| `/remote connect <telegram|lark>` | Run adapter connect/health check. | First version verifies outbound capability only. |
+| `/remote test-message <telegram|lark> <target> [text]` | Send a bounded test message to an allowlisted target. | Does not start a model run. |
+| `/remote runs [--limit N]` | List recent durable gateway runs from local storage. | Works even when the daemon is stopped. |
+| `/remote show <run_id>` | Show one durable run. | Falls back to local store if the daemon is not reachable. |
+| `/remote events <run_id> [--limit N]` | Show durable event replay. | Reads gateway events, not transient UI state. |
+| `/remote stop <run_id>` | Request run cancellation through the gateway API. | Requires a running daemon. |
+| `/remote doctor` | Show daemon status and gateway paths. | Includes gateway/runs/adapters/config/token paths. |
+
+Example smoke commands:
+
+```powershell
+$env:FEATURE_KAIROS = "1"
+$env:CC_RUST_HOME = "$env:TEMP\cc-rust-remote-control-smoke"
+cargo run -p claude-code-rs -- daemon start --port 21990
+cargo run -p claude-code-rs -- --print "/remote status"
+cargo run -p claude-code-rs -- --print "/remote adapters"
+cargo run -p claude-code-rs -- daemon stop
+```
+
+### TUI Surface And Indicator
+
+- The command palette advertises `/remote <status|adapters|connect|test-message|runs|show|events|stop|doctor> ...`.
+- `RemoteSurface` has status, adapters, runs, and security-oriented rows that route actions back to `/remote` commands.
+- The status widget supports a remote indicator snapshot such as `remote=attention/warn`.
+- Secrets, bearer tokens, provider credentials, webhook signatures, and idempotency keys must be redacted from command and TUI output.

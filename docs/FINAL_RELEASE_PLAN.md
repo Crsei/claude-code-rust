@@ -194,3 +194,27 @@ cargo test -p claude-code-rs query::loop_helpers
 3. 新增开放问题先写 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)，再在本文按发布优先级引用。
 4. 新增功能缺口先写 [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md)，除非它只是纯代码质量问题。
 5. 完成一个条目时，同步更新本文、源状态文档和 archive 记录，避免活跃文档保留已完成历史。
+
+## 9. Remote-Control Gateway Release Gate (2026-05-08)
+
+Remote-control gateway can be considered release-gate complete only when the following evidence is attached to the release record:
+
+| Gate | Required evidence |
+| --- | --- |
+| API contract | `docs/reference/REMOTE_CONTROL_GATEWAY.md` lists every `/remote-control/v1/**` endpoint, request shape, response shape, auth requirement, and stable error code. |
+| Local UX | `/remote status`, `/remote adapters`, `/remote runs`, `/remote show`, `/remote events`, `/remote stop`, `/remote doctor`, the command palette metadata, `RemoteSurface`, and status-widget remote indicator are documented. |
+| Security | Bad daemon token, bad remote token, bad origin, payload too large, HMAC failure, duplicate idempotency, busy, queue full, and stale response cases have stable diagnostics and tests. |
+| Recovery | Daemon startup recovery, queued run visibility, recoverable active runs, pending approval/user retention, and stale session-lock recovery are documented and tested. |
+| Adapter scope | Telegram and Lark are documented as connect/health/status/test-message only; full inbound conversational control is explicitly follow-up work. |
+| Non-goals | Public hosted gateway, multi-tenant SaaS, full WebSocket parity, remote desktop control, and real mid-turn `steer` are not release claims. |
+
+Remote-control-specific verification commands:
+
+```powershell
+cargo test -p gateway
+cargo test -p claude-code-rs remote_cmd ui::components::command_palette ui::components::command_surface ui::components::status_widget
+cargo test -p claude-code-rs daemon::protocol daemon::routes daemon::sse daemon::supervisor
+cargo check -p claude-code-rs --message-format short
+```
+
+The Session 16 docs gate verified documentation consistency only. It did not rerun the full code gate; the implementation report records that as a remaining release risk until Session 17/final verification is run.

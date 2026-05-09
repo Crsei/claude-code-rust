@@ -63,3 +63,13 @@
 2. 只读审查原文、长日志和历史复盘放入 [archive/issues/](archive/issues/)。
 3. 修复完成后，把问题从本文移到 [archive/resolved-known-issues-2026-05-07.md](archive/resolved-known-issues-2026-05-07.md) 或后续同类 resolved archive。
 4. 文档中若只有“已实现/已修复”历史，不应留在活跃入口；迁入 `docs/archive/`。
+
+## 8. Remote-Control Gateway Residuals (2026-05-08)
+
+| ID | Severity | Status | Scope | Summary | Detail |
+| --- | --- | --- | --- | --- | --- |
+| REMOTE-001 | Medium | Open | Gateway busy policy | Mid-turn `steer` is intentionally unsupported. | `GatewayPolicy::supports_steer` defaults to false and `BusyPolicy::Steer` returns `501 unsupported`. Capabilities must not imply live steering until `QueryEngine` has explicit mid-turn injection semantics. |
+| REMOTE-002 | Medium | Open | Telegram/Lark adapters | Telegram and Lark are outbound diagnostics only. | The first gateway release supports adapter configuration status, connect/health checks, and allowlisted test messages. Full inbound conversational remote control remains follow-up work. |
+| REMOTE-003 | Medium | Open | Webhook configuration | Declarative webhook routes are code-backed but not yet backed by a full admin CRUD surface. | Built-in route ids resolve secrets from environment variables and use generic defaults for unknown route ids. A durable route-management UX/API is still needed before broad operator use. |
+| REMOTE-004 | Medium | Open | Release verification | Session 16 performed docs-gate verification, not full remote-control code verification. | The next release step must run the Session 17 command set before claiming the gateway implementation is fully green. |
+| REMOTE-005 | Low | Open | Public exposure | Public hosted gateway and multi-tenant SaaS are non-goals for this release. | Non-loopback use requires explicit remote-token policy and origin controls; production hosting design remains out of scope. |
