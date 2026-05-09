@@ -5,6 +5,8 @@ use gateway::{
     api, BusySnapshot, GatewayAuthVerifier, GatewayBusySnapshotProvider, GatewayError,
     GatewayPolicy, GatewayRunner, GatewayStore, SessionKeyPolicy,
 };
+use std::time::Duration;
+use tracing::warn;
 
 use super::gateway_bridge::GatewayDaemonBridge;
 use super::process_state;
@@ -73,6 +75,12 @@ pub fn gateway_routes() -> axum::Router {
         GatewayStore::new(config.persistence.clone(), SessionKeyPolicy::default()),
         policy.clone(),
     );
+    if let Err(error) = runner.recover_on_startup(Duration::from_secs(30 * 60)) {
+        warn!(
+            diagnostic = ?error.diagnostic(),
+            "gateway startup recovery failed"
+        );
+    }
     let state = api::GatewayApiState::new(
         runner,
         GatewayDaemonBridge::assistant_worker(),
@@ -89,8 +97,11 @@ pub fn gateway_routes() -> axum::Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gateway::{BusyPolicy, RemoteSource, RemoteTransport, RunPolicy, RunRequest, RunStatus};
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn busy_snapshot_counts_active_submit_commands() {
         let tmp = tempfile::tempdir().unwrap();
         let previous = std::env::var("CC_RUST_HOME").ok();
@@ -110,6 +121,44 @@ mod tests {
 
         assert_eq!(snapshot.running, 1);
         assert_eq!(snapshot.queued, 0);
+        match previous {
+            Some(value) => std::env::set_var("CC_RUST_HOME", value),
+            None => std::env::remove_var("CC_RUST_HOME"),
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn gateway_routes_runs_startup_recovery() {
+        let tmp = tempfile::tempdir().unwrap();
+        let previous = std::env::var("CC_RUST_HOME").ok();
+        std::env::set_var("CC_RUST_HOME", tmp.path());
+
+        let store = GatewayStore::default_with_policy(SessionKeyPolicy::default());
+        let created = store
+            .create_run(RunRequest {
+                prompt: "recover me".to_string(),
+                source: RemoteSource::new(
+                    RemoteTransport::Http,
+                    "local",
+                    "F:/AIclassmanager/cc/rust",
+                    "dashboard",
+                    "86186",
+                    "thread-1",
+                ),
+                policy: RunPolicy {
+                    busy: BusyPolicy::Queue,
+                    ..RunPolicy::default()
+                },
+                idempotency_key: None,
+            })
+            .unwrap();
+        let run_id = created.meta().run_id.clone();
+        store.update_status(&run_id, RunStatus::Running).unwrap();
+
+        let _router = gateway_routes();
+
+        assert_eq!(store.load_run(&run_id).unwrap().status, RunStatus::Recoverable);
         match previous {
             Some(value) => std::env::set_var("CC_RUST_HOME", value),
             None => std::env::remove_var("CC_RUST_HOME"),
