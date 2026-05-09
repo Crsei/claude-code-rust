@@ -1,6 +1,7 @@
 use crate::{
-    BusyDecision, BusySnapshot, GatewayDiagnostic, GatewayError, GatewayPolicy, GatewayStore,
-    RunEvent, RunEventKind, RunMeta, RunRequest, RunStatus, SessionKeyPolicy,
+    BusyDecision, BusySnapshot, CallbackDeliverySink, ChannelDeliverySink, DeliveryRecord,
+    DeliveryRouter, GatewayDiagnostic, GatewayError, GatewayPolicy, GatewayStore, RunEvent,
+    RunEventKind, RunMeta, RunRequest, RunStatus, SessionKeyPolicy,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -294,6 +295,35 @@ impl GatewayRunner {
             command: Some(receipt),
             diagnostic: None,
         })
+    }
+
+    pub fn deliver_event(
+        &self,
+        run_id: &crate::RunId,
+        event: &RunEvent,
+        callback_sink: &impl CallbackDeliverySink,
+        channel_sink: &impl ChannelDeliverySink,
+    ) -> Result<Vec<DeliveryRecord>, GatewayError> {
+        let meta = self.store.load_run(run_id)?;
+        let records = DeliveryRouter::default().deliver_event(
+            &self.store,
+            &meta,
+            event,
+            callback_sink,
+            channel_sink,
+        )?;
+        for diagnostic in records
+            .iter()
+            .filter_map(|record| record.diagnostic.clone())
+        {
+            self.store
+                .append_event(&crate::delivery::delivery_failed_event(
+                    run_id.clone(),
+                    self.store.read_events(run_id)?.len() as u64 + 1,
+                    diagnostic,
+                ))?;
+        }
+        Ok(records)
     }
 
     fn start_run(

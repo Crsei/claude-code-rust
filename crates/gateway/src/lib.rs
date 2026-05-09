@@ -10,6 +10,7 @@ pub mod api;
 mod api_support;
 pub mod auth;
 pub mod config;
+pub mod delivery;
 pub mod events;
 pub mod policy;
 pub mod run;
@@ -28,6 +29,10 @@ pub use adapters::{
 pub use api::{GatewayApiState, GatewayBusySnapshotProvider, StaticBusySnapshotProvider};
 pub use auth::{GatewayAuthMode, GatewayAuthVerifier, RemoteGatewayAuth};
 pub use config::{GatewayConfig, GatewayLimits, GatewayPersistence, GatewaySecurityConfig};
+pub use delivery::{
+    CallbackDeliverySink, ChannelDeliverySink, DeliveryPayload, DeliveryRecord, DeliveryRouter,
+    DeliveryStatus, DeliveryTarget,
+};
 pub use events::{RunEvent, RunEventKind};
 pub use policy::{BusyDecision, BusySnapshot, GatewayPolicy, GatewayRateLimiter};
 pub use run::{
