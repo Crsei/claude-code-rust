@@ -6,6 +6,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Gateway-neutral command names for the daemon integration layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -324,6 +325,27 @@ impl GatewayRunner {
                 ))?;
         }
         Ok(records)
+    }
+
+    pub fn recover_on_startup(
+        &self,
+        pending_timeout: Duration,
+    ) -> Result<crate::GatewayRecoveryReport, GatewayError> {
+        self.store.recover_on_startup(pending_timeout)
+    }
+
+    pub fn start_next_queued(
+        &self,
+        snapshot: BusySnapshot,
+        sink: &(impl GatewayCommandSink + ?Sized),
+    ) -> Result<Option<GatewayRunSubmission>, GatewayError> {
+        if snapshot.running >= self.policy.max_running {
+            return Ok(None);
+        }
+        let Some(meta) = self.store.queued_runs()?.into_iter().next() else {
+            return Ok(None);
+        };
+        self.start_run(meta, sink).map(Some)
     }
 
     fn start_run(

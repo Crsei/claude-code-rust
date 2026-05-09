@@ -12,9 +12,12 @@ use std::time::Duration;
 const META_FILE: &str = "meta.json";
 const EVENTS_FILE: &str = "events.ndjson";
 
+mod recovery;
+pub use recovery::{GatewayRecoveryReport, SessionLock, SessionLockOutcome};
+
 #[derive(Debug, Clone)]
 pub struct GatewayStore {
-    persistence: GatewayPersistence,
+    pub(crate) persistence: GatewayPersistence,
     session_policy: SessionKeyPolicy,
 }
 
@@ -198,7 +201,7 @@ impl GatewayStore {
         self.run_dir(run_id).join(EVENTS_FILE)
     }
 
-    fn ensure_layout(&self) -> Result<(), GatewayError> {
+    pub(crate) fn ensure_layout(&self) -> Result<(), GatewayError> {
         self.persistence.validate_layout().map_err(|error| {
             GatewayError::new(
                 GatewayDiagnostic::new(
@@ -216,6 +219,7 @@ impl GatewayStore {
             &self.persistence.adapters_dir,
             &self.persistence.webhooks_dir,
             &self.idempotency_dir(),
+            &self.session_locks_dir(),
         ] {
             fs::create_dir_all(path).map_err(|error| {
                 GatewayError::io(
@@ -271,12 +275,16 @@ impl GatewayStore {
         self.run_dir(run_id).join(META_FILE)
     }
 
-    fn next_sequence(&self, run_id: &RunId) -> Result<u64, GatewayError> {
+    pub(crate) fn next_sequence(&self, run_id: &RunId) -> Result<u64, GatewayError> {
         Ok(self.read_events(run_id)?.len() as u64 + 1)
     }
 
     fn idempotency_dir(&self) -> PathBuf {
         self.persistence.gateway_dir.join("idempotency")
+    }
+
+    pub(crate) fn session_locks_dir(&self) -> PathBuf {
+        self.persistence.gateway_dir.join("session-locks")
     }
 
     fn idempotency_path(&self, request: &RunRequest) -> Option<PathBuf> {

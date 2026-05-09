@@ -45,5 +45,5 @@ pub use runner::{
 };
 pub use session_key::{SessionKey, SessionKeyPolicy};
 pub use source::{RemoteSource, RemoteSourceMetadata, RemoteTransport};
-pub use store::GatewayStore;
+pub use store::{GatewayRecoveryReport, GatewayStore, SessionLock, SessionLockOutcome};
 pub use webhook::{WebhookRouteConfig, WebhookVerifier};

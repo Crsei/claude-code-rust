@@ -1,8 +1,9 @@
 use gateway::{
     BusyPolicy, CreateRunOutcome, GatewayPersistence, GatewayStore, RemoteSource, RemoteTransport,
-    RunEvent, RunEventKind, RunPolicy, RunRequest, RunStatus, SessionKeyPolicy,
+    RunEvent, RunEventKind, RunPolicy, RunRequest, RunStatus, SessionKeyPolicy, SessionLockOutcome,
 };
 use std::sync::{Arc, Barrier};
+use std::time::Duration;
 
 fn persistence(root: &std::path::Path) -> GatewayPersistence {
     GatewayPersistence {
@@ -186,4 +187,116 @@ fn append_event_failure_returns_stable_diagnostic() {
     assert_eq!(err.diagnostic().code, "event_append_failed");
     assert!(err.diagnostic().message.contains("event log"));
     assert!(err.diagnostic().action.contains("events.ndjson"));
+}
+
+#[test]
+fn startup_recovery_marks_running_runs_recoverable_and_requeues_queued_runs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = GatewayStore::new(persistence(tmp.path()), SessionKeyPolicy::default());
+    let queued = store.create_run(request(None)).unwrap().meta().clone();
+    let running = store
+        .create_run(request(Some("provider-2")))
+        .unwrap()
+        .meta()
+        .clone();
+    store
+        .update_status(&running.run_id, RunStatus::Running)
+        .unwrap();
+
+    let report = store.recover_on_startup(Duration::from_secs(60)).unwrap();
+
+    assert_eq!(report.queued, 1);
+    assert_eq!(report.recoverable, 1);
+    assert_eq!(
+        store.load_run(&queued.run_id).unwrap().status,
+        RunStatus::Queued
+    );
+    assert_eq!(
+        store.load_run(&running.run_id).unwrap().status,
+        RunStatus::Recoverable
+    );
+    let running_events = store.read_events(&running.run_id).unwrap();
+    assert!(running_events.iter().any(|event| matches!(
+        &event.kind,
+        RunEventKind::Diagnostic { diagnostic } if diagnostic.code == "run_recovered_after_restart"
+    )));
+    let queued_events = store.read_events(&queued.run_id).unwrap();
+    assert!(queued_events.iter().any(|event| matches!(
+        &event.kind,
+        RunEventKind::Custom { name, .. } if name == "run_requeued_after_restart"
+    )));
+}
+
+#[test]
+fn startup_recovery_retains_pending_runs_with_expiry_event() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = GatewayStore::new(persistence(tmp.path()), SessionKeyPolicy::default());
+    let meta = store.create_run(request(None)).unwrap().meta().clone();
+    store
+        .update_status(&meta.run_id, RunStatus::Running)
+        .unwrap();
+    store
+        .update_status(&meta.run_id, RunStatus::WaitingApproval)
+        .unwrap();
+
+    let report = store.recover_on_startup(Duration::from_secs(30)).unwrap();
+
+    assert_eq!(report.pending, 1);
+    assert_eq!(
+        store.load_run(&meta.run_id).unwrap().status,
+        RunStatus::WaitingApproval
+    );
+    let events = store.read_events(&meta.run_id).unwrap();
+    assert!(events.iter().any(|event| matches!(
+        &event.kind,
+        RunEventKind::Custom { name, payload }
+            if name == "pending_response_retained_after_restart"
+                && payload.get("expiresAtMs").is_some()
+    )));
+}
+
+#[test]
+fn stale_session_lock_takeover_writes_audit_event() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = GatewayStore::new(persistence(tmp.path()), SessionKeyPolicy::default());
+    let meta = store.create_run(request(None)).unwrap().meta().clone();
+
+    assert!(matches!(
+        store
+            .acquire_session_lock(&meta, 100, Duration::from_secs(60))
+            .unwrap(),
+        SessionLockOutcome::Acquired(_)
+    ));
+    assert!(matches!(
+        store
+            .acquire_session_lock(&meta, 200, Duration::from_secs(60))
+            .unwrap(),
+        SessionLockOutcome::Busy(_)
+    ));
+
+    let lock_path = std::fs::read_dir(tmp.path().join("gateway").join("session-locks"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let mut lock: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&lock_path).unwrap()).unwrap();
+    lock["heartbeatMs"] = serde_json::json!(0);
+    std::fs::write(&lock_path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+
+    assert!(matches!(
+        store
+            .acquire_session_lock(&meta, 200, Duration::from_millis(1))
+            .unwrap(),
+        SessionLockOutcome::Recovered(_)
+    ));
+    let events = store.read_events(&meta.run_id).unwrap();
+    assert!(events.iter().any(|event| matches!(
+        &event.kind,
+        RunEventKind::SessionLockRecovered {
+            previous_owner_pid: 100,
+            new_owner_pid: 200
+        }
+    )));
 }

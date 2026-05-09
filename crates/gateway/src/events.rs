@@ -7,13 +7,32 @@ use serde_json::Value;
 #[serde(rename_all = "snake_case", tag = "type", content = "data")]
 pub enum RunEventKind {
     Created,
-    StatusChanged { status: RunStatus },
-    AssistantDelta { text: String },
-    ApprovalRequested { tool_use_id: String },
-    AskUserRequested { question_id: String },
-    Diagnostic { diagnostic: GatewayDiagnostic },
-    DeliveryFailed { diagnostic: GatewayDiagnostic },
-    Custom { name: String, payload: Value },
+    StatusChanged {
+        status: RunStatus,
+    },
+    AssistantDelta {
+        text: String,
+    },
+    ApprovalRequested {
+        tool_use_id: String,
+    },
+    AskUserRequested {
+        question_id: String,
+    },
+    Diagnostic {
+        diagnostic: GatewayDiagnostic,
+    },
+    DeliveryFailed {
+        diagnostic: GatewayDiagnostic,
+    },
+    SessionLockRecovered {
+        previous_owner_pid: u32,
+        new_owner_pid: u32,
+    },
+    Custom {
+        name: String,
+        payload: Value,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
