@@ -48,6 +48,8 @@ pub struct GatewayConfig {
     pub persistence: GatewayPersistence,
     pub limits: GatewayLimits,
     #[serde(default)]
+    pub security: GatewaySecurityConfig,
+    #[serde(default)]
     pub adapters: GatewayAdaptersConfig,
 }
 
@@ -57,9 +59,19 @@ impl Default for GatewayConfig {
             enabled: false,
             persistence: GatewayPersistence::default(),
             limits: GatewayLimits::default(),
+            security: GatewaySecurityConfig::default(),
             adapters: GatewayAdaptersConfig::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewaySecurityConfig {
+    #[serde(default)]
+    pub allowed_origins: Vec<String>,
+    #[serde(default, skip_serializing)]
+    pub remote_token: Option<String>,
 }
 
 impl GatewayConfig {
@@ -258,5 +270,15 @@ mod tests {
         assert!(!json.contains("cli_a_secret_app"));
         assert!(!json.contains("raw-lark-secret"));
         assert!(!json.contains("raw-webhook-secret"));
+    }
+
+    #[test]
+    fn config_does_not_serialize_remote_token() {
+        let mut config = GatewayConfig::default();
+        config.security.remote_token = Some("raw-remote-token".to_string());
+
+        let json = serde_json::to_string(&config).unwrap();
+
+        assert!(!json.contains("raw-remote-token"));
     }
 }

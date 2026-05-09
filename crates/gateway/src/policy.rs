@@ -1,5 +1,7 @@
 use crate::{BusyPolicy, GatewayDiagnostic, GatewayError, RunId};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -97,6 +99,40 @@ impl GatewayPolicy {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct GatewayRateLimiter {
+    max_hits: usize,
+    window: Duration,
+    hits: BTreeMap<String, Vec<Instant>>,
+}
+
+impl GatewayRateLimiter {
+    pub fn new(max_hits: usize, window: Duration) -> Self {
+        Self {
+            max_hits,
+            window,
+            hits: BTreeMap::new(),
+        }
+    }
+
+    pub fn check(&mut self, key: impl Into<String>) -> Result<(), GatewayError> {
+        let key = key.into();
+        let now = Instant::now();
+        let cutoff = now.checked_sub(self.window).unwrap_or(now);
+        let hits = self.hits.entry(key).or_default();
+        hits.retain(|hit| *hit >= cutoff);
+        if hits.len() >= self.max_hits {
+            return Err(GatewayError::new(GatewayDiagnostic::new(
+                "rate_limited",
+                "The remote-control gateway rate limit has been exceeded.",
+                "Retry after the rate-limit window or reduce request frequency.",
+            )));
+        }
+        hits.push(now);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,5 +179,16 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err.diagnostic().code, "unsupported");
+    }
+
+    #[test]
+    fn rate_limiter_returns_stable_redacted_diagnostic() {
+        let mut limiter = GatewayRateLimiter::new(1, std::time::Duration::from_secs(60));
+        limiter.check("token:raw-token").unwrap();
+        let err = limiter.check("token:raw-token").unwrap_err();
+        let json = serde_json::to_string(err.diagnostic()).unwrap();
+
+        assert_eq!(err.diagnostic().code, "rate_limited");
+        assert!(!json.contains("raw-token"));
     }
 }

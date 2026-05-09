@@ -7,6 +7,7 @@
 
 pub mod adapters;
 pub mod api;
+mod api_support;
 pub mod auth;
 pub mod config;
 pub mod events;
@@ -16,16 +17,17 @@ pub mod runner;
 pub mod session_key;
 pub mod source;
 pub mod store;
+pub mod webhook;
 
 pub use adapters::{
     AdapterProvider, AdapterRegistry, AdapterState, AdapterStatus, AdapterTestMessage,
     RemoteAdapter,
 };
 pub use api::{GatewayApiState, GatewayBusySnapshotProvider, StaticBusySnapshotProvider};
-pub use auth::{GatewayAuthMode, GatewayAuthVerifier};
-pub use config::{GatewayConfig, GatewayLimits, GatewayPersistence};
+pub use auth::{GatewayAuthMode, GatewayAuthVerifier, RemoteGatewayAuth};
+pub use config::{GatewayConfig, GatewayLimits, GatewayPersistence, GatewaySecurityConfig};
 pub use events::{RunEvent, RunEventKind};
-pub use policy::{BusyDecision, BusySnapshot, GatewayPolicy};
+pub use policy::{BusyDecision, BusySnapshot, GatewayPolicy, GatewayRateLimiter};
 pub use run::{
     BusyPolicy, CreateRunOutcome, GatewayDiagnostic, GatewayError, RunId, RunMeta, RunPolicy,
     RunRequest, RunStatus,
@@ -37,3 +39,4 @@ pub use runner::{
 pub use session_key::{SessionKey, SessionKeyPolicy};
 pub use source::{RemoteSource, RemoteSourceMetadata, RemoteTransport};
 pub use store::GatewayStore;
+pub use webhook::{WebhookRouteConfig, WebhookVerifier};

@@ -1,3 +1,4 @@
+use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -9,7 +10,9 @@ use std::sync::Arc;
 
 use crate::adapters::lark::LarkAdapter;
 use crate::adapters::telegram::TelegramAdapter;
-use crate::auth::{extract_gateway_token, GatewayAuthMode, GatewayAuthVerifier};
+pub use crate::api_support::error_response;
+use crate::api_support::{idempotency_header, parse_json_limited, status_for_diagnostic};
+use crate::auth::{extract_gateway_token, validate_origin, GatewayAuthMode, GatewayAuthVerifier};
 use crate::{
     AdapterProvider, AdapterRegistry, AdapterTestMessage, BusySnapshot, GatewayCommandSink,
     GatewayConfig, GatewayDiagnostic, GatewayError, GatewayPolicy, GatewayRunAction,
@@ -30,7 +33,7 @@ const ADAPTER_TEST_PATH: &str = "/remote-control/v1/adapters/{provider}/test-mes
 
 macro_rules! authorize_or_return {
     ($state:expr, $headers:expr) => {
-        if let Err(error) = ($state.auth_verify)(extract_gateway_token(&$headers)) {
+        if let Err(error) = $state.authorize(&$headers) {
             return error_response(error);
         }
     };
@@ -117,6 +120,11 @@ impl GatewayApiState {
         );
         Self::new(runner, sink, auth, snapshot, policy, config)
     }
+
+    fn authorize(&self, headers: &HeaderMap) -> Result<(), GatewayError> {
+        validate_origin(headers, &self.config.security.allowed_origins)?;
+        (self.auth_verify)(extract_gateway_token(headers))
+    }
 }
 
 pub fn router(state: GatewayApiState) -> Router {
@@ -141,9 +149,16 @@ async fn capabilities(State(state): State<GatewayApiState>) -> Response {
 async fn create_run(
     State(state): State<GatewayApiState>,
     headers: HeaderMap,
-    Json(request): Json<RunRequest>,
+    body: Bytes,
 ) -> Response {
     authorize_or_return!(state, headers);
+    let mut request: RunRequest = match parse_json_limited(&state.config.limits, &body) {
+        Ok(request) => request,
+        Err(error) => return error_response(error),
+    };
+    if request.idempotency_key.is_none() {
+        request.idempotency_key = idempotency_header(&headers).map(str::to_string);
+    }
 
     match state
         .runner
@@ -215,10 +230,14 @@ async fn approval_response(
     State(state): State<GatewayApiState>,
     headers: HeaderMap,
     Path(run_id): Path<String>,
-    Json(request): Json<ApprovalResponseRequest>,
+    body: Bytes,
 ) -> Response {
     authorize_or_return!(state, headers);
     let run_id = run_id_or_return!(run_id);
+    let request: ApprovalResponseRequest = match parse_json_limited(&state.config.limits, &body) {
+        Ok(request) => request,
+        Err(error) => return error_response(error),
+    };
     if request.tool_use_id.trim().is_empty() {
         return error_response(GatewayError::new(GatewayDiagnostic::new(
             "approval_id_missing",
@@ -246,10 +265,14 @@ async fn ask_user_response(
     State(state): State<GatewayApiState>,
     headers: HeaderMap,
     Path(run_id): Path<String>,
-    Json(request): Json<AskUserResponseRequest>,
+    body: Bytes,
 ) -> Response {
     authorize_or_return!(state, headers);
     let run_id = run_id_or_return!(run_id);
+    let request: AskUserResponseRequest = match parse_json_limited(&state.config.limits, &body) {
+        Ok(request) => request,
+        Err(error) => return error_response(error),
+    };
     if request.question_id.trim().is_empty() {
         return error_response(GatewayError::new(GatewayDiagnostic::new(
             "question_id_missing",
@@ -299,9 +322,13 @@ async fn test_adapter_message(
     State(state): State<GatewayApiState>,
     headers: HeaderMap,
     Path(provider): Path<String>,
-    Json(message): Json<AdapterTestMessage>,
+    body: Bytes,
 ) -> Response {
     authorize_or_return!(state, headers);
+    let message: AdapterTestMessage = match parse_json_limited(&state.config.limits, &body) {
+        Ok(message) => message,
+        Err(error) => return error_response(error),
+    };
 
     let provider = match AdapterProvider::parse(&provider) {
         Ok(provider) => provider,
@@ -403,38 +430,4 @@ fn adapter_registry(config: &GatewayConfig) -> AdapterRegistry {
     registry.register(TelegramAdapter::new(config.adapters.telegram.clone()));
     registry.register(LarkAdapter::new(config.adapters.lark.clone()));
     registry
-}
-
-pub fn error_response(error: GatewayError) -> Response {
-    let diagnostic = error.into_diagnostic();
-    let status = status_for_diagnostic(&diagnostic);
-    (
-        status,
-        Json(json!({
-            "error": diagnostic,
-        })),
-    )
-        .into_response()
-}
-
-fn status_for_diagnostic(diagnostic: &GatewayDiagnostic) -> StatusCode {
-    match diagnostic.code.as_str() {
-        "missing_control_token" | "invalid_control_token" => StatusCode::UNAUTHORIZED,
-        "invalid_run_id" => StatusCode::BAD_REQUEST,
-        "run_not_found" => StatusCode::NOT_FOUND,
-        "replay_unavailable" => StatusCode::SERVICE_UNAVAILABLE,
-        "approval_id_missing"
-        | "question_id_missing"
-        | "adapter_unsupported"
-        | "telegram_target_missing"
-        | "lark_target_missing" => StatusCode::BAD_REQUEST,
-        "busy" | "stale_response" => StatusCode::CONFLICT,
-        "run_already_terminal" => StatusCode::CONFLICT,
-        "telegram_target_blocked" | "lark_target_blocked" => StatusCode::FORBIDDEN,
-        "queue_full" => StatusCode::TOO_MANY_REQUESTS,
-        "unsupported" | "telegram_transport_unavailable" | "lark_transport_unavailable" => {
-            StatusCode::NOT_IMPLEMENTED
-        }
-        _ => StatusCode::INTERNAL_SERVER_ERROR,
-    }
 }

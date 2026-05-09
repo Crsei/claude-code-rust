@@ -8,9 +8,12 @@ description = "Remote-control gateway models and foundations for cc-rust"
 axum = { workspace = true }
 cc-config = { workspace = true }
 hex = { workspace = true }
+hmac = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+tokio = { workspace = true }
+tower = { workspace = true }
