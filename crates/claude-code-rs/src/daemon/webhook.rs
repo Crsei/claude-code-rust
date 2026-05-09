@@ -1,9 +1,17 @@
-//! Webhook signature verification and payload parsing.
+//! Webhook signature verification, declarative route handling, and payload parsing.
 
 #![allow(dead_code)]
 
+use axum::body::Bytes;
+use axum::extract::{Path, State};
+use axum::http::HeaderMap;
+use axum::Json;
 use hmac::{Hmac, Mac};
+use serde_json::{json, Value};
 use sha2::Sha256;
+
+use super::routes::assistant_command_active;
+use super::state::DaemonState;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -45,6 +53,207 @@ pub fn verify_slack_signature(
     let result = mac.finalize();
     let expected = format!("v0={}", hex::encode(result.into_bytes()));
     expected == signature
+}
+
+pub async fn webhook_github(headers: HeaderMap, body: Bytes) -> Json<Value> {
+    handle_deliver_only_webhook(declarative_route("github").with_deliver_only(true), headers, body)
+        .await
+}
+
+pub async fn webhook_slack(headers: HeaderMap, body: Bytes) -> Json<Value> {
+    handle_deliver_only_webhook(declarative_route("slack").with_deliver_only(true), headers, body)
+        .await
+}
+
+pub async fn webhook_generic(headers: HeaderMap, body: Bytes) -> Json<Value> {
+    handle_deliver_only_webhook(declarative_route("generic").with_deliver_only(true), headers, body)
+        .await
+}
+
+pub async fn webhook_declarative(
+    State(state): State<DaemonState>,
+    Path(route_id): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Json<Value> {
+    let route = declarative_route(&route_id);
+    match gateway::webhook::WebhookRouter::handle(&route, &headers, &body) {
+        Ok(gateway::webhook::WebhookRouteOutcome::Ignored { event }) => Json(json!({
+            "status": "ignored",
+            "source": route.provider.as_source_client(),
+            "routeId": route.route_id,
+            "event": event,
+        })),
+        Ok(gateway::webhook::WebhookRouteOutcome::DeliverOnly {
+            event,
+            prompt,
+            source,
+            idempotency_key,
+        }) => deliver_webhook_event(&route, event, prompt, source, idempotency_key),
+        Ok(gateway::webhook::WebhookRouteOutcome::Run { request, event }) => {
+            submit_webhook_run(state, route, request, event)
+        }
+        Err(error) => webhook_error(error),
+    }
+}
+
+async fn handle_deliver_only_webhook(
+    route: gateway::webhook::WebhookRouteConfig,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Json<Value> {
+    match gateway::webhook::WebhookRouter::handle(&route, &headers, &body) {
+        Ok(gateway::webhook::WebhookRouteOutcome::Ignored { event }) => Json(json!({
+            "status": "ignored",
+            "source": route.provider.as_source_client(),
+            "event": event,
+        })),
+        Ok(gateway::webhook::WebhookRouteOutcome::DeliverOnly {
+            event,
+            prompt,
+            source,
+            idempotency_key,
+        }) => deliver_webhook_event(&route, event, prompt, source, idempotency_key),
+        Ok(gateway::webhook::WebhookRouteOutcome::Run { request, event }) => Json(json!({
+            "status": "received",
+            "source": route.provider.as_source_client(),
+            "routeId": route.route_id,
+            "event": event,
+            "prompt": request.prompt,
+        })),
+        Err(error) => webhook_error(error),
+    }
+}
+
+fn submit_webhook_run(
+    _state: DaemonState,
+    route: gateway::webhook::WebhookRouteConfig,
+    request: gateway::RunRequest,
+    event: Option<String>,
+) -> Json<Value> {
+    let policy = gateway::GatewayPolicy::default();
+    let config = gateway::GatewayConfig::default();
+    let runner = gateway::GatewayRunner::new(
+        gateway::GatewayStore::new(config.persistence, gateway::SessionKeyPolicy::default()),
+        policy.clone(),
+    );
+    let snapshot = gateway::BusySnapshot {
+        running: usize::from(assistant_command_active()),
+        queued: 0,
+        max_running: policy.max_running,
+        max_queued: policy.max_queued,
+    };
+
+    match runner.submit_run(
+        request,
+        snapshot,
+        &crate::daemon::gateway_bridge::GatewayDaemonBridge::assistant_worker(),
+    ) {
+        Ok(submission) => Json(json!({
+            "status": "received",
+            "source": route.provider.as_source_client(),
+            "routeId": route.route_id,
+            "event": event,
+            "runId": submission.meta.run_id,
+            "runStatus": submission.meta.status,
+            "action": submission.action,
+        })),
+        Err(error) => webhook_error(error),
+    }
+}
+
+fn deliver_webhook_event(
+    route: &gateway::webhook::WebhookRouteConfig,
+    event: Option<String>,
+    prompt: String,
+    _source: gateway::RemoteSource,
+    idempotency_key: Option<String>,
+) -> Json<Value> {
+    if route.provider == gateway::webhook::WebhookProvider::GitHub {
+        let payload = prompt
+            .split_once('\n')
+            .and_then(|(_, body)| serde_json::from_str::<Value>(body).ok())
+            .unwrap_or(Value::Null);
+        let Some(activity) = crate::tools::pr_activity::parse_github_pr_activity(
+            &payload,
+            event.as_deref(),
+            idempotency_key.as_deref(),
+        ) else {
+            return Json(json!({
+                "status": "ignored",
+                "source": "github",
+                "event": event,
+            }));
+        };
+        return match crate::tools::pr_activity::route_github_pr_activity(&activity) {
+            Ok(result) => Json(json!({
+                "status": "received",
+                "source": "github",
+                "routeId": route.route_id,
+                "event": event,
+                "deliverOnly": true,
+                "matched": result.matched,
+                "delivered": result.delivered,
+            })),
+            Err(error) => Json(json!({
+                "status": "error",
+                "source": "github",
+                "routeId": route.route_id,
+                "message": error.to_string(),
+            })),
+        };
+    }
+
+    Json(json!({
+        "status": "received",
+        "source": route.provider.as_source_client(),
+        "routeId": route.route_id,
+        "event": event,
+        "deliverOnly": true,
+        "idempotencyKey": idempotency_key,
+    }))
+}
+
+fn webhook_error(error: gateway::GatewayError) -> Json<Value> {
+    let diagnostic = error.into_diagnostic();
+    Json(json!({
+        "status": "error",
+        "error": diagnostic,
+    }))
+}
+
+fn declarative_route(route_id: &str) -> gateway::webhook::WebhookRouteConfig {
+    let secret = webhook_secret(route_id);
+    match route_id {
+        "github" => gateway::webhook::WebhookRouteConfig::github(route_id, secret),
+        "slack" => gateway::webhook::WebhookRouteConfig::slack(route_id, secret),
+        _ => gateway::webhook::WebhookRouteConfig::generic(route_id, secret),
+    }
+}
+
+fn webhook_secret(route_id: &str) -> Option<String> {
+    let normalized = route_id
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let route_key = format!("CC_RUST_WEBHOOK_{}_SECRET", normalized);
+    std::env::var(&route_key)
+        .or_else(|_| match route_id {
+            "github" => std::env::var("CC_RUST_GITHUB_WEBHOOK_SECRET")
+                .or_else(|_| std::env::var("GITHUB_WEBHOOK_SECRET")),
+            "slack" => std::env::var("CC_RUST_SLACK_WEBHOOK_SECRET")
+                .or_else(|_| std::env::var("SLACK_SIGNING_SECRET")),
+            _ => std::env::var("CC_RUST_GENERIC_WEBHOOK_SECRET"),
+        })
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 #[cfg(test)]
