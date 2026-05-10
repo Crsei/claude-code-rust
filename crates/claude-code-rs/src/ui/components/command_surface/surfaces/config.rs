@@ -28,11 +28,32 @@ impl ConfigSurface {
         } else {
             state.main_loop_backend.clone()
         };
+        let output_style = state
+            .settings
+            .output_style
+            .clone()
+            .unwrap_or_else(|| "default".to_string());
+        let language = state
+            .settings
+            .language
+            .clone()
+            .unwrap_or_else(|| "not set".to_string());
         let editor = state
             .settings
             .editor_mode
             .clone()
             .unwrap_or_else(|| "normal".to_string());
+        let voice = bool_setting_label(state.settings.voice_enabled);
+        let progress = bool_setting_label(state.settings.terminal_progress_bar_enabled);
+        let fast_mode = if state.fast_mode {
+            "true".to_string()
+        } else {
+            bool_setting_label(state.settings.fast_mode)
+        };
+        let thinking = state
+            .thinking_enabled
+            .map(|enabled| enabled.to_string())
+            .unwrap_or_else(|| "auto".to_string());
 
         Self {
             state: TabbedFormState::new(
@@ -59,9 +80,75 @@ impl ConfigSurface {
                         vec![FormOption::new("picker", "Theme picker").disabled()],
                     ),
                     FormTab::new(
-                        "effort",
-                        "Effort",
-                        vec![FormOption::new("picker", "Effort picker").disabled()],
+                        "usage",
+                        "Usage",
+                        vec![
+                            FormOption::new("cost", "Show session usage")
+                                .with_description("token totals and estimated cost"),
+                            FormOption::new("extra-usage", "Show extended usage")
+                                .with_description("per-message token and cost breakdown"),
+                        ],
+                    ),
+                    FormTab::new(
+                        "output",
+                        "Output",
+                        vec![
+                            FormOption::new("style-default", "Use default output style")
+                                .with_description(format!("current outputStyle={output_style}")),
+                            FormOption::new("style-explanatory", "Use explanatory output style")
+                                .with_description(format!("current outputStyle={output_style}")),
+                            FormOption::new("style-learning", "Use learning output style")
+                                .with_description(format!("current outputStyle={output_style}")),
+                            FormOption::new("set-output-style", "Set custom output style")
+                                .with_description("fill prompt with /config set outputStyle"),
+                            FormOption::new("editor-vim", "Enable vim editor mode")
+                                .with_description(format!("current editorMode={editor}")),
+                            FormOption::new("editor-normal", "Use normal editor mode")
+                                .with_description(format!("current editorMode={editor}")),
+                            FormOption::new("progress-on", "Enable terminal progress bar")
+                                .with_description(format!(
+                                    "current terminalProgressBarEnabled={progress}"
+                                )),
+                            FormOption::new("progress-off", "Disable terminal progress bar")
+                                .with_description(format!(
+                                    "current terminalProgressBarEnabled={progress}"
+                                )),
+                        ],
+                    ),
+                    FormTab::new(
+                        "language",
+                        "Language",
+                        vec![
+                            FormOption::new("set-language", "Set response language")
+                                .with_description(format!("current language={language}")),
+                            FormOption::new("language-en", "Use English")
+                                .with_description(format!("current language={language}")),
+                            FormOption::new("language-zh", "Use Chinese")
+                                .with_description(format!("current language={language}")),
+                            FormOption::new("voice-on", "Enable voice input")
+                                .with_description(format!("current voiceEnabled={voice}")),
+                            FormOption::new("voice-off", "Disable voice input")
+                                .with_description(format!("current voiceEnabled={voice}")),
+                        ],
+                    ),
+                    FormTab::new(
+                        "thinking",
+                        "Thinking",
+                        vec![FormOption::new("picker", "Effort picker")
+                            .with_description(format!("thinking={thinking}; fastMode={fast_mode}"))
+                            .disabled()],
+                    ),
+                    FormTab::new(
+                        "safety",
+                        "Safety",
+                        vec![
+                            FormOption::new("sources", "Review setting sources")
+                                .with_description("managed/user/project/local provenance"),
+                            FormOption::new("raw", "Review raw layers")
+                                .with_description("inspect managed/user/project/local JSON"),
+                            FormOption::new("schema", "Review settings schema")
+                                .with_description("supported settings and validation shape"),
+                        ],
                     ),
                     FormTab::new(
                         "config",
@@ -75,16 +162,6 @@ impl ConfigSurface {
                                 .with_description("fill prompt with /config set model"),
                             FormOption::new("set-theme", "Set custom theme")
                                 .with_description("fill prompt with /config set theme"),
-                        ],
-                    ),
-                    FormTab::new(
-                        "editor",
-                        "Editor",
-                        vec![
-                            FormOption::new("set-vim", "Enable vim mode")
-                                .with_description(format!("current editorMode={editor}")),
-                            FormOption::new("set-normal", "Use normal editor mode")
-                                .with_description(format!("current editorMode={editor}")),
                         ],
                     ),
                 ],
@@ -108,7 +185,7 @@ impl ConfigSurface {
                 )
             }
             Some("theme") => self.render_picker(&self.theme_picker, &[]),
-            Some("effort") => self.render_picker(&self.effort_picker, &[]),
+            Some("thinking") => self.render_picker(&self.effort_picker, &[]),
             _ => self.state.render_lines().join("\n"),
         }
     }
@@ -130,7 +207,7 @@ impl ConfigSurface {
                     CommandSurfaceOutcome::Submit(format!("/config set theme {id}"))
                 });
             }
-            Some("effort") => {
+            Some("thinking") => {
                 return handle_picker_key(&mut self.effort_picker, key, |id| {
                     CommandSurfaceOutcome::Submit(format!("/config set effortLevel {id}"))
                 });
@@ -142,16 +219,51 @@ impl ConfigSurface {
             TabbedFormEvent::Selected { option_id, .. } => match option_id.as_str() {
                 "show" => CommandSurfaceOutcome::Submit("/config show".to_string()),
                 "sources" => CommandSurfaceOutcome::Submit("/config sources".to_string()),
+                "cost" => CommandSurfaceOutcome::Submit("/cost".to_string()),
+                "extra-usage" => CommandSurfaceOutcome::Submit("/extra-usage".to_string()),
+                "style-default" => {
+                    CommandSurfaceOutcome::Submit("/config set outputStyle default".to_string())
+                }
+                "style-explanatory" => {
+                    CommandSurfaceOutcome::Submit("/config set outputStyle explanatory".to_string())
+                }
+                "style-learning" => {
+                    CommandSurfaceOutcome::Submit("/config set outputStyle learning".to_string())
+                }
+                "set-output-style" => {
+                    CommandSurfaceOutcome::FillPrompt("/config set outputStyle ".to_string())
+                }
+                "set-language" => {
+                    CommandSurfaceOutcome::FillPrompt("/config set language ".to_string())
+                }
+                "language-en" => {
+                    CommandSurfaceOutcome::Submit("/config set language English".to_string())
+                }
+                "language-zh" => {
+                    CommandSurfaceOutcome::Submit("/config set language Chinese".to_string())
+                }
+                "voice-on" => {
+                    CommandSurfaceOutcome::Submit("/config set voiceEnabled true".to_string())
+                }
+                "voice-off" => {
+                    CommandSurfaceOutcome::Submit("/config set voiceEnabled false".to_string())
+                }
+                "editor-vim" => {
+                    CommandSurfaceOutcome::Submit("/config set editorMode vim".to_string())
+                }
+                "editor-normal" => {
+                    CommandSurfaceOutcome::Submit("/config set editorMode normal".to_string())
+                }
+                "progress-on" => CommandSurfaceOutcome::Submit(
+                    "/config set terminalProgressBarEnabled true".to_string(),
+                ),
+                "progress-off" => CommandSurfaceOutcome::Submit(
+                    "/config set terminalProgressBarEnabled false".to_string(),
+                ),
                 "raw" => CommandSurfaceOutcome::Submit("/config show --raw".to_string()),
                 "schema" => CommandSurfaceOutcome::Submit("/config schema".to_string()),
                 "set-model" => CommandSurfaceOutcome::FillPrompt("/config set model ".to_string()),
                 "set-theme" => CommandSurfaceOutcome::FillPrompt("/config set theme ".to_string()),
-                "set-vim" => {
-                    CommandSurfaceOutcome::Submit("/config set editorMode vim".to_string())
-                }
-                "set-normal" => {
-                    CommandSurfaceOutcome::Submit("/config set editorMode normal".to_string())
-                }
                 _ => CommandSurfaceOutcome::None,
             },
             _ => CommandSurfaceOutcome::None,
@@ -444,5 +556,11 @@ fn format_effort(value: Option<&str>) -> String {
             Some(tokens) => format!("{value} ({tokens} tokens)"),
             None => value.to_string(),
         })
+        .unwrap_or_else(|| "not set".to_string())
+}
+
+fn bool_setting_label(value: Option<bool>) -> String {
+    value
+        .map(|value| value.to_string())
         .unwrap_or_else(|| "not set".to_string())
 }
