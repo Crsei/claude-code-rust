@@ -288,6 +288,21 @@ impl App {
     }
 
     pub fn show_permission_dialog(&mut self, tool_name: &str, input: &str, message: &str) {
+        let web_fetch_subject;
+        let web_fetch_message;
+        let (input, message) = if tool_name.eq_ignore_ascii_case("WebFetch") {
+            let url = permission_subject(input, message);
+            web_fetch_message =
+                crate::ui::permissions::web_fetch_permission_request::web_fetch_permission_request::render_web_fetch_permission_request(
+                    &url,
+                    "GET",
+                    0,
+                );
+            web_fetch_subject = url;
+            (web_fetch_subject.as_str(), web_fetch_message.as_str())
+        } else {
+            (input, message)
+        };
         self.permission_dialog = Some(PermissionDialog::new(tool_name, input, message));
         self.dirty = true;
     }
@@ -445,6 +460,20 @@ impl App {
     }
 
     // Event handling
+}
+
+fn permission_subject(input: &str, message: &str) -> String {
+    let source = if input.trim().is_empty() {
+        message
+    } else {
+        input
+    };
+    source
+        .split_whitespace()
+        .find(|part| part.starts_with("http://") || part.starts_with("https://"))
+        .unwrap_or(source)
+        .trim_matches(|ch: char| ch == '"' || ch == '\'' || ch == ',' || ch == ')' || ch == '(')
+        .to_string()
 }
 
 impl Default for App {

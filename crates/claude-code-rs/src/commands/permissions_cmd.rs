@@ -272,6 +272,9 @@ fn handle_mode(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult
     }
 
     let requested = PermissionMode::parse(parts[0]);
+    let confirmed = parts[1..]
+        .iter()
+        .any(|part| matches!(*part, "--confirm" | "--yes" | "--i-understand"));
     if matches!(requested, PermissionMode::Default) && !parts[0].eq_ignore_ascii_case("default") {
         return Ok(CommandResult::Output(format!(
             "Unknown permission mode: '{}'.\nAvailable: default, auto, bypass, plan, acceptEdits, dontAsk",
@@ -295,6 +298,24 @@ fn handle_mode(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult
     {
         return Ok(CommandResult::Output(
             "Auto mode is disabled by configuration (permissions.enableAutoMode=false).".into(),
+        ));
+    }
+
+    if matches!(requested, PermissionMode::Auto) && !confirmed {
+        return Ok(CommandResult::Output(
+            "Auto mode lets cc-rust answer permission prompts with a safety classifier. \
+             It can still make mistakes; use isolated workspaces for risky tasks.\n\
+             Confirm with: /permissions mode auto --confirm"
+                .into(),
+        ));
+    }
+
+    if matches!(requested, PermissionMode::Bypass) && !confirmed {
+        return Ok(CommandResult::Output(
+            "Bypass permissions mode skips permission prompts for potentially dangerous actions. \
+             Use only in a sandbox/container/VM you can restore.\n\
+             Confirm with: /permissions mode bypass --confirm"
+                .into(),
         ));
     }
 
@@ -345,7 +366,13 @@ fn handle_add(kind: RuleKind, parts: &[&str], ctx: &mut CommandContext) -> Resul
     }
     let rule = parts.join(" ");
 
-    // 1. Mutate in-memory state so the rule applies immediately.
+    let persist_msg = match scope {
+        PersistScope::Session => "(session-only; not persisted)".to_string(),
+        other => persist_rule(kind, other, &rule, &ctx.cwd)?,
+    };
+
+    // Mutate in-memory state after persistence succeeds so persistent-scope
+    // failures cannot silently leave a transient grant behind.
     let bucket = match (kind, scope) {
         (RuleKind::Allow, PersistScope::Session) => {
             &mut ctx.app_state.tool_permission_context.session_allow_rules
@@ -368,12 +395,6 @@ fn handle_add(kind: RuleKind, parts: &[&str], ctx: &mut CommandContext) -> Resul
         strip_dangerous_permissions_for_active_auto_mode(&mut ctx.app_state.tool_permission_context)
     } else {
         AutoModeRuntimeTransition::default()
-    };
-
-    // 2. Persist to disk for non-session scopes.
-    let persist_msg = match scope {
-        PersistScope::Session => "(session-only — not persisted)".to_string(),
-        other => persist_rule(kind, other, &rule, &ctx.cwd)?,
     };
 
     Ok(CommandResult::Output(format!(
@@ -545,6 +566,19 @@ mod tests {
         let CommandResult::Output(text) = result else {
             panic!("expected output")
         };
+        assert!(text.contains("--confirm"));
+        assert_eq!(
+            ctx.app_state.tool_permission_context.mode,
+            PermissionMode::Default
+        );
+
+        let result = handler
+            .execute("mode auto --confirm", &mut ctx)
+            .await
+            .unwrap();
+        let CommandResult::Output(text) = result else {
+            panic!("expected output")
+        };
         assert!(text.contains("Auto mode safety"));
         assert_eq!(
             ctx.app_state.tool_permission_context.mode,
@@ -625,6 +659,34 @@ mod tests {
             .join("plan-workflow.json")
             .is_file());
         assert!(!nested.join(".cc-rust").join("plan-workflow.json").exists());
+    }
+
+    #[tokio::test]
+    async fn test_permissions_mode_bypass_requires_confirmation() {
+        let handler = PermissionsHandler;
+        let mut ctx = test_ctx();
+        ctx.app_state
+            .tool_permission_context
+            .is_bypass_permissions_mode_available = true;
+
+        let result = handler.execute("mode bypass", &mut ctx).await.unwrap();
+        let CommandResult::Output(text) = result else {
+            panic!("expected output")
+        };
+        assert!(text.contains("--confirm"));
+        assert_eq!(
+            ctx.app_state.tool_permission_context.mode,
+            PermissionMode::Default
+        );
+
+        handler
+            .execute("mode bypass --confirm", &mut ctx)
+            .await
+            .unwrap();
+        assert_eq!(
+            ctx.app_state.tool_permission_context.mode,
+            PermissionMode::Bypass
+        );
     }
 
     #[tokio::test]

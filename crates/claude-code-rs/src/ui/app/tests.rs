@@ -419,6 +419,24 @@ fn command_surface_renders_as_overlay() {
     assert!(content.contains("Yes, install rust-analyzer"));
 }
 
+#[test]
+fn web_fetch_permission_dialog_uses_dedicated_renderer() {
+    let mut app = App::new();
+    app.show_permission_dialog(
+        "WebFetch",
+        "",
+        "WebFetch: Allow tool? https://example.com/docs",
+    );
+    let dialog = app
+        .permission_dialog
+        .as_ref()
+        .expect("permission dialog should open");
+
+    assert_eq!(dialog.tool_input, "https://example.com/docs");
+    assert!(dialog.message.contains("Web fetch permission"));
+    assert!(dialog.message.contains("method: GET"));
+}
+
 fn send_key(app: &mut App, code: KeyCode) -> AppAction {
     app.handle_key_event(KeyEvent::new(code, KeyModifiers::NONE))
 }

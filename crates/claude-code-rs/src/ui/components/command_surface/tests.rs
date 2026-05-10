@@ -77,8 +77,20 @@ fn slash_command_surfaces_open_only_for_empty_interactive_commands() {
     let cwd = std::env::current_dir().expect("current dir");
 
     for command in [
-        "agents", "config", "diff", "hooks", "login", "mcp", "memory", "sandbox", "skills",
-        "remote", "tasks", "team",
+        "agents",
+        "config",
+        "diff",
+        "hooks",
+        "login",
+        "mcp",
+        "memory",
+        "sandbox",
+        "skills",
+        "permissions",
+        "perms",
+        "remote",
+        "tasks",
+        "team",
     ] {
         assert!(
             CommandSurface::for_slash_command(command, "", &state, &cwd).is_some(),
@@ -89,6 +101,38 @@ fn slash_command_surfaces_open_only_for_empty_interactive_commands() {
             "{command} with args should keep the normal slash-command path"
         );
     }
+}
+
+#[test]
+fn permissions_command_surface_routes_confirmed_safety_modes() {
+    let mut state = AppState::default();
+    state
+        .tool_permission_context
+        .always_allow_rules
+        .insert("project".to_string(), vec!["Bash(cargo test*)".to_string()]);
+    state
+        .tool_permission_context
+        .is_bypass_permissions_mode_available = true;
+    let cwd = std::env::current_dir().expect("current dir");
+    let mut surface =
+        CommandSurface::for_slash_command("permissions", "", &state, &cwd).expect("surface");
+
+    assert!(surface.render().contains("Permissions"));
+    assert!(surface.render().contains("mode=default"));
+    surface.handle_key(key(KeyCode::Right));
+    assert!(surface.render().contains("Permission rules (1)"));
+    surface.handle_key(key(KeyCode::Right));
+    assert!(surface.render().contains("Auto mode"));
+    surface.handle_key(key(KeyCode::Down));
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::Submit("/permissions mode auto --confirm".to_string())
+    );
+    surface.handle_key(key(KeyCode::Down));
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::Submit("/permissions mode bypass --confirm".to_string())
+    );
 }
 
 #[test]
