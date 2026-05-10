@@ -127,6 +127,30 @@ fn command_meta_fallback_does_not_show_generic_args_placeholder() {
 }
 
 #[test]
+fn command_palette_surfaces_session_help_diagnostics_and_keybindings() {
+    let cwd = Path::new("/repo");
+
+    let resume = command_meta("resume", cwd);
+    assert!(resume
+        .examples
+        .iter()
+        .any(|example| example.contains("recent")));
+
+    let session_export = command_meta("session-export", cwd);
+    assert!(session_export.usage.contains("list"));
+
+    let doctor = command_meta("doctor", cwd);
+    assert_eq!(doctor.usage, "/doctor [summary|raw]");
+
+    let keybindings = command_meta("keybindings", cwd);
+    assert!(keybindings.usage.contains("status"));
+
+    let memory = command_meta("memory", cwd);
+    assert!(memory.usage.contains("search"));
+    assert!(memory.usage.contains("open"));
+}
+
+#[test]
 fn visible_window_tracks_selection_beyond_first_page() {
     assert_eq!(visible_window_start(12, 0, MAX_ROWS), 0);
     assert_eq!(visible_window_start(12, MAX_ROWS - 1, MAX_ROWS), 0);

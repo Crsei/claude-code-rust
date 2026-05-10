@@ -22,7 +22,8 @@
 | Daemon supervisor/worker ownership | 阶段主干完成，完整 ownership 未完 | 当前 HTTP/SSE 控制面已读 supervisor/worker 状态并写入 command/event 协议；真实 submit/abort 执行 ownership 仍有兼容路径。 |
 | Remote-control gateway control plane | 未实现，Phase 0 边界已冻结 | 计划新增 `crates/gateway` 作为控制面，负责 `/remote-control/v1/**`、RemoteSource/session/run、auth、adapter registry、durable events、delivery 和 recovery；现有 daemon `/api/*` 不是公网 remote-control API。 |
 | Telegram/Lark gateway adapter connectivity | 未实现，范围限定 | 第一版只做连接、健康检查、provider-neutral 状态诊断和测试发送；不做 inbound conversation、完整远程会话控制或绕过 gateway runner 触发模型。 |
-| Local `/remote` and TUI remote surface | 未实现 | 当前无 `/remote` slash command、无 `RemoteSurface`、无 remote status indicator；后续必须在 `claude-code-rs` 接线层实现，不能只交付 HTTP API。 |
+| Local `/remote` and TUI remote surface | 部分完成 | `/remote` slash command and `RemoteSurface` now exist and read local gateway status/adapters/runs/events. Remaining work: a live remote status indicator and full end-to-end gateway verification. |
+| Remote/teleport command surfaces | teleport deferred | `/channels` is intentionally limited to gateway-backed outbound adapter status for now. Inbound channel sessions and any `/teleport` command remain deferred until a product/runtime contract exists; do not present placeholders as real remote-control capability. |
 
 ## 2. 活跃方案文档
 
@@ -90,3 +91,11 @@
 1. 任何进入本节的条目必须在 PR 中说明理由，并列出未来复审触发条件。
 2. 每季度至少复审一次本节。
 3. 过期未复审的条目回落到 TODO 队列。
+
+## Ratatui UI parity follow-up after OMX closeout (2026-05-10)
+
+The OMX parity pass narrowed several P1 UI gaps but did not eliminate all upstream parity work. Remaining tracked gaps:
+
+- Remote/teleport: local `/remote`, `/channels`, Chrome, IDE, and LSP surfaces now expose real local status where available; inbound channel sessions and teleport remain deferred until product/runtime contracts exist.
+- Persistent history: Ctrl+R can use persistent history where backend data is available; cross-session history quality still depends on durable reader coverage and should remain under UI/runtime residual tracking.
+- Full-suite verification: focused UI tests pass, but package-wide `cargo test -p claude-code-rs` remains blocked by TEST-002 and must be resolved before treating the whole crate as green.

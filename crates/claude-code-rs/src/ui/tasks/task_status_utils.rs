@@ -46,6 +46,20 @@ pub fn progress_bar(task: &TaskStatus, width: usize) -> String {
     render_progress_bar(ratio, width)
 }
 
+pub fn progress_detail(task: &TaskStatus) -> String {
+    let Some((done, total)) = task.progress else {
+        return "no progress reported".to_string();
+    };
+
+    if total == 0 {
+        return format!("{done}/0 steps");
+    }
+
+    let capped = done.min(total);
+    let percent = (capped as f64 / total as f64) * 100.0;
+    format!("{capped}/{total} steps ({percent:.0}%)")
+}
+
 pub fn task_header(task: &TaskStatus) -> String {
     format!(
         "{} [{}] {} {}",

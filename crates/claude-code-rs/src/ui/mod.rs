@@ -163,6 +163,8 @@ pub mod event_router;
 #[allow(dead_code)]
 #[path = "runtime/frame_requester.rs"]
 pub mod frame_requester;
+#[path = "runtime/persistent_history.rs"]
+pub mod persistent_history;
 #[allow(dead_code)]
 #[path = "runtime/session_log.rs"]
 pub mod session_log;

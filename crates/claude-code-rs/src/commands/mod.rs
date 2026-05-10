@@ -112,6 +112,9 @@ pub mod reload_plugins_cmd;
 // IDE integration (issue #41)
 pub mod ide_cmd;
 
+// LSP status and recommendation surfaces
+pub mod lsp_cmd;
+
 // First-party Chrome integration (Claude in Chrome)
 pub mod chrome_cmd;
 
@@ -205,7 +208,7 @@ pub fn get_all_commands() -> Vec<Command> {
         command(
             "help",
             &["h", "?"],
-            "Show available commands and their descriptions",
+            "Help V2: commands, quick surfaces, keys, and diagnostics hints",
             help::HelpHandler,
         ),
         command(
@@ -226,7 +229,12 @@ pub fn get_all_commands() -> Vec<Command> {
             "Show git diff of current changes",
             diff::DiffHandler,
         ),
-        command("exit", &["quit", "q"], "Exit the REPL", exit::ExitHandler),
+        command(
+            "exit",
+            &["quit", "q"],
+            "Exit the REPL via the normal exit flow",
+            exit::ExitHandler,
+        ),
         command(
             "version",
             &["v"],
@@ -253,8 +261,8 @@ pub fn get_all_commands() -> Vec<Command> {
         ),
         command(
             "resume",
-            &[],
-            "Resume a previous session",
+            &["sessions", "preview"],
+            "Resume or preview a previous saved session",
             resume::ResumeHandler,
         ),
         command(
@@ -350,8 +358,8 @@ pub fn get_all_commands() -> Vec<Command> {
         command("fast", &[], "Toggle fast mode on/off", fast::FastHandler),
         command(
             "memory",
-            &["mem"],
-            "View and manage CLAUDE.md project instructions",
+            &["mem", "global-search", "quick-open"],
+            "View, search, and quick-open memory/project instructions",
             memory::MemoryHandler,
         ),
         command(
@@ -375,7 +383,7 @@ pub fn get_all_commands() -> Vec<Command> {
         command("status", &[], "Show session status", status::StatusHandler),
         command(
             "export",
-            &[],
+            &["markdown-export"],
             "Export conversation to Markdown (.md)",
             export::ExportHandler,
         ),
@@ -393,7 +401,7 @@ pub fn get_all_commands() -> Vec<Command> {
         ),
         command(
             "session-export",
-            &["sexport"],
+            &["sexport", "structured-export"],
             "Export session as structured JSON data package (.session.json)",
             session_export::SessionExportHandler,
         ),
@@ -426,6 +434,12 @@ pub fn get_all_commands() -> Vec<Command> {
             &[],
             "Detect, select, or reconnect the IDE MCP bridge",
             ide_cmd::IdeHandler,
+        ),
+        command(
+            "lsp",
+            &[],
+            "Show LSP server cards and recommendation settings",
+            lsp_cmd::LspHandler,
         ),
         command(
             "chrome",
@@ -495,7 +509,7 @@ pub fn get_all_commands() -> Vec<Command> {
         ),
         command(
             "dream",
-            &[],
+            &["logs"],
             "Distill daily logs into memory",
             dream::DreamHandler,
         ),
@@ -567,14 +581,17 @@ pub fn get_all_commands() -> Vec<Command> {
         ),
         command(
             "agents",
+            // Keep only the plural command. `/agents` owns both list and detail
+            // modes; adding `/agent` would split docs/palette discoverability
+            // without adding behavior.
             &[],
             "Browse agent definitions with source + override visibility",
             agents_cmd::AgentsHandler,
         ),
         command(
             "doctor",
-            &["diagnostics"],
-            "Aggregated diagnostics (install, auth, settings, MCP, terminal)",
+            &["diagnostics", "diag"],
+            "Aggregated diagnostics (install, auth, settings, MCP, keybindings, terminal)",
             doctor::DoctorHandler,
         ),
         command(
@@ -773,6 +790,10 @@ mod tests {
         assert!(find_command("exp").is_some());
         assert!(find_command("experiments").is_some());
         assert!(find_command("mem").is_some());
+        assert!(
+            find_command("agent").is_none(),
+            "/agent is intentionally not an alias; /agents is the canonical list/detail command"
+        );
         // New aliases (issues #58, #60, #63).
         assert!(find_command("cron").is_some());
         assert!(find_command("teamonboarding").is_some());

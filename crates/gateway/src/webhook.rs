@@ -2,9 +2,9 @@ use axum::http::HeaderMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{BusyPolicy, GatewayDiagnostic, GatewayError, RemoteSource, RunPolicy, RunRequest};
 use crate::webhook_hmac::{bad_hmac_error, verify_hex_hmac};
 use crate::webhook_render::{render_prompt, source_for};
+use crate::{BusyPolicy, GatewayDiagnostic, GatewayError, RemoteSource, RunPolicy, RunRequest};
 
 pub const GITHUB_SIGNATURE_HEADER: &str = "x-hub-signature-256";
 pub const SLACK_SIGNATURE_HEADER: &str = "x-slack-signature";
@@ -163,7 +163,11 @@ impl WebhookRouteConfig {
     pub fn resolved_secret(&self) -> Option<String> {
         self.secret
             .clone()
-            .or_else(|| self.secret_env.as_deref().and_then(|key| std::env::var(key).ok()))
+            .or_else(|| {
+                self.secret_env
+                    .as_deref()
+                    .and_then(|key| std::env::var(key).ok())
+            })
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
     }
@@ -190,7 +194,11 @@ impl WebhookVerifier {
         verify_hex_hmac(secret.as_bytes(), body, hex_signature)
     }
 
-    pub fn verify(route: &WebhookRouteConfig, headers: &HeaderMap, body: &[u8]) -> Result<(), GatewayError> {
+    pub fn verify(
+        route: &WebhookRouteConfig,
+        headers: &HeaderMap,
+        body: &[u8],
+    ) -> Result<(), GatewayError> {
         verify_size(route, body)?;
         match route.provider {
             WebhookProvider::GitHub => verify_provider_hmac(route, headers, body, "sha256="),
@@ -312,10 +320,16 @@ fn verify_provider_hmac(
     verify_hex_hmac(secret.as_bytes(), body, hex_signature)
 }
 
-fn verify_slack(route: &WebhookRouteConfig, headers: &HeaderMap, body: &[u8]) -> Result<(), GatewayError> {
+fn verify_slack(
+    route: &WebhookRouteConfig,
+    headers: &HeaderMap,
+    body: &[u8],
+) -> Result<(), GatewayError> {
     let secret = route_secret_owned(route)?;
-    let signature = header_str(headers, SLACK_SIGNATURE_HEADER).ok_or_else(missing_signature_error)?;
-    let timestamp = header_str(headers, SLACK_TIMESTAMP_HEADER).ok_or_else(missing_signature_error)?;
+    let signature =
+        header_str(headers, SLACK_SIGNATURE_HEADER).ok_or_else(missing_signature_error)?;
+    let timestamp =
+        header_str(headers, SLACK_TIMESTAMP_HEADER).ok_or_else(missing_signature_error)?;
     let base = format!("v0:{}:{}", timestamp, String::from_utf8_lossy(body));
     let Some(hex_signature) = signature.strip_prefix("v0=") else {
         return Err(bad_hmac_error());
@@ -349,8 +363,18 @@ fn event_name(route: &WebhookRouteConfig, headers: &HeaderMap, payload: &Value) 
         .provider
         .event_header()
         .and_then(|name| header_str(headers, name))
-        .or_else(|| payload.get("event").and_then(Value::as_str).map(ToOwned::to_owned))
-        .or_else(|| payload.get("type").and_then(Value::as_str).map(ToOwned::to_owned))
+        .or_else(|| {
+            payload
+                .get("event")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        })
+        .or_else(|| {
+            payload
+                .get("type")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        })
 }
 
 fn event_allowed(route: &WebhookRouteConfig, event: Option<&str>) -> bool {
@@ -375,8 +399,18 @@ fn idempotency_key(
         .as_deref()
         .or_else(|| route.provider.idempotency_header())
         .and_then(|name| header_str(headers, name))
-        .or_else(|| payload.get("delivery_id").and_then(Value::as_str).map(ToOwned::to_owned))
-        .or_else(|| payload.get("id").and_then(Value::as_str).map(ToOwned::to_owned))
+        .or_else(|| {
+            payload
+                .get("delivery_id")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        })
+        .or_else(|| {
+            payload
+                .get("id")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        })
 }
 
 fn header_str(headers: &HeaderMap, name: &str) -> Option<String> {

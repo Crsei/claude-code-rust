@@ -104,6 +104,7 @@ fn status(ctx: &CommandContext) -> String {
 
     match helpers::read_team_file(&tc.team_name) {
         Ok(tf) => {
+            let snapshots = InProcessBackend::task_snapshots();
             lines.push(format!(
                 "  created_at: {}",
                 chrono::DateTime::from_timestamp(tf.created_at, 0)
@@ -126,13 +127,36 @@ fn status(ctx: &CommandContext) -> String {
                     None => "·",
                 };
                 let color = m.color.as_deref().unwrap_or("-");
+                let member_tasks = snapshots
+                    .iter()
+                    .filter(|snapshot| snapshot.agent_id == m.agent_id)
+                    .collect::<Vec<_>>();
+                let task_state = if member_tasks.iter().any(|snapshot| snapshot.has_error) {
+                    "error".to_string()
+                } else if member_tasks.iter().any(|snapshot| {
+                    snapshot.status == crate::teams::types::TaskStatus::Running && !snapshot.is_idle
+                }) {
+                    "working".to_string()
+                } else if member_tasks.iter().any(|snapshot| {
+                    snapshot.status == crate::teams::types::TaskStatus::Running && snapshot.is_idle
+                }) {
+                    "idle".to_string()
+                } else if member_tasks.is_empty() {
+                    "no-task".to_string()
+                } else {
+                    format!("{} task(s)", member_tasks.len())
+                };
                 lines.push(format!(
-                    "    {} {} [{}] color={} model={}",
+                    "    {} {} [{}] color={} model={} backend={} status={}",
                     active_marker,
                     m.name,
                     tag,
                     color,
                     m.model.as_deref().unwrap_or("inherit"),
+                    m.backend_type
+                        .map(|backend| backend.to_string())
+                        .unwrap_or_else(|| "unknown".to_string()),
+                    task_state,
                 ));
             }
         }

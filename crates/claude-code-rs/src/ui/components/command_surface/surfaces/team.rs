@@ -48,12 +48,12 @@ impl TeamSurface {
         match key.code {
             KeyCode::Up => {
                 self.selected_index =
-                    cycle_index(self.selected_index, self.summary.teammates.len(), -1);
+                    cycle_index(self.selected_index, self.selectable_teammate_count(), -1);
                 CommandSurfaceOutcome::None
             }
             KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
                 self.selected_index =
-                    cycle_index(self.selected_index, self.summary.teammates.len(), 1);
+                    cycle_index(self.selected_index, self.selectable_teammate_count(), 1);
                 CommandSurfaceOutcome::None
             }
             KeyCode::Enter => CommandSurfaceOutcome::Submit("/team status".to_string()),
@@ -77,6 +77,18 @@ impl TeamSurface {
     }
 
     pub(crate) fn selected_teammate(&self) -> Option<&TeammateStatus> {
-        self.summary.teammates.get(self.selected_index)
+        self.summary
+            .teammates
+            .iter()
+            .filter(|teammate| teammate.name != "team-lead")
+            .nth(self.selected_index)
+    }
+
+    fn selectable_teammate_count(&self) -> usize {
+        self.summary
+            .teammates
+            .iter()
+            .filter(|teammate| teammate.name != "team-lead")
+            .count()
     }
 }

@@ -4,14 +4,13 @@ use crate::types::tool::Tool;
 use crate::types::tool::Tools;
 use crate::ui::messages::user_tool_result_message::utils::{
     find_tool_from_messages, ToolResultBlock, UserToolResultLookups, CANCEL_MESSAGE,
-    INTERRUPT_MESSAGE_FOR_TOOL_USE, REJECT_MESSAGE,
+    INTERRUPT_MESSAGE_FOR_TOOL_USE, REJECT_MESSAGE, REJECT_MESSAGE_WITH_REASON_PREFIX,
 };
 use crate::ui::messages::user_tool_result_message::{
     rejected_plan_message::render_rejected_plan_message,
     rejected_tool_use_message::render_rejected_tool_use_message,
     user_tool_canceled_message::render_user_tool_canceled_message,
     user_tool_error_message::render_user_tool_error_message,
-    user_tool_reject_message::render_fallback_reject_message,
     user_tool_success_message::render_user_tool_success_message,
 };
 use crate::ui::theme::Theme;
@@ -30,10 +29,23 @@ pub fn render_user_tool_result_message(
         return render_user_tool_canceled_message(theme);
     }
 
-    if param.content.starts_with(REJECT_MESSAGE) || param.content == INTERRUPT_MESSAGE_FOR_TOOL_USE
-    {
+    if param.content == INTERRUPT_MESSAGE_FOR_TOOL_USE {
+        return render_user_tool_canceled_message(theme);
+    }
+
+    if param.content.starts_with(REJECT_MESSAGE) {
         if let Some(tool_resolution) = find_tool_from_messages(&param.tool_use_id, tools, lookups) {
             return user_tool_reject_with_tool(&tool_resolution, param, theme);
+        }
+        if param.content.starts_with(REJECT_MESSAGE_WITH_REASON_PREFIX) {
+            return render_user_tool_error_message(
+                &param.content,
+                None,
+                None,
+                theme,
+                _is_transcript_mode,
+                _verbose,
+            );
         }
         return render_rejected_tool_use_message(theme);
     }
@@ -58,12 +70,14 @@ pub fn render_user_tool_result_message(
                 theme,
             );
         }
-        if param.content.starts_with(
-            "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:",
-        ) {
-            return render_rejected_tool_use_message(theme);
-        }
-        return render_rejected_tool_use_message(theme);
+        return render_user_tool_error_message(
+            &param.content,
+            None,
+            None,
+            theme,
+            _is_transcript_mode,
+            _verbose,
+        );
     }
 
     if let Some(tool_resolution) = find_tool_from_messages(&param.tool_use_id, tools, lookups) {
@@ -112,7 +126,10 @@ fn user_tool_reject_with_tool(
 }
 
 fn render_fallback_result(_param: &ToolResultBlock, theme: &Theme) -> Vec<Line<'static>> {
-    render_fallback_reject_message(theme)
+    vec![ratatui::text::Line::from(ratatui::text::Span::styled(
+        "Tool result received (tool metadata unavailable)",
+        theme.tool_result,
+    ))]
 }
 
 fn render_user_tool_reject_message(

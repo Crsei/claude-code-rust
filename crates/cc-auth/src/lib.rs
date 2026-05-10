@@ -494,7 +494,10 @@ mod tests {
                 || err.to_string().contains("JSON"),
             "unexpected error: {err:#}"
         );
-        assert!(path.exists(), "diagnostic read failure must not clear credentials");
+        assert!(
+            path.exists(),
+            "diagnostic read failure must not clear credentials"
+        );
     }
 
     #[test]
@@ -513,7 +516,10 @@ mod tests {
             diagnostic.contains("Tokio"),
             "unexpected error: {diagnostic}"
         );
-        assert!(path.exists(), "infrastructure failure must not clear credentials");
+        assert!(
+            path.exists(),
+            "infrastructure failure must not clear credentials"
+        );
     }
 
     #[test]
@@ -530,7 +536,10 @@ mod tests {
             err.to_string().contains("no refresh token"),
             "unexpected error: {err:#}"
         );
-        assert!(path.exists(), "invalid present credentials are diagnostic, not auto-cleared");
+        assert!(
+            path.exists(),
+            "invalid present credentials are diagnostic, not auto-cleared"
+        );
     }
 
     #[test]
@@ -548,7 +557,10 @@ mod tests {
             err.to_string().contains("OAuth auto-refresh failed"),
             "unexpected error: {err:#}"
         );
-        assert!(path.exists(), "Codex refresh infrastructure failure must not clear credentials");
+        assert!(
+            path.exists(),
+            "Codex refresh infrastructure failure must not clear credentials"
+        );
     }
 
     #[test]

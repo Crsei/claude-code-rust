@@ -42,6 +42,8 @@ pub enum Context {
     Footer,
     /// Rewind / summarize message selection.
     MessageSelector,
+    /// Fullscreen selected-message action cursor.
+    MessageActions,
     /// Diff viewer navigation.
     DiffDialog,
     /// Model picker effort level.
@@ -74,6 +76,7 @@ impl Context {
             Context::Attachments => "Attachments",
             Context::Footer => "Footer",
             Context::MessageSelector => "MessageSelector",
+            Context::MessageActions => "MessageActions",
             Context::DiffDialog => "DiffDialog",
             Context::ModelPicker => "ModelPicker",
             Context::Select => "Select",
@@ -99,6 +102,7 @@ impl Context {
             Context::Attachments,
             Context::Footer,
             Context::MessageSelector,
+            Context::MessageActions,
             Context::DiffDialog,
             Context::ModelPicker,
             Context::Select,
@@ -187,6 +191,6 @@ mod tests {
 
     #[test]
     fn all_contexts_listed() {
-        assert_eq!(Context::all().len(), 20);
+        assert_eq!(Context::all().len(), 21);
     }
 }

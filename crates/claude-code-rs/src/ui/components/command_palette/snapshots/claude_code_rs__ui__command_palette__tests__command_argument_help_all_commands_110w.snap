@@ -1,6 +1,6 @@
 ---
 source: crates/claude-code-rs/src/ui/components/command_palette/tests.rs
-assertion_line: 213
+assertion_line: 237
 expression: normalize_snapshot_text(rendered)
 ---
 ## /init
@@ -94,7 +94,7 @@ expression: normalize_snapshot_text(rendered)
 │About: Show or modify configuration settings                                                                │
 │Edit: user: ~/.cc-rust/settings.json | project: ./.cc-rust/settings.json                                    │
 │                                                                                                            │
-│Hint: Press Ctrl+E to pick a target.                                                                        │
+│Hint: Ctrl+E pick target                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /context
 ┌ /context arguments ────────────────────────────────────────────────────────────────────────────────────────┐
@@ -134,9 +134,9 @@ expression: normalize_snapshot_text(rendered)
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /doctor
 ┌ /doctor arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
-│Usage: /doctor [all|auth|settings|mcp|terminal]                                                             │
-│Example: /doctor                                                                                            │
-│About: Aggregated diagnostics (install, auth, settings, MCP, terminal)                                      │
+│Usage: /doctor [summary|raw]                                                                                │
+│Example: /doctor summary                                                                                    │
+│About: Aggregated diagnostics (install, auth, settings, MCP, keybindings, terminal)                         │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /dream
 ┌ /dream arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
@@ -154,7 +154,7 @@ expression: normalize_snapshot_text(rendered)
 ┌ /exit arguments ───────────────────────────────────────────────────────────────────────────────────────────┐
 │Usage: /exit                                                                                                │
 │Example: /exit                                                                                              │
-│About: Exit the REPL                                                                                        │
+│About: Exit the REPL via the normal exit flow                                                               │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /experimental
 ┌ /experimental arguments ───────────────────────────────────────────────────────────────────────────────────┐
@@ -164,8 +164,8 @@ expression: normalize_snapshot_text(rendered)
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /export
 ┌ /export arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
-│Usage: /export [path]                                                                                       │
-│Example: /export session.md                                                                                 │
+│Usage: /export [list|path|session-id]                                                                       │
+│Example: /export                                                                                            │
 │About: Export conversation to Markdown (.md)                                                                │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /extra-usage
@@ -195,8 +195,8 @@ expression: normalize_snapshot_text(rendered)
 ## /help
 ┌ /help arguments ───────────────────────────────────────────────────────────────────────────────────────────┐
 │Usage: /help [command]                                                                                      │
-│Example: /help mcp                                                                                          │
-│About: Show available commands and their descriptions                                                       │
+│Example: /help                                                                                              │
+│About: Help V2: commands, quick surfaces, keys, and diagnostics hints                                       │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /hooks
 ┌ /hooks arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
@@ -205,7 +205,7 @@ expression: normalize_snapshot_text(rendered)
 │About: Read-only merged hook tree (managed + user + project + local)                                        │
 │Edit: managed: file:///C:/ProgramData/cc-rust/settings.json | user: ~/.cc-rust/settings.json                │
 │      project: ./.cc-rust/settings.json | local: ./.cc-rust/settings.local.json                             │
-│Hint: Press Ctrl+E to pick a target.                                                                        │
+│Hint: Ctrl+E pick target                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /ide
 ┌ /ide arguments ────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -225,7 +225,7 @@ expression: normalize_snapshot_text(rendered)
 │Example: /keybindings                                                                                       │
 │About: View, edit, or reload keybindings.json                                                               │
 │Edit: user: ~/.cc-rust/keybindings.json                                                                     │
-│Hint: Press Ctrl+E to pick a target.                                                                        │
+│Hint: Ctrl+E pick target                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /login
 ┌ /login arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
@@ -251,6 +251,12 @@ expression: normalize_snapshot_text(rendered)
 │Example: /loop 5m /status                                                                                   │
 │About: Register a recurring local task or slash command and run it once                                     │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /lsp
+┌ /lsp arguments ────────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /lsp [status|servers|recommendations]                                                                │
+│Example: /lsp status                                                                                        │
+│About: Show LSP server cards and recommendation settings                                                    │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /mcp
 ┌ /mcp arguments ────────────────────────────────────────────────────────────────────────────────────────────┐
 │Usage: /mcp <list|status|add|edit|remove|approve|reject|connect|disconnect|reconnect>                       │
@@ -258,16 +264,16 @@ expression: normalize_snapshot_text(rendered)
 │About: MCP server management (list, status, add, edit, remove, approve, reject, connect)                    │
 │Edit: user: ~/.cc-rust/settings.json | project: ./.cc-rust/settings.json                                    │
 │      local: ./.cc-rust/settings.local.json                                                                 │
-│Hint: Press Ctrl+E to pick a target.                                                                        │
+│Hint: Ctrl+E pick target                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /memory
 ┌ /memory arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
-│Usage: /memory <show|edit|add> [text]                                                                       │
-│Example: /memory                                                                                            │
-│About: View and manage CLAUDE.md project instructions                                                       │
+│Usage: /memory <show|edit|add|search|open> [text|scope]                                                     │
+│Example: /memory search auth                                                                                │
+│About: View, search, and quick-open memory/project instructions                                             │
 │Edit: project: ./CLAUDE.md | global: ~/.cc-rust/memory                                                      │
 │                                                                                                            │
-│Hint: Press Ctrl+E to pick a target.                                                                        │
+│Hint: Ctrl+E pick target                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /model
 ┌ /model arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
@@ -299,7 +305,7 @@ expression: normalize_snapshot_text(rendered)
 │Example: /plan enter refactor command palette                                                               │
 │About: Enter plan mode and show or edit the plan file                                                       │
 │Edit: current: ~/.cc-rust/plan.md                                                                           │
-│Hint: Press Ctrl+E to pick a target.                                                                        │
+│Hint: Ctrl+E pick target                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /plugin
 ┌ /plugin arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -343,7 +349,7 @@ expression: normalize_snapshot_text(rendered)
 ┌ /resume arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
 │Usage: /resume <session-id|recent>                                                                          │
 │Example: /resume recent                                                                                     │
-│About: Resume a previous session                                                                            │
+│About: Resume or preview a previous saved session                                                           │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /review
 ┌ /review arguments ─────────────────────────────────────────────────────────────────────────────────────────┐

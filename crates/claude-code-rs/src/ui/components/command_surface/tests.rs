@@ -39,16 +39,31 @@ fn section(label: &str, body: String) -> String {
 }
 
 #[test]
-fn agents_surface_submits_selected_agent_detail_command() {
+fn agents_surface_switches_between_list_and_detail() {
     let mut surface = CommandSurface::Agents(AgentsSurface::new(Path::new(".")));
     assert!(surface.render().contains("[Agents]"));
+    assert!(!surface.render().contains("Create new agent"));
+
     surface.handle_key(key(KeyCode::Right));
     assert!(surface.render().contains("[Built-in agents]"));
     assert!(surface.render().contains("general-purpose"));
+
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::None
+    );
+    let detail = surface.render();
+    assert!(detail.contains("Agent detail:"));
+    assert!(detail.contains("Built-in"));
+    assert!(detail.contains("Enter submit `/agents show"));
+
     match surface.handle_key(key(KeyCode::Enter)) {
         CommandSurfaceOutcome::Submit(command) => assert!(command.starts_with("/agents show ")),
         other => panic!("expected selected agent detail command, got {other:?}"),
     }
+
+    surface.handle_key(key(KeyCode::Backspace));
+    assert!(surface.render().contains("[Built-in agents]"));
 }
 
 #[test]
@@ -101,6 +116,11 @@ fn slash_command_surfaces_open_only_for_empty_interactive_commands() {
             "{command} with args should keep the normal slash-command path"
         );
     }
+
+    assert!(
+        CommandSurface::for_slash_command("agent", "", &state, &cwd).is_none(),
+        "/agent is intentionally not an alias; use the canonical /agents surface"
+    );
 }
 
 #[test]

@@ -1,12 +1,13 @@
 ---
 source: crates/claude-code-rs/src/ui/messages/user_tool_result_message/mod.rs
+assertion_line: 82
 expression: rendered
 ---
 ## canceled
 Interrupted by user
 
 ## rejected-tool
-Tool use rejected
+Tool use rejected by user (tool metadata unavailable)
 
 ## rejected-plan
 User rejected Claude's plan:

@@ -49,7 +49,7 @@ pub fn render_user_tool_error_message(
 
     let tool_name = tool_display_name(tool, input);
     let mut lines = vec![Line::from(Span::styled(
-        format!("{tool_name} failed"),
+        format!("{tool_name} failed with error:"),
         theme.error,
     ))];
 

@@ -4,7 +4,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use crate::types::message::{
-    ContentBlock, InfoLevel, Message, MessageContent, SystemSubtype, ToolResultContent,
+    Attachment, ContentBlock, InfoLevel, Message, MessageContent, SystemSubtype, ToolResultContent,
 };
 use crate::ui::markdown::markdown_to_lines;
 use crate::ui::theme::Theme;
@@ -28,6 +28,8 @@ pub fn render_messages(
     streaming: bool,
     scroll: usize,
     vscroll: &VirtualScroll,
+    selected_message: Option<usize>,
+    selected_expanded: bool,
 ) {
     if area.height == 0 || area.width == 0 || messages.is_empty() {
         return;
@@ -45,6 +47,15 @@ pub fn render_messages(
 
     for idx in start..end.min(messages.len()) {
         let mut msg_lines = render_single_message_wrapped(&messages[idx], theme, area.width);
+        if Some(idx) == selected_message {
+            decorate_selected_message(
+                &mut msg_lines,
+                &messages[idx],
+                theme,
+                selected_expanded,
+                area.width as usize,
+            );
+        }
         if streaming
             && idx == messages.len().saturating_sub(1)
             && matches!(&messages[idx], Message::Assistant(_))
@@ -96,6 +107,110 @@ pub(in crate::ui) fn render_single_message<'a>(msg: &Message, theme: &Theme) -> 
     }
 }
 
+pub(in crate::ui) fn message_copy_text(msg: &Message) -> String {
+    match msg {
+        Message::User(user) => message_content_copy_text(&user.content),
+        Message::Assistant(assistant) => assistant
+            .content
+            .iter()
+            .filter_map(content_block_copy_text)
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Message::System(system) => system.content.clone(),
+        Message::Progress(progress) => progress
+            .data
+            .get("message")
+            .and_then(|value| value.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| progress.data.to_string()),
+        Message::Attachment(attachment) => attachment_copy_text(&attachment.attachment),
+    }
+}
+
+pub(in crate::ui) fn message_primary_reference(msg: &Message) -> Option<String> {
+    match msg {
+        Message::User(user) => message_content_reference(&user.content),
+        Message::Assistant(assistant) => assistant.content.iter().find_map(content_block_reference),
+        Message::Attachment(attachment) => attachment_reference(&attachment.attachment),
+        Message::System(_) | Message::Progress(_) => None,
+    }
+}
+
+fn decorate_selected_message<'a>(
+    lines: &mut Vec<Line<'a>>,
+    msg: &Message,
+    theme: &Theme,
+    expanded: bool,
+    width: usize,
+) {
+    let mut header = vec![
+        Span::styled(
+            if expanded {
+                "▼ selected"
+            } else {
+                "▶ selected"
+            },
+            theme.selected,
+        ),
+        Span::styled(" · c copy", theme.dim),
+        Span::styled(" · enter detail", theme.dim),
+    ];
+    if let Some(meta) = selected_message_meta(msg) {
+        header.push(Span::styled(format!(" · {meta}"), theme.dim));
+    }
+    lines.insert(0, Line::from(header));
+
+    if expanded {
+        lines.extend(
+            message_detail_lines(msg, width)
+                .into_iter()
+                .map(|line| Line::from(Span::styled(format!("  {line}"), theme.dim))),
+        );
+    }
+}
+
+fn selected_message_meta(msg: &Message) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(ts) = concise_timestamp(msg.timestamp()) {
+        parts.push(ts);
+    }
+    if let Some(reference) = message_primary_reference(msg) {
+        parts.push(reference);
+    }
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+fn concise_timestamp(timestamp: i64) -> Option<String> {
+    if timestamp <= 0 {
+        return None;
+    }
+    let millis = if timestamp > 10_000_000_000 {
+        timestamp
+    } else {
+        timestamp.saturating_mul(1000)
+    };
+    chrono::DateTime::from_timestamp_millis(millis)
+        .map(|dt| dt.with_timezone(&chrono::Local).format("%H:%M").to_string())
+}
+
+fn message_detail_lines(msg: &Message, width: usize) -> Vec<String> {
+    let mut lines = vec![format!("uuid: {}", msg.uuid())];
+    if let Some(ts) = concise_timestamp(msg.timestamp()) {
+        lines.push(format!("time: {ts}"));
+    }
+    if let Some(reference) = message_primary_reference(msg) {
+        lines.push(format!("ref: {reference}"));
+    }
+    let preview = crate::utils::messages::truncate_text(
+        &message_copy_text(msg).replace('\n', " ⏎ "),
+        width.saturating_sub(4).max(20),
+    );
+    if !preview.is_empty() {
+        lines.push(format!("copy: {preview}"));
+    }
+    lines
+}
+
 // ── User messages ───────────────────────────────────────────────────────
 
 fn render_user_message<'a>(
@@ -112,14 +227,18 @@ fn render_user_message<'a>(
             }
             blocks
                 .iter()
-                .filter_map(|b| match b {
-                    ContentBlock::Text { text } => Some(text.clone()),
-                    _ => None,
-                })
+                .filter_map(content_block_copy_text)
                 .collect::<Vec<_>>()
                 .join("\n")
         }
     };
+
+    if content_text.trim() == "[Request interrupted by user]" {
+        return vec![Line::from(Span::styled(
+            "Interrupted by user",
+            theme.warning,
+        ))];
+    }
 
     // First line includes the "You: " prefix.
     let content_lines: Vec<&str> = content_text.lines().collect();
@@ -219,7 +338,7 @@ fn tool_result_content_text(content: &ToolResultContent) -> String {
             .iter()
             .filter_map(|block| match block {
                 ContentBlock::Text { text } => Some(text.clone()),
-                ContentBlock::Image { source } => Some(format!("[image: {}]", source.media_type)),
+                ContentBlock::Image { source } => Some(image_reference(source)),
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -304,8 +423,8 @@ fn render_assistant_message<'a>(
             }
 
             ContentBlock::ToolUse { id: _, name, input } => {
-                // Show tool invocation: tool name + abbreviated input.
-                let input_summary = abbreviate_json(input, 80);
+                // Show tool invocation: tool name + primary path/query when available.
+                let input_summary = tool_input_summary(name, input, 80);
                 let tool_line = Line::from(vec![
                     Span::raw(if first_block { "" } else { "        " }),
                     Span::styled(format!("[{}] ", name), theme.tool_name),
@@ -316,7 +435,7 @@ fn render_assistant_message<'a>(
             }
 
             ContentBlock::ServerToolUse { id: _, name, input } => {
-                let input_summary = abbreviate_json(input, 80);
+                let input_summary = tool_input_summary(name, input, 80);
                 let tool_line = Line::from(vec![
                     Span::raw(if first_block { "" } else { "        " }),
                     Span::styled(format!("[server:{}] ", name), theme.tool_name),
@@ -345,9 +464,7 @@ fn render_assistant_message<'a>(
                             ContentBlock::ConnectorText { connector_text, .. } => {
                                 connector_text.clone()
                             }
-                            ContentBlock::Image { source } => {
-                                format!("[image: {}]", source.media_type)
-                            }
+                            ContentBlock::Image { source } => image_reference(source),
                             _ => "[...]".to_string(),
                         })
                         .collect::<Vec<_>>()
@@ -419,10 +536,10 @@ fn render_assistant_message<'a>(
                 first_block = false;
             }
 
-            ContentBlock::Image { .. } => {
+            ContentBlock::Image { source } => {
                 lines.push(Line::from(vec![
                     Span::raw(if first_block { "" } else { "        " }),
-                    Span::styled("[image]", theme.dim),
+                    Span::styled(image_reference(source), theme.dim),
                 ]));
                 first_block = false;
             }
@@ -454,8 +571,8 @@ fn render_system_message<'a>(
     let mut lines = Vec::new();
 
     let (prefix, style) = match &msg.subtype {
-        SystemSubtype::CompactBoundary { .. } => ("--- context compacted ---", theme.dim),
-        SystemSubtype::MicrocompactBoundary { .. } => ("--- context microcompacted ---", theme.dim),
+        SystemSubtype::CompactBoundary { .. } => ("context compacted", theme.dim),
+        SystemSubtype::MicrocompactBoundary { .. } => ("context microcompacted", theme.dim),
         SystemSubtype::ApiError { error, .. } => {
             let _ = error;
             ("API Error: ", theme.error)
@@ -473,7 +590,10 @@ fn render_system_message<'a>(
         &msg.subtype,
         SystemSubtype::CompactBoundary { .. } | SystemSubtype::MicrocompactBoundary { .. }
     ) {
-        lines.push(Line::from(vec![Span::styled(prefix.to_string(), style)]));
+        lines.push(Line::from(vec![Span::styled(
+            compact_boundary_summary(&msg.subtype, prefix),
+            style,
+        )]));
     } else {
         let content_lines: Vec<&str> = msg.content.lines().collect();
         if content_lines.is_empty() {
@@ -555,11 +675,159 @@ fn abbreviate_json(value: &serde_json::Value, max_chars: usize) -> String {
     }
 }
 
+fn tool_input_summary(name: &str, input: &serde_json::Value, max_chars: usize) -> String {
+    if let Some(primary) = tool_primary_input(name, input) {
+        let json = abbreviate_json(input, max_chars);
+        return format!("{primary} {json}").trim().to_string();
+    }
+    abbreviate_json(input, max_chars)
+}
+
+fn tool_primary_input(name: &str, input: &serde_json::Value) -> Option<String> {
+    let key = match name {
+        "Read" | "Edit" | "Write" => "file_path",
+        "NotebookEdit" => "notebook_path",
+        "Bash" => "command",
+        "Grep" | "Glob" => "pattern",
+        "WebFetch" => "url",
+        "WebSearch" => "query",
+        "Task" | "Agent" => "prompt",
+        _ => return None,
+    };
+    input
+        .get(key)
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            let label = if key.ends_with("path") || key == "file_path" {
+                "path"
+            } else {
+                key
+            };
+            format!("{label}={value}")
+        })
+}
+
+fn message_content_copy_text(content: &MessageContent) -> String {
+    match content {
+        MessageContent::Text(text) => strip_system_reminders(text),
+        MessageContent::Blocks(blocks) => blocks
+            .iter()
+            .filter_map(content_block_copy_text)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    }
+}
+
+fn message_content_reference(content: &MessageContent) -> Option<String> {
+    match content {
+        MessageContent::Text(_) => None,
+        MessageContent::Blocks(blocks) => blocks.iter().find_map(content_block_reference),
+    }
+}
+
+fn content_block_copy_text(block: &ContentBlock) -> Option<String> {
+    match block {
+        ContentBlock::Text { text } => Some(strip_system_reminders(text)),
+        ContentBlock::ConnectorText { connector_text, .. } => Some(connector_text.clone()),
+        ContentBlock::ToolUse { name, input, .. }
+        | ContentBlock::ServerToolUse { name, input, .. } => {
+            tool_primary_input(name, input).or_else(|| Some(input.to_string()))
+        }
+        ContentBlock::ToolResult { content, .. } => Some(tool_result_content_text(content)),
+        ContentBlock::Image { source } => Some(image_reference(source)),
+        ContentBlock::Thinking { thinking, .. } => (!thinking.is_empty()).then(|| thinking.clone()),
+        ContentBlock::RedactedThinking { .. } => Some("[redacted thinking]".to_string()),
+    }
+}
+
+fn content_block_reference(block: &ContentBlock) -> Option<String> {
+    match block {
+        ContentBlock::ToolUse { name, input, .. }
+        | ContentBlock::ServerToolUse { name, input, .. } => tool_primary_input(name, input),
+        ContentBlock::Image { source } => Some(image_reference(source)),
+        ContentBlock::ToolResult { content, .. } => match content {
+            ToolResultContent::Text(_) => None,
+            ToolResultContent::Blocks(blocks) => blocks.iter().find_map(content_block_reference),
+        },
+        _ => None,
+    }
+}
+
+fn image_reference(source: &crate::types::message::ImageSource) -> String {
+    format!(
+        "[image: {}, {} chars]",
+        source.media_type,
+        source.data.len()
+    )
+}
+
+fn attachment_copy_text(attachment: &Attachment) -> String {
+    match attachment {
+        Attachment::EditedTextFile { path } => path.clone(),
+        Attachment::QueuedCommand { prompt, .. } => prompt.clone(),
+        Attachment::MaxTurnsReached {
+            max_turns,
+            turn_count,
+        } => format!("Max turns reached: {turn_count}/{max_turns}"),
+        Attachment::StructuredOutput { data } => data.to_string(),
+        Attachment::HookStoppedContinuation => "Hook stopped continuation".to_string(),
+        Attachment::NestedMemory { path, content } => format!("{path}\n{content}"),
+        Attachment::SkillDiscovery { skills } => skills.join(", "),
+    }
+}
+
+fn attachment_reference(attachment: &Attachment) -> Option<String> {
+    match attachment {
+        Attachment::EditedTextFile { path } | Attachment::NestedMemory { path, .. } => {
+            Some(format!("path={path}"))
+        }
+        Attachment::QueuedCommand { prompt, .. } => Some(format!(
+            "prompt={}",
+            crate::utils::messages::truncate_text(prompt, 48)
+        )),
+        _ => None,
+    }
+}
+
+fn strip_system_reminders(text: &str) -> String {
+    const OPEN: &str = "<system-reminder>";
+    const CLOSE: &str = "</system-reminder>";
+    let mut rest = text.trim_start();
+    while let Some(after_open) = rest.strip_prefix(OPEN) {
+        let Some(end) = after_open.find(CLOSE) else {
+            break;
+        };
+        rest = after_open[end + CLOSE.len()..].trim_start();
+    }
+    rest.to_string()
+}
+
+fn compact_boundary_summary(subtype: &SystemSubtype, prefix: &str) -> String {
+    match subtype {
+        SystemSubtype::CompactBoundary {
+            compact_metadata: Some(meta),
+        } => format!(
+            "--- {prefix}: {} → {} tokens ---",
+            meta.pre_compact_token_count, meta.post_compact_token_count
+        ),
+        SystemSubtype::MicrocompactBoundary {
+            microcompact_metadata: Some(meta),
+        } => format!(
+            "--- {prefix}: saved {} tokens from {} tool results ---",
+            meta.tokens_saved,
+            meta.compacted_tool_ids.len()
+        ),
+        _ => format!("--- {prefix} ---"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::render_single_message;
+    use super::{message_copy_text, message_primary_reference, render_single_message};
     use crate::types::message::{
-        ContentBlock, Message, MessageContent, ToolResultContent, UserMessage,
+        AssistantMessage, CompactMetadata, ContentBlock, ImageSource, Message, MessageContent,
+        SystemMessage, SystemSubtype, ToolResultContent, UserMessage,
     };
     use crate::ui::diff::file_edit_diff::unified_hunk_lines_from_edit;
     use crate::ui::theme::Theme;
@@ -609,5 +877,86 @@ mod tests {
         assert!(rendered.contains("file: src/lib.rs"));
         assert!(rendered.contains("old_call();"));
         assert!(rendered.contains("new_call();"));
+    }
+
+    #[test]
+    fn messages_render_path_image_compact_and_interrupt_summaries() {
+        let theme = Theme::default();
+        let image = ImageSource {
+            source_type: "base64".to_string(),
+            media_type: "image/png".to_string(),
+            data: "abcdef".to_string(),
+        };
+        let assistant = Message::Assistant(AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 1_700_000_000,
+            role: "assistant".to_string(),
+            content: vec![
+                ContentBlock::ToolUse {
+                    id: "toolu_read".to_string(),
+                    name: "Read".to_string(),
+                    input: json!({ "file_path": "src/main.rs" }),
+                },
+                ContentBlock::Image {
+                    source: image.clone(),
+                },
+            ],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        });
+        let rendered = lines_to_text(render_single_message(&assistant, &theme));
+
+        assert!(rendered.contains("path=src/main.rs"));
+        assert!(rendered.contains("[image: image/png, 6 chars]"));
+        assert_eq!(
+            message_primary_reference(&assistant).as_deref(),
+            Some("path=src/main.rs")
+        );
+        assert!(message_copy_text(&assistant).contains("[image: image/png, 6 chars]"));
+
+        let compact = Message::System(SystemMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 1_700_000_000,
+            subtype: SystemSubtype::CompactBoundary {
+                compact_metadata: Some(CompactMetadata {
+                    pre_compact_token_count: 12_000,
+                    post_compact_token_count: 4_000,
+                    preserved_segment: None,
+                }),
+            },
+            content: String::new(),
+        });
+        assert!(lines_to_text(render_single_message(&compact, &theme))
+            .contains("context compacted: 12000 → 4000 tokens"));
+
+        let interrupted = Message::User(UserMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "user".to_string(),
+            content: MessageContent::Text("[Request interrupted by user]".to_string()),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        });
+        assert_eq!(
+            lines_to_text(render_single_message(&interrupted, &theme)),
+            "Interrupted by user"
+        );
+    }
+
+    fn lines_to_text(lines: Vec<ratatui::text::Line<'_>>) -> String {
+        lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }

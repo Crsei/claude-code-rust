@@ -613,3 +613,20 @@ P0 milestone residual risks:
 3. **中期**: Claude Desktop MCP 配置自动发现、live file-edit transcript event 接线
 4. **长期**: IDE 集成、远程功能 (视路线图)
 5. **不追**: LogoV2 动画、纯 React 抽象 (SentryErrorBoundary)、设计系统基类
+
+---
+
+## Ratatui UI parity OMX closeout (2026-05-10)
+
+Final verification for `target/codex-runs/ratatui-ui-parity-omx` read all available batch summary files and task last-message files. The run confirms these parity effects are now represented in the working tree:
+
+- Shared UI primitives: reusable tab, status-icon, and keyboard-shortcut hint renderers; `SelectionSurface` preview/action/disabled metadata support.
+- Settings/safety surfaces: richer `/config` tabs, `/sandbox` diagnostics, and command-surface coverage for permission safety modes.
+- Message/composer surfaces: selected-message affordances, clearer tool-result fallback/reject/error rendering, prompt mode/placeholder/large-paste/truncation preview, and command hint updates.
+- Agent/team/task/search/integration surfaces: `/agents` list/detail mode, team/task summary/detail refinements, persistent-history reader wiring where backend data exists, LSP/IDE/Chrome/channel command-surface status, and updated snapshot coverage.
+
+Verification status:
+
+- PASS: `git diff --check`.
+- PASS: focused UI snapshot/filter tests for `command_surface`, `selection_surface`, `status_widget`, `config_cmd`, `sandbox`, `permissions`, `messages`, `prompt_input`, `history_search`, `command_palette`, `agents`, `teams`, `resume`, `session_export`, `ide`, `lsp_recommendation`, `channels`, `hooks`, and `visual_regression` after accepting intentional snapshot updates.
+- WARNING: package-wide `cargo test -p claude-code-rs -- --nocapture` is not green in this workspace; see `KNOWN_ISSUES.md` TEST-002 for the current failure list and follow-up.

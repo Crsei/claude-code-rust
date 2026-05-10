@@ -28,7 +28,7 @@ mod tests {
         let rendered = format!(
             "## status\n{}\n\n## dialog\n{}",
             render_team_status(2, true, true).unwrap(),
-            render_teams_dialog(&team, 1)
+            render_teams_dialog(&team, 0)
         );
         insta::assert_snapshot!("team_surfaces", rendered);
     }

@@ -76,7 +76,7 @@ mod render;
 mod wrap;
 
 pub use render::render_messages;
-pub(super) use render::render_single_message;
+pub(super) use render::{message_copy_text, message_primary_reference, render_single_message};
 
 #[cfg(test)]
 mod tests {

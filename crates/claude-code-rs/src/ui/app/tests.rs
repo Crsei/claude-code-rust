@@ -1,7 +1,7 @@
 use super::workspace_trust::trusted_workspaces_path;
 use super::*;
 use crate::types::app_state::AppState;
-use crate::types::message::{MessageContent, UserMessage};
+use crate::types::message::{ContentBlock, MessageContent, UserMessage};
 use crate::types::tool::PermissionMode;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::backend::TestBackend;
@@ -351,6 +351,23 @@ fn ctrl_r_opens_history_search_and_escape_closes() {
 }
 
 #[test]
+fn resume_history_seed_populates_ctrl_r_before_live_prompts() {
+    let mut app = App::new();
+    app.seed_persistent_history(vec![
+        HistorySearchEntry::new("new saved prompt", 20),
+        HistorySearchEntry::new("old saved prompt", 10),
+    ]);
+
+    assert_eq!(app.history_len(), 2);
+    assert_eq!(
+        send_key_with_modifiers(&mut app, KeyCode::Char('r'), KeyModifiers::CONTROL),
+        AppAction::None
+    );
+    assert_eq!(send_key(&mut app, KeyCode::Enter), AppAction::None);
+    assert_eq!(app.prompt.input, "new saved prompt");
+}
+
+#[test]
 fn history_search_enter_fills_selected_prompt() {
     let mut app = App::new();
     app.push_history("first prompt".to_string());
@@ -435,6 +452,58 @@ fn web_fetch_permission_dialog_uses_dedicated_renderer() {
     assert_eq!(dialog.tool_input, "https://example.com/docs");
     assert!(dialog.message.contains("Web fetch permission"));
     assert!(dialog.message.contains("method: GET"));
+}
+
+#[test]
+fn messages_action_selection_toggles_detail_and_copies_selected_text() {
+    let mut app = App::new();
+    app.add_message(Message::User(UserMessage {
+        uuid: uuid::Uuid::new_v4(),
+        timestamp: 0,
+        role: "user".to_string(),
+        content: MessageContent::Text("copy this message".to_string()),
+        is_meta: false,
+        tool_use_result: None,
+        source_tool_assistant_uuid: None,
+    }));
+
+    assert_eq!(
+        send_key_with_modifiers(&mut app, KeyCode::Up, KeyModifiers::SHIFT),
+        AppAction::None
+    );
+    assert_eq!(app.selected_message(), Some(0));
+    assert_eq!(send_key(&mut app, KeyCode::Enter), AppAction::None);
+    assert_eq!(
+        send_key(&mut app, KeyCode::Char('c')),
+        AppAction::CopyMessage("copy this message".to_string())
+    );
+}
+
+#[test]
+fn messages_action_copies_primary_path_reference() {
+    let mut app = App::new();
+    app.add_message(Message::User(UserMessage {
+        uuid: uuid::Uuid::new_v4(),
+        timestamp: 0,
+        role: "user".to_string(),
+        content: MessageContent::Blocks(vec![ContentBlock::ToolUse {
+            id: "toolu_read".to_string(),
+            name: "Read".to_string(),
+            input: serde_json::json!({ "file_path": "src/lib.rs" }),
+        }]),
+        is_meta: false,
+        tool_use_result: None,
+        source_tool_assistant_uuid: None,
+    }));
+
+    assert_eq!(
+        send_key_with_modifiers(&mut app, KeyCode::Up, KeyModifiers::SHIFT),
+        AppAction::None
+    );
+    assert_eq!(
+        send_key(&mut app, KeyCode::Char('p')),
+        AppAction::CopyMessage("path=src/lib.rs".to_string())
+    );
 }
 
 fn send_key(app: &mut App, code: KeyCode) -> AppAction {

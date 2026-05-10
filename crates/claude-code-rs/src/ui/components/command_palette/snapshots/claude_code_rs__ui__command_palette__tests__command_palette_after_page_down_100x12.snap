@@ -1,5 +1,6 @@
 ---
-source: crates/claude-code-rs/src/ui/command_palette.rs
+source: crates/claude-code-rs/src/ui/components/command_palette/tests.rs
+assertion_line: 177
 expression: "render_palette_snapshot(\"/\", &cwd, 100, 12, &[KeyCode::PageDown])"
 ---
 "┌ Commands ────────────────────────────────────────────────────────────────────────────────────────┐"
@@ -12,5 +13,5 @@ expression: "render_palette_snapshot(\"/\", &cwd, 100, 12, &[KeyCode::PageDown])
 "│                                                                                                  │"
 "│Usage: /branch [title]                                                                            │"
 "│Example: /branch                                                                                  │"
-"│Enter selects the command; type arguments after the inserted space.                               │"
+"│Enter select | Esc close | type arguments after space                                             │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────┘"

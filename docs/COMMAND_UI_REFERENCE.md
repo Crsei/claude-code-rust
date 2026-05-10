@@ -61,7 +61,7 @@
 | --- | --- | --- |
 | 输入 `/` | `CommandPalette` | 上下选择命令，Enter 插入 `/<command> ` |
 | command palette 的 `Ctrl+E` | edit target picker | 对支持 edit targets 的命令插入目标参数 |
-| `/agents` | agent source tabs + agent list | Enter 提交 `/agents show <agent>` |
+| `/agents` | agent source tabs + in-surface list/detail view | Enter opens detail; detail Enter preserves text behavior by submitting `/agents show <agent>` |
 | `/config` | tabbed form + model/theme/effort pickers | Enter 提交 `/config show`、`/config set ...` 等 |
 | `/diff` | diff source/file selector + detail view | Enter 从文件列表进入 detail；`b` 返回列表 |
 | `/hooks` | settings scope tabs + hook event list | Enter 提交 `/hooks list <event>`；`o` 打开当前 scope |
@@ -78,8 +78,8 @@
 已存在但当前未作为 slash command 接线的选择组件:
 
 - `ResumePicker`: Rust `/resume` 当前直接恢复最近 session 或按 id/prefix 恢复，不弹交互选择器。
-- `ui/agents/new_agent_creation/**`: create-agent wizard 组件存在，但 `/agents` surface 当前
-  `show_create_new = false`，没有通过 `/agents` 入口启动。
+- `ui/agents/new_agent_creation/**`: create-agent wizard components exist, but `/agents` keeps the entry hidden until save/cancel can reuse existing safe `AgentSettingsCommand` User/Project settings paths.
+- `/agent` alias decision: do not add a singular alias; `/agents` remains the canonical list/detail surface to keep help and palette routing unambiguous.
 
 ## 三、向导类
 

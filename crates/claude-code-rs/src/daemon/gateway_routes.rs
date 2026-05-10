@@ -158,7 +158,10 @@ mod tests {
 
         let _router = gateway_routes();
 
-        assert_eq!(store.load_run(&run_id).unwrap().status, RunStatus::Recoverable);
+        assert_eq!(
+            store.load_run(&run_id).unwrap().status,
+            RunStatus::Recoverable
+        );
         match previous {
             Some(value) => std::env::set_var("CC_RUST_HOME", value),
             None => std::env::remove_var("CC_RUST_HOME"),

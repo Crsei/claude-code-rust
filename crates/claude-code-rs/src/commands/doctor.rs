@@ -20,6 +20,8 @@ use crate::auth::{try_resolve_auth, AuthMethod};
 use crate::config::paths;
 use crate::config::settings::{load_effective, SettingsSource};
 use crate::config::validation::{validate_settings, WarningSeverity};
+use crate::keybindings::action::Action;
+use crate::keybindings::context::Context as KbContext;
 use crate::ui::browser::{render_with_footer, shorten_path, TreeNode};
 
 use super::terminal_setup::TerminalLabel;
@@ -431,6 +433,38 @@ fn build_keybindings_section(ctx: &CommandContext) -> Section {
         Status::Ok,
         reg.all_bindings().len().to_string(),
     ));
+    for (ctx, action, label) in [
+        (KbContext::Global, "history:search", "Ctrl+R history search"),
+        (KbContext::Global, "app:exit", "exit flow"),
+        (
+            KbContext::Global,
+            "app:toggleTranscript",
+            "transcript/global search",
+        ),
+        (
+            KbContext::HistorySearch,
+            "historySearch:accept",
+            "history accept",
+        ),
+    ] {
+        let has_binding = reg
+            .bindings_for(&Action::new_static(action))
+            .iter()
+            .any(|(binding_ctx, _)| *binding_ctx == ctx);
+        rows.push(Row::new(
+            label,
+            if has_binding {
+                Status::Ok
+            } else {
+                Status::Warn
+            },
+            if has_binding {
+                action.to_string()
+            } else {
+                format!("no binding in {} for {}", ctx.as_str(), action)
+            },
+        ));
+    }
     for issue in reg.last_issues() {
         rows.push(Row::new("issue", Status::Warn, issue));
     }

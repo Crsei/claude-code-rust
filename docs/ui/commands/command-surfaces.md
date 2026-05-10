@@ -74,24 +74,37 @@
 
 ## Agents
 
-触发: `/agents`
+Trigger: `/agents`
+
+List mode:
 
 ```text
 Agents
-[All]  Built-in agents  User agents  Project agents
+[Agents]  Built-in agents  User agents  Project agents
 
-> general-purpose     built-in  General task execution
-  debugger            built-in  Root-cause analysis
-  code-reviewer       built-in  Review diffs and regressions
+Built-in agents:
+> general-purpose - default model
+  debugger - default model
+  code-reviewer - default model
 
-Left/Right switch source tabs | Up/Down navigate | Enter select | Esc close
+Left/Right switch source tabs | Up/Down navigate | Enter detail | Esc close
 ```
 
-关键期望:
+Detail mode:
 
-- source tab 显示 agent 来源过滤。
-- 当前 Rust surface 不显示 create-agent wizard。
-- Enter 提交 `/agents show <agent>`。
+```text
+Agent detail: general-purpose
+...agent definition details...
+
+Backspace/b return to list | Enter submit `/agents show general-purpose` | Esc close
+```
+
+Key expectations:
+
+- `/agents` is a list/detail surface, not a selector-only surface.
+- `/agents show <name>` text behavior is preserved from detail mode.
+- The create-agent wizard entry stays hidden until save/cancel can use the existing safe `AgentSettingsCommand` User/Project settings paths.
+- `/agent` is intentionally not an alias; `/agents` is the canonical list/detail command to keep help and palette routing unambiguous.
 
 ## Config Settings
 

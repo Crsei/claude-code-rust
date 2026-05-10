@@ -15,6 +15,10 @@
 //! of this aggregator later; the data model we assemble already carries
 //! enough metadata (source, path, active state) to support that without a
 //! rewrite.
+//!
+//! Alias decision: keep the command plural-only. `/agents` is the canonical
+//! list/detail surface; `/agent` would not expose distinct behavior and would
+//! make help/palette routing less clear.
 
 use std::collections::HashMap;
 use std::path::PathBuf;

@@ -100,6 +100,13 @@ pub async fn run_tui(
     app.set_backend_name(engine.app_state().main_loop_backend.clone());
     app.set_session_id(engine.current_session_id().to_string());
     app.set_cwd(engine.cwd().to_string());
+    match super::persistent_history::load_persistent_history() {
+        Ok(entries) if !entries.is_empty() => app.seed_persistent_history(entries),
+        Ok(_) => {}
+        Err(error) => {
+            tracing::warn!(error = %error, "persistent prompt history unavailable");
+        }
+    }
 
     // Scriptable status line (issue #11) — seed from the effective
     // settings snapshot held on AppState. Subsequent edits via
@@ -322,6 +329,18 @@ pub async fn run_tui(
                                     ),
                                 }
                             }
+                            AppAction::CopyMessage(text) => {
+                                match crate::ui::clipboard_text::copy_text_to_clipboard(&text) {
+                                    Ok(()) => add_system_info(
+                                        &mut app,
+                                        &format!("Copied message to clipboard ({} chars)", text.len()),
+                                    ),
+                                    Err(e) => add_system_info(
+                                        &mut app,
+                                        &format!("Copy failed: {e}"),
+                                    ),
+                                }
+                            }
                             // Scroll actions are handled internally by App
                             _ => {}
                         }
@@ -331,6 +350,9 @@ pub async fn run_tui(
                     }
                     Event::Mouse(mouse) => {
                         let _ = app.handle_mouse_event(mouse);
+                    }
+                    Event::Paste(text) => {
+                        let _ = app.handle_paste_event(text);
                     }
                     _ => {}
                 }

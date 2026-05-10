@@ -9,7 +9,9 @@ use super::App;
 use crate::ui::command_palette::CommandPalette;
 use crate::ui::command_surface::CommandSurface;
 use crate::ui::history_search_dialog::HistorySearchDialog;
+use crate::ui::keyboard_shortcut::{render_shortcut_hints, ShortcutHint};
 use crate::ui::messages::render_messages;
+use crate::ui::prompt_input::PromptInputRenderContext;
 use crate::ui::theme::Theme;
 use crate::ui::transcript::{self, TranscriptInputMode, ViewMode};
 use crate::ui::welcome;
@@ -65,6 +67,7 @@ impl App {
         let cwd_path = std::path::Path::new(&self.cwd);
         let command_arg_help_height =
             CommandPalette::argument_help_height(&self.prompt.input, cwd_path);
+        let paste_notice_height = u16::from(self.prompt.large_paste_notice().is_some());
         let input_height = 1u16;
         let status_height = if custom_lines.is_empty() {
             1u16
@@ -75,6 +78,7 @@ impl App {
             + suggestion_height
             + command_palette_height
             + command_arg_help_height
+            + paste_notice_height
             + input_height
             + status_height;
         let max_content_height = size.height.saturating_sub(bottom_height);
@@ -126,6 +130,8 @@ impl App {
                 self.is_streaming,
                 self.scroll_offset,
                 &self.vscroll,
+                self.selected_message,
+                self.selected_message_expanded,
             );
         }
 
@@ -134,6 +140,7 @@ impl App {
         let bottom_chunks = Layout::vertical([
             Constraint::Length(if self.is_streaming { 1 } else { 0 }),
             Constraint::Length(if has_suggestions { 1 } else { 0 }),
+            Constraint::Length(paste_notice_height),
             Constraint::Length(1),
             Constraint::Length(command_palette_height),
             Constraint::Length(command_arg_help_height),
@@ -150,26 +157,36 @@ impl App {
             self.render_suggestions(bottom_chunks[1], frame.buffer_mut());
         }
 
+        if paste_notice_height > 0 {
+            self.render_paste_notice(bottom_chunks[2], frame.buffer_mut());
+        }
+
         let argument_hint = CommandPalette::argument_hint(&self.prompt.input, cwd_path);
-        self.prompt.render_with_hint(
-            bottom_chunks[2],
+        let placeholder = self.prompt_placeholder();
+        let mode_indicator = self.prompt_mode_indicator();
+        self.prompt.render_with_context(
+            bottom_chunks[3],
             frame.buffer_mut(),
             &self.theme,
-            argument_hint.as_deref(),
+            PromptInputRenderContext {
+                hint: argument_hint.as_deref(),
+                placeholder: Some(placeholder),
+                mode_indicator: Some(mode_indicator),
+            },
         );
 
         self.command_palette
-            .render(bottom_chunks[3], frame.buffer_mut(), &self.theme);
+            .render(bottom_chunks[4], frame.buffer_mut(), &self.theme);
 
         CommandPalette::render_argument_help(
             &self.prompt.input,
             cwd_path,
-            bottom_chunks[4],
+            bottom_chunks[5],
             frame.buffer_mut(),
             &self.theme,
         );
 
-        self.render_status_bar(bottom_chunks[5], frame.buffer_mut(), &custom_lines);
+        self.render_status_bar(bottom_chunks[6], frame.buffer_mut(), &custom_lines);
 
         if let Some(ref surface) = self.command_surface {
             render_command_surface_overlay(surface, size, frame.buffer_mut(), &self.theme);
@@ -201,6 +218,43 @@ impl App {
                 ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
             ));
             buf.set_line(area.x, area.y, &line, area.width);
+        }
+    }
+
+    fn render_paste_notice(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        if area.height == 0 {
+            return;
+        }
+        if let Some(notice) = self.prompt.large_paste_notice() {
+            let line = Line::from(vec![
+                Span::styled(" paste ", self.theme.info),
+                Span::styled(notice.to_string(), self.theme.dim),
+            ]);
+            buf.set_line(area.x, area.y, &line, area.width);
+        }
+    }
+
+    fn prompt_placeholder(&self) -> &'static str {
+        if self.is_streaming {
+            "Waiting for response..."
+        } else if self.prompt.input.starts_with('/') || self.command_palette.active() {
+            "Type a command"
+        } else if self.vim.enabled {
+            "Press i to insert, / for commands, Ctrl+R for history"
+        } else {
+            "Message Claude Code, / for commands"
+        }
+    }
+
+    fn prompt_mode_indicator(&self) -> &'static str {
+        if self.is_streaming {
+            "BUSY"
+        } else if self.prompt.input.starts_with('/') || self.command_palette.active() {
+            "CMD"
+        } else if self.vim.enabled {
+            self.vim.mode.indicator()
+        } else {
+            "INS"
         }
     }
 
@@ -270,10 +324,17 @@ impl App {
             parts.push(format!("remote:{remote}"));
         }
         parts.push(mode.to_string());
-        parts.push(format!(
-            "Ctrl+C {}",
-            if self.is_streaming { "abort" } else { "quit" }
-        ));
+        let hints = if self.is_streaming {
+            render_shortcut_hints(&[ShortcutHint::new("Ctrl+C", "abort")])
+        } else {
+            render_shortcut_hints(&[
+                ShortcutHint::new("/", "commands"),
+                ShortcutHint::new("Ctrl+R", "history"),
+                ShortcutHint::new("Ctrl+O", "views"),
+                ShortcutHint::new("Ctrl+C", "quit"),
+            ])
+        };
+        parts.push(hints);
 
         // If the runner reported an error, surface a quiet marker so the
         // user knows to run `/statusline status` to see why.
@@ -340,6 +401,8 @@ impl App {
             self.is_streaming,
             self.transcript_state.scroll_offset,
             &self.vscroll,
+            self.selected_message,
+            self.selected_message_expanded,
         );
 
         if header_height > 0 {

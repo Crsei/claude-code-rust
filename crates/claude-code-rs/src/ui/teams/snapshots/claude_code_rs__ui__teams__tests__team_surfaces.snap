@@ -7,8 +7,10 @@ expression: rendered
 
 ## dialog
 Team: ui-port
-> reviewer       running    mode=plan tasks=2
-  role: Review implementation risks
-  builder        running    mode=ask tasks=0 hidden
-  role: Implement bounded changes
+Coordinator: team-lead state=running mode=ask backend=unknown
+Summary: 2 members (1 visible), 2 active, 0 idle, 0 error, 0 stopped, 2 assigned task(s)
+> reviewer       running    mode=plan  backend=unknown    tasks=2
+  role: Review implementation risks | model: inherit
+  builder        running    mode=ask   backend=unknown    tasks=0 hidden
+  role: Implement bounded changes | model: inherit
 k kill | s shutdown | h hide | m cycle mode

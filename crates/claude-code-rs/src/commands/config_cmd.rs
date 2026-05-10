@@ -411,13 +411,16 @@ fn handle_set(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
     let key = parts[0];
     let value = parts[1..].join(" ");
 
-    // 1. Mutate the in-memory AppState so subsequent reads in this session
-    //    see the new value.
-    let in_memory_msg = apply_set_in_memory(key, &value, ctx)?;
+    // Stage the in-memory update before touching disk so validation errors are
+    // still visible, but do not publish it until persistence succeeds. This
+    // keeps a present-but-invalid settings file from creating a transient
+    // empty/default session override.
+    let mut staged_state = ctx.app_state.clone();
+    let in_memory_msg = apply_set_in_memory(key, &value, &mut staged_state)?;
 
     // 2. Persist to the chosen scope's file (with backup).
     let persist_value = match key {
-        "model" => ctx.app_state.main_loop_model.clone(),
+        "model" => staged_state.main_loop_model.clone(),
         _ => value.clone(),
     };
     let file_msg = persist_set(scope, key, &persist_value, &ctx.cwd)?;
@@ -428,7 +431,8 @@ fn handle_set(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
         WriteScope::Project => SettingsSource::Project,
         WriteScope::Local => SettingsSource::Local,
     };
-    ctx.app_state.settings.sources.insert(key.to_string(), src);
+    staged_state.settings.sources.insert(key.to_string(), src);
+    ctx.app_state = staged_state;
 
     Ok(CommandResult::Output(format!(
         "{}\n{}",
@@ -437,23 +441,25 @@ fn handle_set(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
 }
 
 /// Apply a key=value to the live AppState. Returns a user-facing message.
-fn apply_set_in_memory(key: &str, value: &str, ctx: &mut CommandContext) -> Result<String> {
-    let s = &mut ctx.app_state.settings;
-    let parsed_bool = || value == "true" || value == "1";
-    let parsed_bool_opt = || Some(parsed_bool());
+fn apply_set_in_memory(
+    key: &str,
+    value: &str,
+    app_state: &mut crate::types::app_state::AppState,
+) -> Result<String> {
+    let s = &mut app_state.settings;
 
     match key {
         "model" => {
             let available = s.available_models.clone();
             let resolved = crate::commands::model::resolve_and_validate_model(value, &available)
                 .map_err(anyhow::Error::msg)?;
-            ctx.app_state.main_loop_model = resolved.clone();
+            app_state.main_loop_model = resolved.clone();
             s.model = Some(resolved.clone());
             Ok(format!("Model set to: {}", resolved))
         }
         "backend" => {
             let normalized = crate::engine::codex_exec::normalize_backend(Some(value));
-            ctx.app_state.main_loop_backend = normalized.clone();
+            app_state.main_loop_backend = normalized.clone();
             s.backend = Some(normalized.clone());
             Ok(format!("Backend set to: {}", normalized))
         }
@@ -462,17 +468,17 @@ fn apply_set_in_memory(key: &str, value: &str, ctx: &mut CommandContext) -> Resu
             Ok(format!("Theme set to: {}", value))
         }
         "verbose" => {
-            let v = parsed_bool();
-            ctx.app_state.verbose = v;
+            let v = parse_config_bool(key, value)?;
+            app_state.verbose = v;
             s.verbose = Some(v);
             Ok(format!("Verbose set to: {}", v))
         }
         "permissionMode" | "permission_mode" => {
+            let mode = crate::types::tool::PermissionMode::parse_configured(Some(value))?;
             s.permission_mode = Some(value.to_string());
             s.permissions.default_mode = Some(value.to_string());
-            let mode = crate::types::tool::PermissionMode::parse(value);
             crate::permissions::dangerous::set_permission_mode_with_auto_mode_safety(
-                &mut ctx.app_state.tool_permission_context,
+                &mut app_state.tool_permission_context,
                 mode,
             );
             Ok(format!("Permission mode set to: {}", value))
@@ -486,8 +492,9 @@ fn apply_set_in_memory(key: &str, value: &str, ctx: &mut CommandContext) -> Resu
             Ok(format!("Language set to: {}", value))
         }
         "voiceEnabled" | "voice_enabled" => {
-            s.voice_enabled = parsed_bool_opt();
-            Ok(format!("Voice enabled: {}", parsed_bool()))
+            let v = parse_config_bool(key, value)?;
+            s.voice_enabled = Some(v);
+            Ok(format!("Voice enabled: {}", v))
         }
         "editorMode" | "editor_mode" => {
             s.editor_mode = Some(value.to_string());
@@ -498,35 +505,40 @@ fn apply_set_in_memory(key: &str, value: &str, ctx: &mut CommandContext) -> Resu
             Ok(format!("View mode set to: {}", value))
         }
         "terminalProgressBarEnabled" | "terminal_progress_bar_enabled" => {
-            s.terminal_progress_bar_enabled = parsed_bool_opt();
-            Ok(format!("Terminal progress bar: {}", parsed_bool()))
+            let v = parse_config_bool(key, value)?;
+            s.terminal_progress_bar_enabled = Some(v);
+            Ok(format!("Terminal progress bar: {}", v))
         }
         "effortLevel" | "effort_level" => {
             s.effort_level = Some(value.to_string());
-            ctx.app_state.effort_value = Some(value.to_string());
+            app_state.effort_value = Some(value.to_string());
             Ok(format!("Effort level set to: {}", value))
         }
         "fastMode" | "fast_mode" => {
-            let v = parsed_bool();
+            let v = parse_config_bool(key, value)?;
             s.fast_mode = Some(v);
-            ctx.app_state.fast_mode = v;
+            app_state.fast_mode = v;
             Ok(format!("Fast mode set to: {}", v))
         }
         "fastModePerSessionOptIn" | "fast_mode_per_session_opt_in" => {
-            s.fast_mode_per_session_opt_in = parsed_bool_opt();
-            Ok(format!("Fast mode per-session opt-in: {}", parsed_bool()))
+            let v = parse_config_bool(key, value)?;
+            s.fast_mode_per_session_opt_in = Some(v);
+            Ok(format!("Fast mode per-session opt-in: {}", v))
         }
         "teammateMode" | "teammate_mode" => {
-            s.teammate_mode = parsed_bool_opt();
-            Ok(format!("Teammate mode: {}", parsed_bool()))
+            let v = parse_config_bool(key, value)?;
+            s.teammate_mode = Some(v);
+            Ok(format!("Teammate mode: {}", v))
         }
         "claudeInChromeDefaultEnabled" | "claude_in_chrome_default_enabled" => {
-            s.claude_in_chrome_default_enabled = parsed_bool_opt();
-            Ok(format!("Claude-in-Chrome default: {}", parsed_bool()))
+            let v = parse_config_bool(key, value)?;
+            s.claude_in_chrome_default_enabled = Some(v);
+            Ok(format!("Claude-in-Chrome default: {}", v))
         }
         "autoMemoryEnabled" | "auto_memory_enabled" => {
-            s.auto_memory_enabled = parsed_bool_opt();
-            Ok(format!("Auto-memory enabled: {}", parsed_bool()))
+            let v = parse_config_bool(key, value)?;
+            s.auto_memory_enabled = Some(v);
+            Ok(format!("Auto-memory enabled: {}", v))
         }
         _ => anyhow::bail!(
             "Unknown config key: '{}'. Run `/config show` to see available keys.",
@@ -547,7 +559,7 @@ fn persist_set(scope: WriteScope, key: &str, value: &str, cwd: &Path) -> Result<
     };
 
     // 2. Patch the key in-place.
-    apply_set_to_raw(&mut raw, key, value);
+    apply_set_to_raw(&mut raw, key, value)?;
 
     // 3. Write back via the scope-specific helper (handles backups + dir
     //    creation + atomic rename).
@@ -571,10 +583,7 @@ fn scope_path(scope: WriteScope, cwd: &Path) -> std::path::PathBuf {
     }
 }
 
-fn apply_set_to_raw(raw: &mut RawSettings, key: &str, value: &str) {
-    let bool_val = || value == "true" || value == "1";
-    let bool_opt = || Some(bool_val());
-
+fn apply_set_to_raw(raw: &mut RawSettings, key: &str, value: &str) -> Result<()> {
     match key {
         "model" => raw.model = Some(value.into()),
         "backend" => {
@@ -582,8 +591,9 @@ fn apply_set_to_raw(raw: &mut RawSettings, key: &str, value: &str) {
                 Some(crate::engine::codex_exec::normalize_backend(Some(value)).to_string());
         }
         "theme" => raw.theme = Some(value.into()),
-        "verbose" => raw.verbose = bool_opt(),
+        "verbose" => raw.verbose = Some(parse_config_bool(key, value)?),
         "permissionMode" | "permission_mode" => {
+            crate::types::tool::PermissionMode::parse_configured(Some(value))?;
             raw.permission_mode = Some(value.into());
             let mut perms = raw.permissions.take().unwrap_or_default();
             perms.default_mode = Some(value.into());
@@ -591,28 +601,47 @@ fn apply_set_to_raw(raw: &mut RawSettings, key: &str, value: &str) {
         }
         "outputStyle" | "output_style" => raw.output_style = Some(value.into()),
         "language" => raw.language = Some(value.into()),
-        "voiceEnabled" | "voice_enabled" => raw.voice_enabled = bool_opt(),
+        "voiceEnabled" | "voice_enabled" => {
+            raw.voice_enabled = Some(parse_config_bool(key, value)?)
+        }
         "editorMode" | "editor_mode" => raw.editor_mode = Some(value.into()),
         "viewMode" | "view_mode" => raw.view_mode = Some(value.into()),
         "terminalProgressBarEnabled" | "terminal_progress_bar_enabled" => {
-            raw.terminal_progress_bar_enabled = bool_opt();
+            raw.terminal_progress_bar_enabled = Some(parse_config_bool(key, value)?);
         }
         "effortLevel" | "effort_level" => raw.effort_level = Some(value.into()),
-        "fastMode" | "fast_mode" => raw.fast_mode = bool_opt(),
+        "fastMode" | "fast_mode" => raw.fast_mode = Some(parse_config_bool(key, value)?),
         "fastModePerSessionOptIn" | "fast_mode_per_session_opt_in" => {
-            raw.fast_mode_per_session_opt_in = bool_opt();
+            raw.fast_mode_per_session_opt_in = Some(parse_config_bool(key, value)?);
         }
-        "teammateMode" | "teammate_mode" => raw.teammate_mode = bool_opt(),
+        "teammateMode" | "teammate_mode" => {
+            raw.teammate_mode = Some(parse_config_bool(key, value)?)
+        }
         "claudeInChromeDefaultEnabled" | "claude_in_chrome_default_enabled" => {
-            raw.claude_in_chrome_default_enabled = bool_opt();
+            raw.claude_in_chrome_default_enabled = Some(parse_config_bool(key, value)?);
         }
-        "autoMemoryEnabled" | "auto_memory_enabled" => raw.auto_memory_enabled = bool_opt(),
+        "autoMemoryEnabled" | "auto_memory_enabled" => {
+            raw.auto_memory_enabled = Some(parse_config_bool(key, value)?);
+        }
         // Unknown keys get stuffed in `extra` so users can experiment with
         // future fields without losing data.
         _ => {
             raw.extra
                 .insert(key.to_string(), serde_json::Value::String(value.into()));
         }
+    }
+    Ok(())
+}
+
+fn parse_config_bool(key: &str, value: &str) -> Result<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" => Ok(true),
+        "false" | "0" => Ok(false),
+        _ => anyhow::bail!(
+            "Invalid boolean for {}: '{}'. Use true/false or 1/0.",
+            key,
+            value
+        ),
     }
 }
 
@@ -673,6 +702,7 @@ mod tests {
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
     use std::path::PathBuf;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
 
     fn test_ctx() -> CommandContext {
         test_ctx_with_cwd(PathBuf::from("/test/project"))
@@ -759,6 +789,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_config_set_invalid_bool_is_visible_and_does_not_mutate() {
+        let handler = ConfigHandler;
+        let mut ctx = test_ctx();
+
+        let result = handler
+            .execute("set voiceEnabled definitely", &mut ctx)
+            .await;
+
+        match result {
+            Ok(_) => panic!("invalid boolean should fail visibly"),
+            Err(err) => assert!(err.to_string().contains("Invalid boolean")),
+        }
+        assert_eq!(ctx.app_state.settings.voice_enabled, None);
+    }
+
+    #[tokio::test]
+    async fn test_config_set_invalid_existing_file_does_not_publish_staged_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let project_root = dir.path().join("workspace");
+        let nested = project_root.join("src");
+        let project_dir = project_root.join(".cc-rust");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::create_dir_all(&project_dir).unwrap();
+        std::fs::write(project_dir.join("settings.json"), "{ invalid json").unwrap();
+
+        let handler = ConfigHandler;
+        let mut ctx = test_ctx_with_cwd(nested);
+        let result = handler.execute("set theme light --project", &mut ctx).await;
+
+        match result {
+            Ok(_) => panic!("invalid existing settings should fail visibly"),
+            Err(err) => assert!(!err.to_string().is_empty()),
+        }
+        assert_eq!(ctx.app_state.settings.theme, None);
+        assert!(!ctx.app_state.settings.sources.contains_key("theme"));
+    }
+
+    #[tokio::test]
     async fn test_config_set_project_from_subdir_preserves_existing_settings() {
         let dir = tempfile::tempdir().unwrap();
         let project_root = dir.path().join("workspace");
@@ -839,13 +907,23 @@ mod tests {
     struct EnvGuard {
         key: &'static str,
         previous: Option<String>,
+        _lock: MutexGuard<'static, ()>,
     }
 
     impl EnvGuard {
         fn set(key: &'static str, value: &str) -> Self {
+            static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+            let lock = ENV_LOCK
+                .get_or_init(|| Mutex::new(()))
+                .lock()
+                .expect("env test lock poisoned");
             let previous = std::env::var(key).ok();
             std::env::set_var(key, value);
-            Self { key, previous }
+            Self {
+                key,
+                previous,
+                _lock: lock,
+            }
         }
     }
 

@@ -22,7 +22,7 @@ impl CommandHandler for ResumeHandler {
     async fn execute(&self, args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
         let target = args.trim();
 
-        if target.is_empty() {
+        if target.is_empty() || target.eq_ignore_ascii_case("recent") {
             // Try to resume the most recent session for the current directory.
             return handle_resume_latest(ctx);
         }
@@ -190,6 +190,22 @@ mod tests {
                 assert!(text.contains("not found"));
             }
             _ => panic!("Expected Output result"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_resume_recent_alias_uses_latest_flow() {
+        let handler = ResumeHandler;
+        let mut ctx = test_ctx();
+        let result = handler.execute("recent", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => {
+                assert!(
+                    text.contains("No previous session found"),
+                    "recent should use latest-session flow, got: {text}"
+                );
+            }
+            _ => panic!("expected Output"),
         }
     }
 

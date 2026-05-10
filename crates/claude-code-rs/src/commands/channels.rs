@@ -22,15 +22,24 @@ impl CommandHandler for ChannelsHandler {
         }
 
         match args.trim() {
-            "" | "list" => Ok(CommandResult::Output("No channels connected.".into())),
-            "status" => Ok(CommandResult::Output(
-                "Channel status: no active connections.".into(),
-            )),
+            "" | "list" | "status" => Ok(CommandResult::Output(render_channels().await)),
             _ => Ok(CommandResult::Output(
                 "Usage: /channels [list|status]".into(),
             )),
         }
     }
+}
+
+async fn render_channels() -> String {
+    let mut lines = vec![
+        "Channels".to_string(),
+        "Inbound channel sessions are deferred; outbound remote adapters are the real channel surface currently wired.".to_string(),
+        String::new(),
+        crate::commands::remote_cmd::render_adapters().await,
+    ];
+    lines.push(String::new());
+    lines.push("Use `/remote adapters` for the same gateway-backed adapter status.".to_string());
+    lines.join("\n")
 }
 
 // ---------------------------------------------------------------------------

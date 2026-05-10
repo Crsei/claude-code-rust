@@ -108,8 +108,8 @@ fn route_renders_prompt_and_extracts_github_delivery_id() {
 
 #[test]
 fn deliver_only_route_does_not_create_run_request() {
-    let route =
-        WebhookRouteConfig::github("github", Some("route-secret".to_string())).with_deliver_only(true);
+    let route = WebhookRouteConfig::github("github", Some("route-secret".to_string()))
+        .with_deliver_only(true);
     let body = br#"{"action":"opened","repository":{"full_name":"acme/demo"}}"#;
     let mut headers = HeaderMap::new();
     headers.insert(

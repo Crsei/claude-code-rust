@@ -26,7 +26,7 @@ impl CommandHandler for IdeHandler {
         let rest: Vec<&str> = parts.collect();
 
         match sub {
-            None => Ok(CommandResult::Output(render_help())),
+            None => Ok(CommandResult::Output(render_picker())),
             Some("detect") => Ok(CommandResult::Output(render_list(
                 &ide::detect_ides(),
                 "IDE detection results",
@@ -35,6 +35,7 @@ impl CommandHandler for IdeHandler {
             Some("select") => handle_select(&rest),
             Some("clear") => handle_clear(),
             Some("reconnect") => handle_reconnect(),
+            Some("help" | "?") => Ok(CommandResult::Output(render_help())),
             Some(other) => Ok(CommandResult::Output(format!(
                 "Unknown ide subcommand: '{}'\n\n{}",
                 other,
@@ -111,6 +112,12 @@ fn render_help() -> String {
         .to_string()
 }
 
+fn render_picker() -> String {
+    let mut text = render_status();
+    text.push_str("\n\nUse `/ide select <id>` to pick an IDE, `/ide clear` to reset, or `/ide help` for details.");
+    text
+}
+
 fn render_status() -> String {
     let ides = ide::detect_ides();
     let selected = ide::selected_ide();
@@ -135,13 +142,18 @@ fn render_list(ides: &[IdeInfo], heading: &str) -> String {
         let installed = if info.installed { "yes" } else { "no " };
         let running = if info.running { "yes" } else { "no " };
         let marker = if info.selected { "*" } else { " " };
+        let connection = info.connection_state.as_deref().unwrap_or("disconnected");
         lines.push(format!(
-            "  {} {:<9} {:<24} installed={} running={}",
-            marker, info.id, info.name, installed, running
+            "  {} {:<9} {:<24} installed={} running={} connection={}",
+            marker, info.id, info.name, installed, running, connection
         ));
+        if let Some(error) = &info.error {
+            lines.push(format!("      error={error}"));
+        }
     }
     lines.push(String::new());
     lines.push("  * = currently selected".to_string());
+    lines.push("  Select with: /ide select <id>".to_string());
     lines.join("\n")
 }
 
@@ -198,8 +210,8 @@ mod tests {
         let result = handler.execute("", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(text) => {
-                assert!(text.contains("IDE integration"));
-                assert!(text.contains("/ide detect"));
+                assert!(text.contains("IDE status"));
+                assert!(text.contains("/ide select"));
                 assert!(text.contains("/ide select"));
             }
             _ => panic!("expected Output"),

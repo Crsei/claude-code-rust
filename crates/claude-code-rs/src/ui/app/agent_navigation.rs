@@ -100,6 +100,36 @@ impl AgentNavigationState {
             .get(current_thread_id)
             .map(AgentThreadEntry::label)
     }
+
+    pub fn render_agent_tree(&self, current_thread_id: &str) -> String {
+        let ordered = self.ordered_threads();
+        if ordered.is_empty() {
+            return "Agents: none".to_string();
+        }
+
+        let mut lines = vec![format!("Agents ({})", ordered.len())];
+        for entry in ordered {
+            let current = if entry.thread_id == current_thread_id {
+                ">"
+            } else {
+                " "
+            };
+            let state = if entry.is_closed { "closed" } else { "active" };
+            let role = entry.agent_role.as_deref().unwrap_or("default");
+            lines.push(format!(
+                "{current} {:<18} {:<7} role={} thread={}",
+                entry.label(),
+                state,
+                role,
+                short_thread_id(&entry.thread_id)
+            ));
+        }
+        lines.join("\n")
+    }
+}
+
+fn short_thread_id(thread_id: &str) -> &str {
+    thread_id.get(..8).unwrap_or(thread_id)
 }
 
 #[cfg(test)]
@@ -125,5 +155,30 @@ mod tests {
             state.adjacent_thread_id("a", AgentNavigationDirection::Next),
             Some("b".to_string())
         );
+    }
+
+    #[test]
+    fn renders_agent_tree_statuses() {
+        let mut state = AgentNavigationState::default();
+        state.upsert(AgentThreadEntry {
+            thread_id: "primary-thread".to_string(),
+            agent_nickname: None,
+            agent_role: Some("leader".to_string()),
+            is_primary: true,
+            is_closed: false,
+        });
+        state.upsert(AgentThreadEntry {
+            thread_id: "worker-thread".to_string(),
+            agent_nickname: Some("builder".to_string()),
+            agent_role: Some("executor".to_string()),
+            is_primary: false,
+            is_closed: true,
+        });
+
+        let rendered = state.render_agent_tree("worker-thread");
+        assert!(rendered.contains("Agents (2)"));
+        assert!(rendered.contains("Primary"));
+        assert!(rendered.contains("> builder"));
+        assert!(rendered.contains("closed"));
     }
 }

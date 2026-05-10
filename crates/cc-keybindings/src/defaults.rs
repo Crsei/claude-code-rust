@@ -125,6 +125,11 @@ pub const DEFAULTS: &[Default] = &[
         chord: "ctrl+v",
         action: "chat:imagePaste",
     },
+    Default {
+        context: Context::Chat,
+        chord: "shift+up",
+        action: "chat:messageActions",
+    },
     // Voice dictation (issue #13). Hold Ctrl+Space to capture audio;
     // release to transcribe. Ctrl+Space is chosen over bare Space so the
     // space bar still types a space. The user can rebind via
@@ -380,6 +385,72 @@ pub const DEFAULTS: &[Default] = &[
         chord: "enter",
         action: "messageSelector:select",
     },
+    // -- Message actions ------------------------------------------------
+    Default {
+        context: Context::MessageActions,
+        chord: "up",
+        action: "messageActions:prev",
+    },
+    Default {
+        context: Context::MessageActions,
+        chord: "down",
+        action: "messageActions:next",
+    },
+    Default {
+        context: Context::MessageActions,
+        chord: "k",
+        action: "messageActions:prev",
+    },
+    Default {
+        context: Context::MessageActions,
+        chord: "j",
+        action: "messageActions:next",
+    },
+    Default {
+        context: Context::MessageActions,
+        chord: "meta+up",
+        action: "messageActions:top",
+    },
+    Default {
+        context: Context::MessageActions,
+        chord: "meta+down",
+        action: "messageActions:bottom",
+    },
+    Default {
+        context: Context::MessageActions,
+        chord: "shift+up",
+        action: "messageActions:prevUser",
+    },
+    Default {
+        context: Context::MessageActions,
+        chord: "shift+down",
+        action: "messageActions:nextUser",
+    },
+    Default {
+        context: Context::MessageActions,
+        chord: "escape",
+        action: "messageActions:escape",
+    },
+    Default {
+        context: Context::MessageActions,
+        chord: "ctrl+c",
+        action: "messageActions:ctrlc",
+    },
+    Default {
+        context: Context::MessageActions,
+        chord: "enter",
+        action: "messageActions:enter",
+    },
+    Default {
+        context: Context::MessageActions,
+        chord: "c",
+        action: "messageActions:c",
+    },
+    Default {
+        context: Context::MessageActions,
+        chord: "p",
+        action: "messageActions:p",
+    },
     // -- Diff dialog ----------------------------------------------------
     Default {
         context: Context::DiffDialog,
@@ -598,6 +669,7 @@ mod tests {
             if d.chord == "ctrl+c"
                 && d.context != Context::Global
                 && d.context != Context::HistorySearch
+                && d.context != Context::MessageActions
             {
                 panic!("ctrl+c bound outside Global/HistorySearch: {:?}", d.context);
             }

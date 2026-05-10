@@ -56,18 +56,30 @@ pub fn verify_slack_signature(
 }
 
 pub async fn webhook_github(headers: HeaderMap, body: Bytes) -> Json<Value> {
-    handle_deliver_only_webhook(declarative_route("github").with_deliver_only(true), headers, body)
-        .await
+    handle_deliver_only_webhook(
+        declarative_route("github").with_deliver_only(true),
+        headers,
+        body,
+    )
+    .await
 }
 
 pub async fn webhook_slack(headers: HeaderMap, body: Bytes) -> Json<Value> {
-    handle_deliver_only_webhook(declarative_route("slack").with_deliver_only(true), headers, body)
-        .await
+    handle_deliver_only_webhook(
+        declarative_route("slack").with_deliver_only(true),
+        headers,
+        body,
+    )
+    .await
 }
 
 pub async fn webhook_generic(headers: HeaderMap, body: Bytes) -> Json<Value> {
-    handle_deliver_only_webhook(declarative_route("generic").with_deliver_only(true), headers, body)
-        .await
+    handle_deliver_only_webhook(
+        declarative_route("generic").with_deliver_only(true),
+        headers,
+        body,
+    )
+    .await
 }
 
 pub async fn webhook_declarative(

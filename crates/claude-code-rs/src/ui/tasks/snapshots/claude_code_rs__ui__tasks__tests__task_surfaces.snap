@@ -6,7 +6,7 @@ expression: rendered
 > cargo test         shell     running    12.4s [██████    ] running tests
 
 ## status
-[3 tasks, 1 running, 1 failed] Enter to view
+[3 tasks, 0 pending, 1 running, 1 succeeded, 1 failed, 0 canceled] Enter to view
 
 ## dialog
 Background tasks (3)
@@ -19,8 +19,11 @@ Enter details | k/s stop | d delete tool | r refresh | Esc close
 $ cargo test
 state: running
 elapsed: 12.4s
-progress: [████████████        ]
-running tests
+progress: [████████████        ] 3/5 steps (60%)
+summary: running tests
+recent output (2 retained):
+  running 12 tests
+  test ui::tasks ... ok
 
 ## shell-detail
 cargo test [shell] running 12.4s

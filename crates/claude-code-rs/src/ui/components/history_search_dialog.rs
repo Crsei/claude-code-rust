@@ -2,6 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use unicode_width::UnicodeWidthChar;
 
 use crate::ui::fuzzy_match::fuzzy_match;
+use crate::ui::keyboard_shortcut::{render_shortcut_hints, ShortcutHint};
 use crate::ui::search_box::SearchBox;
 
 const AGE_WIDTH: usize = 8;
@@ -149,7 +150,7 @@ impl HistorySearchDialog {
         let empty_message = self.empty_message();
         if let Some(message) = empty_message {
             lines.push(message.to_string());
-            lines.push("Enter use | Esc close | Ctrl+R next".to_string());
+            lines.push(history_search_hints());
             return lines
                 .into_iter()
                 .take(height)
@@ -162,7 +163,7 @@ impl HistorySearchDialog {
         } else {
             lines.extend(self.render_narrow_rows(width, height, &visible));
         }
-        lines.push("Enter use | Esc close | Ctrl+R next".to_string());
+        lines.push(history_search_hints());
         lines
             .into_iter()
             .take(height)
@@ -397,6 +398,14 @@ fn display_width(text: &str) -> usize {
     text.chars()
         .map(|ch| UnicodeWidthChar::width(ch).unwrap_or(0))
         .sum()
+}
+
+fn history_search_hints() -> String {
+    render_shortcut_hints(&[
+        ShortcutHint::new("Enter", "use"),
+        ShortcutHint::new("Esc", "close"),
+        ShortcutHint::new("Ctrl+R", "next"),
+    ])
 }
 
 #[cfg(test)]

@@ -276,6 +276,7 @@ fn render_team_detail(task: &TeammateTaskSnapshot) -> String {
     if task.awaiting_plan_approval {
         out.push_str("  Plan:     awaiting approval\n");
     }
+    out.push_str(&format!("  Mode:     {}\n", task.permission_mode.as_str()));
     if let Some(model) = &task.model {
         out.push_str(&format!("  Model:    {}\n", model));
     }

@@ -73,3 +73,10 @@
 | REMOTE-003 | Medium | Open | Webhook configuration | Declarative webhook routes are code-backed but not yet backed by a full admin CRUD surface. | Built-in route ids resolve secrets from environment variables and use generic defaults for unknown route ids. A durable route-management UX/API is still needed before broad operator use. |
 | REMOTE-004 | Medium | Open | Release verification | Session 16 performed docs-gate verification, not full remote-control code verification. | The next release step must run the Session 17 command set before claiming the gateway implementation is fully green. |
 | REMOTE-005 | Low | Open | Public exposure | Public hosted gateway and multi-tenant SaaS are non-goals for this release. | Non-loopback use requires explicit remote-token policy and origin controls; production hosting design remains out of scope. |
+
+## 9. Ratatui UI parity OMX verification residuals (2026-05-10)
+
+| ID | Severity | Status | Scope | Summary | Detail |
+| --- | --- | --- | --- | --- | --- |
+| TEST-002 | Medium | Open | `cargo test -p claude-code-rs` | Package-wide test run is not green after the ratatui UI parity closeout. | Final closeout ran `cargo test -p claude-code-rs -- --nocapture`: 1960 passed and 10 failed before snapshot acceptance/focused reruns. Initial failures were `commands::branch::tests::test_branch_forks_current_conversation`, `commands::ide_cmd::tests::select_then_clear_round_trip`, `commands::tasks_cmd::{delete_removes_tool_task,show_prints_tool_detail_fields,stop_marks_tool_task_cancelled}`, `engine::system_prompt::tests::test_auto_memory_context_respects_toggle`, and UI snapshot tests. Intentional UI snapshots were accepted and focused UI filters pass; individual task-command tests pass when run alone, but the broad `tasks` filter showed cross-test-state failures and the package-wide non-UI failures need a separate fix. |
+| UI-005 | Low | Open | line endings | `git diff --check` passes but reports CRLF-to-LF normalization warnings for several touched files. | The warnings are not whitespace errors, but commit packaging should expect Git normalization on touched Rust/docs files. |

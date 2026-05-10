@@ -6,6 +6,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 
+use crate::ui::keyboard_shortcut::{render_shortcut_hints, ShortcutHint};
 use crate::ui::selection_surface::SelectionSurface;
 use crate::ui::theme::Theme;
 
@@ -110,14 +111,11 @@ impl CommandPalette {
                 if has_edit_target_picker(selected) {
                     lines.push(Line::from(vec![
                         Span::styled("Hint: ", theme.dim),
-                        Span::styled("Press Ctrl+E to choose a target in-terminal.", theme.info),
+                        Span::styled(command_target_hint(), theme.info),
                     ]));
                 }
             } else {
-                lines.push(Line::from(Span::styled(
-                    "Enter selects the command; type arguments after the inserted space.",
-                    theme.dim,
-                )));
+                lines.push(Line::from(Span::styled(command_palette_hint(), theme.dim)));
             }
         }
 
@@ -125,7 +123,7 @@ impl CommandPalette {
             lines.push(Line::default());
             lines.push(Line::from(vec![
                 Span::styled("Target picker: ", theme.dim),
-                Span::styled("Ctrl+E closes the picker", theme.dim),
+                Span::styled(command_target_picker_hint(), theme.dim),
             ]));
             lines.extend(render_picker_lines(picker, MAX_EDIT_TARGET_ROWS, theme));
         }
@@ -201,7 +199,7 @@ impl CommandPalette {
             if has_edit_target_picker(&item) {
                 let hint = Line::from(vec![
                     Span::styled("Hint: ", theme.dim),
-                    Span::styled("Press Ctrl+E to pick a target.", theme.info),
+                    Span::styled(command_target_hint(), theme.info),
                 ]);
                 let row_idx = 3 + item.edit_targets.len().min(MAX_EDIT_ROWS);
                 if (row_idx as u16) < inner.height {
@@ -324,4 +322,23 @@ fn render_picker_lines(
             Line::from(Span::styled(text, style))
         })
         .collect()
+}
+
+fn command_palette_hint() -> String {
+    render_shortcut_hints(&[
+        ShortcutHint::new("Enter", "select"),
+        ShortcutHint::new("Esc", "close"),
+        ShortcutHint::new("type", "arguments after space"),
+    ])
+}
+
+fn command_target_hint() -> String {
+    render_shortcut_hints(&[ShortcutHint::new("Ctrl+E", "pick target")])
+}
+
+fn command_target_picker_hint() -> String {
+    render_shortcut_hints(&[
+        ShortcutHint::new("Enter", "insert"),
+        ShortcutHint::new("Ctrl+E", "close"),
+    ])
 }

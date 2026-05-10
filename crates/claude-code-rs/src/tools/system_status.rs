@@ -19,7 +19,8 @@ impl Tool for SystemStatusTool {
     }
 
     async fn description(&self, _input: &Value) -> String {
-        "Query the current status of subsystems (LSP, MCP, plugins, skills).".to_string()
+        "Query the current status of subsystems (LSP, MCP, plugins, skills, IDE, Chrome)."
+            .to_string()
     }
 
     fn input_json_schema(&self) -> Value {
@@ -28,7 +29,7 @@ impl Tool for SystemStatusTool {
             "properties": {
                 "subsystem": {
                     "type": "string",
-                    "enum": ["lsp", "mcp", "plugins", "skills", "agents", "teams", "all"],
+                    "enum": ["lsp", "mcp", "plugins", "skills", "agents", "teams", "ide", "chrome", "all"],
                     "description": "Which subsystem to query. Defaults to 'all'."
                 }
             }
@@ -66,7 +67,7 @@ impl Tool for SystemStatusTool {
     }
 
     async fn prompt(&self) -> String {
-        "Use SystemStatus to check the current status of LSP servers, MCP servers, plugins, and skills. \
+        "Use SystemStatus to check the current status of LSP servers, MCP servers, plugins, skills, IDE, and Chrome. \
          Query a specific subsystem with the `subsystem` parameter, or use \"all\" for a full overview."
             .to_string()
     }
@@ -88,9 +89,10 @@ fn format_status_output(subsystem: &str) -> String {
         } else {
             for s in &servers {
                 section.push_str(&format!(
-                    "- {}: {} (extensions: {})\n",
+                    "- {}: {} (open_files={}, extensions: {})\n",
                     s.language_id,
                     s.state,
+                    s.open_files_count,
                     s.extensions.join(", ")
                 ));
             }
@@ -194,6 +196,42 @@ fn format_status_output(subsystem: &str) -> String {
         parts.push(section);
     }
 
+    if subsystem == "all" || subsystem == "ide" {
+        let ides = subsystem_handlers::build_ide_info_list();
+        let mut section = String::from("## IDE Integrations\n");
+        if ides.is_empty() {
+            section.push_str("No IDE integrations detected.\n");
+        } else {
+            for ide in &ides {
+                section.push_str(&format!(
+                    "- {}: installed={} running={} selected={} connection={}\n",
+                    ide.id,
+                    ide.installed,
+                    ide.running,
+                    ide.selected,
+                    ide.connection_state.as_deref().unwrap_or("disconnected")
+                ));
+            }
+        }
+        parts.push(section);
+    }
+
+    if subsystem == "all" || subsystem == "chrome" {
+        let snap = crate::browser::state::snapshot();
+        let mut section = String::from("## Chrome Integration\n");
+        section.push_str(&format!("Connection: {}\n", snap.connection.label()));
+        section.push_str(&format!(
+            "Extension detected: {}\n",
+            snap.extension_installed
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "not checked".to_string())
+        ));
+        if let Some(error) = snap.last_error.as_deref() {
+            section.push_str(&format!("Last error: {error}\n"));
+        }
+        parts.push(section);
+    }
+
     parts.join("\n")
 }
 
@@ -231,6 +269,8 @@ mod tests {
         assert!(output.contains("## MCP Servers"));
         assert!(output.contains("## Plugins"));
         assert!(output.contains("## Skills"));
+        assert!(output.contains("## IDE Integrations"));
+        assert!(output.contains("## Chrome Integration"));
     }
 
     #[test]

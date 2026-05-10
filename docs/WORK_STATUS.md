@@ -55,3 +55,7 @@ cc-rust 已不再按历史 "Lite" 边界维护。触及上游能力时，默认�
 - 要实现：补到对应 plan / implementation task。
 - 要延期：保留在 [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md) TODO 区。
 - 要裁剪：写入 [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md) "Intentional 裁剪"，说明理由、决策者、日期和复审触发条件。
+
+## Ratatui UI parity OMX final verification (2026-05-10)
+
+The ratatui UI parity OMX batch series has been closed out at documentation level. Available batch summaries/last messages through the final task were reviewed, intentional UI snapshot updates were accepted, and the feasible targeted UI verification set was run. The current state is suitable for runner-owned commit packaging with one caveat: package-wide `cargo test -p claude-code-rs` still has unrelated or cross-test-state failures tracked as TEST-002 in `KNOWN_ISSUES.md`.

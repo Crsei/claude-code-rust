@@ -2,6 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent
 
 use crate::ui::command_surface::CommandSurfaceOutcome;
 use crate::ui::history_search_dialog::{HistorySearchDialog, HistorySearchDialogEvent};
+use crate::ui::messages::{message_copy_text, message_primary_reference};
 use crate::ui::transcript::ViewMode;
 use crate::ui::vim::VimAction;
 
@@ -34,6 +35,15 @@ impl App {
 
         if self.command_surface.is_some() {
             return self.handle_command_surface_key(key);
+        }
+
+        if self.selected_message.is_some() {
+            if let Some(action) = self.resolve_bound_action(&key) {
+                if let Some(result) = self.dispatch_bound_action(&action) {
+                    return result;
+                }
+            }
+            return AppAction::None;
         }
 
         if self.command_palette.active() {
@@ -292,6 +302,18 @@ impl App {
         }
     }
 
+    pub fn handle_paste_event(&mut self, text: String) -> AppAction {
+        if self.view_mode != ViewMode::Prompt || !self.prompt.is_active {
+            return AppAction::None;
+        }
+        self.prompt.paste_text(&text);
+        self.history_index = None;
+        self.saved_input.clear();
+        self.sync_command_palette();
+        self.dirty = true;
+        AppAction::None
+    }
+
     pub(super) fn scroll_up(&mut self, lines: usize) {
         self.scroll_offset = self.scroll_offset.saturating_sub(lines);
         self.dirty = true;
@@ -360,6 +382,12 @@ impl App {
     }
 
     pub(super) fn active_keybinding_contexts(&self) -> [crate::keybindings::context::Context; 2] {
+        if self.selected_message.is_some() {
+            return [
+                crate::keybindings::context::Context::MessageActions,
+                crate::keybindings::context::Context::Global,
+            ];
+        }
         if self.view_mode.is_transcript_like() {
             [
                 crate::keybindings::context::Context::Transcript,
@@ -479,6 +507,75 @@ impl App {
                     self.take_prompt_submission()
                         .map_or(AppAction::None, AppAction::Submit),
                 );
+            }
+            "chat:messageActions" => {
+                self.enter_message_actions();
+                return Some(AppAction::None);
+            }
+            "messageActions:prev" => {
+                self.select_previous_message(false);
+                return Some(AppAction::None);
+            }
+            "messageActions:next" => {
+                self.select_next_message(false);
+                return Some(AppAction::None);
+            }
+            "messageActions:prevUser" => {
+                self.select_previous_message(true);
+                return Some(AppAction::None);
+            }
+            "messageActions:nextUser" => {
+                self.select_next_message(true);
+                return Some(AppAction::None);
+            }
+            "messageActions:top" => {
+                self.selected_message = self.first_selectable_message();
+                self.selected_message_expanded = false;
+                self.scroll_selected_message_into_view();
+                return Some(AppAction::None);
+            }
+            "messageActions:bottom" => {
+                self.selected_message = self.last_selectable_message();
+                self.selected_message_expanded = false;
+                self.scroll_selected_message_into_view();
+                return Some(AppAction::None);
+            }
+            "messageActions:escape" => {
+                if self.selected_message_expanded {
+                    self.selected_message_expanded = false;
+                } else {
+                    self.selected_message = None;
+                }
+                self.dirty = true;
+                return Some(AppAction::None);
+            }
+            "messageActions:ctrlc" => {
+                self.selected_message = None;
+                self.selected_message_expanded = false;
+                self.dirty = true;
+                return Some(AppAction::None);
+            }
+            "messageActions:enter" => {
+                self.selected_message_expanded = !self.selected_message_expanded;
+                self.dirty = true;
+                return Some(AppAction::None);
+            }
+            "messageActions:c" => {
+                if let Some(message) = self.selected_message.and_then(|idx| self.messages.get(idx))
+                {
+                    return Some(AppAction::CopyMessage(message_copy_text(message)));
+                }
+                return Some(AppAction::None);
+            }
+            "messageActions:p" => {
+                if let Some(text) = self
+                    .selected_message
+                    .and_then(|idx| self.messages.get(idx))
+                    .and_then(message_primary_reference)
+                {
+                    return Some(AppAction::CopyMessage(text));
+                }
+                return Some(AppAction::None);
             }
             "voice:pushToTalk" => {
                 if self.is_voice_ready() {
@@ -612,5 +709,85 @@ impl App {
                     .map_or(AppAction::None, AppAction::Submit),
             ),
         }
+    }
+
+    fn enter_message_actions(&mut self) {
+        self.selected_message = self.last_selectable_message();
+        self.selected_message_expanded = false;
+        self.scroll_selected_message_into_view();
+        self.dirty = true;
+    }
+
+    fn first_selectable_message(&self) -> Option<usize> {
+        self.messages
+            .iter()
+            .enumerate()
+            .find_map(|(idx, message)| is_selectable_message(message).then_some(idx))
+    }
+
+    fn last_selectable_message(&self) -> Option<usize> {
+        self.messages
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(idx, message)| is_selectable_message(message).then_some(idx))
+    }
+
+    fn select_previous_message(&mut self, user_only: bool) {
+        let start = self
+            .selected_message
+            .unwrap_or_else(|| self.messages.len().saturating_sub(1));
+        self.selected_message = (0..start)
+            .rev()
+            .find(|idx| selectable_by_mode(&self.messages[*idx], user_only))
+            .or(self.selected_message)
+            .or_else(|| self.last_selectable_message());
+        self.selected_message_expanded = false;
+        self.scroll_selected_message_into_view();
+        self.dirty = true;
+    }
+
+    fn select_next_message(&mut self, user_only: bool) {
+        let start = self.selected_message.map_or(0, |idx| idx.saturating_add(1));
+        self.selected_message = (start..self.messages.len())
+            .find(|idx| selectable_by_mode(&self.messages[*idx], user_only))
+            .or(self.selected_message)
+            .or_else(|| self.first_selectable_message());
+        self.selected_message_expanded = false;
+        self.scroll_selected_message_into_view();
+        self.dirty = true;
+    }
+
+    fn scroll_selected_message_into_view(&mut self) {
+        if let Some(idx) = self.selected_message {
+            let line = self.vscroll.visual_offset_of(idx);
+            if self.view_mode.is_transcript_like() {
+                self.transcript_state.scroll_offset = line.saturating_sub(1);
+            } else {
+                self.scroll_offset = line.saturating_sub(1);
+            }
+        }
+    }
+}
+
+fn selectable_by_mode(message: &crate::types::message::Message, user_only: bool) -> bool {
+    if user_only {
+        matches!(message, crate::types::message::Message::User(_)) && is_selectable_message(message)
+    } else {
+        is_selectable_message(message)
+    }
+}
+
+fn is_selectable_message(message: &crate::types::message::Message) -> bool {
+    match message {
+        crate::types::message::Message::User(user) => {
+            !user.is_meta
+                && !message_copy_text(message).trim().is_empty()
+                && message_copy_text(message).trim() != "[Request interrupted by user]"
+        }
+        crate::types::message::Message::Assistant(assistant) => !assistant.content.is_empty(),
+        crate::types::message::Message::System(_)
+        | crate::types::message::Message::Attachment(_) => true,
+        crate::types::message::Message::Progress(_) => false,
     }
 }

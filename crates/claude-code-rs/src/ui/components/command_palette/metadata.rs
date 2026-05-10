@@ -50,11 +50,14 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         "cost" => simple_meta("/cost", &["/cost"]),
         "daemon" => simple_meta("/daemon [status|stop]", &["/daemon status"]),
         "diff" => simple_meta("/diff", &["/diff"]),
-        "doctor" => simple_meta("/doctor [all|auth|settings|mcp|terminal]", &["/doctor"]),
-        "dream" => simple_meta("/dream [--days N]", &["/dream --days 7"]),
+        "doctor" => simple_meta("/doctor [summary|raw]", &["/doctor summary"]),
+        "dream" => simple_meta("/dream [--days N]", &["/dream --days 7", "/logs"]),
         "effort" => simple_meta("/effort <low|medium|high>", &["/effort medium"]),
-        "exit" => simple_meta("/exit", &["/exit"]),
-        "export" => simple_meta("/export [path]", &["/export session.md"]),
+        "exit" => simple_meta("/exit", &["/exit", "/quit"]),
+        "export" => simple_meta(
+            "/export [list|path|session-id]",
+            &["/export", "/export session.md"],
+        ),
         "experimental" => simple_meta(
             "/experimental [status|list|on|off|reset]",
             &["/experimental status", "/experimental on"],
@@ -63,7 +66,7 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         "fast" => simple_meta("/fast [on|off|status]", &["/fast on"]),
         "files" => simple_meta("/files", &["/files"]),
         "gbranch" => simple_meta("/gbranch [branch-name]", &["/gbranch feature/ui-fix"]),
-        "help" => simple_meta("/help [command]", &["/help mcp"]),
+        "help" => simple_meta("/help [command]", &["/help", "/help keybindings"]),
         "hooks" => CommandMeta {
             usage: "/hooks <list|path|open> [event|layer]".to_string(),
             examples: vec![
@@ -109,6 +112,10 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         ),
         "login-code" => simple_meta("/login-code <authorization-code>", &["/login-code abc123"]),
         "logout" => simple_meta("/logout", &["/logout"]),
+        "lsp" => simple_meta(
+            "/lsp [status|servers|recommendations]",
+            &["/lsp status", "/lsp recommendations"],
+        ),
         "loop" => simple_meta(
             "/loop <interval|list|remove|trigger|pause|resume> ...",
             &["/loop 5m /status"],
@@ -192,7 +199,10 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
                 "/remote runs",
             ],
         ),
-        "resume" => simple_meta("/resume <session-id|recent>", &["/resume recent"]),
+        "resume" => simple_meta(
+            "/resume <session-id|recent>",
+            &["/resume recent", "/preview"],
+        ),
         "review" => simple_meta("/review <pr-number|url|branch>", &["/review 123"]),
         "rewind" => simple_meta("/rewind <turn|message-id>", &["/rewind 2"]),
         "sandbox" => simple_meta(
@@ -207,10 +217,13 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
             "/security-review [scope]",
             &["/security-review crates/claude-code-rs/src/ui"],
         ),
-        "session" => simple_meta("/session [list|list all]", &["/session list"]),
+        "session" => simple_meta(
+            "/session [list|list all]",
+            &["/session list", "/sessions"],
+        ),
         "session-export" => simple_meta(
             "/session-export <list|session-id|path>",
-            &["/session-export list"],
+            &["/session-export list", "/structured-export"],
         ),
         "simplify" => simple_meta(
             "/simplify [--single|-1] [scope]",
@@ -273,8 +286,11 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
             ],
         },
         "memory" => CommandMeta {
-            usage: "/memory <show|edit|add> [text]".to_string(),
-            examples: vec!["/memory".to_string()],
+            usage: "/memory <show|edit|add|search|open> [text|scope]".to_string(),
+            examples: vec![
+                "/memory search auth".to_string(),
+                "/memory open global".to_string(),
+            ],
             edit_targets: vec![
                 EditTarget::new("project", cwd.join("CLAUDE.md"), cwd, "open project"),
                 EditTarget::new(

@@ -22,3 +22,28 @@ pub fn render_team_status(
     }
     Some(status)
 }
+
+pub fn render_team_summary_status(
+    total_teammates: usize,
+    active_teammates: usize,
+    assigned_tasks: usize,
+    teams_selected: bool,
+    show_hint: bool,
+) -> Option<String> {
+    let mut status = render_team_status(total_teammates, false, false)?;
+    if active_teammates > 0 || assigned_tasks > 0 {
+        status.push_str(&format!(
+            " ({} active, {} task{})",
+            active_teammates,
+            assigned_tasks,
+            if assigned_tasks == 1 { "" } else { "s" }
+        ));
+    }
+    if teams_selected {
+        status = format!("[{status}]");
+    }
+    if teams_selected && show_hint {
+        status.push_str(" - Enter to view");
+    }
+    Some(status)
+}

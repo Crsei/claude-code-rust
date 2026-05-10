@@ -1,5 +1,6 @@
 ---
 source: crates/claude-code-rs/src/ui/runtime/visual_regression.rs
+assertion_line: 389
 expression: render_interactive_ui_surfaces()
 ---
 ## permission/bash
@@ -41,9 +42,9 @@ expression: render_interactive_ui_surfaces()
 │Example: /mcp add ctx7 --command=npx --arg=-y --arg=@upstash/context7-mcp                         │
 │Edit: user: ~/.cc-rust/settings.json | project: ./.cc-rust/settings.json                          │
 │      local: ./.cc-rust/settings.local.json                                                       │
-│Hint: Press Ctrl+E to choose a target in-terminal.                                                │
+│Hint: Ctrl+E pick target                                                                          │
 │                                                                                                  │
-│Target picker: Ctrl+E closes the picker                                                           │
+│Target picker: Enter insert | Ctrl+E close                                                        │
 │Edit targets for /mcp / Filter...                                                                 │
 │> user - ~/.cc-rust/settings.json                                                                 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘

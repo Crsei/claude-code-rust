@@ -47,6 +47,64 @@ impl CommandHandler for StatusHandler {
         lines.push(format!("Fast mode:   {}", fast_mode));
         lines.push(format!("Effort:      {}", effort));
         lines.push(format!("Permissions: {}", permission_mode));
+        lines.push(format!(
+            "Coordinator: {}",
+            if crate::teams::coordinator::is_coordinator_mode_enabled() {
+                "ON"
+            } else {
+                "OFF"
+            }
+        ));
+        if let Some(team) = ctx.app_state.team_context.as_ref() {
+            let snapshots = crate::teams::in_process::InProcessBackend::task_snapshots()
+                .into_iter()
+                .filter(|task| task.team_name == team.team_name)
+                .collect::<Vec<_>>();
+            let running = snapshots
+                .iter()
+                .filter(|task| task.status == crate::teams::types::TaskStatus::Running)
+                .count();
+            let idle = snapshots.iter().filter(|task| task.is_idle).count();
+            let errored = snapshots
+                .iter()
+                .filter(|task| task.has_error || task.error_message.is_some())
+                .count();
+            let awaiting_plan = snapshots
+                .iter()
+                .filter(|task| task.awaiting_plan_approval)
+                .count();
+            let working = running > idle;
+            lines.push(format!(
+                "Team:        {} ({} teammate(s), {} running, {} idle, {} error, {} awaiting plan, working={})",
+                team.team_name,
+                team.teammates.len(),
+                running,
+                idle,
+                errored,
+                awaiting_plan,
+                working
+            ));
+        } else {
+            lines.push("Team:        none".to_string());
+        }
+        let tool_tasks = crate::tools::tasks::global_store().list();
+        let active_tool_tasks = tool_tasks
+            .iter()
+            .filter(|task| {
+                matches!(
+                    task.status,
+                    crate::tools::tasks::TaskStatus::Pending
+                        | crate::tools::tasks::TaskStatus::InProgress
+                        | crate::tools::tasks::TaskStatus::Interrupted
+                        | crate::tools::tasks::TaskStatus::Recoverable
+                )
+            })
+            .count();
+        lines.push(format!(
+            "Tasks:       {} tool task(s), {} active",
+            tool_tasks.len(),
+            active_tool_tasks
+        ));
 
         Ok(CommandResult::Output(lines.join("\n")))
     }
@@ -80,6 +138,8 @@ mod tests {
                 assert!(text.contains("Fast mode:"));
                 assert!(text.contains("Effort:"));
                 assert!(text.contains("Permissions:"));
+                assert!(text.contains("Team:"));
+                assert!(text.contains("Tasks:"));
             }
             _ => panic!("Expected Output"),
         }

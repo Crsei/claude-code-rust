@@ -23,6 +23,7 @@ use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::config::paths;
+use crate::keybindings::action::Action;
 use crate::keybindings::config::EMPTY_TEMPLATE;
 use crate::keybindings::context::Context as KbContext;
 use crate::keybindings::registry::KeybindingRegistry;
@@ -91,11 +92,39 @@ fn render_status(reg: &KeybindingRegistry) -> String {
             out.push_str(&format!("  - {}\n", i));
         }
     }
+    let warnings = critical_binding_warnings(reg);
+    if !warnings.is_empty() {
+        out.push_str("\nWarnings:\n");
+        for warning in warnings {
+            out.push_str(&format!("  - {}\n", warning));
+        }
+    }
     out.push_str(
         "\nTip: run `/keybindings` to create and edit the file, or \
          `/keybindings list` to see every effective binding.\n",
     );
     out
+}
+
+fn critical_binding_warnings(reg: &KeybindingRegistry) -> Vec<String> {
+    [
+        (KbContext::Global, "history:search", "Ctrl+R history search"),
+        (KbContext::Global, "app:exit", "exit flow"),
+        (
+            KbContext::HistorySearch,
+            "historySearch:accept",
+            "history accept",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(ctx, action, label)| {
+        let present = reg
+            .bindings_for(&Action::new_static(action))
+            .iter()
+            .any(|(binding_ctx, _)| *binding_ctx == ctx);
+        (!present).then(|| format!("{label} has no {ctx} binding for {action}"))
+    })
+    .collect()
 }
 
 fn open_for_edit(reg: &KeybindingRegistry) -> String {

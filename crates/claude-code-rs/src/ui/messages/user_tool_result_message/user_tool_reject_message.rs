@@ -48,7 +48,7 @@ pub fn render_fallback_reject_message(theme: &Theme) -> Vec<Line<'static>> {
 fn render_fallback(tool: Option<&dyn Tool>, theme: &Theme) -> Vec<Line<'static>> {
     let label = match tool {
         Some(_) => "Tool call was rejected",
-        None => "Tool use rejected",
+        None => "Tool use rejected by user (tool metadata unavailable)",
     };
     vec![Line::from(Span::styled(label, theme.warning))]
 }

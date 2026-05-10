@@ -76,15 +76,25 @@ fn render_status() -> String {
     match &snap.connection {
         ChromeConnectionState::Disabled => {
             lines.push(String::new());
-            lines.push("  Enable with:".into());
-            lines.push("    claude --chrome".into());
-            lines.push("    or set CLAUDE_CODE_ENABLE_CFC=1".into());
+            lines.push("  Onboarding:".into());
+            lines.push(
+                "    1. Start cc-rust with `--chrome` or set `CLAUDE_CODE_ENABLE_CFC=1`.".into(),
+            );
+            lines.push(format!(
+                "    2. Install the Chrome extension: {}",
+                CHROME_EXTENSION_URL
+            ));
+            lines.push("    3. Run `/chrome reconnect` after enabling the subsystem.".into());
         }
         ChromeConnectionState::Enabled => {
             lines.push(String::new());
-            lines.push("  Subsystem is on; waiting for the Chrome extension to connect.".into());
-            lines.push(format!("  Reconnect: {}", CHROME_RECONNECT_URL));
-            lines.push("  To retry setup: /chrome reconnect".into());
+            lines.push(
+                "  Onboarding: subsystem is on; waiting for the Chrome extension to connect."
+                    .into(),
+            );
+            lines.push(format!("    Extension: {}", CHROME_EXTENSION_URL));
+            lines.push(format!("    Reconnect URL: {}", CHROME_RECONNECT_URL));
+            lines.push("    Retry native-host setup: /chrome reconnect".into());
         }
         ChromeConnectionState::Connecting => {
             lines.push("  Handshake in progress — reconnect if this sticks...".into());

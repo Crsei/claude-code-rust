@@ -87,7 +87,7 @@ async fn render_status() -> String {
     lines.join("\n")
 }
 
-async fn render_adapters() -> String {
+pub(crate) async fn render_adapters() -> String {
     let client = match LocalGatewayClient::from_running_daemon() {
         Ok(client) => client,
         Err(diag) => return render_gateway_diagnostic("Adapters", &diag),

@@ -25,10 +25,17 @@ impl CommandHandler for HelpHandler {
                 } else {
                     format!("  Aliases: {}", cmd.aliases.join(", "))
                 };
-                return Ok(CommandResult::Output(format!(
-                    "/{} -- {}\n{}",
-                    cmd.name, cmd.description, aliases
-                )));
+                let usage = help_usage_for(&cmd.name);
+                let mut text = format!("/{} -- {}\nUsage: {}", cmd.name, cmd.description, usage);
+                if !aliases.is_empty() {
+                    text.push('\n');
+                    text.push_str(aliases.trim());
+                }
+                if let Some(tip) = help_tip_for(&cmd.name) {
+                    text.push('\n');
+                    text.push_str(tip);
+                }
+                return Ok(CommandResult::Output(text));
             } else {
                 return Ok(CommandResult::Output(format!(
                     "Unknown command: '{}'. Type /help to see all commands.",
@@ -39,6 +46,10 @@ impl CommandHandler for HelpHandler {
 
         // Build the full help listing.
         let mut lines: Vec<String> = Vec::new();
+        lines.push("Help V2".into());
+        lines.push("Quick surfaces: /resume recent, /session list, /session-export list, /export, /doctor summary, /keybindings status.".into());
+        lines.push("Keys: Ctrl+R history search, Ctrl+O transcript/global search, / opens command palette, Esc closes surfaces.".into());
+        lines.push(String::new());
         lines.push("Available commands:".into());
         lines.push(String::new());
 
@@ -64,6 +75,38 @@ impl CommandHandler for HelpHandler {
         lines.push("Type /help <command> for more information about a specific command.".into());
 
         Ok(CommandResult::Output(lines.join("\n")))
+    }
+}
+
+fn help_usage_for(name: &str) -> &'static str {
+    match name {
+        "doctor" => "/doctor [summary|raw]",
+        "exit" => "/exit",
+        "export" => "/export [list|path|session-id]",
+        "help" => "/help [command]",
+        "keybindings" => "/keybindings [open|status|list|reload|path]",
+        "memory" => "/memory [show|path|edit|search|open]",
+        "resume" => "/resume <session-id|recent>",
+        "session" => "/session [list|list all]",
+        "session-export" => "/session-export <list|session-id|path>",
+        _ => "/<command> [args]",
+    }
+}
+
+fn help_tip_for(name: &str) -> Option<&'static str> {
+    match name {
+        "doctor" => Some("Tip: diagnostics include keybinding warnings for core flows."),
+        "help" => Some("Tip: use /help <command> for usage plus command-specific hints."),
+        "keybindings" => {
+            Some("Tip: run /keybindings status to see parse issues and core-flow warnings.")
+        }
+        "resume" => Some(
+            "Tip: /resume recent reloads the newest saved session; Ctrl+R can reuse saved prompts.",
+        ),
+        "session-export" => {
+            Some("Tip: /session-export list shows structured exports; /export writes Markdown.")
+        }
+        _ => None,
     }
 }
 

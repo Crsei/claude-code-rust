@@ -38,6 +38,11 @@ pub(crate) fn team_summary_from_state(state: &AppState) -> (TeamSummary, bool) {
                     status.mode = member.mode.clone().unwrap_or_else(|| "ask".to_string());
                     status.state = teammate_state_label(member.is_active, &matching);
                     status.assigned_tasks = matching.len();
+                    status.backend = member
+                        .backend_type
+                        .map(|backend| backend.to_string())
+                        .unwrap_or_else(|| "unknown".to_string());
+                    status.model = member.model.clone();
                     status.hidden = !member.tmux_pane_id.is_empty()
                         && team_file.hidden_pane_ids.contains(&member.tmux_pane_id);
                     status
@@ -57,6 +62,11 @@ pub(crate) fn team_summary_from_state(state: &AppState) -> (TeamSummary, bool) {
                         info.name.clone(),
                         info.agent_type.as_deref().unwrap_or("teammate"),
                     );
+                    status.backend = if info.tmux_pane_id.is_empty() {
+                        "in-process".to_string()
+                    } else {
+                        "tmux".to_string()
+                    };
                     status.hidden = false;
                     status
                 })

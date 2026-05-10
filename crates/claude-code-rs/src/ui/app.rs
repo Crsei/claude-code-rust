@@ -77,11 +77,14 @@ pub enum AppAction {
     /// pre-rendered markdown body; the caller writes it to disk and
     /// spawns the editor so `App` stays free of IO.
     ExportTranscript(String),
+    CopyMessage(String),
 }
 
 /// Main TUI application state.
 pub struct App {
     messages: Vec<Message>,
+    selected_message: Option<usize>,
+    selected_message_expanded: bool,
     prompt: PromptInput,
     scroll_offset: usize,
     is_streaming: bool,
@@ -167,6 +170,8 @@ impl App {
     pub fn new() -> Self {
         Self {
             messages: Vec::new(),
+            selected_message: None,
+            selected_message_expanded: false,
             prompt: PromptInput::new(),
             scroll_offset: 0,
             is_streaming: false,
@@ -235,6 +240,7 @@ impl App {
             self.show_welcome = false;
         }
         self.messages.push(msg);
+        self.clamp_selected_message();
         self.vscroll
             .invalidate_from(self.messages.len().saturating_sub(1));
         self.scroll_to_bottom_deferred();
@@ -247,6 +253,7 @@ impl App {
         } else {
             self.messages.push(msg);
         }
+        self.clamp_selected_message();
         self.vscroll
             .invalidate_from(self.messages.len().saturating_sub(1));
         self.scroll_to_bottom_deferred();
@@ -255,6 +262,7 @@ impl App {
 
     pub fn remove_last_message(&mut self) {
         if self.messages.pop().is_some() {
+            self.clamp_selected_message();
             self.vscroll.invalidate_from(self.messages.len());
             self.scroll_to_bottom_deferred();
             self.dirty = true;
@@ -265,8 +273,23 @@ impl App {
         &self.messages
     }
 
+    pub fn selected_message(&self) -> Option<usize> {
+        self.selected_message
+    }
+
+    fn clamp_selected_message(&mut self) {
+        if self.messages.is_empty() {
+            self.selected_message = None;
+            self.selected_message_expanded = false;
+        } else if let Some(idx) = self.selected_message {
+            self.selected_message = Some(idx.min(self.messages.len() - 1));
+        }
+    }
+
     pub fn clear_messages(&mut self) {
         self.messages.clear();
+        self.selected_message = None;
+        self.selected_message_expanded = false;
         self.scroll_offset = 0;
         self.vscroll.invalidate_all();
         self.dirty = true;
@@ -457,6 +480,31 @@ impl App {
         }
         self.history_index = None;
         self.saved_input.clear();
+    }
+
+    /// Seed Ctrl+R prompt history from backend session storage.
+    ///
+    /// Callers pass entries newest-first (the shape returned by the session
+    /// reader). `App` keeps history oldest-first so arrow-history and Ctrl+R
+    /// continue to prefer live prompts appended during this TUI run.
+    pub fn seed_persistent_history(&mut self, entries: Vec<HistorySearchEntry>) {
+        for entry in entries.into_iter().rev() {
+            if self
+                .history
+                .iter()
+                .any(|existing| existing.display == entry.display)
+            {
+                continue;
+            }
+            self.history.push(entry);
+        }
+        self.history_index = None;
+        self.dirty = true;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn history_len(&self) -> usize {
+        self.history.len()
     }
 
     // Event handling

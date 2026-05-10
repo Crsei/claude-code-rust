@@ -2,6 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
+use unicode_width::UnicodeWidthStr;
 
 use super::theme::Theme;
 
@@ -18,6 +19,15 @@ pub struct PromptInput {
     pub cursor_position: usize,
     /// Whether this widget is focused / accepting input.
     pub is_active: bool,
+    /// Summary of the most recent large paste, shown by the app chrome only.
+    large_paste_notice: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PromptInputRenderContext<'a> {
+    pub hint: Option<&'a str>,
+    pub placeholder: Option<&'a str>,
+    pub mode_indicator: Option<&'a str>,
 }
 
 impl PromptInput {
@@ -26,6 +36,7 @@ impl PromptInput {
             input: String::new(),
             cursor_position: 0,
             is_active: true,
+            large_paste_notice: None,
         }
     }
 
@@ -45,6 +56,7 @@ impl PromptInput {
                 }
                 self.input.clear();
                 self.cursor_position = 0;
+                self.large_paste_notice = None;
                 return Some(text);
             }
 
@@ -126,13 +138,28 @@ impl PromptInput {
         self.cursor_position += text.len();
     }
 
+    /// Insert pasted text and remember a compact UI notice for large pastes.
+    pub fn paste_text(&mut self, text: &str) {
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        self.insert_str(&normalized);
+        self.large_paste_notice = large_paste_notice(&normalized);
+    }
+
+    pub fn take_large_paste_notice(&mut self) -> Option<String> {
+        self.large_paste_notice.take()
+    }
+
+    pub fn large_paste_notice(&self) -> Option<&str> {
+        self.large_paste_notice.as_deref()
+    }
+
     /// Render the prompt input widget.
     ///
     /// Shows a "> " prompt prefix followed by the input text with a visible
     /// cursor indicator. The visible window scrolls horizontally when the
     /// cursor would move off-screen.
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
-        self.render_with_hint(area, buf, theme, None);
+        self.render_with_context(area, buf, theme, PromptInputRenderContext::default());
     }
 
     /// Render the prompt input widget with a dim inline hint after the text.
@@ -143,6 +170,25 @@ impl PromptInput {
         theme: &Theme,
         hint: Option<&str>,
     ) {
+        self.render_with_context(
+            area,
+            buf,
+            theme,
+            PromptInputRenderContext {
+                hint,
+                placeholder: None,
+                mode_indicator: None,
+            },
+        );
+    }
+
+    pub fn render_with_context(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        theme: &Theme,
+        context: PromptInputRenderContext<'_>,
+    ) {
         if area.height == 0 || area.width < 4 {
             return;
         }
@@ -151,15 +197,46 @@ impl PromptInput {
         let prompt_span = Span::styled(prompt_str, theme.prompt);
         let prompt_width = 2u16; // "> " is always 2 columns
 
-        let available_width = (area.width.saturating_sub(prompt_width)) as usize;
+        let mode_width = context
+            .mode_indicator
+            .map(|label| UnicodeWidthStr::width(label) + 3)
+            .unwrap_or(0);
+        let available_width =
+            (area.width.saturating_sub(prompt_width) as usize).saturating_sub(mode_width);
+
+        if self.input.is_empty() {
+            let mut spans = vec![prompt_span];
+            if self.is_active {
+                spans.push(Span::styled(
+                    " ",
+                    ratatui::style::Style::default()
+                        .fg(ratatui::style::Color::Black)
+                        .bg(ratatui::style::Color::White),
+                ));
+                if let Some(placeholder) = context.placeholder {
+                    spans.push(Span::styled(format!(" {placeholder}"), theme.dim));
+                }
+            }
+            push_mode_indicator(&mut spans, context.mode_indicator, theme);
+            buf.set_line(area.x, area.y, &Line::from(spans), area.width);
+            return;
+        }
+
+        let preview = input_preview(&self.input, available_width);
+        let render_text = preview.as_deref().unwrap_or(&self.input);
+        let render_cursor_position = if preview.is_some() {
+            render_text.len()
+        } else {
+            self.cursor_position
+        };
 
         // Compute the visible window of the input text. We track the cursor
         // as a *character* offset for display purposes.
-        let char_cursor = self.input[..self.cursor_position].chars().count();
-        let input_chars: Vec<char> = self.input.chars().collect();
+        let char_cursor = render_text[..render_cursor_position].chars().count();
+        let input_chars: Vec<char> = render_text.chars().collect();
 
         // Determine scroll offset so the cursor is always visible.
-        let scroll = if char_cursor >= available_width {
+        let scroll = if available_width > 0 && char_cursor >= available_width {
             char_cursor - available_width + 1
         } else {
             0
@@ -169,7 +246,7 @@ impl PromptInput {
         let visible_text: String = input_chars[scroll..visible_end].iter().collect();
 
         // Build the cursor position within the visible region.
-        let cursor_in_visible = char_cursor.saturating_sub(scroll);
+        let cursor_in_visible = char_cursor.saturating_sub(scroll).min(visible_text.len());
 
         // Split visible text around the cursor to insert styling.
         let before_cursor: String = visible_text.chars().take(cursor_in_visible).collect();
@@ -191,12 +268,16 @@ impl PromptInput {
                     .bg(ratatui::style::Color::White),
             ));
             spans.push(Span::raw(after_cursor));
-            if let Some(hint) = hint.filter(|_| cursor_in_visible >= visible_text.len()) {
+            if let Some(hint) = context
+                .hint
+                .filter(|_| cursor_in_visible >= visible_text.len())
+            {
                 spans.push(Span::styled(format!(" {hint}"), theme.dim));
             }
         } else {
             spans.push(Span::styled(visible_text, theme.dim));
         }
+        push_mode_indicator(&mut spans, context.mode_indicator, theme);
 
         let line = Line::from(spans);
         buf.set_line(area.x, area.y, &line, area.width);
@@ -266,8 +347,126 @@ impl PromptInput {
     }
 }
 
+fn input_preview(input: &str, available_width: usize) -> Option<String> {
+    let char_count = input.chars().count();
+    let line_count = input.lines().count().max(1);
+    let is_large = line_count > 1 || char_count > available_width.saturating_mul(2).max(80);
+    if !is_large {
+        return None;
+    }
+
+    let max_preview = available_width.saturating_sub(24).clamp(16, 96);
+    let first_line = input.lines().next().unwrap_or(input).trim();
+    let mut preview: String = first_line.chars().take(max_preview).collect();
+    if first_line.chars().count() > max_preview || line_count > 1 {
+        preview.push_str("...");
+    }
+    Some(format!(
+        "[{} chars, {} lines pasted] {}",
+        char_count, line_count, preview
+    ))
+}
+
+fn large_paste_notice(text: &str) -> Option<String> {
+    let char_count = text.chars().count();
+    let line_count = text.lines().count().max(1);
+    if char_count < 512 && line_count < 4 {
+        return None;
+    }
+    Some(format!(
+        "Pasted {} chars across {} lines; preview is truncated in the UI only.",
+        char_count, line_count
+    ))
+}
+
+fn push_mode_indicator(
+    spans: &mut Vec<Span<'static>>,
+    mode_indicator: Option<&str>,
+    theme: &Theme,
+) {
+    if let Some(label) = mode_indicator.filter(|label| !label.is_empty()) {
+        spans.push(Span::styled(format!("  [{label}]"), theme.dim));
+    }
+}
+
 impl Default for PromptInput {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+
+    fn render_to_string(
+        input: &PromptInput,
+        width: u16,
+        context: PromptInputRenderContext<'_>,
+    ) -> String {
+        let area = Rect::new(0, 0, width, 1);
+        let mut buf = Buffer::empty(area);
+        input.render_with_context(area, &mut buf, &Theme::default(), context);
+        (0..width).map(|x| buf[(x, 0)].symbol()).collect()
+    }
+
+    #[test]
+    fn prompt_input_resolves_placeholder_and_mode_indicator() {
+        let input = PromptInput::new();
+        let rendered = render_to_string(
+            &input,
+            60,
+            PromptInputRenderContext {
+                hint: None,
+                placeholder: Some("Message Claude Code"),
+                mode_indicator: Some("INS"),
+            },
+        );
+
+        assert!(rendered.starts_with(">"));
+        assert!(rendered.contains("Message Claude Code"));
+        assert!(rendered.contains("[INS]"));
+    }
+
+    #[test]
+    fn prompt_input_large_paste_is_ui_preview_only() {
+        let mut input = PromptInput::new();
+        let pasted = ["alpha beta gamma"; 60].join("\n");
+        input.paste_text(&pasted);
+
+        assert_eq!(input.input, pasted);
+        assert!(input.large_paste_notice().is_some());
+
+        let rendered = render_to_string(
+            &input,
+            80,
+            PromptInputRenderContext {
+                hint: None,
+                placeholder: None,
+                mode_indicator: Some("INS"),
+            },
+        );
+        assert!(rendered.contains("chars"));
+        assert!(rendered.contains("lines pasted"));
+    }
+
+    #[test]
+    fn prompt_input_tiny_width_with_mode_indicator_does_not_panic() {
+        let mut input = PromptInput::new();
+        input.insert_str("hello");
+
+        let rendered = render_to_string(
+            &input,
+            4,
+            PromptInputRenderContext {
+                hint: None,
+                placeholder: None,
+                mode_indicator: Some("INSERT"),
+            },
+        );
+
+        assert!(rendered.starts_with(">"));
     }
 }

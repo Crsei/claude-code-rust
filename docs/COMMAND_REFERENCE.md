@@ -739,6 +739,7 @@
 - `/effort`：当前只支持 `low|medium|high`
 - `/copy`：当前不真正写系统剪贴板
 - `/notify`、`/channels`、`/daemon stop`：目前偏状态/占位接口
+- `/channels`：2026-05-10 起在 feature gate 打开后显示 gateway-backed outbound adapter status；inbound channel sessions / `/teleport` 仍为 deferred，不应当作已接通能力。
 - `/mcp status`：当前偏 discovery 视图，不是实时连接面板
 
 如果后续继续补文档，下一步适合增加：

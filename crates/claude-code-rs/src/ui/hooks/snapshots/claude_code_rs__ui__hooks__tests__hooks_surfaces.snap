@@ -1,5 +1,6 @@
 ---
 source: crates/claude-code-rs/src/ui/hooks/mod.rs
+assertion_line: 64
 expression: rendered
 ---
 ## config
@@ -14,6 +15,8 @@ Select hook event
   Notification   When a notification is emitted
   Stop           When the main agent stops
   SubagentStop   When a subagent stops
+  WorktreeCreate When a worktree is created
+  WorktreeRemove When a worktree is removed
 
 ## matcher
 Select matcher

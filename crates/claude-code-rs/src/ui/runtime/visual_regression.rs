@@ -282,6 +282,8 @@ fn render_streaming_message_snapshot() -> String {
         true,
         0,
         &vscroll,
+        None,
+        false,
     );
     normalize_snapshot_text(buffer_text(&buf, area))
 }

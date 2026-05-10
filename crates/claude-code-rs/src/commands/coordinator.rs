@@ -48,6 +48,23 @@ fn status(ctx: &CommandContext) -> String {
         lines.push(format!("Active team: {}", team.team_name));
         lines.push(format!("Lead: {}", team.lead_agent_id));
         lines.push(format!("Visible teammates: {}", team.teammates.len()));
+        let snapshots = crate::teams::in_process::InProcessBackend::task_snapshots();
+        let running = snapshots
+            .iter()
+            .filter(|snapshot| snapshot.status == crate::teams::types::TaskStatus::Running)
+            .count();
+        let idle = snapshots
+            .iter()
+            .filter(|snapshot| {
+                snapshot.status == crate::teams::types::TaskStatus::Running && snapshot.is_idle
+            })
+            .count();
+        lines.push(format!(
+            "Team task status: {} running ({} idle), {} total",
+            running,
+            idle,
+            snapshots.len()
+        ));
     } else {
         lines.push("Active team: none".to_string());
     }
