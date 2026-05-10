@@ -9,13 +9,10 @@ param(
     [ValidateSet("medium")]
     [string]$ReasoningEffort = "medium",
     [string]$Sandbox = "danger-full-access",
-    [int]$InitialBatchSize = 2,
+    [int]$InitialBatchSize = 1,
     [int]$MinBatchSize = 1,
-    [int]$MaxBatchSize = 4,
-    [int]$MaxChangedFiles = 8,
-    [int]$MaxFileDeltaLines = 300,
-    [double]$MaxFileDeltaRatio = 0.25,
-    [int]$MaxCodeFileLines = 900,
+    [int]$MaxBatchSize = 1,
+    [int]$MaxCodeFileLines = 2000,
     [switch]$ContinueOnError,
     [switch]$SkipCommit,
     [switch]$DryRun
@@ -23,6 +20,10 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$GuardMaxChangedFiles = 16
+$GuardMaxFileDeltaLines = 300
+$GuardMaxFileDeltaRatio = 0.75
 
 function Resolve-RepoPath {
     param(
@@ -154,11 +155,110 @@ function Invoke-DiffGuards {
         }
 
         if ([System.IO.Path]::GetExtension($path) -eq ".rs" -and $lineCount -gt $MaxCodeFileLines) {
-            $violations.Add("BLOCKER: Rust file $path has $lineCount lines, above $MaxCodeFileLines; split or document a refactor decision")
+            if (-not $tracked) {
+                $violations.Add("BLOCKER: new Rust file $path has $lineCount lines, above $MaxCodeFileLines; split before committing")
+            } elseif ($delta -gt $MaxFileDeltaLines -or ($lineCount -gt 0 -and ($delta / [double]$lineCount) -gt $MaxFileDeltaRatio)) {
+                $violations.Add("BLOCKER: Rust file $path has $lineCount lines, above $MaxCodeFileLines and was touched broadly; split the touched area if in scope, otherwise document the refactor decision")
+            } else {
+                $violations.Add("WARNING: Rust file $path has $lineCount lines, above $MaxCodeFileLines but was touched narrowly; do not split unrelated code, and explain the narrow-change rationale in the task completion note")
+            }
         }
     }
 
     return @($violations)
+}
+
+function Convert-ToExitCode {
+    param([AllowNull()][object]$Value)
+
+    if ($null -eq $Value) {
+        return 0
+    }
+
+    $items = @($Value)
+    for ($i = $items.Count - 1; $i -ge 0; $i--) {
+        $candidate = $items[$i]
+        if ($null -eq $candidate) {
+            continue
+        }
+        if ($candidate -is [int]) {
+            return [int]$candidate
+        }
+
+        $parsed = 0
+        if ([int]::TryParse(([string]$candidate).Trim(), [ref]$parsed)) {
+            return $parsed
+        }
+    }
+
+    $sample = ($items | Select-Object -First 3 | ForEach-Object { [string]$_ }) -join " | "
+    throw "Runner exit code did not contain an integer. Received $($items.Count) object(s): $sample"
+}
+
+function Invoke-RunnerProcess {
+    param([string[]]$ArgumentList)
+
+    & powershell @ArgumentList | Out-Host
+    return (Convert-ToExitCode -Value $LASTEXITCODE)
+}
+
+function Test-BlockingGuardFinding {
+    param([string[]]$Findings)
+
+    foreach ($finding in $Findings) {
+        if ($finding -match '^BLOCKER:') {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Test-WarningGuardFinding {
+    param([string[]]$Findings)
+
+    foreach ($finding in $Findings) {
+        if ($finding -match '^WARNING:') {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Get-BatchStatus {
+    param(
+        [int]$ExitCode,
+        [string[]]$Violations
+    )
+
+    if ($ExitCode -ne 0) {
+        return "ERROR"
+    }
+    if (Test-BlockingGuardFinding -Findings $Violations) {
+        return "BLOCKER"
+    }
+    if (Test-WarningGuardFinding -Findings $Violations) {
+        return "WARNING"
+    }
+    return "PASS"
+}
+
+function Get-BatchDiagnosticLines {
+    param(
+        [int]$ExitCode,
+        [string[]]$Violations
+    )
+
+    $diagnostics = New-Object System.Collections.Generic.List[string]
+    if ($ExitCode -ne 0) {
+        $diagnostics.Add("ERROR: task runner exited with code $ExitCode; inspect task last-message files and runner logs")
+    }
+    foreach ($violation in $Violations) {
+        $diagnostics.Add($violation)
+    }
+    if ($diagnostics.Count -eq 0) {
+        $diagnostics.Add("PASS: runner exit code and diff guards passed")
+    }
+    return @($diagnostics)
 }
 
 function Write-BatchArtifacts {
@@ -166,25 +266,21 @@ function Write-BatchArtifacts {
         [string]$OutputRoot,
         [int]$BatchNumber,
         [string[]]$Tasks,
-        [int]$ExitCode,
+        [object]$ExitCode,
         [string[]]$ChangedPaths,
         [string[]]$Violations,
         [string]$BatchOutputDir
     )
 
+    $exitCodeValue = Convert-ToExitCode -Value $ExitCode
     $batchLabel = "{0:00}" -f $BatchNumber
     $lastMessages = @()
     if (Test-Path -LiteralPath $BatchOutputDir) {
         $lastMessages = @(Get-ChildItem -LiteralPath $BatchOutputDir -Filter "task-*.last-message.txt" -File | ForEach-Object { $_.FullName })
     }
 
-    $status = if ($ExitCode -ne 0) {
-        "ERROR"
-    } elseif ($Violations.Count -gt 0) {
-        "BLOCKER"
-    } else {
-        "PASS"
-    }
+    $status = Get-BatchStatus -ExitCode $exitCodeValue -Violations $Violations
+    $diagnostics = @(Get-BatchDiagnosticLines -ExitCode $exitCodeValue -Violations $Violations)
 
     $jsonPath = Join-Path $OutputRoot "batch-$batchLabel.summary.json"
     $mdPath = Join-Path $OutputRoot "batch-$batchLabel.summary.md"
@@ -192,12 +288,13 @@ function Write-BatchArtifacts {
     $record = [ordered]@{
         batch = $BatchNumber
         status = $status
-        exit_code = $ExitCode
+        exit_code = $exitCodeValue
         model = "gpt-5.5"
         reasoning_effort = "medium"
         tasks = $Tasks
         changed_files = $ChangedPaths
         guard_violations = $Violations
+        diagnostics = $diagnostics
         last_message_files = $lastMessages
         written_at = (Get-Date).ToString("o")
     }
@@ -208,9 +305,10 @@ function Write-BatchArtifacts {
     $lines.Add("# Ratatui UI parity OMX batch $batchLabel")
     $lines.Add("")
     $lines.Add("Status: $status")
-    $lines.Add("Exit code: $ExitCode")
+    $lines.Add("Exit code: $exitCodeValue")
     $lines.Add("Model: gpt-5.5")
     $lines.Add("Reasoning effort: medium")
+    $lines.Add("Summary JSON: $jsonPath")
     $lines.Add("")
     $lines.Add("## Tasks")
     foreach ($task in $Tasks) {
@@ -233,6 +331,11 @@ function Write-BatchArtifacts {
         foreach ($violation in $Violations) {
             $lines.Add("- $violation")
         }
+    }
+    $lines.Add("")
+    $lines.Add("## Diagnostic summary")
+    foreach ($diagnostic in $diagnostics) {
+        $lines.Add("- $diagnostic")
     }
     $lines.Add("")
     $lines.Add("## Last-message files")
@@ -312,7 +415,7 @@ $baselineDirty = Get-PathSet -Paths @(Get-GitChangedPaths)
 
 New-Item -ItemType Directory -Force -Path $resolvedOutputRoot | Out-Null
 
-$globalContract = "Global contract: use omx/codex with concise output, no long reasoning transcript; model and reasoning are fixed by the runner; use at most 2 native subagents only for independent bounded exploration or review; stay inside the task ownership scope; do not git commit because the runner owns commits; make errors explicit with ERROR/BLOCKER/WARNING/PASS; avoid redundant safety layers and prefer clear fail-fast diagnostics."
+$globalContract = "Global contract: use omx/codex with concise output, no long reasoning transcript; model and reasoning are fixed by the runner; use at most 2 native subagents only for independent bounded exploration or review; stay inside the task ownership scope; do not git commit because the runner owns commits; make errors explicit with ERROR/BLOCKER/WARNING/PASS; avoid redundant safety layers and prefer clear fail-fast diagnostics; for Rust file-size findings, split only when the touched area is in task scope, otherwise keep narrow changes and explain the rationale."
 
 Push-Location $repoRoot
 try {
@@ -369,17 +472,16 @@ try {
             $runnerArgs += "-ContinueOnError"
         }
 
-        & powershell @runnerArgs
-        $exitCode = $LASTEXITCODE
+        $exitCode = Invoke-RunnerProcess -ArgumentList $runnerArgs
 
         $currentChanged = @(Get-GitChangedPaths)
         $newChanged = @($currentChanged | Where-Object { -not $baselineDirty.Contains($_) } | Sort-Object -Unique)
         $violations = @(Invoke-DiffGuards `
             -ChangedPaths $newChanged `
             -RepoRoot $repoRoot `
-            -MaxChangedFiles $MaxChangedFiles `
-            -MaxFileDeltaLines $MaxFileDeltaLines `
-            -MaxFileDeltaRatio $MaxFileDeltaRatio `
+            -MaxChangedFiles $GuardMaxChangedFiles `
+            -MaxFileDeltaLines $GuardMaxFileDeltaLines `
+            -MaxFileDeltaRatio $GuardMaxFileDeltaRatio `
             -MaxCodeFileLines $MaxCodeFileLines)
 
         Write-BatchArtifacts `
@@ -391,7 +493,8 @@ try {
             -Violations $violations `
             -BatchOutputDir $batchOutputDir
 
-        if ($exitCode -eq 0 -and $violations.Count -eq 0) {
+        $hasBlockingFinding = Test-BlockingGuardFinding -Findings $violations
+        if ($exitCode -eq 0 -and -not $hasBlockingFinding) {
             if (-not $SkipCommit) {
                 Commit-Batch -ChangedPaths $newChanged -BatchNumber $batchNumber -OutputRoot $resolvedOutputRoot
             } else {
@@ -405,7 +508,11 @@ try {
         } else {
             $cleanBatchCount = 0
             $batchSize = [Math]::Max($MinBatchSize, $batchSize - 1)
-            Write-Host "Batch $batchLabel did not pass. See batch summary in $resolvedOutputRoot." -ForegroundColor Red
+            $summaryPath = Join-Path $resolvedOutputRoot "batch-$batchLabel.summary.md"
+            Write-Host "Batch $batchLabel did not pass. Summary: $summaryPath" -ForegroundColor Red
+            foreach ($diagnostic in @(Get-BatchDiagnosticLines -ExitCode $exitCode -Violations $violations)) {
+                Write-Host "- $diagnostic" -ForegroundColor Red
+            }
             if (-not $ContinueOnError) {
                 exit $(if ($exitCode -ne 0) { $exitCode } else { 1 })
             }

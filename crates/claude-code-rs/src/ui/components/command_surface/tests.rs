@@ -348,10 +348,30 @@ fn config_surface_picker_selection_submits_config_set_commands() {
 fn sandbox_surface_uses_tab_navigation_and_selection() {
     let mut surface = CommandSurface::Sandbox(SandboxSurface::new(&AppState::default()));
 
-    surface.handle_key(key(KeyCode::Right));
-    surface.handle_key(key(KeyCode::Right));
-    assert!(surface.render().contains("[Network]"));
+    let rendered = surface.render();
+    assert!(rendered.contains("[Config]"));
+    assert!(rendered.contains("Network policy"));
 
+    surface.handle_key(key(KeyCode::Right));
+    assert!(surface.render().contains("[Dependencies]"));
+    assert!(surface.render().contains("OS-level sandbox"));
+    assert!(surface.render().contains("Network proxy runtime"));
+    surface.handle_key(key(KeyCode::Down));
+    surface.handle_key(key(KeyCode::Down));
+
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::Submit("/sandbox require".to_string())
+    );
+    surface.handle_key(key(KeyCode::Down));
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::Submit("/sandbox optional".to_string())
+    );
+
+    surface.handle_key(key(KeyCode::Char('6')));
+    assert!(surface.render().contains("[Network]"));
+    surface.handle_key(key(KeyCode::Up));
     assert_eq!(
         surface.handle_key(key(KeyCode::Enter)),
         CommandSurfaceOutcome::Submit("/sandbox network on".to_string())
