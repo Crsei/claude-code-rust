@@ -5,6 +5,7 @@ use crate::model_registry;
 use crate::types::app_state::AppState;
 use crate::ui::command_surface::CommandSurfaceOutcome;
 use crate::ui::form_navigation::{FormOption, FormTab, TabbedFormEvent, TabbedFormState};
+use crate::ui::keyboard_shortcut::{render_shortcut_hints, ShortcutHint};
 use crate::ui::selection_surface::{SelectionItem, SelectionSurface, SelectionSurfaceEvent};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -173,10 +174,13 @@ impl ConfigSurface {
         let mut lines = vec![self.state.title.clone(), render_tab_line(&self.state)];
         lines.extend(context_lines.iter().cloned());
         lines.extend(picker.render_lines(10));
-        lines.push(
-            "Left/Right switch tabs | Type filter | Up/Down navigate | Enter select | Esc close"
-                .into(),
-        );
+        lines.push(render_shortcut_hints(&[
+            ShortcutHint::new("Left/Right", "switch tabs"),
+            ShortcutHint::new("Type", "filter"),
+            ShortcutHint::new("Up/Down", "navigate"),
+            ShortcutHint::new("Enter", "select"),
+            ShortcutHint::new("Esc", "close"),
+        ]));
         lines.join("\n")
     }
 }
@@ -207,19 +211,14 @@ fn is_tab_navigation_key(key: &KeyEvent) -> bool {
 }
 
 fn render_tab_line(state: &TabbedFormState) -> String {
-    state
-        .tabs
-        .iter()
-        .enumerate()
-        .map(|(idx, tab)| {
-            if idx == state.active_tab {
-                format!("[{}]", tab.label)
-            } else {
-                format!(" {} ", tab.label)
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+    crate::ui::tabs::render_tabs(
+        &state
+            .tabs
+            .iter()
+            .map(|tab| tab.label.as_str())
+            .collect::<Vec<_>>(),
+        state.active_tab,
+    )
 }
 
 fn build_model_picker(state: &AppState) -> SelectionSurface {
@@ -307,6 +306,10 @@ fn push_model_item(
         label,
         description: description.join("; "),
         enabled: true,
+        disabled_reason: None,
+        preview_lines: Vec::new(),
+        actions: Vec::new(),
+        search_terms: Vec::new(),
     });
 }
 
@@ -369,6 +372,10 @@ fn theme_item(
         label: label.into(),
         description,
         enabled: true,
+        disabled_reason: None,
+        preview_lines: Vec::new(),
+        actions: Vec::new(),
+        search_terms: Vec::new(),
     }
 }
 
@@ -424,6 +431,10 @@ fn effort_item(
         label: label.into(),
         description: details.join("; "),
         enabled: true,
+        disabled_reason: None,
+        preview_lines: Vec::new(),
+        actions: Vec::new(),
+        search_terms: Vec::new(),
     }
 }
 

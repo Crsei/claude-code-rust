@@ -42,7 +42,7 @@ sdk/typescript/package-lock.json
 .worktrees
 
 # terminal frontend
-ui/
+/ui/
 ui/node_modules/
 ui/dist/
 ui/bun.lockb

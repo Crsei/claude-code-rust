@@ -5,12 +5,28 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crate::ui::fuzzy_match::best_fuzzy_match;
 use crate::ui::search_box::SearchBox;
 
+#[path = "selection_surface_details.rs"]
+mod selection_surface_details;
+use selection_surface_details::{item_search_terms, push_item_details};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectionItem {
     pub id: String,
     pub label: String,
     pub description: String,
     pub enabled: bool,
+    pub disabled_reason: Option<String>,
+    pub preview_lines: Vec<String>,
+    pub actions: Vec<SelectionAction>,
+    pub search_terms: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectionAction {
+    pub id: String,
+    pub label: String,
+    pub enabled: bool,
+    pub disabled_reason: Option<String>,
 }
 
 impl SelectionItem {
@@ -20,6 +36,10 @@ impl SelectionItem {
             label: label.into(),
             description: String::new(),
             enabled: true,
+            disabled_reason: None,
+            preview_lines: Vec::new(),
+            actions: Vec::new(),
+            search_terms: Vec::new(),
         }
     }
 }
@@ -118,24 +138,45 @@ impl SelectionSurface {
             .and_then(|idx| self.items.get(*idx))
     }
 
+    pub fn selected_enabled_action(&self, action_id: &str) -> Option<&SelectionAction> {
+        self.selected_item()
+            .filter(|item| item.enabled)?
+            .actions
+            .iter()
+            .find(|action| action.id == action_id && action.enabled)
+    }
+
     pub fn render_lines(&self, height: usize) -> Vec<String> {
         let search = SearchBox::new(&self.filter)
             .placeholder("Filter...")
             .borderless(true)
             .render();
         let mut lines = vec![format!("{} {}", self.title, search)];
-        for (visible_idx, item_idx) in self.visible_indices().into_iter().take(height).enumerate() {
+        let mut rendered_rows = 0usize;
+        for (visible_idx, item_idx) in self.visible_indices().into_iter().enumerate() {
+            if rendered_rows >= height {
+                break;
+            }
             let item = &self.items[item_idx];
             let marker = if visible_idx == self.selected {
                 ">"
             } else {
                 " "
             };
-            let state = if item.enabled { "" } else { " disabled" };
+            let state = if item.enabled {
+                String::new()
+            } else {
+                item.disabled_reason
+                    .as_deref()
+                    .map(|reason| format!(" disabled: {reason}"))
+                    .unwrap_or_else(|| " disabled".to_string())
+            };
             lines.push(format!(
                 "{marker} {} - {}{state}",
                 item.label, item.description
             ));
+            rendered_rows += 1;
+            push_item_details(&mut lines, item, &mut rendered_rows, height);
         }
         lines
     }
@@ -146,14 +187,7 @@ impl SelectionSurface {
             .iter()
             .enumerate()
             .filter_map(|(idx, item)| {
-                let matched = best_fuzzy_match(
-                    [
-                        item.label.as_str(),
-                        item.id.as_str(),
-                        item.description.as_str(),
-                    ],
-                    &self.filter,
-                )?;
+                let matched = best_fuzzy_match(item_search_terms(item), &self.filter)?;
                 Some((idx, matched.score))
             })
             .collect::<Vec<_>>();
@@ -161,6 +195,9 @@ impl SelectionSurface {
         matches.into_iter().map(|(idx, _)| idx).collect()
     }
 }
+
+#[cfg(test)]
+mod selection_surface_preview_tests;
 
 #[cfg(test)]
 mod tests {

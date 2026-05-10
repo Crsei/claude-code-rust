@@ -1,5 +1,7 @@
 //! Built-in rich status widget.
 
+use crate::ui::status_icon::StatusIcon;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusSeverity {
     Ok,
@@ -11,8 +13,8 @@ impl StatusSeverity {
     fn label(self) -> Option<&'static str> {
         match self {
             StatusSeverity::Ok => None,
-            StatusSeverity::Warning => Some("warn"),
-            StatusSeverity::Error => Some("error"),
+            StatusSeverity::Warning => Some(StatusIcon::Warning.label()),
+            StatusSeverity::Error => Some(StatusIcon::Error.label()),
         }
     }
 }
@@ -128,9 +130,9 @@ impl StatusSnapshot {
 
     fn subsystems_label(&self) -> &'static str {
         if self.subsystems_ok {
-            "ok"
+            StatusIcon::Ok.label()
         } else {
-            "attention"
+            StatusIcon::Attention.label()
         }
     }
 }

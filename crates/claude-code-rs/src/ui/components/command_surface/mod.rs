@@ -148,19 +148,7 @@ impl CommandSurface {
 }
 
 fn render_tabs(labels: &[impl AsRef<str>], selected: usize) -> String {
-    labels
-        .iter()
-        .enumerate()
-        .map(|(idx, label)| {
-            let label = label.as_ref();
-            if idx == selected {
-                format!("[{label}]")
-            } else {
-                format!(" {label} ")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+    crate::ui::tabs::render_tabs(labels, selected)
 }
 
 fn cycle_index(current: usize, len: usize, direction: isize) -> usize {

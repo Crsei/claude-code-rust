@@ -45,6 +45,10 @@ pub fn build_mcp_server_approval_surface(server_name: &str) -> SelectionSurface 
                 label: choice.label,
                 description: format!("{} -> {}", choice.description, choice.command),
                 enabled: true,
+                disabled_reason: None,
+                preview_lines: Vec::new(),
+                actions: Vec::new(),
+                search_terms: Vec::new(),
             })
             .collect(),
     )

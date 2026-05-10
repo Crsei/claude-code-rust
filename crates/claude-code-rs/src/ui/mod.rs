@@ -58,6 +58,8 @@ pub mod fuzzy_match;
 #[allow(dead_code)]
 #[path = "components/history_search_dialog.rs"]
 pub mod history_search_dialog;
+#[path = "components/keyboard_shortcut.rs"]
+pub mod keyboard_shortcut;
 #[allow(dead_code)]
 #[path = "components/pager_overlay.rs"]
 pub mod pager_overlay;
@@ -73,9 +75,13 @@ pub mod search_box;
 #[allow(dead_code)]
 #[path = "components/selection_surface.rs"]
 pub mod selection_surface;
+#[path = "components/status_icon.rs"]
+pub mod status_icon;
 #[allow(dead_code)]
 #[path = "components/status_widget.rs"]
 pub mod status_widget;
+#[path = "components/tabs.rs"]
+pub mod tabs;
 #[allow(dead_code)]
 #[path = "components/tooltops.rs"]
 pub mod tooltops;
