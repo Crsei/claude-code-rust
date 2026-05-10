@@ -69,7 +69,7 @@ function Get-PathSet {
     foreach ($path in $Paths) {
         [void]$set.Add($path)
     }
-    return $set
+    return ,$set
 }
 
 function Test-TrackedPath {
