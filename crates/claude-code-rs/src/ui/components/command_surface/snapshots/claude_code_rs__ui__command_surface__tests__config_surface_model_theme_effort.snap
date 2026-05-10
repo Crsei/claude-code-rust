@@ -4,14 +4,14 @@ expression: "rendered.join(\"\\n\\n\")"
 ---
 -- status --
 Config
-[Status]  Model   Theme   Effort   Config   Editor
+[Status]  Model   Theme   Usage   Output   Language   Thinking   Safety   Config
 > Show effective config - model=custom-model; backend=native
   Show setting sources - which layer set each key
 Left/Right switch tabs | Up/Down navigate | Enter select | Esc close
 
 -- model --
 Config
- Status  [Model]  Theme   Effort   Config   Editor
+ Status  [Model]  Theme   Usage   Output   Language   Thinking   Safety   Config
 Current effort: medium (10240 tokens)
 Model / Filter...
 > custom-model - configured; current; effort=medium
@@ -20,7 +20,7 @@ Left/Right switch tabs | Type filter | Up/Down navigate | Enter select | Esc clo
 
 -- theme --
 Config
- Status   Model  [Theme]  Effort   Config   Editor
+ Status   Model  [Theme]  Usage   Output   Language   Thinking   Safety   Config
 Theme / Filter...
   Auto - match terminal when supported
   Dark mode - default ratatui palette
@@ -30,9 +30,39 @@ Theme / Filter...
   Nord - cool low-saturation palette
 Left/Right switch tabs | Type filter | Up/Down navigate | Enter select | Esc close
 
--- effort --
+-- usage --
 Config
- Status   Model   Theme  [Effort]  Config   Editor
+ Status   Model   Theme  [Usage]  Output   Language   Thinking   Safety   Config
+> Show session usage - token totals and estimated cost
+  Show extended usage - per-message token and cost breakdown
+Left/Right switch tabs | Up/Down navigate | Enter select | Esc close
+
+-- output --
+Config
+ Status   Model   Theme   Usage  [Output]  Language   Thinking   Safety   Config
+> Use default output style - current outputStyle=explanatory
+  Use explanatory output style - current outputStyle=explanatory
+  Use learning output style - current outputStyle=explanatory
+  Set custom output style - fill prompt with /config set outputStyle
+  Enable vim editor mode - current editorMode=normal
+  Use normal editor mode - current editorMode=normal
+  Enable terminal progress bar - current terminalProgressBarEnabled=not set
+  Disable terminal progress bar - current terminalProgressBarEnabled=not set
+Left/Right switch tabs | Up/Down navigate | Enter select | Esc close
+
+-- language --
+Config
+ Status   Model   Theme   Usage   Output  [Language]  Thinking   Safety   Config
+> Set response language - current language=English
+  Use English - current language=English
+  Use Chinese - current language=English
+  Enable voice input - current voiceEnabled=not set
+  Disable voice input - current voiceEnabled=not set
+Left/Right switch tabs | Up/Down navigate | Enter select | Esc close
+
+-- thinking --
+Config
+ Status   Model   Theme   Usage   Output   Language  [Thinking]  Safety   Config
 Effort / Filter...
   Auto - model default; 10240 tokens
   Low - shorter thinking budget; 4096 tokens
@@ -40,3 +70,11 @@ Effort / Filter...
   High - deeper thinking budget; 24576 tokens
   Max - largest fixed thinking budget; 32768 tokens
 Left/Right switch tabs | Type filter | Up/Down navigate | Enter select | Esc close
+
+-- safety --
+Config
+ Status   Model   Theme   Usage   Output   Language   Thinking  [Safety]  Config
+> Review setting sources - managed/user/project/local provenance
+  Review raw layers - inspect managed/user/project/local JSON
+  Review settings schema - supported settings and validation shape
+Left/Right switch tabs | Up/Down navigate | Enter select | Esc close

@@ -1158,8 +1158,14 @@ pub fn write_settings_file(path: &Path, raw: &RawSettings) -> Result<()> {
     let pretty =
         serde_json::to_string_pretty(raw).context("Failed to serialize settings to JSON")?;
 
-    // Atomic-ish: write to a tmp sibling, then rename.
-    let tmp = path.with_extension("json.tmp");
+    // Atomic-ish: write to a unique tmp sibling, then rename. A fixed
+    // `settings.json.tmp` name races when config tests mutate isolated homes in
+    // parallel on Windows.
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let tmp = path.with_extension(format!("json.{}.{}.tmp", std::process::id(), nonce));
     std::fs::write(&tmp, pretty).with_context(|| format!("Failed to write {}", tmp.display()))?;
     std::fs::rename(&tmp, path)
         .with_context(|| format!("Failed to rename {} -> {}", tmp.display(), path.display()))?;

@@ -260,7 +260,7 @@ fn config_surface_uses_tab_navigation_and_selection() {
     let mut surface = CommandSurface::Config(ConfigSurface::new(&AppState::default()));
     assert!(surface.render().contains("[Status]"));
 
-    surface.handle_key(key(KeyCode::Char('5')));
+    surface.handle_key(key(KeyCode::Char('9')));
     assert!(surface.render().contains("[Config]"));
     surface.handle_key(key(KeyCode::Down));
 
@@ -280,6 +280,8 @@ fn config_surface_exposes_model_theme_and_effort_pickers() {
     state.main_loop_model = "custom-model".into();
     state.settings.available_models = vec!["custom-model".into(), "SOTA".into()];
     state.settings.theme = Some("light".into());
+    state.settings.output_style = Some("explanatory".into());
+    state.settings.language = Some("English".into());
     state.effort_value = Some("medium".into());
 
     let mut surface = CommandSurface::Config(ConfigSurface::new(&state));
@@ -292,7 +294,19 @@ fn config_surface_exposes_model_theme_and_effort_pickers() {
     rendered.push(section("theme", surface.render()));
 
     surface.handle_key(key(KeyCode::Right));
-    rendered.push(section("effort", surface.render()));
+    rendered.push(section("usage", surface.render()));
+
+    surface.handle_key(key(KeyCode::Right));
+    rendered.push(section("output", surface.render()));
+
+    surface.handle_key(key(KeyCode::Right));
+    rendered.push(section("language", surface.render()));
+
+    surface.handle_key(key(KeyCode::Right));
+    rendered.push(section("thinking", surface.render()));
+
+    surface.handle_key(key(KeyCode::Right));
+    rendered.push(section("safety", surface.render()));
 
     insta::assert_snapshot!("config_surface_model_theme_effort", rendered.join("\n\n"));
 }
@@ -321,9 +335,9 @@ fn config_surface_picker_selection_submits_config_set_commands() {
     );
 
     let mut effort_surface = CommandSurface::Config(ConfigSurface::new(&state));
-    effort_surface.handle_key(key(KeyCode::Right));
-    effort_surface.handle_key(key(KeyCode::Right));
-    effort_surface.handle_key(key(KeyCode::Right));
+    for _ in 0..6 {
+        effort_surface.handle_key(key(KeyCode::Right));
+    }
     assert_eq!(
         effort_surface.handle_key(key(KeyCode::Enter)),
         CommandSurfaceOutcome::Submit("/config set effortLevel medium".to_string())
