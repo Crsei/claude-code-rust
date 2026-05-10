@@ -183,6 +183,29 @@ mod tests {
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
     use std::path::PathBuf;
+    use std::sync::{Mutex, MutexGuard};
+
+    static PENDING_OAUTH_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    struct PendingOAuthTestGuard {
+        _guard: MutexGuard<'static, ()>,
+    }
+
+    impl PendingOAuthTestGuard {
+        fn acquire() -> Self {
+            let guard = PENDING_OAUTH_TEST_LOCK
+                .lock()
+                .expect("pending OAuth test lock poisoned");
+            let _ = PENDING_OAUTH.lock().take();
+            Self { _guard: guard }
+        }
+    }
+
+    impl Drop for PendingOAuthTestGuard {
+        fn drop(&mut self) {
+            let _ = PENDING_OAUTH.lock().take();
+        }
+    }
 
     fn test_ctx() -> CommandContext {
         CommandContext {
@@ -197,8 +220,7 @@ mod tests {
 
     #[test]
     fn test_start_pending_claude_ai_contains_url() {
-        // Clear any pre-existing state first
-        let _ = PENDING_OAUTH.lock().take();
+        let _guard = PendingOAuthTestGuard::acquire();
         let msg = start_pending(config::OAuthMethod::ClaudeAi);
         assert!(
             msg.contains("Claude.ai"),
@@ -219,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_start_pending_console_contains_url() {
-        let _ = PENDING_OAUTH.lock().take();
+        let _guard = PendingOAuthTestGuard::acquire();
         let msg = start_pending(config::OAuthMethod::Console);
         assert!(
             msg.contains("Console"),
@@ -231,9 +253,9 @@ mod tests {
 
     #[test]
     fn test_start_pending_openai_codex_missing_client_id() {
+        let _guard = PendingOAuthTestGuard::acquire();
         let saved = std::env::var(config::OPENAI_CODEX_OAUTH_CLIENT_ID_ENV).ok();
         std::env::remove_var(config::OPENAI_CODEX_OAUTH_CLIENT_ID_ENV);
-        let _ = PENDING_OAUTH.lock().take();
         let msg = start_pending(config::OAuthMethod::OpenAiCodex);
         assert!(msg.contains("Cannot start OAuth flow"));
         if let Some(value) = saved {
@@ -243,7 +265,7 @@ mod tests {
 
     #[test]
     fn test_start_pending_stores_state() {
-        let _ = PENDING_OAUTH.lock().take();
+        let _guard = PendingOAuthTestGuard::acquire();
         start_pending(config::OAuthMethod::ClaudeAi);
         let pending = PENDING_OAUTH.lock().take();
         assert!(
@@ -269,8 +291,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_login_code_no_pending_flow() {
-        // Ensure no pending state
-        let _ = PENDING_OAUTH.lock().take();
+        let _guard = PendingOAuthTestGuard::acquire();
         let handler = LoginCodeHandler;
         let mut ctx = test_ctx();
         let result = handler.execute("some-fake-code", &mut ctx).await.unwrap();

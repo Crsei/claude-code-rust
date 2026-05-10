@@ -1,5 +1,47 @@
 Set-StrictMode -Version Latest
 
+function Invoke-LoggedCargoCommand {
+    param(
+        [string[]]$CargoArgs,
+        [string]$LogPath
+    )
+
+    $stdoutPath = "$LogPath.stdout.tmp"
+    $stderrPath = "$LogPath.stderr.tmp"
+    Remove-Item -LiteralPath $stdoutPath, $stderrPath -ErrorAction SilentlyContinue
+
+    try {
+        $process = Start-Process `
+            -FilePath "cargo" `
+            -ArgumentList $CargoArgs `
+            -NoNewWindow `
+            -Wait `
+            -PassThru `
+            -RedirectStandardOutput $stdoutPath `
+            -RedirectStandardError $stderrPath
+        $exitCode = $process.ExitCode
+    } catch {
+        "ERROR: failed to start cargo: $($_.Exception.Message)" |
+            Add-Content -LiteralPath $LogPath -Encoding UTF8
+        Write-Host "ERROR: failed to start cargo: $($_.Exception.Message)" -ForegroundColor Red
+        return 1
+    }
+
+    foreach ($path in @($stdoutPath, $stderrPath)) {
+        if (-not (Test-Path -LiteralPath $path)) {
+            continue
+        }
+        $lines = @(Get-Content -LiteralPath $path -Encoding UTF8)
+        if ($lines.Count -gt 0) {
+            $lines | Add-Content -LiteralPath $LogPath -Encoding UTF8
+            $lines | Out-Host
+        }
+        Remove-Item -LiteralPath $path -ErrorAction SilentlyContinue
+    }
+
+    return $exitCode
+}
+
 function Invoke-FinalValidation {
     param([string]$OutputRoot)
 
@@ -25,8 +67,7 @@ function Invoke-FinalValidation {
 
         Write-Host ""
         Write-Host "=== Final validation: $display ===" -ForegroundColor Cyan
-        & cargo @args 2>&1 | Tee-Object -FilePath $logPath -Append | Out-Host
-        $exitCode = $LASTEXITCODE
+        $exitCode = Invoke-LoggedCargoCommand -CargoArgs $args -LogPath $logPath
         "Finished: $((Get-Date).ToString("o"))" | Add-Content -LiteralPath $logPath -Encoding UTF8
         "Exit code: $exitCode" | Add-Content -LiteralPath $logPath -Encoding UTF8
 
