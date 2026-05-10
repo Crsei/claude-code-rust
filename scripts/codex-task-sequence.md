@@ -60,3 +60,17 @@ Each task writes its final assistant message to:
 ```
 
 Use these files when preparing follow-up documentation or checking which task failed.
+
+## Workspace crate extraction wrapper
+
+For the crate-extraction refactor lanes, use the wrapper that adds dynamic
+batching, review checkpoints, refactor guards, and commit-on-green around this
+base runner:
+
+```powershell
+.\scripts\run-workspace-crate-extraction-omx.ps1 -DryRun
+.\scripts\run-workspace-crate-extraction-omx.ps1
+```
+
+The wrapper keeps `gpt-5.5` + `medium` fixed and reads tasks from
+`docs/scripts/workspace-crate-extraction-omx-tasks-2026-05-10.txt`.

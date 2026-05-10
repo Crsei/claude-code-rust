@@ -81,3 +81,29 @@ Useful options:
 - `-SkipCommit`: run tasks and guards without automatic commits
 - `-ContinueOnError`: continue after a failed batch to collect more diagnostics
 - `-MaxBatchSize`, `-MinBatchSize`, `-InitialBatchSize`: tune dynamic batch sizing
+
+## `run-workspace-crate-extraction-omx.ps1`
+
+Run the workspace crate-extraction execution plan through
+`codex-task-sequence.ps1` with fixed `gpt-5.5` + `medium`, dynamic batching,
+review checkpoints, commit-on-green, and Rust file-size/refactor guards.
+
+Dry run:
+
+```powershell
+.\scripts\run-workspace-crate-extraction-omx.ps1 -DryRun
+```
+
+Execute:
+
+```powershell
+.\scripts\run-workspace-crate-extraction-omx.ps1
+```
+
+Useful options:
+
+- `-TasksFile`: defaults to `docs/scripts/workspace-crate-extraction-omx-tasks-2026-05-10.txt`
+- `-SkipCommit`: run tasks and guards without automatic commits
+- `-ContinueOnError`: continue after a failed batch to collect diagnostics
+- `-InitialBatchSize`, `-MinBatchSize`, `-MaxBatchSize`: tune dynamic task allocation
+- `-WarnRustFileLines` and `-MaxRustFileLines`: tune refactor/file-size detection
