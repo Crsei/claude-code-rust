@@ -70,6 +70,14 @@ The wrapper:
 - writes batch summaries under
   `target/codex-runs/workspace-crate-extraction-omx`;
 - commits only new paths changed after the wrapper starts.
+- commits baseline-dirty paths too when their content changes during a batch
+  (`-CommitBaselineDirtyChanges` defaults to true), which means a batch may
+  intentionally include the pre-existing edits in a file it touches.
+- parses agent final messages for leading `ERROR`, `BLOCKER`, or `WARNING`
+  lines and records those in the batch diagnostics.
+- records failed batch reasons to `failures.md/jsonl`, then writes a final
+  report and runs unified final validation unless `-SkipFinalValidation` is
+  supplied.
 
 ## Review Plan
 

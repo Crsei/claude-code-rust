@@ -86,7 +86,8 @@ Useful options:
 
 Run the workspace crate-extraction execution plan through
 `codex-task-sequence.ps1` with fixed `gpt-5.5` + `medium`, dynamic batching,
-review checkpoints, commit-on-green, and Rust file-size/refactor guards.
+review checkpoints, commit-on-green, Rust file-size/refactor guards, final
+validation, and a final run report.
 
 Dry run:
 
@@ -104,6 +105,20 @@ Useful options:
 
 - `-TasksFile`: defaults to `docs/scripts/workspace-crate-extraction-omx-tasks-2026-05-10.txt`
 - `-SkipCommit`: run tasks and guards without automatic commits
+- `-CommitBaselineDirtyChanges`: defaults to `$true`; baseline-dirty files are committed if their content changes during a batch
 - `-ContinueOnError`: continue after a failed batch to collect diagnostics
+- `-SkipFinalValidation`: skip the final `cargo fmt/check/clippy/test` validation sequence
 - `-InitialBatchSize`, `-MinBatchSize`, `-MaxBatchSize`: tune dynamic task allocation
 - `-WarnRustFileLines` and `-MaxRustFileLines`: tune refactor/file-size detection
+
+Outputs:
+
+- `batch-XX.summary.md/json`: per-batch tasks, changed files, guard findings, diagnostics, and last-message paths
+- `failures.md/jsonl`: failed batch reasons, including test/script failures and agent-reported `ERROR` / `BLOCKER`
+- `final-validation/`: logs for `cargo fmt --all --check`, `cargo check --workspace --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace`
+- `final-report.md/json`: run-level summary, stopped-early reason, validation results, and git status sample
+
+Default failure behavior: stop after the first failed batch, record the failure
+reason, run final validation, and write the final report. Use
+`-ContinueOnError` only when you intentionally want later tasks to run on the
+post-failure worktree for diagnostic collection.
