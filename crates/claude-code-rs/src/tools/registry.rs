@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+pub use cc_tools::registry::ToolPolicy;
 use tracing::warn;
 
 use crate::types::tool::Tools;
@@ -16,31 +17,12 @@ use super::send_user_message::SendUserMessageTool;
 use super::skill::SkillTool;
 use super::structured_output::StructuredOutputTool;
 use super::system_status::SystemStatusTool;
-use super::tasks::{
-    TaskCreateTool, TaskGetTool, TaskListTool, TaskOutputTool, TaskStopTool, TaskUpdateTool,
-    TodoWriteTool,
-};
 use super::team_spawn::TeamSpawnTool;
 use super::tool_search::ToolSearchTool;
 use super::web_fetch::WebFetchTool;
 use super::web_search::WebSearchTool;
 use super::worktree::{EnterWorktreeTool, ExitWorktreeTool};
-use super::{exec, fs};
-
-/// Runtime tool visibility profile.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ToolPolicy {
-    /// Default interactive/session tool pool.
-    DefaultAgent,
-    /// Coordinator lead tool pool. The lead delegates via Agent, communicates
-    /// through mailboxes, and can inspect/stop worker tasks.
-    Coordinator,
-    /// Dedicated coordinator worker pool.
-    CoordinatorWorker,
-    /// Generic in-process teammate pool. This intentionally excludes internal
-    /// team orchestration tools so teammates cannot recursively coordinate.
-    InProcessTeammate,
-}
+use super::{exec, fs, tasks};
 
 /// Get all base tool instances.
 ///
@@ -61,6 +43,7 @@ fn base_tools() -> Tools {
     // Domain-grouped tools — each sub-domain owns its own list.
     tools.extend(fs::tools());
     tools.extend(exec::tools());
+    tools.extend(tasks::tools());
 
     // Single-tool / small-cluster modules (not yet a sub-domain).
     tools.extend([
@@ -76,13 +59,6 @@ fn base_tools() -> Tools {
         Arc::new(ExitPlanModeTool) as _,
         Arc::new(EnterWorktreeTool) as _,
         Arc::new(ExitWorktreeTool) as _,
-        Arc::new(TodoWriteTool) as _,
-        Arc::new(TaskCreateTool) as _,
-        Arc::new(TaskGetTool) as _,
-        Arc::new(TaskUpdateTool) as _,
-        Arc::new(TaskListTool) as _,
-        Arc::new(TaskStopTool) as _,
-        Arc::new(TaskOutputTool) as _,
         Arc::new(LspTool) as _,
         Arc::new(SendMessageTool) as _,
         Arc::new(SubscribePrActivityTool) as _,
@@ -131,52 +107,13 @@ pub fn get_tools_for_policy(policy: ToolPolicy) -> Tools {
 
 /// Filter an existing tool set for a runtime policy.
 pub fn filter_tools_for_policy(tools: Tools, policy: ToolPolicy) -> Tools {
-    let Some(allowed) = allowed_tools_for_policy(policy) else {
+    let Some(allowed) = cc_tools::registry::allowed_tool_names(policy) else {
         return tools;
     };
     tools
         .into_iter()
         .filter(|tool| allowed.iter().any(|name| *name == tool.name()))
         .collect()
-}
-
-fn allowed_tools_for_policy(policy: ToolPolicy) -> Option<&'static [&'static str]> {
-    match policy {
-        ToolPolicy::DefaultAgent => None,
-        ToolPolicy::Coordinator => Some(&[
-            "Agent",
-            "SendMessage",
-            "TaskList",
-            "TaskStop",
-            "subscribe_pr_activity",
-            "unsubscribe_pr_activity",
-        ]),
-        ToolPolicy::CoordinatorWorker => Some(&[
-            "Glob",
-            "Grep",
-            "Read",
-            "Bash",
-            "Edit",
-            "Write",
-            "TodoWrite",
-            "TaskList",
-            "TaskUpdate",
-            "SendMessage",
-        ]),
-        ToolPolicy::InProcessTeammate => Some(&[
-            "Glob",
-            "Grep",
-            "Read",
-            "Bash",
-            "Edit",
-            "Write",
-            "TodoWrite",
-            "TaskList",
-            "TaskUpdate",
-            "TaskOutput",
-            "SendMessage",
-        ]),
-    }
 }
 
 #[cfg(test)]

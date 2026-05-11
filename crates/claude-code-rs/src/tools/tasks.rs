@@ -18,11 +18,10 @@ use cc_tasks::dependency_ids_from_input;
 use cc_tasks::{
     normalize_dependencies, normalize_optional_string, parse_task_create, parse_task_id,
     parse_task_update, TaskError, TaskUpdateAction, DEFAULT_TASK_LIST_ID,
-    REMOTE_TASK_TYPE_AUTOFIX_PR, REMOTE_TASK_TYPE_BACKGROUND_PR, REMOTE_TASK_TYPE_ENUM,
-    REMOTE_TASK_TYPE_REMOTE_AGENT, REMOTE_TASK_TYPE_ULTRAPLAN, REMOTE_TASK_TYPE_ULTRAREVIEW,
-    TASK_CREATE_KIND_ENUM, TASK_KIND_DREAM, TASK_KIND_IN_PROCESS_TEAMMATE, TASK_KIND_LOCAL_AGENT,
-    TASK_KIND_LOCAL_BASH, TASK_KIND_LOCAL_WORKFLOW, TASK_KIND_MONITOR_MCP, TASK_KIND_REMOTE_AGENT,
-    TASK_KIND_TOOL,
+    REMOTE_TASK_TYPE_AUTOFIX_PR, REMOTE_TASK_TYPE_BACKGROUND_PR, REMOTE_TASK_TYPE_REMOTE_AGENT,
+    REMOTE_TASK_TYPE_ULTRAPLAN, REMOTE_TASK_TYPE_ULTRAREVIEW, TASK_KIND_DREAM,
+    TASK_KIND_IN_PROCESS_TEAMMATE, TASK_KIND_LOCAL_AGENT, TASK_KIND_LOCAL_BASH,
+    TASK_KIND_LOCAL_WORKFLOW, TASK_KIND_MONITOR_MCP, TASK_KIND_REMOTE_AGENT, TASK_KIND_TOOL,
 };
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -82,8 +81,8 @@ use todo::todo_snapshot_for_key;
 const TASK_SCHEMA_VERSION: u32 = 5;
 const DEFAULT_OUTPUT_LIMIT_BYTES: usize = 64 * 1024;
 const OUTPUT_SUMMARY_MAX_CHARS: usize = 2_000;
-const DEFAULT_TASK_OUTPUT_TIMEOUT_MS: u64 = 30_000;
-const MAX_TASK_OUTPUT_TIMEOUT_MS: u64 = 600_000;
+const DEFAULT_TASK_OUTPUT_TIMEOUT_MS: u64 = cc_tools::task_specs::TASK_OUTPUT_DEFAULT_TIMEOUT_MS;
+const MAX_TASK_OUTPUT_TIMEOUT_MS: u64 = cc_tools::task_specs::TASK_OUTPUT_MAX_TIMEOUT_MS;
 const TASK_OUTPUT_POLL_INTERVAL_MS: u64 = 100;
 const REMOTE_REVIEW_TIMEOUT_MS: i64 = 30 * 60 * 1000;
 const TASK_HIGHWATERMARK_FILE: &str = ".highwatermark";
@@ -440,3 +439,19 @@ pub fn global_store() -> TaskStore {
 // TaskOutputTool lives in tasks/output.rs.
 
 // Tests live in tasks/tests.rs.
+
+/// Task-domain tool adapters.
+///
+/// Runtime behavior still lives in this root module while the workspace split
+/// moves pure specs and task-domain types into leaf crates.
+pub fn tools() -> Tools {
+    vec![
+        Arc::new(TodoWriteTool),
+        Arc::new(TaskCreateTool),
+        Arc::new(TaskGetTool),
+        Arc::new(TaskUpdateTool),
+        Arc::new(TaskListTool),
+        Arc::new(TaskStopTool),
+        Arc::new(TaskOutputTool),
+    ]
+}

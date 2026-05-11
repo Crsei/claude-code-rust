@@ -845,6 +845,10 @@ dependencies = [
 [[package]]
 name = "cc-tools"
 version = "0.1.0"
+dependencies = [
+ "cc-tasks",
+ "serde_json",
+]
 
 [[package]]
 name = "cc-types"
@@ -975,6 +979,7 @@ dependencies = [
  "cc-session",
  "cc-skills",
  "cc-tasks",
+ "cc-tools",
  "cc-types",
  "cc-utils",
  "chrono",

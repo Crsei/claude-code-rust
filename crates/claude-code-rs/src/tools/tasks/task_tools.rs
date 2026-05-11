@@ -33,7 +33,7 @@ pub struct TodoWriteTool;
 #[async_trait]
 impl Tool for TodoWriteTool {
     fn name(&self) -> &str {
-        "TodoWrite"
+        cc_tools::task_specs::TODO_WRITE_NAME
     }
 
     async fn description(&self, _: &Value) -> String {
@@ -41,35 +41,7 @@ impl Tool for TodoWriteTool {
     }
 
     fn input_json_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "todos": {
-                    "type": "array",
-                    "description": "Complete replacement todo list for the current session or agent",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "content": {
-                                "type": "string",
-                                "description": "Todo item text"
-                            },
-                            "status": {
-                                "type": "string",
-                                "enum": ["pending", "in_progress", "completed"],
-                                "description": "Todo status"
-                            },
-                            "activeForm": {
-                                "type": "string",
-                                "description": "Optional in-progress wording for UI display"
-                            }
-                        },
-                        "required": ["content", "status"]
-                    }
-                }
-            },
-            "required": ["todos"]
-        })
+        cc_tools::task_specs::todo_write_schema()
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
@@ -136,16 +108,12 @@ impl Tool for TodoWriteTool {
     }
 }
 
-// =============================================================================
-// TaskCreateTool
-// =============================================================================
-
 pub struct TaskCreateTool;
 
 #[async_trait]
 impl Tool for TaskCreateTool {
     fn name(&self) -> &str {
-        "TaskCreate"
+        cc_tools::task_specs::TASK_CREATE_NAME
     }
 
     async fn description(&self, _: &Value) -> String {
@@ -153,97 +121,7 @@ impl Tool for TaskCreateTool {
     }
 
     fn input_json_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "subject": {
-                    "type": "string",
-                    "description": "A brief title for the task"
-                },
-                "description": {
-                    "type": "string",
-                    "description": "What needs to be done"
-                },
-                "activeForm": {
-                    "type": "string",
-                    "description": "Present continuous form shown while the task is in progress"
-                },
-                "metadata": {
-                    "type": "object",
-                    "description": "Arbitrary metadata to attach to the task"
-                },
-                "kind": {
-                    "type": "string",
-                    "description": "Stable task type for persisted records; legacy aliases are accepted and normalized",
-                    "enum": TASK_CREATE_KIND_ENUM
-                },
-                "parent_id": {
-                    "type": "string",
-                    "description": "Optional parent task ID"
-                },
-                "depends_on": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Task IDs that should complete before this task"
-                },
-                "blocked_by": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Bun-compatible alias for depends_on"
-                },
-                "blockedBy": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Bun-compatible camelCase alias for depends_on"
-                },
-                "owner": {
-                    "type": "string",
-                    "description": "Optional owner that has claimed this task"
-                },
-                "tool_use_id": {
-                    "type": "string",
-                    "description": "Optional upstream tool use ID associated with this task"
-                },
-                "agent_id": {
-                    "type": "string",
-                    "description": "Optional agent ID associated with this task"
-                },
-                "supervisor_id": {
-                    "type": "string",
-                    "description": "Optional runtime supervisor ID for this task"
-                },
-                "isolation": {
-                    "type": "string",
-                    "description": "Optional runtime isolation label, such as worktree"
-                },
-                "worktree_path": {
-                    "type": "string",
-                    "description": "Optional worktree path for isolated task execution"
-                },
-                "worktree_branch": {
-                    "type": "string",
-                    "description": "Optional worktree branch for isolated task execution"
-                },
-                "remote_task_type": {
-                    "type": "string",
-                    "enum": REMOTE_TASK_TYPE_ENUM,
-                    "description": "Optional remote task subtype used by remote-agent supervisors"
-                },
-                "remote_session_id": {
-                    "type": "string",
-                    "description": "Optional remote session ID used to restore or poll a remote task"
-                },
-                "remote_task_metadata": {
-                    "type": "object",
-                    "description": "Optional remote task metadata, such as repository or pull request identifiers"
-                },
-                "poll_started_at": {
-                    "type": "integer",
-                    "description": "Optional remote poll start timestamp in milliseconds since epoch"
-                }
-            },
-            "required": ["subject", "description"]
-        })
+        cc_tools::task_specs::task_create_schema()
     }
 
     async fn call(
@@ -304,16 +182,12 @@ impl Tool for TaskCreateTool {
     }
 }
 
-// =============================================================================
-// TaskGetTool
-// =============================================================================
-
 pub struct TaskGetTool;
 
 #[async_trait]
 impl Tool for TaskGetTool {
     fn name(&self) -> &str {
-        "TaskGet"
+        cc_tools::task_specs::TASK_GET_NAME
     }
 
     async fn description(&self, _: &Value) -> String {
@@ -321,19 +195,7 @@ impl Tool for TaskGetTool {
     }
 
     fn input_json_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "task_id": {
-                    "type": "string",
-                    "description": "The task ID to look up"
-                }
-            },
-            "anyOf": [
-                { "required": ["task_id"] },
-                { "required": ["taskId"] }
-            ]
-        })
+        cc_tools::task_specs::task_get_schema()
     }
 
     fn is_concurrency_safe(&self, _: &Value) -> bool {
@@ -372,16 +234,12 @@ impl Tool for TaskGetTool {
     }
 }
 
-// =============================================================================
-// TaskUpdateTool
-// =============================================================================
-
 pub struct TaskUpdateTool;
 
 #[async_trait]
 impl Tool for TaskUpdateTool {
     fn name(&self) -> &str {
-        "TaskUpdate"
+        cc_tools::task_specs::TASK_UPDATE_NAME
     }
 
     async fn description(&self, _: &Value) -> String {
@@ -389,63 +247,7 @@ impl Tool for TaskUpdateTool {
     }
 
     fn input_json_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "task_id": {
-                    "type": "string",
-                    "description": "The task ID to update"
-                },
-                "taskId": {
-                    "type": "string",
-                    "description": "Bun-compatible alias for task_id"
-                },
-                "subject": {
-                    "type": "string",
-                    "description": "New subject for the task"
-                },
-                "description": {
-                    "type": "string",
-                    "description": "New description for the task"
-                },
-                "activeForm": {
-                    "type": "string",
-                    "description": "Present continuous form shown while the task is in progress"
-                },
-                "status": {
-                    "type": "string",
-                    "enum": ["pending", "in_progress", "completed", "failed", "cancelled", "recoverable", "interrupted", "deleted"],
-                    "description": "New status for the task"
-                },
-                "addBlocks": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Task IDs that this task blocks"
-                },
-                "addBlockedBy": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Task IDs that block this task"
-                },
-                "owner": {
-                    "type": "string",
-                    "description": "Agent or session owner for this task"
-                },
-                "metadata": {
-                    "type": "object",
-                    "description": "Metadata keys to merge into the task; null values delete keys"
-                },
-                "check_agent_busy": {
-                    "type": "boolean",
-                    "description": "When claiming, fail if the same owner already has another unfinished task"
-                },
-                "checkAgentBusy": {
-                    "type": "boolean",
-                    "description": "Bun-compatible camelCase alias for check_agent_busy"
-                }
-            },
-            "required": ["task_id"]
-        })
+        cc_tools::task_specs::task_update_schema()
     }
 
     async fn call(
@@ -591,16 +393,12 @@ impl Tool for TaskUpdateTool {
     }
 }
 
-// =============================================================================
-// TaskListTool
-// =============================================================================
-
 pub struct TaskListTool;
 
 #[async_trait]
 impl Tool for TaskListTool {
     fn name(&self) -> &str {
-        "TaskList"
+        cc_tools::task_specs::TASK_LIST_NAME
     }
 
     async fn description(&self, _: &Value) -> String {
@@ -608,10 +406,7 @@ impl Tool for TaskListTool {
     }
 
     fn input_json_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {}
-        })
+        cc_tools::task_specs::task_list_schema()
     }
 
     fn is_concurrency_safe(&self, _: &Value) -> bool {
@@ -651,16 +446,12 @@ impl Tool for TaskListTool {
     }
 }
 
-// =============================================================================
-// TaskStopTool
-// =============================================================================
-
 pub struct TaskStopTool;
 
 #[async_trait]
 impl Tool for TaskStopTool {
     fn name(&self) -> &str {
-        "TaskStop"
+        cc_tools::task_specs::TASK_STOP_NAME
     }
 
     async fn description(&self, _: &Value) -> String {
@@ -668,16 +459,7 @@ impl Tool for TaskStopTool {
     }
 
     fn input_json_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "task_id": {
-                    "type": "string",
-                    "description": "The task ID to cancel"
-                }
-            },
-            "required": ["task_id"]
-        })
+        cc_tools::task_specs::task_stop_schema()
     }
 
     async fn call(

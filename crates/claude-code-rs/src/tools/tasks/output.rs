@@ -123,7 +123,7 @@ pub(super) async fn wait_for_task_output(
 #[async_trait]
 impl Tool for TaskOutputTool {
     fn name(&self) -> &str {
-        "TaskOutput"
+        cc_tools::task_specs::TASK_OUTPUT_NAME
     }
 
     async fn description(&self, _: &Value) -> String {
@@ -131,28 +131,7 @@ impl Tool for TaskOutputTool {
     }
 
     fn input_json_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "task_id": {
-                    "type": "string",
-                    "description": "The task ID whose output to retrieve"
-                },
-                "block": {
-                    "type": "boolean",
-                    "description": "Whether to wait for the task to leave pending/running state",
-                    "default": true
-                },
-                "timeout": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": MAX_TASK_OUTPUT_TIMEOUT_MS,
-                    "description": "Maximum wait time in milliseconds when block=true",
-                    "default": DEFAULT_TASK_OUTPUT_TIMEOUT_MS
-                }
-            },
-            "required": ["task_id"]
-        })
+        cc_tools::task_specs::task_output_schema()
     }
 
     fn is_concurrency_safe(&self, _: &Value) -> bool {

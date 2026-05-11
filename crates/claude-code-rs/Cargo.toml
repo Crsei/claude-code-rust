@@ -154,6 +154,7 @@ cc-browser = { workspace = true }
 cc-session = { workspace = true }
 cc-engine = { workspace = true }
 cc-query = { workspace = true }
+cc-tools = { workspace = true }
 cc-tasks = { workspace = true }
 gateway = { workspace = true }
 

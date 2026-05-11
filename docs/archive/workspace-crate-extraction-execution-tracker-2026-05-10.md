@@ -449,3 +449,71 @@ Error visibility notes:
 - Existing explicit query-loop diagnostics remain covered by the `cc-query` and
   lifecycle tests listed above.
 - No redundant safety layer was added.
+
+## Batch 08 - tools-tasks-06 cc-tools slim specs and adapters
+
+Status: WARNING
+Commit: not committed
+Tasks:
+- [build] tools-tasks-06 - Slim cc-tools to specs, registry helpers, and thin
+  adapters; rewire task callers.
+
+Implemented effects:
+- Replaced the `cc-tools` scaffold docs with a thin crate surface for pure
+  registry helpers and task tool specs.
+- Added `cc_tools::registry::ToolPolicy` plus policy allow-list helpers and
+  rewired the root tool registry to re-export/use them.
+- Added `cc_tools::task_specs` for task tool names, schemas, and task-output
+  timeout bounds.
+- Added a `tasks::tools()` adapter aggregator and rewired the root registry to
+  call it instead of importing individual task tool structs.
+- Rewired task tool adapters to source names/schemas from `cc-tools`; runtime
+  behavior and validation remain in the root task module / `cc-tasks`.
+- Added the root `claude-code-rs -> cc-tools` dependency and `cc-tools ->
+  cc-tasks + serde_json` leaf dependencies.
+
+Defects and divergences:
+- `cargo test -p claude-code-rs tools::` compiled and ran the affected tests,
+  but finished with 4 unrelated `tools::plan_mode` failures caused by a
+  malformed external state file:
+  `C:\Users\86186\.cc-rust\plan-workflow.json` (`trailing characters at line
+  267 column 3`).
+- The worktree already contained unrelated modified/deleted script files and
+  untracked docs/scripts; this batch did not change them.
+
+Follow-ups:
+- Clean or isolate the global `~/.cc-rust/plan-workflow.json` test dependency
+  before using broad `tools::` as a reliable lane gate on this machine.
+- Future tools/tasks cleanup can continue moving runtime code into `cc-tasks`
+  once the adapter dependencies are disentangled; keep `cc-tools` free of
+  engine/query/UI/IPC/daemon edges.
+
+Verification:
+- `cargo fmt --all --check`: pass.
+- `cargo check -p cc-tools --message-format short`: pass.
+- `cargo test -p cc-tools`: pass, 3 passed.
+- `cargo check -p cc-tasks --message-format short`: pass.
+- `cargo check -p claude-code-rs --message-format short`: pass.
+- `cargo test -p claude-code-rs tools::tasks --message-format short`: pass,
+  58 passed.
+- `cargo test -p claude-code-rs tools::registry --message-format short`: pass,
+  7 passed.
+- `cargo test -p claude-code-rs commands::tasks --message-format short`: pass,
+  9 passed.
+- `cargo tree -p cc-tools -e normal --depth 1`: pass; direct dependencies are
+  only `cc-tasks` and `serde_json`.
+
+File-size/refactor findings:
+- Touched Rust files are under guard thresholds after the schema move:
+  `tasks/task_tools.rs` 494 lines, `tasks.rs` 457, `cc-tools/src/task_specs.rs`
+  251, `tools/registry.rs` 220, `cc-tools/src/registry.rs` 76.
+- No new or moved Rust file exceeds 800 lines.
+
+Dependency graph notes:
+- `cc-tools` remains a leaf-style helper crate with no edge to
+  `cc-engine`, `cc-query`, `cc-ipc`, `cc-daemon`, UI, or the root crate.
+
+Error visibility notes:
+- No task error paths were wrapped or duplicated.
+- Existing task parsing/validation remains at the domain/runtime boundary; the
+  adapter change only centralizes static specs and selection policy.
