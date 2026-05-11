@@ -389,3 +389,63 @@ Error visibility notes:
   start/stall errors, fallback exhaustion, prompt-too-long recovery,
   cancellation, hook failures, dangerous-command blocks, and tool panics.
 - No redundant safety layer was added.
+
+## Batch 07 - engine-query-06 lane closeout
+
+Status: PASS
+Commit: not committed
+Tasks:
+- [final] engine-query-06 - Remove engine/query shims, run lane gates, update
+  tracker, and commit only if all engine/query checks are green.
+
+Implemented effects:
+- Removed the root `claude-code-rs` query compatibility shim
+  (`crates/claude-code-rs/src/query/mod.rs`) and its `mod query` declaration.
+- Rewired the remaining root-crate query import in
+  `crates/claude-code-rs/src/safety/classifier.rs` to import
+  `ModelCallParams` and `QueryDeps` directly from `cc_query`.
+- Updated `cc-query` crate docs so they no longer describe a temporary
+  `crate::query` shim.
+
+Defects and divergences:
+- None found in the engine/query lane gates.
+- The worktree contains unrelated pre-existing runner/supervisor changes; this
+  closeout did not modify them.
+
+Follow-ups:
+- Runner/owner: commit this batch if the surrounding runner policy requires it.
+  This agent did not commit because the task-level contract says the runner owns
+  commits.
+- Future engine/query edits should keep root-crate callers importing from
+  `cc_query` directly and avoid reintroducing `crate::query::*`.
+
+Verification:
+- `cargo fmt --all --check`: pass.
+- `cargo test -p cc-query`: pass, 40 passed.
+- `cargo test -p cc-engine`: pass, 17 passed.
+- `cargo test -p claude-code-rs engine::lifecycle`: pass, 49 passed.
+- `cargo check -p claude-code-rs --message-format short`: pass.
+- `cargo check --workspace --all-targets --message-format short`: pass.
+- `cargo tree -p cc-query`: pass.
+- `rg` guard for root `crate::query`, root `mod query`, and temporary query
+  shim text under `crates/claude-code-rs/src` and `crates/cc-query/src`: pass,
+  no matches.
+
+File-size/refactor findings:
+- Deleted the root query shim file instead of growing it.
+- Touched historical oversized files were not grown by behavior changes:
+  `crates/claude-code-rs/src/main.rs` is 898 lines after removing `mod query`,
+  and `crates/claude-code-rs/src/safety/classifier.rs` remains 712 lines with
+  only an import-path rewrite.
+- `crates/cc-query/src/lib.rs` is 16 lines.
+
+Dependency graph notes:
+- Removed the root module edge `claude-code-rs::query -> cc-query`.
+- Remaining query-loop boundary is explicit through the workspace crate edge
+  `claude-code-rs -> cc-query`.
+
+Error visibility notes:
+- No error-handling code changed.
+- Existing explicit query-loop diagnostics remain covered by the `cc-query` and
+  lifecycle tests listed above.
+- No redundant safety layer was added.

@@ -1,8 +1,7 @@
 //! cc-query - async streaming query loop.
 //!
-//! This crate owns the query-loop implementation. The root binary keeps a
-//! temporary `crate::query` shim so older call sites can continue to compile
-//! while the workspace split proceeds.
+//! This crate owns the query-loop implementation. Root-crate callers import
+//! directly from `cc_query`.
 
 pub mod deps;
 pub(crate) mod loop_helpers;

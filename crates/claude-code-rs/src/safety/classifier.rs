@@ -16,12 +16,12 @@ use regex::Regex;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::query::deps::{ModelCallParams, QueryDeps};
 use crate::types::message::{
     AssistantMessage, ContentBlock, Message, MessageContent, SystemSubtype, ToolResultContent,
     UserMessage,
 };
 use crate::types::tool::PermissionMode;
+use cc_query::deps::{ModelCallParams, QueryDeps};
 
 const AUTO_MODE_SYSTEM_PROMPT: &str = r#"You are the cc-rust safety classifier for tool use.
 Return exactly one JSON object and no prose.

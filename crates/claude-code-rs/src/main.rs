@@ -33,7 +33,6 @@ mod engine;
 use cc_keybindings as keybindings;
 // `permissions` lives in its own crate (`cc-permissions`).
 use cc_permissions as permissions;
-mod query;
 // `sandbox` lives in its own crate (`cc-sandbox`). Re-alias at the crate
 // root so existing `crate::sandbox::...` paths continue to resolve.
 use cc_sandbox as sandbox;
