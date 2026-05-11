@@ -79,7 +79,7 @@ fn format_status_output(subsystem: &str) -> String {
         }),
     )
 }
-fn _count_nodes(node: &crate::ipc::agent_types::AgentNode) -> usize {
+fn _count_nodes(node: &cc_types::agent_types::AgentNode) -> usize {
     1 + node.children.iter().map(_count_nodes).sum::<usize>()
 }
 

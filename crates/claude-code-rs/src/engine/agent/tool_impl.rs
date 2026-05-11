@@ -377,7 +377,7 @@ fn resolve_optional_teammate_model(raw_model: &str, parent_model: &str) -> Resul
 
 fn apply_agent_definition_defaults(
     params: &mut AgentInput,
-    definition: Option<&crate::ipc::subsystem_types::AgentDefinitionEntry>,
+    definition: Option<&cc_ipc_protocol::subsystem_types::AgentDefinitionEntry>,
     ctx: &ToolUseContext,
 ) {
     let Some(definition) = definition else {

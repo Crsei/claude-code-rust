@@ -21,8 +21,7 @@
 //! memory: project
 //! ---
 //!
-//! You are a thorough reviewer. …
-//! ```
+//! You are a thorough reviewer. -//! ```
 //!
 //! Sources:
 //!   * `Builtin` — engine-provided, loaded from [`super::builtin_agents`]
@@ -36,12 +35,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::builtin_agents::builtin_agent_entries;
-use super::protocol::BackendMessage;
-use super::subsystem_events::{AgentSettingsCommand, AgentSettingsEvent};
-use super::subsystem_types::{
+use cc_ipc_protocol::subsystem_events::{AgentSettingsCommand, AgentSettingsEvent};
+use cc_ipc_protocol::subsystem_types::{
     AgentDefinitionEntry, AgentDefinitionSource, AgentMemoryScope, AgentPermissionMode,
     AgentToolInfo,
 };
+use cc_ipc_protocol::BackendMessage;
 
 // ---------------------------------------------------------------------------
 // Public handler

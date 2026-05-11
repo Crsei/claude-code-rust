@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::ipc::subsystem_types::LspServerInfo;
+use cc_ipc_protocol::subsystem_types::LspServerInfo;
 
 pub struct LspHandler;
 

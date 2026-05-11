@@ -1,6 +1,6 @@
 //! Adapter helpers between IPC backend messages and app events.
 
-use crate::ipc::protocol::BackendMessage;
+use cc_ipc_protocol::BackendMessage;
 
 use super::app_event::AppEvent;
 

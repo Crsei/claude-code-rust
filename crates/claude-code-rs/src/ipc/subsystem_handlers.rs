@@ -12,11 +12,11 @@
 use std::future::Future;
 use std::path::{Path, PathBuf};
 
-use super::protocol::BackendMessage;
-use super::subsystem_events::{
+use cc_ipc_protocol::subsystem_events::{
     IdeEvent, LspEvent, McpEvent, PluginEvent, SkillEvent, SubsystemEvent,
 };
-use super::subsystem_types::*;
+use cc_ipc_protocol::subsystem_types::*;
+use cc_ipc_protocol::BackendMessage;
 use cc_mcp::discovery::DiscoveryScope;
 
 // ===========================================================================
@@ -29,8 +29,10 @@ use cc_mcp::discovery::DiscoveryScope;
 /// scheduled onto the active Tokio runtime and report results through the LSP
 /// subsystem event bus, so the headless loop can keep processing stdin while
 /// language servers start, sync documents, or compute completions.
-pub fn handle_lsp_command(cmd: super::subsystem_events::LspCommand) -> Vec<BackendMessage> {
-    use super::subsystem_events::LspCommand;
+pub fn handle_lsp_command(
+    cmd: cc_ipc_protocol::subsystem_events::LspCommand,
+) -> Vec<BackendMessage> {
+    use cc_ipc_protocol::subsystem_events::LspCommand;
 
     match cmd {
         LspCommand::StartServer { language_id } => {
@@ -357,16 +359,18 @@ pub struct McpRuntimeReport {
 /// `QueryStatus` builds a runtime-state list; `QueryConfig`/`UpsertConfig`/
 /// `RemoveConfig` implement the scope-aware config editor (issue #44).
 #[allow(dead_code)]
-pub fn handle_mcp_command(cmd: super::subsystem_events::McpCommand) -> Vec<BackendMessage> {
+pub fn handle_mcp_command(
+    cmd: cc_ipc_protocol::subsystem_events::McpCommand,
+) -> Vec<BackendMessage> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     handle_mcp_command_at_cwd(cmd, &cwd)
 }
 
 pub async fn handle_mcp_command_with_runtime(
-    cmd: super::subsystem_events::McpCommand,
+    cmd: cc_ipc_protocol::subsystem_events::McpCommand,
     cwd: &Path,
 ) -> Vec<BackendMessage> {
-    use super::subsystem_events::McpCommand;
+    use cc_ipc_protocol::subsystem_events::McpCommand;
 
     match cmd {
         McpCommand::ConnectServer { server_name } => {
@@ -500,10 +504,10 @@ pub async fn run_mcp_runtime_operation(
 }
 
 fn handle_mcp_command_at_cwd(
-    cmd: super::subsystem_events::McpCommand,
+    cmd: cc_ipc_protocol::subsystem_events::McpCommand,
     cwd: &Path,
 ) -> Vec<BackendMessage> {
-    use super::subsystem_events::McpCommand;
+    use cc_ipc_protocol::subsystem_events::McpCommand;
 
     match cmd {
         McpCommand::ConnectServer { server_name } => mcp_runtime_report_messages(
@@ -809,8 +813,10 @@ fn find_mcp_runtime_config(
 ///
 /// Enable/disable are deferred to the `/plugin` slash command.
 /// `QueryStatus` returns the full plugin list.
-pub fn handle_plugin_command(cmd: super::subsystem_events::PluginCommand) -> Vec<BackendMessage> {
-    use super::subsystem_events::PluginCommand;
+pub fn handle_plugin_command(
+    cmd: cc_ipc_protocol::subsystem_events::PluginCommand,
+) -> Vec<BackendMessage> {
+    use cc_ipc_protocol::subsystem_events::PluginCommand;
 
     match cmd {
         PluginCommand::Enable { plugin_id } => {
@@ -886,8 +892,10 @@ pub fn handle_plugin_command(cmd: super::subsystem_events::PluginCommand) -> Vec
 /// - `Select` / `Clear` persist the user's selection through `crate::ide`.
 /// - `Reconnect` re-triggers a `ConnectionStateChanged` event so the MCP
 ///   manager notices the selection on its next discovery pass.
-pub fn handle_ide_command(cmd: super::subsystem_events::IdeCommand) -> Vec<BackendMessage> {
-    use super::subsystem_events::IdeCommand;
+pub fn handle_ide_command(
+    cmd: cc_ipc_protocol::subsystem_events::IdeCommand,
+) -> Vec<BackendMessage> {
+    use cc_ipc_protocol::subsystem_events::IdeCommand;
 
     match cmd {
         IdeCommand::Detect | IdeCommand::QueryStatus => {
@@ -946,8 +954,10 @@ pub fn handle_ide_command(cmd: super::subsystem_events::IdeCommand) -> Vec<Backe
 ///
 /// `Reload` clears and re-initialises the skill registry.
 /// `QueryStatus` returns the full skill list.
-pub fn handle_skill_command(cmd: super::subsystem_events::SkillCommand) -> Vec<BackendMessage> {
-    use super::subsystem_events::SkillCommand;
+pub fn handle_skill_command(
+    cmd: cc_ipc_protocol::subsystem_events::SkillCommand,
+) -> Vec<BackendMessage> {
+    use cc_ipc_protocol::subsystem_events::SkillCommand;
 
     match cmd {
         SkillCommand::Reload => {
@@ -1437,7 +1447,7 @@ fn toggle_mcp_entry_enabled(
 /// Serialize an entry for the on-disk `mcpServers[name]` value.
 ///
 /// The settings file uses the legacy `McpServerConfig` shape (transport under
-/// `type`, `command`/`args`/`url`/…). Consumers using different shapes can
+/// `type`, `command`/`args`/`url`/-. Consumers using different shapes can
 /// still round-trip thanks to `McpServerConfig`'s permissive deserializer.
 fn entry_to_settings_value(entry: &McpServerConfigEntry) -> serde_json::Value {
     let cfg = crate::mcp::McpServerConfig {
@@ -1627,6 +1637,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn build_skill_info_list_returns_skills() {
         use crate::skills;
 
@@ -1651,6 +1662,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn build_skill_info_list_maps_sources() {
         use crate::skills;
 
@@ -1703,7 +1715,7 @@ mod tests {
 
     #[test]
     fn handle_lsp_query_status_returns_server_list() {
-        use super::super::subsystem_events::LspCommand;
+        use cc_ipc_protocol::subsystem_events::LspCommand;
         let msgs = handle_lsp_command(LspCommand::QueryStatus);
         assert_eq!(msgs.len(), 1);
         assert!(matches!(&msgs[0], BackendMessage::LspEvent { .. }));
@@ -1711,7 +1723,7 @@ mod tests {
 
     #[test]
     fn handle_lsp_start_returns_info() {
-        use super::super::subsystem_events::LspCommand;
+        use cc_ipc_protocol::subsystem_events::LspCommand;
         let msgs = handle_lsp_command(LspCommand::StartServer {
             language_id: "rust".into(),
         });
@@ -1747,7 +1759,7 @@ mod tests {
 
     #[test]
     fn handle_mcp_query_status_returns_server_list() {
-        use super::super::subsystem_events::McpCommand;
+        use cc_ipc_protocol::subsystem_events::McpCommand;
         let msgs = handle_mcp_command(McpCommand::QueryStatus);
         assert_eq!(msgs.len(), 1);
         assert!(matches!(&msgs[0], BackendMessage::McpEvent { .. }));
@@ -1957,7 +1969,7 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn handle_mcp_upsert_config_emits_config_changed() {
-        use super::super::subsystem_events::McpCommand;
+        use cc_ipc_protocol::subsystem_events::McpCommand;
         let home = tempfile::tempdir().expect("tempdir");
         let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
 
@@ -1995,7 +2007,7 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn handle_mcp_upsert_config_on_read_only_emits_config_error() {
-        use super::super::subsystem_events::McpCommand;
+        use cc_ipc_protocol::subsystem_events::McpCommand;
 
         let entry = McpServerConfigEntry {
             name: "plugin-srv".to_string(),
@@ -2024,7 +2036,7 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn handle_mcp_query_config_returns_config_list() {
-        use super::super::subsystem_events::McpCommand;
+        use cc_ipc_protocol::subsystem_events::McpCommand;
         let msgs = handle_mcp_command(McpCommand::QueryConfig);
         assert_eq!(msgs.len(), 1);
         match &msgs[0] {
@@ -2057,12 +2069,12 @@ mod tests {
         };
         upsert_mcp_entry(cwd.path(), entry).expect("upsert ok");
 
-        // First toggle: enable → disabled.
+        // First toggle: enable ->disabled.
         let after_disable =
             toggle_mcp_entry_enabled(cwd.path(), "tog-srv", None).expect("first toggle ok");
         assert_eq!(after_disable.disabled, Some(true));
 
-        // Second toggle: disabled → enabled.
+        // Second toggle: disabled ->enabled.
         let after_enable =
             toggle_mcp_entry_enabled(cwd.path(), "tog-srv", None).expect("second toggle ok");
         assert_eq!(after_enable.disabled, Some(false));
@@ -2100,7 +2112,7 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn handle_mcp_toggle_enabled_emits_config_changed_and_state() {
-        use super::super::subsystem_events::McpCommand;
+        use cc_ipc_protocol::subsystem_events::McpCommand;
         let home = tempfile::tempdir().expect("tempdir");
         let cwd = tempfile::tempdir().expect("tempdir");
         let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
@@ -2159,7 +2171,7 @@ mod tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn handle_mcp_reconnect_uses_runtime_manager_and_emits_final_state() {
-        use super::super::subsystem_events::McpCommand;
+        use cc_ipc_protocol::subsystem_events::McpCommand;
 
         let home = tempfile::tempdir().expect("tempdir");
         let cwd = tempfile::tempdir().expect("tempdir");
@@ -2245,7 +2257,7 @@ mod tests {
 
     #[test]
     fn handle_plugin_query_status_returns_plugin_list() {
-        use super::super::subsystem_events::PluginCommand;
+        use cc_ipc_protocol::subsystem_events::PluginCommand;
         let msgs = handle_plugin_command(PluginCommand::QueryStatus);
         assert_eq!(msgs.len(), 1);
         assert!(matches!(&msgs[0], BackendMessage::PluginEvent { .. }));
@@ -2253,7 +2265,7 @@ mod tests {
 
     #[test]
     fn handle_skill_query_status_returns_skill_list() {
-        use super::super::subsystem_events::SkillCommand;
+        use cc_ipc_protocol::subsystem_events::SkillCommand;
         let msgs = handle_skill_command(SkillCommand::QueryStatus);
         assert_eq!(msgs.len(), 1);
         assert!(matches!(&msgs[0], BackendMessage::SkillEvent { .. }));

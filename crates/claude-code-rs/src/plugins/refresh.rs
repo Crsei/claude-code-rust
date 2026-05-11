@@ -18,7 +18,7 @@ use std::time::Instant;
 use tracing::{info, warn};
 
 use super::{clear_plugins, init_plugins, loader, PluginStatus};
-use crate::ipc::subsystem_events::{PluginEvent, SubsystemEvent};
+use cc_ipc_protocol::subsystem_events::{PluginEvent, SubsystemEvent};
 
 /// Summary of a plugin reload cycle.
 #[derive(Debug, Clone)]

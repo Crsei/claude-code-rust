@@ -647,3 +647,80 @@ Error visibility notes:
   last dropped type, and source phase.
 - Lossless queue overflow returns an explicit diagnostic instead of silently
   dropping; best-effort replacement increments structured drop counters.
+
+## Batch 11 - ipc-08 Rust IPC shim removal
+
+Status: PASS
+Commit: not committed
+Tasks:
+- [final] ipc-08 - Remove Rust IPC shims, run final Rust IPC gates, update
+  tracker, and commit only if all Rust IPC checks are green. Do not run
+  TypeScript IPC checks.
+
+Implemented effects:
+- Deleted root `claude-code-rs::ipc` compatibility shim modules for agent
+  channel/events/handlers/tree/types, protocol DTOs, frontend sink, and
+  subsystem type DTOs.
+- Rewired Rust callers to the owning crates: `cc_types`, `cc_ipc`,
+  `cc_ipc_client`, and `cc_ipc_protocol`.
+- Kept `claude-code-rs::ipc::subsystem_events` only as the root-owned
+  in-process `SubsystemEventBus`; DTO imports now come from `cc_ipc_protocol`.
+- Updated `cc-engine` lifecycle background-agent sender types to use
+  `cc_types::agent_channel::AgentSender` directly.
+- Removed stale `cc-ipc` scaffold/re-export wording from crate docs.
+- Added serial guards to the two IPC skill-registry tests that mutate global
+  skill state, so the normal parallel IPC test gate is stable.
+
+Defects and divergences:
+- No Rust IPC gate failures remain. During verification, the normal parallel
+  `claude-code-rs ipc::` run exposed global skill-registry test interference;
+  the affected tests now use the existing `serial_test` guard and the normal
+  parallel IPC gate passes.
+- TypeScript IPC checks were intentionally not run per task scope.
+- The worktree contains unrelated pre-existing docs/scripts changes and
+  untracked docs/scripts entries; this closeout did not modify them.
+
+Follow-ups:
+- Commit this batch only from the runner/owner path; this agent did not commit
+  because the task contract says the runner owns commits.
+- Future IPC work should split existing large root-owned files such as
+  `subsystem_handlers.rs` and `agent_settings.rs` before adding behavior.
+
+Verification:
+- `cargo fmt --all --check`: pass.
+- `cargo check -p cc-ipc-protocol --message-format short`: pass.
+- `cargo check -p cc-ipc-client --message-format short`: pass.
+- `cargo check -p cc-ipc --message-format short`: pass.
+- `cargo test -p cc-ipc-protocol -- --nocapture`: pass, 84 passed.
+- `cargo test -p cc-ipc-client -- --nocapture`: pass, 10 passed.
+- `cargo test -p cc-ipc -- --nocapture`: pass, 7 passed.
+- `cargo check -p claude-code-rs --message-format short`: pass.
+- `cargo test -p claude-code-rs ipc:: -- --nocapture`: pass, 68 passed.
+- `cargo check --workspace --all-targets --message-format short`: pass.
+- `cargo tree -p cc-ipc -e normal --depth 1`: pass; direct dependencies are
+  `cc-ipc-protocol`, `cc-types`, `chrono`, `parking_lot`, and `serde_json`.
+- Rust shim guard for removed root IPC compatibility modules/re-export wording:
+  pass, no remaining root shim paths for the deleted modules.
+- UTF-8 guard over `crates/**/*.rs`: pass, zero invalid Rust files.
+
+File-size/refactor findings:
+- Deleted seven pure root IPC shim files plus the root protocol and sink/type
+  shim files instead of growing them.
+- Touched large Rust files were limited to import/path rewrites and punctuation
+  normalization, not new behavior. Existing large files remain follow-up split
+  candidates: `subsystem_handlers.rs` 2271 lines, `agent_settings.rs` 1042
+  lines, and `cc-engine/src/lifecycle/deps.rs` 2432 lines.
+
+Dependency graph notes:
+- Removed root module surfaces:
+  `claude-code-rs::ipc::{agent_channel, agent_events, agent_handlers,
+  agent_tree, agent_types, protocol, sink, subsystem_types}`.
+- `claude-code-rs` now references the extracted IPC/type crates directly at
+  call sites instead of via root compatibility shims.
+- `cc-engine` no longer relies on a root-crate `ipc::agent_channel` path for
+  background-agent sender storage.
+
+Error visibility notes:
+- No IPC error paths were hidden or wrapped in this final cleanup.
+- Existing explicit frontend parse, queue-pressure, subsystem command, and
+  Rust protocol serde diagnostics remain covered by the Rust IPC gates above.

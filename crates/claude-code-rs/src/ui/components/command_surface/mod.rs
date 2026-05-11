@@ -4,8 +4,8 @@ use std::path::Path;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 
-use crate::ipc::subsystem_types::LspRecommendationPayload;
 use crate::types::app_state::AppState;
+use cc_ipc_protocol::subsystem_types::LspRecommendationPayload;
 
 mod adapters;
 mod surfaces;

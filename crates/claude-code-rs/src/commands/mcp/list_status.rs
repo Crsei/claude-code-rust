@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use super::settings::describe_entry;
 use super::{CommandContext, CommandResult};
-use crate::ipc::subsystem_types::McpServerConfigEntry;
+use cc_ipc_protocol::subsystem_types::McpServerConfigEntry;
 
 // ---------------------------------------------------------------------------
 // list / status
@@ -77,7 +77,7 @@ pub(super) async fn handle_list(ctx: &CommandContext) -> Result<CommandResult> {
     if browser_count > 0 {
         lines.push(
             "Browser-tagged servers expose browser-automation tools (navigate, \
-             read_page, click, …). See docs/reference/browser-mcp-config.md."
+             read_page, click, -. See docs/reference/browser-mcp-config.md."
                 .to_string(),
         );
     }

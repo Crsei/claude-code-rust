@@ -18,7 +18,7 @@ use parking_lot::Mutex;
 use tokio::sync::broadcast::Sender;
 use uuid::Uuid;
 
-use super::subsystem_events::{AgentSettingsEvent, SubsystemEvent};
+use cc_ipc_protocol::subsystem_events::{AgentSettingsEvent, SubsystemEvent};
 
 // ---------------------------------------------------------------------------
 // Event-bus wiring

@@ -12,7 +12,7 @@
 //! we expose every built-in unconditionally — the sub-engine already accepts
 //! any `subagent_type` string, so over-reporting here is harmless.
 
-use super::subsystem_types::{AgentDefinitionEntry, AgentDefinitionSource};
+use cc_ipc_protocol::subsystem_types::{AgentDefinitionEntry, AgentDefinitionSource};
 
 struct BuiltinAgent {
     name: &'static str,

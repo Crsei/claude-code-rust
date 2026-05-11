@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use crate::engine::lifecycle::QueryEngine;
 
-use super::protocol::BackendMessage;
-use super::sink::FrontendSink;
+use cc_ipc_client::sink::FrontendSink;
+use cc_ipc_protocol::BackendMessage;
 
 /// Pending permission requests awaiting a response from the frontend.
 pub type PendingPermissions = cc_ipc_client::PendingPermissions;

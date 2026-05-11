@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-use crate::ipc::subsystem_types::McpServerConfigEntry;
 use crate::mcp::McpServerConfig;
+use cc_ipc_protocol::subsystem_types::McpServerConfigEntry;
 
 // ---------------------------------------------------------------------------
 // Misc helpers — shared between subcommands

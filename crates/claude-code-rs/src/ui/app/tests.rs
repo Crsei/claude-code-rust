@@ -512,8 +512,8 @@ fn send_key(app: &mut App, code: KeyCode) -> AppAction {
 
 fn lsp_recommendation_payload(
     plugin_description: Option<String>,
-) -> crate::ipc::subsystem_types::LspRecommendationPayload {
-    crate::ipc::subsystem_types::LspRecommendationPayload {
+) -> cc_ipc_protocol::subsystem_types::LspRecommendationPayload {
+    cc_ipc_protocol::subsystem_types::LspRecommendationPayload {
         request_id: "req-1".to_string(),
         plugin_name: "rust-analyzer".to_string(),
         plugin_description,

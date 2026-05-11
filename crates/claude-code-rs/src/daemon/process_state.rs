@@ -14,6 +14,8 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use super::protocol;
+
 const SCHEMA_VERSION: u32 = 1;
 #[cfg(test)]
 const DEFAULT_DAEMON_PORT: u16 = 19836;
@@ -602,9 +604,9 @@ fn submit_worker_command(args: &[String]) -> Result<()> {
         anyhow::bail!("daemon submit requires text");
     }
 
-    let command = super::protocol::enqueue_command(
+    let command = protocol::enqueue_command(
         super::supervisor::ASSISTANT_WORKER_ID,
-        super::protocol::DaemonCommandKind::Submit,
+        protocol::DaemonCommandKind::Submit,
         serde_json::json!({ "text": text }),
         None,
     )?;
@@ -617,9 +619,9 @@ fn submit_worker_command(args: &[String]) -> Result<()> {
 
 fn abort_worker_command() -> Result<()> {
     require_running_daemon()?;
-    let command = super::protocol::enqueue_command(
+    let command = protocol::enqueue_command(
         super::supervisor::ASSISTANT_WORKER_ID,
-        super::protocol::DaemonCommandKind::Abort,
+        protocol::DaemonCommandKind::Abort,
         serde_json::json!({}),
         None,
     )?;
@@ -638,7 +640,7 @@ fn print_worker_command(args: &[String]) -> Result<()> {
         .get(3)
         .map(String::as_str)
         .unwrap_or(super::supervisor::ASSISTANT_WORKER_ID);
-    let Some(command) = super::protocol::read_command(worker_id, command_id)? else {
+    let Some(command) = protocol::read_command(worker_id, command_id)? else {
         anyhow::bail!("daemon command not found: {command_id}");
     };
     println!("{}", serde_json::to_string_pretty(&command)?);
@@ -650,7 +652,7 @@ fn print_worker_events(args: &[String]) -> Result<()> {
         .get(2)
         .map(String::as_str)
         .unwrap_or(super::supervisor::ASSISTANT_WORKER_ID);
-    let events = super::protocol::read_worker_events(worker_id)?;
+    let events = protocol::read_worker_events(worker_id)?;
     if events.is_empty() {
         println!("daemon events: none for worker={worker_id}");
         return Ok(());

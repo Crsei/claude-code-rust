@@ -50,9 +50,9 @@ use std::sync::LazyLock;
 use tokio::sync::broadcast;
 use tracing::warn;
 
-use crate::ipc::subsystem_events::{IdeEvent, SubsystemEvent};
-use crate::ipc::subsystem_types::IdeInfo;
 use crate::mcp::McpServerConfig;
+use cc_ipc_protocol::subsystem_events::{IdeEvent, SubsystemEvent};
+use cc_ipc_protocol::subsystem_types::IdeInfo;
 
 // ---------------------------------------------------------------------------
 // Subsystem event emission (mirrors `plugins::mod.rs` pattern)
@@ -225,7 +225,7 @@ fn is_running(spec: &IdeSpec) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Persisted selection (`{data_root}/settings.json` → `selectedIde`)
+// Persisted selection (`{data_root}/settings.json` — `selectedIde`)
 // ---------------------------------------------------------------------------
 
 fn settings_path() -> PathBuf {
@@ -348,9 +348,9 @@ fn write_selection(id: Option<&str>) -> Result<()> {
 /// Build a dynamic `McpServerConfig` for the IDE's MCP bridge.
 ///
 /// Current defaults (stdio):
-/// - `vscode` → `code --mcp-server`
-/// - `cursor` → `cursor --mcp-server`
-/// - JetBrains → `<binary> mcp` (best guess — these IDEs currently expose MCP
+/// - `vscode` — `code --mcp-server`
+/// - `cursor` — `cursor --mcp-server`
+/// - JetBrains — `<binary> mcp` (best guess — these IDEs currently expose MCP
 ///   through a plugin binary, so `None` is returned when the CLI is missing).
 ///
 /// Returns `None` when no reasonable bridge command is available on this

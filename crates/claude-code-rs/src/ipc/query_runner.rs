@@ -11,7 +11,7 @@ use crate::services::prompt_suggestion::PromptSuggestionService;
 use crate::types::config::QuerySource;
 
 use super::sdk_mapper::handle_sdk_message;
-use super::sink::FrontendSink;
+use cc_ipc_client::sink::FrontendSink;
 
 impl cc_ipc_client::query_runner::QueryTurnHost<SdkMessage> for QueryEngine {
     type Stream = BoxStream<'static, SdkMessage>;

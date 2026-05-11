@@ -23,8 +23,8 @@ use std::process::Command;
 use anyhow::{anyhow, Result};
 use tracing::{debug, warn};
 
-use super::protocol::{BackendMessage, FileSearchMatch};
-use super::sink::FrontendSink;
+use cc_ipc_client::sink::FrontendSink;
+use cc_ipc_protocol::{BackendMessage, FileSearchMatch};
 
 const DEFAULT_MAX_RESULTS: usize = 500;
 const MAX_LINE_LEN: usize = 2048;

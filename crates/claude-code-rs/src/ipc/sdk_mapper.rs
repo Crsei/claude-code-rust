@@ -1,4 +1,4 @@
-//! SdkMessage → BackendMessage mapping.
+//! SdkMessage ->BackendMessage mapping.
 //!
 //! Pure mapping layer extracted from `headless.rs`.  Each [`SdkMessage`] variant
 //! is translated into one or more [`BackendMessage`]s and written via the
@@ -16,12 +16,12 @@ use crate::engine::sdk_types::SdkMessage;
 use crate::services::prompt_suggestion::PromptSuggestionService;
 use crate::types::message::{ContentBlock, Message, StreamEvent, ToolResultContent};
 
-use super::protocol::{BackendMessage, ToolResultContentInfo};
-use super::sink::FrontendSink;
 use crate::ui::status_line::payload::{build_payload_from_snapshot, StatusLineSnapshot};
+use cc_ipc_client::sink::FrontendSink;
+use cc_ipc_protocol::{BackendMessage, ToolResultContentInfo};
 
 // ---------------------------------------------------------------------------
-// SdkMessage → BackendMessage mapping
+// SdkMessage ->BackendMessage mapping
 // ---------------------------------------------------------------------------
 
 /// Map a single [`SdkMessage`] to the appropriate [`BackendMessage`](s) and
@@ -119,7 +119,7 @@ pub fn handle_sdk_message(
         SdkMessage::CompactBoundary(boundary) => {
             let text = if let Some(ref meta) = boundary.compact_metadata {
                 format!(
-                    "Context compacted: {} → {} tokens",
+                    "Context compacted: {} ->{} tokens",
                     meta.pre_compact_token_count, meta.post_compact_token_count
                 )
             } else {
@@ -510,7 +510,7 @@ mod tests {
         ];
         let (output, infos) = extract_tool_result_output(&blocks);
         assert_eq!(output, "line 1\nline 2");
-        assert!(infos.is_none(), "no non-text blocks → None");
+        assert!(infos.is_none(), "no non-text blocks ->None");
     }
 
     #[test]
@@ -551,7 +551,7 @@ mod tests {
         let (output, infos) = extract_tool_result_output(&blocks);
         assert!(output.contains("screenshot taken"));
         assert!(output.contains("[image: image/jpeg]"));
-        let infos = infos.expect("has image → Some");
+        let infos = infos.expect("has image ->Some");
         assert_eq!(infos.len(), 2);
     }
 

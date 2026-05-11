@@ -2,17 +2,21 @@ use crate::ui::agents::types::{
     AgentDefinition, AgentMemoryScope as UiAgentMemoryScope, AgentSource, AgentSourceFilter,
 };
 pub(crate) fn agent_entry_to_ui(
-    entry: crate::ipc::subsystem_types::AgentDefinitionEntry,
+    entry: cc_ipc_protocol::subsystem_types::AgentDefinitionEntry,
 ) -> AgentDefinition {
     let mut agent = AgentDefinition::new(
         entry.name,
         entry.description,
         entry.system_prompt,
         match entry.source {
-            crate::ipc::subsystem_types::AgentDefinitionSource::Builtin => AgentSource::BuiltIn,
-            crate::ipc::subsystem_types::AgentDefinitionSource::User => AgentSource::User,
-            crate::ipc::subsystem_types::AgentDefinitionSource::Project => AgentSource::Project,
-            crate::ipc::subsystem_types::AgentDefinitionSource::Plugin { .. } => {
+            cc_ipc_protocol::subsystem_types::AgentDefinitionSource::Builtin => {
+                AgentSource::BuiltIn
+            }
+            cc_ipc_protocol::subsystem_types::AgentDefinitionSource::User => AgentSource::User,
+            cc_ipc_protocol::subsystem_types::AgentDefinitionSource::Project => {
+                AgentSource::Project
+            }
+            cc_ipc_protocol::subsystem_types::AgentDefinitionSource::Plugin { .. } => {
                 AgentSource::Plugin
             }
         },
@@ -25,9 +29,9 @@ pub(crate) fn agent_entry_to_ui(
     agent.filename = entry.filename;
     agent.base_dir = entry.file_path;
     agent.memory = entry.memory.map(|memory| match memory {
-        crate::ipc::subsystem_types::AgentMemoryScope::User => UiAgentMemoryScope::User,
-        crate::ipc::subsystem_types::AgentMemoryScope::Project => UiAgentMemoryScope::Project,
-        crate::ipc::subsystem_types::AgentMemoryScope::Local => UiAgentMemoryScope::Local,
+        cc_ipc_protocol::subsystem_types::AgentMemoryScope::User => UiAgentMemoryScope::User,
+        cc_ipc_protocol::subsystem_types::AgentMemoryScope::Project => UiAgentMemoryScope::Project,
+        cc_ipc_protocol::subsystem_types::AgentMemoryScope::Local => UiAgentMemoryScope::Local,
     });
     agent.effort = entry.effort;
     agent.permission_mode = entry.permission_mode.map(|mode| format!("{mode:?}"));

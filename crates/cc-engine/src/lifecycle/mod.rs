@@ -78,7 +78,7 @@ pub(crate) struct QueryEngineState {
     pub(crate) ask_user_callback: Option<crate::types::tool::AskUserCallback>,
     /// Sender for background agent completion channel.
     /// Set by headless/TUI mode; cloned into ToolUseContext.
-    pub(crate) bg_agent_tx: Option<crate::ipc::agent_channel::AgentSender>,
+    pub(crate) bg_agent_tx: Option<cc_types::agent_channel::AgentSender>,
     /// Callback invoked on every [`ToolProgress`] emitted by a tool.
     /// Set by headless/TUI mode; read by `QueryEngineDeps::tool_progress_callback`
     /// and plumbed down to `execute_tool_calls` so tools (notably Bash) can
@@ -244,7 +244,7 @@ impl QueryEngine {
     }
 
     /// Set the background agent sender (called by headless/TUI at startup).
-    pub fn set_bg_agent_tx(&self, tx: crate::ipc::agent_channel::AgentSender) {
+    pub fn set_bg_agent_tx(&self, tx: cc_types::agent_channel::AgentSender) {
         self.state.write().bg_agent_tx = Some(tx);
     }
 

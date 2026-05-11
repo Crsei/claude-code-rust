@@ -123,8 +123,8 @@ impl LspOperation {
 // `tools::lsp <-> lsp_service` cycle). Re-exported here so existing
 // `crate::tools::lsp::{HoverInfo, SourceLocation, SymbolInfo}` call sites
 // keep compiling.
-use crate::ipc::subsystem_types::LspDiagnostic;
 pub use crate::lsp_service::types::{CompletionItemInfo, HoverInfo, SourceLocation, SymbolInfo};
+use cc_ipc_protocol::subsystem_types::LspDiagnostic;
 
 // ---------------------------------------------------------------------------
 // Result formatting

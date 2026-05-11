@@ -18,8 +18,8 @@ use crate::engine::lifecycle::QueryEngine;
 use crate::services::prompt_suggestion::PromptSuggestionService;
 
 use super::callbacks::{PendingPermissions, PendingQuestions};
-use super::protocol::{BackendMessage, FrontendMessage};
-use super::sink::FrontendSink;
+use cc_ipc_client::sink::FrontendSink;
+use cc_ipc_protocol::{BackendMessage, FrontendMessage};
 
 /// The headless runtime.
 ///
@@ -67,12 +67,12 @@ impl HeadlessRuntime {
         super::callbacks::install_tool_progress_callback(&self.engine, self.sink.clone());
 
         // ── 1b. Background agent channel ─────────────────────────────
-        let (agent_tx, mut agent_rx) = crate::ipc::agent_channel::agent_channel();
+        let (agent_tx, mut agent_rx) = cc_types::agent_channel::agent_channel();
         self.engine.set_bg_agent_tx(agent_tx);
         let pending_bg = self.engine.pending_bg_results.clone();
 
         // ── 1c. Subsystem event bus ──────────────────────────────────
-        let event_bus = super::subsystem_events::SubsystemEventBus::new();
+        let event_bus = crate::ipc::subsystem_events::SubsystemEventBus::new();
         let mut event_rx = event_bus.subscribe();
         crate::lsp_service::set_event_sender(event_bus.sender());
         crate::plugins::set_event_sender(event_bus.sender());
@@ -84,8 +84,8 @@ impl HeadlessRuntime {
         crate::skills::set_event_callback(move |e| {
             let adapted = match e {
                 crate::skills::SkillSubsystemEvent::SkillsLoaded { count } => {
-                    super::subsystem_events::SubsystemEvent::Skill(
-                        super::subsystem_events::SkillEvent::SkillsLoaded { count },
+                    cc_ipc_protocol::subsystem_events::SubsystemEvent::Skill(
+                        cc_ipc_protocol::subsystem_events::SkillEvent::SkillsLoaded { count },
                     )
                 }
             };
@@ -105,8 +105,8 @@ impl HeadlessRuntime {
                         state.clone(),
                         error.clone(),
                     );
-                    super::subsystem_events::SubsystemEvent::Mcp(
-                        super::subsystem_events::McpEvent::ServerStateChanged {
+                    cc_ipc_protocol::subsystem_events::SubsystemEvent::Mcp(
+                        cc_ipc_protocol::subsystem_events::McpEvent::ServerStateChanged {
                             server_name,
                             state,
                             error,
@@ -114,12 +114,12 @@ impl HeadlessRuntime {
                     )
                 }
                 cc_mcp::McpSubsystemEvent::ToolsDiscovered { server_name, tools } => {
-                    super::subsystem_events::SubsystemEvent::Mcp(
-                        super::subsystem_events::McpEvent::ToolsDiscovered {
+                    cc_ipc_protocol::subsystem_events::SubsystemEvent::Mcp(
+                        cc_ipc_protocol::subsystem_events::McpEvent::ToolsDiscovered {
                             server_name,
                             tools: tools
                                 .into_iter()
-                                .map(|t| super::subsystem_types::McpToolInfo {
+                                .map(|t| cc_ipc_protocol::subsystem_types::McpToolInfo {
                                     name: t.tool_name,
                                     description: Some(t.description),
                                 })
@@ -130,12 +130,12 @@ impl HeadlessRuntime {
                 cc_mcp::McpSubsystemEvent::ResourcesDiscovered {
                     server_name,
                     resources,
-                } => super::subsystem_events::SubsystemEvent::Mcp(
-                    super::subsystem_events::McpEvent::ResourcesDiscovered {
+                } => cc_ipc_protocol::subsystem_events::SubsystemEvent::Mcp(
+                    cc_ipc_protocol::subsystem_events::McpEvent::ResourcesDiscovered {
                         server_name,
                         resources: resources
                             .into_iter()
-                            .map(|r| super::subsystem_types::McpResourceInfo {
+                            .map(|r| cc_ipc_protocol::subsystem_types::McpResourceInfo {
                                 uri: r.uri,
                                 name: Some(r.name),
                                 mime_type: r.mime_type,
@@ -147,8 +147,8 @@ impl HeadlessRuntime {
                     server_name,
                     content,
                     meta,
-                } => super::subsystem_events::SubsystemEvent::Mcp(
-                    super::subsystem_events::McpEvent::ChannelNotification {
+                } => cc_ipc_protocol::subsystem_events::SubsystemEvent::Mcp(
+                    cc_ipc_protocol::subsystem_events::McpEvent::ChannelNotification {
                         server_name,
                         content,
                         meta,
@@ -240,8 +240,8 @@ impl HeadlessRuntime {
                 // ── Branch 2: Agent/Team events ──────────────────────
                 Some(event) = agent_rx.recv() => {
                     match event {
-                        crate::ipc::agent_channel::AgentIpcEvent::Agent(ref agent_event) => {
-                            if let crate::ipc::agent_events::AgentEvent::Completed {
+                        cc_types::agent_channel::AgentIpcEvent::Agent(ref agent_event) => {
+                            if let cc_types::agent_events::AgentEvent::Completed {
                                 ref agent_id, ref result_preview, had_error, duration_ms, ..
                             } = agent_event {
                                 let tree = cc_ipc::agent_tree::AGENT_TREE.lock();
@@ -276,7 +276,7 @@ impl HeadlessRuntime {
                                 event: agent_event.clone(),
                             });
                         }
-                        crate::ipc::agent_channel::AgentIpcEvent::Team(team_event) => {
+                        cc_types::agent_channel::AgentIpcEvent::Team(team_event) => {
                             let _ = self.sink.send(&BackendMessage::TeamEvent {
                                 event: team_event,
                             });
@@ -287,22 +287,22 @@ impl HeadlessRuntime {
                 // ── Branch 3: Subsystem events ───────────────────────
                 Ok(event) = event_rx.recv() => {
                     let msg = match event {
-                        super::subsystem_events::SubsystemEvent::Lsp(e) => {
+                        cc_ipc_protocol::subsystem_events::SubsystemEvent::Lsp(e) => {
                             BackendMessage::LspEvent { event: e }
                         }
-                        super::subsystem_events::SubsystemEvent::Mcp(e) => {
+                        cc_ipc_protocol::subsystem_events::SubsystemEvent::Mcp(e) => {
                             BackendMessage::McpEvent { event: e }
                         }
-                        super::subsystem_events::SubsystemEvent::Plugin(e) => {
+                        cc_ipc_protocol::subsystem_events::SubsystemEvent::Plugin(e) => {
                             BackendMessage::PluginEvent { event: e }
                         }
-                        super::subsystem_events::SubsystemEvent::Skill(e) => {
+                        cc_ipc_protocol::subsystem_events::SubsystemEvent::Skill(e) => {
                             BackendMessage::SkillEvent { event: e }
                         }
-                        super::subsystem_events::SubsystemEvent::Ide(e) => {
+                        cc_ipc_protocol::subsystem_events::SubsystemEvent::Ide(e) => {
                             BackendMessage::IdeEvent { event: e }
                         }
-                        super::subsystem_events::SubsystemEvent::AgentSettings(e) => {
+                        cc_ipc_protocol::subsystem_events::SubsystemEvent::AgentSettings(e) => {
                             BackendMessage::AgentSettingsEvent { event: e }
                         }
                     };

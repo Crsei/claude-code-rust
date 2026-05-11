@@ -7,7 +7,7 @@ use super::settings::{
     write_settings_value,
 };
 use super::{CommandContext, CommandResult};
-use crate::ipc::subsystem_types::{ConfigScope, McpServerConfigEntry};
+use cc_ipc_protocol::subsystem_types::{ConfigScope, McpServerConfigEntry};
 
 // ---------------------------------------------------------------------------
 // add / edit
@@ -142,7 +142,7 @@ fn persist_upsert(cwd: &std::path::Path, entry: McpServerConfigEntry) -> Result<
     let name = entry.name.clone();
     let path = match &entry.scope {
         ConfigScope::User => cc_config::settings::user_settings_path(),
-        // Keep the write path aligned with the scoped discovery layer —
+        // Keep the write path aligned with the scoped discovery layer -
         // see the aside in `ipc::subsystem_handlers::settings_path_for_scope`.
         ConfigScope::Project => cwd.join(".cc-rust").join("settings.json"),
         _ => {

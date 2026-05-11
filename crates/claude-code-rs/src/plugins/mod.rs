@@ -127,14 +127,14 @@ pub struct MarketplaceEntry {
 /// ```text
 /// ~/.cc-rust/plugins/
 /// ├── cache/
-/// │   └── {marketplace}/{plugin}/{version}/
-/// │       └── plugin.json          ← manifest
+/// |  └── {marketplace}/{plugin}/{version}/
+/// |      └── plugin.json          ->manifest
 /// ├── marketplaces/
-/// │   ├── official-marketplace/
-/// │   │   └── marketplace.json     ← plugin index
-/// │   └── {other}/
-/// ├── known_marketplaces.json      ← marketplace registry
-/// └── installed_plugins.json       ← installation metadata
+/// |  ├── official-marketplace/
+/// |  |  └── marketplace.json     ->plugin index
+/// |  └── {other}/
+/// ├── known_marketplaces.json      ->marketplace registry
+/// └── installed_plugins.json       ->installation metadata
 /// ```
 pub fn plugins_dir() -> PathBuf {
     crate::config::paths::plugins_dir()
@@ -174,19 +174,21 @@ static DIAGNOSTICS: LazyLock<Mutex<Vec<PluginDiagnostic>>> =
 
 /// Event sender for subsystem events.
 static EVENT_TX: LazyLock<
-    Mutex<Option<tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>>>,
+    Mutex<
+        Option<tokio::sync::broadcast::Sender<cc_ipc_protocol::subsystem_events::SubsystemEvent>>,
+    >,
 > = LazyLock::new(|| Mutex::new(None));
 
 /// Inject the event sender from the headless event loop.
 #[allow(dead_code)] // Called by headless event loop wiring (Task 12).
 pub fn set_event_sender(
-    tx: tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>,
+    tx: tokio::sync::broadcast::Sender<cc_ipc_protocol::subsystem_events::SubsystemEvent>,
 ) {
     *EVENT_TX.lock() = Some(tx);
 }
 
 /// Emit a subsystem event.
-fn emit_event(event: crate::ipc::subsystem_events::SubsystemEvent) {
+fn emit_event(event: cc_ipc_protocol::subsystem_events::SubsystemEvent) {
     if let Some(tx) = EVENT_TX.lock().as_ref() {
         let _ = tx.send(event);
     }
@@ -197,7 +199,7 @@ fn emit_event(event: crate::ipc::subsystem_events::SubsystemEvent) {
 /// Routes through the same sender as internal emissions so attached
 /// frontends can't tell the difference. Used when slash-command handlers
 /// detect drift and need to notify the UI that a reload is appropriate.
-pub fn emit_event_external(event: crate::ipc::subsystem_events::SubsystemEvent) {
+pub fn emit_event_external(event: cc_ipc_protocol::subsystem_events::SubsystemEvent) {
     emit_event(event);
 }
 
@@ -209,8 +211,8 @@ pub fn register_plugin(plugin: PluginEntry) {
         PluginStatus::Disabled => "disabled",
         PluginStatus::Error(_) => "error",
     };
-    let event = crate::ipc::subsystem_events::SubsystemEvent::Plugin(
-        crate::ipc::subsystem_events::PluginEvent::StatusChanged {
+    let event = cc_ipc_protocol::subsystem_events::SubsystemEvent::Plugin(
+        cc_ipc_protocol::subsystem_events::PluginEvent::StatusChanged {
             plugin_id: plugin.id.clone(),
             name: plugin.name.clone(),
             status: status_str.to_string(),
@@ -266,8 +268,8 @@ pub fn set_plugin_status(id: &str, status: PluginStatus) -> Option<PluginEntry> 
         _ => None,
     };
 
-    emit_event(crate::ipc::subsystem_events::SubsystemEvent::Plugin(
-        crate::ipc::subsystem_events::PluginEvent::StatusChanged {
+    emit_event(cc_ipc_protocol::subsystem_events::SubsystemEvent::Plugin(
+        cc_ipc_protocol::subsystem_events::PluginEvent::StatusChanged {
             plugin_id: plugin.id.clone(),
             name: plugin.name.clone(),
             status: status_str.to_string(),
@@ -282,8 +284,8 @@ pub fn set_plugin_status(id: &str, status: PluginStatus) -> Option<PluginEntry> 
 pub fn unregister_plugin(id: &str) -> Option<PluginEntry> {
     let result = REGISTRY.lock().remove(id);
     if let Some(ref removed) = result {
-        emit_event(crate::ipc::subsystem_events::SubsystemEvent::Plugin(
-            crate::ipc::subsystem_events::PluginEvent::StatusChanged {
+        emit_event(cc_ipc_protocol::subsystem_events::SubsystemEvent::Plugin(
+            cc_ipc_protocol::subsystem_events::PluginEvent::StatusChanged {
                 plugin_id: removed.id.clone(),
                 name: removed.name.clone(),
                 status: "not_installed".to_string(),

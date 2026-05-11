@@ -417,7 +417,7 @@ static LSP_CLIENTS: LazyLock<tokio::sync::Mutex<HashMap<String, client::LspClien
 
 /// Latest diagnostics per document URI.
 static DIAGNOSTICS: LazyLock<
-    parking_lot::Mutex<HashMap<String, Vec<crate::ipc::subsystem_types::LspDiagnostic>>>,
+    parking_lot::Mutex<HashMap<String, Vec<cc_ipc_protocol::subsystem_types::LspDiagnostic>>>,
 > = LazyLock::new(|| parking_lot::Mutex::new(HashMap::new()));
 
 /// Delivered diagnostic keys per URI. Used by the tool-facing snapshot path
@@ -428,27 +428,27 @@ static DELIVERED_DIAGNOSTICS: LazyLock<parking_lot::Mutex<HashMap<String, HashSe
 /// Event sender for subsystem events (injected by headless event loop).
 static EVENT_TX: LazyLock<
     parking_lot::Mutex<
-        Option<tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>>,
+        Option<tokio::sync::broadcast::Sender<cc_ipc_protocol::subsystem_events::SubsystemEvent>>,
     >,
 > = LazyLock::new(|| parking_lot::Mutex::new(None));
 
 /// Inject the event sender from the headless event loop.
 #[allow(dead_code)] // Called by headless event loop wiring (Task 12).
 pub fn set_event_sender(
-    tx: tokio::sync::broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>,
+    tx: tokio::sync::broadcast::Sender<cc_ipc_protocol::subsystem_events::SubsystemEvent>,
 ) {
     *EVENT_TX.lock() = Some(tx);
 }
 
 /// Emit a subsystem event (no-op if no sender is set).
-pub(crate) fn emit_event(event: crate::ipc::subsystem_events::SubsystemEvent) {
+pub(crate) fn emit_event(event: cc_ipc_protocol::subsystem_events::SubsystemEvent) {
     if let Some(tx) = EVENT_TX.lock().as_ref() {
         let _ = tx.send(event);
     }
 }
 
-pub(crate) fn record_diagnostics_event(event: crate::ipc::subsystem_events::LspEvent) {
-    if let crate::ipc::subsystem_events::LspEvent::DiagnosticsPublished { uri, diagnostics } =
+pub(crate) fn record_diagnostics_event(event: cc_ipc_protocol::subsystem_events::LspEvent) {
+    if let cc_ipc_protocol::subsystem_events::LspEvent::DiagnosticsPublished { uri, diagnostics } =
         &event
     {
         if diagnostics.is_empty() {
@@ -458,7 +458,9 @@ pub(crate) fn record_diagnostics_event(event: crate::ipc::subsystem_events::LspE
             DIAGNOSTICS.lock().insert(uri.clone(), diagnostics.clone());
         }
     }
-    emit_event(crate::ipc::subsystem_events::SubsystemEvent::Lsp(event));
+    emit_event(cc_ipc_protocol::subsystem_events::SubsystemEvent::Lsp(
+        event,
+    ));
 }
 
 pub(crate) fn clear_delivered_diagnostics(uri: &str) {
@@ -467,7 +469,7 @@ pub(crate) fn clear_delivered_diagnostics(uri: &str) {
 
 pub fn diagnostics_snapshot(
     uri: Option<&str>,
-) -> Vec<(String, Vec<crate::ipc::subsystem_types::LspDiagnostic>)> {
+) -> Vec<(String, Vec<cc_ipc_protocol::subsystem_types::LspDiagnostic>)> {
     let diagnostics = DIAGNOSTICS.lock();
     match uri {
         Some(uri) => diagnostics
@@ -510,8 +512,8 @@ async fn get_or_start_client(
         }
         tracing::warn!(server = %key, "LSP server died, will restart");
         clients.remove(&key);
-        emit_event(crate::ipc::subsystem_events::SubsystemEvent::Lsp(
-            crate::ipc::subsystem_events::LspEvent::ServerStateChanged {
+        emit_event(cc_ipc_protocol::subsystem_events::SubsystemEvent::Lsp(
+            cc_ipc_protocol::subsystem_events::LspEvent::ServerStateChanged {
                 language_id: key.clone(),
                 state: "stopped".to_string(),
                 error: Some("server process died".to_string()),
@@ -527,8 +529,8 @@ async fn get_or_start_client(
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let new_client = client::LspClient::start(&config, &root_path).await?;
     clients.insert(key.clone(), new_client);
-    emit_event(crate::ipc::subsystem_events::SubsystemEvent::Lsp(
-        crate::ipc::subsystem_events::LspEvent::ServerStateChanged {
+    emit_event(cc_ipc_protocol::subsystem_events::SubsystemEvent::Lsp(
+        cc_ipc_protocol::subsystem_events::LspEvent::ServerStateChanged {
             language_id: key.clone(),
             state: "running".to_string(),
             error: None,
@@ -599,8 +601,8 @@ pub async fn start_server(language_id_or_key: &str) -> Result<()> {
     let mut clients = LSP_CLIENTS.lock().await;
     if let Some(existing) = clients.get_mut(&key) {
         if existing.is_alive() {
-            emit_event(crate::ipc::subsystem_events::SubsystemEvent::Lsp(
-                crate::ipc::subsystem_events::LspEvent::ServerStateChanged {
+            emit_event(cc_ipc_protocol::subsystem_events::SubsystemEvent::Lsp(
+                cc_ipc_protocol::subsystem_events::LspEvent::ServerStateChanged {
                     language_id: key,
                     state: "running".to_string(),
                     error: None,
@@ -613,8 +615,8 @@ pub async fn start_server(language_id_or_key: &str) -> Result<()> {
 
     let client = client::LspClient::start(&config, &root_path).await?;
     clients.insert(key.clone(), client);
-    emit_event(crate::ipc::subsystem_events::SubsystemEvent::Lsp(
-        crate::ipc::subsystem_events::LspEvent::ServerStateChanged {
+    emit_event(cc_ipc_protocol::subsystem_events::SubsystemEvent::Lsp(
+        cc_ipc_protocol::subsystem_events::LspEvent::ServerStateChanged {
             language_id: key,
             state: "running".to_string(),
             error: None,
@@ -633,8 +635,8 @@ pub async fn stop_server(language_id_or_key: &str) -> Result<()> {
     if let Some(client) = clients.remove(&key) {
         drop(clients);
         let _ = client.shutdown().await;
-        emit_event(crate::ipc::subsystem_events::SubsystemEvent::Lsp(
-            crate::ipc::subsystem_events::LspEvent::ServerStateChanged {
+        emit_event(cc_ipc_protocol::subsystem_events::SubsystemEvent::Lsp(
+            cc_ipc_protocol::subsystem_events::LspEvent::ServerStateChanged {
                 language_id: key,
                 state: "stopped".to_string(),
                 error: None,
@@ -722,7 +724,7 @@ pub async fn close_document(uri: &str) -> Result<Option<DocumentSyncState>> {
     let state = client.close_document(uri).await?;
     if let Some(state) = state.as_ref() {
         record_diagnostics_event(
-            crate::ipc::subsystem_events::LspEvent::DiagnosticsPublished {
+            cc_ipc_protocol::subsystem_events::LspEvent::DiagnosticsPublished {
                 uri: uri.to_string(),
                 diagnostics: Vec::new(),
             },
@@ -733,8 +735,8 @@ pub async fn close_document(uri: &str) -> Result<Option<DocumentSyncState>> {
 }
 
 fn emit_document_synced(kind: &str, state: &DocumentSyncState) {
-    emit_event(crate::ipc::subsystem_events::SubsystemEvent::Lsp(
-        crate::ipc::subsystem_events::LspEvent::DocumentSynced {
+    emit_event(cc_ipc_protocol::subsystem_events::SubsystemEvent::Lsp(
+        cc_ipc_protocol::subsystem_events::LspEvent::DocumentSynced {
             uri: state.uri.clone(),
             language_id: state.language_id.clone(),
             version: state.version,
@@ -770,7 +772,7 @@ pub async fn completion(
     conversions::parse_completion_response(response)
 }
 
-pub fn server_info_snapshot() -> Vec<crate::ipc::subsystem_types::LspServerInfo> {
+pub fn server_info_snapshot() -> Vec<cc_ipc_protocol::subsystem_types::LspServerInfo> {
     let mut open_counts = HashMap::<String, usize>::new();
     if let Ok(clients) = LSP_CLIENTS.try_lock() {
         for (key, client) in clients.iter() {
@@ -784,7 +786,7 @@ pub fn server_info_snapshot() -> Vec<crate::ipc::subsystem_types::LspServerInfo>
             let key = server_key(&cfg);
             let open_files_count = open_counts.get(&key).copied().unwrap_or(0);
             let running = open_counts.contains_key(&key);
-            crate::ipc::subsystem_types::LspServerInfo {
+            cc_ipc_protocol::subsystem_types::LspServerInfo {
                 language_id: key,
                 state: if running {
                     "running".to_string()

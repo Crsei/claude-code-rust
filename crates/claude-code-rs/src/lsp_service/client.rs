@@ -1,6 +1,6 @@
 //! LSP client — manages a single language server subprocess.
 //!
-//! Lifecycle: `start()` → initialize handshake → request/notify → file sync → `shutdown()`.
+//! Lifecycle: `start()` ->initialize handshake ->request/notify ->file sync — `shutdown()`.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -666,10 +666,10 @@ fn path_to_uri(path: &Path) -> String {
     let normalized = s.replace('\\', "/");
 
     if normalized.starts_with('/') {
-        // Unix absolute path: /home/user/... → file:///home/user/...
+        // Unix absolute path: /home/user/... ->file:///home/user/...
         format!("file://{normalized}")
     } else {
-        // Windows absolute path: C:/Users/... → file:///C:/Users/...
+        // Windows absolute path: C:/Users/... ->file:///C:/Users/...
         format!("file:///{normalized}")
     }
 }
@@ -680,12 +680,12 @@ fn uri_to_path(uri: &str) -> Result<String> {
     if let Some(rest) = uri.strip_prefix("file:///") {
         #[cfg(windows)]
         {
-            // On Windows: file:///C:/foo → C:\foo
+            // On Windows: file:///C:/foo ->C:\foo
             Ok(rest.replace('/', "\\"))
         }
         #[cfg(not(windows))]
         {
-            // On Unix: file:///home/user → /home/user
+            // On Unix: file:///home/user ->/home/user
             Ok(format!("/{rest}"))
         }
     } else if let Some(rest) = uri.strip_prefix("file://") {
@@ -800,8 +800,8 @@ fn byte_index_for_position(text: &str, line: u32, utf16_character: u32) -> Resul
 /// Parse a `textDocument/publishDiagnostics` notification into an LspEvent.
 fn parse_diagnostics_notification(
     params: &serde_json::Value,
-) -> crate::ipc::subsystem_events::LspEvent {
-    use crate::ipc::subsystem_types::{DiagnosticRange, LspDiagnostic};
+) -> cc_ipc_protocol::subsystem_events::LspEvent {
+    use cc_ipc_protocol::subsystem_types::{DiagnosticRange, LspDiagnostic};
 
     let uri = params["uri"].as_str().unwrap_or_default().to_string();
     let diagnostics = params["diagnostics"]
@@ -838,7 +838,7 @@ fn parse_diagnostics_notification(
         })
         .unwrap_or_default();
 
-    crate::ipc::subsystem_events::LspEvent::DiagnosticsPublished { uri, diagnostics }
+    cc_ipc_protocol::subsystem_events::LspEvent::DiagnosticsPublished { uri, diagnostics }
 }
 
 // ---------------------------------------------------------------------------
@@ -1022,7 +1022,10 @@ mod tests {
         });
         let event = parse_diagnostics_notification(&params);
         match event {
-            crate::ipc::subsystem_events::LspEvent::DiagnosticsPublished { uri, diagnostics } => {
+            cc_ipc_protocol::subsystem_events::LspEvent::DiagnosticsPublished {
+                uri,
+                diagnostics,
+            } => {
                 assert_eq!(uri, "file:///src/main.rs");
                 assert_eq!(diagnostics.len(), 1);
                 assert_eq!(diagnostics[0].severity, "error");
@@ -1041,8 +1044,9 @@ mod tests {
         });
         let event = parse_diagnostics_notification(&params);
         match event {
-            crate::ipc::subsystem_events::LspEvent::DiagnosticsPublished {
-                diagnostics, ..
+            cc_ipc_protocol::subsystem_events::LspEvent::DiagnosticsPublished {
+                diagnostics,
+                ..
             } => {
                 assert!(diagnostics.is_empty());
             }

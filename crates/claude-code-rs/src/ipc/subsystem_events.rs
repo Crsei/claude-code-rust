@@ -1,8 +1,8 @@
-//! Compatibility re-export for IPC subsystem DTOs plus the in-process event bus.
+//! Root-owned subsystem event bus for in-process IPC/TUI subscribers.
 
 use tokio::sync::broadcast;
 
-pub use cc_ipc_protocol::subsystem_events::*;
+use cc_ipc_protocol::subsystem_events::SubsystemEvent;
 
 /// Broadcast-based event bus for subsystem events.
 pub struct SubsystemEventBus {

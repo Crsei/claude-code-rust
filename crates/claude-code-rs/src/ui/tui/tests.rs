@@ -7,13 +7,13 @@ use super::subsystem_events::handle_subsystem_event;
 use crate::engine::sdk_types::{
     SdkAssistantMessage, SdkMessage, SdkStreamEvent, SdkTombstone, SdkUserReplay,
 };
-use crate::ipc::subsystem_events::{LspEvent, SubsystemEvent};
 use crate::types::message::{
     ContentBlock, InfoLevel, Message, MessageContent, StreamEvent, SystemMessage, SystemSubtype,
     ToolResultContent, UserMessage,
 };
 use crate::types::tool::ToolProgress;
 use crate::ui::app::App;
+use cc_ipc_protocol::subsystem_events::{LspEvent, SubsystemEvent};
 use serde_json::json;
 fn stream_event(event: StreamEvent) -> SdkMessage {
     SdkMessage::StreamEvent(SdkStreamEvent {
@@ -401,7 +401,7 @@ fn lsp_recommendation_event_opens_command_surface() {
     handle_subsystem_event(
         &mut app,
         SubsystemEvent::Lsp(LspEvent::RecommendationRequest {
-            payload: crate::ipc::subsystem_types::LspRecommendationPayload {
+            payload: cc_ipc_protocol::subsystem_types::LspRecommendationPayload {
                 request_id: "req-1".to_string(),
                 plugin_name: "rust-analyzer".to_string(),
                 plugin_description: Some("Rust language server".to_string()),

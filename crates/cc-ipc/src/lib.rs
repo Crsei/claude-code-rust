@@ -1,15 +1,13 @@
-//! cc-ipc — IPC spine between backend and frontend (Phase 7 scaffold).
+//! cc-ipc - IPC spine between backend and frontend.
 //!
 //! Issue #76 (`[workspace-split] Phase 7`): target destination for
 //! `crates/claude-code-rs/src/ipc/` plus the `tools/system_status.rs` wrapper
 //! (which reads `ipc::subsystem_handlers` and therefore moves with the IPC
 //! crate to avoid a `cc-tools -> cc-ipc` edge).
 //!
-//! Cycle-breaking prerequisites (done in this PR): moved agent event / command
-//! / channel types from `src/ipc/` to `cc-types::{agent_events,
-//! agent_types, agent_channel}`. The files under `src/ipc/` are now thin
-//! re-exports so downstream consumers don't break while the physical code
-//! move is staged in a follow-up PR.
+//! Agent event / command / channel types live in
+//! `cc-types::{agent_events, agent_types, agent_channel}` so the IPC runtime
+//! can share them without depending on the root binary crate.
 
 pub mod agent_handlers;
 pub mod agent_tree;

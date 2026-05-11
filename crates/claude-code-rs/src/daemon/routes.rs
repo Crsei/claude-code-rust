@@ -83,7 +83,7 @@ pub struct DetachRequest {
 }
 
 // ---------------------------------------------------------------------------
-// SdkMessage → SseEvent mapping
+// SdkMessage ->SseEvent mapping
 // ---------------------------------------------------------------------------
 
 /// Convert an [`SdkMessage`] into an [`SseEvent`] suitable for broadcasting

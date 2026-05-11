@@ -4,7 +4,7 @@
 //! - `/ide`            — show help.
 //! - `/ide detect`     — run detection; print one row per IDE.
 //! - `/ide status`     — show detected IDEs + current selection.
-//! - `/ide select <id>`— persist selection; triggers a bridge reconnect.
+//! - `/ide select <id>`-persist selection; triggers a bridge reconnect.
 //! - `/ide clear`      — remove the persisted selection.
 //! - `/ide reconnect`  — re-establish the MCP bridge for the selected IDE.
 
@@ -13,7 +13,7 @@ use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::ide;
-use crate::ipc::subsystem_types::IdeInfo;
+use cc_ipc_protocol::subsystem_types::IdeInfo;
 
 /// Handler for the `/ide` slash command.
 pub struct IdeHandler;

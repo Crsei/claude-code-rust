@@ -14,9 +14,9 @@ use crate::services::prompt_suggestion::PromptSuggestionService;
 use crate::types::message::{ContentBlock, Message, MessageContent};
 
 use super::callbacks::{PendingPermissions, PendingQuestions};
-use super::protocol::{BackendMessage, ConversationMessage, FrontendMessage};
 use super::query_runner::spawn_query_turn;
-use super::sink::FrontendSink;
+use cc_ipc_client::sink::FrontendSink;
+use cc_ipc_protocol::{BackendMessage, ConversationMessage, FrontendMessage};
 
 // ---------------------------------------------------------------------------
 // FrontendMessage dispatch

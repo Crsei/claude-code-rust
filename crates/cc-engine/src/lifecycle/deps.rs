@@ -51,7 +51,7 @@ pub(crate) struct QueryEngineDeps {
     /// Propagated into `ToolUseContext` for headless/TUI permission flow.
     pub(crate) permission_callback: Option<crate::types::tool::PermissionCallback>,
     /// Background agent sender — forwarded into ToolUseContext.
-    pub(crate) bg_agent_tx: Option<crate::ipc::agent_channel::AgentSender>,
+    pub(crate) bg_agent_tx: Option<cc_types::agent_channel::AgentSender>,
     /// Optional callback that receives every `ToolProgress` emitted by a
     /// tool. The query loop pulls this via `tool_progress_callback()` and
     /// hands it to `execute_tool_calls`. Tests can leave it unset; in

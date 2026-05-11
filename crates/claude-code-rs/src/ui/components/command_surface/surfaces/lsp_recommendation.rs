@@ -1,10 +1,10 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::ipc::subsystem_types::LspRecommendationPayload;
 use crate::ui::command_surface::CommandSurfaceOutcome;
 use crate::ui::lsp_recommendation::lsp_recommendation_menu::{
     LspRecommendationDecision, LspRecommendationPromptState,
 };
+use cc_ipc_protocol::subsystem_types::LspRecommendationPayload;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LspRecommendationSurface {
     pub(crate) request_id: String,

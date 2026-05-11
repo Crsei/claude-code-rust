@@ -27,7 +27,7 @@ use crate::permissions::dangerous::set_permission_mode_with_auto_mode_safety;
 use crate::types::config::{AgentContext, QueryEngineConfig};
 use crate::types::tool::*;
 
-use crate::ipc::subsystem_types::{
+use cc_ipc_protocol::subsystem_types::{
     AgentDefinitionEntry, AgentDefinitionSource, AgentPermissionMode,
 };
 
@@ -168,7 +168,7 @@ async fn count_worktree_changes(
 }
 
 // ---------------------------------------------------------------------------
-// Helper: convert SdkMessage → AgentEvent for IPC forwarding
+// Helper: convert SdkMessage ->AgentEvent for IPC forwarding
 // ---------------------------------------------------------------------------
 
 /// Convert an SdkMessage to an AgentEvent for IPC forwarding.
@@ -330,7 +330,7 @@ fn build_child_config(
 fn active_agent_definition(
     cwd: &Path,
     agent_type: &str,
-) -> Option<crate::ipc::subsystem_types::AgentDefinitionEntry> {
+) -> Option<cc_ipc_protocol::subsystem_types::AgentDefinitionEntry> {
     crate::ipc::agent_settings::list_all_agents(cwd)
         .into_iter()
         .filter(|entry| entry.name == agent_type)
@@ -535,7 +535,7 @@ async fn collect_stream_result(
 #[cfg(test)]
 mod child_tool_boundary_tests {
     use super::*;
-    use crate::ipc::subsystem_types::{AgentDefinitionEntry, AgentDefinitionSource};
+    use cc_ipc_protocol::subsystem_types::{AgentDefinitionEntry, AgentDefinitionSource};
 
     fn tool_names(tools: &Tools) -> Vec<String> {
         tools.iter().map(|tool| tool.name().to_string()).collect()

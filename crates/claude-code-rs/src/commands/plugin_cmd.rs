@@ -380,8 +380,8 @@ fn handle_set_enabled(plugin_id: &str, enable: bool) -> Result<CommandResult> {
 }
 
 fn emit_refresh_needed(reason: String) {
-    let event = crate::ipc::subsystem_events::SubsystemEvent::Plugin(
-        crate::ipc::subsystem_events::PluginEvent::RefreshNeeded { reason },
+    let event = cc_ipc_protocol::subsystem_events::SubsystemEvent::Plugin(
+        cc_ipc_protocol::subsystem_events::PluginEvent::RefreshNeeded { reason },
     );
     // Plugins module owns the event sender static; route through a helper.
     plugins::emit_event_external(event);
