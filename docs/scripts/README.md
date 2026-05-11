@@ -30,6 +30,68 @@
 
 当前非 workspace 待执行任务必须走通用标准任务列表流程，也就是 `scripts/standard_task_list_omx.py` 或 `scripts/standard_task_list_omx_supervisor.py`。不要再为它新增专项 PowerShell runner。
 
+### OMX + subagent 标准执行计划
+
+这套计划用于把 `docs/scripts/` 中仍待执行的任务构建成标准任务队列，并通过 OMX/Codex runner 小批量执行。目标是稳定推进长任务，而不是一次性把多个无关改动塞进同一个会话。
+
+固定执行配置：
+
+- 模型固定为 `gpt-5.5`。
+- reasoning effort 固定为 `medium`。
+- 子任务输出保持简洁，不写长 reasoning transcript；只报告行动、改动文件、验证、风险和下一步。
+- 底层执行优先走 `scripts/run-standard-task-list-omx.ps1` 或 `scripts/standard_task_list_omx_supervisor.py`；需要普通只读定位时可用 `omx sparkshell`、`omx explore` 或 `rg`。Windows 下 `omx explore` 不可用时，用 PowerShell + `rg` 等价定位即可。
+
+任务队列构建：
+
+1. 从 `docs/scripts/` 中保留的待执行清单开始，不从 `docs/scripts/achieve/` 重新取已完成任务。
+2. 每行只放一个可验证任务；空行和 `#` 注释允许存在。
+3. 高风险或边界任务使用 `[checkpoint]`、`[review]`、`[final]`，由标准 runner 强制拆成单任务 batch。
+4. 普通 `[build]` 任务只在文件所有权清楚、风险低、验证相同的情况下才允许合并。
+5. 当前非 workspace 待执行入口是 `docs/scripts/non-workspace-unfinished-standard-task-2026-05-11.txt`；它把剩余事项打包成一个 `[final]` 任务，实际执行时仍由标准 runner 写 batch summary、execution report 和 final report。
+
+按需分配每批任务数量：
+
+- 初始 batch size 为 `1`。
+- `[checkpoint]`、`[review]`、`[final]` 永远单独执行。
+- 连续 green batch 后可以增加 batch size，最高不超过标准 runner 的 `--max-batch-size`。
+- 只在任务改动域相同、测试命令相同、文件所有权不重叠时合并多个 `[build]` 任务。
+- 出现失败、跨域改动、单文件 diff 过大、agent 报告 blocker 时，下一批收缩到单任务。
+
+subagent 使用规则：
+
+- 只在独立、边界清楚的定位、审查或验证工作上使用 native subagent。
+- 实现任务由当前 batch 的主 agent 负责；subagent 不直接扩大 scope，不提交，不重写全局计划。
+- 可用 subagent 让一个会话做只读代码定位，另一个做 diff/review 风险检查；二者结果由主 agent 整合。
+- 中途 review gate 优先使用 `[review]` 任务承载；review 只修 blocker 或测试失败，不新增功能。
+
+提交和历史：
+
+- green batch 由标准 runner 统一 `git add` 当前 batch changed paths 并自动 commit。
+- 子任务 agent 不直接 commit。
+- commit message 遵守本仓库 Lore Commit Protocol，至少说明约束、验证和未测项。
+- 如果运行时存在 unrelated dirty worktree，runner 和 agent 都不得 revert；只提交本 batch 实际变更。
+
+重构和单文件代码量检测：
+
+- 标准 runner 会检查 `--max-files-per-batch`、`--max-per-file-diff-lines`、`--warn-rust-file-lines`、`--max-rust-file-lines` 和 oversized Rust 文件数量。
+- 触发 `WARNING` 或 `BLOCKER-RISK` 时，优先拆任务、抽小模块、删除重复代码或复用已有 helper。
+- 不为了“安全”再叠一层重复 guard；优先让现有边界返回清晰错误。
+- 单文件继续膨胀时，必须在当前任务范围内拆分，或在 batch summary 中说明为什么不能拆。
+
+错误和诊断要求：
+
+- 错误必须足够明显，方便后续 agent 从日志直接定位；不要把存在但损坏的配置、凭据、manifest 或状态文件静默当成不存在。
+- 诊断至少包含可行动的 message、相关路径或命令、建议动作；能稳定编码的错误要保留 stable code。
+- absent 和 invalid 要区分：确实缺失可以空结果；存在但不可读、不可解析、权限错误或 schema 错误必须显式暴露。
+- 减少冗余安全设计：不要用多层模糊 fallback 掩盖真实失败；需要 fail closed 的路径给出明确 blocker，best-effort 路径给出 warning。
+
+收尾产物：
+
+- 每个 batch 保留 `batch-XX.summary.md/json` 和 `batch-XX/task-report.md/json`。
+- 整次运行保留 `execution-report.md/json` 和 `final-report.md/json`。
+- 完成后把实现效果、已知缺陷、未测项和后续跟踪方案写入对应 docs 或 `docs/archive/` 报告。
+- 用户可感知问题写入 `docs/KNOWN_ISSUES.md`；只记录当前仍存在的问题，不保留已经修复的历史噪声。
+
 ## 通用约定
 
 ### 运行环境
