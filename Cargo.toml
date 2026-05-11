@@ -151,6 +151,7 @@ cc-teams = { path = "crates/cc-teams" }
 cc-daemon = { path = "crates/cc-daemon" }
 cc-commands = { path = "crates/cc-commands" }
 cc-ipc = { path = "crates/cc-ipc" }
+cc-ipc-protocol = { path = "crates/cc-ipc-protocol" }
 
 # Daemon HTTP server
 axum = { version = "0.8", features = ["ws"] }

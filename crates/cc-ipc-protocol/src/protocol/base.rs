@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::types::message::ContentBlock;
+use cc_types::message::ContentBlock;
 
 /// Lightweight description of a content block in a tool result,
 /// suitable for forwarding to the frontend.
@@ -57,7 +57,7 @@ pub struct ConversationMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::message::ContentBlock;
+    use cc_types::message::ContentBlock;
 
     #[test]
     fn conversation_message_serializes_content_blocks_when_present() {

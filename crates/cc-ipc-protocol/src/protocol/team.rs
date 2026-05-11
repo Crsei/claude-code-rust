@@ -5,8 +5,9 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::ipc::agent_events::TeamEvent as TE;
-    use crate::ipc::protocol::{BackendMessage, FrontendMessage};
+    use cc_types::agent_events::TeamEvent as TE;
+
+    use crate::protocol::{BackendMessage, FrontendMessage};
 
     #[test]
     fn backend_team_event_serializes() {

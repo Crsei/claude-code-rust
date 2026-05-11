@@ -5,8 +5,9 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::ipc::agent_events::AgentEvent as AE;
-    use crate::ipc::protocol::{BackendMessage, FrontendMessage};
+    use cc_types::agent_events::AgentEvent as AE;
+
+    use crate::protocol::{BackendMessage, FrontendMessage};
 
     #[test]
     fn backend_agent_event_serializes() {

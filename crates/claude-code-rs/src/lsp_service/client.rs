@@ -1054,7 +1054,7 @@ mod tests {
     fn apply_document_change_replaces_ascii_range() {
         let mut text = "fn main() {\n    let x = 1;\n}\n".to_string();
         let change = DocumentChange {
-            range: super::super::types::SourceRange {
+            range: cc_ipc_protocol::SourceRange {
                 start_line: 2,
                 start_character: 9,
                 end_line: 2,

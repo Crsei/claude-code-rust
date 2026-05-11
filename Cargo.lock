@@ -645,6 +645,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-ipc-protocol"
+version = "0.1.0"
+dependencies = [
+ "cc-mcp",
+ "cc-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cc-keybindings"
 version = "0.1.0"
 dependencies = [
@@ -968,6 +978,7 @@ dependencies = [
  "cc-computer-use",
  "cc-config",
  "cc-engine",
+ "cc-ipc-protocol",
  "cc-keybindings",
  "cc-mcp",
  "cc-models",

@@ -5,11 +5,11 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::ipc::protocol::{BackendMessage, FrontendMessage};
+    use crate::protocol::{BackendMessage, FrontendMessage};
 
     #[test]
     fn backend_lsp_event_serializes() {
-        use crate::ipc::subsystem_events::LspEvent;
+        use crate::subsystem_events::LspEvent;
         let msg = BackendMessage::LspEvent {
             event: LspEvent::ServerStateChanged {
                 language_id: "rust".to_string(),
@@ -24,7 +24,7 @@ mod tests {
 
     #[test]
     fn backend_lsp_completion_event_serializes() {
-        use crate::ipc::subsystem_events::LspEvent;
+        use crate::subsystem_events::LspEvent;
         let msg = BackendMessage::LspEvent {
             event: LspEvent::CompletionResults {
                 request_id: "c1".to_string(),
@@ -40,7 +40,7 @@ mod tests {
 
     #[test]
     fn backend_subsystem_status_serializes() {
-        use crate::ipc::subsystem_types::SubsystemStatusSnapshot;
+        use crate::subsystem_types::SubsystemStatusSnapshot;
         let msg = BackendMessage::SubsystemStatus {
             status: SubsystemStatusSnapshot {
                 lsp: vec![],
@@ -58,7 +58,7 @@ mod tests {
 
     #[test]
     fn backend_ide_event_serializes() {
-        use crate::ipc::subsystem_events::IdeEvent;
+        use crate::subsystem_events::IdeEvent;
         let msg = BackendMessage::IdeEvent {
             event: IdeEvent::IdeList { ides: vec![] },
         };
