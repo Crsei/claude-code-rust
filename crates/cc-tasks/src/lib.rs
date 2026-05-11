@@ -1,12 +1,7 @@
-//! cc-tasks — task-domain boundary (Phase 6 workspace split scaffold).
+//! cc-tasks — task-domain types, parsing, errors, and persistence shapes.
 //!
-//! Target destination for the task store, task-output handling, task tools,
-//! and task JSON/domain types currently living under
-//! `crates/claude-code-rs/src/tools/tasks*`.
-//!
-//! This first boundary step owns only stable task-domain vocabulary so current
-//! behavior stays in place while later moves can migrate implementation code
-//! without changing schema strings.
+//! Runtime store and tool adapters still live with the root runtime module
+//! until their engine/UI/session dependencies can move cleanly.
 
 pub mod commands;
 pub mod domain;

@@ -15,13 +15,16 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 #[cfg(test)]
 use cc_tasks::dependency_ids_from_input;
+#[cfg(test)]
+use cc_tasks::TaskCreateOptions;
 use cc_tasks::{
     normalize_dependencies, normalize_optional_string, parse_task_create, parse_task_id,
-    parse_task_update, TaskError, TaskUpdateAction, DEFAULT_TASK_LIST_ID,
-    REMOTE_TASK_TYPE_AUTOFIX_PR, REMOTE_TASK_TYPE_BACKGROUND_PR, REMOTE_TASK_TYPE_REMOTE_AGENT,
-    REMOTE_TASK_TYPE_ULTRAPLAN, REMOTE_TASK_TYPE_ULTRAREVIEW, TASK_KIND_DREAM,
-    TASK_KIND_IN_PROCESS_TEAMMATE, TASK_KIND_LOCAL_AGENT, TASK_KIND_LOCAL_BASH,
-    TASK_KIND_LOCAL_WORKFLOW, TASK_KIND_MONITOR_MCP, TASK_KIND_REMOTE_AGENT, TASK_KIND_TOOL,
+    parse_task_update, TaskEntry, TaskError, TaskStatus, TaskUpdateAction, TeammateTaskExitReason,
+    UnassignTeammateTasksResult, DEFAULT_TASK_LIST_ID, REMOTE_TASK_TYPE_AUTOFIX_PR,
+    REMOTE_TASK_TYPE_BACKGROUND_PR, REMOTE_TASK_TYPE_REMOTE_AGENT, REMOTE_TASK_TYPE_ULTRAPLAN,
+    REMOTE_TASK_TYPE_ULTRAREVIEW, TASK_KIND_DREAM, TASK_KIND_IN_PROCESS_TEAMMATE,
+    TASK_KIND_LOCAL_AGENT, TASK_KIND_LOCAL_BASH, TASK_KIND_LOCAL_WORKFLOW, TASK_KIND_MONITOR_MCP,
+    TASK_KIND_REMOTE_AGENT, TASK_KIND_TOOL,
 };
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -47,16 +50,11 @@ mod todo;
 #[cfg(test)]
 mod tests;
 
-#[allow(unused_imports)]
-pub use cc_tasks::{
-    TaskCreateOptions, TaskEntry, TaskRuntimeHandle, TaskStatus, TaskUpdateFields,
-    TeammateTaskExitReason, UnassignTeammateTasksResult, UnassignedTaskSummary,
-};
 use json::task_to_json_from_store;
-#[allow(unused_imports)]
-pub use lists::{
-    sanitize_task_list_id, task_list_dir, task_list_id_for_context, unassign_teammate_tasks,
-};
+use lists::task_list_dir;
+pub use lists::unassign_teammate_tasks;
+#[cfg(test)]
+use lists::{sanitize_task_list_id, task_list_id_for_context};
 use lists::{store, store_for_context, TaskListLock};
 pub use output::TaskOutputTool;
 use repository::TaskRepository;

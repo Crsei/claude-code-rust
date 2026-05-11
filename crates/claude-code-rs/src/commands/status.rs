@@ -93,10 +93,10 @@ impl CommandHandler for StatusHandler {
             .filter(|task| {
                 matches!(
                     task.status,
-                    crate::tools::tasks::TaskStatus::Pending
-                        | crate::tools::tasks::TaskStatus::InProgress
-                        | crate::tools::tasks::TaskStatus::Interrupted
-                        | crate::tools::tasks::TaskStatus::Recoverable
+                    cc_tasks::TaskStatus::Pending
+                        | cc_tasks::TaskStatus::InProgress
+                        | cc_tasks::TaskStatus::Interrupted
+                        | cc_tasks::TaskStatus::Recoverable
                 )
             })
             .count();

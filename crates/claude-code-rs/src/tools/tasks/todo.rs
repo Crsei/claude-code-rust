@@ -1,5 +1,5 @@
-use super::store::{TodoItem, TodoWriteOutcome};
 use super::*;
+use cc_tasks::{TodoItem, TodoWriteOutcome};
 
 static TODO_STORE: std::sync::LazyLock<Mutex<HashMap<String, Vec<TodoItem>>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));

@@ -52,10 +52,7 @@ pub fn start_runner(config: InProcessRunnerConfig) -> tokio::task::JoinHandle<()
     let handle = tokio::spawn(async move {
         if let Err(e) = run_teammate(config).await {
             warn!(agent_id = %agent_id, error = %e, "teammate runner exited with error");
-            release_teammate_tasks(
-                &identity,
-                crate::tools::tasks::TeammateTaskExitReason::Terminated,
-            );
+            release_teammate_tasks(&identity, cc_tasks::TeammateTaskExitReason::Terminated);
             InProcessBackend::mark_task_failed(&task_id, e.to_string());
         }
     });
@@ -165,7 +162,7 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
                     InProcessBackend::update_task_status(&task_id, TaskStatus::Stopped);
                     release_teammate_tasks(
                         &identity,
-                        crate::tools::tasks::TeammateTaskExitReason::Shutdown,
+                        cc_tasks::TeammateTaskExitReason::Shutdown,
                     );
                     break;
                 }
@@ -189,7 +186,7 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
                         InProcessBackend::update_task_status(&task_id, TaskStatus::Stopped);
                         release_teammate_tasks(
                             &identity,
-                            crate::tools::tasks::TeammateTaskExitReason::Terminated,
+                            cc_tasks::TeammateTaskExitReason::Terminated,
                         );
                         return Ok(());
                     }
@@ -209,7 +206,7 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
                                     InProcessBackend::update_task_status(&task_id, TaskStatus::Stopped);
                                     release_teammate_tasks(
                                         &identity,
-                                        crate::tools::tasks::TeammateTaskExitReason::Shutdown,
+                                        cc_tasks::TeammateTaskExitReason::Shutdown,
                                     );
                                     return Ok(());
                                 }
@@ -223,7 +220,7 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
                                 let error = mark_mailbox_processing_failure(&task_id, e);
                                 release_teammate_tasks(
                                     &identity,
-                                    crate::tools::tasks::TeammateTaskExitReason::Terminated,
+                                    cc_tasks::TeammateTaskExitReason::Terminated,
                                 );
                                 return Err(anyhow::anyhow!(error));
                             }
@@ -236,7 +233,7 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
         info!(agent_id = %identity.agent_id, "teammate runner finished");
         release_teammate_tasks(
             &identity,
-            crate::tools::tasks::TeammateTaskExitReason::Shutdown,
+            cc_tasks::TeammateTaskExitReason::Shutdown,
         );
         Ok(())
     })
@@ -245,8 +242,8 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
 
 fn release_teammate_tasks(
     identity: &TeammateIdentity,
-    reason: crate::tools::tasks::TeammateTaskExitReason,
-) -> crate::tools::tasks::UnassignTeammateTasksResult {
+    reason: cc_tasks::TeammateTaskExitReason,
+) -> cc_tasks::UnassignTeammateTasksResult {
     let result = crate::tools::tasks::unassign_teammate_tasks(
         &identity.team_name,
         &identity.agent_id,

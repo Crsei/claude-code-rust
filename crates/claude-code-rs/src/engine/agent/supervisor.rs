@@ -18,7 +18,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::engine::lifecycle::QueryEngine;
-use crate::tools::tasks::{global_store, TaskCreateOptions, TaskEntry, TaskStatus};
+use cc_tasks::{TaskCreateOptions, TaskEntry, TaskStatus};
+
+use crate::tools::tasks::global_store;
 use crate::types::config::{QueryEngineConfig, QuerySource};
 use crate::types::tool::*;
 use crate::utils::bash::validate_working_directory;

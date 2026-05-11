@@ -422,7 +422,7 @@ async fn kill(ctx: &mut CommandContext, rest: &str) -> String {
             &tc.team_name,
             &agent_id,
             name,
-            crate::tools::tasks::TeammateTaskExitReason::Terminated,
+            cc_tasks::TeammateTaskExitReason::Terminated,
         );
         // Flip is_active in team file and remove from teammates map.
         let _ = helpers::set_member_active(&tc.team_name, &agent_id, false);
@@ -470,7 +470,7 @@ async fn delete(ctx: &mut CommandContext, rest: &str) -> String {
                     name,
                     &member.agent_id,
                     &member.name,
-                    crate::tools::tasks::TeammateTaskExitReason::Terminated,
+                    cc_tasks::TeammateTaskExitReason::Terminated,
                 );
                 if !unassigned.unassigned_tasks.is_empty() {
                     unassigned_messages.push(unassigned.notification_message);

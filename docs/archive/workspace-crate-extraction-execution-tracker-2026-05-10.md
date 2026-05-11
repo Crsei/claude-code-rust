@@ -517,3 +517,73 @@ Error visibility notes:
 - No task error paths were wrapped or duplicated.
 - Existing task parsing/validation remains at the domain/runtime boundary; the
   adapter change only centralizes static specs and selection policy.
+
+## Batch 09 - tools-tasks-07 lane closeout
+
+Status: PASS
+Commit: not committed
+Tasks:
+- [final] tools-tasks-07 - Delete task/tool shims, run lane gates, update
+  tracker, and commit only if all tools/tasks checks are green.
+
+Implemented effects:
+- Deleted the unused root `tools::background_agents` compatibility shim and
+  removed its module declaration.
+- Removed public `tools::tasks` task-domain type re-exports; root callers now
+  import task-domain types directly from `cc_tasks`.
+- Kept task runtime/store/tool adapters in the root runtime module while
+  preserving private internal imports for its submodules and tests.
+- Updated `cc-tools` and `cc-tasks` crate descriptions so they no longer call
+  the active boundary a scaffold.
+
+Defects and divergences:
+- None found in the tools/tasks lane gates.
+- The worktree contains unrelated pre-existing script/supervisor changes and
+  untracked docs/scripts; this closeout did not modify them.
+
+Follow-ups:
+- Runner/owner: commit this batch if the surrounding runner policy requires it.
+  This agent did not commit because the task-level contract says the runner owns
+  commits.
+- Future tools/tasks moves should keep task-domain types imported from
+  `cc_tasks` directly and avoid reintroducing root `tools::tasks` type
+  re-export shims.
+
+Verification:
+- `cargo fmt --all --check`: pass.
+- `cargo check -p cc-tools --message-format short`: pass.
+- `cargo check -p cc-tasks --message-format short`: pass.
+- `cargo test -p cc-tools`: pass, 3 passed.
+- `cargo test -p cc-tasks`: pass, 10 passed.
+- `cargo test -p claude-code-rs tools::tasks -- --nocapture`: pass, 58 passed.
+- `cargo test -p claude-code-rs tools::registry -- --nocapture`: pass, 7 passed.
+- `cargo test -p claude-code-rs commands::tasks -- --nocapture`: pass, 9 passed.
+- `cargo check -p claude-code-rs --message-format short`: pass.
+- `cargo check --workspace --all-targets --message-format short`: pass.
+- `cargo tree -p cc-tools -e normal --depth 1`: pass; direct dependencies are
+  only `cc-tasks` and `serde_json`.
+- `cargo tree -p cc-tasks -e normal --depth 1`: pass; direct dependencies are
+  `serde`, `serde_json`, and `tokio-util`.
+- `rg` guard for root background-agent shim, root task-domain type re-exports,
+  and workspace-split scaffold wording under the tools/tasks crates: pass, no
+  matches.
+
+File-size/refactor findings:
+- Deleted the background-agent shim file instead of growing it.
+- Touched Rust files stayed under the 800-line guard: `tasks/store.rs` 519
+  lines, `tasks.rs` 406, `cc-tools/src/task_specs.rs` 240,
+  `tools/registry.rs` 191, `cc-tools/src/registry.rs` 71, and
+  `cc-tasks/src/lib.rs` 30.
+
+Dependency graph notes:
+- Removed root module surface: `claude-code-rs::tools::background_agents`.
+- Removed public task-domain type shim surface from `tools::tasks`; remaining
+  cross-boundary type dependency is explicit through `cc_tasks`.
+- `cc-tools` remains a leaf-style helper crate with no edge to
+  `cc-engine`, `cc-query`, `cc-ipc`, UI, daemon, or the root crate.
+
+Error visibility notes:
+- No task error paths were wrapped, hidden, or duplicated.
+- Existing explicit task parsing/claim/persistence errors remain covered by the
+  focused `cc-tasks` and `tools::tasks` tests.
+- No redundant safety layer was added.

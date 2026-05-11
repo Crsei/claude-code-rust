@@ -32,9 +32,6 @@ pub mod registry;
 pub mod ask_user;
 pub mod skill;
 
-// Background agent types (used by Agent tool + query loop + event loop).
-pub mod background_agents;
-
 // Web / network tools.
 pub mod web_fetch;
 pub mod web_search;

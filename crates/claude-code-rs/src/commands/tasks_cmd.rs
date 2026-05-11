@@ -7,13 +7,13 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use cc_tasks::{parse_tasks_command, TasksCommand};
+use cc_tasks::{parse_tasks_command, TaskEntry, TaskStatus as ToolTaskStatus, TasksCommand};
 use chrono::{DateTime, Local, TimeZone};
 
 use super::{CommandContext, CommandHandler, CommandResult};
 use crate::teams::in_process::{InProcessBackend, TeammateTaskSnapshot};
 use crate::teams::types::TaskStatus as TeamTaskStatus;
-use crate::tools::tasks::{global_store, TaskEntry, TaskStatus as ToolTaskStatus};
+use crate::tools::tasks::global_store;
 use crate::ui::browser::{render_with_footer, TreeNode};
 
 pub struct TasksHandler;

@@ -1,7 +1,7 @@
 use super::*;
-pub use cc_tasks::{
+use cc_tasks::{
     TaskClaimFailure, TaskClaimFailureReason, TaskCreateOptions, TaskEntry, TaskRuntimeHandle,
-    TaskStatus, TaskUpdateFields, TodoItem, TodoWriteOutcome, UnassignedTaskSummary,
+    TaskStatus, TaskUpdateFields, UnassignedTaskSummary,
 };
 
 /// Shared task store backed by a durable repository and runtime handles.

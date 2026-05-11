@@ -33,7 +33,7 @@ pub(crate) fn task_surface_items() -> Vec<TaskSurfaceItem> {
     items
 }
 
-pub(crate) fn tool_task_surface_item(task: crate::tools::tasks::TaskEntry) -> TaskSurfaceItem {
+pub(crate) fn tool_task_surface_item(task: cc_tasks::TaskEntry) -> TaskSurfaceItem {
     let title = if task.subject.trim().is_empty() {
         task.id.clone()
     } else {
@@ -111,19 +111,15 @@ pub(crate) fn ui_task_kind_from_tool_kind(kind: &str) -> UiTaskKind {
     }
 }
 
-pub(crate) fn ui_task_state_from_tool_status(
-    status: crate::tools::tasks::TaskStatus,
-) -> UiTaskState {
+pub(crate) fn ui_task_state_from_tool_status(status: cc_tasks::TaskStatus) -> UiTaskState {
     match status {
-        crate::tools::tasks::TaskStatus::Pending => UiTaskState::Pending,
-        crate::tools::tasks::TaskStatus::InProgress
-        | crate::tools::tasks::TaskStatus::Interrupted
-        | crate::tools::tasks::TaskStatus::Recoverable => UiTaskState::Running,
-        crate::tools::tasks::TaskStatus::Completed => UiTaskState::Succeeded,
-        crate::tools::tasks::TaskStatus::Failed => UiTaskState::Failed,
-        crate::tools::tasks::TaskStatus::Cancelled | crate::tools::tasks::TaskStatus::Stopped => {
-            UiTaskState::Canceled
-        }
+        cc_tasks::TaskStatus::Pending => UiTaskState::Pending,
+        cc_tasks::TaskStatus::InProgress
+        | cc_tasks::TaskStatus::Interrupted
+        | cc_tasks::TaskStatus::Recoverable => UiTaskState::Running,
+        cc_tasks::TaskStatus::Completed => UiTaskState::Succeeded,
+        cc_tasks::TaskStatus::Failed => UiTaskState::Failed,
+        cc_tasks::TaskStatus::Cancelled | cc_tasks::TaskStatus::Stopped => UiTaskState::Canceled,
     }
 }
 
