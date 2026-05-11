@@ -1,10 +1,199 @@
-//! cc-commands — slash-command implementations (Phase 7 scaffold).
-//!
-//! Issue #76 (`[workspace-split] Phase 7`): target destination for
-//! `crates/claude-code-rs/src/commands/` (53 commands, ~12.6k LOC — the
-//! largest single-module extraction). This crate implements the
-//! `CommandDispatcher` trait defined in cc-types::commands.
-//!
-//! Downstream deps (after full move): cc-engine, cc-plugins, cc-tools,
-//! cc-teams, cc-browser, cc-compact, cc-session, cc-voice, cc-keybindings,
-//! cc-mcp, cc-sandbox, cc-auth, cc-bootstrap, cc-skills, cc-utils.
+//! Slash-command contract and low-coupling command implementations.
+
+pub mod clear;
+pub mod exit;
+pub mod version;
+
+use std::path::PathBuf;
+
+use anyhow::Result;
+use async_trait::async_trait;
+
+use cc_bootstrap::SessionId;
+use cc_engine::types::app_state::AppState;
+use cc_types::message::Message;
+
+/// A registered slash command.
+pub struct Command {
+    /// Primary command name (e.g. "help").
+    pub name: String,
+    /// Alternative names (e.g. ["h", "?"]).
+    pub aliases: Vec<String>,
+    /// Short description shown in /help output.
+    pub description: String,
+    /// The handler that executes this command.
+    pub handler: Box<dyn CommandHandler>,
+}
+
+impl Command {
+    pub fn metadata(&self) -> CommandMetadata {
+        CommandMetadata {
+            name: self.name.clone(),
+            aliases: self.aliases.clone(),
+            description: self.description.clone(),
+        }
+    }
+}
+
+/// Command metadata used by parsers and dispatchers without handler ownership.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandMetadata {
+    pub name: String,
+    pub aliases: Vec<String>,
+    pub description: String,
+}
+
+/// Trait implemented by every slash command.
+#[async_trait]
+pub trait CommandHandler: Send + Sync {
+    /// Execute the command with the given arguments and context.
+    async fn execute(&self, args: &str, ctx: &mut CommandContext) -> Result<CommandResult>;
+}
+
+/// Execution context passed to command handlers.
+pub struct CommandContext {
+    /// Current conversation messages.
+    pub messages: Vec<Message>,
+    /// Current working directory.
+    pub cwd: PathBuf,
+    /// Application state snapshot.
+    pub app_state: AppState,
+    /// Current session ID.
+    pub session_id: SessionId,
+}
+
+/// Result of executing a command.
+pub enum CommandResult {
+    /// Output text to display to the user (not sent to the model).
+    Output(String),
+    /// Messages to add to the conversation and then send to the model.
+    Query(Vec<Message>),
+    /// Clear the visible conversation by starting a fresh session.
+    Clear,
+    /// Exit the REPL with a goodbye message.
+    Exit(String),
+    /// No visible output.
+    #[allow(dead_code)]
+    None,
+}
+
+pub fn command<H>(name: &str, aliases: &[&str], description: &str, handler: H) -> Command
+where
+    H: CommandHandler + 'static,
+{
+    Command {
+        name: name.to_string(),
+        aliases: aliases.iter().map(|alias| (*alias).to_string()).collect(),
+        description: description.to_string(),
+        handler: Box::new(handler),
+    }
+}
+
+pub fn sort_commands_for_display(commands: &mut [Command]) {
+    commands.sort_by(|a, b| match (a.name.as_str(), b.name.as_str()) {
+        ("init", "init") => std::cmp::Ordering::Equal,
+        ("init", _) => std::cmp::Ordering::Less,
+        (_, "init") => std::cmp::Ordering::Greater,
+        _ => a.name.cmp(&b.name),
+    });
+}
+
+pub fn command_metadata(commands: &[Command]) -> Vec<CommandMetadata> {
+    commands.iter().map(Command::metadata).collect()
+}
+
+/// Find a command by name or alias from user input.
+pub fn find_command_in(input: &str, commands: &[CommandMetadata]) -> Option<usize> {
+    let cmd_name = input.split_whitespace().next().unwrap_or("");
+
+    commands
+        .iter()
+        .position(|c| c.name == cmd_name || c.aliases.iter().any(|a| a == cmd_name))
+}
+
+/// Parse user input into (command_index, args) if it starts with `/`.
+pub fn parse_command_input_in(
+    input: &str,
+    commands: &[CommandMetadata],
+) -> Option<(usize, String)> {
+    let trimmed = input.trim();
+    if !trimmed.starts_with('/') {
+        return None;
+    }
+
+    let without_slash = &trimmed[1..];
+    let cmd_name = without_slash.split_whitespace().next().unwrap_or("");
+    let args = without_slash
+        .strip_prefix(cmd_name)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+
+    find_command_in(without_slash, commands).map(|idx| (idx, args))
+}
+
+/// Concrete [`cc_types::commands::CommandDispatcher`] backed by command metadata.
+pub struct DefaultCommandDispatcher {
+    commands: Vec<CommandMetadata>,
+}
+
+impl DefaultCommandDispatcher {
+    pub fn new(commands: Vec<CommandMetadata>) -> Self {
+        Self { commands }
+    }
+
+    pub fn from_commands(commands: &[Command]) -> Self {
+        Self::new(command_metadata(commands))
+    }
+}
+
+impl cc_types::commands::CommandDispatcher for DefaultCommandDispatcher {
+    fn parse_command_input(&self, input: &str) -> Option<cc_types::commands::ParsedCommand> {
+        parse_command_input_in(input, &self.commands)
+            .map(|(index, args)| cc_types::commands::ParsedCommand { index, args })
+    }
+
+    fn command_name(&self, index: usize) -> Option<String> {
+        self.commands.get(index).map(|cmd| cmd.name.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cc_types::commands::CommandDispatcher;
+
+    fn sample_commands() -> Vec<Command> {
+        let mut commands = vec![
+            command("help", &["h", "?"], "Show help", clear::ClearHandler),
+            command("init", &[], "Init", clear::ClearHandler),
+            command("config", &["settings"], "Configure", clear::ClearHandler),
+        ];
+        sort_commands_for_display(&mut commands);
+        commands
+    }
+
+    #[test]
+    fn parser_resolves_names_and_aliases() {
+        let metadata = command_metadata(&sample_commands());
+
+        assert_eq!(find_command_in("help", &metadata), Some(2));
+        assert_eq!(find_command_in("settings", &metadata), Some(1));
+        assert_eq!(find_command_in("missing", &metadata), None);
+        assert_eq!(
+            parse_command_input_in("/config set model SOTA", &metadata),
+            Some((1, "set model SOTA".to_string()))
+        );
+        assert_eq!(parse_command_input_in("not a command", &metadata), None);
+    }
+
+    #[test]
+    fn dispatcher_uses_stable_metadata_snapshot() {
+        let dispatcher = DefaultCommandDispatcher::from_commands(&sample_commands());
+
+        let parsed = dispatcher.parse_command_input("/h").unwrap();
+        assert_eq!(parsed.index, 2);
+        assert_eq!(parsed.args, "");
+        assert_eq!(dispatcher.command_name(0).as_deref(), Some("init"));
+    }
+}

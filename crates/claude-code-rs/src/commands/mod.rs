@@ -4,13 +4,11 @@
 //! Each command implements `CommandHandler` and is registered in `get_all_commands()`.
 
 // Essential commands
-pub mod clear;
 pub mod config_cmd;
 pub mod context;
 pub mod coordinator;
 pub mod cost;
 pub mod diff;
-pub mod exit;
 pub mod files;
 pub mod help;
 pub mod login;
@@ -20,7 +18,6 @@ pub mod model;
 pub mod permissions_cmd;
 pub mod resume;
 pub mod session;
-pub mod version;
 
 // Git & workflow
 pub mod branch;
@@ -128,80 +125,15 @@ pub mod notify;
 pub mod remote_cmd;
 pub mod sleep_cmd;
 
-use std::path::PathBuf;
-
-use anyhow::Result;
-use async_trait::async_trait;
-
-use crate::bootstrap::SessionId;
-use crate::types::app_state::AppState;
-use crate::types::message::Message;
-
-// ---------------------------------------------------------------------------
-// Core types
-// ---------------------------------------------------------------------------
-
-/// A registered slash command.
-pub struct Command {
-    /// Primary command name (e.g. "help").
-    pub name: String,
-    /// Alternative names (e.g. ["h", "?"]).
-    pub aliases: Vec<String>,
-    /// Short description shown in /help output.
-    pub description: String,
-    /// The handler that executes this command.
-    pub handler: Box<dyn CommandHandler>,
-}
-
-/// Trait implemented by every slash command.
-#[async_trait]
-pub trait CommandHandler: Send + Sync {
-    /// Execute the command with the given arguments and context.
-    async fn execute(&self, args: &str, ctx: &mut CommandContext) -> Result<CommandResult>;
-}
-
-/// Execution context passed to command handlers.
-pub struct CommandContext {
-    /// Current conversation messages.
-    pub messages: Vec<Message>,
-    /// Current working directory.
-    pub cwd: PathBuf,
-    /// Application state snapshot.
-    pub app_state: AppState,
-    /// Current session ID.
-    pub session_id: SessionId,
-}
-
-/// Result of executing a command.
-pub enum CommandResult {
-    /// Output text to display to the user (not sent to the model).
-    Output(String),
-    /// Messages to add to the conversation and then send to the model.
-    Query(Vec<Message>),
-    /// Clear the visible conversation by starting a fresh session.
-    Clear,
-    /// Exit the REPL with a goodbye message.
-    Exit(String),
-    /// No visible output.
-    #[allow(dead_code)]
-    None,
-}
+pub use cc_commands::{
+    command, command_metadata, sort_commands_for_display, Command, CommandContext, CommandHandler,
+    CommandResult,
+};
 
 // ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
 
-fn command<H>(name: &str, aliases: &[&str], description: &str, handler: H) -> Command
-where
-    H: CommandHandler + 'static,
-{
-    Command {
-        name: name.to_string(),
-        aliases: aliases.iter().map(|alias| (*alias).to_string()).collect(),
-        description: description.to_string(),
-        handler: Box::new(handler),
-    }
-}
 /// Build the full list of available commands.
 pub fn get_all_commands() -> Vec<Command> {
     let mut commands = vec![
@@ -215,7 +147,7 @@ pub fn get_all_commands() -> Vec<Command> {
             "clear",
             &[],
             "Clear the conversation history",
-            clear::ClearHandler,
+            cc_commands::clear::ClearHandler,
         ),
         command(
             "config",
@@ -233,13 +165,13 @@ pub fn get_all_commands() -> Vec<Command> {
             "exit",
             &["quit", "q"],
             "Exit the REPL via the normal exit flow",
-            exit::ExitHandler,
+            cc_commands::exit::ExitHandler,
         ),
         command(
             "version",
             &["v"],
             "Show the current version",
-            version::VersionHandler,
+            cc_commands::version::VersionHandler,
         ),
         command(
             "model",
@@ -644,41 +576,15 @@ pub fn get_all_commands() -> Vec<Command> {
     commands
 }
 
-fn sort_commands_for_display(commands: &mut [Command]) {
-    commands.sort_by(|a, b| match (a.name.as_str(), b.name.as_str()) {
-        ("init", "init") => std::cmp::Ordering::Equal,
-        ("init", _) => std::cmp::Ordering::Less,
-        (_, "init") => std::cmp::Ordering::Greater,
-        _ => a.name.cmp(&b.name),
-    });
-}
-
 /// Find a command by name or alias from user input.
+#[cfg(test)]
 pub fn find_command(input: &str) -> Option<usize> {
-    let cmd_name = input.split_whitespace().next().unwrap_or("");
-    let commands = get_all_commands();
-
-    commands
-        .iter()
-        .position(|c| c.name == cmd_name || c.aliases.iter().any(|a| a == cmd_name))
+    cc_commands::find_command_in(input, &command_metadata(&get_all_commands()))
 }
 
 /// Parse user input into (command_index, args) if it starts with `/`.
 pub fn parse_command_input(input: &str) -> Option<(usize, String)> {
-    let trimmed = input.trim();
-    if !trimmed.starts_with('/') {
-        return None;
-    }
-
-    let without_slash = &trimmed[1..];
-    let cmd_name = without_slash.split_whitespace().next().unwrap_or("");
-    let args = without_slash
-        .strip_prefix(cmd_name)
-        .unwrap_or("")
-        .trim()
-        .to_string();
-
-    find_command(without_slash).map(|idx| (idx, args))
+    cc_commands::parse_command_input_in(input, &command_metadata(&get_all_commands()))
 }
 
 // ---------------------------------------------------------------------------
@@ -688,28 +594,33 @@ pub fn parse_command_input(input: &str) -> Option<(usize, String)> {
 /// Concrete [`cc_types::commands::CommandDispatcher`] for the full command
 /// registry.  Used to inject command parsing into the engine without the
 /// engine importing `commands::` directly (see issue #74, Phase 5c).
-pub struct DefaultCommandDispatcher;
+pub struct DefaultCommandDispatcher {
+    inner: cc_commands::DefaultCommandDispatcher,
+}
 
 impl DefaultCommandDispatcher {
     pub fn new() -> Self {
-        Self
+        Self {
+            inner: cc_commands::DefaultCommandDispatcher::new(
+                command_metadata(&get_all_commands()),
+            ),
+        }
     }
 }
 
 impl Default for DefaultCommandDispatcher {
     fn default() -> Self {
-        Self
+        Self::new()
     }
 }
 
 impl cc_types::commands::CommandDispatcher for DefaultCommandDispatcher {
     fn parse_command_input(&self, input: &str) -> Option<cc_types::commands::ParsedCommand> {
-        parse_command_input(input)
-            .map(|(index, args)| cc_types::commands::ParsedCommand { index, args })
+        cc_types::commands::CommandDispatcher::parse_command_input(&self.inner, input)
     }
 
     fn command_name(&self, index: usize) -> Option<String> {
-        get_all_commands().get(index).map(|cmd| cmd.name.clone())
+        cc_types::commands::CommandDispatcher::command_name(&self.inner, index)
     }
 }
 

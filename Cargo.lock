@@ -563,7 +563,12 @@ dependencies = [
 name = "cc-commands"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "async-trait",
+ "cc-bootstrap",
+ "cc-engine",
  "cc-types",
+ "tokio",
 ]
 
 [[package]]
@@ -994,6 +999,7 @@ dependencies = [
  "cc-auth",
  "cc-bootstrap",
  "cc-browser",
+ "cc-commands",
  "cc-compact",
  "cc-computer-use",
  "cc-config",
