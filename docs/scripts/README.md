@@ -113,6 +113,8 @@ PowerShell wrapper 会把相对路径解析到仓库根目录下。建议始终�
 | `-Profile` | 空 | 非空时传给 `codex exec --profile`。 |
 | `-Sandbox` | `danger-full-access` | 传给 `codex exec --sandbox`。 |
 | `-OutputDir` | `target/codex-runs` | 保存 `task-XX.last-message.txt` 的目录。 |
+| `-TaskNumberOffset` | `0` | batch wrapper 传入的全局任务序号偏移，用来显示真实任务进度。 |
+| `-TotalTaskCount` | `0` | batch wrapper 传入的全局任务总数；为 `0` 时使用当前任务文件数量。 |
 | `-ContinueOnError` | 关闭 | 某个任务失败后继续运行后续任务。 |
 
 ### 执行行为

@@ -827,6 +827,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-tasks"
+version = "0.1.0"
+
+[[package]]
 name = "cc-teams"
 version = "0.1.0"
 dependencies = [
@@ -965,6 +969,7 @@ dependencies = [
  "cc-services",
  "cc-session",
  "cc-skills",
+ "cc-tasks",
  "cc-types",
  "cc-utils",
  "chrono",

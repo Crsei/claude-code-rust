@@ -144,6 +144,7 @@ gateway = { path = "crates/gateway" }
 cc-engine = { path = "crates/cc-engine" }
 cc-query = { path = "crates/cc-query" }
 cc-tools = { path = "crates/cc-tools" }
+cc-tasks = { path = "crates/cc-tasks" }
 cc-lsp-service = { path = "crates/cc-lsp-service" }
 cc-plugins = { path = "crates/cc-plugins" }
 cc-teams = { path = "crates/cc-teams" }

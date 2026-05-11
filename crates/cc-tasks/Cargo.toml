@@ -1,0 +1,7 @@
+[package]
+name = "cc-tasks"
+version = "0.1.0"
+edition = "2021"
+description = "Task domain types and tool task implementation boundary. Workspace split scaffold."
+
+[dependencies]

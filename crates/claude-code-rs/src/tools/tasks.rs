@@ -13,6 +13,13 @@
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use cc_tasks::domain::{
+    DEFAULT_TASK_LIST_ID, REMOTE_TASK_TYPE_AUTOFIX_PR, REMOTE_TASK_TYPE_BACKGROUND_PR,
+    REMOTE_TASK_TYPE_ENUM, REMOTE_TASK_TYPE_REMOTE_AGENT, REMOTE_TASK_TYPE_ULTRAPLAN,
+    REMOTE_TASK_TYPE_ULTRAREVIEW, TASK_CREATE_KIND_ENUM, TASK_KIND_DREAM,
+    TASK_KIND_IN_PROCESS_TEAMMATE, TASK_KIND_LOCAL_AGENT, TASK_KIND_LOCAL_BASH,
+    TASK_KIND_LOCAL_WORKFLOW, TASK_KIND_MONITOR_MCP, TASK_KIND_REMOTE_AGENT, TASK_KIND_TOOL,
+};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -86,40 +93,9 @@ const TASK_LIST_LOCK_FILE: &str = ".lock";
 const TASK_LIST_LOCK_RETRIES: usize = 30;
 #[cfg(test)]
 const TASK_LIST_LOCK_RETRIES: usize = 3;
-const DEFAULT_TASK_LIST_ID: &str = "tasklist";
 const CC_RUST_TASK_LIST_ID_ENV: &str = "CC_RUST_TASK_LIST_ID";
 const CLAUDE_CODE_TASK_LIST_ID_ENV: &str = "CLAUDE_CODE_TASK_LIST_ID";
 const CLAUDE_CODE_TEAM_NAME_ENV: &str = "CLAUDE_CODE_TEAM_NAME";
-const TASK_KIND_TOOL: &str = "tool";
-const TASK_KIND_LOCAL_BASH: &str = "local_bash";
-const TASK_KIND_LOCAL_AGENT: &str = "local_agent";
-const TASK_KIND_REMOTE_AGENT: &str = "remote_agent";
-const TASK_KIND_IN_PROCESS_TEAMMATE: &str = "in_process_teammate";
-const TASK_KIND_LOCAL_WORKFLOW: &str = "local_workflow";
-const TASK_KIND_MONITOR_MCP: &str = "monitor_mcp";
-const TASK_KIND_DREAM: &str = "dream";
-const REMOTE_TASK_TYPE_REMOTE_AGENT: &str = "remote-agent";
-const REMOTE_TASK_TYPE_ULTRAPLAN: &str = "ultraplan";
-const REMOTE_TASK_TYPE_ULTRAREVIEW: &str = "ultrareview";
-const REMOTE_TASK_TYPE_AUTOFIX_PR: &str = "autofix-pr";
-const REMOTE_TASK_TYPE_BACKGROUND_PR: &str = "background-pr";
-const TASK_CREATE_KIND_ENUM: &[&str] = &[
-    TASK_KIND_TOOL,
-    TASK_KIND_LOCAL_BASH,
-    TASK_KIND_LOCAL_AGENT,
-    TASK_KIND_REMOTE_AGENT,
-    TASK_KIND_IN_PROCESS_TEAMMATE,
-    TASK_KIND_LOCAL_WORKFLOW,
-    TASK_KIND_MONITOR_MCP,
-    TASK_KIND_DREAM,
-];
-const REMOTE_TASK_TYPE_ENUM: &[&str] = &[
-    REMOTE_TASK_TYPE_REMOTE_AGENT,
-    REMOTE_TASK_TYPE_ULTRAPLAN,
-    REMOTE_TASK_TYPE_ULTRAREVIEW,
-    REMOTE_TASK_TYPE_AUTOFIX_PR,
-    REMOTE_TASK_TYPE_BACKGROUND_PR,
-];
 
 // TaskStore shared state lives in tasks/store.rs.
 
