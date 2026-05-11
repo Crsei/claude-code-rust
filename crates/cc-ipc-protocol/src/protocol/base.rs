@@ -123,6 +123,17 @@ mod tests {
     }
 
     #[test]
+    fn backend_tombstone_serializes() {
+        use super::super::BackendMessage;
+        let msg = BackendMessage::Tombstone {
+            message_id: "assistant-1".into(),
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "tombstone");
+        assert_eq!(json["message_id"], "assistant-1");
+    }
+
+    #[test]
     fn frontend_question_response_deserializes() {
         use super::super::FrontendMessage;
         let json = r#"{"type":"question_response","id":"q-1","text":"yes"}"#;

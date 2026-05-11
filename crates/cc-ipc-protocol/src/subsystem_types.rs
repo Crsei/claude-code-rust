@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use cc_mcp::McpOAuthConfig;
+use cc_types::mcp::McpOAuthConfig;
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -683,6 +683,41 @@ mod tests {
         let value = serde_json::to_value(&entry).unwrap();
         assert_eq!(value["url"], "https://example.com/mcp");
         assert_eq!(value["browser_mcp"], true);
+    }
+
+    #[test]
+    fn mcp_server_config_entry_oauth_roundtrip() {
+        let entry = McpServerConfigEntry {
+            name: "remote".into(),
+            transport: "streamable-http".into(),
+            command: None,
+            args: None,
+            url: Some("https://example.com/mcp".into()),
+            headers: None,
+            oauth: Some(McpOAuthConfig {
+                client_id: Some("cc-rust-test".into()),
+                callback_port: Some(18888),
+                auth_server_metadata_url: Some(
+                    "https://auth.example.com/.well-known/oauth-authorization-server".into(),
+                ),
+                scopes: Some(vec!["tools.read".into()]),
+            }),
+            env: None,
+            browser_mcp: None,
+            disabled: None,
+            scope: ConfigScope::Project,
+        };
+
+        let json = serde_json::to_string(&entry).expect("serialize entry");
+        assert!(json.contains("clientId"));
+        assert!(json.contains("callbackPort"));
+        assert!(json.contains("authServerMetadataUrl"));
+
+        let back: McpServerConfigEntry = serde_json::from_str(&json).expect("deserialize entry");
+        let oauth = back.oauth.expect("oauth should roundtrip");
+        assert_eq!(oauth.client_id.as_deref(), Some("cc-rust-test"));
+        assert_eq!(oauth.callback_port, Some(18888));
+        assert_eq!(oauth.scopes, Some(vec!["tools.read".into()]));
     }
 
     #[test]

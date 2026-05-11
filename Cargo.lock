@@ -648,7 +648,6 @@ dependencies = [
 name = "cc-ipc-protocol"
 version = "0.1.0"
 dependencies = [
- "cc-mcp",
  "cc-types",
  "serde",
  "serde_json",
@@ -681,6 +680,7 @@ dependencies = [
  "base64",
  "bytes",
  "cc-config",
+ "cc-types",
  "chrono",
  "futures",
  "parking_lot",
@@ -867,7 +867,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "parking_lot",
  "serde",
  "serde_json",
  "tokio",

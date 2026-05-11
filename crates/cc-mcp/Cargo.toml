@@ -22,6 +22,7 @@ tokio-util = { workspace = true }
 url = { workspace = true }
 
 cc-config = { workspace = true }
+cc-types = { path = "../cc-types", default-features = false }
 
 [dev-dependencies]
 tempfile = { workspace = true }

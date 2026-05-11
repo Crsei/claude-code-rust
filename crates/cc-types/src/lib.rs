@@ -7,12 +7,16 @@
 //!
 //! See issue #70 (`[workspace-split] Phase 1`) for the rationale behind this
 //! partial split.
+#[cfg(feature = "runtime-types")]
 pub mod agent_channel;
 pub mod agent_events;
 pub mod agent_types;
 pub mod commands;
+#[cfg(feature = "runtime-types")]
 pub mod hooks;
+pub mod mcp;
 pub mod message;
+#[cfg(feature = "runtime-types")]
 pub mod permissions;
 pub mod plan_workflow;
 pub mod state;

@@ -5,7 +5,6 @@ edition = "2021"
 description = "Shared IPC protocol DTOs for cc-rust frontend/backend boundaries."
 
 [dependencies]
-cc-mcp = { workspace = true }
-cc-types = { workspace = true }
+cc-types = { path = "../cc-types", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
