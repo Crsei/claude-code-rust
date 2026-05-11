@@ -141,6 +141,23 @@ Return a concise completion note with changed files, verification run, and any r
 - 启用 `-ContinueOnError` 后继续执行后续任务。
 - 每个任务的最终回复写入 `<OutputDir>\task-XX.last-message.txt`。
 
+## `run-standard-task-list-omx.ps1`
+
+路径：`scripts/run-standard-task-list-omx.ps1`
+
+这是通用标准任务列表的批处理入口，是从 workspace crate extraction Python runner 复制并泛化出来的版本。它适合新的长任务清单，默认读取 `codex-tasks.txt`，输出到 `target/codex-runs/standard-task-list-omx`。
+
+常用命令：
+
+```powershell
+.\scripts\run-standard-task-list-omx.ps1 -TasksFile .\codex-tasks.txt -DryRun
+.\scripts\run-standard-task-list-omx.ps1 -TasksFile .\codex-tasks.txt
+python .\scripts\standard_task_list_omx_supervisor.py --tasks-file .\codex-tasks.txt --plan-only
+python .\scripts\standard_task_list_omx_supervisor.py --tasks-file .\codex-tasks.txt -- --skip-final-validation
+```
+
+它保留动态 batch、`[checkpoint]` / `[review]` / `[final]` 单独成批、diff guard、blocker-risk review、green batch 自动提交、final report 和 supervisor 续跑能力。需要跳过自动提交时传 `-SkipCommit`；需要避免最终 `cargo` 长验证时传 `-SkipFinalValidation`。
+
 ## `run-workspace-crate-extraction-omx.ps1`
 
 路径：`scripts/run-workspace-crate-extraction-omx.ps1`
@@ -536,6 +553,20 @@ ratatui UI parity wrapper 使用 PowerShell helper 中的默认 guard：
 
 以下目录主要由 wrapper 自动加载，不建议作为用户入口直接执行。
 
+### `scripts/standard_task_list_omx_py/`
+
+通用标准任务列表 runner 的 Python 实现模块，是新任务清单的默认模板。入口文件：
+
+- `scripts/run-standard-task-list-omx.ps1`
+- `scripts/standard_task_list_omx.py`
+- `scripts/standard_task_list_omx_supervisor.py`
+
+配套测试：
+
+```text
+scripts/tests/test_standard_task_list_omx.py
+```
+
 ### `scripts/workspace_crate_extraction_omx_py/`
 
 Python runner 的实现模块：
@@ -716,7 +747,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\codex-task-sequenc
 修改 `scripts/` 后建议至少执行：
 
 ```powershell
-python -m unittest scripts.tests.test_workspace_crate_extraction_omx
+python -m unittest scripts.tests.test_workspace_crate_extraction_omx scripts.tests.test_standard_task_list_omx
 git diff --check
 ```
 
@@ -733,6 +764,9 @@ cargo test --workspace
 
 ```powershell
 Test-Path .\scripts\codex-task-sequence.ps1
+Test-Path .\scripts\run-standard-task-list-omx.ps1
+Test-Path .\scripts\standard_task_list_omx.py
+Test-Path .\scripts\standard_task_list_omx_supervisor.py
 Test-Path .\scripts\run-workspace-crate-extraction-omx.ps1
 Test-Path .\scripts\workspace_crate_extraction_omx.py
 Test-Path .\scripts\workspace_crate_extraction_omx_supervisor.py
