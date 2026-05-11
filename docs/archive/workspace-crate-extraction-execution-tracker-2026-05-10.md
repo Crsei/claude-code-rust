@@ -224,3 +224,67 @@ Error visibility notes:
   env overrides are absent.
 - File-size guard messages now include HEAD line-count context so later agents
   can distinguish historical size debt from batch-induced growth.
+
+## Batch 05 - api-models-05 lane closeout
+
+Status: PASS
+Commit: not committed
+Tasks:
+- [final] api-models-05 - Remove api/model shims, run lane gates, update
+  tracker, and commit only if all api/models checks are green.
+
+Implemented effects:
+- Removed the root `claude-code-rs` API compatibility shim
+  (`crates/claude-code-rs/src/api.rs`) and the corresponding `mod api`
+  declaration.
+- Rewired remaining root-crate API consumers to `cc_api::api::*`.
+- Preserved model metadata ownership in `cc-models`; no root model shim or
+  `api::model_mapping` ownership remains.
+
+Defects and divergences:
+- None found in the API/models lane gates.
+- The working tree contains unrelated pre-existing runner/supervisor changes;
+  they were not modified for this closeout.
+
+Follow-ups:
+- Runner/owner: commit this batch if the surrounding runner policy requires it.
+  This agent did not commit because the task-level contract says the runner owns
+  commits.
+- Future lanes should keep `cc-api` as the transport/request boundary and avoid
+  reintroducing `crate::api::*` imports in `claude-code-rs`.
+
+Verification:
+- `cargo fmt --all --check`: pass.
+- `cargo test -p cc-models`: pass, 28 passed.
+- `cargo test -p cc-api`: pass, 126 passed.
+- `cargo test -p claude-code-rs commands::login`: pass, 13 passed.
+- `cargo test -p claude-code-rs engine::lifecycle`: pass, 49 passed.
+- `cargo check -p claude-code-rs --message-format short`: pass.
+- `cargo check --workspace --all-targets --message-format short`: pass.
+- `cargo tree -p cc-models`: pass, no dependencies.
+- `cargo tree -p cc-api`: pass; depends on `cc-auth`, `cc-models`,
+  `cc-types`, and `cc-utils`.
+- `rg` guard for `crate::api`, root `mod api`, root `model_registry`, and
+  `api::model_mapping` under `crates/claude-code-rs/src`: pass, no matches.
+
+File-size/refactor findings:
+- No Rust file was grown structurally; edits were path rewrites plus shim
+  deletion.
+- Touched historical oversized files remain above guard thresholds:
+  `engine/lifecycle/deps.rs` 2434 lines,
+  `engine/lifecycle/submit_message.rs` 1405 lines,
+  `query/loop_helpers.rs` 1343 lines, `main.rs` 992 lines, and
+  `query/loop_impl.rs` 783 lines. No split was required because this closeout
+  did not add behavior or increase those files.
+
+Dependency graph notes:
+- Removed edge: `claude-code-rs` no longer owns or exports a root `api` module.
+- Remaining API dependency is explicit through the workspace crate edge
+  `claude-code-rs -> cc-api`.
+- `cc-models` remains dependency-free.
+
+Error visibility notes:
+- Provider configuration diagnostics remain explicit through
+  `cc_api::api::client::ApiClient::from_backend_result`.
+- Removed legacy model alias diagnostics remain explicit through `cc_models`.
+- No redundant safety layer was added.
