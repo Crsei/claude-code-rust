@@ -1,6 +1,6 @@
 // src/tools/system_status.rs
 
-//! SystemStatus tool 鈥?lets the Agent query subsystem status.
+//! SystemStatus tool — lets the Agent query subsystem status.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -148,7 +148,7 @@ fn format_status_output(subsystem: &str) -> String {
         } else {
             for s in &skills {
                 section.push_str(&format!(
-                    "- {} [{}] 鈥?{}\n",
+                    "- {} [{}] — {}\n",
                     s.name, s.source, s.description
                 ));
             }
@@ -170,7 +170,7 @@ fn format_status_output(subsystem: &str) -> String {
         } else {
             for a in &active {
                 section.push_str(&format!(
-                    "- {}: {} [{}{}] 鈥?\"{}\" (depth {})\n",
+                    "- {}: {} [{}{}] — \"{}\" (depth {})\n",
                     a.agent_id,
                     a.state,
                     if a.is_background {
