@@ -13,6 +13,7 @@ pub mod ingress;
 pub mod protocol;
 pub mod query_runner;
 pub mod runtime;
+pub mod runtime_adapters;
 pub mod sdk_mapper;
 pub mod sink;
 pub mod subsystem_events;

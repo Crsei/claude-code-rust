@@ -33,6 +33,8 @@ pub(crate) async fn dispatch(
     suggestion_svc: &Arc<Mutex<PromptSuggestionService>>,
     sink: &FrontendSink,
 ) -> bool {
+    super::runtime_adapters::ensure_installed();
+
     match msg {
         FrontendMessage::SubmitPrompt { text, id } => {
             debug!("headless: submit_prompt id={}", id);
@@ -145,29 +147,29 @@ pub(crate) async fn dispatch(
 
         FrontendMessage::LspCommand { command } => {
             debug!("headless: LSP command: {:?}", command);
-            let msgs = super::subsystem_handlers::handle_lsp_command(command);
+            let msgs = cc_ipc::subsystem_handlers::handle_lsp_command(command);
             let _ = sink.send_many(msgs);
         }
         FrontendMessage::McpCommand { command } => {
             debug!("headless: MCP command: {:?}", command);
             let cwd = std::path::Path::new(engine.cwd());
             let msgs =
-                super::subsystem_handlers::handle_mcp_command_with_runtime(command, cwd).await;
+                cc_ipc::subsystem_handlers::handle_mcp_command_with_runtime(command, cwd).await;
             let _ = sink.send_many(msgs);
         }
         FrontendMessage::PluginCommand { command } => {
             debug!("headless: Plugin command: {:?}", command);
-            let msgs = super::subsystem_handlers::handle_plugin_command(command);
+            let msgs = cc_ipc::subsystem_handlers::handle_plugin_command(command);
             let _ = sink.send_many(msgs);
         }
         FrontendMessage::SkillCommand { command } => {
             debug!("headless: Skill command: {:?}", command);
-            let msgs = super::subsystem_handlers::handle_skill_command(command);
+            let msgs = cc_ipc::subsystem_handlers::handle_skill_command(command);
             let _ = sink.send_many(msgs);
         }
         FrontendMessage::IdeCommand { command } => {
             debug!("headless: IDE command: {:?}", command);
-            let msgs = super::subsystem_handlers::handle_ide_command(command);
+            let msgs = cc_ipc::subsystem_handlers::handle_ide_command(command);
             let _ = sink.send_many(msgs);
         }
         FrontendMessage::AgentSettingsCommand { command } => {
@@ -177,17 +179,17 @@ pub(crate) async fn dispatch(
         }
         FrontendMessage::QuerySubsystemStatus => {
             debug!("headless: subsystem status query");
-            let status = super::subsystem_handlers::build_subsystem_status_snapshot();
+            let status = cc_ipc::subsystem_handlers::build_subsystem_status_snapshot();
             let _ = sink.send(&BackendMessage::SubsystemStatus { status });
         }
         FrontendMessage::AgentCommand { command } => {
             debug!("headless: Agent command: {:?}", command);
-            let msgs = super::agent_handlers::handle_agent_command(command);
+            let msgs = cc_ipc::agent_handlers::handle_agent_command(command);
             let _ = sink.send_many(msgs);
         }
         FrontendMessage::TeamCommand { command } => {
             debug!("headless: Team command: {:?}", command);
-            let msgs = super::agent_handlers::handle_team_command(command);
+            let msgs = cc_ipc::agent_handlers::handle_team_command(command);
             let _ = sink.send_many(msgs);
         }
 
@@ -413,7 +415,7 @@ async fn handle_slash_command(
         if cmd.name == "team" {
             if let Some(tc) = ctx.app_state.team_context.as_ref() {
                 if !tc.team_name.is_empty() {
-                    let events = super::agent_handlers::build_team_status_events(&tc.team_name);
+                    let events = cc_ipc::agent_handlers::build_team_status_events(&tc.team_name);
                     let _ = sink.send_many(events);
                 }
             }

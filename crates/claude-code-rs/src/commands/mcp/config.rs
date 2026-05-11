@@ -7,7 +7,6 @@ use super::settings::{
     write_settings_value,
 };
 use super::{CommandContext, CommandResult};
-use crate::ipc::subsystem_handlers::build_mcp_server_config_entries;
 use crate::ipc::subsystem_types::{ConfigScope, McpServerConfigEntry};
 
 // ---------------------------------------------------------------------------
@@ -72,7 +71,8 @@ pub(super) fn handle_edit(rest: &[&str], ctx: &mut CommandContext) -> Result<Com
     }
 
     // Locate the current entry to edit (respect --scope override if supplied).
-    let existing = build_mcp_server_config_entries(&ctx.cwd);
+    crate::ipc::runtime_adapters::ensure_installed();
+    let existing = cc_ipc::subsystem_handlers::build_mcp_server_config_entries(&ctx.cwd);
     let current = match flags.scope.as_ref() {
         Some(wanted) => existing
             .iter()
@@ -195,7 +195,8 @@ pub(super) fn handle_remove(rest: &[&str], ctx: &mut CommandContext) -> Result<C
         return Ok(CommandResult::Output(format!("{}\n\n{}", msg, help_text())));
     }
 
-    let existing = build_mcp_server_config_entries(&ctx.cwd);
+    crate::ipc::runtime_adapters::ensure_installed();
+    let existing = cc_ipc::subsystem_handlers::build_mcp_server_config_entries(&ctx.cwd);
     let matches: Vec<&McpServerConfigEntry> = existing
         .iter()
         .filter(|e| {

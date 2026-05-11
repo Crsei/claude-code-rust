@@ -668,7 +668,8 @@ pub fn available_tools() -> Vec<AgentToolInfo> {
     // MCP tools — pull from the subsystem snapshot so the editor can restrict
     // agents to specific MCP servers. Names are pre-prefixed with
     // `mcp__{server}__{tool}` to match how they appear at tool-use time.
-    let mcp_servers = super::subsystem_handlers::build_mcp_server_info_list();
+    super::runtime_adapters::ensure_installed();
+    let mcp_servers = cc_ipc::subsystem_handlers::build_mcp_server_info_list();
     for server in mcp_servers {
         out.push(AgentToolInfo {
             name: format!("mcp__{}__*", server.name),

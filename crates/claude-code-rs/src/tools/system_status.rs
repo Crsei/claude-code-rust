@@ -1,12 +1,11 @@
 // src/tools/system_status.rs
 
-//! SystemStatus tool — lets the Agent query subsystem status.
+//! SystemStatus tool 鈥?lets the Agent query subsystem status.
 
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::ipc::subsystem_handlers;
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
 
@@ -79,10 +78,11 @@ impl Tool for SystemStatusTool {
 
 /// Format a human-readable status output for the given subsystem.
 fn format_status_output(subsystem: &str) -> String {
+    crate::ipc::runtime_adapters::ensure_installed();
     let mut parts = Vec::new();
 
     if subsystem == "all" || subsystem == "lsp" {
-        let servers = subsystem_handlers::build_lsp_server_info_list();
+        let servers = cc_ipc::subsystem_handlers::build_lsp_server_info_list();
         let mut section = String::from("## LSP Servers\n");
         if servers.is_empty() {
             section.push_str("No LSP servers configured.\n");
@@ -101,7 +101,7 @@ fn format_status_output(subsystem: &str) -> String {
     }
 
     if subsystem == "all" || subsystem == "mcp" {
-        let servers = subsystem_handlers::build_mcp_server_info_list();
+        let servers = cc_ipc::subsystem_handlers::build_mcp_server_info_list();
         let mut section = String::from("## MCP Servers\n");
         if servers.is_empty() {
             section.push_str("No MCP servers configured.\n");
@@ -121,7 +121,7 @@ fn format_status_output(subsystem: &str) -> String {
     }
 
     if subsystem == "all" || subsystem == "plugins" {
-        let plugins = subsystem_handlers::build_plugin_info_list();
+        let plugins = cc_ipc::subsystem_handlers::build_plugin_info_list();
         let mut section = String::from("## Plugins\n");
         if plugins.is_empty() {
             section.push_str("No plugins installed.\n");
@@ -141,14 +141,14 @@ fn format_status_output(subsystem: &str) -> String {
     }
 
     if subsystem == "all" || subsystem == "skills" {
-        let skills = subsystem_handlers::build_skill_info_list();
+        let skills = cc_ipc::subsystem_handlers::build_skill_info_list();
         let mut section = format!("## Skills ({} total)\n", skills.len());
         if skills.is_empty() {
             section.push_str("No skills loaded.\n");
         } else {
             for s in &skills {
                 section.push_str(&format!(
-                    "- {} [{}] — {}\n",
+                    "- {} [{}] 鈥?{}\n",
                     s.name, s.source, s.description
                 ));
             }
@@ -157,7 +157,7 @@ fn format_status_output(subsystem: &str) -> String {
     }
 
     if subsystem == "all" || subsystem == "agents" {
-        let tree = crate::ipc::agent_tree::AGENT_TREE.lock();
+        let tree = cc_ipc::agent_tree::AGENT_TREE.lock();
         let active = tree.active_agents();
         let bg_count = active.iter().filter(|a| a.is_background).count();
         let mut section = format!(
@@ -170,7 +170,7 @@ fn format_status_output(subsystem: &str) -> String {
         } else {
             for a in &active {
                 section.push_str(&format!(
-                    "- {}: {} [{}{}] — \"{}\" (depth {})\n",
+                    "- {}: {} [{}{}] 鈥?\"{}\" (depth {})\n",
                     a.agent_id,
                     a.state,
                     if a.is_background {
@@ -197,7 +197,7 @@ fn format_status_output(subsystem: &str) -> String {
     }
 
     if subsystem == "all" || subsystem == "ide" {
-        let ides = subsystem_handlers::build_ide_info_list();
+        let ides = cc_ipc::subsystem_handlers::build_ide_info_list();
         let mut section = String::from("## IDE Integrations\n");
         if ides.is_empty() {
             section.push_str("No IDE integrations detected.\n");

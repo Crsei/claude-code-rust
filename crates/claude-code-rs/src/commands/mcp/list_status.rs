@@ -2,9 +2,6 @@ use anyhow::Result;
 
 use super::settings::describe_entry;
 use super::{CommandContext, CommandResult};
-use crate::ipc::subsystem_handlers::{
-    build_mcp_server_config_entries, build_mcp_server_info_list_for_cwd_async,
-};
 use crate::ipc::subsystem_types::McpServerConfigEntry;
 
 // ---------------------------------------------------------------------------
@@ -12,8 +9,10 @@ use crate::ipc::subsystem_types::McpServerConfigEntry;
 // ---------------------------------------------------------------------------
 
 pub(super) async fn handle_list(ctx: &CommandContext) -> Result<CommandResult> {
-    let entries = build_mcp_server_config_entries(&ctx.cwd);
-    let status = build_mcp_server_info_list_for_cwd_async(&ctx.cwd).await;
+    crate::ipc::runtime_adapters::ensure_installed();
+    let entries = cc_ipc::subsystem_handlers::build_mcp_server_config_entries(&ctx.cwd);
+    let status =
+        cc_ipc::subsystem_handlers::build_mcp_server_info_list_for_cwd_async(&ctx.cwd).await;
 
     if entries.is_empty() {
         return Ok(CommandResult::Output(
@@ -89,7 +88,9 @@ pub(super) async fn handle_list(ctx: &CommandContext) -> Result<CommandResult> {
 }
 
 pub(super) async fn handle_status(ctx: &CommandContext) -> Result<CommandResult> {
-    let status = build_mcp_server_info_list_for_cwd_async(&ctx.cwd).await;
+    crate::ipc::runtime_adapters::ensure_installed();
+    let status =
+        cc_ipc::subsystem_handlers::build_mcp_server_info_list_for_cwd_async(&ctx.cwd).await;
     if status.is_empty() {
         return Ok(CommandResult::Output(
             "No MCP servers discovered.".to_string(),

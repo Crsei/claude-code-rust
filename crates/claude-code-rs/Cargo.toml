@@ -156,6 +156,7 @@ cc-engine = { workspace = true }
 cc-query = { workspace = true }
 cc-tools = { workspace = true }
 cc-tasks = { workspace = true }
+cc-ipc = { workspace = true }
 cc-ipc-protocol = { workspace = true }
 cc-ipc-client = { workspace = true }
 gateway = { workspace = true }

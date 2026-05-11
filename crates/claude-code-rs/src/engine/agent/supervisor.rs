@@ -458,7 +458,7 @@ impl AgentRuntime {
         }
 
         let result_preview = preview(&result_text);
-        crate::ipc::agent_tree::AGENT_TREE.lock().update_state(
+        cc_ipc::agent_tree::AGENT_TREE.lock().update_state(
             &self.agent_id,
             if was_cancelled {
                 "cancelled"
@@ -484,7 +484,7 @@ impl AgentRuntime {
                 },
             ));
 
-        let roots = crate::ipc::agent_tree::AGENT_TREE.lock().build_snapshot();
+        let roots = cc_ipc::agent_tree::AGENT_TREE.lock().build_snapshot();
         let _ = self
             .bg_tx
             .send(cc_types::agent_channel::AgentIpcEvent::Agent(
@@ -549,7 +549,7 @@ fn register_agent_tree(
         had_error: false,
         children: vec![],
     };
-    crate::ipc::agent_tree::AGENT_TREE.lock().register(node);
+    cc_ipc::agent_tree::AGENT_TREE.lock().register(node);
 
     let _ = bg_tx.send(cc_types::agent_channel::AgentIpcEvent::Agent(
         cc_types::agent_events::AgentEvent::Spawned {
@@ -564,7 +564,7 @@ fn register_agent_tree(
         },
     ));
 
-    let roots = crate::ipc::agent_tree::AGENT_TREE.lock().build_snapshot();
+    let roots = cc_ipc::agent_tree::AGENT_TREE.lock().build_snapshot();
     let _ = bg_tx.send(cc_types::agent_channel::AgentIpcEvent::Agent(
         cc_types::agent_events::AgentEvent::TreeSnapshot { roots },
     ));

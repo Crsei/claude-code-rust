@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::ipc::{subsystem_handlers, subsystem_types::LspServerInfo};
+use crate::ipc::subsystem_types::LspServerInfo;
 
 pub struct LspHandler;
 
@@ -28,7 +28,8 @@ impl CommandHandler for LspHandler {
 }
 
 fn render_status() -> String {
-    let servers = subsystem_handlers::build_lsp_server_info_list();
+    crate::ipc::runtime_adapters::ensure_installed();
+    let servers = cc_ipc::subsystem_handlers::build_lsp_server_info_list();
     let mut lines = vec!["LSP server status".to_string()];
     if servers.is_empty() {
         lines.push("No LSP servers configured.".to_string());
@@ -61,7 +62,8 @@ fn render_server_card(server: &LspServerInfo) -> String {
 }
 
 fn render_recommendations() -> String {
-    let settings = subsystem_handlers::load_lsp_recommendation_settings();
+    crate::ipc::runtime_adapters::ensure_installed();
+    let settings = cc_ipc::subsystem_handlers::load_lsp_recommendation_settings();
     let muted = if settings.muted_plugins.is_empty() {
         "(none)".to_string()
     } else {

@@ -51,6 +51,8 @@ impl HeadlessRuntime {
     /// the multiplexed `select!` loop.  Returns when the frontend sends `Quit`
     /// or stdin is closed.
     pub async fn run(&self, model: String) -> anyhow::Result<()> {
+        super::runtime_adapters::ensure_installed();
+
         // ── 1. Install callbacks ──────────────────────────────────────
         super::callbacks::install_permission_callback(
             &self.engine,
@@ -242,7 +244,7 @@ impl HeadlessRuntime {
                             if let crate::ipc::agent_events::AgentEvent::Completed {
                                 ref agent_id, ref result_preview, had_error, duration_ms, ..
                             } = agent_event {
-                                let tree = crate::ipc::agent_tree::AGENT_TREE.lock();
+                                let tree = cc_ipc::agent_tree::AGENT_TREE.lock();
                                 let (is_bg, desc) = tree.get(agent_id)
                                     .map(|n| (n.is_background, n.description.clone()))
                                     .unwrap_or((true, "unknown".to_string()));

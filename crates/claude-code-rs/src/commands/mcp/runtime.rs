@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use super::{CommandContext, CommandResult};
-use crate::ipc::subsystem_handlers::{run_mcp_runtime_operation, McpRuntimeOperation};
+use cc_ipc::subsystem_handlers::{run_mcp_runtime_operation, McpRuntimeOperation};
 
 // ---------------------------------------------------------------------------
 // connect / disconnect / reconnect
@@ -10,6 +10,7 @@ use crate::ipc::subsystem_handlers::{run_mcp_runtime_operation, McpRuntimeOperat
 pub(super) async fn handle_connect(rest: &[&str], ctx: &CommandContext) -> Result<CommandResult> {
     match rest.first() {
         Some(name) => {
+            crate::ipc::runtime_adapters::ensure_installed();
             let report =
                 run_mcp_runtime_operation(&ctx.cwd, McpRuntimeOperation::Connect, name).await;
             Ok(CommandResult::Output(report.text))
@@ -26,6 +27,7 @@ pub(super) async fn handle_disconnect(
 ) -> Result<CommandResult> {
     match rest.first() {
         Some(name) => {
+            crate::ipc::runtime_adapters::ensure_installed();
             let report =
                 run_mcp_runtime_operation(&ctx.cwd, McpRuntimeOperation::Disconnect, name).await;
             Ok(CommandResult::Output(report.text))
@@ -39,6 +41,7 @@ pub(super) async fn handle_disconnect(
 pub(super) async fn handle_reconnect(rest: &[&str], ctx: &CommandContext) -> Result<CommandResult> {
     match rest.first() {
         Some(name) => {
+            crate::ipc::runtime_adapters::ensure_installed();
             let report =
                 run_mcp_runtime_operation(&ctx.cwd, McpRuntimeOperation::Reconnect, name).await;
             Ok(CommandResult::Output(report.text))

@@ -641,7 +641,10 @@ dependencies = [
 name = "cc-ipc"
 version = "0.1.0"
 dependencies = [
+ "cc-ipc-protocol",
  "cc-types",
+ "chrono",
+ "parking_lot",
 ]
 
 [[package]]
@@ -992,6 +995,7 @@ dependencies = [
  "cc-computer-use",
  "cc-config",
  "cc-engine",
+ "cc-ipc",
  "cc-ipc-client",
  "cc-ipc-protocol",
  "cc-keybindings",

@@ -11,6 +11,10 @@
 //! re-exports so downstream consumers don't break while the physical code
 //! move is staged in a follow-up PR.
 
+pub mod agent_handlers;
+pub mod agent_tree;
+pub mod subsystem_handlers;
+
 #[allow(unused_imports)]
 pub use cc_types::{
     agent_channel::{agent_channel, AgentIpcEvent, AgentReceiver, AgentSender},

@@ -329,7 +329,7 @@ impl AgentTool {
                 had_error: false,
                 children: vec![],
             };
-            crate::ipc::agent_tree::AGENT_TREE.lock().register(node);
+            cc_ipc::agent_tree::AGENT_TREE.lock().register(node);
 
             if let Some(tx) = agent_tx {
                 let _ = tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
@@ -345,7 +345,7 @@ impl AgentTool {
                     },
                 ));
 
-                let roots = crate::ipc::agent_tree::AGENT_TREE.lock().build_snapshot();
+                let roots = cc_ipc::agent_tree::AGENT_TREE.lock().build_snapshot();
                 let _ = tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
                     crate::ipc::agent_events::AgentEvent::TreeSnapshot { roots },
                 ));
@@ -459,7 +459,7 @@ impl AgentTool {
             } else {
                 result_text.clone()
             };
-            crate::ipc::agent_tree::AGENT_TREE.lock().update_state(
+            cc_ipc::agent_tree::AGENT_TREE.lock().update_state(
                 agent_id,
                 if had_error { "error" } else { "completed" },
                 Some(preview.clone()),
@@ -478,7 +478,7 @@ impl AgentTool {
                     },
                 ));
 
-                let roots = crate::ipc::agent_tree::AGENT_TREE.lock().build_snapshot();
+                let roots = cc_ipc::agent_tree::AGENT_TREE.lock().build_snapshot();
                 let _ = tx.send(crate::ipc::agent_channel::AgentIpcEvent::Agent(
                     crate::ipc::agent_events::AgentEvent::TreeSnapshot { roots },
                 ));

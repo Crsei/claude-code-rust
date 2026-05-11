@@ -763,10 +763,7 @@ fn build_subsystem_status_reminder() -> Option<String> {
     };
     let plugin_count = crate::plugins::get_enabled_plugins().len();
     let skill_count = crate::skills::get_all_skills().len();
-    let agent_count = crate::ipc::agent_tree::AGENT_TREE
-        .lock()
-        .active_agents()
-        .len();
+    let agent_count = cc_ipc::agent_tree::AGENT_TREE.lock().active_agents().len();
 
     if mcp_count + plugin_count + skill_count == 0 && agent_count == 0 && mcp_error.is_none() {
         return None;
