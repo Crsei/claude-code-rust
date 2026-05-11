@@ -475,7 +475,7 @@ fn auto_toggle(action: &str, ctx: &mut CommandContext) -> Result<CommandResult> 
     match action {
         "on" | "off" => {
             let on = action == "on";
-            let persist_msg = persist_auto_memory(on)?;
+            let persist_msg = persist_auto_memory(on, ctx)?;
             ctx.app_state.settings.auto_memory_enabled = Some(on);
 
             Ok(CommandResult::Output(format!(
@@ -498,14 +498,34 @@ fn auto_toggle(action: &str, ctx: &mut CommandContext) -> Result<CommandResult> 
     }
 }
 
-fn persist_auto_memory(on: bool) -> Result<String> {
-    let path = settings::user_settings_path();
+fn persist_auto_memory(on: bool, ctx: &CommandContext) -> Result<String> {
+    let path = auto_memory_settings_path(ctx);
+    persist_auto_memory_to_path(on, &path)
+}
+
+#[cfg(not(test))]
+fn auto_memory_settings_path(_ctx: &CommandContext) -> PathBuf {
+    settings::user_settings_path()
+}
+
+#[cfg(test)]
+fn auto_memory_settings_path(ctx: &CommandContext) -> PathBuf {
+    ctx.cwd.join("settings.json")
+}
+
+fn persist_auto_memory_to_path(on: bool, path: &Path) -> Result<String> {
     // Missing settings still default, but an existing unreadable or invalid
     // file must abort so we don't replace it with a partial rewrite.
-    let mut raw = settings::load_global_config()
-        .with_context(|| format!("Failed to load existing settings {}", path.display()))?;
+    let mut raw: settings::RawSettings = if path.exists() {
+        let contents = std::fs::read_to_string(path)
+            .with_context(|| format!("Failed to load existing settings {}", path.display()))?;
+        serde_json::from_str(&contents)
+            .with_context(|| format!("Failed to load existing settings {}", path.display()))?
+    } else {
+        settings::RawSettings::default()
+    };
     raw.auto_memory_enabled = Some(on);
-    settings::write_settings_file(&path, &raw)
+    settings::write_settings_file(path, &raw)
         .with_context(|| format!("Failed to persist setting to {}", path.display()))?;
     Ok(format!("Persisted to {}", path.display()))
 }
@@ -587,10 +607,6 @@ mod tests {
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
     use std::path::PathBuf;
-    use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
     fn test_ctx(cwd: PathBuf) -> CommandContext {
         CommandContext {
             messages: Vec::new(),
@@ -750,13 +766,9 @@ mod tests {
     /// the real `~/.cc-rust/settings.json`.
     #[tokio::test]
     async fn test_memory_auto_toggle_updates_state() {
-        let _lock = ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cc_rust_mem_auto_test_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-
-        let previous = std::env::var("CC_RUST_HOME").ok();
-        std::env::set_var("CC_RUST_HOME", &root);
 
         let handler = MemoryHandler;
         let mut ctx = test_ctx(root.clone());
@@ -785,25 +797,17 @@ mod tests {
         }
         assert_eq!(ctx.app_state.settings.auto_memory_enabled, Some(false));
 
-        match previous {
-            Some(v) => std::env::set_var("CC_RUST_HOME", v),
-            None => std::env::remove_var("CC_RUST_HOME"),
-        }
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
     async fn test_memory_auto_invalid_existing_settings_aborts_without_rewrite() {
-        let _lock = ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cc_rust_mem_auto_bad_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let settings_path = root.join("settings.json");
         let original = "{ invalid json\n";
         std::fs::write(&settings_path, original).unwrap();
-
-        let previous = std::env::var("CC_RUST_HOME").ok();
-        std::env::set_var("CC_RUST_HOME", &root);
 
         let handler = MemoryHandler;
         let mut ctx = test_ctx(root.clone());
@@ -820,10 +824,6 @@ mod tests {
         assert_eq!(ctx.app_state.settings.auto_memory_enabled, None);
         assert_eq!(std::fs::read_to_string(&settings_path).unwrap(), original);
 
-        match previous {
-            Some(v) => std::env::set_var("CC_RUST_HOME", v),
-            None => std::env::remove_var("CC_RUST_HOME"),
-        }
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -831,7 +831,6 @@ mod tests {
     /// unknown scopes.
     #[tokio::test]
     async fn test_memory_open_scope_paths() {
-        let _lock = ENV_LOCK.lock().unwrap();
         let tmp =
             std::env::temp_dir().join(format!("cc_rust_mem_open_test_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&tmp).unwrap();
