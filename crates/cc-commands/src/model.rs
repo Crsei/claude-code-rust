@@ -1,4 +1,4 @@
-//! /model command -- switch the active model.
+﻿//! /model command -- switch the active model.
 //!
 //! Subcommands:
 //! - `/model`            -- show the currently active model
@@ -11,7 +11,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
+use crate::{CommandContext, CommandHandler, CommandResult};
 
 pub use cc_models::resolve_model_alias;
 
@@ -122,8 +122,8 @@ impl CommandHandler for ModelHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {

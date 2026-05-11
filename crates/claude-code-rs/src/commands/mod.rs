@@ -4,7 +4,6 @@
 //! Each command implements `CommandHandler` and is registered in `get_all_commands()`.
 
 // Essential commands
-pub mod config_cmd;
 pub mod context;
 pub mod coordinator;
 pub mod cost;
@@ -14,10 +13,8 @@ pub mod help;
 pub mod login;
 pub mod login_code;
 pub mod logout;
-pub mod model;
 pub mod permissions_cmd;
 pub mod resume;
-pub mod session;
 
 // Git & workflow
 pub mod branch;
@@ -33,7 +30,6 @@ pub mod fast;
 pub mod model_add;
 
 // Memory & skills
-pub mod memory;
 pub mod skills_cmd;
 
 // Fork-agent dependent commands (issues #37, #62)
@@ -126,8 +122,8 @@ pub mod remote_cmd;
 pub mod sleep_cmd;
 
 pub use cc_commands::{
-    command, command_metadata, sort_commands_for_display, Command, CommandContext, CommandHandler,
-    CommandResult,
+    command, command_metadata, model, sort_commands_for_display, Command, CommandContext,
+    CommandHandler, CommandResult,
 };
 
 // ---------------------------------------------------------------------------
@@ -153,7 +149,7 @@ pub fn get_all_commands() -> Vec<Command> {
             "config",
             &["settings"],
             "Show or modify configuration settings",
-            config_cmd::ConfigHandler,
+            cc_commands::config_cmd::ConfigHandler,
         ),
         command(
             "diff",
@@ -177,7 +173,7 @@ pub fn get_all_commands() -> Vec<Command> {
             "model",
             &[],
             "Show or switch the active model",
-            model::ModelHandler,
+            cc_commands::model::ModelHandler,
         ),
         command(
             "cost",
@@ -189,7 +185,7 @@ pub fn get_all_commands() -> Vec<Command> {
             "session",
             &[],
             "Show current session info or list saved sessions",
-            session::SessionHandler,
+            cc_commands::session::SessionHandler,
         ),
         command(
             "resume",
@@ -292,7 +288,7 @@ pub fn get_all_commands() -> Vec<Command> {
             "memory",
             &["mem", "global-search", "quick-open"],
             "View, search, and quick-open memory/project instructions",
-            memory::MemoryHandler,
+            cc_commands::memory::MemoryHandler,
         ),
         command(
             "skills",

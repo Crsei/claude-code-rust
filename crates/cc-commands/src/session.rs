@@ -1,4 +1,4 @@
-//! /session command -- list and show session information.
+﻿//! /session command -- list and show session information.
 //!
 //! Subcommands:
 //! - `/session`              -- show current session info + recent workspace sessions
@@ -11,8 +11,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
-use crate::session::storage;
+use crate::{CommandContext, CommandHandler, CommandResult};
+use cc_session::storage;
 
 /// Handler for the `/session` slash command.
 pub struct SessionHandler;
@@ -69,14 +69,14 @@ fn format_session_table(
 
         let label = if !session.title.is_empty() {
             let prefix = if session.custom_title.is_some() {
-                "★ "
+                "* "
             } else {
                 ""
             };
             let max = 60;
             let truncated: String = session.title.chars().take(max).collect();
             if session.title.chars().count() > max {
-                format!("{}{}…", prefix, truncated)
+                format!("{}{}...", prefix, truncated)
             } else {
                 format!("{}{}", prefix, truncated)
             }
@@ -108,7 +108,7 @@ fn handle_show(ctx: &CommandContext) -> Result<CommandResult> {
     lines.push("Current session:".into());
     lines.push(String::new());
     lines.push(format!("  Session ID:        {}", ctx.session_id));
-    // Show the persisted title if we already have a session file — skip the
+    // Show the persisted title if we already have a session file; skip the
     // disk read otherwise so freshly-started sessions don't pay for it.
     if storage::get_session_file(ctx.session_id.as_str()).exists() {
         if let Ok(info) = storage::load_session_info(ctx.session_id.as_str()) {
@@ -190,8 +190,8 @@ fn handle_list(ctx: &CommandContext, include_all: bool) -> Result<CommandResult>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {

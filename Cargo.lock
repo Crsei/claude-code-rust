@@ -566,9 +566,17 @@ dependencies = [
  "anyhow",
  "async-trait",
  "cc-bootstrap",
+ "cc-config",
  "cc-engine",
+ "cc-models",
+ "cc-permissions",
+ "cc-session",
  "cc-types",
+ "chrono",
+ "serde_json",
+ "tempfile",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

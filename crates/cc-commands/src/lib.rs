@@ -1,7 +1,11 @@
 //! Slash-command contract and low-coupling command implementations.
 
 pub mod clear;
+pub mod config_cmd;
 pub mod exit;
+pub mod memory;
+pub mod model;
+pub mod session;
 pub mod version;
 
 use std::path::PathBuf;
