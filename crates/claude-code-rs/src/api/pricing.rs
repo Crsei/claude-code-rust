@@ -15,9 +15,54 @@ pub fn calculate_cost(model: &str, usage: &Usage) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, MutexGuard};
+
+    static PRICING_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct PricingEnvSnapshot {
+        input: Option<String>,
+        output: Option<String>,
+    }
+
+    impl PricingEnvSnapshot {
+        fn clear() -> Self {
+            let snapshot = Self::capture();
+            std::env::remove_var("MODEL_INPUT_PRICE");
+            std::env::remove_var("MODEL_OUTPUT_PRICE");
+            snapshot
+        }
+
+        fn capture() -> Self {
+            Self {
+                input: std::env::var("MODEL_INPUT_PRICE").ok(),
+                output: std::env::var("MODEL_OUTPUT_PRICE").ok(),
+            }
+        }
+    }
+
+    impl Drop for PricingEnvSnapshot {
+        fn drop(&mut self) {
+            match &self.input {
+                Some(v) => std::env::set_var("MODEL_INPUT_PRICE", v),
+                None => std::env::remove_var("MODEL_INPUT_PRICE"),
+            }
+            match &self.output {
+                Some(v) => std::env::set_var("MODEL_OUTPUT_PRICE", v),
+                None => std::env::remove_var("MODEL_OUTPUT_PRICE"),
+            }
+        }
+    }
+
+    fn lock_pricing_env() -> MutexGuard<'static, ()> {
+        PRICING_ENV_LOCK
+            .lock()
+            .expect("pricing env test lock poisoned")
+    }
 
     #[test]
     fn calculate_cost_basic() {
+        let _lock = lock_pricing_env();
+        let _env = PricingEnvSnapshot::clear();
         let usage = Usage {
             input_tokens: 1000,
             output_tokens: 500,
@@ -31,11 +76,8 @@ mod tests {
 
     #[test]
     fn calculate_cost_unknown_model_is_zero() {
-        let orig_input = std::env::var("MODEL_INPUT_PRICE").ok();
-        let orig_output = std::env::var("MODEL_OUTPUT_PRICE").ok();
-        std::env::remove_var("MODEL_INPUT_PRICE");
-        std::env::remove_var("MODEL_OUTPUT_PRICE");
-
+        let _lock = lock_pricing_env();
+        let _env = PricingEnvSnapshot::clear();
         let usage = Usage {
             input_tokens: 1000,
             output_tokens: 500,
@@ -44,14 +86,6 @@ mod tests {
         };
         let cost = calculate_cost("unknown-model", &usage);
 
-        match orig_input {
-            Some(v) => std::env::set_var("MODEL_INPUT_PRICE", v),
-            None => std::env::remove_var("MODEL_INPUT_PRICE"),
-        }
-        match orig_output {
-            Some(v) => std::env::set_var("MODEL_OUTPUT_PRICE", v),
-            None => std::env::remove_var("MODEL_OUTPUT_PRICE"),
-        }
         assert_eq!(cost, 0.0);
     }
 }

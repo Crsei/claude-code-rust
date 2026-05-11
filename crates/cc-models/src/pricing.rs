@@ -124,6 +124,56 @@ fn pricing_from_table(model: &str) -> Option<ModelPricing> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, MutexGuard};
+
+    static PRICING_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct PricingEnvSnapshot {
+        input: Option<String>,
+        output: Option<String>,
+    }
+
+    impl PricingEnvSnapshot {
+        fn clear() -> Self {
+            let snapshot = Self::capture();
+            std::env::remove_var("MODEL_INPUT_PRICE");
+            std::env::remove_var("MODEL_OUTPUT_PRICE");
+            snapshot
+        }
+
+        fn override_with(input: &str, output: &str) -> Self {
+            let snapshot = Self::capture();
+            std::env::set_var("MODEL_INPUT_PRICE", input);
+            std::env::set_var("MODEL_OUTPUT_PRICE", output);
+            snapshot
+        }
+
+        fn capture() -> Self {
+            Self {
+                input: std::env::var("MODEL_INPUT_PRICE").ok(),
+                output: std::env::var("MODEL_OUTPUT_PRICE").ok(),
+            }
+        }
+    }
+
+    impl Drop for PricingEnvSnapshot {
+        fn drop(&mut self) {
+            match &self.input {
+                Some(v) => std::env::set_var("MODEL_INPUT_PRICE", v),
+                None => std::env::remove_var("MODEL_INPUT_PRICE"),
+            }
+            match &self.output {
+                Some(v) => std::env::set_var("MODEL_OUTPUT_PRICE", v),
+                None => std::env::remove_var("MODEL_OUTPUT_PRICE"),
+            }
+        }
+    }
+
+    fn lock_pricing_env() -> MutexGuard<'static, ()> {
+        PRICING_ENV_LOCK
+            .lock()
+            .expect("pricing env test lock poisoned")
+    }
 
     #[test]
     fn exact_match_claude_sonnet() {
@@ -165,6 +215,8 @@ mod tests {
 
     #[test]
     fn calculate_cost_basic() {
+        let _lock = lock_pricing_env();
+        let _env = PricingEnvSnapshot::clear();
         let cost = cost_from_counts(get_pricing("gpt-4o"), 1000, 500, 0, 0);
         let expected = 1000.0 * 2.5 / 1_000_000.0 + 500.0 * 10.0 / 1_000_000.0;
         assert!((cost - expected).abs() < 1e-10);
@@ -172,43 +224,19 @@ mod tests {
 
     #[test]
     fn calculate_cost_unknown_model_is_zero() {
-        let orig_input = std::env::var("MODEL_INPUT_PRICE").ok();
-        let orig_output = std::env::var("MODEL_OUTPUT_PRICE").ok();
-        std::env::remove_var("MODEL_INPUT_PRICE");
-        std::env::remove_var("MODEL_OUTPUT_PRICE");
-
+        let _lock = lock_pricing_env();
+        let _env = PricingEnvSnapshot::clear();
         let cost = cost_from_counts(get_pricing("unknown-model"), 1000, 500, 0, 0);
 
-        match orig_input {
-            Some(v) => std::env::set_var("MODEL_INPUT_PRICE", v),
-            None => std::env::remove_var("MODEL_INPUT_PRICE"),
-        }
-        match orig_output {
-            Some(v) => std::env::set_var("MODEL_OUTPUT_PRICE", v),
-            None => std::env::remove_var("MODEL_OUTPUT_PRICE"),
-        }
         assert_eq!(cost, 0.0);
     }
 
     #[test]
     fn env_override_takes_precedence() {
-        let orig_input = std::env::var("MODEL_INPUT_PRICE").ok();
-        let orig_output = std::env::var("MODEL_OUTPUT_PRICE").ok();
-
-        std::env::set_var("MODEL_INPUT_PRICE", "99.0");
-        std::env::set_var("MODEL_OUTPUT_PRICE", "199.0");
-
+        let _lock = lock_pricing_env();
+        let _env = PricingEnvSnapshot::override_with("99.0", "199.0");
         let p = get_pricing("gpt-4o");
         assert_eq!(p.input_per_1m, 99.0);
         assert_eq!(p.output_per_1m, 199.0);
-
-        match orig_input {
-            Some(v) => std::env::set_var("MODEL_INPUT_PRICE", v),
-            None => std::env::remove_var("MODEL_INPUT_PRICE"),
-        }
-        match orig_output {
-            Some(v) => std::env::set_var("MODEL_OUTPUT_PRICE", v),
-            None => std::env::remove_var("MODEL_OUTPUT_PRICE"),
-        }
     }
 }
