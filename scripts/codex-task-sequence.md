@@ -8,7 +8,7 @@ For the P1 fail-fast follow-up tasks, run from the repository root:
 
 ```powershell
 .\scripts\codex-task-sequence.ps1 `
-  -TasksFile .\docs\scripts\p1-defensive-fail-fast-after-phase1-tasks.txt `
+  -TasksFile .\docs\scripts\achieve\p1-defensive-fail-fast-after-phase1-tasks.txt `
   -WorkDir . `
   -OutputDir .\target\codex-runs\p1-defensive-after-phase1 `
   -Sandbox danger-full-access `

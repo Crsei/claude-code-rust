@@ -1,4 +1,4 @@
-# One task per line for scripts/codex-task-sequence.ps1. Saved as UTF-8. Preferred runner: scripts/tmp/run-remote-control-gateway-omx-sessions.ps1.
+# One task per line for scripts/codex-task-sequence.ps1. Saved as UTF-8. Archived runner: scripts/achieve/run-remote-control-gateway-omx-sessions.ps1.
 执行 Session 00 - Baseline And Partition。读取 docs/plan/remote-control-gateway-omx-execution-plan-2026-05-08.md 和 docs/plan/remote-control-gateway-execution-plan-2026-05-08.md；固定模型 gpt-5.5、reasoning medium；减少显式思考过程，只输出行动、证据、风险。只读检查 omx --version、git status、remote/gateway/TUI 入口；可用 omx sparkshell 或 rg；不要改文件，不提交。
 执行 Session 01 - Phase 0 Boundary Docs。读取两个 remote-control 计划；按计划只修改 owned docs；明确 gateway/daemon/ipc/remote/TUI/Telegram/Lark 边界；运行 rg 和 git diff --check；只 stage 本 session 文档文件，按 Lore 协议提交。
 执行 Session 02 - Phase 1A Gateway Crate Foundation。读取执行计划 Session 02；实现 crates/gateway foundation、RemoteSource、session key、cc-config gateway paths；禁止修改 daemon routes/ui/ipc；按需用最多 2 个 gpt-5.5 medium default subagent 做只读定位；运行 cargo test/check 和单文件行数检测；通过后只提交 owned files。

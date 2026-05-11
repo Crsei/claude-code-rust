@@ -825,24 +825,6 @@ fn test_task_store_not_found() {
 }
 
 #[test]
-fn test_task_status_roundtrip() {
-    for status in [
-        TaskStatus::Pending,
-        TaskStatus::InProgress,
-        TaskStatus::Completed,
-        TaskStatus::Failed,
-        TaskStatus::Cancelled,
-        TaskStatus::Interrupted,
-        TaskStatus::Recoverable,
-        TaskStatus::Stopped,
-    ] {
-        let s = status.as_str();
-        assert_eq!(TaskStatus::from_str(s), Some(status));
-    }
-    assert_eq!(TaskStatus::from_str("invalid"), None);
-}
-
-#[test]
 fn test_todo_write_schema_matches_upstream_shape() {
     let schema = TodoWriteTool.input_json_schema();
     assert_eq!(schema["required"], json!(["todos"]));

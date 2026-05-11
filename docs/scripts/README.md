@@ -7,6 +7,7 @@
 | 场景 | 推荐入口 |
 | --- | --- |
 | 顺序执行一组独立 Codex 任务 | `scripts/codex-task-sequence.ps1` |
+| 跑当前待执行任务列表 | `scripts/run-standard-task-list-omx.ps1 -TasksFile docs/scripts/non-workspace-unfinished-standard-task-2026-05-11.txt` |
 | 跑通用标准任务列表批处理计划 | `scripts/run-standard-task-list-omx.ps1` |
 | 观察标准任务列表已完成批次并只续跑未完成任务 | `scripts/standard_task_list_omx_supervisor.py` |
 | 跑 workspace crate extraction 批处理计划 | `scripts/run-workspace-crate-extraction-omx.ps1` |
@@ -15,6 +16,19 @@
 | 跑 ratatui UI parity 批处理计划 | `scripts/run-ratatui-ui-parity-omx.ps1` |
 | 生成或校验 Rust TUI 快照 | `scripts/export-ui-snapshots.ps1` |
 | 查看历史专项自动化脚本 | `scripts/achieve/` 和 `scripts/tmp/` |
+
+## 当前任务清单
+
+`docs/scripts/` 只保留仍需要执行或仍作为当前入口的任务清单。已经完成的清单放在 `docs/scripts/achieve/`，仅用于复现历史运行或阅读执行证据。
+
+| 清单 | 状态 | 处理流程 |
+| --- | --- | --- |
+| `docs/scripts/non-workspace-unfinished-standard-task-2026-05-11.txt` | 当前待执行任务列表；打包了非 workspace crate extraction 的未完成事项 | `scripts/standard_task_list_omx_py/` |
+| `docs/scripts/workspace-crate-extraction-omx-tasks-2026-05-10.txt` | workspace crate extraction 当前长任务清单 | `scripts/workspace_crate_extraction_omx_py/` |
+| `docs/scripts/workspace-crate-extraction-omx-remaining-from-api-models-03.txt` | workspace crate extraction 历史续跑/诊断清单 | 只在明确需要从该点恢复时使用 |
+| `docs/scripts/achieve/*.txt` | 已完成任务清单 | 历史复现，不作为当前待执行入口 |
+
+当前非 workspace 待执行任务必须走通用标准任务列表流程，也就是 `scripts/standard_task_list_omx.py` 或 `scripts/standard_task_list_omx_supervisor.py`。不要再为它新增专项 PowerShell runner。
 
 ## 通用约定
 
@@ -79,7 +93,7 @@ PowerShell wrapper 会把相对路径解析到仓库根目录下。建议始终�
 
 ```powershell
 .\scripts\codex-task-sequence.ps1 `
-  -TasksFile .\docs\scripts\p1-defensive-fail-fast-after-phase1-tasks.txt `
+  -TasksFile .\docs\scripts\achieve\p1-defensive-fail-fast-after-phase1-tasks.txt `
   -WorkDir . `
   -OutputDir .\target\codex-runs\p1-defensive-after-phase1 `
   -Sandbox danger-full-access `
@@ -159,6 +173,47 @@ python .\scripts\standard_task_list_omx_supervisor.py --tasks-file .\codex-tasks
 ```
 
 它保留动态 batch、`[checkpoint]` / `[review]` / `[final]` 单独成批、diff guard、blocker-risk review、green batch 自动提交、final report 和 supervisor 续跑能力。需要跳过自动提交时传 `-SkipCommit`；需要避免最终 `cargo` 长验证时传 `-SkipFinalValidation`。
+
+### 当前待执行任务列表
+
+当前待执行任务列表是：
+
+```text
+docs/scripts/non-workspace-unfinished-standard-task-2026-05-11.txt
+```
+
+它已经按 `standard_task_list_omx_py.tasks.load_task_list()` 的格式整理为一行一个任务，注释行以 `#` 开头，并使用 `[final]` 前缀强制成为单任务 batch。这样 supervisor 能按 batch summary 判断完成状态，失败后也能重新生成 remaining task 文件。
+
+预览 batch，不启动 Codex：
+
+```powershell
+.\scripts\run-standard-task-list-omx.ps1 `
+  -TasksFile .\docs\scripts\non-workspace-unfinished-standard-task-2026-05-11.txt `
+  -OutputRoot .\target\codex-runs\non-workspace-unfinished-standard-task `
+  -DryRun
+```
+
+只生成完成度和剩余任务文件：
+
+```powershell
+python .\scripts\standard_task_list_omx_supervisor.py `
+  --tasks-file docs/scripts/non-workspace-unfinished-standard-task-2026-05-11.txt `
+  --observed-output-root target/codex-runs/non-workspace-unfinished-standard-task `
+  --supervisor-output-root target/codex-runs/non-workspace-unfinished-standard-task-supervisor `
+  --plan-only
+```
+
+执行或续跑剩余任务：
+
+```powershell
+python .\scripts\standard_task_list_omx_supervisor.py `
+  --tasks-file docs/scripts/non-workspace-unfinished-standard-task-2026-05-11.txt `
+  --observed-output-root target/codex-runs/non-workspace-unfinished-standard-task `
+  --supervisor-output-root target/codex-runs/non-workspace-unfinished-standard-task-supervisor `
+  -- --skip-final-validation
+```
+
+如果需要完整 release gate，移除最后一行的 `--skip-final-validation`。如果只是验证任务清单仍能进入标准流程，使用 `-DryRun` 和 `--plan-only`，不要直接启动 Codex 执行。
 
 ## `run-workspace-crate-extraction-omx.ps1`
 
@@ -474,7 +529,7 @@ supervisor 会尝试区分两类失败：
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
-| `-TasksFile` | `docs/scripts/ratatui-ui-parity-omx-tasks.txt` | ratatui UI parity 任务清单。 |
+| `-TasksFile` | `docs/scripts/achieve/ratatui-ui-parity-omx-tasks.txt` | ratatui UI parity 已归档任务清单。 |
 | `-Runner` | `scripts/codex-task-sequence.ps1` | 底层任务序列器。 |
 | `-Omx` | `omx` | 实际传给 `codex-task-sequence.ps1 -Codex` 的命令。 |
 | `-WorkDir` | `.` | 工作目录。 |
@@ -707,6 +762,24 @@ Get-Content .\target\codex-runs\workspace-crate-extraction-omx\final-report.md
 ```
 
 ### 只想知道还剩哪些任务
+
+通用标准任务列表当前待执行队列：
+
+```powershell
+python .\scripts\standard_task_list_omx_supervisor.py `
+  --tasks-file docs/scripts/non-workspace-unfinished-standard-task-2026-05-11.txt `
+  --observed-output-root target/codex-runs/non-workspace-unfinished-standard-task `
+  --supervisor-output-root target/codex-runs/non-workspace-unfinished-standard-task-supervisor `
+  --plan-only
+```
+
+然后读取：
+
+```powershell
+Get-Content .\target\codex-runs\non-workspace-unfinished-standard-task-supervisor\supervisor-status.md
+```
+
+workspace crate extraction 队列：
 
 ```powershell
 python .\scripts\workspace_crate_extraction_omx_supervisor.py --plan-only

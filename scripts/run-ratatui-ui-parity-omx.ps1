@@ -1,5 +1,5 @@
 param(
-    [string]$TasksFile = "docs/scripts/ratatui-ui-parity-omx-tasks.txt",
+    [string]$TasksFile = "docs/scripts/achieve/ratatui-ui-parity-omx-tasks.txt",
     [string]$Runner = "scripts/codex-task-sequence.ps1",
     [string]$Omx = "omx",
     [string]$WorkDir = ".",

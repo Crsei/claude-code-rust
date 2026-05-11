@@ -10,7 +10,7 @@ commit gate。
 本文档是执行计划；实际批处理入口为
 [`scripts/run-ratatui-ui-parity-omx.ps1`](../../scripts/run-ratatui-ui-parity-omx.ps1)，
 任务清单位于
-[`docs/scripts/ratatui-ui-parity-omx-tasks.txt`](../scripts/ratatui-ui-parity-omx-tasks.txt)。
+[`docs/scripts/achieve/ratatui-ui-parity-omx-tasks.txt`](../scripts/achieve/ratatui-ui-parity-omx-tasks.txt)。
 
 ## 0. 固定执行契约
 

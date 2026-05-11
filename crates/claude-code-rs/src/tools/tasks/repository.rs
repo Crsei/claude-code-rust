@@ -1,74 +1,11 @@
 use super::*;
+pub(super) use cc_tasks::{PersistedTaskFile, PersistedTaskRecord};
 
 #[derive(Debug)]
 pub(super) struct TaskRepository {
     pub(super) dir: PathBuf,
     pub(super) output_limit_bytes: usize,
     id_reservation_lock: Mutex<()>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub(super) struct PersistedTaskFile {
-    pub(super) schema_version: u32,
-    pub(super) task: PersistedTaskRecord,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub(super) struct PersistedTaskRecord {
-    id: String,
-    #[serde(default = "default_task_kind")]
-    kind: String,
-    subject: String,
-    description: String,
-    pub(super) status: String,
-    #[serde(default)]
-    output_file: Option<String>,
-    #[serde(default)]
-    output_summary: String,
-    #[serde(default)]
-    output_bytes: usize,
-    #[serde(default)]
-    output_truncated: bool,
-    #[serde(default)]
-    parent_id: Option<String>,
-    #[serde(default, alias = "blocked_by", alias = "blockedBy")]
-    depends_on: Vec<String>,
-    #[serde(default)]
-    owner: Option<String>,
-    #[serde(default, rename = "activeForm")]
-    active_form: Option<String>,
-    #[serde(default)]
-    metadata: Option<Value>,
-    #[serde(default)]
-    tool_use_id: Option<String>,
-    #[serde(default)]
-    agent_id: Option<String>,
-    #[serde(default)]
-    supervisor_id: Option<String>,
-    #[serde(default)]
-    isolation: Option<String>,
-    #[serde(default)]
-    worktree_path: Option<String>,
-    #[serde(default)]
-    worktree_branch: Option<String>,
-    #[serde(default)]
-    remote_task_type: Option<String>,
-    #[serde(default)]
-    remote_session_id: Option<String>,
-    #[serde(default)]
-    remote_task_metadata: Option<Value>,
-    #[serde(default)]
-    poll_started_at: Option<i64>,
-    #[serde(default)]
-    cancel_requested_at: Option<i64>,
-    #[serde(default)]
-    recovered_at: Option<i64>,
-    #[serde(default)]
-    previous_status: Option<String>,
-    created_at: i64,
-    updated_at: i64,
-    #[serde(default, skip_serializing)]
-    legacy_inline_output: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -305,7 +242,7 @@ impl TaskRepository {
 
         let file = PersistedTaskFile {
             schema_version: TASK_SCHEMA_VERSION,
-            task: PersistedTaskRecord::from_entry(&to_write),
+            task: persisted_record_from_entry(&to_write),
         };
         let json = serde_json::to_string_pretty(&file)?;
         write_text_atomic(&self.task_json_path(&to_write.id), &json)?;
@@ -369,39 +306,37 @@ impl Drop for HighWatermarkLock {
     }
 }
 
-impl PersistedTaskRecord {
-    fn from_entry(entry: &TaskEntry) -> Self {
-        Self {
-            id: entry.id.clone(),
-            kind: entry.kind.clone(),
-            subject: entry.subject.clone(),
-            description: entry.description.clone(),
-            status: entry.status.as_str().to_string(),
-            output_file: Some(output_file_name(&entry.id)),
-            output_summary: entry.output_summary.clone(),
-            output_bytes: entry.output_bytes,
-            output_truncated: entry.output_truncated,
-            parent_id: entry.parent_id.clone(),
-            depends_on: entry.depends_on.clone(),
-            owner: entry.owner.clone(),
-            active_form: entry.active_form.clone(),
-            metadata: entry.metadata.clone(),
-            tool_use_id: entry.tool_use_id.clone(),
-            agent_id: entry.agent_id.clone(),
-            supervisor_id: entry.supervisor_id.clone(),
-            isolation: entry.isolation.clone(),
-            worktree_path: entry.worktree_path.clone(),
-            worktree_branch: entry.worktree_branch.clone(),
-            remote_task_type: entry.remote_task_type.clone(),
-            remote_session_id: entry.remote_session_id.clone(),
-            remote_task_metadata: entry.remote_task_metadata.clone(),
-            poll_started_at: entry.poll_started_at,
-            cancel_requested_at: entry.cancel_requested_at,
-            recovered_at: entry.recovered_at,
-            previous_status: entry.previous_status.map(|s| s.as_str().to_string()),
-            created_at: entry.created_at,
-            updated_at: entry.updated_at,
-            legacy_inline_output: None,
-        }
+fn persisted_record_from_entry(entry: &TaskEntry) -> PersistedTaskRecord {
+    PersistedTaskRecord {
+        id: entry.id.clone(),
+        kind: entry.kind.clone(),
+        subject: entry.subject.clone(),
+        description: entry.description.clone(),
+        status: entry.status.as_str().to_string(),
+        output_file: Some(output_file_name(&entry.id)),
+        output_summary: entry.output_summary.clone(),
+        output_bytes: entry.output_bytes,
+        output_truncated: entry.output_truncated,
+        parent_id: entry.parent_id.clone(),
+        depends_on: entry.depends_on.clone(),
+        owner: entry.owner.clone(),
+        active_form: entry.active_form.clone(),
+        metadata: entry.metadata.clone(),
+        tool_use_id: entry.tool_use_id.clone(),
+        agent_id: entry.agent_id.clone(),
+        supervisor_id: entry.supervisor_id.clone(),
+        isolation: entry.isolation.clone(),
+        worktree_path: entry.worktree_path.clone(),
+        worktree_branch: entry.worktree_branch.clone(),
+        remote_task_type: entry.remote_task_type.clone(),
+        remote_session_id: entry.remote_session_id.clone(),
+        remote_task_metadata: entry.remote_task_metadata.clone(),
+        poll_started_at: entry.poll_started_at,
+        cancel_requested_at: entry.cancel_requested_at,
+        recovered_at: entry.recovered_at,
+        previous_status: entry.previous_status.map(|s| s.as_str().to_string()),
+        created_at: entry.created_at,
+        updated_at: entry.updated_at,
+        legacy_inline_output: None,
     }
 }

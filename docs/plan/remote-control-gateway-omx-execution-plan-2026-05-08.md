@@ -12,8 +12,8 @@
 
 配套执行文件：
 
-- `scripts/tmp/run-remote-control-gateway-omx-sessions.ps1`
-- `docs/scripts/remote-control-gateway-omx-tasks-2026-05-08.txt`
+- `scripts/achieve/run-remote-control-gateway-omx-sessions.ps1`
+- `docs/scripts/achieve/remote-control-gateway-omx-tasks-2026-05-08.txt`
 
 ## 1. 目标
 
@@ -725,26 +725,26 @@ cargo check -p claude-code-rs --message-format short
 只看将运行什么：
 
 ```powershell
-.\scripts\tmp\run-remote-control-gateway-omx-sessions.ps1 -DryRun
+.\scripts\achieve\run-remote-control-gateway-omx-sessions.ps1 -DryRun
 ```
 
 一次只跑一个高风险 session：
 
 ```powershell
-.\scripts\tmp\run-remote-control-gateway-omx-sessions.ps1 -OnlySession 7
+.\scripts\achieve\run-remote-control-gateway-omx-sessions.ps1 -OnlySession 7
 ```
 
 从头开始，但每次最多跑 2 个 session：
 
 ```powershell
-.\scripts\tmp\run-remote-control-gateway-omx-sessions.ps1 -StartAt 0 -MaxSessions 2
+.\scripts\achieve\run-remote-control-gateway-omx-sessions.ps1 -StartAt 0 -MaxSessions 2
 ```
 
 继续到下一个 review gate：
 
 ```powershell
-.\scripts\tmp\run-remote-control-gateway-omx-sessions.ps1 -StartAt 8 -EndAt 11
-.\scripts\tmp\run-remote-control-gateway-omx-sessions.ps1 -OnlySession "Review D"
+.\scripts\achieve\run-remote-control-gateway-omx-sessions.ps1 -StartAt 8 -EndAt 11
+.\scripts\achieve\run-remote-control-gateway-omx-sessions.ps1 -OnlySession "Review D"
 ```
 
 底层调用仍走：

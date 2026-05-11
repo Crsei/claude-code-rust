@@ -7,6 +7,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use cc_tasks::{parse_tasks_command, TasksCommand};
 use chrono::{DateTime, Local, TimeZone};
 
 use super::{CommandContext, CommandHandler, CommandResult};
@@ -20,42 +21,21 @@ pub struct TasksHandler;
 #[async_trait]
 impl CommandHandler for TasksHandler {
     async fn execute(&self, args: &str, _ctx: &mut CommandContext) -> Result<CommandResult> {
-        let mut parts = args.split_whitespace();
-        let sub = parts.next().unwrap_or("").to_ascii_lowercase();
-        match sub.as_str() {
-            "" | "list" | "ls" => Ok(CommandResult::Output(render_list())),
-            "show" | "info" => {
-                let id = parts.next().unwrap_or("").trim();
-                if id.is_empty() {
-                    return Ok(CommandResult::Output("Usage: /tasks show <id>".to_string()));
-                }
-                Ok(CommandResult::Output(render_detail(id)))
-            }
-            "stop" | "kill" | "cancel" => {
-                let id = parts.next().unwrap_or("").trim();
-                if id.is_empty() {
-                    return Ok(CommandResult::Output("Usage: /tasks stop <id>".to_string()));
-                }
-                Ok(CommandResult::Output(stop_task(id)))
-            }
-            "delete" | "rm" => {
-                let id = parts.next().unwrap_or("").trim();
-                if id.is_empty() {
-                    return Ok(CommandResult::Output(
-                        "Usage: /tasks delete <id>".to_string(),
-                    ));
-                }
-                Ok(CommandResult::Output(delete_task(id)))
-            }
-            other => Ok(CommandResult::Output(format!(
+        match parse_tasks_command(args) {
+            Ok(TasksCommand::List) => Ok(CommandResult::Output(render_list())),
+            Ok(TasksCommand::Show { id }) => Ok(CommandResult::Output(render_detail(&id))),
+            Ok(TasksCommand::Stop { id }) => Ok(CommandResult::Output(stop_task(&id))),
+            Ok(TasksCommand::Delete { id }) => Ok(CommandResult::Output(delete_task(&id))),
+            Ok(TasksCommand::Unknown { subcommand }) => Ok(CommandResult::Output(format!(
                 "Unknown /tasks subcommand '{}'.\n\n\
                  Usage:\n  \
                  /tasks               - list current background tasks\n  \
                  /tasks show <id>     - drill into one task\n  \
                  /tasks stop <id>     - cancel a tool task\n  \
                  /tasks delete <id>   - delete a persisted tool task\n",
-                other
+                subcommand
             ))),
+            Err(error) => Ok(CommandResult::Output(error.message)),
         }
     }
 }

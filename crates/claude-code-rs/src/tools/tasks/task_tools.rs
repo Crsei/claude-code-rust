@@ -1,5 +1,33 @@
 use super::*;
 
+fn task_error_result(error: TaskError) -> ToolResult {
+    ToolResult {
+        data: json!({
+            "error": error.message,
+            "task_error": error.to_json(),
+        }),
+        new_messages: vec![],
+        ..Default::default()
+    }
+}
+
+fn default_update_owner(input: &Value, ctx: &ToolUseContext) -> String {
+    input
+        .get("owner")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|owner| !owner.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| {
+            ctx.agent_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|owner| !owner.is_empty())
+                .map(ToString::to_string)
+        })
+        .unwrap_or_else(|| ctx.session_id.clone())
+}
+
 pub struct TodoWriteTool;
 
 #[async_trait]
@@ -225,112 +253,16 @@ impl Tool for TaskCreateTool {
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let subject = input
-            .get("subject")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Untitled");
-        let description = input
-            .get("description")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let active_form = input
-            .get("activeForm")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let metadata = input.get("metadata").filter(|v| v.is_object()).cloned();
-        let kind = input
-            .get("kind")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let parent_id = input
-            .get("parent_id")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let depends_on = dependency_ids_from_input(&input);
-        let owner = input
-            .get("owner")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let tool_use_id = input
-            .get("tool_use_id")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let agent_id = input
-            .get("agent_id")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let supervisor_id = input
-            .get("supervisor_id")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let isolation = input
-            .get("isolation")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let worktree_path = input
-            .get("worktree_path")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let worktree_branch = input
-            .get("worktree_branch")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let remote_task_type = input
-            .get("remote_task_type")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let remote_session_id = input
-            .get("remote_session_id")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let remote_task_metadata = input
-            .get("remote_task_metadata")
-            .filter(|v| v.is_object())
-            .cloned();
-        let poll_started_at = input.get("poll_started_at").and_then(|v| v.as_i64());
-        let has_options = kind.is_some()
-            || parent_id.is_some()
-            || !depends_on.is_empty()
-            || owner.is_some()
-            || active_form.is_some()
-            || metadata.is_some()
-            || tool_use_id.is_some()
-            || agent_id.is_some()
-            || supervisor_id.is_some()
-            || isolation.is_some()
-            || worktree_path.is_some()
-            || worktree_branch.is_some()
-            || remote_task_type.is_some()
-            || remote_session_id.is_some()
-            || remote_task_metadata.is_some()
-            || poll_started_at.is_some();
-
+        let request = parse_task_create(&input);
         let task_store = store_for_context(ctx);
-        let entry = if has_options {
+        let entry = if request.has_options {
             task_store.try_create_with_options(
-                subject,
-                description,
-                TaskCreateOptions {
-                    kind,
-                    parent_id,
-                    depends_on,
-                    owner,
-                    active_form,
-                    metadata,
-                    tool_use_id,
-                    agent_id,
-                    supervisor_id,
-                    isolation,
-                    worktree_path,
-                    worktree_branch,
-                    remote_task_type,
-                    remote_session_id,
-                    remote_task_metadata,
-                    poll_started_at,
-                },
+                &request.subject,
+                &request.description,
+                request.options,
             )
         } else {
-            task_store.try_create(subject, description)
+            task_store.try_create(&request.subject, &request.description)
         }?;
 
         let linked_plan_workflow = maybe_link_plan_workflow_task(ctx, &entry)?;
@@ -419,20 +351,19 @@ impl Tool for TaskGetTool {
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
+        let id = match parse_task_id(&input) {
+            Ok(id) => id,
+            Err(error) => return Ok(task_error_result(error)),
+        };
 
         let task_store = store_for_context(ctx);
-        match task_store.get(id) {
+        match task_store.get(&id) {
             Some(entry) => Ok(ToolResult {
                 data: json!({ "task": task_to_json_from_store(&task_store, &entry) }),
                 new_messages: vec![],
                 ..Default::default()
             }),
-            None => Ok(ToolResult {
-                data: json!({ "error": format!("Task not found: {}", id) }),
-                new_messages: vec![],
-                ..Default::default()
-            }),
+            None => Ok(task_error_result(TaskError::not_found(id))),
         }
     }
 
@@ -524,38 +455,23 @@ impl Tool for TaskUpdateTool {
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let id = task_id_from_input(&input);
-        let status_value = input.get("status").and_then(|v| v.as_str());
-        let status = match status_value {
-            Some("deleted") | None => None,
-            Some(status_str) => match TaskStatus::from_str(status_str) {
-                Some(status) => Some(status),
-                None => {
-                    return Ok(ToolResult {
-                        data: json!({ "error": format!("Invalid task status: {}", status_str) }),
-                        new_messages: vec![],
-                        ..Default::default()
-                    });
-                }
-            },
+        let request = match parse_task_update(&input, default_update_owner(&input, ctx)) {
+            Ok(request) => request,
+            Err(error) => return Ok(task_error_result(error)),
         };
 
         let task_store = store_for_context(ctx);
-        let existing = task_store.get(id);
+        let existing = task_store.get(&request.id);
         let Some(existing) = existing else {
-            return Ok(ToolResult {
-                data: json!({ "error": format!("Task not found: {}", id) }),
-                new_messages: vec![],
-                ..Default::default()
-            });
+            return Ok(task_error_result(TaskError::not_found(request.id)));
         };
 
-        if status_value == Some("deleted") {
-            let deleted = task_store.try_delete(id)?.is_some();
+        if request.action == TaskUpdateAction::Delete {
+            let deleted = task_store.try_delete(&request.id)?.is_some();
             return Ok(ToolResult {
                 data: json!({
                     "success": deleted,
-                    "task_id": id,
+                    "task_id": request.id,
                     "updated_fields": if deleted { vec!["deleted"] } else { Vec::<&str>::new() },
                     "status_change": if deleted {
                         json!({ "from": existing.status.as_str(), "to": "deleted" })
@@ -565,7 +481,7 @@ impl Tool for TaskUpdateTool {
                     "message": if deleted {
                         format!("Task '{}' deleted", existing.subject)
                     } else {
-                        format!("Task not found: {}", id)
+                        format!("Task not found: {}", request.id)
                     },
                 }),
                 new_messages: vec![],
@@ -573,15 +489,19 @@ impl Tool for TaskUpdateTool {
             });
         }
 
-        if status == Some(TaskStatus::InProgress) {
-            let owner = task_update_owner(&input, ctx);
-            let check_agent_busy = task_update_check_agent_busy(&input);
-            let entry = match task_store.claim_task(id, &owner, check_agent_busy) {
+        if request.action == TaskUpdateAction::Claim {
+            let entry = match task_store.claim_task(
+                &request.id,
+                &request.owner,
+                request.check_agent_busy,
+            ) {
                 Ok(entry) => entry,
                 Err(failure) => {
+                    let error = TaskError::claim_failed(failure.reason.as_str());
                     return Ok(ToolResult {
                         data: json!({
-                            "error": format!("Task claim failed: {}", failure.reason.as_str()),
+                            "error": error.message,
+                            "task_error": error.to_json(),
                             "claim": failure.to_json(),
                         }),
                         new_messages: vec![],
@@ -589,7 +509,7 @@ impl Tool for TaskUpdateTool {
                     });
                 }
             };
-            let mut updates = task_update_fields_from_input(&input);
+            let mut updates = request.fields.clone();
             updates.status = None;
             updates.owner = None;
             let entry = if updates.subject.is_some()
@@ -599,7 +519,9 @@ impl Tool for TaskUpdateTool {
                 || !updates.add_blocks.is_empty()
                 || !updates.add_blocked_by.is_empty()
             {
-                task_store.try_update_fields(id, updates)?.unwrap_or(entry)
+                task_store
+                    .try_update_fields(&request.id, updates)?
+                    .unwrap_or(entry)
             } else {
                 entry
             };
@@ -608,21 +530,21 @@ impl Tool for TaskUpdateTool {
                     "task": task_to_json_from_store(&task_store, &entry),
                     "updated_fields": ["status", "owner"],
                     "status_change": { "from": existing.status.as_str(), "to": TaskStatus::InProgress.as_str() },
-                    "message": format!("Task '{}' claimed by {}", entry.subject, owner)
+                    "message": format!("Task '{}' claimed by {}", entry.subject, request.owner)
                 }),
                 new_messages: vec![],
                 ..Default::default()
             });
         }
 
-        let mut updates = task_update_fields_from_input(&input);
-        updates.status = status;
-        let updated_fields = task_updated_fields_from_input(&input, status_value);
+        let updates = request.fields.clone();
+        let updated_fields = request.updated_fields;
 
-        match task_store.try_update_fields(id, updates)? {
+        match task_store.try_update_fields(&request.id, updates)? {
             Some(entry) => {
                 // Fire TaskCompleted hook when status changes to completed.
-                if status == Some(TaskStatus::Completed) && existing.status != TaskStatus::Completed
+                if request.status == Some(TaskStatus::Completed)
+                    && existing.status != TaskStatus::Completed
                 {
                     let app_state = (ctx.get_app_state)();
                     let configs =
@@ -646,11 +568,11 @@ impl Tool for TaskUpdateTool {
                     data: json!({
                         "task": task_to_json_from_store(&task_store, &entry),
                         "updated_fields": updated_fields,
-                        "status_change": status.map(|new_status| json!({
+                        "status_change": request.status.map(|new_status| json!({
                             "from": existing.status.as_str(),
                             "to": new_status.as_str()
                         })),
-                        "message": if let Some(status) = status {
+                        "message": if let Some(status) = request.status {
                             format!("Task '{}' updated to {}", entry.subject, status.as_str())
                         } else {
                             format!("Task '{}' updated", entry.subject)
@@ -660,11 +582,7 @@ impl Tool for TaskUpdateTool {
                     ..Default::default()
                 })
             }
-            None => Ok(ToolResult {
-                data: json!({ "error": format!("Task not found: {}", id) }),
-                new_messages: vec![],
-                ..Default::default()
-            }),
+            None => Ok(task_error_result(TaskError::not_found(request.id))),
         }
     }
 
@@ -769,10 +687,13 @@ impl Tool for TaskStopTool {
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
+        let id = match parse_task_id(&input) {
+            Ok(id) => id,
+            Err(error) => return Ok(task_error_result(error)),
+        };
 
         let task_store = store_for_context(ctx);
-        match task_store.try_stop(id)? {
+        match task_store.try_stop(&id)? {
             Some(entry) => Ok(ToolResult {
                 data: json!({
                     "task": task_to_json_from_store(&task_store, &entry),
@@ -781,11 +702,7 @@ impl Tool for TaskStopTool {
                 new_messages: vec![],
                 ..Default::default()
             }),
-            None => Ok(ToolResult {
-                data: json!({ "error": format!("Task not found: {}", id) }),
-                new_messages: vec![],
-                ..Default::default()
-            }),
+            None => Ok(task_error_result(TaskError::not_found(id))),
         }
     }
 

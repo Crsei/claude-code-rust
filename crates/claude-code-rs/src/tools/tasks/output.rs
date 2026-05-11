@@ -1,29 +1,7 @@
 use super::*;
 
 pub struct TaskOutputTool;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum TaskOutputRetrievalStatus {
-    Success,
-    Timeout,
-    NotReady,
-}
-
-impl TaskOutputRetrievalStatus {
-    fn as_str(self) -> &'static str {
-        match self {
-            TaskOutputRetrievalStatus::Success => "success",
-            TaskOutputRetrievalStatus::Timeout => "timeout",
-            TaskOutputRetrievalStatus::NotReady => "not_ready",
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(super) enum TaskOutputWaitResult {
-    Ready(TaskEntry),
-    TimedOut(Option<TaskEntry>),
-}
+pub(super) use cc_tasks::{TaskOutputRetrievalStatus, TaskOutputWaitResult};
 
 pub(super) fn parse_task_output_timeout_ms(input: &Value) -> Result<u64> {
     let Some(timeout) = input.get("timeout") else {

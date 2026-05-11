@@ -68,7 +68,7 @@ follow-up is still required. Do not blindly rerun completed work.
 Completed or superseded lanes:
 
 - P1 defensive after phase 1:
-  `docs/scripts/p1-defensive-fail-fast-after-phase1-tasks.txt`,
+  `docs/scripts/achieve/p1-defensive-fail-fast-after-phase1-tasks.txt`,
   `target/codex-runs/p1-defensive-after-phase1/**`, and
   `target/codex-runs/session-07-final-verification/task-01.last-message.txt`.
   The later final verification reports targeted checks passed.
@@ -78,7 +78,7 @@ Completed or superseded lanes:
   blocked by a missing `crates/gateway/Cargo.toml`, which is now present; do
   not reopen implementation unless current checks still fail.
 - Remote-control gateway:
-  `docs/scripts/remote-control-gateway-omx-tasks-2026-05-08.txt`,
+  `docs/scripts/achieve/remote-control-gateway-omx-tasks-2026-05-08.txt`,
   `scripts/achieve/run-remote-control-gateway-omx-sessions.ps1`, and
   `target/codex-runs/remote-control-gateway/session-17-final-verification/task-01.last-message.txt`.
   Session 17 reports the remote-control targeted checks passed with remaining
