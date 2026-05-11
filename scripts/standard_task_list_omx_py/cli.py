@@ -203,7 +203,15 @@ def run_batch(
         return
 
     exit_code = invoke_runner_process(
-        runner_args(args, runner, work_dir, batch_tasks_file, batch_output_dir),
+        runner_args(
+            args,
+            runner,
+            work_dir,
+            batch_tasks_file,
+            batch_output_dir,
+            state.index,
+            len(tasks),
+        ),
         repo_root,
     )
     current_changed = git_changed_paths(repo_root)
@@ -267,6 +275,8 @@ def runner_args(
     work_dir: Path,
     batch_tasks_file: Path,
     batch_output_dir: Path,
+    task_number_offset: int = 0,
+    total_task_count: int = 0,
 ) -> list[str]:
     command = [
         "powershell",
@@ -283,6 +293,10 @@ def runner_args(
         str(work_dir),
         "-OutputDir",
         str(batch_output_dir),
+        "-TaskNumberOffset",
+        str(task_number_offset),
+        "-TotalTaskCount",
+        str(total_task_count),
         "-Model",
         args.model,
         "-ReasoningEffort",

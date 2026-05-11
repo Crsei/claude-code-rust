@@ -50,6 +50,9 @@ Task 3 - ...
 - `-Sandbox`: passed through as `codex exec --sandbox`; default is `danger-full-access`.
 - `-Profile`: passed through as `codex exec --profile`.
 - `-ContinueOnError`: keep running subsequent tasks after a non-zero exit.
+- `-TaskNumberOffset`: optional zero-based offset used by batch wrappers so progress
+  displays as the global task number.
+- `-TotalTaskCount`: optional global task count used by batch wrappers.
 
 ## Output
 

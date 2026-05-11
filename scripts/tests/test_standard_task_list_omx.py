@@ -10,6 +10,7 @@ from pathlib import Path
 from scripts.standard_task_list_omx_py import (
     artifacts,
     blocker_review,
+    cli,
     common,
     guards,
     supervisor,
@@ -37,6 +38,24 @@ class StandardTaskListRunnerTests(unittest.TestCase):
 
         self.assertEqual(tasks.next_batch_size(task_list, 0, 3, len(task_list)), 2)
         self.assertEqual(tasks.next_batch_size(task_list, 2, 3, 2), 1)
+
+    def test_runner_args_include_global_task_progress(self) -> None:
+        args = cli.build_parser().parse_args([])
+
+        command = cli.runner_args(
+            args,
+            Path("runner.ps1"),
+            Path("."),
+            Path("batch.tasks.txt"),
+            Path("out"),
+            task_number_offset=3,
+            total_task_count=9,
+        )
+
+        self.assertIn("-TaskNumberOffset", command)
+        self.assertEqual(command[command.index("-TaskNumberOffset") + 1], "3")
+        self.assertIn("-TotalTaskCount", command)
+        self.assertEqual(command[command.index("-TotalTaskCount") + 1], "9")
 
     def test_oversized_file_blocks_only_after_threshold(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

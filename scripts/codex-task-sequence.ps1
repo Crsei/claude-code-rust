@@ -9,6 +9,8 @@ param(
     [string]$Profile = "",
     [string]$Sandbox = "danger-full-access",
     [string]$OutputDir = "target/codex-runs",
+    [int]$TaskNumberOffset = 0,
+    [int]$TotalTaskCount = 0,
     [switch]$ContinueOnError
 )
 
@@ -137,6 +139,8 @@ function Write-TaskExecutionSummary {
         [string]$OutputDir,
         [int]$TaskNumber,
         [int]$TaskCount,
+        [int]$GlobalTaskNumber,
+        [int]$GlobalTaskCount,
         [string]$Task,
         [int]$ExitCode,
         [string[]]$ChangedFiles,
@@ -152,6 +156,8 @@ function Write-TaskExecutionSummary {
     $record = [ordered]@{
         task_number = $TaskNumber
         task_count = $TaskCount
+        global_task_number = $GlobalTaskNumber
+        global_task_count = $GlobalTaskCount
         task = $Task
         status = $status
         exit_code = $ExitCode
@@ -184,7 +190,11 @@ function Write-TaskExecutionReport {
 
     $lines = @("# Task execution report", "")
     foreach ($record in $records) {
-        $lines += "## Task $($record.task_number)"
+        $heading = "Task $($record.task_number)"
+        if ($record.PSObject.Properties.Name -contains "global_task_number") {
+            $heading = "Task $($record.global_task_number) / $($record.global_task_count)"
+        }
+        $lines += "## $heading"
         $lines += ""
         $lines += "- Status: $($record.status)"
         $lines += "- Exit code: $($record.exit_code)"
@@ -234,15 +244,17 @@ New-Item -ItemType Directory -Force -Path $resolvedOutputDir | Out-Null
 
 Push-Location $repoRoot
 try {
+    $displayTaskCount = if ($TotalTaskCount -gt 0) { $TotalTaskCount } else { $taskList.Count }
     for ($i = 0; $i -lt $taskList.Count; $i++) {
         $taskNumber = $i + 1
+        $displayTaskNumber = $TaskNumberOffset + $taskNumber
         $taskLabel = '{0:00}' -f $taskNumber
         $lastMessageFile = Join-Path $resolvedOutputDir "task-$taskLabel.last-message.txt"
         $taskStartedAt = Get-Date -Format o
         $beforePaths = @(Get-GitChangedPaths)
         $beforeSignatures = Get-PathSignatureMap -RepoRoot $repoRoot -Paths $beforePaths
         $prompt = @"
-You are executing task $taskNumber of $($taskList.Count).
+You are executing task $displayTaskNumber of $displayTaskCount.
 Work only on this task. Do not continue to later tasks.
 
 Task:
@@ -252,7 +264,7 @@ Return a concise completion note with changed files, verification run, and any r
 "@
 
         Write-Host ""
-        Write-Host "=== Task $taskNumber / $($taskList.Count) ===" -ForegroundColor Cyan
+        Write-Host "=== Task $displayTaskNumber / $displayTaskCount ===" -ForegroundColor Cyan
         Write-Host $taskList[$i]
         Write-Host ""
 
@@ -279,13 +291,15 @@ Return a concise completion note with changed files, verification run, and any r
             $interruptionReason = $_.Exception.Message
         }
         if ($taskExitCode -ne 0 -and -not $interruptionReason) {
-            $interruptionReason = "Task $taskNumber failed with exit code $taskExitCode"
+            $interruptionReason = "Task $displayTaskNumber failed with exit code $taskExitCode"
         }
         $changedForTask = @(Get-TaskChangedPaths -RepoRoot $repoRoot -BeforeSignatures $beforeSignatures -BeforePaths $beforePaths)
         Write-TaskExecutionSummary `
             -OutputDir $resolvedOutputDir `
             -TaskNumber $taskNumber `
             -TaskCount $taskList.Count `
+            -GlobalTaskNumber $displayTaskNumber `
+            -GlobalTaskCount $displayTaskCount `
             -Task $taskList[$i] `
             -ExitCode $taskExitCode `
             -ChangedFiles $changedForTask `
@@ -295,7 +309,7 @@ Return a concise completion note with changed files, verification run, and any r
             -InterruptionReason $interruptionReason
 
         if ($taskExitCode -ne 0) {
-            Write-Error "Task $taskNumber failed with exit code $taskExitCode" -ErrorAction Continue
+            Write-Error "Task $displayTaskNumber failed with exit code $taskExitCode" -ErrorAction Continue
             if (-not $ContinueOnError) {
                 exit $taskExitCode
             }
