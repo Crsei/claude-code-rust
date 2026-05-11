@@ -10,9 +10,10 @@
 
 use anyhow::{bail, Result};
 use async_trait::async_trait;
-use serde::Deserialize;
 use serde_json::{json, Value};
 use tracing::{debug, info};
+
+use cc_teams::tool_specs as team_tool_specs;
 
 use crate::teams::in_process::InProcessBackend;
 use crate::teams::types::TeammateMessage;
@@ -23,46 +24,18 @@ use crate::types::tool::*;
 /// SendMessage tool.
 pub struct SendMessageTool;
 
-#[derive(Deserialize)]
-struct SendMessageInput {
-    /// Recipient: teammate name, "*" for broadcast.
-    to: String,
-    /// The message text or structured content.
-    message: String,
-    /// Optional 5-10 word summary.
-    #[serde(default)]
-    summary: Option<String>,
-}
-
 #[async_trait]
 impl Tool for SendMessageTool {
     fn name(&self) -> &str {
-        "SendMessage"
+        team_tool_specs::SEND_MESSAGE_TOOL_NAME
     }
 
     async fn description(&self, _input: &Value) -> String {
-        "Send a message to a teammate or broadcast to all teammates.".to_string()
+        team_tool_specs::send_message_description()
     }
 
     fn input_json_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "to": {
-                    "type": "string",
-                    "description": "Recipient teammate name, or \"*\" for broadcast"
-                },
-                "message": {
-                    "type": "string",
-                    "description": "Message text or structured JSON message"
-                },
-                "summary": {
-                    "type": "string",
-                    "description": "Brief 5-10 word summary of the message"
-                }
-            },
-            "required": ["to", "message"]
-        })
+        team_tool_specs::send_message_schema()
     }
 
     fn is_enabled(&self) -> bool {
@@ -74,62 +47,16 @@ impl Tool for SendMessageTool {
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
-        let to = input.get("to").and_then(|v| v.as_str()).unwrap_or("");
-        if to.trim().is_empty() {
-            return ValidationResult::Error {
-                message: "'to' field is required".into(),
+        team_tool_specs::validate_send_message(input)
+            .map(|_| ValidationResult::Ok)
+            .unwrap_or_else(|message| ValidationResult::Error {
+                message: message.into(),
                 error_code: 400,
-            };
-        }
-        let msg = input.get("message").and_then(|v| v.as_str()).unwrap_or("");
-        if msg.trim().is_empty() {
-            return ValidationResult::Error {
-                message: "'message' field is required".into(),
-                error_code: 400,
-            };
-        }
-        ValidationResult::Ok
+            })
     }
 
     fn backfill_observable_input(&self, input: &mut serde_json::Map<String, Value>) {
-        if input.contains_key("type") {
-            return;
-        }
-
-        let Some(to) = input.get("to").and_then(Value::as_str).map(str::to_string) else {
-            return;
-        };
-        let Some(message) = input.get("message").cloned() else {
-            return;
-        };
-
-        match message {
-            Value::String(text) if to == "*" => {
-                input.insert("type".to_string(), Value::String("broadcast".to_string()));
-                input.insert("content".to_string(), Value::String(text));
-            }
-            Value::String(text) => {
-                input.insert("type".to_string(), Value::String("message".to_string()));
-                input.insert("recipient".to_string(), Value::String(to));
-                input.insert("content".to_string(), Value::String(text));
-            }
-            Value::Object(message) => {
-                if let Some(value) = message.get("type") {
-                    input.insert("type".to_string(), value.clone());
-                }
-                input.insert("recipient".to_string(), Value::String(to));
-                if let Some(value) = message.get("request_id") {
-                    input.insert("request_id".to_string(), value.clone());
-                }
-                if let Some(value) = message.get("approve") {
-                    input.insert("approve".to_string(), value.clone());
-                }
-                if let Some(value) = message.get("reason").or_else(|| message.get("feedback")) {
-                    input.insert("content".to_string(), value.clone());
-                }
-            }
-            _ => {}
-        }
+        team_tool_specs::backfill_send_message_observable_input(input);
     }
 
     async fn call(
@@ -139,7 +66,7 @@ impl Tool for SendMessageTool {
         _parent: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let params: SendMessageInput = serde_json::from_value(input)?;
+        let params: team_tool_specs::SendMessageInput = serde_json::from_value(input)?;
 
         // Get team context
         let app_state = (ctx.get_app_state)();
@@ -193,18 +120,11 @@ impl Tool for SendMessageTool {
     }
 
     async fn prompt(&self) -> String {
-        "Send a message to a teammate or broadcast to all teammates. \
-         Use the 'to' field with a teammate name or '*' for broadcast. \
-         Include a brief summary for quick context."
-            .to_string()
+        team_tool_specs::send_message_prompt()
     }
 
     fn user_facing_name(&self, input: Option<&Value>) -> String {
-        if let Some(to) = input.and_then(|v| v.get("to")).and_then(|v| v.as_str()) {
-            format!("SendMessage(to: {})", to)
-        } else {
-            "SendMessage".to_string()
-        }
+        team_tool_specs::send_message_user_facing_name(input)
     }
 }
 

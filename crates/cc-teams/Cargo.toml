@@ -6,3 +6,5 @@ description = "Team coordination: backend, mailbox, protocol, runner. Phase 7 wo
 
 [dependencies]
 cc-types = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

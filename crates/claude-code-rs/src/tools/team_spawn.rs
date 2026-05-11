@@ -1,4 +1,4 @@
-//! TeamSpawn tool — creates and runs a new in-process teammate.
+//! TeamSpawn tool - creates and runs a new in-process teammate.
 //!
 //! This is the conversation-facing entry point for agent teams: the model
 //! calls `TeamSpawn` to bring up a named teammate with its own prompt,
@@ -15,13 +15,15 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tracing::info;
 
+use cc_teams::tool_specs as team_tool_specs;
+
 use crate::teams::backend::TeammateExecutor;
 use crate::teams::types::{
     BackendType, TeamContext, TeamMember, TeammateInfo, TeammateSpawnConfig,
 };
 use crate::teams::{backend, constants, helpers, identity, in_process::InProcessBackend};
 use crate::types::message::AssistantMessage;
-use crate::types::tool::{PermissionMode, *};
+use crate::types::tool::*;
 
 /// TeamSpawn tool.
 pub struct TeamSpawnTool;
@@ -38,7 +40,7 @@ struct TeamSpawnInput {
     /// Optional UI color (red/blue/green/yellow/purple/orange/pink/cyan).
     #[serde(default)]
     color: Option<String>,
-    /// Optional team name — if omitted, uses current team or creates one.
+    /// Optional team name; if omitted, uses current team or creates one.
     #[serde(default)]
     team: Option<String>,
     /// Optional description for an implicitly-created team.
@@ -58,108 +60,36 @@ struct TeamSpawnInput {
 #[async_trait]
 impl Tool for TeamSpawnTool {
     fn name(&self) -> &str {
-        "TeamSpawn"
+        team_tool_specs::TEAM_SPAWN_TOOL_NAME
     }
 
     async fn description(&self, _input: &Value) -> String {
-        "Spawn a new in-process teammate agent that runs in parallel and can be messaged via SendMessage.".into()
+        team_tool_specs::team_spawn_description()
     }
 
     fn input_json_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Unique teammate name (letters, numbers, - and _ only)."
-                },
-                "prompt": {
-                    "type": "string",
-                    "description": "Initial instruction for the teammate — what role it plays, what task to start on."
-                },
-                "model": {
-                    "type": "string",
-                    "description": "Optional model id. Defaults to the parent agent's model."
-                },
-                "color": {
-                    "type": "string",
-                    "description": "Optional UI color tag (red, blue, green, yellow, purple, orange, pink, cyan)."
-                },
-                "team": {
-                    "type": "string",
-                    "description": "Optional team name. Defaults to the active team, or creates one tied to the current session."
-                },
-                "description": {
-                    "type": "string",
-                    "description": "Optional description used only when an implicit team is created."
-                },
-                "backend": {
-                    "type": "string",
-                    "enum": ["in-process"],
-                    "description": "Execution backend. cc-rust intentionally supports only in-process Agent Teams."
-                },
-                "mode": {
-                    "type": "string",
-                    "enum": ["default", "auto", "bypass", "plan", "acceptEdits", "dontAsk"],
-                    "description": "Optional permission mode for the teammate. Use \"plan\" to require plan approval before edits."
-                },
-                "agent_type": {
-                    "type": "string",
-                    "description": "Optional built-in or custom agent type for the teammate. Coordinator mode defaults to worker."
-                }
-            },
-            "required": ["name", "prompt"]
-        })
+        team_tool_specs::team_spawn_schema()
     }
 
     fn is_enabled(&self) -> bool {
-        // Always advertise — creating a team through this tool is one of the
+        // Always advertise: creating a team through this tool is one of the
         // ways users turn teams on for a session.
         true
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
-        let name = input.get("name").and_then(|v| v.as_str()).unwrap_or("");
-        if name.trim().is_empty() {
-            return ValidationResult::Error {
-                message: "'name' is required".into(),
-                error_code: 400,
-            };
-        }
-        if name == constants::TEAM_LEAD_NAME {
-            return ValidationResult::Error {
-                message: format!(
-                    "'{}' is reserved for the team lead",
-                    constants::TEAM_LEAD_NAME
-                ),
-                error_code: 400,
-            };
-        }
-        let prompt = input.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
-        if prompt.trim().is_empty() {
-            return ValidationResult::Error {
-                message: "'prompt' is required".into(),
-                error_code: 400,
-            };
-        }
-        if let Some(raw_backend) = input.get("backend").and_then(|v| v.as_str()) {
+        team_tool_specs::validate_team_spawn(input, |raw_backend| {
             match raw_backend.parse::<BackendType>() {
-                Ok(backend_type) if backend::is_backend_supported(backend_type) => {}
-                Ok(backend_type) => {
-                    return ValidationResult::Error {
-                        message: backend::unsupported_backend_message(backend_type),
-                        error_code: 400,
-                    };
-                }
-                Err(e) => {
-                    return ValidationResult::Error {
-                        message: e,
-                        error_code: 400,
-                    };
-                }
+                Ok(backend_type) if backend::is_backend_supported(backend_type) => Ok(()),
+                Ok(backend_type) => Err(backend::unsupported_backend_message(backend_type)),
+                Err(e) => Err(e),
             }
-        }
-        ValidationResult::Ok
+        })
+        .map(|_| ValidationResult::Ok)
+        .unwrap_or_else(|message| ValidationResult::Error {
+            message,
+            error_code: 400,
+        })
     }
 
     async fn call(
@@ -187,7 +117,7 @@ impl Tool for TeamSpawnTool {
             cwd
         };
 
-        // Resolve team name — explicit > active context > session-derived.
+        // Resolve team name: explicit > active context > session-derived.
         let (team_name, freshly_created) = match params.team.clone() {
             Some(t) if !t.trim().is_empty() => (t, false),
             _ => match app_state.team_context.as_ref() {
@@ -374,33 +304,23 @@ impl Tool for TeamSpawnTool {
     }
 
     async fn prompt(&self) -> String {
-        "Spawn a new teammate to work in parallel. Use SendMessage to \
-         communicate with it after spawn. If no team exists, a session-scoped \
-         team is created automatically and you become the team lead."
-            .into()
+        team_tool_specs::team_spawn_prompt()
     }
 
     fn user_facing_name(&self, input: Option<&Value>) -> String {
-        if let Some(name) = input.and_then(|v| v.get("name")).and_then(|v| v.as_str()) {
-            format!("TeamSpawn({})", name)
-        } else {
-            "TeamSpawn".into()
-        }
+        team_tool_specs::team_spawn_user_facing_name(input)
     }
 }
 
 fn team_spawn_plan_mode_required(mode: Option<&str>) -> bool {
-    mode.map(PermissionMode::parse)
-        .unwrap_or(PermissionMode::Default)
-        == PermissionMode::Plan
+    team_tool_specs::team_spawn_plan_mode_required(mode)
 }
 
 fn resolve_team_spawn_agent_type(explicit: Option<&str>) -> Option<String> {
-    explicit
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-        .or_else(|| Some(crate::teams::coordinator::default_teammate_agent_type().to_string()))
+    team_tool_specs::resolve_team_spawn_agent_type(
+        explicit,
+        crate::teams::coordinator::default_teammate_agent_type(),
+    )
 }
 
 // ---------------------------------------------------------------------------

@@ -14,6 +14,7 @@
 pub mod agent_handlers;
 pub mod agent_tree;
 pub mod subsystem_handlers;
+pub mod system_status_tool;
 
 #[allow(unused_imports)]
 pub use cc_types::{

@@ -9,3 +9,4 @@ cc-ipc-protocol = { workspace = true }
 cc-types = { workspace = true }
 chrono = { workspace = true }
 parking_lot = { workspace = true }
+serde_json = { workspace = true }

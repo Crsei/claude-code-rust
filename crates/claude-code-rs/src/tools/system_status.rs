@@ -1,10 +1,12 @@
 // src/tools/system_status.rs
 
-//! SystemStatus tool — lets the Agent query subsystem status.
+//! SystemStatus tool - lets the Agent query subsystem status.
 
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
+
+use cc_ipc::system_status_tool::{self, ChromeStatus};
 
 use crate::types::message::AssistantMessage;
 use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
@@ -18,21 +20,11 @@ impl Tool for SystemStatusTool {
     }
 
     async fn description(&self, _input: &Value) -> String {
-        "Query the current status of subsystems (LSP, MCP, plugins, skills, IDE, Chrome)."
-            .to_string()
+        system_status_tool::system_status_description()
     }
 
     fn input_json_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "subsystem": {
-                    "type": "string",
-                    "enum": ["lsp", "mcp", "plugins", "skills", "agents", "teams", "ide", "chrome", "all"],
-                    "description": "Which subsystem to query. Defaults to 'all'."
-                }
-            }
-        })
+        system_status_tool::system_status_schema()
     }
 
     fn is_read_only(&self, _input: &Value) -> bool {
@@ -66,9 +58,7 @@ impl Tool for SystemStatusTool {
     }
 
     async fn prompt(&self) -> String {
-        "Use SystemStatus to check the current status of LSP servers, MCP servers, plugins, skills, IDE, and Chrome. \
-         Query a specific subsystem with the `subsystem` parameter, or use \"all\" for a full overview."
-            .to_string()
+        system_status_tool::system_status_prompt()
     }
 
     fn user_facing_name(&self, _input: Option<&Value>) -> String {
@@ -79,162 +69,16 @@ impl Tool for SystemStatusTool {
 /// Format a human-readable status output for the given subsystem.
 fn format_status_output(subsystem: &str) -> String {
     crate::ipc::runtime_adapters::ensure_installed();
-    let mut parts = Vec::new();
-
-    if subsystem == "all" || subsystem == "lsp" {
-        let servers = cc_ipc::subsystem_handlers::build_lsp_server_info_list();
-        let mut section = String::from("## LSP Servers\n");
-        if servers.is_empty() {
-            section.push_str("No LSP servers configured.\n");
-        } else {
-            for s in &servers {
-                section.push_str(&format!(
-                    "- {}: {} (open_files={}, extensions: {})\n",
-                    s.language_id,
-                    s.state,
-                    s.open_files_count,
-                    s.extensions.join(", ")
-                ));
-            }
-        }
-        parts.push(section);
-    }
-
-    if subsystem == "all" || subsystem == "mcp" {
-        let servers = cc_ipc::subsystem_handlers::build_mcp_server_info_list();
-        let mut section = String::from("## MCP Servers\n");
-        if servers.is_empty() {
-            section.push_str("No MCP servers configured.\n");
-        } else {
-            for s in &servers {
-                let mut line = format!(
-                    "- {}: {} ({}, {} tools, {} resources)",
-                    s.name, s.state, s.transport, s.tools_count, s.resources_count
-                );
-                if let Some(ref info) = s.server_info {
-                    line.push_str(&format!(" [{}@{}]", info.name, info.version));
-                }
-                section.push_str(&format!("{}\n", line));
-            }
-        }
-        parts.push(section);
-    }
-
-    if subsystem == "all" || subsystem == "plugins" {
-        let plugins = cc_ipc::subsystem_handlers::build_plugin_info_list();
-        let mut section = String::from("## Plugins\n");
-        if plugins.is_empty() {
-            section.push_str("No plugins installed.\n");
-        } else {
-            for p in &plugins {
-                let mut line = format!("- {}: {} (v{})", p.id, p.status, p.version);
-                if !p.contributed_skills.is_empty() {
-                    line.push_str(&format!("\n  Skills: {}", p.contributed_skills.join(", ")));
-                }
-                if !p.contributed_tools.is_empty() {
-                    line.push_str(&format!("\n  Tools: {}", p.contributed_tools.join(", ")));
-                }
-                section.push_str(&format!("{}\n", line));
-            }
-        }
-        parts.push(section);
-    }
-
-    if subsystem == "all" || subsystem == "skills" {
-        let skills = cc_ipc::subsystem_handlers::build_skill_info_list();
-        let mut section = format!("## Skills ({} total)\n", skills.len());
-        if skills.is_empty() {
-            section.push_str("No skills loaded.\n");
-        } else {
-            for s in &skills {
-                section.push_str(&format!(
-                    "- {} [{}] — {}\n",
-                    s.name, s.source, s.description
-                ));
-            }
-        }
-        parts.push(section);
-    }
-
-    if subsystem == "all" || subsystem == "agents" {
-        let tree = cc_ipc::agent_tree::AGENT_TREE.lock();
-        let active = tree.active_agents();
-        let bg_count = active.iter().filter(|a| a.is_background).count();
-        let mut section = format!(
-            "## Active Agents ({} total, {} background)\n",
-            active.len(),
-            bg_count
-        );
-        if active.is_empty() {
-            section.push_str("No active agents.\n");
-        } else {
-            for a in &active {
-                section.push_str(&format!(
-                    "- {}: {} [{}{}] — \"{}\" (depth {})\n",
-                    a.agent_id,
-                    a.state,
-                    if a.is_background {
-                        "background"
-                    } else {
-                        "sync"
-                    },
-                    a.agent_type
-                        .as_ref()
-                        .map(|t| format!(", {}", t))
-                        .unwrap_or_default(),
-                    a.description,
-                    a.depth,
-                ));
-            }
-        }
-        parts.push(section);
-    }
-
-    if subsystem == "all" || subsystem == "teams" {
-        let mut section = String::from("## Teams\n");
-        section.push_str("Team status requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS feature.\n");
-        parts.push(section);
-    }
-
-    if subsystem == "all" || subsystem == "ide" {
-        let ides = cc_ipc::subsystem_handlers::build_ide_info_list();
-        let mut section = String::from("## IDE Integrations\n");
-        if ides.is_empty() {
-            section.push_str("No IDE integrations detected.\n");
-        } else {
-            for ide in &ides {
-                section.push_str(&format!(
-                    "- {}: installed={} running={} selected={} connection={}\n",
-                    ide.id,
-                    ide.installed,
-                    ide.running,
-                    ide.selected,
-                    ide.connection_state.as_deref().unwrap_or("disconnected")
-                ));
-            }
-        }
-        parts.push(section);
-    }
-
-    if subsystem == "all" || subsystem == "chrome" {
-        let snap = crate::browser::state::snapshot();
-        let mut section = String::from("## Chrome Integration\n");
-        section.push_str(&format!("Connection: {}\n", snap.connection.label()));
-        section.push_str(&format!(
-            "Extension detected: {}\n",
-            snap.extension_installed
-                .map(|value| value.to_string())
-                .unwrap_or_else(|| "not checked".to_string())
-        ));
-        if let Some(error) = snap.last_error.as_deref() {
-            section.push_str(&format!("Last error: {error}\n"));
-        }
-        parts.push(section);
-    }
-
-    parts.join("\n")
+    let snap = crate::browser::state::snapshot();
+    system_status_tool::format_status_output(
+        subsystem,
+        Some(ChromeStatus {
+            connection_label: snap.connection.label().to_string(),
+            extension_detected: snap.extension_installed,
+            last_error: snap.last_error,
+        }),
+    )
 }
-
 fn _count_nodes(node: &crate::ipc::agent_types::AgentNode) -> usize {
     1 + node.children.iter().map(_count_nodes).sum::<usize>()
 }

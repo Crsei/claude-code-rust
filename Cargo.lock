@@ -645,6 +645,7 @@ dependencies = [
  "cc-types",
  "chrono",
  "parking_lot",
+ "serde_json",
 ]
 
 [[package]]
@@ -868,6 +869,8 @@ name = "cc-teams"
 version = "0.1.0"
 dependencies = [
  "cc-types",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1009,6 +1012,7 @@ dependencies = [
  "cc-session",
  "cc-skills",
  "cc-tasks",
+ "cc-teams",
  "cc-tools",
  "cc-types",
  "cc-utils",
