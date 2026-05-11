@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 
 // ---------------------------------------------------------------------------
 
@@ -115,7 +115,7 @@ pub(super) fn handle_show(parts: &[&str], ctx: &CommandContext) -> Result<Comman
         &mut lines,
     );
     // Resolve the configured style now so the user sees what will actually
-    // be injected 鈥?built-ins always show as the canonical name; custom
+    // be injected; built-ins always show as the canonical name; custom
     // styles surface as their resolved name (or fall back to default if
     // the file can't be loaded).
     if let Some(name) = state.settings.output_style.as_deref() {
@@ -288,7 +288,7 @@ fn handle_show_raw(ctx: &CommandContext) -> Result<CommandResult> {
 pub(super) fn handle_sources(ctx: &CommandContext) -> Result<CommandResult> {
     if ctx.app_state.settings.sources.is_empty() {
         return Ok(CommandResult::Output(
-            "(no settings overrides recorded 鈥?every key is default)".into(),
+            "(no settings overrides recorded; every key is default)".into(),
         ));
     }
     let mut lines = vec!["Per-key sources:".into(), String::new()];

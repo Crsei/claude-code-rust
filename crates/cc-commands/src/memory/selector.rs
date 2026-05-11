@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 
 // ---------------------------------------------------------------------------
 
@@ -9,13 +9,13 @@
 ///   Memory selector
 ///   Auto-memory: OFF (enable via /memory auto on)
 ///
-///   [1] [global] my_key 鈥?2026-04-20
-///   [2] [project] auth_notes 鈥?2026-04-18
+///   [1] [global] my_key - 2026-04-20
+///   [2] [project] auth_notes - 2026-04-18
 ///   ...
-///   [a] open auto-memory dir   鈥?<path>
-///   [t] open team-memory dir   鈥?<path>
-///   [g] open global memory dir 鈥?<path>
-///   [p] open project memory dir鈥?<path>
+///   [a] open auto-memory dir   - <path>
+///   [t] open team-memory dir   - <path>
+///   [g] open global memory dir - <path>
+///   [p] open project memory dir - <path>
 ///
 /// The true interactive TUI picker belongs in the terminal frontend;
 /// see the module-level TODO.
@@ -32,7 +32,7 @@ pub(super) fn selector(ctx: &CommandContext) -> Result<CommandResult> {
     ));
     lines.push(String::new());
 
-    // CLAUDE.md files at the top 鈥?unnumbered because they're content-only.
+    // CLAUDE.md files at the top, unnumbered because they're content-only.
     let md_files = config_claude_md::find_claude_md_files(cwd);
     if !md_files.is_empty() {
         lines.push(format!("CLAUDE.md files ({}):", md_files.len()));
@@ -59,7 +59,7 @@ pub(super) fn selector(ctx: &CommandContext) -> Result<CommandResult> {
                 .next()
                 .unwrap_or(&e.updated_at)
                 .to_string();
-            lines.push(format!("  [{}] [{}] {} 鈥?{}", idx, label, e.key, date));
+            lines.push(format!("  [{}] [{}] {} - {}", idx, label, e.key, date));
         }
     };
 
@@ -72,7 +72,7 @@ pub(super) fn selector(ctx: &CommandContext) -> Result<CommandResult> {
     emit_group("project", &project, &mut lines);
     if team_gate || !team.is_empty() {
         // Show team entries even when the feature is gated off so legacy
-        // data is never stranded 鈥?only injection into prompts is gated.
+        // data is never stranded; only injection into prompts is gated.
         emit_group("team", &team, &mut lines);
     }
     if auto_on || !auto.is_empty() {
@@ -82,25 +82,25 @@ pub(super) fn selector(ctx: &CommandContext) -> Result<CommandResult> {
     }
 
     if !any_entries {
-        lines.push("  (no memory entries 鈥?use `/memory set <key> <value>` to create one)".into());
+        lines.push("  (no memory entries; use `/memory set <key> <value>` to create one)".into());
     }
 
     lines.push(String::new());
     lines.push("Directory shortcuts:".into());
     lines.push(format!(
-        "  [a] auto-memory dir    鈥?{}",
+        "  [a] auto-memory dir    - {}",
         cfg_paths::auto_memory_dir().display()
     ));
     lines.push(format!(
-        "  [t] team-memory dir    鈥?{}",
+        "  [t] team-memory dir    - {}",
         cfg_paths::team_memory_dir(cwd).display()
     ));
     lines.push(format!(
-        "  [g] global memory dir  鈥?{}",
+        "  [g] global memory dir  - {}",
         cfg_paths::memory_dir_global().display()
     ));
     lines.push(format!(
-        "  [p] project memory dir 鈥?{}",
+        "  [p] project memory dir - {}",
         cwd.join(".cc-rust").join("memory").display()
     ));
     lines.push(String::new());

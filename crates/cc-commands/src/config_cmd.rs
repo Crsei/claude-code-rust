@@ -1,4 +1,4 @@
-﻿//! /config command -- show and modify configuration settings.
+//! /config command -- show and modify configuration settings.
 //!
 //! Subcommands:
 //! - `/config show`                       -- show effective settings + sources
@@ -146,11 +146,7 @@ fn handle_set(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
 }
 
 /// Apply a key=value to the live AppState. Returns a user-facing message.
-fn apply_set_in_memory(
-    key: &str,
-    value: &str,
-    app_state: &mut AppState,
-) -> Result<String> {
+fn apply_set_in_memory(key: &str, value: &str, app_state: &mut AppState) -> Result<String> {
     let s = &mut app_state.settings;
 
     match key {
@@ -274,7 +270,7 @@ fn persist_set(scope: WriteScope, key: &str, value: &str, cwd: &Path) -> Result<
         WriteScope::Local => settings::write_local_settings(cwd, &raw)?,
     };
     Ok(format!(
-        "鈫?persisted to {} (backups kept)",
+        "-> persisted to {} (backups kept)",
         written.display()
     ))
 }
@@ -292,8 +288,7 @@ fn apply_set_to_raw(raw: &mut RawSettings, key: &str, value: &str) -> Result<()>
     match key {
         "model" => raw.model = Some(value.into()),
         "backend" => {
-            raw.backend =
-                Some(normalize_backend(Some(value)).to_string());
+            raw.backend = Some(normalize_backend(Some(value)).to_string());
         }
         "theme" => raw.theme = Some(value.into()),
         "verbose" => raw.verbose = Some(parse_config_bool(key, value)?),
@@ -436,7 +431,7 @@ mod output_style {
 
 // Small helper to allow `take()` on Option<PermissionsSettings> without
 // pulling in extra crates. Using `Option::take` works directly above; this
-// trait is intentionally *not* defined 鈥?we only need the inherent `take`.
+// trait is intentionally not defined; we only need the inherent `take`.
 
 // ---------------------------------------------------------------------------
 // /config reset
@@ -475,7 +470,7 @@ fn handle_reset(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResul
     }
 
     Ok(CommandResult::Output(
-        "In-memory configuration reset to defaults. Files on disk untouched 鈥?\
+        "In-memory configuration reset to defaults. Files on disk untouched; \
          pass --user / --project / --local to also rewrite a file."
             .into(),
     ))

@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 
 // ---------------------------------------------------------------------------
 
@@ -52,4 +52,4 @@ pub(super) fn edit_memory(cwd: &Path) -> Result<CommandResult> {
 }
 
 // ---------------------------------------------------------------------------
-// Selector (default entry point 鈥?issue #45)
+// Selector (default entry point: issue #45)

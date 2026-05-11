@@ -1,20 +1,20 @@
-﻿//! `/memory` command 鈥?default entry point is a memory selector that
+//! `/memory` command - default entry point is a memory selector that
 //! surfaces auto-memory state and exposes every scope (global, project,
 //! team, auto) together with the nearest CLAUDE.md files.
 //!
 //! Subcommands (issue #45):
-//!   (no args)  鈥?Print the selector (grouped listing of every scope +
+//!   (no args)  - Print the selector (grouped listing of every scope +
 //!                 auto-memory header + directory shortcuts)
-//!   show       鈥?Display CLAUDE.md content
-//!   path       鈥?Show CLAUDE.md file locations
-//!   edit       鈥?Create/locate CLAUDE.md for editing
-//!   list       鈥?List memdir entries across every scope
-//!   get <key>  鈥?Read a memdir entry
+//!   show       - Display CLAUDE.md content
+//!   path       - Show CLAUDE.md file locations
+//!   edit       - Create/locate CLAUDE.md for editing
+//!   list       - List memdir entries across every scope
+//!   get <key>  - Read a memdir entry
 //!   set <key> <value> [--global|--team|--auto] [--category=<cat>]
 //!   rm <key>   [--global|--team|--auto]
 //!   search <query>
-//!   auto on|off|status  鈥?Toggle auto-memory capture/injection
-//!   open  <auto|team|global|project>  鈥?Print/ensure-and-open a dir
+//!   auto on|off|status  - Toggle auto-memory capture/injection
+//!   open  <auto|team|global|project>  - Print/ensure-and-open a dir
 //!
 //! # TODO
 //! - The selector is currently a formatted listing; a real interactive TUI
@@ -47,7 +47,7 @@ impl CommandHandler for MemoryHandler {
         let subcommand = parts.first().copied().unwrap_or("");
 
         match subcommand {
-            // Default entry point 鈥?selector view (issue #45).
+            // Default entry point: selector view (issue #45).
             "" => selector::selector(ctx),
             "show" => claude_md::show_memory(&ctx.cwd),
             "path" => claude_md::show_paths(&ctx.cwd),
@@ -103,21 +103,21 @@ impl CommandHandler for MemoryHandler {
             }
             _ => Ok(CommandResult::Output(
                 "Usage: /memory [show|path|edit|list|get|set|rm|search|auto|open]\n\n\
-                 (no args)           鈥?Interactive memory selector (default)\n\n\
+                 (no args)           - Interactive memory selector (default)\n\n\
                  CLAUDE.md:\n\
-                 \x20 show           鈥?Display current CLAUDE.md content\n\
-                 \x20 path           鈥?Show CLAUDE.md file locations\n\
-                 \x20 edit           鈥?Create/locate CLAUDE.md for editing\n\n\
+                 \x20 show           - Display current CLAUDE.md content\n\
+                 \x20 path           - Show CLAUDE.md file locations\n\
+                 \x20 edit           - Create/locate CLAUDE.md for editing\n\n\
                  Memory entries:\n\
-                 \x20 list                       鈥?List entries across all scopes\n\
-                 \x20 get <key>                  鈥?Read an entry (searches all scopes)\n\
+                 \x20 list                       - List entries across all scopes\n\
+                 \x20 get <key>                  - Read an entry (searches all scopes)\n\
                  \x20 set <key> <val> [--global|--team|--auto] [--category=<cat>]\n\
                  \x20 rm <key> [--global|--team|--auto]\n\
-                 \x20 search <query>             鈥?Substring match across entries\n\n\
+                 \x20 search <query>             - Substring match across entries\n\n\
                  Auto-memory (issue #45):\n\
-                 \x20 auto on|off|status        鈥?Toggle auto-capture\n\
+                 \x20 auto on|off|status        - Toggle auto-capture\n\
                  \x20 open <auto|team|global|project>\n\
-                 \x20                             鈥?Print/open a scope directory"
+                 \x20                             - Print/open a scope directory"
                     .to_string(),
             )),
         }
@@ -186,12 +186,12 @@ fn append_group(lines: &mut Vec<String>, header: &str, entries: &[MemoryEntry]) 
         } else {
             format!(" [{}]", e.category)
         };
-        lines.push(format!("  {} 鈥?{}{}", e.key, truncate(&e.value, 60), cat));
+        lines.push(format!("  {} - {}{}", e.key, truncate(&e.value, 60), cat));
     }
 }
 
 fn get_entry(key: &str, cwd: &Path) -> Result<CommandResult> {
-    // Search project 鈫?global 鈫?team 鈫?auto. First hit wins.
+    // Search project -> global -> team -> auto. First hit wins.
     for scope in [
         MemoryScope::Project,
         MemoryScope::Global,
@@ -296,7 +296,7 @@ fn search_entries(query: &str, cwd: &Path) -> Result<CommandResult> {
             format!(" [{}]", e.category)
         };
         lines.push(format!(
-            "  [{}] {} 鈥?{}{}",
+            "  [{}] {} - {}{}",
             scope.as_str(),
             e.key,
             truncate(&e.value, 60),
@@ -318,7 +318,7 @@ fn auto_toggle(action: &str, ctx: &mut CommandContext) -> Result<CommandResult> 
             ctx.app_state.settings.auto_memory_enabled = Some(on);
 
             Ok(CommandResult::Output(format!(
-                "Auto-memory: {}\n{}\n\nNote: the auto-capture hook is not yet wired 鈥?\
+                "Auto-memory: {}\n{}\n\nNote: the auto-capture hook is not yet wired; \
                  this toggle persists the setting only.",
                 if on { "ON" } else { "OFF" },
                 persist_msg
@@ -393,7 +393,7 @@ fn open_dir(which: &str, cwd: &Path) -> Result<CommandResult> {
     };
 
     // Ensure the directory exists so the path resolves to something
-    // openable. We intentionally don't spawn an external editor 鈥?the UI
+    // openable. We intentionally don't spawn an external editor; the UI
     // layer (or the user) picks the right opener.
     if let Err(e) = fs::create_dir_all(&dir) {
         return Ok(CommandResult::Output(format!(
