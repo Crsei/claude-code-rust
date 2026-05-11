@@ -288,3 +288,104 @@ Error visibility notes:
   `cc_api::api::client::ApiClient::from_backend_result`.
 - Removed legacy model alias diagnostics remain explicit through `cc_models`.
 - No redundant safety layer was added.
+
+## Batch 06 - engine-query-00 checkpoint
+
+Status: PASS
+Commit: not committed
+Tasks:
+- [checkpoint] engine-query-00 - Inventory engine/query call sites, loop
+  ownership, baseline tests, dependency graph, and file-size hot spots. No code
+  moved.
+
+Implemented effects:
+- Documentation-only inventory added to this tracker.
+- No Rust code, module declarations, imports, loop ownership, or crate
+  dependencies were changed.
+
+Loop ownership:
+- Root `claude-code-rs` still owns the live query loop in
+  `src/query/{loop_impl.rs,loop_helpers.rs,deps.rs,turn_context.rs}`.
+- `QueryEngine::submit_message` in `engine/lifecycle/submit_message.rs` builds
+  `QueryParams`, constructs `QueryEngineDeps`, calls `loop_impl::query(params,
+  deps)`, then maps `QueryYield` into SDK-facing messages while updating
+  session state.
+- `QueryEngineDeps` in `engine/lifecycle/deps.rs` is the adapter from the query
+  trait boundary into root runtime services: API calls, compaction,
+  permissions, hooks, tool execution, MCP refresh, progress callbacks, and
+  background-agent state.
+- `cc-query` is still a scaffold crate only. It currently exports
+  `CompletedBackgroundAgent` and `PendingBackgroundResults` from `cc-types` and
+  does not own the loop implementation.
+- `cc-engine` owns extracted status-line and engine shared type modules, but
+  not the root `engine/` lifecycle or `query/` loop yet.
+
+Call-site inventory:
+- `submit_message` callers: web chat handlers, daemon proactive ticks, daemon
+  gateway bridge, startup JSON/print modes, IPC query runner, TUI engine event
+  driver, team runner, agent fork/dispatch/supervisor/worktree paths, and
+  lifecycle tests.
+- Direct `loop_impl::query` production caller: only
+  `engine/lifecycle/submit_message.rs`.
+- Direct `query(params, deps)` test callers live in `query/loop_tests.rs`.
+- `QueryDeps` production implementation: `QueryEngineDeps`; test
+  implementations are local mocks in query loop/helper tests.
+
+Dependency graph notes:
+- Current root edge: `claude-code-rs -> cc-engine` for status-line/types and
+  `claude-code-rs -> cc-types` for shared background-agent/hook/command
+  primitives.
+- `claude-code-rs` does not depend on `cc-query` yet, so moving the loop will
+  require adding that edge or rehoming via `cc-engine`.
+- `cc-query -> cc-types` only; no API, tool, session, engine, UI, or transport
+  dependencies are present in the scaffold crate.
+- `cc-engine` currently depends on `cc-types`, `cc-config`, `cc-bootstrap`,
+  `cc-models`, `cc-compact`, and `cc-keybindings`; it does not depend on
+  `cc-api`, `cc-tools`, `cc-session`, or root `claude-code-rs`.
+- Expected extraction pressure points: `QueryDeps` still references root-owned
+  `QueryParams`, `QueryGates`, `QuerySource`, `ToolUseContext`, `Tools`,
+  `AppState`, and message/result types through root re-exports or root modules.
+
+Defects and divergences:
+- None found by the targeted baseline tests.
+- The worktree already contained unrelated modified Rust/script files before
+  this checkpoint, including engine/query files; this task did not overwrite or
+  normalize those changes.
+- `cc-query` has no behavioral tests yet because it has no moved loop code.
+
+Follow-ups:
+- engine-query-01 should move query loop code only after choosing the exact
+  homes for `QueryParams`, query DTOs, and `QueryDeps` request/result structs.
+- Split or shrink touched oversized files before adding behavior to them,
+  especially `engine/lifecycle/deps.rs`, `engine/lifecycle/submit_message.rs`,
+  and `query/loop_helpers.rs`.
+- Preserve `QueryEngineDeps` as the explicit runtime adapter; do not duplicate
+  tool permission, hook, or result-size safety layers inside the loop move.
+
+Verification:
+- `cargo test -p cc-query`: pass, 0 tests.
+- `cargo test -p cc-engine`: pass, 15 passed.
+- `cargo test -p claude-code-rs query::`: pass, 40 passed.
+- `cargo test -p claude-code-rs engine::lifecycle`: pass, 49 passed.
+- `cargo tree -p cc-query`: pass; only workspace dependency is `cc-types`.
+- `cargo tree -p cc-engine`: pass; no root-crate dependency.
+- `cargo tree -p claude-code-rs -e normal --depth 1`: pass; shows existing
+  `cc-engine` edge and no `cc-query` edge.
+
+File-size/refactor findings:
+- No Rust files were touched.
+- Existing hot spots above guard thresholds: `query/loop_tests.rs` 2188 lines,
+  `engine/lifecycle/deps.rs` 2221 lines,
+  `engine/lifecycle/submit_message.rs` 1283 lines,
+  `engine/system_prompt.rs` 1259 lines, `query/loop_helpers.rs` 1208 lines,
+  `engine/agent/supervisor.rs` 969 lines,
+  `engine/agent/worktree.rs` 749 lines, and `query/loop_impl.rs` 709 lines.
+- Near-threshold files: `engine/agent/tool_impl.rs` 694 lines and
+  `engine/agent/mod.rs` 598 lines.
+
+Error visibility notes:
+- No error-handling code changed.
+- Existing explicit query-loop diagnostics remain covered by tests for stream
+  start/stall errors, fallback exhaustion, prompt-too-long recovery,
+  cancellation, hook failures, dangerous-command blocks, and tool panics.
+- No redundant safety layer was added.
