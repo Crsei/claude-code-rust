@@ -7,6 +7,8 @@
 | 场景 | 推荐入口 |
 | --- | --- |
 | 顺序执行一组独立 Codex 任务 | `scripts/codex-task-sequence.ps1` |
+| 跑通用标准任务列表批处理计划 | `scripts/run-standard-task-list-omx.ps1` |
+| 观察标准任务列表已完成批次并只续跑未完成任务 | `scripts/standard_task_list_omx_supervisor.py` |
 | 跑 workspace crate extraction 批处理计划 | `scripts/run-workspace-crate-extraction-omx.ps1` |
 | 直接调试 workspace crate extraction Python runner | `scripts/workspace_crate_extraction_omx.py` |
 | 观察已完成批次并只续跑未完成任务 | `scripts/workspace_crate_extraction_omx_supervisor.py` |
@@ -45,7 +47,7 @@ PowerShell wrapper 会把相对路径解析到仓库根目录下。建议始终�
 
 - 空行会被忽略。
 - 以 `#` 开头的行会被忽略。
-- `workspace crate extraction` 和 `ratatui UI parity` wrapper 会把以 `[checkpoint]`、`[review]`、`[final]` 开头的任务强制拆成单任务 batch。
+- `standard task list`、`workspace crate extraction` 和 `ratatui UI parity` wrapper 会把以 `[checkpoint]`、`[review]`、`[final]` 开头的任务强制拆成单任务 batch。
 - 普通 `[build]` 任务可按 batch size 合并执行。
 
 ### 输出目录
@@ -61,7 +63,7 @@ PowerShell wrapper 会把相对路径解析到仓库根目录下。建议始终�
 - `batch-XX/`：某个 batch 内每个任务的 last-message 文件。
 - `batch-XX.summary.md` / `batch-XX.summary.json`：batch 状态、任务、改动文件、guard 结果、诊断摘要。
 - `failures.md` / `failures.jsonl`：失败 batch 的诊断记录。
-- `execution-report.md` / `execution-report.json`：workspace crate extraction 的 run-level task 汇总，聚合每个 task 的结果、改动文件、输出位置和中断原因。
+- `execution-report.md` / `execution-report.json`：Python batch wrapper 的 run-level task 汇总，聚合每个 task 的结果、改动文件、输出位置和中断原因。
 - `final-validation/`：最终 `cargo` 验证日志。
 - `final-report.md` / `final-report.json`：整次运行总结。
 

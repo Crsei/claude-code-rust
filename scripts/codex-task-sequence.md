@@ -74,3 +74,17 @@ base runner:
 
 The wrapper keeps `gpt-5.5` + `medium` fixed and reads tasks from
 `docs/scripts/workspace-crate-extraction-omx-tasks-2026-05-10.txt`.
+
+## Standard task list wrapper
+
+For new task-list lanes that need the same batching, guards, resumable reports,
+and commit-on-green behavior without workspace-crate-specific defaults, use:
+
+```powershell
+.\scripts\run-standard-task-list-omx.ps1 -TasksFile .\codex-tasks.txt -DryRun
+.\scripts\run-standard-task-list-omx.ps1 -TasksFile .\codex-tasks.txt
+python .\scripts\standard_task_list_omx_supervisor.py --tasks-file .\codex-tasks.txt --plan-only
+```
+
+The standard wrapper defaults to `codex-tasks.txt` and writes artifacts under
+`target/codex-runs/standard-task-list-omx`.
