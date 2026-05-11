@@ -1,6 +1,6 @@
 //! Runtime cost helpers backed by model pricing metadata from `cc-models`.
 
-use crate::types::message::Usage;
+use cc_types::message::Usage;
 
 /// Calculate total cost in USD for a model + usage pair.
 pub fn calculate_cost(model: &str, usage: &Usage) -> f64 {

@@ -343,7 +343,7 @@ fn test_build_headers_bedrock_no_api_key() {
     };
     let client = ApiClient::new(config);
     let headers = client.build_headers_map();
-    // Generic header map deliberately does not include Bedrock auth — the
+    // Generic header map deliberately does not include Bedrock auth 鈥?the
     // Bedrock provider sets Bearer/SigV4 headers per-request in its stream
     // implementation.
     assert!(!headers.contains_key("x-api-key"));
@@ -808,7 +808,7 @@ data: {\"type\":\"message_stop\"}\n\
     assert_eq!(msg.content.len(), 1);
     assert_eq!(msg.stop_reason.as_deref(), Some("end_turn"));
 
-    if let crate::types::message::ContentBlock::Text { text } = &msg.content[0] {
+    if let cc_types::message::ContentBlock::Text { text } = &msg.content[0] {
         assert_eq!(text, "Hello, world!");
     } else {
         panic!("expected Text content block");

@@ -108,11 +108,11 @@ const AUTH_FOUNDRY: &[&str] = &["CLAUDE_CODE_USE_FOUNDRY"];
 
 pub const FOUNDRY_UNSUPPORTED_REASON: &str = "Foundry provider selection is known from the reference project, but cc-rust has no Foundry request/auth adapter yet";
 
-/// All supported providers — ordered by detection priority.
+/// All supported providers 鈥?ordered by detection priority.
 ///
 /// The first provider with a set API key env var wins in `detect_provider()`.
 pub static PROVIDERS: &[ProviderInfo] = &[
-    // ── International ────────────────────────────────────────────
+    // 鈹€鈹€ International 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     ProviderInfo {
         name: "anthropic",
         env_key: "ANTHROPIC_API_KEY",
@@ -121,7 +121,7 @@ pub static PROVIDERS: &[ProviderInfo] = &[
         label: "Anthropic (Claude)",
         protocol: ProviderProtocol::Anthropic,
     },
-    // Azure OpenAI — base_url is a placeholder; the real endpoint is read
+    // Azure OpenAI 鈥?base_url is a placeholder; the real endpoint is read
     // from AZURE_BASE_URL at runtime (deployment-specific).
     ProviderInfo {
         name: "azure",
@@ -169,16 +169,16 @@ pub static PROVIDERS: &[ProviderInfo] = &[
         env_key: "OPENROUTER_API_KEY",
         base_url: "https://openrouter.ai/api/v1",
         default_model: "anthropic/claude-sonnet-4",
-        label: "OpenRouter (多模型聚合)",
+        label: "OpenRouter (澶氭ā鍨嬭仛鍚?",
         protocol: ProviderProtocol::OpenAiCompat,
     },
-    // ── China ────────────────────────────────────────────────────
+    // 鈹€鈹€ China 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     ProviderInfo {
         name: "deepseek",
         env_key: "DEEPSEEK_API_KEY",
         base_url: "https://api.deepseek.com/v1",
         default_model: "deepseek-chat",
-        label: "DeepSeek (深度求索)",
+        label: "DeepSeek (娣卞害姹傜储)",
         protocol: ProviderProtocol::OpenAiCompat,
     },
     ProviderInfo {
@@ -186,7 +186,7 @@ pub static PROVIDERS: &[ProviderInfo] = &[
         env_key: "ZHIPU_API_KEY",
         base_url: "https://open.bigmodel.cn/api/paas/v4",
         default_model: "glm-4-flash",
-        label: "智谱 AI (GLM)",
+        label: "鏅鸿氨 AI (GLM)",
         protocol: ProviderProtocol::OpenAiCompat,
     },
     ProviderInfo {
@@ -194,7 +194,7 @@ pub static PROVIDERS: &[ProviderInfo] = &[
         env_key: "DASHSCOPE_API_KEY",
         base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1",
         default_model: "qwen-plus",
-        label: "通义千问 (Qwen/百炼)",
+        label: "閫氫箟鍗冮棶 (Qwen/鐧剧偧)",
         protocol: ProviderProtocol::OpenAiCompat,
     },
     ProviderInfo {
@@ -202,7 +202,7 @@ pub static PROVIDERS: &[ProviderInfo] = &[
         env_key: "MOONSHOT_API_KEY",
         base_url: "https://api.moonshot.cn/v1",
         default_model: "moonshot-v1-8k",
-        label: "月之暗面 (Kimi)",
+        label: "鏈堜箣鏆楅潰 (Kimi)",
         protocol: ProviderProtocol::OpenAiCompat,
     },
     ProviderInfo {
@@ -210,7 +210,7 @@ pub static PROVIDERS: &[ProviderInfo] = &[
         env_key: "BAICHUAN_API_KEY",
         base_url: "https://api.baichuan-ai.com/v1",
         default_model: "Baichuan4-Air",
-        label: "百川智能",
+        label: "鐧惧窛鏅鸿兘",
         protocol: ProviderProtocol::OpenAiCompat,
     },
     ProviderInfo {
@@ -218,7 +218,7 @@ pub static PROVIDERS: &[ProviderInfo] = &[
         env_key: "MINIMAX_API_KEY",
         base_url: "https://api.minimax.chat/v1",
         default_model: "MiniMax-Text-01",
-        label: "MiniMax (稀宇)",
+        label: "MiniMax (绋€瀹?",
         protocol: ProviderProtocol::OpenAiCompat,
     },
     ProviderInfo {
@@ -226,7 +226,7 @@ pub static PROVIDERS: &[ProviderInfo] = &[
         env_key: "YI_API_KEY",
         base_url: "https://api.lingyiwanwu.com/v1",
         default_model: "yi-lightning",
-        label: "零一万物 (Yi)",
+        label: "闆朵竴涓囩墿 (Yi)",
         protocol: ProviderProtocol::OpenAiCompat,
     },
     ProviderInfo {
@@ -234,7 +234,7 @@ pub static PROVIDERS: &[ProviderInfo] = &[
         env_key: "SILICONFLOW_API_KEY",
         base_url: "https://api.siliconflow.cn/v1",
         default_model: "deepseek-ai/DeepSeek-V3",
-        label: "硅基流动 (SiliconFlow)",
+        label: "纭呭熀娴佸姩 (SiliconFlow)",
         protocol: ProviderProtocol::OpenAiCompat,
     },
     ProviderInfo {
@@ -242,7 +242,7 @@ pub static PROVIDERS: &[ProviderInfo] = &[
         env_key: "STEPFUN_API_KEY",
         base_url: "https://api.stepfun.com/v1",
         default_model: "step-2-16k",
-        label: "阶跃星辰 (StepFun)",
+        label: "闃惰穬鏄熻景 (StepFun)",
         protocol: ProviderProtocol::OpenAiCompat,
     },
     ProviderInfo {
@@ -250,7 +250,7 @@ pub static PROVIDERS: &[ProviderInfo] = &[
         env_key: "SPARK_API_KEY",
         base_url: "https://spark-api-open.xf-yun.com/v1",
         default_model: "generalv3.5",
-        label: "讯飞星火 (Spark)",
+        label: "璁鏄熺伀 (Spark)",
         protocol: ProviderProtocol::OpenAiCompat,
     },
 ];

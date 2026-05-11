@@ -1,4 +1,4 @@
-//! API Client — multi-provider LLM integration.
+//! API Client 鈥?multi-provider LLM integration.
 //!
 //! Supports: Anthropic (native), OpenAI-compatible (15+ providers),
 //! Google Gemini, AWS Bedrock (Claude), GCP Vertex AI (Claude).

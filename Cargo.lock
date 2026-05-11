@@ -480,6 +480,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "base64",
+ "bytes",
+ "cc-auth",
+ "cc-models",
+ "cc-types",
+ "cc-utils",
+ "chrono",
+ "futures",
+ "hex",
+ "hmac",
+ "reqwest",
+ "ring",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
+ "urlencoding",
+ "uuid",
+]
+
+[[package]]
 name = "cc-auth"
 version = "0.1.0"
 dependencies = [
@@ -896,6 +926,7 @@ dependencies = [
  "axum",
  "base64",
  "bytes",
+ "cc-api",
  "cc-auth",
  "cc-bootstrap",
  "cc-browser",

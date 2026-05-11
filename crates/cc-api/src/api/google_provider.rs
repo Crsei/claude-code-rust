@@ -1,4 +1,4 @@
-//! Google Gemini provider — streamGenerateContent API.
+//! Google Gemini provider 鈥?streamGenerateContent API.
 //!
 //! Auth: `GOOGLE_API_KEY` passed as `?key=` query parameter.
 //! Endpoint: `{base}/models/{model}:streamGenerateContent?key=...&alt=sse`
@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::api::client::MessagesRequest;
-use crate::types::message::{ContentBlock, MessageDelta, StreamEvent, Usage};
+use cc_types::message::{ContentBlock, MessageDelta, StreamEvent, Usage};
 
 // ---------------------------------------------------------------------------
 // Gemini response types
@@ -74,7 +74,7 @@ struct GeminiUsage {
 }
 
 // ---------------------------------------------------------------------------
-// Message format conversion (Anthropic → Gemini)
+// Message format conversion (Anthropic 鈫?Gemini)
 // ---------------------------------------------------------------------------
 
 /// Convert MessagesRequest (Anthropic format) to Gemini request body.
@@ -857,7 +857,7 @@ mod tests {
         let contents = body["contents"].as_array().unwrap();
         assert_eq!(contents.len(), 3);
         assert_eq!(contents[0]["role"], "user");
-        assert_eq!(contents[1]["role"], "model"); // "assistant" → "model"
+        assert_eq!(contents[1]["role"], "model"); // "assistant" 鈫?"model"
         assert_eq!(contents[2]["role"], "user");
     }
 

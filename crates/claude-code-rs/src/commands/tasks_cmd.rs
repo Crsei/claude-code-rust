@@ -375,6 +375,10 @@ mod tests {
     use crate::bootstrap::SessionId;
     use crate::types::app_state::AppState;
     use std::path::PathBuf;
+    use std::sync::LazyLock;
+
+    static TASK_CMD_STORE_LOCK: LazyLock<tokio::sync::Mutex<()>> =
+        LazyLock::new(|| tokio::sync::Mutex::new(()));
 
     fn make_ctx() -> CommandContext {
         CommandContext {
@@ -459,6 +463,7 @@ mod tests {
 
     #[tokio::test]
     async fn stop_marks_tool_task_cancelled() {
+        let _guard = TASK_CMD_STORE_LOCK.lock().await;
         let store = global_store();
         let task = store.create("unit", "created-by-test");
         let handler = TasksHandler;
@@ -479,6 +484,7 @@ mod tests {
 
     #[tokio::test]
     async fn show_prints_tool_detail_fields() {
+        let _guard = TASK_CMD_STORE_LOCK.lock().await;
         let store = global_store();
         let task = store.create("detail-test", "detail description");
         let handler = TasksHandler;
@@ -502,6 +508,7 @@ mod tests {
 
     #[tokio::test]
     async fn delete_removes_tool_task() {
+        let _guard = TASK_CMD_STORE_LOCK.lock().await;
         let store = global_store();
         let task = store.create("delete-test", "delete description");
         let handler = TasksHandler;

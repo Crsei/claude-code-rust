@@ -1,4 +1,4 @@
-//! GCP Vertex AI provider — routes Claude requests to Google-managed Claude
+//! GCP Vertex AI provider 鈥?routes Claude requests to Google-managed Claude
 //! endpoints.
 //!
 //! Like Bedrock, this is an adaptation layer, not a separate product. Vertex
@@ -45,8 +45,8 @@ use serde_json::{json, Value};
 
 use crate::api::client::{parse_sse_byte_stream, MessagesRequest};
 use crate::api::retry::categorize_api_error;
-use crate::types::message::StreamEvent;
 use cc_models::to_vertex_model_id;
+use cc_types::message::StreamEvent;
 
 pub const VERTEX_ANTHROPIC_VERSION: &str = "vertex-2023-10-16";
 pub const DEFAULT_VERTEX_REGION: &str = "us-east5";
@@ -577,7 +577,7 @@ impl crate::api::stream_provider::StreamProvider for VertexStreamProvider {
                 .unwrap_or_else(|_| String::from("(failed to read error body)"));
             let category = categorize_api_error(status.as_u16(), &error_body);
             bail!(
-                "Vertex AI error (HTTP {}): {:?} — {}",
+                "Vertex AI error (HTTP {}): {:?} 鈥?{}",
                 status.as_u16(),
                 category,
                 error_body
@@ -714,7 +714,7 @@ aM0cnYVle4nyuGi3M6aECuC6ggfLfXOQ3yGAmE3DKg2bgcmJag2cOT6fTRZemThD
         std::env::remove_var("GOOGLE_CLOUD_PROJECT");
         std::env::remove_var("GCLOUD_PROJECT");
 
-        // None set → None
+        // None set 鈫?None
         assert_eq!(resolve_project_id(), None);
 
         // Only fallback set

@@ -1,4 +1,4 @@
-//! StreamProvider trait — unified provider dispatch for streaming API calls.
+//! StreamProvider trait 鈥?unified provider dispatch for streaming API calls.
 //!
 //! Each LLM provider (Anthropic, OpenAI-compatible, Google Gemini) implements
 //! this trait. The `ApiClient` stores a `Box<dyn StreamProvider>` and dispatches
@@ -11,7 +11,7 @@ use futures::Stream;
 
 use crate::api::client::{parse_sse_byte_stream, MessagesRequest};
 use crate::api::retry::categorize_api_error;
-use crate::types::message::StreamEvent;
+use cc_types::message::StreamEvent;
 
 /// Trait for provider-specific streaming implementations.
 #[async_trait::async_trait]
@@ -78,7 +78,7 @@ impl StreamProvider for AnthropicStreamProvider {
                 .unwrap_or_else(|_| String::from("(failed to read error body)"));
             let category = categorize_api_error(status, &error_body);
             anyhow::bail!(
-                "API error (HTTP {}): {:?} — {}",
+                "API error (HTTP {}): {:?} 鈥?{}",
                 status,
                 category,
                 error_body

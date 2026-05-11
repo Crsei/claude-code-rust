@@ -2,7 +2,7 @@
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
-use crate::types::message::{AssistantMessage, ContentBlock, MessageDelta, StreamEvent, Usage};
+use cc_types::message::{AssistantMessage, ContentBlock, MessageDelta, StreamEvent, Usage};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompletedToolUse {
@@ -313,11 +313,17 @@ impl StreamAccumulator {
     }
 }
 
+impl Default for StreamAccumulator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn delta_type_matches(delta: &Value, expected: &str) -> bool {
     delta
         .get("type")
         .and_then(|v| v.as_str())
-        .map_or(true, |actual| actual == expected)
+        .is_none_or(|actual| actual == expected)
 }
 
 fn delta_type_name(delta: &Value) -> &str {

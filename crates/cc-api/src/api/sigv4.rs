@@ -1,4 +1,4 @@
-//! AWS Signature Version 4 (SigV4) request signing — minimal implementation
+//! AWS Signature Version 4 (SigV4) request signing 鈥?minimal implementation
 //! for Bedrock `/invoke` requests.
 //!
 //! Only implements what's needed to sign a single POST request with a JSON
@@ -69,7 +69,7 @@ pub struct SignedHeaders {
 pub fn sign(req: &SignRequest, creds: &AwsCredentials) -> Result<SignedHeaders> {
     let payload_hash = hex::encode(Sha256::digest(req.body));
 
-    // Canonical headers — must be sorted by lowercased name.
+    // Canonical headers 鈥?must be sorted by lowercased name.
     // We include: content-type, host, x-amz-content-sha256, x-amz-date,
     // and optionally x-amz-security-token.
     let mut canonical_headers = format!(
@@ -168,7 +168,7 @@ mod tests {
     use super::*;
 
     // Reference: AWS SigV4 test suite "get-vanilla"
-    // Simplified here — we only validate our implementation is consistent.
+    // Simplified here 鈥?we only validate our implementation is consistent.
     #[test]
     fn signing_key_derivation_is_stable() {
         let k1 = derive_signing_key(

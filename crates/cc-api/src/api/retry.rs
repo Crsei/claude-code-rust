@@ -27,23 +27,23 @@ impl Default for RetryConfig {
 /// Categorized API error for retry decisions
 #[derive(Debug, Clone)]
 pub enum ApiErrorCategory {
-    /// Rate limited — retry with backoff
+    /// Rate limited 鈥?retry with backoff
     #[allow(dead_code)]
     RateLimit { retry_after_ms: Option<u64> },
-    /// Server overloaded — retry with backoff, maybe fallback
+    /// Server overloaded 鈥?retry with backoff, maybe fallback
     Overloaded,
-    /// Server error — retry
+    /// Server error 鈥?retry
     ServerError,
-    /// Invalid request — don't retry
+    /// Invalid request 鈥?don't retry
     #[allow(dead_code)]
     InvalidRequest { message: String },
-    /// Auth error — don't retry
+    /// Auth error 鈥?don't retry
     AuthError,
-    /// Prompt too long — don't retry (handle differently)
+    /// Prompt too long 鈥?don't retry (handle differently)
     PromptTooLong,
-    /// Max output tokens — don't retry (handle differently)
+    /// Max output tokens 鈥?don't retry (handle differently)
     MaxOutputTokens,
-    /// Unknown — don't retry
+    /// Unknown 鈥?don't retry
     #[allow(dead_code)]
     Unknown {
         status: Option<u16>,
@@ -182,14 +182,14 @@ fn extract_http_status(message: &str) -> Option<u16> {
 pub fn retry_delay(config: &RetryConfig, attempt: usize) -> Duration {
     let delay = config.initial_delay_ms as f64 * config.backoff_multiplier.powi(attempt as i32);
     let delay = delay.min(config.max_delay_ms as f64) as u64;
-    // Add jitter (±20%)
+    // Add jitter (卤20%)
     let jitter = (delay as f64 * 0.2 * (rand_fraction() * 2.0 - 1.0)) as i64;
     Duration::from_millis((delay as i64 + jitter).max(0) as u64)
 }
 
 #[allow(dead_code)]
 fn rand_fraction() -> f64 {
-    // Simple pseudo-random for jitter — not crypto-secure
+    // Simple pseudo-random for jitter 鈥?not crypto-secure
     use std::time::SystemTime;
     let nanos = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)

@@ -127,6 +127,7 @@ cc-types = { path = "crates/cc-types" }
 cc-models = { path = "crates/cc-models" }
 cc-bootstrap = { path = "crates/cc-bootstrap" }
 cc-auth = { path = "crates/cc-auth" }
+cc-api = { path = "crates/cc-api" }
 cc-skills = { path = "crates/cc-skills" }
 cc-config = { path = "crates/cc-config" }
 cc-utils = { path = "crates/cc-utils" }

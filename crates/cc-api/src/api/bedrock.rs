@@ -1,8 +1,8 @@
-//! AWS Bedrock provider — routes Claude requests to AWS-managed Claude endpoints.
+//! AWS Bedrock provider 鈥?routes Claude requests to AWS-managed Claude endpoints.
 //!
 //! Bedrock is one of several "third-party cloud" providers for Claude; this
 //! module is a thin adaptation layer that reuses the existing streaming
-//! architecture. It is NOT a separate product — it's an alternative transport
+//! architecture. It is NOT a separate product 鈥?it's an alternative transport
 //! for the same Claude conversation loop.
 //!
 //! # Endpoint
@@ -19,9 +19,9 @@
 //! # Authentication (MVP)
 //!
 //! Two modes supported:
-//! - `AWS_BEARER_TOKEN_BEDROCK` (Bedrock API key) → `Authorization: Bearer ...`
+//! - `AWS_BEARER_TOKEN_BEDROCK` (Bedrock API key) 鈫?`Authorization: Bearer ...`
 //! - `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` (+ optional `AWS_SESSION_TOKEN`)
-//!   → SigV4 request signing
+//!   鈫?SigV4 request signing
 //!
 //! # Request body
 //!
@@ -48,8 +48,8 @@ use serde_json::{json, Value};
 use crate::api::client::MessagesRequest;
 use crate::api::sigv4::{self, AwsCredentials, SignRequest};
 use crate::api::streaming::parse_sse_event;
-use crate::types::message::StreamEvent;
 use cc_models::to_bedrock_model_id;
+use cc_types::message::StreamEvent;
 
 pub const BEDROCK_ANTHROPIC_VERSION: &str = "bedrock-2023-05-31";
 
@@ -80,8 +80,8 @@ impl BedrockAuth {
 
 /// Resolve the AWS region for Bedrock.
 ///
-/// Matches claude-code-bun: `AWS_REGION` → `AWS_DEFAULT_REGION`
-/// → default `us-east-1`.
+/// Matches claude-code-bun: `AWS_REGION` 鈫?`AWS_DEFAULT_REGION`
+/// 鈫?default `us-east-1`.
 pub fn resolve_region() -> String {
     std::env::var("AWS_REGION")
         .ok()
@@ -447,7 +447,7 @@ fn anthropic_json_payload_to_stream_event(payload: &[u8]) -> Result<Option<Strea
     parse_sse_event(event_type, text)
 }
 
-fn read_u8<'a>(bytes: &'a [u8], offset: &mut usize) -> Result<u8> {
+fn read_u8(bytes: &[u8], offset: &mut usize) -> Result<u8> {
     let raw = read_bytes(bytes, offset, 1)?;
     Ok(raw[0])
 }

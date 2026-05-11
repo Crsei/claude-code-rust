@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use futures::Stream;
 
 use crate::api::streaming::parse_sse_event;
-use crate::types::message::StreamEvent;
+use cc_types::message::StreamEvent;
 
 // ---------------------------------------------------------------------------
 // SSE byte-stream parser

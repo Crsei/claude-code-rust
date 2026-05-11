@@ -1,4 +1,4 @@
-//! API client — creates provider-specific HTTP clients and drives the
+//! API client 鈥?creates provider-specific HTTP clients and drives the
 //! Anthropic Messages API (streaming + non-streaming).
 use std::future::Future;
 use std::pin::Pin;
@@ -9,7 +9,7 @@ use futures::Stream;
 use serde_json::Value;
 
 use crate::api::retry::{categorize_stream_start_error, retry_delay, RetryConfig};
-use crate::types::message::{AssistantMessage, StreamEvent};
+use cc_types::message::{AssistantMessage, StreamEvent};
 
 // Re-export siblings for convenience within this module's tests.
 use crate::api::providers::{ProviderInfo, ProviderProtocol};
@@ -37,7 +37,7 @@ pub(crate) fn build_openai_compat_url(base_url: &str, provider_name: &str) -> St
     format!("{}{}", base_url.trim_end_matches('/'), endpoint)
 }
 
-/// API provider enum — determines wire protocol and auth method.
+/// API provider enum 鈥?determines wire protocol and auth method.
 #[derive(Debug, Clone)]
 pub enum ApiProvider {
     /// Direct Anthropic API (native Messages API)
@@ -58,7 +58,7 @@ pub enum ApiProvider {
     },
     /// Google Gemini (streamGenerateContent API)
     Google { api_key: String, base_url: String },
-    /// AWS Bedrock — Claude via AWS-managed endpoints.
+    /// AWS Bedrock 鈥?Claude via AWS-managed endpoints.
     ///
     /// `base_url_override` is read from `ANTHROPIC_BEDROCK_BASE_URL` when set.
     Bedrock {
@@ -66,7 +66,7 @@ pub enum ApiProvider {
         auth: crate::api::bedrock::BedrockAuth,
         base_url_override: Option<String>,
     },
-    /// GCP Vertex AI — Claude via Google-managed endpoints.
+    /// GCP Vertex AI 鈥?Claude via Google-managed endpoints.
     Vertex {
         project_id: String,
         region: String,
@@ -192,7 +192,7 @@ pub struct ApiClientConfig {
     pub timeout_secs: u64,
 }
 
-/// The API client — uses reqwest under the hood.
+/// The API client 鈥?uses reqwest under the hood.
 pub struct ApiClient {
     config: ApiClientConfig,
     http: reqwest::Client,
@@ -611,9 +611,9 @@ impl ApiClient {
     /// Auto-detect provider from environment variables and construct an `ApiClient`.
     ///
     /// Priority:
-    /// 1. `CLAUDE_CODE_USE_BEDROCK=1` → AWS Bedrock (Claude)
-    /// 2. `CLAUDE_CODE_USE_VERTEX=1`  → GCP Vertex AI (Claude)
-    /// 3. First of the registered API-key providers (Anthropic, Azure, OpenAI, …)
+    /// 1. `CLAUDE_CODE_USE_BEDROCK=1` 鈫?AWS Bedrock (Claude)
+    /// 2. `CLAUDE_CODE_USE_VERTEX=1`  鈫?GCP Vertex AI (Claude)
+    /// 3. First of the registered API-key providers (Anthropic, Azure, OpenAI, 鈥?
     ///    that has its env var set.
     ///
     /// For Azure OpenAI, the base URL is read from `AZURE_BASE_URL` since it is
@@ -621,7 +621,7 @@ impl ApiClient {
     ///
     /// Returns `None` if no provider is configured.
     pub fn from_env_result() -> Result<Option<Self>> {
-        // 1. CLAUDE_CODE_USE_BEDROCK / _VERTEX — third-party cloud providers
+        // 1. CLAUDE_CODE_USE_BEDROCK / _VERTEX 鈥?third-party cloud providers
         //    checked BEFORE API-key providers, matching claude-code-bun.
         if is_env_truthy("CLAUDE_CODE_USE_BEDROCK") {
             return Self::from_bedrock_env_result().map(Some);
@@ -703,10 +703,10 @@ impl ApiClient {
     /// Construct an `ApiClient` for AWS Bedrock using environment variables.
     ///
     /// Honors (matching claude-code-bun):
-    /// - `AWS_REGION` / `AWS_DEFAULT_REGION` — region selection
-    /// - `AWS_BEARER_TOKEN_BEDROCK` — preferred auth (Bedrock API key)
-    /// - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` — SigV4
-    /// - `ANTHROPIC_BEDROCK_BASE_URL` — override the default endpoint
+    /// - `AWS_REGION` / `AWS_DEFAULT_REGION` 鈥?region selection
+    /// - `AWS_BEARER_TOKEN_BEDROCK` 鈥?preferred auth (Bedrock API key)
+    /// - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` 鈥?SigV4
+    /// - `ANTHROPIC_BEDROCK_BASE_URL` 鈥?override the default endpoint
     ///
     /// Returns `None` if neither auth mode is available.
     pub fn from_bedrock_env_result() -> Result<Self> {
@@ -738,9 +738,9 @@ impl ApiClient {
     /// Construct an `ApiClient` for GCP Vertex AI using environment variables.
     ///
     /// Honors:
-    /// - `CLOUD_ML_REGION` — region (default: `us-east5`)
-    /// - `ANTHROPIC_VERTEX_PROJECT_ID` / `GOOGLE_CLOUD_PROJECT` / `GCLOUD_PROJECT` — project ID
-    /// - `CLAUDE_CODE_VERTEX_ACCESS_TOKEN` / `GOOGLE_OAUTH_ACCESS_TOKEN` — access token
+    /// - `CLOUD_ML_REGION` 鈥?region (default: `us-east5`)
+    /// - `ANTHROPIC_VERTEX_PROJECT_ID` / `GOOGLE_CLOUD_PROJECT` / `GCLOUD_PROJECT` 鈥?project ID
+    /// - `CLAUDE_CODE_VERTEX_ACCESS_TOKEN` / `GOOGLE_OAUTH_ACCESS_TOKEN` 鈥?access token
     /// - `GOOGLE_APPLICATION_CREDENTIALS` service-account JSON
     ///   (falls back to `gcloud auth application-default print-access-token` subprocess)
     ///
@@ -797,7 +797,7 @@ impl ApiClient {
         let Some(info) = crate::api::providers::get_provider(OPENAI_CODEX_PROVIDER_NAME) else {
             return Ok(None);
         };
-        let Some(api_key) = crate::auth::try_resolve_codex_auth_token()? else {
+        let Some(api_key) = cc_auth::try_resolve_codex_auth_token()? else {
             return Ok(None);
         };
 
@@ -831,7 +831,7 @@ impl ApiClient {
     /// - `codex` backend: force the OpenAI Codex auth path.
     /// - other backends: use the standard auth chain.
     pub fn from_backend_result(backend: Option<&str>) -> Result<Option<Self>> {
-        if backend.is_some_and(crate::engine::codex_exec::is_codex_backend) {
+        if backend.is_some_and(is_codex_backend) {
             return Self::from_codex_auth_result();
         }
         Self::from_auth_result()
@@ -862,7 +862,7 @@ impl ApiClient {
         }
 
         // 2. Fall back to auth resolution (keychain, external token, OAuth)
-        let auth = crate::auth::try_resolve_auth()?;
+        let auth = cc_auth::try_resolve_auth()?;
         let Some(api_key) = auth
             .api_key()
             .or_else(|| auth.bearer_token())
@@ -1028,7 +1028,7 @@ impl ApiClient {
                 }
                 Err(e) => {
                     // If an error occurs mid-stream, return what we have with
-                    // an error marker — but first, if we have no content at all,
+                    // an error marker 鈥?but first, if we have no content at all,
                     // propagate the error directly.
                     if accumulator.content_blocks.is_empty() {
                         return Err(e);
@@ -1054,7 +1054,7 @@ impl ApiClient {
 
 /// Return true if env var `name` is set to a truthy value (`1`, `true`, `yes`,
 /// `on`). Matches claude-code-bun's `isEnvTruthy` semantics.
-pub(crate) fn is_env_truthy(name: &str) -> bool {
+pub fn is_env_truthy(name: &str) -> bool {
     match std::env::var(name) {
         Ok(v) => matches!(
             v.trim().to_ascii_lowercase().as_str(),
@@ -1062,4 +1062,8 @@ pub(crate) fn is_env_truthy(name: &str) -> bool {
         ),
         Err(_) => false,
     }
+}
+
+fn is_codex_backend(value: &str) -> bool {
+    value.eq_ignore_ascii_case("codex")
 }

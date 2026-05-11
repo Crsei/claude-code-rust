@@ -21,6 +21,17 @@ impl TaskListLock {
                     let backoff_ms = (5_u64 << attempt.min(8)).min(250);
                     std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
                 }
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    // Some package-wide tests temporarily point CC_RUST_HOME at
+                    // tempdirs from other tests. If that tempdir is torn down
+                    // between create_dir_all() and lock creation, recreate the
+                    // task-list directory and retry instead of failing with an
+                    // unhelpful "path not found".
+                    fs::create_dir_all(&dir).with_context(|| {
+                        format!("failed to recreate task dir {}", dir.display())
+                    })?;
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
                 Err(err) => {
                     return Err(err).with_context(|| {
                         format!("failed to create task-list lock {}", path.display())

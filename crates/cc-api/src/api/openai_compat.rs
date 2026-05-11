@@ -1,4 +1,4 @@
-//! OpenAI-compatible provider — handles all providers using the
+//! OpenAI-compatible provider 鈥?handles all providers using the
 //! OpenAI chat/completions API format.
 //!
 //! Covers: OpenAI, DeepSeek, Groq, OpenRouter, Qwen, Zhipu, Moonshot,
@@ -18,10 +18,10 @@ use futures::Stream;
 use serde_json::{json, Value};
 
 use crate::api::client::{build_openai_compat_url, MessagesRequest, OPENAI_CODEX_PROVIDER_NAME};
-use crate::types::message::{ContentBlock, MessageDelta, StreamEvent, Usage};
+use cc_types::message::{ContentBlock, MessageDelta, StreamEvent, Usage};
 
 // ---------------------------------------------------------------------------
-// Message format conversion (Anthropic → OpenAI)
+// Message format conversion (Anthropic 鈫?OpenAI)
 // ---------------------------------------------------------------------------
 
 /// Extract text from Anthropic system prompt blocks.
@@ -80,7 +80,7 @@ fn build_openai_request(request: &MessagesRequest, provider_name: &str) -> Value
     let is_deepseek_provider = provider_name.eq_ignore_ascii_case("deepseek");
     let mut oai_messages: Vec<Value> = Vec::new();
 
-    // System prompt → system message
+    // System prompt 鈫?system message
     if let Some(system) = &request.system {
         let text = extract_system_text(system);
         if !text.is_empty() {
@@ -88,7 +88,7 @@ fn build_openai_request(request: &MessagesRequest, provider_name: &str) -> Value
         }
     }
 
-    // User/assistant messages — convert to OpenAI format.
+    // User/assistant messages 鈥?convert to OpenAI format.
     // Handles: text messages, assistant tool_use blocks, user tool_result blocks.
     for msg in &request.messages {
         let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("user");
@@ -176,7 +176,7 @@ fn build_openai_request(request: &MessagesRequest, provider_name: &str) -> Value
                 }
             }
         } else if role == "user" {
-            // Check for tool_result blocks → convert to OpenAI "tool" role messages
+            // Check for tool_result blocks 鈫?convert to OpenAI "tool" role messages
             if let Some(Value::Array(blocks)) = content {
                 let mut text_parts: Vec<String> = Vec::new();
                 let mut tool_results: Vec<(String, String)> = Vec::new();
@@ -373,8 +373,7 @@ pub(crate) async fn openai_compat_stream(
 /// Emits Anthropic-style StreamEvent sequence for compatibility with the
 /// existing StreamAccumulator:
 ///
-///   MessageStart → ContentBlockStart → ContentBlockDelta* →
-///   ContentBlockStop → MessageDelta → MessageStop
+///   MessageStart 鈫?ContentBlockStart 鈫?ContentBlockDelta* 鈫?///   ContentBlockStop 鈫?MessageDelta 鈫?MessageStop
 fn parse_openai_sse_byte_stream<S>(byte_stream: S) -> impl Stream<Item = Result<StreamEvent>> + Send
 where
     S: Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send + 'static,
@@ -391,7 +390,7 @@ where
         // Track whether we are inside a text content block.
         let mut _text_block_open = false;
         let mut thinking_block_open = false;
-        // Track active tool calls: index → (id, name, accumulated arguments).
+        // Track active tool calls: index 鈫?(id, name, accumulated arguments).
         let mut tool_calls: std::collections::HashMap<u64, (String, String, String)> =
             std::collections::HashMap::new();
 
@@ -453,7 +452,7 @@ where
                             None => continue,
                         };
 
-                        // ── Reasoning content delta ─────────────────────
+                        // 鈹€鈹€ Reasoning content delta 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
                         // DeepSeek thinking mode streams chain-of-thought in
                         // delta.reasoning_content. Preserve it even when the
                         // value is an empty string; tool-call turns must pass
@@ -487,7 +486,7 @@ where
                             }
                         }
 
-                        // ── Text content delta ──────────────────────────
+                        // 鈹€鈹€ Text content delta 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
                         if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
                             if !content.is_empty() {
                                 if thinking_block_open {
@@ -509,7 +508,7 @@ where
                             }
                         }
 
-                        // ── Tool call deltas ────────────────────────────
+                        // 鈹€鈹€ Tool call deltas 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
                         // OpenAI streams tool_calls as:
                         //   delta.tool_calls: [{"index":0, "id":"call_xxx", "type":"function",
                         //                       "function":{"name":"Read","arguments":""}}]
@@ -547,7 +546,7 @@ where
                             }
                         }
 
-                        // ── Finish reason ────────────────────────────────
+                        // 鈹€鈹€ Finish reason 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
                         if let Some(reason) = choice
                             .get("finish_reason")
                             .and_then(|r| r.as_str())
@@ -594,13 +593,13 @@ where
                                 },
                                 usage: None,
                             };
-                            // Don't return yet — the usage-only chunk follows
+                            // Don't return yet 鈥?the usage-only chunk follows
                             // before [DONE] and we need to process it.
                         }
                     }
                 }
 
-                // Usage info — Azure/OpenAI send a final chunk with usage after finish_reason.
+                // Usage info 鈥?Azure/OpenAI send a final chunk with usage after finish_reason.
                 // The chunk has `"usage": null` for content chunks, and a real object for the last.
                 if let Some(usage) = v.get("usage").filter(|u| !u.is_null()) {
                     let input = usage
@@ -627,7 +626,7 @@ where
             }
         }
 
-        // Stream ended without [DONE] or finish_reason — still close properly
+        // Stream ended without [DONE] or finish_reason 鈥?still close properly
         if _text_block_open {
             yield StreamEvent::ContentBlockStop { index: block_index };
         }

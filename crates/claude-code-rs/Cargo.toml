@@ -139,6 +139,7 @@ cc-types = { workspace = true }
 cc-models = { workspace = true }
 cc-bootstrap = { workspace = true }
 cc-auth = { workspace = true }
+cc-api = { workspace = true }
 cc-skills = { workspace = true }
 cc-config = { workspace = true }
 cc-utils = { workspace = true }

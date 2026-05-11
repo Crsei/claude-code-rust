@@ -277,8 +277,28 @@ fn normalize_snapshot_text(mut text: String) -> String {
         text = text.replace(&home.replace(' ', "%20"), "<HOME>");
     }
 
-    text = text.replace("$CC_RUST_HOME", "~/.cc-rust");
+    text = normalize_cc_rust_home_width(text);
     text.replace("C:/cc-rust-snapshot", "<WORKSPACE>")
+}
+
+fn normalize_cc_rust_home_width(text: String) -> String {
+    if !text.contains("$CC_RUST_HOME") {
+        return text;
+    }
+    text.lines()
+        .map(|line| {
+            let width = line.chars().count();
+            let mut normalized = line.replace("$CC_RUST_HOME", "~/.cc-rust");
+            let new_width = normalized.chars().count();
+            if new_width < width && normalized.ends_with('│') {
+                let pad = " ".repeat(width - new_width);
+                let insert_at = normalized.len() - "│".len();
+                normalized.insert_str(insert_at, &pad);
+            }
+            normalized
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn buffer_text_trimmed(buf: &Buffer, area: Rect) -> String {
