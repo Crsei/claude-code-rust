@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-use crate::mcp::McpServerConfig;
-use cc_ipc_protocol::subsystem_types::McpServerConfigEntry;
+use cc_ipc_protocol::subsystem_types::{ConfigScope, McpServerConfigEntry};
+use cc_mcp::McpServerConfig;
 
 // ---------------------------------------------------------------------------
 // Misc helpers — shared between subcommands
@@ -36,6 +36,52 @@ pub(super) fn describe_entry(entry: &McpServerConfigEntry) -> String {
         }
     }
     parts.join(" ")
+}
+
+pub(super) fn discover_config_entries(cwd: &std::path::Path) -> Vec<McpServerConfigEntry> {
+    match cc_mcp::discovery::discover_mcp_servers_scoped(cwd) {
+        Ok(scoped) => scoped
+            .into_iter()
+            .map(|s| McpServerConfigEntry {
+                name: s.config.name,
+                scope: scope_from_discovery(&s.scope),
+                transport: s.config.transport,
+                command: s.config.command,
+                args: s.config.args,
+                url: s.config.url,
+                headers: s.config.headers,
+                oauth: s.config.oauth,
+                env: s.config.env,
+                browser_mcp: s.config.browser_mcp,
+                disabled: s.config.disabled,
+            })
+            .collect(),
+        Err(err) => {
+            tracing::warn!(error = %err, "Failed to discover scoped MCP server configs");
+            vec![McpServerConfigEntry {
+                name: "discovery".to_string(),
+                scope: ConfigScope::User,
+                transport: "settings".to_string(),
+                command: None,
+                args: None,
+                url: None,
+                headers: None,
+                oauth: None,
+                env: None,
+                browser_mcp: None,
+                disabled: Some(true),
+            }]
+        }
+    }
+}
+
+fn scope_from_discovery(scope: &cc_mcp::discovery::DiscoveryScope) -> ConfigScope {
+    match scope {
+        cc_mcp::discovery::DiscoveryScope::User => ConfigScope::User,
+        cc_mcp::discovery::DiscoveryScope::Project => ConfigScope::Project,
+        cc_mcp::discovery::DiscoveryScope::Plugin(id) => ConfigScope::Plugin { id: id.clone() },
+        cc_mcp::discovery::DiscoveryScope::Ide(id) => ConfigScope::Ide { id: id.clone() },
+    }
 }
 
 pub(super) fn read_settings_value(path: &std::path::Path) -> Result<serde_json::Value> {

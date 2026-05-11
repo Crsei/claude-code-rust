@@ -13,6 +13,7 @@ pub mod channel;
 pub mod client;
 pub mod discovery;
 pub mod manager;
+pub mod runtime;
 pub mod transport;
 
 use serde::{Deserialize, Serialize};

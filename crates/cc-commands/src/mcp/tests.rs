@@ -1,7 +1,8 @@
 use super::*;
-use crate::bootstrap::SessionId;
-use crate::types::app_state::AppState;
+use cc_bootstrap::SessionId;
+use cc_engine::types::app_state::AppState;
 use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 fn test_ctx(cwd: PathBuf) -> CommandContext {
     CommandContext {
@@ -15,13 +16,23 @@ fn test_ctx(cwd: PathBuf) -> CommandContext {
 struct EnvGuard {
     key: &'static str,
     previous: Option<String>,
+    _lock: MutexGuard<'static, ()>,
 }
 
 impl EnvGuard {
     fn set(key: &'static str, value: &str) -> Self {
+        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        let lock = ENV_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env test lock poisoned");
         let previous = std::env::var(key).ok();
         std::env::set_var(key, value);
-        Self { key, previous }
+        Self {
+            key,
+            previous,
+            _lock: lock,
+        }
     }
 }
 
@@ -37,18 +48,16 @@ impl Drop for EnvGuard {
 struct RuntimeMcpGuard;
 
 impl RuntimeMcpGuard {
-    fn install(
-        manager: std::sync::Arc<tokio::sync::Mutex<crate::mcp::manager::McpManager>>,
-    ) -> Self {
-        crate::mcp::runtime::clear_for_tests();
-        crate::mcp::runtime::install_manager(manager);
+    fn install(manager: std::sync::Arc<tokio::sync::Mutex<cc_mcp::manager::McpManager>>) -> Self {
+        cc_mcp::runtime::clear_for_tests();
+        cc_mcp::runtime::install_manager(manager);
         Self
     }
 }
 
 impl Drop for RuntimeMcpGuard {
     fn drop(&mut self) {
-        crate::mcp::runtime::clear_for_tests();
+        cc_mcp::runtime::clear_for_tests();
     }
 }
 
@@ -397,9 +406,7 @@ async fn mcp_reconnect_uses_runtime_manager() {
     let home = tempfile::tempdir().unwrap();
     let cwd = tempfile::tempdir().unwrap();
     let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
-    let manager = std::sync::Arc::new(tokio::sync::Mutex::new(
-        crate::mcp::manager::McpManager::new(),
-    ));
+    let manager = std::sync::Arc::new(tokio::sync::Mutex::new(cc_mcp::manager::McpManager::new()));
     let _runtime = RuntimeMcpGuard::install(manager.clone());
     std::fs::write(
         home.path().join("settings.json"),

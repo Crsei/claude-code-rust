@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use super::flags::parse_auth_complete_args;
 use super::{CommandContext, CommandResult};
-use crate::mcp::McpServerConfig;
+use cc_mcp::McpServerConfig;
 
 pub(super) async fn handle_auth(rest: &[&str], ctx: &CommandContext) -> Result<CommandResult> {
     match rest.first().copied() {
@@ -16,7 +16,7 @@ pub(super) async fn handle_auth(rest: &[&str], ctx: &CommandContext) -> Result<C
                 Ok(config) => config,
                 Err(message) => return Ok(CommandResult::Output(message)),
             };
-            match crate::mcp::auth::start_authorization(&config).await {
+            match cc_mcp::auth::start_authorization(&config).await {
                 Ok(start) => Ok(CommandResult::Output(format!(
                     "OAuth authorization started for MCP server `{}`.\n\
                      Open this URL in a browser:\n{}\n\n\
@@ -58,14 +58,14 @@ pub(super) async fn handle_auth(rest: &[&str], ctx: &CommandContext) -> Result<C
                 Ok(config) => config,
                 Err(message) => return Ok(CommandResult::Output(message)),
             };
-            match crate::mcp::auth::complete_authorization(&config, &code, parsed.state.as_deref())
+            match cc_mcp::auth::complete_authorization(&config, &code, parsed.state.as_deref())
                 .await
             {
                 Ok(_) => Ok(CommandResult::Output(format!(
                     "Stored OAuth credentials for MCP server `{}` in {}. Access token: {}",
                     config.name,
-                    crate::mcp::auth::token_store_path().display(),
-                    crate::mcp::auth::redact_secret(&code)
+                    cc_mcp::auth::token_store_path().display(),
+                    cc_mcp::auth::redact_secret(&code)
                 ))),
                 Err(err) => Ok(CommandResult::Output(format!(
                     "Failed to complete OAuth for MCP server `{}`: {}",
@@ -83,7 +83,7 @@ pub(super) async fn handle_auth(rest: &[&str], ctx: &CommandContext) -> Result<C
                 Ok(config) => config,
                 Err(message) => return Ok(CommandResult::Output(message)),
             };
-            match crate::mcp::auth::clear_stored_token(&config) {
+            match cc_mcp::auth::clear_stored_token(&config) {
                 Ok(true) => Ok(CommandResult::Output(format!(
                     "Cleared OAuth credentials for MCP server `{}`.",
                     config.name
@@ -108,7 +108,7 @@ pub(super) async fn handle_auth(rest: &[&str], ctx: &CommandContext) -> Result<C
                 Ok(config) => config,
                 Err(message) => return Ok(CommandResult::Output(message)),
             };
-            match crate::mcp::auth::credential_status(&config) {
+            match cc_mcp::auth::credential_status(&config) {
                 Ok(status) => Ok(CommandResult::Output(format!(
                     "OAuth status for MCP server `{}`: configured={} authorized={} expired={} refreshable={}\nToken store: {}",
                     config.name,
@@ -131,7 +131,7 @@ pub(super) async fn handle_auth(rest: &[&str], ctx: &CommandContext) -> Result<C
 }
 
 fn find_mcp_config(cwd: &std::path::Path, server_name: &str) -> Result<McpServerConfig, String> {
-    let configs = crate::mcp::discovery::discover_mcp_servers(cwd)
+    let configs = cc_mcp::discovery::discover_mcp_servers(cwd)
         .map_err(|err| format!("Failed to discover MCP servers: {err}"))?;
     configs
         .into_iter()

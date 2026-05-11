@@ -3,6 +3,8 @@
 pub mod clear;
 pub mod config_cmd;
 pub mod exit;
+pub mod lsp_cmd;
+pub mod mcp;
 pub mod memory;
 pub mod model;
 pub mod session;
@@ -16,6 +18,33 @@ use async_trait::async_trait;
 use cc_bootstrap::SessionId;
 use cc_engine::types::app_state::AppState;
 use cc_types::message::Message;
+
+pub mod runtime {
+    use std::sync::{OnceLock, RwLock};
+
+    type Installer = fn();
+
+    static INSTALLER: OnceLock<RwLock<Option<Installer>>> = OnceLock::new();
+
+    pub fn set_runtime_installer(installer: Installer) {
+        let slot = INSTALLER.get_or_init(|| RwLock::new(None));
+        if let Ok(mut guard) = slot.write() {
+            *guard = Some(installer);
+        }
+    }
+
+    pub(crate) fn ensure_runtime_installed() {
+        let Some(slot) = INSTALLER.get() else {
+            return;
+        };
+        let Ok(guard) = slot.read() else {
+            return;
+        };
+        if let Some(installer) = *guard {
+            installer();
+        }
+    }
+}
 
 /// A registered slash command.
 pub struct Command {

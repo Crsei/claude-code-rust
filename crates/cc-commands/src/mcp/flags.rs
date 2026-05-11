@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::mcp::McpOAuthConfig;
 use cc_ipc_protocol::subsystem_types::ConfigScope;
+use cc_mcp::McpOAuthConfig;
 
 // ---------------------------------------------------------------------------
 // Flag parsing helpers

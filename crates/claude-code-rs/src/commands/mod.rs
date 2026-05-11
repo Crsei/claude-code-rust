@@ -97,16 +97,11 @@ pub mod rate_limit;
 // Context management
 pub mod compact;
 
-// MCP server management
-pub mod mcp;
 pub mod plugin_cmd;
 pub mod reload_plugins_cmd;
 
 // IDE integration (issue #41)
 pub mod ide_cmd;
-
-// LSP status and recommendation surfaces
-pub mod lsp_cmd;
 
 // First-party Chrome integration (Claude in Chrome)
 pub mod chrome_cmd;
@@ -132,6 +127,8 @@ pub use cc_commands::{
 
 /// Build the full list of available commands.
 pub fn get_all_commands() -> Vec<Command> {
+    cc_commands::runtime::set_runtime_installer(crate::ipc::runtime_adapters::ensure_installed);
+
     let mut commands = vec![
         command(
             "help",
@@ -355,7 +352,7 @@ pub fn get_all_commands() -> Vec<Command> {
             "mcp",
             &[],
             "MCP server management (list, status, add, edit, remove, approve, reject, connect)",
-            mcp::McpHandler,
+            cc_commands::mcp::McpHandler,
         ),
         command(
             "ide",
@@ -367,7 +364,7 @@ pub fn get_all_commands() -> Vec<Command> {
             "lsp",
             &[],
             "Show LSP server cards and recommendation settings",
-            lsp_cmd::LspHandler,
+            cc_commands::lsp_cmd::LspHandler,
         ),
         command(
             "chrome",

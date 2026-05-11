@@ -50,7 +50,7 @@ pub fn server_state(server_name: &str) -> Option<RuntimeMcpServerState> {
     SERVER_STATES.read().get(server_name).cloned()
 }
 
-#[cfg(test)]
+#[doc(hidden)]
 pub fn clear_for_tests() {
     *MANAGER.write() = None;
     SERVER_STATES.write().clear();

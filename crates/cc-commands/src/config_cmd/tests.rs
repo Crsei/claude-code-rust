@@ -34,6 +34,7 @@ async fn test_config_show() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn test_config_set_model_in_memory() {
     // Use a tempdir as CC_RUST_HOME so we don't clobber the real user file.
     let dir = tempfile::tempdir().unwrap();
@@ -69,6 +70,7 @@ async fn test_config_set_model_rejects_removed_legacy_alias() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn test_config_set_permission_mode_updates_live_context() {
     let dir = tempfile::tempdir().unwrap();
     let _g = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
