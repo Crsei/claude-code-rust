@@ -152,6 +152,7 @@ Error visibility notes:
 
 Status: WARNING
 Commit: 4f303a9
+Supplemental commit: d80cd9c
 Tasks:
 - [build] api-models-01 - Move model metadata into `cc-models`, rewire
   metadata-only callers, keep behavior unchanged, and run `cc-models` tests
@@ -168,6 +169,8 @@ Implemented effects:
 - Updated the batch file-size guard so historical oversized files warn when a
   batch does not grow them, while newly oversized files or further growth still
   block commit.
+- Stabilized pricing tests that mutate `MODEL_INPUT_PRICE` and
+  `MODEL_OUTPUT_PRICE` with test-only locks and environment snapshots.
 
 Defects and divergences:
 - Initial Batch 03 runner result was BLOCKER because the guard treated existing
@@ -175,6 +178,8 @@ Defects and divergences:
   The guard policy is now explicit and Batch 03 rechecks as warning-only.
 - No behavior drift was found in model alias resolution, provider mapping, or
   pricing tests.
+- Pricing environment overrides are process-global; tests now serialize only the
+  env-mutating sections instead of requiring serial cargo invocation.
 
 Follow-ups:
 - api-models-02 review should verify `cc-models` remains dependency-free and
@@ -188,6 +193,7 @@ Follow-ups:
 Verification:
 - `cargo fmt --all --check`: pass.
 - `cargo test -p cc-models`: pass, 28 passed.
+- `cargo test -p claude-code-rs api::pricing`: pass, 2 passed.
 - `cargo check -p claude-code-rs --message-format short`: pass.
 - `cargo check --workspace --all-targets --message-format short`: pass.
 - `cargo tree -p cc-models`: pass, no dependencies.
