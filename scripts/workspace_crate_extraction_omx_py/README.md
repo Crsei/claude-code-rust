@@ -49,6 +49,7 @@ scripts/workspace_crate_extraction_omx_supervisor.py
 | `common.py` | 通用常量、路径解析、git 命令封装、文本写入、统一时间格式。 |
 | `git_state.py` | 读取 worktree 改动、记录 baseline dirty 签名、计算当前 batch 应纳入的 changed paths。 |
 | `guards.py` | diff guard、Rust 文件行数 guard、rename/copy guard、agent last-message finding 解析。 |
+| `blocker_review.py` | 只读 blocker-risk review agent 调用、review 结论解析、风险 finding 改写。 |
 | `artifacts.py` | 写 `batch-XX.summary.md/json`、`failures.md/jsonl`，并计算 batch 状态。 |
 | `commit.py` | 对 green batch 执行 `git add`、生成 Lore 风格 commit message、执行 `git commit`。 |
 | `validation.py` | 最终 `cargo fmt/check/clippy/test` 验证、日志写入、run-level final report。 |
@@ -73,11 +74,14 @@ Runner 入口是 `workspace_crate_extraction_omx_py.cli.main()`，核心流程�
 7. 调用 `scripts/codex-task-sequence.ps1` 执行本 batch。
 8. 读取当前 git changed paths，并和启动时 baseline dirty 签名对比，得到本 batch changed paths。
 9. 执行 diff/file-size/agent-report guards。
-10. 写 batch summary 和 failure log。
-11. 如果 batch green，按配置自动提交并尝试放大 batch size。
-12. 如果 batch failed，缩小 batch size，并按配置停止或继续。
-13. 全部 batch 结束后，除非跳过，执行最终 cargo 验证。
-14. 写 `final-report.md/json`，并用是否存在失败决定进程退出码。
+10. 底层 `codex-task-sequence.ps1` 在每个 task 结束后写 `task-XX.summary.json`，并刷新当前 batch 的 `task-report.md/json`。
+11. 如果出现 `BLOCKER-RISK`，启动只读 blocker-risk review agent，写入风险结论。
+12. 写 batch summary 和 failure log。
+13. 每个 batch 结束或 runner 内部中断时刷新 run-level `final-report.md/json` 和 `execution-report.md/json`。
+14. 如果 batch green，按配置自动提交并尝试放大 batch size。
+15. 如果 batch failed，缩小 batch size，并按配置停止或继续。
+16. 全部 batch 结束后，除非跳过，执行最终 cargo 验证。
+17. 再次写 `final-report.md/json`，并用是否存在失败决定进程退出码。
 
 ## Runner 参数
 
@@ -101,9 +105,13 @@ python .\scripts\workspace_crate_extraction_omx.py [options]
 | `--min-batch-size` | `1` | batch size 下限。 |
 | `--max-batch-size` | `3` | batch size 上限。 |
 | `--warn-rust-file-lines` | `500` | Rust 文件 warning 行数阈值。 |
-| `--max-rust-file-lines` | `800` | Rust 文件 blocker 行数阈值。 |
+| `--max-rust-file-lines` | `2000` | Rust 文件 blocker-risk 行数阈值。 |
 | `--max-files-per-batch` | `12` | 单 batch 改动文件数 warning 阈值。 |
 | `--max-per-file-diff-lines` | `600` | 单文件 diff 行数 warning 阈值。 |
+| `--max-oversized-rust-files-before-blocker` | `3` | 单 batch 中超过 `--max-rust-file-lines` 的 Rust 文件达到该数量时标记 `BLOCKER-RISK`。 |
+| `--skip-blocker-review` | 关闭 | 不启动只读 blocker-risk review agent。 |
+| `--blocker-review-sandbox` | `read-only` | blocker-risk review agent 使用的 sandbox。 |
+| `--blocker-review-timeout-seconds` | `900` | blocker-risk review agent 超时时间。 |
 | `--commit-baseline-dirty-changes` | 开启 | baseline dirty 文件如果在 batch 中发生内容变化，也纳入 changed paths。 |
 | `--no-commit-baseline-dirty-changes` | 关闭 | baseline dirty 文件即使变化也不纳入 changed paths。 |
 | `--continue-on-error` | 关闭 | batch 失败后继续后续 batch。 |
@@ -199,10 +207,10 @@ WARNING: batch changed <n> files; consider reducing batch size for reviewability
 
 ### rename/copy
 
-通过 `git diff --name-status HEAD -- <paths>` 统计 rename/copy 条目。超过 5 个时产生 blocker，要求先拆分机械移动：
+通过 `git diff --name-status HEAD -- <paths>` 统计 rename/copy 条目。超过 5 个时产生 blocker-risk 标记，但不会中断 runner：
 
 ```text
-BLOCKER: batch has <n> rename/copy entries; split mechanical moves before committing
+BLOCKER-RISK: batch has <n> rename/copy entries; split mechanical moves if review becomes unclear
 ```
 
 ### Rust 文件行数
@@ -210,11 +218,27 @@ BLOCKER: batch has <n> rename/copy entries; split mechanical moves before commit
 只检查 `.rs` 文件。
 
 - 超过 `warn` 阈值但未超过 `max`：`WARNING`。
-- 超过 `max` 且 HEAD 中不存在或 HEAD 未超过 `max`：`BLOCKER`。
 - HEAD 中已经超过 `max`，本 batch 没有继续增大：`WARNING`。
-- HEAD 中已经超过 `max`，本 batch 继续增大：`BLOCKER`。
+- 超过 `max` 的 Rust 文件少于 `--max-oversized-rust-files-before-blocker`：`WARNING`。
+- 超过 `max` 的 Rust 文件达到 `--max-oversized-rust-files-before-blocker`：`BLOCKER-RISK`。
 
-这条规则允许历史大文件在不继续恶化时被小幅维护，但阻止 batch 把文件继续做大。
+`BLOCKER-RISK` 只表示“从这个 batch 的首个任务开始存在 blocker 限制风险”。它不会让 runner 中断，也不会阻止自动提交；summary 中会记录对应任务和 review 结论。
+
+### Blocker-risk review
+
+如果出现 `BLOCKER-RISK`，且未启用 `--skip-blocker-review`，runner 会启动一个只读 Codex review agent。这个 agent 不修改文件，只检查当前 diff 和风险 finding，并输出：
+
+```text
+BLOCKER_REVIEW: WAIVE
+```
+
+或：
+
+```text
+BLOCKER_REVIEW: KEEP
+```
+
+`WAIVE` 会把风险改写为 `WAIVED-BLOCKER-RISK`；`KEEP` 会继续保留 `BLOCKER-RISK`。两种结果都不会中断运行，都会让 batch 以 `WARNING` 状态继续。
 
 ### 单文件 diff 行数
 
@@ -230,7 +254,7 @@ BLOCKER: batch has <n> rename/copy entries; split mechanical moves before commit
 - `Status: ERROR ...`
 - `Status: BLOCKER ...`
 
-这些会成为 batch finding。`ERROR` 和 `BLOCKER` 会阻止 batch 进入 commit。
+这些会成为 batch finding。子任务 agent 明确报告的 `ERROR` 和 `BLOCKER` 仍会阻止 batch 进入 commit；guard 限制类风险使用 `BLOCKER-RISK`，不会阻止继续运行。
 
 ## Batch 状态
 
@@ -239,11 +263,11 @@ BLOCKER: batch has <n> rename/copy entries; split mechanical moves before commit
 | 状态 | 条件 | 是否可提交 |
 | --- | --- | --- |
 | `PASS` | 底层 runner 退出码为 0，且没有 finding。 | 是 |
-| `WARNING` | 底层 runner 退出码为 0，且只有 warning finding。 | 是 |
-| `BLOCKER` | 底层 runner 退出码为 0，但存在 blocker/error finding。 | 否 |
+| `WARNING` | 底层 runner 退出码为 0，且只有 warning、`BLOCKER-RISK` 或 `WAIVED-BLOCKER-RISK` finding。 | 是 |
+| `BLOCKER` | 底层 runner 退出码为 0，但存在 agent 报告的 blocker/error finding。 | 否 |
 | `ERROR` | 底层 runner 退出码非 0。 | 否 |
 
-`WARNING` 是可完成状态，因为它表示可审查但需要维护者注意；`BLOCKER` 和 `ERROR` 是停止状态。
+`WARNING` 是可完成状态，因为它表示可审查但需要维护者注意。`BLOCKER-RISK` 属于 warning 级别，只做风险标记，不中断运行；`BLOCKER` 和 `ERROR` 是停止状态。
 
 ## 输出产物
 
@@ -259,11 +283,14 @@ target/codex-runs/workspace-crate-extraction-omx/
 | --- | --- | --- |
 | `batch-XX.tasks.txt` | `cli.run_batch()` | 当前 batch 下发给 Codex 的任务，每行含 `GLOBAL_CONTRACT`。 |
 | `batch-XX/` | `codex-task-sequence.ps1` | 底层每个 task 的 last-message 等输出。 |
+| `batch-XX/task-YY.summary.json` | `codex-task-sequence.ps1` | 单个 task 的状态、退出码、改动文件、last-message 路径、输出目录、中断原因。 |
+| `batch-XX/task-report.md/json` | `codex-task-sequence.ps1` | 当前 batch 内已执行 task 的滚动报告；每个 task 结束后刷新。 |
 | `batch-XX.summary.json` | `artifacts.write_batch_artifacts()` | batch、status、exit code、tasks、changed files、guard findings、diagnostics、last-message files。 |
 | `batch-XX.summary.md` | `artifacts.write_batch_artifacts()` | 人可读 batch 摘要。 |
 | `batch-XX.commit-message.txt` | `commit.commit_batch()` | 自动提交使用的 Lore commit message。 |
 | `failures.jsonl` | `artifacts.write_failure_record()` | 每个失败 batch 一行 JSON。 |
 | `failures.md` | `artifacts.write_failure_record()` | 人可读失败记录。 |
+| `execution-report.md/json` | `validation.write_task_execution_report()` | run-level task 执行汇总，聚合每个 task 的 changed files、结果、中间输出和中断原因。 |
 | `final-validation/` | `validation.invoke_final_validation()` | 最终 cargo 验证日志与 summary。 |
 | `final-report.json` | `validation.write_run_report()` | run-level 机器可读报告。 |
 | `final-report.md` | `validation.write_run_report()` | run-level 人可读报告。 |
@@ -287,6 +314,35 @@ target/codex-runs/workspace-crate-extraction-omx/
 ```
 
 Supervisor 依赖 `status` 和 `tasks` 字段判断哪些任务已经完成。
+
+### Task execution report
+
+每个 task 结束后，`codex-task-sequence.ps1` 会立即写：
+
+```text
+batch-XX/task-YY.summary.json
+batch-XX/task-report.md
+batch-XX/task-report.json
+```
+
+`task-YY.summary.json` 记录：
+
+- task 编号和 task 文本。
+- `PASS` / `ERROR` 状态和 exit code。
+- 这个 task 前后 git changed paths 签名差异推导出的 changed files。
+- `task-YY.last-message.txt` 路径。
+- 当前 batch 输出目录。
+- started/ended 时间。
+- 如果任务失败或命令异常，记录 `interruption_reason`。
+
+每个 batch 结束、runner 中断、最终验证结束时，Python runner 会刷新：
+
+```text
+execution-report.md
+execution-report.json
+```
+
+这份 run-level report 聚合所有 `batch-*/task-*.summary.json`，用于从一个位置查看每个任务修改了哪些文件、执行结果、完成情况、中间输出位置和中断原因。`final-report.md` 会链接到这两份 execution report。
 
 ## 自动提交
 
@@ -510,6 +566,7 @@ python -m unittest scripts.tests.test_workspace_crate_extraction_omx
 - 任务文件读取。
 - checkpoint batch 切分。
 - 历史 oversized Rust 文件 guard。
+- blocker-risk review 结论解析和非中断状态。
 - batch summary 状态写入。
 - supervisor remaining task 计算。
 - resolution 文件完成判断。

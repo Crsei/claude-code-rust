@@ -13,12 +13,16 @@ param(
     [int]$MinBatchSize = 1,
     [int]$MaxBatchSize = 3,
     [int]$WarnRustFileLines = 500,
-    [int]$MaxRustFileLines = 800,
+    [int]$MaxRustFileLines = 2000,
     [int]$MaxFilesPerBatch = 12,
     [int]$MaxPerFileDiffLines = 600,
+    [int]$MaxOversizedRustFilesBeforeBlocker = 3,
+    [string]$BlockerReviewSandbox = "read-only",
+    [int]$BlockerReviewTimeoutSeconds = 900,
     [bool]$CommitBaselineDirtyChanges = $true,
     [switch]$ContinueOnError,
     [switch]$SkipCommit,
+    [switch]$SkipBlockerReview,
     [switch]$SkipFinalValidation,
     [switch]$DryRun
 )
@@ -60,7 +64,10 @@ $pythonArgs += @(
     "--warn-rust-file-lines", [string]$WarnRustFileLines,
     "--max-rust-file-lines", [string]$MaxRustFileLines,
     "--max-files-per-batch", [string]$MaxFilesPerBatch,
-    "--max-per-file-diff-lines", [string]$MaxPerFileDiffLines
+    "--max-per-file-diff-lines", [string]$MaxPerFileDiffLines,
+    "--max-oversized-rust-files-before-blocker", [string]$MaxOversizedRustFilesBeforeBlocker,
+    "--blocker-review-sandbox", $BlockerReviewSandbox,
+    "--blocker-review-timeout-seconds", [string]$BlockerReviewTimeoutSeconds
 )
 
 if ($CommitBaselineDirtyChanges) {
@@ -70,6 +77,7 @@ if ($CommitBaselineDirtyChanges) {
 }
 if ($ContinueOnError) { $pythonArgs += "--continue-on-error" }
 if ($SkipCommit) { $pythonArgs += "--skip-commit" }
+if ($SkipBlockerReview) { $pythonArgs += "--skip-blocker-review" }
 if ($SkipFinalValidation) { $pythonArgs += "--skip-final-validation" }
 if ($DryRun) { $pythonArgs += "--dry-run" }
 

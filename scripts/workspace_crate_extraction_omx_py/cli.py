@@ -8,6 +8,12 @@ from pathlib import Path
 from typing import Sequence
 
 from .artifacts import batch_diagnostic_lines, write_batch_artifacts, write_failure_record
+from .blocker_review import (
+    apply_blocker_review_result,
+    blocker_risk_findings,
+    review_blockers,
+    should_review_blockers,
+)
 from .commit import commit_batch
 from .common import GLOBAL_CONTRACT, path_key, resolve_repo_path, write_lines
 from .git_state import batch_changed_paths, git_changed_paths, path_signature_map
@@ -36,9 +42,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-batch-size", type=int, default=1)
     parser.add_argument("--max-batch-size", type=int, default=3)
     parser.add_argument("--warn-rust-file-lines", type=int, default=500)
-    parser.add_argument("--max-rust-file-lines", type=int, default=800)
+    parser.add_argument("--max-rust-file-lines", type=int, default=2000)
     parser.add_argument("--max-files-per-batch", type=int, default=12)
     parser.add_argument("--max-per-file-diff-lines", type=int, default=600)
+    parser.add_argument("--max-oversized-rust-files-before-blocker", type=int, default=3)
+    parser.add_argument("--skip-blocker-review", action="store_true")
+    parser.add_argument("--blocker-review-sandbox", default="read-only")
+    parser.add_argument("--blocker-review-timeout-seconds", type=int, default=900)
     baseline_group = parser.add_mutually_exclusive_group()
     baseline_group.add_argument(
         "--commit-baseline-dirty-changes",
@@ -67,6 +77,10 @@ def run(args: argparse.Namespace) -> int:
 
     if not runner.exists():
         raise FileNotFoundError(f"Runner not found: {runner}")
+    if args.max_oversized_rust_files_before_blocker < 1:
+        raise RuntimeError("--max-oversized-rust-files-before-blocker must be greater than zero")
+    if args.blocker_review_timeout_seconds < 0:
+        raise RuntimeError("--blocker-review-timeout-seconds cannot be negative")
 
     tasks = load_task_list(tasks_file)
     if not tasks:
@@ -83,16 +97,33 @@ def run(args: argparse.Namespace) -> int:
     baseline_signatures = path_signature_map(repo_root, baseline_dirty_paths)
 
     while state.index < len(tasks):
-        run_batch(
-            args,
+        try:
+            run_batch(
+                args,
+                repo_root,
+                runner,
+                work_dir,
+                output_root,
+                tasks,
+                baseline_dirty,
+                baseline_signatures,
+                state,
+            )
+        except Exception as exc:  # noqa: BLE001 - write an interruption report before returning.
+            state.had_failure = True
+            state.stopped_early = True
+            state.stop_reason = f"Runner interrupted: {exc}"
+        write_run_report(
             repo_root,
-            runner,
-            work_dir,
             output_root,
-            tasks,
-            baseline_dirty,
-            baseline_signatures,
-            state,
+            state.started_at,
+            datetime.now().astimezone(),
+            len(tasks),
+            state.completed_task_count,
+            state.stopped_early,
+            state.stop_reason,
+            state.validation_results,
+            args.dry_run,
         )
         if state.stopped_early:
             break
@@ -190,8 +221,26 @@ def run_batch(
         args.max_rust_file_lines,
         args.max_files_per_batch,
         args.max_per_file_diff_lines,
+        args.max_oversized_rust_files_before_blocker,
     )
     violations.extend(agent_reported_findings(batch_output_dir))
+    if blocker_risk_findings(violations):
+        violations.append(f"WARNING: blocker risk starts at task: {batch_tasks[0]}")
+    if not args.skip_blocker_review and should_review_blockers(exit_code, violations):
+        review_result = review_blockers(
+            repo_root=repo_root,
+            batch_number=state.batch_number,
+            tasks=batch_tasks,
+            changed_paths=changed_for_batch,
+            findings=violations,
+            batch_output_dir=batch_output_dir,
+            codex=args.codex,
+            model=args.model,
+            reasoning_effort=args.reasoning_effort,
+            sandbox=args.blocker_review_sandbox,
+            timeout_seconds=args.blocker_review_timeout_seconds,
+        )
+        violations = apply_blocker_review_result(violations, review_result)
     write_batch_artifacts(
         output_root,
         state.batch_number,

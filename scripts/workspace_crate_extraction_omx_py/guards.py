@@ -32,6 +32,7 @@ def invoke_diff_guards(
     max_lines: int,
     max_files: int,
     max_diff_lines: int,
+    max_oversized_files_before_blocker: int,
 ) -> list[str]:
     findings: list[str] = []
     if not changed_paths:
@@ -54,11 +55,17 @@ def invoke_diff_guards(
     rename_count = sum(1 for line in name_status if re.match(r"^[RC]", line))
     if rename_count > 5:
         findings.append(
-            f"BLOCKER: batch has {rename_count} rename/copy entries; split mechanical moves before committing"
+            f"BLOCKER-RISK: batch has {rename_count} rename/copy entries; split mechanical moves if review becomes unclear"
         )
 
     findings.extend(
-        file_size_findings(repo_root, changed_paths, warn_lines, max_lines)
+        file_size_findings(
+            repo_root,
+            changed_paths,
+            warn_lines,
+            max_lines,
+            max_oversized_files_before_blocker,
+        )
     )
     findings.extend(diff_size_findings(repo_root, changed_paths, max_diff_lines))
     return findings
@@ -69,8 +76,10 @@ def file_size_findings(
     changed_paths: Sequence[str],
     warn_lines: int,
     max_lines: int,
+    max_oversized_files_before_blocker: int,
 ) -> list[str]:
     findings: list[str] = []
+    oversized_candidates: list[tuple[str, int, int | None]] = []
     for path in changed_paths:
         if not path.lower().endswith(".rs"):
             continue
@@ -79,37 +88,52 @@ def file_size_findings(
 
         line_count = rust_line_count(repo_root, path)
         if line_count > max_lines:
-            findings.extend(max_line_findings(repo_root, path, line_count, max_lines))
+            head_count = head_rust_line_count(repo_root, path)
+            if head_count is not None and head_count > max_lines and line_count <= head_count:
+                findings.append(
+                    f"WARNING: {path} has {line_count} lines, above max {max_lines} "
+                    f"but did not grow from HEAD ({head_count}); keep future edits split-focused"
+                )
+            else:
+                oversized_candidates.append((path, line_count, head_count))
         elif line_count > warn_lines:
             findings.append(
                 f"WARNING: {path} has {line_count} lines, above warning threshold {warn_lines}"
             )
+    findings.extend(
+        oversized_candidate_findings(
+            oversized_candidates,
+            max_lines,
+            max_oversized_files_before_blocker,
+        )
+    )
     return findings
 
 
-def max_line_findings(
-    repo_root: Path,
-    path: str,
-    line_count: int,
+def oversized_candidate_findings(
+    candidates: Sequence[tuple[str, int, int | None]],
     max_lines: int,
+    max_oversized_files_before_blocker: int,
 ) -> list[str]:
-    head_count = head_rust_line_count(repo_root, path)
-    if head_count is not None and head_count > max_lines:
-        if line_count <= head_count:
-            return [
-                f"WARNING: {path} has {line_count} lines, above max {max_lines} "
-                f"but did not grow from HEAD ({head_count}); keep future edits split-focused"
-            ]
+    if not candidates:
+        return []
+
+    threshold = max(1, max_oversized_files_before_blocker)
+    if len(candidates) >= threshold:
+        sample = ", ".join(f"{path} ({line_count} lines)" for path, line_count, _ in candidates)
         return [
-            f"BLOCKER: {path} grew from {head_count} to {line_count} lines "
-            f"while already above max {max_lines}; split before commit"
+            f"BLOCKER-RISK: {len(candidates)} changed Rust files exceed {max_lines} lines "
+            f"(risk threshold {threshold}): {sample}"
         ]
 
-    baseline = "new file" if head_count is None else f"HEAD had {head_count} lines"
-    return [
-        f"BLOCKER: {path} has {line_count} lines, above max {max_lines} "
-        f"({baseline}); split before commit"
-    ]
+    findings: list[str] = []
+    for path, line_count, head_count in candidates:
+        baseline = "new file" if head_count is None else f"HEAD had {head_count} lines"
+        findings.append(
+            f"WARNING: {path} has {line_count} lines, above max {max_lines} "
+            f"({baseline}); below blocker threshold {threshold} oversized files"
+        )
+    return findings
 
 
 def diff_size_findings(
@@ -184,4 +208,7 @@ def has_blocking_finding(findings: Sequence[str]) -> bool:
 
 
 def has_warning_finding(findings: Sequence[str]) -> bool:
-    return any(finding.startswith("WARNING:") for finding in findings)
+    return any(
+        finding.startswith(("WARNING:", "BLOCKER-RISK:", "WAIVED-BLOCKER-RISK:"))
+        for finding in findings
+    )

@@ -18,6 +18,8 @@ def invoke_logged_cargo_command(repo_root: Path, cargo_args: Sequence[str], log_
             ["cargo", *cargo_args],
             cwd=str(repo_root),
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -28,13 +30,15 @@ def invoke_logged_cargo_command(repo_root: Path, cargo_args: Sequence[str], log_
         print(message, file=sys.stderr)
         return 1
 
-    if proc.stdout:
-        print(proc.stdout, end="")
-    if proc.stderr:
-        print(proc.stderr, end="", file=sys.stderr)
+    stdout = proc.stdout or ""
+    stderr = proc.stderr or ""
+    if stdout:
+        print(stdout, end="")
+    if stderr:
+        print(stderr, end="", file=sys.stderr)
     with log_path.open("a", encoding="utf-8") as fh:
-        fh.write(proc.stdout)
-        fh.write(proc.stderr)
+        fh.write(stdout)
+        fh.write(stderr)
     return proc.returncode
 
 
@@ -96,6 +100,7 @@ def write_run_report(
 ) -> None:
     output_root.mkdir(parents=True, exist_ok=True)
     summaries = load_batch_summaries(output_root)
+    task_report_paths = write_task_execution_report(output_root, summaries)
     status_counts = Counter(str(summary.get("status", "")) for summary in summaries)
     current_status = git_lines(repo_root, "status", "--short", allow_failure=True)[:200]
     status_count_records = [
@@ -114,6 +119,7 @@ def write_run_report(
         "stop_reason": stop_reason,
         "batch_count": len(summaries),
         "status_counts": status_count_records,
+        "task_execution_report": task_report_paths,
         "validation": list(validation_results),
         "git_status_sample": current_status,
     }
@@ -129,12 +135,114 @@ def write_run_report(
             stopped_early,
             stop_reason,
             status_count_records,
+            task_report_paths,
             validation_results,
             dry_run,
             current_status,
             json_path,
         ),
     )
+
+
+def write_task_execution_report(
+    output_root: Path,
+    batch_summaries: Sequence[dict[str, object]],
+) -> dict[str, str]:
+    records = load_task_execution_records(output_root, batch_summaries)
+    json_path = output_root / "execution-report.json"
+    md_path = output_root / "execution-report.md"
+    json_path.write_text(json.dumps(records, indent=4, ensure_ascii=False) + "\n", encoding="utf-8")
+    write_lines(md_path, task_execution_markdown_lines(records, json_path))
+    return {"json": str(json_path.resolve()), "markdown": str(md_path.resolve())}
+
+
+def load_task_execution_records(
+    output_root: Path,
+    batch_summaries: Sequence[dict[str, object]],
+) -> list[dict[str, object]]:
+    batch_by_number = {
+        int(summary.get("batch", 0)): summary
+        for summary in batch_summaries
+        if str(summary.get("batch", "")).isdigit()
+    }
+    records: list[dict[str, object]] = []
+    for path in sorted(output_root.glob("batch-*/task-*.summary.json")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if not isinstance(record, dict):
+            continue
+        batch_number = batch_number_from_dir(path.parent.name)
+        batch_summary = batch_by_number.get(batch_number, {})
+        records.append(
+            {
+                "batch": batch_number,
+                "batch_status": batch_summary.get("status", ""),
+                "batch_summary": str((output_root / f"batch-{batch_number:02d}.summary.md").resolve())
+                if batch_number > 0
+                else "",
+                "task_number": record.get("task_number", 0),
+                "task_count": record.get("task_count", 0),
+                "task": record.get("task", ""),
+                "status": record.get("status", ""),
+                "exit_code": record.get("exit_code", 0),
+                "changed_files": string_list(record.get("changed_files", [])),
+                "last_message_file": record.get("last_message_file", ""),
+                "output_dir": record.get("output_dir", ""),
+                "started_at": record.get("started_at", ""),
+                "ended_at": record.get("ended_at", ""),
+                "interruption_reason": record.get("interruption_reason", ""),
+            }
+        )
+    return records
+
+
+def batch_number_from_dir(name: str) -> int:
+    prefix = "batch-"
+    if not name.startswith(prefix):
+        return 0
+    try:
+        return int(name.removeprefix(prefix))
+    except ValueError:
+        return 0
+
+
+def task_execution_markdown_lines(records: Sequence[dict[str, object]], json_path: Path) -> list[str]:
+    lines = ["# Workspace crate extraction execution report", ""]
+    if not records:
+        lines.extend(["No task execution summaries recorded.", "", f"JSON: {json_path.resolve()}"])
+        return lines
+
+    for record in records:
+        title = f"Batch {int(record.get('batch', 0)):02d} task {record.get('task_number', 0)}"
+        lines.extend([f"## {title}", ""])
+        lines.append(f"- Status: {record.get('status', '')}")
+        lines.append(f"- Batch status: {record.get('batch_status', '')}")
+        lines.append(f"- Exit code: {record.get('exit_code', 0)}")
+        interruption = str(record.get("interruption_reason", ""))
+        if interruption:
+            lines.append(f"- Interruption reason: {interruption}")
+        lines.append(f"- Task: {record.get('task', '')}")
+        lines.append(f"- Batch summary: {record.get('batch_summary', '')}")
+        lines.append(f"- Last message: {record.get('last_message_file', '')}")
+        lines.append(f"- Output dir: {record.get('output_dir', '')}")
+        lines.append("- Changed files:")
+        changed_files = list(record.get("changed_files", []))
+        lines.extend(["  - (none)"] if not changed_files else [f"  - {path}" for path in changed_files])
+        lines.append("")
+    lines.append(f"JSON: {json_path.resolve()}")
+    return lines
+
+
+def string_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    if isinstance(value, tuple):
+        return [str(item) for item in value]
+    return [str(value)]
 
 
 def load_batch_summaries(output_root: Path) -> list[dict[str, object]]:
@@ -156,6 +264,7 @@ def report_markdown_lines(
     stopped_early: bool,
     stop_reason: str,
     status_count_records: Sequence[dict[str, object]],
+    task_report_paths: dict[str, str],
     validation_results: Sequence[dict[str, object]],
     dry_run: bool,
     current_status: Sequence[str],
@@ -180,6 +289,9 @@ def report_markdown_lines(
     lines.extend(["", "## Failure log"])
     failure_path = output_root / "failures.md"
     lines.append(f"- {failure_path.resolve()}" if failure_path.exists() else "- No batch failures recorded.")
+    lines.extend(["", "## Task execution report"])
+    lines.append(f"- Markdown: {task_report_paths.get('markdown', '')}")
+    lines.append(f"- JSON: {task_report_paths.get('json', '')}")
     lines.extend(["", "## Final validation"])
     if validation_results:
         for result in validation_results:
