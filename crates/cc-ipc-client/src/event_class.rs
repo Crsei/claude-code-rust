@@ -131,14 +131,24 @@ impl ClientEventQueue {
                 source_phase: "client_event_queue",
             }),
             EventClass::BestEffort => {
-                let dropped = self
+                let Some(dropped) = self
                     .events
                     .iter()
                     .position(|queued| classify_event(queued) == EventClass::BestEffort)
                     .and_then(|idx| self.events.remove(idx))
-                    .or_else(|| self.events.pop_front());
+                else {
+                    self.drop_count += 1;
+                    self.last_dropped_type = Some(incoming_type);
+                    return Err(QueuePressureDiagnostic {
+                        event_type: incoming_type,
+                        queue_depth: self.events.len(),
+                        drop_count: self.drop_count,
+                        last_dropped_type: self.last_dropped_type,
+                        source_phase: "client_event_queue",
+                    });
+                };
                 self.drop_count += 1;
-                self.last_dropped_type = dropped.as_ref().map(event_type);
+                self.last_dropped_type = Some(event_type(&dropped));
                 self.events.push_back(msg);
                 Err(QueuePressureDiagnostic {
                     event_type: incoming_type,
@@ -209,5 +219,37 @@ mod tests {
         assert_eq!(diagnostic.queue_depth, 1);
         assert_eq!(diagnostic.drop_count, 1);
         assert_eq!(diagnostic.last_dropped_type, Some("tool_progress"));
+    }
+
+    #[test]
+    fn best_effort_pressure_never_drops_lossless_event() {
+        let mut queue = ClientEventQueue::new(1);
+        queue.push(info("keep")).unwrap();
+
+        let diagnostic = queue.push(progress("drop-incoming")).unwrap_err();
+        let drained: Vec<_> = queue.drain().collect();
+
+        assert_eq!(diagnostic.event_type, "tool_progress");
+        assert_eq!(diagnostic.queue_depth, 1);
+        assert_eq!(diagnostic.drop_count, 1);
+        assert_eq!(diagnostic.last_dropped_type, Some("tool_progress"));
+        assert_eq!(drained.len(), 1);
+        assert!(matches!(
+            &drained[0],
+            BackendMessage::SystemInfo { text, .. } if text == "keep"
+        ));
+    }
+
+    #[test]
+    fn zero_capacity_best_effort_is_diagnostic_without_queue_growth() {
+        let mut queue = ClientEventQueue::new(0);
+
+        let diagnostic = queue.push(progress("drop-incoming")).unwrap_err();
+
+        assert_eq!(diagnostic.event_type, "tool_progress");
+        assert_eq!(diagnostic.queue_depth, 0);
+        assert_eq!(diagnostic.drop_count, 1);
+        assert_eq!(diagnostic.last_dropped_type, Some("tool_progress"));
+        assert_eq!(queue.drain().count(), 0);
     }
 }
