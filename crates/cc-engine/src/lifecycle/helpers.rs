@@ -98,7 +98,7 @@ pub(crate) fn format_conversation_for_summary(messages: &[Message]) -> String {
 /// This translates the engine's internal representation into the wire format
 /// expected by `api::client::ApiClient`.
 pub(crate) fn build_messages_request(
-    params: &crate::query::deps::ModelCallParams,
+    params: &cc_query::deps::ModelCallParams,
 ) -> cc_api::api::client::MessagesRequest {
     use crate::types::message::{Attachment, Message, MessageContent};
 
@@ -269,8 +269,8 @@ mod clamp_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::deps::ModelCallParams;
     use crate::types::message::{Attachment, AttachmentMessage, Message};
+    use cc_query::deps::ModelCallParams;
 
     fn base_params() -> ModelCallParams {
         ModelCallParams {

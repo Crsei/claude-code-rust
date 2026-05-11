@@ -20,13 +20,13 @@ use crate::engine::input_processing;
 use crate::engine::result;
 use crate::engine::sdk_types::*;
 use crate::engine::system_prompt;
-use crate::query::loop_impl;
 use crate::session::transcript;
 use crate::types::config::{QueryParams, QuerySource};
 use crate::types::message::{
     AssistantMessage, Attachment, ContentBlock, Message, MessageContent, QueryYield, StreamEvent,
     SystemSubtype,
 };
+use cc_query::loop_impl;
 
 use super::deps::QueryEngineDeps;
 use super::types::{AbortReason, UsageTracking};

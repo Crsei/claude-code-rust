@@ -13,7 +13,12 @@
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
+use std::path::PathBuf;
 use tempfile::TempDir;
+
+fn manifest_path(relative: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative)
+}
 
 // =========================================================================
 // 1. Config format — hooks in settings.json deserialize correctly
@@ -211,14 +216,14 @@ fn merge_hooks_project_overrides_global_same_event() {
 // 3. [BUG EXPOSURE] Source-level verification of wiring gaps
 // =========================================================================
 
-/// FIXED: orchestration.rs now loads hook configs from AppState.
+/// FIXED: QueryEngineDeps now loads hook configs from AppState.
 ///
 /// The execute_tool_call function loads hook configs via get_app_state()
 /// and passes them to run_pre/post/failure hook calls instead of empty &[].
 #[test]
 fn fixed_orchestration_loads_hook_configs() {
-    let source =
-        fs::read_to_string("src/tools/orchestration.rs").expect("should read orchestration.rs");
+    let source = fs::read_to_string(manifest_path("../cc-engine/src/lifecycle/deps.rs"))
+        .expect("should read deps.rs");
 
     let hook_calls: Vec<&str> = source
         .lines()
@@ -229,15 +234,12 @@ fn fixed_orchestration_loads_hook_configs() {
         })
         .collect();
 
-    assert!(
-        !hook_calls.is_empty(),
-        "orchestration.rs should contain hook calls"
-    );
+    assert!(!hook_calls.is_empty(), "deps.rs should contain hook calls");
 
     let any_use_empty = hook_calls.iter().any(|line| line.contains("&[]"));
     assert!(
         !any_use_empty,
-        "orchestration.rs should not pass empty &[] to hook calls.\n\
+        "deps.rs should not pass empty &[] to hook calls.\n\
          All hook calls should use configs loaded from AppState.\n\
          Current hook calls:\n{}",
         hook_calls.join("\n")
@@ -245,7 +247,7 @@ fn fixed_orchestration_loads_hook_configs() {
 
     assert!(
         source.contains("load_hook_configs"),
-        "orchestration.rs should call load_hook_configs"
+        "deps.rs should call load_hook_configs"
     );
 }
 
@@ -259,7 +261,8 @@ fn fixed_orchestration_loads_hook_configs() {
 /// runs pre-tool, post-tool, and post-failure hooks.
 #[test]
 fn fixed_deps_execute_tool_runs_hooks() {
-    let source = fs::read_to_string("src/engine/lifecycle/deps.rs").expect("should read deps.rs");
+    let source = fs::read_to_string(manifest_path("../cc-engine/src/lifecycle/deps.rs"))
+        .expect("should read deps.rs");
 
     let has_pre_hooks = source.contains("run_pre_tool_hooks");
     let has_post_hooks = source.contains("run_post_tool_hooks");
@@ -293,15 +296,16 @@ fn fixed_deps_execute_tool_runs_hooks() {
 #[test]
 fn verified_hooks_config_flows_to_runtime() {
     // main.rs should populate AppState.hooks from merged_config
-    let main_source = fs::read_to_string("src/main.rs").expect("should read main.rs");
+    let main_source =
+        fs::read_to_string(manifest_path("src/main.rs")).expect("should read main.rs");
     assert!(
         main_source.contains("hooks: merged_config.hooks"),
         "main.rs should copy merged_config.hooks into AppState"
     );
 
     // deps.rs should read app_state.hooks and call load_hook_configs
-    let deps_source =
-        fs::read_to_string("src/engine/lifecycle/deps.rs").expect("should read deps.rs");
+    let deps_source = fs::read_to_string(manifest_path("../cc-engine/src/lifecycle/deps.rs"))
+        .expect("should read deps.rs");
     assert!(
         deps_source.contains("app_state.hooks"),
         "deps.rs should read hooks from AppState"
@@ -320,7 +324,8 @@ fn verified_hooks_config_flows_to_runtime() {
 /// load_hook_configs(&hooks_map, "Stop").
 #[test]
 fn bug_query_stop_hooks_is_placeholder() {
-    let source = fs::read_to_string("src/query/stop_hooks.rs").expect("should read stop_hooks.rs");
+    let source = fs::read_to_string(manifest_path("../cc-query/src/stop_hooks.rs"))
+        .expect("should read stop_hooks.rs");
 
     // stop_hooks.rs should accept HookEventConfig and delegate to hooks::run_stop_hooks
     assert!(
@@ -333,8 +338,8 @@ fn bug_query_stop_hooks_is_placeholder() {
     );
 
     // The call site in loop_impl.rs should load configs from AppState
-    let loop_source =
-        fs::read_to_string("src/query/loop_impl.rs").expect("should read loop_impl.rs");
+    let loop_source = fs::read_to_string(manifest_path("../cc-query/src/loop_impl.rs"))
+        .expect("should read loop_impl.rs");
     assert!(
         loop_source.contains("load_hook_configs") && loop_source.contains("\"Stop\""),
         "loop_impl.rs should load Stop hook configs via load_hook_configs"
@@ -343,30 +348,22 @@ fn bug_query_stop_hooks_is_placeholder() {
 
 /// Both execution paths have hook wiring.
 ///
-/// execution.rs::run_tool_use() accepts hook_configs as a parameter and is
-/// used by StreamingToolExecutor. deps.rs has its own inline hook wiring
+/// StreamingToolExecutor delegates to deps.execute_tool(). deps.rs has inline hook wiring
 /// using load_hook_configs + run_pre/post/failure hooks.
 ///
 /// The two paths serve different callers but both support hooks.
 #[test]
 fn both_execution_paths_have_hook_wiring() {
-    let pipeline_source =
-        fs::read_to_string("src/tools/execution/pipeline.rs").expect("should read pipeline.rs");
-    let coordinator_source = fs::read_to_string("src/tools/execution/coordinator.rs")
-        .expect("should read coordinator.rs");
-    let deps_source =
-        fs::read_to_string("src/engine/lifecycle/deps.rs").expect("should read deps.rs");
+    let loop_helpers_source = fs::read_to_string(manifest_path("../cc-query/src/loop_helpers.rs"))
+        .expect("should read loop_helpers.rs");
+    let deps_source = fs::read_to_string(manifest_path("../cc-engine/src/lifecycle/deps.rs"))
+        .expect("should read deps.rs");
 
-    // execution pipeline correctly accepts hook_configs
+    // StreamingToolExecutor delegates execution to QueryDeps.
     assert!(
-        pipeline_source.contains("hook_configs: &[HookEventConfig]"),
-        "execution pipeline should accept hook_configs parameter"
-    );
-
-    // StreamingToolExecutor stores hook_configs
-    assert!(
-        coordinator_source.contains("hook_configs: Vec<HookEventConfig>"),
-        "StreamingToolExecutor should store hook_configs"
+        loop_helpers_source.contains("StreamingToolExecutor")
+            && loop_helpers_source.contains("deps.execute_tool"),
+        "StreamingToolExecutor should delegate tool execution through QueryDeps"
     );
 
     // deps.rs has inline hook wiring (loads configs and calls hooks)
