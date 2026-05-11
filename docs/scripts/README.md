@@ -36,8 +36,6 @@
 
 固定执行配置：
 
-- 模型固定为 `gpt-5.5`。
-- reasoning effort 固定为 `medium`。
 - 子任务输出保持简洁，不写长 reasoning transcript；只报告行动、改动文件、验证、风险和下一步。
 - 底层执行优先走 `scripts/run-standard-task-list-omx.ps1` 或 `scripts/standard_task_list_omx_supervisor.py`；需要普通只读定位时可用 `omx sparkshell`、`omx explore` 或 `rg`。Windows 下 `omx explore` 不可用时，用 PowerShell + `rg` 等价定位即可。
 
