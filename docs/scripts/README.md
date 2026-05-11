@@ -89,6 +89,11 @@ Run the workspace crate-extraction execution plan through
 review checkpoints, commit-on-green, Rust file-size/refactor guards, final
 validation, and a final run report.
 
+The PowerShell file is now a compatibility wrapper around the Python
+implementation in `scripts/workspace_crate_extraction_omx.py`. Existing
+PowerShell commands continue to work; the Python entry point is useful for
+direct testing and debugging.
+
 Dry run:
 
 ```powershell
@@ -110,6 +115,12 @@ Useful options:
 - `-SkipFinalValidation`: skip the final `cargo fmt/check/clippy/test` validation sequence
 - `-InitialBatchSize`, `-MinBatchSize`, `-MaxBatchSize`: tune dynamic task allocation
 - `-WarnRustFileLines` and `-MaxRustFileLines`: tune refactor/file-size detection
+
+Direct Python dry run:
+
+```powershell
+python .\scripts\workspace_crate_extraction_omx.py --dry-run
+```
 
 Outputs:
 
