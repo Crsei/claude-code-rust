@@ -645,6 +645,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-ipc-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc-engine",
+ "cc-ipc-protocol",
+ "futures",
+ "parking_lot",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "cc-ipc-protocol"
 version = "0.1.0"
 dependencies = [
@@ -977,6 +992,7 @@ dependencies = [
  "cc-computer-use",
  "cc-config",
  "cc-engine",
+ "cc-ipc-client",
  "cc-ipc-protocol",
  "cc-keybindings",
  "cc-mcp",

@@ -37,7 +37,8 @@ pub(crate) async fn dispatch(
         FrontendMessage::SubmitPrompt { text, id } => {
             debug!("headless: submit_prompt id={}", id);
 
-            if let Some(question_id) = try_answer_pending_question(pending_questions, text.clone())
+            if let Some(question_id) =
+                cc_ipc_client::ingress::try_answer_pending_question(pending_questions, text.clone())
             {
                 debug!(
                     "headless: routed submit_prompt to pending AskUserQuestion id={}",
@@ -106,9 +107,11 @@ pub(crate) async fn dispatch(
                 "headless: permission response tool_use_id={} decision={}",
                 tool_use_id, decision
             );
-            if let Some(tx) = pending_permissions.lock().remove(&tool_use_id) {
-                let _ = tx.send(decision);
-            } else {
+            if !cc_ipc_client::ingress::complete_pending_permission(
+                pending_permissions,
+                &tool_use_id,
+                decision,
+            ) {
                 warn!(
                     "headless: no pending permission for tool_use_id={}",
                     tool_use_id
@@ -118,9 +121,7 @@ pub(crate) async fn dispatch(
 
         FrontendMessage::QuestionResponse { id, text } => {
             debug!("headless: question response id={}", id);
-            if let Some(tx) = pending_questions.lock().remove(&id) {
-                let _ = tx.send(text);
-            } else {
+            if !cc_ipc_client::ingress::complete_pending_question(pending_questions, &id, text) {
                 warn!("headless: no pending question for id={}", id);
             }
         }
@@ -213,22 +214,6 @@ pub(crate) async fn dispatch(
     }
 
     true // continue loop
-}
-
-// ---------------------------------------------------------------------------
-// Pending question helper
-// ---------------------------------------------------------------------------
-
-fn try_answer_pending_question(
-    pending_questions: &PendingQuestions,
-    text: String,
-) -> Option<String> {
-    let mut pending = pending_questions.lock();
-    let pending_id = pending.keys().next().cloned()?;
-    let tx = pending.remove(&pending_id)?;
-    drop(pending);
-    let _ = tx.send(text);
-    Some(pending_id)
 }
 
 // ---------------------------------------------------------------------------
@@ -504,80 +489,5 @@ async fn handle_slash_command(
                 recoverable: true,
             });
         }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashMap;
-    use tokio::sync::oneshot;
-
-    #[test]
-    fn routes_submit_prompt_to_pending_question() {
-        let pending: PendingQuestions = Arc::new(Mutex::new(HashMap::new()));
-        let (tx, rx) = oneshot::channel();
-        pending.lock().insert("question-1".to_string(), tx);
-
-        let routed = try_answer_pending_question(&pending, "my answer".to_string());
-
-        assert_eq!(routed.as_deref(), Some("question-1"));
-        assert!(
-            pending.lock().is_empty(),
-            "pending question should be removed"
-        );
-        assert_eq!(
-            rx.blocking_recv().expect("answer should be delivered"),
-            "my answer"
-        );
-    }
-
-    #[test]
-    fn returns_none_when_no_pending_question_exists() {
-        let pending: PendingQuestions = Arc::new(Mutex::new(HashMap::new()));
-        let routed = try_answer_pending_question(&pending, "ignored".to_string());
-        assert!(routed.is_none());
-    }
-
-    #[test]
-    fn question_response_completes_pending_question_by_id() {
-        let pending: PendingQuestions = Arc::new(Mutex::new(HashMap::new()));
-        let (tx1, rx1) = oneshot::channel();
-        let (tx2, rx2) = oneshot::channel();
-        pending.lock().insert("q-1".to_string(), tx1);
-        pending.lock().insert("q-2".to_string(), tx2);
-
-        // Answer q-2 specifically
-        if let Some(tx) = pending.lock().remove("q-2") {
-            let _ = tx.send("answer-for-q2".to_string());
-        }
-
-        assert_eq!(rx2.blocking_recv().unwrap(), "answer-for-q2");
-        // q-1 should still be pending
-        assert!(pending.lock().contains_key("q-1"));
-
-        // Answer q-1
-        if let Some(tx) = pending.lock().remove("q-1") {
-            let _ = tx.send("answer-for-q1".to_string());
-        }
-        assert_eq!(rx1.blocking_recv().unwrap(), "answer-for-q1");
-        assert!(pending.lock().is_empty());
-    }
-
-    #[test]
-    fn submit_prompt_fallback_still_works_for_backward_compat() {
-        // When a submit_prompt arrives and there's a pending question,
-        // the fallback routes it to the first pending question (old behavior).
-        let pending: PendingQuestions = Arc::new(Mutex::new(HashMap::new()));
-        let (tx, rx) = oneshot::channel();
-        pending.lock().insert("legacy-q".to_string(), tx);
-
-        let routed = try_answer_pending_question(&pending, "old-style answer".to_string());
-        assert!(routed.is_some());
-        assert_eq!(rx.blocking_recv().unwrap(), "old-style answer");
     }
 }

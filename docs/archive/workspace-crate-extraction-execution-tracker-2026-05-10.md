@@ -587,3 +587,63 @@ Error visibility notes:
 - Existing explicit task parsing/claim/persistence errors remain covered by the
   focused `cc-tasks` and `tools::tasks` tests.
 - No redundant safety layer was added.
+
+## Batch 10 - ipc-03 cc-ipc-client extraction
+
+Status: PASS
+Commit: not committed
+Tasks:
+- [build] ipc-03 - Move client transport, sink, ingress, callbacks, and
+  query-runner client path into `cc-ipc-client` with event class tests.
+
+Implemented effects:
+- Added `cc-ipc-client` as a workspace crate for frontend sink, JSONL client
+  parse diagnostics, pending ingress response helpers, callback bridge helpers,
+  generic query-turn spawning, and lossless/best-effort event classification.
+- Rewired root IPC sink, callbacks, ingress pending-response handling, and
+  query-runner path to delegate to `cc-ipc-client` while retaining host-specific
+  runtime adapters in `claude-code-rs`.
+- Moved duplicated ingress response tests from the root shim into
+  `cc-ipc-client` tests.
+
+Defects and divergences:
+- Full runtime orchestration still lives in `claude-code-rs/src/ipc/runtime.rs`;
+  this is expected for the next `ipc-05` `cc-ipc` slice.
+- The worktree contained unrelated pre-existing docs/scripts changes; this
+  batch did not modify or normalize them.
+
+Follow-ups:
+- `ipc-04` should review the queue policy and pressure diagnostics now covered
+  by `cc-ipc-client::event_class` tests.
+- `ipc-05` should move runtime orchestration into `cc-ipc` and decide whether
+  `runtime.rs` should call `cc-ipc-client::transport::parse_frontend_line`
+  directly or via the new runtime facade.
+
+Verification:
+- `cargo fmt --all --check`: pass.
+- `cargo test -p cc-ipc-client -- --nocapture`: pass, 8 passed.
+- `cargo check -p claude-code-rs --message-format short`: pass.
+- `cargo test -p claude-code-rs ipc:: -- --nocapture`: pass, 77 passed.
+- `cargo tree -p cc-ipc-client -e normal --depth 1`: pass.
+
+File-size/refactor findings:
+- Touched root `ipc/ingress.rs` was reduced to 493 lines, below the 500-line
+  warning threshold, by moving duplicated pending-question tests to
+  `cc-ipc-client`.
+- New Rust files are below guard thresholds: largest is
+  `cc-ipc-client/src/event_class.rs` at 213 lines.
+- No new or moved Rust file exceeds 800 lines.
+
+Dependency graph notes:
+- New edge: `claude-code-rs -> cc-ipc-client`.
+- `cc-ipc-client` direct dependencies are `cc-engine`, `cc-ipc-protocol`,
+  `futures`, `parking_lot`, `serde_json`, `tokio`, `tracing`, `uuid`, and
+  `anyhow`; no dependency on the binary crate was introduced.
+
+Error visibility notes:
+- Frontend parse failures now have a client transport diagnostic helper with
+  `source_phase=client_transport`.
+- Queue pressure diagnostics include event type, queue depth, drop count,
+  last dropped type, and source phase.
+- Lossless queue overflow returns an explicit diagnostic instead of silently
+  dropping; best-effort replacement increments structured drop counters.
