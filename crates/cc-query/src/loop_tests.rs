@@ -11,17 +11,17 @@ use cc_types::hooks::{
 use futures::StreamExt;
 use serde_json::Value;
 
-use crate::query::deps::{
+use crate::deps::{
     CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
 };
-use crate::types::app_state::AppState;
-use crate::types::config::{QueryGates, QuerySource, TaskBudget};
-use crate::types::message::{
+use cc_engine::types::app_state::AppState;
+use cc_engine::types::config::{QueryGates, QuerySource, TaskBudget};
+use cc_engine::types::message::{
     AssistantMessage, ContentBlock, ImageSource, MessageContent, StreamEvent, ToolResultContent,
     Usage, UserMessage,
 };
-use crate::types::state::AutoCompactTracking;
-use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools};
+use cc_engine::types::state::AutoCompactTracking;
+use cc_engine::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools};
 
 enum MockStreamStep {
     Response(ModelResponse),
@@ -172,7 +172,7 @@ impl QueryDeps for MockDeps {
                     events.push(Ok(StreamEvent::ContentBlockStop { index: i }));
                 }
                 events.push(Ok(StreamEvent::MessageDelta {
-                    delta: crate::types::message::MessageDelta {
+                    delta: cc_engine::types::message::MessageDelta {
                         stop_reason: resp.assistant_message.stop_reason.clone(),
                     },
                     usage: Some(resp.usage),
@@ -261,7 +261,7 @@ impl QueryDeps for MockDeps {
         Ok(ToolExecResult {
             tool_use_id: request.tool_use_id,
             tool_name: request.tool_name,
-            result: crate::types::tool::ToolResult {
+            result: cc_engine::types::tool::ToolResult {
                 data: serde_json::json!("mock tool output"),
                 new_messages: vec![],
                 ..Default::default()
@@ -1119,7 +1119,7 @@ async fn test_max_tokens_recovery_escalates_next_request_limit() {
     assert_eq!(params[0].max_output_tokens, None);
     assert_eq!(
         params[1].max_output_tokens,
-        Some(crate::query::loop_helpers::ESCALATED_MAX_TOKENS)
+        Some(crate::loop_helpers::ESCALATED_MAX_TOKENS)
     );
     assert_eq!(
         deps.collapse_drain_calls.load(Ordering::SeqCst),
@@ -1540,7 +1540,7 @@ async fn streaming_tool_execution_gate_starts_safe_tools_before_message_stop() {
         (
             Duration::ZERO,
             Ok(StreamEvent::MessageDelta {
-                delta: crate::types::message::MessageDelta {
+                delta: cc_engine::types::message::MessageDelta {
                     stop_reason: Some("tool_use".to_string()),
                 },
                 usage: Some(Usage::default()),
@@ -1885,7 +1885,7 @@ impl QueryDeps for ImageMockDeps {
             events.push(StreamEvent::ContentBlockStop { index: i });
         }
         events.push(StreamEvent::MessageDelta {
-            delta: crate::types::message::MessageDelta {
+            delta: cc_engine::types::message::MessageDelta {
                 stop_reason: resp.assistant_message.stop_reason.clone(),
             },
             usage: Some(resp.usage),
@@ -1935,7 +1935,7 @@ impl QueryDeps for ImageMockDeps {
         Ok(ToolExecResult {
             tool_use_id: request.tool_use_id,
             tool_name: request.tool_name,
-            result: crate::types::tool::ToolResult {
+            result: cc_engine::types::tool::ToolResult {
                 data: serde_json::json!("[Image: image/png]"),
                 model_content: Some(ToolResultContent::Blocks(image_blocks)),
                 display_preview: Some("[Image: image/png]".to_string()),
@@ -2101,8 +2101,8 @@ async fn test_image_tool_result_flows_as_blocks() {
 // ---------------------------------------------------------------------------
 
 /// MockDeps that dispatches tool results by tool name:
-/// - screenshot → image content
-/// - left_click / type_text → text confirmation
+/// - screenshot 鈫?image content
+/// - left_click / type_text 鈫?text confirmation
 struct CuMockDeps {
     responses: parking_lot::Mutex<Vec<ModelResponse>>,
     aborted: std::sync::atomic::AtomicBool,
@@ -2148,7 +2148,7 @@ impl QueryDeps for CuMockDeps {
             events.push(StreamEvent::ContentBlockStop { index: i });
         }
         events.push(StreamEvent::MessageDelta {
-            delta: crate::types::message::MessageDelta {
+            delta: cc_engine::types::message::MessageDelta {
                 stop_reason: resp.assistant_message.stop_reason.clone(),
             },
             usage: Some(resp.usage),
@@ -2183,7 +2183,7 @@ impl QueryDeps for CuMockDeps {
     ) -> Result<ToolExecResult> {
         // Dispatch by tool name to simulate different CU tools
         let result = if request.tool_name.contains("screenshot") {
-            crate::types::tool::ToolResult {
+            cc_engine::types::tool::ToolResult {
                 data: serde_json::json!("[Image: image/png]"),
                 model_content: Some(ToolResultContent::Blocks(vec![ContentBlock::Image {
                     source: ImageSource {
@@ -2196,8 +2196,8 @@ impl QueryDeps for CuMockDeps {
                 new_messages: vec![],
             }
         } else {
-            // click, type_text, key, scroll → text confirmation
-            crate::types::tool::ToolResult {
+            // click, type_text, key, scroll 鈫?text confirmation
+            cc_engine::types::tool::ToolResult {
                 data: serde_json::json!(format!(
                     "Action '{}' executed successfully",
                     request.tool_name
@@ -2238,8 +2238,8 @@ impl QueryDeps for CuMockDeps {
 }
 
 /// Full Computer Use smoke test:
-///   Turn 1: model calls screenshot → receives image
-///   Turn 2: model calls left_click → receives text confirmation
+///   Turn 1: model calls screenshot 鈫?receives image
+///   Turn 2: model calls left_click 鈫?receives text confirmation
 ///   Turn 3: model responds with final text
 #[tokio::test]
 async fn test_computer_use_screenshot_click_round_trip() {

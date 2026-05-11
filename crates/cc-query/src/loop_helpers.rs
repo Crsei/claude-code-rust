@@ -11,14 +11,14 @@ use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
-use crate::api::streaming::CompletedToolUse;
-use crate::types::message::{
+use cc_api::api::streaming::CompletedToolUse;
+use cc_engine::types::message::{
     AssistantMessage, ContentBlock, Message, MessageContent, StreamEvent, ToolResultContent,
     UserMessage,
 };
-use crate::types::state::QueryLoopState;
-use crate::types::tool::{ToolProgress, Tools};
-use crate::types::transitions::{Continue, Terminal};
+use cc_engine::types::state::QueryLoopState;
+use cc_engine::types::tool::{ToolProgress, Tools};
+use cc_engine::types::transitions::{Continue, Terminal};
 
 use super::deps::{QueryDeps, ToolExecRequest, ToolExecResult};
 
@@ -378,7 +378,7 @@ pub(crate) fn handle_max_output_tokens(
 pub(crate) async fn execute_tool_calls(
     deps: &Arc<dyn QueryDeps>,
     tool_uses: &[(String, String, serde_json::Value)],
-    tools: &crate::types::tool::Tools,
+    tools: &cc_engine::types::tool::Tools,
     parent_message: &AssistantMessage,
     on_progress: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
 ) -> Vec<ToolExecResult> {
@@ -410,11 +410,7 @@ pub(crate) async fn execute_tool_calls(
             .collect::<Vec<String>>();
         let batch_span = if is_concurrent && batch.len() > 1 {
             deps.langfuse_trace().as_ref().and_then(|trace| {
-                crate::services::langfuse::create_tool_batch_span(
-                    trace,
-                    &batch_tool_names,
-                    batch_index,
-                )
+                cc_services::langfuse::create_tool_batch_span(trace, &batch_tool_names, batch_index)
             })
         } else {
             None
@@ -479,7 +475,7 @@ pub(crate) async fn execute_tool_calls(
                 }
             }
         }
-        crate::services::langfuse::end_span(batch_span);
+        cc_services::langfuse::end_span(batch_span);
     }
 
     results
@@ -493,7 +489,7 @@ fn internal_tool_error_result(
     ToolExecResult {
         tool_use_id,
         tool_name,
-        result: crate::types::tool::ToolResult {
+        result: cc_engine::types::tool::ToolResult {
             data: serde_json::json!(format!("Internal error: {}", error)),
             new_messages: vec![],
             ..Default::default()
@@ -674,11 +670,11 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::time::Duration;
 
-    use crate::query::deps::{CompactionResult, ModelCallParams, ModelResponse};
-    use crate::types::app_state::AppState;
-    use crate::types::message::{StreamEvent, Usage};
-    use crate::types::state::AutoCompactTracking;
-    use crate::types::tool::{Tool, ToolResult, ToolUseContext, Tools};
+    use crate::deps::{CompactionResult, ModelCallParams, ModelResponse};
+    use cc_engine::types::app_state::AppState;
+    use cc_engine::types::message::{StreamEvent, Usage};
+    use cc_engine::types::state::AutoCompactTracking;
+    use cc_engine::types::tool::{Tool, ToolResult, ToolUseContext, Tools};
 
     struct BatchTool {
         name: &'static str,
@@ -1132,7 +1128,7 @@ mod tests {
         let deps: Arc<dyn QueryDeps> = Arc::new(RecordingDeps::new());
         let source_uuid = uuid::Uuid::new_v4();
         let image = ContentBlock::Image {
-            source: crate::types::message::ImageSource {
+            source: cc_engine::types::message::ImageSource {
                 source_type: "base64".to_string(),
                 media_type: "image/png".to_string(),
                 data: "iVBORw0KGgo=".to_string(),

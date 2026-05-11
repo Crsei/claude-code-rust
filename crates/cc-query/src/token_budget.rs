@@ -1,18 +1,18 @@
-use crate::types::state::{BudgetCompletionEvent, BudgetTracker, TokenBudgetDecision};
+use cc_engine::types::state::{BudgetCompletionEvent, BudgetTracker, TokenBudgetDecision};
 
 const COMPLETION_THRESHOLD: f64 = 0.9;
 const DIMINISHING_THRESHOLD: u64 = 500;
 
-/// 检查 token 预算, 决定是否继续
+/// 妫€鏌?token 棰勭畻, 鍐冲畾鏄惁缁х画
 ///
-/// 对应 TypeScript: query/tokenBudget.ts 的 checkTokenBudget
+/// 瀵瑰簲 TypeScript: query/tokenBudget.ts 鐨?checkTokenBudget
 pub fn check_token_budget(
     tracker: &mut BudgetTracker,
     agent_id: Option<&str>,
     budget: Option<u64>,
     global_turn_tokens: u64,
 ) -> TokenBudgetDecision {
-    // 子代理或无预算 → 停止
+    // 瀛愪唬鐞嗘垨鏃犻绠?鈫?鍋滄
     let budget = match budget {
         Some(b) if b > 0 && agent_id.is_none() => b,
         _ => {
@@ -36,7 +36,7 @@ pub fn check_token_budget(
         tracker.last_global_turn_tokens = global_turn_tokens;
         return TokenBudgetDecision::Continue {
             nudge_message: format!(
-                "Token budget at {}% ({}/{}) — continue working.",
+                "Token budget at {}% ({}/{}) 鈥?continue working.",
                 pct, turn_tokens, budget
             ),
             continuation_count: tracker.continuation_count,

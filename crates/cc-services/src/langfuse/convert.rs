@@ -2,10 +2,10 @@ use std::collections::HashMap;
 
 use serde_json::{json, Value};
 
-use crate::types::message::{
+use cc_engine::types::tool::Tools;
+use cc_types::message::{
     AssistantMessage, ContentBlock, Message, MessageContent, ToolResultContent,
 };
-use crate::types::tool::Tools;
 
 use super::sanitize::{
     sanitize_global_string, sanitize_global_value, sanitize_tool_output, serialize_sanitized_value,
@@ -209,7 +209,7 @@ fn convert_messages(messages: &[Message], system_prompt: &[String]) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::message::{Message, UserMessage};
+    use cc_types::message::{Message, UserMessage};
     use uuid::Uuid;
 
     #[test]

@@ -1,9 +1,9 @@
 //! `/advisor` — advisor-model command (issue #33).
 //!
 //! Lets the user configure a stronger secondary model that the API request
-//! pipeline passes through as [`crate::api::client::MessagesRequest::advisor_model`].
+//! pipeline passes through as [`cc_api::api::client::MessagesRequest::advisor_model`].
 //! Only providers that advertise advisor support (see
-//! [`crate::api::client::provider_supports_advisor`]) actually receive the
+//! [`cc_api::api::client::provider_supports_advisor`]) actually receive the
 //! field; for others the command still persists the setting but surfaces a
 //! clear "inactive" message so the user knows their choice won't reach the
 //! provider.

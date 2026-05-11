@@ -2,7 +2,7 @@ use opentelemetry::trace::Status;
 use serde_json::{json, Value};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-use crate::types::message::Usage;
+use cc_types::message::Usage;
 
 use super::sanitize::{
     metadata_json, sanitize_global, sanitize_global_string, sanitize_tool_input,

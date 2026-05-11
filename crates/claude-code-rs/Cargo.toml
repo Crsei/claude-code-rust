@@ -9,16 +9,16 @@ build = "build.rs"
 # Features
 # ============================================================
 #
-# default — minimal build: no telemetry, no embedded web assets,
+# default 闂?minimal build: no telemetry, no embedded web assets,
 #           no image/syntect/tree-sitter pulls. Keeps `cargo build`
 #           fast and avoids heavy native deps (onig, tonic/prost).
 #
 # Opt-in:
-#   telemetry   — Langfuse + OpenTelemetry export (pulls tonic/prost).
-#   web-ui      — Embed the React SPA (rust-embed) into the binary.
-#   image       — Image decoding (png/jpeg only).
-#   syntect     — Syntax highlighting via fancy-regex (no onig C dep).
-#   tree-sitter — AST parsing.
+#   telemetry   闂?Langfuse + OpenTelemetry export (pulls tonic/prost).
+#   web-ui      闂?Embed the React SPA (rust-embed) into the binary.
+#   image       闂?Image decoding (png/jpeg only).
+#   syntect     闂?Syntax highlighting via fancy-regex (no onig C dep).
+#   tree-sitter 闂?AST parsing.
 
 [features]
 default = []
@@ -27,6 +27,7 @@ telemetry = [
     "dep:opentelemetry",
     "dep:opentelemetry_sdk",
     "dep:opentelemetry-langfuse",
+    "cc-services/telemetry",
 ]
 web-ui = ["dep:rust-embed"]
 image = ["dep:image"]
@@ -34,7 +35,7 @@ syntect = ["dep:syntect"]
 tree-sitter = ["dep:tree-sitter"]
 
 [dependencies]
-# 异步运行时
+# 閻庢鍠栭崐褰掝敆閻愬瓨浜ら柟閭﹀灱閺€浠嬫煛?
 tokio = { workspace = true }
 futures = { workspace = true }
 async-trait = { workspace = true }
@@ -42,11 +43,11 @@ async-stream = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 
-# 序列化
+# 闁瑰吋娼欑换鎰板垂椤忓牆绀?
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-# 错误处理
+# 闂備焦瀵ч悷銊╊敋閵堝棗绶為柛鏇ㄥ幗閸?
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 
@@ -56,13 +57,13 @@ clap = { workspace = true }
 # UUID
 uuid = { workspace = true }
 
-# 时间
+# 闂佸搫鍟悥鐓幬?
 chrono = { workspace = true }
 
 # LRU
 lru = { workspace = true }
 
-# 日志
+# 闂佸搫鍟ㄩ崕杈╂崲?
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-appender = { workspace = true }
@@ -74,13 +75,13 @@ opentelemetry-langfuse = { workspace = true, optional = true }
 # LSP
 lsp-types = { workspace = true }
 
-# 文件 & 路径
+# 闂佸搫鍊稿ú锝呪枎?& 闁荤姳璀﹂崹鎵?
 glob = { workspace = true }
 ignore = { workspace = true }
 walkdir = { workspace = true }
 dirs = { workspace = true }
 
-# 正则
+# 濠殿喗绻愮徊浠嬪垂?
 regex = { workspace = true }
 
 # Git
@@ -89,17 +90,17 @@ git2 = { workspace = true }
 # Diff
 similar = { workspace = true }
 
-# 进程
+# 闁哄鏅滅粙鎾诲煝?
 shell-words = { workspace = true }
 
-# 终端 UI
+# 缂傚倷绀侀悧蹇涱敂?UI
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 
-# 语法高亮
+# 闁荤姴娴傞崢鐣屾兜閼告娈楁俊顖滄嚀閻?
 syntect = { workspace = true, optional = true }
 
-# 文本
+# 闂佸搫鍊稿ú锕€锕?
 textwrap = { workspace = true }
 unicode-width = { workspace = true }
 strip-ansi-escapes = { workspace = true }
@@ -107,32 +108,32 @@ strip-ansi-escapes = { workspace = true }
 # Markdown
 pulldown-cmark = { workspace = true }
 
-# 哈希
+# Hashing
 sha2 = { workspace = true }
 hex = { workspace = true }
 rand = { workspace = true }
 ring = { workspace = true }
 
-# 编码
+# 缂傚倸鍊归悧婊堟偉?
 base64 = { workspace = true }
 bytes = { workspace = true }
 url = { workspace = true }
 urlencoding = { workspace = true }
 semver = { workspace = true }
 
-# 网络
+# 缂傚倸鍟崹鍦垝?
 reqwest = { workspace = true }
 tokio-tungstenite = { workspace = true }
 eventsource-stream = { workspace = true }
 
-# 认证
+# 闁荤姳闄嶉崐娑㈡儊?
 keyring = { workspace = true }
 dotenvy = { workspace = true }
 
-# 同步原语
+# 闂佸憡鑹鹃張顒勵敆閻愬搫鍌ㄩ柣鏃€妞块崵?
 parking_lot = { workspace = true }
 
-# 内部 workspace crates (P1/P2/P3)
+# 闂佸憡鍔曢幊姗€宕?workspace crates (P1/P2/P3)
 cc-keybindings = { workspace = true }
 cc-observability = { workspace = true }
 cc-types = { workspace = true }
@@ -152,6 +153,7 @@ cc-permissions = { workspace = true }
 cc-browser = { workspace = true }
 cc-session = { workspace = true }
 cc-engine = { workspace = true }
+cc-query = { workspace = true }
 gateway = { workspace = true }
 
 # Daemon
@@ -165,11 +167,11 @@ notify-rust = { workspace = true }
 rust-embed = { workspace = true, optional = true }
 mime_guess = { workspace = true }
 
-# AST / 图像
+# AST / 闂佹悶鍎查崕鎶藉磿?
 tree-sitter = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
 
-# 可执行文件查找 (sandbox/availability.rs 用它探测 bwrap/sandbox-exec)
+# 闂佸憡鐟崹杈ㄦ櫠閻ｅ本鍋橀悘鐐靛亾閻庮喖霉閻樺搫鐓愰柣鎿勭節楠?(sandbox/availability.rs 闂佹椿娼块崝宀勬偩閻樿绠抽柕蹇ョ磿閵?bwrap/sandbox-exec)
 which = { workspace = true }
 
 [dev-dependencies]

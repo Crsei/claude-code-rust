@@ -115,10 +115,10 @@ fn auth_status_text() -> String {
 }
 
 fn cloud_auth_status_text() -> Option<String> {
-    if crate::api::client::is_env_truthy("CLAUDE_CODE_USE_BEDROCK") {
+    if cc_api::api::client::is_env_truthy("CLAUDE_CODE_USE_BEDROCK") {
         return Some(bedrock_status_text());
     }
-    if crate::api::client::is_env_truthy("CLAUDE_CODE_USE_VERTEX") {
+    if cc_api::api::client::is_env_truthy("CLAUDE_CODE_USE_VERTEX") {
         return Some(vertex_status_text());
     }
     None
@@ -135,7 +135,7 @@ fn enable_bedrock_session() -> String {
         String::new(),
         bedrock_status_text(),
     ];
-    if crate::api::bedrock::BedrockAuth::from_env().is_none() {
+    if cc_api::api::bedrock::BedrockAuth::from_env().is_none() {
         lines.push(String::new());
         lines.push(bedrock_setup_text());
     } else {
@@ -159,8 +159,8 @@ fn enable_vertex_session() -> String {
         String::new(),
         vertex_status_text(),
     ];
-    if crate::api::vertex::resolve_project_id().is_none()
-        || crate::api::vertex::VertexAccessToken::from_env_or_gcloud().is_none()
+    if cc_api::api::vertex::resolve_project_id().is_none()
+        || cc_api::api::vertex::VertexAccessToken::from_env_or_gcloud().is_none()
     {
         lines.push(String::new());
         lines.push(vertex_setup_text());
@@ -175,7 +175,7 @@ fn enable_vertex_session() -> String {
 }
 
 fn bedrock_status_text() -> String {
-    let region = crate::api::bedrock::resolve_region();
+    let region = cc_api::api::bedrock::resolve_region();
     let base_url = std::env::var("ANTHROPIC_BEDROCK_BASE_URL")
         .ok()
         .filter(|v| !v.trim().is_empty());
@@ -184,11 +184,11 @@ fn bedrock_status_text() -> String {
         .filter(|v| !v.trim().is_empty())
         .unwrap_or_else(|| "claude-sonnet-4-5-20250929".to_string());
 
-    let auth = match crate::api::bedrock::BedrockAuth::from_env() {
-        Some(crate::api::bedrock::BedrockAuth::BearerToken(token)) => {
+    let auth = match cc_api::api::bedrock::BedrockAuth::from_env() {
+        Some(cc_api::api::bedrock::BedrockAuth::BearerToken(token)) => {
             format!("Bearer token {}", mask_secret(&token))
         }
-        Some(crate::api::bedrock::BedrockAuth::AwsCredentials(creds)) => {
+        Some(cc_api::api::bedrock::BedrockAuth::AwsCredentials(creds)) => {
             let session = if creds.session_token.is_some() {
                 " + AWS_SESSION_TOKEN"
             } else {
@@ -213,7 +213,7 @@ fn bedrock_status_text() -> String {
          Auth: {}\n\
          Model: {}\n\
          Base URL: {}",
-        crate::api::client::is_env_truthy("CLAUDE_CODE_USE_BEDROCK"),
+        cc_api::api::client::is_env_truthy("CLAUDE_CODE_USE_BEDROCK"),
         region,
         auth,
         model,
@@ -222,14 +222,14 @@ fn bedrock_status_text() -> String {
 }
 
 fn vertex_status_text() -> String {
-    let default_region = crate::api::vertex::resolve_region();
+    let default_region = cc_api::api::vertex::resolve_region();
     let model = std::env::var("ANTHROPIC_MODEL")
         .ok()
         .filter(|v| !v.trim().is_empty())
         .unwrap_or_else(|| "claude-sonnet-4-5-20250929".to_string());
     let region =
-        crate::api::vertex::resolve_region_for_model_with_default(Some(&model), &default_region);
-    let project_id = crate::api::vertex::resolve_project_id()
+        cc_api::api::vertex::resolve_region_for_model_with_default(Some(&model), &default_region);
+    let project_id = cc_api::api::vertex::resolve_project_id()
         .unwrap_or_else(|| "missing (set ANTHROPIC_VERTEX_PROJECT_ID)".to_string());
     let token_source = vertex_token_source();
 
@@ -240,7 +240,7 @@ fn vertex_status_text() -> String {
          Region: {}\n\
          Auth: {}\n\
          Model: {}",
-        crate::api::client::is_env_truthy("CLAUDE_CODE_USE_VERTEX"),
+        cc_api::api::client::is_env_truthy("CLAUDE_CODE_USE_VERTEX"),
         project_id,
         region,
         token_source,
@@ -261,7 +261,7 @@ fn vertex_token_source() -> String {
     {
         return "GOOGLE_OAUTH_ACCESS_TOKEN".to_string();
     }
-    if crate::api::vertex::VertexAccessToken::from_env_or_gcloud().is_some() {
+    if cc_api::api::vertex::VertexAccessToken::from_env_or_gcloud().is_some() {
         return "gcloud application-default access token".to_string();
     }
     "missing (set CLAUDE_CODE_VERTEX_ACCESS_TOKEN or run gcloud auth application-default login)"
@@ -478,8 +478,12 @@ mod tests {
 
         let text = enable_bedrock_session();
 
-        assert!(crate::api::client::is_env_truthy("CLAUDE_CODE_USE_BEDROCK"));
-        assert!(!crate::api::client::is_env_truthy("CLAUDE_CODE_USE_VERTEX"));
+        assert!(cc_api::api::client::is_env_truthy(
+            "CLAUDE_CODE_USE_BEDROCK"
+        ));
+        assert!(!cc_api::api::client::is_env_truthy(
+            "CLAUDE_CODE_USE_VERTEX"
+        ));
         assert!(text.contains("AWS Bedrock provider enabled"));
         assert!(text.contains("Region: us-west-2"));
         assert!(text.contains("Bearer token"));
@@ -496,8 +500,8 @@ mod tests {
 
         let text = enable_vertex_session();
 
-        assert!(crate::api::client::is_env_truthy("CLAUDE_CODE_USE_VERTEX"));
-        assert!(!crate::api::client::is_env_truthy(
+        assert!(cc_api::api::client::is_env_truthy("CLAUDE_CODE_USE_VERTEX"));
+        assert!(!cc_api::api::client::is_env_truthy(
             "CLAUDE_CODE_USE_BEDROCK"
         ));
         assert!(text.contains("GCP Vertex AI provider enabled"));

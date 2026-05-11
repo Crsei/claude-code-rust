@@ -102,7 +102,7 @@ async fn build_model_assisted_memory_context(
         return Ok(Some((String::new(), Vec::new())));
     }
 
-    let api_client = match crate::api::client::ApiClient::from_backend(Some(backend_name)) {
+    let api_client = match cc_api::api::client::ApiClient::from_backend(Some(backend_name)) {
         Some(client) => client,
         None => return Ok(None),
     };
@@ -111,7 +111,7 @@ async fn build_model_assisted_memory_context(
         &candidates,
         cc_session::memdir::MODEL_ASSISTED_RECALL_MAX_RESULTS,
     );
-    let request = crate::api::client::MessagesRequest {
+    let request = cc_api::api::client::MessagesRequest {
         model: model_name.to_string(),
         messages: vec![serde_json::json!({
             "role": "user",
@@ -800,15 +800,15 @@ impl QueryEngine {
 
             // Create API client for the selected backend.
             let mut submit_langfuse_trace = None;
-            let api_client: Option<Arc<crate::api::client::ApiClient>> =
-                crate::api::client::ApiClient::from_backend(Some(&backend_name)).map(Arc::new);
+            let api_client: Option<Arc<cc_api::api::client::ApiClient>> =
+                cc_api::api::client::ApiClient::from_backend(Some(&backend_name)).map(Arc::new);
             if api_client.is_none() {
                 let result = if codex_exec::is_codex_backend(&backend_name) {
                     format!(
                         "Codex backend requires {}. Optionally set {} and {}.",
-                        crate::api::client::OPENAI_CODEX_TOKEN_ENV,
-                        crate::api::client::OPENAI_CODEX_BASE_URL_ENV,
-                        crate::api::client::OPENAI_CODEX_MODEL_ENV
+                        cc_api::api::client::OPENAI_CODEX_TOKEN_ENV,
+                        cc_api::api::client::OPENAI_CODEX_BASE_URL_ENV,
+                        cc_api::api::client::OPENAI_CODEX_MODEL_ENV
                     )
                 } else {
                     "No API provider configured. Set an API key in environment or use /login."

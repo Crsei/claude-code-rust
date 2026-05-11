@@ -1,16 +1,9 @@
 //! No-op Langfuse surface used when the `telemetry` feature is disabled.
-//!
-//! Keeps the public API that call sites in `engine::lifecycle`, `query::*`, and
-//! `main.rs` depend on, so gating telemetry does not require `#[cfg]` at every
-//! call site — the compiler simply folds these stubs away.
 
 use serde_json::Value;
 
-use crate::types::message::Usage;
+use cc_types::message::Usage;
 
-/// No-op trace handle. Holds a `session_id` string only because some call
-/// sites read it to stamp downstream context — the real impl exposes the
-/// same field.
 #[derive(Clone, Debug, Default)]
 pub struct LangfuseTrace {
     pub session_id: String,

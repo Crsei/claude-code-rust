@@ -43,7 +43,7 @@ pub(crate) struct QueryEngineDeps {
     /// When `Some`, the deps will use this client for `call_model` /
     /// `call_model_streaming`. When `None`, those methods bail with a
     /// descriptive error.
-    pub(crate) api_client: Option<Arc<crate::api::client::ApiClient>>,
+    pub(crate) api_client: Option<Arc<cc_api::api::client::ApiClient>>,
     /// Sub-agent context -- propagated into `ToolUseContext` so that
     /// nested Agent tool calls can enforce recursion depth limits.
     pub(crate) agent_context: Option<crate::types::config::AgentContext>,
@@ -208,7 +208,7 @@ fn merge_refreshed_mcp_tools(existing_tools: Tools, refreshed_mcp_tools: Tools) 
 fn prepare_model_call_params_for_client(
     params: &mut ModelCallParams,
     app_model: &str,
-    client: &crate::api::client::ApiClient,
+    client: &cc_api::api::client::ApiClient,
 ) {
     if params.model.as_deref().unwrap_or_default().is_empty() {
         params.model = Some(if app_model.is_empty() {
@@ -218,7 +218,7 @@ fn prepare_model_call_params_for_client(
         });
     }
 
-    if !crate::api::client::provider_supports_advisor(&client.config().provider)
+    if !cc_api::api::client::provider_supports_advisor(&client.config().provider)
         && params.advisor_model.is_some()
     {
         tracing::debug!(
@@ -232,7 +232,7 @@ fn prepare_model_call_params_for_client(
 fn model_for_autocompact(
     params: &mut ModelCallParams,
     app_model: &str,
-    client: Option<&crate::api::client::ApiClient>,
+    client: Option<&cc_api::api::client::ApiClient>,
 ) -> String {
     if let Some(client) = client {
         prepare_model_call_params_for_client(params, app_model, client);
@@ -257,7 +257,7 @@ fn build_auto_compact_exact_count_request(
     base_params: &ModelCallParams,
     messages: Vec<Message>,
     model: &str,
-) -> crate::api::client::MessagesRequest {
+) -> cc_api::api::client::MessagesRequest {
     let mut count_params = base_params.clone();
     count_params.messages = messages;
     count_params.model = Some(model.to_string());
@@ -284,7 +284,7 @@ impl QueryDeps for QueryEngineDeps {
         prepare_model_call_params_for_client(&mut params, &app_model, client);
 
         // Strip advisor_model for providers that don't support it (issue #33).
-        if !crate::api::client::provider_supports_advisor(&client.config().provider)
+        if !cc_api::api::client::provider_supports_advisor(&client.config().provider)
             && params.advisor_model.is_some()
         {
             tracing::debug!(
@@ -298,7 +298,7 @@ impl QueryDeps for QueryEngineDeps {
         let stream = client.messages_stream(request).await?;
         let mut stream = std::pin::pin!(stream);
 
-        let mut accumulator = crate::api::streaming::StreamAccumulator::new();
+        let mut accumulator = cc_api::api::streaming::StreamAccumulator::new();
         let mut stream_events = Vec::new();
 
         use futures::StreamExt;
@@ -335,7 +335,7 @@ impl QueryDeps for QueryEngineDeps {
         prepare_model_call_params_for_client(&mut params, &app_model, client);
 
         // Strip advisor_model for providers that don't support it (issue #33).
-        if !crate::api::client::provider_supports_advisor(&client.config().provider)
+        if !cc_api::api::client::provider_supports_advisor(&client.config().provider)
             && params.advisor_model.is_some()
         {
             tracing::debug!(
@@ -346,7 +346,7 @@ impl QueryDeps for QueryEngineDeps {
         }
 
         let request = build_messages_request(&params);
-        if crate::api::client::is_env_truthy("CC_RUST_EXACT_TOKEN_DIAGNOSTICS")
+        if cc_api::api::client::is_env_truthy("CC_RUST_EXACT_TOKEN_DIAGNOSTICS")
             && client.supports_exact_token_count()
         {
             match client.count_token_usage_exact(&request).await {

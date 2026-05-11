@@ -732,7 +732,22 @@ dependencies = [
 name = "cc-query"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "cc-api",
+ "cc-engine",
+ "cc-observability",
+ "cc-services",
  "cc-types",
+ "cc-utils",
+ "chrono",
+ "futures",
+ "parking_lot",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -760,11 +775,20 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cc-config",
+ "cc-engine",
+ "cc-types",
  "chrono",
+ "dirs",
+ "opentelemetry",
+ "opentelemetry-langfuse",
+ "opentelemetry_sdk",
+ "parking_lot",
  "serde",
  "serde_json",
  "tempfile",
  "tracing",
+ "tracing-opentelemetry",
+ "uuid",
 ]
 
 [[package]]
@@ -939,6 +963,7 @@ dependencies = [
  "cc-models",
  "cc-observability",
  "cc-permissions",
+ "cc-query",
  "cc-sandbox",
  "cc-services",
  "cc-session",

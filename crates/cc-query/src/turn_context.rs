@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use tracing::{debug, warn};
 
-use crate::types::config::{QueryGates, QueryParams, QuerySource};
-use crate::types::state::QueryLoopState;
-use crate::types::tool::Tools;
+use cc_engine::types::config::{QueryGates, QueryParams, QuerySource};
+use cc_engine::types::state::QueryLoopState;
+use cc_engine::types::tool::Tools;
 
 use super::deps::{ModelCallParams, QueryDeps};
 

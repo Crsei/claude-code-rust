@@ -3,7 +3,7 @@
 //! The frontend sends `AgentSettingsCommand::Generate { user_prompt,
 //! existing_names }`. The IPC handler in [`super::agent_settings`] fires a
 //! `GenerateStarted` marker synchronously, then spawns a task here that
-//! calls the model via [`crate::api::client::ApiClient::messages`] and posts
+//! calls the model via [`cc_api::api::client::ApiClient::messages`] and posts
 //! a `Generated` or `Error` event onto the [`super::subsystem_events`] bus.
 //!
 //! The system prompt is kept verbatim from the upstream TypeScript
@@ -65,7 +65,7 @@ pub fn spawn_generation(user_prompt: String, existing_names: Vec<String>) {
 }
 
 async fn run_generation(user_prompt: String, existing_names: Vec<String>) {
-    let Some(client) = crate::api::client::ApiClient::from_auth() else {
+    let Some(client) = cc_api::api::client::ApiClient::from_auth() else {
         emit(AgentSettingsEvent::Error {
             name: "__generate__".into(),
             error: "No API provider configured. Run /login or set ANTHROPIC_API_KEY.".into(),
@@ -88,7 +88,7 @@ async fn run_generation(user_prompt: String, existing_names: Vec<String>) {
         existing_list
     );
 
-    let request = crate::api::client::MessagesRequest {
+    let request = cc_api::api::client::MessagesRequest {
         model,
         messages: vec![serde_json::json!({
             "role": "user",

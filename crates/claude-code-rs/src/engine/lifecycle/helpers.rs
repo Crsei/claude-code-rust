@@ -99,7 +99,7 @@ pub(crate) fn format_conversation_for_summary(messages: &[Message]) -> String {
 /// expected by `api::client::ApiClient`.
 pub(crate) fn build_messages_request(
     params: &crate::query::deps::ModelCallParams,
-) -> crate::api::client::MessagesRequest {
+) -> cc_api::api::client::MessagesRequest {
     use crate::types::message::{Attachment, Message, MessageContent};
 
     // Convert Message list to API JSON format
@@ -206,7 +206,7 @@ pub(crate) fn build_messages_request(
         .clone()
         .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
 
-    crate::api::client::MessagesRequest {
+    cc_api::api::client::MessagesRequest {
         max_tokens: clamp_max_tokens_for_model(
             params.max_output_tokens.unwrap_or(16384),
             &resolved_model,

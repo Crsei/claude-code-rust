@@ -71,7 +71,7 @@ pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
     crate::plugins::init_plugins();
     let tools = registry::get_tools_for_active_session();
     let provider_default =
-        crate::api::client::ApiClient::from_env().map(|c| c.config().default_model.clone());
+        cc_api::api::client::ApiClient::from_env().map(|c| c.config().default_model.clone());
     let model_owned = cli
         .model
         .clone()

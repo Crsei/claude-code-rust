@@ -27,16 +27,16 @@ use futures::Stream;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::types::config::QueryParams;
-use crate::types::message::QueryYield;
-use crate::types::message::{
+use cc_engine::types::config::QueryParams;
+use cc_engine::types::message::QueryYield;
+use cc_engine::types::message::{
     AssistantMessage, Attachment, AttachmentMessage, ContentBlock, Message, RequestStartEvent,
     StreamEvent, TombstoneMessage, ToolUseSummaryMessage, Usage,
 };
-use crate::types::state::{BudgetTracker, TokenBudgetDecision};
-use crate::types::transitions::Continue;
+use cc_engine::types::state::{BudgetTracker, TokenBudgetDecision};
+use cc_engine::types::transitions::Continue;
 
-use crate::services::tool_use_summary::{self, ToolInfo};
+use cc_services::tool_use_summary::{self, ToolInfo};
 
 use super::deps::QueryDeps;
 use super::loop_helpers::{
@@ -57,9 +57,9 @@ use super::turn_context::{prepare_model_request, QueryRunContext};
 /// The caller (QueryEngine) consumes this stream to drive UI updates and message collection.
 pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item = QueryYield> {
     stream! {
-        // ──────────────────────────────────────────────────────────
+        // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
         // Initialization
-        // ──────────────────────────────────────────────────────────
+        // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
         let (turn_context, mut state) = QueryRunContext::from_params(params);
         let mut budget_tracker = BudgetTracker::new();
@@ -67,9 +67,9 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
 
         // Main loop
         'query_loop: loop {
-            // ──────────────────────────────────────────────────────
+            // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
             // STEP 1: SETUP
-            // ──────────────────────────────────────────────────────
+            // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
             let turn_count = state.turn_count;
             debug!(turn = turn_count, "query loop iteration start");
@@ -77,7 +77,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             // Emit query.turn.start audit event
             let turn_audit_ctx = deps.audit_context().with_turn();
             {
-                use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                use cc_observability::{AuditLevel, EventKind, Outcome, Stage};
                 turn_audit_ctx.emit(
                     EventKind::QueryTurnStart,
                     Stage::QueryTurn,
@@ -100,9 +100,9 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 break;
             }
 
-            // ──────────────────────────────────────────────────────
+            // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
             // STEP 1b: Inject completed background agent results
-            // ──────────────────────────────────────────────────────
+            // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
             let completed_agents = deps.drain_background_results();
             for agent in &completed_agents {
@@ -124,11 +124,11 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     )
                 };
 
-                let sys_msg = Message::System(crate::types::message::SystemMessage {
+                let sys_msg = Message::System(cc_engine::types::message::SystemMessage {
                     uuid: Uuid::new_v4(),
                     timestamp: chrono::Utc::now().timestamp_millis(),
-                    subtype: crate::types::message::SystemSubtype::Informational {
-                        level: crate::types::message::InfoLevel::Info,
+                    subtype: cc_engine::types::message::SystemSubtype::Informational {
+                        level: cc_engine::types::message::InfoLevel::Info,
                     },
                     content,
                 });
@@ -136,23 +136,23 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 state.messages.push(sys_msg);
             }
 
-            // ──────────────────────────────────────────────────────
+            // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
             // STEP 2: CONTEXT -- microcompact + autocompact
-            // ──────────────────────────────────────────────────────
+            // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
             let prepared_request =
                 prepare_model_request(&deps, &mut state, &turn_context).await;
 
-            // ──────────────────────────────────────────────────────
+            // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
             // STEP 3: API CALL -- streaming model call
-            // ──────────────────────────────────────────────────────
+            // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
             let tools = prepared_request.tools;
             let call_params = prepared_request.call_params;
             let provider_for_langfuse = deps
                 .langfuse_provider_name()
                 .unwrap_or_else(|| "unknown".to_string());
-            let generation_input = crate::services::langfuse::convert::convert_generation_input(
+            let generation_input = cc_services::langfuse::convert::convert_generation_input(
                 &call_params.messages,
                 &call_params.system_prompt,
                 &call_params.tools,
@@ -170,7 +170,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     .clone()
                     .unwrap_or_else(|| deps.get_app_state().main_loop_model.clone());
                 let mut generation_span = deps.langfuse_trace().as_ref().and_then(|trace| {
-                    crate::services::langfuse::create_generation_span(
+                    cc_services::langfuse::create_generation_span(
                         trace,
                         &attempt_model,
                         &provider_for_langfuse,
@@ -179,7 +179,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 });
 
                 {
-                    use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                    use cc_observability::{AuditLevel, EventKind, Outcome, Stage};
                     req_audit_ctx.emit(
                         EventKind::ModelRequestStart,
                         Stage::ModelCall,
@@ -202,7 +202,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     Ok(s) => s,
                     Err(e) => {
                         let error_str = e.to_string();
-                        crate::services::langfuse::finish_generation_span(
+                        cc_services::langfuse::finish_generation_span(
                             generation_span.take(),
                             None,
                             None,
@@ -239,7 +239,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                             if let ModelCallFailureRecovery::Fallback { model: fallback } = recovery
                             {
                                 {
-                                    use crate::observability::{
+                                    use cc_observability::{
                                         AuditLevel, EventKind, Outcome, Stage,
                                     };
                                     req_audit_ctx.emit(
@@ -279,7 +279,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 };
 
                 // Consume stream events, forwarding to caller while accumulating
-                let mut accumulator = crate::api::streaming::StreamAccumulator::new();
+                let mut accumulator = cc_api::api::streaming::StreamAccumulator::new();
                 let assistant_uuid = Uuid::new_v4();
                 let streaming_tool_parent = AssistantMessage {
                     uuid: assistant_uuid,
@@ -383,7 +383,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
 
                     let ttft_ms = first_response_at
                         .map(|instant| instant.duration_since(model_call_start).as_millis() as u64);
-                    crate::services::langfuse::finish_generation_span(
+                    cc_services::langfuse::finish_generation_span(
                         generation_span.take(),
                         None,
                         None,
@@ -392,7 +392,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     );
                     warn!(error = %err, "stream error during model call");
                     {
-                        use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                        use cc_observability::{AuditLevel, EventKind, Outcome, Stage};
                         req_audit_ctx.emit(
                             EventKind::ModelRequestError,
                             Stage::ModelCall,
@@ -442,9 +442,9 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 let assistant_message = accumulator.build_with_uuid(&attempt_model, assistant_uuid);
                 let ttft_ms = first_response_at
                     .map(|instant| instant.duration_since(model_call_start).as_millis() as u64);
-                crate::services::langfuse::finish_generation_span(
+                cc_services::langfuse::finish_generation_span(
                     generation_span.take(),
-                    Some(crate::services::langfuse::convert::convert_assistant_output(
+                    Some(cc_services::langfuse::convert::convert_assistant_output(
                         &assistant_message,
                     )),
                     assistant_message.usage.as_ref(),
@@ -453,7 +453,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 );
 
                 {
-                    use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+                    use cc_observability::{AuditLevel, EventKind, Outcome, Stage};
                     let model_duration = model_call_start.elapsed().as_millis() as u64;
                     req_audit_ctx.emit(
                         EventKind::ModelRequestFinish,
@@ -481,9 +481,9 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 cumulative_usage.cache_creation_input_tokens += usage.cache_creation_input_tokens;
             }
 
-            // ──────────────────────────────────────────────────────
+            // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
             // STEP 4: POST-STREAMING -- check abort, pending summary
-            // ──────────────────────────────────────────────────────
+            // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
             if deps.is_aborted() {
                 info!("aborted after streaming");
@@ -496,12 +496,12 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             // Inject pending tool use summary as system message
             if turn_context.gates.emit_tool_use_summaries {
                 if let Some(summary) = state.pending_tool_use_summary.take() {
-                    debug!(summary = %crate::utils::messages::truncate_text(&summary, 200), "injecting tool use summary");
-                    let sys_msg = Message::System(crate::types::message::SystemMessage {
+                    debug!(summary = %cc_utils::messages::truncate_text(&summary, 200), "injecting tool use summary");
+                    let sys_msg = Message::System(cc_engine::types::message::SystemMessage {
                         uuid: Uuid::parse_str(&deps.uuid()).unwrap_or_else(|_| Uuid::new_v4()),
                         timestamp: chrono::Utc::now().timestamp_millis(),
-                        subtype: crate::types::message::SystemSubtype::Informational {
-                            level: crate::types::message::InfoLevel::Info,
+                        subtype: cc_engine::types::message::SystemSubtype::Informational {
+                            level: cc_engine::types::message::InfoLevel::Info,
                         },
                         content: format!("[tool summary] {}", summary),
                     });
@@ -515,9 +515,9 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
             yield QueryYield::Message(Message::Assistant(observable_assistant));
             state.messages.push(Message::Assistant(assistant_message.clone()));
 
-            // ──────────────────────────────────────────────────────
+            // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
             // STEP 5 vs 6: Branch -- tool calls or not
-            // ──────────────────────────────────────────────────────
+            // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
             let tool_uses = stop_hooks::extract_tool_uses(&assistant_message);
 
@@ -526,7 +526,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     executor.abort();
                 }
 
-                // ── TERMINAL CHECK (no tool calls) ──
+                // 鈹€鈹€ TERMINAL CHECK (no tool calls) 鈹€鈹€
 
                 // 5a. max_output_tokens recovery
                 if assistant_message.stop_reason.as_deref() == Some("max_tokens") {
@@ -629,7 +629,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     }
                 }
             } else {
-                // ── STEP 6: TOOL EXECUTION ──
+                // 鈹€鈹€ STEP 6: TOOL EXECUTION 鈹€鈹€
 
                 let tool_results = if let Some(executor) = streaming_tool_executor {
                     let streamed = executor.finish().await;
@@ -683,7 +683,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     }
                 }
 
-                // ── STEP 6b: Generate tool use summary ──
+                // 鈹€鈹€ STEP 6b: Generate tool use summary 鈹€鈹€
                 if turn_context.gates.emit_tool_use_summaries {
                     let tool_infos: Vec<ToolInfo> = tool_results
                         .iter()
@@ -723,9 +723,9 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     }
                 }
 
-                // ── STEP 7: ATTACHMENTS (placeholder) ──
+                // 鈹€鈹€ STEP 7: ATTACHMENTS (placeholder) 鈹€鈹€
 
-                // ── STEP 8: CONTINUE -- refresh tools, check maxTurns ──
+                // 鈹€鈹€ STEP 8: CONTINUE -- refresh tools, check maxTurns 鈹€鈹€
 
                 if tool_results
                     .iter()

@@ -57,7 +57,6 @@ use cc_compact as compact;
 
 // Network / API / auth. `auth` lives in its own crate (`cc-auth`); re-alias
 // so existing `crate::auth::...` paths continue to resolve.
-mod api;
 use cc_auth as auth;
 
 // Skills system lives in its own crate (`cc-skills`). Re-alias so existing
@@ -557,7 +556,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     // B.4: Create AppState
     // Resolve model: CLI arg > config > provider default > hardcoded fallback
     let is_codex_backend = crate::engine::codex_exec::is_codex_backend(&backend);
-    let detected_client = crate::api::client::ApiClient::from_backend_result(Some(&backend))
+    let detected_client = cc_api::api::client::ApiClient::from_backend_result(Some(&backend))
         .context("invalid API provider configuration")?;
     let provider_default_model = detected_client
         .as_ref()

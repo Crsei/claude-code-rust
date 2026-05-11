@@ -1,18 +1,19 @@
-//! cc-query — async streaming query loop (Phase 6 scaffold).
+//! cc-query - async streaming query loop.
 //!
-//! Issue #75 (`[workspace-split] Phase 6`): target destination for
-//! `crates/claude-code-rs/src/query/`. The current PR publishes the crate
-//! scaffold so the workspace manifest lists every Phase 6/7 crate up-front.
-//!
-//! Cycle-breaking prerequisites (done in this PR):
-//! - `query -> tools` edge removed: query now calls hooks via the
-//!   `cc_types::hooks::HookRunner` trait exposed through `QueryDeps::hook_runner()`.
-//! - `CompletedBackgroundAgent` / `PendingBackgroundResults` moved to
-//!   `cc-types::background_agents`.
-//!
-//! Remaining before the source move: hoist `types/tool.rs`, `types/app_state.rs`,
-//! and `types/config.rs` into cc-types so `QueryDeps` no longer touches root
-//! crate items (`crate::types::{app_state, config, tool}`).
+//! This crate owns the query-loop implementation. The root binary keeps a
+//! temporary `crate::query` shim so older call sites can continue to compile
+//! while the workspace split proceeds.
+
+pub mod deps;
+pub(crate) mod loop_helpers;
+pub mod loop_impl;
+pub mod stop_hooks;
+pub mod token_budget;
+pub(crate) mod turn_context;
 
 #[allow(unused_imports)]
 pub use cc_types::background_agents::{CompletedBackgroundAgent, PendingBackgroundResults};
+#[allow(unused_imports)]
+pub use deps::QueryDeps;
+#[allow(unused_imports)]
+pub use loop_impl::query;
