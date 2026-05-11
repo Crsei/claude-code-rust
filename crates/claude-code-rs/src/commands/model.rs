@@ -13,14 +13,14 @@ use async_trait::async_trait;
 
 use super::{CommandContext, CommandHandler, CommandResult};
 
-pub use crate::model_registry::resolve_model_alias;
+pub use cc_models::resolve_model_alias;
 
 pub fn removed_legacy_model_alias_error(name: &str) -> String {
-    crate::model_registry::removed_legacy_model_alias_error(name)
+    cc_models::removed_legacy_model_alias_error(name)
 }
 
 pub fn is_removed_legacy_model_alias(name: &str) -> bool {
-    crate::model_registry::is_removed_legacy_model_alias(name)
+    cc_models::is_removed_legacy_model_alias(name)
 }
 
 fn available_model_matches(allowed: &str, resolved_target: &str) -> bool {

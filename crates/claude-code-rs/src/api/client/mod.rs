@@ -563,7 +563,7 @@ impl ApiClient {
                 ..
             } => crate::api::bedrock::build_invoke_stream_url(
                 region,
-                &crate::api::model_mapping::to_bedrock_model_id(&self.config.default_model),
+                &cc_models::to_bedrock_model_id(&self.config.default_model),
                 base_url_override.as_deref(),
             ),
             ApiProvider::Vertex {
@@ -576,7 +576,7 @@ impl ApiClient {
                 crate::api::vertex::build_stream_url(
                     &region,
                     project_id,
-                    &crate::api::model_mapping::to_vertex_model_id(&self.config.default_model),
+                    &cc_models::to_vertex_model_id(&self.config.default_model),
                 )
             }
         }

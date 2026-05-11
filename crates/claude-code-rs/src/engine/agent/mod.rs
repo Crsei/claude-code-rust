@@ -72,12 +72,10 @@ fn resolve_model_alias(alias: &str, fallback: &str) -> Result<String> {
     if trimmed.eq_ignore_ascii_case("inherit") {
         return Ok(fallback.to_string());
     }
-    if crate::model_registry::is_removed_legacy_model_alias(trimmed) {
-        bail!(crate::model_registry::removed_legacy_model_alias_error(
-            trimmed
-        ));
+    if cc_models::is_removed_legacy_model_alias(trimmed) {
+        bail!(cc_models::removed_legacy_model_alias_error(trimmed));
     }
-    Ok(crate::model_registry::resolve_model_alias(trimmed))
+    Ok(cc_models::resolve_model_alias(trimmed))
 }
 
 // ---------------------------------------------------------------------------

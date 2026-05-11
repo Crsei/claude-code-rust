@@ -9,6 +9,18 @@ function Get-RustLineCount {
     return @((Get-Content -LiteralPath $Path -Encoding UTF8)).Count
 }
 
+function Get-HeadRustLineCount {
+    param([string]$Path)
+
+    $headPath = $Path -replace '\\', '/'
+    $content = @(& git show "HEAD:$headPath" 2>$null)
+    if ($LASTEXITCODE -ne 0) {
+        return $null
+    }
+
+    return $content.Count
+}
+
 function Invoke-DiffGuards {
     param(
         [string[]]$ChangedPaths,
@@ -27,7 +39,7 @@ function Invoke-DiffGuards {
         $findings.Add("WARNING: batch changed $($ChangedPaths.Count) files; consider reducing batch size for reviewability")
     }
 
-    $nameStatus = @(& git diff --name-status HEAD -- @ChangedPaths | Where-Object { $_ })
+    $nameStatus = @(& git diff --name-status HEAD -- @ChangedPaths 2>$null | Where-Object { $_ })
     $renameCount = @($nameStatus | Where-Object { $_ -match '^[RC]' }).Count
     if ($renameCount -gt 5) {
         $findings.Add("BLOCKER: batch has $renameCount rename/copy entries; split mechanical moves before committing")
@@ -43,13 +55,23 @@ function Invoke-DiffGuards {
 
         $lineCount = Get-RustLineCount -Path $path
         if ($lineCount -gt $MaxLines) {
-            $findings.Add("BLOCKER: $path has $lineCount lines, above max $MaxLines; split before commit")
+            $headLineCount = Get-HeadRustLineCount -Path $path
+            if ($null -ne $headLineCount -and $headLineCount -gt $MaxLines) {
+                if ($lineCount -le $headLineCount) {
+                    $findings.Add("WARNING: $path has $lineCount lines, above max $MaxLines but did not grow from HEAD ($headLineCount); keep future edits split-focused")
+                } else {
+                    $findings.Add("BLOCKER: $path grew from $headLineCount to $lineCount lines while already above max $MaxLines; split before commit")
+                }
+            } else {
+                $baselineText = if ($null -eq $headLineCount) { "new file" } else { "HEAD had $headLineCount lines" }
+                $findings.Add("BLOCKER: $path has $lineCount lines, above max $MaxLines ($baselineText); split before commit")
+            }
         } elseif ($lineCount -gt $WarnLines) {
             $findings.Add("WARNING: $path has $lineCount lines, above warning threshold $WarnLines")
         }
     }
 
-    $numstat = @(& git diff --numstat HEAD -- @ChangedPaths | Where-Object { $_ })
+    $numstat = @(& git diff --numstat HEAD -- @ChangedPaths 2>$null | Where-Object { $_ })
     foreach ($line in $numstat) {
         $parts = $line -split "`t"
         if ($parts.Count -lt 3) {

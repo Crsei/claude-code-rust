@@ -504,6 +504,7 @@ dependencies = [
 name = "cc-bootstrap"
 version = "0.1.0"
 dependencies = [
+ "cc-models",
  "parking_lot",
  "serde",
  "serde_json",
@@ -591,6 +592,7 @@ dependencies = [
  "cc-compact",
  "cc-config",
  "cc-keybindings",
+ "cc-models",
  "cc-types",
  "chrono",
  "futures",
@@ -654,6 +656,10 @@ dependencies = [
  "tracing",
  "url",
 ]
+
+[[package]]
+name = "cc-models"
+version = "0.1.0"
 
 [[package]]
 name = "cc-observability"
@@ -899,6 +905,7 @@ dependencies = [
  "cc-engine",
  "cc-keybindings",
  "cc-mcp",
+ "cc-models",
  "cc-observability",
  "cc-permissions",
  "cc-sandbox",

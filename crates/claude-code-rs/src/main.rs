@@ -28,7 +28,6 @@ mod computer_use;
 // existing `crate::config::...` paths continue to resolve.
 use cc_config as config;
 mod engine;
-mod model_registry;
 // `keybindings` lives in its own crate (`cc-keybindings`). Re-alias at the
 // crate root so existing `crate::keybindings::...` paths continue to resolve.
 use cc_keybindings as keybindings;
@@ -124,7 +123,7 @@ fn resolve_startup_model(
         if crate::commands::model::is_removed_legacy_model_alias(candidate) {
             warn!(
                 model = %candidate,
-                replacement = ?crate::model_registry::replacement_for_removed_legacy_alias(candidate),
+                replacement = ?cc_models::replacement_for_removed_legacy_alias(candidate),
                 "legacy model alias ignored during startup"
             );
             continue;

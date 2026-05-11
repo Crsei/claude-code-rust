@@ -14,8 +14,8 @@ use std::path::{Path, PathBuf};
 use git2::Repository;
 use serde::{Deserialize, Serialize};
 
-use cc_bootstrap::model::ModelSetting;
 use cc_compact::auto_compact::get_context_window_size;
+use cc_models::ModelSetting;
 
 /// Top-level payload piped to the user's status-line command on stdin.
 ///

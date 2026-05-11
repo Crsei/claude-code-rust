@@ -44,9 +44,9 @@ use futures::Stream;
 use serde_json::{json, Value};
 
 use crate::api::client::{parse_sse_byte_stream, MessagesRequest};
-use crate::api::model_mapping::to_vertex_model_id;
 use crate::api::retry::categorize_api_error;
 use crate::types::message::StreamEvent;
+use cc_models::to_vertex_model_id;
 
 pub const VERTEX_ANTHROPIC_VERSION: &str = "vertex-2023-10-16";
 pub const DEFAULT_VERTEX_REGION: &str = "us-east5";

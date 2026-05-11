@@ -46,10 +46,10 @@ use futures::{Stream, StreamExt};
 use serde_json::{json, Value};
 
 use crate::api::client::MessagesRequest;
-use crate::api::model_mapping::to_bedrock_model_id;
 use crate::api::sigv4::{self, AwsCredentials, SignRequest};
 use crate::api::streaming::parse_sse_event;
 use crate::types::message::StreamEvent;
+use cc_models::to_bedrock_model_id;
 
 pub const BEDROCK_ANTHROPIC_VERSION: &str = "bedrock-2023-05-31";
 

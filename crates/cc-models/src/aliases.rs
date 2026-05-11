@@ -1,8 +1,4 @@
 //! Neutral public model aliases for cc-rust.
-//!
-//! These aliases are intentionally project-local. They give UI and command
-//! surfaces stable capability labels while the API layer still receives the
-//! concrete provider model IDs.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ModelAlias {

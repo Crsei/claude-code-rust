@@ -23,7 +23,7 @@ struct MsgStats {
     cost_usd: f64,
 }
 
-use crate::api::pricing;
+use cc_models::pricing;
 
 /// Format a token count with thousands separators.
 fn fmt_tok(n: u64) -> String {

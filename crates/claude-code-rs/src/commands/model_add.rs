@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use super::{CommandContext, CommandHandler, CommandResult};
-use crate::api::pricing;
+use cc_models::pricing;
 
 pub struct ModelAddHandler;
 

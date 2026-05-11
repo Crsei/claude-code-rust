@@ -6,7 +6,6 @@
 pub mod bedrock;
 pub mod client;
 pub mod google_provider;
-pub mod model_mapping;
 pub mod openai_compat;
 pub mod pricing;
 pub mod providers;

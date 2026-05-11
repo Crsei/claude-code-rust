@@ -1,13 +1,7 @@
 //! Claude model ID mapping across providers (first-party, Bedrock, Vertex).
 //!
-//! cc-rust uses first-party Claude model IDs (e.g. `claude-sonnet-4-5-20250929`)
-//! internally. When talking to AWS Bedrock or GCP Vertex AI, these IDs need to
-//! be translated to provider-specific strings:
-//!
-//! - Bedrock: `us.anthropic.claude-sonnet-4-5-20250929-v1:0`
-//! - Vertex:  `claude-sonnet-4-5@20250929`
-//!
-//! Reference: claude-code-bun `src/utils/model/configs.ts`.
+//! cc-rust uses first-party Claude model IDs internally. AWS Bedrock and GCP
+//! Vertex AI require provider-specific model strings.
 
 /// A single Claude model's IDs across providers.
 #[derive(Debug, Clone, Copy)]
@@ -85,10 +79,6 @@ pub const CLAUDE_MODELS: &[ModelConfig] = &[
 ];
 
 /// Translate a first-party Claude model ID to its Bedrock equivalent.
-///
-/// If the input is already in Bedrock format (contains `anthropic.` or a known
-/// region prefix), it is returned unchanged. Unknown models are returned as-is
-/// so users can pass custom inference profile ARNs or IDs.
 pub fn to_bedrock_model_id(model: &str) -> String {
     if looks_like_bedrock_id(model) {
         return model.to_string();
@@ -102,9 +92,6 @@ pub fn to_bedrock_model_id(model: &str) -> String {
 }
 
 /// Translate a first-party Claude model ID to its Vertex equivalent.
-///
-/// If the input already contains `@` (Vertex version separator), it is returned
-/// unchanged. Unknown models are returned as-is.
 pub fn to_vertex_model_id(model: &str) -> String {
     if model.contains('@') || model.starts_with("projects/") {
         return model.to_string();
@@ -117,15 +104,10 @@ pub fn to_vertex_model_id(model: &str) -> String {
     model.to_string()
 }
 
-/// Return true if `model` looks like it's already in Bedrock format.
 fn looks_like_bedrock_id(model: &str) -> bool {
-    if model.starts_with("arn:") {
+    if model.starts_with("arn:") || model.starts_with("anthropic.") {
         return true;
     }
-    if model.starts_with("anthropic.") {
-        return true;
-    }
-    // Region-prefixed cross-region inference profiles (us/eu/apac/global).
     for prefix in ["us.", "eu.", "apac.", "global."] {
         if model.starts_with(prefix) && model[prefix.len()..].starts_with("anthropic.") {
             return true;
