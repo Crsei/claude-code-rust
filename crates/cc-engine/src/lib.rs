@@ -19,6 +19,9 @@
 //!
 //! See `docs/superpowers/specs/2026-04-20-workspace-split-design.md`.
 
+extern crate self as cc_engine;
+
+pub mod agent_runtime;
 pub mod status_line;
 pub mod types;
 

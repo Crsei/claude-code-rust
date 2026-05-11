@@ -1,8 +1,8 @@
-//! Background agent types — re-exported from `cc-types::background_agents`.
+//! Background agent runtime types re-exported from `cc-engine`.
 //!
-//! The real definitions moved to cc-types in Phase 6 to break the
-//! `query -> tools` edge. This module is kept as a thin re-export so existing
-//! call sites (engine, ipc, agent tool) continue to work unchanged.
+//! The real definitions live with the engine lifecycle because they bridge
+//! background Agent runtime events into query-turn injection. This module is
+//! kept only as a compatibility shim for legacy root-crate imports.
 
 #[allow(unused_imports)]
-pub use cc_types::background_agents::{CompletedBackgroundAgent, PendingBackgroundResults};
+pub use cc_engine::agent_runtime::{CompletedBackgroundAgent, PendingBackgroundResults};

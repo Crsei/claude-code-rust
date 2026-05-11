@@ -120,9 +120,7 @@ pub trait QueryDeps: Send + Sync {
 
     async fn refresh_tools(&self) -> Result<Tools>;
 
-    fn drain_background_results(
-        &self,
-    ) -> Vec<cc_types::background_agents::CompletedBackgroundAgent> {
+    fn drain_background_results(&self) -> Vec<cc_engine::agent_runtime::CompletedBackgroundAgent> {
         vec![]
     }
 

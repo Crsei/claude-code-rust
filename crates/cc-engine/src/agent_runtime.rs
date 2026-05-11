@@ -1,14 +1,15 @@
-//! Background agent types — shared between the Agent tool, query loop,
-//! and the headless/TUI event loop.
+//! Engine-owned runtime support for background Agent executions.
 //!
-//! Moved to cc-types in Phase 6 to break the query -> tools edge.
+//! These types bridge the Agent runtime event loop and the query lifecycle:
+//! the event loop pushes completed background Agent results, and the engine
+//! drains them at turn boundaries for injection into the conversation.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use parking_lot::Mutex;
 
-/// Result from a completed background agent.
+/// Result from a completed background Agent.
 #[derive(Debug, Clone)]
 pub struct CompletedBackgroundAgent {
     pub agent_id: String,
@@ -20,9 +21,8 @@ pub struct CompletedBackgroundAgent {
 
 /// Shared buffer of completed agents waiting to be injected into the query loop.
 ///
-/// The event loop pushes completed agents here after notifying the frontend.
-/// The query loop drains at turn boundaries and injects system messages.
-/// Internal `Mutex` means this is safe to clone and share without external locking.
+/// Internal locking keeps clones connected to the same queue without requiring
+/// external synchronization at the event-loop/query-loop boundary.
 #[derive(Debug, Clone, Default)]
 pub struct PendingBackgroundResults {
     inner: Arc<Mutex<Vec<CompletedBackgroundAgent>>>,
@@ -33,12 +33,12 @@ impl PendingBackgroundResults {
         Self::default()
     }
 
-    /// Push a completed agent result (called by event loop).
+    /// Push a completed agent result from the runtime event loop.
     pub fn push(&self, agent: CompletedBackgroundAgent) {
         self.inner.lock().push(agent);
     }
 
-    /// Drain all pending results (called by query loop at turn start).
+    /// Drain all pending results at a query turn boundary.
     pub fn drain_all(&self) -> Vec<CompletedBackgroundAgent> {
         let mut guard = self.inner.lock();
         std::mem::take(&mut *guard)
@@ -60,7 +60,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pending_results_push_and_drain() {
+    fn pending_results_push_and_drain() {
         let pending = PendingBackgroundResults::new();
         assert!(pending.drain_all().is_empty());
 
@@ -76,7 +76,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pending_results_clone_shares_state() {
+    fn pending_results_clone_shares_state() {
         let pending1 = PendingBackgroundResults::new();
         let pending2 = pending1.clone();
 

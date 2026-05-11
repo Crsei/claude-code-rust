@@ -836,9 +836,6 @@ dependencies = [
 [[package]]
 name = "cc-tools"
 version = "0.1.0"
-dependencies = [
- "cc-types",
-]
 
 [[package]]
 name = "cc-types"

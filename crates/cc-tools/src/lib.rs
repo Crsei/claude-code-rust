@@ -10,11 +10,8 @@
 //!
 //! Cycle-breaking prerequisites (done in this PR):
 //! - `tools -> engine` removed in Phase 5 (agent tool moved to cc-engine).
-//! - `background_agents` types moved to cc-types::background_agents.
+//! - Agent runtime state moved to cc-engine::agent_runtime.
 //!
 //! Remaining before the source move: hoist `types/tool.rs` (Tool trait,
 //! ToolUseContext) to cc-types so every tool module can depend only on
 //! cc-types instead of the root crate.
-
-#[allow(unused_imports)]
-pub use cc_types::background_agents::{CompletedBackgroundAgent, PendingBackgroundResults};

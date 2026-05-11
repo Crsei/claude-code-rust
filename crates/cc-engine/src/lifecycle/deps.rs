@@ -59,7 +59,7 @@ pub(crate) struct QueryEngineDeps {
     /// progress event to `FrontendSink`.
     pub(crate) tool_progress_callback: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
     /// Shared buffer of completed background agents.
-    pub(crate) pending_bg_results: cc_types::background_agents::PendingBackgroundResults,
+    pub(crate) pending_bg_results: cc_engine::agent_runtime::PendingBackgroundResults,
     /// Hook runner — used via the `HookRunner` trait from `cc-types::hooks` so
     /// the engine has no direct dependency on `crate::tools::hooks`.
     pub(crate) hook_runner: Arc<dyn cc_types::hooks::HookRunner>,
@@ -1414,9 +1414,7 @@ impl QueryDeps for QueryEngineDeps {
         Ok(refreshed)
     }
 
-    fn drain_background_results(
-        &self,
-    ) -> Vec<cc_types::background_agents::CompletedBackgroundAgent> {
+    fn drain_background_results(&self) -> Vec<cc_engine::agent_runtime::CompletedBackgroundAgent> {
         self.pending_bg_results.drain_all()
     }
 
@@ -1611,7 +1609,7 @@ mod tests {
             permission_callback: None,
             bg_agent_tx: None,
             tool_progress_callback: None,
-            pending_bg_results: cc_types::background_agents::PendingBackgroundResults::new(),
+            pending_bg_results: cc_engine::agent_runtime::PendingBackgroundResults::new(),
             hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
             command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
         }

@@ -12,7 +12,7 @@ pub mod token_budget;
 pub(crate) mod turn_context;
 
 #[allow(unused_imports)]
-pub use cc_types::background_agents::{CompletedBackgroundAgent, PendingBackgroundResults};
+pub use cc_engine::agent_runtime::{CompletedBackgroundAgent, PendingBackgroundResults};
 #[allow(unused_imports)]
 pub use deps::QueryDeps;
 #[allow(unused_imports)]

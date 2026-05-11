@@ -261,7 +261,7 @@ impl HeadlessRuntime {
                                         .filter(|output| !output.is_empty())
                                         .unwrap_or_else(|| result_preview.clone());
 
-                                    pending_bg.push(crate::tools::background_agents::CompletedBackgroundAgent {
+                                    pending_bg.push(cc_engine::agent_runtime::CompletedBackgroundAgent {
                                         agent_id: agent_id.clone(),
                                         description: desc,
                                         result_text,

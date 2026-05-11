@@ -2,8 +2,8 @@
 //!
 //! Moved from `crates/claude-code-rs/src/types/{app_state, tool, config}.rs`
 //! in Phase 6. The pure leaf types (`message`, `state`, `transitions`,
-//! `permissions`, `hooks`, `commands`, `agent_*`, `background_agents`,
-//! `teams`) live in `cc-types`; the three modules here depend on them plus a
+//! `permissions`, `hooks`, `commands`, `agent_*`, `teams`) live in
+//! `cc-types`; the three modules here depend on them plus a
 //! handful of runtime-bound sibling crates (`cc-keybindings`, `cc-config`) and
 //! this crate's own `status_line` module.
 //!
