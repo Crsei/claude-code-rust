@@ -14,7 +14,6 @@ use futures::Stream;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::commands::{CommandContext, CommandResult};
 use crate::engine::codex_exec;
 use crate::engine::input_processing;
 use crate::engine::result;
@@ -26,6 +25,7 @@ use crate::types::message::{
     AssistantMessage, Attachment, ContentBlock, Message, MessageContent, QueryYield, StreamEvent,
     SystemSubtype,
 };
+use cc_commands::{CommandContext, CommandResult};
 use cc_query::loop_impl;
 
 use super::deps::QueryEngineDeps;

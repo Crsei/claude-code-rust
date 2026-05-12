@@ -13,12 +13,12 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::browser::common::{
     supports_claude_in_chrome, CHROME_EXTENSION_URL, CHROME_PERMISSIONS_URL, CHROME_RECONNECT_URL,
 };
 use crate::browser::session::{ChromeEnablement, ChromeSession};
 use crate::browser::state::{self, ChromeConnectionState};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 /// Handler for the `/chrome` slash command.
 pub struct ChromeHandler;

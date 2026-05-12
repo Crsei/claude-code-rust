@@ -28,9 +28,9 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::engine::agent::fork::{run_fork, ForkOutcome, ForkParams};
 use crate::skills;
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 const SIMPLIFY_SKILL: &str = "simplify";
 

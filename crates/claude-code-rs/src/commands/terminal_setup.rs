@@ -22,8 +22,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::ui::terminal_env::{parse_editor_command, TerminalEnvConfig};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 pub struct TerminalSetupHandler;
 

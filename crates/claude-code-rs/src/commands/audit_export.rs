@@ -10,8 +10,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::session::audit_export;
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 pub struct AuditExportHandler;
 

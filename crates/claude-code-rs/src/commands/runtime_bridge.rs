@@ -1,4 +1,4 @@
-use super::CommandContext;
+use cc_commands::CommandContext;
 
 pub(super) fn install_command_runtime_providers() {
     cc_commands::runtime::set_agent_runtime_providers(

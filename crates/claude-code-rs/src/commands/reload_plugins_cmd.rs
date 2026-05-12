@@ -28,8 +28,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::plugins;
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 /// Handler for `/reload-plugins`.
 pub struct ReloadPluginsHandler;

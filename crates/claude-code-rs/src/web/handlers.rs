@@ -233,19 +233,19 @@ pub async fn settings_handler(
         "set_model" => {
             let model = req.value.as_str().unwrap_or("").to_string();
             let available = state.engine().app_state().settings.available_models.clone();
-            let resolved =
-                match crate::commands::model::resolve_and_validate_model(&model, &available) {
-                    Ok(model) => model,
-                    Err(message) => {
-                        return (
-                            StatusCode::BAD_REQUEST,
-                            Json(SettingsResponse {
-                                ok: false,
-                                message: format!("Rejected: {}", message),
-                            }),
-                        );
-                    }
-                };
+            let resolved = match cc_commands::model::resolve_and_validate_model(&model, &available)
+            {
+                Ok(model) => model,
+                Err(message) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(SettingsResponse {
+                            ok: false,
+                            message: format!("Rejected: {}", message),
+                        }),
+                    );
+                }
+            };
             state.engine().update_app_state(|s| {
                 s.main_loop_model = resolved.clone();
                 s.settings.model = Some(resolved.clone());
@@ -356,7 +356,7 @@ pub async fn command_handler(
     let app_state = state.engine().app_state();
     let cwd = std::path::PathBuf::from(state.engine().cwd());
 
-    let mut ctx = crate::commands::CommandContext {
+    let mut ctx = cc_commands::CommandContext {
         messages,
         cwd,
         app_state: app_state.clone(),
@@ -377,22 +377,22 @@ pub async fn command_handler(
             });
 
             match result {
-                crate::commands::CommandResult::Output(text) => Json(CommandResponse {
+                cc_commands::CommandResult::Output(text) => Json(CommandResponse {
                     response_type: "output".into(),
                     content: text,
                 }),
-                crate::commands::CommandResult::Clear => {
+                cc_commands::CommandResult::Clear => {
                     let session_id = state.engine().start_new_session();
                     Json(CommandResponse {
                         response_type: "clear".into(),
                         content: format!("Started a new session: {}", session_id),
                     })
                 }
-                crate::commands::CommandResult::Exit(msg) => Json(CommandResponse {
+                cc_commands::CommandResult::Exit(msg) => Json(CommandResponse {
                     response_type: "output".into(),
                     content: msg,
                 }),
-                crate::commands::CommandResult::Query(_msgs) => {
+                cc_commands::CommandResult::Query(_msgs) => {
                     // TODO: inject messages and start a new SSE stream
                     Json(CommandResponse {
                         response_type: "output".into(),
@@ -400,7 +400,7 @@ pub async fn command_handler(
                             .into(),
                     })
                 }
-                crate::commands::CommandResult::None => Json(CommandResponse {
+                cc_commands::CommandResult::None => Json(CommandResponse {
                     response_type: "output".into(),
                     content: "OK".into(),
                 }),

@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::{CommandContext, CommandHandler, CommandResult};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 use cc_models::pricing;
 
 pub struct ModelAddHandler;

@@ -19,9 +19,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::bootstrap::SessionId;
 use crate::session::fork as session_fork;
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 pub struct BranchHandler;
 

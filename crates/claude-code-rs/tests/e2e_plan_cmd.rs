@@ -34,7 +34,7 @@ fn plan_command_module_is_declared() {
 fn plan_command_is_registered_in_get_all_commands() {
     let src = read_source("crates/claude-code-rs/src/commands/mod.rs");
     assert!(
-        src.contains("name: \"plan\".into(),"),
+        src.contains("command(\n            \"plan\","),
         "/plan command must have a registry entry"
     );
     assert!(

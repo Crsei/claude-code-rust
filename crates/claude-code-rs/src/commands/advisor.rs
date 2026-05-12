@@ -20,8 +20,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
-use crate::commands::model::resolve_and_validate_model;
+use cc_commands::model::resolve_and_validate_model;
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 pub struct AdvisorHandler;
 

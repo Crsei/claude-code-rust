@@ -11,7 +11,7 @@ use crate::compact::{compaction, partial_compact, pipeline};
 use crate::types::message::{ContentBlock, Message, MessageContent};
 use crate::utils::tokens;
 
-use super::{CommandContext, CommandHandler, CommandResult};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 /// Handler for the `/compact` slash command.
 pub struct CompactHandler;

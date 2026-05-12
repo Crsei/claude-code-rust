@@ -166,6 +166,6 @@ fn context_command_is_still_registered() {
         .join("commands")
         .join("mod.rs");
     let text = fs::read_to_string(&mod_rs).expect("read commands/mod.rs");
-    assert!(text.contains("name: \"context\""));
+    assert!(text.contains("command(\n            \"context\","));
     assert!(text.contains("context::ContextHandler"));
 }

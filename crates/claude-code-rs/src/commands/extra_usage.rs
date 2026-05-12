@@ -7,8 +7,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::types::message::Message;
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 /// Handler for the `/extra-usage` slash command.
 pub struct ExtraUsageHandler;

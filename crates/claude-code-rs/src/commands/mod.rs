@@ -114,10 +114,7 @@ pub mod remote_cmd;
 mod runtime_bridge;
 pub mod sleep_cmd;
 
-pub use cc_commands::{
-    command, command_metadata, model, sort_commands_for_display, Command, CommandContext,
-    CommandHandler, CommandResult,
-};
+use cc_commands::{command, command_metadata, sort_commands_for_display, Command};
 
 // ---------------------------------------------------------------------------
 // Registry

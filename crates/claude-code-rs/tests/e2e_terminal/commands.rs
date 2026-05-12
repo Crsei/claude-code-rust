@@ -27,6 +27,23 @@ fn send_slash_and_get_response(raw: &str) -> serde_json::Value {
     msg
 }
 
+fn read_until_system_info(
+    stdout: &mut std::io::BufReader<std::process::ChildStdout>,
+) -> serde_json::Value {
+    for _ in 0..3 {
+        let msg = read_line_json(stdout, LINE_TIMEOUT);
+        if msg["type"] == "system_info" {
+            return msg;
+        }
+        assert_eq!(
+            msg["type"], "ready",
+            "expected system_info or ready after command side effect: {:?}",
+            msg
+        );
+    }
+    panic!("system_info did not arrive after command side effect");
+}
+
 // =========================================================================
 //  Offline: slash command handling
 // =========================================================================
@@ -91,12 +108,15 @@ fn slash_clear() {
     assert_eq!(replaced["type"], "conversation_replaced");
     assert_eq!(replaced["messages"].as_array().map(Vec::len), Some(0));
 
-    let msg = read_line_json(&mut stdout, LINE_TIMEOUT);
+    let msg = read_until_system_info(&mut stdout);
     assert_eq!(msg["type"], "system_info");
     assert_eq!(msg["level"], "info");
     assert!(
-        msg["text"].as_str().unwrap_or("").contains("cleared"),
-        "/clear should confirm the conversation was cleared: {:?}",
+        msg["text"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Started a new session"),
+        "/clear should confirm the replacement session: {:?}",
         msg
     );
 
@@ -204,7 +224,7 @@ fn multiple_slash_commands_in_session() {
                 cmd, msg
             );
 
-            let msg = read_line_json(&mut stdout, LINE_TIMEOUT);
+            let msg = read_until_system_info(&mut stdout);
             assert_eq!(
                 msg["type"], "system_info",
                 "{} should then confirm the clear: {:?}",

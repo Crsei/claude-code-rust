@@ -7,8 +7,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::config::features::{self, Feature};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 pub struct NotifyHandler;
 

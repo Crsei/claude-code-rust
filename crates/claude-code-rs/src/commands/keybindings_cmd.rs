@@ -21,13 +21,13 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::config::paths;
 use crate::keybindings::action::Action;
 use crate::keybindings::config::EMPTY_TEMPLATE;
 use crate::keybindings::context::Context as KbContext;
 use crate::keybindings::registry::KeybindingRegistry;
 use crate::ui::browser::{ensure_and_open, format_open_outcome};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 pub struct KeybindingsHandler;
 

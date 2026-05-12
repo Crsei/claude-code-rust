@@ -19,7 +19,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::config::settings;
 use crate::permissions::dangerous::{
     set_permission_mode_with_auto_mode_safety, strip_dangerous_permissions_for_active_auto_mode,
@@ -27,6 +26,7 @@ use crate::permissions::dangerous::{
 };
 use crate::plan_workflow;
 use crate::types::tool::{PermissionMode, ToolPermissionContext};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 #[derive(Debug, Clone, Copy)]
 enum PersistScope {

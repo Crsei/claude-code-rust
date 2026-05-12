@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 /// Handler for the `/diff` slash command.
 pub struct DiffHandler;

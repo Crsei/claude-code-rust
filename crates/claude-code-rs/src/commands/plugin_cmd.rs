@@ -24,8 +24,8 @@
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::plugins::{self, PluginEntry, PluginStatus};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 /// Handler for `/plugin`.
 pub struct PluginHandler;

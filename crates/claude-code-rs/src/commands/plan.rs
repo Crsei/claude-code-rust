@@ -17,11 +17,11 @@ use async_trait::async_trait;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::config::paths as cfg_paths;
 use crate::plan_workflow::{self, PlanWorkflowRecord};
 use crate::types::tool::PermissionMode;
 use crate::ui::browser::{ensure_and_open, format_open_outcome};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 /// Template seeded into a fresh plan file on first `open`/`edit`.
 const PLAN_TEMPLATE: &str = "# Plan\n\n<!-- Draft your implementation plan here. -->\n";

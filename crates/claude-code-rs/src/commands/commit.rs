@@ -6,8 +6,8 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::utils::git;
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 pub struct CommitHandler;
 

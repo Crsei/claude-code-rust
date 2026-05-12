@@ -34,11 +34,11 @@ use anyhow::Result;
 use async_trait::async_trait;
 use chrono::Utc;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::services::scheduler::{
     parse_interval, Interval, ScheduledTask, SchedulerError, SchedulerKind, SchedulerStore, TaskId,
     TaskPayload,
 };
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 pub struct ScheduleHandler;
 

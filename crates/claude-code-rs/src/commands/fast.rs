@@ -12,7 +12,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 /// The model required for fast mode.
 const FAST_MODE_MODEL: &str = "claude-opus-4-6-20250414";

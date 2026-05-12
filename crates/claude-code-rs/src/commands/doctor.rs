@@ -15,7 +15,6 @@ use std::path::Path;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::auth::{try_resolve_auth, AuthMethod};
 use crate::config::paths;
 use crate::config::settings::{load_effective, SettingsSource};
@@ -23,6 +22,7 @@ use crate::config::validation::{validate_settings, WarningSeverity};
 use crate::keybindings::action::Action;
 use crate::keybindings::context::Context as KbContext;
 use crate::ui::browser::{render_with_footer, shorten_path, TreeNode};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 use super::terminal_setup::TerminalLabel;
 

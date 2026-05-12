@@ -1,10 +1,10 @@
 use super::subsystem_events::{add_system_error, add_system_info};
 use crate::commands as slash_commands;
-use crate::commands::{CommandContext, CommandResult};
 use crate::engine::lifecycle::QueryEngine;
 use crate::types::message::{ContentBlock, Message, MessageContent};
 use crate::ui::app::App;
 use crate::ui::command_surface::CommandSurface;
+use cc_commands::{CommandContext, CommandResult};
 use std::sync::Arc;
 // ---------------------------------------------------------------------------
 // Slash-command execution

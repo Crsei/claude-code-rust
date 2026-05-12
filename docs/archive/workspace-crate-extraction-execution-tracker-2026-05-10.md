@@ -724,3 +724,82 @@ Error visibility notes:
 - No IPC error paths were hidden or wrapped in this final cleanup.
 - Existing explicit frontend parse, queue-pressure, subsystem command, and
   Rust protocol serde diagnostics remain covered by the Rust IPC gates above.
+
+## Batch 12 - commands-08 lane closeout
+
+Status: PASS
+Commit: not committed
+Tasks:
+- [final] commands-08 - Remove command shims, run e2e command gates, update
+  tracker, and commit only if all commands checks are green.
+
+Implemented effects:
+- Removed the root `commands` module's public re-export shim for
+  `cc_commands::{Command, CommandContext, CommandHandler, CommandResult}` and
+  command parser helpers.
+- Rewired root command handlers, command execution surfaces, startup model
+  resolution, and lifecycle local-command handling to import command contracts
+  directly from `cc_commands`.
+- Updated command e2e source-layout gates for the helper-based registry shape
+  and current headless `/clear` event ordering.
+- Updated the `cc-commands` crate description so it no longer describes the
+  active command boundary as a scaffold.
+
+Defects and divergences:
+- Initial command gates exposed the known checkpoint defects: stale
+  `/plan`/`/context` registry string assertions and `/clear` e2e expecting
+  `system_info` before the post-clear `ready` event. Tests now match current
+  command behavior and pass.
+- The worktree contains unrelated pre-existing docs/scripts changes and
+  untracked docs/scripts entries; this closeout did not modify them.
+
+Follow-ups:
+- Runner/owner: commit this batch if the surrounding runner policy requires it.
+  This agent did not commit because the task-level contract says the runner
+  owns commits.
+- Future command extractions should keep command contracts imported from
+  `cc_commands` directly and avoid reintroducing `crate::commands::*` contract
+  aliases.
+
+Verification:
+- `cargo fmt --all --check`: pass.
+- `cargo test -p cc-commands -- --nocapture`: pass, 74 passed.
+- `cargo test -p claude-code-rs commands::tests -- --nocapture`: pass, 5
+  passed.
+- `cargo test -p claude-code-rs commands:: -- --test-threads=1 --nocapture`:
+  pass, including 340 command unit tests and 13 command e2e tests.
+- `cargo test -p claude-code-rs --test e2e_terminal commands -- --nocapture`:
+  pass, 13 passed.
+- `cargo test -p claude-code-rs --test e2e_plan_cmd -- --nocapture`: pass, 6
+  passed.
+- `cargo test -p claude-code-rs --test e2e_context_cmd -- --nocapture`: pass,
+  8 passed.
+- `cargo check -p claude-code-rs --message-format short`: pass.
+- `cargo check --workspace --all-targets --message-format short`: pass.
+- `cargo tree -p cc-commands -e normal --depth 1`: pass.
+- Root command contract shim guard: pass, no `pub use cc_commands`, root
+  `crate::commands::{CommandContext, CommandResult, CommandHandler, Command}`,
+  or root `crate::commands::model` matches remain.
+- UTF-8 guard over `crates/**/*.rs` plus `crates/cc-commands/Cargo.toml`:
+  pass.
+
+File-size/refactor findings:
+- No Rust file was grown with new command behavior; edits were import rewrites,
+  test expectation updates, and one tracker entry.
+- Touched historical oversized files remain split candidates if future behavior
+  is added: `cc-engine/src/lifecycle/submit_message.rs` 1283 lines, `main.rs`
+  897 lines, `web/handlers.rs` 792 lines, `permissions_cmd.rs` 770 lines, and
+  `daemon/routes.rs` 688 lines.
+
+Dependency graph notes:
+- Command contracts now resolve through the workspace crate edge
+  `claude-code-rs -> cc-commands` at call sites instead of through the root
+  `commands` module.
+- `cc-commands` direct dependencies remain explicit in `cargo tree`; no new
+  dependency cycle was introduced.
+
+Error visibility notes:
+- No command error paths were hidden or wrapped.
+- The `/clear` e2e now explicitly tolerates the post-clear `ready` event before
+  checking the command's `system_info`, making the protocol ordering
+  agent-debuggable instead of failing on an implicit assumption.

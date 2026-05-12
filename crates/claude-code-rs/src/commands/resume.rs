@@ -10,9 +10,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::session::resume as session_resume;
 use crate::session::storage;
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 /// Handler for the `/resume` slash command.
 pub struct ResumeHandler;

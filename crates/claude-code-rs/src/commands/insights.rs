@@ -12,8 +12,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::services::session_analytics::{self, InsightsFilter, Scope};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 /// Handler for the `/insights` slash command.
 pub struct InsightsHandler;

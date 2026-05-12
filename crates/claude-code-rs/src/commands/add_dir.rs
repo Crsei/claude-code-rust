@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::types::tool::AdditionalWorkingDirectory;
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 pub struct AddDirHandler;
 

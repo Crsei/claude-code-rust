@@ -8,8 +8,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::config::features::{self, Feature};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 /// Minimum sleep duration in seconds.
 const MIN_SLEEP_SECS: u64 = 1;

@@ -11,8 +11,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::ide;
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 use cc_ipc_protocol::subsystem_types::IdeInfo;
 
 /// Handler for the `/ide` slash command.

@@ -8,9 +8,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::auth::oauth::{client, config, pkce};
 use crate::auth::{api_key, token};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 /// Pending OAuth state (PKCE verifier, state, method).
 static PENDING_OAUTH: parking_lot::Mutex<Option<PendingOAuth>> = parking_lot::Mutex::new(None);

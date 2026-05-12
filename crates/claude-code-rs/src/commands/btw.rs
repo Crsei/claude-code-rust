@@ -21,8 +21,8 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::engine::agent::fork::{run_fork, ForkParams};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 /// Shared system-prompt fragment that pins the forked agent to its side-
 /// question role. Kept short so cache reuse with the parent prompt is high.

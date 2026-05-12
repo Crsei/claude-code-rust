@@ -11,7 +11,7 @@ use self::gateway_client::{
     gateway_paths, list_local_runs, load_local_run, read_local_events, redact_text,
     LocalGatewayClient, LocalGatewayDaemonStatus,
 };
-use super::{CommandContext, CommandHandler, CommandResult};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 pub struct RemoteHandler;
 

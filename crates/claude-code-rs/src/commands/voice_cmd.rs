@@ -7,13 +7,13 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::auth::{self, AuthMethod};
 use crate::config::settings::{self, RawSettings};
 use crate::voice::audio::{AudioUnavailable, NullAudioBackend};
 use crate::voice::feasibility::{check_feasibility, Feasibility, FeasibilityReason};
 use crate::voice::language::normalize_language_for_stt;
 use crate::voice::stt::{NullTranscriptionClient, SttUnavailable};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 pub struct VoiceHandler;
 

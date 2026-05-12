@@ -8,10 +8,11 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use tracing::{debug, warn};
 
-use crate::commands::{self, CommandContext, CommandResult};
+use crate::commands;
 use crate::engine::lifecycle::QueryEngine;
 use crate::services::prompt_suggestion::PromptSuggestionService;
 use crate::types::message::{ContentBlock, Message, MessageContent};
+use cc_commands::{CommandContext, CommandResult};
 
 use super::callbacks::{PendingPermissions, PendingQuestions};
 use super::query_runner::spawn_query_turn;

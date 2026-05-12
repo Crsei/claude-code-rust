@@ -8,9 +8,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::types::message::{Message, MessageContent, UserMessage};
 use crate::utils::git;
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 pub struct SecurityReviewHandler;
 
