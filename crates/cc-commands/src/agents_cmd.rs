@@ -26,9 +26,10 @@ use std::path::PathBuf;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::{CommandContext, CommandHandler, CommandResult};
-use crate::skills::{self, SkillContext, SkillDefinition, SkillSource};
-use crate::ui::browser::{render_with_footer, shorten_path, TreeNode};
+use crate::browser::{render_with_footer, shorten_path, TreeNode};
+use crate::{CommandContext, CommandHandler, CommandResult};
+use cc_skills::{self as skills, SkillContext, SkillDefinition, SkillSource};
+use serde::Deserialize;
 
 pub struct AgentsHandler;
 
@@ -138,7 +139,7 @@ fn collect_agents(ctx: &CommandContext) -> Vec<AgentEntry> {
     // 1. Built-in subagent types. Sourced from the single registry in
     //    `ipc::builtin_agents` so the text browser and the `/agents-ui`
     //    dialog can't drift from each other.
-    for entry in crate::ipc::builtin_agents::builtin_agent_entries() {
+    for entry in crate::runtime::builtin_agent_entries() {
         out.push(AgentEntry {
             name: entry.name,
             description: entry.description,
@@ -187,14 +188,14 @@ fn is_agent_skill(skill: &SkillDefinition) -> bool {
     matches!(skill.frontmatter.context, SkillContext::Fork) || skill.frontmatter.agent.is_some()
 }
 
-fn load_team_members(team_ctx: &crate::teams::types::TeamContext) -> Vec<AgentEntry> {
+fn load_team_members(team_ctx: &cc_types::teams::TeamContext) -> Vec<AgentEntry> {
     // Read the team file and enumerate members. This is best-effort — if
     // the file is gone or malformed the browser simply skips it.
     let path = PathBuf::from(&team_ctx.team_file_path);
     let Ok(raw) = std::fs::read_to_string(&path) else {
         return vec![];
     };
-    let Ok(team_file) = serde_json::from_str::<crate::teams::types::TeamFile>(&raw) else {
+    let Ok(team_file) = serde_json::from_str::<TeamFile>(&raw) else {
         return vec![];
     };
 
@@ -341,7 +342,7 @@ fn render_agent_detail(agents: &[AgentEntry], name: &str) -> String {
         // Built-in agents have a canonical system prompt — quote it so
         // `/agents show <name>` is useful for introspection.
         if matches!(entry.source, AgentSource::Builtin) {
-            if let Some(prompt) = crate::ipc::builtin_agents::builtin_agent_prompt(&entry.name) {
+            if let Some(prompt) = crate::runtime::builtin_agent_prompt(&entry.name) {
                 out.push_str("\n  System prompt:\n");
                 for line in prompt.lines() {
                     out.push_str("    ");
@@ -362,7 +363,7 @@ fn render_sources(ctx: &CommandContext) -> String {
     out.push_str("  [bundled]    Skills compiled into cc-rust (`src/skills/bundled.rs`)\n");
     out.push_str(&format!(
         "  [user]       {}\n",
-        shorten_path(&crate::config::paths::skills_dir_global())
+        shorten_path(&cc_config::paths::skills_dir_global())
     ));
     let project_skills = ctx.cwd.join(".cc-rust").join("skills");
     out.push_str(&format!(
@@ -378,128 +379,19 @@ fn render_sources(ctx: &CommandContext) -> String {
     out
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+#[derive(Debug, Deserialize)]
+struct TeamFile {
+    #[serde(default)]
+    members: Vec<TeamMember>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TeamMember {
+    agent_id: String,
+    name: String,
+    prompt: Option<String>,
+    is_active: Option<bool>,
+}
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
-
-    fn make_ctx() -> CommandContext {
-        CommandContext {
-            messages: vec![],
-            cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-            app_state: AppState::default(),
-            session_id: SessionId::new(),
-        }
-    }
-
-    #[tokio::test]
-    async fn default_lists_builtins_at_minimum() {
-        let handler = AgentsHandler;
-        let mut ctx = make_ctx();
-        let result = handler.execute("", &mut ctx).await.unwrap();
-        match result {
-            CommandResult::Output(s) => {
-                assert!(s.contains("Agents"));
-                assert!(s.contains("general-purpose"));
-                assert!(s.contains("Explore"));
-                assert!(s.contains("Plan"));
-                // The built-in bucket should always be rendered.
-                assert!(s.contains("Built-in subagent types"));
-            }
-            _ => panic!("expected Output"),
-        }
-    }
-
-    #[tokio::test]
-    async fn show_requires_name() {
-        let handler = AgentsHandler;
-        let mut ctx = make_ctx();
-        let result = handler.execute("show", &mut ctx).await.unwrap();
-        match result {
-            CommandResult::Output(s) => assert!(s.contains("Usage")),
-            _ => panic!("expected Output"),
-        }
-    }
-
-    #[tokio::test]
-    async fn show_returns_details_for_builtin() {
-        let handler = AgentsHandler;
-        let mut ctx = make_ctx();
-        let result = handler
-            .execute("show general-purpose", &mut ctx)
-            .await
-            .unwrap();
-        match result {
-            CommandResult::Output(s) => {
-                assert!(s.contains("Agent: general-purpose"));
-                assert!(s.contains("Source:"));
-                assert!(s.contains("built-in"));
-            }
-            _ => panic!("expected Output"),
-        }
-    }
-
-    #[tokio::test]
-    async fn show_unknown_reports_missing() {
-        let handler = AgentsHandler;
-        let mut ctx = make_ctx();
-        let result = handler.execute("show nope-no-way", &mut ctx).await.unwrap();
-        match result {
-            CommandResult::Output(s) => assert!(s.contains("No agent named")),
-            _ => panic!("expected Output"),
-        }
-    }
-
-    #[tokio::test]
-    async fn unknown_subcommand_lists_usage() {
-        let handler = AgentsHandler;
-        let mut ctx = make_ctx();
-        let result = handler.execute("banana", &mut ctx).await.unwrap();
-        match result {
-            CommandResult::Output(s) => {
-                assert!(s.contains("Unknown /agents"));
-                assert!(s.contains("/agents show"));
-            }
-            _ => panic!("expected Output"),
-        }
-    }
-
-    #[test]
-    fn agent_source_group_order_is_stable() {
-        assert!(AgentSource::Builtin.group_order() < AgentSource::Team.group_order());
-        assert!(
-            AgentSource::Skill(SkillSource::Bundled).group_order()
-                < AgentSource::Skill(SkillSource::Project).group_order()
-        );
-    }
-
-    #[test]
-    fn tree_marks_shadowed_when_name_appears_twice() {
-        let agents = vec![
-            AgentEntry {
-                name: "dup".into(),
-                description: "builtin".into(),
-                source: AgentSource::Builtin,
-                path: None,
-                active: true,
-                execution: "built-in",
-            },
-            AgentEntry {
-                name: "dup".into(),
-                description: "user".into(),
-                source: AgentSource::Skill(SkillSource::User),
-                path: None,
-                active: true,
-                execution: "fork",
-            },
-        ];
-        let out = render_agent_tree(&agents);
-        assert!(out.contains("overrides"));
-        assert!(out.contains("shadowed"));
-    }
-}
+mod tests;

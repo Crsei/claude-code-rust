@@ -16,8 +16,12 @@ cc-mcp = { workspace = true }
 cc-models = { workspace = true }
 cc-permissions = { workspace = true }
 cc-session = { workspace = true }
+cc-skills = { workspace = true }
+cc-tasks = { workspace = true }
 cc-types = { workspace = true }
 chrono = { workspace = true }
+dirs = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

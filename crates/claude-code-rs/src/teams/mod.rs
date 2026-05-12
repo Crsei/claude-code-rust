@@ -16,7 +16,7 @@
 //! - `TeamSpawn` tool — spawns a new teammate from within a
 //!   conversation, so the model can orchestrate its own sub-agents.
 //! - `/team` slash command family — `create`, `list`, `status`, `spawn`,
-//!   `send`, `kill`, `leave`, `delete` (see [`crate::commands::team_cmd`]).
+//!   `send`, `kill`, `leave`, `delete` (see [`command`]).
 //! - Team Dashboard (TS/Ink): `ui/src/components/TeamPanel.tsx`
 //!   subscribed to `BackendMessage::TeamEvent` over IPC.
 //!
@@ -44,6 +44,7 @@
 //! [`in_process::InProcessBackend`].
 
 pub mod backend;
+pub mod command;
 pub mod constants;
 pub mod context;
 pub mod coordinator;

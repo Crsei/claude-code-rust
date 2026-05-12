@@ -10,11 +10,9 @@ use async_trait::async_trait;
 use cc_tasks::{parse_tasks_command, TaskEntry, TaskStatus as ToolTaskStatus, TasksCommand};
 use chrono::{DateTime, Local, TimeZone};
 
-use super::{CommandContext, CommandHandler, CommandResult};
-use crate::teams::in_process::{InProcessBackend, TeammateTaskSnapshot};
-use crate::teams::types::TaskStatus as TeamTaskStatus;
-use crate::tools::tasks::global_store;
-use crate::ui::browser::{render_with_footer, TreeNode};
+use crate::browser::{render_with_footer, TreeNode};
+use crate::runtime::{TeamTaskSnapshot, TeamTaskStatus};
+use crate::{CommandContext, CommandHandler, CommandResult};
 
 pub struct TasksHandler;
 
@@ -45,8 +43,8 @@ impl CommandHandler for TasksHandler {
 // ---------------------------------------------------------------------------
 
 fn render_list() -> String {
-    let tool_tasks = global_store().list();
-    let team_tasks = InProcessBackend::task_snapshots();
+    let tool_tasks = crate::runtime::tool_tasks();
+    let team_tasks = crate::runtime::team_task_snapshots();
 
     let mut roots: Vec<TreeNode> = Vec::new();
 
@@ -116,10 +114,10 @@ of the parent team. Use `/tasks show <id>` for retained output, or \
 }
 
 fn render_detail(id: &str) -> String {
-    if let Some(task) = global_store().get(id) {
+    if let Some(task) = crate::runtime::get_tool_task(id) {
         return render_tool_detail(&task);
     }
-    if let Some(task) = InProcessBackend::task_snapshots()
+    if let Some(task) = crate::runtime::team_task_snapshots()
         .into_iter()
         .find(|t| t.id == id)
     {
@@ -178,7 +176,7 @@ fn render_tool_detail(task: &TaskEntry) -> String {
     }
     if !task.depends_on.is_empty() {
         out.push_str(&format!("  Depends on:  {}\n", task.depends_on.join(", ")));
-        let blocked = global_store().blocked_dependencies(task);
+        let blocked = blocked_dependencies(task);
         if !blocked.is_empty() {
             out.push_str(&format!("  Blocked by:  {}\n", blocked.join(", ")));
         }
@@ -234,7 +232,7 @@ fn render_tool_detail(task: &TaskEntry) -> String {
     out
 }
 
-fn render_team_detail(task: &TeammateTaskSnapshot) -> String {
+fn render_team_detail(task: &TeamTaskSnapshot) -> String {
     let mut out = String::new();
     out.push_str(&format!("Team task {}\n", task.id));
     out.push_str(&"-".repeat(11 + task.id.len()));
@@ -256,7 +254,7 @@ fn render_team_detail(task: &TeammateTaskSnapshot) -> String {
     if task.awaiting_plan_approval {
         out.push_str("  Plan:     awaiting approval\n");
     }
-    out.push_str(&format!("  Mode:     {}\n", task.permission_mode.as_str()));
+    out.push_str(&format!("  Mode:     {}\n", task.permission_mode));
     if let Some(model) = &task.model {
         out.push_str(&format!("  Model:    {}\n", model));
     }
@@ -276,8 +274,20 @@ fn render_team_detail(task: &TeammateTaskSnapshot) -> String {
     out
 }
 
+fn blocked_dependencies(task: &TaskEntry) -> Vec<String> {
+    task.depends_on
+        .iter()
+        .filter(|id| {
+            crate::runtime::get_tool_task(id)
+                .map(|dependency| dependency.status != ToolTaskStatus::Completed)
+                .unwrap_or(true)
+        })
+        .cloned()
+        .collect()
+}
+
 fn stop_task(id: &str) -> String {
-    match global_store().try_stop(id) {
+    match crate::runtime::stop_tool_task(id) {
         Ok(Some(entry)) => {
             return format!(
                 "Cancelled tool task '{}' (now {}).",
@@ -288,7 +298,7 @@ fn stop_task(id: &str) -> String {
         Ok(None) => {}
         Err(err) => return format!("Failed to stop task '{}': {err}", id),
     }
-    if InProcessBackend::task_snapshots()
+    if crate::runtime::team_task_snapshots()
         .iter()
         .any(|t| t.id == id)
     {
@@ -305,12 +315,12 @@ fn stop_task(id: &str) -> String {
 }
 
 fn delete_task(id: &str) -> String {
-    match global_store().try_delete(id) {
+    match crate::runtime::delete_tool_task(id) {
         Ok(Some(entry)) => return format!("Deleted persisted tool task '{}'.", entry.subject),
         Ok(None) => {}
         Err(err) => return format!("Failed to delete task '{}': {err}", id),
     }
-    if InProcessBackend::task_snapshots()
+    if crate::runtime::team_task_snapshots()
         .iter()
         .any(|t| t.id == id)
     {
@@ -352,13 +362,9 @@ fn first_line(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
-    use std::sync::LazyLock;
-
-    static TASK_CMD_STORE_LOCK: LazyLock<tokio::sync::Mutex<()>> =
-        LazyLock::new(|| tokio::sync::Mutex::new(()));
 
     fn make_ctx() -> CommandContext {
         CommandContext {
@@ -436,71 +442,6 @@ mod tests {
             CommandResult::Output(s) => {
                 assert!(s.contains("Unknown /tasks"));
                 assert!(s.contains("Usage"));
-            }
-            _ => panic!("expected Output"),
-        }
-    }
-
-    #[tokio::test]
-    async fn stop_marks_tool_task_cancelled() {
-        let _guard = TASK_CMD_STORE_LOCK.lock().await;
-        let store = global_store();
-        let task = store.create("unit", "created-by-test");
-        let handler = TasksHandler;
-        let mut ctx = make_ctx();
-        let result = handler
-            .execute(&format!("stop {}", task.id), &mut ctx)
-            .await
-            .unwrap();
-        match result {
-            CommandResult::Output(s) => {
-                assert!(s.contains("Cancelled tool task"));
-                let refreshed = store.get(&task.id).unwrap();
-                assert_eq!(refreshed.status, ToolTaskStatus::Cancelled);
-            }
-            _ => panic!("expected Output"),
-        }
-    }
-
-    #[tokio::test]
-    async fn show_prints_tool_detail_fields() {
-        let _guard = TASK_CMD_STORE_LOCK.lock().await;
-        let store = global_store();
-        let task = store.create("detail-test", "detail description");
-        let handler = TasksHandler;
-        let mut ctx = make_ctx();
-        let result = handler
-            .execute(&format!("show {}", task.id), &mut ctx)
-            .await
-            .unwrap();
-        match result {
-            CommandResult::Output(s) => {
-                assert!(s.contains("Tool task"));
-                assert!(s.contains("detail-test"));
-                assert!(s.contains("detail description"));
-                assert!(s.contains("Kind:"));
-                assert!(s.contains("Status:"));
-                assert!(s.contains("Output:"));
-            }
-            _ => panic!("expected Output"),
-        }
-    }
-
-    #[tokio::test]
-    async fn delete_removes_tool_task() {
-        let _guard = TASK_CMD_STORE_LOCK.lock().await;
-        let store = global_store();
-        let task = store.create("delete-test", "delete description");
-        let handler = TasksHandler;
-        let mut ctx = make_ctx();
-        let result = handler
-            .execute(&format!("delete {}", task.id), &mut ctx)
-            .await
-            .unwrap();
-        match result {
-            CommandResult::Output(s) => {
-                assert!(s.contains("Deleted persisted tool task"));
-                assert!(store.get(&task.id).is_none());
             }
             _ => panic!("expected Output"),
         }

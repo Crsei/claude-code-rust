@@ -17,10 +17,6 @@
 //! layer syncs it back to the QueryEngine so subsequent tool invocations
 //! (SendMessage, TeamSpawn) see the same team.
 
-use anyhow::Result;
-use async_trait::async_trait;
-
-use super::{CommandContext, CommandHandler, CommandResult};
 use crate::teams::backend::TeammateExecutor;
 use crate::teams::types::{
     BackendType, TeamContext, TeamMember, TeammateInfo, TeammateMessage, TeammateSpawnConfig,
@@ -28,32 +24,25 @@ use crate::teams::types::{
 use crate::teams::{backend, constants, helpers, identity, in_process::InProcessBackend, mailbox};
 
 // ---------------------------------------------------------------------------
-// Handler
+// Entry point
 // ---------------------------------------------------------------------------
 
-pub struct TeamHandler;
+pub async fn execute_team_command(args: &str, ctx: &mut cc_commands::CommandContext) -> String {
+    let mut parts = args.trim().splitn(2, char_is_whitespace);
+    let sub = parts.next().unwrap_or("").trim();
+    let rest = parts.next().unwrap_or("").trim();
 
-#[async_trait]
-impl CommandHandler for TeamHandler {
-    async fn execute(&self, args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
-        let mut parts = args.trim().splitn(2, char_is_whitespace);
-        let sub = parts.next().unwrap_or("").trim();
-        let rest = parts.next().unwrap_or("").trim();
-
-        let output = match sub {
-            "" | "status" => status(ctx),
-            "list" => list_teams(),
-            "create" => create(ctx, rest),
-            "spawn" => spawn(ctx, rest).await,
-            "send" => send(ctx, rest),
-            "kill" => kill(ctx, rest).await,
-            "leave" => leave(ctx),
-            "delete" => delete(ctx, rest).await,
-            "help" | "--help" | "-h" => help(),
-            other => format!("Unknown /team subcommand: '{}'. Try /team help.", other),
-        };
-
-        Ok(CommandResult::Output(output))
+    match sub {
+        "" | "status" => status(ctx),
+        "list" => list_teams(),
+        "create" => create(ctx, rest),
+        "spawn" => spawn(ctx, rest).await,
+        "send" => send(ctx, rest),
+        "kill" => kill(ctx, rest).await,
+        "leave" => leave(ctx),
+        "delete" => delete(ctx, rest).await,
+        "help" | "--help" | "-h" => help(),
+        other => format!("Unknown /team subcommand: '{}'. Try /team help.", other),
     }
 }
 
@@ -82,7 +71,7 @@ fn help() -> String {
     .join("\n")
 }
 
-fn status(ctx: &CommandContext) -> String {
+fn status(ctx: &cc_commands::CommandContext) -> String {
     if !crate::teams::is_agent_teams_active(&ctx.app_state) {
         return "Agent Teams is inactive. Use '/team create <name>' to create one or \
                 '/team list' to see teams on disk."
@@ -205,7 +194,7 @@ fn list_teams() -> String {
     lines.join("\n")
 }
 
-fn create(ctx: &mut CommandContext, rest: &str) -> String {
+fn create(ctx: &mut cc_commands::CommandContext, rest: &str) -> String {
     let mut parts = rest.splitn(2, char_is_whitespace);
     let name = parts.next().unwrap_or("").trim();
     let description = parts
@@ -250,7 +239,7 @@ fn create(ctx: &mut CommandContext, rest: &str) -> String {
     )
 }
 
-async fn spawn(ctx: &mut CommandContext, rest: &str) -> String {
+async fn spawn(ctx: &mut cc_commands::CommandContext, rest: &str) -> String {
     let mut parts = rest.splitn(2, char_is_whitespace);
     let name = parts.next().unwrap_or("").trim();
     let prompt = parts.next().unwrap_or("").trim();
@@ -376,7 +365,7 @@ async fn spawn(ctx: &mut CommandContext, rest: &str) -> String {
     )
 }
 
-fn send(ctx: &CommandContext, rest: &str) -> String {
+fn send(ctx: &cc_commands::CommandContext, rest: &str) -> String {
     let mut parts = rest.splitn(2, char_is_whitespace);
     let to = parts.next().unwrap_or("").trim();
     let text = parts.next().unwrap_or("").trim();
@@ -406,7 +395,7 @@ fn send(ctx: &CommandContext, rest: &str) -> String {
     }
 }
 
-async fn kill(ctx: &mut CommandContext, rest: &str) -> String {
+async fn kill(ctx: &mut cc_commands::CommandContext, rest: &str) -> String {
     let name = rest.trim();
     if name.is_empty() {
         return "Usage: /team kill <name>".into();
@@ -442,7 +431,7 @@ async fn kill(ctx: &mut CommandContext, rest: &str) -> String {
     }
 }
 
-fn leave(ctx: &mut CommandContext) -> String {
+fn leave(ctx: &mut cc_commands::CommandContext) -> String {
     match ctx.app_state.team_context.take() {
         Some(tc) => format!(
             "Left team '{}' (team data still on disk; use '/team delete' to remove).",
@@ -452,7 +441,7 @@ fn leave(ctx: &mut CommandContext) -> String {
     }
 }
 
-async fn delete(ctx: &mut CommandContext, rest: &str) -> String {
+async fn delete(ctx: &mut cc_commands::CommandContext, rest: &str) -> String {
     let name = rest.trim();
     if name.is_empty() {
         return "Usage: /team delete <name>".into();
@@ -503,110 +492,5 @@ async fn delete(ctx: &mut CommandContext, rest: &str) -> String {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
-    use std::path::PathBuf;
-
-    fn make_ctx() -> CommandContext {
-        CommandContext {
-            messages: Vec::new(),
-            cwd: PathBuf::from("."),
-            app_state: AppState::default(),
-            session_id: SessionId::from_string("test-session"),
-        }
-    }
-
-    #[tokio::test]
-    async fn status_reports_no_team_when_context_missing() {
-        let mut ctx = make_ctx();
-        let result = TeamHandler.execute("", &mut ctx).await.unwrap();
-        match result {
-            CommandResult::Output(s) => {
-                let lower = s.to_lowercase();
-                assert!(
-                    lower.contains("no active team") || lower.contains("inactive"),
-                    "unexpected status output: {s}"
-                );
-                assert!(lower.contains("/team create"));
-            }
-            _ => panic!("expected Output"),
-        }
-    }
-
-    #[tokio::test]
-    async fn unknown_subcommand_is_reported() {
-        let mut ctx = make_ctx();
-        let result = TeamHandler.execute("frobnicate", &mut ctx).await.unwrap();
-        match result {
-            CommandResult::Output(s) => assert!(s.contains("Unknown /team subcommand")),
-            _ => panic!("expected Output"),
-        }
-    }
-
-    #[tokio::test]
-    async fn help_subcommand_lists_commands() {
-        let mut ctx = make_ctx();
-        let result = TeamHandler.execute("help", &mut ctx).await.unwrap();
-        match result {
-            CommandResult::Output(s) => {
-                assert!(s.contains("/team create"));
-                assert!(s.contains("/team spawn"));
-                assert!(s.contains("/team send"));
-            }
-            _ => panic!("expected Output"),
-        }
-    }
-
-    #[tokio::test]
-    async fn create_requires_name() {
-        let mut ctx = make_ctx();
-        let result = TeamHandler.execute("create", &mut ctx).await.unwrap();
-        match result {
-            CommandResult::Output(s) => assert!(s.contains("Usage")),
-            _ => panic!("expected Output"),
-        }
-    }
-
-    #[tokio::test]
-    async fn spawn_without_team_reports_error() {
-        let mut ctx = make_ctx();
-        let result = TeamHandler
-            .execute("spawn researcher find-bugs", &mut ctx)
-            .await
-            .unwrap();
-        match result {
-            CommandResult::Output(s) => assert!(s.contains("No active team")),
-            _ => panic!("expected Output"),
-        }
-    }
-
-    #[tokio::test]
-    async fn leave_without_team_reports_noop() {
-        let mut ctx = make_ctx();
-        let result = TeamHandler.execute("leave", &mut ctx).await.unwrap();
-        match result {
-            CommandResult::Output(s) => assert!(s.to_lowercase().contains("no active team")),
-            _ => panic!("expected Output"),
-        }
-    }
-
-    #[tokio::test]
-    async fn send_without_team_reports_error() {
-        let mut ctx = make_ctx();
-        let result = TeamHandler
-            .execute("send alice hello", &mut ctx)
-            .await
-            .unwrap();
-        match result {
-            CommandResult::Output(s) => assert!(s.contains("No active team")),
-            _ => panic!("expected Output"),
-        }
-    }
-}
+mod tests;
