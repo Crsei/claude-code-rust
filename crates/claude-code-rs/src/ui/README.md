@@ -30,7 +30,10 @@ Leaf modules should not drive the terminal loop directly. New UI code should pre
 
 Interactive widgets and modal surfaces composed by `app.rs`.
 
-Examples: command palette, command surface, prompt input, selection surface, bottom pane, overlays, welcome view, status widget.
+Examples: bottom pane, overlays, welcome view, status widget. Command palette,
+command surface, prompt input, and selection surface source now lives under
+`crates/cc-ui/src/` and is exposed through the `crate::ui::*` facade during the
+workspace split.
 
 ### `input/`
 

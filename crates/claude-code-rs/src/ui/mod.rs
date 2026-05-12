@@ -52,9 +52,9 @@ pub mod chat_composer;
 #[allow(dead_code)]
 #[path = "components/chatwidget.rs"]
 pub mod chatwidget;
-#[path = "components/command_palette/mod.rs"]
+#[path = "../../../cc-ui/src/command_palette/mod.rs"]
 pub mod command_palette;
-#[path = "components/command_surface/mod.rs"]
+#[path = "../../../cc-ui/src/command_surface/mod.rs"]
 pub mod command_surface;
 #[allow(dead_code)]
 #[path = "components/cwd_prompt.rs"]
@@ -74,7 +74,7 @@ pub mod keyboard_shortcut;
 #[path = "components/pager_overlay.rs"]
 pub mod pager_overlay;
 #[allow(dead_code)]
-#[path = "components/prompt_input.rs"]
+#[path = "../../../cc-ui/src/prompt_input.rs"]
 pub mod prompt_input;
 #[allow(dead_code)]
 #[path = "components/resume_picker.rs"]
@@ -83,7 +83,7 @@ pub mod resume_picker;
 #[path = "components/search_box.rs"]
 pub mod search_box;
 #[allow(dead_code)]
-#[path = "components/selection_surface.rs"]
+#[path = "../../../cc-ui/src/selection_surface.rs"]
 pub mod selection_surface;
 #[path = "components/status_icon.rs"]
 pub mod status_icon;

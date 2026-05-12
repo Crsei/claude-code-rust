@@ -1,8 +1,7 @@
 //! cc-ui: Rust terminal UI extraction boundary.
 //!
-//! The active Rust TUI still lives under `claude-code-rs::ui` during this
-//! scaffold step. Follow-up extraction tasks move entry modules here while the
-//! binary keeps a root facade for stable `crate::ui::*` imports.
+//! Extracted Rust TUI source files live here while `claude-code-rs::ui` keeps a
+//! root facade for stable `crate::ui::*` imports during the workspace split.
 
 #![forbid(unsafe_code)]
 
