@@ -128,6 +128,10 @@ pub use cc_commands::{
 /// Build the full list of available commands.
 pub fn get_all_commands() -> Vec<Command> {
     cc_commands::runtime::set_runtime_installer(crate::ipc::runtime_adapters::ensure_installed);
+    cc_commands::runtime::set_lsp_runtime_providers(
+        crate::ipc::subsystem_handlers::build_lsp_server_info_list,
+        crate::ipc::subsystem_handlers::load_lsp_recommendation_settings,
+    );
 
     let mut commands = vec![
         command(

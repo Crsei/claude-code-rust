@@ -569,7 +569,6 @@ dependencies = [
  "cc-browser",
  "cc-config",
  "cc-engine",
- "cc-ipc",
  "cc-ipc-protocol",
  "cc-mcp",
  "cc-models",

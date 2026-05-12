@@ -22,14 +22,36 @@ use cc_types::message::Message;
 pub mod runtime {
     use std::sync::{OnceLock, RwLock};
 
+    use cc_ipc_protocol::subsystem_types::{LspRecommendationSettings, LspServerInfo};
+
     type Installer = fn();
+    type LspServersProvider = fn() -> Vec<LspServerInfo>;
+    type LspRecommendationSettingsProvider = fn() -> LspRecommendationSettings;
 
     static INSTALLER: OnceLock<RwLock<Option<Installer>>> = OnceLock::new();
+    static LSP_SERVERS_PROVIDER: OnceLock<RwLock<Option<LspServersProvider>>> = OnceLock::new();
+    static LSP_SETTINGS_PROVIDER: OnceLock<RwLock<Option<LspRecommendationSettingsProvider>>> =
+        OnceLock::new();
 
     pub fn set_runtime_installer(installer: Installer) {
         let slot = INSTALLER.get_or_init(|| RwLock::new(None));
         if let Ok(mut guard) = slot.write() {
             *guard = Some(installer);
+        }
+    }
+
+    pub fn set_lsp_runtime_providers(
+        servers: LspServersProvider,
+        settings: LspRecommendationSettingsProvider,
+    ) {
+        let servers_slot = LSP_SERVERS_PROVIDER.get_or_init(|| RwLock::new(None));
+        if let Ok(mut guard) = servers_slot.write() {
+            *guard = Some(servers);
+        }
+
+        let settings_slot = LSP_SETTINGS_PROVIDER.get_or_init(|| RwLock::new(None));
+        if let Ok(mut guard) = settings_slot.write() {
+            *guard = Some(settings);
         }
     }
 
@@ -43,6 +65,24 @@ pub mod runtime {
         if let Some(installer) = *guard {
             installer();
         }
+    }
+
+    pub(crate) fn lsp_server_info_list() -> Vec<LspServerInfo> {
+        ensure_runtime_installed();
+        LSP_SERVERS_PROVIDER
+            .get()
+            .and_then(|slot| slot.read().ok().and_then(|guard| *guard))
+            .map(|provider| provider())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn lsp_recommendation_settings() -> LspRecommendationSettings {
+        ensure_runtime_installed();
+        LSP_SETTINGS_PROVIDER
+            .get()
+            .and_then(|slot| slot.read().ok().and_then(|guard| *guard))
+            .map(|provider| provider())
+            .unwrap_or_default()
     }
 }
 
