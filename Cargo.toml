@@ -153,6 +153,7 @@ cc-commands = { path = "crates/cc-commands" }
 cc-ipc = { path = "crates/cc-ipc" }
 cc-ipc-protocol = { path = "crates/cc-ipc-protocol" }
 cc-ipc-client = { path = "crates/cc-ipc-client" }
+cc-ui = { path = "crates/cc-ui" }
 
 # Daemon HTTP server
 axum = { version = "0.8", features = ["ws"] }

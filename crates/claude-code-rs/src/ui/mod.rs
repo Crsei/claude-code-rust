@@ -1,10 +1,18 @@
 // Entry and feature-domain facades stay at the top level. Most leaf UI files
 // live in responsibility folders below, while their public module names remain
 // `crate::ui::<name>` for compatibility.
+//
+// `cc-ui` owns extracted Rust UI entry modules while this root facade keeps
+// stable `crate::ui::*` imports during the workspace split.
+#[allow(dead_code)]
+pub mod extracted {
+    pub const EXTRACTION_BOUNDARY: &str = cc_ui::EXTRACTION_BOUNDARY;
+}
 
 #[allow(dead_code)]
 pub mod agents;
 #[allow(dead_code)]
+#[path = "../../../cc-ui/src/app.rs"]
 pub mod app;
 #[allow(dead_code)]
 pub mod diff;
@@ -17,6 +25,7 @@ pub mod mcp;
 #[allow(dead_code)]
 pub mod memory;
 #[allow(dead_code)]
+#[path = "../../../cc-ui/src/messages.rs"]
 pub mod messages;
 #[allow(dead_code)]
 pub mod permissions;
@@ -26,6 +35,7 @@ pub mod skills;
 pub mod tasks;
 #[allow(dead_code)]
 pub mod teams;
+#[path = "../../../cc-ui/src/tui.rs"]
 pub mod tui;
 
 // Components: interactive widgets and modal surfaces owned or orchestrated by

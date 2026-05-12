@@ -161,6 +161,7 @@ cc-commands = { workspace = true }
 cc-ipc = { workspace = true }
 cc-ipc-protocol = { workspace = true }
 cc-ipc-client = { workspace = true }
+cc-ui = { workspace = true }
 gateway = { workspace = true }
 
 # Daemon

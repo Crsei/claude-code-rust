@@ -24,15 +24,15 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
-#[path = "tui/commands.rs"]
+#[path = "../../claude-code-rs/src/ui/tui/commands.rs"]
 mod commands;
-#[path = "tui/engine_events.rs"]
+#[path = "../../claude-code-rs/src/ui/tui/engine_events.rs"]
 mod engine_events;
-#[path = "tui/export.rs"]
+#[path = "../../claude-code-rs/src/ui/tui/export.rs"]
 mod export;
-#[path = "tui/subsystem_events.rs"]
+#[path = "../../claude-code-rs/src/ui/tui/subsystem_events.rs"]
 mod subsystem_events;
-#[path = "tui/terminal_guard.rs"]
+#[path = "../../claude-code-rs/src/ui/tui/terminal_guard.rs"]
 mod terminal_guard;
 #[cfg(test)]
 #[path = "tui/tests.rs"]
