@@ -1,7 +1,10 @@
 #[cfg(test)]
 mod tests {
-    use crate::engine::lifecycle::*;
-    use crate::engine::sdk_types::*;
+    use std::sync::Arc;
+
+    use crate::command_runtime::{CommandContext, CommandExecutor, CommandResult};
+    use crate::lifecycle::*;
+    use crate::sdk_types::*;
     use crate::types::config::{AgentContext, QueryEngineConfig, QuerySource};
     use crate::types::message::{
         AssistantMessage, ContentBlock, Message, MessageContent, Usage, UserMessage,
@@ -27,6 +30,75 @@ mod tests {
                 Some(value) => std::env::set_var(self.key, value),
                 None => std::env::remove_var(self.key),
             }
+        }
+    }
+
+    struct TestCommandDispatcher;
+
+    impl cc_types::commands::CommandDispatcher for TestCommandDispatcher {
+        fn parse_command_input(&self, input: &str) -> Option<cc_types::commands::ParsedCommand> {
+            let trimmed = input.trim();
+            if trimmed == "/clear" {
+                return Some(cc_types::commands::ParsedCommand {
+                    index: 0,
+                    args: String::new(),
+                });
+            }
+            if let Some(rest) = trimmed.strip_prefix("/help") {
+                return Some(cc_types::commands::ParsedCommand {
+                    index: 1,
+                    args: rest.trim().to_string(),
+                });
+            }
+            if let Some(rest) = trimmed.strip_prefix("/review") {
+                return Some(cc_types::commands::ParsedCommand {
+                    index: 2,
+                    args: rest.trim().to_string(),
+                });
+            }
+            None
+        }
+
+        fn command_name(&self, index: usize) -> Option<String> {
+            match index {
+                0 => Some("clear".to_string()),
+                1 => Some("help".to_string()),
+                2 => Some("review".to_string()),
+                _ => None,
+            }
+        }
+    }
+
+    struct TestCommandExecutor;
+
+    #[async_trait::async_trait]
+    impl CommandExecutor for TestCommandExecutor {
+        async fn execute(
+            &self,
+            parsed: cc_types::commands::ParsedCommand,
+            _command_name: String,
+            ctx: &mut CommandContext,
+        ) -> anyhow::Result<CommandResult> {
+            Ok(match parsed.index {
+                0 => CommandResult::Clear,
+                1 => CommandResult::Output("See /clear to clear the conversation".to_string()),
+                2 => {
+                    ctx.messages.push(Message::User(UserMessage {
+                        uuid: uuid::Uuid::new_v4(),
+                        timestamp: 1,
+                        role: "user".into(),
+                        content: MessageContent::Text(format!(
+                            "Review pull request `{}`",
+                            parsed.args
+                        )),
+                        is_meta: false,
+                        tool_use_result: None,
+                        source_tool_assistant_uuid: None,
+                    }));
+                    CommandResult::Query(ctx.messages.clone())
+                }
+                _ => CommandResult::None,
+            })
         }
     }
 
@@ -307,9 +379,8 @@ mod tests {
 
         let mut engine = QueryEngine::new(make_config());
         let original_session = engine.current_session_id();
-        engine.set_command_dispatcher(std::sync::Arc::new(
-            crate::commands::DefaultCommandDispatcher::new(),
-        ));
+        engine.set_command_dispatcher(Arc::new(TestCommandDispatcher));
+        engine.set_command_executor(Arc::new(TestCommandExecutor));
         let stream = engine.submit_message("/clear", QuerySource::Sdk);
         let mut stream = std::pin::pin!(stream);
 
@@ -351,9 +422,8 @@ mod tests {
         use futures::StreamExt;
 
         let mut engine = QueryEngine::new(make_config());
-        engine.set_command_dispatcher(std::sync::Arc::new(
-            crate::commands::DefaultCommandDispatcher::new(),
-        ));
+        engine.set_command_dispatcher(Arc::new(TestCommandDispatcher));
+        engine.set_command_executor(Arc::new(TestCommandExecutor));
         let stream = engine.submit_message("/help clear", QuerySource::Sdk);
         let mut stream = std::pin::pin!(stream);
 
@@ -384,9 +454,8 @@ mod tests {
         use futures::StreamExt;
 
         let mut engine = QueryEngine::new(make_config());
-        engine.set_command_dispatcher(std::sync::Arc::new(
-            crate::commands::DefaultCommandDispatcher::new(),
-        ));
+        engine.set_command_dispatcher(Arc::new(TestCommandDispatcher));
+        engine.set_command_executor(Arc::new(TestCommandExecutor));
         let stream = engine.submit_message("/review 123", QuerySource::Sdk);
         let mut stream = std::pin::pin!(stream);
 

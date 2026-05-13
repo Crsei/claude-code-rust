@@ -24,20 +24,3 @@ pub fn sdk_stream_to_sse(
             .text("ping"),
     )
 }
-
-impl SdkMessage {
-    /// Return the SSE event name for this message variant.
-    pub fn event_name(&self) -> &'static str {
-        match self {
-            SdkMessage::SystemInit(_) => "system_init",
-            SdkMessage::Assistant(_) => "assistant",
-            SdkMessage::UserReplay(_) => "user_replay",
-            SdkMessage::StreamEvent(_) => "stream_event",
-            SdkMessage::CompactBoundary(_) => "compact_boundary",
-            SdkMessage::ApiRetry(_) => "api_retry",
-            SdkMessage::ToolUseSummary(_) => "tool_use_summary",
-            SdkMessage::Tombstone(_) => "tombstone",
-            SdkMessage::Result(_) => "result",
-        }
-    }
-}

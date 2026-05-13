@@ -11,6 +11,7 @@
 pub mod agent_channel;
 pub mod agent_events;
 pub mod agent_types;
+pub mod callbacks;
 pub mod commands;
 #[cfg(feature = "runtime-types")]
 pub mod hooks;

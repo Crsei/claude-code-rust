@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Browser MCP detection.
 //!
 //! Two identification paths:
@@ -28,6 +30,7 @@ use crate::types::tool::Tool;
 // resolving unchanged.
 #[cfg(test)]
 use cc_browser::detection::clear_browser_servers_for_tests;
+#[allow(unused_imports)]
 pub use cc_browser::detection::{
     browser_servers_snapshot, extract_browser_action, install_browser_servers, is_browser_server,
     BROWSER_TOOL_BASENAMES, MCP_PREFIX,

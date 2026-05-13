@@ -13,7 +13,6 @@ This file provides guidance to Codex when working with the Rust port in `rust/`.
 > - **上游参考**：对照行为时读 `F:\AIclassmanager\cc\src\**`（TypeScript 原版）或 `F:\AIclassmanager\cc\claude-code-bun\**`（Bun 版）。
 > - **如确需保留某项缩减**，在 PR 描述中显式说明，并在文档标注为“故意保留”（Intentional），而不是沉默继续按简化版写。
 
-历史名称 `rust-lite` 仍保留在分支名与部分文档链接中，仅作为版本标识，不再承担“按精简版维护”的语义。
 
 ## Path Isolation (Critical)
 
@@ -27,12 +26,97 @@ cc-rust 和原版 Codex (TypeScript) 共存于同一台机器上，**所有持�
 | Keychain 服务名 | `"Codex"` | `"cc-rust"` |
 | 项目指令文件 | `AGENTS.md` | `AGENTS.md` (共享) |
 
-## Build
+## Cargo / Build
+
+Do not assume `cargo` is available from the default shell `PATH` on this
+machine. The Rust toolchain for this project is installed under the workspace
+parent directory:
 
 ```bash
-# Rust 后端
-cargo build --release
+export CARGO_HOME=/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/.rust/cargo
+export RUSTUP_HOME=/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/.rust/rustup
+export PATH="$CARGO_HOME/bin:$PATH"
 ```
+
+Use the commands below from the repository root:
+
+```bash
+cd /data2-HDD-SATA-20T/Digital_avatar/haoweiyao/claude-code-rust
+
+# Verify the local toolchain.
+cargo --version
+rustc --version
+rustup show active-toolchain
+
+# Build the whole workspace in release mode.
+cargo build --workspace --release
+```
+
+The repository currently selects toolchain `1.91.1` via rustup. A separate
+stable toolchain is also installed in the same local `.rust/` root, but builds
+inside this repo should follow the repository-selected toolchain.
+
+Known build warnings on this machine:
+
+- `npm` is not installed, so the `claude-code-rs` build script skips web-ui
+  dependency installation as a warning.
+- `cc-browser/src/mcp_bridge.rs` currently has an unused `Context` import.
+- `crates/claude-code-rs/src/tools/exec/process_control.rs` currently has an
+  unused Unix `CommandExt` import.
+
+## Commit And Push Automation
+
+本仓库使用本地 Git 身份：
+
+```bash
+git config user.name "Crsei"
+git config user.email "Crsei@protonmail.com"
+```
+
+Rust 工具链安装在仓库父目录的 `.rust/` 下。构建或提交前需要使用这套本地工具链：
+
+```bash
+export CARGO_HOME=/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/.rust/cargo
+export RUSTUP_HOME=/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/.rust/rustup
+export PATH="$CARGO_HOME/bin:$PATH"
+```
+
+常规提交流程：
+
+```bash
+git status --short
+cargo build --workspace --release
+git add <files>
+git commit -m "<short imperative summary>"
+```
+
+推送 `tui` 分支时继续使用
+`/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/github_token.txt`。不要读取、打印、提交或复制该 token 文件内容。使用临时 `GIT_ASKPASS` 脚本向 Git 提供认证，并在命令结束后删除脚本：
+
+```bash
+set +x
+ASKPASS_SCRIPT=$(mktemp)
+cat > "$ASKPASS_SCRIPT" <<'EOF'
+#!/bin/sh
+case "$1" in
+  *Username*) printf '%s\n' 'Crsei' ;;
+  *Password*) cat /data2-HDD-SATA-20T/Digital_avatar/haoweiyao/github_token.txt ;;
+  *) printf '%s\n' 'Crsei' ;;
+esac
+EOF
+chmod 700 "$ASKPASS_SCRIPT"
+GIT_CONFIG_GLOBAL=/dev/null \
+GIT_ASKPASS="$ASKPASS_SCRIPT" \
+GIT_TERMINAL_PROMPT=0 \
+git -c credential.helper= push https://github.com/Crsei/claude-code-rust.git tui
+status=$?
+rm -f "$ASKPASS_SCRIPT"
+exit $status
+```
+
+`GIT_CONFIG_GLOBAL=/dev/null` is intentional here: this machine has a global
+GitHub URL rewrite through `gh.llkk.cc`, and authenticated push should use the
+canonical GitHub URL directly.
 
 ## Project Structure
 

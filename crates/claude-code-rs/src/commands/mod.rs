@@ -115,6 +115,7 @@ mod runtime_bridge;
 pub mod sleep_cmd;
 
 use cc_commands::{command, command_metadata, sort_commands_for_display, Command};
+use cc_engine::command_runtime;
 
 // ---------------------------------------------------------------------------
 // Registry
@@ -593,6 +594,7 @@ pub struct DefaultCommandDispatcher {
 
 impl DefaultCommandDispatcher {
     pub fn new() -> Self {
+        install_engine_command_executor();
         Self {
             inner: cc_commands::DefaultCommandDispatcher::new(
                 command_metadata(&get_all_commands()),
@@ -615,6 +617,52 @@ impl cc_types::commands::CommandDispatcher for DefaultCommandDispatcher {
     fn command_name(&self, index: usize) -> Option<String> {
         cc_types::commands::CommandDispatcher::command_name(&self.inner, index)
     }
+}
+
+pub struct EngineCommandExecutor;
+
+#[async_trait::async_trait]
+impl command_runtime::CommandExecutor for EngineCommandExecutor {
+    async fn execute(
+        &self,
+        parsed: cc_types::commands::ParsedCommand,
+        command_name: String,
+        ctx: &mut command_runtime::CommandContext,
+    ) -> anyhow::Result<command_runtime::CommandResult> {
+        let mut commands = get_all_commands();
+        let Some(command) = commands.get_mut(parsed.index) else {
+            anyhow::bail!("Unknown command: /{}", command_name);
+        };
+
+        let mut root_ctx = cc_commands::CommandContext {
+            messages: ctx.messages.clone(),
+            cwd: ctx.cwd.clone(),
+            app_state: ctx.app_state.clone(),
+            session_id: ctx.session_id.clone(),
+        };
+
+        let result = command.handler.execute(&parsed.args, &mut root_ctx).await?;
+        ctx.messages = root_ctx.messages;
+        ctx.cwd = root_ctx.cwd;
+        ctx.app_state = root_ctx.app_state;
+        ctx.session_id = root_ctx.session_id;
+
+        Ok(match result {
+            cc_commands::CommandResult::Output(text) => {
+                command_runtime::CommandResult::Output(text)
+            }
+            cc_commands::CommandResult::Query(messages) => {
+                command_runtime::CommandResult::Query(messages)
+            }
+            cc_commands::CommandResult::Clear => command_runtime::CommandResult::Clear,
+            cc_commands::CommandResult::Exit(text) => command_runtime::CommandResult::Exit(text),
+            cc_commands::CommandResult::None => command_runtime::CommandResult::None,
+        })
+    }
+}
+
+pub fn install_engine_command_executor() {
+    command_runtime::set_global_command_executor(std::sync::Arc::new(EngineCommandExecutor));
 }
 
 #[cfg(test)]

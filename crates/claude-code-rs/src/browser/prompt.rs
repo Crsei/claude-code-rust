@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! System prompt section for browser MCP.
 //!
 //! Injected when at least one browser MCP server is active so the model sees

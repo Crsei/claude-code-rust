@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports)]
+
 //! Shared helpers for the canonical query-loop tool execution boundary.
 //!
 //! `QueryDeps::execute_tool` is the only full tool execution entry point. This

@@ -98,7 +98,7 @@ pub(crate) fn format_conversation_for_summary(messages: &[Message]) -> String {
 /// This translates the engine's internal representation into the wire format
 /// expected by `api::client::ApiClient`.
 pub(crate) fn build_messages_request(
-    params: &cc_query::deps::ModelCallParams,
+    params: &crate::query::deps::ModelCallParams,
 ) -> cc_api::api::client::MessagesRequest {
     use crate::types::message::{Attachment, Message, MessageContent};
 
@@ -188,7 +188,7 @@ pub(crate) fn build_messages_request(
             let max_tokens_fallback = params
                 .max_output_tokens
                 .map(|n| n.min(u32::MAX as usize) as u32);
-            let budget = crate::engine::effort::resolve_thinking_budget(
+            let budget = crate::effort::resolve_thinking_budget(
                 params.effort_value.as_deref(),
                 max_tokens_fallback,
             );
@@ -270,7 +270,7 @@ mod clamp_tests {
 mod tests {
     use super::*;
     use crate::types::message::{Attachment, AttachmentMessage, Message};
-    use cc_query::deps::ModelCallParams;
+    use crate::query::deps::ModelCallParams;
 
     fn base_params() -> ModelCallParams {
         ModelCallParams {

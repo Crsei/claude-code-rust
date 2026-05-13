@@ -69,7 +69,7 @@ impl HeadlessRuntime {
         // ── 1b. Background agent channel ─────────────────────────────
         let (agent_tx, mut agent_rx) = cc_types::agent_channel::agent_channel();
         self.engine.set_bg_agent_tx(agent_tx);
-        let pending_bg = self.engine.pending_bg_results.clone();
+        let pending_bg = self.engine.pending_background_results();
 
         // ── 1c. Subsystem event bus ──────────────────────────────────
         let event_bus = crate::ipc::subsystem_events::SubsystemEventBus::new();

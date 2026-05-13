@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use crate::engine::lifecycle::QueryEngine;
-
 use cc_ipc_client::sink::FrontendSink;
 use cc_ipc_protocol::BackendMessage;
 
@@ -11,23 +10,6 @@ use cc_ipc_protocol::BackendMessage;
 pub type PendingPermissions = cc_ipc_client::PendingPermissions;
 /// Pending AskUserQuestion requests awaiting the user's next submit_prompt.
 pub type PendingQuestions = cc_ipc_client::PendingQuestions;
-
-impl cc_ipc_client::callbacks::CallbackHost for QueryEngine {
-    fn set_permission_callback(&self, cb: crate::types::tool::PermissionCallback) {
-        QueryEngine::set_permission_callback(self, cb);
-    }
-
-    fn set_ask_user_callback(&self, cb: crate::types::tool::AskUserCallback) {
-        QueryEngine::set_ask_user_callback(self, cb);
-    }
-
-    fn set_tool_progress_callback(
-        &self,
-        cb: Arc<dyn Fn(crate::types::tool::ToolProgress) + Send + Sync>,
-    ) {
-        QueryEngine::set_tool_progress_callback(self, cb);
-    }
-}
 
 /// Install the permission callback on the engine.
 pub fn install_permission_callback(

@@ -125,7 +125,7 @@ pub struct QueryEngine {
     pub(crate) has_handled_orphaned_permission: Arc<AtomicBool>,
     /// Shared buffer of completed background agents.
     /// Event loop pushes; query loop drains.
-    pub(crate) pending_bg_results: cc_engine::agent_runtime::PendingBackgroundResults,
+    pub(crate) pending_bg_results: crate::agent_runtime::PendingBackgroundResults,
     /// Hook runner for the tool-execution hook system.
     ///
     /// Defaults to [`cc_types::hooks::NoopHookRunner`]. Call sites that want
@@ -138,6 +138,8 @@ pub struct QueryEngine {
     /// wire in `DefaultCommandDispatcher` from the main crate's `commands::`
     /// module via [`QueryEngine::set_command_dispatcher`].
     pub(crate) command_dispatcher: Arc<dyn cc_types::commands::CommandDispatcher>,
+    /// Slash-command executor used after the dispatcher has parsed input.
+    pub(crate) command_executor: Arc<dyn crate::command_runtime::CommandExecutor>,
 }
 
 impl QueryEngine {
@@ -193,9 +195,10 @@ impl QueryEngine {
             })),
             aborted: Arc::new(AtomicBool::new(false)),
             has_handled_orphaned_permission: Arc::new(AtomicBool::new(false)),
-            pending_bg_results: cc_engine::agent_runtime::PendingBackgroundResults::new(),
+            pending_bg_results: crate::agent_runtime::PendingBackgroundResults::new(),
             hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
             command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
+            command_executor: crate::command_runtime::global_command_executor(),
         }
     }
 
@@ -227,6 +230,23 @@ impl QueryEngine {
     /// Clone of the current command dispatcher.
     pub fn command_dispatcher(&self) -> Arc<dyn cc_types::commands::CommandDispatcher> {
         self.command_dispatcher.clone()
+    }
+
+    pub fn set_command_executor(
+        &mut self,
+        executor: Arc<dyn crate::command_runtime::CommandExecutor>,
+    ) {
+        self.command_executor = executor;
+    }
+
+    pub fn command_executor(&self) -> Arc<dyn crate::command_runtime::CommandExecutor> {
+        self.command_executor.clone()
+    }
+
+    pub fn pending_background_results(
+        &self,
+    ) -> crate::agent_runtime::PendingBackgroundResults {
+        self.pending_bg_results.clone()
     }
 
     // -- Permission callback --------------------------------------------------

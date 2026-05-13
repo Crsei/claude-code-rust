@@ -20,7 +20,41 @@ pub fn ensure_installed() {
     INSTALL.call_once(|| {
         cc_ipc::agent_handlers::set_runtime_host(Arc::new(RootAgentHost));
         cc_ipc::subsystem_handlers::set_runtime_host(Arc::new(RootSubsystemHost));
+        cc_engine::agent_runtime::set_agent_tree_runtime(Arc::new(RootAgentTreeRuntime));
     });
+}
+
+struct RootAgentTreeRuntime;
+
+impl cc_engine::agent_runtime::AgentTreeRuntime for RootAgentTreeRuntime {
+    fn register(&self, node: cc_types::agent_types::AgentNode) {
+        cc_ipc::agent_tree::AGENT_TREE.lock().register(node);
+    }
+
+    fn update_state(
+        &self,
+        agent_id: &str,
+        state: &str,
+        result_preview: Option<String>,
+        duration_ms: Option<u64>,
+        had_error: bool,
+    ) {
+        cc_ipc::agent_tree::AGENT_TREE.lock().update_state(
+            agent_id,
+            state,
+            result_preview,
+            duration_ms,
+            had_error,
+        );
+    }
+
+    fn snapshot(&self) -> Vec<cc_types::agent_types::AgentNode> {
+        cc_ipc::agent_tree::AGENT_TREE.lock().build_snapshot()
+    }
+
+    fn active_count(&self) -> usize {
+        cc_ipc::agent_tree::AGENT_TREE.lock().active_agents().len()
+    }
 }
 
 struct RootAgentHost;

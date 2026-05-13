@@ -722,6 +722,11 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         None
     };
 
+    // Install root runtime adapters before QueryEngine can spawn agents. This
+    // keeps cc-engine free of direct cc-ipc dependencies while preserving the
+    // shared IPC agent tree used by headless/TUI status surfaces.
+    crate::ipc::runtime_adapters::ensure_installed();
+
     // B.7: Build QueryEngineConfig
     let engine_config = QueryEngineConfig {
         cwd: cwd.clone(),

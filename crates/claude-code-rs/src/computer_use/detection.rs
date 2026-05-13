@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Computer Use tool detection and classification.
 //!
 //! Identifies `mcp__computer-use__*` tools by name prefix and classifies

@@ -6,24 +6,44 @@
 //! shared structures (`AppState`, `Tool` trait, `ToolUseContext`) and the
 //! status-line runner.
 //!
-//! ## What lives here now
-//!
-//! - [`status_line`] — scriptable status-line payload + runner, moved from
-//!   `src/ui/status_line/`. Lives here because `AppState` holds a
-//!   `StatusLineRunner` handle.
-//!
-//! ## Coming in follow-up PRs
-//!
-//! - `types::{tool, app_state, config}` from the root crate
-//! - The contents of `src/engine/` and `src/query/`
-//!
 //! See `docs/superpowers/specs/2026-04-20-workspace-split-design.md`.
 
 extern crate self as cc_engine;
 
 pub mod agent_runtime;
+pub mod agent;
+pub mod browser;
+pub mod codex_exec;
+pub mod command_runtime;
+pub mod computer_use;
+pub mod effort;
+pub mod input_processing;
+pub mod ipc_compat;
+pub mod lifecycle;
+pub mod lsp_service;
+pub mod mcp;
+pub mod output_style;
+pub mod prompt_sections;
+pub mod query;
+pub mod result;
+pub mod sdk_types;
+pub mod services;
 pub mod status_line;
+pub mod system_prompt;
+pub mod teams;
+pub mod tools;
 pub mod types;
+pub mod worktree_hooks;
+
+pub use cc_bootstrap as bootstrap;
+pub use cc_compact as compact;
+pub use cc_config as config;
+pub use cc_observability as observability;
+pub use cc_permissions as permissions;
+pub use cc_sandbox as sandbox;
+pub use cc_session as session;
+pub use cc_skills as skills;
+pub use cc_utils as utils;
 
 // Re-export from cc-types so consumers can eventually write
 // `use cc_engine::{HookRunner, CommandDispatcher}` once the engine types

@@ -23,7 +23,7 @@ use crate::types::app_state::AppState;
 use crate::types::message::{Message, StreamEvent};
 use crate::types::state::AutoCompactTracking;
 use crate::types::tool::{PermissionMode, ToolProgress, Tools, ValidationResult};
-use cc_query::deps::{
+use crate::query::deps::{
     CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
 };
 
@@ -59,7 +59,7 @@ pub(crate) struct QueryEngineDeps {
     /// progress event to `FrontendSink`.
     pub(crate) tool_progress_callback: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
     /// Shared buffer of completed background agents.
-    pub(crate) pending_bg_results: cc_engine::agent_runtime::PendingBackgroundResults,
+    pub(crate) pending_bg_results: crate::agent_runtime::PendingBackgroundResults,
     /// Hook runner — used via the `HookRunner` trait from `cc-types::hooks` so
     /// the engine has no direct dependency on `crate::tools::hooks`.
     pub(crate) hook_runner: Arc<dyn cc_types::hooks::HookRunner>,
@@ -1414,7 +1414,7 @@ impl QueryDeps for QueryEngineDeps {
         Ok(refreshed)
     }
 
-    fn drain_background_results(&self) -> Vec<cc_engine::agent_runtime::CompletedBackgroundAgent> {
+    fn drain_background_results(&self) -> Vec<crate::agent_runtime::CompletedBackgroundAgent> {
         self.pending_bg_results.drain_all()
     }
 
@@ -1440,7 +1440,7 @@ impl QueryDeps for QueryEngineDeps {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::lifecycle::QueryEngine;
+    use crate::lifecycle::QueryEngine;
     use crate::types::config::QueryEngineConfig;
     use crate::types::message::{AssistantMessage, MessageContent, ToolResultContent, UserMessage};
     use crate::types::tool::{
@@ -1609,7 +1609,7 @@ mod tests {
             permission_callback: None,
             bg_agent_tx: None,
             tool_progress_callback: None,
-            pending_bg_results: cc_engine::agent_runtime::PendingBackgroundResults::new(),
+            pending_bg_results: crate::agent_runtime::PendingBackgroundResults::new(),
             hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
             command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
         }
@@ -2271,6 +2271,54 @@ mod tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn execute_tool_allows_plan_file_write_in_plan_mode() {
+        struct TestWriteTool;
+
+        #[async_trait::async_trait]
+        impl Tool for TestWriteTool {
+            fn name(&self) -> &str {
+                "Write"
+            }
+
+            async fn description(&self, _input: &serde_json::Value) -> String {
+                "test write".to_string()
+            }
+
+            fn input_json_schema(&self) -> serde_json::Value {
+                serde_json::json!({"type": "object"})
+            }
+
+            fn is_read_only(&self, _input: &serde_json::Value) -> bool {
+                false
+            }
+
+            async fn call(
+                &self,
+                input: serde_json::Value,
+                _ctx: &crate::types::tool::ToolUseContext,
+                _parent_message: &AssistantMessage,
+                _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
+            ) -> anyhow::Result<crate::types::tool::ToolResult> {
+                let path = input
+                    .get("file_path")
+                    .and_then(|value| value.as_str())
+                    .unwrap();
+                let content = input
+                    .get("content")
+                    .and_then(|value| value.as_str())
+                    .unwrap();
+                std::fs::write(path, content)?;
+                Ok(crate::types::tool::ToolResult {
+                    data: serde_json::json!("ok"),
+                    new_messages: vec![],
+                    ..Default::default()
+                })
+            }
+
+            async fn prompt(&self) -> String {
+                String::new()
+            }
+        }
+
         struct OriginalCwdGuard(std::path::PathBuf);
 
         impl Drop for OriginalCwdGuard {
@@ -2288,7 +2336,7 @@ mod tests {
         let plan_path = crate::config::paths::current_plan_file_path(temp.path());
         let plan_path_string = plan_path.to_string_lossy().into_owned();
         let content = "## Plan\n- verify canonical plan file write";
-        let tool: Arc<dyn Tool> = Arc::new(crate::tools::fs::file_write::FileWriteTool::new());
+        let tool: Arc<dyn Tool> = Arc::new(TestWriteTool);
         let deps = make_deps(vec![tool], PermissionMode::Plan);
 
         let result = deps

@@ -23,8 +23,6 @@ pub(crate) enum ControlledExit {
 /// rather than only the immediate shell wrapper.
 #[cfg(unix)]
 pub(crate) fn configure_process_group(cmd: &mut Command) {
-    use std::os::unix::process::CommandExt;
-
     unsafe {
         cmd.pre_exec(|| {
             if libc::setpgid(0, 0) == -1 {

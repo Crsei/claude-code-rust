@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use cc_engine::types::tool::{AskUserCallback, PermissionCallback, ToolProgress};
+use cc_types::callbacks::{AskUserCallback, PermissionCallback, ToolProgress};
 use cc_ipc_protocol::BackendMessage;
 use parking_lot::Mutex;
 use tokio::sync::oneshot;

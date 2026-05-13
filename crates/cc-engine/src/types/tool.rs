@@ -1,8 +1,6 @@
 #![allow(dead_code)]
 use std::collections::HashMap;
-use std::future::Future;
 use std::hash::{Hash, Hasher};
-use std::pin::Pin;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -13,21 +11,7 @@ use super::app_state::AppState;
 #[allow(unused_imports)]
 use cc_types::message::{AssistantMessage, ContentBlock, Message, ToolResultContent};
 
-/// Async callback for interactive permission requests.
-///
-/// Called with (tool_use_id, tool_name, description, options).
-/// Returns the user's decision: "allow", "deny", or "always_allow".
-pub type PermissionCallback = Arc<
-    dyn Fn(String, String, String, Vec<String>) -> Pin<Box<dyn Future<Output = String> + Send>>
-        + Send
-        + Sync,
->;
-
-/// Async callback for interactive "ask the user" tool requests.
-///
-/// Called with the plain-text question and resolves to the user's answer.
-pub type AskUserCallback =
-    Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = String> + Send>> + Send + Sync>;
+pub use cc_types::callbacks::{AskUserCallback, PermissionCallback, ToolProgress};
 
 /// 工具输入验证结果
 #[derive(Debug, Clone)]
@@ -77,13 +61,6 @@ impl ToolResult {
             new_messages: vec![],
         }
     }
-}
-
-/// 工具执行进度回调的数据
-#[derive(Debug, Clone)]
-pub struct ToolProgress {
-    pub tool_use_id: String,
-    pub data: Value,
 }
 
 // Permission-context types moved into `cc-types::permissions` in Phase 4

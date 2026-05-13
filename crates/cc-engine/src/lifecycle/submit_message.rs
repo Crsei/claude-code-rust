@@ -14,19 +14,19 @@ use futures::Stream;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::engine::codex_exec;
-use crate::engine::input_processing;
-use crate::engine::result;
-use crate::engine::sdk_types::*;
-use crate::engine::system_prompt;
+use crate::codex_exec;
+use crate::command_runtime::{CommandContext, CommandResult};
+use crate::input_processing;
+use crate::result;
+use crate::sdk_types::*;
 use crate::session::transcript;
+use crate::system_prompt;
 use crate::types::config::{QueryParams, QuerySource};
 use crate::types::message::{
     AssistantMessage, Attachment, ContentBlock, Message, MessageContent, QueryYield, StreamEvent,
     SystemSubtype,
 };
-use cc_commands::{CommandContext, CommandResult};
-use cc_query::loop_impl;
+use crate::query::loop_impl;
 
 use super::deps::QueryEngineDeps;
 use super::types::{AbortReason, UsageTracking};
@@ -242,23 +242,16 @@ async fn handle_parsed_command(
     active_session_id_ref: &Arc<parking_lot::RwLock<crate::bootstrap::SessionId>>,
     session_id: &crate::bootstrap::SessionId,
     command_dispatcher: &dyn cc_types::commands::CommandDispatcher,
+    command_executor: &dyn crate::command_runtime::CommandExecutor,
 ) -> LocalCommandOutcome {
     let mut outcome = LocalCommandOutcome::new(session_id.clone());
     let Some(parsed_command) = processed.parsed_command.take() else {
         return outcome;
     };
 
-    let mut commands = crate::commands::get_all_commands();
     let command_name = command_dispatcher
         .command_name(parsed_command.index)
         .unwrap_or_else(|| format!("#{}", parsed_command.index));
-    let Some(command) = commands.get_mut(parsed_command.index) else {
-        outcome.is_error = true;
-        processed.result_text = Some(format!("Unknown command: /{}", command_name));
-        processed.should_query = false;
-        processed.messages.clear();
-        return outcome;
-    };
 
     let mut ctx = CommandContext {
         messages: current_messages.to_vec(),
@@ -267,9 +260,8 @@ async fn handle_parsed_command(
         session_id: session_id.clone(),
     };
 
-    match command
-        .handler
-        .execute(&parsed_command.args, &mut ctx)
+    match command_executor
+        .execute(parsed_command, command_name.clone(), &mut ctx)
         .await
     {
         Ok(CommandResult::Output(text)) => {
@@ -582,6 +574,7 @@ impl QueryEngine {
         let pending_bg_results = self.pending_bg_results.clone();
         let hook_runner = self.hook_runner.clone();
         let command_dispatcher = self.command_dispatcher.clone();
+        let command_executor = self.command_executor.clone();
 
         let stream = async_stream::stream! {
             let mut submit_turn = SubmitTurnState::new();
@@ -673,6 +666,7 @@ impl QueryEngine {
                 &active_session_id_ref,
                 &session_id,
                 command_dispatcher.as_ref(),
+                command_executor.as_ref(),
             )
             .await;
 
