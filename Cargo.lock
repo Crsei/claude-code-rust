@@ -551,6 +551,7 @@ dependencies = [
  "cc-mcp",
  "chrono",
  "dirs",
+ "libc",
  "parking_lot",
  "serde",
  "serde_json",
