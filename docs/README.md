@@ -9,6 +9,7 @@ This directory separates active status documents from historical records.
 - [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md): remaining Full Build TODOs, runtime caveats, and intentional crops.
 - [KNOWN_ISSUES.md](KNOWN_ISSUES.md): single active issue and review-finding tracker.
 - [COMMAND_REFERENCE.md](COMMAND_REFERENCE.md), [CLI_REFERENCE.md](CLI_REFERENCE.md), [USAGE_GUIDE.md](USAGE_GUIDE.md): command and user-facing usage references.
+- [reference/CRATE_MIGRATION_GUIDE.md](reference/CRATE_MIGRATION_GUIDE.md): operational checklist for moving `claude-code-rs` modules into workspace crates.
 - [STORAGE.md](STORAGE.md): cc-rust data-root and path isolation reference.
 - [DAEMON_OPERATIONS.md](DAEMON_OPERATIONS.md): daemon operation guide.
 - [cloud-providers.md](cloud-providers.md): provider configuration reference.
