@@ -1,41 +1,27 @@
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/app/agent_navigation.rs"]
 pub mod agent_navigation;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/app/app_backtrack.rs"]
 pub mod app_backtrack;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/app/app_command.rs"]
 pub mod app_command;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/app/app_event.rs"]
 pub mod app_event;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/app/app_event_sender.rs"]
 pub mod app_event_sender;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/app/app_server_adapter.rs"]
 pub mod app_server_adapter;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/app/app_server_requests.rs"]
 pub mod app_server_requests;
-#[path = "../../claude-code-rs/src/ui/app/input.rs"]
 mod input;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/app/loaded_threads.rs"]
 pub mod loaded_threads;
-#[path = "../../claude-code-rs/src/ui/app/render.rs"]
 mod render;
-#[path = "../../claude-code-rs/src/ui/app/status.rs"]
 pub mod status;
 #[cfg(test)]
 #[path = "app/tests.rs"]
 mod tests;
-#[path = "../../claude-code-rs/src/ui/app/transcript_mode.rs"]
 mod transcript_mode;
-#[path = "../../claude-code-rs/src/ui/app/voice.rs"]
 mod voice;
-#[path = "../../claude-code-rs/src/ui/app/workspace_trust.rs"]
 mod workspace_trust;
 use crate::config::settings::StatusLineSettings;
 use crate::keybindings::KeybindingRegistry;

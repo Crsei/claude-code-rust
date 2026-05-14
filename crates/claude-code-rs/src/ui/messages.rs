@@ -1,113 +1,113 @@
 // BEGIN generated upstream messages modules
 // Rust-side message modules mirrored from upstream React components.
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/advisor_message.rs"]
+#[path = "messages/advisor_message.rs"]
 pub mod advisor_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/assistant_redacted_thinking_message.rs"]
+#[path = "messages/assistant_redacted_thinking_message.rs"]
 pub mod assistant_redacted_thinking_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/assistant_text_message.rs"]
+#[path = "messages/assistant_text_message.rs"]
 pub mod assistant_text_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/assistant_thinking_message.rs"]
+#[path = "messages/assistant_thinking_message.rs"]
 pub mod assistant_thinking_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/assistant_tool_use_message.rs"]
+#[path = "messages/assistant_tool_use_message.rs"]
 pub mod assistant_tool_use_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/attachment_message.rs"]
+#[path = "messages/attachment_message.rs"]
 pub mod attachment_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/collapsed_read_search_content.rs"]
+#[path = "messages/collapsed_read_search_content.rs"]
 pub mod collapsed_read_search_content;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/compact_boundary_message.rs"]
+#[path = "messages/compact_boundary_message.rs"]
 pub mod compact_boundary_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/file_edit_tool_updated_message.rs"]
+#[path = "messages/file_edit_tool_updated_message.rs"]
 pub mod file_edit_tool_updated_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/grouped_tool_use_content.rs"]
+#[path = "messages/grouped_tool_use_content.rs"]
 pub mod grouped_tool_use_content;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/highlighted_thinking_text.rs"]
+#[path = "messages/highlighted_thinking_text.rs"]
 pub mod highlighted_thinking_text;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/hook_progress_message.rs"]
+#[path = "messages/hook_progress_message.rs"]
 pub mod hook_progress_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/null_rendering_attachments.rs"]
+#[path = "messages/null_rendering_attachments.rs"]
 pub mod null_rendering_attachments;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/plan_approval_message.rs"]
+#[path = "messages/plan_approval_message.rs"]
 pub mod plan_approval_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/rate_limit_message.rs"]
+#[path = "messages/rate_limit_message.rs"]
 pub mod rate_limit_message;
 #[allow(dead_code)]
 #[path = "messages/shutdown_message.rs"]
 pub mod shutdown_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/system_api_error_message.rs"]
+#[path = "messages/system_api_error_message.rs"]
 pub mod system_api_error_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/system_text_message.rs"]
+#[path = "messages/system_text_message.rs"]
 pub mod system_text_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/task_assignment_message.rs"]
+#[path = "messages/task_assignment_message.rs"]
 pub mod task_assignment_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/team_mem_collapsed.rs"]
+#[path = "messages/team_mem_collapsed.rs"]
 pub mod team_mem_collapsed;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/team_mem_saved.rs"]
+#[path = "messages/team_mem_saved.rs"]
 pub mod team_mem_saved;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/user_agent_notification_message.rs"]
+#[path = "messages/user_agent_notification_message.rs"]
 pub mod user_agent_notification_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/user_bash_input_message.rs"]
+#[path = "messages/user_bash_input_message.rs"]
 pub mod user_bash_input_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/user_bash_output_message.rs"]
+#[path = "messages/user_bash_output_message.rs"]
 pub mod user_bash_output_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/user_channel_message.rs"]
+#[path = "messages/user_channel_message.rs"]
 pub mod user_channel_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/user_command_message.rs"]
+#[path = "messages/user_command_message.rs"]
 pub mod user_command_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/user_image_message.rs"]
+#[path = "messages/user_image_message.rs"]
 pub mod user_image_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/user_local_command_output_message.rs"]
+#[path = "messages/user_local_command_output_message.rs"]
 pub mod user_local_command_output_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/user_memory_input_message.rs"]
+#[path = "messages/user_memory_input_message.rs"]
 pub mod user_memory_input_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/user_plan_message.rs"]
+#[path = "messages/user_plan_message.rs"]
 pub mod user_plan_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/user_prompt_message.rs"]
+#[path = "messages/user_prompt_message.rs"]
 pub mod user_prompt_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/user_resource_update_message.rs"]
+#[path = "messages/user_resource_update_message.rs"]
 pub mod user_resource_update_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/user_teammate_message.rs"]
+#[path = "messages/user_teammate_message.rs"]
 pub mod user_teammate_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/user_text_message.rs"]
+#[path = "messages/user_text_message.rs"]
 pub mod user_text_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/user_tool_result_message/mod.rs"]
+#[path = "messages/user_tool_result_message/mod.rs"]
 pub mod user_tool_result_message;
 // END generated upstream messages modules
 
-#[path = "../../claude-code-rs/src/ui/messages/render.rs"]
+#[path = "messages/render.rs"]
 mod render;
 #[path = "messages/wrap.rs"]
 mod wrap;

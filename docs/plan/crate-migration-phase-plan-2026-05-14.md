@@ -19,7 +19,9 @@ dependency boundary 调整，不混入功能重写。
 本轮已按 Phase 0-12 拆分执行并提交 implementation slices。代码层面完成了
 contract / DTO 下沉、root engine 重复实现清理、`cc-daemon` protocol owner
 补齐、`cc-mcp` loopback HTTP proxy 隔离、`cc-session` fork path 固定、
-`cc-ui` messages 子集迁移、以及多处会互相污染的测试全局状态隔离。
+以及多处会互相污染的测试全局状态隔离。后续复审决定 Rust TUI 继续由
+`claude-code-rs/src/ui/**` 持有，`cc-ui` 仅保留为空边界 crate，不再作为 UI
+source owner。
 
 已通过的 final gates：
 
@@ -43,14 +45,31 @@ allow_unused_dead 474
 codex_path_hits 12
 ```
 
+2026-05-14 UI ownership rollback 后，跨 crate UI `#[path]` bridge 已归零：
+
+```text
+path_attrs_cc_to_root 0
+path_attrs_root_to_cc 0
+cc_crates_root_imports 44
+allow_unused_dead 473
+codex_path_hits 12
+```
+
 剩余收口重点：
 
-- Phase 10 / 11：`cc-ui` 仍通过 `#[path = "../../claude-code-rs/src/ui/..."]`
-  读取 root UI source，root `ui/mod.rs` 也仍通过 `#[path]` 反向包含 `cc-ui`
-  modules；需要继续把 app/tui/messages 及依赖的 UI leaf modules 迁入 `cc-ui`。
-- Phase 5 / 8：`cc-engine`、`cc-ui` 等 runtime crates 仍有 root-style
+- Phase 10 / 11：Rust TUI 不再迁入 `cc-ui`；`claude-code-rs/src/ui/**`
+  是 intentional root-owned UI surface。后续 thin-binary guard 不应再把
+  root UI 目录本身当作未完成迁移项。
+- 非 UI root gap：`claude-code-rs/src/ui/**` 之外的 root implementation
+  仍需按 target owner 收敛，尤其是 `commands/`、`tools/`、`daemon/`、
+  `ipc/`、`teams/`、`plugins/`、`mcp/`、`browser/`、`lsp_service/`、
+  `computer_use/`、`voice/`、`services/`、`web/` 以及可复用 loose modules。
+- Phase 5 / 8：`cc-engine` 等 runtime crates 仍有 root-style
   `crate::engine/tools/teams/mcp/browser/...` 边界引用；需要用目标 crate import
   或 adapter trait 替换。
+- Phase 1 / 11：当前已未发现非 UI root `#[path]` bridge；剩余风险主要是
+  root compatibility re-export / alias、host-installed callback、重复 DTO、
+  以及 scaffold crate 尚未真正接管 owner。
 - Phase 11：大量 `allow(dead_code|unused_imports|unused)` 仍来自迁移期兼容面；
   后续每个 owner 收口 slice 需要同步删除对应 allow。
 - Phase 12：guard 归零前，本文档保持 active plan，不迁入 `docs/archive/`。
@@ -72,6 +91,10 @@ codex_path_hits 12
 
 - 每个迁移 slice 先记录目标 owner、公共类型 owner、持久化/协议风险、shim 删除 guard。
 - 优先移动 contract / DTO / adapter trait，再移动 runtime implementation。
+- 迁移中禁止为了保留旧路径而新增反向依赖、bespoke compatibility crate、
+  adapter module、re-export layer 或 wrapper API。需要共享的 type / trait / DTO /
+  adapter contract 必须先抽到合适的 shared crate；如果做不到，implementation
+  先留在当前 owner。
 - 不把 runtime 单例、文件写入、subprocess、HTTP server、terminal raw mode 放入
   `cc-types` 或 `cc-ipc-protocol`。
 - 新 crate 需要 root 行为时，先加 adapter trait，由 root startup 安装实现。
@@ -92,26 +115,36 @@ codex_path_hits 12
   `cc-daemon`、`cc-commands`、`cc-ipc`、`cc-ipc-client`、`cc-mcp`、
   `cc-browser`、`cc-lsp-service`、`cc-plugins`、`cc-services`、
   `cc-computer-use`。
-- UI / binary glue：`cc-ui`、`claude-code-rs`。
+- UI / binary glue：Rust TUI source 保留在 `claude-code-rs/src/ui/**`；
+  `cc-ui` 仅为空边界 crate，除非后续重新批准 UI crate extraction。
 
-当前仍需迁移或收敛的 root 目录包括：
+当前仍需迁移或收敛的非 UI root 目录包括：
 
-- `commands/`、`tools/`、`daemon/`、`ipc/`、`teams/`、`engine/`、`ui/`
+- `commands/`、`tools/`、`daemon/`、`ipc/`、`teams/`、`engine/`
 - `browser/`、`computer_use/`、`lsp_service/`、`mcp/`、`plugins/`、
   `services/`、`voice/`、`web/`
 - loose glue：`plan_workflow.rs`、`worktree_hooks.rs`、`dashboard.rs`、
   `shutdown.rs`、`cli.rs`、`main.rs`
 
+`ui/` 不计入上述非 UI root gap；当前阶段它是 intentional root-owned Rust TUI
+surface，但不得被 `cc-*` crates 反向依赖或通过 `#[path]` 读取。
+
 已知迁移桥和优先风险：
 
-- `crates/claude-code-rs/src/engine/lifecycle/mod.rs` 通过 `#[path]` 指向
-  `cc-engine`。
-- `cc-ui` 仍通过大量 `#[path = "../../claude-code-rs/src/ui/..."]` 读取 root
-  UI source。
-- `crates/claude-code-rs/src/ui/mod.rs` 也通过 `#[path]` 指向 `cc-ui`
+- 非 UI root `#[path]` bridge 当前已归零；后续不得用 `#[path]` 或旧路径 wrapper
+  作为新的迁移手段。
+- `main.rs` 仍通过 `use cc_* as ...` 把已抽取 crate 映射回 root-private
+  `crate::config/auth/skills/utils/...` 路径，属于待删除的 compatibility alias。
+- `engine/`、`mcp/`、`browser/`、`computer_use/`、`services/`、`types/`
+  仍包含 re-export facade；后续应改 call sites 直接 import owner crate 或 shared
+  contract crate。
+- `daemon/protocol.rs` 与 `cc-daemon/src/protocol.rs` 存在重复 DTO 风险；root
+  应改用 `cc_daemon::protocol`，再迁移 server/supervisor/runtime。
+- `cc-lsp-service`、`cc-plugins`、`cc-teams` 等 crate 仍偏 scaffold 或 partial
+  extraction，root 仍拥有对应 runtime implementation。
+- UI source 已回退为 root-owned：`cc-ui` 不再读取 root UI source，
+  `crates/claude-code-rs/src/ui/mod.rs` 也不再通过 `#[path]` 指向 `cc-ui`
   modules。
-- `commands/remote_cmd.rs` 通过 `#[path = "../daemon/gateway_client.rs"]`
-  复用 daemon root file。
 - `cc-engine` 当前仍依赖若干 runtime crates，拆环计划中已明确后续 cut。
 
 ## Phase 0：Baseline And Ownership Inventory
@@ -166,6 +199,8 @@ cargo check --workspace --all-targets --message-format short
 - `cc-mcp` 与 `cc-browser` 之间没有双向 runtime ownership。
 - `cc-commands`、`cc-ui`、`cc-ipc` 的共享数据只通过 DTO / dispatcher contract
   流转。
+- 没有新增从目标 crate 回指 root crate / previous owner 的依赖，也没有新增只为
+  迁移兼容旧路径的 wrapper、re-export 或 compatibility layer。
 - `cargo tree` 不显示新增循环或意外 heavy dependency 下沉到 leaf crate。
 
 最小验证：
@@ -199,6 +234,9 @@ cargo tree -p cc-tools -e normal --depth 1
   或 snapshot tests。
 - 明确 `SdkMessage`、`QueryParams`、`ToolUseContext`、`AppState` 的最终 owner
   和跨 crate 可见面。
+- `Tool`、`Tools`、`ToolUseContext`、`ToolResult`、轻量 `AppState` contract
+  不能继续通过 `cc-engine` 或 root facade 被其他 runtime crate 间接消费；应下沉到
+  `cc-types` 或专门 shared runtime contract crate。
 
 退出条件：
 
@@ -277,6 +315,10 @@ permission 的边界固定下来。
 - 文件工具、shell 工具、web 工具、skill tool、team/task tool 按 owner 拆分：
   pure schema 在 `cc-tools`，实际执行依赖的 runtime 留在 owner crate。
 - 保留 Bash/PowerShell sandbox/path isolation 语义，不能在迁移中弱化 fail-closed 行为。
+- root `tools/` 当前仍拥有 filesystem、exec、web、task、LSP、team、plan、
+  config、system-status tool 的真实实现；每个 slice 必须明确目标 owner：
+  `cc-tools` 仅保留 metadata/contracts，任务进入 `cc-tasks`，团队进入
+  `cc-teams`，LSP 进入 `cc-lsp-service`，engine/system 状态通过 adapter 注入。
 
 退出条件：
 
@@ -309,8 +351,8 @@ engine implementation shim。
   agent runtime、engine adapters、model invocation orchestration。
 - `cc-query` 拥有 async query loop driver、stream/event helpers、turn boundary、
   cancellation。
-- 删除 root `engine/lifecycle` 的跨 crate `#[path]` shim，改成短期 re-export 或
-  直接更新 call sites 使用 `cc_engine::*`。
+- 删除 root `engine/` compatibility facade 和 root-owned `agent/` residue，更新
+  call sites 直接使用 `cc_engine::*` 或 binary-only adapter。
 - `CommandDispatcher`、hook runner、tool execution、agent tree、background-agent
   updates、task runtime 通过 adapter 注入。
 - Langfuse/observability setup and shutdown order 保持和迁移前一致。
@@ -318,6 +360,7 @@ engine implementation shim。
 退出条件：
 
 - Root `engine/` 不再包含 QueryEngine lifecycle、query loop、agent runtime 的真实实现。
+- Root `engine/` 不再作为 `cc_engine::*` 的旧路径 re-export facade。
 - `cc-engine` 不依赖 `cc-ipc-client` 或 root-private module。
 - `cc-query` 使用 explicit traits / DTO，不依赖 root module。
 - Agent tree registration/update/snapshot/active-count 在非 IPC 和 IPC 场景都有测试。
@@ -344,8 +387,9 @@ rg 'crate::engine::lifecycle|#\[path = .*cc-engine' crates/claude-code-rs/src -g
   plan workflow event 下沉到 `cc-types` 或 `cc-ipc-protocol`。
 - Binary-only command integrations 通过 runtime adapter 注入：engine submit、
   daemon gateway、team/task runtime、plugin refresh、voice capability、browser/IDE/LSP status。
-- 删除 `commands/remote_cmd.rs` 到 root daemon file 的 `#[path]` 复用，改为
-  `cc-daemon`/gateway client crate owner 或 adapter。
+- root `commands/` 当前仍拥有多数 command implementation；纯命令迁入
+  `cc-commands`，daemon/plugin/browser/voice/engine-backed command 先抽 shared
+  result DTO 和 adapter contract，再迁移实现。
 - 保持 `/help`、`/status`、`/remote`、`/channels`、`/plan` 等 UI/CLI 输出兼容。
 
 退出条件：
@@ -377,6 +421,9 @@ rg '#\[path = "../daemon/gateway_client.rs"\]|crate::commands::' crates/claude-c
 - `cc-ipc` 拥有 runtime orchestration，不拥有 engine implementation。
 - Root 只做 headless binary entry、stdio setup、startup adapter install、process signal glue。
 - Headless JSONL roundtrip、error classification、ordering assumption 不在迁移中改变。
+- root `ipc/` 当前仍拥有 subsystem handlers、SDK mapping、agent settings、
+  file search、ingress、runtime orchestration glue 以及 host adapters；可复用 handler
+  迁入 `cc-ipc`，stdio/process glue 留 root。
 
 退出条件：
 
@@ -416,6 +463,17 @@ rg 'crate::(engine|tools|commands)::' crates/cc-ipc crates/cc-ipc-client -g '*.r
 - `cc-computer-use`：detection、setup、screenshot、input、platform automation。
 - `voice` domain：将可复用 capability/STT/controller/audio 边界迁入目标 crate
   或明确保留 binary-only 条件；如果需要新 `cc-voice`，先写 scaffold plan。
+- 当前 `cc-teams`、`cc-plugins`、`cc-lsp-service` 等仍未完整接管 root runtime；
+  不允许继续只保留 scaffold 并让 root implementation 作为事实 owner。
+- `mcp`、`browser`、`computer_use` 当前是 partial extraction facade：MCP tool
+  wrapper、browser detection/prompt、computer-use detection/setup/tool wrapper
+  仍受 root `Tool` / runtime coupling 阻塞。完成条件绑定 Phase 2 的 shared
+  `Tool` / `ToolUseContext` contract 下沉。
+- `cc-mcp` / `cc-skills` 等 global event callback bridge 应改成 shared event sink
+  trait/type，通过 runtime construction 显式传入，而不是 host-installed
+  compatibility callback。
+- Voice 如果仍保持 runtime unsupported，只能作为明确 intentional compatibility
+  surface 记录 release rationale；否则建立 `cc-voice` owner 并迁移实现。
 
 退出条件：
 
@@ -453,6 +511,10 @@ rg 'crate::(teams|plugins|mcp|browser|lsp_service|computer_use|voice)::' crates/
 - `web/` 中可复用 static routing/SSE/state handler 迁入 owner crate；binary-only
   port binding/startup 留 root。
 - 真实 submit/abort 与 scheduler ownership 从兼容路径迁入 supervisor/worker 架构。
+- 先消除 root `daemon/protocol.rs` 与 `cc-daemon/src/protocol.rs` 的重复 DTO；
+  root 必须 import `cc_daemon::protocol` 或 shared wire contract，而不是继续复制。
+- `cc-auth::set_credentials_path` 这类 root-installed global path callback 应替换为
+  直接 `cc-config` dependency/API；daemon/gateway/web 迁移不得新增类似 host callback。
 
 退出条件：
 
@@ -474,33 +536,32 @@ rg 'crate::(engine|tools|commands|plugins|teams|plan_workflow)::' crates/cc-daem
 
 ## Phase 10：UI And TUI Boundary Closure
 
-目标：让 `cc-ui` 拥有可复用 Rust TUI state/render/input surface，root 只保留 terminal
-lifecycle glue。
+目标更新：Rust TUI state/render/input surface 保留在 `claude-code-rs/src/ui/**`。
+`cc-ui` 不再作为 source owner，只保留为空边界 crate，避免当前阶段继续制造
+双向 `#[path]` migration bridge。
 
 执行内容：
 
-- 把 `cc-ui` 当前通过 `#[path = "../../claude-code-rs/src/ui/..."]` 引用的 UI
-  source 迁入 `cc-ui/src/**`。
+- 将已迁入或 path-included 到 `cc-ui/src/**` 的 UI source 回退到
+  `claude-code-rs/src/ui/**`。
 - UI-facing snapshots of tasks、teams、MCP、LSP、permissions、commands 通过 DTO /
-  adapter 获取，不直接读 root globals。
+  adapter 获取；由于 UI intentional root-owned，这些 root runtime 访问不再作为
+  `cc-ui` blocker 统计。
 - Terminal raw mode、signal integration、channel wiring、engine/headless/daemon
   startup handoff 留在 root binary glue。
-- Snapshot tests 和 visual/runtime regression helpers 指向 `cc-ui` crate owner。
-- Root `ui/mod.rs` 不再通过跨 crate `#[path]` 反向包含 `cc-ui` source；改为
-  normal crate import。
+- Snapshot tests 和 visual/runtime regression helpers 指向 root UI owner。
+- Root `ui/mod.rs` 不再通过跨 crate `#[path]` 反向包含 `cc-ui` source。
 
 退出条件：
 
 - `cc-ui` 不再从 `crates/claude-code-rs/src/ui/**` 读取 source。
-- Root `ui/` 只剩 binary-only terminal lifecycle glue 或已删除。
-- UI tests 主要在 `cc-ui`，root PTY/e2e 只覆盖 terminal process behavior。
-- 所有 referenced assets/rendering helpers 使用目标 crate path。
+- Root `ui/` 是 intentional UI owner，不再作为 thin-binary closeout blocker。
+- UI tests 保留在 root UI；root PTY/e2e 继续覆盖 terminal process behavior。
+- 所有 referenced assets/rendering helpers 使用 root UI path。
 
 最小验证：
 
 ```bash
-cargo check -p cc-ui --message-format short
-cargo test -p cc-ui
 cargo check -p claude-code-rs --message-format short
 rg '#\[path = ".*claude-code-rs/src/ui' crates/cc-ui -g '*.rs'
 rg '#\[path = ".*cc-ui' crates/claude-code-rs/src -g '*.rs'
@@ -508,12 +569,16 @@ rg '#\[path = ".*cc-ui' crates/claude-code-rs/src -g '*.rs'
 
 ## Phase 11：Root Binary Thinning And Shim Deletion
 
-目标：删除所有迁移 shim，使 root crate 达到 thin binary 形态。
+目标：删除所有迁移 shim，收敛非 UI root implementation gap，使 root crate 只保留
+CLI/startup/runtime adapter wiring/process lifecycle glue，以及 intentional root-owned
+Rust TUI surface。
 
 执行内容：
 
 - 删除 root 中已经迁出的 implementation module declarations。
-- 删除或收敛 root re-export；source compatibility shim 必须有明确删除日期。
+- 删除或收敛 root re-export；不得新增用于保留旧 module path 的 compatibility layer。
+- 删除 `main.rs` 中仅为旧 `crate::...` 路径服务的 `use cc_* as ...` alias，并更新
+  call sites 直接使用 owner crate。
 - 更新所有 call sites 使用目标 `cc-*` crate path。
 - 清理 `Cargo.toml` 中 root 只因迁移残留而存在的 direct dependency。
 - 清理 stale tests、stale docs path、duplicate implementation copies。
@@ -524,8 +589,8 @@ rg '#\[path = ".*cc-ui' crates/claude-code-rs/src -g '*.rs'
 
 - Guard 命令不再发现跨 crate `#[path]` migration bridge。
 - Library crate 没有 root dependency 或 root source import。
-- Root crate 没有 engine/query/tools/commands/daemon/ipc/teams/plugins/mcp/lsp/browser/
-  computer-use/voice 的真实实现。
+- 除 intentional `ui/` surface 外，Root crate 没有 engine/query/tools/commands/daemon/
+  ipc/teams/plugins/mcp/lsp/browser/computer-use/voice/services/web 的真实实现。
 - `allow(dead_code)` / `allow(unused_imports)` 没有被用于掩盖迁移残留。
 
 最小验证：
@@ -534,6 +599,7 @@ rg '#\[path = ".*cc-ui' crates/claude-code-rs/src -g '*.rs'
 rg '#\[path = ".*claude-code-rs/src' crates/cc-* crates/gateway -g '*.rs'
 rg '#\[path = ".*cc-' crates/claude-code-rs/src -g '*.rs'
 rg 'crate::(engine|query|tools|commands|daemon|ipc|teams|plugins|mcp|lsp_service|browser|computer_use|voice)::' crates/cc-* crates/gateway -g '*.rs'
+rg 'claude[-_]code[-_]rs' crates/cc-* crates/gateway -g '*.rs' -g '*.toml'
 rg 'allow\\((dead_code|unused_imports|unused)\\)' crates/cc-* crates/claude-code-rs/src -g '*.rs'
 cargo check --workspace --all-targets --message-format short
 ```
@@ -574,13 +640,15 @@ cargo tree -p cc-ui -e normal --depth 1
 rg '#\[path = ".*claude-code-rs/src' crates/cc-* crates/gateway -g '*.rs'
 rg '#\[path = ".*cc-' crates/claude-code-rs/src -g '*.rs'
 rg 'crate::(engine|query|tools|commands|daemon|ipc|teams|plugins|mcp|lsp_service|browser|computer_use|voice)::' crates/cc-* crates/gateway -g '*.rs'
+rg 'claude[-_]code[-_]rs' crates/cc-* crates/gateway -g '*.rs' -g '*.toml'
 rg '~/.Codex|\\.Codex/|~/.codex|service.*Codex|service.*Claude' crates -g '*.rs'
 ```
 
 完成判定：
 
 - 所有 final gates 通过，或只有已记录的环境 warning。
-- Guard 命令没有 production dependency on root implementation。
+- Guard 命令没有 production dependency on root implementation；允许的 root UI
+  ownership 仅限 `claude-code-rs/src/ui/**` 自身，不能被 library crate 反向读取或依赖。
 - Active docs 不再把 crate migration 作为开放 TODO。
 - Archive 中有可审计的 completion note，说明最终 crate ownership、验证命令和任何
   intentional residual。
@@ -599,6 +667,6 @@ rg '~/.Codex|\\.Codex/|~/.codex|service.*Codex|service.*Claude' crates -g '*.rs'
 | 7 | IPC, Headless, And Client Runtime Closure | IPC protocol/client/runtime 分离完成 |
 | 8 | Teams, Plugins, MCP, Browser, LSP, Computer Use, Voice | 横向 runtime domains 收口 |
 | 9 | Daemon, Gateway, Web, And Remote Runtime Closure | daemon/gateway/web ownership 收口 |
-| 10 | UI And TUI Boundary Closure | `cc-ui` source 独立，root 只剩 terminal glue |
+| 10 | UI And TUI Boundary Closure | Rust TUI source intentional root-owned，`cc-ui` 为空边界 crate |
 | 11 | Root Binary Thinning And Shim Deletion | 删除 migration shims 和 duplicate implementation |
 | 12 | Full Verification And Documentation Closeout | workspace final gates 与 docs/archive 收口 |

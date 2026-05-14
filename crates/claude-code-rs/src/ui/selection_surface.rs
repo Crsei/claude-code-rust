@@ -197,6 +197,7 @@ impl SelectionSurface {
 }
 
 #[cfg(test)]
+#[path = "selection_surface_preview_tests.rs"]
 mod selection_surface_preview_tests;
 
 #[cfg(test)]

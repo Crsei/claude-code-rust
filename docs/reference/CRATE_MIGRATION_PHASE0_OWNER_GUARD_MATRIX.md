@@ -28,6 +28,9 @@ cli.rs dashboard.rs main.rs plan_workflow.rs shutdown.rs worktree_hooks.rs
 The workspace already contains target crates for all listed domains except a
 dedicated voice crate. `voice/` remains a Phase 8 decision: either introduce a
 planned `cc-voice` crate or document which pieces are intentionally binary-only.
+Rust TUI ownership was later rolled back to `claude-code-rs/src/ui/**`;
+`cc-ui` remains only as an empty boundary crate unless UI extraction is
+explicitly re-approved.
 
 ## Risk Legend
 
@@ -50,7 +53,7 @@ planned `cc-voice` crate or document which pieces are intentionally binary-only.
 | `ipc/` | `cc-ipc` runtime; `cc-ipc-client` client bridge; `cc-ipc-protocol` wire DTOs | Headless binary entry, stdio setup, startup adapter installation, process signal glue | JSONL/headless/daemon envelopes in `cc-ipc-protocol`; client callbacks in `cc-ipc-client` | `IPC`, `S`, `D`, `Audit`, `Path` | Guard `rg 'crate::(engine|tools|commands)::' crates/cc-ipc crates/cc-ipc-client -g '*.rs'` | `cargo check -p cc-ipc-protocol --message-format short`; `cargo test -p cc-ipc-protocol`; `cargo check -p cc-ipc-client --message-format short`; `cargo check -p cc-ipc --message-format short` |
 | `teams/` | `cc-teams` | Startup adapter install and any binary-private worker process integration | Team/task protocol DTOs in `cc-teams` or `cc-types`; task storage DTOs in `cc-tasks` | `P`, `IPC`, `S`, `Cfg`, `D`, `Audit`, `Path` | Guard `rg 'crate::teams::' crates/cc-* crates/gateway -g '*.rs'`; current hits include `cc-engine` and `cc-ui` root-style access | `cargo check -p cc-teams --message-format short`; `cargo check -p claude-code-rs --message-format short` |
 | `engine/` | `cc-engine`; query loop owner is `cc-query` | Root startup sequencing, model/config assembly, adapter install before `QueryEngine` construction | `QueryEngine`, lifecycle, SDK output, status-line payload in `cc-engine`; turn/loop DTOs in `cc-query` or `cc-types` | `P`, `IPC`, `S`, `Cfg`, `D`, `Audit`, `Path` | `engine/lifecycle/mod.rs` has `#[path = "../../../../cc-engine/src/lifecycle/mod.rs"]`; guard `rg 'crate::engine::lifecycle|#\[path = .*cc-engine' crates/claude-code-rs/src -g '*.rs'` | `cargo check -p cc-engine --message-format short`; `cargo test -p cc-engine`; `cargo check -p cc-query --message-format short`; `cargo check -p claude-code-rs --message-format short` |
-| `ui/` | `cc-ui` for reusable Rust TUI state/render/input; root retains terminal lifecycle | Terminal raw mode, signal integration, channel wiring, engine/headless/daemon startup handoff | UI state/render DTOs in `cc-ui`; snapshots and command/status DTOs in `cc-types` or `cc-ipc-protocol` | `P`, `IPC`, `S`, `Cfg`, `D`, `Audit`, `Path` | `cc-ui` uses many `#[path = "../../claude-code-rs/src/ui/..."]`; root `ui/mod.rs` uses `#[path = "../../../cc-ui/src/..."]`; guards `rg '#\[path = ".*claude-code-rs/src/ui' crates/cc-ui -g '*.rs'` and `rg '#\[path = ".*cc-ui' crates/claude-code-rs/src -g '*.rs'` | `cargo check -p cc-ui --message-format short`; `cargo test -p cc-ui`; `cargo check -p claude-code-rs --message-format short` |
+| `ui/` | Intentional root owner: `claude-code-rs/src/ui/**`; `cc-ui` is an empty boundary crate | Terminal raw mode, signal integration, channel wiring, engine/headless/daemon startup handoff, and Rust TUI state/render/input remain together in root | UI state/render DTOs remain root-private unless later moved to `cc-types` or `cc-ipc-protocol` | `P`, `IPC`, `S`, `Cfg`, `D`, `Audit`, `Path` | Cross-crate UI `#[path]` bridges were removed by rollback; guards `rg '#\[path = ".*claude-code-rs/src/ui' crates/cc-ui -g '*.rs'` and `rg '#\[path = ".*cc-ui' crates/claude-code-rs/src -g '*.rs'` should stay empty | `cargo check -p claude-code-rs --message-format short` |
 | `browser/` | `cc-browser` | CLI flag/startup wiring, native host process entry if still binary-private | Browser detection/rendering/native-host DTOs in `cc-browser`; MCP shared config DTOs in `cc-types` when shared | `P`, `IPC`, `Cfg`, `D`, `Audit`, `Path` | Guard `rg 'crate::browser::' crates/cc-* crates/gateway -g '*.rs'`; Phase 1 Cut 4 must remove browser/MCP ownership bleed | `cargo check -p cc-browser --message-format short`; `cargo check -p cc-mcp --message-format short` |
 | `computer_use/` | `cc-computer-use` | CLI enable flag and permission prompt callback install | Computer-use capability/tool DTOs in `cc-computer-use` or `cc-types`; permission text callback remains adapter | `P`, `IPC`, `Cfg`, `Audit`, `Path` | Guard `rg 'crate::computer_use::' crates/cc-* crates/gateway -g '*.rs'`; current hits include `cc-engine::system_prompt` | `cargo check -p cc-computer-use --message-format short`; `cargo check -p cc-permissions --message-format short` |
 | `lsp_service/` | `cc-lsp-service` | Event sender install and binary process startup wiring | LSP server/info/recommendation DTOs in `cc-lsp-service` or `cc-ipc-protocol` when surfaced over IPC | `IPC`, `S`, `Cfg`, `D`, `Path` | Guard `rg 'crate::lsp_service::' crates/cc-* crates/gateway -g '*.rs'`; current hits include `cc-engine` and `cc-ui` paths | `cargo check -p cc-lsp-service --message-format short`; `cargo check -p cc-ui --message-format short` |
@@ -74,7 +77,7 @@ The Phase 0 shim baseline is reproducible with:
 rg '#\[path = ' crates/claude-code-rs/src crates/cc-* crates/gateway -g '*.rs'
 ```
 
-Known cross-crate migration shims from that guard:
+Known cross-crate migration shims from the original Phase 0 guard:
 
 - `crates/claude-code-rs/src/engine/lifecycle/mod.rs` imports
   `../../../../cc-engine/src/lifecycle/mod.rs`.
@@ -82,6 +85,10 @@ Known cross-crate migration shims from that guard:
   modules by `#[path]`.
 - `crates/cc-ui/src/app.rs`, `messages.rs`, and `tui.rs` import many
   `crates/claude-code-rs/src/ui/**` files by `#[path]`.
+
+2026-05-14 UI rollback update: the `cc-ui` / root UI shims above have been
+removed. `cc-ui/src/` now only contains `lib.rs`, and UI source is intentional
+root-owned under `crates/claude-code-rs/src/ui/**`.
 
 Same-crate `#[path]` entries also exist for platform modules and tests in
 `cc-computer-use`, `cc-query`, `cc-engine`, `cc-mcp`, and `cc-ui`; they are not

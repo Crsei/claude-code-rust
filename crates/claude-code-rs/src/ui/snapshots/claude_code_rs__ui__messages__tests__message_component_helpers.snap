@@ -1,5 +1,6 @@
 ---
 source: crates/claude-code-rs/src/ui/messages.rs
+assertion_line: 346
 expression: rendered
 ---
 ## advisor

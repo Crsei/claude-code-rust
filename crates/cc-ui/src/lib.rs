@@ -1,7 +1,8 @@
-//! cc-ui: Rust terminal UI extraction boundary.
+//! cc-ui: placeholder Rust terminal UI extraction boundary.
 //!
-//! Extracted Rust TUI source files live here while `claude-code-rs::ui` keeps a
-//! root facade for stable `crate::ui::*` imports during the workspace split.
+//! Rust TUI source is intentionally owned by `claude-code-rs::ui` for now.
+//! This crate remains empty so a future extraction can be reintroduced without
+//! changing the workspace manifest shape.
 
 #![forbid(unsafe_code)]
 

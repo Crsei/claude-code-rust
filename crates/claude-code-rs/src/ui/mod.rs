@@ -2,17 +2,12 @@
 // live in responsibility folders below, while their public module names remain
 // `crate::ui::<name>` for compatibility.
 //
-// `cc-ui` owns extracted Rust UI entry modules while this root facade keeps
-// stable `crate::ui::*` imports during the workspace split.
-#[allow(dead_code)]
-pub mod extracted {
-    pub const EXTRACTION_BOUNDARY: &str = cc_ui::EXTRACTION_BOUNDARY;
-}
+// Rust TUI source stays owned by the root binary crate. The workspace keeps a
+// placeholder `cc-ui` crate only as a migration boundary marker.
 
 #[allow(dead_code)]
 pub mod agents;
 #[allow(dead_code)]
-#[path = "../../../cc-ui/src/app.rs"]
 pub mod app;
 #[allow(dead_code)]
 pub mod diff;
@@ -25,7 +20,6 @@ pub mod mcp;
 #[allow(dead_code)]
 pub mod memory;
 #[allow(dead_code)]
-#[path = "../../../cc-ui/src/messages.rs"]
 pub mod messages;
 #[allow(dead_code)]
 pub mod permissions;
@@ -35,7 +29,6 @@ pub mod skills;
 pub mod tasks;
 #[allow(dead_code)]
 pub mod teams;
-#[path = "../../../cc-ui/src/tui.rs"]
 pub mod tui;
 
 // Components: interactive widgets and modal surfaces owned or orchestrated by
@@ -52,9 +45,7 @@ pub mod chat_composer;
 #[allow(dead_code)]
 #[path = "components/chatwidget.rs"]
 pub mod chatwidget;
-#[path = "../../../cc-ui/src/command_palette/mod.rs"]
 pub mod command_palette;
-#[path = "../../../cc-ui/src/command_surface/mod.rs"]
 pub mod command_surface;
 #[allow(dead_code)]
 #[path = "components/cwd_prompt.rs"]
@@ -74,7 +65,6 @@ pub mod keyboard_shortcut;
 #[path = "components/pager_overlay.rs"]
 pub mod pager_overlay;
 #[allow(dead_code)]
-#[path = "../../../cc-ui/src/prompt_input.rs"]
 pub mod prompt_input;
 #[allow(dead_code)]
 #[path = "components/resume_picker.rs"]
@@ -83,7 +73,6 @@ pub mod resume_picker;
 #[path = "components/search_box.rs"]
 pub mod search_box;
 #[allow(dead_code)]
-#[path = "../../../cc-ui/src/selection_surface.rs"]
 pub mod selection_surface;
 #[path = "components/status_icon.rs"]
 pub mod status_icon;
