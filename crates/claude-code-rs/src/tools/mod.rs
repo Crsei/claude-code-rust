@@ -12,9 +12,6 @@
 //
 // --- Infrastructure ----------------------------------------------------------
 //
-// Shared tool-execution machinery (permission pipeline, hook dispatch, etc.)
-// Not tools themselves.
-pub mod execution;
 pub mod registry;
 
 // --- Single-tool / small-cluster modules -------------------------------------
@@ -26,8 +23,7 @@ pub mod skill;
 
 // Web / network tools.
 
-// Plan mode + Task tools.
-pub mod plan_mode;
+// Task tools.
 pub mod tasks;
 
 // Worktree tools.

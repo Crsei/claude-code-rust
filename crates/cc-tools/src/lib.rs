@@ -12,6 +12,7 @@ pub mod exec;
 pub mod fs;
 pub mod hooks;
 pub mod observable_input;
+pub mod plan_mode;
 pub mod plan_workflow;
 pub mod registry;
 pub mod result;

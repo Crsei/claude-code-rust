@@ -8,7 +8,6 @@ use cc_engine::tools::exec;
 use cc_engine::types::tool::Tools;
 
 use super::lsp::LspTool;
-use super::plan_mode::{EnterPlanModeTool, ExitPlanModeTool};
 use super::pr_activity::{SubscribePrActivityTool, UnsubscribePrActivityTool};
 use super::send_message::SendMessageTool;
 use super::skill::SkillTool;
@@ -19,6 +18,7 @@ use cc_tools::ask_user::AskUserQuestionTool;
 use cc_tools::brief::BriefTool;
 use cc_tools::config_tool::ConfigTool;
 use cc_tools::fs;
+use cc_tools::plan_mode::{EnterPlanModeTool, ExitPlanModeTool};
 use cc_tools::send_user_message::SendUserMessageTool;
 use cc_tools::sleep::SleepTool;
 use cc_tools::structured_output::StructuredOutputTool;
