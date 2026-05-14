@@ -15,6 +15,9 @@ use futures::Stream;
 use uuid::Uuid;
 
 use crate::compact::compaction::build_post_compact_messages_with_boundary;
+use crate::query::deps::{
+    CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
+};
 use crate::tools::execution::{
     enforce_result_size, find_tool, is_plan_mode_plan_file_write, sandbox_allowed_command_applies,
     security_validate, ToolExecutionResult,
@@ -23,9 +26,6 @@ use crate::types::app_state::AppState;
 use crate::types::message::{Message, StreamEvent};
 use crate::types::state::AutoCompactTracking;
 use crate::types::tool::{PermissionMode, ToolProgress, Tools, ValidationResult};
-use crate::query::deps::{
-    CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
-};
 
 use super::helpers::{build_messages_request, format_conversation_for_summary};
 use super::QueryEngineState;

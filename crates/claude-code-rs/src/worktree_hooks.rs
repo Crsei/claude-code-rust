@@ -231,9 +231,35 @@ fn has_parent_component(path: &Path) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::path::Path;
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn set_path(key: &'static str, path: &Path) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::set_var(key, path);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     #[test]
+    #[serial_test::serial]
     fn parse_create_output_accepts_allowed_path() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let _home_guard = EnvGuard::set_path("CC_RUST_HOME", home.path());
         let path = crate::config::paths::worktrees_dir().join("agent-worktree-test");
         let output = HookOutput {
             updated_input: Some(json!({
@@ -251,7 +277,10 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn parse_create_output_rejects_out_of_bounds_path() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let _home_guard = EnvGuard::set_path("CC_RUST_HOME", home.path());
         let output = HookOutput {
             updated_input: Some(json!({
                 "worktree_path": std::env::temp_dir().join("outside-worktree").display().to_string(),

@@ -10,6 +10,8 @@ This directory separates active status documents from historical records.
 - [KNOWN_ISSUES.md](KNOWN_ISSUES.md): single active issue and review-finding tracker.
 - [COMMAND_REFERENCE.md](COMMAND_REFERENCE.md), [CLI_REFERENCE.md](CLI_REFERENCE.md), [USAGE_GUIDE.md](USAGE_GUIDE.md): command and user-facing usage references.
 - [reference/CRATE_MIGRATION_GUIDE.md](reference/CRATE_MIGRATION_GUIDE.md): operational checklist for moving `claude-code-rs` modules into workspace crates.
+- [reference/CRATE_MIGRATION_TARGET_STATE.md](reference/CRATE_MIGRATION_TARGET_STATE.md): ideal acceptance state for a completed crate migration.
+- [plan/crate-migration-phase-plan-2026-05-14.md](plan/crate-migration-phase-plan-2026-05-14.md): ordered phase plan for completing crate migration.
 - [STORAGE.md](STORAGE.md): cc-rust data-root and path isolation reference.
 - [DAEMON_OPERATIONS.md](DAEMON_OPERATIONS.md): daemon operation guide.
 - [cloud-providers.md](cloud-providers.md): provider configuration reference.

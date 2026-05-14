@@ -191,7 +191,9 @@ fn display_path_prefers_readable_project_relative_paths() {
 }
 
 #[test]
+#[serial_test::serial]
 fn snapshot_command_palette_root_and_filtered_views() {
+    let _home = EnvVarGuard::set("CC_RUST_HOME", "/tmp/cc-rust-snapshot-home");
     let cwd = snapshot_cwd();
 
     insta::assert_snapshot!(
@@ -213,7 +215,9 @@ fn snapshot_command_palette_root_and_filtered_views() {
 }
 
 #[test]
+#[serial_test::serial]
 fn snapshot_all_command_argument_help_views() {
+    let _home = EnvVarGuard::set("CC_RUST_HOME", "/tmp/cc-rust-snapshot-home");
     let cwd = snapshot_cwd();
     let mut rendered = String::new();
 
@@ -267,6 +271,28 @@ fn snapshot_cwd() -> PathBuf {
     PathBuf::from("C:\\cc-rust-snapshot")
 }
 
+struct EnvVarGuard {
+    key: &'static str,
+    previous: Option<std::ffi::OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let previous = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        match &self.previous {
+            Some(value) => std::env::set_var(self.key, value),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
+
 fn normalize_snapshot_text(mut text: String) -> String {
     for raw_home in [std::env::var_os("USERPROFILE"), std::env::var_os("HOME")]
         .into_iter()
@@ -277,8 +303,35 @@ fn normalize_snapshot_text(mut text: String) -> String {
         text = text.replace(&home.replace(' ', "%20"), "<HOME>");
     }
 
+    text = normalize_managed_settings_path_width(text);
     text = normalize_cc_rust_home_width(text);
     text.replace("C:/cc-rust-snapshot", "<WORKSPACE>")
+}
+
+fn normalize_managed_settings_path_width(text: String) -> String {
+    const PLACEHOLDER: &str = "<MANAGED_SETTINGS>";
+    const PATHS: [&str; 2] = [
+        "file:///C:/ProgramData/cc-rust/settings.json",
+        "file:///etc/cc-rust/managed-settings.json",
+    ];
+
+    text.lines()
+        .map(|line| {
+            let width = line.chars().count();
+            let mut normalized = line.to_string();
+            for path in PATHS {
+                normalized = normalized.replace(path, PLACEHOLDER);
+            }
+            let new_width = normalized.chars().count();
+            if new_width < width && normalized.ends_with('│') {
+                let pad = " ".repeat(width - new_width);
+                let insert_at = normalized.len() - "│".len();
+                normalized.insert_str(insert_at, &pad);
+            }
+            normalized
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn normalize_cc_rust_home_width(text: String) -> String {

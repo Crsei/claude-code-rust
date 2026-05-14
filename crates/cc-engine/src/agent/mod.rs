@@ -534,9 +534,48 @@ async fn collect_stream_result(
 mod child_tool_boundary_tests {
     use super::*;
     use cc_ipc_protocol::subsystem_types::{AgentDefinitionEntry, AgentDefinitionSource};
+    use serde_json::json;
+
+    struct NamedTool(&'static str);
+
+    #[async_trait::async_trait]
+    impl Tool for NamedTool {
+        fn name(&self) -> &str {
+            self.0
+        }
+
+        async fn description(&self, _input: &serde_json::Value) -> String {
+            format!("{} test tool", self.0)
+        }
+
+        fn input_json_schema(&self) -> serde_json::Value {
+            json!({"type": "object"})
+        }
+
+        async fn call(
+            &self,
+            _input: serde_json::Value,
+            _ctx: &ToolUseContext,
+            _parent_message: &cc_types::message::AssistantMessage,
+            _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
+        ) -> Result<ToolResult> {
+            Ok(ToolResult::default())
+        }
+
+        async fn prompt(&self) -> String {
+            String::new()
+        }
+    }
 
     fn tool_names(tools: &Tools) -> Vec<String> {
         tools.iter().map(|tool| tool.name().to_string()).collect()
+    }
+
+    fn test_tools() -> Tools {
+        ["Glob", "Grep", "Read", "Write", "Bash", "Agent"]
+            .into_iter()
+            .map(|name| Arc::new(NamedTool(name)) as Arc<dyn Tool>)
+            .collect()
     }
 
     fn test_definition(tools: Vec<&str>, disallowed_tools: Vec<&str>) -> AgentDefinitionEntry {
@@ -573,8 +612,7 @@ mod child_tool_boundary_tests {
             .into_iter()
             .find(|entry| entry.name == "Explore")
             .expect("Explore built-in agent");
-        let tools =
-            filter_tools_for_agent_definition(crate::agent_runtime::all_tools(), &definition);
+        let tools = filter_tools_for_agent_definition(test_tools(), &definition);
         let names = tool_names(&tools);
 
         assert_eq!(names, vec!["Glob", "Grep", "Read"]);
@@ -589,8 +627,7 @@ mod child_tool_boundary_tests {
             vec!["Read", "Write", "Read", "Bash(git status)"],
             vec!["Write"],
         );
-        let tools =
-            filter_tools_for_agent_definition(crate::agent_runtime::all_tools(), &definition);
+        let tools = filter_tools_for_agent_definition(test_tools(), &definition);
         let names = tool_names(&tools);
 
         assert_eq!(names, vec!["Read", "Bash"]);
@@ -600,8 +637,7 @@ mod child_tool_boundary_tests {
     #[test]
     fn custom_agent_disallowed_wildcard_hides_every_tool() {
         let definition = test_definition(vec![], vec!["*"]);
-        let tools =
-            filter_tools_for_agent_definition(crate::agent_runtime::all_tools(), &definition);
+        let tools = filter_tools_for_agent_definition(test_tools(), &definition);
 
         assert!(tools.is_empty(), "disallowedTools: * must deny all tools");
     }

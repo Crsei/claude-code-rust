@@ -755,6 +755,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_permissions_allow_user_persist() {
         // Use a tempdir as CC_RUST_HOME so /permissions allow doesn't
         // touch the developer's real settings file.

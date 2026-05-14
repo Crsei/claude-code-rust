@@ -21,3 +21,10 @@ pub struct ToolProgress {
     pub tool_use_id: String,
     pub data: Value,
 }
+
+/// Host capability needed to install interactive callbacks.
+pub trait CallbackHost {
+    fn set_permission_callback(&self, cb: PermissionCallback);
+    fn set_ask_user_callback(&self, cb: AskUserCallback);
+    fn set_tool_progress_callback(&self, cb: Arc<dyn Fn(ToolProgress) + Send + Sync>);
+}

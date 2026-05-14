@@ -46,7 +46,7 @@ pub mod plan_approval_message;
 #[path = "../../claude-code-rs/src/ui/messages/rate_limit_message.rs"]
 pub mod rate_limit_message;
 #[allow(dead_code)]
-#[path = "../../claude-code-rs/src/ui/messages/shutdown_message.rs"]
+#[path = "messages/shutdown_message.rs"]
 pub mod shutdown_message;
 #[allow(dead_code)]
 #[path = "../../claude-code-rs/src/ui/messages/system_api_error_message.rs"]
@@ -109,7 +109,7 @@ pub mod user_tool_result_message;
 
 #[path = "../../claude-code-rs/src/ui/messages/render.rs"]
 mod render;
-#[path = "../../claude-code-rs/src/ui/messages/wrap.rs"]
+#[path = "messages/wrap.rs"]
 mod wrap;
 
 pub use render::render_messages;

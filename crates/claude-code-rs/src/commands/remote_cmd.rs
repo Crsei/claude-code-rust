@@ -1,13 +1,10 @@
 //! `/remote` command -- local gateway status and control.
 
-#[path = "../daemon/gateway_client.rs"]
-mod gateway_client;
-
 use anyhow::Result;
 use async_trait::async_trait;
 use gateway::{AdapterProvider, AdapterState, AdapterStatus, GatewayDiagnostic, RunEvent, RunId};
 
-use self::gateway_client::{
+use crate::daemon::gateway_client::{
     gateway_paths, list_local_runs, load_local_run, read_local_events, redact_text,
     LocalGatewayClient, LocalGatewayDaemonStatus,
 };

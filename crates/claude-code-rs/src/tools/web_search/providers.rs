@@ -9,17 +9,24 @@ use super::{
 };
 
 pub(super) fn detect_provider() -> Option<SearchProvider> {
-    if let Ok(key) = std::env::var(TAVILY_API_KEY_ENV) {
-        if !key.is_empty() {
-            return Some(SearchProvider::Tavily(key));
-        }
-    }
-    if let Ok(key) = std::env::var(BRAVE_API_KEY_ENV) {
-        if !key.is_empty() {
-            return Some(SearchProvider::Brave(key));
-        }
-    }
-    None
+    detect_provider_from_keys(
+        std::env::var(TAVILY_API_KEY_ENV).ok(),
+        std::env::var(BRAVE_API_KEY_ENV).ok(),
+    )
+}
+
+pub(super) fn detect_provider_from_keys(
+    tavily_key: Option<String>,
+    brave_key: Option<String>,
+) -> Option<SearchProvider> {
+    tavily_key
+        .filter(|key| !key.is_empty())
+        .map(SearchProvider::Tavily)
+        .or_else(|| {
+            brave_key
+                .filter(|key| !key.is_empty())
+                .map(SearchProvider::Brave)
+        })
 }
 
 /// Execute a Tavily search and return unified results.

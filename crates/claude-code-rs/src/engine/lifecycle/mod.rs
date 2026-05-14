@@ -1,7 +1,4 @@
-//! Compatibility shim for the QueryEngine lifecycle source now housed in
+//! Compatibility re-export for the QueryEngine lifecycle API owned by
 //! `cc-engine`.
 
-#[path = "../../../../cc-engine/src/lifecycle/mod.rs"]
-mod extracted;
-
-pub use extracted::*;
+pub use cc_engine::lifecycle::*;

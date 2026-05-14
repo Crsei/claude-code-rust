@@ -173,12 +173,13 @@ pub fn team_memory_dir(cwd: &Path) -> PathBuf {
 // ----- Project-local paths (under cwd) -------------------------------------
 
 /// `{cwd}/.cc-rust/` — project-level settings / memory / skills root.
-///
-/// Note: call sites currently inline `cwd.join(".cc-rust")`; this helper exists
-/// for future consolidation. Remove the `#[allow(dead_code)]` once migrated.
-#[allow(dead_code)]
 pub fn project_cc_rust_dir(cwd: &Path) -> PathBuf {
     cwd.join(".cc-rust")
+}
+
+/// `{cwd}/.cc-rust/skills/` — project-local skill packages.
+pub fn project_skills_dir(cwd: &Path) -> PathBuf {
+    project_cc_rust_dir(cwd).join("skills")
 }
 
 // ----- Plan file (issue #46) -----------------------------------------------
@@ -429,6 +430,30 @@ mod tests {
             project_cc_rust_dir(Path::new("/foo/bar")),
             PathBuf::from("/foo/bar/.cc-rust")
         );
+    }
+
+    #[test]
+    #[serial]
+    fn phase3_required_paths_are_cc_rust_isolated() {
+        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/phase3-cc-rust-home");
+        let cwd = Path::new("/repo/worktree");
+        let data = PathBuf::from("/tmp/phase3-cc-rust-home");
+
+        assert_eq!(data_root(), data);
+        assert_eq!(
+            crate::settings::user_settings_path(),
+            PathBuf::from("/tmp/phase3-cc-rust-home/settings.json")
+        );
+        assert_eq!(
+            crate::settings::project_settings_path(cwd),
+            PathBuf::from("/repo/worktree/.cc-rust/settings.json")
+        );
+        assert_eq!(
+            project_skills_dir(cwd),
+            PathBuf::from("/repo/worktree/.cc-rust/skills")
+        );
+        assert_eq!(credentials_path(), data.join("credentials.json"));
+        assert_eq!(daemon_dir(), data.join("daemon"));
     }
 
     // Plan file path helpers (issue #46) ----------------------------------

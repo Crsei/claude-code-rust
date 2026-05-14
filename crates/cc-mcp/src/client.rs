@@ -332,7 +332,7 @@ impl McpClient {
             .ok_or_else(|| anyhow::anyhow!("streamable-http transport requires 'url' field"))?;
         let target = StreamableHttpTarget::parse(url)?;
         let headers = normalized_http_transport_headers_with_auth(&self.config).await?;
-        let http_client = streamable_http_client()?;
+        let http_client = streamable_http_client(&target)?;
 
         super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
             server_name: self.config.name.clone(),
@@ -1484,10 +1484,14 @@ fn remote_sse_http_client() -> Result<reqwest::Client> {
         .context("failed to build remote MCP SSE HTTP client")
 }
 
-fn streamable_http_client() -> Result<reqwest::Client> {
-    reqwest::Client::builder()
+fn streamable_http_client(target: &StreamableHttpTarget) -> Result<reqwest::Client> {
+    let mut builder = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS))
+        .connect_timeout(std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS));
+    if is_loopback_url(&target.url) {
+        builder = builder.no_proxy();
+    }
+    builder
         .build()
         .context("failed to build MCP Streamable HTTP client")
 }

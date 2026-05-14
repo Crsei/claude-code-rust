@@ -20,6 +20,8 @@ pub mod message;
 #[cfg(feature = "runtime-types")]
 pub mod permissions;
 pub mod plan_workflow;
+pub mod query_host;
 pub mod state;
+pub mod status_line;
 pub mod teams;
 pub mod transitions;

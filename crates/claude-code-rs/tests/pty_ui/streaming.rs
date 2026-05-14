@@ -7,6 +7,7 @@ use std::time::Duration;
 /// Submit a prompt and verify the model response appears in TUI.
 /// Waits for "Claude:" prefix which only appears in model output, not user echo.
 #[test]
+#[ignore = "requires a real model API key and network"]
 fn simple_chat_renders_response() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
@@ -37,6 +38,7 @@ fn simple_chat_renders_response() {
 /// Ctrl+C during streaming should abort without crashing.
 /// We send a long prompt, wait for streaming to start, then abort.
 #[test]
+#[ignore = "requires a real model API key and network"]
 fn abort_during_streaming() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
@@ -69,6 +71,7 @@ fn abort_during_streaming() {
 
 /// Two consecutive prompts in one session produce separate responses.
 #[test]
+#[ignore = "requires a real model API key and network"]
 fn multi_turn_conversation() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
@@ -97,6 +100,7 @@ fn multi_turn_conversation() {
 /// Tool use (Bash) should display tool name or result in TUI.
 /// Waits for tool-specific markers that don't appear in user echo.
 #[test]
+#[ignore = "requires a real model API key and network"]
 fn tool_use_displayed() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);

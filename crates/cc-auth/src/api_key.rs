@@ -7,6 +7,12 @@
 
 use anyhow::Result;
 
+/// Service name used for cc-rust API keys in the system keychain.
+pub const KEYCHAIN_SERVICE_NAME: &str = "cc-rust";
+
+/// Account name used for the Anthropic API key in the system keychain.
+pub const KEYCHAIN_ACCOUNT_API_KEY: &str = "api-key";
+
 /// Validate an API key format.
 ///
 /// Valid keys start with `sk-ant-` and are longer than 20 characters.
@@ -16,7 +22,7 @@ pub fn validate_api_key(key: &str) -> bool {
 
 /// Store API key to the system keychain.
 pub fn store_api_key(key: &str) -> Result<()> {
-    let entry = keyring::Entry::new("cc-rust", "api-key")?;
+    let entry = keyring::Entry::new(KEYCHAIN_SERVICE_NAME, KEYCHAIN_ACCOUNT_API_KEY)?;
     entry.set_password(key)?;
     Ok(())
 }
@@ -25,7 +31,7 @@ pub fn store_api_key(key: &str) -> Result<()> {
 ///
 /// Returns `Ok(None)` if no key is stored.
 pub fn load_api_key() -> Result<Option<String>> {
-    let entry = keyring::Entry::new("cc-rust", "api-key")?;
+    let entry = keyring::Entry::new(KEYCHAIN_SERVICE_NAME, KEYCHAIN_ACCOUNT_API_KEY)?;
     match entry.get_password() {
         Ok(key) => Ok(Some(key)),
         Err(keyring::Error::NoEntry) => Ok(None),
@@ -37,7 +43,7 @@ pub fn load_api_key() -> Result<Option<String>> {
 ///
 /// Used by the `/logout` command.
 pub fn remove_api_key() -> Result<()> {
-    let entry = keyring::Entry::new("cc-rust", "api-key")?;
+    let entry = keyring::Entry::new(KEYCHAIN_SERVICE_NAME, KEYCHAIN_ACCOUNT_API_KEY)?;
     match entry.delete_credential() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()), // already gone
@@ -64,5 +70,12 @@ mod tests {
         assert!(!validate_api_key("sk-ant-short"));
         assert!(!validate_api_key("wrong-prefix-abcdefghijklmnop"));
         assert!(!validate_api_key(""));
+    }
+
+    #[test]
+    fn keychain_service_name_is_path_isolated() {
+        assert_eq!(KEYCHAIN_SERVICE_NAME, "cc-rust");
+        assert_ne!(KEYCHAIN_SERVICE_NAME, "Codex");
+        assert_ne!(KEYCHAIN_SERVICE_NAME, "Claude");
     }
 }

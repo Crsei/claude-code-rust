@@ -151,6 +151,7 @@ mod tests {
     use crate::types::app_state::AppState;
     use std::fs;
     use std::path::PathBuf;
+    use uuid::Uuid;
 
     fn test_ctx(cwd: PathBuf) -> CommandContext {
         CommandContext {
@@ -159,6 +160,15 @@ mod tests {
             app_state: AppState::default(),
             session_id: SessionId::from_string("test-session"),
         }
+    }
+
+    fn sibling_temp_dirs(label: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let root = std::env::temp_dir().join(format!("cc_rust_add_dir_{label}_{}", Uuid::new_v4()));
+        let cwd = root.join("cwd");
+        let target = root.join("target");
+        fs::create_dir_all(&cwd).unwrap();
+        fs::create_dir_all(&target).unwrap();
+        (root, cwd, target)
     }
 
     #[tokio::test]
@@ -188,15 +198,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_add_dir_success() {
-        let tmp = std::env::temp_dir().join("cc_rust_add_dir_test");
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&tmp).unwrap();
+        let (root, cwd, target) = sibling_temp_dirs("success");
 
         let handler = AddDirHandler;
-        // Use a different cwd so tmp is not a subdirectory
-        let mut ctx = test_ctx(PathBuf::from("/"));
+        let mut ctx = test_ctx(cwd);
         let result = handler
-            .execute(&tmp.to_string_lossy(), &mut ctx)
+            .execute(&target.to_string_lossy(), &mut ctx)
             .await
             .unwrap();
 
@@ -214,27 +221,25 @@ mod tests {
             .additional_working_directories
             .is_empty());
 
-        let _ = fs::remove_dir_all(&tmp);
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
     async fn test_add_dir_duplicate() {
-        let tmp = std::env::temp_dir().join("cc_rust_add_dir_dup_test");
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&tmp).unwrap();
+        let (root, cwd, target) = sibling_temp_dirs("dup");
 
         let handler = AddDirHandler;
-        let mut ctx = test_ctx(PathBuf::from("/"));
+        let mut ctx = test_ctx(cwd);
 
         // First add
         handler
-            .execute(&tmp.to_string_lossy(), &mut ctx)
+            .execute(&target.to_string_lossy(), &mut ctx)
             .await
             .unwrap();
 
         // Second add (duplicate)
         let result = handler
-            .execute(&tmp.to_string_lossy(), &mut ctx)
+            .execute(&target.to_string_lossy(), &mut ctx)
             .await
             .unwrap();
         match result {
@@ -242,7 +247,7 @@ mod tests {
             _ => panic!("Expected Output"),
         }
 
-        let _ = fs::remove_dir_all(&tmp);
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[tokio::test]

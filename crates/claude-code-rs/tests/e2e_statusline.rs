@@ -80,7 +80,9 @@ impl HeadlessSession {
             if trimmed.is_empty() {
                 continue;
             }
-            let parsed: serde_json::Value = serde_json::from_str(trimmed).expect("valid JSONL");
+            let Ok(parsed) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+                continue;
+            };
             if parsed.get("type").and_then(|value| value.as_str()) == Some(expected_type) {
                 return parsed;
             }

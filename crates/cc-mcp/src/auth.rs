@@ -343,9 +343,10 @@ async fn discover_authorization_server_metadata(
     config: &McpServerConfig,
 ) -> Result<AuthorizationServerMetadata> {
     let oauth = require_oauth_config(config)?;
-    let http_client = oauth_http_client()?;
     if let Some(url) = oauth.auth_server_metadata_url.as_deref() {
-        return fetch_auth_server_metadata(&http_client, &Url::parse(url)?).await;
+        let metadata_url = Url::parse(url)?;
+        let http_client = oauth_http_client_for_url(&metadata_url)?;
+        return fetch_auth_server_metadata(&http_client, &metadata_url).await;
     }
 
     let server_url = config
@@ -354,6 +355,7 @@ async fn discover_authorization_server_metadata(
         .ok_or_else(|| anyhow::anyhow!("OAuth discovery requires the MCP server URL"))?;
     let origin = origin_url(&Url::parse(server_url).context("invalid MCP server URL")?)?;
     let protected_resource_url = origin.join("/.well-known/oauth-protected-resource")?;
+    let http_client = oauth_http_client_for_url(&protected_resource_url)?;
     if let Some(resource) =
         fetch_protected_resource_metadata(&http_client, &protected_resource_url).await?
     {
@@ -500,7 +502,7 @@ async fn post_token_form(
     form: Vec<(String, String)>,
 ) -> Result<OAuthTokenResponse> {
     let body = encode_form(form);
-    let response = oauth_http_client()?
+    let response = oauth_http_client_for_url(token_endpoint)?
         .post(token_endpoint.clone())
         .header("Content-Type", "application/x-www-form-urlencoded")
         .header("Accept", "application/json")
@@ -687,9 +689,12 @@ fn validate_header_token(token_type: &str, access_token: &str) -> Result<()> {
     Ok(())
 }
 
-fn oauth_http_client() -> Result<reqwest::Client> {
-    reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
+fn oauth_http_client_for_url(url: &Url) -> Result<reqwest::Client> {
+    let mut builder = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none());
+    if is_loopback_url(url) {
+        builder = builder.no_proxy();
+    }
+    builder
         .build()
         .context("failed to build MCP OAuth HTTP client")
 }

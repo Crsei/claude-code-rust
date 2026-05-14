@@ -58,7 +58,6 @@ cc-browser = { workspace = true }
 cc-skills = { workspace = true }
 cc-ipc-protocol = { workspace = true }
 dirs = { workspace = true }
-cc-ipc-client = { workspace = true }
 cc-tasks = { workspace = true }
 cc-teams = { workspace = true }
 

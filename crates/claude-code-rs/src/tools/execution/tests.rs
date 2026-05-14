@@ -46,9 +46,25 @@ fn make_ctx_with_mode(mode: PermissionMode) -> ToolUseContext {
     }
 }
 
-fn set_original_cwd_for_test(path: &std::path::Path) {
-    let mut ps = crate::bootstrap::PROCESS_STATE.write();
-    ps.original_cwd = path.to_path_buf();
+struct OriginalCwdGuard(std::path::PathBuf);
+
+impl OriginalCwdGuard {
+    fn set(path: &std::path::Path) -> Self {
+        let mut ps = crate::bootstrap::PROCESS_STATE.write();
+        let previous = ps.original_cwd.clone();
+        ps.original_cwd = path.to_path_buf();
+        Self(previous)
+    }
+}
+
+impl Drop for OriginalCwdGuard {
+    fn drop(&mut self) {
+        crate::bootstrap::PROCESS_STATE.write().original_cwd = self.0.clone();
+    }
+}
+
+fn set_original_cwd_for_test(path: &std::path::Path) -> OriginalCwdGuard {
+    OriginalCwdGuard::set(path)
 }
 
 // -- Stub tools for testing is_read_only behavior -----------------------
@@ -185,7 +201,7 @@ fn test_plan_mode_allows_read_tools() {
 fn test_plan_mode_allows_dedicated_plan_file_write() {
     let temp = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(temp.path().join(".cc-rust")).unwrap();
-    set_original_cwd_for_test(temp.path());
+    let _cwd_guard = set_original_cwd_for_test(temp.path());
 
     let plan_path = crate::config::paths::current_plan_file_path(temp.path());
     let plan_path = plan_path.to_string_lossy().into_owned();
@@ -209,7 +225,7 @@ fn test_plan_mode_allows_dedicated_plan_file_write() {
 fn test_plan_mode_blocks_non_plan_file_write() {
     let temp = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(temp.path().join(".cc-rust")).unwrap();
-    set_original_cwd_for_test(temp.path());
+    let _cwd_guard = set_original_cwd_for_test(temp.path());
 
     let other_path = temp.path().join("other.md").to_string_lossy().into_owned();
     let ctx = make_ctx_with_mode(PermissionMode::Plan);
@@ -278,29 +294,23 @@ fn test_path_traversal_blocked() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_path_outside_cwd_blocked() {
-    // Initialize ProcessState with a known cwd so the boundary check works
-    {
-        let mut ps = crate::bootstrap::PROCESS_STATE.write();
-        ps.original_cwd = std::env::current_dir().unwrap();
-    }
+    let cwd = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let _cwd_guard = OriginalCwdGuard::set(cwd.path());
 
     let ctx = make_ctx_with_mode(PermissionMode::Default);
     let tool = WritableStub;
-    // Use an absolute path that is definitely outside the cwd
-    let outside_path = if cfg!(windows) {
-        "C:\\Windows\\System32\\evil.txt"
-    } else {
-        "/tmp/evil.txt"
-    };
-    let input = serde_json::json!({"file_path": outside_path});
+    let outside_path = outside.path().join("evil.txt");
+    let input = serde_json::json!({"file_path": outside_path.to_string_lossy()});
     let now = Instant::now();
 
     let result = security_validate("id6", "Write", &input, &tool, &ctx, now);
     assert!(
         result.is_some(),
         "Path outside cwd should be blocked, path={}",
-        outside_path
+        outside_path.display()
     );
     let err = result.unwrap();
     assert!(err

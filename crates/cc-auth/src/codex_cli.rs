@@ -38,10 +38,10 @@ struct CodexCliAuthFile {
 struct CodexCliTokens {
     access_token: String,
     refresh_token: Option<String>,
-    #[allow(dead_code)]
-    account_id: Option<String>,
-    #[allow(dead_code)]
-    id_token: Option<String>,
+    #[serde(rename = "account_id")]
+    _account_id: Option<String>,
+    #[serde(rename = "id_token")]
+    _id_token: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -328,6 +328,24 @@ mod tests {
             err.to_string().contains("cannot parse Codex CLI auth.json"),
             "unexpected error: {err:#}"
         );
+    }
+
+    #[test]
+    fn test_read_codex_cli_credential_leaves_fallback_file_unchanged() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let auth_path = dir.path().join(CODEX_CLI_AUTH_FILE);
+        let token = make_jwt(chrono::Utc::now().timestamp() + 3600);
+        let json = make_auth_json("chatgpt", &token, Some("refresh-tok"));
+        std::fs::write(&auth_path, &json).unwrap();
+
+        let cred = with_codex_home(dir.path(), || {
+            read_codex_cli_credential()
+                .unwrap()
+                .expect("should parse valid auth.json")
+        });
+
+        assert_eq!(cred.access_token, token);
+        assert_eq!(std::fs::read_to_string(&auth_path).unwrap(), json);
     }
 
     // ---- codex_cli_auth_path ----

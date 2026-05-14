@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::lifecycle::QueryEngine;
 
-impl cc_ipc_client::callbacks::CallbackHost for QueryEngine {
+impl cc_types::callbacks::CallbackHost for QueryEngine {
     fn set_permission_callback(&self, cb: crate::types::tool::PermissionCallback) {
         QueryEngine::set_permission_callback(self, cb);
     }
@@ -11,12 +11,15 @@ impl cc_ipc_client::callbacks::CallbackHost for QueryEngine {
         QueryEngine::set_ask_user_callback(self, cb);
     }
 
-    fn set_tool_progress_callback(&self, cb: Arc<dyn Fn(crate::types::tool::ToolProgress) + Send + Sync>) {
+    fn set_tool_progress_callback(
+        &self,
+        cb: Arc<dyn Fn(crate::types::tool::ToolProgress) + Send + Sync>,
+    ) {
         QueryEngine::set_tool_progress_callback(self, cb);
     }
 }
 
-impl cc_ipc_client::query_runner::QueryTurnHost<crate::sdk_types::SdkMessage> for QueryEngine {
+impl cc_types::query_host::QueryTurnHost<crate::sdk_types::SdkMessage> for QueryEngine {
     type Stream = futures::stream::BoxStream<'static, crate::sdk_types::SdkMessage>;
 
     fn reset_abort(&self) {

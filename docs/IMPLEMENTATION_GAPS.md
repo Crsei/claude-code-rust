@@ -1,6 +1,6 @@
 # cc-rust 未完备项与全量构建 TODO
 
-> 更新日期: 2026-05-08 | 当前阶段: 全量构建 / Full Build
+> 更新日期: 2026-05-14 | 当前阶段: 全量构建 / Full Build
 
 本文只登记仍未补齐、仍需重评或明确 intentional crop 的内容。已确认实现或已关闭的历史记录已迁移到：
 
@@ -20,6 +20,7 @@
 | PlanMode auto-mode parity | 基础完成，classifier parity 未完 | 保守 classifier、计划持久化、approval lifecycle、实现任务关联、团队审批 mailbox、plan file 写入白名单已落地；仍需 full auto-mode LLM classifier parity 和 `allowedPrompts` 语义分类收口。 |
 | WebFetch browser-grade 能力 | 部分完成 | redirect budget / cross-host diagnostic、Content-Type 分发、环境代理/`NO_PROXY`、Cookie/credential 边界已完成；JS 渲染仍待实现或裁剪决策。 |
 | Daemon supervisor/worker ownership | 阶段主干完成，完整 ownership 未完 | 当前 HTTP/SSE 控制面已读 supervisor/worker 状态并写入 command/event 协议；真实 submit/abort 执行 ownership 仍有兼容路径。 |
+| Crate migration / thin binary | Build/test gates green; thin-binary guard 未关闭 | `cargo fmt --all --check`、`cargo check --workspace --all-targets`、`cargo test --workspace` 和 `cargo build --workspace --release` 已通过；final guards 仍有 54 个 `cc-ui -> root UI` path shims、7 个 root -> `cc-ui` path shims、70 个 root-style import hits、474 个 allow-attribute hits、12 个 Codex compatibility path hits。 |
 | Remote-control gateway control plane | 未实现，Phase 0 边界已冻结 | 计划新增 `crates/gateway` 作为控制面，负责 `/remote-control/v1/**`、RemoteSource/session/run、auth、adapter registry、durable events、delivery 和 recovery；现有 daemon `/api/*` 不是公网 remote-control API。 |
 | Telegram/Lark gateway adapter connectivity | 未实现，范围限定 | 第一版只做连接、健康检查、provider-neutral 状态诊断和测试发送；不做 inbound conversation、完整远程会话控制或绕过 gateway runner 触发模型。 |
 | Local `/remote` and TUI remote surface | 部分完成 | `/remote` slash command and `RemoteSurface` now exist and read local gateway status/adapters/runs/events. Remaining work: a live remote status indicator and full end-to-end gateway verification. |
@@ -34,6 +35,7 @@
 - [ipc-refactor-plan.md](ipc-refactor-plan.md): IPC 结构重构计划尚未完全收束。
 - [traceable-logging-plan.md](traceable-logging-plan.md): 可追溯日志体系仍是 Draft。
 - [daemon-usability-plan.md](daemon-usability-plan.md): daemon 可用化主干已分阶段落地，但仍有 worker/route ownership 余量。
+- [plan/crate-migration-phase-plan-2026-05-14.md](plan/crate-migration-phase-plan-2026-05-14.md): Phase 0-12 implementation slices 已落地且 workspace build/test gates green；thin-binary closeout 仍未关闭，当前 blockers 见 [reference/CRATE_MIGRATION_PHASE0_OWNER_GUARD_MATRIX.md](reference/CRATE_MIGRATION_PHASE0_OWNER_GUARD_MATRIX.md) 的 Phase 12 verification snapshot。
 - [reference/remote-control-current-state.md](reference/remote-control-current-state.md): remote-control gateway / daemon / ipc / `/remote` / Telegram/Lark adapter 边界已冻结，后续实现需保持该职责划分。
 - [superpowers/plans/2026-04-11-team-memory-sync.md](superpowers/plans/2026-04-11-team-memory-sync.md): Team Memory 客户端同步仍需 e2e 与文档收口。
 - [superpowers/specs/2026-04-11-team-memory-sync-design.md](superpowers/specs/2026-04-11-team-memory-sync-design.md): Team Memory 验证清单仍有效。
@@ -98,4 +100,4 @@ The OMX parity pass narrowed several P1 UI gaps but did not eliminate all upstre
 
 - Remote/teleport: local `/remote`, `/channels`, Chrome, IDE, and LSP surfaces now expose real local status where available; inbound channel sessions and teleport remain deferred until product/runtime contracts exist.
 - Persistent history: Ctrl+R can use persistent history where backend data is available; cross-session history quality still depends on durable reader coverage and should remain under UI/runtime residual tracking.
-- Full-suite verification: focused UI tests pass, but package-wide `cargo test -p claude-code-rs` remains blocked by TEST-002 and must be resolved before treating the whole crate as green.
+- Full-suite verification: the 2026-05-14 crate-migration pass made the default workspace test gate green. Live PTY/API tests remain `#[ignore]` and must be run explicitly with real credentials/network when validating live model behavior.

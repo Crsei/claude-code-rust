@@ -395,8 +395,11 @@ pub fn resolve_project_id() -> Option<String> {
 
 /// Resolve the region from environment, defaulting to `us-east5`.
 pub fn resolve_region() -> String {
-    std::env::var("CLOUD_ML_REGION")
-        .ok()
+    resolve_region_from_value(std::env::var("CLOUD_ML_REGION").ok())
+}
+
+fn resolve_region_from_value(value: Option<String>) -> String {
+    value
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| DEFAULT_VERTEX_REGION.to_string())
 }
@@ -630,27 +633,15 @@ aM0cnYVle4nyuGi3M6aECuC6ggfLfXOQ3yGAmE3DKg2bgcmJag2cOT6fTRZemThD
 
     #[test]
     fn region_defaults_to_us_east5() {
-        let saved = std::env::var("CLOUD_ML_REGION").ok();
-        std::env::remove_var("CLOUD_ML_REGION");
-
-        assert_eq!(resolve_region(), "us-east5");
-
-        if let Some(v) = saved {
-            std::env::set_var("CLOUD_ML_REGION", v);
-        }
+        assert_eq!(resolve_region_from_value(None), "us-east5");
     }
 
     #[test]
     fn region_uses_cloud_ml_region() {
-        let saved = std::env::var("CLOUD_ML_REGION").ok();
-        std::env::set_var("CLOUD_ML_REGION", "europe-west4");
-
-        assert_eq!(resolve_region(), "europe-west4");
-
-        match saved {
-            Some(v) => std::env::set_var("CLOUD_ML_REGION", v),
-            None => std::env::remove_var("CLOUD_ML_REGION"),
-        }
+        assert_eq!(
+            resolve_region_from_value(Some("europe-west4".to_string())),
+            "europe-west4"
+        );
     }
 
     #[test]

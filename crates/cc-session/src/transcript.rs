@@ -6,7 +6,7 @@
 //! so that partial conversations are preserved even on crash.
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -80,11 +80,16 @@ pub fn get_transcript_file(session_id: &str) -> PathBuf {
 /// Write the `session_header` record as the first (or only) line of a new
 /// transcript file for `session_id`.
 pub fn write_session_header(header: &SessionHeader) -> Result<()> {
-    let dir = get_transcript_dir();
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("Failed to create transcript directory {}", dir.display()))?;
-
     let path = get_transcript_file(&header.session_id);
+    write_session_header_to_file(header, &path)
+}
+
+pub(crate) fn write_session_header_to_file(header: &SessionHeader, path: &Path) -> Result<()> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)
+            .with_context(|| format!("Failed to create transcript directory {}", dir.display()))?;
+    }
+
     if path.exists() {
         anyhow::bail!(
             "Transcript for session {} already exists; refusing to overwrite header",
@@ -137,6 +142,21 @@ pub fn copy_transcript_entries(
     stop_at_uuid: Option<&str>,
 ) -> Result<usize> {
     let source_path = get_transcript_file(source_session_id);
+    let target_path = get_transcript_file(target_session_id);
+    copy_transcript_entries_between_files(
+        &source_path,
+        &target_path,
+        target_session_id,
+        stop_at_uuid,
+    )
+}
+
+pub(crate) fn copy_transcript_entries_between_files(
+    source_path: &Path,
+    target_path: &Path,
+    target_session_id: &str,
+    stop_at_uuid: Option<&str>,
+) -> Result<usize> {
     if !source_path.exists() {
         return Ok(0);
     }
@@ -144,7 +164,6 @@ pub fn copy_transcript_entries(
     let content = std::fs::read_to_string(&source_path)
         .with_context(|| format!("Failed to read source transcript {}", source_path.display()))?;
 
-    let target_path = get_transcript_file(target_session_id);
     let mut target_file = std::fs::OpenOptions::new()
         .append(true)
         .open(&target_path)
@@ -244,6 +263,10 @@ pub fn record_transcript(session_id: &str, messages: &[Message]) -> Result<()> {
 /// an explicit sync point for durability guarantees.
 pub fn flush_transcript(session_id: &str) -> Result<()> {
     let path = get_transcript_file(session_id);
+    flush_transcript_file(&path)
+}
+
+pub(crate) fn flush_transcript_file(path: &Path) -> Result<()> {
     if !path.exists() {
         return Ok(());
     }

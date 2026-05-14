@@ -1,6 +1,6 @@
 //! Config tool -- runtime settings read/write.
 //!
-//! Provides get/set/list operations on the `.cc-rust/settings.json` file.
+//! Provides get/set/list operations on the project `.cc-rust/settings.json` file.
 //! - "get"  : returns the value for a specific key
 //! - "set"  : modifies a setting (writes back to the project config file)
 //! - "list" : returns all current settings
@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use cc_config::settings;
 use serde_json::{json, Value};
 use tracing::debug;
 
@@ -19,11 +20,12 @@ use crate::types::tool::*;
 pub struct ConfigTool;
 
 impl ConfigTool {
-    /// Resolve the project settings path: `.cc-rust/settings.json` in the current
-    /// working directory.
-    fn project_settings_path() -> PathBuf {
-        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        cwd.join(".cc-rust").join("settings.json")
+    fn current_dir() -> std::path::PathBuf {
+        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+    }
+
+    fn project_settings_path_for_cwd(cwd: &Path) -> PathBuf {
+        settings::project_settings_path(cwd)
     }
 
     /// Load the settings file as a serde_json::Value (Object).
@@ -171,7 +173,8 @@ impl Tool for ConfigTool {
         let key = input.get("key").and_then(|v| v.as_str()).unwrap_or("");
         let value_str = input.get("value").and_then(|v| v.as_str());
 
-        let settings_path = Self::project_settings_path();
+        let cwd = Self::current_dir();
+        let settings_path = Self::project_settings_path_for_cwd(&cwd);
 
         match action {
             "get" => {
@@ -262,6 +265,15 @@ mod tests {
     fn test_config_tool_name() {
         let tool = ConfigTool;
         assert_eq!(tool.name(), "Config");
+    }
+
+    #[test]
+    fn test_project_settings_path_uses_cc_rust_project_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        let path = ConfigTool::project_settings_path_for_cwd(dir.path());
+
+        assert_eq!(path, dir.path().join(".cc-rust").join("settings.json"));
     }
 
     #[test]

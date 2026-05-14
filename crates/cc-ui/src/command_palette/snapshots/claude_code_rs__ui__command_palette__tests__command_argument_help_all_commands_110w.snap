@@ -203,7 +203,7 @@ expression: normalize_snapshot_text(rendered)
 │Usage: /hooks <list|path|open> [event|layer]                                                                │
 │Example: /hooks list PreToolUse                                                                             │
 │About: Read-only merged hook tree (managed + user + project + local)                                        │
-│Edit: managed: file:///C:/ProgramData/cc-rust/settings.json | user: ~/.cc-rust/settings.json                │
+│Edit: managed: <MANAGED_SETTINGS> | user: ~/.cc-rust/settings.json                                          │
 │      project: ./.cc-rust/settings.json | local: ./.cc-rust/settings.local.json                             │
 │Hint: Ctrl+E pick target                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

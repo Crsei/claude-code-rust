@@ -1,4 +1,4 @@
-use super::providers::detect_provider;
+use super::providers::detect_provider_from_keys;
 use super::tool::WebSearchTool;
 use super::*;
 
@@ -90,66 +90,20 @@ fn test_user_facing_name() {
 
 #[test]
 fn test_detect_provider_tavily_first() {
-    let orig_tavily = std::env::var(TAVILY_API_KEY_ENV).ok();
-    let orig_brave = std::env::var(BRAVE_API_KEY_ENV).ok();
-
-    std::env::set_var(TAVILY_API_KEY_ENV, "tvly-test");
-    std::env::set_var(BRAVE_API_KEY_ENV, "brave-test");
-
-    let provider = detect_provider();
+    let provider = detect_provider_from_keys(Some("tvly-test".into()), Some("brave-test".into()));
     assert!(matches!(provider, Some(SearchProvider::Tavily(_))));
-
-    // Restore
-    match orig_tavily {
-        Some(v) => std::env::set_var(TAVILY_API_KEY_ENV, v),
-        None => std::env::remove_var(TAVILY_API_KEY_ENV),
-    }
-    match orig_brave {
-        Some(v) => std::env::set_var(BRAVE_API_KEY_ENV, v),
-        None => std::env::remove_var(BRAVE_API_KEY_ENV),
-    }
 }
 
 #[test]
 fn test_detect_provider_brave_fallback() {
-    let orig_tavily = std::env::var(TAVILY_API_KEY_ENV).ok();
-    let orig_brave = std::env::var(BRAVE_API_KEY_ENV).ok();
-
-    std::env::remove_var(TAVILY_API_KEY_ENV);
-    std::env::set_var(BRAVE_API_KEY_ENV, "brave-test");
-
-    let provider = detect_provider();
+    let provider = detect_provider_from_keys(None, Some("brave-test".into()));
     assert!(matches!(provider, Some(SearchProvider::Brave(_))));
-
-    match orig_tavily {
-        Some(v) => std::env::set_var(TAVILY_API_KEY_ENV, v),
-        None => std::env::remove_var(TAVILY_API_KEY_ENV),
-    }
-    match orig_brave {
-        Some(v) => std::env::set_var(BRAVE_API_KEY_ENV, v),
-        None => std::env::remove_var(BRAVE_API_KEY_ENV),
-    }
 }
 
 #[test]
 fn test_detect_provider_none() {
-    let orig_tavily = std::env::var(TAVILY_API_KEY_ENV).ok();
-    let orig_brave = std::env::var(BRAVE_API_KEY_ENV).ok();
-
-    std::env::remove_var(TAVILY_API_KEY_ENV);
-    std::env::remove_var(BRAVE_API_KEY_ENV);
-
-    let provider = detect_provider();
+    let provider = detect_provider_from_keys(None, None);
     assert!(provider.is_none());
-
-    match orig_tavily {
-        Some(v) => std::env::set_var(TAVILY_API_KEY_ENV, v),
-        None => std::env::remove_var(TAVILY_API_KEY_ENV),
-    }
-    match orig_brave {
-        Some(v) => std::env::set_var(BRAVE_API_KEY_ENV, v),
-        None => std::env::remove_var(BRAVE_API_KEY_ENV),
-    }
 }
 
 #[test]

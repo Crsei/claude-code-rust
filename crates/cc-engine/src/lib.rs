@@ -10,8 +10,8 @@
 
 extern crate self as cc_engine;
 
-pub mod agent_runtime;
 pub mod agent;
+pub mod agent_runtime;
 pub mod browser;
 pub mod codex_exec;
 pub mod command_runtime;

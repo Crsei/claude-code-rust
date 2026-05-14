@@ -550,6 +550,33 @@ mod tests {
         }
     }
 
+    struct PlanCwdGuard {
+        previous: std::path::PathBuf,
+        _dir: tempfile::TempDir,
+    }
+
+    impl PlanCwdGuard {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().expect("tempdir");
+            std::fs::create_dir_all(dir.path().join(".cc-rust"))
+                .expect("create project config dir");
+            let mut process_state = crate::bootstrap::PROCESS_STATE.write();
+            let previous = process_state.original_cwd.clone();
+            process_state.original_cwd = dir.path().to_path_buf();
+            drop(process_state);
+            Self {
+                previous,
+                _dir: dir,
+            }
+        }
+    }
+
+    impl Drop for PlanCwdGuard {
+        fn drop(&mut self) {
+            crate::bootstrap::PROCESS_STATE.write().original_cwd = self.previous.clone();
+        }
+    }
+
     #[test]
     fn test_enter_plan_mode_name() {
         let tool = EnterPlanModeTool;
@@ -596,7 +623,9 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_enter_exit_plan_mode_roundtrip() {
+        let _cwd_guard = PlanCwdGuard::new();
         let state = Arc::new(RwLock::new(AppState::default()));
         let dummy_msg = AssistantMessage {
             uuid: uuid::Uuid::new_v4(),
@@ -670,7 +699,9 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_exit_plan_mode_restores_auto() {
+        let _cwd_guard = PlanCwdGuard::new();
         let state = Arc::new(RwLock::new(AppState::default()));
         {
             let mut s = state.write();
@@ -719,7 +750,9 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_exit_plan_mode_adds_allowed_prompt_session_rules() {
+        let _cwd_guard = PlanCwdGuard::new();
         let state = Arc::new(RwLock::new(AppState::default()));
         {
             let mut s = state.write();
@@ -774,7 +807,9 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_exit_plan_mode_classifies_common_allowed_prompts() {
+        let _cwd_guard = PlanCwdGuard::new();
         let state = Arc::new(RwLock::new(AppState::default()));
         {
             let mut s = state.write();

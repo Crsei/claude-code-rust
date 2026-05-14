@@ -243,9 +243,7 @@ impl QueryEngine {
         self.command_executor.clone()
     }
 
-    pub fn pending_background_results(
-        &self,
-    ) -> crate::agent_runtime::PendingBackgroundResults {
+    pub fn pending_background_results(&self) -> crate::agent_runtime::PendingBackgroundResults {
         self.pending_bg_results.clone()
     }
 

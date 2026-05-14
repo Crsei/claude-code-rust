@@ -36,6 +36,14 @@
 | #22 | Rust TUI Ctrl+R session-only history | 保留为 `UI-003`。 |
 | Browser MCP rendering path | Real-server path not exercised | 保留为 `UI-004`。 |
 
+## 2026-05-14 验证关闭
+
+| 历史编号 | 标题 | 关闭口径 |
+| --- | --- | --- |
+| TEST-001 | `tests/e2e_terminal/phase6.rs` 未纳入版本控制 | `phase6.rs` 当前已在 git tracked 文件集中，且 `cargo test --workspace` 覆盖 `e2e_terminal::phase6` 通过。 |
+| CONTEXT-003 | Phase 10 归档记录显示 `cargo test -p claude-code-rs` 门禁未 green | 2026-05-14 crate-migration 验证中 `cargo test --workspace` 通过；默认 live PTY/API 用例保持 `#[ignore]`。 |
+| TEST-002 | ratatui UI parity closeout 后 package-wide test run not green | 2026-05-14 crate-migration 验证中 `cargo fmt --all --check`、`cargo check --workspace --all-targets`、`cargo test --workspace` 和 `cargo build --workspace --release` 均通过。 |
+
 ## 2026-05-07 编译过程记录
 
 - `cargo build -p claude-code-rs`：通过；未出现 compiler error 或 warning。

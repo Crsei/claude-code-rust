@@ -269,8 +269,8 @@ mod clamp_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::message::{Attachment, AttachmentMessage, Message};
     use crate::query::deps::ModelCallParams;
+    use crate::types::message::{Attachment, AttachmentMessage, Message};
 
     fn base_params() -> ModelCallParams {
         ModelCallParams {

@@ -174,11 +174,7 @@ mod tests {
 
         let r1 = resolve_sections(&sections);
         assert_eq!(r1, vec!["value"]);
-
-        // Second resolve should use cache (but we can't verify call count
-        // since we consumed the section; test the cache directly)
-        let cache = SECTION_CACHE.lock();
-        assert_eq!(cache.get("cached_test"), Some(&Some("value".to_string())));
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
     }
 
     #[test]

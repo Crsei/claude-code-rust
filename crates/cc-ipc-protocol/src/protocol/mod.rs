@@ -335,3 +335,38 @@ pub struct FileSearchMatch {
     /// Line text, trimmed of trailing whitespace.
     pub text: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cc_types::status_line::{ModelInfo, StatusLinePayload};
+
+    #[test]
+    fn status_line_update_preserves_wire_shape() {
+        let payload = StatusLinePayload {
+            session_id: Some("session-1".into()),
+            model: Some(ModelInfo {
+                id: "claude-sonnet-4-20250514".into(),
+                display_name: Some("sonnet-4".into()),
+                backend: Some("native".into()),
+            }),
+            streaming: true,
+            message_count: 2,
+            ..StatusLinePayload::new()
+        };
+        let message = BackendMessage::StatusLineUpdate {
+            payload: serde_json::to_value(payload).unwrap(),
+            lines: vec!["model sonnet-4".into()],
+            error: None,
+        };
+
+        let value = serde_json::to_value(&message).unwrap();
+        assert_eq!(value["type"], "status_line_update");
+        assert_eq!(value["payload"]["hookEventName"], "StatusLine");
+        assert_eq!(value["payload"]["sessionId"], "session-1");
+        assert_eq!(value["payload"]["model"]["displayName"], "sonnet-4");
+        assert_eq!(value["payload"]["messageCount"], 2);
+        assert_eq!(value["lines"][0], "model sonnet-4");
+        assert!(value.get("error").is_none());
+    }
+}

@@ -24,7 +24,7 @@ use chrono::Utc;
 use tracing::{debug, info};
 
 use crate::storage;
-use crate::transcript::{self, copy_transcript_entries, write_session_header, SessionHeader};
+use crate::transcript::{self, SessionHeader};
 use cc_types::message::Message;
 
 // ---------------------------------------------------------------------------
@@ -86,6 +86,11 @@ pub fn fork_session(
         anyhow::bail!("fork_session: parent and new session IDs must differ");
     }
 
+    let parent_session_path = storage::get_session_file(parent_session_id);
+    let new_session_path = storage::get_session_file(new_session_id);
+    let parent_transcript_path = transcript::get_transcript_file(parent_session_id);
+    let new_transcript_path = transcript::get_transcript_file(new_session_id);
+
     // Derive the fork point. If the caller passes an explicit UUID we honor
     // it; otherwise fall back to the last in-memory message, then to "copy
     // everything" if the buffer is empty.
@@ -96,7 +101,7 @@ pub fn fork_session(
     // Build a recognizable title. Prefer the parent's current title
     // (custom or auto-derived); fall back to the short new ID when neither
     // is available.
-    let parent_title = storage::load_session_info(parent_session_id)
+    let parent_title = storage::load_session_info_from_file(&parent_session_path)
         .map(|info| info.title)
         .unwrap_or_default();
     let title = derive_fork_title(&parent_title, new_session_id);
@@ -112,12 +117,17 @@ pub fn fork_session(
         forked_at_uuid: derived_cursor.clone(),
         title: Some(title.clone()),
     };
-    write_session_header(&header).context("Failed to write session_header for fork")?;
+    transcript::write_session_header_to_file(&header, &new_transcript_path)
+        .context("Failed to write session_header for fork")?;
 
     // Copy the parent transcript up through the fork point.
-    let copied =
-        copy_transcript_entries(parent_session_id, new_session_id, derived_cursor.as_deref())
-            .context("Failed to copy parent transcript entries into fork")?;
+    let copied = transcript::copy_transcript_entries_between_files(
+        &parent_transcript_path,
+        &new_transcript_path,
+        new_session_id,
+        derived_cursor.as_deref(),
+    )
+    .context("Failed to copy parent transcript entries into fork")?;
 
     // Persist a session file so /resume and /session list can find the
     // fork. We truncate messages to the cursor (inclusive) so the saved
@@ -127,16 +137,16 @@ pub fn fork_session(
         None => Vec::new(),
     };
 
-    storage::save_session(new_session_id, &saved_messages, cwd)
+    storage::save_session_to_file(new_session_id, &saved_messages, cwd, &new_session_path)
         .context("Failed to save forked session file")?;
 
     // Pin the fork's title so it's distinguishable in /session list.
-    storage::set_session_title(new_session_id, Some(&title))
+    storage::set_session_title_in_file(new_session_id, Some(&title), &new_session_path)
         .context("Failed to set forked session title")?;
 
     // Make durable before returning so a crash right after the fork
     // doesn't leave a half-written transcript header.
-    let _ = transcript::flush_transcript(new_session_id);
+    let _ = transcript::flush_transcript_file(&new_transcript_path);
 
     info!(
         parent = parent_session_id,

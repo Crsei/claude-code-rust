@@ -1,6 +1,6 @@
 # cc-rust 工作状态总览
 
-> 更新日期: 2026-05-08 | 分支历史名: `rust-lite` | 当前阶段: 全量构建 / Full Build
+> 更新日期: 2026-05-14 | 分支历史名: `rust-lite` | 当前阶段: 全量构建 / Full Build
 
 本文件只保留当前阶段仍需要判断和执行的状态。已经确认实现、已关闭或只具历史价值的阶段记录统一看：
 
@@ -34,6 +34,7 @@ cc-rust 已不再按历史 "Lite" 边界维护。触及上游能力时，默认�
 | PlanMode | 保守 classifier、持久化、审批和 plan file 白名单已完成 | 补 full auto-mode LLM classifier parity，并覆盖 plan 创建/恢复/审批/e2e。 |
 | WebFetch | redirect/MIME/proxy/credential 边界已完成 | 补 browser-grade JS 渲染或明确裁剪。 |
 | Daemon | Phase 1-7 主干记录已落地，仍有 worker/route ownership 余量 | 继续把真实 submit/abort 与 scheduler ownership 从兼容路径迁入 supervisor/worker 架构。 |
+| Crate migration | Phase 0-12 implementation slices landed; build/test gates green; guard closeout not complete | 保持 [crate-migration-phase-plan-2026-05-14.md](plan/crate-migration-phase-plan-2026-05-14.md) 为活跃计划；下一步清理 UI `#[path]` shims、root-style imports、allow attributes，并复审 Codex compatibility path hits。 |
 | UI/runtime issues | P0/P1 基础完成，存在 residuals 和未跟踪 parity 缺口 | 运行时 residual 见 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)；`⚠️ 部分` / `❌ 缺失` 的未跟踪功能按 [ratatui-ui-parity-untracked-gap-plan-2026-05-08.md](plan/ratatui-ui-parity-untracked-gap-plan-2026-05-08.md) 分阶段处理。 |
 | 文档状态一致性 | 本轮已收敛顶层入口 | 后续每完成一个模块，都同步迁移完成记录到 archive，避免活跃 TODO 文档堆积完成历史。 |
 
@@ -58,4 +59,4 @@ cc-rust 已不再按历史 "Lite" 边界维护。触及上游能力时，默认�
 
 ## Ratatui UI parity OMX final verification (2026-05-10)
 
-The ratatui UI parity OMX batch series has been closed out at documentation level. Available batch summaries/last messages through the final task were reviewed, intentional UI snapshot updates were accepted, and the feasible targeted UI verification set was run. The current state is suitable for runner-owned commit packaging with one caveat: package-wide `cargo test -p claude-code-rs` still has unrelated or cross-test-state failures tracked as TEST-002 in `KNOWN_ISSUES.md`.
+The ratatui UI parity OMX batch series has been closed out at documentation level. Available batch summaries/last messages through the final task were reviewed, intentional UI snapshot updates were accepted, and the feasible targeted UI verification set was run. The later crate-migration verification pass on 2026-05-14 made the default workspace test gate green.

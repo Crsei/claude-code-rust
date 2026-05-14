@@ -7,7 +7,11 @@
 This document is the operational checklist for crate migration. It complements
 the broader split design in
 [`docs/superpowers/specs/2026-04-20-workspace-split-design.md`](../superpowers/specs/2026-04-20-workspace-split-design.md)
-and the module-specific plans under [`docs/plan/`](../plan/).
+and the module-specific plans under [`docs/plan/`](../plan/). The ideal
+acceptance state for the completed migration is documented in
+[`CRATE_MIGRATION_TARGET_STATE.md`](CRATE_MIGRATION_TARGET_STATE.md). The
+ordered execution plan is
+[`crate-migration-phase-plan-2026-05-14.md`](../plan/crate-migration-phase-plan-2026-05-14.md).
 
 ## Target Shape
 

@@ -414,6 +414,7 @@ fn pty_tui_starts_and_captures_output() {
 
 /// Launch TUI, send a simple prompt via PTY input, capture the full session.
 #[test]
+#[ignore = "requires a real model API key and network"]
 fn live_pty_simple_chat() {
     let session = PtySession::spawn(
         &["-C", workspace(), "--permission-mode", "bypass"],
@@ -447,6 +448,7 @@ fn live_pty_simple_chat() {
 
 /// Launch in print mode (-p), capture full output to log.
 #[test]
+#[ignore = "requires a real model API key and network"]
 fn live_pty_print_mode() {
     let session = PtySession::spawn(
         &["-p", "Say exactly: PTY_PRINT_OK", "-C", workspace()],

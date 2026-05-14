@@ -828,6 +828,7 @@ if ready {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn edit_rejects_file_that_has_not_been_read() {
         let dir = tempfile::TempDir::new().unwrap();
         let file_path = dir.path().join("sample.txt");
@@ -856,6 +857,7 @@ if ready {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn edit_rejects_file_modified_after_cached_read() {
         let dir = tempfile::TempDir::new().unwrap();
         let file_path = dir.path().join("sample.txt");
@@ -887,6 +889,7 @@ if ready {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn edit_auto_adjusts_unique_indentation_mismatch() {
         let dir = tempfile::TempDir::new().unwrap();
         let file_path = dir.path().join("sample.rs");
@@ -931,6 +934,7 @@ fn main() {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn edit_rejects_readonly_file_before_writing() {
         let dir = tempfile::TempDir::new().unwrap();
         let file_path = dir.path().join("sample.txt");
@@ -972,6 +976,7 @@ fn main() {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn full_read_registers_state_and_edit_refreshes_it() {
         let dir = tempfile::TempDir::new().unwrap();
         let file_path = dir.path().join("sample.txt");

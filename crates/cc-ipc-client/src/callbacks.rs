@@ -3,8 +3,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use cc_types::callbacks::{AskUserCallback, PermissionCallback, ToolProgress};
 use cc_ipc_protocol::BackendMessage;
+pub use cc_types::callbacks::CallbackHost;
+use cc_types::callbacks::{AskUserCallback, PermissionCallback, ToolProgress};
 use parking_lot::Mutex;
 use tokio::sync::oneshot;
 
@@ -14,13 +15,6 @@ use crate::sink::FrontendSink;
 pub type PendingPermissions = Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>;
 /// Pending AskUserQuestion requests awaiting a response from the frontend.
 pub type PendingQuestions = Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>;
-
-/// Host capability needed to install IPC callbacks.
-pub trait CallbackHost {
-    fn set_permission_callback(&self, cb: PermissionCallback);
-    fn set_ask_user_callback(&self, cb: AskUserCallback);
-    fn set_tool_progress_callback(&self, cb: Arc<dyn Fn(ToolProgress) + Send + Sync>);
-}
 
 /// Optional host hook invoked after the user rejects ExitPlanMode approval.
 pub type ExitPlanRejectedHook<H> = Arc<dyn Fn(&H, &FrontendSink) + Send + Sync>;
@@ -131,4 +125,191 @@ where
         })
     });
     host.set_ask_user_callback(callback);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cc_types::callbacks::ToolProgress;
+    use parking_lot::Mutex;
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[derive(Default)]
+    struct MockHost {
+        permission: Mutex<Option<PermissionCallback>>,
+        ask_user: Mutex<Option<AskUserCallback>>,
+        tool_progress: Mutex<Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>>,
+    }
+
+    impl CallbackHost for MockHost {
+        fn set_permission_callback(&self, cb: PermissionCallback) {
+            *self.permission.lock() = Some(cb);
+        }
+
+        fn set_ask_user_callback(&self, cb: AskUserCallback) {
+            *self.ask_user.lock() = Some(cb);
+        }
+
+        fn set_tool_progress_callback(&self, cb: Arc<dyn Fn(ToolProgress) + Send + Sync>) {
+            *self.tool_progress.lock() = Some(cb);
+        }
+    }
+
+    #[tokio::test]
+    async fn permission_callback_sends_request_and_resolves_decision() {
+        let host = Arc::new(MockHost::default());
+        let pending: PendingPermissions = Arc::new(Mutex::new(HashMap::new()));
+        let sink = FrontendSink::memory();
+
+        install_permission_callback(&host, pending.clone(), sink.clone(), None);
+
+        let callback = host
+            .permission
+            .lock()
+            .clone()
+            .expect("permission callback installed");
+        let task = tokio::spawn(callback(
+            "tool-1".to_string(),
+            "Bash".to_string(),
+            "echo hi".to_string(),
+            vec!["allow".to_string(), "deny".to_string()],
+        ));
+
+        wait_until(|| pending.lock().contains_key("tool-1")).await;
+
+        assert!(matches!(
+            &sink.captured()[0],
+            BackendMessage::PermissionRequest {
+                tool_use_id,
+                tool,
+                command,
+                options,
+            } if tool_use_id == "tool-1"
+                && tool == "Bash"
+                && command == "echo hi"
+                && options == &vec!["allow".to_string(), "deny".to_string()]
+        ));
+
+        let tx = pending.lock().remove("tool-1").expect("pending sender");
+        tx.send("allow".to_string()).unwrap();
+        assert_eq!(task.await.unwrap(), "allow");
+    }
+
+    #[tokio::test]
+    async fn exit_plan_rejection_invokes_host_hook() {
+        let host = Arc::new(MockHost::default());
+        let pending: PendingPermissions = Arc::new(Mutex::new(HashMap::new()));
+        let sink = FrontendSink::memory();
+        let rejected = Arc::new(AtomicBool::new(false));
+        let rejected_hook = {
+            let rejected = rejected.clone();
+            Arc::new(move |_host: &MockHost, _sink: &FrontendSink| {
+                rejected.store(true, Ordering::SeqCst);
+            })
+        };
+
+        install_permission_callback(&host, pending.clone(), sink, Some(rejected_hook));
+
+        let callback = host
+            .permission
+            .lock()
+            .clone()
+            .expect("permission callback installed");
+        let task = tokio::spawn(callback(
+            "exit-plan".to_string(),
+            "ExitPlanMode".to_string(),
+            "approve plan".to_string(),
+            vec!["allow".to_string(), "deny".to_string()],
+        ));
+
+        wait_until(|| pending.lock().contains_key("exit-plan")).await;
+
+        let tx = pending.lock().remove("exit-plan").expect("pending sender");
+        tx.send("deny".to_string()).unwrap();
+        assert_eq!(task.await.unwrap(), "deny");
+        assert!(rejected.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn ask_user_callback_sends_question_and_resolves_response() {
+        let host = MockHost::default();
+        let pending: PendingQuestions = Arc::new(Mutex::new(HashMap::new()));
+        let sink = FrontendSink::memory();
+
+        install_ask_user_callback(&host, pending.clone(), sink.clone());
+
+        let callback = host
+            .ask_user
+            .lock()
+            .clone()
+            .expect("ask-user callback installed");
+        let task = tokio::spawn(callback("Continue?".to_string()));
+
+        wait_until(|| !pending.lock().is_empty()).await;
+
+        let captured = sink.captured();
+        let BackendMessage::QuestionRequest { id, text } = &captured[0] else {
+            panic!("expected question request");
+        };
+        assert_eq!(text, "Continue?");
+
+        let tx = pending.lock().remove(id).expect("pending sender");
+        tx.send("yes".to_string()).unwrap();
+        assert_eq!(task.await.unwrap(), "yes");
+    }
+
+    #[test]
+    fn tool_progress_callback_maps_payload_fields() {
+        let host = MockHost::default();
+        let sink = FrontendSink::memory();
+
+        install_tool_progress_callback(&host, sink.clone());
+
+        let callback = host
+            .tool_progress
+            .lock()
+            .clone()
+            .expect("tool-progress callback installed");
+        callback(ToolProgress {
+            tool_use_id: "tool-1".to_string(),
+            data: serde_json::json!({
+                "tool": "Bash",
+                "output": "line",
+                "elapsed_seconds": 3,
+                "total_lines": 7,
+                "total_bytes": 12,
+                "timeout_ms": 5000
+            }),
+        });
+
+        assert!(matches!(
+            &sink.captured()[0],
+            BackendMessage::ToolProgress {
+                tool_use_id,
+                tool,
+                output,
+                elapsed_seconds,
+                total_lines,
+                total_bytes,
+                timeout_ms,
+            } if tool_use_id == "tool-1"
+                && tool == "Bash"
+                && output == "line"
+                && *elapsed_seconds == 3
+                && *total_lines == Some(7)
+                && *total_bytes == Some(12)
+                && *timeout_ms == Some(5000)
+        ));
+    }
+
+    async fn wait_until(mut predicate: impl FnMut() -> bool) {
+        for _ in 0..50 {
+            if predicate() {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("condition was not met");
+    }
 }

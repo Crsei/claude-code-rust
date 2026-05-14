@@ -1,5 +1,7 @@
-//! cc-daemon — KAIROS daemon HTTP/SSE server (Phase 7 scaffold).
+//! cc-daemon — KAIROS daemon contracts and runtime owner scaffold.
 //!
-//! Issue #76 (`[workspace-split] Phase 7`): target destination for
-//! `crates/claude-code-rs/src/daemon/`. Depends on cc-engine, cc-config, and
-//! cc-types.
+//! Phase 9 keeps the full daemon process/server implementation in the root
+//! binary while this crate starts owning reusable daemon contracts that do not
+//! depend on root runtime modules.
+
+pub mod protocol;

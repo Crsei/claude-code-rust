@@ -11,162 +11,14 @@
 
 use std::path::{Path, PathBuf};
 
-use git2::Repository;
-use serde::{Deserialize, Serialize};
-
 use cc_compact::auto_compact::get_context_window_size;
 use cc_models::ModelSetting;
+use git2::Repository;
 
-/// Top-level payload piped to the user's status-line command on stdin.
-///
-/// All fields except `hook_event_name` and `model` are optional —
-/// missing data (e.g. no active worktree, no cost yet) is represented by
-/// the field being absent rather than a zero value, so scripts can tell
-/// "unknown" apart from "known to be zero".
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct StatusLinePayload {
-    /// Static event name so scripts can multiplex if the payload is ever
-    /// reused for other hooks. Always `"StatusLine"`.
-    pub hook_event_name: String,
-
-    /// Protocol version — bump when fields are removed or renamed so
-    /// scripts can fail fast. Additive changes keep the same version.
-    pub version: u32,
-
-    /// Session identifier (UUID-like string from the engine).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
-
-    /// Active model (resolved main-loop model).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub model: Option<ModelInfo>,
-
-    /// Workspace / cwd information.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace: Option<WorkspaceStatus>,
-
-    /// Context-window occupancy.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub context: Option<ContextWindowStatus>,
-
-    /// Cost accumulator for the current session.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cost: Option<CostStatus>,
-
-    /// Current output style, e.g. `"default"` / `"explanatory"` / `"learning"`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub output_style: Option<String>,
-
-    /// Vim mode information (only present when `editorMode` is `vim`).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vim: Option<VimStatus>,
-
-    /// Active `--worktree` session metadata, when present.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub worktree: Option<WorktreeStatus>,
-
-    /// Currently streaming an assistant response?
-    pub streaming: bool,
-
-    /// Integer count of on-screen messages (user + assistant + tool).
-    pub message_count: usize,
-}
-
-/// Model identity exposed to the status-line script.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelInfo {
-    /// Full model ID (e.g. `claude-sonnet-4-20250514`).
-    pub id: String,
-    /// Short display form (e.g. `sonnet-4`).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub display_name: Option<String>,
-    /// Backend routing label (e.g. `native`, `codex`).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub backend: Option<String>,
-}
-
-/// Workspace / cwd snapshot.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceStatus {
-    /// Current working directory (absolute path).
-    pub cwd: String,
-    /// Project root (e.g. git toplevel) when distinct from `cwd`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_dir: Option<String>,
-    /// Active git branch, when in a repo.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub git_branch: Option<String>,
-    /// True when the checkout is a git worktree (not the main repo).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub is_worktree: Option<bool>,
-    /// Name of the linked git worktree, when discoverable from repo metadata.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub git_worktree: Option<String>,
-}
-
-/// Context-window occupancy — matches the `/context` command output.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct ContextWindowStatus {
-    /// Input tokens consumed so far in this session.
-    pub input_tokens: u64,
-    /// Output tokens produced so far.
-    pub output_tokens: u64,
-    /// Cache-read tokens (billed at a discount).
-    pub cache_read_tokens: u64,
-    /// Cache-creation tokens.
-    pub cache_creation_tokens: u64,
-    /// Total context window ceiling, when known (e.g. 200_000 for Claude 3.5).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_tokens: Option<u64>,
-    /// `input_tokens / max_tokens` as a 0..=1 fraction, when `max_tokens` is
-    /// known. Rounded to 4 decimals.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub used_fraction: Option<f64>,
-}
-
-/// Session-wide cost tracking.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct CostStatus {
-    /// Accumulated USD cost.
-    pub total_usd: f64,
-    /// Number of API calls made.
-    pub api_calls: u64,
-    /// Wall-clock duration of the current session, in seconds. Optional so
-    /// scripts that don't care about timing can ignore it.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_duration_secs: Option<u64>,
-}
-
-/// Vim editor status.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct VimStatus {
-    /// One of `"normal"`, `"insert"`, `"visual"`, `"command"`.
-    pub mode: String,
-}
-
-/// Active cc-rust worktree session metadata.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct WorktreeStatus {
-    /// Human-readable worktree name.
-    pub name: String,
-    /// Absolute worktree path.
-    pub path: String,
-    /// Worktree branch, when known.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub branch: Option<String>,
-    /// Original cwd before entering the worktree.
-    pub original_cwd: String,
-    /// Original branch before entering the worktree, when known.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub original_branch: Option<String>,
-}
+pub use cc_types::status_line::{
+    ContextWindowStatus, CostStatus, ModelInfo, StatusLinePayload, VimStatus, WorkspaceStatus,
+    WorktreeStatus,
+};
 
 /// Inputs needed to assemble a concrete status-line payload snapshot.
 ///
@@ -195,21 +47,6 @@ pub struct StatusLineSnapshot<'a> {
     pub worktree: Option<WorktreeStatus>,
     pub streaming: bool,
     pub message_count: usize,
-}
-
-impl StatusLinePayload {
-    /// Protocol version. Bump on breaking changes.
-    pub const VERSION: u32 = 1;
-
-    /// Construct a minimal payload with just the required bookkeeping
-    /// fields filled in. Callers then set fields from state snapshots.
-    pub fn new() -> Self {
-        Self {
-            hook_event_name: "StatusLine".to_string(),
-            version: Self::VERSION,
-            ..Default::default()
-        }
-    }
 }
 
 /// Build a payload from the runtime snapshot available to the caller.

@@ -633,6 +633,9 @@ name = "cc-daemon"
 version = "0.1.0"
 dependencies = [
  "cc-types",
+ "chrono",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -647,7 +650,6 @@ dependencies = [
  "cc-browser",
  "cc-compact",
  "cc-config",
- "cc-ipc-client",
  "cc-ipc-protocol",
  "cc-keybindings",
  "cc-mcp",
@@ -890,8 +892,10 @@ dependencies = [
 name = "cc-skills"
 version = "0.1.0"
 dependencies = [
+ "cc-config",
  "parking_lot",
  "serde",
+ "tempfile",
 ]
 
 [[package]]

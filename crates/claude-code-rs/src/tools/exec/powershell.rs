@@ -433,8 +433,10 @@ On Windows, uses powershell.exe; on other platforms, uses pwsh (PowerShell Core)
 mod tests {
     use super::*;
     use crate::types::app_state::AppState;
+    #[cfg(windows)]
     use crate::types::message::ContentBlock;
     use crate::types::tool::{FileStateCache, ToolUseOptions};
+    #[cfg(windows)]
     use uuid::Uuid;
 
     fn test_context() -> (ToolUseContext, tokio::sync::watch::Sender<bool>) {
@@ -472,6 +474,7 @@ mod tests {
         )
     }
 
+    #[cfg(windows)]
     fn parent_message() -> AssistantMessage {
         AssistantMessage {
             uuid: Uuid::new_v4(),

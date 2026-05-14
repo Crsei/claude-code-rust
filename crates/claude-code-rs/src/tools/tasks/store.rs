@@ -306,7 +306,14 @@ impl TaskStore {
     /// the oldest bytes are dropped on a UTF-8 boundary and the task is marked
     /// as truncated.
     pub fn append_output(&self, id: &str, output: &str) -> Option<TaskEntry> {
-        let mut tasks = self.tasks.lock();
+        let _guard = match self.acquire_task_list_lock("append task output") {
+            Ok(guard) => guard,
+            Err(err) => {
+                tracing::warn!(task_id = %id, error = %err, "failed to acquire task-list lock");
+                return None;
+            }
+        };
+        let mut tasks = self.load_repository_tasks();
         if let Some(entry) = tasks.get_mut(id) {
             if !entry.output.is_empty() && !output.is_empty() {
                 entry.output.push('\n');
@@ -319,8 +326,8 @@ impl TaskStore {
             entry.updated_at = chrono::Utc::now().timestamp();
             refresh_output_metadata(entry);
             let cloned = entry.clone();
-            drop(tasks);
             self.persist_entry(&cloned);
+            self.replace_tasks(tasks);
             Some(cloned)
         } else {
             None

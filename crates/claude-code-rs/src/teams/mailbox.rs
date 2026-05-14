@@ -30,7 +30,21 @@ use super::types::TeammateMessage;
 ///
 /// Returns: `{data_root}/teams/{team_name}`
 pub fn team_dir(team_name: &str) -> PathBuf {
-    crate::config::paths::teams_dir().join(sanitize_name(team_name))
+    mailbox_teams_dir().join(sanitize_name(team_name))
+}
+
+fn mailbox_teams_dir() -> PathBuf {
+    #[cfg(test)]
+    if let Some(path) = TEST_TEAMS_DIR.with(|dir| dir.borrow().clone()) {
+        return path;
+    }
+
+    crate::config::paths::teams_dir()
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_TEAMS_DIR: std::cell::RefCell<Option<PathBuf>> = std::cell::RefCell::new(None);
 }
 
 /// Get the inbox file path for an agent.
@@ -261,37 +275,50 @@ fn is_stale_lock(lock: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
     use tempfile::TempDir;
 
-    struct EnvGuard {
-        key: &'static str,
-        previous: Option<String>,
+    struct TeamsDirGuard {
+        previous: Option<PathBuf>,
     }
 
-    impl EnvGuard {
-        fn set(key: &'static str, value: &str) -> Self {
-            let previous = std::env::var(key).ok();
-            std::env::set_var(key, value);
-            Self { key, previous }
+    impl TeamsDirGuard {
+        fn set(path: PathBuf) -> Self {
+            let previous = TEST_TEAMS_DIR.with(|dir| dir.replace(Some(path)));
+            Self { previous }
         }
     }
 
-    impl Drop for EnvGuard {
+    impl Drop for TeamsDirGuard {
         fn drop(&mut self) {
-            match &self.previous {
-                Some(v) => std::env::set_var(self.key, v),
-                None => std::env::remove_var(self.key),
-            }
+            let previous = self.previous.take();
+            TEST_TEAMS_DIR.with(|dir| {
+                dir.replace(previous);
+            });
         }
     }
 
-    fn test_team() -> (String, String, PathBuf) {
+    struct TestTeam {
+        team: String,
+        agent: String,
+        dir: PathBuf,
+        _tmp: TempDir,
+        _guard: TeamsDirGuard,
+    }
+
+    fn test_team() -> TestTeam {
+        let tmp = TempDir::new().expect("tempdir");
+        let guard = TeamsDirGuard::set(tmp.path().join("teams"));
         let id = uuid::Uuid::new_v4().to_string();
         let team = format!("test-team-{}", &id[..8]);
         let agent = "test-agent";
         let dir = team_dir(&team);
-        (team, agent.to_string(), dir)
+        TestTeam {
+            team,
+            agent: agent.to_string(),
+            dir,
+            _tmp: tmp,
+            _guard: guard,
+        }
     }
 
     fn cleanup(dir: &Path) {
@@ -316,10 +343,9 @@ mod tests {
     }
 
     #[test]
-    #[serial]
-    fn team_dir_honors_cc_rust_home() {
+    fn team_dir_uses_configured_teams_root() {
         let tmp = TempDir::new().expect("tempdir");
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().expect("utf8 tempdir"));
+        let _guard = TeamsDirGuard::set(tmp.path().join("teams"));
 
         let team_path = team_dir("my team");
         let inbox = inbox_path("agent", "my team");
@@ -343,7 +369,7 @@ mod tests {
 
     #[test]
     fn test_write_and_read() {
-        let (team, agent, dir) = test_team();
+        let fixture = test_team();
         let msg = TeammateMessage {
             from: "sender".into(),
             text: "Hello!".into(),
@@ -353,19 +379,19 @@ mod tests {
             summary: None,
         };
 
-        write_to_mailbox(&agent, msg, &team).unwrap();
-        let messages = read_mailbox(&agent, &team).unwrap();
+        write_to_mailbox(&fixture.agent, msg, &fixture.team).unwrap();
+        let messages = read_mailbox(&fixture.agent, &fixture.team).unwrap();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].from, "sender");
         assert_eq!(messages[0].text, "Hello!");
         assert!(!messages[0].read);
 
-        cleanup(&dir);
+        cleanup(&fixture.dir);
     }
 
     #[test]
     fn test_write_multiple_and_read() {
-        let (team, agent, dir) = test_team();
+        let fixture = test_team();
 
         for i in 0..3 {
             let msg = TeammateMessage {
@@ -376,19 +402,19 @@ mod tests {
                 color: None,
                 summary: None,
             };
-            write_to_mailbox(&agent, msg, &team).unwrap();
+            write_to_mailbox(&fixture.agent, msg, &fixture.team).unwrap();
         }
 
-        let messages = read_mailbox(&agent, &team).unwrap();
+        let messages = read_mailbox(&fixture.agent, &fixture.team).unwrap();
         assert_eq!(messages.len(), 3);
 
-        cleanup(&dir);
+        cleanup(&fixture.dir);
     }
 
     #[test]
     fn test_write_rejects_corrupt_mailbox_without_resetting() {
-        let (team, agent, dir) = test_team();
-        let path = inbox_path(&agent, &team);
+        let fixture = test_team();
+        let path = inbox_path(&fixture.agent, &fixture.team);
         fs::create_dir_all(path.parent().expect("inbox parent")).unwrap();
         fs::write(&path, "{not valid json").unwrap();
 
@@ -401,17 +427,17 @@ mod tests {
             summary: None,
         };
 
-        let err = write_to_mailbox(&agent, msg, &team).unwrap_err();
+        let err = write_to_mailbox(&fixture.agent, msg, &fixture.team).unwrap_err();
 
         assert!(err.to_string().contains("failed to parse mailbox"));
         assert_eq!(fs::read_to_string(&path).unwrap(), "{not valid json");
 
-        cleanup(&dir);
+        cleanup(&fixture.dir);
     }
 
     #[test]
     fn test_read_unread() {
-        let (team, agent, dir) = test_team();
+        let fixture = test_team();
 
         // Write two messages
         for i in 0..2 {
@@ -423,22 +449,22 @@ mod tests {
                 color: None,
                 summary: None,
             };
-            write_to_mailbox(&agent, msg, &team).unwrap();
+            write_to_mailbox(&fixture.agent, msg, &fixture.team).unwrap();
         }
 
         // Mark first as read
-        mark_as_read_by_index(&agent, &team, 0).unwrap();
+        mark_as_read_by_index(&fixture.agent, &fixture.team, 0).unwrap();
 
-        let unread = read_unread_messages(&agent, &team).unwrap();
+        let unread = read_unread_messages(&fixture.agent, &fixture.team).unwrap();
         assert_eq!(unread.len(), 1);
         assert_eq!(unread[0].text, "m1");
 
-        cleanup(&dir);
+        cleanup(&fixture.dir);
     }
 
     #[test]
     fn test_mark_all_as_read() {
-        let (team, agent, dir) = test_team();
+        let fixture = test_team();
 
         for _ in 0..3 {
             let msg = TeammateMessage {
@@ -449,19 +475,19 @@ mod tests {
                 color: None,
                 summary: None,
             };
-            write_to_mailbox(&agent, msg, &team).unwrap();
+            write_to_mailbox(&fixture.agent, msg, &fixture.team).unwrap();
         }
 
-        mark_all_as_read(&agent, &team).unwrap();
-        let unread = read_unread_messages(&agent, &team).unwrap();
+        mark_all_as_read(&fixture.agent, &fixture.team).unwrap();
+        let unread = read_unread_messages(&fixture.agent, &fixture.team).unwrap();
         assert!(unread.is_empty());
 
-        cleanup(&dir);
+        cleanup(&fixture.dir);
     }
 
     #[test]
     fn test_clear_mailbox() {
-        let (team, agent, dir) = test_team();
+        let fixture = test_team();
 
         let msg = TeammateMessage {
             from: "s".into(),
@@ -471,13 +497,18 @@ mod tests {
             color: None,
             summary: None,
         };
-        write_to_mailbox(&agent, msg, &team).unwrap();
-        assert_eq!(read_mailbox(&agent, &team).unwrap().len(), 1);
+        write_to_mailbox(&fixture.agent, msg, &fixture.team).unwrap();
+        assert_eq!(
+            read_mailbox(&fixture.agent, &fixture.team).unwrap().len(),
+            1
+        );
 
-        clear_mailbox(&agent, &team).unwrap();
-        assert!(read_mailbox(&agent, &team).unwrap().is_empty());
+        clear_mailbox(&fixture.agent, &fixture.team).unwrap();
+        assert!(read_mailbox(&fixture.agent, &fixture.team)
+            .unwrap()
+            .is_empty());
 
-        cleanup(&dir);
+        cleanup(&fixture.dir);
     }
 
     #[test]

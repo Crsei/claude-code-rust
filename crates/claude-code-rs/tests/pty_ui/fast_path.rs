@@ -86,6 +86,7 @@ fn print_mode_no_api_key() {
 
 /// `-p` print mode captures response.
 #[test]
+#[ignore = "requires a real model API key and network"]
 fn print_mode_live() {
     let session = PtySession::spawn(
         &["-p", "Say exactly: PTY_PRINT_OK", "-C", workspace()],

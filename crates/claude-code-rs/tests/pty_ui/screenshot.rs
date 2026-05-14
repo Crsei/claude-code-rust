@@ -26,6 +26,7 @@ fn screenshot_welcome_screen() {
 
 /// Single chat response at 120x40.
 #[test]
+#[ignore = "requires a real model API key and network"]
 fn screenshot_chat_response() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);
@@ -65,6 +66,7 @@ fn screenshot_narrow_terminal() {
 /// increased message count. This correctly handles tool-use turns where
 /// the message count jumps by more than 2.
 #[test]
+#[ignore = "requires a real model API key and network"]
 fn screenshot_multi_turn_conversation() {
     let session = PtySession::spawn(default_args(), 120, 40, false);
     std::thread::sleep(RENDER_WAIT);

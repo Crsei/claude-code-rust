@@ -1,6 +1,6 @@
 # cc-rust 当前问题汇总
 
-> 更新日期: 2026-05-07
+> 更新日期: 2026-05-14
 
 本文是当前开放问题、代码审查发现和文档状态问题的唯一活跃入口。已修复、已失效或只具历史价值的问题已迁移到：
 
@@ -11,7 +11,6 @@
 
 | ID | 严重度 | 状态 | 范围 | 摘要 | 详情 |
 | --- | --- | --- | --- | --- | --- |
-| TEST-001 | 高 | Open | `tests/e2e_terminal` | `main.rs` 引入 `mod phase6;`，但 `phase6.rs` 当前未纳入版本控制。 | [2026-05-07 review](archive/issues/2026-05-07-code-review-findings.md) §二 |
 | CLIPPY-001 | 高 | Open | clippy warning gate | `cargo clippy -p claude-code-rs --all-targets -- -D warnings` 仍被跨模块 lint 阻塞；已清理本轮发现的低风险机械项，剩余项需单独计划处理。 | [2026-05-07 编译记录](archive/resolved-known-issues-2026-05-07.md#2026-05-07-编译过程记录) |
 | WORKTREE-001 | 中 | Open | worktree hooks | `WorktreeRemove` 可能收到子目录而非仓库根；路径边界校验未处理 symlink / Windows junction 逃逸。 | [2026-05-07 review](archive/issues/2026-05-07-code-review-findings.md) §二 |
 
@@ -39,7 +38,6 @@
 | --- | --- | --- | --- | --- | --- |
 | CONTEXT-001 | 高 | Open | auto compact | 阈值判断重复扣减本地释放 token，可能错误跳过 auto-compact。 | [2026-05-07 review](archive/issues/2026-05-07-code-review-findings.md) §三 |
 | CONTEXT-002 | 高 | Open | exact count preflight | exact-count 预检漏掉 system prompt 和 tools，可能低估真实模型请求大小。 | 同上 |
-| CONTEXT-003 | 中 | Open | verification gate | Phase 10 归档记录显示必需的 `cargo test -p claude-code-rs` 门禁未 green。 | 同上 |
 
 ## 5. UI / runtime residuals
 
@@ -78,5 +76,4 @@
 
 | ID | Severity | Status | Scope | Summary | Detail |
 | --- | --- | --- | --- | --- | --- |
-| TEST-002 | Medium | Open | `cargo test -p claude-code-rs` | Package-wide test run is not green after the ratatui UI parity closeout. | Final closeout ran `cargo test -p claude-code-rs -- --nocapture`: 1960 passed and 10 failed before snapshot acceptance/focused reruns. Initial failures were `commands::branch::tests::test_branch_forks_current_conversation`, `commands::ide_cmd::tests::select_then_clear_round_trip`, `commands::tasks_cmd::{delete_removes_tool_task,show_prints_tool_detail_fields,stop_marks_tool_task_cancelled}`, `engine::system_prompt::tests::test_auto_memory_context_respects_toggle`, and UI snapshot tests. Intentional UI snapshots were accepted and focused UI filters pass; individual task-command tests pass when run alone, but the broad `tasks` filter showed cross-test-state failures and the package-wide non-UI failures need a separate fix. |
 | UI-005 | Low | Open | line endings | `git diff --check` passes but reports CRLF-to-LF normalization warnings for several touched files. | The warnings are not whitespace errors, but commit packaging should expect Git normalization on touched Rust/docs files. |

@@ -285,17 +285,26 @@ fn filter_sessions_for_workspace(mut sessions: Vec<SessionInfo>, cwd: &Path) -> 
 /// Creates the sessions directory if it does not exist. Overwrites any
 /// existing file for the same `session_id`.
 pub fn save_session(session_id: &str, messages: &[Message], cwd: &str) -> Result<()> {
-    let dir = get_session_dir();
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("Failed to create session directory {}", dir.display()))?;
-
     let path = get_session_file(session_id);
+    save_session_to_file(session_id, messages, cwd, &path)
+}
+
+pub(crate) fn save_session_to_file(
+    session_id: &str,
+    messages: &[Message],
+    cwd: &str,
+    path: &Path,
+) -> Result<()> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)
+            .with_context(|| format!("Failed to create session directory {}", dir.display()))?;
+    }
 
     let now = Utc::now().timestamp();
 
     // Preserve the original created_at and custom_title when updating.
     let (created_at, custom_title) = if path.exists() {
-        match load_session_file(session_id) {
+        match load_session_file_from_path(path) {
             Ok(f) => (f.created_at, f.custom_title),
             Err(_) => (now, None),
         }
@@ -344,7 +353,16 @@ pub const MAX_CUSTOM_TITLE_LEN: usize = 200;
 /// Updates `last_modified` to the current time. Returns the final stored title
 /// (after trimming/truncation) or `None` if cleared.
 pub fn set_session_title(session_id: &str, title: Option<&str>) -> Result<Option<String>> {
-    let mut file = load_session_file(session_id)?;
+    let path = get_session_file(session_id);
+    set_session_title_in_file(session_id, title, &path)
+}
+
+pub(crate) fn set_session_title_in_file(
+    session_id: &str,
+    title: Option<&str>,
+    path: &Path,
+) -> Result<Option<String>> {
+    let mut file = load_session_file_from_path(path)?;
 
     let new_title = title.and_then(|raw| {
         let trimmed = raw.trim();
@@ -358,7 +376,6 @@ pub fn set_session_title(session_id: &str, title: Option<&str>) -> Result<Option
     file.custom_title = new_title.clone();
     file.last_modified = Utc::now().timestamp();
 
-    let path = get_session_file(session_id);
     let json = serde_json::to_string_pretty(&file).context("Failed to serialize session")?;
     std::fs::write(&path, json)
         .with_context(|| format!("Failed to write session file {}", path.display()))?;
@@ -427,6 +444,11 @@ pub fn load_session_info(session_id: &str) -> Result<SessionInfo> {
     Ok(build_session_info(file))
 }
 
+pub(crate) fn load_session_info_from_file(path: &Path) -> Result<SessionInfo> {
+    let file = load_session_file_from_path(path)?;
+    Ok(build_session_info(file))
+}
+
 /// Load a session from disk and return the messages.
 pub fn load_session(session_id: &str) -> Result<Vec<Message>> {
     let file = load_session_file(session_id)?;
@@ -442,6 +464,10 @@ pub fn load_session(session_id: &str) -> Result<Vec<Message>> {
 /// Load the raw session file.
 fn load_session_file(session_id: &str) -> Result<SessionFile> {
     let path = get_session_file(session_id);
+    load_session_file_from_path(&path)
+}
+
+fn load_session_file_from_path(path: &Path) -> Result<SessionFile> {
     let contents = std::fs::read_to_string(&path)
         .with_context(|| format!("Failed to read session file {}", path.display()))?;
     let file: SessionFile = serde_json::from_str(&contents)

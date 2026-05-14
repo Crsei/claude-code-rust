@@ -11,7 +11,6 @@ use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
-use cc_api::api::streaming::CompletedToolUse;
 use crate::types::message::{
     AssistantMessage, ContentBlock, Message, MessageContent, StreamEvent, ToolResultContent,
     UserMessage,
@@ -19,6 +18,7 @@ use crate::types::message::{
 use crate::types::state::QueryLoopState;
 use crate::types::tool::{ToolProgress, Tools};
 use crate::types::transitions::{Continue, Terminal};
+use cc_api::api::streaming::CompletedToolUse;
 
 use super::deps::{QueryDeps, ToolExecRequest, ToolExecResult};
 
@@ -410,7 +410,11 @@ pub(crate) async fn execute_tool_calls(
             .collect::<Vec<String>>();
         let batch_span = if is_concurrent && batch.len() > 1 {
             deps.langfuse_trace().as_ref().and_then(|trace| {
-                crate::services::langfuse::create_tool_batch_span(trace, &batch_tool_names, batch_index)
+                crate::services::langfuse::create_tool_batch_span(
+                    trace,
+                    &batch_tool_names,
+                    batch_index,
+                )
             })
         } else {
             None

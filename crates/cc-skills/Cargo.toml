@@ -5,5 +5,9 @@ edition = "2021"
 description = "Skill discovery, loading, and registry for cc-rust (bundled + user + project + plugin)"
 
 [dependencies]
+cc-config = { path = "../cc-config" }
 serde = { workspace = true }
 parking_lot = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

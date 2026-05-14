@@ -1,6 +1,7 @@
 //! KAIROS daemon -- HTTP server + proactive tick loop.
 pub mod channels;
 pub mod gateway_bridge;
+pub mod gateway_client;
 pub mod gateway_routes;
 mod gateway_run_events;
 pub mod memory_log;

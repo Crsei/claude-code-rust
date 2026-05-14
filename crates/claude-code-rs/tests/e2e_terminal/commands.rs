@@ -152,7 +152,14 @@ fn slash_quit() {
     let msg = send_slash_and_get_response("/quit");
     assert_eq!(msg["type"], "system_info");
     assert_eq!(msg["level"], "info");
-    assert!(msg["text"].as_str().unwrap_or("").contains("Goodbye"));
+    let text = msg["text"].as_str().unwrap_or("");
+    assert!(
+        ["Goodbye", "See ya", "Bye", "Catch you later"]
+            .iter()
+            .any(|expected| text.contains(expected)),
+        "/quit should return one of the configured goodbye messages: {:?}",
+        msg
+    );
 }
 
 /// Empty slash command should produce a response without crash.

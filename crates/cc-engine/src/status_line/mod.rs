@@ -16,9 +16,8 @@ pub mod runner;
 
 // Re-export the typed building blocks and the payload helpers used by the
 // TUI and IPC layers to assemble one shared status snapshot shape.
-#[allow(unused_imports)]
 pub use payload::{
     build_payload_from_snapshot, ContextWindowStatus, CostStatus, ModelInfo, StatusLinePayload,
-    StatusLineSnapshot, WorkspaceStatus,
+    StatusLineSnapshot, VimStatus, WorkspaceStatus, WorktreeStatus,
 };
 pub use runner::{StatusLineOutput, StatusLineRunner};

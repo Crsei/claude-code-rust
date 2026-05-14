@@ -6,3 +6,6 @@ description = "KAIROS daemon: HTTP/SSE server, proactive tick, webhooks, team-me
 
 [dependencies]
 cc-types = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

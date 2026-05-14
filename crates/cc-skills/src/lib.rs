@@ -447,7 +447,7 @@ pub fn reload_skills_with_extra(
     }
 
     if let Some(proj) = project_dir {
-        let project_skills_dir = proj.join(".cc-rust").join("skills");
+        let project_skills_dir = cc_config::paths::project_skills_dir(proj);
         if project_skills_dir.is_dir() {
             let batch = loader::load_skills_from_dir_with_diagnostics(
                 &project_skills_dir,
@@ -1094,6 +1094,39 @@ mod tests {
             SkillSource::Mcp("my-server".to_string()),
         ];
         assert_eq!(sources.len(), 5);
+    }
+
+    #[test]
+    fn reload_loads_project_skills_from_cc_rust_project_dir() {
+        clear_skills();
+        let tmp = tempfile::tempdir().unwrap();
+        let user_dir = tmp.path().join("user-skills");
+        let project_skill_dir = cc_config::paths::project_skills_dir(tmp.path()).join("review");
+        std::fs::create_dir_all(&project_skill_dir).unwrap();
+        std::fs::write(
+            project_skill_dir.join("SKILL.md"),
+            "---\ndescription: Review local changes.\n---\nCheck the diff.\n",
+        )
+        .unwrap();
+
+        let report = reload_skills_with_extra(
+            &user_dir,
+            Some(tmp.path()),
+            Vec::new(),
+            SkillLoadOptions::default(),
+        );
+
+        assert_eq!(report.error_count(), 0, "{:?}", report.diagnostics);
+        let project = get_all_skills()
+            .into_iter()
+            .find(|skill| skill.name == "review")
+            .expect("project skill should load");
+        assert_eq!(project.source, SkillSource::Project);
+        assert_eq!(
+            project.base_dir.as_deref(),
+            Some(project_skill_dir.as_path())
+        );
+        clear_skills();
     }
 
     #[test]
