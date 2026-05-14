@@ -12,26 +12,21 @@ extern crate self as cc_engine;
 
 pub mod agent;
 pub mod agent_runtime;
-pub mod browser;
 pub mod codex_exec;
 pub mod command_runtime;
-pub mod computer_use;
 pub mod effort;
 pub mod input_processing;
 pub mod ipc_compat;
 pub mod lifecycle;
-pub mod lsp_service;
-pub mod mcp;
+pub mod mcp_tool_adapter;
 pub mod output_style;
 pub mod prompt_sections;
 pub mod query;
 pub mod result;
-pub mod sdk_types;
 pub mod services;
 pub mod status_line;
 pub mod system_prompt;
-pub mod teams;
-pub mod tools;
+pub mod tool_runtime;
 pub mod types;
 pub mod worktree_hooks;
 
@@ -48,5 +43,4 @@ pub use cc_utils as utils;
 // Re-export from cc-types so consumers can eventually write
 // `use cc_engine::{HookRunner, CommandDispatcher}` once the engine types
 // land here too.
-#[allow(unused_imports)]
 pub use cc_types::hooks::{HookRunner, NoopHookRunner};

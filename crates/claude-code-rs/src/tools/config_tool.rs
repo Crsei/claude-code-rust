@@ -13,8 +13,8 @@ use cc_config::settings;
 use serde_json::{json, Value};
 use tracing::debug;
 
-use crate::types::message::AssistantMessage;
-use crate::types::tool::*;
+use cc_engine::types::tool::*;
+use cc_types::message::AssistantMessage;
 
 /// ConfigTool -- read and write runtime configuration.
 pub struct ConfigTool;

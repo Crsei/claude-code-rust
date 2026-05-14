@@ -12,15 +12,15 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
-use crate::permissions::decision::{self, PermissionBehavior};
 use crate::tools::exec::bash::truncate_output;
-use crate::types::app_state::AppState;
-use crate::types::message::AssistantMessage;
-use crate::types::tool::{
+use cc_engine::types::app_state::AppState;
+use cc_engine::types::tool::{
     InterruptBehavior, PermissionMode, PermissionResult, Tool, ToolProgress, ToolResult,
     ToolUseContext,
 };
-use crate::utils::bash::resolve_timeout;
+use cc_permissions::decision::{self, PermissionBehavior};
+use cc_types::message::AssistantMessage;
+use cc_utils::bash::resolve_timeout;
 
 use super::manifest::{StdioToolRuntime, ToolContribution, ToolRuntime};
 
@@ -74,7 +74,7 @@ impl PluginToolWrapper {
     fn permission_context_for_call(
         &self,
         app_state: AppState,
-    ) -> crate::types::tool::ToolPermissionContext {
+    ) -> cc_engine::types::tool::ToolPermissionContext {
         let mut permission_ctx = app_state.tool_permission_context;
 
         if self.contribution.read_only {
@@ -82,7 +82,7 @@ impl PluginToolWrapper {
                 PermissionMode::Default | PermissionMode::Plan => PermissionMode::Auto,
                 other => other.clone(),
             };
-            crate::permissions::dangerous::set_permission_mode_with_auto_mode_safety(
+            cc_permissions::dangerous::set_permission_mode_with_auto_mode_safety(
                 &mut permission_ctx,
                 mode,
             );
@@ -343,7 +343,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    use crate::types::tool::{FileStateCache, ToolUseOptions};
+    use cc_engine::types::tool::{FileStateCache, ToolUseOptions};
     use uuid::Uuid;
 
     fn dummy_ctx() -> ToolUseContext {

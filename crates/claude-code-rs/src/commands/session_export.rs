@@ -9,8 +9,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::session::session_export;
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_session::session_export;
 
 pub struct SessionExportHandler;
 
@@ -86,7 +86,7 @@ fn list_exports() -> Result<CommandResult> {
 }
 
 fn export_by_id(session_id: &str) -> Result<CommandResult> {
-    let sessions = crate::session::storage::list_sessions()?;
+    let sessions = cc_session::storage::list_sessions()?;
     let matched = sessions
         .iter()
         .find(|s| s.session_id == session_id || s.session_id.starts_with(session_id));
@@ -153,11 +153,11 @@ fn format_export_summary(export: &session_export::SessionExport) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::session::session_export::{
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
+    use cc_session::session_export::{
         CompressionData, ContextSnapshot, SessionExport, SessionMeta, TranscriptData,
     };
-    use crate::types::app_state::AppState;
     use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {

@@ -5,12 +5,13 @@
 //! otherwise inline. Split out of the monolithic `main.rs` per issue #22
 //! to keep the entry point focused on orchestration.
 
+pub mod engine_runtime;
 pub mod fast_paths;
 pub mod logging;
 pub mod modes;
 pub mod runtime_config;
 
-use crate::config::settings;
+use cc_config::settings;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]

@@ -1,6 +1,6 @@
 //! Shared data structures and lookup helpers for user-tool-result messages.
 
-use crate::types::tool::Tool;
+use cc_engine::types::tool::Tool;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;

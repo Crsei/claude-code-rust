@@ -9,8 +9,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::session::export;
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_session::export;
 
 pub struct ExportHandler;
 
@@ -86,7 +86,7 @@ fn list_exported_files() -> Result<CommandResult> {
 
 fn export_by_id(session_id: &str, _ctx: &CommandContext) -> Result<CommandResult> {
     // Try exact match first, then prefix match
-    let sessions = crate::session::storage::list_sessions()?;
+    let sessions = cc_session::storage::list_sessions()?;
     let matched = sessions
         .iter()
         .find(|s| s.session_id == session_id || s.session_id.starts_with(session_id));
@@ -114,8 +114,8 @@ fn export_by_id(session_id: &str, _ctx: &CommandContext) -> Result<CommandResult
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {

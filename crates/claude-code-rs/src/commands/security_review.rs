@@ -8,9 +8,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::types::message::{Message, MessageContent, UserMessage};
-use crate::utils::git;
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_types::message::{Message, MessageContent, UserMessage};
+use cc_utils::git;
 
 pub struct SecurityReviewHandler;
 
@@ -121,8 +121,8 @@ fn build_security_prompt(context: &str, focus: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
 
     fn test_ctx(cwd: PathBuf) -> CommandContext {

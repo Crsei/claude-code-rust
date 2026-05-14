@@ -18,12 +18,12 @@ use serde_json::{json, Value};
 use tracing::{info, warn};
 
 use crate::commands;
-use crate::engine::sdk_types::SdkMessage;
-use crate::types::plan_workflow::PlanWorkflowRecord;
 use cc_commands::{CommandContext, CommandResult};
+use cc_daemon::protocol::{DaemonCommandKind, DaemonCommandStatus};
+use cc_types::plan_workflow::PlanWorkflowRecord;
+use cc_types::sdk::SdkMessage;
 
 use super::process_state::{self, DaemonStatusSnapshot, DaemonWorkerSummary};
-use super::protocol::{self, DaemonCommandKind, DaemonCommandStatus};
 use super::state::{DaemonState, SseEvent};
 use super::supervisor::ASSISTANT_WORKER_ID;
 use super::team_memory_proxy;
@@ -249,7 +249,7 @@ async fn submit(
 async fn submit_authorized(state: DaemonState, body: SubmitRequest) -> Json<Value> {
     let text = body.text;
     let message_id = body.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let command = match protocol::enqueue_command(
+    let command = match super::protocol_store().enqueue_command(
         ASSISTANT_WORKER_ID,
         DaemonCommandKind::Submit,
         json!({
@@ -293,7 +293,7 @@ async fn abort(State(_state): State<DaemonState>, headers: HeaderMap) -> Json<Va
         return response;
     }
     info!("abort request received");
-    let command = match protocol::enqueue_command(
+    let command = match super::protocol_store().enqueue_command(
         ASSISTANT_WORKER_ID,
         DaemonCommandKind::Abort,
         json!({ "source": "http" }),
@@ -351,7 +351,7 @@ async fn command(
                         data: crate::plan_workflow::event_payload(
                             &record,
                             "slash_command",
-                            &crate::plan_workflow::summarize(&record),
+                            &cc_types::plan_workflow::summarize(&record),
                         ),
                     });
                 }
@@ -413,7 +413,7 @@ async fn permission(
         decision = %body.decision,
         "permission endpoint queued daemon command"
     );
-    let command = match protocol::enqueue_command(
+    let command = match super::protocol_store().enqueue_command(
         ASSISTANT_WORKER_ID,
         DaemonCommandKind::PermissionResponse,
         json!({
@@ -471,15 +471,17 @@ async fn status(State(state): State<DaemonState>) -> Json<StatusResponse> {
         supervisor_pid,
         health_url,
         workers,
-        command_root: protocol::commands_dir().display().to_string(),
-        assistant_event_log: protocol::worker_events_path(ASSISTANT_WORKER_ID)
+        command_root: super::protocol_store().commands_dir().display().to_string(),
+        assistant_event_log: super::protocol_store()
+            .worker_events_path(ASSISTANT_WORKER_ID)
             .display()
             .to_string(),
     })
 }
 
 pub(super) fn assistant_command_active() -> bool {
-    protocol::read_worker_commands(ASSISTANT_WORKER_ID)
+    super::protocol_store()
+        .read_worker_commands(ASSISTANT_WORKER_ID)
         .map(|commands| {
             commands.into_iter().any(|command| {
                 command.kind == DaemonCommandKind::Submit
@@ -521,7 +523,9 @@ async fn resize(headers: HeaderMap) -> Json<Value> {
 
 /// `GET /api/history` -- return conversation history (stub).
 async fn history(State(state): State<DaemonState>) -> Json<Value> {
-    let daemon_events = protocol::read_worker_events(ASSISTANT_WORKER_ID).unwrap_or_default();
+    let daemon_events = super::protocol_store()
+        .read_worker_events(ASSISTANT_WORKER_ID)
+        .unwrap_or_default();
     Json(json!({
         "history": [],
         "sse_events": state.events_since("0"),
@@ -572,9 +576,9 @@ mod tests {
 
     use super::*;
     use crate::daemon::webhook::webhook_github;
-    use crate::engine::sdk_types::{SdkApiRetry, SdkCompactBoundary, SdkToolUseSummary};
-    use crate::types::message::CompactMetadata;
     use axum::body::Bytes;
+    use cc_types::message::CompactMetadata;
+    use cc_types::sdk::{SdkApiRetry, SdkCompactBoundary, SdkToolUseSummary};
     use hmac::{Hmac, Mac};
     use sha2::Sha256;
 

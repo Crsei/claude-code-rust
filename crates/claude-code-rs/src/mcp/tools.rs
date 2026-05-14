@@ -13,11 +13,10 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex;
 use tracing::debug;
 
-use crate::types::message::{AssistantMessage, ContentBlock, ImageSource, ToolResultContent};
-use crate::types::tool::*;
-
-use super::manager::McpManager;
-use super::{McpToolDef, ToolCallContent};
+use cc_engine::types::tool::*;
+use cc_mcp::manager::McpManager;
+use cc_mcp::{McpToolDef, ToolCallContent};
+use cc_types::message::{AssistantMessage, ContentBlock, ImageSource, ToolResultContent};
 
 const MCP_SKILL_URI_PREFIX: &str = "skill://";
 
@@ -168,8 +167,8 @@ fn browser_display_preview(
     content: &[ToolCallContent],
     has_image: bool,
 ) -> Option<String> {
-    use crate::browser::detection::{is_browser_server, BROWSER_TOOL_BASENAMES};
-    use crate::browser::tool_rendering::{infer_kind, short_summary};
+    use cc_browser::detection::{is_browser_server, BROWSER_TOOL_BASENAMES};
+    use cc_browser::tool_rendering::{infer_kind, short_summary};
 
     let is_known_action = BROWSER_TOOL_BASENAMES.contains(&tool_basename);
     if !is_known_action && !is_browser_server(server_name) {
@@ -312,8 +311,8 @@ pub fn mcp_tools_to_tools(
 pub async fn discover_mcp_skill_resources(
     manager: &McpManager,
 ) -> (
-    Vec<crate::skills::SkillDefinition>,
-    Vec<crate::skills::SkillDiagnostic>,
+    Vec<cc_skills::SkillDefinition>,
+    Vec<cc_skills::SkillDiagnostic>,
 ) {
     let mut skills = Vec::new();
     let mut diagnostics = Vec::new();
@@ -335,15 +334,15 @@ pub async fn discover_mcp_skill_resources(
                 Ok(read) => read,
                 Err(err) => {
                     diagnostics.push(
-                        crate::skills::SkillDiagnostic::warning(
+                        cc_skills::SkillDiagnostic::warning(
                             "mcp-skill-read-failed",
                             format!(
                                 "Failed to read MCP skill resource '{}' from '{}': {}",
                                 resource.uri, server_name, err
                             ),
                         )
-                        .with_skill(skill_name)
-                        .with_source(crate::skills::SkillSource::Mcp(server_name.clone())),
+                        .with_skill(skill_name.clone())
+                        .with_source(cc_skills::SkillSource::Mcp(server_name.clone())),
                     );
                     continue;
                 }
@@ -358,23 +357,23 @@ pub async fn discover_mcp_skill_resources(
 
             if text.trim().is_empty() {
                 diagnostics.push(
-                    crate::skills::SkillDiagnostic::warning(
+                    cc_skills::SkillDiagnostic::warning(
                         "mcp-skill-empty",
                         format!(
                             "MCP skill resource '{}' from '{}' returned no text content.",
                             resource.uri, server_name
                         ),
                     )
-                    .with_skill(skill_name)
-                    .with_source(crate::skills::SkillSource::Mcp(server_name.clone())),
+                    .with_skill(skill_name.clone())
+                    .with_source(cc_skills::SkillSource::Mcp(server_name.clone())),
                 );
                 continue;
             }
 
-            let (skill, parse_diagnostics) = crate::skills::loader::load_skill_from_content(
+            let (skill, parse_diagnostics) = cc_skills::loader::load_skill_from_content(
                 &text,
                 &skill_name,
-                crate::skills::SkillSource::Mcp(server_name.clone()),
+                cc_skills::SkillSource::Mcp(server_name.clone()),
             );
             skills.push(skill);
             diagnostics.extend(parse_diagnostics);
@@ -452,7 +451,7 @@ mod tests {
     #[test]
     fn test_format_tool_call_result_resource_text() {
         let content = vec![ToolCallContent::Resource {
-            resource: super::super::McpResourceContent {
+            resource: cc_mcp::McpResourceContent {
                 uri: "file:///tmp/test.txt".to_string(),
                 mime_type: Some("text/plain".to_string()),
                 text: Some("file contents".to_string()),
@@ -559,7 +558,7 @@ mod tests {
     #[test]
     fn test_convert_mcp_resource_blob_image() {
         let content = vec![ToolCallContent::Resource {
-            resource: super::super::McpResourceContent {
+            resource: cc_mcp::McpResourceContent {
                 uri: "screenshot://latest".to_string(),
                 mime_type: Some("image/jpeg".to_string()),
                 text: None,

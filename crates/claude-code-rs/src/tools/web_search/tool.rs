@@ -6,8 +6,8 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::types::message::AssistantMessage;
-use crate::types::tool::*;
+use cc_engine::types::tool::*;
+use cc_types::message::AssistantMessage;
 
 use super::providers::{detect_provider, search_brave, search_tavily};
 use super::{
@@ -365,12 +365,12 @@ mod tests {
     // validate_input boundary conditions
     // -----------------------------------------------------------------------
 
-    fn make_test_ctx() -> crate::types::tool::ToolUseContext {
-        use crate::types::app_state::AppState;
-        use crate::types::tool::{FileStateCache, ToolUseOptions};
+    fn make_test_ctx() -> cc_engine::types::tool::ToolUseContext {
+        use cc_engine::types::app_state::AppState;
+        use cc_engine::types::tool::{FileStateCache, ToolUseOptions};
         use std::sync::Arc;
         let state = AppState::default();
-        crate::types::tool::ToolUseContext {
+        cc_engine::types::tool::ToolUseContext {
             options: ToolUseOptions {
                 debug: false,
                 main_loop_model: "test".into(),

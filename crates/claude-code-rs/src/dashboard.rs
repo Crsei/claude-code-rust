@@ -120,7 +120,7 @@ impl Drop for DashboardCompanion {
 pub fn event_log_path() -> Option<PathBuf> {
     SESSION_ID
         .get()
-        .map(|id| crate::config::paths::runs_dir(id).join("subagent-events.ndjson"))
+        .map(|id| cc_config::paths::runs_dir(id).join("subagent-events.ndjson"))
 }
 
 #[allow(clippy::too_many_arguments)]

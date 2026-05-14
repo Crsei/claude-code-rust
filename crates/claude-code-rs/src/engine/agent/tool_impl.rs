@@ -6,8 +6,8 @@ use serde_json::{json, Value};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::types::message::AssistantMessage;
-use crate::types::tool::*;
+use cc_engine::types::tool::*;
+use cc_types::message::AssistantMessage;
 
 use super::{resolve_model_alias, AgentInput, AgentTool, MAX_AGENT_DEPTH};
 
@@ -321,7 +321,7 @@ struct TeammateSpawnRequest {
 
 fn teammate_spawn_request(
     params: &AgentInput,
-    app_state: &crate::types::app_state::AppState,
+    app_state: &cc_engine::types::app_state::AppState,
 ) -> Result<Option<TeammateSpawnRequest>> {
     let Some(raw_name) = params.name.as_deref() else {
         return Ok(None);
@@ -668,7 +668,7 @@ mod tests {
 
     #[test]
     fn test_teammate_spawn_request_uses_explicit_or_active_team() {
-        let mut state = crate::types::app_state::AppState::default();
+        let mut state = cc_engine::types::app_state::AppState::default();
         let lead_id = crate::teams::identity::lead_agent_id("alpha");
         state.team_context = Some(cc_types::teams::TeamContext {
             team_name: "alpha".into(),
@@ -700,7 +700,7 @@ mod tests {
 
     #[test]
     fn test_teammate_spawn_request_allows_implicit_team_without_context() {
-        let state = crate::types::app_state::AppState::default();
+        let state = cc_engine::types::app_state::AppState::default();
         let params: AgentInput = serde_json::from_value(json!({
             "prompt": "review",
             "description": "review code",
@@ -714,7 +714,7 @@ mod tests {
 
     #[test]
     fn test_teammate_spawn_request_rejects_nested_teammate_spawn() {
-        let mut state = crate::types::app_state::AppState::default();
+        let mut state = cc_engine::types::app_state::AppState::default();
         state.team_context = Some(cc_types::teams::TeamContext {
             team_name: "alpha".into(),
             lead_agent_id: crate::teams::identity::lead_agent_id("alpha"),

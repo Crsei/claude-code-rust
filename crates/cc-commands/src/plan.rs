@@ -1,29 +1,16 @@
 //! `/plan` command: durable plan workflow controls.
-//!
-//! Subcommands:
-//!   (no args) or `show`/`view`  Enter plan mode, then print the plan file.
-//!   `enter [description]`       Enter plan mode with a short trace note.
-//!   `open` / `edit`             Open plan file in an external editor.
-//!   `path`                      Print the plan and workflow paths.
-//!   `status`                    Print workflow status and approval state.
-//!   `trace`                     Print workflow trace events.
-//!   `approve`                   Approve the current plan and exit plan mode.
-//!   `reject [feedback]`         Reject the current plan and stay in plan mode.
-//!   `link <task-id> [summary]`  Link implementation evidence to the plan.
-//!   `classify <prompt>`         Show whether the classifier would enter plan mode.
 
-use anyhow::Result;
-use async_trait::async_trait;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::config::paths as cfg_paths;
-use crate::plan_workflow::{self, PlanWorkflowRecord};
-use crate::types::tool::PermissionMode;
-use crate::ui::browser::{ensure_and_open, format_open_outcome};
-use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use anyhow::Result;
+use async_trait::async_trait;
+use cc_engine::types::tool::PermissionMode;
+use cc_types::plan_workflow::PlanWorkflowRecord;
 
-/// Template seeded into a fresh plan file on first `open`/`edit`.
+use super::browser::{ensure_and_open, format_open_outcome};
+use crate::{plan_workflow, CommandContext, CommandHandler, CommandResult};
+
 const PLAN_TEMPLATE: &str = "# Plan\n\n<!-- Draft your implementation plan here. -->\n";
 
 pub struct PlanHandler;
@@ -42,8 +29,8 @@ impl CommandHandler for PlanHandler {
             "open" | "edit" => open_plan(&ctx.cwd),
             "path" => Ok(CommandResult::Output(format!(
                 "Plan file: {}\nWorkflow file: {}",
-                cfg_paths::current_plan_file_path(&ctx.cwd).display(),
-                cfg_paths::current_plan_workflow_file_path(&ctx.cwd).display()
+                cc_config::paths::current_plan_file_path(&ctx.cwd).display(),
+                cc_config::paths::current_plan_workflow_file_path(&ctx.cwd).display()
             ))),
             "status" => status(ctx),
             "trace" => trace(ctx),
@@ -80,14 +67,14 @@ fn enter_and_show(ctx: &mut CommandContext, description: Option<&str>) -> Result
         &mut ctx.app_state,
         &ctx.cwd,
         existing,
-        "main",
+        plan_workflow::default_owner(),
         "slash_command",
         description,
         None,
     );
     plan_workflow::persist(&ctx.cwd, &record)?;
 
-    let path = cfg_paths::current_plan_file_path(&ctx.cwd);
+    let path = cc_config::paths::current_plan_file_path(&ctx.cwd);
     let body = read_plan_body(&path);
 
     let header = if was_in_plan {
@@ -111,7 +98,7 @@ fn enter_and_show(ctx: &mut CommandContext, description: Option<&str>) -> Result
 }
 
 fn open_plan(cwd: &Path) -> Result<CommandResult> {
-    let path: PathBuf = cfg_paths::current_plan_file_path(cwd);
+    let path: PathBuf = cc_config::paths::current_plan_file_path(cwd);
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
@@ -158,14 +145,14 @@ fn trace(ctx: &mut CommandContext) -> Result<CommandResult> {
 }
 
 fn approve(ctx: &mut CommandContext) -> Result<CommandResult> {
-    let plan_path = cfg_paths::current_plan_file_path(&ctx.cwd);
+    let plan_path = cc_config::paths::current_plan_file_path(&ctx.cwd);
     let plan_text = read_plan_body(&plan_path);
     let existing = plan_workflow::load(&ctx.cwd)?;
     let record = plan_workflow::approve_and_exit_state(
         &mut ctx.app_state,
         &ctx.cwd,
         existing,
-        "main",
+        plan_workflow::default_owner(),
         "slash_command",
         plan_text,
     );
@@ -182,7 +169,7 @@ fn reject(ctx: &mut CommandContext, feedback: &str) -> Result<CommandResult> {
         &mut ctx.app_state,
         &ctx.cwd,
         existing,
-        "main",
+        plan_workflow::default_owner(),
         "slash_command",
         (!feedback.trim().is_empty()).then(|| feedback.trim().to_string()),
     );
@@ -211,7 +198,7 @@ fn link(ctx: &mut CommandContext, rest: &str) -> Result<CommandResult> {
         &mut ctx.app_state,
         &ctx.cwd,
         existing,
-        "main",
+        plan_workflow::default_owner(),
         "slash_command",
         task_id.to_string(),
         summary,
@@ -274,8 +261,8 @@ fn read_plan_body(path: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use serial_test::serial;
     use std::env;
     use tempfile::tempdir;
@@ -302,7 +289,7 @@ mod tests {
     impl Drop for EnvGuard {
         fn drop(&mut self) {
             match &self.previous {
-                Some(v) => env::set_var(self.key, v),
+                Some(value) => env::set_var(self.key, value),
                 None => env::remove_var(self.key),
             }
         }
@@ -324,9 +311,9 @@ mod tests {
     #[serial]
     async fn bare_plan_enters_plan_mode_and_shows_placeholder() {
         let tmp = tempdir().unwrap();
-        let _g = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
-        let _editor = EnvGuard::unset("VISUAL");
-        let _editor2 = EnvGuard::unset("EDITOR");
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _visual = EnvGuard::unset("VISUAL");
+        let _editor = EnvGuard::unset("EDITOR");
 
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::Default);
         let result = PlanHandler.execute("", &mut ctx).await.unwrap();
@@ -340,11 +327,11 @@ mod tests {
             Some(PermissionMode::Default)
         );
         assert!(ctx.app_state.plan_workflow.is_some());
-        assert!(cfg_paths::current_plan_workflow_file_path(tmp.path()).is_file());
+        assert!(cc_config::paths::current_plan_workflow_file_path(tmp.path()).is_file());
         match result {
-            CommandResult::Output(s) => {
-                assert!(s.contains("Plan mode"));
-                assert!(s.contains("empty plan"));
+            CommandResult::Output(text) => {
+                assert!(text.contains("Plan mode"));
+                assert!(text.contains("empty plan"));
             }
             _ => panic!("expected Output"),
         }
@@ -354,7 +341,7 @@ mod tests {
     #[serial]
     async fn plan_is_idempotent_and_preserves_prior_mode() {
         let tmp = tempdir().unwrap();
-        let _g = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
 
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::AcceptEdits);
         PlanHandler.execute("", &mut ctx).await.unwrap();
@@ -371,7 +358,7 @@ mod tests {
     #[serial]
     async fn approve_restores_prior_mode_and_records_approval() {
         let tmp = tempdir().unwrap();
-        let _g = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
 
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::AcceptEdits);
         PlanHandler.execute("", &mut ctx).await.unwrap();
@@ -384,10 +371,10 @@ mod tests {
         let workflow = ctx.app_state.plan_workflow.as_ref().unwrap();
         assert_eq!(
             workflow.approval_state,
-            crate::types::plan_workflow::PlanApprovalState::Approved
+            cc_types::plan_workflow::PlanApprovalState::Approved
         );
         match result {
-            CommandResult::Output(s) => assert!(s.contains("Plan approved")),
+            CommandResult::Output(text) => assert!(text.contains("Plan approved")),
             _ => panic!("expected Output"),
         }
     }
@@ -400,14 +387,14 @@ mod tests {
         fs::create_dir_all(&plan_dir).unwrap();
         let plan_path = plan_dir.join("plan.md");
         fs::write(&plan_path, "# My Plan\n\n1. Step one\n").unwrap();
-        let _g = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
 
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::Default);
         let result = PlanHandler.execute("show", &mut ctx).await.unwrap();
         match result {
-            CommandResult::Output(s) => {
-                assert!(s.contains("My Plan"));
-                assert!(s.contains("Step one"));
+            CommandResult::Output(text) => {
+                assert!(text.contains("My Plan"));
+                assert!(text.contains("Step one"));
             }
             _ => panic!("expected Output"),
         }
@@ -417,15 +404,15 @@ mod tests {
     #[serial]
     async fn unknown_subcommand_prints_usage() {
         let tmp = tempdir().unwrap();
-        let _g = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
 
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::Default);
         let result = PlanHandler.execute("bogus", &mut ctx).await.unwrap();
         match result {
-            CommandResult::Output(s) => {
-                assert!(s.contains("Unknown subcommand"));
-                assert!(s.contains("bogus"));
-                assert!(s.contains("/plan open"));
+            CommandResult::Output(text) => {
+                assert!(text.contains("Unknown subcommand"));
+                assert!(text.contains("bogus"));
+                assert!(text.contains("/plan open"));
             }
             _ => panic!("expected Output"),
         }
@@ -435,14 +422,14 @@ mod tests {
     #[serial]
     async fn path_subcommand_prints_resolved_path() {
         let tmp = tempdir().unwrap();
-        let _g = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
 
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::Default);
         let result = PlanHandler.execute("path", &mut ctx).await.unwrap();
         match result {
-            CommandResult::Output(s) => {
-                assert!(s.contains("Plan file:"));
-                assert!(s.contains("Workflow file:"));
+            CommandResult::Output(text) => {
+                assert!(text.contains("Plan file:"));
+                assert!(text.contains("Workflow file:"));
             }
             _ => panic!("expected Output"),
         }
@@ -452,18 +439,19 @@ mod tests {
     #[serial]
     async fn open_without_editor_creates_template_and_reports() {
         let tmp = tempdir().unwrap();
-        let _g = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
-        let _v = EnvGuard::unset("VISUAL");
-        let _e = EnvGuard::unset("EDITOR");
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _visual = EnvGuard::unset("VISUAL");
+        let _editor = EnvGuard::unset("EDITOR");
 
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::Default);
         let result = PlanHandler.execute("open", &mut ctx).await.unwrap();
 
-        let body = fs::read_to_string(cfg_paths::current_plan_file_path(tmp.path())).unwrap();
+        let body =
+            fs::read_to_string(cc_config::paths::current_plan_file_path(tmp.path())).unwrap();
         assert!(body.starts_with("# Plan"));
 
         match result {
-            CommandResult::Output(s) => assert!(!s.is_empty()),
+            CommandResult::Output(text) => assert!(!text.is_empty()),
             _ => panic!("expected Output"),
         }
     }
@@ -472,7 +460,7 @@ mod tests {
     #[serial]
     async fn classify_previews_explicit_entry() {
         let tmp = tempdir().unwrap();
-        let _g = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
 
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::Default);
         let result = PlanHandler
@@ -480,7 +468,7 @@ mod tests {
             .await
             .unwrap();
         match result {
-            CommandResult::Output(s) => assert!(s.contains("should_enter=true")),
+            CommandResult::Output(text) => assert!(text.contains("should_enter=true")),
             _ => panic!("expected Output"),
         }
     }

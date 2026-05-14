@@ -1,15 +1,14 @@
-use super::security::{
-    enforce_result_size, find_tool, is_plan_mode_plan_file_write, security_validate,
-};
+use super::security::{find_tool, is_plan_mode_plan_file_write, security_validate};
 use super::*;
-use crate::types::app_state::AppState;
-use crate::types::tool::{FileStateCache, PermissionMode, ToolUseOptions};
+use cc_engine::types::app_state::AppState;
+use cc_engine::types::tool::{FileStateCache, PermissionMode, ToolUseOptions};
+use cc_tools::result::enforce_result_size;
 use std::sync::Arc;
 use std::time::Instant;
 
 use serde_json::Value;
 
-use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools};
+use cc_engine::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools};
 
 // -- Helper: minimal ToolUseContext for security_validate tests ----------
 
@@ -50,7 +49,7 @@ struct OriginalCwdGuard(std::path::PathBuf);
 
 impl OriginalCwdGuard {
     fn set(path: &std::path::Path) -> Self {
-        let mut ps = crate::bootstrap::PROCESS_STATE.write();
+        let mut ps = cc_bootstrap::PROCESS_STATE.write();
         let previous = ps.original_cwd.clone();
         ps.original_cwd = path.to_path_buf();
         Self(previous)
@@ -59,7 +58,7 @@ impl OriginalCwdGuard {
 
 impl Drop for OriginalCwdGuard {
     fn drop(&mut self) {
-        crate::bootstrap::PROCESS_STATE.write().original_cwd = self.0.clone();
+        cc_bootstrap::PROCESS_STATE.write().original_cwd = self.0.clone();
     }
 }
 
@@ -88,7 +87,7 @@ impl Tool for ReadOnlyStub {
         &self,
         _: Value,
         _: &ToolUseContext,
-        _: &crate::types::message::AssistantMessage,
+        _: &cc_types::message::AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> anyhow::Result<ToolResult> {
         Ok(ToolResult {
@@ -121,7 +120,7 @@ impl Tool for WritableStub {
         &self,
         _: Value,
         _: &ToolUseContext,
-        _: &crate::types::message::AssistantMessage,
+        _: &cc_types::message::AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> anyhow::Result<ToolResult> {
         Ok(ToolResult {
@@ -203,7 +202,7 @@ fn test_plan_mode_allows_dedicated_plan_file_write() {
     std::fs::create_dir_all(temp.path().join(".cc-rust")).unwrap();
     let _cwd_guard = set_original_cwd_for_test(temp.path());
 
-    let plan_path = crate::config::paths::current_plan_file_path(temp.path());
+    let plan_path = cc_config::paths::current_plan_file_path(temp.path());
     let plan_path = plan_path.to_string_lossy().into_owned();
     let ctx = make_ctx_with_mode(PermissionMode::Plan);
     let tool = WritableStub;

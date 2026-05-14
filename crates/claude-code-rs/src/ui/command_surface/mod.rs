@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 
-use crate::types::app_state::AppState;
+use cc_engine::types::app_state::AppState;
 use cc_ipc_protocol::subsystem_types::LspRecommendationPayload;
 
 mod adapters;

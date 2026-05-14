@@ -247,11 +247,11 @@ struct BuiltinAgentRegistryImpl;
 
 impl BuiltinAgentRegistry for BuiltinAgentRegistryImpl {
     fn builtin_agent_entries(&self) -> Vec<cc_ipc_protocol::subsystem_types::AgentDefinitionEntry> {
-        crate::teams::builtin_agents::builtin_agent_entries()
+        crate::agent::builtin_agents::builtin_agent_entries()
     }
 
     fn builtin_agent_prompt(&self, name: &str) -> Option<String> {
-        crate::teams::builtin_agents::builtin_agent_prompt(name).map(ToOwned::to_owned)
+        crate::agent::builtin_agents::builtin_agent_prompt(name).map(ToOwned::to_owned)
     }
 }
 

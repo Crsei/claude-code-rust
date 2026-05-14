@@ -1,7 +1,5 @@
 //! Dispatcher for user tool result message rendering.
 
-use crate::types::tool::Tool;
-use crate::types::tool::Tools;
 use crate::ui::messages::user_tool_result_message::utils::{
     find_tool_from_messages, ToolResultBlock, UserToolResultLookups, CANCEL_MESSAGE,
     INTERRUPT_MESSAGE_FOR_TOOL_USE, REJECT_MESSAGE, REJECT_MESSAGE_WITH_REASON_PREFIX,
@@ -14,6 +12,8 @@ use crate::ui::messages::user_tool_result_message::{
     user_tool_success_message::render_user_tool_success_message,
 };
 use crate::ui::theme::Theme;
+use cc_engine::types::tool::Tool;
+use cc_engine::types::tool::Tools;
 use ratatui::text::Line;
 
 pub fn render_user_tool_result_message(

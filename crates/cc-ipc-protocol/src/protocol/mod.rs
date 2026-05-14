@@ -124,7 +124,6 @@ fn default_true() -> bool {
 // ---------------------------------------------------------------------------
 
 /// Messages sent by the Rust backend to the UI process.
-#[allow(dead_code)]
 #[derive(Serialize, Debug, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BackendMessage {
@@ -326,7 +325,7 @@ pub enum BackendMessage {
 /// A single file-search hit. Matches the upstream
 /// `{ file, line, text }` shape from
 /// `ui/examples/upstream-patterns/src/components/GlobalSearchDialog.tsx`.
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FileSearchMatch {
     /// Path relative to the search root.
     pub file: String,
@@ -368,5 +367,78 @@ mod tests {
         assert_eq!(value["payload"]["messageCount"], 2);
         assert_eq!(value["lines"][0], "model sonnet-4");
         assert!(value.get("error").is_none());
+    }
+
+    #[test]
+    fn error_message_preserves_jsonl_field_order() {
+        let message = BackendMessage::Error {
+            message: "invalid FrontendMessage: expected value".into(),
+            recoverable: true,
+        };
+
+        let encoded = serde_json::to_string(&message).unwrap();
+
+        assert_eq!(
+            encoded,
+            r#"{"type":"error","message":"invalid FrontendMessage: expected value","recoverable":true}"#
+        );
+    }
+
+    #[test]
+    fn file_search_result_preserves_jsonl_field_order() {
+        let message = BackendMessage::FileSearchResult {
+            request_id: "search-1".into(),
+            matches: vec![FileSearchMatch {
+                file: "src/main.rs".into(),
+                line: 7,
+                text: "fn main() {}".into(),
+            }],
+            truncated: false,
+            error: None,
+        };
+
+        let encoded = serde_json::to_string(&message).unwrap();
+
+        assert_eq!(
+            encoded,
+            r#"{"type":"file_search_result","request_id":"search-1","matches":[{"file":"src/main.rs","line":7,"text":"fn main() {}"}],"truncated":false}"#
+        );
+    }
+
+    #[test]
+    fn file_search_match_roundtrips() {
+        let original = FileSearchMatch {
+            file: "src/lib.rs".into(),
+            line: 12,
+            text: "pub mod ipc;".into(),
+        };
+
+        let encoded = serde_json::to_string(&original).unwrap();
+        let decoded: FileSearchMatch = serde_json::from_str(&encoded).unwrap();
+
+        assert_eq!(decoded.file, original.file);
+        assert_eq!(decoded.line, original.line);
+        assert_eq!(decoded.text, original.text);
+    }
+
+    #[test]
+    fn tool_result_image_content_roundtrips_without_losing_payload() {
+        let original = ToolResultContentInfo::Image {
+            media_type: "image/png".into(),
+            size_bytes: Some(8),
+            data: Some("aGVsbG8=".into()),
+        };
+
+        let encoded = serde_json::to_string(&original).unwrap();
+        let decoded: ToolResultContentInfo = serde_json::from_str(&encoded).unwrap();
+
+        assert!(matches!(
+            decoded,
+            ToolResultContentInfo::Image {
+                media_type,
+                size_bytes: Some(8),
+                data: Some(data),
+            } if media_type == "image/png" && data == "aGVsbG8="
+        ));
     }
 }

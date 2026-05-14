@@ -1,8 +1,8 @@
 //! Render output for successful tool invocations.
 
-use crate::types::tool::Tool;
 use crate::ui::messages::user_tool_result_message::utils::format_tool_output;
 use crate::ui::theme::Theme;
+use cc_engine::types::tool::Tool;
 use ratatui::text::{Line, Span};
 
 pub fn render_user_tool_success_message(

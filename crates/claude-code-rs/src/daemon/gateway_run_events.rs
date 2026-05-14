@@ -1,8 +1,7 @@
 use anyhow::{Context, Result};
+use cc_daemon::protocol;
 use gateway::{GatewayStore, RunEvent, RunEventKind, RunId, RunStatus, SessionKeyPolicy};
 use serde_json::Value;
-
-use super::protocol;
 
 pub(super) fn append_gateway_sdk_event(
     command: &protocol::DaemonCommand,

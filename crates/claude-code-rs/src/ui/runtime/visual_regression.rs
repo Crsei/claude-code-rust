@@ -23,7 +23,7 @@ use super::terminal_integration::{render_policy, TerminalEnvironment};
 use super::theme::Theme;
 use super::tool_activity::{render_grouped_activity, ToolActivity, ToolState};
 use super::virtual_scroll::VirtualScroll;
-use crate::types::message::{AssistantMessage, ContentBlock, Message, MessageContent, UserMessage};
+use cc_types::message::{AssistantMessage, ContentBlock, Message, MessageContent, UserMessage};
 use uuid::Uuid;
 
 pub fn render_foundation_snapshot() -> String {

@@ -21,8 +21,8 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::types::message::AssistantMessage;
-use crate::types::tool::*;
+use cc_engine::types::tool::*;
+use cc_types::message::AssistantMessage;
 
 // ---------------------------------------------------------------------------
 // LSP operations

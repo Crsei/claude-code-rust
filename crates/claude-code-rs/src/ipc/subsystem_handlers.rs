@@ -415,7 +415,7 @@ pub async fn run_mcp_runtime_operation(
         "MCP runtime command requested"
     );
 
-    let Some(manager) = crate::mcp::runtime::current_manager() else {
+    let Some(manager) = cc_mcp::runtime::current_manager() else {
         return mcp_runtime_report(
             server_name,
             "error",
@@ -487,7 +487,7 @@ pub async fn run_mcp_runtime_operation(
             "info",
         ),
         Err(err) => {
-            let state = if crate::mcp::client::is_auth_needed_error(&err) {
+            let state = if cc_mcp::client::is_auth_needed_error(&err) {
                 "auth-needed"
             } else {
                 "error"
@@ -652,7 +652,7 @@ async fn start_mcp_auth(cwd: &Path, server_name: &str) -> Vec<BackendMessage> {
         Ok(config) => config,
         Err(message) => return vec![mcp_config_error_message(server_name, message)],
     };
-    match crate::mcp::auth::start_authorization(&config).await {
+    match cc_mcp::auth::start_authorization(&config).await {
         Ok(start) => vec![
             BackendMessage::McpEvent {
                 event: McpEvent::AuthStarted {
@@ -685,14 +685,14 @@ async fn complete_mcp_auth(
         Ok(config) => config,
         Err(message) => return vec![mcp_config_error_message(server_name, message)],
     };
-    match crate::mcp::auth::complete_authorization(&config, code, state).await {
+    match cc_mcp::auth::complete_authorization(&config, code, state).await {
         Ok(_) => {
             let mut messages = query_mcp_auth(cwd, server_name);
             messages.push(BackendMessage::SystemInfo {
                 text: format!(
                     "Stored OAuth credentials for MCP server `{}` in {}.",
                     server_name,
-                    crate::mcp::auth::token_store_path().display()
+                    cc_mcp::auth::token_store_path().display()
                 ),
                 level: "info".to_string(),
             });
@@ -707,7 +707,7 @@ fn clear_mcp_auth(cwd: &Path, server_name: &str) -> Vec<BackendMessage> {
         Ok(config) => config,
         Err(message) => return vec![mcp_config_error_message(server_name, message)],
     };
-    match crate::mcp::auth::clear_stored_token(&config) {
+    match cc_mcp::auth::clear_stored_token(&config) {
         Ok(_) => query_mcp_auth(cwd, server_name),
         Err(err) => vec![mcp_config_error_message(server_name, err.to_string())],
     }
@@ -718,7 +718,7 @@ fn query_mcp_auth(cwd: &Path, server_name: &str) -> Vec<BackendMessage> {
         Ok(config) => config,
         Err(message) => return vec![mcp_config_error_message(server_name, message)],
     };
-    match crate::mcp::auth::credential_status(&config) {
+    match cc_mcp::auth::credential_status(&config) {
         Ok(status) => vec![BackendMessage::McpEvent {
             event: McpEvent::AuthStatus {
                 server_name: server_name.to_string(),
@@ -766,7 +766,7 @@ fn mcp_runtime_report(
     text: String,
     level: &str,
 ) -> McpRuntimeReport {
-    crate::mcp::runtime::record_server_state(server_name, state, error.clone());
+    cc_mcp::runtime::record_server_state(server_name, state, error.clone());
     McpRuntimeReport {
         server_name: server_name.to_string(),
         state: state.to_string(),
@@ -795,8 +795,8 @@ fn mcp_runtime_report_messages(report: McpRuntimeReport) -> Vec<BackendMessage> 
 fn find_mcp_runtime_config(
     cwd: &Path,
     server_name: &str,
-) -> Result<crate::mcp::McpServerConfig, String> {
-    let configs = crate::mcp::discovery::discover_mcp_servers(cwd)
+) -> Result<cc_mcp::McpServerConfig, String> {
+    let configs = cc_mcp::discovery::discover_mcp_servers(cwd)
         .map_err(|err| format!("Failed to discover MCP servers: {err}"))?;
     configs
         .into_iter()
@@ -963,11 +963,11 @@ pub fn handle_skill_command(
         SkillCommand::Reload => {
             let cwd = std::env::current_dir().ok();
             let plugin_skills = crate::plugins::discover_plugin_skills();
-            let report = crate::skills::reload_skills_with_extra(
-                &crate::config::paths::skills_dir_global(),
+            let report = cc_skills::reload_skills_with_extra(
+                &cc_config::paths::skills_dir_global(),
                 cwd.as_deref(),
                 plugin_skills,
-                crate::skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
+                cc_skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
             );
             tracing::info!(
                 count = report.loaded,
@@ -1027,7 +1027,7 @@ pub fn build_mcp_server_info_list_for_cwd(cwd: &Path) -> Vec<McpServerStatusInfo
         Ok(discovery) => discovery,
         Err(err) => return vec![mcp_discovery_error_status(err)],
     };
-    if let Some(manager) = crate::mcp::runtime::current_manager() {
+    if let Some(manager) = cc_mcp::runtime::current_manager() {
         if let Ok(manager) = manager.try_lock() {
             let mut rows = build_mcp_server_info_list_from_configs(configs, Some(&manager));
             rows.append(&mut diagnostics);
@@ -1045,7 +1045,7 @@ pub async fn build_mcp_server_info_list_for_cwd_async(cwd: &Path) -> Vec<McpServ
         Ok(discovery) => discovery,
         Err(err) => return vec![mcp_discovery_error_status(err)],
     };
-    if let Some(manager) = crate::mcp::runtime::current_manager() {
+    if let Some(manager) = cc_mcp::runtime::current_manager() {
         let manager = manager.lock().await;
         let mut rows = build_mcp_server_info_list_from_configs(configs, Some(&manager));
         rows.append(&mut diagnostics);
@@ -1072,9 +1072,9 @@ fn mcp_discovery_error_status(err: anyhow::Error) -> McpServerStatusInfo {
 
 fn discover_mcp_runtime_configs_with_diagnostics(
     cwd: &Path,
-) -> anyhow::Result<(Vec<crate::mcp::McpServerConfig>, Vec<McpServerStatusInfo>)> {
-    let scoped = crate::mcp::discovery::discover_mcp_servers_scoped(cwd)?;
-    let mut configs: Vec<crate::mcp::McpServerConfig> = Vec::new();
+) -> anyhow::Result<(Vec<cc_mcp::McpServerConfig>, Vec<McpServerStatusInfo>)> {
+    let scoped = cc_mcp::discovery::discover_mcp_servers_scoped(cwd)?;
+    let mut configs: Vec<cc_mcp::McpServerConfig> = Vec::new();
     let mut diagnostics = Vec::new();
 
     for entry in scoped {
@@ -1110,8 +1110,8 @@ fn discover_mcp_runtime_configs_with_diagnostics(
 }
 
 fn build_mcp_server_info_list_from_configs(
-    configs: Vec<crate::mcp::McpServerConfig>,
-    manager: Option<&crate::mcp::manager::McpManager>,
+    configs: Vec<cc_mcp::McpServerConfig>,
+    manager: Option<&cc_mcp::manager::McpManager>,
 ) -> Vec<McpServerStatusInfo> {
     configs
         .into_iter()
@@ -1120,8 +1120,8 @@ fn build_mcp_server_info_list_from_configs(
 }
 
 fn build_mcp_server_info(
-    cfg: crate::mcp::McpServerConfig,
-    manager: Option<&crate::mcp::manager::McpManager>,
+    cfg: cc_mcp::McpServerConfig,
+    manager: Option<&cc_mcp::manager::McpManager>,
 ) -> McpServerStatusInfo {
     if cfg.disabled.unwrap_or(false) {
         return McpServerStatusInfo {
@@ -1138,12 +1138,10 @@ fn build_mcp_server_info(
 
     if let Some(client) = manager.and_then(|manager| manager.clients.get(&cfg.name)) {
         let (state, error) = match &client.state {
-            crate::mcp::McpConnectionState::Pending => ("pending".to_string(), None),
-            crate::mcp::McpConnectionState::Connected => ("connected".to_string(), None),
-            crate::mcp::McpConnectionState::Disconnected => ("disconnected".to_string(), None),
-            crate::mcp::McpConnectionState::Error(error) => {
-                ("error".to_string(), Some(error.clone()))
-            }
+            cc_mcp::McpConnectionState::Pending => ("pending".to_string(), None),
+            cc_mcp::McpConnectionState::Connected => ("connected".to_string(), None),
+            cc_mcp::McpConnectionState::Disconnected => ("disconnected".to_string(), None),
+            cc_mcp::McpConnectionState::Error(error) => ("error".to_string(), Some(error.clone())),
         };
         let server_info = (!client.server_info.name.is_empty()).then(|| McpServerInfoBrief {
             name: client.server_info.name.clone(),
@@ -1161,7 +1159,7 @@ fn build_mcp_server_info(
         };
     }
 
-    let remembered = crate::mcp::runtime::server_state(&cfg.name);
+    let remembered = cc_mcp::runtime::server_state(&cfg.name);
     McpServerStatusInfo {
         name: cfg.name,
         state: remembered
@@ -1182,7 +1180,7 @@ fn build_mcp_server_info(
 /// per scope so the same logical server can appear in multiple scopes (e.g.
 /// "same name in user + project").
 pub fn build_mcp_server_config_entries(cwd: &std::path::Path) -> Vec<McpServerConfigEntry> {
-    let scoped = match crate::mcp::discovery::discover_mcp_servers_scoped(cwd) {
+    let scoped = match cc_mcp::discovery::discover_mcp_servers_scoped(cwd) {
         Ok(scoped) => scoped,
         Err(err) => {
             tracing::warn!(error = %err, "Failed to discover scoped MCP server configs");
@@ -1450,7 +1448,7 @@ fn toggle_mcp_entry_enabled(
 /// `type`, `command`/`args`/`url`/-. Consumers using different shapes can
 /// still round-trip thanks to `McpServerConfig`'s permissive deserializer.
 fn entry_to_settings_value(entry: &McpServerConfigEntry) -> serde_json::Value {
-    let cfg = crate::mcp::McpServerConfig {
+    let cfg = cc_mcp::McpServerConfig {
         name: entry.name.clone(),
         transport: entry.transport.clone(),
         command: entry.command.clone(),
@@ -1500,9 +1498,9 @@ pub fn build_plugin_info_list() -> Vec<PluginInfo> {
 
 /// Build a list of skill info from the global skill registry.
 pub fn build_skill_info_list() -> Vec<SkillInfo> {
-    use crate::skills::SkillSource;
+    use cc_skills::SkillSource;
 
-    crate::skills::get_all_skills()
+    cc_skills::get_all_skills()
         .into_iter()
         .map(|s| {
             let source_str = match &s.source {
@@ -1575,7 +1573,7 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn build_mcp_server_info_list_defaults_to_pending() {
-        crate::mcp::runtime::clear_for_tests();
+        cc_mcp::runtime::clear_for_tests();
         let infos = build_mcp_server_info_list();
         for info in &infos {
             assert_eq!(info.state, "pending");
@@ -1639,14 +1637,12 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn build_skill_info_list_returns_skills() {
-        use crate::skills;
-
-        skills::clear_skills();
-        skills::register_skill(crate::skills::SkillDefinition {
+        cc_skills::clear_skills();
+        cc_skills::register_skill(cc_skills::SkillDefinition {
             name: "test-skill".to_string(),
-            source: crate::skills::SkillSource::Bundled,
+            source: cc_skills::SkillSource::Bundled,
             base_dir: None,
-            frontmatter: crate::skills::SkillFrontmatter {
+            frontmatter: cc_skills::SkillFrontmatter {
                 description: "A test".to_string(),
                 user_invocable: true,
                 ..Default::default()
@@ -1658,34 +1654,36 @@ mod tests {
         assert!(test.is_some());
         assert_eq!(test.unwrap().source, "bundled");
         assert!(test.unwrap().user_invocable);
-        skills::clear_skills();
+        cc_skills::clear_skills();
     }
 
     #[test]
     #[serial_test::serial]
     fn build_skill_info_list_maps_sources() {
-        use crate::skills;
-
-        skills::clear_skills();
+        cc_skills::clear_skills();
 
         let sources = vec![
-            ("bundled-sk", skills::SkillSource::Bundled, "bundled"),
-            ("user-sk", skills::SkillSource::User, "user"),
-            ("project-sk", skills::SkillSource::Project, "project"),
+            ("bundled-sk", cc_skills::SkillSource::Bundled, "bundled"),
+            ("user-sk", cc_skills::SkillSource::User, "user"),
+            ("project-sk", cc_skills::SkillSource::Project, "project"),
             (
                 "plugin-sk",
-                skills::SkillSource::Plugin("p".to_string()),
+                cc_skills::SkillSource::Plugin("p".to_string()),
                 "plugin",
             ),
-            ("mcp-sk", skills::SkillSource::Mcp("m".to_string()), "mcp"),
+            (
+                "mcp-sk",
+                cc_skills::SkillSource::Mcp("m".to_string()),
+                "mcp",
+            ),
         ];
 
         for (name, source, _) in &sources {
-            skills::register_skill(skills::SkillDefinition {
+            cc_skills::register_skill(cc_skills::SkillDefinition {
                 name: name.to_string(),
                 source: source.clone(),
                 base_dir: None,
-                frontmatter: skills::SkillFrontmatter {
+                frontmatter: cc_skills::SkillFrontmatter {
                     description: "test".to_string(),
                     user_invocable: true,
                     ..Default::default()
@@ -1701,7 +1699,7 @@ mod tests {
             assert_eq!(info.unwrap().source, *expected_source);
         }
 
-        skills::clear_skills();
+        cc_skills::clear_skills();
     }
 
     #[test]
@@ -1798,17 +1796,17 @@ mod tests {
 
     impl RuntimeMcpGuard {
         fn install(
-            manager: std::sync::Arc<tokio::sync::Mutex<crate::mcp::manager::McpManager>>,
+            manager: std::sync::Arc<tokio::sync::Mutex<cc_mcp::manager::McpManager>>,
         ) -> Self {
-            crate::mcp::runtime::clear_for_tests();
-            crate::mcp::runtime::install_manager(manager);
+            cc_mcp::runtime::clear_for_tests();
+            cc_mcp::runtime::install_manager(manager);
             Self
         }
     }
 
     impl Drop for RuntimeMcpGuard {
         fn drop(&mut self) {
-            crate::mcp::runtime::clear_for_tests();
+            cc_mcp::runtime::clear_for_tests();
         }
     }
 
@@ -2176,9 +2174,8 @@ mod tests {
         let home = tempfile::tempdir().expect("tempdir");
         let cwd = tempfile::tempdir().expect("tempdir");
         let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
-        let manager = std::sync::Arc::new(tokio::sync::Mutex::new(
-            crate::mcp::manager::McpManager::new(),
-        ));
+        let manager =
+            std::sync::Arc::new(tokio::sync::Mutex::new(cc_mcp::manager::McpManager::new()));
         let _runtime = RuntimeMcpGuard::install(manager.clone());
         std::fs::write(
             home.path().join("settings.json"),

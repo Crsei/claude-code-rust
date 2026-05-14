@@ -7,8 +7,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::config::features::{self, FeatureFlags};
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_config::features::{self, FeatureFlags};
 
 pub struct ExperimentalHandler;
 

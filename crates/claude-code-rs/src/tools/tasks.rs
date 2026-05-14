@@ -17,9 +17,12 @@ use async_trait::async_trait;
 use cc_tasks::dependency_ids_from_input;
 #[cfg(test)]
 use cc_tasks::TaskCreateOptions;
+#[cfg(test)]
+use cc_tasks::REMOTE_REVIEW_TIMEOUT_MS;
 use cc_tasks::{
-    normalize_dependencies, normalize_optional_string, parse_task_create, parse_task_id,
-    parse_task_update, TaskEntry, TaskError, TaskStatus, TaskUpdateAction, TeammateTaskExitReason,
+    normalize_dependencies, normalize_new_status, normalize_optional_string, parse_task_create,
+    parse_task_id, parse_task_update, recover_task_after_restart, remote_review_timed_out,
+    TaskEntry, TaskError, TaskStatus, TaskUpdateAction, TeammateTaskExitReason,
     UnassignTeammateTasksResult, DEFAULT_TASK_LIST_ID, REMOTE_TASK_TYPE_AUTOFIX_PR,
     REMOTE_TASK_TYPE_BACKGROUND_PR, REMOTE_TASK_TYPE_REMOTE_AGENT, REMOTE_TASK_TYPE_ULTRAPLAN,
     REMOTE_TASK_TYPE_ULTRAREVIEW, TASK_KIND_DREAM, TASK_KIND_IN_PROCESS_TEAMMATE,
@@ -36,8 +39,8 @@ use std::sync::Arc;
 use tokio::time::{sleep, Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
-use crate::types::message::AssistantMessage;
-use crate::types::tool::*;
+use cc_engine::types::tool::*;
+use cc_types::message::AssistantMessage;
 
 mod json;
 mod lists;
@@ -82,7 +85,6 @@ const OUTPUT_SUMMARY_MAX_CHARS: usize = 2_000;
 const DEFAULT_TASK_OUTPUT_TIMEOUT_MS: u64 = cc_tools::task_specs::TASK_OUTPUT_DEFAULT_TIMEOUT_MS;
 const MAX_TASK_OUTPUT_TIMEOUT_MS: u64 = cc_tools::task_specs::TASK_OUTPUT_MAX_TIMEOUT_MS;
 const TASK_OUTPUT_POLL_INTERVAL_MS: u64 = 100;
-const REMOTE_REVIEW_TIMEOUT_MS: i64 = 30 * 60 * 1000;
 const TASK_HIGHWATERMARK_FILE: &str = ".highwatermark";
 const TASK_HIGHWATERMARK_LOCK_FILE: &str = ".highwatermark.lock";
 const TASK_HIGHWATERMARK_LOCK_RETRIES: usize = 30;
@@ -98,90 +100,6 @@ const CLAUDE_CODE_TEAM_NAME_ENV: &str = "CLAUDE_CODE_TEAM_NAME";
 // TaskStore shared state lives in tasks/store.rs.
 
 // Durable repository lives in tasks/repository.rs.
-
-fn recover_task_after_restart(entry: &mut TaskEntry) -> bool {
-    let mut changed = false;
-    let status = normalize_loaded_status(entry.status);
-    if status != entry.status {
-        entry.previous_status = Some(entry.status);
-        entry.status = status;
-        changed = true;
-    }
-
-    if entry.status.should_interrupt_on_startup() {
-        let remote_recoverable = is_remote_recoverable_task(entry);
-        let recovered_status = if remote_recoverable {
-            TaskStatus::Recoverable
-        } else {
-            TaskStatus::Interrupted
-        };
-        let now = chrono::Utc::now();
-        let mut recovered = false;
-
-        if entry.status != recovered_status || entry.recovered_at.is_none() {
-            if entry.status != recovered_status || entry.previous_status.is_none() {
-                entry.previous_status = Some(entry.status);
-            }
-            entry.status = recovered_status;
-            entry.recovered_at = Some(now.timestamp());
-            recovered = true;
-        }
-
-        if remote_recoverable {
-            let poll_started_at = now.timestamp_millis();
-            if entry.poll_started_at != Some(poll_started_at) {
-                entry.poll_started_at = Some(poll_started_at);
-                recovered = true;
-            }
-        }
-
-        if !recovered {
-            return changed;
-        }
-        entry.updated_at = now.timestamp();
-        return true;
-    }
-
-    changed
-}
-
-fn is_remote_recoverable_task(entry: &TaskEntry) -> bool {
-    entry.kind == TASK_KIND_REMOTE_AGENT
-        || entry.remote_session_id.is_some()
-        || entry.remote_task_type.is_some()
-}
-
-fn is_remote_review_task(entry: &TaskEntry) -> bool {
-    entry.remote_task_type.as_deref() == Some(REMOTE_TASK_TYPE_ULTRAREVIEW)
-        || entry
-            .remote_task_metadata
-            .as_ref()
-            .and_then(|metadata| metadata.get("isRemoteReview"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-}
-
-fn remote_review_timed_out(entry: &TaskEntry, now_ms: i64) -> bool {
-    entry.status.is_active_for_output_wait()
-        && is_remote_review_task(entry)
-        && entry
-            .poll_started_at
-            .is_some_and(|started| now_ms.saturating_sub(started) > REMOTE_REVIEW_TIMEOUT_MS)
-}
-
-fn normalize_loaded_status(status: TaskStatus) -> TaskStatus {
-    match status {
-        TaskStatus::Stopped => TaskStatus::Cancelled,
-        other => other,
-    }
-}
-
-fn normalize_new_status(status: TaskStatus) -> TaskStatus {
-    match status {
-        TaskStatus::Stopped => TaskStatus::Cancelled,
-        other => other,
-    }
-}
 
 fn refresh_output_metadata(entry: &mut TaskEntry) {
     entry.output_bytes = entry.output.len();
@@ -372,7 +290,7 @@ fn remove_if_exists(path: &Path) -> Result<()> {
 // Task-list registry, locking, and migration live in tasks/lists.rs.
 
 fn plan_workflow_cwd() -> PathBuf {
-    let cwd = crate::bootstrap::state::original_cwd();
+    let cwd = cc_bootstrap::state::original_cwd();
     if !cwd.as_os_str().is_empty() {
         return cwd;
     }
@@ -385,9 +303,9 @@ fn plan_workflow_cwd() -> PathBuf {
 fn maybe_link_plan_workflow_task(
     ctx: &ToolUseContext,
     entry: &TaskEntry,
-) -> Result<Option<crate::plan_workflow::PlanWorkflowRecord>> {
+) -> Result<Option<cc_types::plan_workflow::PlanWorkflowRecord>> {
     let cwd = plan_workflow_cwd();
-    let existing = match crate::plan_workflow::load(&cwd) {
+    let existing = match cc_commands::plan_workflow::load(&cwd) {
         Ok(record) => record,
         Err(err) => {
             tracing::warn!(
@@ -400,12 +318,12 @@ fn maybe_link_plan_workflow_task(
     let persist_cwd = cwd.clone();
     let task_id = entry.id.clone();
     let summary = Some(entry.subject.clone());
-    let slot: Arc<Mutex<Option<Option<crate::plan_workflow::PlanWorkflowRecord>>>> =
+    let slot: Arc<Mutex<Option<Option<cc_types::plan_workflow::PlanWorkflowRecord>>>> =
         Arc::new(Mutex::new(None));
     let slot_for_update = Arc::clone(&slot);
 
     (ctx.set_app_state)(Box::new(move |mut state| {
-        let linked = crate::plan_workflow::maybe_link_implementation_task_state(
+        let linked = cc_commands::plan_workflow::maybe_link_implementation_task_state(
             &mut state,
             &cwd,
             existing,
@@ -420,7 +338,7 @@ fn maybe_link_plan_workflow_task(
 
     let record = slot.lock().clone().unwrap_or(None);
     if let Some(record) = &record {
-        crate::plan_workflow::persist(&persist_cwd, record)?;
+        cc_commands::plan_workflow::persist(&persist_cwd, record)?;
     }
     Ok(record)
 }

@@ -9,8 +9,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::config::features::{self, Feature};
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_config::features::{self, Feature};
 
 pub struct AssistantHandler;
 
@@ -56,8 +56,8 @@ impl CommandHandler for AssistantHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {

@@ -1,8 +1,8 @@
 use crossterm::event::KeyEvent;
 
-use crate::types::app_state::AppState;
 use crate::ui::command_surface::CommandSurfaceOutcome;
 use crate::ui::form_navigation::{FormOption, FormTab, TabbedFormEvent, TabbedFormState};
+use cc_engine::types::app_state::AppState;
 
 #[path = "sandbox_tabs.rs"]
 mod sandbox_tabs;

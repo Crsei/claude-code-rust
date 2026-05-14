@@ -166,7 +166,7 @@ fn status(ctx: &cc_commands::CommandContext) -> String {
 }
 
 fn list_teams() -> String {
-    let teams_root = crate::config::paths::teams_dir();
+    let teams_root = cc_config::paths::teams_dir();
     if !teams_root.exists() {
         return "No teams on disk yet.".into();
     }

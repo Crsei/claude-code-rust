@@ -422,9 +422,9 @@ fn handle_uninstall(plugin_id: &str, purge: bool) -> Result<CommandResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
     use crate::plugins::{PluginEntry, PluginSource, PluginStatus};
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {

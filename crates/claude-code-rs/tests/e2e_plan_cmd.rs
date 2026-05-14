@@ -23,10 +23,10 @@ fn read_source(rel: &str) -> String {
 
 #[test]
 fn plan_command_module_is_declared() {
-    let src = read_source("crates/claude-code-rs/src/commands/mod.rs");
+    let src = read_source("crates/cc-commands/src/lib.rs");
     assert!(
         src.contains("pub mod plan;"),
-        "commands::plan module must be declared in commands/mod.rs"
+        "cc-commands must own and expose the plan command module"
     );
 }
 
@@ -38,14 +38,14 @@ fn plan_command_is_registered_in_get_all_commands() {
         "/plan command must have a registry entry"
     );
     assert!(
-        src.contains("plan::PlanHandler"),
-        "/plan entry must wire PlanHandler"
+        src.contains("cc_commands::plan::PlanHandler"),
+        "/plan entry must wire the cc-commands PlanHandler"
     );
 }
 
 #[test]
 fn plan_handler_covers_expected_subcommands() {
-    let src = read_source("crates/claude-code-rs/src/commands/plan.rs");
+    let src = read_source("crates/cc-commands/src/plan.rs");
     for token in [
         "\"show\"",
         "\"view\"",
@@ -67,7 +67,7 @@ fn plan_handler_covers_expected_subcommands() {
 
 #[test]
 fn plan_handler_uses_pre_plan_mode_handshake() {
-    let src = read_source("crates/claude-code-rs/src/plan_workflow.rs");
+    let src = read_source("crates/cc-commands/src/plan_workflow.rs");
     assert!(
         src.contains("pre_plan_mode"),
         "plan workflow service must save pre_plan_mode so ExitPlanMode can restore"
@@ -99,7 +99,7 @@ fn plan_path_helpers_are_publicly_exposed() {
 
 #[test]
 fn plan_handler_delegates_to_external_editor_util() {
-    let src = read_source("crates/claude-code-rs/src/commands/plan.rs");
+    let src = read_source("crates/cc-commands/src/plan.rs");
     assert!(
         src.contains("ensure_and_open"),
         "/plan open must delegate to the shared ensure_and_open editor util"

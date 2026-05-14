@@ -14,8 +14,10 @@ use parking_lot::RwLock;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::types::message::AssistantMessage;
-use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools, ValidationResult};
+use cc_engine::types::tool::{
+    Tool, ToolProgress, ToolResult, ToolUseContext, Tools, ValidationResult,
+};
+use cc_types::message::AssistantMessage;
 
 const DEFAULT_LIMIT: usize = 8;
 const MAX_LIMIT: usize = 50;
@@ -1114,9 +1116,9 @@ const STOP_WORDS: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::message::AssistantMessage;
-    use crate::types::tool::ValidationResult;
+    use cc_engine::types::tool::ValidationResult;
     use cc_skills::{SkillContext, SkillDefinition, SkillFrontmatter, SkillSource};
+    use cc_types::message::AssistantMessage;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[derive(Clone)]

@@ -17,16 +17,16 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-use crate::engine::lifecycle::QueryEngine;
+use cc_engine::lifecycle::QueryEngine;
 use cc_tasks::{TaskCreateOptions, TaskEntry, TaskStatus};
 
 use crate::tools::tasks::global_store;
-use crate::types::config::{QueryEngineConfig, QuerySource};
-use crate::types::tool::*;
-use crate::utils::bash::validate_working_directory;
 use crate::worktree_hooks::{
     default_agent_worktree_path, ensure_worktree_parent, run_worktree_create_hook,
 };
+use cc_engine::types::config::{QueryEngineConfig, QuerySource};
+use cc_engine::types::tool::*;
+use cc_utils::bash::validate_working_directory;
 
 use super::{
     build_child_config, count_worktree_changes, find_git_root, get_head_sha, sdk_to_agent_event,
@@ -348,9 +348,9 @@ impl AgentRuntime {
             };
 
             match &msg {
-                crate::engine::sdk_types::SdkMessage::Assistant(assistant_msg) => {
+                cc_types::sdk::SdkMessage::Assistant(assistant_msg) => {
                     for block in &assistant_msg.message.content {
-                        if let crate::types::message::ContentBlock::Text { text } = block {
+                        if let cc_types::message::ContentBlock::Text { text } = block {
                             if !result_text.is_empty() {
                                 result_text.push('\n');
                             }
@@ -358,7 +358,7 @@ impl AgentRuntime {
                         }
                     }
                 }
-                crate::engine::sdk_types::SdkMessage::Result(sdk_result) => {
+                cc_types::sdk::SdkMessage::Result(sdk_result) => {
                     if sdk_result.is_error {
                         had_error = true;
                         if !sdk_result.result.is_empty() {

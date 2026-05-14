@@ -31,11 +31,15 @@ use tokio_util::io::StreamReader;
 use tracing::{debug, info, warn};
 use url::Url;
 
+use cc_types::mcp::{
+    CLIENT_NAME, CLIENT_VERSION, CONNECT_TIMEOUT_SECS, PROTOCOL_VERSION, TOOL_CALL_TIMEOUT_SECS,
+};
+
 use super::{
     CallToolResult, InitializeResult, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
-    ListResourcesResult, ListToolsResult, McpConnectionState, McpResource, McpServerConfig,
-    McpToolDef, ReadResourceResult, ServerCapabilities, ServerInfo, ToolCallContent, CLIENT_NAME,
-    CLIENT_VERSION, CONNECT_TIMEOUT_SECS, PROTOCOL_VERSION, TOOL_CALL_TIMEOUT_SECS,
+    ListResourcesResult, ListToolsResult, McpConnectionState, McpResource, McpRuntimeContext,
+    McpServerConfig, McpToolDef, ReadResourceResult, ServerCapabilities, ServerInfo,
+    SharedMcpEventSink, ToolCallContent,
 };
 
 use super::transport::{
@@ -113,11 +117,16 @@ pub struct McpClient {
     pub(crate) next_id: Arc<AtomicU64>,
     /// Pending requests: id -> oneshot sender for the response.
     pending: PendingRequests,
+    runtime: McpRuntimeContext,
 }
 
 impl McpClient {
     /// Create a new MCP client for the given server configuration.
     pub fn new(config: McpServerConfig) -> Self {
+        Self::with_runtime(config, McpRuntimeContext::new())
+    }
+
+    pub fn with_runtime(config: McpServerConfig, runtime: McpRuntimeContext) -> Self {
         Self {
             config,
             state: McpConnectionState::Pending,
@@ -133,6 +142,17 @@ impl McpClient {
             streamable_http_sender: None,
             next_id: Arc::new(AtomicU64::new(1)),
             pending: Arc::new(Mutex::new(HashMap::new())),
+            runtime,
+        }
+    }
+
+    pub fn set_event_sink(&mut self, event_sink: Option<SharedMcpEventSink>) {
+        self.runtime.set_event_sink(event_sink.clone());
+        if let Some(sender) = &mut self.sse_sender {
+            sender.set_event_sink(event_sink.clone());
+        }
+        if let Some(sender) = &mut self.streamable_http_sender {
+            sender.set_event_sink(event_sink);
         }
     }
 
@@ -155,11 +175,12 @@ impl McpClient {
             } else {
                 "error"
             };
-            super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
-                server_name: self.config.name.clone(),
-                state: state.to_string(),
-                error: Some(e.to_string()),
-            });
+            self.runtime
+                .emit_event(super::McpSubsystemEvent::ServerStateChanged {
+                    server_name: self.config.name.clone(),
+                    state: state.to_string(),
+                    error: Some(e.to_string()),
+                });
         }
 
         result
@@ -226,19 +247,21 @@ impl McpClient {
         // Start background reader task
         let pending = self.pending.clone();
         let server_name = self.config.name.clone();
+        let runtime = self.runtime.clone();
         let reader_handle = tokio::spawn(async move {
-            reader_loop(stdout, pending, server_name).await;
+            reader_loop(stdout, pending, server_name, runtime).await;
         });
         self.reader_handle = Some(reader_handle);
 
         self.child = Some(child);
         self.state = McpConnectionState::Connected;
 
-        super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
-            server_name: self.config.name.clone(),
-            state: "connected".to_string(),
-            error: None,
-        });
+        self.runtime
+            .emit_event(super::McpSubsystemEvent::ServerStateChanged {
+                server_name: self.config.name.clone(),
+                state: "connected".to_string(),
+                error: None,
+            });
 
         debug!(server = %self.config.name, "MCP: stdio server connected");
         Ok(())
@@ -259,11 +282,12 @@ impl McpClient {
         let base_target = SseConnectTarget::parse(url)?;
         let headers = normalized_http_transport_headers_with_auth(&self.config).await?;
 
-        super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
-            server_name: self.config.name.clone(),
-            state: "connecting".to_string(),
-            error: None,
-        });
+        self.runtime
+            .emit_event(super::McpSubsystemEvent::ServerStateChanged {
+                server_name: self.config.name.clone(),
+                state: "connecting".to_string(),
+                error: None,
+            });
 
         info!(
             server = %self.config.name,
@@ -275,8 +299,12 @@ impl McpClient {
             SseConnectTarget::Loopback(target) => {
                 let reader =
                     connect_loopback_sse_stream(target, &headers, &self.config.name).await?;
-                let (handle, rx) =
-                    spawn_sse_reader(reader, self.pending.clone(), self.config.name.clone());
+                let (handle, rx) = spawn_sse_reader(
+                    reader,
+                    self.pending.clone(),
+                    self.config.name.clone(),
+                    self.runtime.clone(),
+                );
                 (handle, rx, None)
             }
             SseConnectTarget::RemoteHttps(target) => {
@@ -288,8 +316,12 @@ impl McpClient {
                     &self.config.name,
                 )
                 .await?;
-                let (handle, rx) =
-                    spawn_sse_reader(reader, self.pending.clone(), self.config.name.clone());
+                let (handle, rx) = spawn_sse_reader(
+                    reader,
+                    self.pending.clone(),
+                    self.config.name.clone(),
+                    self.runtime.clone(),
+                );
                 (handle, rx, Some(http_client))
             }
         };
@@ -302,15 +334,17 @@ impl McpClient {
             headers,
             server_name: self.config.name.clone(),
             http_client: remote_http_client,
+            runtime: self.runtime.clone(),
         });
         self.reader_handle = Some(reader_handle);
         self.state = McpConnectionState::Connected;
 
-        super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
-            server_name: self.config.name.clone(),
-            state: "connected".to_string(),
-            error: None,
-        });
+        self.runtime
+            .emit_event(super::McpSubsystemEvent::ServerStateChanged {
+                server_name: self.config.name.clone(),
+                state: "connected".to_string(),
+                error: None,
+            });
 
         debug!(server = %self.config.name, "MCP: SSE server connected");
         Ok(())
@@ -334,11 +368,12 @@ impl McpClient {
         let headers = normalized_http_transport_headers_with_auth(&self.config).await?;
         let http_client = streamable_http_client(&target)?;
 
-        super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
-            server_name: self.config.name.clone(),
-            state: "connecting".to_string(),
-            error: None,
-        });
+        self.runtime
+            .emit_event(super::McpSubsystemEvent::ServerStateChanged {
+                server_name: self.config.name.clone(),
+                state: "connecting".to_string(),
+                error: None,
+            });
 
         info!(
             server = %self.config.name,
@@ -352,14 +387,16 @@ impl McpClient {
             self.config.name.clone(),
             http_client,
             self.pending.clone(),
+            self.runtime.clone(),
         ));
         self.state = McpConnectionState::Connected;
 
-        super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
-            server_name: self.config.name.clone(),
-            state: "connected".to_string(),
-            error: None,
-        });
+        self.runtime
+            .emit_event(super::McpSubsystemEvent::ServerStateChanged {
+                server_name: self.config.name.clone(),
+                state: "connected".to_string(),
+                error: None,
+            });
 
         debug!(server = %self.config.name, "MCP: Streamable HTTP server ready");
         Ok(())
@@ -469,11 +506,12 @@ impl McpClient {
 
         self.state = McpConnectionState::Disconnected;
 
-        super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
-            server_name: self.config.name.clone(),
-            state: "disconnected".to_string(),
-            error: None,
-        });
+        self.runtime
+            .emit_event(super::McpSubsystemEvent::ServerStateChanged {
+                server_name: self.config.name.clone(),
+                state: "disconnected".to_string(),
+                error: None,
+            });
     }
 
     // -----------------------------------------------------------------------
@@ -507,18 +545,19 @@ impl McpClient {
 
         self.tools = tools.clone();
 
-        super::emit_event(super::McpSubsystemEvent::ToolsDiscovered {
-            server_name: self.config.name.clone(),
-            tools: self
-                .tools
-                .iter()
-                .map(|t| super::McpToolInfo {
-                    server_name: self.config.name.clone(),
-                    tool_name: t.name.clone(),
-                    description: t.description.clone(),
-                })
-                .collect(),
-        });
+        self.runtime
+            .emit_event(super::McpSubsystemEvent::ToolsDiscovered {
+                server_name: self.config.name.clone(),
+                tools: self
+                    .tools
+                    .iter()
+                    .map(|t| super::McpToolInfo {
+                        server_name: self.config.name.clone(),
+                        tool_name: t.name.clone(),
+                        description: t.description.clone(),
+                    })
+                    .collect(),
+            });
 
         Ok(tools)
     }
@@ -589,20 +628,21 @@ impl McpClient {
 
         self.resources = result.resources.clone();
 
-        super::emit_event(super::McpSubsystemEvent::ResourcesDiscovered {
-            server_name: self.config.name.clone(),
-            resources: self
-                .resources
-                .iter()
-                .map(|r| super::McpResourceInfo {
-                    server_name: self.config.name.clone(),
-                    uri: r.uri.clone(),
-                    name: r.name.clone(),
-                    description: None,
-                    mime_type: r.mime_type.clone(),
-                })
-                .collect(),
-        });
+        self.runtime
+            .emit_event(super::McpSubsystemEvent::ResourcesDiscovered {
+                server_name: self.config.name.clone(),
+                resources: self
+                    .resources
+                    .iter()
+                    .map(|r| super::McpResourceInfo {
+                        server_name: self.config.name.clone(),
+                        uri: r.uri.clone(),
+                        name: r.name.clone(),
+                        description: None,
+                        mime_type: r.mime_type.clone(),
+                    })
+                    .collect(),
+            });
 
         Ok(result.resources)
     }
@@ -827,7 +867,7 @@ impl StreamableHttpTarget {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct StreamableHttpSender {
     target: StreamableHttpTarget,
     headers: Vec<(String, String)>,
@@ -836,6 +876,7 @@ struct StreamableHttpSender {
     pending: PendingRequests,
     session_id: Arc<Mutex<Option<String>>>,
     protocol_version: Arc<Mutex<String>>,
+    runtime: McpRuntimeContext,
 }
 
 impl StreamableHttpSender {
@@ -845,6 +886,7 @@ impl StreamableHttpSender {
         server_name: String,
         http_client: reqwest::Client,
         pending: PendingRequests,
+        runtime: McpRuntimeContext,
     ) -> Self {
         Self {
             target,
@@ -854,7 +896,12 @@ impl StreamableHttpSender {
             pending,
             session_id: Arc::new(Mutex::new(None)),
             protocol_version: Arc::new(Mutex::new(STREAMABLE_HTTP_PROTOCOL_VERSION.to_string())),
+            runtime,
         }
+    }
+
+    fn set_event_sink(&mut self, event_sink: Option<SharedMcpEventSink>) {
+        self.runtime.set_event_sink(event_sink);
     }
 
     async fn set_protocol_version(&self, protocol_version: String) {
@@ -883,7 +930,7 @@ impl StreamableHttpSender {
             )
         })?;
         self.capture_session_id(response.headers()).await?;
-        handle_streamable_http_status(response.status(), &self.server_name)?;
+        handle_streamable_http_status(response.status(), &self.server_name, &self.runtime)?;
 
         if response.status() == StatusCode::ACCEPTED {
             if expected_id.is_some() {
@@ -903,6 +950,7 @@ impl StreamableHttpSender {
                 self.pending.clone(),
                 &self.server_name,
                 expected_id,
+                &self.runtime,
             )
             .await
         } else {
@@ -917,6 +965,7 @@ impl StreamableHttpSender {
                 self.pending.clone(),
                 &self.server_name,
                 expected_id,
+                &self.runtime,
             )
             .await
             .map(|_| ())
@@ -940,7 +989,7 @@ impl StreamableHttpSender {
 
         match response.status() {
             StatusCode::METHOD_NOT_ALLOWED | StatusCode::NOT_FOUND => return Ok(None),
-            status => handle_streamable_http_status(status, &self.server_name)?,
+            status => handle_streamable_http_status(status, &self.server_name, &self.runtime)?,
         }
 
         if !is_event_stream_response(response.headers()) {
@@ -954,8 +1003,9 @@ impl StreamableHttpSender {
         let reader = BufReader::new(StreamReader::new(body_stream));
         let pending = self.pending.clone();
         let server_name = self.server_name.clone();
+        let runtime = self.runtime.clone();
         let handle = tokio::spawn(async move {
-            streamable_http_sse_reader_loop(reader, pending, server_name).await;
+            streamable_http_sse_reader_loop(reader, pending, server_name, runtime).await;
         });
         Ok(Some(handle))
     }
@@ -978,7 +1028,7 @@ impl StreamableHttpSender {
         })?;
         match response.status() {
             StatusCode::METHOD_NOT_ALLOWED | StatusCode::NOT_FOUND => {}
-            status => handle_streamable_http_status(status, &self.server_name)?,
+            status => handle_streamable_http_status(status, &self.server_name, &self.runtime)?,
         }
         *self.session_id.lock().await = None;
         Ok(())
@@ -1029,6 +1079,7 @@ async fn process_streamable_http_event_stream<R>(
     pending: PendingRequests,
     server_name: &str,
     expected_id: Option<u64>,
+    runtime: &McpRuntimeContext,
 ) -> Result<()>
 where
     R: tokio::io::AsyncBufRead + Unpin,
@@ -1049,6 +1100,7 @@ where
                         &event_name,
                         &data_lines,
                         expected_id,
+                        runtime,
                     )
                     .await?;
                     event_name.clear();
@@ -1097,6 +1149,7 @@ async fn handle_streamable_http_sse_event(
     event_name: &str,
     data_lines: &[String],
     expected_id: Option<u64>,
+    runtime: &McpRuntimeContext,
 ) -> Result<bool> {
     if data_lines.is_empty() {
         return Ok(false);
@@ -1111,8 +1164,14 @@ async fn handle_streamable_http_sse_event(
                     server_name
                 )
             })?;
-            dispatch_streamable_http_json_message(value, pending.clone(), server_name, expected_id)
-                .await
+            dispatch_streamable_http_json_message(
+                value,
+                pending.clone(),
+                server_name,
+                expected_id,
+                runtime,
+            )
+            .await
         }
         other => {
             debug!(
@@ -1130,6 +1189,7 @@ async fn dispatch_streamable_http_json_message(
     pending: PendingRequests,
     server_name: &str,
     expected_id: Option<u64>,
+    runtime: &McpRuntimeContext,
 ) -> Result<bool> {
     if let Ok(response) = serde_json::from_value::<JsonRpcResponse>(value.clone()) {
         let matched = expected_id
@@ -1150,7 +1210,7 @@ async fn dispatch_streamable_http_json_message(
             server = %server_name,
             "MCP: routed Streamable HTTP server notification"
         );
-        super::emit_event(event);
+        runtime.emit_event(event);
         return Ok(false);
     }
 
@@ -1315,19 +1375,31 @@ impl RemoteSseHttpTarget {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct SseHttpSender {
     target: SsePostTarget,
     headers: Vec<(String, String)>,
     server_name: String,
     http_client: Option<reqwest::Client>,
+    runtime: McpRuntimeContext,
 }
 
 impl SseHttpSender {
+    fn set_event_sink(&mut self, event_sink: Option<SharedMcpEventSink>) {
+        self.runtime.set_event_sink(event_sink);
+    }
+
     async fn post_json(&self, body: &str) -> Result<()> {
         match &self.target {
             SsePostTarget::Loopback(target) => {
-                post_loopback_sse_json(target, &self.headers, &self.server_name, body).await
+                post_loopback_sse_json(
+                    target,
+                    &self.headers,
+                    &self.server_name,
+                    body,
+                    &self.runtime,
+                )
+                .await
             }
             SsePostTarget::RemoteHttps(target) => {
                 let http_client = self.http_client.as_ref().ok_or_else(|| {
@@ -1342,6 +1414,7 @@ impl SseHttpSender {
                     &self.headers,
                     &self.server_name,
                     body,
+                    &self.runtime,
                 )
                 .await
             }
@@ -1354,6 +1427,7 @@ async fn post_loopback_sse_json(
     headers: &[(String, String)],
     server_name: &str,
     body: &str,
+    runtime: &McpRuntimeContext,
 ) -> Result<()> {
     let mut stream = TcpStream::connect(target.socket_addr())
         .await
@@ -1377,7 +1451,7 @@ async fn post_loopback_sse_json(
     let status = read_http_response_head(&mut reader)
         .await
         .context("failed to read MCP SSE POST response headers")?;
-    handle_sse_post_status(StatusCode::from_u16(status)?, server_name)?;
+    handle_sse_post_status(StatusCode::from_u16(status)?, server_name, runtime)?;
 
     Ok(())
 }
@@ -1388,6 +1462,7 @@ async fn post_remote_https_sse_json(
     headers: &[(String, String)],
     server_name: &str,
     body: &str,
+    runtime: &McpRuntimeContext,
 ) -> Result<()> {
     let request = http_client
         .post(target.url.clone())
@@ -1400,7 +1475,7 @@ async fn post_remote_https_sse_json(
             server_name
         )
     })?;
-    handle_sse_post_status(response.status(), server_name)?;
+    handle_sse_post_status(response.status(), server_name, runtime)?;
 
     Ok(())
 }
@@ -1500,6 +1575,7 @@ fn spawn_sse_reader<R>(
     reader: R,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value>>>>>,
     server_name: String,
+    runtime: McpRuntimeContext,
 ) -> (
     tokio::task::JoinHandle<()>,
     oneshot::Receiver<Result<String>>,
@@ -1509,7 +1585,7 @@ where
 {
     let (endpoint_tx, endpoint_rx) = oneshot::channel();
     let reader_handle = tokio::spawn(async move {
-        sse_reader_loop(reader, pending, server_name, Some(endpoint_tx)).await;
+        sse_reader_loop(reader, pending, server_name, Some(endpoint_tx), runtime).await;
     });
     (reader_handle, endpoint_rx)
 }
@@ -1573,9 +1649,13 @@ fn handle_sse_event_stream_status(status: StatusCode, server_name: &str) -> Resu
     Ok(())
 }
 
-fn handle_sse_post_status(status: StatusCode, server_name: &str) -> Result<()> {
+fn handle_sse_post_status(
+    status: StatusCode,
+    server_name: &str,
+    runtime: &McpRuntimeContext,
+) -> Result<()> {
     if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-        super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
+        runtime.emit_event(super::McpSubsystemEvent::ServerStateChanged {
             server_name: server_name.to_string(),
             state: "auth-needed".to_string(),
             error: Some(
@@ -1609,9 +1689,13 @@ fn handle_sse_post_status(status: StatusCode, server_name: &str) -> Result<()> {
     Ok(())
 }
 
-fn handle_streamable_http_status(status: StatusCode, server_name: &str) -> Result<()> {
+fn handle_streamable_http_status(
+    status: StatusCode,
+    server_name: &str,
+    runtime: &McpRuntimeContext,
+) -> Result<()> {
     if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-        super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
+        runtime.emit_event(super::McpSubsystemEvent::ServerStateChanged {
             server_name: server_name.to_string(),
             state: "auth-needed".to_string(),
             error: Some(

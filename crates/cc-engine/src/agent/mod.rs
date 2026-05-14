@@ -6,6 +6,7 @@
 //! runs the provided prompt through it, and returns the result to the parent.
 //! This enables delegation of complex, multi-step tasks to specialized subagents.
 
+pub(crate) mod builtin_agents;
 mod dispatch;
 pub mod fork;
 pub mod supervisor;
@@ -174,12 +175,12 @@ async fn count_worktree_changes(
 /// Convert an SdkMessage to an AgentEvent for IPC forwarding.
 /// Returns None for messages that don't map to agent events.
 pub(crate) fn sdk_to_agent_event(
-    sdk_msg: &crate::sdk_types::SdkMessage,
+    sdk_msg: &cc_types::sdk::SdkMessage,
     agent_id: &str,
 ) -> Option<cc_types::agent_events::AgentEvent> {
-    use crate::sdk_types::SdkMessage;
     use crate::types::message::{ContentBlock, StreamEvent, ToolResultContent};
     use cc_types::agent_events::AgentEvent;
+    use cc_types::sdk::SdkMessage;
 
     match sdk_msg {
         SdkMessage::StreamEvent(evt) => match &evt.event {
@@ -480,10 +481,10 @@ fn tool_matches_spec(tool_name: &str, spec: &str) -> bool {
 /// When `ipc` is provided (sender + agent_id), intermediate streaming events
 /// are forwarded through the agent IPC channel via [`sdk_to_agent_event`].
 async fn collect_stream_result(
-    stream: std::pin::Pin<Box<dyn futures::Stream<Item = crate::sdk_types::SdkMessage> + Send>>,
+    stream: std::pin::Pin<Box<dyn futures::Stream<Item = cc_types::sdk::SdkMessage> + Send>>,
     ipc: Option<(&cc_types::agent_channel::AgentSender, &str)>,
 ) -> (String, bool) {
-    use crate::sdk_types::SdkMessage;
+    use cc_types::sdk::SdkMessage;
     use futures::StreamExt;
 
     let mut stream = stream;

@@ -39,9 +39,6 @@ pub mod simplify;
 // Advisor model plumbing (issue #33)
 pub mod advisor;
 
-// Plan mode (issue #46)
-pub mod plan;
-
 // Scheduling / automation (issues #58, #60)
 pub mod loop_cmd;
 pub mod schedule;
@@ -237,7 +234,7 @@ pub fn get_all_commands() -> Vec<Command> {
             "plan",
             &[],
             "Enter plan mode and show or edit the plan file",
-            plan::PlanHandler,
+            cc_commands::plan::PlanHandler,
         ),
         command(
             "login",

@@ -39,11 +39,11 @@ pub struct StatusLineSnapshot<'a> {
     pub api_calls: u64,
     pub session_duration_secs: Option<u64>,
     /// Pre-resolved canonical output-style name. Callers compute this by
-    /// calling `crate::engine::output_style::resolve(style, cwd).name()`.
+    /// calling `cc_engine::output_style::resolve(style, cwd).name()`.
     pub resolved_output_style_name: Option<String>,
     pub editor_mode: Option<&'a str>,
     /// Pre-built worktree status. Callers compute this from
-    /// `crate::tools::worktree::get_current_worktree_session()`.
+    /// the root worktree session tracker.
     pub worktree: Option<WorktreeStatus>,
     pub streaming: bool,
     pub message_count: usize,
@@ -92,7 +92,7 @@ pub fn model_info_from_runtime(model_id: &str, backend: Option<&str>) -> Option<
 }
 
 // `resolve_output_style_name` used to live here but touched
-// `crate::engine::output_style::resolve` in the root crate. Callers now
+// `cc_engine::output_style::resolve`. Callers now
 // pre-resolve the canonical name and pass it via
 // `StatusLineSnapshot::resolved_output_style_name`.
 
@@ -157,8 +157,8 @@ pub fn workspace_status_from_path(cwd: &Path) -> Option<WorkspaceStatus> {
     })
 }
 
-// `current_worktree_status` used to live here but read the
-// `crate::tools::worktree::get_current_worktree_session()` global.
+// `current_worktree_status` used to live here but read the root worktree
+// session tracker.
 // Callers now build a `WorktreeStatus` themselves and pass it via
 // `StatusLineSnapshot::worktree`.
 

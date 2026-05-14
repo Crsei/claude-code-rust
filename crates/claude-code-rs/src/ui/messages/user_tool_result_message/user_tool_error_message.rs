@@ -1,6 +1,5 @@
 //! Render output for tool-use error blocks.
 
-use crate::types::tool::Tool;
 use crate::ui::messages::user_tool_result_message::{
     rejected_plan_message::render_rejected_plan_message,
     utils::{
@@ -9,6 +8,7 @@ use crate::ui::messages::user_tool_result_message::{
     },
 };
 use crate::ui::theme::Theme;
+use cc_engine::types::tool::Tool;
 use ratatui::text::{Line, Span};
 use serde_json::Value;
 

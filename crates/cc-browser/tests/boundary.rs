@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::Path;
+
 #[test]
 fn browser_crate_owns_browser_tool_detection_and_rendering() {
     let (server, action) =
@@ -15,14 +18,13 @@ fn browser_crate_owns_browser_tool_detection_and_rendering() {
 }
 
 #[test]
-fn browser_bridge_uses_mcp_protocol_without_reversing_dependency() {
-    assert_eq!(cc_mcp::PROTOCOL_VERSION, "2024-11-05");
+fn browser_bridge_uses_mcp_contract_without_runtime_dependency() {
+    assert_eq!(cc_types::mcp::PROTOCOL_VERSION, "2024-11-05");
 
-    let config: cc_mcp::McpServerConfig = serde_json::from_value(serde_json::json!({
-        "type": "stdio",
-        "command": "claude-browser",
-        "browserMcp": true
-    }))
-    .unwrap();
-    assert_eq!(config.browser_mcp, Some(true));
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let manifest = fs::read_to_string(manifest_dir.join("Cargo.toml")).unwrap();
+    assert!(
+        !manifest.contains("cc-mcp"),
+        "cc-browser must not depend on cc-mcp runtime; browser bridge uses cc-types MCP contracts"
+    );
 }

@@ -8,8 +8,8 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 
-use crate::types::message::{Message, MessageContent};
 use crate::ui::history_search_dialog::HistorySearchEntry;
+use cc_types::message::{Message, MessageContent};
 
 const MAX_PERSISTENT_HISTORY: usize = 200;
 
@@ -74,7 +74,7 @@ fn prompt_from_message(message: Message) -> Option<(String, i64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::message::UserMessage;
+    use cc_types::message::UserMessage;
     use uuid::Uuid;
 
     #[test]

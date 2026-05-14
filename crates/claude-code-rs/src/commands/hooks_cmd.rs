@@ -27,12 +27,12 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use crate::config::settings::{
+use crate::ui::browser::{ensure_and_open, format_open_outcome, render_with_footer, TreeNode};
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_config::settings::{
     load_effective, local_settings_path, managed_settings_path, project_settings_path,
     user_settings_path, SettingsSource,
 };
-use crate::ui::browser::{ensure_and_open, format_open_outcome, render_with_footer, TreeNode};
-use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 /// Recognised hook event names the tree groups on. Unknown events are still
 /// rendered — this list only controls the display order and helps us render
@@ -319,8 +319,8 @@ fn usage_layers() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use serde_json::json;
     use std::path::PathBuf;
 

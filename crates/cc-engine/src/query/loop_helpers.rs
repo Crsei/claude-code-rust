@@ -674,7 +674,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::time::Duration;
 
-    use crate::query::deps::{CompactionResult, ModelCallParams, ModelResponse};
+    use super::super::deps::{CompactionResult, ModelCallParams, ModelResponse};
     use crate::types::app_state::AppState;
     use crate::types::message::{StreamEvent, Usage};
     use crate::types::state::AutoCompactTracking;

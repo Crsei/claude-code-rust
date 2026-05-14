@@ -5,7 +5,15 @@ edition = "2021"
 description = "KAIROS daemon: HTTP/SSE server, proactive tick, webhooks, team-memory proxy. Phase 7 workspace split (scaffold)."
 
 [dependencies]
+anyhow = { workspace = true }
+axum = { workspace = true }
 cc-types = { workspace = true }
 chrono = { workspace = true }
+futures = { workspace = true }
+mime_guess = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+serial_test = { workspace = true }
+tempfile = { workspace = true }

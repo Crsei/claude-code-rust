@@ -1,7 +1,7 @@
-use crate::config::settings::StatusLineSettings;
 use crate::ui::status_line::{
     build_payload_from_snapshot, payload, StatusLinePayload, StatusLineRunner, StatusLineSnapshot,
 };
+use cc_config::settings::StatusLineSettings;
 
 use super::App;
 /// Subset of engine usage-tracking relevant to the status-line payload.
@@ -51,7 +51,10 @@ impl App {
     /// Mirror runtime-only settings into the built-in footer. The custom
     /// status-line payload has richer JSON; these labels keep the fallback
     /// footer useful when no command status line is configured.
-    pub fn sync_status_context_from_state(&mut self, state: &crate::types::app_state::AppState) {
+    pub fn sync_status_context_from_state(
+        &mut self,
+        state: &cc_engine::types::app_state::AppState,
+    ) {
         let permission_mode = state.tool_permission_context.mode.as_str().to_string();
         let sandbox = sandbox_label(&state.settings.sandbox);
         let effort = state
@@ -131,7 +134,7 @@ impl App {
     }
 }
 
-fn remote_indicator_label(state: &crate::types::app_state::AppState) -> Option<String> {
+fn remote_indicator_label(state: &cc_engine::types::app_state::AppState) -> Option<String> {
     if !state.kairos_active {
         return Some("off".to_string());
     }
@@ -139,7 +142,7 @@ fn remote_indicator_label(state: &crate::types::app_state::AppState) -> Option<S
     Some("attention".to_string())
 }
 
-fn sandbox_label(settings: &crate::config::settings::SandboxSettings) -> String {
+fn sandbox_label(settings: &cc_config::settings::SandboxSettings) -> String {
     if !settings.enabled.unwrap_or(false) {
         return "off".to_string();
     }

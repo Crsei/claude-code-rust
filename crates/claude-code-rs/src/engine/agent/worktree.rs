@@ -7,18 +7,18 @@ use serde_json::json;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::types::config::QuerySource;
-use crate::types::tool::*;
+use cc_engine::types::config::QuerySource;
+use cc_engine::types::tool::*;
 
 use super::{
     build_child_config, collect_stream_result, count_worktree_changes, find_git_root, get_head_sha,
     AgentInput, AgentTool,
 };
-use crate::engine::lifecycle::QueryEngine;
 use crate::worktree_hooks::{
     default_agent_worktree_path, ensure_worktree_parent, run_worktree_create_hook,
     run_worktree_remove_hook, validate_allowed_worktree_path, WorktreeRemoveHookOutcome,
 };
+use cc_engine::lifecycle::QueryEngine;
 
 impl AgentTool {
     /// Run the agent inside an isolated git worktree.

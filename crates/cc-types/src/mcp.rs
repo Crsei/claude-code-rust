@@ -1,5 +1,20 @@
 use serde::{Deserialize, Serialize};
 
+/// MCP protocol version used by stdio MCP peers.
+pub const PROTOCOL_VERSION: &str = "2024-11-05";
+
+/// Client name advertised by cc-rust MCP clients.
+pub const CLIENT_NAME: &str = "claude-code-rs";
+
+/// Client version advertised by cc-rust MCP clients.
+pub const CLIENT_VERSION: &str = "0.1.0";
+
+/// Default connection and initialization timeout in seconds.
+pub const CONNECT_TIMEOUT_SECS: u64 = 30;
+
+/// Default tool-call timeout in seconds.
+pub const TOOL_CALL_TIMEOUT_SECS: u64 = 300;
+
 /// OAuth configuration for an MCP server.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpOAuthConfig {

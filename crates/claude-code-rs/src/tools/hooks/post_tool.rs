@@ -5,11 +5,10 @@ use serde_json::Value;
 use tracing::{debug, warn};
 
 use super::execution::execute_command_hook;
-use super::{
-    load_hook_configs, matches_tool, HookEntry, HookEventConfig, HookOutput, PostToolHookResult,
-};
+use super::{HookEntry, HookEventConfig, HookOutput, PostToolHookResult};
 #[cfg(test)]
-use crate::types::tool::ToolResult;
+use cc_engine::types::tool::ToolResult;
+use cc_types::hooks::{load_hook_configs, matches_tool};
 
 /// Value-only variant of [`run_post_tool_hooks`] used by `ShellHookRunner`.
 ///

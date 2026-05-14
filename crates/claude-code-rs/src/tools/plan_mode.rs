@@ -19,8 +19,8 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use crate::types::message::AssistantMessage;
-use crate::types::tool::*;
+use cc_engine::types::tool::*;
+use cc_types::message::AssistantMessage;
 
 // ---------------------------------------------------------------------------
 // EnterPlanMode
@@ -85,7 +85,7 @@ impl Tool for EnterPlanModeTool {
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
         let record = mutate_plan_workflow(ctx, plan_cwd(), |state, cwd, existing| {
-            crate::plan_workflow::enter_plan_mode_state(
+            cc_commands::plan_workflow::enter_plan_mode_state(
                 state, cwd, existing, "main", "tool", None, None,
             )
         })?;
@@ -219,7 +219,9 @@ impl Tool for ExitPlanModeTool {
         };
 
         match mutate_plan_workflow(ctx, plan_cwd(), move |state, cwd, existing| {
-            crate::plan_workflow::request_approval_state(state, cwd, existing, "main", "tool", plan)
+            cc_commands::plan_workflow::request_approval_state(
+                state, cwd, existing, "main", "tool", plan,
+            )
         }) {
             Ok(record) => PermissionResult::Ask {
                 message: if allowed_prompt_count == 0 {
@@ -259,7 +261,7 @@ impl Tool for ExitPlanModeTool {
             let plan_for_record = (!plan.is_empty()).then(|| plan.clone());
             let rules_for_state = allowed_prompt_rules.clone();
             move |state, cwd, existing| {
-                let record = crate::plan_workflow::approve_and_exit_state(
+                let record = cc_commands::plan_workflow::approve_and_exit_state(
                     state,
                     cwd,
                     existing,
@@ -438,7 +440,7 @@ fn push_unique_rule(rules: &mut Vec<String>, rule: String) {
 }
 
 fn plan_cwd() -> PathBuf {
-    let cwd = crate::bootstrap::state::original_cwd();
+    let cwd = cc_bootstrap::state::original_cwd();
     if !cwd.as_os_str().is_empty() {
         return cwd;
     }
@@ -473,17 +475,17 @@ fn mutate_plan_workflow<F>(
     ctx: &ToolUseContext,
     cwd: PathBuf,
     f: F,
-) -> Result<crate::plan_workflow::PlanWorkflowRecord>
+) -> Result<cc_types::plan_workflow::PlanWorkflowRecord>
 where
     F: FnOnce(
-            &mut crate::types::app_state::AppState,
+            &mut cc_engine::types::app_state::AppState,
             &Path,
-            Option<crate::plan_workflow::PlanWorkflowRecord>,
-        ) -> crate::plan_workflow::PlanWorkflowRecord
+            Option<cc_types::plan_workflow::PlanWorkflowRecord>,
+        ) -> cc_types::plan_workflow::PlanWorkflowRecord
         + 'static,
 {
-    let existing = crate::plan_workflow::load(&cwd)?;
-    let slot: Arc<Mutex<Option<crate::plan_workflow::PlanWorkflowRecord>>> =
+    let existing = cc_commands::plan_workflow::load(&cwd)?;
+    let slot: Arc<Mutex<Option<cc_types::plan_workflow::PlanWorkflowRecord>>> =
         Arc::new(Mutex::new(None));
     let slot_for_update = Arc::clone(&slot);
     let persist_cwd = cwd.clone();
@@ -499,7 +501,7 @@ where
         .expect("plan workflow slot poisoned")
         .clone()
         .expect("plan workflow update should set record");
-    crate::plan_workflow::persist(&persist_cwd, &record)?;
+    cc_commands::plan_workflow::persist(&persist_cwd, &record)?;
     Ok(record)
 }
 
@@ -510,7 +512,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::app_state::AppState;
+    use cc_engine::types::app_state::AppState;
     use parking_lot::RwLock;
     use std::sync::Arc;
 
@@ -560,7 +562,7 @@ mod tests {
             let dir = tempfile::tempdir().expect("tempdir");
             std::fs::create_dir_all(dir.path().join(".cc-rust"))
                 .expect("create project config dir");
-            let mut process_state = crate::bootstrap::PROCESS_STATE.write();
+            let mut process_state = cc_bootstrap::PROCESS_STATE.write();
             let previous = process_state.original_cwd.clone();
             process_state.original_cwd = dir.path().to_path_buf();
             drop(process_state);
@@ -573,7 +575,7 @@ mod tests {
 
     impl Drop for PlanCwdGuard {
         fn drop(&mut self) {
-            crate::bootstrap::PROCESS_STATE.write().original_cwd = self.previous.clone();
+            cc_bootstrap::PROCESS_STATE.write().original_cwd = self.previous.clone();
         }
     }
 

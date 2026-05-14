@@ -137,7 +137,7 @@ pub struct MarketplaceEntry {
 /// └── installed_plugins.json       ->installation metadata
 /// ```
 pub fn plugins_dir() -> PathBuf {
-    crate::config::paths::plugins_dir()
+    cc_config::paths::plugins_dir()
 }
 
 pub fn cache_dir() -> PathBuf {
@@ -542,7 +542,7 @@ pub fn init_plugins() {
 }
 
 /// Discover executable runtime tools contributed by enabled plugins.
-pub fn discover_plugin_tools() -> Vec<Arc<dyn crate::types::tool::Tool>> {
+pub fn discover_plugin_tools() -> Vec<Arc<dyn cc_engine::types::tool::Tool>> {
     let mut out = Vec::new();
 
     for plugin in get_enabled_plugins() {
@@ -572,7 +572,7 @@ pub fn discover_plugin_tools() -> Vec<Arc<dyn crate::types::tool::Tool>> {
                 plugin.id.clone(),
                 cache_path.clone(),
                 contributed,
-            )) as Arc<dyn crate::types::tool::Tool>);
+            )) as Arc<dyn cc_engine::types::tool::Tool>);
         }
     }
 
@@ -582,7 +582,7 @@ pub fn discover_plugin_tools() -> Vec<Arc<dyn crate::types::tool::Tool>> {
 /// Discover MCP server configs contributed by enabled plugins.
 ///
 /// These are loaded from each plugin's cached `plugin.json`.
-pub fn discover_plugin_mcp_servers() -> Vec<crate::mcp::McpServerConfig> {
+pub fn discover_plugin_mcp_servers() -> Vec<cc_mcp::McpServerConfig> {
     discover_plugin_mcp_servers_scoped()
         .into_iter()
         .map(|(_id, cfg)| cfg)
@@ -593,7 +593,7 @@ pub fn discover_plugin_mcp_servers() -> Vec<crate::mcp::McpServerConfig> {
 /// discovered server to its owning plugin.
 ///
 /// Returns `(plugin_id, config)` pairs.
-pub fn discover_plugin_mcp_servers_scoped() -> Vec<(String, crate::mcp::McpServerConfig)> {
+pub fn discover_plugin_mcp_servers_scoped() -> Vec<(String, cc_mcp::McpServerConfig)> {
     let mut out = Vec::new();
 
     for plugin in get_enabled_plugins() {
@@ -622,7 +622,7 @@ pub fn discover_plugin_mcp_servers_scoped() -> Vec<(String, crate::mcp::McpServe
             };
             out.push((
                 plugin.id.clone(),
-                crate::mcp::McpServerConfig {
+                cc_mcp::McpServerConfig {
                     name: mcp.name,
                     transport: "stdio".to_string(),
                     command: Some(mcp.command),
@@ -642,7 +642,7 @@ pub fn discover_plugin_mcp_servers_scoped() -> Vec<(String, crate::mcp::McpServe
 }
 
 /// Discover plugin-provided skill definitions from enabled plugins.
-pub fn discover_plugin_skills() -> Vec<crate::skills::SkillDefinition> {
+pub fn discover_plugin_skills() -> Vec<cc_skills::SkillDefinition> {
     let mut out = Vec::new();
 
     for plugin in get_enabled_plugins() {
@@ -665,20 +665,20 @@ pub fn discover_plugin_skills() -> Vec<crate::skills::SkillDefinition> {
 
         for contributed in manifest.skills {
             let skill_path = cache_path.join(&contributed.path);
-            let source = crate::skills::SkillSource::Plugin(plugin.id.clone());
+            let source = cc_skills::SkillSource::Plugin(plugin.id.clone());
 
-            let mut skill =
-                match crate::skills::loader::load_skill_from_file_path(&skill_path, source) {
-                    Some(s) => s,
-                    None => {
-                        warn!(
-                            plugin = %plugin.id,
-                            path = %skill_path.display(),
-                            "Plugin: failed to load contributed skill file"
-                        );
-                        continue;
-                    }
-                };
+            let mut skill = match cc_skills::loader::load_skill_from_file_path(&skill_path, source)
+            {
+                Some(s) => s,
+                None => {
+                    warn!(
+                        plugin = %plugin.id,
+                        path = %skill_path.display(),
+                        "Plugin: failed to load contributed skill file"
+                    );
+                    continue;
+                }
+            };
 
             // Manifest contribution name is treated as canonical registry name.
             skill.name = contributed.name;

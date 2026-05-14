@@ -11,15 +11,15 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::sandbox::{make_runner, policy_from_app_state, preflight_shell_command};
-use crate::types::message::AssistantMessage;
-use crate::types::tool::{
+use cc_engine::types::tool::{
     InterruptBehavior, PermissionResult, Tool, ToolProgress, ToolResult, ToolUseContext,
     ValidationResult,
 };
-use crate::utils::bash::resolve_timeout;
-use crate::utils::git_operation_tracking::track_git_operations_json;
-use crate::utils::shell::build_shell_env;
+use cc_sandbox::{make_runner, policy_from_app_state, preflight_shell_command};
+use cc_types::message::AssistantMessage;
+use cc_utils::bash::resolve_timeout;
+use cc_utils::git_operation_tracking::track_git_operations_json;
+use cc_utils::shell::build_shell_env;
 
 use super::bash::truncate_output;
 use super::powershell_parser;
@@ -236,7 +236,7 @@ impl Tool for PowerShellTool {
         if is_excluded && !policy.allow_unsandboxed_commands {
             return Ok(ToolResult {
                 data: json!({
-                    "error": crate::sandbox::SandboxError::EscapeHatchDisabled {
+                    "error": cc_sandbox::SandboxError::EscapeHatchDisabled {
                         command: command.clone()
                     }
                     .to_string(),
@@ -432,10 +432,10 @@ On Windows, uses powershell.exe; on other platforms, uses pwsh (PowerShell Core)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::app_state::AppState;
+    use cc_engine::types::app_state::AppState;
+    use cc_engine::types::tool::{FileStateCache, ToolUseOptions};
     #[cfg(windows)]
-    use crate::types::message::ContentBlock;
-    use crate::types::tool::{FileStateCache, ToolUseOptions};
+    use cc_types::message::ContentBlock;
     #[cfg(windows)]
     use uuid::Uuid;
 

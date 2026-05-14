@@ -146,9 +146,9 @@ fn stop(_ctx: &mut CommandContext) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::config::features::{self, FeatureFlags};
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_config::features::{self, FeatureFlags};
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
 
     struct EnvGuard {

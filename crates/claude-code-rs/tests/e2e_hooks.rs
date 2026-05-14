@@ -267,10 +267,14 @@ fn fixed_deps_execute_tool_runs_hooks() {
     let has_pre_hooks = source.contains("run_pre_tool_hooks");
     let has_post_hooks = source.contains("run_post_tool_hooks");
     let has_failure_hooks = source.contains("run_post_tool_failure_hooks");
-    let has_hook_import = source.contains("tools::hooks");
+    let has_hook_runner_contract =
+        source.contains("cc_types::hooks") && source.contains("HookRunner");
     let has_load_configs = source.contains("load_hook_configs");
 
-    assert!(has_hook_import, "deps.rs should import the hooks module");
+    assert!(
+        has_hook_runner_contract,
+        "deps.rs should use the shared hook runner contract"
+    );
     assert!(
         has_load_configs,
         "deps.rs should call load_hook_configs to read hook configs from AppState"

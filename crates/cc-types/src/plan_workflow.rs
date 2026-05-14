@@ -75,6 +75,34 @@ pub struct PlanWorkflowRecord {
     pub trace: Vec<PlanWorkflowTraceEvent>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanEntryClassifierDecision {
+    pub should_enter: bool,
+    pub reason: String,
+    pub matched_rule: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlanWorkflowEventPayload {
+    pub event: String,
+    pub summary: String,
+    pub record: PlanWorkflowRecord,
+}
+
+impl PlanWorkflowEventPayload {
+    pub fn new(
+        event: impl Into<String>,
+        summary: impl Into<String>,
+        record: PlanWorkflowRecord,
+    ) -> Self {
+        Self {
+            event: event.into(),
+            summary: summary.into(),
+            record,
+        }
+    }
+}
+
 impl PlanWorkflowRecord {
     pub fn new(file_path: impl Into<String>, owner: Option<String>, source: &str) -> Self {
         let now = timestamp();
@@ -222,6 +250,25 @@ impl PlanWorkflowRecord {
             data,
         });
     }
+}
+
+pub fn summarize(record: &PlanWorkflowRecord) -> String {
+    format!(
+        "Plan workflow {}: status={:?}, approval={:?}, file={}, linked_tasks={}",
+        record.id,
+        record.status,
+        record.approval_state,
+        record.file_path,
+        record.linked_task_ids.len()
+    )
+}
+
+pub fn event_payload(
+    record: &PlanWorkflowRecord,
+    event: &str,
+    summary: &str,
+) -> PlanWorkflowEventPayload {
+    PlanWorkflowEventPayload::new(event, summary, record.clone())
 }
 
 pub fn timestamp() -> String {

@@ -1,7 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use crate::config as cc_config;
-
 use super::CommandItem;
 
 #[derive(Debug, Clone)]

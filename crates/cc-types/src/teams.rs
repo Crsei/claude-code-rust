@@ -1,11 +1,9 @@
 //! Team coordination data types shared across cc-rust crates.
 //!
 //! Only the *pure data* types that `AppState` needs live here. Runtime
-//! machinery (backend, mailbox, runner, protocol, in-process task state) stays
-//! in the root crate's `teams::` module until cc-teams is extracted in
-//! Phase 7. Having `TeamContext` and `TeammateInfo` in cc-types lets
-//! `types/app_state.rs` stop reaching into `crate::teams::types::*`, which is
-//! the last blocker for moving `AppState` into cc-types.
+//! machinery (backend, mailbox, runner, protocol, in-process task state) has a
+//! dedicated owner outside the root crate. Having `TeamContext` and
+//! `TeammateInfo` in cc-types keeps `AppState` on stable DTOs.
 //!
 //! See issue #75 / #76 (workspace split Phase 6/7) and the "Remaining before
 //! the source move" section of

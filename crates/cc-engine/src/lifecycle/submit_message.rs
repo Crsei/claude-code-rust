@@ -17,9 +17,7 @@ use uuid::Uuid;
 use crate::codex_exec;
 use crate::command_runtime::{CommandContext, CommandResult};
 use crate::input_processing;
-use crate::query::loop_impl;
 use crate::result;
-use crate::sdk_types::*;
 use crate::session::transcript;
 use crate::system_prompt;
 use crate::types::config::{QueryParams, QuerySource};
@@ -27,9 +25,11 @@ use crate::types::message::{
     AssistantMessage, Attachment, ContentBlock, Message, MessageContent, QueryYield, StreamEvent,
     SystemSubtype,
 };
+use cc_engine::query::loop_impl;
+use cc_types::sdk::*;
 
 use super::deps::QueryEngineDeps;
-use super::types::{AbortReason, UsageTracking};
+use super::types::{AbortReason, UsageTrackingExt};
 use super::QueryEngine;
 
 fn model_assisted_memory_recall_enabled() -> bool {

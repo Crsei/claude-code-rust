@@ -34,12 +34,12 @@ pub async fn spawn_team_memory_server(
     let secret = uuid::Uuid::new_v4().to_string();
 
     // Resolve GitHub repo from git remote.
-    let repo = crate::utils::git::get_remote_url(cwd)
+    let repo = cc_utils::git::get_remote_url(cwd)
         .ok()
-        .and_then(|url| crate::utils::git::parse_github_repo(&url));
+        .and_then(|url| cc_utils::git::parse_github_repo(&url));
 
     // Compute team memory path: {data_root}/projects/<sanitized>/memory/team/
-    let team_mem_path = crate::config::paths::team_memory_dir(cwd);
+    let team_mem_path = cc_config::paths::team_memory_dir(cwd);
 
     // Resolve the script path relative to the binary location.
     let exe_dir = std::env::current_exe()?

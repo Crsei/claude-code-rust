@@ -13,8 +13,8 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 
-use crate::session::storage::{self, SessionInfo};
-use crate::types::message::Message;
+use cc_session::storage::{self, SessionInfo};
+use cc_types::message::Message;
 
 /// Filter + scoping controls for [`compute_insights`].
 #[derive(Debug, Clone)]
@@ -336,7 +336,7 @@ fn truncate_inline(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::storage::{SerializableMessage, SessionFile};
+    use cc_session::storage::{SerializableMessage, SessionFile};
     use std::path::{Path, PathBuf};
 
     struct HomeGuard {

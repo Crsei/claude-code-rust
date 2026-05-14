@@ -1,9 +1,9 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::types::app_state::AppState;
 use crate::ui::command_surface::adapters::team::team_summary_from_state;
 use crate::ui::command_surface::{cycle_index, CommandSurfaceOutcome};
 use crate::ui::teams::teams_dialog::{render_teams_dialog, TeamSummary, TeammateStatus};
+use cc_engine::types::app_state::AppState;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TeamSurface {
     pub(crate) summary: TeamSummary,

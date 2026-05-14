@@ -20,10 +20,10 @@ use serde_json::{json, Value};
 use tracing::{debug, info};
 use uuid::Uuid;
 
-use crate::skills::{self, SkillContext, SkillDefinition};
+use cc_engine::types::tool::*;
+use cc_skills::{SkillContext, SkillDefinition};
 #[allow(unused_imports)]
-use crate::types::message::{AssistantMessage, ContentBlock, Message, MessageContent, UserMessage};
-use crate::types::tool::*;
+use cc_types::message::{AssistantMessage, ContentBlock, Message, MessageContent, UserMessage};
 
 /// SkillTool — invoke skills (slash command wrappers) by name.
 pub struct SkillTool;
@@ -40,7 +40,7 @@ struct SkillInput {
 /// Build the prompt listing available skills for the system prompt.
 #[allow(dead_code)]
 fn build_skills_listing() -> String {
-    let skills = skills::get_model_invocable_skills();
+    let skills = cc_skills::get_model_invocable_skills();
     if skills.is_empty() {
         return String::new();
     }
@@ -130,12 +130,12 @@ impl Tool for SkillTool {
         }
 
         // Check skill exists and is model-invocable
-        match skills::find_skill(skill_name) {
+        match cc_skills::find_skill(skill_name) {
             None => ValidationResult::Error {
                 message: format!(
                     "Skill '{}' not found. Available skills: {}",
                     skill_name,
-                    skills::get_model_invocable_skills()
+                    cc_skills::get_model_invocable_skills()
                         .iter()
                         .map(|s| s.name.as_str())
                         .collect::<Vec<_>>()
@@ -165,7 +165,7 @@ impl Tool for SkillTool {
         let skill_name = params.skill.trim_start_matches('/');
         let args = params.args.as_deref().unwrap_or("");
 
-        let skill = skills::find_skill(skill_name)
+        let skill = cc_skills::find_skill(skill_name)
             .ok_or_else(|| anyhow::anyhow!("Skill '{}' not found", skill_name))?;
 
         info!(
@@ -352,9 +352,9 @@ mod tests {
     fn test_make_skill_message() {
         let skill = SkillDefinition {
             name: "test".to_string(),
-            source: skills::SkillSource::Bundled,
+            source: cc_skills::SkillSource::Bundled,
             base_dir: None,
-            frontmatter: skills::SkillFrontmatter {
+            frontmatter: cc_skills::SkillFrontmatter {
                 description: "Test".to_string(),
                 ..Default::default()
             },
@@ -379,12 +379,12 @@ mod tests {
         let _guard = SKILL_REGISTRY_TEST_LOCK.blocking_lock();
 
         // Clear and register a test skill
-        skills::clear_skills();
-        skills::register_skill(SkillDefinition {
+        cc_skills::clear_skills();
+        cc_skills::register_skill(SkillDefinition {
             name: "test-skill".to_string(),
-            source: skills::SkillSource::Bundled,
+            source: cc_skills::SkillSource::Bundled,
             base_dir: None,
-            frontmatter: skills::SkillFrontmatter {
+            frontmatter: cc_skills::SkillFrontmatter {
                 description: "A test skill".to_string(),
                 when_to_use: Some("When testing".to_string()),
                 ..Default::default()
@@ -398,7 +398,7 @@ mod tests {
         assert!(listing.contains("When testing"));
 
         // Cleanup
-        skills::clear_skills();
+        cc_skills::clear_skills();
     }
 
     #[tokio::test]
@@ -407,7 +407,7 @@ mod tests {
 
         let tool = SkillTool;
         let state = std::sync::Arc::new(parking_lot::RwLock::new(
-            crate::types::app_state::AppState::default(),
+            cc_engine::types::app_state::AppState::default(),
         ));
         let state_r = state.clone();
         let state_w = state.clone();
@@ -428,8 +428,8 @@ mod tests {
             set_app_state: std::sync::Arc::new(
                 move |f: Box<
                     dyn FnOnce(
-                        crate::types::app_state::AppState,
-                    ) -> crate::types::app_state::AppState,
+                        cc_engine::types::app_state::AppState,
+                    ) -> cc_engine::types::app_state::AppState,
                 >| {
                     let mut s = state_w.write();
                     let old = s.clone();
@@ -466,7 +466,7 @@ mod tests {
         ));
 
         // Non-existent skill
-        skills::clear_skills();
+        cc_skills::clear_skills();
         let result = tool
             .validate_input(&json!({"skill": "nonexistent"}), &ctx)
             .await;
@@ -482,11 +482,11 @@ mod tests {
 
         // Register a unique skill name to avoid race conditions with other tests
         let unique_name = format!("test-skill-{}", uuid::Uuid::new_v4());
-        skills::register_skill(SkillDefinition {
+        cc_skills::register_skill(SkillDefinition {
             name: unique_name.clone(),
-            source: skills::SkillSource::Bundled,
+            source: cc_skills::SkillSource::Bundled,
             base_dir: None,
-            frontmatter: skills::SkillFrontmatter {
+            frontmatter: cc_skills::SkillFrontmatter {
                 description: "Test".to_string(),
                 ..Default::default()
             },
@@ -495,7 +495,7 @@ mod tests {
 
         let tool = SkillTool;
         let state = std::sync::Arc::new(parking_lot::RwLock::new(
-            crate::types::app_state::AppState::default(),
+            cc_engine::types::app_state::AppState::default(),
         ));
         let state_r = state.clone();
         let state_w = state.clone();
@@ -516,8 +516,8 @@ mod tests {
             set_app_state: std::sync::Arc::new(
                 move |f: Box<
                     dyn FnOnce(
-                        crate::types::app_state::AppState,
-                    ) -> crate::types::app_state::AppState,
+                        cc_engine::types::app_state::AppState,
+                    ) -> cc_engine::types::app_state::AppState,
                 >| {
                     let mut s = state_w.write();
                     let old = s.clone();

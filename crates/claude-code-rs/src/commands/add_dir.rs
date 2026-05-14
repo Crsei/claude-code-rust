@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::types::tool::AdditionalWorkingDirectory;
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_engine::types::tool::AdditionalWorkingDirectory;
 
 pub struct AddDirHandler;
 
@@ -147,8 +147,8 @@ fn is_subdir(child: &std::path::Path, parent: &std::path::Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use std::fs;
     use std::path::PathBuf;
     use uuid::Uuid;

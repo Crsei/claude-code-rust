@@ -10,8 +10,8 @@ use std::path::Path;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::types::message::{ContentBlock, Message};
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_types::message::{ContentBlock, Message};
 
 /// Handler for the `/files` slash command.
 pub struct FilesHandler;
@@ -57,7 +57,7 @@ fn extract_referenced_files(messages: &[Message]) -> BTreeSet<String> {
 
         // Also check for attachment messages referencing edited files.
         if let Message::Attachment(att) = msg {
-            if let crate::types::message::Attachment::EditedTextFile { path } = &att.attachment {
+            if let cc_types::message::Attachment::EditedTextFile { path } = &att.attachment {
                 files.insert(path.clone());
             }
         }
@@ -96,9 +96,9 @@ impl CommandHandler for FilesHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
-    use crate::types::message::AssistantMessage;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
+    use cc_types::message::AssistantMessage;
     use std::path::PathBuf;
     use uuid::Uuid;
 

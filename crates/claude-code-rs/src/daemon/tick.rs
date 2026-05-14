@@ -8,7 +8,7 @@ use futures::StreamExt;
 use serde_json::json;
 use tracing::{debug, info, warn};
 
-use crate::types::config::QuerySource;
+use cc_engine::types::config::QuerySource;
 
 use super::memory_log::append_log_entry;
 use super::state::{next_event_id, DaemonState, SseEvent};

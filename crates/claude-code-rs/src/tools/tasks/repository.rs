@@ -164,7 +164,9 @@ impl TaskRepository {
         };
 
         let mut task = self.record_to_entry(record)?;
-        let was_recovered = recover_on_startup && recover_task_after_restart(&mut task);
+        let now = chrono::Utc::now();
+        let was_recovered = recover_on_startup
+            && recover_task_after_restart(&mut task, now.timestamp(), now.timestamp_millis());
         refresh_output_metadata(&mut task);
 
         if needs_schema_rewrite || was_recovered {

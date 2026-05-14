@@ -1,9 +1,9 @@
 use super::engine_events::now_ts;
-use crate::types::message::{InfoLevel, Message, SystemMessage, SystemSubtype};
 use crate::ui::app::App;
 use crate::ui::command_surface::CommandSurface;
 use cc_ipc_protocol::subsystem_events::{LspCommand, LspEvent, SubsystemEvent};
 use cc_ipc_protocol::BackendMessage;
+use cc_types::message::{InfoLevel, Message, SystemMessage, SystemSubtype};
 pub(super) fn handle_subsystem_event(app: &mut App, event: SubsystemEvent) {
     match event {
         SubsystemEvent::Lsp(LspEvent::RecommendationRequest { payload }) => {

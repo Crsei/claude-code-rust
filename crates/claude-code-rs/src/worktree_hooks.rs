@@ -31,11 +31,11 @@ pub enum WorktreeRemoveHookOutcome {
 }
 
 pub fn default_user_worktree_path(slug: &str) -> PathBuf {
-    crate::config::paths::worktrees_dir().join(format!("cc-worktree-{}", slug))
+    cc_config::paths::worktrees_dir().join(format!("cc-worktree-{}", slug))
 }
 
 pub fn default_agent_worktree_path(short_id: &str) -> PathBuf {
-    crate::config::paths::worktrees_dir().join(format!("agent-worktree-{}", short_id))
+    cc_config::paths::worktrees_dir().join(format!("agent-worktree-{}", short_id))
 }
 
 pub fn ensure_worktree_parent(worktree_path: &Path) -> Result<()> {
@@ -52,7 +52,7 @@ pub fn validate_allowed_worktree_path(worktree_path: &Path) -> Result<()> {
         bail!(
             "worktree path {} is outside {}",
             worktree_path.display(),
-            absolute_path(&crate::config::paths::worktrees_dir()).display()
+            absolute_path(&cc_config::paths::worktrees_dir()).display()
         );
     }
     Ok(())
@@ -64,7 +64,7 @@ pub fn is_allowed_worktree_path(worktree_path: &Path) -> bool {
     }
 
     let path = absolute_path(worktree_path);
-    let root = absolute_path(&crate::config::paths::worktrees_dir());
+    let root = absolute_path(&cc_config::paths::worktrees_dir());
     path.starts_with(root)
 }
 
@@ -260,7 +260,7 @@ mod tests {
     fn parse_create_output_accepts_allowed_path() {
         let home = tempfile::tempdir().expect("tempdir");
         let _home_guard = EnvGuard::set_path("CC_RUST_HOME", home.path());
-        let path = crate::config::paths::worktrees_dir().join("agent-worktree-test");
+        let path = cc_config::paths::worktrees_dir().join("agent-worktree-test");
         let output = HookOutput {
             updated_input: Some(json!({
                 "worktree_path": path.display().to_string(),

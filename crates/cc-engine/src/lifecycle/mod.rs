@@ -21,15 +21,14 @@ mod submit_message;
 mod tests;
 mod types;
 
-// Re-export public types so external callers keep using
-// `crate::engine::lifecycle::{QueryEngine, UsageTracking, ...}`
-pub use types::{AbortReason, PermissionDenial, UsageTracking};
+pub use types::AbortReason;
 
 use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use cc_types::sdk::{PermissionDenial, UsageTracking};
 use tracing::{info, warn};
 
 use crate::bootstrap::SessionId;

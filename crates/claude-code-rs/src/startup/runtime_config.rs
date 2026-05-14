@@ -7,8 +7,8 @@
 use std::collections::HashMap;
 
 use crate::cli::Cli;
-use crate::config::settings;
-use crate::types::tool::{PermissionMode, ToolPermissionContext};
+use cc_config::settings;
+use cc_engine::types::tool::{PermissionMode, ToolPermissionContext};
 
 /// Resolve the working directory from CLI args or the current process cwd.
 pub fn resolve_cwd(cli: &Cli) -> String {
@@ -34,8 +34,8 @@ pub fn chrome_cli_override(cli: &Cli) -> Option<bool> {
 /// True iff Chrome integration is enabled after layering CLI over config.
 pub fn chrome_requested(cli: &Cli, config_default: Option<bool>) -> bool {
     matches!(
-        crate::browser::session::resolve_enablement(chrome_cli_override(cli), config_default),
-        crate::browser::session::ChromeEnablement::Enabled
+        cc_browser::session::resolve_enablement(chrome_cli_override(cli), config_default),
+        cc_browser::session::ChromeEnablement::Enabled
     )
 }
 
@@ -78,10 +78,7 @@ pub fn build_tool_permission_context(
 
     // Iterate lowest -> highest priority so /permissions show prints them
     // in a stable order; the matcher itself treats sources uniformly.
-    let layers: [(
-        SettingsSource,
-        Option<&crate::config::settings::RawSettings>,
-    ); 4] = [
+    let layers: [(SettingsSource, Option<&cc_config::settings::RawSettings>); 4] = [
         (SettingsSource::Managed, loaded.managed.as_ref()),
         (SettingsSource::User, loaded.user.as_ref()),
         (SettingsSource::Project, loaded.project.as_ref()),
@@ -97,7 +94,7 @@ pub fn build_tool_permission_context(
             for dir in &perms.additional_directories {
                 additional_working_directories.insert(
                     dir.clone(),
-                    crate::types::tool::AdditionalWorkingDirectory {
+                    cc_engine::types::tool::AdditionalWorkingDirectory {
                         path: dir.clone(),
                         read_only: false,
                     },
@@ -123,6 +120,6 @@ pub fn build_tool_permission_context(
         pre_plan_mode: None,
     };
     let mode = ctx.mode.clone();
-    crate::permissions::dangerous::set_permission_mode_with_auto_mode_safety(&mut ctx, mode);
+    cc_permissions::dangerous::set_permission_mode_with_auto_mode_safety(&mut ctx, mode);
     ctx
 }

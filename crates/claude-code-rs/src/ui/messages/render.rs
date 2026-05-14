@@ -3,12 +3,12 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
-use crate::types::message::{
-    Attachment, ContentBlock, InfoLevel, Message, MessageContent, SystemSubtype, ToolResultContent,
-};
 use crate::ui::markdown::markdown_to_lines;
 use crate::ui::theme::Theme;
 use crate::ui::virtual_scroll::VirtualScroll;
+use cc_types::message::{
+    Attachment, ContentBlock, InfoLevel, Message, MessageContent, SystemSubtype, ToolResultContent,
+};
 
 use super::file_edit_tool_updated_message::{
     render_file_edit_tool_updated_message, FileEditMessageStyle, FileEditToolUpdatedView,
@@ -201,7 +201,7 @@ fn message_detail_lines(msg: &Message, width: usize) -> Vec<String> {
     if let Some(reference) = message_primary_reference(msg) {
         lines.push(format!("ref: {reference}"));
     }
-    let preview = crate::utils::messages::truncate_text(
+    let preview = cc_utils::messages::truncate_text(
         &message_copy_text(msg).replace('\n', " ⏎ "),
         width.saturating_sub(4).max(20),
     );
@@ -213,10 +213,7 @@ fn message_detail_lines(msg: &Message, width: usize) -> Vec<String> {
 
 // ── User messages ───────────────────────────────────────────────────────
 
-fn render_user_message<'a>(
-    msg: &crate::types::message::UserMessage,
-    theme: &Theme,
-) -> Vec<Line<'a>> {
+fn render_user_message<'a>(msg: &cc_types::message::UserMessage, theme: &Theme) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
 
     let content_text = match &msg.content {
@@ -258,7 +255,7 @@ fn render_user_message<'a>(
 }
 
 fn render_tool_result_user_message<'a>(
-    msg: &crate::types::message::UserMessage,
+    msg: &cc_types::message::UserMessage,
     blocks: &[ContentBlock],
     theme: &Theme,
 ) -> Option<Vec<Line<'a>>> {
@@ -365,7 +362,7 @@ fn styled_text_lines<'a>(text: &str, style: Style) -> Vec<Line<'a>> {
 // ── Assistant messages ──────────────────────────────────────────────────
 
 fn render_assistant_message<'a>(
-    msg: &crate::types::message::AssistantMessage,
+    msg: &cc_types::message::AssistantMessage,
     theme: &Theme,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
@@ -565,7 +562,7 @@ fn render_assistant_message<'a>(
 // ── System messages ─────────────────────────────────────────────────────
 
 fn render_system_message<'a>(
-    msg: &crate::types::message::SystemMessage,
+    msg: &cc_types::message::SystemMessage,
     theme: &Theme,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
@@ -615,7 +612,7 @@ fn render_system_message<'a>(
 // ── Progress messages ───────────────────────────────────────────────────
 
 fn render_progress_message<'a>(
-    msg: &crate::types::message::ProgressMessage,
+    msg: &cc_types::message::ProgressMessage,
     theme: &Theme,
 ) -> Vec<Line<'a>> {
     let data_summary = if msg.data.is_object() {
@@ -638,10 +635,10 @@ fn render_progress_message<'a>(
 // ── Attachment messages ─────────────────────────────────────────────────
 
 fn render_attachment_message<'a>(
-    msg: &crate::types::message::AttachmentMessage,
+    msg: &cc_types::message::AttachmentMessage,
     theme: &Theme,
 ) -> Vec<Line<'a>> {
-    use crate::types::message::Attachment;
+    use cc_types::message::Attachment;
     let text = match &msg.attachment {
         Attachment::EditedTextFile { path } => format!("[edited: {}]", path),
         Attachment::QueuedCommand { prompt, .. } => format!("[queued: {}]", prompt),
@@ -754,7 +751,7 @@ fn content_block_reference(block: &ContentBlock) -> Option<String> {
     }
 }
 
-fn image_reference(source: &crate::types::message::ImageSource) -> String {
+fn image_reference(source: &cc_types::message::ImageSource) -> String {
     format!(
         "[image: {}, {} chars]",
         source.media_type,
@@ -784,7 +781,7 @@ fn attachment_reference(attachment: &Attachment) -> Option<String> {
         }
         Attachment::QueuedCommand { prompt, .. } => Some(format!(
             "prompt={}",
-            crate::utils::messages::truncate_text(prompt, 48)
+            cc_utils::messages::truncate_text(prompt, 48)
         )),
         _ => None,
     }
@@ -825,12 +822,12 @@ fn compact_boundary_summary(subtype: &SystemSubtype, prefix: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{message_copy_text, message_primary_reference, render_single_message};
-    use crate::types::message::{
+    use crate::ui::diff::file_edit_diff::unified_hunk_lines_from_edit;
+    use crate::ui::theme::Theme;
+    use cc_types::message::{
         AssistantMessage, CompactMetadata, ContentBlock, ImageSource, Message, MessageContent,
         SystemMessage, SystemSubtype, ToolResultContent, UserMessage,
     };
-    use crate::ui::diff::file_edit_diff::unified_hunk_lines_from_edit;
-    use crate::ui::theme::Theme;
     use serde_json::json;
 
     #[test]

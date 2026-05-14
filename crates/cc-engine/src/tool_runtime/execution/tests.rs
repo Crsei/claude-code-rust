@@ -1,9 +1,8 @@
-use super::security::{
-    enforce_result_size, find_tool, is_plan_mode_plan_file_write, security_validate,
-};
+use super::security::{find_tool, is_plan_mode_plan_file_write, security_validate};
 use super::*;
 use crate::types::app_state::AppState;
 use crate::types::tool::{FileStateCache, PermissionMode, ToolUseOptions};
+use cc_tools::result::enforce_result_size;
 use std::sync::Arc;
 use std::time::Instant;
 

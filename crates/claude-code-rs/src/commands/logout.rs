@@ -20,8 +20,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::auth;
 use crate::services::onboarding::OnboardingStore;
+use cc_auth as auth;
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 pub struct LogoutHandler;
@@ -258,9 +258,9 @@ fn detect_managed_settings() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
     use crate::services::onboarding::{OnboardingState, OnboardingStore};
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use chrono::Utc;
     use std::path::PathBuf;
     use tempfile::tempdir;

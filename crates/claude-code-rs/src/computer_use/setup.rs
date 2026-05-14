@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use crate::types::tool::Tool;
+use cc_engine::types::tool::Tool;
 
 use super::tools;
 
@@ -39,9 +39,6 @@ pub fn register_cu_tools() -> Vec<Arc<dyn Tool>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::computer_use::detection::{
-        computer_use_system_prompt, detect_cu_tools, is_computer_use_tool,
-    };
 
     #[test]
     fn test_register_cu_tools_count() {
@@ -55,36 +52,12 @@ mod tests {
         for tool in &tools {
             let name = tool.user_facing_name(None);
             assert!(
-                is_computer_use_tool(&name),
+                name.starts_with(crate::computer_use::detection::COMPUTER_USE_PREFIX),
                 "tool '{}' should have mcp__computer-use__ prefix, got '{}'",
                 tool.name(),
                 name
             );
         }
-    }
-
-    #[test]
-    fn test_cu_tools_detected_by_detection_module() {
-        let tools = register_cu_tools();
-        let detected = detect_cu_tools(&tools);
-        assert_eq!(
-            detected.len(),
-            tools.len(),
-            "all registered tools should be detected as CU tools"
-        );
-    }
-
-    #[test]
-    fn test_system_prompt_generated_with_cu_tools() {
-        let tools = register_cu_tools();
-        let prompt = computer_use_system_prompt(&tools);
-        assert!(prompt.is_some(), "should generate CU system prompt");
-        let prompt = prompt.unwrap();
-        assert!(prompt.contains("screenshot"));
-        assert!(prompt.contains("left_click"));
-        assert!(prompt.contains("type_text"));
-        assert!(prompt.contains("key"));
-        assert!(prompt.contains("scroll"));
     }
 
     #[test]

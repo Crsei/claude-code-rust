@@ -16,8 +16,8 @@ use tracing::debug;
 use crate::types::message::{AssistantMessage, ContentBlock, ImageSource, ToolResultContent};
 use crate::types::tool::*;
 
-use super::manager::McpManager;
-use super::{McpToolDef, ToolCallContent};
+use cc_mcp::manager::McpManager;
+use cc_mcp::{McpToolDef, ToolCallContent};
 
 const MCP_SKILL_URI_PREFIX: &str = "skill://";
 
@@ -452,7 +452,7 @@ mod tests {
     #[test]
     fn test_format_tool_call_result_resource_text() {
         let content = vec![ToolCallContent::Resource {
-            resource: super::super::McpResourceContent {
+            resource: cc_mcp::McpResourceContent {
                 uri: "file:///tmp/test.txt".to_string(),
                 mime_type: Some("text/plain".to_string()),
                 text: Some("file contents".to_string()),
@@ -559,7 +559,7 @@ mod tests {
     #[test]
     fn test_convert_mcp_resource_blob_image() {
         let content = vec![ToolCallContent::Resource {
-            resource: super::super::McpResourceContent {
+            resource: cc_mcp::McpResourceContent {
                 uri: "screenshot://latest".to_string(),
                 mime_type: Some("image/jpeg".to_string()),
                 text: None,

@@ -17,13 +17,14 @@ use gateway::{
 use serde_json::{json, Value};
 use tokio_stream::StreamExt;
 
-use crate::engine::lifecycle::QueryEngine;
-use crate::types::config::{QueryEngineConfig, QuerySource};
+use crate::commands;
+use cc_daemon::protocol::{self, DaemonCommandKind};
+use cc_engine::lifecycle::QueryEngine;
+use cc_engine::types::config::{QueryEngineConfig, QuerySource};
 
 use super::gateway_run_events::{
     append_gateway_event, append_gateway_sdk_event, update_gateway_status,
 };
-use super::protocol::{self, DaemonCommandKind};
 use super::routes::sdk_message_to_sse;
 use super::supervisor::ASSISTANT_WORKER_ID;
 
@@ -54,13 +55,14 @@ impl GatewayCommandSink for GatewayDaemonBridge {
     fn dispatch(&self, command: GatewayCommand) -> Result<GatewayCommandReceipt, GatewayError> {
         let kind = daemon_kind(command.kind);
         let payload = daemon_payload(&command);
-        let queued = protocol::enqueue_command(
-            &self.target_worker_id,
-            kind,
-            payload,
-            command.idempotency_key.clone(),
-        )
-        .map_err(|error| enqueue_error(&command, error))?;
+        let queued = super::protocol_store()
+            .enqueue_command(
+                &self.target_worker_id,
+                kind,
+                payload,
+                command.idempotency_key.clone(),
+            )
+            .map_err(|error| enqueue_error(&command, error))?;
 
         Ok(GatewayCommandReceipt {
             command_id: queued.command_id,
@@ -79,7 +81,7 @@ fn daemon_kind(kind: GatewayCommandKind) -> DaemonCommandKind {
 }
 
 fn daemon_payload(command: &GatewayCommand) -> Value {
-    match command.kind {
+    match command.kind.clone() {
         GatewayCommandKind::Submit => {
             let text = command
                 .payload
@@ -136,6 +138,7 @@ pub async fn handle_worker_command(
     runtime: &mut AssistantWorkerRuntime,
     command: protocol::DaemonCommand,
 ) -> Result<bool> {
+    let store = super::protocol_store();
     match command.kind {
         protocol::DaemonCommandKind::Submit => {
             if let Err(err) = runtime.execute_submit(worker_id, &command).await {
@@ -151,7 +154,7 @@ pub async fn handle_worker_command(
                     },
                 )?;
                 update_gateway_status(&command, RunStatus::Failed)?;
-                protocol::append_event(
+                store.append_event(
                     worker_id,
                     Some(&command.command_id),
                     "command_failed",
@@ -160,16 +163,16 @@ pub async fn handle_worker_command(
                         "error": err.to_string(),
                     }),
                 )?;
-                protocol::mark_command_failed(command, err.to_string())?;
+                store.mark_command_failed(command, err.to_string())?;
             } else {
-                protocol::mark_command_handled(command)?;
+                store.mark_command_handled(command)?;
             }
             Ok(false)
         }
         protocol::DaemonCommandKind::Abort => {
             runtime.abort();
-            let command = protocol::mark_command_handled(command)?;
-            protocol::append_event(
+            let command = store.mark_command_handled(command)?;
+            store.append_event(
                 worker_id,
                 Some(&command.command_id),
                 "abort_ack",
@@ -180,8 +183,8 @@ pub async fn handle_worker_command(
         protocol::DaemonCommandKind::PermissionResponse
         | protocol::DaemonCommandKind::AskUserResponse
         | protocol::DaemonCommandKind::ReloadConfig => {
-            let command = protocol::mark_command_handled(command)?;
-            protocol::append_event(
+            let command = store.mark_command_handled(command)?;
+            store.append_event(
                 worker_id,
                 Some(&command.command_id),
                 "command_handled",
@@ -190,8 +193,8 @@ pub async fn handle_worker_command(
             Ok(false)
         }
         protocol::DaemonCommandKind::Shutdown => {
-            let command = protocol::mark_command_handled(command)?;
-            protocol::append_event(
+            let command = store.mark_command_handled(command)?;
+            store.append_event(
                 worker_id,
                 Some(&command.command_id),
                 "worker_shutdown_ack",
@@ -223,7 +226,7 @@ impl AssistantWorkerRuntime {
             task_budget: None,
             verbose: false,
             initial_messages: None,
-            commands: crate::commands::get_all_commands()
+            commands: commands::get_all_commands()
                 .iter()
                 .map(|command| command.name.clone())
                 .collect(),
@@ -236,7 +239,7 @@ impl AssistantWorkerRuntime {
             agent_context: None,
         });
         engine.set_hook_runner(Arc::new(crate::tools::hooks::ShellHookRunner::new()));
-        engine.set_command_dispatcher(Arc::new(crate::commands::DefaultCommandDispatcher::new()));
+        engine.set_command_dispatcher(Arc::new(commands::DefaultCommandDispatcher::new()));
 
         Self {
             engine: Arc::new(engine),
@@ -259,7 +262,7 @@ impl AssistantWorkerRuntime {
             .and_then(|value| value.as_str())
             .unwrap_or(&command.command_id);
 
-        protocol::append_event(
+        super::protocol_store().append_event(
             worker_id,
             Some(&command.command_id),
             "submit_started",
@@ -286,7 +289,7 @@ impl AssistantWorkerRuntime {
         while let Some(sdk_msg) = stream.next().await {
             if let Some(event) = sdk_message_to_sse(&sdk_msg, message_id) {
                 append_gateway_sdk_event(command, &event.event_type, event.data.clone())?;
-                protocol::append_event(
+                super::protocol_store().append_event(
                     worker_id,
                     Some(&command.command_id),
                     &event.event_type,
@@ -295,7 +298,7 @@ impl AssistantWorkerRuntime {
             }
         }
 
-        protocol::append_event(
+        super::protocol_store().append_event(
             worker_id,
             Some(&command.command_id),
             "submit_completed",
@@ -364,7 +367,8 @@ mod tests {
             })
             .unwrap();
 
-        let command = protocol::read_command("assistant-session-1", &receipt.command_id)
+        let command = crate::daemon::protocol_store()
+            .read_command("assistant-session-1", &receipt.command_id)
             .unwrap()
             .unwrap();
         assert_eq!(command.payload["text"], "hello");
@@ -395,19 +399,20 @@ mod tests {
             })
             .unwrap();
         let run_id = created.meta().run_id.clone();
-        let command = protocol::enqueue_command(
-            "assistant-session-1",
-            DaemonCommandKind::Submit,
-            json!({
-                "text": "hello",
-                "gateway": {
-                    "runId": run_id.to_string(),
-                    "sessionKey": created.meta().session_key.to_string(),
-                }
-            }),
-            None,
-        )
-        .unwrap();
+        let command = crate::daemon::protocol_store()
+            .enqueue_command(
+                "assistant-session-1",
+                DaemonCommandKind::Submit,
+                json!({
+                    "text": "hello",
+                    "gateway": {
+                        "runId": run_id.to_string(),
+                        "sessionKey": created.meta().session_key.to_string(),
+                    }
+                }),
+                None,
+            )
+            .unwrap();
 
         append_gateway_event(
             &command,

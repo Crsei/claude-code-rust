@@ -1,6 +1,6 @@
 //! Network policy — domain allowlist + `--no-network` gating.
 //!
-//! Shared by [`crate::tools::web_fetch`] and the shell sandboxes.
+//! Shared by web fetch callers and the shell sandboxes.
 
 use super::errors::SandboxError;
 use cc_utils::bash::{parse_command, split_compound_command};

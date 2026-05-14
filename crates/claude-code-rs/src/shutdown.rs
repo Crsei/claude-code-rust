@@ -13,8 +13,8 @@
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use crate::engine::lifecycle::QueryEngine;
-use crate::session::transcript;
+use cc_engine::lifecycle::QueryEngine;
+use cc_session::transcript;
 
 // ---------------------------------------------------------------------------
 // Shutdown handler registration
@@ -67,7 +67,7 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
     // Step 0: Fire SessionEnd hook (best-effort, fire-and-forget)
     {
         let hooks_map = engine.app_state().hooks;
-        let end_configs = crate::tools::hooks::load_hook_configs(&hooks_map, "SessionEnd");
+        let end_configs = cc_types::hooks::load_hook_configs(&hooks_map, "SessionEnd");
         if !end_configs.is_empty() {
             let session_id = engine.current_session_id();
             let payload = serde_json::json!({
@@ -103,7 +103,7 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
     let messages = engine.messages();
     if !messages.is_empty() {
         let cwd = engine.cwd();
-        if let Err(e) = crate::session::storage::save_session(session_id.as_str(), &messages, cwd) {
+        if let Err(e) = cc_session::storage::save_session(session_id.as_str(), &messages, cwd) {
             warn!(error = %e, "failed to save session during shutdown");
         } else {
             debug!("graceful_shutdown: session saved");
@@ -115,7 +115,7 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
 
     // Step 6: Emit session.end audit event and sync
     {
-        use crate::observability::{AuditLevel, EventKind, Outcome, Stage};
+        use cc_observability::{AuditLevel, EventKind, Outcome, Stage};
         let ctx = engine.audit_context();
         let usage = engine.usage();
         ctx.emit(

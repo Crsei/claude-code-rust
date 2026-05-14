@@ -1,11 +1,11 @@
 use crossterm::event::KeyEvent;
 
-use crate::engine::effort::effort_to_budget_tokens;
-use crate::types::app_state::AppState;
 use crate::ui::command_surface::CommandSurfaceOutcome;
 use crate::ui::form_navigation::{FormOption, FormTab, TabbedFormEvent, TabbedFormState};
 use crate::ui::keyboard_shortcut::{render_shortcut_hints, ShortcutHint};
 use crate::ui::selection_surface::{SelectionItem, SelectionSurface, SelectionSurfaceEvent};
+use cc_engine::effort::effort_to_budget_tokens;
+use cc_engine::types::app_state::AppState;
 use cc_models::aliases as model_registry;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

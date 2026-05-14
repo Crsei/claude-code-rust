@@ -18,8 +18,8 @@ use cc_teams::tool_specs as team_tool_specs;
 use crate::teams::in_process::InProcessBackend;
 use crate::teams::types::TeammateMessage;
 use crate::teams::{constants, helpers, identity, mailbox, protocol};
-use crate::types::message::AssistantMessage;
-use crate::types::tool::*;
+use cc_engine::types::tool::*;
+use cc_types::message::AssistantMessage;
 
 /// SendMessage tool.
 pub struct SendMessageTool;
@@ -396,7 +396,7 @@ mod tests {
         BackendType, InProcessTeammateTaskState, TaskStatus, TeamContext, TeamMember,
         TeammateIdentity,
     };
-    use crate::types::app_state::AppState;
+    use cc_engine::types::app_state::AppState;
     use std::sync::Arc;
 
     struct EnvGuard {

@@ -1,15 +1,15 @@
-use crate::engine::lifecycle::QueryEngine;
-use crate::engine::sdk_types::SdkMessage;
-use crate::services::prompt_suggestion::PromptSuggestionService;
-use crate::types::config::QuerySource;
-use crate::types::message::ProgressMessage;
-use crate::types::message::{
+use crate::ui::app::App;
+use crate::ui::permissions::PermissionChoice;
+use cc_engine::lifecycle::QueryEngine;
+use cc_engine::types::config::QuerySource;
+use cc_engine::types::tool::ToolProgress;
+use cc_services::prompt_suggestion::PromptSuggestionService;
+use cc_types::message::ProgressMessage;
+use cc_types::message::{
     AssistantMessage, ContentBlock, InfoLevel, Message, MessageContent, StreamEvent, SystemMessage,
     SystemSubtype, UserMessage,
 };
-use crate::types::tool::ToolProgress;
-use crate::ui::app::App;
-use crate::ui::permissions::PermissionChoice;
+use cc_types::sdk::SdkMessage;
 use futures::StreamExt;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -80,7 +80,7 @@ pub(super) fn install_tui_permission_callback(
     engine: &Arc<QueryEngine>,
     tx: mpsc::UnboundedSender<EngineEvent>,
 ) {
-    let callback: crate::types::tool::PermissionCallback = Arc::new(
+    let callback: cc_engine::types::tool::PermissionCallback = Arc::new(
         move |_tool_use_id: String,
               tool_name: String,
               description: String,
@@ -162,7 +162,7 @@ fn tool_progress_display_text(data: &serde_json::Value) -> String {
     }
     let output = output.trim();
     if !output.is_empty() {
-        let output = crate::utils::messages::truncate_text(output, 120);
+        let output = cc_utils::messages::truncate_text(output, 120);
         text.push_str(&format!("; {output}"));
     }
     text

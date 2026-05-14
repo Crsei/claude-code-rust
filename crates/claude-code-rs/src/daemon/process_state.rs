@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::protocol;
+use cc_daemon::protocol;
 
 const SCHEMA_VERSION: u32 = 1;
 #[cfg(test)]
@@ -121,7 +121,7 @@ pub enum DaemonStatusSnapshot {
 }
 
 pub fn daemon_dir() -> PathBuf {
-    crate::config::paths::daemon_dir()
+    cc_config::paths::daemon_dir()
 }
 
 pub fn state_path() -> PathBuf {
@@ -528,7 +528,7 @@ fn start_daemon(args: &[String], cwd: &Path, fallback_port: u16) -> Result<()> {
         DaemonStatusSnapshot::Stopped => {}
     }
 
-    if !crate::config::features::enabled(crate::config::features::Feature::Kairos) {
+    if !cc_config::features::enabled(cc_config::features::Feature::Kairos) {
         anyhow::bail!("daemon start requires FEATURE_KAIROS=1");
     }
 
@@ -604,7 +604,7 @@ fn submit_worker_command(args: &[String]) -> Result<()> {
         anyhow::bail!("daemon submit requires text");
     }
 
-    let command = protocol::enqueue_command(
+    let command = super::protocol_store().enqueue_command(
         super::supervisor::ASSISTANT_WORKER_ID,
         protocol::DaemonCommandKind::Submit,
         serde_json::json!({ "text": text }),
@@ -619,7 +619,7 @@ fn submit_worker_command(args: &[String]) -> Result<()> {
 
 fn abort_worker_command() -> Result<()> {
     require_running_daemon()?;
-    let command = protocol::enqueue_command(
+    let command = super::protocol_store().enqueue_command(
         super::supervisor::ASSISTANT_WORKER_ID,
         protocol::DaemonCommandKind::Abort,
         serde_json::json!({}),
@@ -640,7 +640,7 @@ fn print_worker_command(args: &[String]) -> Result<()> {
         .get(3)
         .map(String::as_str)
         .unwrap_or(super::supervisor::ASSISTANT_WORKER_ID);
-    let Some(command) = protocol::read_command(worker_id, command_id)? else {
+    let Some(command) = super::protocol_store().read_command(worker_id, command_id)? else {
         anyhow::bail!("daemon command not found: {command_id}");
     };
     println!("{}", serde_json::to_string_pretty(&command)?);
@@ -652,7 +652,7 @@ fn print_worker_events(args: &[String]) -> Result<()> {
         .get(2)
         .map(String::as_str)
         .unwrap_or(super::supervisor::ASSISTANT_WORKER_ID);
-    let events = protocol::read_worker_events(worker_id)?;
+    let events = super::protocol_store().read_worker_events(worker_id)?;
     if events.is_empty() {
         println!("daemon events: none for worker={worker_id}");
         return Ok(());

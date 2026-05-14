@@ -23,11 +23,11 @@ mod tests;
 mod transcript_mode;
 mod voice;
 mod workspace_trust;
-use crate::config::settings::StatusLineSettings;
-use crate::keybindings::KeybindingRegistry;
-use crate::services::prompt_suggestion::PromptSuggestion;
-use crate::types::message::Message;
 use crate::voice::VoiceController;
+use cc_config::settings::StatusLineSettings;
+use cc_keybindings::KeybindingRegistry;
+use cc_services::prompt_suggestion::PromptSuggestion;
+use cc_types::message::Message;
 use status::SessionUsageSnapshot;
 use workspace_trust::is_workspace_trusted;
 
@@ -112,7 +112,7 @@ pub struct App {
     /// Tick counter for throttling spinner frame advances.
     tick_counter: u32,
     keybindings: KeybindingRegistry,
-    pending_chord: Vec<crate::keybindings::keystroke::Keystroke>,
+    pending_chord: Vec<cc_keybindings::keystroke::Keystroke>,
     vim: VimState,
 
     // Scriptable status line (issue #11)

@@ -4,13 +4,14 @@
 //! servers, and aggregating their tools and resources.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use anyhow::Result;
 use tokio::time::{sleep, Duration};
 use tracing::{info, warn};
 
 use super::client::McpClient;
-use super::{McpResource, McpServerConfig, McpToolDef};
+use super::{McpResource, McpRuntimeContext, McpServerConfig, McpToolDef, SharedMcpEventSink};
 
 const CONNECT_RETRY_ATTEMPTS: usize = 3;
 const CONNECT_RETRY_BASE_DELAY_MS: u64 = 50;
@@ -20,12 +21,29 @@ const CONNECT_RETRY_MAX_DELAY_MS: u64 = 250;
 pub struct McpManager {
     /// Active clients, keyed by server name.
     pub clients: HashMap<String, McpClient>,
+    runtime: McpRuntimeContext,
 }
 
 impl McpManager {
     pub fn new() -> Self {
+        Self::with_runtime(McpRuntimeContext::new())
+    }
+
+    pub fn with_event_sink(event_sink: Arc<dyn super::McpEventSink>) -> Self {
+        Self::with_runtime(McpRuntimeContext::with_event_sink(event_sink))
+    }
+
+    pub fn with_runtime(runtime: McpRuntimeContext) -> Self {
         Self {
             clients: HashMap::new(),
+            runtime,
+        }
+    }
+
+    pub fn set_event_sink(&mut self, event_sink: Option<SharedMcpEventSink>) {
+        self.runtime.set_event_sink(event_sink.clone());
+        for client in self.clients.values_mut() {
+            client.set_event_sink(event_sink.clone());
         }
     }
 
@@ -65,15 +83,16 @@ impl McpManager {
         // is preserved for a later re-enable.
         if config.disabled.unwrap_or(false) {
             tracing::info!(server = %name, "MCP: server disabled in settings, skipping");
-            super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
-                server_name: name,
-                state: "disabled".to_string(),
-                error: None,
-            });
+            self.runtime
+                .emit_event(super::McpSubsystemEvent::ServerStateChanged {
+                    server_name: name,
+                    state: "disabled".to_string(),
+                    error: None,
+                });
             return Ok(());
         }
 
-        let client = Self::connect_ready_client_with_retries(config).await?;
+        let client = self.connect_ready_client_with_retries(config).await?;
         self.clients.insert(name, client);
         Ok(())
     }
@@ -83,18 +102,22 @@ impl McpManager {
     pub async fn reconnect_server(&mut self, config: McpServerConfig) -> Result<()> {
         let name = config.name.clone();
         self.disconnect_server(&name).await;
-        super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
-            server_name: name,
-            state: "pending".to_string(),
-            error: None,
-        });
+        self.runtime
+            .emit_event(super::McpSubsystemEvent::ServerStateChanged {
+                server_name: name,
+                state: "pending".to_string(),
+                error: None,
+            });
         self.connect_server(config).await
     }
 
-    async fn connect_ready_client_with_retries(config: McpServerConfig) -> Result<McpClient> {
+    async fn connect_ready_client_with_retries(
+        &self,
+        config: McpServerConfig,
+    ) -> Result<McpClient> {
         let mut last_error = None;
         for attempt in 0..CONNECT_RETRY_ATTEMPTS {
-            match Self::connect_ready_client(config.clone()).await {
+            match self.connect_ready_client(config.clone()).await {
                 Ok(client) => return Ok(client),
                 Err(err) => {
                     let final_attempt = attempt + 1 >= CONNECT_RETRY_ATTEMPTS;
@@ -117,9 +140,9 @@ impl McpManager {
         Err(last_error.expect("retry loop should have returned on final attempt"))
     }
 
-    async fn connect_ready_client(config: McpServerConfig) -> Result<McpClient> {
+    async fn connect_ready_client(&self, config: McpServerConfig) -> Result<McpClient> {
         let name = config.name.clone();
-        let mut client = McpClient::new(config);
+        let mut client = McpClient::with_runtime(config, self.runtime.clone());
 
         client.connect().await?;
 
@@ -130,11 +153,12 @@ impl McpManager {
                 error = %error,
                 "MCP: failed to initialize server"
             );
-            super::emit_event(super::McpSubsystemEvent::ServerStateChanged {
-                server_name: name,
-                state: "error".to_string(),
-                error: Some(error),
-            });
+            self.runtime
+                .emit_event(super::McpSubsystemEvent::ServerStateChanged {
+                    server_name: name,
+                    state: "error".to_string(),
+                    error: Some(error),
+                });
             client.disconnect().await;
             return Err(e);
         }

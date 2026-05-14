@@ -15,17 +15,17 @@ use futures::Stream;
 use uuid::Uuid;
 
 use crate::compact::compaction::build_post_compact_messages_with_boundary;
-use crate::query::deps::{
-    CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
-};
-use crate::tools::execution::{
-    enforce_result_size, find_tool, is_plan_mode_plan_file_write, sandbox_allowed_command_applies,
-    security_validate, ToolExecutionResult,
+use crate::tool_runtime::execution::{
+    find_tool, is_plan_mode_plan_file_write, sandbox_allowed_command_applies, security_validate,
+    ToolExecutionResult,
 };
 use crate::types::app_state::AppState;
 use crate::types::message::{Message, StreamEvent};
 use crate::types::state::AutoCompactTracking;
 use crate::types::tool::{PermissionMode, ToolProgress, Tools, ValidationResult};
+use cc_engine::query::deps::{
+    CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
+};
 
 use super::helpers::{build_messages_request, format_conversation_for_summary};
 use super::QueryEngineState;
@@ -61,7 +61,7 @@ pub(crate) struct QueryEngineDeps {
     /// Shared buffer of completed background agents.
     pub(crate) pending_bg_results: crate::agent_runtime::PendingBackgroundResults,
     /// Hook runner — used via the `HookRunner` trait from `cc-types::hooks` so
-    /// the engine has no direct dependency on `crate::tools::hooks`.
+    /// the engine has no direct dependency on the concrete shell-hook runner.
     pub(crate) hook_runner: Arc<dyn cc_types::hooks::HookRunner>,
     /// Command dispatcher — forwarded into `ToolUseContext` for tools that
     /// spawn child engines (e.g. Agent).
@@ -692,7 +692,7 @@ impl QueryDeps for QueryEngineDeps {
         use cc_types::hooks::{PermissionOverride, PostToolHookResult, PreToolHookResult};
 
         // Hook dispatcher trait object — decouples the engine from the concrete
-        // `crate::tools::hooks` impl (see issue #74, Phase 5b).
+        // concrete shell-hook runner (see issue #74, Phase 5b).
         let hooks = self.hook_runner.as_ref();
 
         let tool = find_tool(&request.tool_name, tools)
@@ -1291,7 +1291,10 @@ impl QueryDeps for QueryEngineDeps {
                     }
                 }
 
-                result.data = enforce_result_size(result.data, tool.max_result_size_chars());
+                result.data = cc_tools::result::enforce_result_size(
+                    result.data,
+                    tool.max_result_size_chars(),
+                );
 
                 Ok(ToolExecResult {
                     tool_use_id: request.tool_use_id,
@@ -1393,7 +1396,7 @@ impl QueryDeps for QueryEngineDeps {
     }
 
     async fn refresh_tools(&self) -> Result<Tools> {
-        let Some(manager) = crate::mcp::runtime::current_manager() else {
+        let Some(manager) = cc_mcp::runtime::current_manager() else {
             return Ok(self.state.read().tools.clone());
         };
 
@@ -1401,7 +1404,7 @@ impl QueryDeps for QueryEngineDeps {
             let manager_guard = manager.lock().await;
             manager_guard.all_tools()
         };
-        let mcp_tools = crate::mcp::tools::mcp_tools_to_tools(mcp_tool_defs, manager);
+        let mcp_tools = crate::mcp_tool_adapter::mcp_tools_to_tools(mcp_tool_defs, manager);
 
         let refreshed = {
             let mut state = self.state.write();
@@ -1410,7 +1413,7 @@ impl QueryDeps for QueryEngineDeps {
             refreshed
         };
 
-        crate::tools::tool_search::install_runtime_tool_catalog(&refreshed);
+        crate::tool_runtime::tool_search::install_runtime_tool_catalog(&refreshed);
         Ok(refreshed)
     }
 
@@ -1824,17 +1827,15 @@ mod tests {
     }
 
     fn mcp_tool(server_name: &str, tool_name: &str) -> Arc<dyn Tool> {
-        Arc::new(crate::mcp::tools::McpToolWrapper {
-            def: crate::mcp::McpToolDef {
+        Arc::new(crate::mcp_tool_adapter::McpToolWrapper {
+            def: cc_mcp::McpToolDef {
                 name: tool_name.to_string(),
                 description: format!("{server_name} tool"),
                 input_schema: json!({"type": "object"}),
                 server_name: server_name.to_string(),
             },
             server_name: server_name.to_string(),
-            manager: Arc::new(tokio::sync::Mutex::new(
-                crate::mcp::manager::McpManager::new(),
-            )),
+            manager: Arc::new(tokio::sync::Mutex::new(cc_mcp::manager::McpManager::new())),
         })
     }
 

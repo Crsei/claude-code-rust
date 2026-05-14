@@ -7,7 +7,6 @@ mod gateway_run_events;
 pub mod memory_log;
 pub mod notification;
 pub mod process_state;
-pub mod protocol;
 pub mod routes;
 pub mod server;
 pub mod sse;
@@ -16,3 +15,7 @@ pub mod supervisor;
 pub mod team_memory_proxy;
 pub mod tick;
 pub mod webhook;
+
+pub(crate) fn protocol_store() -> cc_daemon::protocol::DaemonProtocolStore {
+    cc_daemon::protocol::DaemonProtocolStore::new(process_state::daemon_dir())
+}

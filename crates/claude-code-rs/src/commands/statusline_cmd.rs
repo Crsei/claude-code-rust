@@ -25,11 +25,11 @@ use std::time::Duration;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::config::settings::{self, RawSettings, StatusLineSettings};
-use crate::types::message::Message;
 use crate::ui::status_line::payload::{build_payload_from_snapshot, StatusLineSnapshot};
 use crate::ui::status_line::{StatusLineOutput, StatusLinePayload, StatusLineRunner};
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_config::settings::{self, RawSettings, StatusLineSettings};
+use cc_types::message::Message;
 
 pub struct StatusLineHandler;
 
@@ -419,9 +419,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
-    use crate::types::message::{AssistantMessage, Usage};
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
+    use cc_types::message::{AssistantMessage, Usage};
     use uuid::Uuid;
 
     fn make_ctx() -> CommandContext {

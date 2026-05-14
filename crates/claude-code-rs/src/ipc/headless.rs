@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use crate::engine::lifecycle::QueryEngine;
+use cc_engine::lifecycle::QueryEngine;
 
 use super::runtime::HeadlessRuntime;
 use cc_ipc_client::sink::FrontendSink;

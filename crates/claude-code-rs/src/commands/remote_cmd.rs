@@ -327,8 +327,8 @@ fn usage() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use gateway::{RemoteSource, RemoteTransport, RunPolicy, RunRequest};
     use std::path::PathBuf;
 

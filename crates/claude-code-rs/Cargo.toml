@@ -151,6 +151,7 @@ cc-compact = { workspace = true }
 cc-sandbox = { workspace = true }
 cc-permissions = { workspace = true }
 cc-browser = { workspace = true }
+cc-lsp-service = { workspace = true }
 cc-session = { workspace = true }
 cc-engine = { workspace = true }
 cc-query = { workspace = true }
@@ -158,6 +159,7 @@ cc-tools = { workspace = true }
 cc-tasks = { workspace = true }
 cc-teams = { workspace = true }
 cc-commands = { workspace = true }
+cc-daemon = { workspace = true }
 cc-ipc = { workspace = true }
 cc-ipc-protocol = { workspace = true }
 cc-ipc-client = { workspace = true }
@@ -172,7 +174,6 @@ notify-rust = { workspace = true }
 
 # Web UI embed
 rust-embed = { workspace = true, optional = true }
-mime_guess = { workspace = true }
 
 # AST / 闂佹悶鍎查崕鎶藉磿?
 tree-sitter = { workspace = true, optional = true }

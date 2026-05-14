@@ -15,7 +15,6 @@ use tokio_stream::StreamExt;
 use tracing::info;
 
 use super::{
-    protocol,
     state::{DaemonState, SseClient, SseEvent},
     supervisor::ASSISTANT_WORKER_ID,
 };
@@ -48,7 +47,10 @@ pub async fn sse_handler(
             let _ = tx.send(event);
         }
     }
-    for event in protocol::read_worker_events(ASSISTANT_WORKER_ID).unwrap_or_default() {
+    for event in super::protocol_store()
+        .read_worker_events(ASSISTANT_WORKER_ID)
+        .unwrap_or_default()
+    {
         let _ = tx.send(SseEvent {
             id: event.event_id,
             event_type: format!("daemon_{}", event.event_type),

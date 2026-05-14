@@ -9,10 +9,10 @@ use parking_lot::Mutex;
 use tracing::{debug, warn};
 
 use crate::commands;
-use crate::engine::lifecycle::QueryEngine;
-use crate::services::prompt_suggestion::PromptSuggestionService;
-use crate::types::message::{ContentBlock, Message, MessageContent};
 use cc_commands::{CommandContext, CommandResult};
+use cc_engine::lifecycle::QueryEngine;
+use cc_services::prompt_suggestion::PromptSuggestionService;
+use cc_types::message::{ContentBlock, Message, MessageContent};
 
 use super::callbacks::{PendingPermissions, PendingQuestions};
 use super::query_runner::spawn_query_turn;
@@ -51,7 +51,7 @@ pub(crate) async fn dispatch(
             }
 
             let app_state = engine.app_state();
-            let classifier = crate::plan_workflow::classify_plan_entry(&text, &app_state);
+            let classifier = cc_commands::plan_workflow::classify_plan_entry(&text, &app_state);
             if classifier.should_enter {
                 match crate::plan_workflow::enter_engine_plan_mode(
                     engine,
@@ -60,7 +60,7 @@ pub(crate) async fn dispatch(
                     Some(&classifier.reason),
                 ) {
                     Ok(record) => {
-                        let summary = crate::plan_workflow::summarize(&record);
+                        let summary = cc_types::plan_workflow::summarize(&record);
                         let _ = sink.send(&BackendMessage::PlanWorkflowEvent {
                             event: "classifier_entered".to_string(),
                             summary: summary.clone(),
@@ -136,7 +136,7 @@ pub(crate) async fn dispatch(
 
         FrontendMessage::Resize { cols, rows } => {
             debug!("headless: resize {}x{}", cols, rows);
-            let mut ps = crate::bootstrap::PROCESS_STATE.write();
+            let mut ps = cc_bootstrap::PROCESS_STATE.write();
             ps.terminal_cols = cols;
             ps.terminal_rows = rows;
         }
@@ -205,13 +205,18 @@ pub(crate) async fn dispatch(
                 "headless: search_files request_id={} pattern={:?}",
                 request_id, pattern
             );
-            super::file_search::dispatch_search(
-                request_id,
-                pattern,
-                cwd,
-                case_insensitive,
-                max_results,
-                sink,
+            let sink = sink.clone();
+            cc_ipc::file_search::dispatch_search(
+                cc_ipc::file_search::FileSearchRequest {
+                    request_id,
+                    pattern,
+                    cwd,
+                    case_insensitive,
+                    max_results,
+                },
+                move |msg| {
+                    let _ = sink.send(&msg);
+                },
             );
         }
     }
@@ -293,16 +298,16 @@ fn to_conversation_message(message: &Message) -> Option<ConversationMessage> {
         }
         Message::System(system) => {
             let level = match &system.subtype {
-                crate::types::message::SystemSubtype::Informational { level } => Some(
+                cc_types::message::SystemSubtype::Informational { level } => Some(
                     match level {
-                        crate::types::message::InfoLevel::Info => "info",
-                        crate::types::message::InfoLevel::Warning => "warning",
-                        crate::types::message::InfoLevel::Error => "error",
+                        cc_types::message::InfoLevel::Info => "info",
+                        cc_types::message::InfoLevel::Warning => "warning",
+                        cc_types::message::InfoLevel::Error => "error",
                     }
                     .to_string(),
                 ),
-                crate::types::message::SystemSubtype::Warning => Some("warning".to_string()),
-                crate::types::message::SystemSubtype::ApiError { .. } => Some("error".to_string()),
+                cc_types::message::SystemSubtype::Warning => Some("warning".to_string()),
+                cc_types::message::SystemSubtype::ApiError { .. } => Some("error".to_string()),
                 _ => Some("info".to_string()),
             };
 
@@ -404,7 +409,7 @@ async fn handle_slash_command(
             if let Some(record) = ctx.app_state.plan_workflow.clone() {
                 let _ = sink.send(&BackendMessage::PlanWorkflowEvent {
                     event: "slash_command".to_string(),
-                    summary: crate::plan_workflow::summarize(&record),
+                    summary: cc_types::plan_workflow::summarize(&record),
                     record,
                 });
             }
@@ -459,8 +464,8 @@ async fn handle_slash_command(
                     .iter()
                     .filter_map(|m| match m {
                         Message::User(u) => Some(match &u.content {
-                            crate::types::message::MessageContent::Text(t) => t.clone(),
-                            crate::types::message::MessageContent::Blocks(_) => {
+                            cc_types::message::MessageContent::Text(t) => t.clone(),
+                            cc_types::message::MessageContent::Blocks(_) => {
                                 "[content blocks]".to_string()
                             }
                         }),

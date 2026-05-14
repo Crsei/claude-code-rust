@@ -86,7 +86,7 @@ fn task_lists_root() -> PathBuf {
 
     #[cfg(not(test))]
     {
-        crate::config::paths::tasks_dir()
+        cc_config::paths::tasks_dir()
     }
 }
 

@@ -21,13 +21,13 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::config::paths;
-use crate::keybindings::action::Action;
-use crate::keybindings::config::EMPTY_TEMPLATE;
-use crate::keybindings::context::Context as KbContext;
-use crate::keybindings::registry::KeybindingRegistry;
 use crate::ui::browser::{ensure_and_open, format_open_outcome};
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_config::paths;
+use cc_keybindings::action::Action;
+use cc_keybindings::config::EMPTY_TEMPLATE;
+use cc_keybindings::context::Context as KbContext;
+use cc_keybindings::registry::KeybindingRegistry;
 
 pub struct KeybindingsHandler;
 
@@ -187,8 +187,8 @@ fn list_bindings(reg: &KeybindingRegistry, filter: Option<KbContext>) -> String 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
 
     fn make_ctx() -> CommandContext {
         CommandContext {

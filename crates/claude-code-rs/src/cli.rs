@@ -131,7 +131,7 @@ pub struct Cli {
     pub claude_in_chrome_mcp: bool,
 
     /// Disable all network access for the current session. Forwarded to
-    /// [`crate::sandbox::SandboxPolicy`] so shell subprocesses and WebFetch
+    /// [`cc_sandbox::SandboxPolicy`] so shell subprocesses and WebFetch
     /// are both blocked.
     #[arg(long = "no-network")]
     pub no_network: bool,

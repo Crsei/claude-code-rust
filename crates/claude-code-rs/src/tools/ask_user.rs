@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tracing::debug;
 
-use crate::types::message::AssistantMessage;
-use crate::types::tool::*;
+use cc_engine::types::tool::*;
+use cc_types::message::AssistantMessage;
 
 /// AskUserQuestion tool — asks the user a question and waits for response.
 pub struct AskUserQuestionTool;
@@ -229,7 +229,7 @@ mod tests {
                 rx
             },
             read_file_state: FileStateCache::default(),
-            get_app_state: std::sync::Arc::new(crate::types::app_state::AppState::default),
+            get_app_state: std::sync::Arc::new(cc_engine::types::app_state::AppState::default),
             set_app_state: std::sync::Arc::new(|_| {}),
             session_id: "test-session".to_string(),
             langfuse_session_id: "test-session".to_string(),

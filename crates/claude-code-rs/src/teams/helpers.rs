@@ -53,7 +53,7 @@ pub fn team_config_path(team_name: &str) -> PathBuf {
 
 /// Get the tasks directory for a team.
 pub fn team_tasks_dir(team_name: &str) -> PathBuf {
-    crate::config::paths::tasks_dir().join(sanitize_team_name(team_name))
+    cc_config::paths::tasks_dir().join(sanitize_team_name(team_name))
 }
 
 // ---------------------------------------------------------------------------

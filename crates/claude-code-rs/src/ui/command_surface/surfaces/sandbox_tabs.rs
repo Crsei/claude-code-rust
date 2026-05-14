@@ -1,6 +1,6 @@
-use crate::sandbox::availability::{detect_availability, Availability};
-use crate::types::app_state::AppState;
 use crate::ui::form_navigation::{FormOption, FormTab};
+use cc_engine::types::app_state::AppState;
+use cc_sandbox::availability::{detect_availability, Availability};
 
 pub(super) fn expand_status_tabs(
     tabs: &mut Vec<FormTab>,

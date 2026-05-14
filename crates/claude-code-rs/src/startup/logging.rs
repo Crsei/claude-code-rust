@@ -41,7 +41,7 @@ pub fn init_tracing(verbose: bool) -> WorkerGuard {
     let stderr_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(log_level));
 
-    let log_dir = crate::config::paths::logs_dir();
+    let log_dir = cc_config::paths::logs_dir();
     if let Err(e) = std::fs::create_dir_all(&log_dir) {
         eprintln!(
             "warning: failed to create log directory {}: {}. File logging disabled.",
@@ -72,7 +72,7 @@ pub fn init_tracing(verbose: bool) -> WorkerGuard {
 
     #[cfg(feature = "telemetry")]
     {
-        match crate::services::langfuse::init_langfuse() {
+        match cc_services::langfuse::init_langfuse() {
             Ok(Some(tracer)) => {
                 let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
                 subscriber.with(telemetry).init();

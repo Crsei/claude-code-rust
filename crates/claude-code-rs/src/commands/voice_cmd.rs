@@ -7,13 +7,13 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::auth::{self, AuthMethod};
-use crate::config::settings::{self, RawSettings};
 use crate::voice::audio::{AudioUnavailable, NullAudioBackend};
 use crate::voice::feasibility::{check_feasibility, Feasibility, FeasibilityReason};
 use crate::voice::language::normalize_language_for_stt;
 use crate::voice::stt::{NullTranscriptionClient, SttUnavailable};
+use cc_auth::{self as auth, AuthMethod};
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_config::settings::{self, RawSettings};
 
 pub struct VoiceHandler;
 
@@ -280,8 +280,8 @@ fn persist(enabled: bool) -> Result<std::path::PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use serial_test::serial;
 
     struct EnvGuard {

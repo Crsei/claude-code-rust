@@ -83,9 +83,9 @@ const USAGE_HELP: &str = "Usage:\n  \
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::session::storage::{self, SerializableMessage, SessionFile};
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
+    use cc_session::storage::{self, SerializableMessage, SessionFile};
     use std::path::{Path, PathBuf};
 
     struct HomeGuard {

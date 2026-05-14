@@ -392,8 +392,8 @@ fn normalize_env_value(raw: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
 
     fn make_ctx() -> CommandContext {
         CommandContext {

@@ -11,10 +11,11 @@
 
 pub mod agent_handlers;
 pub mod agent_tree;
+pub mod file_search;
+pub mod subsystem_events;
 pub mod subsystem_handlers;
 pub mod system_status_tool;
 
-#[allow(unused_imports)]
 pub use cc_types::{
     agent_channel::{agent_channel, AgentIpcEvent, AgentReceiver, AgentSender},
     agent_events::{AgentCommand, AgentEvent, TeamCommand, TeamEvent},

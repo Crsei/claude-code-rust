@@ -135,6 +135,29 @@ impl Default for HookOutput {
 /// Type alias for the hooks map loaded from `settings.json`.
 pub type HooksMap = HashMap<String, Value>;
 
+/// Check if a hook matcher pattern applies to a tool name.
+///
+/// `None` and `"*"` match all tools. Other values match either an exact tool
+/// name or a prefix, which covers MCP tool families such as `mcp__`.
+pub fn matches_tool(matcher: Option<&str>, tool_name: &str) -> bool {
+    match matcher {
+        None => true,
+        Some("*") => true,
+        Some(pattern) => tool_name == pattern || tool_name.starts_with(pattern),
+    }
+}
+
+/// Load hook configurations for a specific event from the hooks settings map.
+///
+/// Invalid event payloads preserve the existing best-effort behavior by
+/// returning an empty config set.
+pub fn load_hook_configs(hooks_value: &HooksMap, event_name: &str) -> Vec<HookEventConfig> {
+    hooks_value
+        .get(event_name)
+        .and_then(|event_value| serde_json::from_value(event_value.clone()).ok())
+        .unwrap_or_default()
+}
+
 /// Trait for running hook subprocess commands.
 ///
 /// Decouples the engine from the concrete shell-execution implementation that
@@ -193,6 +216,74 @@ pub trait HookRunner: Send + Sync {
         &self,
         hook_configs: &[HookEventConfig],
     ) -> anyhow::Result<PostToolHookResult>;
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{json, Value};
+
+    use super::*;
+
+    #[test]
+    fn matcher_supports_exact_wildcard_and_prefix() {
+        assert!(matches_tool(Some("Bash"), "Bash"));
+        assert!(!matches_tool(Some("Bash"), "Read"));
+        assert!(matches_tool(None, "Read"));
+        assert!(matches_tool(Some("*"), "anything_at_all"));
+        assert!(matches_tool(Some("mcp__"), "mcp__server__tool"));
+        assert!(!matches_tool(Some("mcp__"), "mcp_single_underscore"));
+    }
+
+    #[test]
+    fn load_hook_configs_preserves_critical_and_default_timeout() {
+        let hooks_value = HooksMap::from([(
+            "PreToolUse".to_string(),
+            json!([
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "echo ok",
+                            "timeout": 30
+                        }
+                    ]
+                },
+                {
+                    "matcher": "*",
+                    "critical": true,
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "echo audit"
+                        }
+                    ]
+                }
+            ]),
+        )]);
+
+        let configs = load_hook_configs(&hooks_value, "PreToolUse");
+        assert_eq!(configs.len(), 2);
+        assert_eq!(configs[0].matcher.as_deref(), Some("Bash"));
+        assert!(!configs[0].critical);
+        assert_eq!(configs[1].matcher.as_deref(), Some("*"));
+        assert!(configs[1].critical);
+
+        match &configs[1].hooks[0] {
+            HookEntry::Command { command, timeout } => {
+                assert_eq!(command, "echo audit");
+                assert_eq!(*timeout, 60);
+            }
+        }
+    }
+
+    #[test]
+    fn load_hook_configs_ignores_missing_or_invalid_event() {
+        let hooks_value = HooksMap::from([("PreToolUse".to_string(), Value::String("bad".into()))]);
+
+        assert!(load_hook_configs(&hooks_value, "PreToolUse").is_empty());
+        assert!(load_hook_configs(&hooks_value, "PostToolUse").is_empty());
+    }
 }
 
 // ---------------------------------------------------------------------------

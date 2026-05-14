@@ -10,11 +10,11 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tracing::debug;
 
-use crate::types::message::AssistantMessage;
-use crate::types::tool::{
+use cc_engine::types::tool::{
     InterruptBehavior, Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult,
 };
-use crate::utils::bash::resolve_timeout;
+use cc_types::message::AssistantMessage;
+use cc_utils::bash::resolve_timeout;
 
 use super::bash::truncate_output;
 

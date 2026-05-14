@@ -162,8 +162,8 @@ async fn test_background_agent_placeholder_format() {
 // sdk_to_agent_event — SdkMessage → AgentEvent mapping
 // ---------------------------------------------------------------------------
 
-fn make_stream_event(delta: serde_json::Value) -> crate::sdk_types::SdkMessage {
-    crate::sdk_types::SdkMessage::StreamEvent(crate::sdk_types::SdkStreamEvent {
+fn make_stream_event(delta: serde_json::Value) -> cc_types::sdk::SdkMessage {
+    cc_types::sdk::SdkMessage::StreamEvent(cc_types::sdk::SdkStreamEvent {
         event: crate::types::message::StreamEvent::ContentBlockDelta { index: 0, delta },
         session_id: "s1".into(),
         uuid: Uuid::nil(),
@@ -172,8 +172,8 @@ fn make_stream_event(delta: serde_json::Value) -> crate::sdk_types::SdkMessage {
 
 fn make_assistant_msg(
     content: Vec<crate::types::message::ContentBlock>,
-) -> crate::sdk_types::SdkMessage {
-    crate::sdk_types::SdkMessage::Assistant(crate::sdk_types::SdkAssistantMessage {
+) -> cc_types::sdk::SdkMessage {
+    cc_types::sdk::SdkMessage::Assistant(cc_types::sdk::SdkAssistantMessage {
         message: crate::types::message::AssistantMessage {
             uuid: Uuid::nil(),
             timestamp: 0,
@@ -190,10 +190,8 @@ fn make_assistant_msg(
     })
 }
 
-fn make_user_replay(
-    blocks: Vec<crate::types::message::ContentBlock>,
-) -> crate::sdk_types::SdkMessage {
-    crate::sdk_types::SdkMessage::UserReplay(crate::sdk_types::SdkUserReplay {
+fn make_user_replay(blocks: Vec<crate::types::message::ContentBlock>) -> cc_types::sdk::SdkMessage {
+    cc_types::sdk::SdkMessage::UserReplay(cc_types::sdk::SdkUserReplay {
         content: String::new(),
         session_id: "s1".into(),
         uuid: Uuid::nil(),
@@ -341,7 +339,7 @@ fn test_sdk_to_agent_event_tool_result_blocks_shows_placeholder() {
 
 #[test]
 fn test_sdk_to_agent_event_user_replay_no_blocks_returns_none() {
-    let msg = crate::sdk_types::SdkMessage::UserReplay(crate::sdk_types::SdkUserReplay {
+    let msg = cc_types::sdk::SdkMessage::UserReplay(cc_types::sdk::SdkUserReplay {
         content: "hello".into(),
         session_id: "s1".into(),
         uuid: Uuid::nil(),
@@ -357,7 +355,7 @@ fn test_sdk_to_agent_event_user_replay_no_blocks_returns_none() {
 
 #[test]
 fn test_sdk_to_agent_event_system_init_returns_none() {
-    let msg = crate::sdk_types::SdkMessage::SystemInit(crate::sdk_types::SystemInitMessage {
+    let msg = cc_types::sdk::SdkMessage::SystemInit(cc_types::sdk::SystemInitMessage {
         tools: vec![],
         model: "test".into(),
         permission_mode: "default".into(),
@@ -369,7 +367,7 @@ fn test_sdk_to_agent_event_system_init_returns_none() {
 
 #[test]
 fn test_sdk_to_agent_event_stream_message_start_returns_none() {
-    let msg = crate::sdk_types::SdkMessage::StreamEvent(crate::sdk_types::SdkStreamEvent {
+    let msg = cc_types::sdk::SdkMessage::StreamEvent(cc_types::sdk::SdkStreamEvent {
         event: crate::types::message::StreamEvent::MessageStart {
             usage: crate::types::message::Usage {
                 input_tokens: 0,

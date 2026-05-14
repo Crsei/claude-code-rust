@@ -7,16 +7,16 @@
 //! - `/rename --clear`        -- remove the custom title (falling back to auto-derived)
 //!
 //! The title is stored on the `SessionFile` via
-//! [`crate::session::storage::set_session_title`]. If the session has not been
+//! [`cc_session::storage::set_session_title`]. If the session has not been
 //! persisted yet (no assistant turn has triggered an auto-save) we persist the
 //! current message buffer first so the rename has a file to land on.
 
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::session::storage;
-use crate::types::message::{Message, MessageContent};
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_session::storage;
+use cc_types::message::{Message, MessageContent};
 
 /// Handler for the `/rename` slash command.
 pub struct RenameHandler;
@@ -135,7 +135,7 @@ fn auto_rename(ctx: &CommandContext, session_id: &str) -> Result<CommandResult> 
 
 /// Pull a reasonable title from the in-memory message list.
 ///
-/// Mirrors the behavior of [`crate::session::storage`]'s derived title: first
+/// Mirrors the behavior of [`cc_session::storage`]'s derived title: first
 /// non-meta user message, first non-empty line, truncated to 80 chars.
 fn derive_auto_title_from_messages(messages: &[Message]) -> String {
     const MAX: usize = 80;
@@ -149,7 +149,7 @@ fn derive_auto_title_from_messages(messages: &[Message]) -> String {
             MessageContent::Blocks(blocks) => blocks
                 .iter()
                 .filter_map(|b| match b {
-                    crate::types::message::ContentBlock::Text { text } => Some(text.clone()),
+                    cc_types::message::ContentBlock::Text { text } => Some(text.clone()),
                     _ => None,
                 })
                 .collect::<Vec<_>>()
@@ -176,9 +176,9 @@ fn derive_auto_title_from_messages(messages: &[Message]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
-    use crate::types::message::{MessageContent, UserMessage};
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
+    use cc_types::message::{MessageContent, UserMessage};
     use std::path::{Path, PathBuf};
     use uuid::Uuid;
 

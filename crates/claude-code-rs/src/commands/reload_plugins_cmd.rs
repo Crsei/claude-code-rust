@@ -39,11 +39,11 @@ impl CommandHandler for ReloadPluginsHandler {
     async fn execute(&self, _args: &str, _ctx: &mut CommandContext) -> Result<CommandResult> {
         let report = plugins::reload_plugins();
         let plugin_skills = plugins::discover_plugin_skills();
-        let skill_report = crate::skills::reload_skills_with_extra(
-            &crate::config::paths::skills_dir_global(),
+        let skill_report = cc_skills::reload_skills_with_extra(
+            &cc_config::paths::skills_dir_global(),
             Some(&_ctx.cwd),
             plugin_skills,
-            crate::skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
+            cc_skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
         );
         Ok(CommandResult::Output(format_report(&report, &skill_report)))
     }
@@ -62,7 +62,7 @@ impl CommandHandler for ReloadPluginsHandler {
 /// obvious even if the diagnostic list is long.
 fn format_report(
     report: &plugins::ReloadReport,
-    skill_report: &crate::skills::SkillLoadReport,
+    skill_report: &cc_skills::SkillLoadReport,
 ) -> String {
     let mut out = format!(
         "Reloaded {} plugin(s) in {}ms.",
@@ -110,11 +110,11 @@ fn format_report(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
     use crate::plugins::{
         clear_plugins, register_plugin, PluginEntry, PluginSource, PluginStatus, ReloadReport,
     };
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use parking_lot::Mutex;
     use std::path::PathBuf;
     use std::sync::LazyLock;
@@ -153,8 +153,8 @@ mod tests {
         }
     }
 
-    fn empty_skill_report() -> crate::skills::SkillLoadReport {
-        crate::skills::SkillLoadReport {
+    fn empty_skill_report() -> cc_skills::SkillLoadReport {
+        cc_skills::SkillLoadReport {
             loaded: 0,
             skipped: 0,
             diagnostics: vec![],

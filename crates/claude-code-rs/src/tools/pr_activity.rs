@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::teams::{constants, mailbox, types::TeammateMessage};
-use crate::types::message::AssistantMessage;
-use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use cc_engine::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use cc_types::message::AssistantMessage;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PrActivitySubscription {
@@ -414,7 +414,7 @@ fn unsubscribe(params: UnsubscribeInput) -> Result<usize> {
 }
 
 fn load_subscriptions() -> Result<Vec<PrActivitySubscription>> {
-    let path = crate::config::paths::pr_activity_subscriptions_path();
+    let path = cc_config::paths::pr_activity_subscriptions_path();
     if !path.exists() {
         return Ok(Vec::new());
     }
@@ -427,7 +427,7 @@ fn load_subscriptions() -> Result<Vec<PrActivitySubscription>> {
 }
 
 fn save_subscriptions(subscriptions: &[PrActivitySubscription]) -> Result<()> {
-    let path = crate::config::paths::pr_activity_subscriptions_path();
+    let path = cc_config::paths::pr_activity_subscriptions_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }

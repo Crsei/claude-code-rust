@@ -1,7 +1,6 @@
 //! Web server module — Axum-based HTTP server for the chat UI.
 
 pub mod handlers;
-pub mod sse;
 pub mod state;
 pub mod static_files;
 

@@ -148,7 +148,7 @@ impl Tool for TaskCreateTool {
         // Fire TaskCreated hook.
         {
             let app_state = (ctx.get_app_state)();
-            let configs = crate::tools::hooks::load_hook_configs(&app_state.hooks, "TaskCreated");
+            let configs = cc_types::hooks::load_hook_configs(&app_state.hooks, "TaskCreated");
             if !configs.is_empty() {
                 let payload = json!({
                     "task_id": &entry.id,
@@ -350,7 +350,7 @@ impl Tool for TaskUpdateTool {
                 {
                     let app_state = (ctx.get_app_state)();
                     let configs =
-                        crate::tools::hooks::load_hook_configs(&app_state.hooks, "TaskCompleted");
+                        cc_types::hooks::load_hook_configs(&app_state.hooks, "TaskCompleted");
                     if !configs.is_empty() {
                         let payload = json!({
                             "task_id": &entry.id,

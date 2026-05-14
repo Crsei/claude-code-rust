@@ -9,6 +9,7 @@ pub mod callbacks;
 pub mod event_class;
 pub mod ingress;
 pub mod query_runner;
+pub mod sdk_mapping;
 pub mod sink;
 pub mod transport;
 

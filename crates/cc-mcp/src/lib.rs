@@ -19,42 +19,9 @@ pub mod transport;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 pub use cc_types::mcp::McpOAuthConfig;
-
-// ---------------------------------------------------------------------------
-// Protocol constants
-// ---------------------------------------------------------------------------
-
-/// MCP protocol version we advertise during initialization.
-pub const PROTOCOL_VERSION: &str = "2024-11-05";
-
-/// Client name sent during initialization.
-pub const CLIENT_NAME: &str = "claude-code-rs";
-
-/// Client version sent during initialization.
-pub const CLIENT_VERSION: &str = "0.1.0";
-
-/// Default connection/initialize timeout (seconds).
-pub const CONNECT_TIMEOUT_SECS: u64 = 30;
-
-/// Default tool call timeout (seconds). Very generous — MCP tools can be slow.
-pub const TOOL_CALL_TIMEOUT_SECS: u64 = 300;
-
-// ---------------------------------------------------------------------------
-// Subsystem event emission
-// ---------------------------------------------------------------------------
-//
-// cc-mcp used to hold a
-// `broadcast::Sender<crate::ipc::subsystem_events::SubsystemEvent>` directly.
-// Once mcp moved into its own crate (issue #72), reaching back into the root
-// crate's `ipc` module would have been a cycle. The host now registers a
-// simple callback that receives cc-mcp's own minimal event enum and is
-// responsible for adapting it into the broader `SubsystemEvent` wrapper.
-// Same pattern as `cc-skills::set_event_callback`.
-
-use parking_lot::Mutex as SyncMutex;
-use std::sync::LazyLock;
 
 /// Tool information surfaced to the host when `ToolsDiscovered` fires.
 #[derive(Debug, Clone)]
@@ -98,23 +65,51 @@ pub enum McpSubsystemEvent {
     },
 }
 
-type EventCallback = Box<dyn Fn(McpSubsystemEvent) + Send + Sync>;
-
-static EVENT_CALLBACK: LazyLock<SyncMutex<Option<EventCallback>>> =
-    LazyLock::new(|| SyncMutex::new(None));
-
-/// Register the host's event adapter. Replaces any previous callback.
-pub fn set_event_callback<F>(cb: F)
-where
-    F: Fn(McpSubsystemEvent) + Send + Sync + 'static,
-{
-    *EVENT_CALLBACK.lock() = Some(Box::new(cb));
+/// Host-provided sink for MCP subsystem events.
+///
+/// The sink is attached to `McpManager`/`McpClient` instances instead of being
+/// installed globally, so tests and embedded runtimes can run multiple MCP
+/// owners without sharing hidden callback state.
+pub trait McpEventSink: Send + Sync {
+    fn emit(&self, event: McpSubsystemEvent);
 }
 
-/// Emit an event through the registered callback (no-op if unset).
-pub(crate) fn emit_event(event: McpSubsystemEvent) {
-    if let Some(cb) = EVENT_CALLBACK.lock().as_ref() {
-        cb(event);
+impl<F> McpEventSink for F
+where
+    F: Fn(McpSubsystemEvent) + Send + Sync,
+{
+    fn emit(&self, event: McpSubsystemEvent) {
+        self(event);
+    }
+}
+
+pub type SharedMcpEventSink = Arc<dyn McpEventSink>;
+
+/// Runtime-scoped MCP integrations that are intentionally host-owned.
+#[derive(Clone, Default)]
+pub struct McpRuntimeContext {
+    event_sink: Option<SharedMcpEventSink>,
+}
+
+impl McpRuntimeContext {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_event_sink(event_sink: SharedMcpEventSink) -> Self {
+        Self {
+            event_sink: Some(event_sink),
+        }
+    }
+
+    pub fn set_event_sink(&mut self, event_sink: Option<SharedMcpEventSink>) {
+        self.event_sink = event_sink;
+    }
+
+    pub(crate) fn emit_event(&self, event: McpSubsystemEvent) {
+        if let Some(sink) = &self.event_sink {
+            sink.emit(event);
+        }
     }
 }
 

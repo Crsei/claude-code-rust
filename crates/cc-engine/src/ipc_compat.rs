@@ -19,8 +19,8 @@ impl cc_types::callbacks::CallbackHost for QueryEngine {
     }
 }
 
-impl cc_types::query_host::QueryTurnHost<crate::sdk_types::SdkMessage> for QueryEngine {
-    type Stream = futures::stream::BoxStream<'static, crate::sdk_types::SdkMessage>;
+impl cc_types::query_host::QueryTurnHost<cc_types::sdk::SdkMessage> for QueryEngine {
+    type Stream = futures::stream::BoxStream<'static, cc_types::sdk::SdkMessage>;
 
     fn reset_abort(&self) {
         QueryEngine::reset_abort(self);

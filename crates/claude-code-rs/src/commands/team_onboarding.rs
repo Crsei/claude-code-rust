@@ -168,7 +168,7 @@ fn append_common_commands(out: &mut String) {
 }
 
 fn append_skills(out: &mut String) {
-    let skills = crate::skills::get_user_invocable_skills();
+    let skills = cc_skills::get_user_invocable_skills();
     out.push_str("## Skills\n\n");
     if skills.is_empty() {
         out.push_str(

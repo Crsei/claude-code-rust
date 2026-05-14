@@ -8,8 +8,8 @@ use serde_json::{json, Value};
 
 use cc_ipc::system_status_tool::{self, ChromeStatus};
 
-use crate::types::message::AssistantMessage;
-use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use cc_engine::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use cc_types::message::AssistantMessage;
 
 pub struct SystemStatusTool;
 
@@ -69,7 +69,7 @@ impl Tool for SystemStatusTool {
 /// Format a human-readable status output for the given subsystem.
 fn format_status_output(subsystem: &str) -> String {
     crate::ipc::runtime_adapters::ensure_installed();
-    let snap = crate::browser::state::snapshot();
+    let snap = cc_browser::state::snapshot();
     system_status_tool::format_status_output(
         subsystem,
         Some(ChromeStatus {

@@ -182,12 +182,6 @@ pub fn builtin_agent_prompt(name: &str) -> Option<&'static str> {
         .map(|a| a.system_prompt)
 }
 
-/// Return the names of every built-in agent. Handy for `existing_names` in
-/// the AI generation command (so Claude doesn't pick a colliding identifier).
-pub fn builtin_agent_names() -> Vec<String> {
-    BUILTINS.iter().map(|a| a.name.to_string()).collect()
-}
-
 fn to_entry(agent: &BuiltinAgent) -> AgentDefinitionEntry {
     AgentDefinitionEntry {
         name: agent.name.to_string(),

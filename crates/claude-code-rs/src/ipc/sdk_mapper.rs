@@ -11,14 +11,15 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use tracing::debug;
 
-use crate::engine::lifecycle::QueryEngine;
-use crate::engine::sdk_types::SdkMessage;
-use crate::services::prompt_suggestion::PromptSuggestionService;
-use crate::types::message::{ContentBlock, Message, StreamEvent, ToolResultContent};
+use cc_engine::lifecycle::QueryEngine;
+use cc_ipc_client::sdk_mapping::{extract_tool_result_output, stream_event_to_backend_message};
+use cc_services::prompt_suggestion::PromptSuggestionService;
+use cc_types::message::{ContentBlock, Message, StreamEvent, ToolResultContent};
+use cc_types::sdk::SdkMessage;
 
 use crate::ui::status_line::payload::{build_payload_from_snapshot, StatusLineSnapshot};
 use cc_ipc_client::sink::FrontendSink;
-use cc_ipc_protocol::{BackendMessage, ToolResultContentInfo};
+use cc_ipc_protocol::BackendMessage;
 
 // ---------------------------------------------------------------------------
 // SdkMessage ->BackendMessage mapping
@@ -220,22 +221,22 @@ fn maybe_send_plan_workflow_from_tool_result(content: &ToolResultContent, sink: 
     let Some(record_value) = value.get("plan_workflow") else {
         return;
     };
-    let Ok(record) = serde_json::from_value::<crate::types::plan_workflow::PlanWorkflowRecord>(
-        record_value.clone(),
-    ) else {
+    let Ok(record) =
+        serde_json::from_value::<cc_types::plan_workflow::PlanWorkflowRecord>(record_value.clone())
+    else {
         return;
     };
 
     let event = match record.approval_state {
-        crate::types::plan_workflow::PlanApprovalState::Approved => "approval_approved",
-        crate::types::plan_workflow::PlanApprovalState::Rejected => "approval_rejected",
-        crate::types::plan_workflow::PlanApprovalState::Pending => "approval_requested",
-        crate::types::plan_workflow::PlanApprovalState::NotRequested => "updated",
+        cc_types::plan_workflow::PlanApprovalState::Approved => "approval_approved",
+        cc_types::plan_workflow::PlanApprovalState::Rejected => "approval_rejected",
+        cc_types::plan_workflow::PlanApprovalState::Pending => "approval_requested",
+        cc_types::plan_workflow::PlanApprovalState::NotRequested => "updated",
     };
 
     let _ = sink.send(&BackendMessage::PlanWorkflowEvent {
         event: event.to_string(),
-        summary: crate::plan_workflow::summarize(&record),
+        summary: cc_types::plan_workflow::summarize(&record),
         record,
     });
 }
@@ -257,107 +258,6 @@ fn handle_stream_event(
     }
 }
 
-fn stream_event_to_backend_message(
-    event: &StreamEvent,
-    message_id: &str,
-) -> Option<BackendMessage> {
-    match event {
-        StreamEvent::MessageStart { .. } => Some(BackendMessage::StreamStart {
-            message_id: message_id.to_string(),
-        }),
-        StreamEvent::ContentBlockStart { .. } => None,
-        StreamEvent::ContentBlockDelta { ref delta, .. } => {
-            if stream_delta_type_matches(delta, "text_delta") {
-                if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
-                    return Some(BackendMessage::StreamDelta {
-                        message_id: message_id.to_string(),
-                        text: text.to_string(),
-                    });
-                }
-            }
-            if stream_delta_type_matches(delta, "thinking_delta") {
-                if let Some(thinking) = delta.get("thinking").and_then(|v| v.as_str()) {
-                    return Some(BackendMessage::ThinkingDelta {
-                        message_id: message_id.to_string(),
-                        thinking: thinking.to_string(),
-                    });
-                }
-            }
-            None
-        }
-        StreamEvent::MessageStop => Some(BackendMessage::StreamEnd {
-            message_id: message_id.to_string(),
-        }),
-        _ => None,
-    }
-}
-
-fn stream_delta_type_matches(delta: &serde_json::Value, expected: &str) -> bool {
-    delta
-        .get("type")
-        .and_then(|v| v.as_str())
-        .map_or(true, |actual| actual == expected)
-}
-
-// ---------------------------------------------------------------------------
-// Tool result content extraction
-// ---------------------------------------------------------------------------
-
-/// Extract human-readable output text and optional structured content info
-/// from a `ToolResultContent::Blocks(...)`.
-///
-/// For text blocks: concatenated into the output string.
-/// For image blocks: represented as `[image: mime_type]` in the output text,
-///   with metadata forwarded in the content_infos vec.
-pub fn extract_tool_result_output(
-    blocks: &[ContentBlock],
-) -> (String, Option<Vec<ToolResultContentInfo>>) {
-    let mut text_parts: Vec<String> = Vec::new();
-    let mut infos: Vec<ToolResultContentInfo> = Vec::new();
-    let mut has_non_text = false;
-
-    for block in blocks {
-        match block {
-            ContentBlock::Text { text } => {
-                text_parts.push(text.clone());
-                infos.push(ToolResultContentInfo::Text { text: text.clone() });
-            }
-            ContentBlock::Image { source } => {
-                has_non_text = true;
-                let media_type = source.media_type.clone();
-                let size_bytes = Some(source.data.len() * 3 / 4); // approx decoded size
-                text_parts.push(format!("[image: {}]", media_type));
-                // Forward the base64 payload to the frontend so browser
-                // screenshots can render inline. The data was already expanded
-                // into memory when the MCP tool call completed, so this is a
-                // clone of existing bytes — not a fresh allocation.
-                infos.push(ToolResultContentInfo::Image {
-                    media_type,
-                    size_bytes,
-                    data: Some(source.data.clone()),
-                });
-            }
-            _ => {
-                // Other block types (ToolUse, Thinking, etc.) — just note them
-                text_parts.push("[...]".to_string());
-            }
-        }
-    }
-
-    let output = if text_parts.is_empty() {
-        "(no output)".to_string()
-    } else {
-        text_parts.join("\n")
-    };
-
-    let content_infos = if has_non_text { Some(infos) } else { None };
-    (output, content_infos)
-}
-
-// ---------------------------------------------------------------------------
-// Scriptable status-line payload builder (issue #11)
-// ---------------------------------------------------------------------------
-
 /// Build the JSON payload published alongside every `Result` SDK message.
 /// Extracted so `handle_sdk_message` stays readable.
 ///
@@ -366,7 +266,7 @@ pub fn extract_tool_result_output(
 /// frontend validates it against its own shape.
 fn build_status_line_payload(
     engine: &Arc<QueryEngine>,
-    result: &crate::engine::sdk_types::SdkResult,
+    result: &cc_types::sdk::SdkResult,
 ) -> serde_json::Result<serde_json::Value> {
     let app_state = engine.app_state();
     let cwd = std::path::Path::new(engine.cwd());
@@ -469,9 +369,10 @@ pub fn generate_and_send_suggestions(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::sdk_types::{ResultSubtype, SdkResult};
-    use crate::types::config::QueryEngineConfig;
-    use crate::types::message::ImageSource;
+    use cc_engine::types::config::QueryEngineConfig;
+    use cc_ipc_protocol::ToolResultContentInfo;
+    use cc_types::message::ImageSource;
+    use cc_types::sdk::{ResultSubtype, SdkResult};
     use uuid::Uuid;
 
     fn make_engine(cwd: &str) -> Arc<QueryEngine> {
@@ -584,7 +485,7 @@ mod tests {
                 stop_reason: Some("end_turn".into()),
                 session_id: engine.session_id.to_string(),
                 total_cost_usd: 0.1234,
-                usage: crate::engine::lifecycle::UsageTracking {
+                usage: cc_types::sdk::UsageTracking {
                     total_input_tokens: 1200,
                     total_output_tokens: 300,
                     total_cache_read_tokens: 20,

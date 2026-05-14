@@ -15,8 +15,8 @@ chrono = { workspace = true }
 dirs = { workspace = true }
 libc = { workspace = true }
 
-cc-mcp = { workspace = true }
 cc-config = { workspace = true }
+cc-types = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

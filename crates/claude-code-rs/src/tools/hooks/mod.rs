@@ -34,50 +34,6 @@ pub use cc_types::hooks::{
 
 use async_trait::async_trait;
 use serde_json::Value;
-use tracing::warn;
-
-// ---------------------------------------------------------------------------
-// Matcher logic (still needed by the free-function implementations)
-// ---------------------------------------------------------------------------
-
-/// Check if a matcher pattern matches a tool name.
-///
-/// - `None` or `"*"` matches everything.
-/// - Exact match: `"Bash"` matches `"Bash"`.
-/// - Prefix match: `"mcp__"` matches `"mcp__server__tool"`.
-fn matches_tool(matcher: Option<&str>, tool_name: &str) -> bool {
-    match matcher {
-        None => true,
-        Some("*") => true,
-        Some(pattern) => tool_name == pattern || tool_name.starts_with(pattern),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Hook config loading
-// ---------------------------------------------------------------------------
-
-/// Load hook configurations for a specific event from the hooks settings value.
-///
-/// `hooks_value` is the deserialized `hooks` map from GlobalConfig.
-/// `event_name` is one of "PreToolUse", "PostToolUse", "Stop".
-pub fn load_hook_configs(hooks_value: &HooksMap, event_name: &str) -> Vec<HookEventConfig> {
-    let Some(event_value) = hooks_value.get(event_name) else {
-        return vec![];
-    };
-
-    match serde_json::from_value::<Vec<HookEventConfig>>(event_value.clone()) {
-        Ok(configs) => configs,
-        Err(e) => {
-            warn!(
-                event = event_name,
-                error = %e,
-                "failed to deserialize hook configs"
-            );
-            vec![]
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // ShellHookRunner — concrete HookRunner backed by the shell-command impl
@@ -105,7 +61,7 @@ impl Default for ShellHookRunner {
 #[async_trait]
 impl HookRunner for ShellHookRunner {
     fn load_hook_configs(&self, hooks_value: &HooksMap, event_name: &str) -> Vec<HookEventConfig> {
-        load_hook_configs(hooks_value, event_name)
+        cc_types::hooks::load_hook_configs(hooks_value, event_name)
     }
 
     async fn run_pre_tool_hooks(
@@ -151,113 +107,5 @@ impl HookRunner for ShellHookRunner {
         hook_configs: &[HookEventConfig],
     ) -> anyhow::Result<PostToolHookResult> {
         run_stop_hooks(hook_configs).await
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-    use std::collections::HashMap;
-
-    // -- matches_tool tests --
-
-    #[test]
-    fn test_matches_tool_exact() {
-        assert!(matches_tool(Some("Bash"), "Bash"));
-        assert!(!matches_tool(Some("Bash"), "Read"));
-    }
-
-    #[test]
-    fn test_matches_tool_wildcard() {
-        assert!(matches_tool(None, "Bash"));
-        assert!(matches_tool(None, "Read"));
-        assert!(matches_tool(Some("*"), "Bash"));
-        assert!(matches_tool(Some("*"), "anything_at_all"));
-    }
-
-    #[test]
-    fn test_matches_tool_prefix() {
-        assert!(matches_tool(Some("mcp__"), "mcp__server__tool"));
-        assert!(matches_tool(Some("mcp__"), "mcp__another"));
-        assert!(!matches_tool(Some("mcp__"), "Bash"));
-        assert!(!matches_tool(Some("mcp__"), "mcp_single_underscore"));
-    }
-
-    // -- load_hook_configs tests --
-
-    #[test]
-    fn test_load_hook_configs() {
-        let mut hooks_value: HashMap<String, Value> = HashMap::new();
-        hooks_value.insert(
-            "PreToolUse".to_string(),
-            json!([
-                {
-                    "matcher": "Bash",
-                    "hooks": [
-                        {
-                            "type": "command",
-                            "command": "echo ok",
-                            "timeout": 30
-                        }
-                    ]
-                },
-                {
-                    "matcher": "*",
-                    "critical": true,
-                    "hooks": [
-                        {
-                            "type": "command",
-                            "command": "echo audit"
-                        }
-                    ]
-                }
-            ]),
-        );
-
-        let configs = load_hook_configs(&hooks_value, "PreToolUse");
-        assert_eq!(configs.len(), 2);
-        assert_eq!(configs[0].matcher.as_deref(), Some("Bash"));
-        assert!(
-            !configs[0].critical,
-            "existing hook configs without critical remain optional"
-        );
-        assert_eq!(configs[0].hooks.len(), 1);
-        match &configs[0].hooks[0] {
-            HookEntry::Command { command, timeout } => {
-                assert_eq!(command, "echo ok");
-                assert_eq!(*timeout, 30);
-            }
-        }
-        assert_eq!(configs[1].matcher.as_deref(), Some("*"));
-        assert!(
-            configs[1].critical,
-            "critical hook configs parse the fail-closed flag"
-        );
-        match &configs[1].hooks[0] {
-            HookEntry::Command { command, timeout } => {
-                assert_eq!(command, "echo audit");
-                assert_eq!(*timeout, 60); // default
-            }
-        }
-    }
-
-    #[test]
-    fn test_load_hook_configs_missing_event() {
-        let hooks_value: HashMap<String, Value> = HashMap::new();
-        let configs = load_hook_configs(&hooks_value, "PreToolUse");
-        assert!(configs.is_empty());
-    }
-
-    #[test]
-    fn test_load_hook_configs_invalid_json() {
-        let mut hooks_value: HashMap<String, Value> = HashMap::new();
-        hooks_value.insert("PreToolUse".to_string(), json!("not an array"));
-        let configs = load_hook_configs(&hooks_value, "PreToolUse");
-        assert!(configs.is_empty());
     }
 }

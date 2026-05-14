@@ -177,7 +177,7 @@ pub enum PermissionDecisionReason {
 
 /// Result a hook contributed to the central decision flow.
 ///
-/// Built from [`crate::tools::hooks::PreToolHookResult`] in `pipeline.rs`
+/// Built from [`cc_types::hooks::PreToolHookResult`] in the tool pipeline
 /// and threaded through [`has_permissions_to_use_tool`] so a hook can
 /// allow / deny / ask / modify input *without* skipping the rule engine.
 #[derive(Debug, Clone, Default)]

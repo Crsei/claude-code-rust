@@ -4,12 +4,14 @@ mod tests {
 
     use crate::command_runtime::{CommandContext, CommandExecutor, CommandResult};
     use crate::lifecycle::*;
-    use crate::sdk_types::*;
     use crate::types::config::{AgentContext, QueryEngineConfig, QuerySource};
     use crate::types::message::{
         AssistantMessage, ContentBlock, Message, MessageContent, Usage, UserMessage,
     };
+    use cc_types::sdk::*;
     use tempfile::tempdir;
+
+    use super::super::types::UsageTrackingExt;
 
     struct EnvGuard {
         key: &'static str,

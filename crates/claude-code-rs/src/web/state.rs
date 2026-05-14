@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::engine::lifecycle::QueryEngine;
+use cc_engine::lifecycle::QueryEngine;
 
 /// Shared state passed to all Axum handlers via State extractor.
 ///

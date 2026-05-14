@@ -156,8 +156,8 @@ fn write_env_file(path: &Path, vars: &BTreeMap<String, String>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
     use tempfile::TempDir;
 

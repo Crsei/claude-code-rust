@@ -19,7 +19,9 @@ use sha2::{Digest, Sha256};
 use tracing::warn;
 use url::Url;
 
-use super::{McpOAuthConfig, McpServerConfig, CLIENT_NAME, CLIENT_VERSION};
+use cc_types::mcp::{CLIENT_NAME, CLIENT_VERSION};
+
+use super::{McpOAuthConfig, McpServerConfig};
 
 const DEFAULT_CLIENT_ID: &str = "cc-rust";
 const DEFAULT_CALLBACK_PORT: u16 = 1455;

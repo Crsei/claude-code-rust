@@ -139,7 +139,7 @@ pub static PROVIDERS: &[ProviderInfo] = &[
         label: "OpenAI (GPT)",
         protocol: ProviderProtocol::OpenAiCompat,
     },
-    // ChatGPT OAuth token for Codex service (OpenAI Codex provider path).
+    // ChatGPT OAuth token for the OpenAI Codex provider path.
     ProviderInfo {
         name: "openai-codex",
         env_key: "OPENAI_CODEX_AUTH_TOKEN",

@@ -4,7 +4,7 @@ use super::*;
 
 use serde_json::json;
 
-use crate::types::tool::*;
+use cc_engine::types::tool::*;
 
 #[test]
 fn test_matches_domain() {
@@ -151,7 +151,7 @@ fn test_tavily_response_deserialization() {
 }
 
 fn make_test_ctx() -> ToolUseContext {
-    use crate::types::app_state::AppState;
+    use cc_engine::types::app_state::AppState;
     use std::sync::Arc;
     let state = AppState::default();
     ToolUseContext {

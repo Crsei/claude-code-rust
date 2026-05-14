@@ -18,7 +18,6 @@ use tracing::{info, warn};
 use super::{
     gateway_bridge::{handle_worker_command, AssistantWorkerRuntime},
     process_state::{self, DaemonWorkerStatus},
-    protocol,
 };
 
 pub const ASSISTANT_WORKER_ID: &str = "assistant-session-1";
@@ -250,7 +249,9 @@ pub async fn run_worker_mode(kind: &str, worker_id: &str, cwd: PathBuf) -> Resul
         }
         process_state::write_worker_heartbeat(worker_id)?;
         let mut processed = 0usize;
-        while let Some(command) = protocol::claim_next_pending_command(worker_id, kind.as_str())? {
+        while let Some(command) =
+            super::protocol_store().claim_next_pending_command(worker_id, kind.as_str())?
+        {
             processed += 1;
             let shutdown_requested =
                 handle_worker_command(worker_id, &mut runtime, command).await?;

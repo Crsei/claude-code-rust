@@ -141,9 +141,9 @@ impl CommandHandler for ContextHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
-    use crate::types::message::{Message, MessageContent, UserMessage};
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
+    use cc_types::message::{Message, MessageContent, UserMessage};
     use std::path::PathBuf;
     use uuid::Uuid;
 

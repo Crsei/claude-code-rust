@@ -23,9 +23,9 @@ use anyhow::{bail, Result};
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::permissions::dangerous::set_permission_mode_with_auto_mode_safety;
-use crate::types::config::{AgentContext, QueryEngineConfig};
-use crate::types::tool::*;
+use cc_engine::types::config::{AgentContext, QueryEngineConfig};
+use cc_engine::types::tool::*;
+use cc_permissions::dangerous::set_permission_mode_with_auto_mode_safety;
 
 use cc_ipc_protocol::subsystem_types::{
     AgentDefinitionEntry, AgentDefinitionSource, AgentPermissionMode,
@@ -174,12 +174,12 @@ async fn count_worktree_changes(
 /// Convert an SdkMessage to an AgentEvent for IPC forwarding.
 /// Returns None for messages that don't map to agent events.
 pub(crate) fn sdk_to_agent_event(
-    sdk_msg: &crate::engine::sdk_types::SdkMessage,
+    sdk_msg: &cc_types::sdk::SdkMessage,
     agent_id: &str,
 ) -> Option<cc_types::agent_events::AgentEvent> {
-    use crate::engine::sdk_types::SdkMessage;
-    use crate::types::message::{ContentBlock, StreamEvent, ToolResultContent};
     use cc_types::agent_events::AgentEvent;
+    use cc_types::message::{ContentBlock, StreamEvent, ToolResultContent};
+    use cc_types::sdk::SdkMessage;
 
     match sdk_msg {
         SdkMessage::StreamEvent(evt) => match &evt.event {
@@ -480,12 +480,10 @@ fn tool_matches_spec(tool_name: &str, spec: &str) -> bool {
 /// When `ipc` is provided (sender + agent_id), intermediate streaming events
 /// are forwarded through the agent IPC channel via [`sdk_to_agent_event`].
 async fn collect_stream_result(
-    stream: std::pin::Pin<
-        Box<dyn futures::Stream<Item = crate::engine::sdk_types::SdkMessage> + Send>,
-    >,
+    stream: std::pin::Pin<Box<dyn futures::Stream<Item = cc_types::sdk::SdkMessage> + Send>>,
     ipc: Option<(&cc_types::agent_channel::AgentSender, &str)>,
 ) -> (String, bool) {
-    use crate::engine::sdk_types::SdkMessage;
+    use cc_types::sdk::SdkMessage;
     use futures::StreamExt;
 
     let mut stream = stream;
@@ -496,7 +494,7 @@ async fn collect_stream_result(
         match msg {
             SdkMessage::Assistant(ref assistant_msg) => {
                 for block in &assistant_msg.message.content {
-                    if let crate::types::message::ContentBlock::Text { text } = block {
+                    if let cc_types::message::ContentBlock::Text { text } = block {
                         if !result_text.is_empty() {
                             result_text.push('\n');
                         }

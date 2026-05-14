@@ -7,8 +7,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::types::message::AssistantMessage;
-use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use cc_engine::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use cc_types::message::AssistantMessage;
 
 /// StructuredOutputTool -- format data into JSON, CSV, or table format.
 pub struct StructuredOutputTool;

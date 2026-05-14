@@ -24,6 +24,8 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
+use crate::commands as command_registry;
+
 #[path = "tui/commands.rs"]
 mod commands;
 #[path = "tui/engine_events.rs"]
@@ -50,9 +52,9 @@ use subsystem_events::{
 };
 use terminal_guard::TerminalGuard;
 
-use crate::engine::lifecycle::QueryEngine;
-use crate::ipc::subsystem_events::SubsystemEventBus;
-use crate::types::message::{InfoLevel, Message, SystemMessage, SystemSubtype};
+use cc_engine::lifecycle::QueryEngine;
+use cc_ipc::subsystem_events::SubsystemEventBus;
+use cc_types::message::{InfoLevel, Message, SystemMessage, SystemSubtype};
 
 use super::app::{App, AppAction};
 
@@ -146,7 +148,7 @@ pub async fn run_tui(
             app_state.settings.language.as_deref(),
         );
         let voice_supported = matches!(
-            crate::commands::voice_cmd::current_feasibility(),
+            command_registry::voice_cmd::current_feasibility(),
             crate::voice::feasibility::Feasibility::Ready { .. }
         );
         app.set_voice_settings(

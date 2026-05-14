@@ -23,10 +23,10 @@ use anyhow::Result;
 use tracing::{debug, info};
 use uuid::Uuid;
 
-use crate::engine::lifecycle::QueryEngine;
-use crate::types::config::{QueryEngineConfig, QuerySource};
-use crate::types::message::Message;
-use crate::types::tool::{QueryChainTracking, Tools};
+use cc_engine::lifecycle::QueryEngine;
+use cc_engine::types::config::{QueryEngineConfig, QuerySource};
+use cc_engine::types::tool::{QueryChainTracking, Tools};
+use cc_types::message::Message;
 
 use super::collect_stream_result;
 
@@ -122,7 +122,7 @@ pub async fn run_fork(params: ForkParams) -> Result<ForkOutcome> {
         persist_session: false,
         resolved_model: Some(params.model.clone()),
         auto_save_session: false,
-        agent_context: Some(crate::types::config::AgentContext {
+        agent_context: Some(cc_engine::types::config::AgentContext {
             agent_id: agent_id.clone(),
             query_tracking: QueryChainTracking { chain_id, depth: 1 },
             langfuse_session_id: String::new(),

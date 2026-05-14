@@ -6,6 +6,7 @@
 pub mod commands;
 pub mod domain;
 pub mod errors;
+pub mod lifecycle;
 pub mod tool_requests;
 pub mod types;
 
@@ -18,6 +19,11 @@ pub use domain::{
     TASK_KIND_LOCAL_WORKFLOW, TASK_KIND_MONITOR_MCP, TASK_KIND_REMOTE_AGENT, TASK_KIND_TOOL,
 };
 pub use errors::{TaskError, TaskErrorCode};
+pub use lifecycle::{
+    is_remote_recoverable_task, is_remote_review_task, normalize_loaded_status,
+    normalize_new_status, recover_task_after_restart, remote_review_timed_out,
+    REMOTE_REVIEW_TIMEOUT_MS,
+};
 pub use tool_requests::{
     dependency_ids_from_input, normalize_dependencies, normalize_optional_string,
     parse_task_create, parse_task_id, parse_task_update, string_array_field, task_id_from_input,

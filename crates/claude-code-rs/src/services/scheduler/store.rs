@@ -287,7 +287,6 @@ impl SchedulerStore {
 
 /// Drop-guard that removes the lock file when it goes out of scope.
 struct FileLockGuard<'a> {
-    #[allow(dead_code)]
     file: Option<File>,
     path: &'a Path,
 }

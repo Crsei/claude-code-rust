@@ -8,8 +8,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::types::message::AssistantMessage;
-use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use cc_engine::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use cc_types::message::AssistantMessage;
 
 /// SendUserMessageTool -- send a brief message to the user.
 pub struct SendUserMessageTool;

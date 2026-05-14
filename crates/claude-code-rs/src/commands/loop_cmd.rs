@@ -31,8 +31,8 @@ use crate::services::scheduler::{
     parse_interval, ScheduledTask, SchedulerError, SchedulerKind, SchedulerStore, TaskId,
     TaskPayload,
 };
-use crate::types::message::{Message, MessageContent, UserMessage};
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_types::message::{Message, MessageContent, UserMessage};
 
 pub struct LoopHandler;
 

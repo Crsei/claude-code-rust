@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use cc_tasks::{parse_tasks_command, TaskEntry, TaskStatus as ToolTaskStatus, TasksCommand};
 use chrono::{DateTime, Local, TimeZone};
 
-use crate::browser::{render_with_footer, TreeNode};
+use super::browser::{render_with_footer, TreeNode};
 use crate::runtime::{TeamTaskSnapshot, TeamTaskStatus};
 use crate::{CommandContext, CommandHandler, CommandResult};
 

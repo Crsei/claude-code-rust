@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! Browser MCP detection.
 //!
 //! Two identification paths:
@@ -19,33 +17,15 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::mcp::McpServerConfig;
-use crate::types::tool::Tool;
+use cc_engine::types::tool::Tool;
+use cc_mcp::McpServerConfig;
 
-// Phase 4 (issue #73) moved the pure-parsing and server-registry helpers
-// into `cc_browser::detection`. Re-export them here so every
-// `crate::browser::detection::{MCP_PREFIX, BROWSER_TOOL_BASENAMES,
-// extract_browser_action, install_browser_servers,
-// browser_servers_snapshot, is_browser_server}` call site keeps
-// resolving unchanged.
+use cc_browser::detection::extract_browser_action;
 #[cfg(test)]
-use cc_browser::detection::clear_browser_servers_for_tests;
-#[allow(unused_imports)]
-pub use cc_browser::detection::{
-    browser_servers_snapshot, extract_browser_action, install_browser_servers, is_browser_server,
-    BROWSER_TOOL_BASENAMES, MCP_PREFIX,
+use cc_browser::detection::{
+    browser_servers_snapshot, clear_browser_servers_for_tests, install_browser_servers,
+    is_browser_server,
 };
-
-/// Metadata for a tool that was classified as a browser MCP tool.
-#[derive(Debug, Clone)]
-pub struct BrowserToolInfo {
-    /// Full tool name, e.g. `mcp__chrome__navigate`.
-    pub full_name: String,
-    /// Owning MCP server name, e.g. `chrome`.
-    pub server_name: String,
-    /// Action basename (the part after the last `__`), e.g. `navigate`.
-    pub action: String,
-}
 
 /// Detect the set of browser MCP server names given registered tools and
 /// server configs.
@@ -71,42 +51,6 @@ pub fn detect_browser_servers(
     }
 
     servers
-}
-
-/// Walk the tool list and return detailed info for every browser-classified tool.
-///
-/// Uses a union of the two detection paths: any tool whose owning server is in
-/// `browser_server_names` is included (even if its basename is unknown), and
-/// any tool whose basename matches the browser list is included (even if its
-/// server wasn't explicitly flagged).
-pub fn detect_browser_tools(
-    tools: &[Arc<dyn Tool>],
-    browser_server_names: &HashSet<String>,
-) -> Vec<BrowserToolInfo> {
-    let mut out = Vec::new();
-
-    for tool in tools {
-        let full_name = tool.user_facing_name(None);
-        let Some(rest) = full_name.strip_prefix(MCP_PREFIX) else {
-            continue;
-        };
-        let Some((server, action)) = rest.split_once("__") else {
-            continue;
-        };
-
-        let is_known_action = BROWSER_TOOL_BASENAMES.contains(&action);
-        let is_flagged_server = browser_server_names.contains(server);
-
-        if is_known_action || is_flagged_server {
-            out.push(BrowserToolInfo {
-                full_name: full_name.clone(),
-                server_name: server.to_string(),
-                action: action.to_string(),
-            });
-        }
-    }
-
-    out
 }
 
 // ---------------------------------------------------------------------------

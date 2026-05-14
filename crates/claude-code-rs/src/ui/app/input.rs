@@ -381,22 +381,22 @@ impl App {
         }
     }
 
-    pub(super) fn active_keybinding_contexts(&self) -> [crate::keybindings::context::Context; 2] {
+    pub(super) fn active_keybinding_contexts(&self) -> [cc_keybindings::context::Context; 2] {
         if self.selected_message.is_some() {
             return [
-                crate::keybindings::context::Context::MessageActions,
-                crate::keybindings::context::Context::Global,
+                cc_keybindings::context::Context::MessageActions,
+                cc_keybindings::context::Context::Global,
             ];
         }
         if self.view_mode.is_transcript_like() {
             [
-                crate::keybindings::context::Context::Transcript,
-                crate::keybindings::context::Context::Scroll,
+                cc_keybindings::context::Context::Transcript,
+                cc_keybindings::context::Context::Scroll,
             ]
         } else {
             [
-                crate::keybindings::context::Context::Chat,
-                crate::keybindings::context::Context::Scroll,
+                cc_keybindings::context::Context::Chat,
+                cc_keybindings::context::Context::Scroll,
             ]
         }
     }
@@ -404,9 +404,9 @@ impl App {
     pub(super) fn resolve_bound_action(
         &mut self,
         key: &KeyEvent,
-    ) -> Option<crate::keybindings::action::Action> {
-        use crate::keybindings::keystroke::{Chord, Keystroke};
-        use crate::keybindings::registry::Resolution;
+    ) -> Option<cc_keybindings::action::Action> {
+        use cc_keybindings::keystroke::{Chord, Keystroke};
+        use cc_keybindings::registry::Resolution;
 
         let stroke = Keystroke::from_event(key)?;
 
@@ -442,7 +442,7 @@ impl App {
 
     pub(super) fn dispatch_bound_action(
         &mut self,
-        action: &crate::keybindings::action::Action,
+        action: &cc_keybindings::action::Action,
     ) -> Option<AppAction> {
         match action.as_str() {
             "app:interrupt" => {
@@ -770,24 +770,23 @@ impl App {
     }
 }
 
-fn selectable_by_mode(message: &crate::types::message::Message, user_only: bool) -> bool {
+fn selectable_by_mode(message: &cc_types::message::Message, user_only: bool) -> bool {
     if user_only {
-        matches!(message, crate::types::message::Message::User(_)) && is_selectable_message(message)
+        matches!(message, cc_types::message::Message::User(_)) && is_selectable_message(message)
     } else {
         is_selectable_message(message)
     }
 }
 
-fn is_selectable_message(message: &crate::types::message::Message) -> bool {
+fn is_selectable_message(message: &cc_types::message::Message) -> bool {
     match message {
-        crate::types::message::Message::User(user) => {
+        cc_types::message::Message::User(user) => {
             !user.is_meta
                 && !message_copy_text(message).trim().is_empty()
                 && message_copy_text(message).trim() != "[Request interrupted by user]"
         }
-        crate::types::message::Message::Assistant(assistant) => !assistant.content.is_empty(),
-        crate::types::message::Message::System(_)
-        | crate::types::message::Message::Attachment(_) => true,
-        crate::types::message::Message::Progress(_) => false,
+        cc_types::message::Message::Assistant(assistant) => !assistant.content.is_empty(),
+        cc_types::message::Message::System(_) | cc_types::message::Message::Attachment(_) => true,
+        cc_types::message::Message::Progress(_) => false,
     }
 }

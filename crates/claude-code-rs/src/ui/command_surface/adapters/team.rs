@@ -1,6 +1,6 @@
-use crate::types::app_state::AppState;
 use crate::ui::command_surface::adapters::tasks::first_non_empty;
 use crate::ui::teams::teams_dialog::{TeamSummary, TeammateStatus};
+use cc_engine::types::app_state::AppState;
 pub(crate) fn team_summary_from_state(state: &AppState) -> (TeamSummary, bool) {
     let Some(context) = state
         .team_context

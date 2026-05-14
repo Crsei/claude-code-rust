@@ -9,6 +9,8 @@ pub mod lsp_cmd;
 pub mod mcp;
 pub mod memory;
 pub mod model;
+pub mod plan;
+pub mod plan_workflow;
 pub mod session;
 pub mod tasks_cmd;
 pub mod team_cmd;

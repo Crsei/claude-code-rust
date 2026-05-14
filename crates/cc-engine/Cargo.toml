@@ -55,10 +55,12 @@ cc-sandbox = { workspace = true }
 cc-api = { workspace = true }
 cc-mcp = { workspace = true }
 cc-browser = { workspace = true }
+cc-lsp-service = { workspace = true }
 cc-skills = { workspace = true }
 cc-ipc-protocol = { workspace = true }
 dirs = { workspace = true }
 cc-tasks = { workspace = true }
+cc-tools = { workspace = true }
 cc-teams = { workspace = true }
 
 [features]

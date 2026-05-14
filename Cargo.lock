@@ -515,10 +515,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
+ "cc-config",
  "chrono",
  "dirs",
  "keyring",
- "parking_lot",
  "rand 0.8.5",
  "reqwest",
  "serde",
@@ -548,7 +548,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cc-config",
- "cc-mcp",
+ "cc-types",
  "chrono",
  "dirs",
  "libc",
@@ -632,10 +632,16 @@ dependencies = [
 name = "cc-daemon"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "axum",
  "cc-types",
  "chrono",
+ "futures",
+ "mime_guess",
  "serde",
  "serde_json",
+ "serial_test",
+ "tempfile",
 ]
 
 [[package]]
@@ -652,6 +658,7 @@ dependencies = [
  "cc-config",
  "cc-ipc-protocol",
  "cc-keybindings",
+ "cc-lsp-service",
  "cc-mcp",
  "cc-models",
  "cc-observability",
@@ -661,6 +668,7 @@ dependencies = [
  "cc-skills",
  "cc-tasks",
  "cc-teams",
+ "cc-tools",
  "cc-types",
  "cc-utils",
  "chrono",
@@ -682,11 +690,16 @@ dependencies = [
 name = "cc-ipc"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "cc-ipc-protocol",
  "cc-types",
  "chrono",
+ "ignore",
  "parking_lot",
+ "regex",
  "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -730,6 +743,8 @@ name = "cc-lsp-service"
 version = "0.1.0"
 dependencies = [
  "cc-types",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1045,11 +1060,13 @@ dependencies = [
  "cc-compact",
  "cc-computer-use",
  "cc-config",
+ "cc-daemon",
  "cc-engine",
  "cc-ipc",
  "cc-ipc-client",
  "cc-ipc-protocol",
  "cc-keybindings",
+ "cc-lsp-service",
  "cc-mcp",
  "cc-models",
  "cc-observability",
@@ -1083,7 +1100,6 @@ dependencies = [
  "libc",
  "lru",
  "lsp-types",
- "mime_guess",
  "notify-rust",
  "opentelemetry",
  "opentelemetry-langfuse",

@@ -4,7 +4,7 @@
 //! existing_names }`. The IPC handler in [`super::agent_settings`] fires a
 //! `GenerateStarted` marker synchronously, then spawns a task here that
 //! calls the model via [`cc_api::api::client::ApiClient::messages`] and posts
-//! a `Generated` or `Error` event onto the [`super::subsystem_events`] bus.
+//! a `Generated` or `Error` event onto the `cc_ipc::subsystem_events` bus.
 //!
 //! The system prompt is kept verbatim from the upstream TypeScript
 //! implementation (`src/components/agents/generateAgent.ts`) so the JSON
@@ -143,7 +143,7 @@ struct GeneratedAgent {
 }
 
 fn parse_generated(msg: cc_types::message::AssistantMessage) -> Result<GeneratedAgent, String> {
-    use crate::types::message::ContentBlock;
+    use cc_types::message::ContentBlock;
 
     let mut text_parts: Vec<String> = Vec::new();
     for block in &msg.content {
@@ -288,8 +288,8 @@ Remember: The agents you create should be autonomous experts capable of handling
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::message::ContentBlock;
     use cc_types::message::AssistantMessage;
+    use cc_types::message::ContentBlock;
     use uuid::Uuid;
 
     fn assistant_with_text(text: &str) -> AssistantMessage {

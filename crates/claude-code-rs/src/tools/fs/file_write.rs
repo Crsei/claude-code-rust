@@ -4,8 +4,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::types::message::AssistantMessage;
-use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use cc_engine::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use cc_types::message::AssistantMessage;
 
 use super::safe_write::{
     safe_write_text, validate_write_request, SafeWriteOptions, DEFAULT_MAX_WRITE_BYTES,
@@ -169,7 +169,7 @@ impl Tool for FileWriteTool {
         // Fire FileChanged hook
         {
             let app_state = (ctx.get_app_state)();
-            let configs = crate::tools::hooks::load_hook_configs(&app_state.hooks, "FileChanged");
+            let configs = cc_types::hooks::load_hook_configs(&app_state.hooks, "FileChanged");
             if !configs.is_empty() {
                 let payload = json!({
                     "file_path": &file_path,
@@ -230,9 +230,9 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    use crate::types::app_state::AppState;
-    use crate::types::message::ContentBlock;
-    use crate::types::tool::{FileStateCache, ToolUseOptions};
+    use cc_engine::types::app_state::AppState;
+    use cc_engine::types::tool::{FileStateCache, ToolUseOptions};
+    use cc_types::message::ContentBlock;
     use serde_json::json;
     use uuid::Uuid;
 
@@ -403,10 +403,10 @@ mod tests {
         assert_eq!(safe_write.get("bytes").and_then(|v| v.as_u64()), Some(11));
         assert!(matches!(
             result.new_messages.as_slice(),
-            [crate::types::message::Message::Attachment(attachment)]
+            [cc_types::message::Message::Attachment(attachment)]
                 if matches!(
                     &attachment.attachment,
-                    crate::types::message::Attachment::EditedTextFile { path }
+                    cc_types::message::Attachment::EditedTextFile { path }
                         if path == &expected_path
                 )
         ));

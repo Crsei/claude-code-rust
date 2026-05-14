@@ -151,3 +151,82 @@ pub fn render_with_footer(title: &str, roots: &[TreeNode], footer: &str) -> Stri
     }
     out
 }
+
+#[derive(Debug)]
+pub enum OpenOutcome {
+    Opened { editor: String, created: bool },
+    NoEditor { created: bool },
+    Failed { editor: String, message: String },
+    CreateFailed { error: String },
+}
+
+pub fn ensure_and_open(path: &Path, template: &str) -> OpenOutcome {
+    let created = match ensure_file(path, template) {
+        Ok(created) => created,
+        Err(error) => {
+            return OpenOutcome::CreateFailed {
+                error: error.to_string(),
+            };
+        }
+    };
+
+    let editor = std::env::var("VISUAL")
+        .or_else(|_| std::env::var("EDITOR"))
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+
+    match editor {
+        Some(editor) => match std::process::Command::new(&editor).arg(path).status() {
+            Ok(status) if status.success() => OpenOutcome::Opened { editor, created },
+            Ok(status) => OpenOutcome::Failed {
+                editor,
+                message: format!("exited with status {}", status.code().unwrap_or(-1)),
+            },
+            Err(error) => OpenOutcome::Failed {
+                editor,
+                message: error.to_string(),
+            },
+        },
+        None => OpenOutcome::NoEditor { created },
+    }
+}
+
+pub fn format_open_outcome(outcome: &OpenOutcome, path: &Path) -> String {
+    match outcome {
+        OpenOutcome::Opened { editor, created } => format!(
+            "{}Opened {} in {}.",
+            if *created { "Created and " } else { "" },
+            path.display(),
+            editor
+        ),
+        OpenOutcome::NoEditor { created } => format!(
+            "{}File: {}\n(Set $VISUAL or $EDITOR to auto-open in an editor.)",
+            if *created { "Created template.\n" } else { "" },
+            path.display()
+        ),
+        OpenOutcome::Failed { editor, message } => {
+            format!(
+                "Error launching '{}': {}. File: {}",
+                editor,
+                message,
+                path.display()
+            )
+        }
+        OpenOutcome::CreateFailed { error } => {
+            format!("Error: could not prepare {}: {}", path.display(), error)
+        }
+    }
+}
+
+fn ensure_file(path: &Path, template: &str) -> std::io::Result<bool> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    if path.exists() {
+        return Ok(false);
+    }
+    std::fs::write(path, template)?;
+    Ok(true)
+}

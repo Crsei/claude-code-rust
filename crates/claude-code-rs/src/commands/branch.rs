@@ -19,9 +19,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::bootstrap::SessionId;
-use crate::session::fork as session_fork;
+use cc_bootstrap::SessionId;
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_session::fork as session_fork;
 
 pub struct BranchHandler;
 
@@ -95,9 +95,9 @@ fn short_id(id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::{storage, transcript};
-    use crate::types::app_state::AppState;
-    use crate::types::message::{Message, MessageContent, UserMessage};
+    use cc_engine::types::app_state::AppState;
+    use cc_session::{storage, transcript};
+    use cc_types::message::{Message, MessageContent, UserMessage};
     use std::path::{Path, PathBuf};
     use uuid::Uuid;
 

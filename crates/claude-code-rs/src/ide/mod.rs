@@ -50,9 +50,9 @@ use std::sync::LazyLock;
 use tokio::sync::broadcast;
 use tracing::warn;
 
-use crate::mcp::McpServerConfig;
 use cc_ipc_protocol::subsystem_events::{IdeEvent, SubsystemEvent};
 use cc_ipc_protocol::subsystem_types::IdeInfo;
+use cc_mcp::McpServerConfig;
 
 // ---------------------------------------------------------------------------
 // Subsystem event emission (mirrors `plugins::mod.rs` pattern)

@@ -6,11 +6,11 @@ use std::time::Instant;
 
 use serde_json::Value;
 
-use crate::permissions::dangerous;
-use crate::permissions::path_validation;
-use crate::types::app_state::AppState;
-use crate::types::tool::ToolUseContext;
-use crate::types::tool::{PermissionMode, Tool, Tools};
+use cc_engine::types::app_state::AppState;
+use cc_engine::types::tool::ToolUseContext;
+use cc_engine::types::tool::{PermissionMode, Tool, Tools};
+use cc_permissions::dangerous;
+use cc_permissions::path_validation;
 
 use super::{make_error_result, ToolExecutionResult};
 
@@ -96,7 +96,7 @@ pub(crate) fn security_validate(
             };
 
             // Step 2: check the path is within allowed directories
-            let cwd = crate::bootstrap::PROCESS_STATE.read().original_cwd.clone();
+            let cwd = cc_bootstrap::PROCESS_STATE.read().original_cwd.clone();
             let perm_ctx = &app_state.tool_permission_context;
 
             if !path_validation::is_path_within_allowed_directories(&canonical, &cwd, perm_ctx) {
@@ -141,8 +141,8 @@ pub(crate) fn is_plan_mode_plan_file_write(tool_name: &str, input: &Value) -> bo
         return false;
     };
 
-    let cwd = crate::bootstrap::state::original_cwd();
-    let plan_path = crate::config::paths::current_plan_file_path(&cwd);
+    let cwd = cc_bootstrap::state::original_cwd();
+    let plan_path = cc_config::paths::current_plan_file_path(&cwd);
     paths_equivalent_for_plan_file(&candidate, &plan_path)
 }
 
@@ -170,14 +170,14 @@ pub(crate) fn sandbox_allowed_command_applies(
         return false;
     };
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let policy = crate::sandbox::policy_from_app_state(
+    let policy = cc_sandbox::policy_from_app_state(
         &app_state.tool_permission_context,
         &app_state.settings.sandbox,
         cwd,
         false,
     );
     policy.enabled
-        && policy.mode == crate::sandbox::SandboxMode::Workspace
+        && policy.mode == cc_sandbox::SandboxMode::Workspace
         && policy.is_allowed_command(command)
 }
 
@@ -224,119 +224,4 @@ pub(crate) fn find_tool(name: &str, tools: &Tools) -> Option<Arc<dyn Tool>> {
     }
 
     None
-}
-
-/// Enforce tool result size limit by truncating if necessary.
-pub(crate) fn enforce_result_size(data: Value, max_chars: usize) -> Value {
-    match &data {
-        Value::String(s) if s.len() > max_chars => {
-            let head = &s[..max_chars / 2];
-            let tail = &s[s.len() - max_chars / 4..];
-            let omitted = s.len() - head.len() - tail.len();
-            Value::String(format!(
-                "{}\n\n[... {} characters omitted ...]\n\n{}",
-                head, omitted, tail
-            ))
-        }
-        _ => data,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn test_enforce_result_size_non_string() {
-        let data = json!({"key": "value"});
-        let result = enforce_result_size(data.clone(), 10);
-        assert_eq!(result, data);
-    }
-
-    #[test]
-    fn test_enforce_result_size_short_string() {
-        let data = json!("short text");
-        let result = enforce_result_size(data.clone(), 1000);
-        assert_eq!(result, data);
-    }
-
-    #[test]
-    fn test_enforce_result_size_long_string() {
-        let long = "x".repeat(10_000);
-        let data = json!(long);
-        let result = enforce_result_size(data, 1000);
-        let s = result.as_str().unwrap();
-        assert!(s.contains("characters omitted"));
-        assert!(s.len() < 10_000);
-    }
-
-    #[test]
-    fn test_enforce_result_size_exact_boundary() {
-        let exact = "a".repeat(1000);
-        let data = json!(exact);
-        let result = enforce_result_size(data.clone(), 1000);
-        // Exactly at limit should NOT be truncated (the condition is >)
-        assert_eq!(result.as_str().unwrap().len(), 1000);
-    }
-
-    #[test]
-    fn test_enforce_result_size_null() {
-        let data = json!(null);
-        let result = enforce_result_size(data.clone(), 100);
-        assert_eq!(result, data);
-    }
-
-    #[test]
-    fn test_enforce_result_size_array() {
-        let data = json!([1, 2, 3]);
-        let result = enforce_result_size(data.clone(), 5);
-        assert_eq!(result, data);
-    }
-
-    #[test]
-    fn test_enforce_result_size_truncation_structure() {
-        // Verify head/tail sizes match the documented formula:
-        // head = max_chars / 2, tail = max_chars / 4
-        let max = 1000usize;
-        let long = "y".repeat(max * 3);
-        let data = json!(long);
-        let result = enforce_result_size(data, max);
-        let s = result.as_str().unwrap();
-
-        // head portion: max/2 = 500 'y's
-        let head_part: String = s.chars().take(max / 2).collect();
-        assert_eq!(head_part, "y".repeat(max / 2));
-
-        // tail portion after the omission marker: max/4 = 250 'y's
-        let tail_part: String = s
-            .chars()
-            .rev()
-            .take(max / 4)
-            .collect::<String>()
-            .chars()
-            .rev()
-            .collect();
-        assert_eq!(tail_part, "y".repeat(max / 4));
-
-        // omission message present
-        assert!(s.contains(&format!(
-            "{} characters omitted",
-            long.len() - max / 2 - max / 4
-        )));
-    }
-
-    #[test]
-    fn test_enforce_result_size_number() {
-        let data = json!(42);
-        let result = enforce_result_size(data.clone(), 1);
-        assert_eq!(result, data);
-    }
-
-    #[test]
-    fn test_enforce_result_size_bool() {
-        let data = json!(true);
-        let result = enforce_result_size(data.clone(), 1);
-        assert_eq!(result, data);
-    }
 }

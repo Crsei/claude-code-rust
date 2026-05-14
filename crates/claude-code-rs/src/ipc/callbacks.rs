@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::engine::lifecycle::QueryEngine;
+use cc_engine::lifecycle::QueryEngine;
 use cc_ipc_client::sink::FrontendSink;
 use cc_ipc_protocol::BackendMessage;
 
@@ -26,7 +26,7 @@ pub fn install_permission_callback(
             Ok(record) => {
                 let _ = sink.send(&BackendMessage::PlanWorkflowEvent {
                     event: "approval_rejected".to_string(),
-                    summary: crate::plan_workflow::summarize(&record),
+                    summary: cc_types::plan_workflow::summarize(&record),
                     record,
                 });
             }

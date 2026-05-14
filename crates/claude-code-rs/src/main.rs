@@ -15,52 +15,17 @@
 // headless / TUI / print / json).
 // ============================================================================
 
-// Process-wide bootstrap singleton layer (import DAG leaf node).
-// Lives in its own crate (`cc-bootstrap`). Re-alias so existing
-// `crate::bootstrap::...` paths continue to resolve.
-use cc_bootstrap as bootstrap;
-
 // Core modules
 mod cli;
 mod commands;
 mod computer_use;
-// `config` lives in its own crate (`cc-config`). Re-alias at the crate root so
-// existing `crate::config::...` paths continue to resolve.
-use cc_config as config;
 mod engine;
-// `keybindings` lives in its own crate (`cc-keybindings`). Re-alias at the
-// crate root so existing `crate::keybindings::...` paths continue to resolve.
-use cc_keybindings as keybindings;
-// `permissions` lives in its own crate (`cc-permissions`).
-use cc_permissions as permissions;
-// `sandbox` lives in its own crate (`cc-sandbox`). Re-alias at the crate
-// root so existing `crate::sandbox::...` paths continue to resolve.
-use cc_sandbox as sandbox;
 mod safety;
-// `session` lives in its own crate (`cc-session`).
-use cc_session as session;
 mod startup;
 mod tools;
-mod types;
 mod ui;
-mod worktree_hooks;
-// `utils` lives in its own crate (`cc-utils`). Re-alias at the crate root so
-// existing `crate::utils::...` paths continue to resolve.
-use cc_utils as utils;
 mod voice;
-
-// Context compaction pipeline — lives in its own crate (`cc-compact`).
-// Re-alias at the crate root so existing `crate::compact::...` paths continue
-// to resolve.
-use cc_compact as compact;
-
-// Network / API / auth. `auth` lives in its own crate (`cc-auth`); re-alias
-// so existing `crate::auth::...` paths continue to resolve.
-use cc_auth as auth;
-
-// Skills system lives in its own crate (`cc-skills`). Re-alias so existing
-// `crate::skills::...` paths continue to resolve.
-use cc_skills as skills;
+mod worktree_hooks;
 
 // Plugin system
 mod plan_workflow;
@@ -89,10 +54,6 @@ mod web;
 
 // Phase I: Shutdown and cleanup
 mod shutdown;
-
-// Observability lives in its own crate (`cc-observability`). Re-alias at the
-// crate root so existing `crate::observability::...` paths continue to resolve.
-use cc_observability as observability;
 
 // IPC headless mode
 mod ipc;
@@ -150,7 +111,7 @@ fn resolve_startup_model(
     cc_commands::model::resolve_model_alias(hardcoded_default)
 }
 
-fn log_skill_report(scope: &str, report: &skills::SkillLoadReport) {
+fn log_skill_report(scope: &str, report: &cc_skills::SkillLoadReport) {
     info!(
         scope,
         loaded = report.loaded,
@@ -163,7 +124,7 @@ fn log_skill_report(scope: &str, report: &skills::SkillLoadReport) {
 
     for diagnostic in &report.diagnostics {
         match diagnostic.severity {
-            skills::SkillDiagnosticSeverity::Error => warn!(
+            cc_skills::SkillDiagnosticSeverity::Error => warn!(
                 scope,
                 code = %diagnostic.code,
                 skill = ?diagnostic.skill,
@@ -172,7 +133,7 @@ fn log_skill_report(scope: &str, report: &skills::SkillLoadReport) {
                 message = %diagnostic.message,
                 "skill load error"
             ),
-            skills::SkillDiagnosticSeverity::Warning => debug!(
+            cc_skills::SkillDiagnosticSeverity::Warning => debug!(
                 scope,
                 code = %diagnostic.code,
                 skill = ?diagnostic.skill,
@@ -184,15 +145,15 @@ fn log_skill_report(scope: &str, report: &skills::SkillLoadReport) {
         }
     }
 }
-use crate::config::settings;
-use crate::engine::lifecycle::QueryEngine;
 use crate::startup::runtime_config::{
     build_tool_permission_context, chrome_cli_override, resolve_cwd, resolve_permission_mode,
 };
 use crate::tools::registry;
-use crate::types::app_state::{AppState, SettingsJson};
-use crate::types::config::QueryEngineConfig;
 use crate::ui::tui;
+use cc_config::settings;
+use cc_engine::lifecycle::QueryEngine;
+use cc_engine::types::app_state::{AppState, SettingsJson};
+use cc_engine::types::config::QueryEngineConfig;
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -200,11 +161,7 @@ use crate::ui::tui;
 
 fn main() -> ExitCode {
     startup::load_env_files();
-
-    // Wire `cc-auth`'s credentials path — it lives outside the root crate now
-    // (P2, issue #71) so it can't call `crate::config::paths::credentials_path()`
-    // directly. Register once, before any fast path might hit OAuth resolution.
-    cc_auth::set_credentials_path(crate::config::paths::credentials_path());
+    startup::engine_runtime::install();
 
     // Wire cc-permissions' descriptive-prompt callbacks. cc-permissions moved
     // out of the root crate in Phase 4 (issue #73); the Computer Use and
@@ -237,13 +194,13 @@ fn main() -> ExitCode {
         Some(format!("Allow {} {}?", description, risk_tag))
     });
     cc_permissions::decision::set_browser_message_callback(|tool_name: &str| {
-        if let Some(m) = crate::browser::permissions::browser_permission_message(tool_name) {
+        if let Some(m) = cc_browser::permissions::browser_permission_message(tool_name) {
             return Some(m);
         }
         if let Some(rest) = tool_name.strip_prefix("mcp__") {
             if let Some((server, action)) = rest.split_once("__") {
-                if crate::browser::detection::is_browser_server(server) {
-                    let cat = crate::browser::permissions::classify_browser_action(action);
+                if cc_browser::detection::is_browser_server(server) {
+                    let cat = cc_browser::permissions::classify_browser_action(action);
                     return Some(format!(
                         "Allow browser action '{}' via MCP server '{}' {}?",
                         action,
@@ -335,7 +292,7 @@ fn main() -> ExitCode {
             }
         }
     });
-    crate::services::langfuse::shutdown_langfuse();
+    cc_services::langfuse::shutdown_langfuse();
     exit_code
 }
 
@@ -374,20 +331,20 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             debug!(source = src.as_str(), path = %path.display(), "settings layer");
         }
     }
-    let backend = crate::engine::codex_exec::normalize_backend(merged_config.backend.as_deref());
+    let backend = cc_engine::codex_exec::normalize_backend(merged_config.backend.as_deref());
 
     // B.2: Determine permission mode
     let permission_mode = resolve_permission_mode(
         cli.permission_mode.as_deref(),
         merged_config.permission_mode.as_deref(),
     )?;
-    let chrome_enablement = crate::browser::session::resolve_enablement(
+    let chrome_enablement = cc_browser::session::resolve_enablement(
         chrome_cli_override(&cli),
         merged_config.claude_in_chrome_default_enabled,
     );
     let chrome_wanted = matches!(
         chrome_enablement,
-        crate::browser::session::ChromeEnablement::Enabled
+        cc_browser::session::ChromeEnablement::Enabled
     );
 
     // B.3: Register tools
@@ -406,33 +363,33 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             "Skills: loading plugin-contributed skills"
         );
     }
-    let skill_report = skills::reload_skills_with_extra(
-        &crate::config::paths::skills_dir_global(),
+    let skill_report = cc_skills::reload_skills_with_extra(
+        &cc_config::paths::skills_dir_global(),
         Some(std::path::Path::new(&cwd)),
         plugin_skills,
-        skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
+        cc_skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
     );
     log_skill_report("startup", &skill_report);
 
     // Start Chrome setup before registering the synthetic MCP bridge so the
     // manifest/shims are in place before the bridge begins serving requests.
     {
-        use crate::browser::session::ChromeSession;
+        use cc_browser::session::ChromeSession;
 
         let session = ChromeSession::new(chrome_enablement);
         if let Err(e) = session.start() {
             warn!(error = %e, "Chrome subsystem startup failed");
         }
-        if crate::browser::state::is_enabled() {
+        if cc_browser::state::is_enabled() {
             info!("Claude in Chrome subsystem active - use /chrome for status");
         }
     }
 
     // B.3d: Discover and connect MCP servers
     let _mcp_manager = {
-        use crate::mcp::discovery::discover_mcp_servers;
-        use crate::mcp::manager::McpManager;
         use crate::mcp::tools::mcp_tools_to_tools;
+        use cc_mcp::discovery::discover_mcp_servers;
+        use cc_mcp::manager::McpManager;
 
         let cwd_path = std::path::Path::new(&cwd);
         let mut server_configs = match discover_mcp_servers(cwd_path) {
@@ -454,9 +411,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             if let Ok(exe) = std::env::current_exe() {
                 // De-dupe: if the user also put `claude-in-chrome` in
                 // settings.json for some reason, the explicit config wins.
-                let name = crate::browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME;
+                let name = cc_browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME;
                 if !server_configs.iter().any(|c| c.name == name) {
-                    server_configs.push(crate::mcp::McpServerConfig {
+                    server_configs.push(cc_mcp::McpServerConfig {
                         name: name.to_string(),
                         transport: "stdio".to_string(),
                         command: Some(exe.to_string_lossy().into_owned()),
@@ -505,10 +462,10 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             let (mcp_skills, mcp_skill_diagnostics) =
                 crate::mcp::tools::discover_mcp_skill_resources(&mgr).await;
             if !mcp_skills.is_empty() || !mcp_skill_diagnostics.is_empty() {
-                let report = skills::register_skills_resolved_with_diagnostics(
+                let report = cc_skills::register_skills_resolved_with_diagnostics(
                     mcp_skills,
                     mcp_skill_diagnostics,
-                    skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
+                    cc_skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
                 );
                 log_skill_report("mcp", &report);
             }
@@ -525,7 +482,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         // already know the capability is expected.
         if chrome_wanted {
             browser_servers
-                .insert(crate::browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string());
+                .insert(cc_browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string());
         }
         if !browser_servers.is_empty() {
             info!(
@@ -533,9 +490,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                 "Browser MCP: detected browser-shaped MCP server(s)"
             );
         }
-        crate::browser::detection::install_browser_servers(browser_servers);
+        cc_browser::detection::install_browser_servers(browser_servers);
 
-        crate::mcp::runtime::install_manager(mcp_manager.clone());
+        cc_mcp::runtime::install_manager(mcp_manager.clone());
         mcp_manager
     };
 
@@ -553,7 +510,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // B.4: Create AppState
     // Resolve model: CLI arg > config > provider default > hardcoded fallback
-    let is_codex_backend = crate::engine::codex_exec::is_codex_backend(&backend);
+    let is_codex_backend = cc_engine::codex_exec::is_codex_backend(&backend);
     let detected_client = cc_api::api::client::ApiClient::from_backend_result(Some(&backend))
         .context("invalid API provider configuration")?;
     let provider_default_model = detected_client
@@ -583,7 +540,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     }
 
     let hardcoded_default = if is_codex_backend {
-        crate::engine::codex_exec::DEFAULT_CODEX_MODEL.to_string()
+        cc_engine::codex_exec::DEFAULT_CODEX_MODEL.to_string()
     } else {
         "claude-sonnet-4-20250514".to_string()
     };
@@ -594,7 +551,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         &hardcoded_default,
         &merged_config.available_models,
     );
-    let persisted_plan_workflow = match crate::plan_workflow::load(std::path::Path::new(&cwd)) {
+    let persisted_plan_workflow = match cc_commands::plan_workflow::load(std::path::Path::new(&cwd))
+    {
         Ok(record) => record,
         Err(e) => {
             warn!(error = %e, "failed to load persisted plan workflow");
@@ -669,8 +627,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         is_assistant_mode: false,
         autonomous_tick_ms: None,
         terminal_focus: true,
-        keybindings: crate::keybindings::KeybindingRegistry::with_user_path(Some(
-            crate::config::paths::keybindings_path(),
+        keybindings: cc_keybindings::KeybindingRegistry::with_user_path(Some(
+            cc_config::paths::keybindings_path(),
         )),
         status_line_runner: crate::ui::status_line::StatusLineRunner::new(),
     };
@@ -682,11 +640,11 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     }
 
     // B.6: Handle session resume (before engine creation)
-    let resume_messages: Option<Vec<crate::types::message::Message>> = if cli.resume {
-        match session::resume::get_last_session(std::path::Path::new(&cwd)) {
+    let resume_messages: Option<Vec<cc_types::message::Message>> = if cli.resume {
+        match cc_session::resume::get_last_session(std::path::Path::new(&cwd)) {
             Ok(Some(info)) => {
                 info!(session = %info.session_id, "resuming last session");
-                match session::resume::resume_session(&info.session_id) {
+                match cc_session::resume::resume_session(&info.session_id) {
                     Ok(msgs) => {
                         info!(count = msgs.len(), "loaded messages from previous session");
                         Some(msgs)
@@ -708,7 +666,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         }
     } else if let Some(ref session_id) = cli.continue_session {
         info!(session = %session_id, "continuing session");
-        match session::resume::resume_session(session_id) {
+        match cc_session::resume::resume_session(session_id) {
             Ok(msgs) => {
                 info!(count = msgs.len(), "loaded messages for --continue");
                 Some(msgs)
@@ -757,7 +715,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     let engine = Arc::new({
         let mut e = QueryEngine::new(engine_config);
         e.set_hook_runner(Arc::new(crate::tools::hooks::ShellHookRunner::new()));
-        e.set_command_dispatcher(Arc::new(crate::commands::DefaultCommandDispatcher::new()));
+        e.set_command_dispatcher(Arc::new(commands::DefaultCommandDispatcher::new()));
         e
     });
     info!(session = %engine.session_id, "QueryEngine created");
@@ -769,7 +727,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     // B.8a: Fire SessionStart hook (fire-and-forget)
     {
         let start_configs =
-            crate::tools::hooks::load_hook_configs(&merged_config.hooks, "SessionStart");
+            cc_types::hooks::load_hook_configs(&merged_config.hooks, "SessionStart");
         if !start_configs.is_empty() {
             let payload = serde_json::json!({
                 "session_id": engine.session_id.as_str(),
@@ -782,7 +740,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // B.8b: Initialize audit sink
     {
-        use crate::observability::{
+        use cc_observability::{
             AuditConfig, AuditContext, AuditSink, EventKind, Outcome, SessionMeta, Stage,
         };
 
@@ -804,7 +762,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             source: source_mode.to_string(),
         };
 
-        let runs_dir = crate::config::paths::runs_dir(engine.session_id.as_str());
+        let runs_dir = cc_config::paths::runs_dir(engine.session_id.as_str());
         match AuditSink::init(engine.session_id.as_str(), runs_dir, &meta, audit_config) {
             Ok(sink) => {
                 let ctx = AuditContext::new(engine.session_id.as_str(), source_mode, sink);
@@ -822,9 +780,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // B.8.1: Initialize global ProcessState
     let cwd_path = std::path::PathBuf::from(&cwd);
-    let project_root =
-        crate::utils::git::find_git_root(&cwd_path).unwrap_or_else(|| cwd_path.clone());
-    bootstrap::init_process_state(
+    let project_root = cc_utils::git::find_git_root(&cwd_path).unwrap_or_else(|| cwd_path.clone());
+    cc_bootstrap::init_process_state(
         cwd_path,
         project_root,
         engine.session_id.clone(),
@@ -880,7 +837,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // Daemon mode
     if cli.daemon {
-        use crate::config::features::{self, Feature};
+        use cc_config::features::{self, Feature};
         if !features::enabled(Feature::Kairos) {
             eprintln!("error: --daemon requires FEATURE_KAIROS=1");
             return Ok(ExitCode::FAILURE);
@@ -964,7 +921,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     let shutdown_token = shutdown::register_shutdown_handler();
 
     let mut dashboard_companion =
-        if crate::config::features::enabled(crate::config::features::Feature::SubagentDashboard) {
+        if cc_config::features::enabled(cc_config::features::Feature::SubagentDashboard) {
             match dashboard::DashboardCompanion::spawn(dashboard::DashboardConfig::default()).await
             {
                 Ok(child) => Some(child),

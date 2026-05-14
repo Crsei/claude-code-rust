@@ -1,4 +1,3 @@
-#![allow(dead_code)] // Public API — will be used by settings loader
 //! Settings validation.
 //!
 //! Validates configuration values and reports warnings for
@@ -14,8 +13,7 @@ const VALID_BACKENDS: &[&str] = &["native", "codex"];
 // Engine-layer constants duplicated here
 // ---------------------------------------------------------------------------
 //
-// These were `crate::engine::output_style::BUILT_IN_NAMES` and
-// `crate::engine::effort::effort_to_budget_tokens` before cc-config was
+// These were root engine output-style and effort helpers before cc-config was
 // split off in Phase 3 (issue #72). Moving `engine::output_style` and
 // `engine::effort` into cc-config would drag the full engine graph in;
 // validation just needs the name/budget lookup, so we duplicate the

@@ -7,9 +7,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::compact::{compaction, partial_compact, pipeline};
-use crate::types::message::{ContentBlock, Message, MessageContent};
-use crate::utils::tokens;
+use cc_compact::{compaction, partial_compact, pipeline};
+use cc_types::message::{ContentBlock, Message, MessageContent};
+use cc_utils::tokens;
 
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
@@ -133,7 +133,7 @@ fn execute_partial_compact(
         return CommandResult::Output("Nothing to compact -- conversation is empty.".into());
     }
 
-    if !crate::compact::gates::CompactionFeatureGates::from_env().partial_compact {
+    if !cc_compact::gates::CompactionFeatureGates::from_env().partial_compact {
         return CommandResult::Output(
             "Partial compact is disabled by CC_RUST_PARTIAL_COMPACT.".into(),
         );
@@ -339,8 +339,8 @@ fn content_block_excerpt(block: &ContentBlock) -> Option<String> {
             truncate_chars(&input.to_string(), 80)
         )),
         ContentBlock::ToolResult { content, .. } => Some(match content {
-            crate::types::message::ToolResultContent::Text(text) => text.clone(),
-            crate::types::message::ToolResultContent::Blocks(blocks) => blocks
+            cc_types::message::ToolResultContent::Text(text) => text.clone(),
+            cc_types::message::ToolResultContent::Blocks(blocks) => blocks
                 .iter()
                 .filter_map(content_block_excerpt)
                 .collect::<Vec<_>>()
@@ -378,9 +378,9 @@ fn partial_direction_label(direction: partial_compact::PartialCompactDirection) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
-    use crate::types::message::{Message, MessageContent, SystemSubtype, UserMessage};
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
+    use cc_types::message::{Message, MessageContent, SystemSubtype, UserMessage};
     use std::path::PathBuf;
     use uuid::Uuid;
 

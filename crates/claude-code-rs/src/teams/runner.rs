@@ -17,9 +17,10 @@ use super::mailbox;
 use super::protocol::{self, ProtocolMessage};
 use super::types::*;
 
-use crate::engine::lifecycle::QueryEngine;
-use crate::types::config::{AgentContext, QueryEngineConfig, QuerySource};
-use crate::types::tool::{PermissionMode, QueryChainTracking};
+use crate::commands as command_registry;
+use cc_engine::lifecycle::QueryEngine;
+use cc_engine::types::config::{AgentContext, QueryEngineConfig, QuerySource};
+use cc_engine::types::tool::{PermissionMode, QueryChainTracking};
 
 // ---------------------------------------------------------------------------
 // Spawn entry point
@@ -141,7 +142,7 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
             crate::tools::hooks::ShellHookRunner::new(),
         ));
         engine.set_command_dispatcher(std::sync::Arc::new(
-            crate::commands::DefaultCommandDispatcher::new(),
+            command_registry::DefaultCommandDispatcher::new(),
         ));
 
         let mut next_prompt = Some(config.prompt.clone());
@@ -294,7 +295,7 @@ async fn drive_engine_turn(
     task_id: &str,
     cancellation: &tokio_util::sync::CancellationToken,
 ) -> Result<bool> {
-    use crate::engine::sdk_types::SdkMessage;
+    use cc_types::sdk::SdkMessage;
     use futures::StreamExt;
 
     InProcessBackend::set_task_idle(task_id, false);

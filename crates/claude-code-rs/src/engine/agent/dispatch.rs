@@ -4,10 +4,10 @@ use anyhow::Result;
 use serde_json::json;
 use tracing::debug;
 
-use crate::engine::lifecycle::QueryEngine;
-use crate::types::config::QuerySource;
-use crate::types::tool::*;
-use crate::utils::bash::validate_working_directory;
+use cc_engine::lifecycle::QueryEngine;
+use cc_engine::types::config::QuerySource;
+use cc_engine::types::tool::*;
+use cc_utils::bash::validate_working_directory;
 
 use super::{build_child_config, collect_stream_result, AgentInput, AgentTool};
 

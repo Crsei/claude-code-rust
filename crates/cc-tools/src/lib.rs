@@ -6,4 +6,5 @@
 //! do not require engine, query, UI, IPC, or daemon state.
 
 pub mod registry;
+pub mod result;
 pub mod task_specs;

@@ -1,5 +1,5 @@
 use super::*;
-use crate::types::tool::Tool;
+use cc_engine::types::tool::Tool;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -162,19 +162,17 @@ async fn test_background_agent_placeholder_format() {
 // sdk_to_agent_event — SdkMessage → AgentEvent mapping
 // ---------------------------------------------------------------------------
 
-fn make_stream_event(delta: serde_json::Value) -> crate::engine::sdk_types::SdkMessage {
-    crate::engine::sdk_types::SdkMessage::StreamEvent(crate::engine::sdk_types::SdkStreamEvent {
-        event: crate::types::message::StreamEvent::ContentBlockDelta { index: 0, delta },
+fn make_stream_event(delta: serde_json::Value) -> cc_types::sdk::SdkMessage {
+    cc_types::sdk::SdkMessage::StreamEvent(cc_types::sdk::SdkStreamEvent {
+        event: cc_types::message::StreamEvent::ContentBlockDelta { index: 0, delta },
         session_id: "s1".into(),
         uuid: Uuid::nil(),
     })
 }
 
-fn make_assistant_msg(
-    content: Vec<crate::types::message::ContentBlock>,
-) -> crate::engine::sdk_types::SdkMessage {
-    crate::engine::sdk_types::SdkMessage::Assistant(crate::engine::sdk_types::SdkAssistantMessage {
-        message: crate::types::message::AssistantMessage {
+fn make_assistant_msg(content: Vec<cc_types::message::ContentBlock>) -> cc_types::sdk::SdkMessage {
+    cc_types::sdk::SdkMessage::Assistant(cc_types::sdk::SdkAssistantMessage {
+        message: cc_types::message::AssistantMessage {
             uuid: Uuid::nil(),
             timestamp: 0,
             role: "assistant".into(),
@@ -190,10 +188,8 @@ fn make_assistant_msg(
     })
 }
 
-fn make_user_replay(
-    blocks: Vec<crate::types::message::ContentBlock>,
-) -> crate::engine::sdk_types::SdkMessage {
-    crate::engine::sdk_types::SdkMessage::UserReplay(crate::engine::sdk_types::SdkUserReplay {
+fn make_user_replay(blocks: Vec<cc_types::message::ContentBlock>) -> cc_types::sdk::SdkMessage {
+    cc_types::sdk::SdkMessage::UserReplay(cc_types::sdk::SdkUserReplay {
         content: String::new(),
         session_id: "s1".into(),
         uuid: Uuid::nil(),
@@ -249,7 +245,7 @@ fn test_sdk_to_agent_event_unsupported_text_like_delta_returns_none() {
 
 #[test]
 fn test_sdk_to_agent_event_tool_use() {
-    let msg = make_assistant_msg(vec![crate::types::message::ContentBlock::ToolUse {
+    let msg = make_assistant_msg(vec![cc_types::message::ContentBlock::ToolUse {
         id: "tu1".into(),
         name: "Bash".into(),
         input: json!({"command": "ls"}),
@@ -273,7 +269,7 @@ fn test_sdk_to_agent_event_tool_use() {
 
 #[test]
 fn test_sdk_to_agent_event_assistant_text_only_returns_none() {
-    let msg = make_assistant_msg(vec![crate::types::message::ContentBlock::Text {
+    let msg = make_assistant_msg(vec![cc_types::message::ContentBlock::Text {
         text: "just text".into(),
     }]);
     assert!(sdk_to_agent_event(&msg, "a1").is_none());
@@ -281,9 +277,9 @@ fn test_sdk_to_agent_event_assistant_text_only_returns_none() {
 
 #[test]
 fn test_sdk_to_agent_event_tool_result_text() {
-    let msg = make_user_replay(vec![crate::types::message::ContentBlock::ToolResult {
+    let msg = make_user_replay(vec![cc_types::message::ContentBlock::ToolResult {
         tool_use_id: "tu1".into(),
-        content: crate::types::message::ToolResultContent::Text("file contents".into()),
+        content: cc_types::message::ToolResultContent::Text("file contents".into()),
         is_error: false,
     }]);
     let event = sdk_to_agent_event(&msg, "a4").unwrap();
@@ -305,9 +301,9 @@ fn test_sdk_to_agent_event_tool_result_text() {
 
 #[test]
 fn test_sdk_to_agent_event_tool_result_error() {
-    let msg = make_user_replay(vec![crate::types::message::ContentBlock::ToolResult {
+    let msg = make_user_replay(vec![cc_types::message::ContentBlock::ToolResult {
         tool_use_id: "tu2".into(),
-        content: crate::types::message::ToolResultContent::Text("command failed".into()),
+        content: cc_types::message::ToolResultContent::Text("command failed".into()),
         is_error: true,
     }]);
     let event = sdk_to_agent_event(&msg, "a5").unwrap();
@@ -321,10 +317,10 @@ fn test_sdk_to_agent_event_tool_result_error() {
 
 #[test]
 fn test_sdk_to_agent_event_tool_result_blocks_shows_placeholder() {
-    let msg = make_user_replay(vec![crate::types::message::ContentBlock::ToolResult {
+    let msg = make_user_replay(vec![cc_types::message::ContentBlock::ToolResult {
         tool_use_id: "tu3".into(),
-        content: crate::types::message::ToolResultContent::Blocks(vec![
-            crate::types::message::ContentBlock::Text {
+        content: cc_types::message::ToolResultContent::Blocks(vec![
+            cc_types::message::ContentBlock::Text {
                 text: "inner".into(),
             },
         ]),
@@ -341,51 +337,46 @@ fn test_sdk_to_agent_event_tool_result_blocks_shows_placeholder() {
 
 #[test]
 fn test_sdk_to_agent_event_user_replay_no_blocks_returns_none() {
-    let msg =
-        crate::engine::sdk_types::SdkMessage::UserReplay(crate::engine::sdk_types::SdkUserReplay {
-            content: "hello".into(),
-            session_id: "s1".into(),
-            uuid: Uuid::nil(),
-            timestamp: 0,
-            is_replay: false,
-            is_synthetic: false,
-            tool_use_result: None,
-            source_tool_assistant_uuid: None,
-            content_blocks: None,
-        });
+    let msg = cc_types::sdk::SdkMessage::UserReplay(cc_types::sdk::SdkUserReplay {
+        content: "hello".into(),
+        session_id: "s1".into(),
+        uuid: Uuid::nil(),
+        timestamp: 0,
+        is_replay: false,
+        is_synthetic: false,
+        tool_use_result: None,
+        source_tool_assistant_uuid: None,
+        content_blocks: None,
+    });
     assert!(sdk_to_agent_event(&msg, "a1").is_none());
 }
 
 #[test]
 fn test_sdk_to_agent_event_system_init_returns_none() {
-    let msg = crate::engine::sdk_types::SdkMessage::SystemInit(
-        crate::engine::sdk_types::SystemInitMessage {
-            tools: vec![],
-            model: "test".into(),
-            permission_mode: "default".into(),
-            session_id: "s1".into(),
-            uuid: Uuid::nil(),
-        },
-    );
+    let msg = cc_types::sdk::SdkMessage::SystemInit(cc_types::sdk::SystemInitMessage {
+        tools: vec![],
+        model: "test".into(),
+        permission_mode: "default".into(),
+        session_id: "s1".into(),
+        uuid: Uuid::nil(),
+    });
     assert!(sdk_to_agent_event(&msg, "a1").is_none());
 }
 
 #[test]
 fn test_sdk_to_agent_event_stream_message_start_returns_none() {
-    let msg = crate::engine::sdk_types::SdkMessage::StreamEvent(
-        crate::engine::sdk_types::SdkStreamEvent {
-            event: crate::types::message::StreamEvent::MessageStart {
-                usage: crate::types::message::Usage {
-                    input_tokens: 0,
-                    output_tokens: 0,
-                    cache_creation_input_tokens: 0,
-                    cache_read_input_tokens: 0,
-                },
+    let msg = cc_types::sdk::SdkMessage::StreamEvent(cc_types::sdk::SdkStreamEvent {
+        event: cc_types::message::StreamEvent::MessageStart {
+            usage: cc_types::message::Usage {
+                input_tokens: 0,
+                output_tokens: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
             },
-            session_id: "s1".into(),
-            uuid: Uuid::nil(),
         },
-    );
+        session_id: "s1".into(),
+        uuid: Uuid::nil(),
+    });
     assert!(sdk_to_agent_event(&msg, "a1").is_none());
 }
 
@@ -393,12 +384,12 @@ fn test_sdk_to_agent_event_stream_message_start_returns_none() {
 fn test_sdk_to_agent_event_tool_use_picks_first() {
     // When assistant message has multiple tool uses, sdk_to_agent_event returns the first
     let msg = make_assistant_msg(vec![
-        crate::types::message::ContentBlock::ToolUse {
+        cc_types::message::ContentBlock::ToolUse {
             id: "tu-first".into(),
             name: "Read".into(),
             input: json!({"path": "/a"}),
         },
-        crate::types::message::ContentBlock::ToolUse {
+        cc_types::message::ContentBlock::ToolUse {
             id: "tu-second".into(),
             name: "Write".into(),
             input: json!({"path": "/b"}),

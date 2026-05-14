@@ -7,14 +7,14 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::types::message::{AssistantMessage, ContentBlock, ImageSource, ToolResultContent};
-use crate::types::tool::{
+use cc_computer_use::input::{self, InputAction, MouseButton};
+use cc_computer_use::screenshot;
+use cc_engine::types::tool::{
     PermissionResult, Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult,
 };
+use cc_types::message::{AssistantMessage, ContentBlock, ImageSource, ToolResultContent};
 
 use super::detection::{classify_risk, extract_cu_action, CuRiskLevel};
-use super::input::{InputAction, MouseButton};
-use super::screenshot;
 
 // ---------------------------------------------------------------------------
 // Shared permission check for all CU tools
@@ -156,8 +156,6 @@ impl Tool for ScreenshotTool {
 pub struct ClickTool {
     button: MouseButton,
     tool_name: &'static str,
-    // Used in description() and prompt() via async trait — suppressed false positive.
-    #[allow(dead_code)]
     display_name: &'static str,
 }
 
@@ -235,7 +233,7 @@ impl Tool for ClickTool {
         let x = input["x"].as_i64().unwrap_or(0) as i32;
         let y = input["y"].as_i64().unwrap_or(0) as i32;
 
-        let result = super::input::execute_input(InputAction::Click {
+        let result = input::execute_input(InputAction::Click {
             x,
             y,
             button: self.button,
@@ -310,7 +308,7 @@ impl Tool for DoubleClickTool {
         let x = input["x"].as_i64().unwrap_or(0) as i32;
         let y = input["y"].as_i64().unwrap_or(0) as i32;
 
-        let result = super::input::execute_input(InputAction::DoubleClick { x, y }).await?;
+        let result = input::execute_input(InputAction::DoubleClick { x, y }).await?;
 
         Ok(ToolResult {
             data: json!(result),
@@ -375,7 +373,7 @@ impl Tool for TypeTextTool {
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
         let text = input["text"].as_str().unwrap_or("").to_string();
-        let result = super::input::execute_input(InputAction::TypeText { text }).await?;
+        let result = input::execute_input(InputAction::TypeText { text }).await?;
         Ok(ToolResult {
             data: json!(result),
             ..Default::default()
@@ -442,7 +440,7 @@ impl Tool for KeyTool {
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
         let key = input["key"].as_str().unwrap_or("").to_string();
-        let result = super::input::execute_input(InputAction::KeyPress { key }).await?;
+        let result = input::execute_input(InputAction::KeyPress { key }).await?;
         Ok(ToolResult {
             data: json!(result),
             ..Default::default()
@@ -504,7 +502,7 @@ impl Tool for ScrollTool {
         let y = input["y"].as_i64().unwrap_or(0) as i32;
         let amount = input["amount"].as_i64().unwrap_or(3) as i32;
 
-        let result = super::input::execute_input(InputAction::Scroll { x, y, amount }).await?;
+        let result = input::execute_input(InputAction::Scroll { x, y, amount }).await?;
         Ok(ToolResult {
             data: json!(result),
             ..Default::default()
@@ -561,7 +559,7 @@ impl Tool for MouseMoveTool {
         let x = input["x"].as_i64().unwrap_or(0) as i32;
         let y = input["y"].as_i64().unwrap_or(0) as i32;
 
-        let result = super::input::execute_input(InputAction::MouseMove { x, y }).await?;
+        let result = input::execute_input(InputAction::MouseMove { x, y }).await?;
         Ok(ToolResult {
             data: json!(result),
             ..Default::default()
@@ -620,7 +618,7 @@ impl Tool for CursorPositionTool {
         _parent: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let pos = super::input::get_cursor_position().await?;
+        let pos = input::get_cursor_position().await?;
         Ok(ToolResult {
             data: json!({ "x": pos.x, "y": pos.y }),
             ..Default::default()

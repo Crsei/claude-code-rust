@@ -32,7 +32,7 @@
 //! recomputed lazily and the viewport snaps to the first hit. `n` / `N`
 //! cycle through hits, wrapping at the ends.
 
-use crate::types::message::{Attachment, ContentBlock, Message, MessageContent, SystemSubtype};
+use cc_types::message::{Attachment, ContentBlock, Message, MessageContent, SystemSubtype};
 
 /// The three view modes the TUI can be in. Cycling is `Prompt →
 /// Transcript → Focus → Prompt` via `Ctrl+O`.
@@ -283,8 +283,8 @@ fn blocks_to_text(blocks: &[ContentBlock]) -> String {
                     out.push('\n');
                 }
                 match content {
-                    crate::types::message::ToolResultContent::Text(t) => out.push_str(t),
-                    crate::types::message::ToolResultContent::Blocks(inner) => {
+                    cc_types::message::ToolResultContent::Text(t) => out.push_str(t),
+                    cc_types::message::ToolResultContent::Blocks(inner) => {
                         out.push_str(&blocks_to_text(inner));
                     }
                 }
@@ -456,7 +456,7 @@ fn synthesize_edit_summary(edited_files: &[String]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::message::{
+    use cc_types::message::{
         AssistantMessage, AttachmentMessage, InfoLevel, MessageContent, SystemMessage,
         SystemSubtype, UserMessage,
     };

@@ -5,7 +5,8 @@ use serde_json::Value;
 use tracing::{debug, warn};
 
 use super::execution::execute_command_hook;
-use super::{matches_tool, HookEntry, HookEventConfig, PermissionOverride, PreToolHookResult};
+use super::{HookEntry, HookEventConfig, PermissionOverride, PreToolHookResult};
+use cc_types::hooks::matches_tool;
 
 // ---------------------------------------------------------------------------
 // Pre-tool hooks

@@ -7,7 +7,7 @@
 use ratatui::text::Line;
 use unicode_width::UnicodeWidthStr;
 
-use crate::types::message::Message;
+use cc_types::message::Message;
 
 use super::messages::render_single_message;
 use super::theme::Theme;
@@ -236,10 +236,8 @@ impl VirtualScroll {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::message::{
-        AssistantMessage, ContentBlock, Message, MessageContent, UserMessage,
-    };
     use crate::ui::theme::Theme;
+    use cc_types::message::{AssistantMessage, ContentBlock, Message, MessageContent, UserMessage};
 
     fn user(text: &str) -> Message {
         Message::User(UserMessage {

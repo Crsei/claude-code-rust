@@ -13,8 +13,8 @@ use parking_lot::{Mutex, RwLock};
 use serde::Serialize;
 use tokio::sync::mpsc;
 
-use crate::config::features::FeatureFlags;
-use crate::engine::lifecycle::QueryEngine;
+use cc_config::features::FeatureFlags;
+use cc_engine::lifecycle::QueryEngine;
 
 // ---------------------------------------------------------------------------
 // Monotonic event ID counter

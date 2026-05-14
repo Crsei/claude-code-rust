@@ -43,10 +43,8 @@ pub struct ScopedMcpServer {
 // Plugin-contributed server hook
 // ---------------------------------------------------------------------------
 //
-// `discover_mcp_servers` used to call `crate::plugins::discover_plugin_mcp_servers()`
-// directly. Once cc-mcp moved into its own crate (issue #72), reaching back
-// into the root crate's `plugins` module would have been a cycle. The host
-// registers a callback that returns plugin-contributed server configs.
+// Plugin-contributed discovery is host-provided to keep cc-mcp independent
+// from the root plugin runtime.
 //
 // Two hook shapes are supported:
 // - `set_plugin_hook` (legacy): just returns configs. Every entry is marked

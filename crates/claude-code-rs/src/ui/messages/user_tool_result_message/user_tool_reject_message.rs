@@ -1,8 +1,8 @@
 //! Render output for tool-use rejections (non-error refusal path).
 
-use crate::types::tool::Tool;
 use crate::ui::messages::user_tool_result_message::utils::format_tool_output;
 use crate::ui::theme::Theme;
+use cc_engine::types::tool::Tool;
 use ratatui::text::{Line, Span};
 use serde_json::Value;
 

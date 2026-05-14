@@ -1,4 +1,4 @@
-//! Root-owned subsystem event bus for in-process IPC/TUI subscribers.
+//! Broadcast bus for in-process subsystem events.
 
 use tokio::sync::broadcast;
 

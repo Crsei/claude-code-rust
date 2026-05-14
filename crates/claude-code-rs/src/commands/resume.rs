@@ -10,9 +10,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::session::resume as session_resume;
-use crate::session::storage;
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_session::resume as session_resume;
+use cc_session::storage;
 
 /// Handler for the `/resume` slash command.
 pub struct ResumeHandler;
@@ -124,8 +124,8 @@ fn resume_session_by_id(session_id: &str, ctx: &mut CommandContext) -> Result<Co
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
     use tempfile::tempdir;
 

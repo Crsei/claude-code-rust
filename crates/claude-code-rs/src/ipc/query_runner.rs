@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
-use crate::engine::lifecycle::QueryEngine;
-use crate::services::prompt_suggestion::PromptSuggestionService;
+use cc_engine::lifecycle::QueryEngine;
+use cc_services::prompt_suggestion::PromptSuggestionService;
 
 use super::sdk_mapper::handle_sdk_message;
 use cc_ipc_client::sink::FrontendSink;

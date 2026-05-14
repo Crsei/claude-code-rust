@@ -1,10 +1,10 @@
 use super::subsystem_events::{add_system_error, add_system_info};
 use crate::commands as slash_commands;
-use crate::engine::lifecycle::QueryEngine;
-use crate::types::message::{ContentBlock, Message, MessageContent};
 use crate::ui::app::App;
 use crate::ui::command_surface::CommandSurface;
 use cc_commands::{CommandContext, CommandResult};
+use cc_engine::lifecycle::QueryEngine;
+use cc_types::message::{ContentBlock, Message, MessageContent};
 use std::sync::Arc;
 // ---------------------------------------------------------------------------
 // Slash-command execution
@@ -111,7 +111,7 @@ pub(super) async fn try_execute_command(
 fn sync_app_runtime_from_state(
     engine: &Arc<QueryEngine>,
     app: &mut App,
-    state: &crate::types::app_state::AppState,
+    state: &cc_engine::types::app_state::AppState,
 ) {
     engine.update_app_state(|engine_state| {
         engine_state.main_loop_model = state.main_loop_model.clone();
@@ -135,7 +135,7 @@ fn sync_app_runtime_from_state(
     let lang =
         crate::voice::language::normalize_language_for_stt(state.settings.language.as_deref());
     let voice_supported = matches!(
-        crate::commands::voice_cmd::current_feasibility(),
+        slash_commands::voice_cmd::current_feasibility(),
         crate::voice::feasibility::Feasibility::Ready { .. }
     );
     app.set_voice_settings(

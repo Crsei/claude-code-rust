@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::config::{self as cc_config, paths as cfg_paths};
+use cc_config::paths as cfg_paths;
 
 use super::edit_targets::EditTarget;
 

@@ -9,8 +9,8 @@
 
 use std::sync::Arc;
 
-use crate::types::message::{Attachment, AttachmentMessage, Message};
-use crate::types::tool::Tools;
+use cc_engine::types::tool::Tools;
+use cc_types::message::{Attachment, AttachmentMessage, Message};
 
 pub mod file_edit;
 pub mod file_read;

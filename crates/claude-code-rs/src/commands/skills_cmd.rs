@@ -3,7 +3,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::{plugins, skills};
+use crate::plugins;
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 pub struct SkillsHandler;
@@ -15,11 +15,11 @@ impl CommandHandler for SkillsHandler {
 
         if arg == "reload" {
             let plugin_skills = plugins::discover_plugin_skills();
-            let report = skills::reload_skills_with_extra(
-                &crate::config::paths::skills_dir_global(),
+            let report = cc_skills::reload_skills_with_extra(
+                &cc_config::paths::skills_dir_global(),
                 Some(&ctx.cwd),
                 plugin_skills,
-                skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
+                cc_skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
             );
             return Ok(CommandResult::Output(format_reload_report(&report)));
         }
@@ -28,7 +28,7 @@ impl CommandHandler for SkillsHandler {
             return Ok(CommandResult::Output(format_diagnostics()));
         }
 
-        let all = skills::get_all_skills();
+        let all = cc_skills::get_all_skills();
 
         if !arg.is_empty() && arg != "list" {
             if let Some(skill) = all
@@ -56,7 +56,7 @@ impl CommandHandler for SkillsHandler {
         lines.push(format!("Available Skills ({} total)", all.len()));
         lines.push(format!(
             "Registry revision: {}",
-            skills::registry_revision()
+            cc_skills::registry_revision()
         ));
         lines.push("-".repeat(50));
 
@@ -79,17 +79,17 @@ impl CommandHandler for SkillsHandler {
     }
 }
 
-fn source_tag(source: &skills::SkillSource) -> &'static str {
+fn source_tag(source: &cc_skills::SkillSource) -> &'static str {
     match source {
-        skills::SkillSource::Bundled => "[bundled]",
-        skills::SkillSource::User => "[user]",
-        skills::SkillSource::Project => "[project]",
-        skills::SkillSource::Plugin(_) => "[plugin]",
-        skills::SkillSource::Mcp(_) => "[mcp]",
+        cc_skills::SkillSource::Bundled => "[bundled]",
+        cc_skills::SkillSource::User => "[user]",
+        cc_skills::SkillSource::Project => "[project]",
+        cc_skills::SkillSource::Plugin(_) => "[plugin]",
+        cc_skills::SkillSource::Mcp(_) => "[mcp]",
     }
 }
 
-fn format_skill_detail(skill: &skills::SkillDefinition) -> String {
+fn format_skill_detail(skill: &cc_skills::SkillDefinition) -> String {
     let mut lines = Vec::new();
     lines.push(format!("Skill: {}", skill.display_name()));
     lines.push(format!("Canonical name: {}", skill.name));
@@ -144,7 +144,7 @@ fn format_skill_detail(skill: &skills::SkillDefinition) -> String {
     lines.join("\n")
 }
 
-fn format_reload_report(report: &skills::SkillLoadReport) -> String {
+fn format_reload_report(report: &cc_skills::SkillLoadReport) -> String {
     let mut lines = Vec::new();
     lines.push(format!(
         "Reloaded {} skill(s) at revision {}.",
@@ -187,7 +187,7 @@ fn format_reload_report(report: &skills::SkillLoadReport) -> String {
 }
 
 fn format_diagnostics() -> String {
-    let diagnostics = skills::get_skill_diagnostics();
+    let diagnostics = cc_skills::get_skill_diagnostics();
     if diagnostics.is_empty() {
         return "No skill diagnostics recorded.".to_string();
     }
@@ -212,8 +212,8 @@ fn format_diagnostics() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {

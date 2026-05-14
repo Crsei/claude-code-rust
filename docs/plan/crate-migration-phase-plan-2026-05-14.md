@@ -23,37 +23,64 @@ contract / DTO 下沉、root engine 重复实现清理、`cc-daemon` protocol ow
 `claude-code-rs/src/ui/**` 持有，`cc-ui` 仅保留为空边界 crate，不再作为 UI
 source owner。
 
-已通过的 final gates：
+Phase 12 final verification snapshot（2026-05-14）：
 
-```bash
-cargo fmt --all --check
-cargo check --workspace --all-targets --message-format short
-cargo test --workspace
-cargo build --workspace --release
-```
+- `cargo fmt --all --check`：初次发现迁移切片的 rustfmt import/order
+  差异；运行 `cargo fmt --all` 后复跑通过。
+- `cargo check --workspace --all-targets --message-format short`：通过。
+- `cargo test --workspace`：初次发现两个源码 guard 测试仍指向旧 root owner
+  (`e2e_hooks` 的 `tools::hooks` 字符串和 `e2e_plan_cmd` 的
+  `claude-code-rs/src/commands/plan.rs`)；已改为验证 `cc_types::hooks::HookRunner`
+  和 `cc-commands` owner 后复跑通过。
+- `cargo build --workspace --release`：通过。
+- `cargo tree -p claude-code-rs -e normal --depth 1`：通过；root binary 仍直接
+  依赖大部分 `cc-*` runtime crates 与 `gateway`，需继续按 thin-binary
+  wiring 复核哪些 dependency 是 binary glue，哪些仍是 owner gap。
+- `cargo tree -p cc-engine -e normal --depth 1`：通过；`cc-engine` 仍直接依赖
+  `cc-browser`、`cc-mcp`、`cc-tools`、`cc-teams`、`cc-lsp-service` 等 runtime
+  crates，Cargo graph 层面的 engine/runtime ownership 仍需继续收敛。
+- `cargo tree -p cc-query -e normal --depth 1`：通过；`cc-query` 仍依赖
+  `cc-engine` 和 `cc-services`，query/engine split 仍需后续复核。
+- `cargo tree -p cc-tools -e normal --depth 1`：通过；当前 normal deps 为
+  `cc-tasks` 和 `serde_json`。
+- `cargo tree -p cc-daemon -e normal --depth 1`：通过；当前 normal deps 为
+  `anyhow`、`axum`、`cc-types`、`chrono`、`futures`、`mime_guess`、`serde`、
+  `serde_json`。
+- `cargo tree -p cc-ui -e normal --depth 1`：通过；`cc-ui` 为空边界 crate，
+  没有 normal deps。
 
 本机仍有已知环境 warning：`npm` 未安装时 `claude-code-rs` build script 会跳过
 web-ui dependency install。该 warning 不影响本轮 crate migration gate。
 
-Phase 12 尚不能关闭为 Completed Full，因为 thin-binary / owner guard 仍未归零：
-
-```text
-path_attrs_cc_to_root 54
-path_attrs_root_to_cc 7
-cc_crates_root_imports 70
-allow_unused_dead 474
-codex_path_hits 12
-```
-
-2026-05-14 UI ownership rollback 后，跨 crate UI `#[path]` bridge 已归零：
+Phase 12 尚不能关闭为 Completed Full。Final build/test gates pass, migration
+closeout still blocked by ownership / guard items below：
 
 ```text
 path_attrs_cc_to_root 0
 path_attrs_root_to_cc 0
-cc_crates_root_imports 44
-allow_unused_dead 473
+cc_crates_root_imports 0
+claude_code_rs_hits_in_cc_crates 14
 codex_path_hits 12
+allow_unused_dead 457
 ```
+
+Guard semantics:
+
+- `rg '#\[path = ".*claude-code-rs/src' crates/cc-* crates/gateway -g '*.rs'`：
+  no matches；library crates no longer read root source by `#[path]`.
+- `rg '#\[path = ".*cc-' crates/claude-code-rs/src -g '*.rs'`：no matches；
+  root no longer reads `cc-*` source by `#[path]`.
+- `rg 'crate::(engine|query|tools|commands|daemon|ipc|teams|plugins|mcp|lsp_service|browser|computer_use|voice)::' crates/cc-* crates/gateway -g '*.rs'`：
+  no matches；string guard no longer finds root-style runtime imports inside
+  library crates.
+- `rg 'claude[-_]code[-_]rs' crates/cc-* crates/gateway -g '*.rs' -g '*.toml'`：
+  14 matches, currently docs/comments, test temp path names, version/client-name
+  strings, and `cc-types::mcp::CLIENT_NAME`; they still need classification before
+  declaring final ownership closeout.
+- `rg '~/.Codex|\.Codex/|~/.codex|service.*Codex|service.*Claude' crates -g '*.rs'`：
+  12 matches, currently Codex CLI read-only fallback docs/code and UI/login text;
+  these remain path-isolation classification items, not evidence that cc-rust writes
+  upstream Codex paths.
 
 剩余收口重点：
 
@@ -64,15 +91,16 @@ codex_path_hits 12
   仍需按 target owner 收敛，尤其是 `commands/`、`tools/`、`daemon/`、
   `ipc/`、`teams/`、`plugins/`、`mcp/`、`browser/`、`lsp_service/`、
   `computer_use/`、`voice/`、`services/`、`web/` 以及可复用 loose modules。
-- Phase 5 / 8：`cc-engine` 等 runtime crates 仍有 root-style
-  `crate::engine/tools/teams/mcp/browser/...` 边界引用；需要用目标 crate import
-  或 adapter trait 替换。
+- Phase 5 / 8：root-style import string guard 已归零，但 `cargo tree` 显示
+  `cc-engine` / `cc-query` 仍直接依赖多个 runtime crates；后续需要继续按
+  adapter trait / shared DTO 收敛 Cargo graph ownership，而不能只依赖字符串 guard。
 - Phase 1 / 11：当前已未发现非 UI root `#[path]` bridge；剩余风险主要是
   root compatibility re-export / alias、host-installed callback、重复 DTO、
   以及 scaffold crate 尚未真正接管 owner。
 - Phase 11：大量 `allow(dead_code|unused_imports|unused)` 仍来自迁移期兼容面；
   后续每个 owner 收口 slice 需要同步删除对应 allow。
-- Phase 12：guard 归零前，本文档保持 active plan，不迁入 `docs/archive/`。
+- Phase 12：final gates 已通过，但 ownership blockers 未归零；本文档保持 active
+  plan，不迁入 `docs/archive/`，也不在 `COMPLETED_FULL` 宣称完成。
 
 ## 总目标
 
@@ -150,6 +178,11 @@ surface，但不得被 `cc-*` crates 反向依赖或通过 `#[path]` 读取。
 ## Phase 0：Baseline And Ownership Inventory
 
 目标：冻结迁移基线，形成 owner matrix 和 guard matrix，避免后续 phase 只凭目录名移动。
+
+Phase 0 阶段产物：
+[`docs/plan/crate-migration-phase-0-inventory-2026-05-14.md`](crate-migration-phase-0-inventory-2026-05-14.md)。
+该文档冻结当前 root 一级模块 owner matrix、guard matrix、后续 phase blocker /
+focused verification 索引，以及当前 `#[path]` baseline 语义。
 
 执行内容：
 

@@ -11,8 +11,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use super::login_code;
-use crate::auth;
-use crate::auth::oauth::OAuthMethod;
+use cc_auth::{self as auth, oauth::OAuthMethod};
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 pub struct LoginHandler;

@@ -15,14 +15,14 @@ use std::path::Path;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::auth::{try_resolve_auth, AuthMethod};
-use crate::config::paths;
-use crate::config::settings::{load_effective, SettingsSource};
-use crate::config::validation::{validate_settings, WarningSeverity};
-use crate::keybindings::action::Action;
-use crate::keybindings::context::Context as KbContext;
 use crate::ui::browser::{render_with_footer, shorten_path, TreeNode};
+use cc_auth::{try_resolve_auth, AuthMethod};
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_config::paths;
+use cc_config::settings::{load_effective, SettingsSource};
+use cc_config::validation::{validate_settings, WarningSeverity};
+use cc_keybindings::action::Action;
+use cc_keybindings::context::Context as KbContext;
 
 use super::terminal_setup::TerminalLabel;
 
@@ -377,7 +377,7 @@ fn build_settings_section(cwd: &Path, ctx: &CommandContext) -> Section {
 
 fn build_mcp_section(cwd: &Path) -> Section {
     let mut rows = Vec::new();
-    match crate::mcp::discovery::discover_mcp_servers(cwd) {
+    match cc_mcp::discovery::discover_mcp_servers(cwd) {
         Ok(servers) => {
             if servers.is_empty() {
                 rows.push(Row::new(
@@ -556,8 +556,8 @@ fn build_terminal_section() -> Section {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
 
     fn make_ctx() -> CommandContext {

@@ -14,7 +14,7 @@ struct TrustedWorkspaces {
 }
 
 pub(super) fn trusted_workspaces_path() -> PathBuf {
-    crate::config::paths::data_root().join(TRUSTED_WORKSPACES_FILE)
+    cc_config::paths::data_root().join(TRUSTED_WORKSPACES_FILE)
 }
 
 fn normalize_workspace_path(path: &Path) -> String {

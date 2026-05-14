@@ -8,20 +8,20 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
-use crate::permissions::dangerous::is_dangerous_command;
-use crate::sandbox::{make_runner, policy_from_app_state, preflight_shell_command};
-use crate::types::message::AssistantMessage;
-use crate::types::tool::{
+use cc_engine::types::tool::{
     InterruptBehavior, PermissionResult, Tool, ToolProgress, ToolResult, ToolUseContext,
     ValidationResult,
 };
-use crate::utils::bash::{
+use cc_permissions::dangerous::is_dangerous_command;
+use cc_sandbox::{make_runner, policy_from_app_state, preflight_shell_command};
+use cc_types::message::AssistantMessage;
+use cc_utils::bash::{
     extract_command_name, extract_command_prefixes, has_malformed_tokens, has_unterminated_quotes,
     is_command_parseable, parse_command, resolve_timeout, rewrite_windows_null_redirect,
     should_add_stdin_redirect, split_compound_command, validate_heredocs,
 };
-use crate::utils::git_operation_tracking::track_git_operations_json;
-use crate::utils::shell::{build_shell_env, detect_default_shell};
+use cc_utils::git_operation_tracking::track_git_operations_json;
+use cc_utils::shell::{build_shell_env, detect_default_shell};
 
 use super::process_control::{
     configure_process_group, wait_for_exit_or_termination, ControlledExit,
@@ -377,7 +377,7 @@ impl Tool for BashTool {
         if is_excluded && !policy.allow_unsandboxed_commands {
             return Ok(ToolResult {
                 data: json!({
-                    "error": crate::sandbox::SandboxError::EscapeHatchDisabled {
+                    "error": cc_sandbox::SandboxError::EscapeHatchDisabled {
                         command: command.clone()
                     }
                     .to_string(),

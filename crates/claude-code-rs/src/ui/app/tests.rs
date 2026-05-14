@@ -1,8 +1,8 @@
 use super::workspace_trust::trusted_workspaces_path;
 use super::*;
-use crate::types::app_state::AppState;
-use crate::types::message::{ContentBlock, MessageContent, UserMessage};
-use crate::types::tool::PermissionMode;
+use cc_engine::types::app_state::AppState;
+use cc_engine::types::tool::PermissionMode;
+use cc_types::message::{ContentBlock, MessageContent, UserMessage};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;

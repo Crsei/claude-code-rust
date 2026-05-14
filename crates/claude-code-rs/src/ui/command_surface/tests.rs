@@ -5,7 +5,6 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifi
 
 use super::surfaces::tasks::{TaskSurfaceItem, TaskSurfaceSource};
 use super::*;
-use crate::types::app_state::AppState;
 use crate::ui::diff::diff_dialog::{DiffDialogMode, DiffSource};
 use crate::ui::diff::{DiffData, DiffFile, DiffStats};
 use crate::ui::mcp::index::{McpServer, McpServerKind};
@@ -18,6 +17,7 @@ use crate::ui::tasks::{
     TaskKind as UiTaskKind, TaskState as UiTaskState, TaskStatus as UiTaskStatus,
 };
 use crate::ui::teams::teams_dialog::{TeamSummary, TeammateStatus};
+use cc_engine::types::app_state::AppState;
 use cc_ipc_protocol::subsystem_types::LspRecommendationPayload;
 
 fn key(code: KeyCode) -> KeyEvent {

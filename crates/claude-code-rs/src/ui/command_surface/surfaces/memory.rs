@@ -15,7 +15,7 @@ pub struct MemorySurface {
 
 impl MemorySurface {
     pub(crate) fn new(cwd: &Path) -> Self {
-        let home = crate::config::paths::data_root();
+        let home = cc_config::paths::data_root();
         Self {
             state: MemoryFileSelectorState::new(memory_options(cwd, &home)),
             cwd: cwd.to_path_buf(),

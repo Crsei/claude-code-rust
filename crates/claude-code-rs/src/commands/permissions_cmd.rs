@@ -19,14 +19,13 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::config::settings;
-use crate::permissions::dangerous::{
+use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_config::settings;
+use cc_engine::types::tool::{PermissionMode, ToolPermissionContext};
+use cc_permissions::dangerous::{
     set_permission_mode_with_auto_mode_safety, strip_dangerous_permissions_for_active_auto_mode,
     AutoModeRuntimeTransition,
 };
-use crate::plan_workflow;
-use crate::types::tool::{PermissionMode, ToolPermissionContext};
-use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 #[derive(Debug, Clone, Copy)]
 enum PersistScope {
@@ -320,8 +319,8 @@ fn handle_mode(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult
     }
 
     if matches!(requested, PermissionMode::Plan) {
-        let existing = plan_workflow::load(&ctx.cwd)?;
-        let record = plan_workflow::enter_plan_mode_state(
+        let existing = cc_commands::plan_workflow::load(&ctx.cwd)?;
+        let record = cc_commands::plan_workflow::enter_plan_mode_state(
             &mut ctx.app_state,
             &ctx.cwd,
             existing,
@@ -330,11 +329,11 @@ fn handle_mode(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult
             Some("entered via /permissions mode plan"),
             None,
         );
-        plan_workflow::persist(&ctx.cwd, &record)?;
+        cc_commands::plan_workflow::persist(&ctx.cwd, &record)?;
         return Ok(CommandResult::Output(format!(
             "Permission mode set to: {}\n{}",
             requested.as_str(),
-            plan_workflow::summarize(&record),
+            cc_types::plan_workflow::summarize(&record),
         )));
     }
 
@@ -476,7 +475,7 @@ fn handle_clear_session(ctx: &mut CommandContext) -> Result<CommandResult> {
 // ---------------------------------------------------------------------------
 
 fn handle_reset(ctx: &mut CommandContext) -> Result<CommandResult> {
-    let default = crate::types::app_state::AppState::default();
+    let default = cc_engine::types::app_state::AppState::default();
     ctx.app_state.tool_permission_context = default.tool_permission_context;
     Ok(CommandResult::Output(
         "Permission rules reset to defaults (in-memory only — files on disk untouched).".into(),
@@ -486,8 +485,8 @@ fn handle_reset(ctx: &mut CommandContext) -> Result<CommandResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {

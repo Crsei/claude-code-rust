@@ -29,7 +29,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::engine::agent::fork::{run_fork, ForkOutcome, ForkParams};
-use crate::skills;
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 const SIMPLIFY_SKILL: &str = "simplify";
@@ -64,7 +63,7 @@ impl CommandHandler for SimplifyHandler {
         let trimmed = args.trim();
         let (single_agent, scope) = parse_args(trimmed);
 
-        let skill = match skills::find_skill(SIMPLIFY_SKILL) {
+        let skill = match cc_skills::find_skill(SIMPLIFY_SKILL) {
             Some(s) => s,
             None => {
                 return Ok(CommandResult::Output(
@@ -112,11 +111,11 @@ fn parse_args(raw: &str) -> (bool, Option<String>) {
 
 /// Single-pass mode — one forked agent invokes the skill directly.
 async fn run_single(
-    skill: &skills::SkillDefinition,
+    skill: &cc_skills::SkillDefinition,
     scope: Option<&str>,
     cwd: String,
     model: String,
-    tools: crate::types::tool::Tools,
+    tools: cc_engine::types::tool::Tools,
 ) -> Result<CommandResult> {
     let prompt = build_single_prompt(skill, scope);
     let params = ForkParams {
@@ -143,11 +142,11 @@ async fn run_single(
 
 /// Multi-agent mode — fan out to 3 parallel reviewer forks and aggregate.
 async fn run_multi_agent(
-    skill: &skills::SkillDefinition,
+    skill: &cc_skills::SkillDefinition,
     scope: Option<&str>,
     cwd: String,
     model: String,
-    tools: crate::types::tool::Tools,
+    tools: cc_engine::types::tool::Tools,
 ) -> Result<CommandResult> {
     let base = skill.expand_prompt(scope.unwrap_or(""), None);
 
@@ -175,7 +174,7 @@ async fn run_multi_agent(
 }
 
 /// Build the single-pass prompt. Injects optional scope into the skill body.
-fn build_single_prompt(skill: &skills::SkillDefinition, scope: Option<&str>) -> String {
+fn build_single_prompt(skill: &cc_skills::SkillDefinition, scope: Option<&str>) -> String {
     let base = skill.expand_prompt(scope.unwrap_or(""), None);
     match scope {
         Some(s) if !s.is_empty() => format!("{}\n\nScope: {}", base, s),

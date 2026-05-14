@@ -8,11 +8,11 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use similar::TextDiff;
 
-use crate::types::message::{AssistantMessage, ToolResultContent};
-use crate::types::tool::{
+use cc_engine::types::tool::{
     FileCacheEntry, FileStateCache, Tool, ToolProgress, ToolResult, ToolUseContext,
     ValidationResult,
 };
+use cc_types::message::{AssistantMessage, ToolResultContent};
 
 use super::safe_write::{safe_write_text, SafeWriteOptions};
 
@@ -627,8 +627,7 @@ impl Tool for FileEditTool {
             // Fire FileChanged hook
             {
                 let app_state = (ctx.get_app_state)();
-                let configs =
-                    crate::tools::hooks::load_hook_configs(&app_state.hooks, "FileChanged");
+                let configs = cc_types::hooks::load_hook_configs(&app_state.hooks, "FileChanged");
                 if !configs.is_empty() {
                     let payload = json!({
                         "file_path": &file_path,
@@ -683,9 +682,9 @@ Usage:\n\
 mod tests {
     use super::*;
     use crate::tools::fs::file_read::FileReadTool;
-    use crate::types::app_state::AppState;
-    use crate::types::message::ContentBlock;
-    use crate::types::tool::{FileStateCache, ToolUseOptions};
+    use cc_engine::types::app_state::AppState;
+    use cc_engine::types::tool::{FileStateCache, ToolUseOptions};
+    use cc_types::message::ContentBlock;
     use std::sync::Arc;
     use uuid::Uuid;
 
@@ -1012,10 +1011,10 @@ fn main() {
         let expected_path = file_path.to_string_lossy().to_string();
         assert!(matches!(
             first_edit.new_messages.as_slice(),
-            [crate::types::message::Message::Attachment(attachment)]
+            [cc_types::message::Message::Attachment(attachment)]
                 if matches!(
                     &attachment.attachment,
-                    crate::types::message::Attachment::EditedTextFile { path }
+                    cc_types::message::Attachment::EditedTextFile { path }
                         if path == &expected_path
                 )
         ));

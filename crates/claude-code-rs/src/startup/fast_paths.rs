@@ -10,9 +10,9 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use crate::cli::Cli;
-use crate::config::settings;
 use crate::startup::runtime_config::{chrome_requested, resolve_cwd};
 use crate::tools::registry;
+use cc_config::settings;
 
 /// Run the Chrome native-messaging host bridge. Does NOT set up tracing or
 /// register tools — Chrome captures stderr as error logs, so we skip every
@@ -20,7 +20,7 @@ use crate::tools::registry;
 pub fn run_chrome_native_host() -> ExitCode {
     let rt = tokio::runtime::Runtime::new().expect("create tokio runtime");
     rt.block_on(async {
-        match crate::browser::native_host::run().await {
+        match cc_browser::native_host::run().await {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("chrome-native-host error: {e:#}");
@@ -35,7 +35,7 @@ pub fn run_chrome_native_host() -> ExitCode {
 pub fn run_claude_in_chrome_mcp() -> ExitCode {
     let rt = tokio::runtime::Runtime::new().expect("create tokio runtime");
     rt.block_on(async {
-        match crate::browser::mcp_bridge::run().await {
+        match cc_browser::mcp_bridge::run().await {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("claude-in-chrome-mcp error: {e:#}");
@@ -101,14 +101,13 @@ pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
         .ok()
         .and_then(|cfg| cfg.claude_in_chrome_default_enabled);
     if chrome_requested(cli, chrome_config_default) {
-        browser_servers
-            .insert(crate::browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string());
+        browser_servers.insert(cc_browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string());
     }
-    crate::browser::detection::install_browser_servers(browser_servers);
+    cc_browser::detection::install_browser_servers(browser_servers);
 
     // Best-effort: load merged settings so --dump-system-prompt reflects
     // language/output_style overrides without requiring full bootstrap.
-    let dump_settings = crate::config::settings::load_effective(std::path::Path::new(&cwd))
+    let dump_settings = cc_config::settings::load_effective(std::path::Path::new(&cwd))
         .ok()
         .map(|loaded| loaded.effective);
     let dump_lang = dump_settings.as_ref().and_then(|s| s.language.clone());
@@ -118,8 +117,8 @@ pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
         .and_then(|s| s.auto_memory_enabled)
         .unwrap_or(false);
     let session_memory_context = {
-        let mut service = crate::services::session_memory::SessionMemoryService::new(
-            crate::services::session_memory::SessionMemoryConfig::default(),
+        let mut service = cc_services::session_memory::SessionMemoryService::new(
+            cc_services::session_memory::SessionMemoryConfig::default(),
         );
         match service.load_from_disk() {
             Ok(()) => service.format_memory_context_for_workspace(5, Some(cwd_path)),
@@ -132,7 +131,7 @@ pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
             }
         }
     };
-    let (parts, _, _) = crate::engine::system_prompt::build_system_prompt_with_session_memory(
+    let (parts, _, _) = cc_engine::system_prompt::build_system_prompt_with_session_memory(
         cli.system_prompt.as_deref(),
         cli.append_system_prompt.as_deref(),
         &tools,
@@ -151,8 +150,8 @@ pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
 
 fn discover_mcp_servers_for_fast_path(
     cwd_path: &Path,
-) -> anyhow::Result<Vec<crate::mcp::McpServerConfig>> {
-    crate::mcp::discovery::discover_mcp_servers(cwd_path)
+) -> anyhow::Result<Vec<cc_mcp::McpServerConfig>> {
+    cc_mcp::discovery::discover_mcp_servers(cwd_path)
 }
 
 #[cfg(test)]

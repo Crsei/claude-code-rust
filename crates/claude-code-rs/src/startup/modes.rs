@@ -6,8 +6,8 @@ use std::process::ExitCode;
 
 use anyhow::Context;
 
-use crate::engine::lifecycle::QueryEngine;
-use crate::types::config::QuerySource;
+use cc_engine::lifecycle::QueryEngine;
+use cc_engine::types::config::QuerySource;
 
 /// JSON output mode (for SDK consumers — JSONL on stdout).
 pub async fn run_json_mode(engine: &QueryEngine, prompt: &str) -> anyhow::Result<ExitCode> {
@@ -21,7 +21,7 @@ pub async fn run_json_mode(engine: &QueryEngine, prompt: &str) -> anyhow::Result
         let json = serde_json::to_string(&msg).context("failed to serialize SdkMessage to JSON")?;
         println!("{}", json);
 
-        if let crate::engine::sdk_types::SdkMessage::Result(ref result) = msg {
+        if let cc_types::sdk::SdkMessage::Result(ref result) = msg {
             if result.is_error {
                 exit_code = ExitCode::FAILURE;
             }
@@ -43,14 +43,14 @@ pub async fn run_print_mode(engine: &QueryEngine, prompt: &str) -> anyhow::Resul
 
     while let Some(msg) = stream.next().await {
         match &msg {
-            crate::engine::sdk_types::SdkMessage::Assistant(assistant_msg) => {
+            cc_types::sdk::SdkMessage::Assistant(assistant_msg) => {
                 for block in &assistant_msg.message.content {
-                    if let crate::types::message::ContentBlock::Text { text } = block {
+                    if let cc_types::message::ContentBlock::Text { text } = block {
                         print!("{}", text);
                     }
                 }
             }
-            crate::engine::sdk_types::SdkMessage::Result(result) => {
+            cc_types::sdk::SdkMessage::Result(result) => {
                 if result.is_error {
                     exit_code = ExitCode::FAILURE;
                 }

@@ -3,8 +3,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::types::message::{ContentBlock, Message};
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_types::message::{ContentBlock, Message};
 
 pub struct CopyHandler;
 
@@ -49,9 +49,9 @@ impl CommandHandler for CopyHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
-    use crate::types::message::AssistantMessage;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
+    use cc_types::message::AssistantMessage;
     use std::path::PathBuf;
     use uuid::Uuid;
 

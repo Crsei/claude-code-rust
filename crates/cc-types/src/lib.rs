@@ -21,6 +21,7 @@ pub mod message;
 pub mod permissions;
 pub mod plan_workflow;
 pub mod query_host;
+pub mod sdk;
 pub mod state;
 pub mod status_line;
 pub mod teams;

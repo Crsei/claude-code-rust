@@ -12,7 +12,7 @@ pub struct SkillsSurface {
 
 impl SkillsSurface {
     pub(crate) fn new() -> Self {
-        let mut items = crate::skills::get_all_skills()
+        let mut items = cc_skills::get_all_skills()
             .into_iter()
             .map(skill_menu_item)
             .collect::<Vec<_>>();
@@ -92,7 +92,7 @@ impl SkillsSurface {
     }
 }
 
-pub(crate) fn skill_menu_item(skill: crate::skills::SkillDefinition) -> SkillMenuItem {
+pub(crate) fn skill_menu_item(skill: cc_skills::SkillDefinition) -> SkillMenuItem {
     SkillMenuItem {
         name: skill_display_name(&skill).to_string(),
         description: skill_description(&skill).to_string(),
@@ -101,12 +101,12 @@ pub(crate) fn skill_menu_item(skill: crate::skills::SkillDefinition) -> SkillMen
     }
 }
 
-pub(crate) fn skill_source_label(source: &crate::skills::SkillSource) -> String {
+pub(crate) fn skill_source_label(source: &cc_skills::SkillSource) -> String {
     match source {
-        crate::skills::SkillSource::Bundled => "bundled".to_string(),
-        crate::skills::SkillSource::User => "user".to_string(),
-        crate::skills::SkillSource::Project => "project".to_string(),
-        crate::skills::SkillSource::Plugin(name) => format!("plugin:{name}"),
-        crate::skills::SkillSource::Mcp(name) => format!("mcp:{name}"),
+        cc_skills::SkillSource::Bundled => "bundled".to_string(),
+        cc_skills::SkillSource::User => "user".to_string(),
+        cc_skills::SkillSource::Project => "project".to_string(),
+        cc_skills::SkillSource::Plugin(name) => format!("plugin:{name}"),
+        cc_skills::SkillSource::Mcp(name) => format!("mcp:{name}"),
     }
 }

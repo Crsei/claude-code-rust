@@ -22,8 +22,8 @@ use crate::teams::types::{
     BackendType, TeamContext, TeamMember, TeammateInfo, TeammateSpawnConfig,
 };
 use crate::teams::{backend, constants, helpers, identity, in_process::InProcessBackend};
-use crate::types::message::AssistantMessage;
-use crate::types::tool::*;
+use cc_engine::types::tool::*;
+use cc_types::message::AssistantMessage;
 
 /// TeamSpawn tool.
 pub struct TeamSpawnTool;
@@ -330,8 +330,8 @@ fn resolve_team_spawn_agent_type(explicit: Option<&str>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::features::{self, FeatureFlags};
-    use crate::types::app_state::AppState;
+    use cc_config::features::{self, FeatureFlags};
+    use cc_engine::types::app_state::AppState;
     use std::sync::Arc;
 
     struct FeatureOverrideGuard;

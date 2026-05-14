@@ -6,7 +6,7 @@
 
 use crossterm::event::KeyEvent;
 
-use crate::types::message::Message;
+use cc_types::message::Message;
 
 use super::app::{App, AppAction};
 

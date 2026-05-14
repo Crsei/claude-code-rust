@@ -6,8 +6,8 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 
-use crate::utils::git;
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_utils::git;
 
 pub struct CommitHandler;
 
@@ -55,10 +55,10 @@ impl CommandHandler for CommitHandler {
             lines.push("Please review the changes and create a git commit. Stage the relevant files and write a clear commit message summarizing the changes.".to_string());
 
             let prompt = lines.join("\n");
-            let msg = crate::types::message::Message::User(crate::types::message::UserMessage {
+            let msg = cc_types::message::Message::User(cc_types::message::UserMessage {
                 uuid: uuid::Uuid::new_v4(),
                 role: "user".to_string(),
-                content: crate::types::message::MessageContent::Text(prompt),
+                content: cc_types::message::MessageContent::Text(prompt),
                 timestamp: chrono::Utc::now().timestamp(),
                 is_meta: false,
                 tool_use_result: None,
@@ -98,8 +98,8 @@ impl CommandHandler for CommitHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
 
     fn test_ctx(cwd: PathBuf) -> CommandContext {

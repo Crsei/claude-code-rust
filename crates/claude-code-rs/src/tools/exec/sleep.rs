@@ -9,9 +9,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::config::features::{self, Feature};
-use crate::types::message::AssistantMessage;
-use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use cc_config::features::{self, Feature};
+use cc_engine::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use cc_types::message::AssistantMessage;
 
 /// SleepTool -- signal the proactive tick loop to pause.
 pub struct SleepTool;
@@ -223,8 +223,8 @@ mod tests {
     // -----------------------------------------------------------------------
 
     fn make_test_ctx() -> ToolUseContext {
-        use crate::types::app_state::AppState;
-        use crate::types::tool::{FileStateCache, ToolUseOptions};
+        use cc_engine::types::app_state::AppState;
+        use cc_engine::types::tool::{FileStateCache, ToolUseOptions};
         use std::sync::Arc;
 
         ToolUseContext {

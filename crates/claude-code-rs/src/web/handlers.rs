@@ -13,15 +13,16 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
-use crate::bootstrap::SessionId;
-use crate::engine::lifecycle::QueryEngine;
-use crate::engine::sdk_types::SdkMessage;
-use crate::session::{resume as session_resume, storage};
-use crate::types::config::{QueryEngineConfig, QuerySource};
-use crate::types::message::{ContentBlock, Message, MessageContent};
-use crate::types::tool::PermissionMode;
+use crate::commands;
+use cc_bootstrap::SessionId;
+use cc_daemon::web::sdk_stream_to_sse;
+use cc_engine::lifecycle::QueryEngine;
+use cc_engine::types::config::{QueryEngineConfig, QuerySource};
+use cc_engine::types::tool::PermissionMode;
+use cc_session::{resume as session_resume, storage};
+use cc_types::message::{ContentBlock, Message, MessageContent};
+use cc_types::sdk::SdkMessage;
 
-use super::sse::sdk_stream_to_sse;
 use super::state::WebState;
 
 // ---------------------------------------------------------------------------
@@ -193,7 +194,7 @@ pub async fn state_handler(State(state): State<WebState>) -> impl IntoResponse {
     let usage = state.engine().usage();
 
     // Get command list
-    let commands: Vec<CommandInfo> = crate::commands::get_all_commands()
+    let commands: Vec<CommandInfo> = commands::get_all_commands()
         .iter()
         .map(|c| CommandInfo {
             name: c.name.clone(),
@@ -267,7 +268,7 @@ pub async fn settings_handler(
                 _ => PermissionMode::Default,
             };
             state.engine().update_app_state(|s| {
-                crate::permissions::dangerous::set_permission_mode_with_auto_mode_safety(
+                cc_permissions::dangerous::set_permission_mode_with_auto_mode_safety(
                     &mut s.tool_permission_context,
                     mode.clone(),
                 );
@@ -336,7 +337,7 @@ pub async fn command_handler(
 ) -> impl IntoResponse {
     info!(command = %req.command, args = %req.args, "POST /api/command");
 
-    let commands = crate::commands::get_all_commands();
+    let commands = commands::get_all_commands();
     let cmd = commands
         .iter()
         .find(|c| c.name == req.command || c.aliases.contains(&req.command));

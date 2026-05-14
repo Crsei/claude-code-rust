@@ -4,7 +4,7 @@
 //! The `StatusLineSnapshot` struct in cc-engine takes
 //! `resolved_output_style_name: Option<String>` and `worktree: Option<WorktreeStatus>`
 //! as already-resolved values, because the original in-crate helpers touched
-//! `crate::engine::output_style` and `crate::tools::worktree` — modules that
+//! `cc_engine::output_style` and `crate::tools::worktree` — modules that
 //! haven't moved out of the root crate yet. These small helpers perform that
 //! resolution at each snapshot-building call site.
 
@@ -20,7 +20,7 @@ pub fn resolve_output_style_name(output_style: Option<&str>, cwd: &Path) -> Opti
         .map(str::trim)
         .filter(|style| !style.is_empty())
         .map(|style| {
-            crate::engine::output_style::resolve(style, cwd)
+            cc_engine::output_style::resolve(style, cwd)
                 .name()
                 .to_string()
         })

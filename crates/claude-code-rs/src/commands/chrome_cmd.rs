@@ -13,11 +13,11 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::browser::common::{
+use cc_browser::common::{
     supports_claude_in_chrome, CHROME_EXTENSION_URL, CHROME_PERMISSIONS_URL, CHROME_RECONNECT_URL,
 };
-use crate::browser::session::{ChromeEnablement, ChromeSession};
-use crate::browser::state::{self, ChromeConnectionState};
+use cc_browser::session::{ChromeEnablement, ChromeSession};
+use cc_browser::state::{self, ChromeConnectionState};
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 /// Handler for the `/chrome` slash command.
@@ -185,10 +185,10 @@ fn handle_reconnect() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::browser::common::ChromiumBrowser;
-    use crate::browser::state::{self, ChromeConnectionState};
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_browser::common::ChromiumBrowser;
+    use cc_browser::state::{self, ChromeConnectionState};
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {

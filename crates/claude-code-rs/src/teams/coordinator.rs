@@ -5,7 +5,7 @@
 //! This is the first parity slice for Bun's `coordinatorMode.ts`: it adds the
 //! runtime gate and system-prompt section without changing worker tool policy.
 
-use crate::config::features::{self, Feature, FeatureFlags};
+use cc_config::features::{self, Feature, FeatureFlags};
 
 pub const WORKER_AGENT_TYPE: &str = "worker";
 pub const TEAMMATE_AGENT_TYPE: &str = "teammate";
@@ -69,7 +69,7 @@ pub fn coordinator_system_prompt() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::features::FeatureFlags;
+    use cc_config::features::FeatureFlags;
 
     struct FeatureOverrideGuard;
 

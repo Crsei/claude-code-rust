@@ -8,8 +8,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::auth::oauth::{client, config, pkce};
-use crate::auth::{api_key, token};
+use cc_auth::oauth::{client, config, pkce};
+use cc_auth::{api_key, token};
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
 
 /// Pending OAuth state (PKCE verifier, state, method).
@@ -180,8 +180,8 @@ fn extract_authorization_code(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
     use std::sync::{Mutex, MutexGuard};
 

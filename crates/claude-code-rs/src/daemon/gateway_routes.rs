@@ -1,5 +1,6 @@
 //! Remote-control gateway route wiring for the daemon HTTP server.
 
+use cc_daemon::protocol::{DaemonCommandKind, DaemonCommandStatus};
 use gateway::auth::{invalid_token_error, missing_token_error, GatewayAuthMode};
 use gateway::{
     api, BusySnapshot, GatewayAuthVerifier, GatewayBusySnapshotProvider, GatewayError,
@@ -10,7 +11,6 @@ use tracing::warn;
 
 use super::gateway_bridge::GatewayDaemonBridge;
 use super::process_state;
-use super::protocol::{self, DaemonCommandKind, DaemonCommandStatus};
 use super::supervisor::ASSISTANT_WORKER_ID;
 
 #[derive(Debug, Clone, Copy)]
@@ -47,7 +47,9 @@ struct DaemonBusySnapshotProvider {
 
 impl GatewayBusySnapshotProvider for DaemonBusySnapshotProvider {
     fn snapshot(&self) -> BusySnapshot {
-        let commands = protocol::read_worker_commands(ASSISTANT_WORKER_ID).unwrap_or_default();
+        let commands = super::protocol_store()
+            .read_worker_commands(ASSISTANT_WORKER_ID)
+            .unwrap_or_default();
         let active_submits = commands
             .iter()
             .filter(|command| {
@@ -106,13 +108,14 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let previous = std::env::var("CC_RUST_HOME").ok();
         std::env::set_var("CC_RUST_HOME", tmp.path());
-        protocol::enqueue_command(
-            ASSISTANT_WORKER_ID,
-            DaemonCommandKind::Submit,
-            serde_json::json!({ "text": "hello" }),
-            None,
-        )
-        .unwrap();
+        crate::daemon::protocol_store()
+            .enqueue_command(
+                ASSISTANT_WORKER_ID,
+                DaemonCommandKind::Submit,
+                serde_json::json!({ "text": "hello" }),
+                None,
+            )
+            .unwrap();
 
         let snapshot = DaemonBusySnapshotProvider {
             policy: GatewayPolicy::default(),

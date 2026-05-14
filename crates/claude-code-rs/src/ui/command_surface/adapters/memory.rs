@@ -32,24 +32,21 @@ pub(crate) fn memory_options(cwd: &Path, home: &Path) -> Vec<MemoryFileOption> {
         file_option(home.join("CLAUDE.md"), MemoryFileKind::User),
         file_option(cwd.join("CLAUDE.md"), MemoryFileKind::Project),
     ];
-    for path in crate::config::claude_md::find_claude_md_files(cwd) {
+    for path in cc_config::claude_md::find_claude_md_files(cwd) {
         if path != cwd.join("CLAUDE.md") {
             options.push(file_option(path, MemoryFileKind::Nested));
         }
     }
     options.extend([
+        MemoryFileOption::new(cc_config::paths::auto_memory_dir(), MemoryFileKind::Folder)
+            .with_description("auto-memory folder"),
         MemoryFileOption::new(
-            crate::config::paths::auto_memory_dir(),
-            MemoryFileKind::Folder,
-        )
-        .with_description("auto-memory folder"),
-        MemoryFileOption::new(
-            crate::config::paths::team_memory_dir(cwd),
+            cc_config::paths::team_memory_dir(cwd),
             MemoryFileKind::Folder,
         )
         .with_description("team-memory folder"),
         MemoryFileOption::new(
-            crate::config::paths::memory_dir_global(),
+            cc_config::paths::memory_dir_global(),
             MemoryFileKind::Folder,
         )
         .with_description("global memory folder"),

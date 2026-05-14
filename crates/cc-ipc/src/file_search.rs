@@ -1,74 +1,73 @@
 //! File-search handler for the `SearchFiles` frontend command.
 //!
-//! Frontend-facing counterpart of
-//! `ui/examples/upstream-patterns/src/utils/ripgrep.ts` and the
-//! `GlobalSearchDialog` it drives. The upstream frontend spawns `rg`
-//! directly; cc-rust's frontend has no FS access, so this module runs
-//! `rg` on the backend and returns a single capped response over IPC.
-//!
-//! Behaviour:
-//!
-//! - Uses the external `rg` binary when available. Falls back to
-//!   a pure-Rust search using `ignore::WalkBuilder` + `regex` so the
-//!   handler still works on bare-metal Rust builds without ripgrep in
-//!   `$PATH`.
-//! - Returns at most `DEFAULT_MAX_RESULTS` results (500) regardless of
-//!   the caller's `max_results` value — keeps the payload bounded.
-//! - Truncates overly long lines to `MAX_LINE_LEN` (2 KB) so a single
-//!   minified JS line doesn't blow up the UI.
+//! Frontend-facing counterpart of upstream's global search dialog helper.
+//! The frontend has no direct filesystem access, so the backend runs `rg`
+//! or a pure-Rust fallback and returns one capped IPC response.
 
 use std::path::Path;
 use std::process::Command;
 
 use anyhow::{anyhow, Result};
-use tracing::{debug, warn};
-
-use cc_ipc_client::sink::FrontendSink;
 use cc_ipc_protocol::{BackendMessage, FileSearchMatch};
+use tracing::{debug, warn};
 
 const DEFAULT_MAX_RESULTS: usize = 500;
 const MAX_LINE_LEN: usize = 2048;
 
-/// Spawn the search on a blocking thread and forward the result back
-/// through `sink`. Called from `ingress::dispatch` — the async wrapper
-/// keeps the event loop responsive while `rg` runs.
-pub(crate) fn dispatch_search(
-    request_id: String,
-    pattern: String,
-    cwd: Option<String>,
-    case_insensitive: bool,
-    max_results: Option<usize>,
-    sink: &FrontendSink,
-) {
-    let sink = sink.clone();
-    let cap = max_results
+#[derive(Debug, Clone)]
+pub struct FileSearchRequest {
+    pub request_id: String,
+    pub pattern: String,
+    pub cwd: Option<String>,
+    pub case_insensitive: bool,
+    pub max_results: Option<usize>,
+}
+
+/// Spawn a bounded search on a blocking thread and pass the IPC response to
+/// the supplied sender. The caller owns the concrete transport/sink.
+pub fn dispatch_search<F>(request: FileSearchRequest, send: F)
+where
+    F: FnOnce(BackendMessage) + Send + 'static,
+{
+    tokio::task::spawn_blocking(move || {
+        let msg = handle_search(request);
+        send(msg);
+    });
+}
+
+pub fn handle_search(request: FileSearchRequest) -> BackendMessage {
+    let cap = request
+        .max_results
         .unwrap_or(DEFAULT_MAX_RESULTS)
         .min(DEFAULT_MAX_RESULTS);
-    tokio::task::spawn_blocking(move || {
-        let search_root = resolve_cwd(cwd.as_deref());
-        debug!(
-            "file_search: request_id={} pattern={:?} root={:?} cap={}",
-            request_id, pattern, search_root, cap
-        );
-        let msg = match run_search(&pattern, &search_root, case_insensitive, cap) {
-            Ok((matches, truncated)) => BackendMessage::FileSearchResult {
-                request_id,
-                matches,
-                truncated,
-                error: None,
-            },
-            Err(error) => {
-                warn!("file_search: failed: {}", error);
-                BackendMessage::FileSearchResult {
-                    request_id,
-                    matches: Vec::new(),
-                    truncated: false,
-                    error: Some(error.to_string()),
-                }
+    let search_root = resolve_cwd(request.cwd.as_deref());
+    debug!(
+        "file_search: request_id={} pattern={:?} root={:?} cap={}",
+        request.request_id, request.pattern, search_root, cap
+    );
+
+    match run_search(
+        &request.pattern,
+        &search_root,
+        request.case_insensitive,
+        cap,
+    ) {
+        Ok((matches, truncated)) => BackendMessage::FileSearchResult {
+            request_id: request.request_id,
+            matches,
+            truncated,
+            error: None,
+        },
+        Err(error) => {
+            warn!("file_search: failed: {}", error);
+            BackendMessage::FileSearchResult {
+                request_id: request.request_id,
+                matches: Vec::new(),
+                truncated: false,
+                error: Some(error.to_string()),
             }
-        };
-        let _ = sink.send(&msg);
-    });
+        }
+    }
 }
 
 fn resolve_cwd(cwd: Option<&str>) -> String {
@@ -77,7 +76,6 @@ fn resolve_cwd(cwd: Option<&str>) -> String {
             return explicit.to_string();
         }
     }
-    // Reuse the engine's tracked cwd when no explicit root is supplied.
     std::env::current_dir()
         .ok()
         .and_then(|p| p.to_str().map(|s| s.to_string()))
@@ -101,9 +99,6 @@ fn run_search(
     fallback_search(pattern, search_root, case_insensitive, cap)
 }
 
-/// Prefer the external `rg` binary when available. Returns `None` if
-/// `rg --version` fails so the caller can fall back to the pure-Rust
-/// walker.
 fn try_ripgrep(
     pattern: &str,
     search_root: &str,
@@ -119,8 +114,6 @@ fn try_ripgrep(
     if case_insensitive {
         cmd.arg("-i");
     }
-    // Per-file cap matches upstream MAX_MATCHES_PER_FILE. The total cap
-    // is enforced below as we parse lines.
     cmd.arg("-m").arg("10");
     cmd.arg("-e").arg(pattern);
     cmd.arg(search_root);
@@ -132,9 +125,6 @@ fn try_ripgrep(
     Some((matches, truncated))
 }
 
-/// Parse ripgrep output of the shape `path:line:text`. Windows paths
-/// contain a drive-letter colon, so we walk to the first `:<digits>:`
-/// boundary instead of splitting on the first colon.
 fn parse_ripgrep_output(raw: &str, search_root: &str, cap: usize) -> (Vec<FileSearchMatch>, bool) {
     let mut matches = Vec::with_capacity(cap.min(256));
     let mut truncated = false;
@@ -163,8 +153,6 @@ struct RgSplit<'a> {
 }
 
 fn split_rg_line(line: &str) -> Option<RgSplit<'_>> {
-    // Find the last substring matching `:<digits>:`. rg output puts the
-    // line number right before the content.
     let bytes = line.as_bytes();
     for start in (0..bytes.len()).rev() {
         if bytes[start] != b':' {
@@ -212,9 +200,6 @@ fn truncate_line(line: &str) -> String {
     out
 }
 
-/// Pure-Rust fallback when `rg` isn't on `$PATH`. Walks with the
-/// `ignore` crate (same gitignore handling rg uses) and matches against
-/// a regex derived from the literal pattern.
 fn fallback_search(
     pattern: &str,
     search_root: &str,
@@ -246,7 +231,6 @@ fn fallback_search(
         let Ok(data) = std::fs::read_to_string(entry.path()) else {
             continue;
         };
-        // Per-file cap, matching ripgrep's `-m 10`.
         let mut found_in_file = 0usize;
         for (i, line) in data.lines().enumerate() {
             if !regex.is_match(line) {
@@ -297,5 +281,26 @@ mod tests {
         let trimmed = truncate_line(&long);
         assert!(trimmed.len() <= MAX_LINE_LEN + 4);
         assert!(trimmed.ends_with('…'));
+    }
+
+    #[test]
+    fn empty_pattern_returns_empty_result_message() {
+        let msg = handle_search(FileSearchRequest {
+            request_id: "search-1".into(),
+            pattern: " ".into(),
+            cwd: None,
+            case_insensitive: true,
+            max_results: Some(10),
+        });
+
+        assert!(matches!(
+            msg,
+            BackendMessage::FileSearchResult {
+                request_id,
+                matches,
+                truncated: false,
+                error: None,
+            } if request_id == "search-1" && matches.is_empty()
+        ));
     }
 }

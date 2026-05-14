@@ -1,6 +1,6 @@
 use super::*;
-use crate::bootstrap::SessionId;
-use crate::types::app_state::AppState;
+use cc_bootstrap::SessionId;
+use cc_engine::types::app_state::AppState;
 use std::path::PathBuf;
 
 fn make_ctx() -> cc_commands::CommandContext {

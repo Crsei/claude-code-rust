@@ -6,12 +6,8 @@
 //!
 //! Reserved tool name prefix: `mcp__computer-use__*`
 //!
-//! Phase 3 (issue #72) moved the `input` and `screenshot` platform
-//! submodules into the `cc-computer-use` workspace crate. Re-exporting them
-//! here keeps every `crate::computer_use::{input,screenshot}::…` path
-//! resolving for call sites in `detection`, `setup`, and `tools`.
-
-pub use cc_computer_use::{input, screenshot};
+//! Platform-native `input` and `screenshot` backends live in `cc-computer-use`;
+//! root keeps only detection, setup, and Tool trait wrappers.
 
 pub mod detection;
 pub mod setup;

@@ -338,6 +338,147 @@ fn mcp_instructions_section() -> Option<String> {
     None
 }
 
+fn coordinator_prompt_section() -> Option<String> {
+    use cc_config::features::{self, Feature};
+
+    features::enabled(Feature::Coordinator).then(|| {
+        concat!(
+            "# Coordinator Mode\n\n",
+            "You are coordinating an Agent Team. Treat yourself as the team lead: ",
+            "break work into small, verifiable tasks, delegate only when parallel ",
+            "work materially helps, and keep ownership of final integration and verification.\n\n",
+            "## Worker Coordination\n",
+            "- Spawn or address workers only for bounded tasks with clear ownership.\n",
+            "- Use SendMessage for direct worker updates and concise handoffs.\n",
+            "- Use TaskList to inspect active work before assigning more work.\n",
+            "- Use TaskStop to cancel stale, duplicate, or unsafe worker tasks.\n"
+        )
+        .to_string()
+    })
+}
+
+fn computer_use_system_prompt(tools: &[Arc<dyn Tool>]) -> Option<String> {
+    const COMPUTER_USE_SERVER: &str = "computer-use";
+    const COMPUTER_USE_PREFIX: &str = "mcp__computer-use__";
+
+    let tool_list = tools
+        .iter()
+        .filter_map(|tool| {
+            let name = tool.user_facing_name(None);
+            let action = name.strip_prefix(COMPUTER_USE_PREFIX)?;
+            Some(format!("- `{}` ({})", name, action))
+        })
+        .collect::<Vec<_>>();
+
+    if tool_list.is_empty() {
+        return None;
+    }
+
+    Some(format!(
+        "# Computer Use\n\n\
+         You have access to Computer Use tools from the `{}` MCP server.\n\n\
+         Available Computer Use tools:\n\
+         {}\n\n\
+         - Always take a screenshot first before acting.\n\
+         - After an input action, observe again to verify the result.\n",
+        COMPUTER_USE_SERVER,
+        tool_list.join("\n")
+    ))
+}
+
+#[derive(Debug, Clone)]
+struct BrowserToolInfo {
+    full_name: String,
+    server_name: String,
+    action: String,
+}
+
+fn browser_system_prompt(
+    tools: &[Arc<dyn Tool>],
+    browser_server_names: &std::collections::HashSet<String>,
+) -> Option<String> {
+    let detected = detect_browser_tools(tools, browser_server_names);
+    if detected.is_empty() && browser_server_names.is_empty() {
+        return None;
+    }
+
+    let mut by_server: std::collections::BTreeMap<&str, Vec<&BrowserToolInfo>> =
+        std::collections::BTreeMap::new();
+    for info in &detected {
+        by_server
+            .entry(info.server_name.as_str())
+            .or_default()
+            .push(info);
+    }
+    for server in browser_server_names {
+        by_server.entry(server.as_str()).or_default();
+    }
+
+    let mut sections = Vec::new();
+    for (server, infos) in &by_server {
+        let mut lines = Vec::new();
+        lines.push(format!("Server `{}`:", server));
+        if infos.is_empty() {
+            lines.push(
+                "  (configured as a browser MCP server; no tools have been reported yet)"
+                    .to_string(),
+            );
+        } else {
+            for info in infos {
+                let cat = cc_browser::permissions::classify_browser_action(&info.action);
+                lines.push(format!(
+                    "  - `{}` ({}, category: {})",
+                    info.full_name,
+                    info.action,
+                    cat.label()
+                ));
+            }
+        }
+        sections.push(lines.join("\n"));
+    }
+
+    Some(format!(
+        "# Browser Automation (via MCP)\n\n\
+         One or more MCP servers in this session expose browser-automation tools.\n\n\
+         ## Available browser tools\n\
+         {servers}\n\n\
+         ## Usage guidelines\n\
+         - Start from a known state and re-observe after navigation, clicks, or form submissions.\n\
+         - Prefer structured selectors over coordinates when both are available.\n\
+         - Do not paste user secrets into forms unless explicitly requested.\n",
+        servers = sections.join("\n\n"),
+    ))
+}
+
+fn detect_browser_tools(
+    tools: &[Arc<dyn Tool>],
+    browser_server_names: &std::collections::HashSet<String>,
+) -> Vec<BrowserToolInfo> {
+    let mut out = Vec::new();
+    for tool in tools {
+        let full_name = tool.user_facing_name(None);
+        let Some(rest) = full_name.strip_prefix(cc_browser::detection::MCP_PREFIX) else {
+            continue;
+        };
+        let Some((server, action)) = rest.split_once("__") else {
+            continue;
+        };
+        let server = server.to_string();
+        let action = action.to_string();
+        let is_known_action =
+            cc_browser::detection::BROWSER_TOOL_BASENAMES.contains(&action.as_str());
+        let is_flagged_server = browser_server_names.contains(&server);
+        if is_known_action || is_flagged_server {
+            out.push(BrowserToolInfo {
+                full_name,
+                server_name: server,
+                action,
+            });
+        }
+    }
+    out
+}
+
 /// Corresponds to TS: `SUMMARIZE_TOOL_RESULTS_SECTION`
 const SUMMARIZE_TOOL_RESULTS: &str =
     "When working with tool results, write down any important information you might need later \
@@ -539,7 +680,7 @@ pub fn build_system_prompt_with_memory_contexts(
             }),
             uncached_section(
                 "coordinator_mode",
-                crate::teams::coordinator::coordinator_prompt_section,
+                coordinator_prompt_section,
                 "coordinator mode can be toggled for the current session",
             ),
             cached_section("subsystem_status", build_subsystem_status_reminder),
@@ -549,7 +690,7 @@ pub fn build_system_prompt_with_memory_contexts(
         parts.extend(resolved);
 
         // ── Computer Use system prompt (when CU tools are detected) ──
-        if let Some(cu_prompt) = crate::computer_use::detection::computer_use_system_prompt(tools) {
+        if let Some(cu_prompt) = computer_use_system_prompt(tools) {
             parts.push(cu_prompt);
         }
 
@@ -558,10 +699,8 @@ pub fn build_system_prompt_with_memory_contexts(
         // startup; if any tool matches (by heuristic or by config flag) we
         // emit a dedicated "# Browser Automation" section so the model knows
         // it can drive a browser and how to do so safely.
-        let browser_servers = crate::browser::detection::browser_servers_snapshot();
-        if let Some(browser_prompt) =
-            crate::browser::prompt::browser_system_prompt(tools, &browser_servers)
-        {
+        let browser_servers = cc_browser::detection::browser_servers_snapshot();
+        if let Some(browser_prompt) = browser_system_prompt(tools, &browser_servers) {
             parts.push(browser_prompt);
         }
 
@@ -751,8 +890,8 @@ fn format_sub_bullets(items: &[&str]) -> String {
 ///
 /// Returns `None` when no subsystems are active beyond defaults.
 fn build_subsystem_status_reminder() -> Option<String> {
-    let lsp_configs = crate::lsp_service::default_server_configs().len();
-    let (mcp_count, mcp_error) = match crate::mcp::discovery::discover_mcp_servers(
+    let lsp_configs = cc_lsp_service::default_server_configs().len();
+    let (mcp_count, mcp_error) = match cc_mcp::discovery::discover_mcp_servers(
         &std::env::current_dir().unwrap_or_default(),
     ) {
         Ok(servers) => (servers.len(), None),

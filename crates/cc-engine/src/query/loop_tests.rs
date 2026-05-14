@@ -11,7 +11,7 @@ use cc_types::hooks::{
 use futures::StreamExt;
 use serde_json::Value;
 
-use crate::query::deps::{
+use super::super::deps::{
     CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
 };
 use crate::types::app_state::AppState;
@@ -1119,7 +1119,7 @@ async fn test_max_tokens_recovery_escalates_next_request_limit() {
     assert_eq!(params[0].max_output_tokens, None);
     assert_eq!(
         params[1].max_output_tokens,
-        Some(crate::query::loop_helpers::ESCALATED_MAX_TOKENS)
+        Some(super::super::loop_helpers::ESCALATED_MAX_TOKENS)
     );
     assert_eq!(
         deps.collapse_drain_calls.load(Ordering::SeqCst),

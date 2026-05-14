@@ -11,23 +11,7 @@
 //!    own native messaging host + MCP bridge and talks directly to the
 //!    Anthropic Chrome extension — no third-party MCP server required.
 //!
-//! Both paths feed into the same downstream UX (prompt, permissions,
-//! rendering), so they're grouped here rather than in separate crates.
-//!
-//! Phase 4 (issue #73) moved the parts of this module that did not touch
-//! the `Tool` trait into the `cc-browser` workspace crate and re-exports
-//! them here. `detection` and `prompt` still live locally because they
-//! accept `Arc<dyn Tool>` — unblocked once the Tool trait leaves the root
-//! crate (Phase 5 hub-cycle break).
-
-pub use cc_browser::{
-    common, mcp_bridge, native_host, permissions, session, state, tool_rendering,
-};
-// `setup` and `transport` are consumed by the CLI + integration tests via the
-// full path `cc_browser::{setup,transport}::…`. Re-export them under the
-// legacy `crate::browser::` names so any lingering call sites keep compiling.
-#[allow(unused_imports)]
-pub use cc_browser::{setup, transport};
+//! Shared browser infrastructure lives in `cc-browser`; this root module keeps
+//! only the live-tool detection adapter that still needs the root Tool list.
 
 pub mod detection;
-pub mod prompt;

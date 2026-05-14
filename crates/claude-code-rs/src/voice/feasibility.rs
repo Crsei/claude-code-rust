@@ -5,7 +5,7 @@
 //! surfaced before auth or remote-environment gates so users are not
 //! told to log in for a feature that does not exist here.
 
-use crate::auth::AuthMethod;
+use cc_auth::AuthMethod;
 
 use super::audio::{AudioCaptureBackend, AudioUnavailable};
 use super::stt::{SttUnavailable, TranscriptionClient};

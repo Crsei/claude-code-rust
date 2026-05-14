@@ -473,7 +473,7 @@ pub async fn run() -> Result<()> {
             "initialize" => rpc_ok(
                 id,
                 json!({
-                    "protocolVersion": cc_mcp::PROTOCOL_VERSION,
+                    "protocolVersion": cc_types::mcp::PROTOCOL_VERSION,
                     "capabilities": { "tools": {} },
                     "serverInfo": {
                         "name": "claude-in-chrome",

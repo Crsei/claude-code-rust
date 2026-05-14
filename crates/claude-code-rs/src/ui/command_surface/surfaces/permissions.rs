@@ -1,12 +1,12 @@
 use crossterm::event::KeyEvent;
 
-use crate::types::app_state::AppState;
-use crate::types::tool::{PermissionMode, ToolPermissionContext, ToolPermissionRulesBySource};
 use crate::ui::command_surface::CommandSurfaceOutcome;
 use crate::ui::form_navigation::{FormOption, FormTab, TabbedFormEvent, TabbedFormState};
 use crate::ui::permissions::rules::permission_rule_list::render_permission_rule_list;
 use crate::ui::permissions::rules::PermissionRule;
 use crate::ui::permissions::utils::{PermissionDecision, PermissionScope};
+use cc_engine::types::app_state::AppState;
+use cc_engine::types::tool::{PermissionMode, ToolPermissionContext, ToolPermissionRulesBySource};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PermissionsSurface {

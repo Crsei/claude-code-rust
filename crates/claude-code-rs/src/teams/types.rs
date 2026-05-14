@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::types::tool::PermissionMode;
+use cc_engine::types::tool::PermissionMode;
 
 // ---------------------------------------------------------------------------
 // BackendType

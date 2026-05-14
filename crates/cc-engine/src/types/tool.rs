@@ -140,7 +140,7 @@ pub struct ToolUseContext {
     pub bg_agent_tx: Option<cc_types::agent_channel::AgentSender>,
     /// Hook runner used by tools (e.g. the Agent tool fires SubagentStart /
     /// SubagentStop events through this trait rather than importing
-    /// `crate::tools::hooks` directly).
+    /// the concrete root shell-hook runner directly).
     pub hook_runner: Arc<dyn cc_types::hooks::HookRunner>,
     /// Command dispatcher — propagated to child engines spawned by the Agent
     /// tool so they inherit the same slash-command registry.

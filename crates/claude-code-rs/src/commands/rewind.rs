@@ -9,7 +9,7 @@
 //! Rewinding does two things: it trims the in-memory message buffer (which the
 //! ingress layer mirrors back to the engine via `conversation_changed`), and
 //! it truncates the on-disk session file via
-//! [`crate::session::storage::truncate_session`], which writes a recoverable
+//! [`cc_session::storage::truncate_session`], which writes a recoverable
 //! `*.rewind-<ts>.json` backup alongside the original.
 //!
 //! A "turn" here is anchored at a non-meta user message. Keeping `n` turns
@@ -20,9 +20,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::session::storage;
-use crate::types::message::{Message, MessageContent};
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_session::storage;
+use cc_types::message::{Message, MessageContent};
 
 /// Handler for the `/rewind` slash command.
 pub struct RewindHandler;
@@ -155,7 +155,7 @@ fn message_preview(content: &MessageContent) -> String {
         MessageContent::Blocks(blocks) => blocks
             .iter()
             .filter_map(|b| match b {
-                crate::types::message::ContentBlock::Text { text } => Some(text.clone()),
+                cc_types::message::ContentBlock::Text { text } => Some(text.clone()),
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -253,9 +253,9 @@ fn rewind_to_turn(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
-    use crate::types::message::{AssistantMessage, UserMessage};
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
+    use cc_types::message::{AssistantMessage, UserMessage};
     use std::path::{Path, PathBuf};
     use uuid::Uuid;
 
@@ -297,7 +297,7 @@ mod tests {
             uuid: Uuid::new_v4(),
             timestamp: 1_700_000_000_000,
             role: "assistant".into(),
-            content: vec![crate::types::message::ContentBlock::Text { text: text.into() }],
+            content: vec![cc_types::message::ContentBlock::Text { text: text.into() }],
             usage: None,
             stop_reason: Some("end_turn".into()),
             is_api_error_message: false,

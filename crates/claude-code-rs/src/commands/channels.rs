@@ -7,8 +7,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::config::features::{self, Feature};
+use crate::commands as command_registry;
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_config::features::{self, Feature};
 
 pub struct ChannelsHandler;
 
@@ -35,7 +36,7 @@ async fn render_channels() -> String {
         "Channels".to_string(),
         "Inbound channel sessions are deferred; outbound remote adapters are the real channel surface currently wired.".to_string(),
         String::new(),
-        crate::commands::remote_cmd::render_adapters().await,
+        command_registry::remote_cmd::render_adapters().await,
     ];
     lines.push(String::new());
     lines.push("Use `/remote adapters` for the same gateway-backed adapter status.".to_string());
@@ -49,8 +50,8 @@ async fn render_channels() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {

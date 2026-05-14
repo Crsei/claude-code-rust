@@ -11,15 +11,15 @@
 //!   /sandbox no-network       disable all network (network.disabled=true)
 //!   /sandbox network on|off   toggle network.disabled
 //!
-//! Changes are applied to the in-memory [`crate::types::app_state::AppState`]
+//! Changes are applied to the in-memory [`cc_engine::types::app_state::AppState`]
 //! via the session-level override path — they do not persist to
 //! `settings.json`. Use `/config set sandbox.*` for persistent edits.
 
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::sandbox::{policy_from_app_state, Availability, Mechanism, SandboxMode};
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_sandbox::{policy_from_app_state, Availability, Mechanism, SandboxMode};
 
 pub struct SandboxHandler;
 
@@ -238,8 +238,8 @@ fn mechanism_label(m: Mechanism) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::SessionId;
-    use crate::types::app_state::AppState;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
 
     fn make_ctx() -> CommandContext {
         CommandContext {

@@ -1,4 +1,4 @@
-use crate::types::message::{
+use cc_types::message::{
     Attachment, ContentBlock, Message, MessageContent, ToolResultContent,
 };
 
@@ -57,7 +57,7 @@ pub(in crate::ui) fn content_block_copy_text(block: &ContentBlock) -> Option<Str
     }
 }
 
-pub(in crate::ui) fn image_reference(source: &crate::types::message::ImageSource) -> String {
+pub(in crate::ui) fn image_reference(source: &cc_types::message::ImageSource) -> String {
     format!(
         "[image: {}, {} chars]",
         source.media_type,
@@ -144,7 +144,7 @@ fn attachment_reference(attachment: &Attachment) -> Option<String> {
         }
         Attachment::QueuedCommand { prompt, .. } => Some(format!(
             "prompt={}",
-            crate::utils::messages::truncate_text(prompt, 48)
+            cc_utils::messages::truncate_text(prompt, 48)
         )),
         _ => None,
     }

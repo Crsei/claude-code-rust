@@ -16,7 +16,7 @@ use tokio::sync::{oneshot, Mutex};
 use tracing::{debug, info, warn};
 
 use super::channel::parse_channel_notification;
-use super::{JsonRpcResponse, McpSubsystemEvent};
+use super::{JsonRpcResponse, McpRuntimeContext, McpSubsystemEvent};
 
 /// Background task that reads JSON-RPC responses from the MCP server's stdout.
 ///
@@ -26,6 +26,7 @@ pub(crate) async fn reader_loop(
     stdout: tokio::process::ChildStdout,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value>>>>>,
     server_name: String,
+    runtime: McpRuntimeContext,
 ) {
     let reader = BufReader::new(stdout);
     let mut lines = reader.lines();
@@ -56,7 +57,7 @@ pub(crate) async fn reader_loop(
                                 } else if let Some(method) =
                                     val.get("method").and_then(|m| m.as_str())
                                 {
-                                    handle_json_notification(&server_name, method, &val);
+                                    handle_json_notification(&server_name, method, &val, &runtime);
                                 } else {
                                     debug!(
                                         server = %server_name,
@@ -112,6 +113,7 @@ pub(crate) async fn sse_reader_loop<R>(
     pending: PendingRequests,
     server_name: String,
     mut endpoint_sender: Option<oneshot::Sender<Result<String>>>,
+    runtime: McpRuntimeContext,
 ) where
     R: AsyncBufRead + Unpin,
 {
@@ -134,6 +136,7 @@ pub(crate) async fn sse_reader_loop<R>(
                         &event_name,
                         &data_lines,
                         &mut endpoint_sender,
+                        &runtime,
                     )
                     .await;
                     event_name.clear();
@@ -191,6 +194,7 @@ pub(crate) async fn streamable_http_sse_reader_loop<R>(
     mut reader: R,
     pending: PendingRequests,
     server_name: String,
+    runtime: McpRuntimeContext,
 ) where
     R: AsyncBufRead + Unpin,
 {
@@ -217,6 +221,7 @@ pub(crate) async fn streamable_http_sse_reader_loop<R>(
                         &event_name,
                         &data_lines,
                         &mut endpoint_sender,
+                        &runtime,
                     )
                     .await;
                     event_name.clear();
@@ -254,6 +259,7 @@ async fn handle_sse_event(
     event_name: &str,
     data_lines: &[String],
     endpoint_sender: &mut Option<oneshot::Sender<Result<String>>>,
+    runtime: &McpRuntimeContext,
 ) {
     if data_lines.is_empty() {
         return;
@@ -279,7 +285,7 @@ async fn handle_sse_event(
                             "MCP: received malformed SSE response"
                         );
                     } else if let Some(method) = val.get("method").and_then(|m| m.as_str()) {
-                        handle_json_notification(server_name, method, &val);
+                        handle_json_notification(server_name, method, &val, runtime);
                     } else {
                         debug!(
                             server = %server_name,
@@ -307,14 +313,19 @@ async fn handle_sse_event(
     }
 }
 
-fn handle_json_notification(server_name: &str, method: &str, value: &Value) {
+fn handle_json_notification(
+    server_name: &str,
+    method: &str,
+    value: &Value,
+    runtime: &McpRuntimeContext,
+) {
     if let Some(event) = notification_event(server_name, value) {
         debug!(
             server = %server_name,
             method = method,
             "MCP: routed server notification"
         );
-        super::emit_event(event);
+        runtime.emit_event(event);
         return;
     }
 

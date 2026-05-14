@@ -4,7 +4,7 @@ use std::sync::Arc;
 pub use cc_tools::registry::ToolPolicy;
 use tracing::warn;
 
-use crate::types::tool::Tools;
+use cc_engine::types::tool::Tools;
 
 use super::ask_user::AskUserQuestionTool;
 use super::brief::BriefTool;
@@ -48,7 +48,7 @@ fn base_tools() -> Tools {
     // Single-tool / small-cluster modules (not yet a sub-domain).
     tools.extend([
         Arc::new(AskUserQuestionTool) as _,
-        Arc::new(crate::engine::agent::AgentTool) as _,
+        Arc::new(cc_engine::agent::AgentTool) as _,
         Arc::new(SkillTool) as _,
         Arc::new(ConfigTool) as _,
         Arc::new(StructuredOutputTool) as _,

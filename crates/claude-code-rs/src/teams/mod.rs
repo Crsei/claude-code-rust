@@ -74,7 +74,7 @@ pub mod types;
 /// caller that needs a non-context variant (e.g. startup-time decisions).
 #[allow(dead_code)]
 pub fn is_agent_teams_enabled() -> bool {
-    crate::config::features::enabled(crate::config::features::Feature::AgentTeams)
+    cc_config::features::enabled(cc_config::features::Feature::AgentTeams)
 }
 
 /// Check if Agent Teams is active in the given app state.
@@ -83,7 +83,7 @@ pub fn is_agent_teams_enabled() -> bool {
 /// [`types::TeamContext`] already exists. The second condition lets
 /// conversation-triggered flows (`/team create`, `TeamSpawn` tool) unlock
 /// team tools without the user needing to pre-export the env var.
-pub fn is_agent_teams_active(app_state: &crate::types::app_state::AppState) -> bool {
+pub fn is_agent_teams_active(app_state: &cc_engine::types::app_state::AppState) -> bool {
     if is_agent_teams_enabled() {
         return true;
     }

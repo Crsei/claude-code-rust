@@ -14,8 +14,8 @@ use parking_lot::Mutex;
 use tokio::io::AsyncBufReadExt;
 use tracing::{debug, error, warn};
 
-use crate::engine::lifecycle::QueryEngine;
-use crate::services::prompt_suggestion::PromptSuggestionService;
+use cc_engine::lifecycle::QueryEngine;
+use cc_services::prompt_suggestion::PromptSuggestionService;
 
 use super::callbacks::{PendingPermissions, PendingQuestions};
 use cc_ipc_client::sink::FrontendSink;
@@ -72,7 +72,7 @@ impl HeadlessRuntime {
         let pending_bg = self.engine.pending_background_results();
 
         // ── 1c. Subsystem event bus ──────────────────────────────────
-        let event_bus = crate::ipc::subsystem_events::SubsystemEventBus::new();
+        let event_bus = cc_ipc::subsystem_events::SubsystemEventBus::new();
         let mut event_rx = event_bus.subscribe();
         crate::lsp_service::set_event_sender(event_bus.sender());
         crate::plugins::set_event_sender(event_bus.sender());
@@ -81,9 +81,9 @@ impl HeadlessRuntime {
         // cc-skills lives in its own crate and no longer knows about
         // `SubsystemEvent`. Adapt its minimal event enum into ours here.
         let skills_tx = event_bus.sender();
-        crate::skills::set_event_callback(move |e| {
+        cc_skills::set_event_callback(move |e| {
             let adapted = match e {
-                crate::skills::SkillSubsystemEvent::SkillsLoaded { count } => {
+                cc_skills::SkillSubsystemEvent::SkillsLoaded { count } => {
                     cc_ipc_protocol::subsystem_events::SubsystemEvent::Skill(
                         cc_ipc_protocol::subsystem_events::SkillEvent::SkillsLoaded { count },
                     )
@@ -91,16 +91,16 @@ impl HeadlessRuntime {
             };
             let _ = skills_tx.send(adapted);
         });
-        // cc-mcp is the same: adapt its minimal event enum into ours here.
+        // cc-mcp receives its event sink through the runtime-owned manager.
         let mcp_tx = event_bus.sender();
-        cc_mcp::set_event_callback(move |e| {
+        let mcp_sink: cc_mcp::SharedMcpEventSink = Arc::new(move |e| {
             let adapted = match e {
                 cc_mcp::McpSubsystemEvent::ServerStateChanged {
                     server_name,
                     state,
                     error,
                 } => {
-                    crate::mcp::runtime::record_server_state(
+                    cc_mcp::runtime::record_server_state(
                         server_name.clone(),
                         state.clone(),
                         error.clone(),
@@ -157,8 +157,11 @@ impl HeadlessRuntime {
             };
             let _ = mcp_tx.send(adapted);
         });
+        if let Some(manager) = cc_mcp::runtime::current_manager() {
+            manager.lock().await.set_event_sink(Some(mcp_sink));
+        }
         // Wire the plugin-contributed MCP discovery hook. Plugins return
-        // `crate::mcp::McpServerConfig`, which is re-exported from
+        // `cc_mcp::McpServerConfig`, which is re-exported from
         // `cc_mcp::McpServerConfig`, so they are the same type.
         cc_mcp::discovery::set_plugin_hook(crate::plugins::discover_plugin_mcp_servers);
         // Scope-aware variant (issue #44) — preserves each server's owning

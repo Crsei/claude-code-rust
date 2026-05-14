@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::browser::{render_with_footer, shorten_path, TreeNode};
+use super::browser::{render_with_footer, shorten_path, TreeNode};
 use crate::{CommandContext, CommandHandler, CommandResult};
 use cc_skills::{self as skills, SkillContext, SkillDefinition, SkillSource};
 use serde::Deserialize;
@@ -217,7 +217,7 @@ fn load_team_members(team_ctx: &cc_types::teams::TeamContext) -> Vec<AgentEntry>
 }
 
 // Built-in subagent types — the single source of truth lives in
-// [`crate::ipc::builtin_agents`] so the settings dialog and this text
+// the host IPC builtin-agent registry so the settings dialog and this text
 // browser cannot drift.
 
 // ---------------------------------------------------------------------------

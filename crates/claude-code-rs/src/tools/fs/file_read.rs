@@ -6,11 +6,11 @@ use async_trait::async_trait;
 use base64::Engine as _;
 use serde_json::{json, Value};
 
-use crate::types::message::AssistantMessage;
-use crate::types::tool::{
+use cc_engine::types::tool::{
     FileCacheEntry, InterruptBehavior, Tool, ToolProgress, ToolResult, ToolUseContext,
     ValidationResult,
 };
+use cc_types::message::AssistantMessage;
 
 /// FileReadTool — Read files from the filesystem
 ///
@@ -81,7 +81,7 @@ impl FileReadTool {
 
     fn record_text_read(ctx: &ToolUseContext, target: &ReadTarget, content: &str, timestamp: i64) {
         let entry = FileCacheEntry {
-            content_hash: crate::types::tool::FileStateCache::hash_content(content.as_bytes()),
+            content_hash: cc_engine::types::tool::FileStateCache::hash_content(content.as_bytes()),
             last_read_timestamp: timestamp,
         };
 

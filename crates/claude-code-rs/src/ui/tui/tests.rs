@@ -4,16 +4,14 @@ use super::engine_events::{
     progress_message_from_tool_progress, StreamingState,
 };
 use super::subsystem_events::handle_subsystem_event;
-use crate::engine::sdk_types::{
-    SdkAssistantMessage, SdkMessage, SdkStreamEvent, SdkTombstone, SdkUserReplay,
-};
-use crate::types::message::{
+use crate::ui::app::App;
+use cc_engine::types::tool::ToolProgress;
+use cc_ipc_protocol::subsystem_events::{LspEvent, SubsystemEvent};
+use cc_types::message::{
     ContentBlock, InfoLevel, Message, MessageContent, StreamEvent, SystemMessage, SystemSubtype,
     ToolResultContent, UserMessage,
 };
-use crate::types::tool::ToolProgress;
-use crate::ui::app::App;
-use cc_ipc_protocol::subsystem_events::{LspEvent, SubsystemEvent};
+use cc_types::sdk::{SdkAssistantMessage, SdkMessage, SdkStreamEvent, SdkTombstone, SdkUserReplay};
 use serde_json::json;
 fn stream_event(event: StreamEvent) -> SdkMessage {
     SdkMessage::StreamEvent(SdkStreamEvent {
@@ -184,7 +182,7 @@ fn tui_ignores_tool_input_delta_until_final_assistant() {
     handle_sdk_message(
         &mut app,
         SdkMessage::Assistant(SdkAssistantMessage {
-            message: crate::types::message::AssistantMessage {
+            message: cc_types::message::AssistantMessage {
                 uuid: uuid::Uuid::new_v4(),
                 timestamp: now_ts(),
                 role: "assistant".to_string(),
@@ -258,7 +256,7 @@ fn tui_tombstone_removes_partial_streaming_assistant() {
     let mut app = App::new();
     app.add_message(create_user_message("fallback please"));
     let mut state = StreamingState::new();
-    let tombstone_message = crate::types::message::AssistantMessage {
+    let tombstone_message = cc_types::message::AssistantMessage {
         uuid: uuid::Uuid::new_v4(),
         timestamp: now_ts(),
         role: "assistant".to_string(),

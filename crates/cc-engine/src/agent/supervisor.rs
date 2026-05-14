@@ -347,7 +347,7 @@ impl AgentRuntime {
             };
 
             match &msg {
-                crate::sdk_types::SdkMessage::Assistant(assistant_msg) => {
+                cc_types::sdk::SdkMessage::Assistant(assistant_msg) => {
                     for block in &assistant_msg.message.content {
                         if let crate::types::message::ContentBlock::Text { text } = block {
                             if !result_text.is_empty() {
@@ -357,7 +357,7 @@ impl AgentRuntime {
                         }
                     }
                 }
-                crate::sdk_types::SdkMessage::Result(sdk_result) => {
+                cc_types::sdk::SdkMessage::Result(sdk_result) => {
                     if sdk_result.is_error {
                         had_error = true;
                         if !sdk_result.result.is_empty() {

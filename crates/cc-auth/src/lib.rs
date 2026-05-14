@@ -3,7 +3,7 @@
 //! Supports three active auth methods:
 //! - API Key: via `ANTHROPIC_API_KEY` env var or system keychain
 //! - External Auth Token: via `ANTHROPIC_AUTH_TOKEN` env var
-//! - OAuth Token: from the registered credentials path (Claude.ai / Console / OpenAI Codex)
+//! - OAuth Token: from cc-rust's isolated credentials path (Claude.ai / Console / OpenAI Codex)
 
 pub mod api_key;
 pub mod codex_cli;
@@ -13,50 +13,15 @@ pub mod token;
 const OPENAI_CODEX_AUTH_TOKEN_ENV: &str = "OPENAI_CODEX_AUTH_TOKEN";
 
 // ---------------------------------------------------------------------------
-// Host-provided credentials path
+// Credentials path
 // ---------------------------------------------------------------------------
-//
-// cc-auth used to call `crate::config::paths::credentials_path()` directly
-// from `token.rs`. That's a cycle the moment `auth` moves out of the root
-// crate, so the host now registers the path once at startup and cc-auth reads
-// it back through this module.
 
-use parking_lot::RwLock;
-use std::path::PathBuf;
-use std::sync::LazyLock;
-
-static CREDENTIALS_PATH: LazyLock<RwLock<Option<PathBuf>>> = LazyLock::new(|| RwLock::new(None));
-
-/// Register the OAuth credentials file path. The host calls this once during
-/// process startup; if a caller reaches token I/O without it having run
-/// (e.g. a unit test that exercises `resolve_auth` directly), the fallback
-/// in [`credentials_path`] mirrors the root crate's
-/// `config::paths::credentials_path()` layout.
-pub fn set_credentials_path(path: PathBuf) {
-    *CREDENTIALS_PATH.write() = Some(path);
-}
-
-/// Return the registered credentials path, falling back to
-/// `{CC_RUST_HOME | ~/.cc-rust | $TMP/cc-rust}/credentials.json` when the host
-/// hasn't registered one. Kept in sync with `config::paths::data_root` in the
-/// root crate, a small duplication that decouples cc-auth from it.
-pub(crate) fn credentials_path() -> PathBuf {
-    if let Some(p) = CREDENTIALS_PATH.read().clone() {
-        return p;
-    }
-    data_root_fallback().join("credentials.json")
-}
-
-fn data_root_fallback() -> PathBuf {
-    if let Ok(override_dir) = std::env::var("CC_RUST_HOME") {
-        if !override_dir.trim().is_empty() {
-            return PathBuf::from(override_dir);
-        }
-    }
-    if let Some(home) = dirs::home_dir() {
-        return home.join(".cc-rust");
-    }
-    std::env::temp_dir().join("cc-rust")
+/// Return cc-rust's isolated OAuth credentials path.
+///
+/// `cc-auth` depends on `cc-config` for path ownership, so binary startup no
+/// longer installs this path as an adapter.
+pub(crate) fn credentials_path() -> std::path::PathBuf {
+    cc_config::paths::credentials_path()
 }
 
 // ---------------------------------------------------------------------------
@@ -484,7 +449,7 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("credentials.json");
         std::fs::write(&path, "{not-json").unwrap();
-        set_credentials_path(path.clone());
+        let _cc_home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
 
         let err = try_resolve_oauth().expect_err("corrupt existing credentials must be diagnostic");
 
@@ -505,7 +470,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("credentials.json");
-        set_credentials_path(path.clone());
+        let _cc_home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
         token::save_token(&expired_token(Some("refresh-token"), "claude_ai")).unwrap();
 
         let err =
@@ -527,7 +492,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("credentials.json");
-        set_credentials_path(path.clone());
+        let _cc_home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
         token::save_token(&expired_token(None, "claude_ai")).unwrap();
 
         let err = try_resolve_oauth().expect_err("expired present credentials are invalid");
@@ -547,7 +512,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("credentials.json");
-        set_credentials_path(path.clone());
+        let _cc_home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
         token::save_token(&expired_token(Some("refresh-token"), "openai_codex")).unwrap();
 
         let err = try_resolve_codex_from_credentials()
@@ -569,7 +534,7 @@ mod tests {
         let _api_key = EnvGuard::set("ANTHROPIC_API_KEY", "not-a-valid-key");
         let _auth_token = EnvGuard::remove("ANTHROPIC_AUTH_TOKEN");
         let dir = tempfile::TempDir::new().unwrap();
-        set_credentials_path(dir.path().join("credentials.json"));
+        let _cc_home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
 
         let err = try_resolve_auth().expect_err("invalid present env API key must be diagnostic");
 
@@ -577,6 +542,34 @@ mod tests {
             err.to_string().contains("ANTHROPIC_API_KEY"),
             "unexpected error: {err:#}"
         );
+    }
+
+    #[test]
+    fn credentials_path_is_owned_by_cc_config_path_isolation() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::TempDir::new().unwrap();
+        let _cc_home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+        let stored = token::StoredToken {
+            access_token: "isolated-access".into(),
+            refresh_token: None,
+            expires_at: None,
+            token_type: "bearer".into(),
+            scopes: vec![],
+            oauth_method: Some("claude_ai".into()),
+        };
+
+        assert_eq!(credentials_path(), dir.path().join("credentials.json"));
+        assert_eq!(
+            token::token_file_path(),
+            dir.path().join("credentials.json")
+        );
+
+        token::save_token(&stored).unwrap();
+        let loaded = token::load_token().unwrap().expect("stored token");
+        assert_eq!(loaded.access_token, "isolated-access");
+        assert!(dir.path().join("credentials.json").is_file());
+        assert!(!dir.path().join(".Codex").exists());
+        assert!(!dir.path().join(".codex").exists());
     }
 
     fn expired_token(refresh_token: Option<&str>, method: &str) -> token::StoredToken {
