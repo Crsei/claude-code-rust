@@ -16,7 +16,6 @@ pub mod powershell;
 mod powershell_parser;
 pub(crate) mod process_control;
 pub mod repl;
-pub mod sleep;
 
 /// Returns every tool owned by the execution sub-domain.
 ///
@@ -27,6 +26,5 @@ pub fn tools() -> Tools {
         Arc::new(bash::BashTool::new()),
         Arc::new(powershell::PowerShellTool),
         Arc::new(repl::ReplTool),
-        Arc::new(sleep::SleepTool),
     ]
 }

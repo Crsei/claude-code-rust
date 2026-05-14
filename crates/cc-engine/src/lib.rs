@@ -27,6 +27,7 @@ pub mod services;
 pub mod status_line;
 pub mod system_prompt;
 pub mod tool_runtime;
+pub mod tools;
 pub mod types;
 pub mod worktree_hooks;
 

@@ -12,9 +12,6 @@
 //
 // Filesystem: read, write, search files on the local disk.
 pub mod fs;
-// Execution: spawn subprocesses, drive time, run embedded runtimes.
-pub mod exec;
-
 // --- Infrastructure ----------------------------------------------------------
 //
 // Shared tool-execution machinery (permission pipeline, hook dispatch, etc.)
@@ -31,6 +28,7 @@ pub mod registry;
 // stacking here.
 pub mod ask_user;
 pub mod skill;
+pub mod sleep;
 
 // Web / network tools.
 pub mod web_fetch;

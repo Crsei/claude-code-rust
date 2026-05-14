@@ -675,6 +675,7 @@ dependencies = [
  "dirs",
  "futures",
  "git2",
+ "libc",
  "parking_lot",
  "serde",
  "serde_json",

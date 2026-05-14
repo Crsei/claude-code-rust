@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 
 use cc_config::features::{self, Feature};
 use cc_engine::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use cc_tools::exec::sleep as sleep_spec;
 use cc_types::message::AssistantMessage;
 
 /// SleepTool -- signal the proactive tick loop to pause.
@@ -19,30 +20,15 @@ pub struct SleepTool;
 #[async_trait]
 impl Tool for SleepTool {
     fn name(&self) -> &str {
-        "Sleep"
+        sleep_spec::NAME
     }
 
     async fn description(&self, _input: &Value) -> String {
-        "Pause the proactive tick loop for a specified duration.".to_string()
+        sleep_spec::description().to_string()
     }
 
     fn input_json_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "duration_seconds": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 3600,
-                    "description": "Number of seconds to pause the proactive tick loop (1-3600)"
-                },
-                "reason": {
-                    "type": "string",
-                    "description": "Optional reason for pausing (e.g. \"waiting for CI to finish\")"
-                }
-            },
-            "required": ["duration_seconds"]
-        })
+        sleep_spec::input_schema()
     }
 
     fn is_enabled(&self) -> bool {
@@ -60,16 +46,12 @@ impl Tool for SleepTool {
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
         let duration = input.get("duration_seconds").and_then(|v| v.as_i64());
 
-        match duration {
-            None => ValidationResult::Error {
-                message: "\"duration_seconds\" is required".to_string(),
+        match sleep_spec::validate_duration_seconds(duration) {
+            Ok(()) => ValidationResult::Ok,
+            Err(message) => ValidationResult::Error {
+                message,
                 error_code: 1,
             },
-            Some(d) if !(1..=3600).contains(&d) => ValidationResult::Error {
-                message: format!("\"duration_seconds\" must be between 1 and 3600, got {}", d),
-                error_code: 1,
-            },
-            Some(_) => ValidationResult::Ok,
         }
     }
 
@@ -105,20 +87,11 @@ impl Tool for SleepTool {
     }
 
     async fn prompt(&self) -> String {
-        "Use Sleep to pause the proactive tick loop for a specified number of seconds.\n\n\
-         When you determine that no further action is needed for a period of time \
-         (e.g. waiting for a CI build, a deployment, or an external event), call \
-         Sleep with the estimated wait duration. The daemon will stop ticking \
-         until the sleep period expires.\n\n\
-         Parameters:\n\
-         - duration_seconds (required): 1-3600 seconds.\n\
-         - reason (optional): A brief explanation of why you are sleeping.\n\n\
-         This tool does not block execution -- it signals intent to the tick loop."
-            .to_string()
+        sleep_spec::prompt()
     }
 
     fn user_facing_name(&self, _input: Option<&Value>) -> String {
-        "Sleep".to_string()
+        sleep_spec::NAME.to_string()
     }
 }
 

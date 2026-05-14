@@ -5,6 +5,7 @@
 //! cleanly; this crate owns stable schemas, prompts, and selection helpers that
 //! do not require engine, query, UI, IPC, or daemon state.
 
+pub mod exec;
 pub mod registry;
 pub mod result;
 pub mod task_specs;

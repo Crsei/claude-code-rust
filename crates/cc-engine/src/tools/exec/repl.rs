@@ -3,8 +3,6 @@
 //! Maps a language name to an interpreter, writes the code to a temporary file,
 //! and executes it with a timeout.
 
-use std::collections::HashMap;
-
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -13,29 +11,12 @@ use tracing::debug;
 use cc_engine::types::tool::{
     InterruptBehavior, Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult,
 };
+use cc_tools::exec::repl as repl_spec;
 use cc_types::message::AssistantMessage;
 use cc_utils::bash::resolve_timeout;
 
-use super::bash::truncate_output;
-
 /// ReplTool -- execute code snippets in supported languages.
 pub struct ReplTool;
-
-/// Mapping from language identifier to (interpreter command, file extension).
-fn language_map() -> HashMap<&'static str, (&'static str, &'static str)> {
-    let mut m = HashMap::new();
-    m.insert("python", ("python", ".py"));
-    m.insert("python3", ("python3", ".py"));
-    m.insert("node", ("node", ".js"));
-    m.insert("javascript", ("node", ".js"));
-    m.insert("ruby", ("ruby", ".rb"));
-    m.insert("perl", ("perl", ".pl"));
-    m.insert("php", ("php", ".php"));
-    m.insert("lua", ("lua", ".lua"));
-    m.insert("bash", ("bash", ".sh"));
-    m.insert("sh", ("sh", ".sh"));
-    m
-}
 
 impl ReplTool {
     fn parse_input(input: &Value) -> (String, String, u64) {
@@ -60,36 +41,19 @@ impl ReplTool {
 #[async_trait]
 impl Tool for ReplTool {
     fn name(&self) -> &str {
-        "REPL"
+        repl_spec::NAME
     }
 
     async fn description(&self, input: &Value) -> String {
-        let lang = input
+        let language = input
             .get("language")
             .and_then(|v| v.as_str())
             .unwrap_or("code");
-        format!("Execute a {} code snippet.", lang)
+        repl_spec::description(Some(language))
     }
 
     fn input_json_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "language": {
-                    "type": "string",
-                    "description": "The programming language (python, python3, node, javascript, ruby, perl, php, lua, bash, sh)"
-                },
-                "code": {
-                    "type": "string",
-                    "description": "The code to execute"
-                },
-                "timeout": {
-                    "type": "number",
-                    "description": "Optional timeout in milliseconds (default 120000, max 600000)"
-                }
-            },
-            "required": ["language", "code"]
-        })
+        repl_spec::input_schema()
     }
 
     fn is_read_only(&self, _input: &Value) -> bool {
@@ -120,13 +84,12 @@ impl Tool for ReplTool {
             };
         }
 
-        let map = language_map();
-        if !map.contains_key(language.as_str()) {
+        if repl_spec::language_spec(language.as_str()).is_none() {
             return ValidationResult::Error {
                 message: format!(
                     "Unsupported language \"{}\". Supported: {}",
                     language,
-                    map.keys().cloned().collect::<Vec<_>>().join(", ")
+                    repl_spec::supported_language_names().join(", ")
                 ),
                 error_code: 1,
             };
@@ -144,9 +107,8 @@ impl Tool for ReplTool {
     ) -> Result<ToolResult> {
         let (language, code, timeout_ms) = Self::parse_input(&input);
 
-        let map = language_map();
-        let (interpreter, ext) = match map.get(language.as_str()) {
-            Some(pair) => *pair,
+        let (interpreter, ext) = match repl_spec::language_spec(language.as_str()) {
+            Some(pair) => pair,
             None => {
                 return Ok(ToolResult {
                     data: json!({ "error": format!("Unsupported language: {}", language) }),
@@ -205,7 +167,7 @@ impl Tool for ReplTool {
                 }
 
                 let max_chars = self.max_result_size_chars();
-                combined = truncate_output(&combined, max_chars);
+                combined = cc_tools::exec::truncate_output(&combined, max_chars);
 
                 Ok(ToolResult {
                     data: json!({
@@ -233,17 +195,11 @@ impl Tool for ReplTool {
     }
 
     async fn prompt(&self) -> String {
-        "Use the REPL tool to execute code snippets in supported languages.\n\n\
-Supported languages: python, python3, node/javascript, ruby, perl, php, lua, bash, sh.\n\n\
-The code is written to a temporary file and executed with the appropriate interpreter.\n\
-stdout, stderr, and exit code are captured and returned.\n\
-Default timeout is 120 seconds. Maximum is 600 seconds.\n\n\
-Use this when you need to test a code snippet or compute something."
-            .to_string()
+        repl_spec::prompt()
     }
 
     fn user_facing_name(&self, _input: Option<&Value>) -> String {
-        "REPL".to_string()
+        repl_spec::NAME.to_string()
     }
 }
 
@@ -316,11 +272,11 @@ mod tests {
 
     #[test]
     fn test_language_map_has_expected_entries() {
-        let map = language_map();
-        assert!(map.contains_key("python"));
-        assert!(map.contains_key("python3"));
-        assert!(map.contains_key("node"));
-        assert!(map.contains_key("javascript"));
-        assert!(map.contains_key("ruby"));
+        let languages = repl_spec::supported_language_names();
+        assert!(languages.contains(&"python"));
+        assert!(languages.contains(&"python3"));
+        assert!(languages.contains(&"node"));
+        assert!(languages.contains(&"javascript"));
+        assert!(languages.contains(&"ruby"));
     }
 }

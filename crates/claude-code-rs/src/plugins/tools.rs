@@ -12,13 +12,13 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
-use crate::tools::exec::bash::truncate_output;
 use cc_engine::types::app_state::AppState;
 use cc_engine::types::tool::{
     InterruptBehavior, PermissionMode, PermissionResult, Tool, ToolProgress, ToolResult,
     ToolUseContext,
 };
 use cc_permissions::decision::{self, PermissionBehavior};
+use cc_tools::exec::truncate_output;
 use cc_types::message::AssistantMessage;
 use cc_utils::bash::resolve_timeout;
 

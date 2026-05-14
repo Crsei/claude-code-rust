@@ -4,6 +4,7 @@ use std::sync::Arc;
 pub use cc_tools::registry::ToolPolicy;
 use tracing::warn;
 
+use cc_engine::tools::exec;
 use cc_engine::types::tool::Tools;
 
 use super::ask_user::AskUserQuestionTool;
@@ -15,6 +16,7 @@ use super::pr_activity::{SubscribePrActivityTool, UnsubscribePrActivityTool};
 use super::send_message::SendMessageTool;
 use super::send_user_message::SendUserMessageTool;
 use super::skill::SkillTool;
+use super::sleep::SleepTool;
 use super::structured_output::StructuredOutputTool;
 use super::system_status::SystemStatusTool;
 use super::team_spawn::TeamSpawnTool;
@@ -22,7 +24,7 @@ use super::tool_search::ToolSearchTool;
 use super::web_fetch::WebFetchTool;
 use super::web_search::WebSearchTool;
 use super::worktree::{EnterWorktreeTool, ExitWorktreeTool};
-use super::{exec, fs, tasks};
+use super::{fs, tasks};
 
 /// Get all base tool instances.
 ///
@@ -43,6 +45,7 @@ fn base_tools() -> Tools {
     // Domain-grouped tools — each sub-domain owns its own list.
     tools.extend(fs::tools());
     tools.extend(exec::tools());
+    tools.push(Arc::new(SleepTool));
     tools.extend(tasks::tools());
 
     // Single-tool / small-cluster modules (not yet a sub-domain).

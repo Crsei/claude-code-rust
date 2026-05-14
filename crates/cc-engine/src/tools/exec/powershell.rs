@@ -16,6 +16,7 @@ use cc_engine::types::tool::{
     ValidationResult,
 };
 use cc_sandbox::{make_runner, policy_from_app_state, preflight_shell_command};
+use cc_tools::exec::powershell as powershell_spec;
 use cc_types::message::AssistantMessage;
 use cc_utils::bash::resolve_timeout;
 use cc_utils::git_operation_tracking::track_git_operations_json;
@@ -57,28 +58,15 @@ impl PowerShellTool {
 #[async_trait]
 impl Tool for PowerShellTool {
     fn name(&self) -> &str {
-        "PowerShell"
+        powershell_spec::NAME
     }
 
     async fn description(&self, _input: &Value) -> String {
-        "Executes a PowerShell command and returns its output.".to_string()
+        powershell_spec::description().to_string()
     }
 
     fn input_json_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "The PowerShell command to execute"
-                },
-                "timeout": {
-                    "type": "number",
-                    "description": "Optional timeout in milliseconds (default 120000, max 600000)"
-                }
-            },
-            "required": ["command"]
-        })
+        powershell_spec::input_schema()
     }
 
     fn is_enabled(&self) -> bool {
@@ -410,18 +398,11 @@ impl Tool for PowerShellTool {
     }
 
     async fn prompt(&self) -> String {
-        "Executes a PowerShell command and returns its output.\n\n\
-Use this tool when you need to run PowerShell-specific commands or cmdlets.\n\
-On Windows, uses powershell.exe; on other platforms, uses pwsh (PowerShell Core).\n\n\
-- The command is passed via `-Command` so you can use full PowerShell syntax.\n\
-- Default timeout is 120 seconds (120000 ms). Maximum is 600 seconds.\n\
-- stdout and stderr are captured separately.\n\
-- For simple shell commands, prefer the Bash tool instead."
-            .to_string()
+        powershell_spec::prompt()
     }
 
     fn user_facing_name(&self, _input: Option<&Value>) -> String {
-        "PowerShell".to_string()
+        powershell_spec::NAME.to_string()
     }
 }
 
