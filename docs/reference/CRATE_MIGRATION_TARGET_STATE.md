@@ -23,8 +23,9 @@ Completion requires all of the following:
 - No library crate depends on `claude-code-rs` or imports files from
   `crates/claude-code-rs/src/**`.
 - No normal runtime path uses `#[path = "..."]` across crate boundaries.
-- Root compatibility shims are deleted or reduced to short re-exports with a
-  written removal date. The final state has no root shim with real logic.
+- Migration work does not introduce move-specific reverse dependencies or
+  compatibility layers. If a move needs shared types, traits, DTOs, or adapter
+  contracts, place those contracts in an appropriate shared crate instead.
 - Persisted files, IPC JSON, session transcripts, daemon state, settings,
   credentials, audit output, and path-isolation behavior remain compatible with
   the pre-migration cc-rust behavior.
@@ -60,6 +61,26 @@ Final graph rules:
   bootstrapping remains binary glue unless it has a stable standalone boundary.
 - `claude-code-rs` may depend on library crates to assemble the application,
   but no library crate may depend on it.
+
+## Migration-Time Direction Rules
+
+These rules apply during the move, not only after the final state is reached:
+
+- Do not add a dependency from a target crate back to the root crate or to the
+  previous owner of the code being moved just to keep existing call sites
+  compiling.
+- Do not add a bespoke compatibility crate, adapter module, re-export layer, or
+  wrapper API whose only purpose is to preserve the old module path for one
+  migration slice.
+- Do not encode ownership through consumer-specific callbacks. A moved crate
+  should depend on stable contracts, not on APIs shaped around one current
+  caller.
+- When two crates need the same type, trait, protocol shape, or classification
+  data, keep or move that contract into a shared crate such as `cc-types`,
+  `cc-ipc-protocol`, or another explicitly shared contract crate.
+- If code cannot move without a reverse dependency or compatibility layer, leave
+  the implementation in its current owner until the shared contract is extracted
+  first.
 
 ## Root Binary Shape
 
@@ -249,9 +270,10 @@ mod app;
 use claude_code_rs::engine;
 ```
 
-Root re-exports should exist only when they preserve source compatibility for
-callers during a bounded phase. After migration completion, public callers
-should import the owning `cc-*` crate directly.
+Root re-exports are not a migration strategy. If an existing re-export remains
+temporarily, it must be a trivial leftover scheduled for deletion and must not
+be extended to support a new move. New code should import the owning `cc-*`
+crate or shared contract crate directly.
 
 ## Final Verification Gates
 
