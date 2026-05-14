@@ -24,8 +24,9 @@
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 
-use crate::plugins::{self, PluginEntry, PluginStatus};
+use crate::plugins;
 use cc_commands::{CommandContext, CommandHandler, CommandResult};
+use cc_plugins::{PluginEntry, PluginStatus};
 
 /// Handler for `/plugin`.
 pub struct PluginHandler;
@@ -422,9 +423,9 @@ fn handle_uninstall(plugin_id: &str, purge: bool) -> Result<CommandResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugins::{PluginEntry, PluginSource, PluginStatus};
     use cc_bootstrap::SessionId;
     use cc_engine::types::app_state::AppState;
+    use cc_plugins::{PluginEntry, PluginSource, PluginStatus};
     use std::path::PathBuf;
 
     fn test_ctx() -> CommandContext {

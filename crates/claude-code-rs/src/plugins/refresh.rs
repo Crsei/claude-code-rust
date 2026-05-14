@@ -17,8 +17,9 @@ use std::time::Instant;
 
 use tracing::{info, warn};
 
-use super::{clear_plugins, init_plugins, loader, PluginStatus};
+use super::{clear_plugins, init_plugins, loader};
 use cc_ipc_protocol::subsystem_events::{PluginEvent, SubsystemEvent};
+use cc_plugins::PluginStatus;
 
 /// Summary of a plugin reload cycle.
 #[derive(Debug, Clone)]
@@ -138,9 +139,8 @@ pub fn reload_plugins() -> ReloadReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugins::{
-        installed_plugins_path, plugins_dir, register_plugin, PluginEntry, PluginSource,
-    };
+    use crate::plugins::{installed_plugins_path, plugins_dir, register_plugin};
+    use cc_plugins::{PluginEntry, PluginSource};
     use parking_lot::Mutex;
     use std::fs;
     use std::path::Path;

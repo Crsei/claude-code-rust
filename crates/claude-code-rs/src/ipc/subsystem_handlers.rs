@@ -1471,7 +1471,7 @@ fn entry_to_settings_value(entry: &McpServerConfigEntry) -> serde_json::Value {
 
 /// Build a list of plugin info from the in-memory plugin registry.
 pub fn build_plugin_info_list() -> Vec<PluginInfo> {
-    use crate::plugins::PluginStatus;
+    use cc_plugins::PluginStatus;
 
     crate::plugins::get_all_plugins()
         .into_iter()
@@ -1585,15 +1585,15 @@ mod tests {
         use crate::plugins;
 
         plugins::clear_plugins();
-        plugins::register_plugin(plugins::PluginEntry {
+        plugins::register_plugin(cc_plugins::PluginEntry {
             id: "test-plugin-handlers".to_string(),
             name: "Test Plugin".to_string(),
             version: "1.0.0".to_string(),
             description: "For testing".to_string(),
-            source: plugins::PluginSource::Local {
+            source: cc_plugins::PluginSource::Local {
                 path: "/tmp/test".to_string(),
             },
-            status: plugins::PluginStatus::Installed,
+            status: cc_plugins::PluginStatus::Installed,
             marketplace: None,
             cache_path: None,
             tools: vec!["tool_a".to_string()],
@@ -1602,15 +1602,15 @@ mod tests {
             installed_at: None,
             updated_at: None,
         });
-        plugins::register_plugin(plugins::PluginEntry {
+        plugins::register_plugin(cc_plugins::PluginEntry {
             id: "err-plugin-handlers".to_string(),
             name: "Error Plugin".to_string(),
             version: "0.1.0".to_string(),
             description: "Broken".to_string(),
-            source: plugins::PluginSource::Local {
+            source: cc_plugins::PluginSource::Local {
                 path: "/tmp/err".to_string(),
             },
-            status: plugins::PluginStatus::Error("load failed".to_string()),
+            status: cc_plugins::PluginStatus::Error("load failed".to_string()),
             marketplace: None,
             cache_path: None,
             tools: vec![],

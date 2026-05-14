@@ -110,11 +110,10 @@ fn format_report(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugins::{
-        clear_plugins, register_plugin, PluginEntry, PluginSource, PluginStatus, ReloadReport,
-    };
+    use crate::plugins::{clear_plugins, register_plugin, ReloadReport};
     use cc_bootstrap::SessionId;
     use cc_engine::types::app_state::AppState;
+    use cc_plugins::{PluginEntry, PluginSource, PluginStatus};
     use parking_lot::Mutex;
     use std::path::PathBuf;
     use std::sync::LazyLock;

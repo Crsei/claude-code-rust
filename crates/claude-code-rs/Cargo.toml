@@ -145,6 +145,7 @@ cc-skills = { workspace = true }
 cc-config = { workspace = true }
 cc-utils = { workspace = true }
 cc-mcp = { workspace = true }
+cc-plugins = { workspace = true }
 cc-services = { workspace = true }
 cc-computer-use = { workspace = true }
 cc-compact = { workspace = true }

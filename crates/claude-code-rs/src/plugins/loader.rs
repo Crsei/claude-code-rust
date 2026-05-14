@@ -9,8 +9,10 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use tracing::warn;
 
-use super::manifest::{load_manifest, PluginManifest};
-use super::{cache_dir, installed_plugins_path, PluginEntry, PluginStatus};
+use cc_plugins::manifest::{load_manifest, PluginManifest};
+use cc_plugins::{PluginEntry, PluginStatus};
+
+use super::{cache_dir, installed_plugins_path};
 
 /// Structured diagnostic emitted when plugin metadata exists but cannot be
 /// read, traversed, parsed, or validated.
@@ -365,7 +367,7 @@ pub fn manifest_to_entry(
             .unwrap_or_else(|| manifest.name.clone()),
         version: manifest.version.clone(),
         description: manifest.description.clone(),
-        source: crate::plugins::PluginSource::Local {
+        source: cc_plugins::PluginSource::Local {
             path: cache_path.to_string_lossy().to_string(),
         },
         status: PluginStatus::Installed,
@@ -390,8 +392,8 @@ pub fn manifest_to_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugins::manifest::*;
-    use crate::plugins::PluginSource;
+    use cc_plugins::manifest::*;
+    use cc_plugins::PluginSource;
     use std::collections::HashMap;
     use std::io::Write;
     use std::path::Path;

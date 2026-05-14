@@ -167,7 +167,7 @@ fn plugin_server_configs() -> Vec<LspServerConfig> {
             }
         }
 
-        let manifest = match crate::plugins::manifest::load_manifest(&cache_path) {
+        let manifest = match cc_plugins::manifest::load_manifest(&cache_path) {
             Ok(manifest) => manifest,
             Err(err) => {
                 tracing::warn!(

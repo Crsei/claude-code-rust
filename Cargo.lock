@@ -810,7 +810,10 @@ dependencies = [
 name = "cc-plugins"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "cc-types",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1071,6 +1074,7 @@ dependencies = [
  "cc-models",
  "cc-observability",
  "cc-permissions",
+ "cc-plugins",
  "cc-query",
  "cc-sandbox",
  "cc-services",

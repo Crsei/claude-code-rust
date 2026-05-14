@@ -1,22 +1,13 @@
 //! Plugin manifest — `plugin.json` schema and validation.
 //!
-//! Corresponds to TypeScript: plugin manifest types used across
-//! `src/utils/plugins/pluginInstallationHelpers.ts` and related files.
-//!
-//! Every plugin directory must contain a `plugin.json` file that declares
-//! the plugin's identity, capabilities, and requirements.
-
-#![allow(unused)]
+//! Every plugin directory must contain a `plugin.json` file that declares the
+//! plugin's identity, capabilities, and requirements.
 
 use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-
-// ---------------------------------------------------------------------------
-// Manifest types
-// ---------------------------------------------------------------------------
 
 /// Top-level plugin.json structure.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,10 +147,6 @@ pub struct CommandContribution {
     pub aliases: Vec<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Validation
-// ---------------------------------------------------------------------------
-
 /// Validate a plugin manifest.
 pub fn validate_manifest(manifest: &PluginManifest) -> Result<()> {
     if manifest.name.is_empty() {
@@ -172,7 +159,6 @@ pub fn validate_manifest(manifest: &PluginManifest) -> Result<()> {
         bail!("Plugin version is required");
     }
 
-    // Validate name characters (alphanumeric, hyphens, underscores, @, /)
     let valid_name = manifest
         .name
         .chars()
@@ -185,7 +171,6 @@ pub fn validate_manifest(manifest: &PluginManifest) -> Result<()> {
         );
     }
 
-    // Validate version (loose semver check)
     let parts: Vec<&str> = manifest.version.split('.').collect();
     if parts.len() < 2 || parts.len() > 4 {
         bail!(
@@ -194,7 +179,6 @@ pub fn validate_manifest(manifest: &PluginManifest) -> Result<()> {
         );
     }
 
-    // Check for duplicate tool names
     let mut tool_names: Vec<&str> = manifest.tools.iter().map(|t| t.name.as_str()).collect();
     tool_names.sort();
     let unique_len = {
@@ -232,10 +216,6 @@ pub fn load_manifest(plugin_dir: &Path) -> Result<PluginManifest> {
     validate_manifest(&manifest)?;
     Ok(manifest)
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

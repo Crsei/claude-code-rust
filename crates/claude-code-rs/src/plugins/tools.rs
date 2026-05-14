@@ -22,7 +22,7 @@ use cc_permissions::decision::{self, PermissionBehavior};
 use cc_types::message::AssistantMessage;
 use cc_utils::bash::resolve_timeout;
 
-use super::manifest::{StdioToolRuntime, ToolContribution, ToolRuntime};
+use cc_plugins::manifest::{StdioToolRuntime, ToolContribution, ToolRuntime};
 
 /// Executable wrapper around a plugin-contributed tool manifest entry.
 pub struct PluginToolWrapper {
