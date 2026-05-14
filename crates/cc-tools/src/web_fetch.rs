@@ -17,7 +17,7 @@ use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use cc_engine::types::tool::*;
+use crate::tool::*;
 use cc_sandbox::{policy_from_app_state, NetworkDecision};
 use cc_types::message::AssistantMessage;
 

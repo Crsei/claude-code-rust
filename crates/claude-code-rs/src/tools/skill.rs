@@ -406,9 +406,7 @@ mod tests {
         let _guard = SKILL_REGISTRY_TEST_LOCK.lock().await;
 
         let tool = SkillTool;
-        let state = std::sync::Arc::new(parking_lot::RwLock::new(
-            cc_engine::types::app_state::AppState::default(),
-        ));
+        let state = std::sync::Arc::new(parking_lot::RwLock::new(ToolAppState::default()));
         let state_r = state.clone();
         let state_w = state.clone();
 
@@ -426,11 +424,7 @@ mod tests {
             read_file_state: FileStateCache::default(),
             get_app_state: std::sync::Arc::new(move || state_r.read().clone()),
             set_app_state: std::sync::Arc::new(
-                move |f: Box<
-                    dyn FnOnce(
-                        cc_engine::types::app_state::AppState,
-                    ) -> cc_engine::types::app_state::AppState,
-                >| {
+                move |f: Box<dyn FnOnce(ToolAppState) -> ToolAppState>| {
                     let mut s = state_w.write();
                     let old = s.clone();
                     *s = f(old);
@@ -494,9 +488,7 @@ mod tests {
         });
 
         let tool = SkillTool;
-        let state = std::sync::Arc::new(parking_lot::RwLock::new(
-            cc_engine::types::app_state::AppState::default(),
-        ));
+        let state = std::sync::Arc::new(parking_lot::RwLock::new(ToolAppState::default()));
         let state_r = state.clone();
         let state_w = state.clone();
 
@@ -514,11 +506,7 @@ mod tests {
             read_file_state: FileStateCache::default(),
             get_app_state: std::sync::Arc::new(move || state_r.read().clone()),
             set_app_state: std::sync::Arc::new(
-                move |f: Box<
-                    dyn FnOnce(
-                        cc_engine::types::app_state::AppState,
-                    ) -> cc_engine::types::app_state::AppState,
-                >| {
+                move |f: Box<dyn FnOnce(ToolAppState) -> ToolAppState>| {
                     let mut s = state_w.write();
                     let old = s.clone();
                     *s = f(old);

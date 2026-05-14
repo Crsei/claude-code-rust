@@ -25,7 +25,7 @@ pub use post_tool::{
 pub use pre_tool::run_pre_tool_hooks;
 
 // Re-export the plain data types from cc-types so existing
-// `crate::tools::hooks::{HookEventConfig, HookOutput, ...}` import paths keep
+// `crate::hooks::{HookEventConfig, HookOutput, ...}` import paths keep
 // working without changes.
 pub use cc_types::hooks::{
     HookEntry, HookEventConfig, HookOutput, HookRunner, HooksMap, PermissionOverride,

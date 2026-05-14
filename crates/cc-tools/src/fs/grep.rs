@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::process::Command;
 
-use cc_engine::types::tool::*;
+use crate::tool::*;
 use cc_types::message::AssistantMessage;
 
 pub struct GrepTool;

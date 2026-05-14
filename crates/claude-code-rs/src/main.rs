@@ -506,7 +506,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         tools.extend(cu_tools);
     }
 
-    crate::tools::tool_search::install_runtime_tool_catalog(&tools);
+    cc_tools::tool_search::install_runtime_tool_catalog(&tools);
 
     // B.4: Create AppState
     // Resolve model: CLI arg > config > provider default > hardcoded fallback
@@ -714,7 +714,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     // B.8: Create QueryEngine
     let engine = Arc::new({
         let mut e = QueryEngine::new(engine_config);
-        e.set_hook_runner(Arc::new(crate::tools::hooks::ShellHookRunner::new()));
+        e.set_hook_runner(Arc::new(cc_tools::hooks::ShellHookRunner::new()));
         e.set_command_dispatcher(Arc::new(commands::DefaultCommandDispatcher::new()));
         e
     });
@@ -733,8 +733,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                 "session_id": engine.session_id.as_str(),
                 "cwd": std::env::current_dir().unwrap_or_default().to_string_lossy(),
             });
-            let _ = crate::tools::hooks::run_event_hooks("SessionStart", &payload, &start_configs)
-                .await;
+            let _ =
+                cc_tools::hooks::run_event_hooks("SessionStart", &payload, &start_configs).await;
         }
     }
 

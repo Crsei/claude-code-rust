@@ -15,6 +15,7 @@ use cc_engine::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Too
 fn make_ctx_with_mode(mode: PermissionMode) -> ToolUseContext {
     let mut app = AppState::default();
     app.tool_permission_context.mode = mode;
+    let app = app.to_tool_app_state();
 
     let (_tx, rx) = tokio::sync::watch::channel(false);
     ToolUseContext {

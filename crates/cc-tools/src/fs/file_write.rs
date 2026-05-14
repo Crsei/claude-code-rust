@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use cc_engine::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use crate::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
 use cc_types::message::AssistantMessage;
 
 use super::safe_write::{
@@ -83,7 +83,7 @@ impl Tool for FileWriteTool {
     }
 
     fn backfill_observable_input(&self, input: &mut serde_json::Map<String, Value>) {
-        crate::tools::observable_input::backfill_file_path(input);
+        crate::observable_input::backfill_file_path(input);
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
@@ -181,8 +181,7 @@ impl Tool for FileWriteTool {
                         "backup_path": report.backup_path.as_ref().map(|p| p.display().to_string()),
                     },
                 });
-                let _ =
-                    crate::tools::hooks::run_event_hooks("FileChanged", &payload, &configs).await;
+                let _ = crate::hooks::run_event_hooks("FileChanged", &payload, &configs).await;
             }
         }
 
@@ -230,8 +229,8 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    use cc_engine::types::app_state::AppState;
-    use cc_engine::types::tool::{FileStateCache, ToolUseOptions};
+    use crate::tool::ToolAppState as AppState;
+    use crate::tool::{FileStateCache, ToolUseOptions};
     use cc_types::message::ContentBlock;
     use serde_json::json;
     use uuid::Uuid;

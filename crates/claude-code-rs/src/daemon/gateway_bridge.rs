@@ -213,7 +213,7 @@ impl AssistantWorkerRuntime {
     pub fn new(cwd: &Path) -> Self {
         crate::plugins::init_plugins();
         let tools = crate::tools::registry::get_tools_for_active_session();
-        crate::tools::tool_search::install_runtime_tool_catalog(&tools);
+        cc_tools::tool_search::install_runtime_tool_catalog(&tools);
         let mut engine = QueryEngine::new(QueryEngineConfig {
             cwd: cwd.to_string_lossy().into_owned(),
             tools,
@@ -238,7 +238,7 @@ impl AssistantWorkerRuntime {
             auto_save_session: true,
             agent_context: None,
         });
-        engine.set_hook_runner(Arc::new(crate::tools::hooks::ShellHookRunner::new()));
+        engine.set_hook_runner(Arc::new(cc_tools::hooks::ShellHookRunner::new()));
         engine.set_command_dispatcher(Arc::new(commands::DefaultCommandDispatcher::new()));
 
         Self {

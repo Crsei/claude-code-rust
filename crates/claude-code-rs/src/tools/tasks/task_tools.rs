@@ -155,8 +155,7 @@ impl Tool for TaskCreateTool {
                     "subject": &entry.subject,
                     "description": &entry.description,
                 });
-                let _ =
-                    crate::tools::hooks::run_event_hooks("TaskCreated", &payload, &configs).await;
+                let _ = cc_tools::hooks::run_event_hooks("TaskCreated", &payload, &configs).await;
             }
         }
 
@@ -357,12 +356,9 @@ impl Tool for TaskUpdateTool {
                             "subject": &entry.subject,
                             "status": entry.status.as_str(),
                         });
-                        let _ = crate::tools::hooks::run_event_hooks(
-                            "TaskCompleted",
-                            &payload,
-                            &configs,
-                        )
-                        .await;
+                        let _ =
+                            cc_tools::hooks::run_event_hooks("TaskCompleted", &payload, &configs)
+                                .await;
                     }
                 }
 

@@ -5,7 +5,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use cc_engine::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use crate::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
 use cc_types::message::AssistantMessage;
 
 /// GlobTool — Find files matching glob patterns

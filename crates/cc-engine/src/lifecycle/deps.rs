@@ -125,7 +125,7 @@ fn central_permission_result_for_tool(
     if matches!(&decision.behavior, PermissionBehavior::Ask)
         && matches!(&decision.reason, PermissionDecisionReason::Mode { .. })
         && app_state.tool_permission_context.mode != PermissionMode::Plan
-        && sandbox_allowed_command_applies(tool_name, input, app_state)
+        && sandbox_allowed_command_applies(tool_name, input, &app_state.to_tool_app_state())
     {
         decision = PermissionDecision {
             behavior: PermissionBehavior::Allow,
@@ -718,14 +718,15 @@ impl QueryDeps for QueryEngineDeps {
             read_file_state: self.state.read().file_state_cache.clone(),
             get_app_state: {
                 let state = self.state.clone();
-                Arc::new(move || state.read().app_state.clone())
+                Arc::new(move || state.read().app_state.to_tool_app_state())
             },
             set_app_state: {
                 let state = self.state.clone();
-                Arc::new(move |updater: Box<dyn FnOnce(AppState) -> AppState>| {
+                Arc::new(move |updater: crate::types::tool::AppStateUpdater| {
                     let mut s = state.write();
-                    let old = s.app_state.clone();
-                    s.app_state = updater(old);
+                    let old = s.app_state.to_tool_app_state();
+                    let updated = updater(old);
+                    s.app_state.apply_tool_app_state(updated);
                 })
             },
             session_id: self.audit_ctx.session_id.clone(),
@@ -893,7 +894,7 @@ impl QueryDeps for QueryEngineDeps {
             let perm_result = match tool.check_permissions(&effective_input, &ctx).await {
                 PermissionResult::Allow { updated_input } => {
                     effective_input = updated_input;
-                    let app_state = (ctx.get_app_state)();
+                    let app_state = self.state.read().app_state.clone();
                     central_permission_result_for_tool(
                         &request.tool_name,
                         &mut effective_input,

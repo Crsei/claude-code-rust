@@ -201,8 +201,7 @@ impl QueryEngine {
         }
     }
 
-    /// Install a concrete hook runner (normally `ShellHookRunner` from the
-    /// main crate's `tools::hooks` module).
+    /// Install a concrete hook runner (normally `cc_tools::hooks::ShellHookRunner`).
     ///
     /// Must be called before `submit_message` if runtime hook firing is
     /// desired; otherwise the [`cc_types::hooks::NoopHookRunner`] default is

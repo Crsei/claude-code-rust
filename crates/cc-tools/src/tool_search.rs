@@ -14,9 +14,7 @@ use parking_lot::RwLock;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use cc_engine::types::tool::{
-    Tool, ToolProgress, ToolResult, ToolUseContext, Tools, ValidationResult,
-};
+use crate::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools, ValidationResult};
 use cc_types::message::AssistantMessage;
 
 const DEFAULT_LIMIT: usize = 8;
@@ -639,29 +637,11 @@ impl Tool for ToolSearchTool {
 }
 
 async fn build_runtime_index() -> ToolSearchIndex {
-    let mut tools = RUNTIME_TOOLS.read().clone();
-    let mut seen = tools
-        .iter()
-        .map(|tool| tool_identity(tool.as_ref()))
-        .collect::<HashSet<_>>();
-
-    for tool in super::registry::get_all_tools() {
-        if seen.insert(tool_identity(tool.as_ref())) {
-            tools.push(tool);
-        }
-    }
+    let tools = RUNTIME_TOOLS.read().clone();
 
     ToolSearchIndex::from_tools(tools)
         .await
         .with_skills(cc_skills::get_model_invocable_skills())
-}
-
-fn tool_identity(tool: &dyn Tool) -> String {
-    format!(
-        "{}\0{}",
-        normalize_identity(tool.name()),
-        normalize_identity(&tool.user_facing_name(None))
-    )
 }
 
 fn source_allowed(source: ToolSearchSource, filter: Option<ToolSearchSource>) -> bool {
@@ -1116,7 +1096,7 @@ const STOP_WORDS: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cc_engine::types::tool::ValidationResult;
+    use crate::tool::ValidationResult;
     use cc_skills::{SkillContext, SkillDefinition, SkillFrontmatter, SkillSource};
     use cc_types::message::AssistantMessage;
     use std::sync::atomic::{AtomicUsize, Ordering};

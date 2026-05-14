@@ -8,8 +8,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
+use crate::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
 use cc_config::features::{self, Feature};
-use cc_engine::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
 use cc_types::message::AssistantMessage;
 
 /// BriefTool -- send a structured brief message to the user.
@@ -148,8 +148,8 @@ Parameters:\n\
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cc_engine::types::app_state::AppState;
-    use cc_engine::types::tool::{FileStateCache, ToolUseOptions};
+    use crate::tool::ToolAppState as AppState;
+    use crate::tool::{FileStateCache, ToolUseOptions};
     use std::sync::Arc;
 
     fn create_test_context() -> ToolUseContext {

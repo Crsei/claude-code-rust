@@ -321,7 +321,7 @@ struct TeammateSpawnRequest {
 
 fn teammate_spawn_request(
     params: &AgentInput,
-    app_state: &crate::types::app_state::AppState,
+    app_state: &cc_tools::tool::ToolAppState,
 ) -> Result<Option<TeammateSpawnRequest>> {
     let Some(raw_name) = params.name.as_deref() else {
         return Ok(None);
@@ -684,7 +684,9 @@ mod tests {
             "team_name": " beta "
         }))
         .unwrap();
-        let request = teammate_spawn_request(&params, &state).unwrap().unwrap();
+        let request = teammate_spawn_request(&params, &state.to_tool_app_state())
+            .unwrap()
+            .unwrap();
         assert_eq!(request.name, "reviewer");
         assert_eq!(request.team_name.as_deref(), Some("beta"));
 
@@ -694,7 +696,9 @@ mod tests {
             "name": "reviewer"
         }))
         .unwrap();
-        let request = teammate_spawn_request(&params, &state).unwrap().unwrap();
+        let request = teammate_spawn_request(&params, &state.to_tool_app_state())
+            .unwrap()
+            .unwrap();
         assert_eq!(request.team_name.as_deref(), Some("alpha"));
     }
 
@@ -707,7 +711,9 @@ mod tests {
             "name": "reviewer"
         }))
         .unwrap();
-        let request = teammate_spawn_request(&params, &state).unwrap().unwrap();
+        let request = teammate_spawn_request(&params, &state.to_tool_app_state())
+            .unwrap()
+            .unwrap();
         assert_eq!(request.name, "reviewer");
         assert!(request.team_name.is_none());
     }
@@ -727,7 +733,7 @@ mod tests {
             "name": "reviewer"
         }))
         .unwrap();
-        let error = teammate_spawn_request(&params, &state).unwrap_err();
+        let error = teammate_spawn_request(&params, &state.to_tool_app_state()).unwrap_err();
         assert!(error.to_string().contains("Teammates cannot spawn"));
     }
 

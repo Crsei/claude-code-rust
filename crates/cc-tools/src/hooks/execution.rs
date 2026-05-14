@@ -129,17 +129,17 @@ pub(super) async fn execute_command_hook(
             parse_hook_output_with_diagnostics(&stdout, &io_diagnostics)
         }
         Err(_) => {
-            // Timeout expired — kill the child process.
-            let kill_diagnostic = if let Err(e) = child.kill().await {
-                warn!(
-                    command = command,
-                    error = %e,
-                    "failed to kill timed-out hook command"
-                );
-                Some(format!("failed to kill timed-out hook command: {e}"))
-            } else {
-                None
-            };
+            drop(stdout_reader);
+            drop(stderr_reader);
+
+            // Timeout expired. Kill the whole Unix process group when possible:
+            // hooks run through a shell, and commands such as `sleep 60` can
+            // outlive that shell while still holding stdout/stderr pipes open.
+            let kill_diagnostic = kill_timed_out_child(command, &mut child);
+            tokio::spawn(async move {
+                let _ = child.wait().await;
+            });
+
             if let Some(kill_diagnostic) = kill_diagnostic {
                 Err(anyhow::anyhow!(
                     "hook command timed out after {}s; {}",
@@ -153,6 +153,43 @@ pub(super) async fn execute_command_hook(
                 ))
             }
         }
+    }
+}
+
+fn kill_timed_out_child(command: &str, child: &mut tokio::process::Child) -> Option<String> {
+    let mut diagnostics = Vec::new();
+
+    #[cfg(unix)]
+    if let Some(pid) = child.id() {
+        let process_group = -(pid as libc::pid_t);
+        // SAFETY: kill(2) is called with a process-group id derived from a
+        // child process we spawned into its own group below.
+        let result = unsafe { libc::kill(process_group, libc::SIGKILL) };
+        if result != 0 {
+            let e = std::io::Error::last_os_error();
+            warn!(
+                command = command,
+                pid = pid,
+                error = %e,
+                "failed to kill timed-out hook process group"
+            );
+            diagnostics.push(format!("failed to kill timed-out hook process group: {e}"));
+        }
+    }
+
+    if let Err(e) = child.start_kill() {
+        warn!(
+            command = command,
+            error = %e,
+            "failed to kill timed-out hook command"
+        );
+        diagnostics.push(format!("failed to kill timed-out hook command: {e}"));
+    }
+
+    if diagnostics.is_empty() {
+        None
+    } else {
+        Some(diagnostics.join("; "))
     }
 }
 
@@ -191,12 +228,16 @@ fn spawn_shell_command(command: &str) -> Result<tokio::process::Child> {
     {
         use tokio::process::Command;
 
-        Command::new("bash")
+        let mut shell = Command::new("bash");
+        shell
             .arg("-c")
             .arg(command)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        shell.process_group(0);
+
+        shell
             .spawn()
             .context("failed to spawn hook command via bash")
     }

@@ -85,7 +85,7 @@ impl Tool for EnterPlanModeTool {
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
         let record = mutate_plan_workflow(ctx, plan_cwd(), |state, cwd, existing| {
-            cc_commands::plan_workflow::enter_plan_mode_state(
+            cc_tools::plan_workflow::enter_plan_mode_state(
                 state, cwd, existing, "main", "tool", None, None,
             )
         })?;
@@ -219,7 +219,7 @@ impl Tool for ExitPlanModeTool {
         };
 
         match mutate_plan_workflow(ctx, plan_cwd(), move |state, cwd, existing| {
-            cc_commands::plan_workflow::request_approval_state(
+            cc_tools::plan_workflow::request_approval_state(
                 state, cwd, existing, "main", "tool", plan,
             )
         }) {
@@ -261,7 +261,7 @@ impl Tool for ExitPlanModeTool {
             let plan_for_record = (!plan.is_empty()).then(|| plan.clone());
             let rules_for_state = allowed_prompt_rules.clone();
             move |state, cwd, existing| {
-                let record = cc_commands::plan_workflow::approve_and_exit_state(
+                let record = cc_tools::plan_workflow::approve_and_exit_state(
                     state,
                     cwd,
                     existing,
@@ -478,13 +478,13 @@ fn mutate_plan_workflow<F>(
 ) -> Result<cc_types::plan_workflow::PlanWorkflowRecord>
 where
     F: FnOnce(
-            &mut cc_engine::types::app_state::AppState,
+            &mut cc_tools::tool::ToolAppState,
             &Path,
             Option<cc_types::plan_workflow::PlanWorkflowRecord>,
         ) -> cc_types::plan_workflow::PlanWorkflowRecord
         + 'static,
 {
-    let existing = cc_commands::plan_workflow::load(&cwd)?;
+    let existing = cc_tools::plan_workflow::load(&cwd)?;
     let slot: Arc<Mutex<Option<cc_types::plan_workflow::PlanWorkflowRecord>>> =
         Arc::new(Mutex::new(None));
     let slot_for_update = Arc::clone(&slot);
@@ -501,7 +501,7 @@ where
         .expect("plan workflow slot poisoned")
         .clone()
         .expect("plan workflow update should set record");
-    cc_commands::plan_workflow::persist(&persist_cwd, &record)?;
+    cc_tools::plan_workflow::persist(&persist_cwd, &record)?;
     Ok(record)
 }
 
@@ -512,7 +512,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cc_engine::types::app_state::AppState;
+    use cc_tools::tool::ToolAppState as AppState;
     use parking_lot::RwLock;
     use std::sync::Arc;
 

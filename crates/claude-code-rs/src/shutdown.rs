@@ -74,8 +74,7 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
                 "session_id": session_id.as_str(),
                 "exit_reason": "normal",
             });
-            let _ =
-                crate::tools::hooks::run_event_hooks("SessionEnd", &payload, &end_configs).await;
+            let _ = cc_tools::hooks::run_event_hooks("SessionEnd", &payload, &end_configs).await;
         }
     }
 

@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use base64::Engine as _;
 use serde_json::{json, Value};
 
-use cc_engine::types::tool::{
+use crate::tool::{
     FileCacheEntry, InterruptBehavior, Tool, ToolProgress, ToolResult, ToolUseContext,
     ValidationResult,
 };
@@ -81,7 +81,7 @@ impl FileReadTool {
 
     fn record_text_read(ctx: &ToolUseContext, target: &ReadTarget, content: &str, timestamp: i64) {
         let entry = FileCacheEntry {
-            content_hash: cc_engine::types::tool::FileStateCache::hash_content(content.as_bytes()),
+            content_hash: crate::tool::FileStateCache::hash_content(content.as_bytes()),
             last_read_timestamp: timestamp,
         };
 
@@ -756,7 +756,7 @@ impl Tool for FileReadTool {
     }
 
     fn backfill_observable_input(&self, input: &mut serde_json::Map<String, Value>) {
-        crate::tools::observable_input::backfill_file_path(input);
+        crate::observable_input::backfill_file_path(input);
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {

@@ -8,7 +8,6 @@ use serde_json::Value;
 
 use crate::permissions::dangerous;
 use crate::permissions::path_validation;
-use crate::types::app_state::AppState;
 use crate::types::tool::ToolUseContext;
 use crate::types::tool::{PermissionMode, Tool, Tools};
 
@@ -154,7 +153,7 @@ pub(crate) fn is_plan_mode_plan_file_write(tool_name: &str, input: &Value) -> bo
 pub(crate) fn sandbox_allowed_command_applies(
     tool_name: &str,
     input: &Value,
-    app_state: &AppState,
+    app_state: &cc_tools::tool::ToolAppState,
 ) -> bool {
     if !matches!(tool_name, "Bash" | "PowerShell") {
         return false;

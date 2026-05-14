@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use similar::TextDiff;
 
-use cc_engine::types::tool::{
+use crate::tool::{
     FileCacheEntry, FileStateCache, Tool, ToolProgress, ToolResult, ToolUseContext,
     ValidationResult,
 };
@@ -380,7 +380,7 @@ impl Tool for FileEditTool {
     }
 
     fn backfill_observable_input(&self, input: &mut serde_json::Map<String, Value>) {
-        crate::tools::observable_input::backfill_file_path(input);
+        crate::observable_input::backfill_file_path(input);
     }
 
     async fn validate_input(&self, input: &Value, ctx: &ToolUseContext) -> ValidationResult {
@@ -638,8 +638,7 @@ impl Tool for FileEditTool {
                             "backup_path": write_report.backup_path.as_ref().map(|p| p.display().to_string()),
                         },
                     });
-                    let _ = crate::tools::hooks::run_event_hooks("FileChanged", &payload, &configs)
-                        .await;
+                    let _ = crate::hooks::run_event_hooks("FileChanged", &payload, &configs).await;
                 }
             }
 
@@ -681,12 +680,35 @@ Usage:\n\
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::fs::file_read::FileReadTool;
-    use cc_engine::types::app_state::AppState;
-    use cc_engine::types::tool::{FileStateCache, ToolUseOptions};
+    use crate::fs::file_read::FileReadTool;
+    use crate::tool::ToolAppState as AppState;
+    use crate::tool::{FileStateCache, ToolUseOptions};
     use cc_types::message::ContentBlock;
+    use std::ffi::OsString;
     use std::sync::Arc;
     use uuid::Uuid;
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvGuard {
+        fn set_path(key: &'static str, path: &Path) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::set_var(key, path);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     fn test_context() -> ToolUseContext {
         let app_state = AppState::default();
@@ -891,6 +913,7 @@ if ready {
     #[serial_test::serial]
     async fn edit_auto_adjusts_unique_indentation_mismatch() {
         let dir = tempfile::TempDir::new().unwrap();
+        let _home = EnvGuard::set_path("CC_RUST_HOME", dir.path());
         let file_path = dir.path().join("sample.rs");
         let original = "\
 fn main() {
@@ -978,6 +1001,7 @@ fn main() {
     #[serial_test::serial]
     async fn full_read_registers_state_and_edit_refreshes_it() {
         let dir = tempfile::TempDir::new().unwrap();
+        let _home = EnvGuard::set_path("CC_RUST_HOME", dir.path());
         let file_path = dir.path().join("sample.txt");
         tokio::fs::write(&file_path, "alpha\nbeta\n").await.unwrap();
 

@@ -305,7 +305,7 @@ fn maybe_link_plan_workflow_task(
     entry: &TaskEntry,
 ) -> Result<Option<cc_types::plan_workflow::PlanWorkflowRecord>> {
     let cwd = plan_workflow_cwd();
-    let existing = match cc_commands::plan_workflow::load(&cwd) {
+    let existing = match cc_tools::plan_workflow::load(&cwd) {
         Ok(record) => record,
         Err(err) => {
             tracing::warn!(
@@ -323,7 +323,7 @@ fn maybe_link_plan_workflow_task(
     let slot_for_update = Arc::clone(&slot);
 
     (ctx.set_app_state)(Box::new(move |mut state| {
-        let linked = cc_commands::plan_workflow::maybe_link_implementation_task_state(
+        let linked = cc_tools::plan_workflow::maybe_link_implementation_task_state(
             &mut state,
             &cwd,
             existing,
@@ -338,7 +338,7 @@ fn maybe_link_plan_workflow_task(
 
     let record = slot.lock().clone().unwrap_or(None);
     if let Some(record) = &record {
-        cc_commands::plan_workflow::persist(&persist_cwd, record)?;
+        cc_tools::plan_workflow::persist(&persist_cwd, record)?;
     }
     Ok(record)
 }

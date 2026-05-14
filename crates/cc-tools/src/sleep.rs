@@ -7,11 +7,13 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use serde::Serialize;
 use serde_json::{json, Value};
 
+use crate::exec::sleep as sleep_spec;
+use crate::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
 use cc_config::features::{self, Feature};
-use cc_engine::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
-use cc_tools::exec::sleep as sleep_spec;
 use cc_types::message::AssistantMessage;
 
 /// SleepTool -- signal the proactive tick loop to pause.
@@ -71,8 +73,7 @@ impl Tool for SleepTool {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let sleep_state =
-            crate::daemon::process_state::write_sleep_state(duration_seconds as u64, &reason)?;
+        let sleep_state = write_sleep_state(duration_seconds as u64, &reason)?;
 
         Ok(ToolResult {
             data: json!({
@@ -93,6 +94,36 @@ impl Tool for SleepTool {
     fn user_facing_name(&self, _input: Option<&Value>) -> String {
         sleep_spec::NAME.to_string()
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ToolSleepState {
+    schema_version: u32,
+    sleeping_until: DateTime<Utc>,
+    reason: Option<String>,
+    updated_at: DateTime<Utc>,
+}
+
+fn write_sleep_state(duration_seconds: u64, reason: &str) -> Result<ToolSleepState> {
+    let now = Utc::now();
+    let state = ToolSleepState {
+        schema_version: 1,
+        sleeping_until: now + chrono::Duration::seconds(duration_seconds as i64),
+        reason: if reason.trim().is_empty() {
+            None
+        } else {
+            Some(reason.trim().to_string())
+        },
+        updated_at: now,
+    };
+    let path = cc_config::paths::daemon_dir().join("sleep-state.json");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec_pretty(&state)?)?;
+    std::fs::rename(tmp, path)?;
+    Ok(state)
 }
 
 // ---------------------------------------------------------------------------
@@ -196,8 +227,8 @@ mod tests {
     // -----------------------------------------------------------------------
 
     fn make_test_ctx() -> ToolUseContext {
-        use cc_engine::types::app_state::AppState;
-        use cc_engine::types::tool::{FileStateCache, ToolUseOptions};
+        use crate::tool::ToolAppState as AppState;
+        use crate::tool::{FileStateCache, ToolUseOptions};
         use std::sync::Arc;
 
         ToolUseContext {

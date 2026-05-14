@@ -331,7 +331,6 @@ fn resolve_team_spawn_agent_type(explicit: Option<&str>) -> Option<String> {
 mod tests {
     use super::*;
     use cc_config::features::{self, FeatureFlags};
-    use cc_engine::types::app_state::AppState;
     use std::sync::Arc;
 
     struct FeatureOverrideGuard;
@@ -439,7 +438,7 @@ mod tests {
             },
             abort_signal: rx,
             read_file_state: FileStateCache::default(),
-            get_app_state: Arc::new(AppState::default),
+            get_app_state: Arc::new(ToolAppState::default),
             set_app_state: Arc::new(|_| {}),
             session_id: "test-session".to_string(),
             langfuse_session_id: "test-session".to_string(),

@@ -694,7 +694,7 @@ mod tests {
     use super::*;
     use crate::worktree_hooks::{WORKTREE_CREATE_EVENT, WORKTREE_REMOVE_EVENT};
     use async_trait::async_trait;
-    use cc_engine::types::app_state::AppState;
+    use cc_engine::types::tool::ToolAppState;
     use cc_types::hooks::{HookEventConfig, HookOutput, HookRunner, HooksMap, NoopHookRunner};
     use parking_lot::RwLock;
     use serde_json::{json, Value};
@@ -856,11 +856,11 @@ mod tests {
     }
 
     fn make_ctx() -> ToolUseContext {
-        make_ctx_with(AppState::default(), Arc::new(NoopHookRunner::new()))
+        make_ctx_with(ToolAppState::default(), Arc::new(NoopHookRunner::new()))
     }
 
-    fn make_ctx_with(app_state: AppState, hook_runner: Arc<dyn HookRunner>) -> ToolUseContext {
-        let state = Arc::new(RwLock::new(AppState::default()));
+    fn make_ctx_with(app_state: ToolAppState, hook_runner: Arc<dyn HookRunner>) -> ToolUseContext {
+        let state = Arc::new(RwLock::new(ToolAppState::default()));
         let state_r = Arc::clone(&state);
         let state_w = Arc::clone(&state);
         *state.write() = app_state;
@@ -878,7 +878,7 @@ mod tests {
             abort_signal: tokio::sync::watch::channel(false).1,
             read_file_state: FileStateCache::default(),
             get_app_state: Arc::new(move || state_r.read().clone()),
-            set_app_state: Arc::new(move |f: Box<dyn FnOnce(AppState) -> AppState>| {
+            set_app_state: Arc::new(move |f: Box<dyn FnOnce(ToolAppState) -> ToolAppState>| {
                 let mut s = state_w.write();
                 let old = s.clone();
                 *s = f(old);
@@ -1139,7 +1139,7 @@ mod tests {
         let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
         let _cwd = CurrentDirGuard::set(cwd.path());
 
-        let mut hooks = AppState::default();
+        let mut hooks = ToolAppState::default();
         hooks.hooks.insert(
             WORKTREE_CREATE_EVENT.to_string(),
             json!([{ "hooks": [{ "type": "command", "command": "create" }] }]),

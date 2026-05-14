@@ -10,15 +10,11 @@
 
 // --- Domain sub-modules ------------------------------------------------------
 //
-// Filesystem: read, write, search files on the local disk.
-pub mod fs;
 // --- Infrastructure ----------------------------------------------------------
 //
 // Shared tool-execution machinery (permission pipeline, hook dispatch, etc.)
 // Not tools themselves.
 pub mod execution;
-pub mod hooks;
-pub(crate) mod observable_input;
 pub mod registry;
 
 // --- Single-tool / small-cluster modules -------------------------------------
@@ -26,13 +22,9 @@ pub mod registry;
 // Not yet grouped into a sub-domain. Keep this list short — once a new
 // adjacent tool appears, promote the pair into a proper sub-domain instead of
 // stacking here.
-pub mod ask_user;
 pub mod skill;
-pub mod sleep;
 
 // Web / network tools.
-pub mod web_fetch;
-pub mod web_search;
 
 // Plan mode + Task tools.
 pub mod plan_mode;
@@ -50,15 +42,9 @@ pub mod send_message;
 pub mod team_spawn;
 
 // Meta / UX tools.
-pub mod config_tool;
-pub mod send_user_message;
-pub mod structured_output;
 
 // Kairos Brief mode.
-pub mod brief;
 
 // SystemStatus (agent subsystem observability).
-pub mod system_status;
 
 // Tool discovery / retrieval.
-pub mod tool_search;

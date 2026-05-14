@@ -12,10 +12,9 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
-use cc_engine::types::app_state::AppState;
 use cc_engine::types::tool::{
-    InterruptBehavior, PermissionMode, PermissionResult, Tool, ToolProgress, ToolResult,
-    ToolUseContext,
+    InterruptBehavior, PermissionMode, PermissionResult, Tool, ToolAppState, ToolProgress,
+    ToolResult, ToolUseContext,
 };
 use cc_permissions::decision::{self, PermissionBehavior};
 use cc_tools::exec::truncate_output;
@@ -73,7 +72,7 @@ impl PluginToolWrapper {
 
     fn permission_context_for_call(
         &self,
-        app_state: AppState,
+        app_state: ToolAppState,
     ) -> cc_engine::types::tool::ToolPermissionContext {
         let mut permission_ctx = app_state.tool_permission_context;
 
@@ -361,7 +360,7 @@ mod tests {
             },
             abort_signal: rx,
             read_file_state: FileStateCache::default(),
-            get_app_state: Arc::new(AppState::default),
+            get_app_state: Arc::new(ToolAppState::default),
             set_app_state: Arc::new(|_| {}),
             session_id: "test-session".to_string(),
             langfuse_session_id: "test-session".to_string(),

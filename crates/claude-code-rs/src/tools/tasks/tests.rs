@@ -1,5 +1,5 @@
 use super::*;
-use cc_engine::types::app_state::AppState;
+use cc_tools::tool::ToolAppState as AppState;
 use serde_json::json;
 use std::ffi::OsString;
 use std::sync::Arc;

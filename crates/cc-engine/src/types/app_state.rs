@@ -40,7 +40,7 @@ pub struct AppState {
     /// Agent Teams 上下文 (feature-gated)
     pub team_context: Option<cc_types::teams::TeamContext>,
     /// Hook configurations loaded from settings.json (merged config).
-    /// Read by `tools::hooks::load_hook_configs()` and the hook execution pipeline.
+    /// Read by `cc_tools::hooks::load_hook_configs()` and the hook execution pipeline.
     pub hooks: HashMap<String, serde_json::Value>,
     /// Durable plan-mode workflow state.
     ///
@@ -109,5 +109,51 @@ impl Default for AppState {
             keybindings: cc_keybindings::KeybindingRegistry::with_defaults(),
             status_line_runner: crate::status_line::StatusLineRunner::new(),
         }
+    }
+}
+
+impl AppState {
+    pub fn to_tool_app_state(&self) -> cc_tools::tool::ToolAppState {
+        cc_tools::tool::ToolAppState {
+            settings: self.settings.clone(),
+            verbose: self.verbose,
+            main_loop_model: self.main_loop_model.clone(),
+            main_loop_backend: self.main_loop_backend.clone(),
+            advisor_model: self.advisor_model.clone(),
+            tool_permission_context: self.tool_permission_context.clone(),
+            thinking_enabled: self.thinking_enabled,
+            fast_mode: self.fast_mode,
+            effort_value: self.effort_value.clone(),
+            team_context: self.team_context.clone(),
+            hooks: self.hooks.clone(),
+            plan_workflow: self.plan_workflow.clone(),
+            surfaced_memory_keys: self.surfaced_memory_keys.clone(),
+            kairos_active: self.kairos_active,
+            is_brief_only: self.is_brief_only,
+            is_assistant_mode: self.is_assistant_mode,
+            autonomous_tick_ms: self.autonomous_tick_ms,
+            terminal_focus: self.terminal_focus,
+        }
+    }
+
+    pub fn apply_tool_app_state(&mut self, state: cc_tools::tool::ToolAppState) {
+        self.settings = state.settings;
+        self.verbose = state.verbose;
+        self.main_loop_model = state.main_loop_model;
+        self.main_loop_backend = state.main_loop_backend;
+        self.advisor_model = state.advisor_model;
+        self.tool_permission_context = state.tool_permission_context;
+        self.thinking_enabled = state.thinking_enabled;
+        self.fast_mode = state.fast_mode;
+        self.effort_value = state.effort_value;
+        self.team_context = state.team_context;
+        self.hooks = state.hooks;
+        self.plan_workflow = state.plan_workflow;
+        self.surfaced_memory_keys = state.surfaced_memory_keys;
+        self.kairos_active = state.kairos_active;
+        self.is_brief_only = state.is_brief_only;
+        self.is_assistant_mode = state.is_assistant_mode;
+        self.autonomous_tick_ms = state.autonomous_tick_ms;
+        self.terminal_focus = state.terminal_focus;
     }
 }
