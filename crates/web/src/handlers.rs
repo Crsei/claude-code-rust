@@ -3,6 +3,7 @@
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::{OnceLock, RwLock};
 
 use axum::{
     extract::{Path as AxumPath, State},
@@ -13,8 +14,8 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
-use crate::commands;
 use cc_bootstrap::SessionId;
+use cc_commands::Command;
 use cc_daemon::web::sdk_stream_to_sse;
 use cc_engine::lifecycle::QueryEngine;
 use cc_engine::types::config::{QueryEngineConfig, QuerySource};
@@ -24,6 +25,26 @@ use cc_types::message::{ContentBlock, Message, MessageContent};
 use cc_types::sdk::SdkMessage;
 
 use super::state::WebState;
+
+type CommandProvider = fn() -> Vec<Command>;
+
+static COMMAND_PROVIDER: OnceLock<RwLock<Option<CommandProvider>>> = OnceLock::new();
+
+/// Install the root-owned slash-command registry used by web command routes.
+pub fn set_command_provider(provider: CommandProvider) {
+    let slot = COMMAND_PROVIDER.get_or_init(|| RwLock::new(None));
+    if let Ok(mut guard) = slot.write() {
+        *guard = Some(provider);
+    }
+}
+
+fn get_all_commands() -> Vec<Command> {
+    COMMAND_PROVIDER
+        .get()
+        .and_then(|slot| slot.read().ok().and_then(|guard| *guard))
+        .map(|provider| provider())
+        .unwrap_or_default()
+}
 
 // ---------------------------------------------------------------------------
 // Request / Response types
@@ -194,7 +215,7 @@ pub async fn state_handler(State(state): State<WebState>) -> impl IntoResponse {
     let usage = state.engine().usage();
 
     // Get command list
-    let commands: Vec<CommandInfo> = commands::get_all_commands()
+    let commands: Vec<CommandInfo> = get_all_commands()
         .iter()
         .map(|c| CommandInfo {
             name: c.name.clone(),
@@ -337,7 +358,7 @@ pub async fn command_handler(
 ) -> impl IntoResponse {
     info!(command = %req.command, args = %req.args, "POST /api/command");
 
-    let commands = commands::get_all_commands();
+    let commands = get_all_commands();
     let cmd = commands
         .iter()
         .find(|c| c.name == req.command || c.aliases.contains(&req.command));

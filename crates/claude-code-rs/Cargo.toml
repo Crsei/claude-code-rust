@@ -28,8 +28,9 @@ telemetry = [
     "dep:opentelemetry_sdk",
     "dep:opentelemetry-langfuse",
     "cc-services/telemetry",
+    "cc-startup/telemetry",
 ]
-web-ui = ["dep:rust-embed"]
+web-ui = ["cc-web/web-ui"]
 image = ["dep:image"]
 syntect = ["dep:syntect"]
 tree-sitter = ["dep:tree-sitter"]
@@ -164,6 +165,10 @@ cc-daemon = { workspace = true }
 cc-ipc = { workspace = true }
 cc-ipc-protocol = { workspace = true }
 cc-ipc-client = { workspace = true }
+cc-startup = { workspace = true }
+cc-voice = { workspace = true }
+cc-web = { workspace = true }
+cc-worktree = { workspace = true }
 gateway = { workspace = true }
 
 # Daemon
@@ -172,9 +177,6 @@ tower = { workspace = true }
 tower-http = { workspace = true }
 hmac = { workspace = true }
 notify-rust = { workspace = true }
-
-# Web UI embed
-rust-embed = { workspace = true, optional = true }
 
 # AST / 闂佹悶鍎查崕鎶藉磿?
 tree-sitter = { workspace = true, optional = true }

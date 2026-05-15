@@ -1,11 +1,11 @@
 //! Audio-device compatibility surface for the Codex TUI layout.
 //!
-//! cc-rust currently routes voice capture through `crate::voice`, whose default
+//! cc-rust currently routes voice capture through `cc_voice`, whose default
 //! backend is intentionally unsupported. This module keeps the Codex-shaped
 //! `audio_device` boundary available to UI code while reporting that runtime
 //! truth explicitly.
 
-use crate::voice::audio::{AudioCaptureBackend, NullAudioBackend};
+use cc_voice::audio::{AudioCaptureBackend, NullAudioBackend};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RealtimeAudioDeviceKind {

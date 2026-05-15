@@ -134,8 +134,8 @@ impl TranscriptionClient for NullTranscriptionClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::voice::audio::AudioCaptureBackend;
-    use crate::voice::audio::NullAudioBackend;
+    use crate::audio::AudioCaptureBackend;
+    use crate::audio::NullAudioBackend;
 
     /// Canned client used by controller tests: echoes a fixed
     /// transcription back regardless of input audio.

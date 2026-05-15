@@ -1,4 +1,4 @@
-use crate::voice::{VoiceController, VoiceEvent};
+use cc_voice::{VoiceController, VoiceEvent};
 
 use super::App;
 

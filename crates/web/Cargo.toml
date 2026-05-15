@@ -1,0 +1,34 @@
+[package]
+name = "cc-web"
+version = "0.1.0"
+edition = "2021"
+description = "Axum web UI server for cc-rust."
+
+[features]
+default = []
+web-ui = ["dep:rust-embed"]
+
+[lib]
+path = "src/mod.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+axum = { workspace = true }
+cc-bootstrap = { workspace = true }
+cc-commands = { workspace = true }
+cc-daemon = { workspace = true }
+cc-engine = { workspace = true }
+cc-permissions = { workspace = true }
+cc-session = { workspace = true }
+cc-types = { workspace = true }
+futures = { workspace = true }
+parking_lot = { workspace = true }
+rust-embed = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tower-http = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

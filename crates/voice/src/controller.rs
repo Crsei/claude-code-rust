@@ -266,8 +266,8 @@ fn format_stt_error(e: &SttError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::voice::audio::NullAudioBackend;
-    use crate::voice::stt::{NullTranscriptionClient, SttUnavailable};
+    use crate::audio::NullAudioBackend;
+    use crate::stt::{NullTranscriptionClient, SttUnavailable};
     use async_trait::async_trait;
 
     struct InspectableBackend {

@@ -14,7 +14,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
-use crate::web::state::WebState;
+use crate::state::WebState;
 
 /// Build the Axum router with all routes.
 pub fn build_router(state: WebState) -> Router {

@@ -75,7 +75,6 @@ pub mod team_onboarding;
 pub mod terminal_env;
 pub mod terminal_setup;
 pub mod version;
-pub mod voice;
 pub mod voice_cmd;
 
 use std::path::PathBuf;

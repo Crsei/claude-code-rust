@@ -86,18 +86,20 @@ fn lsp_event_to_subsystem(
                 uri,
                 diagnostics: diagnostics
                     .into_iter()
-                    .map(|diagnostic| cc_ipc_protocol::subsystem_types::LspDiagnostic {
-                        range: cc_ipc_protocol::subsystem_types::DiagnosticRange {
-                            start_line: diagnostic.range.start_line,
-                            start_character: diagnostic.range.start_character,
-                            end_line: diagnostic.range.end_line,
-                            end_character: diagnostic.range.end_character,
+                    .map(
+                        |diagnostic| cc_ipc_protocol::subsystem_types::LspDiagnostic {
+                            range: cc_ipc_protocol::subsystem_types::DiagnosticRange {
+                                start_line: diagnostic.range.start_line,
+                                start_character: diagnostic.range.start_character,
+                                end_line: diagnostic.range.end_line,
+                                end_character: diagnostic.range.end_character,
+                            },
+                            severity: diagnostic.severity,
+                            message: diagnostic.message,
+                            source: diagnostic.source,
+                            code: diagnostic.code,
                         },
-                        severity: diagnostic.severity,
-                        message: diagnostic.message,
-                        source: diagnostic.source,
-                        code: diagnostic.code,
-                    })
+                    )
                     .collect(),
             }
         }
@@ -212,18 +214,17 @@ pub async fn run_tui(
     // these arguments without changing anything above.
     {
         use std::sync::Arc;
-        let audio = Arc::new(crate::voice::audio::NullAudioBackend::new());
-        let stt = Arc::new(crate::voice::stt::NullTranscriptionClient::new());
-        let voice_controller = crate::voice::VoiceController::new(audio, stt);
+        let audio = Arc::new(cc_voice::audio::NullAudioBackend::new());
+        let stt = Arc::new(cc_voice::stt::NullTranscriptionClient::new());
+        let voice_controller = cc_voice::VoiceController::new(audio, stt);
         app.set_voice_controller(voice_controller);
 
         let app_state = engine.app_state();
-        let lang = crate::voice::language::normalize_language_for_stt(
-            app_state.settings.language.as_deref(),
-        );
+        let lang =
+            cc_voice::language::normalize_language_for_stt(app_state.settings.language.as_deref());
         let voice_supported = matches!(
             cc_commands::voice_cmd::current_feasibility(),
-            cc_commands::voice::Feasibility::Ready { .. }
+            cc_voice::Feasibility::Ready { .. }
         );
         app.set_voice_settings(
             app_state.settings.voice_enabled.unwrap_or(false),

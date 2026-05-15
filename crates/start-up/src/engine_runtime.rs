@@ -15,50 +15,15 @@ use cc_engine::types::tool::Tool;
 
 static INSTALL: Once = Once::new();
 
-pub fn install() {
+pub fn install(dashboard: Arc<dyn DashboardEmitter>, tools: Arc<dyn AgentToolRegistry>) {
     INSTALL.call_once(|| {
         let mut adapters = cc_engine::agent_runtime::agent_runtime_adapters();
-        adapters.dashboard = Arc::new(RootDashboardEmitter);
-        adapters.tools = Arc::new(RootAgentToolRegistry);
+        adapters.dashboard = dashboard;
+        adapters.tools = tools;
         adapters.teammate_spawner = Arc::new(RootTeammateSpawner);
         adapters.task_store = Arc::new(RootAgentTaskStore);
         cc_engine::agent_runtime::set_agent_runtime_adapters(adapters);
     });
-}
-
-struct RootDashboardEmitter;
-
-impl DashboardEmitter for RootDashboardEmitter {
-    fn emit_subagent_event(
-        &self,
-        kind: &str,
-        agent_id: &str,
-        parent_agent_id: Option<&str>,
-        description: Option<&str>,
-        model: Option<&str>,
-        depth: usize,
-        background: bool,
-        payload: Option<Value>,
-    ) -> Result<()> {
-        crate::dashboard::emit_subagent_event(
-            kind,
-            agent_id,
-            parent_agent_id,
-            description,
-            model,
-            depth,
-            background,
-            payload,
-        )
-    }
-}
-
-struct RootAgentToolRegistry;
-
-impl AgentToolRegistry for RootAgentToolRegistry {
-    fn get_all_tools(&self) -> Vec<Arc<dyn cc_engine::types::tool::Tool>> {
-        crate::tools::registry::get_all_tools()
-    }
 }
 
 struct RootTeammateSpawner;

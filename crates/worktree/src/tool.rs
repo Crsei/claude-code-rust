@@ -25,11 +25,11 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tracing::{debug, info, warn};
 
-use crate::worktree_hooks::{
+use cc_engine::types::tool::*;
+use cc_engine::worktree_hooks::{
     default_user_worktree_path, ensure_worktree_parent, run_worktree_create_hook,
     run_worktree_remove_hook, validate_allowed_worktree_path, WorktreeRemoveHookOutcome,
 };
-use cc_engine::types::tool::*;
 use cc_types::message::AssistantMessage;
 
 // ---------------------------------------------------------------------------
@@ -692,9 +692,9 @@ impl Tool for ExitWorktreeTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::worktree_hooks::{WORKTREE_CREATE_EVENT, WORKTREE_REMOVE_EVENT};
     use async_trait::async_trait;
     use cc_engine::types::tool::ToolAppState;
+    use cc_engine::worktree_hooks::{WORKTREE_CREATE_EVENT, WORKTREE_REMOVE_EVENT};
     use cc_types::hooks::{HookEventConfig, HookOutput, HookRunner, HooksMap, NoopHookRunner};
     use parking_lot::RwLock;
     use serde_json::{json, Value};

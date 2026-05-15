@@ -22,11 +22,8 @@ mod computer_use;
 mod engine;
 mod safety;
 mod skills;
-mod startup;
 mod tools;
 mod ui;
-mod voice;
-mod worktree;
 mod worktree_hooks;
 
 // Plugin system
@@ -46,9 +43,6 @@ mod ide;
 // Service layer
 mod services;
 
-// Web UI (Axum HTTP server)
-mod web;
-
 // Phase I: Shutdown and cleanup
 mod shutdown;
 
@@ -61,10 +55,14 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use anyhow::Context;
+use cc_startup as startup;
+use cc_web as web;
 use clap::Parser;
+use serde_json::Value;
 use tracing::{debug, error, info, warn};
 
 use crate::cli::Cli;
+use startup::runtime_config::StartupCli;
 
 fn resolve_startup_model(
     requested: Option<&str>,
@@ -140,15 +138,78 @@ fn log_skill_report(scope: &str, report: &cc_skills::SkillLoadReport) {
         }
     }
 }
-use crate::startup::runtime_config::{
-    build_tool_permission_context, chrome_cli_override, resolve_cwd, resolve_permission_mode,
-};
+
+impl StartupCli for Cli {
+    fn cwd(&self) -> Option<&str> {
+        self.cwd.as_deref()
+    }
+
+    fn chrome(&self) -> bool {
+        self.chrome
+    }
+
+    fn no_chrome(&self) -> bool {
+        self.no_chrome
+    }
+}
+
+impl startup::fast_paths::DumpSystemPromptCli for Cli {
+    fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+
+    fn system_prompt(&self) -> Option<&str> {
+        self.system_prompt.as_deref()
+    }
+
+    fn append_system_prompt(&self) -> Option<&str> {
+        self.append_system_prompt.as_deref()
+    }
+}
+
+struct RootDashboardEmitter;
+
+impl cc_engine::agent_runtime::DashboardEmitter for RootDashboardEmitter {
+    fn emit_subagent_event(
+        &self,
+        kind: &str,
+        agent_id: &str,
+        parent_agent_id: Option<&str>,
+        description: Option<&str>,
+        model: Option<&str>,
+        depth: usize,
+        background: bool,
+        payload: Option<Value>,
+    ) -> anyhow::Result<()> {
+        crate::dashboard::emit_subagent_event(
+            kind,
+            agent_id,
+            parent_agent_id,
+            description,
+            model,
+            depth,
+            background,
+            payload,
+        )
+    }
+}
+
+struct RootAgentToolRegistry;
+
+impl cc_engine::agent_runtime::AgentToolRegistry for RootAgentToolRegistry {
+    fn get_all_tools(&self) -> Vec<Arc<dyn cc_engine::types::tool::Tool>> {
+        crate::tools::registry::get_all_tools()
+    }
+}
 use crate::tools::registry;
 use crate::ui::tui;
 use cc_config::settings;
 use cc_engine::lifecycle::QueryEngine;
 use cc_engine::types::app_state::{AppState, SettingsJson};
 use cc_engine::types::config::QueryEngineConfig;
+use startup::runtime_config::{
+    build_tool_permission_context, chrome_cli_override, resolve_cwd, resolve_permission_mode,
+};
 
 fn install_daemon_runtime_adapters() {
     cc_daemon::runtime::set_runtime_adapters(cc_daemon::runtime::DaemonRuntimeAdapters {
@@ -222,7 +283,10 @@ fn daemon_route_github_pr_activity(
 
 fn main() -> ExitCode {
     startup::load_env_files();
-    startup::engine_runtime::install();
+    startup::engine_runtime::install(
+        Arc::new(RootDashboardEmitter),
+        Arc::new(RootAgentToolRegistry),
+    );
 
     // Wire cc-permissions' descriptive-prompt callbacks. cc-permissions moved
     // out of the root crate in Phase 4 (issue #73); the Computer Use and
@@ -301,7 +365,15 @@ fn main() -> ExitCode {
     }
 
     if let Some(output_dir) = cli.export_ui_snapshots.as_deref() {
-        return startup::fast_paths::run_export_ui_snapshots(output_dir);
+        return startup::fast_paths::run_export_ui_snapshots(output_dir, |dir| {
+            crate::ui::snapshot_export::export_ui_snapshots(dir)
+                .map(|report| startup::fast_paths::SnapshotExportReport {
+                    output_dir: report.output_dir,
+                    index_path: report.index_path,
+                    snapshot_count: report.snapshot_count,
+                })
+                .map_err(Into::into)
+        });
     }
 
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
@@ -333,7 +405,8 @@ fn main() -> ExitCode {
 
     // Fast path: --dump-system-prompt
     if cli.dump_system_prompt {
-        return startup::fast_paths::run_dump_system_prompt(&cli);
+        let tools = registry::get_tools_for_active_session();
+        return startup::fast_paths::run_dump_system_prompt(&cli, &tools);
     }
 
     if !cli.print && cli.output_format.is_none() {
@@ -877,6 +950,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // B.10: Web UI mode
     if cli.web {
+        web::handlers::set_command_provider(commands::get_all_commands);
         let web_state = web::state::WebState::new(
             engine.clone(),
             Arc::new(std::sync::atomic::AtomicBool::new(false)),

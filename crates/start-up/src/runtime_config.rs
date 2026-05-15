@@ -6,13 +6,18 @@
 
 use std::collections::HashMap;
 
-use crate::cli::Cli;
 use cc_config::settings;
 use cc_engine::types::tool::{PermissionMode, ToolPermissionContext};
 
+pub trait StartupCli {
+    fn cwd(&self) -> Option<&str>;
+    fn chrome(&self) -> bool;
+    fn no_chrome(&self) -> bool;
+}
+
 /// Resolve the working directory from CLI args or the current process cwd.
-pub fn resolve_cwd(cli: &Cli) -> String {
-    cli.cwd.clone().unwrap_or_else(|| {
+pub fn resolve_cwd(cli: &impl StartupCli) -> String {
+    cli.cwd().map(str::to_string).unwrap_or_else(|| {
         std::env::current_dir()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| ".".to_string())
@@ -21,10 +26,10 @@ pub fn resolve_cwd(cli: &Cli) -> String {
 
 /// Map `--chrome` / `--no-chrome` flags onto an explicit Option<bool>.
 /// `None` means "defer to config / env defaults".
-pub fn chrome_cli_override(cli: &Cli) -> Option<bool> {
-    if cli.chrome {
+pub fn chrome_cli_override(cli: &impl StartupCli) -> Option<bool> {
+    if cli.chrome() {
         Some(true)
-    } else if cli.no_chrome {
+    } else if cli.no_chrome() {
         Some(false)
     } else {
         None
@@ -32,7 +37,7 @@ pub fn chrome_cli_override(cli: &Cli) -> Option<bool> {
 }
 
 /// True iff Chrome integration is enabled after layering CLI over config.
-pub fn chrome_requested(cli: &Cli, config_default: Option<bool>) -> bool {
+pub fn chrome_requested(cli: &impl StartupCli, config_default: Option<bool>) -> bool {
     matches!(
         cc_browser::session::resolve_enablement(chrome_cli_override(cli), config_default),
         cc_browser::session::ChromeEnablement::Enabled

@@ -7,9 +7,8 @@ use tracing::warn;
 use cc_engine::tools::exec;
 use cc_engine::types::tool::Tools;
 
-use cc_lsp_service::tool::LspTool;
 use crate::skills::tool::SkillTool;
-use crate::worktree::tool::{EnterWorktreeTool, ExitWorktreeTool};
+use cc_lsp_service::tool::LspTool;
 use cc_teams::pr_activity::{SubscribePrActivityTool, UnsubscribePrActivityTool};
 use cc_teams::send_message::SendMessageTool;
 use cc_teams::team_spawn::TeamSpawnTool;
@@ -25,6 +24,7 @@ use cc_tools::system_status::SystemStatusTool;
 use cc_tools::tool_search::ToolSearchTool;
 use cc_tools::web_fetch::WebFetchTool;
 use cc_tools::web_search::WebSearchTool;
+use cc_worktree::tool::{EnterWorktreeTool, ExitWorktreeTool};
 
 /// Get all base tool instances.
 ///

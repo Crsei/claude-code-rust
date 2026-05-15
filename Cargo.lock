@@ -587,6 +587,7 @@ dependencies = [
  "cc-tools",
  "cc-types",
  "cc-utils",
+ "cc-voice",
  "chrono",
  "dirs",
  "dotenvy",
@@ -972,6 +973,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-startup"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "cc-api",
+ "cc-browser",
+ "cc-config",
+ "cc-engine",
+ "cc-mcp",
+ "cc-permissions",
+ "cc-plugins",
+ "cc-services",
+ "cc-tasks",
+ "cc-teams",
+ "cc-types",
+ "dotenvy",
+ "futures",
+ "opentelemetry",
+ "opentelemetry-langfuse",
+ "opentelemetry_sdk",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-appender",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "cc-tasks"
 version = "0.1.0"
 dependencies = [
@@ -1087,6 +1121,58 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-voice"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "cc-auth",
+ "parking_lot",
+ "serial_test",
+ "tokio",
+]
+
+[[package]]
+name = "cc-web"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "cc-bootstrap",
+ "cc-commands",
+ "cc-daemon",
+ "cc-engine",
+ "cc-permissions",
+ "cc-session",
+ "cc-types",
+ "futures",
+ "parking_lot",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http",
+ "tracing",
+]
+
+[[package]]
+name = "cc-worktree"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "cc-engine",
+ "cc-types",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1189,11 +1275,15 @@ dependencies = [
  "cc-services",
  "cc-session",
  "cc-skills",
+ "cc-startup",
  "cc-tasks",
  "cc-teams",
  "cc-tools",
  "cc-types",
  "cc-utils",
+ "cc-voice",
+ "cc-web",
+ "cc-worktree",
  "chrono",
  "clap",
  "crossterm",
@@ -1226,7 +1316,6 @@ dependencies = [
  "regex",
  "reqwest",
  "ring",
- "rust-embed",
  "semver",
  "serde",
  "serde_json",

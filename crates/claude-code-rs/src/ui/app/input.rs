@@ -583,13 +583,13 @@ impl App {
                         .voice
                         .as_ref()
                         .map(|voice| voice.state())
-                        .unwrap_or(crate::voice::VoiceState::Idle)
+                        .unwrap_or(cc_voice::VoiceState::Idle)
                     {
-                        crate::voice::VoiceState::Idle | crate::voice::VoiceState::Error(_) => {
+                        cc_voice::VoiceState::Idle | cc_voice::VoiceState::Error(_) => {
                             self.begin_push_to_talk();
                         }
-                        crate::voice::VoiceState::Recording => self.end_push_to_talk(),
-                        crate::voice::VoiceState::Transcribing => {}
+                        cc_voice::VoiceState::Recording => self.end_push_to_talk(),
+                        cc_voice::VoiceState::Transcribing => {}
                     }
                 }
                 return Some(AppAction::None);

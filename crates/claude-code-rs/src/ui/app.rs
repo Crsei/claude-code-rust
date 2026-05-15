@@ -23,11 +23,11 @@ mod tests;
 mod transcript_mode;
 mod voice;
 mod workspace_trust;
-use crate::voice::VoiceController;
 use cc_config::settings::StatusLineSettings;
 use cc_keybindings::KeybindingRegistry;
 use cc_services::prompt_suggestion::PromptSuggestion;
 use cc_types::message::Message;
+use cc_voice::VoiceController;
 use status::SessionUsageSnapshot;
 use workspace_trust::is_workspace_trusted;
 

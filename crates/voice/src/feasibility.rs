@@ -174,8 +174,8 @@ fn truthy_env(key: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::voice::audio::NullAudioBackend;
-    use crate::voice::stt::NullTranscriptionClient;
+    use crate::audio::NullAudioBackend;
+    use crate::stt::NullTranscriptionClient;
     use serial_test::serial;
 
     struct ReadyAudioBackend;

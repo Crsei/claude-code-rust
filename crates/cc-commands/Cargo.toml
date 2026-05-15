@@ -28,6 +28,7 @@ cc-tasks = { workspace = true }
 cc-tools = { workspace = true }
 cc-types = { workspace = true }
 cc-utils = { workspace = true }
+cc-voice = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
 dotenvy = { workspace = true }

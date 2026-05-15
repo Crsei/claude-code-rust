@@ -132,11 +132,10 @@ fn sync_app_runtime_from_state(
     app.set_keybindings(state.keybindings.clone());
     app.sync_status_context_from_state(state);
 
-    let lang =
-        crate::voice::language::normalize_language_for_stt(state.settings.language.as_deref());
+    let lang = cc_voice::language::normalize_language_for_stt(state.settings.language.as_deref());
     let voice_supported = matches!(
         cc_commands::voice_cmd::current_feasibility(),
-        cc_commands::voice::Feasibility::Ready { .. }
+        cc_voice::Feasibility::Ready { .. }
     );
     app.set_voice_settings(
         state.settings.voice_enabled.unwrap_or(false),

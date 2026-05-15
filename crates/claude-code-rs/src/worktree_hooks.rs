@@ -30,10 +30,6 @@ pub enum WorktreeRemoveHookOutcome {
     Unhandled,
 }
 
-pub fn default_user_worktree_path(slug: &str) -> PathBuf {
-    cc_config::paths::worktrees_dir().join(format!("cc-worktree-{}", slug))
-}
-
 pub fn default_agent_worktree_path(short_id: &str) -> PathBuf {
     cc_config::paths::worktrees_dir().join(format!("agent-worktree-{}", short_id))
 }

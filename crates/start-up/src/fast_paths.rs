@@ -7,12 +7,28 @@
 //! `--claude-in-chrome-mcp`).
 
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 
-use crate::cli::Cli;
-use crate::startup::runtime_config::{chrome_requested, resolve_cwd};
-use crate::tools::registry;
+use crate::runtime_config::{chrome_requested, resolve_cwd};
 use cc_config::settings;
+use cc_engine::types::tool::Tool;
+
+use crate::runtime_config::StartupCli;
+
+pub trait DumpSystemPromptCli: StartupCli {
+    fn model(&self) -> Option<&str>;
+    fn system_prompt(&self) -> Option<&str>;
+    fn append_system_prompt(&self) -> Option<&str>;
+}
+
+#[derive(Debug, Clone)]
+pub struct SnapshotExportReport {
+    pub output_dir: PathBuf,
+    pub index_path: PathBuf,
+    pub snapshot_count: usize,
+}
 
 /// Run the Chrome native-messaging host bridge. Does NOT set up tracing or
 /// register tools — Chrome captures stderr as error logs, so we skip every
@@ -46,8 +62,11 @@ pub fn run_claude_in_chrome_mcp() -> ExitCode {
 }
 
 /// Export accepted Rust TUI snapshots into a single human-review folder.
-pub fn run_export_ui_snapshots(output_dir: &Path) -> ExitCode {
-    match crate::ui::snapshot_export::export_ui_snapshots(output_dir) {
+pub fn run_export_ui_snapshots(
+    output_dir: &Path,
+    export: impl FnOnce(&Path) -> anyhow::Result<SnapshotExportReport>,
+) -> ExitCode {
+    match export(output_dir) {
         Ok(report) => {
             println!(
                 "exported {} Rust TUI snapshots to {}",
@@ -67,14 +86,13 @@ pub fn run_export_ui_snapshots(output_dir: &Path) -> ExitCode {
 /// Print the resolved system prompt and exit. Populates the minimum state
 /// required for the prompt builder (tools, MCP/browser detection, merged
 /// language/style) without running the full Phase B pipeline.
-pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
+pub fn run_dump_system_prompt(cli: &impl DumpSystemPromptCli, tools: &[Arc<dyn Tool>]) -> ExitCode {
     cc_plugins::init_plugins();
-    let tools = registry::get_tools_for_active_session();
     let provider_default =
         cc_api::api::client::ApiClient::from_env().map(|c| c.config().default_model.clone());
     let model_owned = cli
-        .model
-        .clone()
+        .model()
+        .map(str::to_string)
         .or(provider_default)
         .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
     let model = model_owned.as_str();
@@ -92,8 +110,7 @@ pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let mut browser_servers =
-        crate::browser::detection::detect_browser_servers(&server_configs, &tools);
+    let mut browser_servers = detect_browser_servers(&server_configs, tools);
     // Mirror the full-init path: when Chrome subsystem is requested via
     // CLI / env, pre-register the first-party server name so the
     // `# Browser Automation` prompt fires under --dump-system-prompt too.
@@ -132,9 +149,9 @@ pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
         }
     };
     let (parts, _, _) = cc_engine::system_prompt::build_system_prompt_with_session_memory(
-        cli.system_prompt.as_deref(),
-        cli.append_system_prompt.as_deref(),
-        &tools,
+        cli.system_prompt(),
+        cli.append_system_prompt(),
+        tools,
         model,
         &cwd,
         dump_lang.as_deref(),
@@ -146,6 +163,26 @@ pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
         println!("{}", part);
     }
     ExitCode::SUCCESS
+}
+
+fn detect_browser_servers(
+    configs: &[cc_mcp::McpServerConfig],
+    tools: &[Arc<dyn Tool>],
+) -> std::collections::HashSet<String> {
+    let mut servers: std::collections::HashSet<String> = configs
+        .iter()
+        .filter(|config| config.browser_mcp.unwrap_or(false))
+        .map(|config| config.name.clone())
+        .collect();
+
+    for tool in tools {
+        let name = tool.user_facing_name(None);
+        if let Some((server, _)) = cc_browser::detection::extract_browser_action(&name) {
+            servers.insert(server.to_string());
+        }
+    }
+
+    servers
 }
 
 fn discover_mcp_servers_for_fast_path(
