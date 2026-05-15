@@ -84,10 +84,3 @@ pub fn sync_command_app_state(engine: &QueryEngine, command_state: &AppState) {
         state.plan_workflow = plan_workflow;
     });
 }
-
-pub fn event_payload(record: &PlanWorkflowRecord, event: &str, summary: &str) -> serde_json::Value {
-    serde_json::to_value(cc_types::plan_workflow::event_payload(
-        record, event, summary,
-    ))
-    .unwrap_or_else(|_| serde_json::Value::Null)
-}

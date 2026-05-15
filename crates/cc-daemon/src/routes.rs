@@ -13,13 +13,14 @@ use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use cc_engine::lifecycle::QueryEngine;
+use cc_engine::types::app_state::AppState;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::{info, warn};
 
-use crate::commands;
+use crate::protocol::{DaemonCommandKind, DaemonCommandStatus};
 use cc_commands::{CommandContext, CommandResult};
-use cc_daemon::protocol::{DaemonCommandKind, DaemonCommandStatus};
 use cc_types::plan_workflow::PlanWorkflowRecord;
 use cc_types::sdk::SdkMessage;
 
@@ -27,6 +28,28 @@ use super::process_state::{self, DaemonStatusSnapshot, DaemonWorkerSummary};
 use super::state::{DaemonState, SseEvent};
 use super::supervisor::ASSISTANT_WORKER_ID;
 use super::team_memory_proxy;
+
+fn sync_command_app_state(engine: &QueryEngine, command_state: &AppState) {
+    let permission_context = command_state.tool_permission_context.clone();
+    let team_context = command_state.team_context.clone();
+    let plan_workflow = command_state.plan_workflow.clone();
+    engine.update_app_state(|state| {
+        state.tool_permission_context = permission_context;
+        state.team_context = team_context;
+        state.plan_workflow = plan_workflow;
+    });
+}
+
+fn plan_workflow_event_payload(
+    record: &PlanWorkflowRecord,
+    event: &str,
+    summary: &str,
+) -> serde_json::Value {
+    serde_json::to_value(cc_types::plan_workflow::event_payload(
+        record, event, summary,
+    ))
+    .unwrap_or_else(|_| serde_json::Value::Null)
+}
 
 // ---------------------------------------------------------------------------
 // Request / Response types
@@ -320,11 +343,17 @@ async fn command(
         return response;
     }
     let raw = body.raw.trim().to_string();
-    let Some((cmd_idx, args)) = commands::parse_command_input(&raw) else {
+    let all_commands = match crate::runtime::commands() {
+        Ok(commands) => commands,
+        Err(err) => {
+            return Json(json!({ "status": "error", "message": err.to_string() }));
+        }
+    };
+    let metadata = cc_commands::command_metadata(&all_commands);
+    let Some((cmd_idx, args)) = cc_commands::parse_command_input_in(&raw, &metadata) else {
         return Json(json!({ "status": "error", "message": format!("unknown command: {raw}") }));
     };
 
-    let all_commands = commands::get_all_commands();
     let cmd = &all_commands[cmd_idx];
     let original_app_state = state.engine.app_state();
     let original_plan = original_app_state.plan_workflow.clone();
@@ -341,14 +370,14 @@ async fn command(
         Ok(result) => {
             let plan_changed = ctx.app_state.plan_workflow != original_plan
                 || ctx.app_state.tool_permission_context.mode != original_mode;
-            crate::plan_workflow::sync_command_app_state(&state.engine, &ctx.app_state);
+            sync_command_app_state(&state.engine, &ctx.app_state);
 
             if plan_changed {
                 if let Some(record) = ctx.app_state.plan_workflow.clone() {
                     state.broadcast(SseEvent {
                         id: String::new(),
                         event_type: "plan_workflow_event".to_string(),
-                        data: crate::plan_workflow::event_payload(
+                        data: plan_workflow_event_payload(
                             &record,
                             "slash_command",
                             &cc_types::plan_workflow::summarize(&record),
@@ -572,10 +601,12 @@ pub async fn health() -> Json<Value> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use uuid::Uuid;
 
     use super::*;
-    use crate::daemon::webhook::webhook_github;
+    use crate::webhook::webhook_github;
     use axum::body::Bytes;
     use cc_types::message::CompactMetadata;
     use cc_types::sdk::{SdkApiRetry, SdkCompactBoundary, SdkToolUseSummary};
@@ -608,6 +639,31 @@ mod tests {
         let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(body);
         format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
+    }
+
+    fn install_test_runtime_adapters() {
+        crate::runtime::set_runtime_adapters(crate::runtime::DaemonRuntimeAdapters {
+            init_plugins: || {},
+            active_tools: Vec::new,
+            commands: Vec::new,
+            command_dispatcher: || Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
+            command_executor: || Arc::new(cc_engine::command_runtime::NoopCommandExecutor::new()),
+            route_github_pr_activity: test_route_github_pr_activity,
+        });
+    }
+
+    fn test_route_github_pr_activity(
+        payload: &Value,
+        event: Option<&str>,
+        delivery_id: Option<&str>,
+    ) -> anyhow::Result<Option<crate::runtime::GithubPrActivityRouteOutcome>> {
+        assert_eq!(event, Some("pull_request"));
+        assert_eq!(delivery_id, Some("delivery-42"));
+        assert_eq!(payload["repository"]["name"], "cc-rust");
+        Ok(Some(crate::runtime::GithubPrActivityRouteOutcome {
+            matched: 1,
+            delivered: 1,
+        }))
     }
 
     #[test]
@@ -685,20 +741,12 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn github_webhook_routes_matching_pr_activity_to_mailbox() {
+    async fn github_webhook_routes_matching_pr_activity_through_adapter() {
         let home = tempfile::tempdir().unwrap();
         let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
         let _github_secret = EnvGuard::set("CC_RUST_GITHUB_WEBHOOK_SECRET", "route-secret");
         let _legacy_secret = EnvGuard::set("GITHUB_WEBHOOK_SECRET", "");
-        crate::teams::helpers::create_team("phase4-route", None, None, ".").unwrap();
-        crate::teams::pr_activity::subscribe(
-            "AIclassmanager".into(),
-            "cc-rust".into(),
-            42,
-            "phase4-route".into(),
-            crate::teams::constants::TEAM_LEAD_NAME.into(),
-        )
-        .unwrap();
+        install_test_runtime_adapters();
         let body = serde_json::to_vec(&json!({
             "action": "opened",
             "repository": {
@@ -726,13 +774,6 @@ mod tests {
         assert_eq!(response["status"], "received");
         assert_eq!(response["matched"], 1);
         assert_eq!(response["delivered"], 1);
-        let inbox = crate::teams::mailbox::read_mailbox(
-            crate::teams::constants::TEAM_LEAD_NAME,
-            "phase4-route",
-        )
-        .unwrap();
-        assert_eq!(inbox.len(), 1);
-        assert!(inbox[0].text.contains("delivery-42"));
     }
 
     #[tokio::test]

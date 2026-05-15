@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use cc_daemon::protocol;
+use crate::protocol;
 
 const SCHEMA_VERSION: u32 = 1;
 #[cfg(test)]

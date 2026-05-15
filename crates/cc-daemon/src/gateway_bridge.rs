@@ -17,8 +17,7 @@ use gateway::{
 use serde_json::{json, Value};
 use tokio_stream::StreamExt;
 
-use crate::commands;
-use cc_daemon::protocol::{self, DaemonCommandKind};
+use crate::protocol::{self, DaemonCommandKind};
 use cc_engine::lifecycle::QueryEngine;
 use cc_engine::types::config::{QueryEngineConfig, QuerySource};
 
@@ -210,10 +209,11 @@ pub struct AssistantWorkerRuntime {
 }
 
 impl AssistantWorkerRuntime {
-    pub fn new(cwd: &Path) -> Self {
-        crate::plugins::init_plugins();
-        let tools = crate::tools::registry::get_tools_for_active_session();
+    pub fn new(cwd: &Path) -> Result<Self> {
+        crate::runtime::init_plugins()?;
+        let tools = crate::runtime::active_tools()?;
         cc_tools::tool_search::install_runtime_tool_catalog(&tools);
+        let command_names = crate::runtime::command_names()?;
         let mut engine = QueryEngine::new(QueryEngineConfig {
             cwd: cwd.to_string_lossy().into_owned(),
             tools,
@@ -226,10 +226,7 @@ impl AssistantWorkerRuntime {
             task_budget: None,
             verbose: false,
             initial_messages: None,
-            commands: commands::get_all_commands()
-                .iter()
-                .map(|command| command.name.clone())
-                .collect(),
+            commands: command_names,
             thinking_config: None,
             json_schema: None,
             replay_user_messages: false,
@@ -239,11 +236,12 @@ impl AssistantWorkerRuntime {
             agent_context: None,
         });
         engine.set_hook_runner(Arc::new(cc_tools::hooks::ShellHookRunner::new()));
-        engine.set_command_dispatcher(Arc::new(commands::DefaultCommandDispatcher::new()));
+        engine.set_command_dispatcher(crate::runtime::command_dispatcher()?);
+        engine.set_command_executor(crate::runtime::command_executor()?);
 
-        Self {
+        Ok(Self {
             engine: Arc::new(engine),
-        }
+        })
     }
 
     async fn execute_submit(
@@ -367,7 +365,7 @@ mod tests {
             })
             .unwrap();
 
-        let command = crate::daemon::protocol_store()
+        let command = crate::protocol_store()
             .read_command("assistant-session-1", &receipt.command_id)
             .unwrap()
             .unwrap();
@@ -399,7 +397,7 @@ mod tests {
             })
             .unwrap();
         let run_id = created.meta().run_id.clone();
-        let command = crate::daemon::protocol_store()
+        let command = crate::protocol_store()
             .enqueue_command(
                 "assistant-session-1",
                 DaemonCommandKind::Submit,

@@ -226,7 +226,7 @@ pub async fn run_supervisor_loop(cwd: PathBuf, port: u16) -> Result<()> {
 
 pub async fn run_worker_mode(kind: &str, worker_id: &str, cwd: PathBuf) -> Result<()> {
     let kind = WorkerKind::parse(kind)?;
-    let mut runtime = AssistantWorkerRuntime::new(&cwd);
+    let mut runtime = AssistantWorkerRuntime::new(&cwd)?;
     if process_state::read_worker_state(worker_id)?.is_none() {
         let log_path = process_state::worker_log_path(worker_id);
         process_state::write_worker_running(

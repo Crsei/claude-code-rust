@@ -14,7 +14,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::daemon::process_state::{self, DaemonStatusSnapshot};
+use crate::process_state::{self, DaemonStatusSnapshot};
 
 const TOKEN_HEADER: &str = "x-cc-rust-daemon-token";
 

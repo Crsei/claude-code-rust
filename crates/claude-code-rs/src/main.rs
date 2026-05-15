@@ -61,8 +61,6 @@ mod shutdown;
 // IPC headless mode
 mod ipc;
 
-// KAIROS daemon
-mod daemon;
 mod dashboard;
 
 use std::process::ExitCode;
@@ -157,6 +155,42 @@ use cc_config::settings;
 use cc_engine::lifecycle::QueryEngine;
 use cc_engine::types::app_state::{AppState, SettingsJson};
 use cc_engine::types::config::QueryEngineConfig;
+
+fn install_daemon_runtime_adapters() {
+    cc_daemon::runtime::set_runtime_adapters(cc_daemon::runtime::DaemonRuntimeAdapters {
+        init_plugins: crate::plugins::init_plugins,
+        active_tools: crate::tools::registry::get_tools_for_active_session,
+        commands: crate::commands::get_all_commands,
+        command_dispatcher: daemon_command_dispatcher,
+        command_executor: daemon_command_executor,
+        route_github_pr_activity: daemon_route_github_pr_activity,
+    });
+}
+
+fn daemon_command_dispatcher() -> Arc<dyn cc_types::commands::CommandDispatcher> {
+    Arc::new(crate::commands::DefaultCommandDispatcher::new())
+}
+
+fn daemon_command_executor() -> Arc<dyn cc_engine::command_runtime::CommandExecutor> {
+    Arc::new(crate::commands::EngineCommandExecutor)
+}
+
+fn daemon_route_github_pr_activity(
+    payload: &serde_json::Value,
+    event: Option<&str>,
+    delivery_id: Option<&str>,
+) -> anyhow::Result<Option<cc_daemon::runtime::GithubPrActivityRouteOutcome>> {
+    let Some(activity) =
+        crate::teams::pr_activity::parse_github_pr_activity(payload, event, delivery_id)
+    else {
+        return Ok(None);
+    };
+    let result = crate::teams::pr_activity::route_github_pr_activity(&activity)?;
+    Ok(Some(cc_daemon::runtime::GithubPrActivityRouteOutcome {
+        matched: result.matched,
+        delivered: result.delivered,
+    }))
+}
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -253,6 +287,7 @@ fn main() -> ExitCode {
     };
 
     info!("claude-code-rs v{}", env!("CARGO_PKG_VERSION"));
+    install_daemon_runtime_adapters();
 
     if let Some(worker_kind) = cli.daemon_worker.clone() {
         let worker_cwd = std::path::PathBuf::from(resolve_cwd(&cli));
@@ -261,7 +296,7 @@ fn main() -> ExitCode {
             .clone()
             .unwrap_or_else(|| format!("{}-{}", worker_kind, std::process::id()));
         let worker_result = rt.block_on(async {
-            daemon::supervisor::run_worker_mode(&worker_kind, &worker_id, worker_cwd).await
+            cc_daemon::supervisor::run_worker_mode(&worker_kind, &worker_id, worker_cwd).await
         });
         return match worker_result {
             Ok(()) => ExitCode::SUCCESS,
@@ -280,7 +315,7 @@ fn main() -> ExitCode {
     if !cli.print && cli.output_format.is_none() {
         let daemon_cwd = std::path::PathBuf::from(resolve_cwd(&cli));
         if let Some(code) =
-            daemon::process_state::try_run_management_command(&cli.prompt, &daemon_cwd, cli.port)
+            cc_daemon::process_state::try_run_management_command(&cli.prompt, &daemon_cwd, cli.port)
         {
             return code;
         }
@@ -845,7 +880,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             eprintln!("error: --daemon requires FEATURE_KAIROS=1");
             return Ok(ExitCode::FAILURE);
         }
-        daemon::process_state::write_started(cli.port, std::path::Path::new(&cwd))?;
+        cc_daemon::process_state::write_started(cli.port, std::path::Path::new(&cwd))?;
 
         // Set KAIROS state
         engine.update_app_state(|app| {
@@ -854,7 +889,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             app.autonomous_tick_ms = Some(30_000);
         });
 
-        let mut daemon_state = daemon::state::DaemonState::new(
+        let mut daemon_state = cc_daemon::state::DaemonState::new(
             engine.clone(),
             Arc::new(features::FLAGS.clone()),
             cli.port,
@@ -862,7 +897,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
         // Spawn team-memory-server if feature is enabled.
         let _team_memory_child = if features::enabled(Feature::TeamMemory) {
-            match daemon::team_memory_proxy::spawn_team_memory_server(
+            match cc_daemon::team_memory_proxy::spawn_team_memory_server(
                 cli.port,
                 std::path::Path::new(&cwd),
             )
@@ -889,24 +924,25 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         let supervisor_cwd = std::path::PathBuf::from(cwd.clone());
 
         let daemon_result = tokio::select! {
-            result = daemon::server::serve_http(http_state, cli.port) => {
+            result = cc_daemon::server::serve_http(http_state, cli.port) => {
                 result.map(|()| ExitCode::SUCCESS)
             }
-            _ = daemon::tick::tick_loop(tick_state), if tick_enabled => {
+            _ = cc_daemon::tick::tick_loop(tick_state), if tick_enabled => {
                 Ok(ExitCode::SUCCESS)
             }
             _ = tokio::signal::ctrl_c() => {
                 tracing::info!("daemon shutting down");
                 Ok(ExitCode::SUCCESS)
             }
-            result = daemon::supervisor::run_supervisor_loop(supervisor_cwd, cli.port) => {
+            result = cc_daemon::supervisor::run_supervisor_loop(supervisor_cwd, cli.port) => {
                 result.map(|()| ExitCode::SUCCESS)
             }
         };
-        if let Err(err) = daemon::supervisor::terminate_known_workers() {
+        if let Err(err) = cc_daemon::supervisor::terminate_known_workers() {
             warn!(error = %err, "failed to terminate daemon workers");
         }
-        if let Err(err) = daemon::process_state::write_stopped(cli.port, std::path::Path::new(&cwd))
+        if let Err(err) =
+            cc_daemon::process_state::write_stopped(cli.port, std::path::Path::new(&cwd))
         {
             warn!(error = %err, "failed to write daemon stopped state");
         }

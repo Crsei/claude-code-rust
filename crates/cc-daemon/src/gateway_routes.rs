@@ -1,6 +1,6 @@
 //! Remote-control gateway route wiring for the daemon HTTP server.
 
-use cc_daemon::protocol::{DaemonCommandKind, DaemonCommandStatus};
+use crate::protocol::{DaemonCommandKind, DaemonCommandStatus};
 use gateway::auth::{invalid_token_error, missing_token_error, GatewayAuthMode};
 use gateway::{
     api, BusySnapshot, GatewayAuthVerifier, GatewayBusySnapshotProvider, GatewayError,
@@ -108,7 +108,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let previous = std::env::var("CC_RUST_HOME").ok();
         std::env::set_var("CC_RUST_HOME", tmp.path());
-        crate::daemon::protocol_store()
+        crate::protocol_store()
             .enqueue_command(
                 ASSISTANT_WORKER_ID,
                 DaemonCommandKind::Submit,

@@ -1,5 +1,5 @@
+use crate::protocol;
 use anyhow::{Context, Result};
-use cc_daemon::protocol;
 use gateway::{GatewayStore, RunEvent, RunEventKind, RunId, RunStatus, SessionKeyPolicy};
 use serde_json::Value;
 

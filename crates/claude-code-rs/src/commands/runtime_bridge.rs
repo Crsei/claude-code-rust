@@ -22,7 +22,7 @@ pub(super) fn install_command_runtime_providers() {
     );
     cc_commands::runtime::set_remote_daemon_status_provider(remote_daemon_status_for_commands);
     cc_commands::runtime::set_remote_token_path_provider(
-        crate::daemon::process_state::control_token_path,
+        cc_daemon::process_state::control_token_path,
     );
     cc_commands::runtime::set_tool_policy_names_provider(tool_policy_names_for_commands);
     cc_commands::runtime::set_tool_list_provider(crate::tools::registry::get_all_tools);
@@ -65,8 +65,8 @@ pub(super) fn install_command_runtime_providers() {
     cc_commands::daemon_cmd::set_daemon_command_runtime(
         cc_commands::daemon_cmd::DaemonCommandRuntime {
             status_snapshot: daemon_status_snapshot_for_commands,
-            state_path: crate::daemon::process_state::state_path,
-            request_shutdown: crate::daemon::process_state::request_shutdown,
+            state_path: cc_daemon::process_state::state_path,
+            request_shutdown: cc_daemon::process_state::request_shutdown,
         },
     );
     cc_commands::sleep_cmd::set_sleep_command_runtime(
@@ -239,21 +239,21 @@ fn reload_plugins_for_commands() -> cc_commands::reload_plugins_cmd::ReloadRepor
 
 fn daemon_status_snapshot_for_commands(
 ) -> anyhow::Result<cc_commands::daemon_cmd::DaemonStatusSnapshot> {
-    Ok(match crate::daemon::process_state::status_snapshot()? {
-        crate::daemon::process_state::DaemonStatusSnapshot::Running(state) => {
+    Ok(match cc_daemon::process_state::status_snapshot()? {
+        cc_daemon::process_state::DaemonStatusSnapshot::Running(state) => {
             cc_commands::daemon_cmd::DaemonStatusSnapshot::Running(map_daemon_state(state))
         }
-        crate::daemon::process_state::DaemonStatusSnapshot::Stale(state) => {
+        cc_daemon::process_state::DaemonStatusSnapshot::Stale(state) => {
             cc_commands::daemon_cmd::DaemonStatusSnapshot::Stale(map_daemon_state(state))
         }
-        crate::daemon::process_state::DaemonStatusSnapshot::Stopped => {
+        cc_daemon::process_state::DaemonStatusSnapshot::Stopped => {
             cc_commands::daemon_cmd::DaemonStatusSnapshot::Stopped
         }
     })
 }
 
 fn map_daemon_state(
-    state: crate::daemon::process_state::DaemonProcessState,
+    state: cc_daemon::process_state::DaemonProcessState,
 ) -> cc_commands::daemon_cmd::DaemonProcessState {
     cc_commands::daemon_cmd::DaemonProcessState {
         pid: state.pid,
@@ -276,7 +276,7 @@ fn sleep_state_for_commands(
     duration_seconds: u64,
     reason: &str,
 ) -> anyhow::Result<cc_commands::sleep_cmd::DaemonSleepState> {
-    let state = crate::daemon::process_state::write_sleep_state(duration_seconds, reason)?;
+    let state = cc_daemon::process_state::write_sleep_state(duration_seconds, reason)?;
     Ok(cc_commands::sleep_cmd::DaemonSleepState {
         sleeping_until: state.sleeping_until,
     })
@@ -284,16 +284,16 @@ fn sleep_state_for_commands(
 
 fn remote_daemon_status_for_commands(
 ) -> Result<cc_commands::remote_cmd::LocalGatewayDaemonStatus, String> {
-    crate::daemon::gateway_client::LocalGatewayClient::daemon_status()
+    cc_daemon::gateway_client::LocalGatewayClient::daemon_status()
         .map(map_remote_daemon_status)
         .map_err(|error| error.to_string())
 }
 
 fn map_remote_daemon_status(
-    status: crate::daemon::gateway_client::LocalGatewayDaemonStatus,
+    status: cc_daemon::gateway_client::LocalGatewayDaemonStatus,
 ) -> cc_commands::remote_cmd::LocalGatewayDaemonStatus {
     match status {
-        crate::daemon::gateway_client::LocalGatewayDaemonStatus::Running {
+        cc_daemon::gateway_client::LocalGatewayDaemonStatus::Running {
             pid,
             base_url,
             health_url,
@@ -302,10 +302,10 @@ fn map_remote_daemon_status(
             base_url,
             health_url,
         },
-        crate::daemon::gateway_client::LocalGatewayDaemonStatus::Stale { pid } => {
+        cc_daemon::gateway_client::LocalGatewayDaemonStatus::Stale { pid } => {
             cc_commands::remote_cmd::LocalGatewayDaemonStatus::Stale { pid }
         }
-        crate::daemon::gateway_client::LocalGatewayDaemonStatus::Stopped => {
+        cc_daemon::gateway_client::LocalGatewayDaemonStatus::Stopped => {
             cc_commands::remote_cmd::LocalGatewayDaemonStatus::Stopped
         }
     }
@@ -314,7 +314,7 @@ fn map_remote_daemon_status(
 fn remote_capabilities_for_commands(
 ) -> cc_commands::remote_cmd::RemoteFuture<cc_commands::remote_cmd::GatewayCapabilitiesSnapshot> {
     Box::pin(async {
-        let client = crate::daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
+        let client = cc_daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
         let cap = client.capabilities().await?;
         Ok(cc_commands::remote_cmd::GatewayCapabilitiesSnapshot {
             version: cap.version,
@@ -329,7 +329,7 @@ fn remote_capabilities_for_commands(
 
 fn remote_adapters_for_commands() -> cc_commands::remote_cmd::RemoteFuture<Vec<AdapterStatus>> {
     Box::pin(async {
-        let client = crate::daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
+        let client = cc_daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
         client.adapters().await
     })
 }
@@ -338,7 +338,7 @@ fn remote_connect_adapter_for_commands(
     provider: AdapterProvider,
 ) -> cc_commands::remote_cmd::RemoteFuture<AdapterStatus> {
     Box::pin(async move {
-        let client = crate::daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
+        let client = cc_daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
         client.connect_adapter(provider).await
     })
 }
@@ -349,14 +349,14 @@ fn remote_test_adapter_message_for_commands(
     text: String,
 ) -> cc_commands::remote_cmd::RemoteFuture<AdapterStatus> {
     Box::pin(async move {
-        let client = crate::daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
+        let client = cc_daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
         client.test_adapter_message(provider, target, text).await
     })
 }
 
 fn remote_show_run_for_commands(run_id: RunId) -> cc_commands::remote_cmd::RemoteFuture<RunMeta> {
     Box::pin(async move {
-        let client = crate::daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
+        let client = cc_daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
         client.show_run(&run_id).await
     })
 }
@@ -365,7 +365,7 @@ fn remote_run_events_for_commands(
     run_id: RunId,
 ) -> cc_commands::remote_cmd::RemoteFuture<Vec<RunEvent>> {
     Box::pin(async move {
-        let client = crate::daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
+        let client = cc_daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
         client.run_events(&run_id).await
     })
 }
@@ -374,7 +374,7 @@ fn remote_stop_run_for_commands(
     run_id: RunId,
 ) -> cc_commands::remote_cmd::RemoteFuture<cc_commands::remote_cmd::GatewayRunActionResponse> {
     Box::pin(async move {
-        let client = crate::daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
+        let client = cc_daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
         let response = client.stop_run(&run_id).await?;
         Ok(cc_commands::remote_cmd::GatewayRunActionResponse {
             run_id: response.run_id,
