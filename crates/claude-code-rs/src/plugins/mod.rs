@@ -16,7 +16,7 @@ pub mod refresh;
 pub mod tools;
 
 pub use loader::PluginDiagnostic;
-pub use refresh::{reload_plugins, ReloadReport};
+pub use refresh::reload_plugins;
 
 use cc_plugins::{PluginEntry, PluginStatus};
 use parking_lot::Mutex;

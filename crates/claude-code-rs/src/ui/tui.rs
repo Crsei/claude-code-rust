@@ -24,8 +24,6 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
-use crate::commands as command_registry;
-
 #[path = "tui/commands.rs"]
 mod commands;
 #[path = "tui/engine_events.rs"]
@@ -148,8 +146,8 @@ pub async fn run_tui(
             app_state.settings.language.as_deref(),
         );
         let voice_supported = matches!(
-            command_registry::voice_cmd::current_feasibility(),
-            crate::voice::feasibility::Feasibility::Ready { .. }
+            cc_commands::voice_cmd::current_feasibility(),
+            cc_commands::voice::Feasibility::Ready { .. }
         );
         app.set_voice_settings(
             app_state.settings.voice_enabled.unwrap_or(false),

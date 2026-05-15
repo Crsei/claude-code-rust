@@ -1,20 +1,82 @@
 //! Slash-command contract and low-coupling command implementations.
 
+pub mod add_dir;
+pub mod advisor;
 pub mod agents_cmd;
+pub mod assistant;
+pub mod audit_export;
+pub mod branch;
+pub mod brief;
 pub mod browser;
+pub mod btw;
+pub mod channels;
+pub mod chrome_cmd;
 pub mod clear;
+pub mod commit;
+pub mod compact;
 pub mod config_cmd;
+pub mod context;
+pub mod coordinator;
+pub mod copy;
+pub mod cost;
+pub mod daemon_cmd;
+pub mod diff;
+pub mod doctor;
+pub mod dream;
+pub mod effort;
 pub mod exit;
+pub mod experimental;
+pub mod export;
+pub mod extra_usage;
+pub mod fast;
+pub mod files;
+pub mod gbranch;
+pub mod help;
+pub mod hooks_cmd;
+pub mod ide_cmd;
+pub mod init;
+pub mod insights;
+pub mod keybindings_cmd;
+pub mod login;
+pub mod login_code;
+pub mod logout;
+pub mod loop_cmd;
 pub mod lsp_cmd;
 pub mod mcp;
 pub mod memory;
 pub mod model;
+pub mod model_add;
+pub mod notify;
+pub mod permissions_cmd;
 pub mod plan;
 pub mod plan_workflow;
+pub mod plugin_cmd;
+pub mod rate_limit;
+pub mod recap;
+pub mod reload_plugins_cmd;
+pub mod remote_cmd;
+pub mod rename;
+pub mod resume;
+pub mod review;
+pub mod rewind;
+pub mod sandbox_cmd;
+pub mod schedule;
+pub mod security_review;
 pub mod session;
+pub mod session_export;
+pub mod simplify;
+pub mod skills_cmd;
+pub mod sleep_cmd;
+pub mod status;
+pub mod statusline_cmd;
 pub mod tasks_cmd;
 pub mod team_cmd;
+pub mod team_onboarding;
+pub mod terminal_env;
+pub mod terminal_setup;
 pub mod version;
+pub mod voice;
+pub mod voice_cmd;
 
 use std::path::PathBuf;
 
@@ -27,13 +89,17 @@ use cc_types::message::Message;
 
 pub mod runtime {
     use std::future::Future;
+    use std::path::PathBuf;
     use std::pin::Pin;
     use std::sync::{OnceLock, RwLock};
 
+    use cc_engine::status_line::payload::WorktreeStatus;
     use cc_ipc_protocol::subsystem_types::{LspRecommendationSettings, LspServerInfo};
     use cc_tasks::TaskEntry;
+    use cc_tools::tool::Tools;
+    use cc_types::message::Message;
 
-    use crate::CommandContext;
+    use crate::{CommandContext, CommandMetadata};
 
     type Installer = fn();
     type LspServersProvider = fn() -> Vec<LspServerInfo>;
@@ -44,6 +110,18 @@ pub mod runtime {
     type TaskGetProvider = fn(&str) -> Option<TaskEntry>;
     type TaskMutateProvider = fn(&str) -> Result<Option<TaskEntry>, String>;
     type TeamTaskSnapshotProvider = fn() -> Vec<TeamTaskSnapshot>;
+    type CommandMetadataProvider = fn() -> Vec<CommandMetadata>;
+    type WorktreeStatusProvider = fn() -> Option<WorktreeStatus>;
+    type RemoteDaemonStatusProvider =
+        fn() -> Result<crate::remote_cmd::LocalGatewayDaemonStatus, String>;
+    type RemoteTokenPathProvider = fn() -> PathBuf;
+    type ToolPolicyNamesProvider = fn(CommandToolPolicy) -> Vec<String>;
+    type ToolListProvider = fn() -> Tools;
+    type ForkRunner = fn(
+        CommandForkParams,
+    ) -> Pin<
+        Box<dyn Future<Output = anyhow::Result<CommandForkOutcome>> + Send + 'static>,
+    >;
     type TeamCommandExecutor = for<'a> fn(
         &'a str,
         &'a mut CommandContext,
@@ -60,6 +138,33 @@ pub mod runtime {
         Running,
         Stopped,
         Completed,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum CommandToolPolicy {
+        DefaultAgent,
+        Coordinator,
+    }
+
+    #[derive(Clone)]
+    pub struct CommandForkParams {
+        pub prompt: String,
+        pub cwd: String,
+        pub model: String,
+        pub fallback_model: Option<String>,
+        pub tools: Tools,
+        pub max_turns: Option<usize>,
+        pub parent_messages: Option<Vec<Message>>,
+        pub append_system_prompt: Option<String>,
+        pub custom_system_prompt: Option<String>,
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct CommandForkOutcome {
+        pub text: String,
+        pub had_error: bool,
+        pub duration_ms: u64,
+        pub agent_id: String,
     }
 
     #[derive(Debug, Clone)]
@@ -92,6 +197,18 @@ pub mod runtime {
     static TASK_DELETE_PROVIDER: OnceLock<RwLock<Option<TaskMutateProvider>>> = OnceLock::new();
     static TEAM_TASK_SNAPSHOT_PROVIDER: OnceLock<RwLock<Option<TeamTaskSnapshotProvider>>> =
         OnceLock::new();
+    static COMMAND_METADATA_PROVIDER: OnceLock<RwLock<Option<CommandMetadataProvider>>> =
+        OnceLock::new();
+    static WORKTREE_STATUS_PROVIDER: OnceLock<RwLock<Option<WorktreeStatusProvider>>> =
+        OnceLock::new();
+    static REMOTE_DAEMON_STATUS_PROVIDER: OnceLock<RwLock<Option<RemoteDaemonStatusProvider>>> =
+        OnceLock::new();
+    static REMOTE_TOKEN_PATH_PROVIDER: OnceLock<RwLock<Option<RemoteTokenPathProvider>>> =
+        OnceLock::new();
+    static TOOL_POLICY_NAMES_PROVIDER: OnceLock<RwLock<Option<ToolPolicyNamesProvider>>> =
+        OnceLock::new();
+    static TOOL_LIST_PROVIDER: OnceLock<RwLock<Option<ToolListProvider>>> = OnceLock::new();
+    static FORK_RUNNER: OnceLock<RwLock<Option<ForkRunner>>> = OnceLock::new();
     static TEAM_COMMAND_EXECUTOR: OnceLock<RwLock<Option<TeamCommandExecutor>>> = OnceLock::new();
 
     pub fn set_runtime_installer(installer: Installer) {
@@ -140,6 +257,34 @@ pub mod runtime {
 
     pub fn set_team_command_executor(executor: TeamCommandExecutor) {
         set_provider(&TEAM_COMMAND_EXECUTOR, executor);
+    }
+
+    pub fn set_command_metadata_provider(provider: CommandMetadataProvider) {
+        set_provider(&COMMAND_METADATA_PROVIDER, provider);
+    }
+
+    pub fn set_worktree_status_provider(provider: WorktreeStatusProvider) {
+        set_provider(&WORKTREE_STATUS_PROVIDER, provider);
+    }
+
+    pub fn set_remote_daemon_status_provider(provider: RemoteDaemonStatusProvider) {
+        set_provider(&REMOTE_DAEMON_STATUS_PROVIDER, provider);
+    }
+
+    pub fn set_remote_token_path_provider(provider: RemoteTokenPathProvider) {
+        set_provider(&REMOTE_TOKEN_PATH_PROVIDER, provider);
+    }
+
+    pub fn set_tool_policy_names_provider(provider: ToolPolicyNamesProvider) {
+        set_provider(&TOOL_POLICY_NAMES_PROVIDER, provider);
+    }
+
+    pub fn set_tool_list_provider(provider: ToolListProvider) {
+        set_provider(&TOOL_LIST_PROVIDER, provider);
+    }
+
+    pub fn set_fork_runner(runner: ForkRunner) {
+        set_provider(&FORK_RUNNER, runner);
     }
 
     fn set_provider<T: Copy>(slot: &OnceLock<RwLock<Option<T>>>, provider: T) {
@@ -222,6 +367,55 @@ pub mod runtime {
         get_provider(&TEAM_TASK_SNAPSHOT_PROVIDER)
             .map(|provider| provider())
             .unwrap_or_default()
+    }
+
+    pub(crate) fn command_metadata_snapshot() -> Vec<CommandMetadata> {
+        ensure_runtime_installed();
+        get_provider(&COMMAND_METADATA_PROVIDER)
+            .map(|provider| provider())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn current_worktree_status() -> Option<WorktreeStatus> {
+        ensure_runtime_installed();
+        get_provider(&WORKTREE_STATUS_PROVIDER).and_then(|provider| provider())
+    }
+
+    pub(crate) fn remote_daemon_status(
+    ) -> Result<crate::remote_cmd::LocalGatewayDaemonStatus, String> {
+        ensure_runtime_installed();
+        get_provider(&REMOTE_DAEMON_STATUS_PROVIDER)
+            .map(|provider| provider())
+            .unwrap_or(Ok(crate::remote_cmd::LocalGatewayDaemonStatus::Stopped))
+    }
+
+    pub(crate) fn remote_token_path() -> PathBuf {
+        ensure_runtime_installed();
+        get_provider(&REMOTE_TOKEN_PATH_PROVIDER)
+            .map(|provider| provider())
+            .unwrap_or_else(|| cc_config::paths::daemon_dir().join("control-token.json"))
+    }
+
+    pub(crate) fn tool_policy_names(policy: CommandToolPolicy) -> Vec<String> {
+        ensure_runtime_installed();
+        get_provider(&TOOL_POLICY_NAMES_PROVIDER)
+            .map(|provider| provider(policy))
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn available_tools() -> Tools {
+        ensure_runtime_installed();
+        get_provider(&TOOL_LIST_PROVIDER)
+            .map(|provider| provider())
+            .unwrap_or_default()
+    }
+
+    pub(crate) async fn run_fork(params: CommandForkParams) -> anyhow::Result<CommandForkOutcome> {
+        ensure_runtime_installed();
+        let Some(runner) = get_provider(&FORK_RUNNER) else {
+            anyhow::bail!("fork runtime adapter is unavailable");
+        };
+        runner(params).await
     }
 
     pub(crate) async fn execute_team_command(args: &str, ctx: &mut CommandContext) -> String {

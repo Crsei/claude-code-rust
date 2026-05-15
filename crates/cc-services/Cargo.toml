@@ -25,11 +25,13 @@ opentelemetry-langfuse = { workspace = true, optional = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
 parking_lot = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
 
 cc-config = { workspace = true }
 cc-engine = { workspace = true }
+cc-session = { workspace = true }
 cc-types = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-uuid = { workspace = true }

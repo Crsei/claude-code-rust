@@ -183,14 +183,13 @@ pub mod visual_regression;
 #[allow(dead_code)]
 #[path = "platform/audio_device.rs"]
 pub mod audio_device;
-#[path = "platform/browser.rs"]
-pub mod browser;
 #[allow(dead_code)]
 #[path = "platform/custom_terminal.rs"]
 pub mod custom_terminal;
 #[allow(dead_code)]
 #[path = "platform/debug_config.rs"]
 pub mod debug_config;
+#[allow(dead_code)]
 #[path = "platform/terminal_env.rs"]
 pub mod terminal_env;
 #[allow(dead_code)]

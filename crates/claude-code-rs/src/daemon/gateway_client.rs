@@ -1,17 +1,13 @@
 //! Local client for the loopback remote-control gateway.
 //!
-//! The client intentionally talks to the daemon's loopback HTTP API for
-//! mutating operations. Read-only run listing can inspect the gateway store so
-//! `/remote runs` remains useful when the daemon is stopped.
+//! The client intentionally talks to the daemon's loopback HTTP API for live
+//! gateway operations.
 
-use std::fs;
-use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use gateway::{
-    AdapterProvider, AdapterStatus, AdapterTestMessage, GatewayConfig, GatewayDiagnostic,
-    GatewayPersistence, GatewayStore, RunEvent, RunId, RunMeta, SessionKeyPolicy,
+    AdapterProvider, AdapterStatus, AdapterTestMessage, GatewayDiagnostic, RunEvent, RunId, RunMeta,
 };
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
@@ -248,67 +244,6 @@ impl LocalGatewayClient {
     fn url(&self, path: &str) -> String {
         format!("{}{}", self.base_url, path)
     }
-}
-
-pub fn list_local_runs(limit: usize) -> Result<Vec<RunMeta>> {
-    let persistence = GatewayPersistence::default();
-    let runs_dir = persistence.runs_dir.clone();
-    if !runs_dir.exists() {
-        return Ok(Vec::new());
-    }
-
-    let store = GatewayStore::new(persistence, SessionKeyPolicy::default());
-    let mut runs = Vec::new();
-    for entry in
-        fs::read_dir(&runs_dir).with_context(|| format!("failed to read {}", runs_dir.display()))?
-    {
-        let entry = entry?;
-        if !entry.file_type()?.is_dir() {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().to_string();
-        let Ok(run_id) = RunId::from_string(name) else {
-            continue;
-        };
-        if let Ok(meta) = store.load_run(&run_id) {
-            runs.push(meta);
-        }
-    }
-    runs.sort_by(|left, right| right.updated_at_ms.cmp(&left.updated_at_ms));
-    runs.truncate(limit);
-    Ok(runs)
-}
-
-pub fn load_local_run(run_id: &RunId) -> Result<RunMeta, GatewayDiagnostic> {
-    GatewayStore::new(GatewayPersistence::default(), SessionKeyPolicy::default())
-        .load_run(run_id)
-        .map_err(|error| error.into_diagnostic())
-}
-
-pub fn read_local_events(run_id: &RunId) -> Result<Vec<RunEvent>, GatewayDiagnostic> {
-    GatewayStore::new(GatewayPersistence::default(), SessionKeyPolicy::default())
-        .read_events(run_id)
-        .map_err(|error| error.into_diagnostic())
-}
-
-pub fn gateway_paths() -> GatewayPaths {
-    let config = GatewayConfig::default();
-    GatewayPaths {
-        gateway_dir: config.persistence.gateway_dir,
-        runs_dir: config.persistence.runs_dir,
-        adapters_dir: config.persistence.adapters_dir,
-        config_path: GatewayConfig::default_config_path(),
-        token_path: process_state::control_token_path(),
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct GatewayPaths {
-    pub gateway_dir: PathBuf,
-    pub runs_dir: PathBuf,
-    pub adapters_dir: PathBuf,
-    pub config_path: PathBuf,
-    pub token_path: PathBuf,
 }
 
 async fn decode_response<T>(response: reqwest::Response) -> Result<T, GatewayDiagnostic>

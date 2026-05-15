@@ -3,113 +3,7 @@
 //! Commands are invoked by typing `/command_name [args]` in the user prompt.
 //! Each command implements `CommandHandler` and is registered in `get_all_commands()`.
 
-// Essential commands
-pub mod context;
-pub mod coordinator;
-pub mod cost;
-pub mod diff;
-pub mod files;
-pub mod help;
-pub mod login;
-pub mod login_code;
-pub mod logout;
-pub mod permissions_cmd;
-pub mod resume;
-
-// Git & workflow
-pub mod branch;
-pub mod commit;
-pub mod gbranch;
-pub mod recap;
-pub mod review;
-pub mod security_review;
-
-// Model control
-pub mod effort;
-pub mod fast;
-pub mod model_add;
-
-// Memory & skills
-pub mod skills_cmd;
-
-// Fork-agent dependent commands (issues #37, #62)
-pub mod btw;
-pub mod simplify;
-
-// Advisor model plumbing (issue #33)
-pub mod advisor;
-
-// Scheduling / automation (issues #58, #60)
-pub mod loop_cmd;
-pub mod schedule;
-
-// Team onboarding (issue #63)
-pub mod team_onboarding;
-
-// Session management
-pub mod copy;
-pub mod init;
-pub mod insights;
-pub mod rename;
-pub mod rewind;
-pub mod status;
-
-// Agent Teams
-
-// Workspace
-pub mod add_dir;
-
-// Sandbox
-pub mod sandbox_cmd;
-
-// Keybindings
-pub mod keybindings_cmd;
-
-// Read-only browsers (issues #34, #39, #40, #54)
-pub mod doctor;
-pub mod hooks_cmd;
-
-// Scriptable status line (issue #11)
-pub mod statusline_cmd;
-
-// Terminal setup diagnostics (issue #12)
-pub mod terminal_setup;
-
-// Voice dictation (issue #13)
-pub mod voice_cmd;
-
-// Export
-pub mod audit_export;
-pub mod experimental;
-pub mod export;
-pub mod session_export;
-
-// Extended info
-pub mod extra_usage;
-pub mod rate_limit;
-
-// Context management
-pub mod compact;
-
-pub mod plugin_cmd;
-pub mod reload_plugins_cmd;
-
-// IDE integration (issue #41)
-pub mod ide_cmd;
-
-// First-party Chrome integration (Claude in Chrome)
-pub mod chrome_cmd;
-
-// KAIROS / assistant commands
-pub mod assistant;
-pub mod brief;
-pub mod channels;
-pub mod daemon_cmd;
-pub mod dream;
-pub mod notify;
-pub mod remote_cmd;
 mod runtime_bridge;
-pub mod sleep_cmd;
 
 use cc_commands::{command, command_metadata, sort_commands_for_display, Command};
 use cc_engine::command_runtime;
@@ -132,7 +26,7 @@ pub fn get_all_commands() -> Vec<Command> {
             "help",
             &["h", "?"],
             "Help V2: commands, quick surfaces, keys, and diagnostics hints",
-            help::HelpHandler,
+            cc_commands::help::HelpHandler,
         ),
         command(
             "clear",
@@ -150,7 +44,7 @@ pub fn get_all_commands() -> Vec<Command> {
             "diff",
             &[],
             "Show git diff of current changes",
-            diff::DiffHandler,
+            cc_commands::diff::DiffHandler,
         ),
         command(
             "exit",
@@ -174,7 +68,7 @@ pub fn get_all_commands() -> Vec<Command> {
             "cost",
             &["usage"],
             "Show token usage and cost for the current session",
-            cost::CostHandler,
+            cc_commands::cost::CostHandler,
         ),
         command(
             "session",
@@ -186,49 +80,49 @@ pub fn get_all_commands() -> Vec<Command> {
             "resume",
             &["sessions", "preview"],
             "Resume or preview a previous saved session",
-            resume::ResumeHandler,
+            cc_commands::resume::ResumeHandler,
         ),
         command(
             "rename",
             &[],
             "Set or clear the custom title for the current session",
-            rename::RenameHandler,
+            cc_commands::rename::RenameHandler,
         ),
         command(
             "rewind",
             &[],
             "Rewind the conversation to an earlier user turn",
-            rewind::RewindHandler,
+            cc_commands::rewind::RewindHandler,
         ),
         command(
             "insights",
             &[],
             "Session history analytics (cross-session statistics)",
-            insights::InsightsHandler,
+            cc_commands::insights::InsightsHandler,
         ),
         command(
             "files",
             &[],
             "List files referenced in the current conversation",
-            files::FilesHandler,
+            cc_commands::files::FilesHandler,
         ),
         command(
             "context",
             &["ctx"],
             "Show context usage information",
-            context::ContextHandler,
+            cc_commands::context::ContextHandler,
         ),
         command(
             "coordinator",
             &["coord"],
             "Enable or inspect coordinator mode for Agent Teams",
-            coordinator::CoordinatorHandler,
+            cc_commands::coordinator::CoordinatorHandler,
         ),
         command(
             "permissions",
             &["perms"],
             "View or modify tool permission settings",
-            permissions_cmd::PermissionsHandler,
+            cc_commands::permissions_cmd::PermissionsHandler,
         ),
         command(
             "plan",
@@ -240,45 +134,50 @@ pub fn get_all_commands() -> Vec<Command> {
             "login",
             &[],
             "Authenticate (API key, Anthropic OAuth, OpenAI Codex OAuth, Bedrock, Vertex)",
-            login::LoginHandler,
+            cc_commands::login::LoginHandler,
         ),
         command(
             "login-code",
             &[],
             "Complete OAuth login with authorization code",
-            login_code::LoginCodeHandler,
+            cc_commands::login_code::LoginCodeHandler,
         ),
         command(
             "logout",
             &[],
             "Clear stored authentication credentials",
-            logout::LogoutHandler,
+            cc_commands::logout::LogoutHandler,
         ),
         command(
             "commit",
             &[],
             "Create a git commit from current changes",
-            commit::CommitHandler,
+            cc_commands::commit::CommitHandler,
         ),
         command(
             "branch",
             &["br"],
             "Fork the current conversation into a new branch",
-            branch::BranchHandler,
+            cc_commands::branch::BranchHandler,
         ),
         command(
             "gbranch",
             &["gitbranch"],
             "Show or switch git branches",
-            gbranch::GitBranchHandler,
+            cc_commands::gbranch::GitBranchHandler,
         ),
         command(
             "effort",
             &[],
             "Set the thinking effort level (low/medium/high)",
-            effort::EffortHandler,
+            cc_commands::effort::EffortHandler,
         ),
-        command("fast", &[], "Toggle fast mode on/off", fast::FastHandler),
+        command(
+            "fast",
+            &[],
+            "Toggle fast mode on/off",
+            cc_commands::fast::FastHandler,
+        ),
         command(
             "memory",
             &["mem", "global-search", "quick-open"],
@@ -289,62 +188,67 @@ pub fn get_all_commands() -> Vec<Command> {
             "skills",
             &[],
             "List available skills",
-            skills_cmd::SkillsHandler,
+            cc_commands::skills_cmd::SkillsHandler,
         ),
         command(
             "init",
             &[],
             "Initialize project config and CLAUDE.md",
-            init::InitHandler,
+            cc_commands::init::InitHandler,
         ),
         command(
             "copy",
             &["cp"],
             "Copy the last assistant response to clipboard",
-            copy::CopyHandler,
+            cc_commands::copy::CopyHandler,
         ),
-        command("status", &[], "Show session status", status::StatusHandler),
+        command(
+            "status",
+            &[],
+            "Show session status",
+            cc_commands::status::StatusHandler,
+        ),
         command(
             "export",
             &["markdown-export"],
             "Export conversation to Markdown (.md)",
-            export::ExportHandler,
+            cc_commands::export::ExportHandler,
         ),
         command(
             "experimental",
             &["experiments", "exp"],
             "Inspect or override experimental feature gates",
-            experimental::ExperimentalHandler,
+            cc_commands::experimental::ExperimentalHandler,
         ),
         command(
             "audit-export",
             &["audit"],
             "Export session as verifiable audit record (.audit.json)",
-            audit_export::AuditExportHandler,
+            cc_commands::audit_export::AuditExportHandler,
         ),
         command(
             "session-export",
             &["sexport", "structured-export"],
             "Export session as structured JSON data package (.session.json)",
-            session_export::SessionExportHandler,
+            cc_commands::session_export::SessionExportHandler,
         ),
         command(
             "extra-usage",
             &["eu"],
             "Show extended token usage and cost analysis",
-            extra_usage::ExtraUsageHandler,
+            cc_commands::extra_usage::ExtraUsageHandler,
         ),
         command(
             "rate-limit-options",
             &["rlo", "rate-limit"],
             "Show rate limit information for the current model",
-            rate_limit::RateLimitHandler,
+            cc_commands::rate_limit::RateLimitHandler,
         ),
         command(
             "compact",
             &[],
             "Compact conversation to reduce token usage",
-            compact::CompactHandler,
+            cc_commands::compact::CompactHandler,
         ),
         command(
             "mcp",
@@ -356,7 +260,7 @@ pub fn get_all_commands() -> Vec<Command> {
             "ide",
             &[],
             "Detect, select, or reconnect the IDE MCP bridge",
-            ide_cmd::IdeHandler,
+            cc_commands::ide_cmd::IdeHandler,
         ),
         command(
             "lsp",
@@ -368,109 +272,109 @@ pub fn get_all_commands() -> Vec<Command> {
             "chrome",
             &[],
             "Claude in Chrome (first-party integration) status + reconnect",
-            chrome_cmd::ChromeHandler,
+            cc_commands::chrome_cmd::ChromeHandler,
         ),
         command(
             "plugin",
             &[],
             "Plugin management (list, status, enable, disable)",
-            plugin_cmd::PluginHandler,
+            cc_commands::plugin_cmd::PluginHandler,
         ),
         command(
             "reload-plugins",
             &[],
             "Hot-refresh the plugin registry",
-            reload_plugins_cmd::ReloadPluginsHandler,
+            cc_commands::reload_plugins_cmd::ReloadPluginsHandler,
         ),
         command(
             "model-add",
             &["ma"],
             "Add a model with token pricing to .env",
-            model_add::ModelAddHandler,
+            cc_commands::model_add::ModelAddHandler,
         ),
         command(
             "brief",
             &[],
             "Toggle Brief output mode (KAIROS)",
-            brief::BriefHandler,
+            cc_commands::brief::BriefHandler,
         ),
         command(
             "sleep",
             &[],
             "Set proactive sleep duration",
-            sleep_cmd::SleepCmdHandler,
+            cc_commands::sleep_cmd::SleepCmdHandler,
         ),
         command(
             "assistant",
             &["kairos"],
             "View assistant mode status",
-            assistant::AssistantHandler,
+            cc_commands::assistant::AssistantHandler,
         ),
         command(
             "daemon",
             &[],
             "View/control daemon process",
-            daemon_cmd::DaemonCmdHandler,
+            cc_commands::daemon_cmd::DaemonCmdHandler,
         ),
         command(
             "notify",
             &[],
             "Push notification settings",
-            notify::NotifyHandler,
+            cc_commands::notify::NotifyHandler,
         ),
         command(
             "remote",
             &[],
             "Inspect and control the local remote-control gateway",
-            remote_cmd::RemoteHandler,
+            cc_commands::remote_cmd::RemoteHandler,
         ),
         command(
             "channels",
             &[],
             "View connected channels",
-            channels::ChannelsHandler,
+            cc_commands::channels::ChannelsHandler,
         ),
         command(
             "dream",
             &["logs"],
             "Distill daily logs into memory",
-            dream::DreamHandler,
+            cc_commands::dream::DreamHandler,
         ),
         command(
             "add-dir",
             &[],
             "Add a new working directory",
-            add_dir::AddDirHandler,
+            cc_commands::add_dir::AddDirHandler,
         ),
         command(
             "sandbox",
             &[],
             "View or toggle sandbox + network access settings",
-            sandbox_cmd::SandboxHandler,
+            cc_commands::sandbox_cmd::SandboxHandler,
         ),
         command(
             "keybindings",
             &["keys", "shortcuts"],
             "View, edit, or reload keybindings.json",
-            keybindings_cmd::KeybindingsHandler,
+            cc_commands::keybindings_cmd::KeybindingsHandler,
         ),
         command(
             "statusline",
             &["status-line"],
             "View, edit, or test the scriptable status line",
-            statusline_cmd::StatusLineHandler,
+            cc_commands::statusline_cmd::StatusLineHandler,
         ),
         command(
             "terminal-setup",
             &["term-setup", "terminal"],
             "Diagnose terminal env + print Shift+Enter / tmux / notification tips",
-            terminal_setup::TerminalSetupHandler,
+            cc_commands::terminal_setup::TerminalSetupHandler,
         ),
         command(
             "voice",
             &["dictation"],
             "Inspect compatibility-only voice settings (runtime voice unsupported)",
-            voice_cmd::VoiceHandler,
+            cc_commands::voice_cmd::VoiceHandler,
         ),
         command(
             "team",
@@ -482,25 +386,25 @@ pub fn get_all_commands() -> Vec<Command> {
             "review",
             &[],
             "Review a pull request using a local gh pr workflow",
-            review::ReviewHandler,
+            cc_commands::review::ReviewHandler,
         ),
         command(
             "security-review",
             &["secreview"],
             "Run a focused security review of the current branch diff",
-            security_review::SecurityReviewHandler,
+            cc_commands::security_review::SecurityReviewHandler,
         ),
         command(
             "recap",
             &[],
             "Summarize the current session (short | long)",
-            recap::RecapHandler,
+            cc_commands::recap::RecapHandler,
         ),
         command(
             "hooks",
             &[],
             "Read-only merged hook tree (managed + user + project + local)",
-            hooks_cmd::HooksHandler,
+            cc_commands::hooks_cmd::HooksHandler,
         ),
         command(
             "agents",
@@ -515,7 +419,7 @@ pub fn get_all_commands() -> Vec<Command> {
             "doctor",
             &["diagnostics", "diag"],
             "Aggregated diagnostics (install, auth, settings, MCP, keybindings, terminal)",
-            doctor::DoctorHandler,
+            cc_commands::doctor::DoctorHandler,
         ),
         command(
             "tasks",
@@ -528,39 +432,39 @@ pub fn get_all_commands() -> Vec<Command> {
             "btw",
             &[],
             "Ask a side question in a forked agent",
-            btw::BtwHandler,
+            cc_commands::btw::BtwHandler,
         ),
         command(
             "simplify",
             &[],
             "Run a multi-agent simplification review of recent changes",
-            simplify::SimplifyHandler,
+            cc_commands::simplify::SimplifyHandler,
         ),
         command(
             "advisor",
             &[],
             "Show, set, or clear the advisor model",
-            advisor::AdvisorHandler,
+            cc_commands::advisor::AdvisorHandler,
         ),
         // Scheduling / automation (issues #58, #60).
         command(
             "loop",
             &[],
             "Register a recurring local task or slash command and run it once",
-            loop_cmd::LoopHandler,
+            cc_commands::loop_cmd::LoopHandler,
         ),
         command(
             "schedule",
             &["cron"],
             "Manage local cron tasks (add, list, pause, trigger, remove)",
-            schedule::ScheduleHandler,
+            cc_commands::schedule::ScheduleHandler,
         ),
         // Team onboarding (issue #63).
         command(
             "team-onboarding",
             &["teamonboarding"],
             "Generate a teammate onboarding guide from project and team state",
-            team_onboarding::TeamOnboardingHandler,
+            cc_commands::team_onboarding::TeamOnboardingHandler,
         ),
     ];
     sort_commands_for_display(&mut commands);
