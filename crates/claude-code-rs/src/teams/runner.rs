@@ -245,7 +245,7 @@ fn release_teammate_tasks(
     identity: &TeammateIdentity,
     reason: cc_tasks::TeammateTaskExitReason,
 ) -> cc_tasks::UnassignTeammateTasksResult {
-    let result = crate::tools::tasks::unassign_teammate_tasks(
+    let result = crate::tasks::unassign_teammate_tasks(
         &identity.team_name,
         &identity.agent_id,
         &identity.agent_name,

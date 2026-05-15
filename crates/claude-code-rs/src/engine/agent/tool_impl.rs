@@ -143,7 +143,7 @@ impl Tool for AgentTool {
                 "mode": params.mode.clone(),
                 "backend": "in-process",
             });
-            let mut result = crate::tools::team_spawn::TeamSpawnTool
+            let mut result = crate::teams::team_spawn::TeamSpawnTool
                 .call(spawn_input, ctx, _parent, _on_progress)
                 .await?;
             annotate_agent_teammate_result(&mut result, &params.prompt);

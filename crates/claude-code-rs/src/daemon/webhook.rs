@@ -186,7 +186,7 @@ fn deliver_webhook_event(
             .split_once('\n')
             .and_then(|(_, body)| serde_json::from_str::<Value>(body).ok())
             .unwrap_or(Value::Null);
-        let Some(activity) = crate::tools::pr_activity::parse_github_pr_activity(
+        let Some(activity) = crate::teams::pr_activity::parse_github_pr_activity(
             &payload,
             event.as_deref(),
             idempotency_key.as_deref(),
@@ -197,7 +197,7 @@ fn deliver_webhook_event(
                 "event": event,
             }));
         };
-        return match crate::tools::pr_activity::route_github_pr_activity(&activity) {
+        return match crate::teams::pr_activity::route_github_pr_activity(&activity) {
             Ok(result) => Json(json!({
                 "status": "received",
                 "source": "github",

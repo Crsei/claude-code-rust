@@ -407,7 +407,7 @@ async fn kill(ctx: &mut cc_commands::CommandContext, rest: &str) -> String {
     let backend = InProcessBackend::new();
     let killed = backend.kill(&agent_id).await;
     if killed {
-        let unassigned = crate::tools::tasks::unassign_teammate_tasks(
+        let unassigned = crate::tasks::unassign_teammate_tasks(
             &tc.team_name,
             &agent_id,
             name,
@@ -455,7 +455,7 @@ async fn delete(ctx: &mut cc_commands::CommandContext, rest: &str) -> String {
         for member in helpers::get_non_lead_members(&team_file) {
             if member.backend_type.unwrap_or(BackendType::InProcess) == BackendType::InProcess {
                 let _ = backend.kill(&member.agent_id).await;
-                let unassigned = crate::tools::tasks::unassign_teammate_tasks(
+                let unassigned = crate::tasks::unassign_teammate_tasks(
                     name,
                     &member.agent_id,
                     &member.name,

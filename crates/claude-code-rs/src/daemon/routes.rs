@@ -691,7 +691,7 @@ mod tests {
         let _github_secret = EnvGuard::set("CC_RUST_GITHUB_WEBHOOK_SECRET", "route-secret");
         let _legacy_secret = EnvGuard::set("GITHUB_WEBHOOK_SECRET", "");
         crate::teams::helpers::create_team("phase4-route", None, None, ".").unwrap();
-        crate::tools::pr_activity::subscribe(
+        crate::teams::pr_activity::subscribe(
             "AIclassmanager".into(),
             "cc-rust".into(),
             42,

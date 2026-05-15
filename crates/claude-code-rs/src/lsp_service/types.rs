@@ -1,9 +1,9 @@
 //! Shared LSP result types used by both the LSP service (this crate) and the
-//! `Lsp` tool wrapper in `tools::lsp`.
+//! `Lsp` tool wrapper in `lsp_service::tool`.
 //!
 //! Previously these lived in `tools::lsp`, which produced a
 //! `lsp_service -> tools` edge that blocked Phase 6 crate extraction. Moving
-//! them here reverses the direction: `tools::lsp` now imports from
+//! them here reverses the direction: `lsp_service::tool` now imports from
 //! `lsp_service::types`, which is the natural direction given the tool is a
 //! thin wrapper over the service.
 

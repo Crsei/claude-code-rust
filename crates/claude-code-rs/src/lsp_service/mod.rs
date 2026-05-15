@@ -10,6 +10,7 @@
 
 pub mod client;
 pub mod conversions;
+pub mod tool;
 pub mod types;
 
 use std::collections::{HashMap, HashSet};

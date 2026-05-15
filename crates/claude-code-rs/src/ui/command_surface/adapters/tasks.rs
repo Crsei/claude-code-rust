@@ -20,7 +20,7 @@ pub(crate) fn elapsed_ms_since_timestamp(timestamp: i64) -> u64 {
 }
 
 pub(crate) fn task_surface_items() -> Vec<TaskSurfaceItem> {
-    let mut items = crate::tools::tasks::global_store()
+    let mut items = crate::tasks::global_store()
         .list()
         .into_iter()
         .map(tool_task_surface_item)

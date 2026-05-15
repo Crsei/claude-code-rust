@@ -87,7 +87,7 @@ impl CommandHandler for StatusHandler {
         } else {
             lines.push("Team:        none".to_string());
         }
-        let tool_tasks = crate::tools::tasks::global_store().list();
+        let tool_tasks = crate::tasks::global_store().list();
         let active_tool_tasks = tool_tasks
             .iter()
             .filter(|task| {

@@ -119,10 +119,8 @@ impl LspOperation {
 // ---------------------------------------------------------------------------
 //
 // Moved to `crate::lsp_service::types` in Phase 6 prep so the `lsp_service`
-// crate no longer has to depend on `crate::tools::lsp` (breaks the
-// `tools::lsp <-> lsp_service` cycle). Re-exported here so existing
-// `crate::tools::lsp::{HoverInfo, SourceLocation, SymbolInfo}` call sites
-// keep compiling.
+// crate no longer has to depend on this tool wrapper. Re-exported here for
+// callers that want the tool-facing DTOs from the LSP tool module.
 pub use crate::lsp_service::types::{CompletionItemInfo, HoverInfo, SourceLocation, SymbolInfo};
 use cc_ipc_protocol::subsystem_types::LspDiagnostic;
 

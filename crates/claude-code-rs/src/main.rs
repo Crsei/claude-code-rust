@@ -21,10 +21,13 @@ mod commands;
 mod computer_use;
 mod engine;
 mod safety;
+mod skills;
 mod startup;
+mod tasks;
 mod tools;
 mod ui;
 mod voice;
+mod worktree;
 mod worktree_hooks;
 
 // Plugin system

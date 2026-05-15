@@ -52,8 +52,11 @@ pub mod helpers;
 pub mod identity;
 pub mod in_process;
 pub mod mailbox;
+pub mod pr_activity;
 pub mod protocol;
 pub mod runner;
+pub mod send_message;
+pub mod team_spawn;
 pub mod types;
 
 // ---------------------------------------------------------------------------

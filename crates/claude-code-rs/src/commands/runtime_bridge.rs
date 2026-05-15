@@ -30,21 +30,21 @@ fn builtin_agent_prompt_for_commands(name: &str) -> Option<String> {
 }
 
 fn tool_tasks_for_commands() -> Vec<cc_tasks::TaskEntry> {
-    crate::tools::tasks::global_store().list()
+    crate::tasks::global_store().list()
 }
 
 fn get_tool_task_for_commands(id: &str) -> Option<cc_tasks::TaskEntry> {
-    crate::tools::tasks::global_store().get(id)
+    crate::tasks::global_store().get(id)
 }
 
 fn stop_tool_task_for_commands(id: &str) -> Result<Option<cc_tasks::TaskEntry>, String> {
-    crate::tools::tasks::global_store()
+    crate::tasks::global_store()
         .try_stop(id)
         .map_err(|err| err.to_string())
 }
 
 fn delete_tool_task_for_commands(id: &str) -> Result<Option<cc_tasks::TaskEntry>, String> {
-    crate::tools::tasks::global_store()
+    crate::tasks::global_store()
         .try_delete(id)
         .map_err(|err| err.to_string())
 }
