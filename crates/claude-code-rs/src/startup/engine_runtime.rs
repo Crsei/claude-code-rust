@@ -87,31 +87,31 @@ impl AgentTaskStore for RootAgentTaskStore {
         description: &str,
         options: TaskCreateOptions,
     ) -> Result<TaskEntry> {
-        crate::tasks::global_store().try_create_with_options(subject, description, options)
+        cc_tasks::global_store().try_create_with_options(subject, description, options)
     }
 
     fn try_update_status(&self, id: &str, status: TaskStatus) -> Result<Option<TaskEntry>> {
-        crate::tasks::global_store().try_update_status(id, status)
+        cc_tasks::global_store().try_update_status(id, status)
     }
 
     fn register_runtime_handle(&self, id: &str, cancellation_token: CancellationToken) -> bool {
-        crate::tasks::global_store().register_runtime_handle(id, cancellation_token)
+        cc_tasks::global_store().register_runtime_handle(id, cancellation_token)
     }
 
     fn append_output(&self, id: &str, output: &str) -> Option<TaskEntry> {
-        crate::tasks::global_store().append_output(id, output)
+        cc_tasks::global_store().append_output(id, output)
     }
 
     fn try_stop(&self, id: &str) -> Result<Option<TaskEntry>> {
-        crate::tasks::global_store().try_stop(id)
+        cc_tasks::global_store().try_stop(id)
     }
 
     fn get_by_agent_id(&self, agent_id: &str) -> Option<TaskEntry> {
-        crate::tasks::global_store().get_by_agent_id(agent_id)
+        cc_tasks::global_store().get_by_agent_id(agent_id)
     }
 
     fn unregister_runtime_handle(&self, id: &str) -> Option<TaskRuntimeHandle> {
-        crate::tasks::global_store().unregister_runtime_handle(id)
+        cc_tasks::global_store().unregister_runtime_handle(id)
     }
 
     fn unassign_teammate_tasks(
@@ -121,6 +121,6 @@ impl AgentTaskStore for RootAgentTaskStore {
         teammate_name: &str,
         reason: cc_tasks::TeammateTaskExitReason,
     ) -> cc_tasks::UnassignTeammateTasksResult {
-        crate::tasks::unassign_teammate_tasks(team_name, teammate_id, teammate_name, reason)
+        cc_tasks::unassign_teammate_tasks(team_name, teammate_id, teammate_name, reason)
     }
 }

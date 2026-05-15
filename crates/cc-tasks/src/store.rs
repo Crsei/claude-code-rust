@@ -1,8 +1,6 @@
 use super::*;
-use cc_tasks::{
-    TaskClaimFailure, TaskClaimFailureReason, TaskCreateOptions, TaskEntry, TaskRuntimeHandle,
-    TaskStatus, TaskUpdateFields, UnassignedTaskSummary,
-};
+use crate::lists::TaskListLock;
+use crate::repository::TaskRepository;
 
 /// Shared task store backed by a durable repository and runtime handles.
 #[derive(Debug, Clone)]
@@ -153,7 +151,7 @@ impl TaskStore {
         }
     }
 
-    pub(super) fn try_update_fields(
+    pub fn try_update_fields(
         &self,
         id: &str,
         updates: TaskUpdateFields,
@@ -223,7 +221,7 @@ impl TaskStore {
         Ok(Some(updated))
     }
 
-    pub(super) fn claim_task(
+    pub fn claim_task(
         &self,
         id: &str,
         owner: &str,
@@ -372,7 +370,7 @@ impl TaskStore {
         self.try_delete(id).ok().flatten()
     }
 
-    pub(super) fn unassign_teammate_tasks(
+    pub fn unassign_teammate_tasks(
         &self,
         teammate_id: &str,
         teammate_name: &str,
@@ -381,7 +379,7 @@ impl TaskStore {
             .unwrap_or_default()
     }
 
-    pub(super) fn try_unassign_teammate_tasks(
+    pub fn try_unassign_teammate_tasks(
         &self,
         teammate_id: &str,
         teammate_name: &str,

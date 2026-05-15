@@ -68,7 +68,7 @@ pub fn run_export_ui_snapshots(output_dir: &Path) -> ExitCode {
 /// required for the prompt builder (tools, MCP/browser detection, merged
 /// language/style) without running the full Phase B pipeline.
 pub fn run_dump_system_prompt(cli: &Cli) -> ExitCode {
-    crate::plugins::init_plugins();
+    cc_plugins::init_plugins();
     let tools = registry::get_tools_for_active_session();
     let provider_default =
         cc_api::api::client::ApiClient::from_env().map(|c| c.config().default_model.clone());

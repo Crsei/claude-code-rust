@@ -776,9 +776,18 @@ dependencies = [
 name = "cc-lsp-service"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "async-trait",
+ "cc-config",
+ "cc-tools",
  "cc-types",
+ "lsp-types",
+ "parking_lot",
  "serde",
  "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -845,9 +854,19 @@ name = "cc-plugins"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
+ "cc-config",
+ "cc-mcp",
+ "cc-tools",
  "cc-types",
+ "chrono",
+ "parking_lot",
  "serde",
  "serde_json",
+ "serial_test",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -956,9 +975,16 @@ dependencies = [
 name = "cc-tasks"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs",
+ "parking_lot",
  "serde",
  "serde_json",
+ "tokio",
  "tokio-util",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

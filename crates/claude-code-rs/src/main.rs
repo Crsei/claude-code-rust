@@ -23,7 +23,6 @@ mod engine;
 mod safety;
 mod skills;
 mod startup;
-mod tasks;
 mod tools;
 mod ui;
 mod voice;
@@ -32,7 +31,6 @@ mod worktree_hooks;
 
 // Plugin system
 mod plan_workflow;
-mod plugins;
 
 // MCP (Model Context Protocol) server layer
 mod mcp;
@@ -41,7 +39,6 @@ mod mcp;
 mod browser;
 
 // LSP service layer
-mod lsp_service;
 
 // IDE detection + selection + MCP bridge (issue #41)
 mod ide;
@@ -155,13 +152,43 @@ use cc_engine::types::config::QueryEngineConfig;
 
 fn install_daemon_runtime_adapters() {
     cc_daemon::runtime::set_runtime_adapters(cc_daemon::runtime::DaemonRuntimeAdapters {
-        init_plugins: crate::plugins::init_plugins,
+        init_plugins: cc_plugins::init_plugins,
         active_tools: crate::tools::registry::get_tools_for_active_session,
         commands: crate::commands::get_all_commands,
         command_dispatcher: daemon_command_dispatcher,
         command_executor: daemon_command_executor,
         route_github_pr_activity: daemon_route_github_pr_activity,
     });
+}
+
+fn discover_plugin_skills_for_root() -> Vec<cc_skills::SkillDefinition> {
+    let mut out = Vec::new();
+
+    for contributed in cc_plugins::discover_plugin_skill_definitions() {
+        let source = cc_skills::SkillSource::Plugin(contributed.plugin_id.clone());
+        let mut skill =
+            match cc_skills::loader::load_skill_from_file_path(&contributed.path, source) {
+                Some(skill) => skill,
+                None => {
+                    warn!(
+                        plugin = %contributed.plugin_id,
+                        path = %contributed.path.display(),
+                        "Plugin: failed to load contributed skill file"
+                    );
+                    continue;
+                }
+            };
+
+        skill.name = contributed.name;
+        if let Some(desc) = contributed.description {
+            if !desc.trim().is_empty() {
+                skill.frontmatter.description = desc;
+            }
+        }
+        out.push(skill);
+    }
+
+    out
 }
 
 fn daemon_command_dispatcher() -> Arc<dyn cc_types::commands::CommandDispatcher> {
@@ -383,15 +410,15 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     );
 
     // B.3: Register tools
-    plugins::init_plugins();
+    cc_plugins::init_plugins();
     let mut tools = registry::get_tools_for_active_session();
     info!(count = tools.len(), "tools registered");
 
     // B.3b: Initialize plugin system
-    plugins::init_plugins();
+    cc_plugins::init_plugins();
 
     // B.3c: Initialize skills (bundled/user/project + plugin)
-    let plugin_skills = plugins::discover_plugin_skills();
+    let plugin_skills = discover_plugin_skills_for_root();
     if !plugin_skills.is_empty() {
         info!(
             count = plugin_skills.len(),

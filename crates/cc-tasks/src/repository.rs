@@ -1,5 +1,4 @@
 use super::*;
-pub(super) use cc_tasks::{PersistedTaskFile, PersistedTaskRecord};
 
 #[derive(Debug)]
 pub(super) struct TaskRepository {

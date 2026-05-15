@@ -20,7 +20,7 @@ use tracing::{info, warn};
 use cc_engine::lifecycle::QueryEngine;
 use cc_tasks::{TaskCreateOptions, TaskEntry, TaskStatus};
 
-use crate::tasks::global_store;
+use cc_tasks::global_store;
 use crate::worktree_hooks::{
     default_agent_worktree_path, ensure_worktree_parent, run_worktree_create_hook,
 };
@@ -293,7 +293,7 @@ struct AgentRuntime {
     agent_model: String,
     depth: usize,
     bg_tx: cc_types::agent_channel::AgentSender,
-    task_store: crate::tasks::TaskStore,
+    task_store: cc_tasks::TaskStore,
     cancellation_token: CancellationToken,
     startup_warning: Option<String>,
     worktree: Option<WorktreeRuntime>,

@@ -13,7 +13,7 @@ use tokio::process::Command;
 use tracing::{debug, warn};
 
 use super::transport::{self, JsonRpcTransport};
-use super::types::{DocumentChange, DocumentSyncState};
+use super::types::{DiagnosticRange, DocumentChange, DocumentSyncState, LspDiagnostic, LspEvent};
 use super::LspServerConfig;
 
 // ---------------------------------------------------------------------------
@@ -425,7 +425,7 @@ impl LspClient {
                 text: next_text,
             },
         );
-        crate::lsp_service::clear_delivered_diagnostics(uri);
+        crate::clear_delivered_diagnostics(uri);
         debug!(uri, version = next_version, "changed file on LSP server");
         Ok(state)
     }
@@ -539,7 +539,7 @@ impl LspClient {
             "textDocument/publishDiagnostics" => {
                 if let Some(params) = msg.get("params") {
                     let event = parse_diagnostics_notification(params);
-                    crate::lsp_service::record_diagnostics_event(event);
+                    crate::record_diagnostics_event(event);
                 }
             }
             "workspace/configuration" => {
@@ -798,11 +798,7 @@ fn byte_index_for_position(text: &str, line: u32, utf16_character: u32) -> Resul
 }
 
 /// Parse a `textDocument/publishDiagnostics` notification into an LspEvent.
-fn parse_diagnostics_notification(
-    params: &serde_json::Value,
-) -> cc_ipc_protocol::subsystem_events::LspEvent {
-    use cc_ipc_protocol::subsystem_types::{DiagnosticRange, LspDiagnostic};
-
+fn parse_diagnostics_notification(params: &serde_json::Value) -> LspEvent {
     let uri = params["uri"].as_str().unwrap_or_default().to_string();
     let diagnostics = params["diagnostics"]
         .as_array()
@@ -838,7 +834,7 @@ fn parse_diagnostics_notification(
         })
         .unwrap_or_default();
 
-    cc_ipc_protocol::subsystem_events::LspEvent::DiagnosticsPublished { uri, diagnostics }
+    LspEvent::DiagnosticsPublished { uri, diagnostics }
 }
 
 // ---------------------------------------------------------------------------
@@ -1022,10 +1018,7 @@ mod tests {
         });
         let event = parse_diagnostics_notification(&params);
         match event {
-            cc_ipc_protocol::subsystem_events::LspEvent::DiagnosticsPublished {
-                uri,
-                diagnostics,
-            } => {
+            LspEvent::DiagnosticsPublished { uri, diagnostics } => {
                 assert_eq!(uri, "file:///src/main.rs");
                 assert_eq!(diagnostics.len(), 1);
                 assert_eq!(diagnostics[0].severity, "error");
@@ -1044,10 +1037,7 @@ mod tests {
         });
         let event = parse_diagnostics_notification(&params);
         match event {
-            cc_ipc_protocol::subsystem_events::LspEvent::DiagnosticsPublished {
-                diagnostics,
-                ..
-            } => {
+            LspEvent::DiagnosticsPublished { diagnostics, .. } => {
                 assert!(diagnostics.is_empty());
             }
             _ => panic!("expected DiagnosticsPublished"),
@@ -1058,7 +1048,7 @@ mod tests {
     fn apply_document_change_replaces_ascii_range() {
         let mut text = "fn main() {\n    let x = 1;\n}\n".to_string();
         let change = DocumentChange {
-            range: cc_ipc_protocol::SourceRange {
+            range: crate::types::SourceRange {
                 start_line: 2,
                 start_character: 9,
                 end_line: 2,

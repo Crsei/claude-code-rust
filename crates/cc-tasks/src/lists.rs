@@ -1,12 +1,12 @@
 use super::*;
 
 #[derive(Debug)]
-pub(super) struct TaskListLock {
+pub(crate) struct TaskListLock {
     path: PathBuf,
 }
 
 impl TaskListLock {
-    pub(super) fn acquire(dir: PathBuf) -> Result<Self> {
+    pub(crate) fn acquire(dir: PathBuf) -> Result<Self> {
         fs::create_dir_all(&dir)
             .with_context(|| format!("failed to create task dir {}", dir.display()))?;
         let path = dir.join(TASK_LIST_LOCK_FILE);
@@ -86,7 +86,17 @@ fn task_lists_root() -> PathBuf {
 
     #[cfg(not(test))]
     {
-        cc_config::paths::tasks_dir()
+        if let Ok(root) = std::env::var("CC_RUST_HOME") {
+            let root = root.trim();
+            if !root.is_empty() {
+                return PathBuf::from(root).join("tasks");
+            }
+        }
+
+        dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".cc-rust")
+            .join("tasks")
     }
 }
 
@@ -232,43 +242,54 @@ fn env_task_list_id(name: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-pub fn task_list_id_for_context(ctx: &ToolUseContext) -> String {
+#[derive(Debug, Clone, Default)]
+pub struct TaskListScope {
+    pub explicit_task_list_id: Option<String>,
+    pub scoped_team_name: Option<String>,
+    pub app_team_name: Option<String>,
+    pub session_id: Option<String>,
+}
+
+pub fn task_list_id_from_parts(scope: TaskListScope) -> String {
     if let Some(id) = env_task_list_id(CC_RUST_TASK_LIST_ID_ENV)
         .or_else(|| env_task_list_id(CLAUDE_CODE_TASK_LIST_ID_ENV))
     {
         return id;
     }
 
-    if let Some(team_name) = cc_teams::context::try_get_team_name()
+    if let Some(id) = scope
+        .explicit_task_list_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        return id;
+    }
+
+    if let Some(team_name) = scope
+        .scoped_team_name
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
     {
         return team_name;
     }
 
-    let app_state = (ctx.get_app_state)();
-    if let Some(team_name) = app_state
-        .team_context
-        .as_ref()
-        .map(|team| team.team_name.trim().to_string())
+    if let Some(team_name) = scope
+        .app_team_name
+        .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+        .or_else(|| env_task_list_id(CLAUDE_CODE_TEAM_NAME_ENV))
     {
         return team_name;
     }
 
-    if let Some(team_name) = env_task_list_id(CLAUDE_CODE_TEAM_NAME_ENV) {
-        return team_name;
-    }
-
-    let session_id = ctx.session_id.trim();
-    if session_id.is_empty() {
-        DEFAULT_TASK_LIST_ID.to_string()
-    } else {
-        session_id.to_string()
-    }
+    scope
+        .session_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_TASK_LIST_ID.to_string())
 }
 
-pub(super) fn task_store_for_task_list_id(task_list_id: &str) -> TaskStore {
+pub fn store_for_task_list_id(task_list_id: &str) -> TaskStore {
     let key = sanitize_task_list_id(task_list_id);
     let root = task_lists_root();
     let dir = root.join(&key);
@@ -285,12 +306,8 @@ pub(super) fn task_store_for_task_list_id(task_list_id: &str) -> TaskStore {
         .clone()
 }
 
-pub(super) fn store_for_context(ctx: &ToolUseContext) -> TaskStore {
-    task_store_for_task_list_id(&task_list_id_for_context(ctx))
-}
-
-pub(super) fn store() -> TaskStore {
-    task_store_for_task_list_id(DEFAULT_TASK_LIST_ID)
+pub fn global_store() -> TaskStore {
+    store_for_task_list_id(DEFAULT_TASK_LIST_ID)
 }
 
 pub fn unassign_teammate_tasks(
@@ -299,7 +316,7 @@ pub fn unassign_teammate_tasks(
     teammate_name: &str,
     reason: TeammateTaskExitReason,
 ) -> UnassignTeammateTasksResult {
-    let task_store = task_store_for_task_list_id(task_list_id);
+    let task_store = store_for_task_list_id(task_list_id);
     let unassigned_tasks = task_store.unassign_teammate_tasks(teammate_id, teammate_name);
     let action = match reason {
         TeammateTaskExitReason::Terminated => "was terminated",

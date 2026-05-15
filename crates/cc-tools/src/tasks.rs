@@ -1,4 +1,21 @@
-use super::*;
+//! Tool adapters for the `cc-tasks` task domain.
+
+use std::sync::Arc;
+
+use anyhow::Result;
+use async_trait::async_trait;
+use serde_json::{json, Value};
+
+use crate::tool::{
+    Tool, ToolProgress, ToolResult, ToolUseContext, Tools, ValidationResult,
+};
+use cc_tasks::{
+    parse_task_create, parse_task_id, parse_task_output_timeout_ms, parse_task_update,
+    replace_todos_for_key, task_list_id_from_parts, task_output_payload, task_to_json_from_store,
+    todo_owner_key, wait_for_task_output, TaskEntry, TaskError, TaskListScope, TaskOutputRetrievalStatus,
+    TaskOutputWaitResult, TaskStatus, TaskStore, TaskUpdateAction,
+};
+use cc_types::message::AssistantMessage;
 
 fn task_error_result(error: TaskError) -> ToolResult {
     ToolResult {
@@ -9,6 +26,23 @@ fn task_error_result(error: TaskError) -> ToolResult {
         new_messages: vec![],
         ..Default::default()
     }
+}
+
+fn task_list_id_for_context(ctx: &ToolUseContext) -> String {
+    let app_state = (ctx.get_app_state)();
+    task_list_id_from_parts(TaskListScope {
+        explicit_task_list_id: None,
+        scoped_team_name: None,
+        app_team_name: app_state
+            .team_context
+            .as_ref()
+            .map(|team| team.team_name.clone()),
+        session_id: Some(ctx.session_id.clone()),
+    })
+}
+
+fn store_for_context(ctx: &ToolUseContext) -> TaskStore {
+    cc_tasks::store_for_task_list_id(&task_list_id_for_context(ctx))
 }
 
 fn default_update_owner(input: &Value, ctx: &ToolUseContext) -> String {
@@ -28,12 +62,63 @@ fn default_update_owner(input: &Value, ctx: &ToolUseContext) -> String {
         .unwrap_or_else(|| ctx.session_id.clone())
 }
 
+fn plan_workflow_cwd() -> std::path::PathBuf {
+    std::env::current_dir().unwrap_or_else(|_| {
+        let fallback = std::env::temp_dir().join("cc-rust-plan-workflow");
+        let _ = std::fs::create_dir_all(fallback.join(".cc-rust"));
+        fallback
+    })
+}
+
+fn maybe_link_plan_workflow_task(
+    ctx: &ToolUseContext,
+    entry: &TaskEntry,
+) -> Result<Option<cc_types::plan_workflow::PlanWorkflowRecord>> {
+    let cwd = plan_workflow_cwd();
+    let existing = match crate::plan_workflow::load(&cwd) {
+        Ok(record) => record,
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                "failed to load plan workflow for task link; continuing without link"
+            );
+            None
+        }
+    };
+    let persist_cwd = cwd.clone();
+    let task_id = entry.id.clone();
+    let summary = Some(entry.subject.clone());
+    let slot: Arc<parking_lot::Mutex<Option<Option<cc_types::plan_workflow::PlanWorkflowRecord>>>> =
+        Arc::new(parking_lot::Mutex::new(None));
+    let slot_for_update = Arc::clone(&slot);
+
+    (ctx.set_app_state)(Box::new(move |mut state| {
+        let linked = crate::plan_workflow::maybe_link_implementation_task_state(
+            &mut state,
+            &cwd,
+            existing,
+            "main",
+            "task_create",
+            task_id,
+            summary,
+        );
+        *slot_for_update.lock() = Some(linked);
+        state
+    }));
+
+    let record = slot.lock().clone().unwrap_or(None);
+    if let Some(record) = &record {
+        crate::plan_workflow::persist(&persist_cwd, record)?;
+    }
+    Ok(record)
+}
+
 pub struct TodoWriteTool;
 
 #[async_trait]
 impl Tool for TodoWriteTool {
     fn name(&self) -> &str {
-        cc_tools::task_specs::TODO_WRITE_NAME
+        crate::task_specs::TODO_WRITE_NAME
     }
 
     async fn description(&self, _: &Value) -> String {
@@ -41,11 +126,11 @@ impl Tool for TodoWriteTool {
     }
 
     fn input_json_schema(&self) -> Value {
-        cc_tools::task_specs::todo_write_schema()
+        crate::task_specs::todo_write_schema()
     }
 
     async fn validate_input(&self, input: &Value, _ctx: &ToolUseContext) -> ValidationResult {
-        match parse_todo_items(input) {
+        match cc_tasks::parse_todo_items(input) {
             Ok(_) => ValidationResult::Ok,
             Err(message) => ValidationResult::Error {
                 message,
@@ -61,7 +146,7 @@ impl Tool for TodoWriteTool {
         _p: &AssistantMessage,
         _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let todos = match parse_todo_items(&input) {
+        let todos = match cc_tasks::parse_todo_items(&input) {
             Ok(todos) => todos,
             Err(message) => {
                 return Ok(ToolResult {
@@ -71,12 +156,11 @@ impl Tool for TodoWriteTool {
                 });
             }
         };
-        let key = todo_owner_key(ctx);
+        let key = todo_owner_key(&ctx.session_id, ctx.agent_id.as_deref());
         let outcome = replace_todos_for_key(&key, todos);
-        let count = outcome.todos.len();
         let mut data = json!({
             "todos": outcome.todos,
-            "count": count,
+            "count": outcome.todos.len(),
             "cleared": outcome.cleared,
             "message": if outcome.cleared {
                 "Todo list cleared because all items are completed"
@@ -113,7 +197,7 @@ pub struct TaskCreateTool;
 #[async_trait]
 impl Tool for TaskCreateTool {
     fn name(&self) -> &str {
-        cc_tools::task_specs::TASK_CREATE_NAME
+        crate::task_specs::TASK_CREATE_NAME
     }
 
     async fn description(&self, _: &Value) -> String {
@@ -121,7 +205,7 @@ impl Tool for TaskCreateTool {
     }
 
     fn input_json_schema(&self) -> Value {
-        cc_tools::task_specs::task_create_schema()
+        crate::task_specs::task_create_schema()
     }
 
     async fn call(
@@ -144,19 +228,15 @@ impl Tool for TaskCreateTool {
         }?;
 
         let linked_plan_workflow = maybe_link_plan_workflow_task(ctx, &entry)?;
-
-        // Fire TaskCreated hook.
-        {
-            let app_state = (ctx.get_app_state)();
-            let configs = cc_types::hooks::load_hook_configs(&app_state.hooks, "TaskCreated");
-            if !configs.is_empty() {
-                let payload = json!({
-                    "task_id": &entry.id,
-                    "subject": &entry.subject,
-                    "description": &entry.description,
-                });
-                let _ = cc_tools::hooks::run_event_hooks("TaskCreated", &payload, &configs).await;
-            }
+        let app_state = (ctx.get_app_state)();
+        let configs = cc_types::hooks::load_hook_configs(&app_state.hooks, "TaskCreated");
+        if !configs.is_empty() {
+            let payload = json!({
+                "task_id": &entry.id,
+                "subject": &entry.subject,
+                "description": &entry.description,
+            });
+            let _ = crate::hooks::run_event_hooks("TaskCreated", &payload, &configs).await;
         }
 
         let mut data = json!({
@@ -186,7 +266,7 @@ pub struct TaskGetTool;
 #[async_trait]
 impl Tool for TaskGetTool {
     fn name(&self) -> &str {
-        cc_tools::task_specs::TASK_GET_NAME
+        crate::task_specs::TASK_GET_NAME
     }
 
     async fn description(&self, _: &Value) -> String {
@@ -194,7 +274,7 @@ impl Tool for TaskGetTool {
     }
 
     fn input_json_schema(&self) -> Value {
-        cc_tools::task_specs::task_get_schema()
+        crate::task_specs::task_get_schema()
     }
 
     fn is_concurrency_safe(&self, _: &Value) -> bool {
@@ -238,7 +318,7 @@ pub struct TaskUpdateTool;
 #[async_trait]
 impl Tool for TaskUpdateTool {
     fn name(&self) -> &str {
-        cc_tools::task_specs::TASK_UPDATE_NAME
+        crate::task_specs::TASK_UPDATE_NAME
     }
 
     async fn description(&self, _: &Value) -> String {
@@ -246,7 +326,7 @@ impl Tool for TaskUpdateTool {
     }
 
     fn input_json_schema(&self) -> Value {
-        cc_tools::task_specs::task_update_schema()
+        crate::task_specs::task_update_schema()
     }
 
     async fn call(
@@ -262,8 +342,7 @@ impl Tool for TaskUpdateTool {
         };
 
         let task_store = store_for_context(ctx);
-        let existing = task_store.get(&request.id);
-        let Some(existing) = existing else {
+        let Some(existing) = task_store.get(&request.id) else {
             return Ok(task_error_result(TaskError::not_found(request.id)));
         };
 
@@ -343,7 +422,6 @@ impl Tool for TaskUpdateTool {
 
         match task_store.try_update_fields(&request.id, updates)? {
             Some(entry) => {
-                // Fire TaskCompleted hook when status changes to completed.
                 if request.status == Some(TaskStatus::Completed)
                     && existing.status != TaskStatus::Completed
                 {
@@ -357,7 +435,7 @@ impl Tool for TaskUpdateTool {
                             "status": entry.status.as_str(),
                         });
                         let _ =
-                            cc_tools::hooks::run_event_hooks("TaskCompleted", &payload, &configs)
+                            crate::hooks::run_event_hooks("TaskCompleted", &payload, &configs)
                                 .await;
                     }
                 }
@@ -394,7 +472,7 @@ pub struct TaskListTool;
 #[async_trait]
 impl Tool for TaskListTool {
     fn name(&self) -> &str {
-        cc_tools::task_specs::TASK_LIST_NAME
+        crate::task_specs::TASK_LIST_NAME
     }
 
     async fn description(&self, _: &Value) -> String {
@@ -402,7 +480,7 @@ impl Tool for TaskListTool {
     }
 
     fn input_json_schema(&self) -> Value {
-        cc_tools::task_specs::task_list_schema()
+        crate::task_specs::task_list_schema()
     }
 
     fn is_concurrency_safe(&self, _: &Value) -> bool {
@@ -447,7 +525,7 @@ pub struct TaskStopTool;
 #[async_trait]
 impl Tool for TaskStopTool {
     fn name(&self) -> &str {
-        cc_tools::task_specs::TASK_STOP_NAME
+        crate::task_specs::TASK_STOP_NAME
     }
 
     async fn description(&self, _: &Value) -> String {
@@ -455,7 +533,7 @@ impl Tool for TaskStopTool {
     }
 
     fn input_json_schema(&self) -> Value {
-        cc_tools::task_specs::task_stop_schema()
+        crate::task_specs::task_stop_schema()
     }
 
     async fn call(
@@ -487,4 +565,102 @@ impl Tool for TaskStopTool {
     async fn prompt(&self) -> String {
         "Cancel a running task.".to_string()
     }
+}
+
+pub struct TaskOutputTool;
+
+#[async_trait]
+impl Tool for TaskOutputTool {
+    fn name(&self) -> &str {
+        crate::task_specs::TASK_OUTPUT_NAME
+    }
+
+    async fn description(&self, _: &Value) -> String {
+        "Get the retained output/log of a task.".to_string()
+    }
+
+    fn input_json_schema(&self) -> Value {
+        crate::task_specs::task_output_schema()
+    }
+
+    fn is_concurrency_safe(&self, _: &Value) -> bool {
+        true
+    }
+
+    fn is_read_only(&self, _: &Value) -> bool {
+        true
+    }
+
+    async fn call(
+        &self,
+        input: Value,
+        ctx: &ToolUseContext,
+        _p: &AssistantMessage,
+        _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
+    ) -> Result<ToolResult> {
+        let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
+        let block = input.get("block").and_then(|v| v.as_bool()).unwrap_or(true);
+        let timeout_ms = parse_task_output_timeout_ms(&input)?;
+
+        let task_store = store_for_context(ctx);
+        let initial = task_store.get(id);
+        match initial {
+            Some(entry) => Ok(ToolResult {
+                data: if !block {
+                    let retrieval_status = if entry.status.is_active_for_output_wait() {
+                        TaskOutputRetrievalStatus::NotReady
+                    } else {
+                        TaskOutputRetrievalStatus::Success
+                    };
+                    task_output_payload(&entry, retrieval_status)
+                } else if !entry.status.is_active_for_output_wait() {
+                    task_output_payload(&entry, TaskOutputRetrievalStatus::Success)
+                } else {
+                    match wait_for_task_output(
+                        task_store.clone(),
+                        id,
+                        timeout_ms,
+                        ctx.abort_signal.clone(),
+                    )
+                    .await?
+                    {
+                        TaskOutputWaitResult::Ready(entry) => {
+                            task_output_payload(&entry, TaskOutputRetrievalStatus::Success)
+                        }
+                        TaskOutputWaitResult::TimedOut(Some(entry)) => {
+                            task_output_payload(&entry, TaskOutputRetrievalStatus::Timeout)
+                        }
+                        TaskOutputWaitResult::TimedOut(None) => json!({
+                            "retrieval_status": TaskOutputRetrievalStatus::Timeout.as_str(),
+                            "task": null,
+                            "error": format!("Task not found: {}", id),
+                        }),
+                    }
+                },
+                new_messages: vec![],
+                ..Default::default()
+            }),
+            None => Ok(ToolResult {
+                data: json!({ "error": format!("Task not found: {}", id) }),
+                new_messages: vec![],
+                ..Default::default()
+            }),
+        }
+    }
+
+    async fn prompt(&self) -> String {
+        "Get the retained output or logs from a task.".to_string()
+    }
+}
+
+pub fn tools() -> Tools {
+    vec![
+        Arc::new(TodoWriteTool),
+        Arc::new(TaskCreateTool),
+        Arc::new(TaskGetTool),
+        Arc::new(TaskUpdateTool),
+        Arc::new(TaskListTool),
+        Arc::new(TaskStopTool),
+        Arc::new(TaskOutputTool),
+    ]
 }

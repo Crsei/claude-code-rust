@@ -26,7 +26,7 @@ use cc_ipc_protocol::subsystem_events::{AgentSettingsEvent, SubsystemEvent};
 
 /// Global handle the headless runtime plugs in on startup so async generation
 /// tasks can push events back out without owning the bus themselves. Mirrors
-/// the pattern used by `crate::plugins::set_event_sender` and friends.
+/// the pattern used by subsystem event sinks and friends.
 static EVENT_TX: LazyLock<Mutex<Option<Sender<SubsystemEvent>>>> =
     LazyLock::new(|| Mutex::new(None));
 

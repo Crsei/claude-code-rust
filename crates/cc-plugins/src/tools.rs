@@ -12,16 +12,14 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
-use cc_engine::types::tool::{
-    InterruptBehavior, PermissionMode, PermissionResult, Tool, ToolAppState, ToolProgress,
-    ToolResult, ToolUseContext,
+use cc_tools::tool::{
+    InterruptBehavior, PermissionMode, PermissionResult, Tool, ToolAppState, ToolPermissionContext,
+    ToolProgress, ToolResult, ToolUseContext,
 };
-use cc_permissions::decision::{self, PermissionBehavior};
 use cc_tools::exec::truncate_output;
 use cc_types::message::AssistantMessage;
-use cc_utils::bash::resolve_timeout;
 
-use cc_plugins::manifest::{StdioToolRuntime, ToolContribution, ToolRuntime};
+use crate::manifest::{StdioToolRuntime, ToolContribution, ToolRuntime};
 
 /// Executable wrapper around a plugin-contributed tool manifest entry.
 pub struct PluginToolWrapper {
@@ -70,24 +68,25 @@ impl PluginToolWrapper {
         }
     }
 
-    fn permission_context_for_call(
-        &self,
-        app_state: ToolAppState,
-    ) -> cc_engine::types::tool::ToolPermissionContext {
-        let mut permission_ctx = app_state.tool_permission_context;
+    fn permission_context_for_call(&self, app_state: ToolAppState) -> ToolPermissionContext {
+        app_state.tool_permission_context
+    }
 
-        if self.contribution.read_only {
-            let mode = match &permission_ctx.mode {
-                PermissionMode::Default | PermissionMode::Plan => PermissionMode::Auto,
-                other => other.clone(),
-            };
-            cc_permissions::dangerous::set_permission_mode_with_auto_mode_safety(
-                &mut permission_ctx,
-                mode,
-            );
-        }
+    fn has_rule_for_tool(rules: &cc_tools::tool::ToolPermissionRulesBySource, tool: &str) -> bool {
+        rules
+            .values()
+            .any(|entries| entries.iter().any(|entry| entry == tool))
+    }
 
-        permission_ctx
+    fn timeout_duration(timeout_ms: Option<u64>) -> std::time::Duration {
+        const DEFAULT_TIMEOUT_MS: u64 = 120_000;
+        const MAX_TIMEOUT_MS: u64 = 600_000;
+
+        std::time::Duration::from_millis(
+            timeout_ms
+                .unwrap_or(DEFAULT_TIMEOUT_MS)
+                .clamp(1, MAX_TIMEOUT_MS),
+        )
     }
 
     async fn run_stdio_runtime(
@@ -143,7 +142,7 @@ impl PluginToolWrapper {
             })
         });
 
-        let timeout_duration = resolve_timeout(runtime.timeout_ms);
+        let timeout_duration = Self::timeout_duration(runtime.timeout_ms);
         let status = match tokio::time::timeout(timeout_duration, child.wait()).await {
             Ok(wait_result) => wait_result.with_context(|| {
                 format!(
@@ -272,26 +271,50 @@ impl Tool for PluginToolWrapper {
     async fn check_permissions(&self, input: &Value, ctx: &ToolUseContext) -> PermissionResult {
         let app_state = (ctx.get_app_state)();
         let permission_ctx = self.permission_context_for_call(app_state);
-        let decision =
-            decision::has_permissions_to_use_tool(self.name(), input, &permission_ctx, None);
+        if Self::has_rule_for_tool(&permission_ctx.always_deny_rules, self.name()) {
+            return PermissionResult::Deny {
+                message: format!("Permission denied for plugin tool '{}'", self.name()),
+            };
+        }
+        if Self::has_rule_for_tool(&permission_ctx.always_allow_rules, self.name())
+            || Self::has_rule_for_tool(&permission_ctx.session_allow_rules, self.name())
+        {
+            return PermissionResult::Allow {
+                updated_input: input.clone(),
+            };
+        }
+        if Self::has_rule_for_tool(&permission_ctx.always_ask_rules, self.name()) {
+            return PermissionResult::Ask {
+                message: format!(
+                    "Allow plugin tool '{}' from '{}'?",
+                    self.name(),
+                    self.plugin_id
+                ),
+            };
+        }
 
-        match decision.behavior {
-            PermissionBehavior::Allow => PermissionResult::Allow {
-                updated_input: decision.updated_input.unwrap_or_else(|| input.clone()),
+        match permission_ctx.mode {
+            PermissionMode::Bypass => PermissionResult::Allow {
+                updated_input: input.clone(),
             },
-            PermissionBehavior::Deny => PermissionResult::Deny {
-                message: decision.message.unwrap_or_else(|| {
-                    format!("Permission denied for plugin tool '{}'", self.name())
-                }),
+            PermissionMode::DontAsk => PermissionResult::Deny {
+                message: format!("Permission denied for plugin tool '{}'", self.name()),
             },
-            PermissionBehavior::Ask => PermissionResult::Ask {
-                message: decision.message.unwrap_or_else(|| {
-                    format!(
-                        "Allow plugin tool '{}' from '{}'?",
-                        self.name(),
-                        self.plugin_id
-                    )
-                }),
+            PermissionMode::Plan if !self.contribution.read_only => PermissionResult::Deny {
+                message: format!(
+                    "Plugin tool '{}' is not available in plan mode because it can write.",
+                    self.name()
+                ),
+            },
+            _ if self.contribution.read_only => PermissionResult::Allow {
+                updated_input: input.clone(),
+            },
+            _ => PermissionResult::Ask {
+                message: format!(
+                    "Allow plugin tool '{}' from '{}'?",
+                    self.name(),
+                    self.plugin_id
+                ),
             },
         }
     }
@@ -342,7 +365,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    use cc_engine::types::tool::{FileStateCache, ToolUseOptions};
+    use cc_tools::tool::{FileStateCache, ToolUseOptions};
     use uuid::Uuid;
 
     fn dummy_ctx() -> ToolUseContext {

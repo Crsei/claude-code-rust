@@ -7,9 +7,8 @@ use tracing::warn;
 use cc_engine::tools::exec;
 use cc_engine::types::tool::Tools;
 
-use crate::lsp_service::tool::LspTool;
+use cc_lsp_service::tool::LspTool;
 use crate::skills::tool::SkillTool;
-use crate::tasks;
 use crate::worktree::tool::{EnterWorktreeTool, ExitWorktreeTool};
 use cc_teams::pr_activity::{SubscribePrActivityTool, UnsubscribePrActivityTool};
 use cc_teams::send_message::SendMessageTool;
@@ -47,7 +46,7 @@ fn base_tools() -> Tools {
     tools.extend(fs::tools());
     tools.extend(exec::tools());
     tools.push(Arc::new(SleepTool));
-    tools.extend(tasks::tools());
+    tools.extend(cc_tools::tasks::tools());
 
     // Single-tool / small-cluster modules (not yet a sub-domain).
     tools.extend([
@@ -83,7 +82,7 @@ pub fn get_all_tools() -> Tools {
     let mut tools = base_tools();
     let mut seen: HashSet<String> = tools.iter().map(|tool| tool.name().to_string()).collect();
 
-    for tool in crate::plugins::discover_plugin_tools() {
+    for tool in cc_plugins::discover_plugin_tools() {
         let name = tool.name().to_string();
         if seen.insert(name.clone()) {
             tools.push(tool);

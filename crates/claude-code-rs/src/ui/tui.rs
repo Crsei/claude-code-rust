@@ -56,6 +56,82 @@ use cc_types::message::{InfoLevel, Message, SystemMessage, SystemSubtype};
 
 use super::app::{App, AppAction};
 
+fn lsp_event_to_subsystem(
+    event: cc_lsp_service::LspEvent,
+) -> cc_ipc_protocol::subsystem_events::SubsystemEvent {
+    use cc_ipc_protocol::subsystem_events::{LspEvent, SubsystemEvent};
+    let event = match event {
+        cc_lsp_service::LspEvent::ServerStateChanged {
+            language_id,
+            state,
+            error,
+        } => LspEvent::ServerStateChanged {
+            language_id,
+            state,
+            error,
+        },
+        cc_lsp_service::LspEvent::DocumentSynced {
+            uri,
+            language_id,
+            version,
+            change_kind,
+        } => LspEvent::DocumentSynced {
+            uri,
+            language_id,
+            version,
+            change_kind,
+        },
+        cc_lsp_service::LspEvent::DiagnosticsPublished { uri, diagnostics } => {
+            LspEvent::DiagnosticsPublished {
+                uri,
+                diagnostics: diagnostics
+                    .into_iter()
+                    .map(|diagnostic| cc_ipc_protocol::subsystem_types::LspDiagnostic {
+                        range: cc_ipc_protocol::subsystem_types::DiagnosticRange {
+                            start_line: diagnostic.range.start_line,
+                            start_character: diagnostic.range.start_character,
+                            end_line: diagnostic.range.end_line,
+                            end_character: diagnostic.range.end_character,
+                        },
+                        severity: diagnostic.severity,
+                        message: diagnostic.message,
+                        source: diagnostic.source,
+                        code: diagnostic.code,
+                    })
+                    .collect(),
+            }
+        }
+        cc_lsp_service::LspEvent::CompletionResults {
+            request_id,
+            uri,
+            items,
+        } => LspEvent::CompletionResults {
+            request_id,
+            uri,
+            items: items
+                .into_iter()
+                .map(|item| cc_ipc_protocol::CompletionItemInfo {
+                    label: item.label,
+                    kind: item.kind,
+                    detail: item.detail,
+                    documentation: item.documentation,
+                    insert_text: item.insert_text,
+                    sort_text: item.sort_text,
+                    filter_text: item.filter_text,
+                })
+                .collect(),
+        },
+        cc_lsp_service::LspEvent::CommandError {
+            request_id,
+            message,
+        } => LspEvent::CommandError {
+            request_id,
+            message,
+        },
+    };
+    SubsystemEvent::Lsp(event)
+}
+
 /// Run the full TUI application, connecting the App UI with the QueryEngine.
 ///
 /// This function takes ownership of the terminal (raw mode + alternate screen)
@@ -165,7 +241,14 @@ pub async fn run_tui(
 
     let subsystem_bus = SubsystemEventBus::new();
     let mut subsystem_rx = subsystem_bus.subscribe();
-    crate::lsp_service::set_event_sender(subsystem_bus.sender());
+    let (lsp_tx, mut lsp_rx) = tokio::sync::broadcast::channel(128);
+    cc_lsp_service::set_event_sender(lsp_tx);
+    let lsp_event_tx = subsystem_bus.sender();
+    tokio::spawn(async move {
+        while let Ok(event) = lsp_rx.recv().await {
+            let _ = lsp_event_tx.send(lsp_event_to_subsystem(event));
+        }
+    });
 
     // ── Spawn terminal event reader thread ─────────────────────────
     //

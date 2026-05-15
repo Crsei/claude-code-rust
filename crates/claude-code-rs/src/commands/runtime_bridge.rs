@@ -32,7 +32,7 @@ pub(super) fn install_command_runtime_providers() {
         crate::ui::clipboard_text::copy_text_to_clipboard,
     );
     cc_commands::logout::set_onboarding_logout_clearer(onboarding_logout_clear_for_commands);
-    cc_commands::skills_cmd::set_plugin_skills_provider(crate::plugins::discover_plugin_skills);
+    cc_commands::skills_cmd::set_plugin_skills_provider(discover_plugin_skills_for_commands);
     cc_commands::ide_cmd::set_ide_command_runtime(cc_commands::ide_cmd::IdeCommandRuntime {
         detect_ides: crate::ide::detect_ides,
         selected_ide: crate::ide::selected_ide,
@@ -42,21 +42,21 @@ pub(super) fn install_command_runtime_providers() {
     });
     cc_commands::plugin_cmd::set_plugin_command_runtime(
         cc_commands::plugin_cmd::PluginCommandRuntime {
-            load_installed_plugins: crate::plugins::loader::load_installed_plugins,
-            save_installed_plugins: crate::plugins::loader::save_installed_plugins,
-            get_all_plugins: crate::plugins::get_all_plugins,
-            needs_refresh: crate::plugins::needs_refresh,
-            find_plugin: crate::plugins::find_plugin,
-            set_plugin_status: crate::plugins::set_plugin_status,
-            register_plugin: crate::plugins::register_plugin,
-            emit_event_external: crate::plugins::emit_event_external,
-            uninstall_plugin: crate::plugins::uninstall_plugin,
+            load_installed_plugins: cc_plugins::loader::load_installed_plugins,
+            save_installed_plugins: cc_plugins::loader::save_installed_plugins,
+            get_all_plugins: cc_plugins::get_all_plugins,
+            needs_refresh: cc_plugins::needs_refresh,
+            find_plugin: cc_plugins::find_plugin,
+            set_plugin_status: cc_plugins::set_plugin_status,
+            register_plugin: cc_plugins::register_plugin,
+            emit_event_external: emit_plugin_event_external_for_commands,
+            uninstall_plugin: cc_plugins::uninstall_plugin,
         },
     );
     cc_commands::reload_plugins_cmd::set_reload_plugins_runtime(
         cc_commands::reload_plugins_cmd::ReloadPluginsRuntime {
             reload_plugins: reload_plugins_for_commands,
-            discover_plugin_skills: crate::plugins::discover_plugin_skills,
+            discover_plugin_skills: discover_plugin_skills_for_commands,
         },
     );
     cc_commands::brief::set_brief_command_runtime(cc_commands::brief::BriefCommandRuntime {
@@ -102,21 +102,21 @@ fn builtin_agent_prompt_for_commands(name: &str) -> Option<String> {
 }
 
 fn tool_tasks_for_commands() -> Vec<cc_tasks::TaskEntry> {
-    crate::tasks::global_store().list()
+    cc_tasks::global_store().list()
 }
 
 fn get_tool_task_for_commands(id: &str) -> Option<cc_tasks::TaskEntry> {
-    crate::tasks::global_store().get(id)
+    cc_tasks::global_store().get(id)
 }
 
 fn stop_tool_task_for_commands(id: &str) -> Result<Option<cc_tasks::TaskEntry>, String> {
-    crate::tasks::global_store()
+    cc_tasks::global_store()
         .try_stop(id)
         .map_err(|err| err.to_string())
 }
 
 fn delete_tool_task_for_commands(id: &str) -> Result<Option<cc_tasks::TaskEntry>, String> {
-    crate::tasks::global_store()
+    cc_tasks::global_store()
         .try_delete(id)
         .map_err(|err| err.to_string())
 }
@@ -227,7 +227,7 @@ fn fork_runner_for_commands(
 }
 
 fn reload_plugins_for_commands() -> cc_commands::reload_plugins_cmd::ReloadReport {
-    let report = crate::plugins::reload_plugins();
+    let report = cc_plugins::reload_plugins();
     cc_commands::reload_plugins_cmd::ReloadReport {
         count: report.count,
         error_count: report.error_count,
@@ -235,6 +235,67 @@ fn reload_plugins_for_commands() -> cc_commands::reload_plugins_cmd::ReloadRepor
         global_errors: report.global_errors,
         duration_ms: report.duration_ms,
     }
+}
+
+fn discover_plugin_skills_for_commands() -> Vec<cc_skills::SkillDefinition> {
+    let mut out = Vec::new();
+
+    for contributed in cc_plugins::discover_plugin_skill_definitions() {
+        let source = cc_skills::SkillSource::Plugin(contributed.plugin_id.clone());
+        let mut skill =
+            match cc_skills::loader::load_skill_from_file_path(&contributed.path, source) {
+                Some(skill) => skill,
+                None => {
+                    tracing::warn!(
+                        plugin = %contributed.plugin_id,
+                        path = %contributed.path.display(),
+                        "Plugin: failed to load contributed skill file"
+                    );
+                    continue;
+                }
+            };
+
+        skill.name = contributed.name;
+        if let Some(desc) = contributed.description {
+            if !desc.trim().is_empty() {
+                skill.frontmatter.description = desc;
+            }
+        }
+        out.push(skill);
+    }
+
+    out
+}
+
+fn emit_plugin_event_external_for_commands(
+    event: cc_ipc_protocol::subsystem_events::SubsystemEvent,
+) {
+    use cc_ipc_protocol::subsystem_events::{PluginEvent, SubsystemEvent};
+
+    let SubsystemEvent::Plugin(event) = event else {
+        return;
+    };
+    let adapted = match event {
+        PluginEvent::Reloaded { count, had_error } => {
+            cc_plugins::PluginSubsystemEvent::Reloaded { count, had_error }
+        }
+        PluginEvent::RefreshNeeded { reason } => {
+            cc_plugins::PluginSubsystemEvent::RefreshNeeded { reason }
+        }
+        PluginEvent::StatusChanged {
+            plugin_id,
+            name,
+            status,
+            error,
+        } => cc_plugins::PluginSubsystemEvent::StatusChanged {
+            plugin_id,
+            name,
+            status,
+            error,
+        },
+        PluginEvent::PluginList { .. } => return,
+    };
+    cc_plugins::emit_event_external(adapted);
 }
 
 fn daemon_status_snapshot_for_commands(

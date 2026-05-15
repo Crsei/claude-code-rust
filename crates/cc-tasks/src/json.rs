@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn task_to_json_from_store(task_store: &TaskStore, entry: &TaskEntry) -> Value {
+pub fn task_to_json_from_store(task_store: &TaskStore, entry: &TaskEntry) -> Value {
     let blocked_dependencies = task_store.blocked_dependencies(entry);
     let blocked_tasks = task_store.blocked_tasks(entry);
     let blocked_by = entry.depends_on.clone();

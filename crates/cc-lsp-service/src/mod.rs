@@ -15,17 +15,112 @@ pub mod types;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::LazyLock;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use cc_lsp_service::LspServerConfig;
+use serde::{Deserialize, Serialize};
 
 pub use types::{
-    CompletionItemInfo, DocumentChange, DocumentSyncState, HoverInfo, SourceLocation, SymbolInfo,
+    CompletionItemInfo, DiagnosticRange, DocumentChange, DocumentSyncState, HoverInfo,
+    LspDiagnostic, LspEvent, LspServerInfo, SourceLocation, SourceRange, SymbolInfo,
 };
 
 pub mod transport;
+
+/// Configuration for a language server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LspServerConfig {
+    /// Stable server key. Defaults to `language_id`; plugin/settings configs
+    /// may set this to avoid collisions between servers that share a language.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Language ID (e.g. "rust", "typescript", "python").
+    #[serde(default, rename = "languageId", alias = "language_id")]
+    pub language_id: String,
+    /// File extensions this server handles.
+    #[serde(default)]
+    pub extensions: Vec<String>,
+    /// Optional extension-to-language map used by plugin LSP configs.
+    #[serde(
+        default,
+        rename = "extensionToLanguage",
+        alias = "extension_to_language"
+    )]
+    pub extension_to_language: HashMap<String, String>,
+    /// Command to launch the server.
+    pub command: String,
+    /// Command arguments.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Environment variables for the server subprocess.
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+    /// Optional workspace folder override.
+    #[serde(default, rename = "workspaceFolder", alias = "workspace_folder")]
+    pub workspace_folder: Option<String>,
+    /// Additional initialization options.
+    #[serde(
+        default,
+        rename = "initializationOptions",
+        alias = "init_options",
+        alias = "initialization_options"
+    )]
+    pub init_options: Option<serde_json::Value>,
+    /// Human-readable source marker: default/settings/plugin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+/// Config adapter used by root/plugin wiring to provide LSP server
+/// contributions without this crate depending on plugin runtime internals.
+pub type LspConfigProvider = Arc<dyn Fn() -> Vec<LspServerConfig> + Send + Sync>;
+
+static CONFIG_PROVIDER: LazyLock<parking_lot::Mutex<Option<LspConfigProvider>>> =
+    LazyLock::new(|| parking_lot::Mutex::new(None));
+
+/// Install or replace the external config provider.
+pub fn set_config_provider(provider: Option<LspConfigProvider>) {
+    *CONFIG_PROVIDER.lock() = provider;
+}
+
+/// Known default LSP server configurations.
+pub fn default_server_configs() -> Vec<LspServerConfig> {
+    vec![
+        builtin_config("rust", &["rs"], "rust-analyzer", &[]),
+        builtin_config(
+            "typescript",
+            &["ts", "tsx", "js", "jsx"],
+            "typescript-language-server",
+            &["--stdio"],
+        ),
+        builtin_config("python", &["py"], "pylsp", &[]),
+        builtin_config("go", &["go"], "gopls", &[]),
+        builtin_config("c", &["c", "h", "cpp", "hpp", "cc"], "clangd", &[]),
+        builtin_config("java", &["java"], "jdtls", &[]),
+    ]
+}
+
+pub fn builtin_config(
+    language_id: &str,
+    extensions: &[&str],
+    command: &str,
+    args: &[&str],
+) -> LspServerConfig {
+    LspServerConfig {
+        name: None,
+        language_id: language_id.to_string(),
+        extensions: extensions.iter().map(|s| (*s).to_string()).collect(),
+        extension_to_language: HashMap::new(),
+        command: command.to_string(),
+        args: args.iter().map(|s| (*s).to_string()).collect(),
+        env: HashMap::new(),
+        workspace_folder: None,
+        init_options: None,
+        source: Some("default".to_string()),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Server configuration
@@ -39,9 +134,9 @@ pub mod transport;
 pub fn configured_server_configs() -> Vec<LspServerConfig> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let mut configs = Vec::new();
-    configs.extend(plugin_server_configs());
+    configs.extend(adapter_server_configs());
     configs.extend(settings_server_configs(&cwd));
-    configs.extend(cc_lsp_service::default_server_configs());
+    configs.extend(default_server_configs());
 
     let mut seen = HashSet::new();
     configs
@@ -141,55 +236,12 @@ fn settings_server_configs(cwd: &Path) -> Vec<LspServerConfig> {
     parse_server_config_value(value, "settings")
 }
 
-fn plugin_server_configs() -> Vec<LspServerConfig> {
-    let mut configs = Vec::new();
-    for plugin in crate::plugins::get_enabled_plugins() {
-        let Some(cache_path) = plugin.cache_path.clone() else {
-            continue;
-        };
-
-        let lsp_json = cache_path.join(".lsp.json");
-        if lsp_json.exists() {
-            match std::fs::read_to_string(&lsp_json)
-                .ok()
-                .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-            {
-                Some(value) => {
-                    configs.extend(parse_server_config_value(
-                        &value,
-                        &format!("plugin:{}", plugin.id),
-                    ));
-                }
-                None => tracing::warn!(
-                    plugin = %plugin.id,
-                    path = %lsp_json.display(),
-                    "Plugin: failed to parse .lsp.json LSP config"
-                ),
-            }
-        }
-
-        let manifest = match cc_plugins::manifest::load_manifest(&cache_path) {
-            Ok(manifest) => manifest,
-            Err(err) => {
-                tracing::warn!(
-                    plugin = %plugin.id,
-                    path = %cache_path.display(),
-                    error = %err,
-                    "Plugin: failed to load manifest for LSP contribution"
-                );
-                continue;
-            }
-        };
-
-        if let Some(declaration) = manifest.lsp_servers.as_ref() {
-            configs.extend(load_manifest_lsp_declaration(
-                declaration,
-                &cache_path,
-                &plugin.id,
-            ));
-        }
-    }
-    configs
+fn adapter_server_configs() -> Vec<LspServerConfig> {
+    CONFIG_PROVIDER
+        .lock()
+        .as_ref()
+        .map(|provider| provider())
+        .unwrap_or_default()
 }
 
 fn parse_server_config_value(value: &serde_json::Value, source: &str) -> Vec<LspServerConfig> {
@@ -248,7 +300,7 @@ fn parse_server_config_value(value: &serde_json::Value, source: &str) -> Vec<Lsp
     out
 }
 
-fn load_manifest_lsp_declaration(
+pub fn load_manifest_lsp_declaration(
     declaration: &serde_json::Value,
     plugin_path: &Path,
     plugin_id: &str,
@@ -336,9 +388,8 @@ static LSP_CLIENTS: LazyLock<tokio::sync::Mutex<HashMap<String, client::LspClien
     LazyLock::new(|| tokio::sync::Mutex::new(HashMap::new()));
 
 /// Latest diagnostics per document URI.
-static DIAGNOSTICS: LazyLock<
-    parking_lot::Mutex<HashMap<String, Vec<cc_ipc_protocol::subsystem_types::LspDiagnostic>>>,
-> = LazyLock::new(|| parking_lot::Mutex::new(HashMap::new()));
+static DIAGNOSTICS: LazyLock<parking_lot::Mutex<HashMap<String, Vec<LspDiagnostic>>>> =
+    LazyLock::new(|| parking_lot::Mutex::new(HashMap::new()));
 
 /// Delivered diagnostic keys per URI. Used by the tool-facing snapshot path
 /// to suppress repeats across turns until a document changes.
@@ -346,31 +397,24 @@ static DELIVERED_DIAGNOSTICS: LazyLock<parking_lot::Mutex<HashMap<String, HashSe
     LazyLock::new(|| parking_lot::Mutex::new(HashMap::new()));
 
 /// Event sender for subsystem events (injected by headless event loop).
-static EVENT_TX: LazyLock<
-    parking_lot::Mutex<
-        Option<tokio::sync::broadcast::Sender<cc_ipc_protocol::subsystem_events::SubsystemEvent>>,
-    >,
-> = LazyLock::new(|| parking_lot::Mutex::new(None));
+static EVENT_TX: LazyLock<parking_lot::Mutex<Option<tokio::sync::broadcast::Sender<LspEvent>>>> =
+    LazyLock::new(|| parking_lot::Mutex::new(None));
 
 /// Inject the event sender from the headless event loop.
 #[allow(dead_code)] // Called by headless event loop wiring (Task 12).
-pub fn set_event_sender(
-    tx: tokio::sync::broadcast::Sender<cc_ipc_protocol::subsystem_events::SubsystemEvent>,
-) {
+pub fn set_event_sender(tx: tokio::sync::broadcast::Sender<LspEvent>) {
     *EVENT_TX.lock() = Some(tx);
 }
 
 /// Emit a subsystem event (no-op if no sender is set).
-pub(crate) fn emit_event(event: cc_ipc_protocol::subsystem_events::SubsystemEvent) {
+pub fn emit_event(event: LspEvent) {
     if let Some(tx) = EVENT_TX.lock().as_ref() {
         let _ = tx.send(event);
     }
 }
 
-pub(crate) fn record_diagnostics_event(event: cc_ipc_protocol::subsystem_events::LspEvent) {
-    if let cc_ipc_protocol::subsystem_events::LspEvent::DiagnosticsPublished { uri, diagnostics } =
-        &event
-    {
+pub(crate) fn record_diagnostics_event(event: LspEvent) {
+    if let LspEvent::DiagnosticsPublished { uri, diagnostics } = &event {
         if diagnostics.is_empty() {
             DIAGNOSTICS.lock().remove(uri);
             DELIVERED_DIAGNOSTICS.lock().remove(uri);
@@ -378,18 +422,14 @@ pub(crate) fn record_diagnostics_event(event: cc_ipc_protocol::subsystem_events:
             DIAGNOSTICS.lock().insert(uri.clone(), diagnostics.clone());
         }
     }
-    emit_event(cc_ipc_protocol::subsystem_events::SubsystemEvent::Lsp(
-        event,
-    ));
+    emit_event(event);
 }
 
 pub(crate) fn clear_delivered_diagnostics(uri: &str) {
     DELIVERED_DIAGNOSTICS.lock().remove(uri);
 }
 
-pub fn diagnostics_snapshot(
-    uri: Option<&str>,
-) -> Vec<(String, Vec<cc_ipc_protocol::subsystem_types::LspDiagnostic>)> {
+pub fn diagnostics_snapshot(uri: Option<&str>) -> Vec<(String, Vec<LspDiagnostic>)> {
     let diagnostics = DIAGNOSTICS.lock();
     match uri {
         Some(uri) => diagnostics
@@ -432,13 +472,11 @@ async fn get_or_start_client(
         }
         tracing::warn!(server = %key, "LSP server died, will restart");
         clients.remove(&key);
-        emit_event(cc_ipc_protocol::subsystem_events::SubsystemEvent::Lsp(
-            cc_ipc_protocol::subsystem_events::LspEvent::ServerStateChanged {
-                language_id: key.clone(),
-                state: "stopped".to_string(),
-                error: Some("server process died".to_string()),
-            },
-        ));
+        emit_event(LspEvent::ServerStateChanged {
+            language_id: key.clone(),
+            state: "stopped".to_string(),
+            error: Some("server process died".to_string()),
+        });
     }
 
     // Start new client
@@ -449,13 +487,11 @@ async fn get_or_start_client(
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let new_client = client::LspClient::start(&config, &root_path).await?;
     clients.insert(key.clone(), new_client);
-    emit_event(cc_ipc_protocol::subsystem_events::SubsystemEvent::Lsp(
-        cc_ipc_protocol::subsystem_events::LspEvent::ServerStateChanged {
-            language_id: key.clone(),
-            state: "running".to_string(),
-            error: None,
-        },
-    ));
+    emit_event(LspEvent::ServerStateChanged {
+        language_id: key.clone(),
+        state: "running".to_string(),
+        error: None,
+    });
     Ok(key)
 }
 
@@ -521,13 +557,11 @@ pub async fn start_server(language_id_or_key: &str) -> Result<()> {
     let mut clients = LSP_CLIENTS.lock().await;
     if let Some(existing) = clients.get_mut(&key) {
         if existing.is_alive() {
-            emit_event(cc_ipc_protocol::subsystem_events::SubsystemEvent::Lsp(
-                cc_ipc_protocol::subsystem_events::LspEvent::ServerStateChanged {
-                    language_id: key,
-                    state: "running".to_string(),
-                    error: None,
-                },
-            ));
+            emit_event(LspEvent::ServerStateChanged {
+                language_id: key,
+                state: "running".to_string(),
+                error: None,
+            });
             return Ok(());
         }
         clients.remove(&key);
@@ -535,13 +569,11 @@ pub async fn start_server(language_id_or_key: &str) -> Result<()> {
 
     let client = client::LspClient::start(&config, &root_path).await?;
     clients.insert(key.clone(), client);
-    emit_event(cc_ipc_protocol::subsystem_events::SubsystemEvent::Lsp(
-        cc_ipc_protocol::subsystem_events::LspEvent::ServerStateChanged {
-            language_id: key,
-            state: "running".to_string(),
-            error: None,
-        },
-    ));
+    emit_event(LspEvent::ServerStateChanged {
+        language_id: key,
+        state: "running".to_string(),
+        error: None,
+    });
     Ok(())
 }
 
@@ -555,13 +587,11 @@ pub async fn stop_server(language_id_or_key: &str) -> Result<()> {
     if let Some(client) = clients.remove(&key) {
         drop(clients);
         let _ = client.shutdown().await;
-        emit_event(cc_ipc_protocol::subsystem_events::SubsystemEvent::Lsp(
-            cc_ipc_protocol::subsystem_events::LspEvent::ServerStateChanged {
-                language_id: key,
-                state: "stopped".to_string(),
-                error: None,
-            },
-        ));
+        emit_event(LspEvent::ServerStateChanged {
+            language_id: key,
+            state: "stopped".to_string(),
+            error: None,
+        });
     }
     Ok(())
 }
@@ -643,26 +673,22 @@ pub async fn close_document(uri: &str) -> Result<Option<DocumentSyncState>> {
     };
     let state = client.close_document(uri).await?;
     if let Some(state) = state.as_ref() {
-        record_diagnostics_event(
-            cc_ipc_protocol::subsystem_events::LspEvent::DiagnosticsPublished {
-                uri: uri.to_string(),
-                diagnostics: Vec::new(),
-            },
-        );
+        record_diagnostics_event(LspEvent::DiagnosticsPublished {
+            uri: uri.to_string(),
+            diagnostics: Vec::new(),
+        });
         emit_document_synced("close", state);
     }
     Ok(state)
 }
 
 fn emit_document_synced(kind: &str, state: &DocumentSyncState) {
-    emit_event(cc_ipc_protocol::subsystem_events::SubsystemEvent::Lsp(
-        cc_ipc_protocol::subsystem_events::LspEvent::DocumentSynced {
-            uri: state.uri.clone(),
-            language_id: state.language_id.clone(),
-            version: state.version,
-            change_kind: kind.to_string(),
-        },
-    ));
+    emit_event(LspEvent::DocumentSynced {
+        uri: state.uri.clone(),
+        language_id: state.language_id.clone(),
+        version: state.version,
+        change_kind: kind.to_string(),
+    });
 }
 
 /// Completion suggestions at a live editor position.
@@ -692,7 +718,7 @@ pub async fn completion(
     conversions::parse_completion_response(response)
 }
 
-pub fn server_info_snapshot() -> Vec<cc_ipc_protocol::subsystem_types::LspServerInfo> {
+pub fn server_info_snapshot() -> Vec<LspServerInfo> {
     let mut open_counts = HashMap::<String, usize>::new();
     if let Ok(clients) = LSP_CLIENTS.try_lock() {
         for (key, client) in clients.iter() {
@@ -706,7 +732,7 @@ pub fn server_info_snapshot() -> Vec<cc_ipc_protocol::subsystem_types::LspServer
             let key = server_key(&cfg);
             let open_files_count = open_counts.get(&key).copied().unwrap_or(0);
             let running = open_counts.contains_key(&key);
-            cc_ipc_protocol::subsystem_types::LspServerInfo {
+            LspServerInfo {
                 language_id: key,
                 state: if running {
                     "running".to_string()
@@ -926,7 +952,7 @@ mod tests {
 
     #[test]
     fn test_default_configs_not_empty() {
-        let configs = cc_lsp_service::default_server_configs();
+        let configs = default_server_configs();
         assert!(configs.len() >= 6);
         for c in &configs {
             assert!(!c.language_id.is_empty());

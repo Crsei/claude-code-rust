@@ -21,6 +21,88 @@ use super::callbacks::{PendingPermissions, PendingQuestions};
 use cc_ipc_client::sink::FrontendSink;
 use cc_ipc_protocol::{BackendMessage, FrontendMessage};
 
+fn lsp_event_to_subsystem(
+    event: cc_lsp_service::LspEvent,
+) -> cc_ipc_protocol::subsystem_events::SubsystemEvent {
+    use cc_ipc_protocol::subsystem_events::{LspEvent, SubsystemEvent};
+    let event = match event {
+        cc_lsp_service::LspEvent::ServerStateChanged {
+            language_id,
+            state,
+            error,
+        } => LspEvent::ServerStateChanged {
+            language_id,
+            state,
+            error,
+        },
+        cc_lsp_service::LspEvent::DocumentSynced {
+            uri,
+            language_id,
+            version,
+            change_kind,
+        } => LspEvent::DocumentSynced {
+            uri,
+            language_id,
+            version,
+            change_kind,
+        },
+        cc_lsp_service::LspEvent::DiagnosticsPublished { uri, diagnostics } => {
+            LspEvent::DiagnosticsPublished {
+                uri,
+                diagnostics: diagnostics.into_iter().map(lsp_diagnostic_to_ipc).collect(),
+            }
+        }
+        cc_lsp_service::LspEvent::CompletionResults {
+            request_id,
+            uri,
+            items,
+        } => LspEvent::CompletionResults {
+            request_id,
+            uri,
+            items: items.into_iter().map(lsp_completion_to_ipc).collect(),
+        },
+        cc_lsp_service::LspEvent::CommandError {
+            request_id,
+            message,
+        } => LspEvent::CommandError {
+            request_id,
+            message,
+        },
+    };
+    SubsystemEvent::Lsp(event)
+}
+
+fn lsp_diagnostic_to_ipc(
+    diagnostic: cc_lsp_service::LspDiagnostic,
+) -> cc_ipc_protocol::subsystem_types::LspDiagnostic {
+    cc_ipc_protocol::subsystem_types::LspDiagnostic {
+        range: cc_ipc_protocol::subsystem_types::DiagnosticRange {
+            start_line: diagnostic.range.start_line,
+            start_character: diagnostic.range.start_character,
+            end_line: diagnostic.range.end_line,
+            end_character: diagnostic.range.end_character,
+        },
+        severity: diagnostic.severity,
+        message: diagnostic.message,
+        source: diagnostic.source,
+        code: diagnostic.code,
+    }
+}
+
+fn lsp_completion_to_ipc(
+    item: cc_lsp_service::CompletionItemInfo,
+) -> cc_ipc_protocol::CompletionItemInfo {
+    cc_ipc_protocol::CompletionItemInfo {
+        label: item.label,
+        kind: item.kind,
+        detail: item.detail,
+        documentation: item.documentation,
+        insert_text: item.insert_text,
+        sort_text: item.sort_text,
+        filter_text: item.filter_text,
+    }
+}
+
 /// The headless runtime.
 ///
 /// All mutable runtime state lives here.  The `select!` loop in [`run()`]
@@ -74,8 +156,46 @@ impl HeadlessRuntime {
         // ── 1c. Subsystem event bus ──────────────────────────────────
         let event_bus = cc_ipc::subsystem_events::SubsystemEventBus::new();
         let mut event_rx = event_bus.subscribe();
-        crate::lsp_service::set_event_sender(event_bus.sender());
-        crate::plugins::set_event_sender(event_bus.sender());
+        let (lsp_tx, mut lsp_rx) = tokio::sync::broadcast::channel(128);
+        cc_lsp_service::set_event_sender(lsp_tx);
+        let lsp_event_tx = event_bus.sender();
+        tokio::spawn(async move {
+            while let Ok(event) = lsp_rx.recv().await {
+                let _ = lsp_event_tx.send(lsp_event_to_subsystem(event));
+            }
+        });
+        let plugin_tx = event_bus.sender();
+        cc_plugins::set_event_sink(Some(Arc::new(move |event| {
+            let adapted = match event {
+                cc_plugins::PluginSubsystemEvent::Reloaded { count, had_error } => {
+                    cc_ipc_protocol::subsystem_events::SubsystemEvent::Plugin(
+                        cc_ipc_protocol::subsystem_events::PluginEvent::Reloaded {
+                            count,
+                            had_error,
+                        },
+                    )
+                }
+                cc_plugins::PluginSubsystemEvent::RefreshNeeded { reason } => {
+                    cc_ipc_protocol::subsystem_events::SubsystemEvent::Plugin(
+                        cc_ipc_protocol::subsystem_events::PluginEvent::RefreshNeeded { reason },
+                    )
+                }
+                cc_plugins::PluginSubsystemEvent::StatusChanged {
+                    plugin_id,
+                    name,
+                    status,
+                    error,
+                } => cc_ipc_protocol::subsystem_events::SubsystemEvent::Plugin(
+                    cc_ipc_protocol::subsystem_events::PluginEvent::StatusChanged {
+                        plugin_id,
+                        name,
+                        status,
+                        error,
+                    },
+                ),
+            };
+            let _ = plugin_tx.send(adapted);
+        })));
         crate::ide::set_event_sender(event_bus.sender());
         super::agent_settings_generate::set_event_sender(event_bus.sender());
         // cc-skills lives in its own crate and no longer knows about
@@ -163,11 +283,11 @@ impl HeadlessRuntime {
         // Wire the plugin-contributed MCP discovery hook. Plugins return
         // `cc_mcp::McpServerConfig`, which is re-exported from
         // `cc_mcp::McpServerConfig`, so they are the same type.
-        cc_mcp::discovery::set_plugin_hook(crate::plugins::discover_plugin_mcp_servers);
+        cc_mcp::discovery::set_plugin_hook(cc_plugins::discover_plugin_mcp_servers);
         // Scope-aware variant (issue #44) — preserves each server's owning
         // plugin id so `/mcp list` can attribute entries correctly.
         cc_mcp::discovery::set_scoped_plugin_hook(|| {
-            crate::plugins::discover_plugin_mcp_servers_scoped()
+            cc_plugins::discover_plugin_mcp_servers_scoped()
         });
         // Wire the IDE-contributed MCP bridge hook (issue #41).
         cc_mcp::discovery::set_ide_hook(crate::ide::selected_ide_mcp_config);

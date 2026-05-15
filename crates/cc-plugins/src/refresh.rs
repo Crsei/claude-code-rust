@@ -4,8 +4,8 @@
 //!   1. Clears the in-memory registry.
 //!   2. Reloads installed plugins from `~/.cc-rust/plugins/installed_plugins.json`.
 //!   3. Reports the outcome as a [`ReloadReport`] and emits a
-//!      [`PluginEvent::Reloaded`] on the subsystem event bus so connected
-//!      frontends pick up the change without polling.
+//!      [`crate::PluginSubsystemEvent::Reloaded`] on the host event sink so
+//!      connected frontends pick up the change without polling.
 //!
 //! Contributions (tools, skills, MCP servers) stay *reactive*: they are
 //! resolved via `discover_plugin_*()` on each query, so no extra bookkeeping
@@ -17,9 +17,8 @@ use std::time::Instant;
 
 use tracing::{info, warn};
 
-use super::{clear_plugins, init_plugins, loader};
-use cc_ipc_protocol::subsystem_events::{PluginEvent, SubsystemEvent};
-use cc_plugins::PluginStatus;
+use super::{clear_plugins, init_plugins, loader, PluginSubsystemEvent};
+use crate::PluginStatus;
 
 /// Summary of a plugin reload cycle.
 #[derive(Debug, Clone)]
@@ -49,7 +48,7 @@ impl ReloadReport {
 /// See the module docs for the semantics of "refresh" and what stays
 /// reactive vs. what the caller must re-query.
 ///
-/// Emits `PluginEvent::Reloaded` on completion via [`super::emit_event`].
+/// Emits [`PluginSubsystemEvent::Reloaded`] on completion.
 pub fn reload_plugins() -> ReloadReport {
     let start = Instant::now();
 
@@ -123,11 +122,11 @@ pub fn reload_plugins() -> ReloadReport {
         "plugins reloaded"
     );
 
-    // 4. Announce on the event bus so any attached frontend can refresh.
-    super::emit_event(SubsystemEvent::Plugin(PluginEvent::Reloaded {
+    // 4. Announce on the event sink so any attached frontend can refresh.
+    super::emit_event(PluginSubsystemEvent::Reloaded {
         count: report.count,
         had_error: report.had_error(),
-    }));
+    });
 
     report
 }
@@ -139,8 +138,8 @@ pub fn reload_plugins() -> ReloadReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugins::{installed_plugins_path, plugins_dir, register_plugin};
-    use cc_plugins::{PluginEntry, PluginSource};
+    use crate::{installed_plugins_path, plugins_dir, register_plugin};
+    use crate::{PluginEntry, PluginSource};
     use parking_lot::Mutex;
     use std::fs;
     use std::path::Path;
@@ -199,18 +198,18 @@ mod tests {
         // Seed the registry with a plugin that is *not* persisted to disk.
         clear_plugins();
         register_plugin(make_plugin("ephemeral", PluginStatus::Installed));
-        assert!(super::super::find_plugin("ephemeral").is_some());
+        assert!(crate::find_plugin("ephemeral").is_some());
 
         let report = reload_plugins();
 
         // The ephemeral plugin should be gone because init_plugins only
         // repopulates from installed_plugins.json.
         assert!(
-            super::super::find_plugin("ephemeral").is_none(),
+            crate::find_plugin("ephemeral").is_none(),
             "in-memory-only plugin should be wiped by reload"
         );
         // Report shape is sane.
-        assert_eq!(report.count, super::super::get_all_plugins().len());
+        assert_eq!(report.count, crate::get_all_plugins().len());
     }
 
     #[test]
@@ -269,7 +268,7 @@ mod tests {
 
         // Scan the registry the way reload_plugins() does on step 3.
         let mut errors = Vec::new();
-        for plugin in super::super::get_all_plugins() {
+        for plugin in crate::get_all_plugins() {
             if let PluginStatus::Error(msg) = plugin.status {
                 errors.push((plugin.id.clone(), msg.clone()));
             }

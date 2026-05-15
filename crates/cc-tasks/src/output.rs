@@ -1,9 +1,9 @@
 use super::*;
 
-pub struct TaskOutputTool;
-pub(super) use cc_tasks::{TaskOutputRetrievalStatus, TaskOutputWaitResult};
+pub const DEFAULT_TASK_OUTPUT_TIMEOUT_MS: u64 = 30_000;
+pub const MAX_TASK_OUTPUT_TIMEOUT_MS: u64 = 600_000;
 
-pub(super) fn parse_task_output_timeout_ms(input: &Value) -> Result<u64> {
+pub fn parse_task_output_timeout_ms(input: &Value) -> Result<u64> {
     let Some(timeout) = input.get("timeout") else {
         return Ok(DEFAULT_TASK_OUTPUT_TIMEOUT_MS);
     };
@@ -25,7 +25,7 @@ pub(super) fn parse_task_output_timeout_ms(input: &Value) -> Result<u64> {
     Ok(value)
 }
 
-pub(super) fn task_output_payload(
+pub fn task_output_payload(
     entry: &TaskEntry,
     retrieval_status: TaskOutputRetrievalStatus,
 ) -> Value {
@@ -81,7 +81,7 @@ pub(super) fn task_output_payload(
     })
 }
 
-pub(super) async fn wait_for_task_output(
+pub async fn wait_for_task_output(
     task_store: TaskStore,
     task_id: &str,
     timeout_ms: u64,
@@ -117,89 +117,5 @@ pub(super) async fn wait_for_task_output(
             }
             _ = sleep(delay) => {}
         }
-    }
-}
-
-#[async_trait]
-impl Tool for TaskOutputTool {
-    fn name(&self) -> &str {
-        cc_tools::task_specs::TASK_OUTPUT_NAME
-    }
-
-    async fn description(&self, _: &Value) -> String {
-        "Get the retained output/log of a task.".to_string()
-    }
-
-    fn input_json_schema(&self) -> Value {
-        cc_tools::task_specs::task_output_schema()
-    }
-
-    fn is_concurrency_safe(&self, _: &Value) -> bool {
-        true
-    }
-
-    fn is_read_only(&self, _: &Value) -> bool {
-        true
-    }
-
-    async fn call(
-        &self,
-        input: Value,
-        ctx: &ToolUseContext,
-        _p: &AssistantMessage,
-        _: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
-    ) -> Result<ToolResult> {
-        let id = input.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
-        let block = input.get("block").and_then(|v| v.as_bool()).unwrap_or(true);
-        let timeout_ms = parse_task_output_timeout_ms(&input)?;
-
-        let task_store = store_for_context(ctx);
-        let initial = task_store.get(id);
-        match initial {
-            Some(entry) => Ok(ToolResult {
-                data: if !block {
-                    let retrieval_status = if entry.status.is_active_for_output_wait() {
-                        TaskOutputRetrievalStatus::NotReady
-                    } else {
-                        TaskOutputRetrievalStatus::Success
-                    };
-                    task_output_payload(&entry, retrieval_status)
-                } else if !entry.status.is_active_for_output_wait() {
-                    task_output_payload(&entry, TaskOutputRetrievalStatus::Success)
-                } else {
-                    match wait_for_task_output(
-                        task_store.clone(),
-                        id,
-                        timeout_ms,
-                        ctx.abort_signal.clone(),
-                    )
-                    .await?
-                    {
-                        TaskOutputWaitResult::Ready(entry) => {
-                            task_output_payload(&entry, TaskOutputRetrievalStatus::Success)
-                        }
-                        TaskOutputWaitResult::TimedOut(Some(entry)) => {
-                            task_output_payload(&entry, TaskOutputRetrievalStatus::Timeout)
-                        }
-                        TaskOutputWaitResult::TimedOut(None) => json!({
-                            "retrieval_status": TaskOutputRetrievalStatus::Timeout.as_str(),
-                            "task": null,
-                            "error": format!("Task not found: {}", id),
-                        }),
-                    }
-                },
-                new_messages: vec![],
-                ..Default::default()
-            }),
-            None => Ok(ToolResult {
-                data: json!({ "error": format!("Task not found: {}", id) }),
-                new_messages: vec![],
-                ..Default::default()
-            }),
-        }
-    }
-
-    async fn prompt(&self) -> String {
-        "Get the retained output or logs from a task.".to_string()
     }
 }

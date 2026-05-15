@@ -21,7 +21,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use cc_engine::types::tool::*;
+use cc_tools::tool::*;
 use cc_types::message::AssistantMessage;
 
 // ---------------------------------------------------------------------------
@@ -118,11 +118,7 @@ impl LspOperation {
 // LSP location types
 // ---------------------------------------------------------------------------
 //
-// Moved to `crate::lsp_service::types` in Phase 6 prep so the `lsp_service`
-// crate no longer has to depend on this tool wrapper. Re-exported here for
-// callers that want the tool-facing DTOs from the LSP tool module.
-pub use crate::lsp_service::types::{CompletionItemInfo, HoverInfo, SourceLocation, SymbolInfo};
-use cc_ipc_protocol::subsystem_types::LspDiagnostic;
+pub use crate::types::{CompletionItemInfo, HoverInfo, LspDiagnostic, SourceLocation, SymbolInfo};
 
 // ---------------------------------------------------------------------------
 // Result formatting
@@ -470,13 +466,11 @@ async fn execute_lsp_operation(
     character: u32,
     trigger_character: Option<String>,
 ) -> Result<Value> {
-    use crate::lsp_service;
-
     let uri = file_path_to_uri(file_path);
 
     match op {
         LspOperation::GoToDefinition => {
-            let locations = lsp_service::go_to_definition(&uri, line, character).await?;
+            let locations = crate::go_to_definition(&uri, line, character).await?;
             Ok(json!({
                 "operation": "goToDefinition",
                 "filePath": file_path.display().to_string(),
@@ -485,7 +479,7 @@ async fn execute_lsp_operation(
             }))
         }
         LspOperation::GoToImplementation => {
-            let locations = lsp_service::go_to_implementation(&uri, line, character).await?;
+            let locations = crate::go_to_implementation(&uri, line, character).await?;
             Ok(json!({
                 "operation": "goToImplementation",
                 "filePath": file_path.display().to_string(),
@@ -494,7 +488,7 @@ async fn execute_lsp_operation(
             }))
         }
         LspOperation::FindReferences => {
-            let locations = lsp_service::find_references(&uri, line, character).await?;
+            let locations = crate::find_references(&uri, line, character).await?;
             let file_count = locations
                 .iter()
                 .map(|l| &l.file_path)
@@ -509,7 +503,7 @@ async fn execute_lsp_operation(
             }))
         }
         LspOperation::Hover => {
-            let hover = lsp_service::hover(&uri, line, character).await?;
+            let hover = crate::hover(&uri, line, character).await?;
             Ok(json!({
                 "operation": "hover",
                 "filePath": file_path.display().to_string(),
@@ -517,7 +511,7 @@ async fn execute_lsp_operation(
             }))
         }
         LspOperation::DocumentSymbol => {
-            let symbols = lsp_service::document_symbols(&uri).await?;
+            let symbols = crate::document_symbols(&uri).await?;
             Ok(json!({
                 "operation": "documentSymbol",
                 "filePath": file_path.display().to_string(),
@@ -528,7 +522,7 @@ async fn execute_lsp_operation(
         LspOperation::WorkspaceSymbol => {
             // For workspace symbol, use the file_path as a query hint
             let query = file_path.to_string_lossy();
-            let symbols = lsp_service::workspace_symbols(&query).await?;
+            let symbols = crate::workspace_symbols(&query).await?;
             Ok(json!({
                 "operation": "workspaceSymbol",
                 "result": format_symbols(&symbols, 0),
@@ -536,7 +530,7 @@ async fn execute_lsp_operation(
             }))
         }
         LspOperation::PrepareCallHierarchy => {
-            let items = lsp_service::prepare_call_hierarchy(&uri, line, character).await?;
+            let items = crate::prepare_call_hierarchy(&uri, line, character).await?;
             Ok(json!({
                 "operation": "prepareCallHierarchy",
                 "filePath": file_path.display().to_string(),
@@ -545,14 +539,14 @@ async fn execute_lsp_operation(
             }))
         }
         LspOperation::IncomingCalls => {
-            let items = lsp_service::prepare_call_hierarchy(&uri, line, character).await?;
+            let items = crate::prepare_call_hierarchy(&uri, line, character).await?;
             if items.is_empty() {
                 return Ok(json!({
                     "operation": "incomingCalls",
                     "result": "No call hierarchy items found at this position.",
                 }));
             }
-            let calls = lsp_service::incoming_calls(&items[0]).await?;
+            let calls = crate::incoming_calls(&items[0]).await?;
             Ok(json!({
                 "operation": "incomingCalls",
                 "filePath": file_path.display().to_string(),
@@ -561,14 +555,14 @@ async fn execute_lsp_operation(
             }))
         }
         LspOperation::OutgoingCalls => {
-            let items = lsp_service::prepare_call_hierarchy(&uri, line, character).await?;
+            let items = crate::prepare_call_hierarchy(&uri, line, character).await?;
             if items.is_empty() {
                 return Ok(json!({
                     "operation": "outgoingCalls",
                     "result": "No call hierarchy items found at this position.",
                 }));
             }
-            let calls = lsp_service::outgoing_calls(&items[0]).await?;
+            let calls = crate::outgoing_calls(&items[0]).await?;
             Ok(json!({
                 "operation": "outgoingCalls",
                 "filePath": file_path.display().to_string(),
@@ -577,7 +571,7 @@ async fn execute_lsp_operation(
             }))
         }
         LspOperation::Completion => {
-            let items = lsp_service::completion(&uri, line, character, trigger_character).await?;
+            let items = crate::completion(&uri, line, character, trigger_character).await?;
             Ok(json!({
                 "operation": "completion",
                 "filePath": file_path.display().to_string(),
@@ -587,7 +581,7 @@ async fn execute_lsp_operation(
             }))
         }
         LspOperation::Diagnostics => {
-            let diagnostics = lsp_service::diagnostics_snapshot(Some(&uri))
+            let diagnostics = crate::diagnostics_snapshot(Some(&uri))
                 .into_iter()
                 .next()
                 .map(|(_, diagnostics)| diagnostics)

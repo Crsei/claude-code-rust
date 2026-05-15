@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use tracing::warn;
 
-use cc_plugins::manifest::{load_manifest, PluginManifest};
-use cc_plugins::{PluginEntry, PluginStatus};
+use crate::manifest::{load_manifest, PluginManifest};
+use crate::{PluginEntry, PluginStatus};
 
 use super::{cache_dir, installed_plugins_path};
 
@@ -367,7 +367,7 @@ pub fn manifest_to_entry(
             .unwrap_or_else(|| manifest.name.clone()),
         version: manifest.version.clone(),
         description: manifest.description.clone(),
-        source: cc_plugins::PluginSource::Local {
+        source: crate::PluginSource::Local {
             path: cache_path.to_string_lossy().to_string(),
         },
         status: PluginStatus::Installed,
@@ -392,8 +392,8 @@ pub fn manifest_to_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cc_plugins::manifest::*;
-    use cc_plugins::PluginSource;
+    use crate::manifest::*;
+    use crate::PluginSource;
     use std::collections::HashMap;
     use std::io::Write;
     use std::path::Path;
@@ -476,7 +476,7 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         let _guard = EnvGuard::set_cc_rust_home(&home);
-        std::fs::create_dir_all(crate::plugins::plugins_dir()).unwrap();
+        std::fs::create_dir_all(crate::plugins_dir()).unwrap();
         std::fs::write(installed_plugins_path(), "{ this is not json").unwrap();
 
         let report = load_installed_plugins_report();

@@ -13,7 +13,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 
 use cc_ipc_protocol::subsystem_events::{
-    IdeEvent, LspEvent, McpEvent, PluginEvent, SkillEvent, SubsystemEvent,
+    IdeEvent, LspEvent, McpEvent, PluginEvent, SkillEvent,
 };
 use cc_ipc_protocol::subsystem_types::*;
 use cc_ipc_protocol::BackendMessage;
@@ -22,6 +22,46 @@ use cc_mcp::discovery::DiscoveryScope;
 // ===========================================================================
 // Command handlers (return value pattern — no direct I/O)
 // ===========================================================================
+
+fn lsp_diagnostic_to_ipc(diagnostic: cc_lsp_service::LspDiagnostic) -> LspDiagnostic {
+    LspDiagnostic {
+        range: DiagnosticRange {
+            start_line: diagnostic.range.start_line,
+            start_character: diagnostic.range.start_character,
+            end_line: diagnostic.range.end_line,
+            end_character: diagnostic.range.end_character,
+        },
+        severity: diagnostic.severity,
+        message: diagnostic.message,
+        source: diagnostic.source,
+        code: diagnostic.code,
+    }
+}
+
+fn lsp_document_change_from_ipc(
+    change: cc_ipc_protocol::DocumentChange,
+) -> cc_lsp_service::DocumentChange {
+    cc_lsp_service::DocumentChange {
+        range: cc_lsp_service::SourceRange {
+            start_line: change.range.start_line,
+            start_character: change.range.start_character,
+            end_line: change.range.end_line,
+            end_character: change.range.end_character,
+        },
+        range_length: change.range_length,
+        text: change.text,
+    }
+}
+
+fn lsp_server_info_to_ipc(info: cc_lsp_service::LspServerInfo) -> LspServerInfo {
+    LspServerInfo {
+        language_id: info.language_id,
+        state: info.state,
+        extensions: info.extensions,
+        open_files_count: info.open_files_count,
+        error: info.error,
+    }
+}
 
 /// Handle an LSP subsystem command from the frontend.
 ///
@@ -38,19 +78,19 @@ pub fn handle_lsp_command(
         LspCommand::StartServer { language_id } => {
             tracing::info!(language_id = %language_id, "LSP start requested via IPC");
             spawn_lsp_task("start_server", None, async move {
-                crate::lsp_service::start_server(&language_id).await
+                cc_lsp_service::start_server(&language_id).await
             })
         }
         LspCommand::StopServer { language_id } => {
             tracing::info!(language_id = %language_id, "LSP stop requested via IPC");
             spawn_lsp_task("stop_server", None, async move {
-                crate::lsp_service::stop_server(&language_id).await
+                cc_lsp_service::stop_server(&language_id).await
             })
         }
         LspCommand::RestartServer { language_id } => {
             tracing::info!(language_id = %language_id, "LSP restart requested via IPC");
             spawn_lsp_task("restart_server", None, async move {
-                crate::lsp_service::restart_server(&language_id).await
+                cc_lsp_service::restart_server(&language_id).await
             })
         }
         LspCommand::QueryStatus => {
@@ -60,9 +100,12 @@ pub fn handle_lsp_command(
             }]
         }
         LspCommand::QueryDiagnostics { uri } => {
-            let entries = crate::lsp_service::diagnostics_snapshot(uri.as_deref())
+            let entries = cc_lsp_service::diagnostics_snapshot(uri.as_deref())
                 .into_iter()
-                .map(|(uri, diagnostics)| LspDiagnosticSnapshotEntry { uri, diagnostics })
+                .map(|(uri, diagnostics)| LspDiagnosticSnapshotEntry {
+                    uri,
+                    diagnostics: diagnostics.into_iter().map(lsp_diagnostic_to_ipc).collect(),
+                })
                 .collect();
             vec![BackendMessage::LspEvent {
                 event: LspEvent::DiagnosticsSnapshot { entries },
@@ -73,7 +116,7 @@ pub fn handle_lsp_command(
             language_id,
             text,
         } => spawn_lsp_task("open_document", None, async move {
-            crate::lsp_service::open_document(&uri, language_id, text)
+            cc_lsp_service::open_document(&uri, language_id, text)
                 .await
                 .map(|_| ())
         }),
@@ -83,19 +126,23 @@ pub fn handle_lsp_command(
             text,
             changes,
         } => spawn_lsp_task("change_document", None, async move {
-            crate::lsp_service::change_document(&uri, text, changes, version)
+            let changes = changes
+                .into_iter()
+                .map(lsp_document_change_from_ipc)
+                .collect();
+            cc_lsp_service::change_document(&uri, text, changes, version)
                 .await
                 .map(|_| ())
         }),
         LspCommand::SaveDocument { uri, text } => {
             spawn_lsp_task("save_document", None, async move {
-                crate::lsp_service::save_document(&uri, text)
+                cc_lsp_service::save_document(&uri, text)
                     .await
                     .map(|_| ())
             })
         }
         LspCommand::CloseDocument { uri } => spawn_lsp_task("close_document", None, async move {
-            crate::lsp_service::close_document(&uri).await.map(|_| ())
+            cc_lsp_service::close_document(&uri).await.map(|_| ())
         }),
         LspCommand::Completion {
             request_id,
@@ -106,18 +153,18 @@ pub fn handle_lsp_command(
         } => {
             let request_id_for_error = request_id.clone();
             spawn_lsp_task("completion", Some(request_id_for_error), async move {
-                let items = crate::lsp_service::completion(
+                let items = cc_lsp_service::completion(
                     &uri,
                     line.saturating_sub(1),
                     character.saturating_sub(1),
                     trigger_character,
                 )
                 .await?;
-                crate::lsp_service::emit_event(SubsystemEvent::Lsp(LspEvent::CompletionResults {
+                cc_lsp_service::emit_event(cc_lsp_service::LspEvent::CompletionResults {
                     request_id,
                     uri,
                     items,
-                }));
+                });
                 Ok(())
             })
         }
@@ -187,10 +234,10 @@ where
     handle.spawn(async move {
         if let Err(err) = future.await {
             tracing::warn!(operation, error = %err, "LSP IPC command failed");
-            crate::lsp_service::emit_event(SubsystemEvent::Lsp(LspEvent::CommandError {
+            cc_lsp_service::emit_event(cc_lsp_service::LspEvent::CommandError {
                 request_id,
                 message: format!("{operation}: {err}"),
-            }));
+            });
         }
     });
 
@@ -847,7 +894,7 @@ pub fn handle_plugin_command(
         }
         PluginCommand::Reload => {
             tracing::info!("Plugin reload requested via IPC");
-            let report = crate::plugins::reload_plugins();
+            let report = cc_plugins::reload_plugins();
             vec![BackendMessage::PluginEvent {
                 event: PluginEvent::Reloaded {
                     count: report.count,
@@ -864,7 +911,7 @@ pub fn handle_plugin_command(
                 purge_cache,
                 "Plugin uninstall requested via IPC"
             );
-            match crate::plugins::uninstall_plugin(&plugin_id, purge_cache) {
+            match cc_plugins::uninstall_plugin(&plugin_id, purge_cache) {
                 Ok(Some(entry)) => vec![BackendMessage::PluginEvent {
                     event: PluginEvent::StatusChanged {
                         plugin_id: entry.id.clone(),
@@ -962,7 +1009,7 @@ pub fn handle_skill_command(
     match cmd {
         SkillCommand::Reload => {
             let cwd = std::env::current_dir().ok();
-            let plugin_skills = crate::plugins::discover_plugin_skills();
+            let plugin_skills = discover_plugin_skills_for_handlers();
             let report = cc_skills::reload_skills_with_extra(
                 &cc_config::paths::skills_dir_global(),
                 cwd.as_deref(),
@@ -1013,7 +1060,10 @@ pub fn handle_skill_command(
 
 /// Build a list of LSP server info from the default server configurations.
 pub fn build_lsp_server_info_list() -> Vec<LspServerInfo> {
-    crate::lsp_service::server_info_snapshot()
+    cc_lsp_service::server_info_snapshot()
+        .into_iter()
+        .map(lsp_server_info_to_ipc)
+        .collect()
 }
 
 /// Build a list of MCP server status info from discovered configurations.
@@ -1473,7 +1523,7 @@ fn entry_to_settings_value(entry: &McpServerConfigEntry) -> serde_json::Value {
 pub fn build_plugin_info_list() -> Vec<PluginInfo> {
     use cc_plugins::PluginStatus;
 
-    crate::plugins::get_all_plugins()
+    cc_plugins::get_all_plugins()
         .into_iter()
         .map(|p| {
             let (status_str, error) = match &p.status {
@@ -1494,6 +1544,36 @@ pub fn build_plugin_info_list() -> Vec<PluginInfo> {
             }
         })
         .collect()
+}
+
+fn discover_plugin_skills_for_handlers() -> Vec<cc_skills::SkillDefinition> {
+    let mut out = Vec::new();
+
+    for contributed in cc_plugins::discover_plugin_skill_definitions() {
+        let source = cc_skills::SkillSource::Plugin(contributed.plugin_id.clone());
+        let mut skill =
+            match cc_skills::loader::load_skill_from_file_path(&contributed.path, source) {
+                Some(skill) => skill,
+                None => {
+                    tracing::warn!(
+                        plugin = %contributed.plugin_id,
+                        path = %contributed.path.display(),
+                        "Plugin: failed to load contributed skill file"
+                    );
+                    continue;
+                }
+            };
+
+        skill.name = contributed.name;
+        if let Some(desc) = contributed.description {
+            if !desc.trim().is_empty() {
+                skill.frontmatter.description = desc;
+            }
+        }
+        out.push(skill);
+    }
+
+    out
 }
 
 /// Build a list of skill info from the global skill registry.
@@ -1582,10 +1662,8 @@ mod tests {
 
     #[test]
     fn build_plugin_info_list_maps_status() {
-        use crate::plugins;
-
-        plugins::clear_plugins();
-        plugins::register_plugin(cc_plugins::PluginEntry {
+        cc_plugins::clear_plugins();
+        cc_plugins::register_plugin(cc_plugins::PluginEntry {
             id: "test-plugin-handlers".to_string(),
             name: "Test Plugin".to_string(),
             version: "1.0.0".to_string(),
@@ -1602,7 +1680,7 @@ mod tests {
             installed_at: None,
             updated_at: None,
         });
-        plugins::register_plugin(cc_plugins::PluginEntry {
+        cc_plugins::register_plugin(cc_plugins::PluginEntry {
             id: "err-plugin-handlers".to_string(),
             name: "Error Plugin".to_string(),
             version: "0.1.0".to_string(),
@@ -1631,7 +1709,7 @@ mod tests {
         assert_eq!(err_p.unwrap().status, "error");
         assert_eq!(err_p.unwrap().error.as_deref(), Some("load failed"));
 
-        plugins::clear_plugins();
+        cc_plugins::clear_plugins();
     }
 
     #[test]

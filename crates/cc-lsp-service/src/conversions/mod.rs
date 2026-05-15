@@ -6,7 +6,7 @@
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
-use crate::lsp_service::types::{CompletionItemInfo, HoverInfo, SourceLocation, SymbolInfo};
+use crate::types::{CompletionItemInfo, HoverInfo, SourceLocation, SymbolInfo};
 
 // ---------------------------------------------------------------------------
 // URI helpers

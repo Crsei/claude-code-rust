@@ -1,17 +1,17 @@
 use super::*;
-use cc_tasks::{TodoItem, TodoWriteOutcome};
 
 static TODO_STORE: std::sync::LazyLock<Mutex<HashMap<String, Vec<TodoItem>>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
-pub(super) fn todo_owner_key(ctx: &ToolUseContext) -> String {
-    ctx.agent_id
-        .clone()
-        .filter(|id| !id.trim().is_empty())
-        .unwrap_or_else(|| ctx.session_id.clone())
+pub fn todo_owner_key(session_id: &str, agent_id: Option<&str>) -> String {
+    agent_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| session_id.to_string())
 }
 
-pub(super) fn parse_todo_items(input: &Value) -> std::result::Result<Vec<TodoItem>, String> {
+pub fn parse_todo_items(input: &Value) -> std::result::Result<Vec<TodoItem>, String> {
     let Some(todos_value) = input.get("todos") else {
         return Err("todos is required".to_string());
     };
@@ -42,7 +42,7 @@ pub(super) fn parse_todo_items(input: &Value) -> std::result::Result<Vec<TodoIte
     Ok(todos)
 }
 
-pub(super) fn replace_todos_for_key(key: &str, todos: Vec<TodoItem>) -> TodoWriteOutcome {
+pub fn replace_todos_for_key(key: &str, todos: Vec<TodoItem>) -> TodoWriteOutcome {
     let all_done = todos.iter().all(|todo| todo.status == "completed");
     let verification_nudge_needed = all_done
         && todos.len() >= 3
@@ -58,9 +58,4 @@ pub(super) fn replace_todos_for_key(key: &str, todos: Vec<TodoItem>) -> TodoWrit
         cleared: all_done,
         verification_nudge_needed,
     }
-}
-
-#[cfg(test)]
-pub(super) fn todo_snapshot_for_key(key: &str) -> Vec<TodoItem> {
-    TODO_STORE.lock().get(key).cloned().unwrap_or_default()
 }
