@@ -134,6 +134,7 @@ cc-utils = { path = "crates/cc-utils" }
 cc-mcp = { path = "crates/cc-mcp" }
 cc-services = { path = "crates/cc-services" }
 cc-computer-use = { path = "crates/cc-computer-use" }
+cc-safety = { path = "crates/cc-safety" }
 cc-compact = { path = "crates/cc-compact" }
 cc-sandbox = { path = "crates/cc-sandbox" }
 cc-permissions = { path = "crates/cc-permissions" }

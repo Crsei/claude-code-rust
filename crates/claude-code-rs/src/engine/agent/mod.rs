@@ -7,7 +7,6 @@
 //! This enables delegation of complex, multi-step tasks to specialized subagents.
 
 mod dispatch;
-pub mod fork;
 pub(crate) mod supervisor;
 mod tool_impl;
 mod worktree;
@@ -276,7 +275,7 @@ fn build_child_config(
         })
     });
     let child_tools = filter_tools_for_optional_definition(
-        crate::tools::registry::get_all_tools(),
+        cc_engine::agent_runtime::all_tools(),
         definition.as_ref(),
     );
     let chain_id = ctx
@@ -574,7 +573,7 @@ mod child_tool_boundary_tests {
             .find(|entry| entry.name == "Explore")
             .expect("Explore built-in agent");
         let tools =
-            filter_tools_for_agent_definition(crate::tools::registry::get_all_tools(), &definition);
+            filter_tools_for_agent_definition(startup::tool_registry::get_all_tools(), &definition);
         let names = tool_names(&tools);
 
         assert_eq!(names, vec!["Glob", "Grep", "Read"]);
@@ -590,7 +589,7 @@ mod child_tool_boundary_tests {
             vec!["Write"],
         );
         let tools =
-            filter_tools_for_agent_definition(crate::tools::registry::get_all_tools(), &definition);
+            filter_tools_for_agent_definition(startup::tool_registry::get_all_tools(), &definition);
         let names = tool_names(&tools);
 
         assert_eq!(names, vec!["Read", "Bash"]);
@@ -601,7 +600,7 @@ mod child_tool_boundary_tests {
     fn custom_agent_disallowed_wildcard_hides_every_tool() {
         let definition = test_definition(vec![], vec!["*"]);
         let tools =
-            filter_tools_for_agent_definition(crate::tools::registry::get_all_tools(), &definition);
+            filter_tools_for_agent_definition(startup::tool_registry::get_all_tools(), &definition);
 
         assert!(tools.is_empty(), "disallowedTools: * must deny all tools");
     }

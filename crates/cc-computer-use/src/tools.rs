@@ -7,12 +7,13 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use cc_computer_use::input::{self, InputAction, MouseButton};
-use cc_computer_use::screenshot;
 use cc_engine::types::tool::{
     PermissionResult, Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult,
 };
 use cc_types::message::{AssistantMessage, ContentBlock, ImageSource, ToolResultContent};
+
+use crate::input::{self, InputAction, MouseButton};
+use crate::screenshot;
 
 use super::detection::{classify_risk, extract_cu_action, CuRiskLevel};
 

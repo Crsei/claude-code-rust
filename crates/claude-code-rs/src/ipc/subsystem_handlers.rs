@@ -12,9 +12,7 @@
 use std::future::Future;
 use std::path::{Path, PathBuf};
 
-use cc_ipc_protocol::subsystem_events::{
-    IdeEvent, LspEvent, McpEvent, PluginEvent, SkillEvent,
-};
+use cc_ipc_protocol::subsystem_events::{IdeEvent, LspEvent, McpEvent, PluginEvent, SkillEvent};
 use cc_ipc_protocol::subsystem_types::*;
 use cc_ipc_protocol::BackendMessage;
 use cc_mcp::discovery::DiscoveryScope;
@@ -136,9 +134,7 @@ pub fn handle_lsp_command(
         }),
         LspCommand::SaveDocument { uri, text } => {
             spawn_lsp_task("save_document", None, async move {
-                cc_lsp_service::save_document(&uri, text)
-                    .await
-                    .map(|_| ())
+                cc_lsp_service::save_document(&uri, text).await.map(|_| ())
             })
         }
         LspCommand::CloseDocument { uri } => spawn_lsp_task("close_document", None, async move {
@@ -953,7 +949,7 @@ pub fn handle_ide_command(
         }
         IdeCommand::Select { ide_id } => {
             tracing::info!(ide_id = %ide_id, "IDE select requested via IPC");
-            match crate::ide::select_ide(&ide_id) {
+            match cc_lsp_service::ide::select_ide(&ide_id) {
                 Ok(()) => {
                     let ides = build_ide_info_list();
                     vec![BackendMessage::IdeEvent {
@@ -968,7 +964,7 @@ pub fn handle_ide_command(
         }
         IdeCommand::Clear => {
             tracing::info!("IDE selection clear requested via IPC");
-            match crate::ide::clear_selection() {
+            match cc_lsp_service::ide::clear_selection() {
                 Ok(()) => {
                     let ides = build_ide_info_list();
                     vec![BackendMessage::IdeEvent {
@@ -983,7 +979,7 @@ pub fn handle_ide_command(
         }
         IdeCommand::Reconnect => {
             tracing::info!("IDE reconnect requested via IPC");
-            match crate::ide::reconnect_selected() {
+            match cc_lsp_service::ide::reconnect_selected() {
                 Ok(()) => vec![BackendMessage::SystemInfo {
                     text: "IDE reconnect scheduled".to_string(),
                     level: "info".to_string(),
@@ -1603,12 +1599,12 @@ pub fn build_skill_info_list() -> Vec<SkillInfo> {
 
 /// Build the list of detected IDE integrations (issue #41).
 ///
-/// Thin wrapper around [`crate::ide::detect_ides`] that exists primarily
+/// Thin wrapper around [`cc_lsp_service::ide::detect_ides`] that exists primarily
 /// so the IPC layer has a stable entry point we can hook from other
 /// places (e.g. the future `/ide` TUI view) without reaching into the
 /// `ide` module.
 pub fn build_ide_info_list() -> Vec<IdeInfo> {
-    crate::ide::detect_ides()
+    cc_lsp_service::ide::detect_ides()
 }
 
 /// Build a complete subsystem status snapshot combining all subsystems.

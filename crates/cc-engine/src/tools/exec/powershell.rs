@@ -437,7 +437,7 @@ mod tests {
                 },
                 abort_signal: rx,
                 read_file_state: FileStateCache::default(),
-                get_app_state: Arc::new(move || app_state.clone()),
+                get_app_state: Arc::new(move || app_state.to_tool_app_state()),
                 set_app_state: Arc::new(|_| {}),
                 session_id: "powershell-test-session".to_string(),
                 langfuse_session_id: "powershell-test-session".to_string(),

@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use crate::commands;
 use crate::ui::fuzzy_match::best_fuzzy_match;
+use cc_commands as commands;
 
 use super::metadata::command_meta;
 use super::CommandItem;

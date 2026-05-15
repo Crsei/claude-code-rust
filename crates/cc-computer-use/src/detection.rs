@@ -24,7 +24,7 @@ pub fn extract_cu_action(tool_name: &str) -> Option<&str> {
 }
 
 /// Classify the risk level of a Computer Use action.
-pub(crate) fn classify_risk(action: &str) -> CuRiskLevel {
+pub fn classify_risk(action: &str) -> CuRiskLevel {
     match action {
         "screenshot" | "cursor_position" => CuRiskLevel::Medium,
         _ => CuRiskLevel::High, // click, type, key, scroll, etc.

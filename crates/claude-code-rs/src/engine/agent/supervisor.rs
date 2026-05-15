@@ -20,12 +20,12 @@ use tracing::{info, warn};
 use cc_engine::lifecycle::QueryEngine;
 use cc_tasks::{TaskCreateOptions, TaskEntry, TaskStatus};
 
-use cc_tasks::global_store;
 use crate::worktree_hooks::{
     default_agent_worktree_path, ensure_worktree_parent, run_worktree_create_hook,
 };
 use cc_engine::types::config::{QueryEngineConfig, QuerySource};
 use cc_engine::types::tool::*;
+use cc_tasks::global_store;
 use cc_utils::bash::validate_working_directory;
 
 use super::{

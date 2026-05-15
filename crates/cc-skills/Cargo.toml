@@ -6,8 +6,12 @@ description = "Skill discovery, loading, and registry for cc-rust (bundled + use
 
 [dependencies]
 cc-config = { path = "../cc-config" }
+cc-types = { workspace = true }
+chrono = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 parking_lot = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

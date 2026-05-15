@@ -83,7 +83,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use cc_bootstrap::SessionId;
-use cc_engine::types::app_state::AppState;
+use cc_engine::{command_runtime, types::app_state::AppState};
 use cc_types::message::Message;
 
 pub mod runtime {
@@ -372,7 +372,7 @@ pub mod runtime {
         ensure_runtime_installed();
         get_provider(&COMMAND_METADATA_PROVIDER)
             .map(|provider| provider())
-            .unwrap_or_default()
+            .unwrap_or_else(|| crate::command_metadata(&crate::get_all_commands()))
     }
 
     pub(crate) fn current_worktree_status() -> Option<WorktreeStatus> {
@@ -520,6 +520,446 @@ pub fn command_metadata(commands: &[Command]) -> Vec<CommandMetadata> {
     commands.iter().map(Command::metadata).collect()
 }
 
+/// Build the full list of available commands.
+///
+/// Runtime-dependent commands use provider hooks in [`runtime`] and in their
+/// local adapter modules. The binary crate is still responsible for installing
+/// those providers before command execution.
+pub fn get_all_commands() -> Vec<Command> {
+    let mut commands = vec![
+        command(
+            "help",
+            &["h", "?"],
+            "Help V2: commands, quick surfaces, keys, and diagnostics hints",
+            help::HelpHandler,
+        ),
+        command(
+            "clear",
+            &[],
+            "Clear the conversation history",
+            clear::ClearHandler,
+        ),
+        command(
+            "config",
+            &["settings"],
+            "Show or modify configuration settings",
+            config_cmd::ConfigHandler,
+        ),
+        command(
+            "diff",
+            &[],
+            "Show git diff of current changes",
+            diff::DiffHandler,
+        ),
+        command(
+            "exit",
+            &["quit", "q"],
+            "Exit the REPL via the normal exit flow",
+            exit::ExitHandler,
+        ),
+        command(
+            "version",
+            &["v"],
+            "Show the current version",
+            version::VersionHandler,
+        ),
+        command(
+            "model",
+            &[],
+            "Show or switch the active model",
+            model::ModelHandler,
+        ),
+        command(
+            "cost",
+            &["usage"],
+            "Show token usage and cost for the current session",
+            cost::CostHandler,
+        ),
+        command(
+            "session",
+            &[],
+            "Show current session info or list saved sessions",
+            session::SessionHandler,
+        ),
+        command(
+            "resume",
+            &["sessions", "preview"],
+            "Resume or preview a previous saved session",
+            resume::ResumeHandler,
+        ),
+        command(
+            "rename",
+            &[],
+            "Set or clear the custom title for the current session",
+            rename::RenameHandler,
+        ),
+        command(
+            "rewind",
+            &[],
+            "Rewind the conversation to an earlier user turn",
+            rewind::RewindHandler,
+        ),
+        command(
+            "insights",
+            &[],
+            "Session history analytics (cross-session statistics)",
+            insights::InsightsHandler,
+        ),
+        command(
+            "files",
+            &[],
+            "List files referenced in the current conversation",
+            files::FilesHandler,
+        ),
+        command(
+            "context",
+            &["ctx"],
+            "Show context usage information",
+            context::ContextHandler,
+        ),
+        command(
+            "coordinator",
+            &["coord"],
+            "Enable or inspect coordinator mode for Agent Teams",
+            coordinator::CoordinatorHandler,
+        ),
+        command(
+            "permissions",
+            &["perms"],
+            "View or modify tool permission settings",
+            permissions_cmd::PermissionsHandler,
+        ),
+        command(
+            "plan",
+            &[],
+            "Enter plan mode and show or edit the plan file",
+            plan::PlanHandler,
+        ),
+        command(
+            "login",
+            &[],
+            "Authenticate (API key, Anthropic OAuth, OpenAI Codex OAuth, Bedrock, Vertex)",
+            login::LoginHandler,
+        ),
+        command(
+            "login-code",
+            &[],
+            "Complete OAuth login with authorization code",
+            login_code::LoginCodeHandler,
+        ),
+        command(
+            "logout",
+            &[],
+            "Clear stored authentication credentials",
+            logout::LogoutHandler,
+        ),
+        command(
+            "commit",
+            &[],
+            "Create a git commit from current changes",
+            commit::CommitHandler,
+        ),
+        command(
+            "branch",
+            &["br"],
+            "Fork the current conversation into a new branch",
+            branch::BranchHandler,
+        ),
+        command(
+            "gbranch",
+            &["gitbranch"],
+            "Show or switch git branches",
+            gbranch::GitBranchHandler,
+        ),
+        command(
+            "effort",
+            &[],
+            "Set the thinking effort level (low/medium/high)",
+            effort::EffortHandler,
+        ),
+        command("fast", &[], "Toggle fast mode on/off", fast::FastHandler),
+        command(
+            "memory",
+            &["mem", "global-search", "quick-open"],
+            "View, search, and quick-open memory/project instructions",
+            memory::MemoryHandler,
+        ),
+        command(
+            "skills",
+            &[],
+            "List available skills",
+            skills_cmd::SkillsHandler,
+        ),
+        command(
+            "init",
+            &[],
+            "Initialize project config and CLAUDE.md",
+            init::InitHandler,
+        ),
+        command(
+            "copy",
+            &["cp"],
+            "Copy the last assistant response to clipboard",
+            copy::CopyHandler,
+        ),
+        command("status", &[], "Show session status", status::StatusHandler),
+        command(
+            "export",
+            &["markdown-export"],
+            "Export conversation to Markdown (.md)",
+            export::ExportHandler,
+        ),
+        command(
+            "experimental",
+            &["experiments", "exp"],
+            "Inspect or override experimental feature gates",
+            experimental::ExperimentalHandler,
+        ),
+        command(
+            "audit-export",
+            &["audit"],
+            "Export session as verifiable audit record (.audit.json)",
+            audit_export::AuditExportHandler,
+        ),
+        command(
+            "session-export",
+            &["sexport", "structured-export"],
+            "Export session as structured JSON data package (.session.json)",
+            session_export::SessionExportHandler,
+        ),
+        command(
+            "extra-usage",
+            &["eu"],
+            "Show extended token usage and cost analysis",
+            extra_usage::ExtraUsageHandler,
+        ),
+        command(
+            "rate-limit-options",
+            &["rlo", "rate-limit"],
+            "Show rate limit information for the current model",
+            rate_limit::RateLimitHandler,
+        ),
+        command(
+            "compact",
+            &[],
+            "Compact conversation to reduce token usage",
+            compact::CompactHandler,
+        ),
+        command(
+            "mcp",
+            &[],
+            "MCP server management (list, status, add, edit, remove, approve, reject, connect)",
+            mcp::McpHandler,
+        ),
+        command(
+            "ide",
+            &[],
+            "Detect, select, or reconnect the IDE MCP bridge",
+            ide_cmd::IdeHandler,
+        ),
+        command(
+            "lsp",
+            &[],
+            "Show LSP server cards and recommendation settings",
+            lsp_cmd::LspHandler,
+        ),
+        command(
+            "chrome",
+            &[],
+            "Claude in Chrome (first-party integration) status + reconnect",
+            chrome_cmd::ChromeHandler,
+        ),
+        command(
+            "plugin",
+            &[],
+            "Plugin management (list, status, enable, disable)",
+            plugin_cmd::PluginHandler,
+        ),
+        command(
+            "reload-plugins",
+            &[],
+            "Hot-refresh the plugin registry",
+            reload_plugins_cmd::ReloadPluginsHandler,
+        ),
+        command(
+            "model-add",
+            &["ma"],
+            "Add a model with token pricing to .env",
+            model_add::ModelAddHandler,
+        ),
+        command(
+            "brief",
+            &[],
+            "Toggle Brief output mode (KAIROS)",
+            brief::BriefHandler,
+        ),
+        command(
+            "sleep",
+            &[],
+            "Set proactive sleep duration",
+            sleep_cmd::SleepCmdHandler,
+        ),
+        command(
+            "assistant",
+            &["kairos"],
+            "View assistant mode status",
+            assistant::AssistantHandler,
+        ),
+        command(
+            "daemon",
+            &[],
+            "View/control daemon process",
+            daemon_cmd::DaemonCmdHandler,
+        ),
+        command(
+            "notify",
+            &[],
+            "Push notification settings",
+            notify::NotifyHandler,
+        ),
+        command(
+            "remote",
+            &[],
+            "Inspect and control the local remote-control gateway",
+            remote_cmd::RemoteHandler,
+        ),
+        command(
+            "channels",
+            &[],
+            "View connected channels",
+            channels::ChannelsHandler,
+        ),
+        command(
+            "dream",
+            &["logs"],
+            "Distill daily logs into memory",
+            dream::DreamHandler,
+        ),
+        command(
+            "add-dir",
+            &[],
+            "Add a new working directory",
+            add_dir::AddDirHandler,
+        ),
+        command(
+            "sandbox",
+            &[],
+            "View or toggle sandbox + network access settings",
+            sandbox_cmd::SandboxHandler,
+        ),
+        command(
+            "keybindings",
+            &["keys", "shortcuts"],
+            "View, edit, or reload keybindings.json",
+            keybindings_cmd::KeybindingsHandler,
+        ),
+        command(
+            "statusline",
+            &["status-line"],
+            "View, edit, or test the scriptable status line",
+            statusline_cmd::StatusLineHandler,
+        ),
+        command(
+            "terminal-setup",
+            &["term-setup", "terminal"],
+            "Diagnose terminal env + print Shift+Enter / tmux / notification tips",
+            terminal_setup::TerminalSetupHandler,
+        ),
+        command(
+            "voice",
+            &["dictation"],
+            "Inspect compatibility-only voice settings (runtime voice unsupported)",
+            voice_cmd::VoiceHandler,
+        ),
+        command(
+            "team",
+            &["teams"],
+            "Manage Agent Teams (create, list, spawn, send, kill, leave, delete)",
+            team_cmd::TeamHandler,
+        ),
+        command(
+            "review",
+            &[],
+            "Review a pull request using a local gh pr workflow",
+            review::ReviewHandler,
+        ),
+        command(
+            "security-review",
+            &["secreview"],
+            "Run a focused security review of the current branch diff",
+            security_review::SecurityReviewHandler,
+        ),
+        command(
+            "recap",
+            &[],
+            "Summarize the current session (short | long)",
+            recap::RecapHandler,
+        ),
+        command(
+            "hooks",
+            &[],
+            "Read-only merged hook tree (managed + user + project + local)",
+            hooks_cmd::HooksHandler,
+        ),
+        command(
+            "agents",
+            &[],
+            "Browse agent definitions with source + override visibility",
+            agents_cmd::AgentsHandler,
+        ),
+        command(
+            "doctor",
+            &["diagnostics", "diag"],
+            "Aggregated diagnostics (install, auth, settings, MCP, keybindings, terminal)",
+            doctor::DoctorHandler,
+        ),
+        command(
+            "tasks",
+            &[],
+            "List and drill into background tasks (tool + team)",
+            tasks_cmd::TasksHandler,
+        ),
+        command(
+            "btw",
+            &[],
+            "Ask a side question in a forked agent",
+            btw::BtwHandler,
+        ),
+        command(
+            "simplify",
+            &[],
+            "Run a multi-agent simplification review of recent changes",
+            simplify::SimplifyHandler,
+        ),
+        command(
+            "advisor",
+            &[],
+            "Show, set, or clear the advisor model",
+            advisor::AdvisorHandler,
+        ),
+        command(
+            "loop",
+            &[],
+            "Register a recurring local task or slash command and run it once",
+            loop_cmd::LoopHandler,
+        ),
+        command(
+            "schedule",
+            &["cron"],
+            "Manage local cron tasks (add, list, pause, trigger, remove)",
+            schedule::ScheduleHandler,
+        ),
+        command(
+            "team-onboarding",
+            &["teamonboarding"],
+            "Generate a teammate onboarding guide from project and team state",
+            team_onboarding::TeamOnboardingHandler,
+        ),
+    ];
+    sort_commands_for_display(&mut commands);
+    commands
+}
+
 /// Find a command by name or alias from user input.
 pub fn find_command_in(input: &str, commands: &[CommandMetadata]) -> Option<usize> {
     let cmd_name = input.split_whitespace().next().unwrap_or("");
@@ -550,6 +990,16 @@ pub fn parse_command_input_in(
     find_command_in(without_slash, commands).map(|idx| (idx, args))
 }
 
+/// Find a command by name or alias in the full registry.
+pub fn find_command(input: &str) -> Option<usize> {
+    find_command_in(input, &command_metadata(&get_all_commands()))
+}
+
+/// Parse user input against the full registry.
+pub fn parse_command_input(input: &str) -> Option<(usize, String)> {
+    parse_command_input_in(input, &command_metadata(&get_all_commands()))
+}
+
 /// Concrete [`cc_types::commands::CommandDispatcher`] backed by command metadata.
 pub struct DefaultCommandDispatcher {
     commands: Vec<CommandMetadata>,
@@ -558,6 +1008,10 @@ pub struct DefaultCommandDispatcher {
 impl DefaultCommandDispatcher {
     pub fn new(commands: Vec<CommandMetadata>) -> Self {
         Self { commands }
+    }
+
+    pub fn for_full_registry() -> Self {
+        Self::new(command_metadata(&get_all_commands()))
     }
 
     pub fn from_commands(commands: &[Command]) -> Self {
@@ -574,6 +1028,51 @@ impl cc_types::commands::CommandDispatcher for DefaultCommandDispatcher {
     fn command_name(&self, index: usize) -> Option<String> {
         self.commands.get(index).map(|cmd| cmd.name.clone())
     }
+}
+
+pub struct EngineCommandExecutor;
+
+#[async_trait]
+impl command_runtime::CommandExecutor for EngineCommandExecutor {
+    async fn execute(
+        &self,
+        parsed: cc_types::commands::ParsedCommand,
+        command_name: String,
+        ctx: &mut command_runtime::CommandContext,
+    ) -> anyhow::Result<command_runtime::CommandResult> {
+        let mut commands = get_all_commands();
+        let Some(command) = commands.get_mut(parsed.index) else {
+            anyhow::bail!("Unknown command: /{}", command_name);
+        };
+
+        let mut command_ctx = CommandContext {
+            messages: ctx.messages.clone(),
+            cwd: ctx.cwd.clone(),
+            app_state: ctx.app_state.clone(),
+            session_id: ctx.session_id.clone(),
+        };
+
+        let result = command
+            .handler
+            .execute(&parsed.args, &mut command_ctx)
+            .await?;
+        ctx.messages = command_ctx.messages;
+        ctx.cwd = command_ctx.cwd;
+        ctx.app_state = command_ctx.app_state;
+        ctx.session_id = command_ctx.session_id;
+
+        Ok(match result {
+            CommandResult::Output(text) => command_runtime::CommandResult::Output(text),
+            CommandResult::Query(messages) => command_runtime::CommandResult::Query(messages),
+            CommandResult::Clear => command_runtime::CommandResult::Clear,
+            CommandResult::Exit(text) => command_runtime::CommandResult::Exit(text),
+            CommandResult::None => command_runtime::CommandResult::None,
+        })
+    }
+}
+
+pub fn install_engine_command_executor() {
+    command_runtime::set_global_command_executor(std::sync::Arc::new(EngineCommandExecutor));
 }
 
 #[cfg(test)]

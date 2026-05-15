@@ -89,6 +89,29 @@ pub fn extract_browser_action(tool_name: &str) -> Option<(&str, &str)> {
     }
 }
 
+/// Detect browser MCP servers from server configs and already-registered MCP
+/// tool display names.
+///
+/// This keeps browser classification independent of the host's concrete Tool
+/// trait: callers only need to pass names such as `mcp__chrome__navigate`.
+pub fn detect_browser_servers_from_tool_names<'a, 'b>(
+    config_flags: impl IntoIterator<Item = (&'b str, bool)>,
+    tool_names: impl IntoIterator<Item = &'a str>,
+) -> HashSet<String> {
+    let mut servers: HashSet<String> = config_flags
+        .into_iter()
+        .filter_map(|(name, browser_mcp)| browser_mcp.then(|| name.to_string()))
+        .collect();
+
+    for name in tool_names {
+        if let Some((server, _)) = extract_browser_action(name) {
+            servers.insert(server.to_string());
+        }
+    }
+
+    servers
+}
+
 // ---------------------------------------------------------------------------
 // Process-wide registry of browser server names
 // ---------------------------------------------------------------------------

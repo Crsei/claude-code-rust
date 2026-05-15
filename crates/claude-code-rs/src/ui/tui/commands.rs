@@ -1,7 +1,7 @@
 use super::subsystem_events::{add_system_error, add_system_info};
-use crate::commands as slash_commands;
 use crate::ui::app::App;
 use crate::ui::command_surface::CommandSurface;
+use cc_commands as slash_commands;
 use cc_commands::{CommandContext, CommandResult};
 use cc_engine::lifecycle::QueryEngine;
 use cc_types::message::{ContentBlock, Message, MessageContent};

@@ -626,8 +626,13 @@ name = "cc-computer-use"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64",
+ "cc-engine",
+ "cc-types",
+ "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -780,15 +785,19 @@ dependencies = [
  "anyhow",
  "async-trait",
  "cc-config",
+ "cc-ipc-protocol",
+ "cc-mcp",
  "cc-tools",
  "cc-types",
  "lsp-types",
  "parking_lot",
  "serde",
  "serde_json",
+ "serial_test",
  "tempfile",
  "tokio",
  "tracing",
+ "which",
 ]
 
 [[package]]
@@ -893,6 +902,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-safety"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "cc-config",
+ "cc-engine",
+ "cc-permissions",
+ "cc-query",
+ "cc-types",
+ "chrono",
+ "insta",
+ "parking_lot",
+ "regex",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "cc-sandbox"
 version = "0.1.0"
 dependencies = [
@@ -967,9 +996,13 @@ name = "cc-skills"
 version = "0.1.0"
 dependencies = [
  "cc-config",
+ "cc-types",
+ "chrono",
  "parking_lot",
  "serde",
+ "serde_json",
  "tempfile",
+ "uuid",
 ]
 
 [[package]]
@@ -982,13 +1015,16 @@ dependencies = [
  "cc-browser",
  "cc-config",
  "cc-engine",
+ "cc-lsp-service",
  "cc-mcp",
  "cc-permissions",
  "cc-plugins",
  "cc-services",
  "cc-tasks",
  "cc-teams",
+ "cc-tools",
  "cc-types",
+ "cc-worktree",
  "dotenvy",
  "futures",
  "opentelemetry",
@@ -1271,6 +1307,7 @@ dependencies = [
  "cc-permissions",
  "cc-plugins",
  "cc-query",
+ "cc-safety",
  "cc-sandbox",
  "cc-services",
  "cc-session",

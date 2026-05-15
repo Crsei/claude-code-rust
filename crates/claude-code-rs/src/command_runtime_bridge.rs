@@ -3,7 +3,12 @@ use std::sync::Arc;
 use cc_commands::CommandContext;
 use gateway::{AdapterProvider, AdapterStatus, RunEvent, RunId, RunMeta};
 
-pub(super) fn install_command_runtime_providers() {
+pub(crate) fn install_command_runtime_providers() {
+    cc_commands::runtime::set_runtime_installer(crate::ipc::runtime_adapters::ensure_installed);
+    cc_commands::runtime::set_lsp_runtime_providers(
+        crate::ipc::subsystem_handlers::build_lsp_server_info_list,
+        crate::ipc::subsystem_handlers::load_lsp_recommendation_settings,
+    );
     cc_commands::runtime::set_agent_runtime_providers(
         builtin_agent_entries_for_commands,
         builtin_agent_prompt_for_commands,
@@ -25,7 +30,7 @@ pub(super) fn install_command_runtime_providers() {
         cc_daemon::process_state::control_token_path,
     );
     cc_commands::runtime::set_tool_policy_names_provider(tool_policy_names_for_commands);
-    cc_commands::runtime::set_tool_list_provider(crate::tools::registry::get_all_tools);
+    cc_commands::runtime::set_tool_list_provider(all_tools_for_commands);
     cc_commands::runtime::set_fork_runner(fork_runner_for_commands);
 
     cc_commands::copy::set_clipboard_copy_provider(
@@ -34,11 +39,11 @@ pub(super) fn install_command_runtime_providers() {
     cc_commands::logout::set_onboarding_logout_clearer(onboarding_logout_clear_for_commands);
     cc_commands::skills_cmd::set_plugin_skills_provider(discover_plugin_skills_for_commands);
     cc_commands::ide_cmd::set_ide_command_runtime(cc_commands::ide_cmd::IdeCommandRuntime {
-        detect_ides: crate::ide::detect_ides,
-        selected_ide: crate::ide::selected_ide,
-        select_ide: crate::ide::select_ide,
-        clear_selection: crate::ide::clear_selection,
-        reconnect_selected: crate::ide::reconnect_selected,
+        detect_ides: cc_lsp_service::ide::detect_ides,
+        selected_ide: cc_lsp_service::ide::selected_ide,
+        select_ide: cc_lsp_service::ide::select_ide,
+        clear_selection: cc_lsp_service::ide::clear_selection,
+        reconnect_selected: cc_lsp_service::ide::reconnect_selected,
     });
     cc_commands::plugin_cmd::set_plugin_command_runtime(
         cc_commands::plugin_cmd::PluginCommandRuntime {
@@ -85,6 +90,7 @@ pub(super) fn install_command_runtime_providers() {
             stop_run: remote_stop_run_for_commands,
         },
     );
+    cc_commands::install_engine_command_executor();
 }
 
 fn builtin_agent_entries_for_commands() -> Vec<cc_commands::runtime::BuiltinAgentEntry> {
@@ -159,19 +165,23 @@ fn team_command_for_commands<'a>(
 }
 
 fn command_metadata_for_commands() -> Vec<cc_commands::CommandMetadata> {
-    cc_commands::command_metadata(&super::get_all_commands())
+    cc_commands::command_metadata(&cc_commands::get_all_commands())
+}
+
+fn all_tools_for_commands() -> cc_engine::types::tool::Tools {
+    cc_tools::registry::get_all_tools()
 }
 
 fn tool_policy_names_for_commands(policy: cc_commands::runtime::CommandToolPolicy) -> Vec<String> {
     let root_policy = match policy {
         cc_commands::runtime::CommandToolPolicy::DefaultAgent => {
-            crate::tools::registry::ToolPolicy::DefaultAgent
+            cc_tools::registry::ToolPolicy::DefaultAgent
         }
         cc_commands::runtime::CommandToolPolicy::Coordinator => {
-            crate::tools::registry::ToolPolicy::Coordinator
+            cc_tools::registry::ToolPolicy::Coordinator
         }
     };
-    crate::tools::registry::get_tools_for_policy(root_policy)
+    cc_tools::registry::get_tools_for_policy(root_policy)
         .iter()
         .map(|tool| tool.name().to_string())
         .collect()

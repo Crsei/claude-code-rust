@@ -4,6 +4,7 @@
 //! Corresponds to TypeScript: `src/skills/`.
 
 pub mod bundled;
+pub mod invocation;
 pub mod loader;
 
 use parking_lot::Mutex;

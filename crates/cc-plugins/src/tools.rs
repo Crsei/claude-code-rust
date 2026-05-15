@@ -12,11 +12,11 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
+use cc_tools::exec::truncate_output;
 use cc_tools::tool::{
     InterruptBehavior, PermissionMode, PermissionResult, Tool, ToolAppState, ToolPermissionContext,
     ToolProgress, ToolResult, ToolUseContext,
 };
-use cc_tools::exec::truncate_output;
 use cc_types::message::AssistantMessage;
 
 use crate::manifest::{StdioToolRuntime, ToolContribution, ToolRuntime};

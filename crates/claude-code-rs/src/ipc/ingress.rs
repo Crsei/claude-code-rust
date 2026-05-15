@@ -8,7 +8,6 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use tracing::{debug, warn};
 
-use crate::commands;
 use cc_commands::{CommandContext, CommandResult};
 use cc_engine::lifecycle::QueryEngine;
 use cc_services::prompt_suggestion::PromptSuggestionService;
@@ -373,7 +372,7 @@ async fn handle_slash_command(
         return;
     }
 
-    let Some((cmd_idx, args)) = commands::parse_command_input(trimmed) else {
+    let Some((cmd_idx, args)) = cc_commands::parse_command_input(trimmed) else {
         let _ = sink.send(&BackendMessage::Error {
             message: format!("unknown command: {}", trimmed),
             recoverable: true,
@@ -381,7 +380,7 @@ async fn handle_slash_command(
         return;
     };
 
-    let all_commands = commands::get_all_commands();
+    let all_commands = cc_commands::get_all_commands();
     let cmd = &all_commands[cmd_idx];
     let original_messages = engine.messages();
     let original_app_state = engine.app_state();

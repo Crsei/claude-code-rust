@@ -1,6 +1,6 @@
 //! Slash-command descriptors for command palette and prompt completion.
 
-use crate::commands;
+use cc_commands as commands;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlashCommand {

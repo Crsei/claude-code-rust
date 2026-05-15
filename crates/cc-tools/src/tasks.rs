@@ -6,14 +6,12 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::tool::{
-    Tool, ToolProgress, ToolResult, ToolUseContext, Tools, ValidationResult,
-};
+use crate::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools, ValidationResult};
 use cc_tasks::{
     parse_task_create, parse_task_id, parse_task_output_timeout_ms, parse_task_update,
     replace_todos_for_key, task_list_id_from_parts, task_output_payload, task_to_json_from_store,
-    todo_owner_key, wait_for_task_output, TaskEntry, TaskError, TaskListScope, TaskOutputRetrievalStatus,
-    TaskOutputWaitResult, TaskStatus, TaskStore, TaskUpdateAction,
+    todo_owner_key, wait_for_task_output, TaskEntry, TaskError, TaskListScope,
+    TaskOutputRetrievalStatus, TaskOutputWaitResult, TaskStatus, TaskStore, TaskUpdateAction,
 };
 use cc_types::message::AssistantMessage;
 
@@ -434,9 +432,8 @@ impl Tool for TaskUpdateTool {
                             "subject": &entry.subject,
                             "status": entry.status.as_str(),
                         });
-                        let _ =
-                            crate::hooks::run_event_hooks("TaskCompleted", &payload, &configs)
-                                .await;
+                        let _ = crate::hooks::run_event_hooks("TaskCompleted", &payload, &configs)
+                            .await;
                     }
                 }
 

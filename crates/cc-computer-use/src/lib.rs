@@ -1,9 +1,13 @@
-//! Desktop-control primitives used by the Computer Use tools.
+//! Computer Use — native desktop control tools.
 //!
-//! **Partial extraction** — Phase 3 (issue #72) moved the platform-specific
-//! screenshot and input submodules here. The `detection`, `setup`, and
-//! `tools` wrappers stay in the root crate because they implement the `Tool`
-//! trait, which still lives there (unblocked by Phase 5 cycle-break).
+//! Provides detection/classification for external MCP tools (`detection`),
+//! platform-native backends (`screenshot`, `input`), Tool trait wrappers
+//! (`tools`), and CLI registration (`setup`).
+//!
+//! Reserved tool name prefix: `mcp__computer-use__*`
 
+pub mod detection;
 pub mod input;
 pub mod screenshot;
+pub mod setup;
+pub mod tools;

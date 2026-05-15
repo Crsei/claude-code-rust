@@ -601,7 +601,7 @@ fn validate_name(name: &str) -> Result<(), String> {
 /// MCP-provided tools are appended with category `"mcp"` and their
 /// originating server recorded in `mcp_server`.
 pub fn available_tools() -> Vec<AgentToolInfo> {
-    // Base list matches `crate::tools::registry::tool_names()` — duplicated
+    // Base list matches the shared tool registry names — duplicated
     // here so the IPC doesn't depend on the tool registry's lazy_static at
     // call time. The registry is the source of truth at runtime; if it
     // diverges, add a doctest or a cross-check (see tests below).

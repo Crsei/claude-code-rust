@@ -17,31 +17,15 @@
 
 // Core modules
 mod cli;
-mod commands;
-mod computer_use;
+mod command_runtime_bridge;
 mod engine;
-mod safety;
-mod skills;
-mod tools;
 mod ui;
 mod worktree_hooks;
 
 // Plugin system
 mod plan_workflow;
 
-// MCP (Model Context Protocol) server layer
-mod mcp;
-
-// Browser MCP: identification + prompt + permissions for browser-automation MCP servers
-mod browser;
-
 // LSP service layer
-
-// IDE detection + selection + MCP bridge (issue #41)
-mod ide;
-
-// Service layer
-mod services;
 
 // Phase I: Shutdown and cleanup
 mod shutdown;
@@ -198,10 +182,9 @@ struct RootAgentToolRegistry;
 
 impl cc_engine::agent_runtime::AgentToolRegistry for RootAgentToolRegistry {
     fn get_all_tools(&self) -> Vec<Arc<dyn cc_engine::types::tool::Tool>> {
-        crate::tools::registry::get_all_tools()
+        registry::get_all_tools()
     }
 }
-use crate::tools::registry;
 use crate::ui::tui;
 use cc_config::settings;
 use cc_engine::lifecycle::QueryEngine;
@@ -210,12 +193,13 @@ use cc_engine::types::config::QueryEngineConfig;
 use startup::runtime_config::{
     build_tool_permission_context, chrome_cli_override, resolve_cwd, resolve_permission_mode,
 };
+use startup::tool_registry as registry;
 
 fn install_daemon_runtime_adapters() {
     cc_daemon::runtime::set_runtime_adapters(cc_daemon::runtime::DaemonRuntimeAdapters {
         init_plugins: cc_plugins::init_plugins,
-        active_tools: crate::tools::registry::get_tools_for_active_session,
-        commands: crate::commands::get_all_commands,
+        active_tools: registry::get_tools_for_active_session,
+        commands: cc_commands::get_all_commands,
         command_dispatcher: daemon_command_dispatcher,
         command_executor: daemon_command_executor,
         route_github_pr_activity: daemon_route_github_pr_activity,
@@ -253,11 +237,11 @@ fn discover_plugin_skills_for_root() -> Vec<cc_skills::SkillDefinition> {
 }
 
 fn daemon_command_dispatcher() -> Arc<dyn cc_types::commands::CommandDispatcher> {
-    Arc::new(crate::commands::DefaultCommandDispatcher::new())
+    Arc::new(cc_commands::DefaultCommandDispatcher::for_full_registry())
 }
 
 fn daemon_command_executor() -> Arc<dyn cc_engine::command_runtime::CommandExecutor> {
-    Arc::new(crate::commands::EngineCommandExecutor)
+    Arc::new(cc_commands::EngineCommandExecutor)
 }
 
 fn daemon_route_github_pr_activity(
@@ -283,6 +267,7 @@ fn daemon_route_github_pr_activity(
 
 fn main() -> ExitCode {
     startup::load_env_files();
+    cc_tools::registry::install_tool_registry_providers(registry::root_tool_registry_providers());
     startup::engine_runtime::install(
         Arc::new(RootDashboardEmitter),
         Arc::new(RootAgentToolRegistry),
@@ -292,11 +277,11 @@ fn main() -> ExitCode {
     // out of the root crate in Phase 4 (issue #73); the Computer Use and
     // browser prompt strings still live here, so we register look-ups.
     cc_permissions::decision::set_cu_message_callback(|tool_name: &str| {
-        let action = crate::computer_use::detection::extract_cu_action(tool_name)?;
-        let risk = crate::computer_use::detection::classify_risk(action);
+        let action = cc_computer_use::detection::extract_cu_action(tool_name)?;
+        let risk = cc_computer_use::detection::classify_risk(action);
         let risk_tag = match risk {
-            crate::computer_use::detection::CuRiskLevel::Medium => "[medium risk]",
-            crate::computer_use::detection::CuRiskLevel::High => "[HIGH RISK]",
+            cc_computer_use::detection::CuRiskLevel::Medium => "[medium risk]",
+            cc_computer_use::detection::CuRiskLevel::High => "[HIGH RISK]",
         };
         let description = match action {
             "screenshot" => "read the screen (take a screenshot)",
@@ -383,6 +368,7 @@ fn main() -> ExitCode {
     };
 
     info!("claude-code-rs v{}", env!("CARGO_PKG_VERSION"));
+    command_runtime_bridge::install_command_runtime_providers();
     install_daemon_runtime_adapters();
 
     if let Some(worker_kind) = cli.daemon_worker.clone() {
@@ -522,7 +508,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // B.3d: Discover and connect MCP servers
     let _mcp_manager = {
-        use crate::mcp::tools::mcp_tools_to_tools;
+        use cc_engine::mcp_tool_adapter::mcp_tools_to_tools;
         use cc_mcp::discovery::discover_mcp_servers;
         use cc_mcp::manager::McpManager;
 
@@ -595,7 +581,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             }
 
             let (mcp_skills, mcp_skill_diagnostics) =
-                crate::mcp::tools::discover_mcp_skill_resources(&mgr).await;
+                cc_engine::mcp_tool_adapter::discover_mcp_skill_resources(&mgr).await;
             if !mcp_skills.is_empty() || !mcp_skill_diagnostics.is_empty() {
                 let report = cc_skills::register_skills_resolved_with_diagnostics(
                     mcp_skills,
@@ -609,8 +595,16 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         // Install the browser MCP server registry exactly once after MCP tools
         // are folded into the tool list. Used by system-prompt injection,
         // permission prompts, and `/mcp list` styling.
-        let mut browser_servers =
-            crate::browser::detection::detect_browser_servers(&configs_for_browser, &tools);
+        let tool_names = tools
+            .iter()
+            .map(|tool| tool.user_facing_name(None))
+            .collect::<Vec<_>>();
+        let mut browser_servers = cc_browser::detection::detect_browser_servers_from_tool_names(
+            configs_for_browser
+                .iter()
+                .map(|config| (config.name.as_str(), config.browser_mcp.unwrap_or(false))),
+            tool_names.iter().map(String::as_str),
+        );
         // Pre-register the first-party Chrome MCP server name when --chrome
         // (or equivalent) is on. The actual tools come online via #5; doing
         // this early means the system prompt, permissions, and /mcp list all
@@ -633,7 +627,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // B.3e: Register native Computer Use tools (if --computer-use)
     if cli.computer_use {
-        let cu_tools = computer_use::setup::register_cu_tools();
+        let cu_tools = cc_computer_use::setup::register_cu_tools();
         info!(
             count = cu_tools.len(),
             "Computer Use: registered native desktop control tools"
@@ -833,7 +827,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         task_budget: None,
         verbose: cli.verbose,
         initial_messages: resume_messages,
-        commands: commands::get_all_commands()
+        commands: cc_commands::get_all_commands()
             .iter()
             .map(|c| c.name.clone())
             .collect(),
@@ -850,7 +844,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     let engine = Arc::new({
         let mut e = QueryEngine::new(engine_config);
         e.set_hook_runner(Arc::new(cc_tools::hooks::ShellHookRunner::new()));
-        e.set_command_dispatcher(Arc::new(commands::DefaultCommandDispatcher::new()));
+        e.set_command_dispatcher(Arc::new(
+            cc_commands::DefaultCommandDispatcher::for_full_registry(),
+        ));
         e
     });
     info!(session = %engine.session_id, "QueryEngine created");
@@ -950,7 +946,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // B.10: Web UI mode
     if cli.web {
-        web::handlers::set_command_provider(commands::get_all_commands);
+        web::handlers::set_command_provider(cc_commands::get_all_commands);
         let web_state = web::state::WebState::new(
             engine.clone(),
             Arc::new(std::sync::atomic::AtomicBool::new(false)),

@@ -149,6 +149,7 @@ cc-mcp = { workspace = true }
 cc-plugins = { workspace = true }
 cc-services = { workspace = true }
 cc-computer-use = { workspace = true }
+cc-safety = { workspace = true }
 cc-compact = { workspace = true }
 cc-sandbox = { workspace = true }
 cc-permissions = { workspace = true }

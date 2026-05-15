@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 use tracing::{debug, info};
 use uuid::Uuid;
 
-use cc_engine::types::tool::*;
+use crate::types::tool::*;
 use cc_skills::{SkillContext, SkillDefinition};
 #[allow(unused_imports)]
 use cc_types::message::{AssistantMessage, ContentBlock, Message, MessageContent, UserMessage};
@@ -215,7 +215,7 @@ impl Tool for SkillTool {
                     .map(|p| p.to_string_lossy().to_string())
                     .unwrap_or_else(|_| ".".to_string());
 
-                let tools = crate::tools::registry::get_all_tools()
+                let tools = crate::agent_runtime::all_tools()
                     .into_iter()
                     .filter(|t| {
                         skill.frontmatter.allowed_tools.is_empty()
@@ -242,7 +242,7 @@ impl Tool for SkillTool {
                     "fork skill dispatching via engine::agent::fork"
                 );
 
-                let params = crate::engine::agent::fork::ForkParams {
+                let params = crate::agent::fork::ForkParams {
                     prompt: expanded_prompt,
                     cwd,
                     model: fork_model,
@@ -256,7 +256,7 @@ impl Tool for SkillTool {
                     command_dispatcher: ctx.command_dispatcher.clone(),
                 };
 
-                match crate::engine::agent::fork::run_fork(params).await {
+                match crate::agent::fork::run_fork(params).await {
                     Ok(outcome) => Ok(ToolResult {
                         data: json!({
                             "success": !outcome.had_error,

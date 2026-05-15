@@ -10,6 +10,7 @@ pub mod fast_paths;
 pub mod logging;
 pub mod modes;
 pub mod runtime_config;
+pub mod tool_registry;
 
 use cc_config::settings;
 use std::path::{Path, PathBuf};

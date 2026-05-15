@@ -52,7 +52,7 @@ mod tests {
         for tool in &tools {
             let name = tool.user_facing_name(None);
             assert!(
-                name.starts_with(crate::computer_use::detection::COMPUTER_USE_PREFIX),
+                name.starts_with(crate::detection::COMPUTER_USE_PREFIX),
                 "tool '{}' should have mcp__computer-use__ prefix, got '{}'",
                 tool.name(),
                 name

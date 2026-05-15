@@ -24,13 +24,16 @@ cc-api = { workspace = true }
 cc-browser = { workspace = true }
 cc-config = { workspace = true }
 cc-engine = { workspace = true }
+cc-lsp-service = { workspace = true }
 cc-mcp = { workspace = true }
 cc-permissions = { workspace = true }
 cc-plugins = { workspace = true }
 cc-services = { workspace = true }
 cc-tasks = { workspace = true }
 cc-teams = { workspace = true }
+cc-tools = { workspace = true }
 cc-types = { workspace = true }
+cc-worktree = { workspace = true }
 dotenvy = { workspace = true }
 futures = { workspace = true }
 opentelemetry = { workspace = true, optional = true }

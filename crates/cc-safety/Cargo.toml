@@ -1,0 +1,23 @@
+[package]
+name = "cc-safety"
+version = "0.1.0"
+edition = "2021"
+description = "Safety classifier foundations for cc-rust."
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+cc-config = { workspace = true }
+cc-engine = { workspace = true }
+cc-permissions = { workspace = true }
+cc-query = { workspace = true }
+cc-types = { workspace = true }
+chrono = { workspace = true }
+regex = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+parking_lot = { workspace = true }
+tokio = { workspace = true }

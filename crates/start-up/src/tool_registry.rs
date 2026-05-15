@@ -1,65 +1,23 @@
-use std::collections::HashSet;
 use std::sync::Arc;
-
-pub use cc_tools::registry::ToolPolicy;
-use tracing::warn;
 
 use cc_engine::tools::exec;
 use cc_engine::types::tool::Tools;
 
-use crate::skills::tool::SkillTool;
 use cc_lsp_service::tool::LspTool;
 use cc_teams::pr_activity::{SubscribePrActivityTool, UnsubscribePrActivityTool};
 use cc_teams::send_message::SendMessageTool;
 use cc_teams::team_spawn::TeamSpawnTool;
-use cc_tools::ask_user::AskUserQuestionTool;
-use cc_tools::brief::BriefTool;
-use cc_tools::config_tool::ConfigTool;
-use cc_tools::fs;
-use cc_tools::plan_mode::{EnterPlanModeTool, ExitPlanModeTool};
-use cc_tools::send_user_message::SendUserMessageTool;
-use cc_tools::sleep::SleepTool;
-use cc_tools::structured_output::StructuredOutputTool;
-use cc_tools::system_status::SystemStatusTool;
-use cc_tools::tool_search::ToolSearchTool;
-use cc_tools::web_fetch::WebFetchTool;
-use cc_tools::web_search::WebSearchTool;
+pub use cc_tools::registry::ToolPolicy;
+use cc_tools::registry::ToolRegistryProviders;
 use cc_worktree::tool::{EnterWorktreeTool, ExitWorktreeTool};
 
-/// Get all base tool instances.
-///
-/// Corresponds to TypeScript: tools.ts `getAllBaseTools()`.
-/// Returns all tool implementations. The caller can filter by `is_enabled()`.
-///
-/// Structure:
-/// 1. Start from each sub-domain's aggregator (`fs::tools()`, `exec::tools()`).
-/// 2. Append single-tool / small-cluster modules that have not yet been
-///    promoted into a sub-domain.
-///
-/// When adding a new tool, prefer adding it to an existing sub-domain's
-/// `tools()` rather than listing it individually here. See
-/// `src/tools/ARCHITECTURE.md` for placement rules.
-fn base_tools() -> Tools {
+fn root_owned_base_tools() -> Tools {
     let mut tools: Tools = Tools::new();
 
-    // Domain-grouped tools — each sub-domain owns its own list.
-    tools.extend(fs::tools());
     tools.extend(exec::tools());
-    tools.push(Arc::new(SleepTool));
-    tools.extend(cc_tools::tasks::tools());
-
-    // Single-tool / small-cluster modules (not yet a sub-domain).
     tools.extend([
-        Arc::new(AskUserQuestionTool) as _,
         Arc::new(cc_engine::agent::AgentTool) as _,
-        Arc::new(SkillTool) as _,
-        Arc::new(ConfigTool) as _,
-        Arc::new(StructuredOutputTool) as _,
-        Arc::new(SendUserMessageTool) as _,
-        Arc::new(WebFetchTool) as _,
-        Arc::new(WebSearchTool) as _,
-        Arc::new(EnterPlanModeTool) as _,
-        Arc::new(ExitPlanModeTool) as _,
+        Arc::new(cc_engine::skill_tool::SkillTool) as _,
         Arc::new(EnterWorktreeTool) as _,
         Arc::new(ExitWorktreeTool) as _,
         Arc::new(LspTool) as _,
@@ -67,31 +25,27 @@ fn base_tools() -> Tools {
         Arc::new(SubscribePrActivityTool) as _,
         Arc::new(UnsubscribePrActivityTool) as _,
         Arc::new(TeamSpawnTool) as _,
-        Arc::new(BriefTool) as _,
-        Arc::new(SystemStatusTool) as _,
-        Arc::new(ToolSearchTool) as _,
     ]);
 
-    // Filter to only enabled tools.
     tools.into_iter().filter(|t| t.is_enabled()).collect()
+}
+
+/// Registry providers for tools that still live outside `cc-tools`.
+///
+/// This is intentionally local to the root crate until startup/main can install
+/// providers directly into `cc_tools::registry` and stop importing
+/// `crate::tools`.
+pub fn root_tool_registry_providers() -> ToolRegistryProviders {
+    ToolRegistryProviders {
+        base_tool_providers: vec![Arc::new(root_owned_base_tools)],
+        runtime_tool_providers: vec![Arc::new(cc_plugins::discover_plugin_tools)],
+    }
 }
 
 /// Get all runtime tools, including plugin-contributed tools that expose an
 /// executable runtime in their plugin manifest.
 pub fn get_all_tools() -> Tools {
-    let mut tools = base_tools();
-    let mut seen: HashSet<String> = tools.iter().map(|tool| tool.name().to_string()).collect();
-
-    for tool in cc_plugins::discover_plugin_tools() {
-        let name = tool.name().to_string();
-        if seen.insert(name.clone()) {
-            tools.push(tool);
-        } else {
-            warn!(tool = %name, "skipping plugin tool with duplicate name");
-        }
-    }
-
-    tools
+    cc_tools::registry::get_all_tools_with_providers(&root_tool_registry_providers())
 }
 
 /// Get tools for the active top-level session.
@@ -105,18 +59,12 @@ pub fn get_tools_for_active_session() -> Tools {
 
 /// Get tools filtered for a concrete runtime policy.
 pub fn get_tools_for_policy(policy: ToolPolicy) -> Tools {
-    filter_tools_for_policy(get_all_tools(), policy)
+    cc_tools::registry::get_tools_for_policy_with_providers(&root_tool_registry_providers(), policy)
 }
 
 /// Filter an existing tool set for a runtime policy.
 pub fn filter_tools_for_policy(tools: Tools, policy: ToolPolicy) -> Tools {
-    let Some(allowed) = cc_tools::registry::allowed_tool_names(policy) else {
-        return tools;
-    };
-    tools
-        .into_iter()
-        .filter(|tool| allowed.iter().any(|name| *name == tool.name()))
-        .collect()
+    cc_tools::registry::filter_tools_for_policy(tools, policy)
 }
 
 #[cfg(test)]

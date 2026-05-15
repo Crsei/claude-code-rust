@@ -29,7 +29,7 @@ fn make_ctx_with_mode(mode: PermissionMode) -> ToolUseContext {
         },
         abort_signal: rx,
         read_file_state: FileStateCache::default(),
-        get_app_state: Arc::new(move || app.clone()),
+        get_app_state: Arc::new(move || app.to_tool_app_state()),
         set_app_state: Arc::new(|_| {}),
         session_id: "test-session".to_string(),
         langfuse_session_id: "test-session".to_string(),

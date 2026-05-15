@@ -6,8 +6,8 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::Terminal;
 
-use crate::commands;
 use crate::ui::theme::Theme;
+use cc_commands as commands;
 
 use super::edit_targets::{display_path, file_uri};
 use super::metadata::command_meta;
