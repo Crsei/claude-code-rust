@@ -11,6 +11,25 @@
 
 use std::collections::HashMap;
 
+pub const TEAM_LEAD_NAME: &str = "team-lead";
+
+pub fn format_agent_id(agent_name: &str, team_name: &str) -> String {
+    format!("{}@{}", agent_name, team_name)
+}
+
+pub fn lead_agent_id(team_name: &str) -> String {
+    format_agent_id(TEAM_LEAD_NAME, team_name)
+}
+
+pub fn is_team_lead(team_ctx: Option<&TeamContext>) -> bool {
+    if let Some(ctx) = team_ctx {
+        if let Some(ref self_id) = ctx.self_agent_id {
+            return *self_id == ctx.lead_agent_id;
+        }
+    }
+    false
+}
+
 /// Runtime team context stored in `AppState::team_context` while an Agent
 /// Team session is active.
 ///
@@ -86,5 +105,25 @@ mod tests {
         let info = ctx.teammates.get("alice").expect("alice present");
         assert_eq!(info.agent_type.as_deref(), Some("reviewer"));
         assert_eq!(ctx.teammates.len(), 1);
+    }
+
+    #[test]
+    fn identity_helpers_format_lead_and_detect_context_leader() {
+        let lead = lead_agent_id("alpha");
+        assert_eq!(lead, "team-lead@alpha");
+
+        let ctx = TeamContext {
+            lead_agent_id: lead.clone(),
+            self_agent_id: Some(lead),
+            ..Default::default()
+        };
+        assert!(is_team_lead(Some(&ctx)));
+
+        let worker = TeamContext {
+            lead_agent_id: "team-lead@alpha".into(),
+            self_agent_id: Some(format_agent_id("worker", "alpha")),
+            ..Default::default()
+        };
+        assert!(!is_team_lead(Some(&worker)));
     }
 }

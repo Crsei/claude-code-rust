@@ -122,7 +122,7 @@ fn delete_tool_task_for_commands(id: &str) -> Result<Option<cc_tasks::TaskEntry>
 }
 
 fn team_task_snapshots_for_commands() -> Vec<cc_commands::runtime::TeamTaskSnapshot> {
-    crate::teams::in_process::InProcessBackend::task_snapshots()
+    cc_teams::in_process::InProcessBackend::task_snapshots()
         .into_iter()
         .map(|snapshot| cc_commands::runtime::TeamTaskSnapshot {
             id: snapshot.id,
@@ -130,13 +130,13 @@ fn team_task_snapshots_for_commands() -> Vec<cc_commands::runtime::TeamTaskSnaps
             agent_name: snapshot.agent_name,
             team_name: snapshot.team_name,
             status: match snapshot.status {
-                crate::teams::types::TaskStatus::Running => {
+                cc_teams::types::TaskStatus::Running => {
                     cc_commands::runtime::TeamTaskStatus::Running
                 }
-                crate::teams::types::TaskStatus::Stopped => {
+                cc_teams::types::TaskStatus::Stopped => {
                     cc_commands::runtime::TeamTaskStatus::Stopped
                 }
-                crate::teams::types::TaskStatus::Completed => {
+                cc_teams::types::TaskStatus::Completed => {
                     cc_commands::runtime::TeamTaskStatus::Completed
                 }
             },
@@ -155,7 +155,7 @@ fn team_command_for_commands<'a>(
     args: &'a str,
     ctx: &'a mut CommandContext,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = String> + Send + 'a>> {
-    Box::pin(crate::teams::command::execute_team_command(args, ctx))
+    Box::pin(cc_teams::command::execute_team_command(args, ctx))
 }
 
 fn command_metadata_for_commands() -> Vec<cc_commands::CommandMetadata> {

@@ -701,7 +701,6 @@ dependencies = [
  "cc-session",
  "cc-skills",
  "cc-tasks",
- "cc-teams",
  "cc-tools",
  "cc-types",
  "cc-utils",
@@ -966,9 +965,26 @@ dependencies = [
 name = "cc-teams"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "async-trait",
+ "cc-bootstrap",
+ "cc-commands",
+ "cc-config",
+ "cc-engine",
+ "cc-tasks",
+ "cc-tools",
  "cc-types",
+ "chrono",
+ "futures",
+ "parking_lot",
  "serde",
  "serde_json",
+ "serial_test",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

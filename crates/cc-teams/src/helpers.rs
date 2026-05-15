@@ -335,6 +335,9 @@ mod tests {
     #[test]
     #[serial]
     fn test_create_and_read_team() {
+        let tmp = TempDir::new().expect("tempdir");
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().expect("utf8 tempdir"));
+
         let name = format!("test-{}", &uuid::Uuid::new_v4().to_string()[..8]);
         let tf = create_team(&name, Some("Test team".into()), None, "/tmp").unwrap();
         assert_eq!(tf.members.len(), 1);
@@ -350,6 +353,9 @@ mod tests {
     #[test]
     #[serial]
     fn test_add_member() {
+        let tmp = TempDir::new().expect("tempdir");
+        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().expect("utf8 tempdir"));
+
         let name = format!("test-{}", &uuid::Uuid::new_v4().to_string()[..8]);
         let tf = create_team(&name, None, None, "/tmp").unwrap();
 

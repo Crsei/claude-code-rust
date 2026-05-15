@@ -306,6 +306,13 @@ pub trait AgentTaskStore: Send + Sync {
     fn try_stop(&self, id: &str) -> Result<Option<TaskEntry>>;
     fn get_by_agent_id(&self, agent_id: &str) -> Option<TaskEntry>;
     fn unregister_runtime_handle(&self, id: &str) -> Option<TaskRuntimeHandle>;
+    fn unassign_teammate_tasks(
+        &self,
+        team_name: &str,
+        teammate_id: &str,
+        teammate_name: &str,
+        reason: cc_tasks::TeammateTaskExitReason,
+    ) -> cc_tasks::UnassignTeammateTasksResult;
 }
 
 struct NoopAgentTaskStore;
@@ -342,6 +349,19 @@ impl AgentTaskStore for NoopAgentTaskStore {
 
     fn unregister_runtime_handle(&self, _id: &str) -> Option<TaskRuntimeHandle> {
         None
+    }
+
+    fn unassign_teammate_tasks(
+        &self,
+        _team_name: &str,
+        _teammate_id: &str,
+        _teammate_name: &str,
+        _reason: cc_tasks::TeammateTaskExitReason,
+    ) -> cc_tasks::UnassignTeammateTasksResult {
+        cc_tasks::UnassignTeammateTasksResult {
+            unassigned_tasks: Vec::new(),
+            notification_message: String::new(),
+        }
     }
 }
 
@@ -419,6 +439,20 @@ pub async fn spawn_teammate(
 
 pub fn global_task_store() -> Arc<dyn AgentTaskStore> {
     adapters().read().task_store.clone()
+}
+
+pub fn unassign_teammate_tasks(
+    team_name: &str,
+    teammate_id: &str,
+    teammate_name: &str,
+    reason: cc_tasks::TeammateTaskExitReason,
+) -> cc_tasks::UnassignTeammateTasksResult {
+    adapters().read().task_store.unassign_teammate_tasks(
+        team_name,
+        teammate_id,
+        teammate_name,
+        reason,
+    )
 }
 
 #[cfg(test)]

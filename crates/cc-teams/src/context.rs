@@ -72,7 +72,7 @@ pub fn try_get_identity() -> Option<TeammateIdentity> {
 /// All `try_get_*` calls within `fut` will resolve from `identity`.
 ///
 /// ```ignore
-/// use crate::teams::context;
+/// use crate::context;
 /// context::run_in_scope(identity, async {
 ///     let id = context::try_get_agent_id(); // Some("researcher@team")
 ///     do_work().await;

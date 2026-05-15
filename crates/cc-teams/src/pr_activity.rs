@@ -7,8 +7,8 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::teams::{constants, mailbox, types::TeammateMessage};
-use cc_engine::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
+use crate::{constants, mailbox, types::TeammateMessage};
+use cc_tools::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};
 use cc_types::message::AssistantMessage;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -482,7 +482,7 @@ fn default_active() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::teams::helpers;
+    use crate::helpers;
     use serial_test::serial;
 
     struct EnvGuard {

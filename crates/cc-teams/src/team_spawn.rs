@@ -15,14 +15,12 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tracing::info;
 
-use cc_teams::tool_specs as team_tool_specs;
+use crate::tool_specs as team_tool_specs;
 
-use crate::teams::backend::TeammateExecutor;
-use crate::teams::types::{
-    BackendType, TeamContext, TeamMember, TeammateInfo, TeammateSpawnConfig,
-};
-use crate::teams::{backend, constants, helpers, identity, in_process::InProcessBackend};
-use cc_engine::types::tool::*;
+use crate::backend::TeammateExecutor;
+use crate::types::{BackendType, TeamContext, TeamMember, TeammateInfo, TeammateSpawnConfig};
+use crate::{backend, constants, helpers, identity, in_process::InProcessBackend};
+use cc_tools::tool::*;
 use cc_types::message::AssistantMessage;
 
 /// TeamSpawn tool.
@@ -163,11 +161,10 @@ impl Tool for TeamSpawnTool {
         let agent_type = resolve_team_spawn_agent_type(params.agent_type.as_deref());
         let system_prompt = agent_type
             .as_deref()
-            .and_then(crate::ipc::builtin_agents::builtin_agent_prompt)
-            .map(ToOwned::to_owned);
+            .and_then(cc_engine::agent_runtime::builtin_agent_prompt);
         let system_prompt_mode = system_prompt
             .as_ref()
-            .map(|_| crate::teams::types::SystemPromptMode::Append);
+            .map(|_| crate::types::SystemPromptMode::Append);
 
         let new_member = TeamMember {
             agent_id: agent_id.clone(),
@@ -319,7 +316,7 @@ fn team_spawn_plan_mode_required(mode: Option<&str>) -> bool {
 fn resolve_team_spawn_agent_type(explicit: Option<&str>) -> Option<String> {
     team_tool_specs::resolve_team_spawn_agent_type(
         explicit,
-        crate::teams::coordinator::default_teammate_agent_type(),
+        crate::coordinator::default_teammate_agent_type(),
     )
 }
 

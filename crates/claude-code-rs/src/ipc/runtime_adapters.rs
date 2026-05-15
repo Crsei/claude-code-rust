@@ -72,7 +72,7 @@ impl AgentRuntimeHost for RootAgentHost {
     }
 
     fn write_team_message(&self, team_name: &str, to: &str, text: &str) -> Result<(), String> {
-        let msg = crate::teams::types::TeammateMessage {
+        let msg = cc_teams::types::TeammateMessage {
             from: "__frontend__".to_string(),
             text: text.to_string(),
             timestamp: chrono::Utc::now().to_rfc3339(),
@@ -80,11 +80,11 @@ impl AgentRuntimeHost for RootAgentHost {
             color: None,
             summary: None,
         };
-        crate::teams::mailbox::write_to_mailbox(to, msg, team_name).map_err(|e| e.to_string())
+        cc_teams::mailbox::write_to_mailbox(to, msg, team_name).map_err(|e| e.to_string())
     }
 
     fn team_members(&self, team_name: &str) -> Result<Vec<TeamMemberInfo>, String> {
-        let tf = crate::teams::helpers::read_team_file(team_name).map_err(|e| e.to_string())?;
+        let tf = cc_teams::helpers::read_team_file(team_name).map_err(|e| e.to_string())?;
         Ok(tf
             .members
             .iter()
@@ -93,7 +93,7 @@ impl AgentRuntimeHost for RootAgentHost {
                 agent_name: m.name.clone(),
                 role: m.agent_type.clone(),
                 is_active: m.is_active.unwrap_or(true),
-                unread_messages: crate::teams::mailbox::read_unread_messages(&m.name, team_name)
+                unread_messages: cc_teams::mailbox::read_unread_messages(&m.name, team_name)
                     .map(|v| v.len())
                     .unwrap_or(0),
             })

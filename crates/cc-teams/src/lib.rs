@@ -1,31 +1,58 @@
-//! cc-teams — team coordination (Phase 7 scaffold).
+//! Agent Teams / Multi-Agent Swarm system.
 //!
-//! Issue #76 (`[workspace-split] Phase 7`): target destination for
-//! `crates/claude-code-rs/src/teams/` plus the two teammate-specific tool
-//! wrappers (`tools/send_message.rs`, `tools/team_spawn.rs`) that get pulled
-//! in with the team runtime to avoid a `cc-tools -> cc-teams` edge.
+//! Corresponds to TypeScript: `utils/swarm/`, `coordinator/`, and related tools.
+//!
+//! Provides multi-agent coordination where a Team Lead creates and manages
+//! multiple Teammate agents running in parallel. Communication happens via
+//! file-based mailbox IPC (`{data_root}/teams/{name}/inboxes/`).
 
+pub mod backend;
+pub mod command;
+pub mod constants;
+pub mod context;
+pub mod coordinator;
+pub mod helpers;
+pub mod identity;
+pub mod in_process;
+pub mod mailbox;
+pub mod pr_activity;
+pub mod protocol;
+pub mod runner;
+pub mod send_message;
+pub mod team_spawn;
 pub mod tool_specs;
+pub mod types;
 
-pub mod identity {
-    use cc_types::teams::TeamContext;
+/// Check if Agent Teams is enabled via the upstream env-var switch or a
+/// session-local experimental override.
+#[allow(dead_code)]
+pub fn is_agent_teams_enabled() -> bool {
+    cc_config::features::enabled(cc_config::features::Feature::AgentTeams)
+}
 
-    pub const TEAM_LEAD_NAME: &str = "team-lead";
-
-    pub fn format_agent_id(agent_name: &str, team_name: &str) -> String {
-        format!("{}@{}", agent_name, team_name)
+/// Check if Agent Teams is active in the given app state.
+///
+/// Returns true when **either** the env-var opt-in is set **or** an active
+/// team context already exists. The second condition lets conversation-triggered
+/// flows (`/team create`, `TeamSpawn`) unlock team tools without requiring a
+/// pre-exported env var.
+pub fn is_agent_teams_active(app_state: &cc_engine::types::app_state::AppState) -> bool {
+    if is_agent_teams_enabled() {
+        return true;
     }
+    app_state
+        .team_context
+        .as_ref()
+        .map(|tc| !tc.team_name.is_empty())
+        .unwrap_or(false)
+}
 
-    pub fn lead_agent_id(team_name: &str) -> String {
-        format_agent_id(TEAM_LEAD_NAME, team_name)
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    pub fn is_team_lead(team_ctx: Option<&TeamContext>) -> bool {
-        if let Some(ctx) = team_ctx {
-            if let Some(ref self_id) = ctx.self_agent_id {
-                return *self_id == ctx.lead_agent_id;
-            }
-        }
-        false
+    #[test]
+    fn test_feature_gate_default_off() {
+        let _ = is_agent_teams_enabled();
     }
 }

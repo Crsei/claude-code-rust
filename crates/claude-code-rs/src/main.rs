@@ -46,9 +46,6 @@ mod lsp_service;
 // IDE detection + selection + MCP bridge (issue #41)
 mod ide;
 
-// Multi-agent Teams (feature-gated: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS)
-mod teams;
-
 // Service layer
 mod services;
 
@@ -181,11 +178,11 @@ fn daemon_route_github_pr_activity(
     delivery_id: Option<&str>,
 ) -> anyhow::Result<Option<cc_daemon::runtime::GithubPrActivityRouteOutcome>> {
     let Some(activity) =
-        crate::teams::pr_activity::parse_github_pr_activity(payload, event, delivery_id)
+        cc_teams::pr_activity::parse_github_pr_activity(payload, event, delivery_id)
     else {
         return Ok(None);
     };
-    let result = crate::teams::pr_activity::route_github_pr_activity(&activity)?;
+    let result = cc_teams::pr_activity::route_github_pr_activity(&activity)?;
     Ok(Some(cc_daemon::runtime::GithubPrActivityRouteOutcome {
         matched: result.matched,
         delivered: result.delivered,

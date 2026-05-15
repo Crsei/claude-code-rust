@@ -10,10 +10,10 @@ use cc_engine::types::tool::Tools;
 use crate::lsp_service::tool::LspTool;
 use crate::skills::tool::SkillTool;
 use crate::tasks;
-use crate::teams::pr_activity::{SubscribePrActivityTool, UnsubscribePrActivityTool};
-use crate::teams::send_message::SendMessageTool;
-use crate::teams::team_spawn::TeamSpawnTool;
 use crate::worktree::tool::{EnterWorktreeTool, ExitWorktreeTool};
+use cc_teams::pr_activity::{SubscribePrActivityTool, UnsubscribePrActivityTool};
+use cc_teams::send_message::SendMessageTool;
+use cc_teams::team_spawn::TeamSpawnTool;
 use cc_tools::ask_user::AskUserQuestionTool;
 use cc_tools::brief::BriefTool;
 use cc_tools::config_tool::ConfigTool;
@@ -97,7 +97,7 @@ pub fn get_all_tools() -> Tools {
 
 /// Get tools for the active top-level session.
 pub fn get_tools_for_active_session() -> Tools {
-    if crate::teams::coordinator::is_coordinator_mode_enabled() {
+    if cc_teams::coordinator::is_coordinator_mode_enabled() {
         get_tools_for_policy(ToolPolicy::Coordinator)
     } else {
         get_tools_for_policy(ToolPolicy::DefaultAgent)

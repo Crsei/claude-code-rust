@@ -22,7 +22,7 @@ use super::protocol;
 use super::runner;
 use super::types::*;
 
-use cc_engine::types::tool::PermissionMode;
+use cc_tools::tool::PermissionMode;
 
 // ---------------------------------------------------------------------------
 // In-process task registry

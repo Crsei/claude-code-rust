@@ -26,7 +26,7 @@ pub(crate) fn task_surface_items() -> Vec<TaskSurfaceItem> {
         .map(tool_task_surface_item)
         .collect::<Vec<_>>();
     items.extend(
-        crate::teams::in_process::InProcessBackend::task_snapshots()
+        cc_teams::in_process::InProcessBackend::task_snapshots()
             .into_iter()
             .map(team_task_surface_item),
     );
@@ -68,7 +68,7 @@ pub(crate) fn tool_task_surface_item(task: cc_tasks::TaskEntry) -> TaskSurfaceIt
 }
 
 pub(crate) fn team_task_surface_item(
-    task: crate::teams::in_process::TeammateTaskSnapshot,
+    task: cc_teams::in_process::TeammateTaskSnapshot,
 ) -> TaskSurfaceItem {
     let summary = if task.has_error {
         first_non_empty([
@@ -124,15 +124,15 @@ pub(crate) fn ui_task_state_from_tool_status(status: cc_tasks::TaskStatus) -> Ui
 }
 
 pub(crate) fn ui_task_state_from_team_status(
-    status: crate::teams::types::TaskStatus,
+    status: cc_teams::types::TaskStatus,
     has_error: bool,
 ) -> UiTaskState {
     if has_error {
         return UiTaskState::Failed;
     }
     match status {
-        crate::teams::types::TaskStatus::Running => UiTaskState::Running,
-        crate::teams::types::TaskStatus::Stopped => UiTaskState::Canceled,
-        crate::teams::types::TaskStatus::Completed => UiTaskState::Succeeded,
+        cc_teams::types::TaskStatus::Running => UiTaskState::Running,
+        cc_teams::types::TaskStatus::Stopped => UiTaskState::Canceled,
+        cc_teams::types::TaskStatus::Completed => UiTaskState::Succeeded,
     }
 }

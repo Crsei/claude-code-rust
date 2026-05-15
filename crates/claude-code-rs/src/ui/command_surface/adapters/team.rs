@@ -16,13 +16,13 @@ pub(crate) fn team_summary_from_state(state: &AppState) -> (TeamSummary, bool) {
         );
     };
 
-    let summary = crate::teams::helpers::read_team_file(&context.team_name)
+    let summary = cc_teams::helpers::read_team_file(&context.team_name)
         .map(|team_file| {
-            let snapshots = crate::teams::in_process::InProcessBackend::task_snapshots();
+            let snapshots = cc_teams::in_process::InProcessBackend::task_snapshots();
             let teammates = team_file
                 .members
                 .iter()
-                .filter(|member| member.name != crate::teams::constants::TEAM_LEAD_NAME)
+                .filter(|member| member.name != cc_teams::constants::TEAM_LEAD_NAME)
                 .map(|member| {
                     let matching = snapshots
                         .iter()
@@ -83,7 +83,7 @@ pub(crate) fn team_summary_from_state(state: &AppState) -> (TeamSummary, bool) {
 
 pub(crate) fn teammate_state_label(
     active: Option<bool>,
-    snapshots: &[&crate::teams::in_process::TeammateTaskSnapshot],
+    snapshots: &[&cc_teams::in_process::TeammateTaskSnapshot],
 ) -> String {
     if snapshots
         .iter()
@@ -93,7 +93,7 @@ pub(crate) fn teammate_state_label(
     }
     if snapshots
         .iter()
-        .any(|snapshot| snapshot.status == crate::teams::types::TaskStatus::Running)
+        .any(|snapshot| snapshot.status == cc_teams::types::TaskStatus::Running)
     {
         if snapshots.iter().all(|snapshot| snapshot.is_idle) {
             return "idle".to_string();

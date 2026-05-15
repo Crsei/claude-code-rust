@@ -72,7 +72,7 @@ impl TeammateSpawner for RootTeammateSpawner {
         parent: &cc_types::message::AssistantMessage,
         on_progress: Option<Box<dyn Fn(cc_engine::types::tool::ToolProgress) + Send + Sync>>,
     ) -> Result<cc_engine::types::tool::ToolResult> {
-        crate::teams::team_spawn::TeamSpawnTool
+        cc_teams::team_spawn::TeamSpawnTool
             .call(input, ctx, parent, on_progress)
             .await
     }
@@ -112,5 +112,15 @@ impl AgentTaskStore for RootAgentTaskStore {
 
     fn unregister_runtime_handle(&self, id: &str) -> Option<TaskRuntimeHandle> {
         crate::tasks::global_store().unregister_runtime_handle(id)
+    }
+
+    fn unassign_teammate_tasks(
+        &self,
+        team_name: &str,
+        teammate_id: &str,
+        teammate_name: &str,
+        reason: cc_tasks::TeammateTaskExitReason,
+    ) -> cc_tasks::UnassignTeammateTasksResult {
+        crate::tasks::unassign_teammate_tasks(team_name, teammate_id, teammate_name, reason)
     }
 }

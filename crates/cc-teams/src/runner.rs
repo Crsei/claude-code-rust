@@ -17,10 +17,11 @@ use super::mailbox;
 use super::protocol::{self, ProtocolMessage};
 use super::types::*;
 
-use crate::commands as command_registry;
 use cc_engine::lifecycle::QueryEngine;
 use cc_engine::types::config::{AgentContext, QueryEngineConfig, QuerySource};
-use cc_engine::types::tool::{PermissionMode, QueryChainTracking};
+use cc_engine::types::tool::QueryChainTracking;
+use cc_tools::registry::ToolPolicy;
+use cc_tools::tool::PermissionMode;
 
 // ---------------------------------------------------------------------------
 // Spawn entry point
@@ -91,10 +92,9 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
         );
 
         // Build a child QueryEngine
-        let child_tools =
-            crate::tools::registry::get_tools_for_policy(tool_policy_for_teammate(
-                config.agent_type.as_deref(),
-            ));
+        let child_tools = tools_for_teammate(tool_policy_for_teammate(
+            config.agent_type.as_deref(),
+        ));
         let (custom_system_prompt, append_system_prompt) =
             teammate_system_prompt_parts(config.system_prompt.clone(), config.system_prompt_mode);
         let engine_config = QueryEngineConfig {
@@ -126,7 +126,7 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
                 agent_type: config.agent_type.clone(),
                 team_context: Some(cc_types::teams::TeamContext {
                     team_name: identity.team_name.clone(),
-                    lead_agent_id: crate::teams::identity::lead_agent_id(&identity.team_name),
+                    lead_agent_id: crate::identity::lead_agent_id(&identity.team_name),
                     self_agent_id: Some(identity.agent_id.clone()),
                     self_agent_name: Some(identity.agent_name.clone()),
                     is_leader: Some(false),
@@ -142,7 +142,9 @@ async fn run_teammate(config: InProcessRunnerConfig) -> Result<()> {
             cc_tools::hooks::ShellHookRunner::new(),
         ));
         engine.set_command_dispatcher(std::sync::Arc::new(
-            command_registry::DefaultCommandDispatcher::new(),
+            cc_commands::DefaultCommandDispatcher::new(
+                cc_commands::runtime::command_metadata_snapshot(),
+            ),
         ));
 
         let mut next_prompt = Some(config.prompt.clone());
@@ -245,7 +247,7 @@ fn release_teammate_tasks(
     identity: &TeammateIdentity,
     reason: cc_tasks::TeammateTaskExitReason,
 ) -> cc_tasks::UnassignTeammateTasksResult {
-    let result = crate::tasks::unassign_teammate_tasks(
+    let result = cc_engine::agent_runtime::unassign_teammate_tasks(
         &identity.team_name,
         &identity.agent_id,
         &identity.agent_name,
@@ -263,13 +265,20 @@ fn release_teammate_tasks(
     result
 }
 
-fn tool_policy_for_teammate(agent_type: Option<&str>) -> crate::tools::registry::ToolPolicy {
+fn tool_policy_for_teammate(agent_type: Option<&str>) -> ToolPolicy {
     match agent_type.map(|value| value.trim()) {
         Some(agent_type) if agent_type.eq_ignore_ascii_case("worker") => {
-            crate::tools::registry::ToolPolicy::CoordinatorWorker
+            ToolPolicy::CoordinatorWorker
         }
-        _ => crate::tools::registry::ToolPolicy::InProcessTeammate,
+        _ => ToolPolicy::InProcessTeammate,
     }
+}
+
+fn tools_for_teammate(policy: ToolPolicy) -> cc_tools::tool::Tools {
+    cc_engine::agent_runtime::all_tools()
+        .into_iter()
+        .filter(|tool| cc_tools::registry::tool_allowed(policy, tool.name()))
+        .collect()
 }
 
 fn teammate_system_prompt_parts(
@@ -691,15 +700,15 @@ mod tests {
     fn teammate_tool_policy_uses_worker_boundary_for_worker_agent_type() {
         assert_eq!(
             tool_policy_for_teammate(Some("worker")),
-            crate::tools::registry::ToolPolicy::CoordinatorWorker
+            ToolPolicy::CoordinatorWorker
         );
         assert_eq!(
             tool_policy_for_teammate(Some("teammate")),
-            crate::tools::registry::ToolPolicy::InProcessTeammate
+            ToolPolicy::InProcessTeammate
         );
         assert_eq!(
             tool_policy_for_teammate(None),
-            crate::tools::registry::ToolPolicy::InProcessTeammate
+            ToolPolicy::InProcessTeammate
         );
     }
 
@@ -730,7 +739,7 @@ mod tests {
         mailbox::write_to_mailbox(
             "worker",
             TeammateMessage {
-                from: crate::teams::constants::TEAM_LEAD_NAME.into(),
+                from: crate::constants::TEAM_LEAD_NAME.into(),
                 text: "continue with tests".into(),
                 timestamp: "2026-05-06T00:00:00Z".into(),
                 read: false,
@@ -748,7 +757,7 @@ mod tests {
             actions.plain_messages,
             vec![format!(
                 "Message from {}: continue with tests",
-                crate::teams::constants::TEAM_LEAD_NAME
+                crate::constants::TEAM_LEAD_NAME
             )]
         );
         let inbox = mailbox::read_mailbox("worker", "phase0").unwrap();
@@ -790,7 +799,7 @@ mod tests {
         let raw = serde_json::json!({
             "type": "shutdown_request",
             "requestId": "shutdown-worker-1",
-            "from": crate::teams::constants::TEAM_LEAD_NAME,
+            "from": crate::constants::TEAM_LEAD_NAME,
             "reason": "phase0 test",
             "timestamp": "2026-05-06T00:00:00Z",
         })
@@ -798,7 +807,7 @@ mod tests {
         mailbox::write_to_mailbox(
             "worker",
             TeammateMessage {
-                from: crate::teams::constants::TEAM_LEAD_NAME.into(),
+                from: crate::constants::TEAM_LEAD_NAME.into(),
                 text: raw,
                 timestamp: "2026-05-06T00:00:00Z".into(),
                 read: false,
@@ -820,7 +829,7 @@ mod tests {
             .unwrap_or_default()
             .contains("requires explicit auto-approval policy"));
         let leader_inbox =
-            mailbox::read_mailbox(crate::teams::constants::TEAM_LEAD_NAME, "phase0").unwrap();
+            mailbox::read_mailbox(crate::constants::TEAM_LEAD_NAME, "phase0").unwrap();
         assert_eq!(leader_inbox.len(), 1);
         assert_eq!(
             leader_inbox[0].summary.as_deref(),
@@ -864,7 +873,7 @@ mod tests {
         let raw = serde_json::json!({
             "type": "shutdown_request",
             "requestId": "shutdown-worker-1",
-            "from": crate::teams::constants::TEAM_LEAD_NAME,
+            "from": crate::constants::TEAM_LEAD_NAME,
             "reason": "phase0 test",
             "timestamp": "2026-05-06T00:00:00Z",
         })
@@ -872,7 +881,7 @@ mod tests {
         mailbox::write_to_mailbox(
             "worker",
             TeammateMessage {
-                from: crate::teams::constants::TEAM_LEAD_NAME.into(),
+                from: crate::constants::TEAM_LEAD_NAME.into(),
                 text: raw,
                 timestamp: "2026-05-06T00:00:00Z".into(),
                 read: false,
@@ -889,7 +898,7 @@ mod tests {
         let snapshot = InProcessBackend::task_snapshots().remove(0);
         assert_eq!(snapshot.status, TaskStatus::Stopped);
         let leader_inbox =
-            mailbox::read_mailbox(crate::teams::constants::TEAM_LEAD_NAME, "phase0").unwrap();
+            mailbox::read_mailbox(crate::constants::TEAM_LEAD_NAME, "phase0").unwrap();
         assert_eq!(leader_inbox.len(), 1);
         assert_eq!(
             leader_inbox[0].summary.as_deref(),

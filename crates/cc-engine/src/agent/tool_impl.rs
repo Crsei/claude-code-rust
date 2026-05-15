@@ -336,7 +336,7 @@ fn teammate_spawn_request(
         .as_ref()
         .filter(|context| !context.team_name.is_empty())
     {
-        if !cc_teams::identity::is_team_lead(Some(team_context)) {
+        if !cc_types::teams::is_team_lead(Some(team_context)) {
             bail!(
                 "Teammates cannot spawn other teammates; omit `name` to create a normal subagent"
             );
@@ -669,7 +669,7 @@ mod tests {
     #[test]
     fn test_teammate_spawn_request_uses_explicit_or_active_team() {
         let mut state = crate::types::app_state::AppState::default();
-        let lead_id = cc_teams::identity::lead_agent_id("alpha");
+        let lead_id = cc_types::teams::lead_agent_id("alpha");
         state.team_context = Some(cc_types::teams::TeamContext {
             team_name: "alpha".into(),
             lead_agent_id: lead_id.clone(),
@@ -723,8 +723,8 @@ mod tests {
         let mut state = crate::types::app_state::AppState::default();
         state.team_context = Some(cc_types::teams::TeamContext {
             team_name: "alpha".into(),
-            lead_agent_id: cc_teams::identity::lead_agent_id("alpha"),
-            self_agent_id: Some(cc_teams::identity::format_agent_id("worker", "alpha")),
+            lead_agent_id: cc_types::teams::lead_agent_id("alpha"),
+            self_agent_id: Some(cc_types::teams::format_agent_id("worker", "alpha")),
             ..Default::default()
         });
         let params: AgentInput = serde_json::from_value(json!({

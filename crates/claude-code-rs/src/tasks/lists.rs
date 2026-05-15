@@ -239,7 +239,7 @@ pub fn task_list_id_for_context(ctx: &ToolUseContext) -> String {
         return id;
     }
 
-    if let Some(team_name) = crate::teams::context::try_get_team_name()
+    if let Some(team_name) = cc_teams::context::try_get_team_name()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
     {

@@ -369,7 +369,7 @@ pub mod runtime {
             .unwrap_or_default()
     }
 
-    pub(crate) fn command_metadata_snapshot() -> Vec<CommandMetadata> {
+    pub fn command_metadata_snapshot() -> Vec<CommandMetadata> {
         ensure_runtime_installed();
         get_provider(&COMMAND_METADATA_PROVIDER)
             .map(|provider| provider())

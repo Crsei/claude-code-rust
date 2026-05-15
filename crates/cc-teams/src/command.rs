@@ -17,11 +17,11 @@
 //! layer syncs it back to the QueryEngine so subsequent tool invocations
 //! (SendMessage, TeamSpawn) see the same team.
 
-use crate::teams::backend::TeammateExecutor;
-use crate::teams::types::{
+use crate::backend::TeammateExecutor;
+use crate::types::{
     BackendType, TeamContext, TeamMember, TeammateInfo, TeammateMessage, TeammateSpawnConfig,
 };
-use crate::teams::{backend, constants, helpers, identity, in_process::InProcessBackend, mailbox};
+use crate::{backend, constants, helpers, identity, in_process::InProcessBackend, mailbox};
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -72,7 +72,7 @@ fn help() -> String {
 }
 
 fn status(ctx: &cc_commands::CommandContext) -> String {
-    if !crate::teams::is_agent_teams_active(&ctx.app_state) {
+    if !crate::is_agent_teams_active(&ctx.app_state) {
         return "Agent Teams is inactive. Use '/team create <name>' to create one or \
                 '/team list' to see teams on disk."
             .into();
@@ -123,11 +123,11 @@ fn status(ctx: &cc_commands::CommandContext) -> String {
                 let task_state = if member_tasks.iter().any(|snapshot| snapshot.has_error) {
                     "error".to_string()
                 } else if member_tasks.iter().any(|snapshot| {
-                    snapshot.status == crate::teams::types::TaskStatus::Running && !snapshot.is_idle
+                    snapshot.status == crate::types::TaskStatus::Running && !snapshot.is_idle
                 }) {
                     "working".to_string()
                 } else if member_tasks.iter().any(|snapshot| {
-                    snapshot.status == crate::teams::types::TaskStatus::Running && snapshot.is_idle
+                    snapshot.status == crate::types::TaskStatus::Running && snapshot.is_idle
                 }) {
                     "idle".to_string()
                 } else if member_tasks.is_empty() {
@@ -273,18 +273,15 @@ async fn spawn(ctx: &mut cc_commands::CommandContext, rest: &str) -> String {
     let agent_id = identity::format_agent_id(name, &team_name);
     let now = chrono::Utc::now().timestamp();
     let cwd = ctx.cwd.to_string_lossy().into_owned();
-    let agent_type = crate::teams::coordinator::default_teammate_agent_type().to_string();
-    let system_prompt = (agent_type == crate::teams::coordinator::WORKER_AGENT_TYPE)
+    let agent_type = crate::coordinator::default_teammate_agent_type().to_string();
+    let system_prompt = (agent_type == crate::coordinator::WORKER_AGENT_TYPE)
         .then(|| {
-            crate::ipc::builtin_agents::builtin_agent_prompt(
-                crate::teams::coordinator::WORKER_AGENT_TYPE,
-            )
-            .map(ToOwned::to_owned)
+            cc_engine::agent_runtime::builtin_agent_prompt(crate::coordinator::WORKER_AGENT_TYPE)
         })
         .flatten();
     let system_prompt_mode = system_prompt
         .as_ref()
-        .map(|_| crate::teams::types::SystemPromptMode::Append);
+        .map(|_| crate::types::SystemPromptMode::Append);
 
     team_file.members.push(TeamMember {
         agent_id: agent_id.clone(),
@@ -407,7 +404,7 @@ async fn kill(ctx: &mut cc_commands::CommandContext, rest: &str) -> String {
     let backend = InProcessBackend::new();
     let killed = backend.kill(&agent_id).await;
     if killed {
-        let unassigned = crate::tasks::unassign_teammate_tasks(
+        let unassigned = cc_engine::agent_runtime::unassign_teammate_tasks(
             &tc.team_name,
             &agent_id,
             name,
@@ -455,7 +452,7 @@ async fn delete(ctx: &mut cc_commands::CommandContext, rest: &str) -> String {
         for member in helpers::get_non_lead_members(&team_file) {
             if member.backend_type.unwrap_or(BackendType::InProcess) == BackendType::InProcess {
                 let _ = backend.kill(&member.agent_id).await;
-                let unassigned = crate::tasks::unassign_teammate_tasks(
+                let unassigned = cc_engine::agent_runtime::unassign_teammate_tasks(
                     name,
                     &member.agent_id,
                     &member.name,

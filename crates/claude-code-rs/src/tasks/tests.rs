@@ -138,7 +138,7 @@ async fn task_list_id_uses_in_process_teammate_team_name() {
     let _cc_rust = EnvGuard::remove(CC_RUST_TASK_LIST_ID_ENV);
     let _claude = EnvGuard::remove(CLAUDE_CODE_TASK_LIST_ID_ENV);
     let ctx = test_context();
-    let identity = crate::teams::types::TeammateIdentity {
+    let identity = cc_teams::types::TeammateIdentity {
         agent_id: "worker@scope-team".to_string(),
         agent_name: "worker".to_string(),
         team_name: "scope-team".to_string(),
@@ -147,7 +147,7 @@ async fn task_list_id_uses_in_process_teammate_team_name() {
         parent_session_id: "leader-session".to_string(),
     };
 
-    crate::teams::context::run_in_scope(identity, async {
+    cc_teams::context::run_in_scope(identity, async {
         assert_eq!(task_list_id_for_context(&ctx), "scope-team");
     })
     .await;

@@ -13,12 +13,12 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tracing::{debug, info};
 
-use cc_teams::tool_specs as team_tool_specs;
+use crate::tool_specs as team_tool_specs;
 
-use crate::teams::in_process::InProcessBackend;
-use crate::teams::types::TeammateMessage;
-use crate::teams::{constants, helpers, identity, mailbox, protocol};
-use cc_engine::types::tool::*;
+use crate::in_process::InProcessBackend;
+use crate::types::TeammateMessage;
+use crate::{constants, helpers, identity, mailbox, protocol};
+use cc_tools::tool::*;
 use cc_types::message::AssistantMessage;
 
 /// SendMessage tool.
@@ -233,7 +233,7 @@ fn handle_protocol_message(
     to: &str,
     sender: &str,
     team_name: &str,
-    _team_ctx: &crate::teams::types::TeamContext,
+    _team_ctx: &crate::types::TeamContext,
 ) -> Result<ToolResult> {
     let proto = match protocol::try_parse_protocol_message(raw_message) {
         Some(p) => p,
@@ -391,8 +391,8 @@ fn handle_protocol_message(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::teams::in_process::InProcessBackend;
-    use crate::teams::types::{
+    use crate::in_process::InProcessBackend;
+    use crate::types::{
         BackendType, InProcessTeammateTaskState, TaskStatus, TeamContext, TeamMember,
         TeammateIdentity,
     };
