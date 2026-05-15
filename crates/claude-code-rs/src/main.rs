@@ -16,11 +16,11 @@
 // ============================================================================
 
 // Core modules
+mod app_runtime_adapters;
+mod app_subsystem_handlers;
 mod cli;
 mod command_runtime_bridge;
-mod engine;
 mod ui;
-mod worktree_hooks;
 
 // Plugin system
 mod plan_workflow;
@@ -29,9 +29,6 @@ mod plan_workflow;
 
 // Phase I: Shutdown and cleanup
 mod shutdown;
-
-// IPC headless mode
-mod ipc;
 
 mod dashboard;
 
@@ -391,6 +388,7 @@ fn main() -> ExitCode {
 
     // Fast path: --dump-system-prompt
     if cli.dump_system_prompt {
+        cc_plugins::init_plugins();
         let tools = registry::get_tools_for_active_session();
         return startup::fast_paths::run_dump_system_prompt(&cli, &tools);
     }
@@ -812,7 +810,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     // Install root runtime adapters before QueryEngine can spawn agents. This
     // keeps cc-engine free of direct cc-ipc dependencies while preserving the
     // shared IPC agent tree used by headless/TUI status surfaces.
-    crate::ipc::runtime_adapters::ensure_installed();
+    crate::app_runtime_adapters::ensure_installed();
 
     // B.7: Build QueryEngineConfig
     let engine_config = QueryEngineConfig {
@@ -1045,9 +1043,11 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // B.12: Enter TUI or headless mode
     if cli.headless {
-        return ipc::headless::run_headless(engine, model)
-            .await
-            .map(|()| ExitCode::SUCCESS);
+        return cc_ipc::headless::run_headless(crate::app_runtime_adapters::headless_config(
+            engine, model,
+        ))
+        .await
+        .map(|()| ExitCode::SUCCESS);
     }
 
     // Register shutdown handler

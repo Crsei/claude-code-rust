@@ -22,7 +22,7 @@ pub(super) fn handle_lsp_recommendation_response(
     plugin_name: String,
     decision: String,
 ) {
-    crate::ipc::runtime_adapters::ensure_installed();
+    crate::app_runtime_adapters::ensure_installed();
     let messages =
         cc_ipc::subsystem_handlers::handle_lsp_command(LspCommand::RecommendationResponse {
             request_id,

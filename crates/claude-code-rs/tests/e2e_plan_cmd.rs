@@ -32,13 +32,13 @@ fn plan_command_module_is_declared() {
 
 #[test]
 fn plan_command_is_registered_in_get_all_commands() {
-    let src = read_source("crates/claude-code-rs/src/commands/mod.rs");
+    let src = read_source("crates/cc-commands/src/lib.rs");
     assert!(
         src.contains("command(\n            \"plan\","),
         "/plan command must have a registry entry"
     );
     assert!(
-        src.contains("cc_commands::plan::PlanHandler"),
+        src.contains("plan::PlanHandler"),
         "/plan entry must wire the cc-commands PlanHandler"
     );
 }

@@ -33,7 +33,7 @@ pub(crate) async fn dispatch(
     suggestion_svc: &Arc<Mutex<PromptSuggestionService>>,
     sink: &FrontendSink,
 ) -> bool {
-    super::runtime_adapters::ensure_installed();
+    super::ensure_installed();
 
     match msg {
         FrontendMessage::SubmitPrompt { text, id } => {
@@ -174,7 +174,7 @@ pub(crate) async fn dispatch(
         }
         FrontendMessage::AgentSettingsCommand { command } => {
             debug!("headless: AgentSettings command: {:?}", command);
-            let msgs = super::agent_settings::handle(command);
+            let msgs = cc_ipc::agent_settings::handle(command);
             let _ = sink.send_many(msgs);
         }
         FrontendMessage::QuerySubsystemStatus => {

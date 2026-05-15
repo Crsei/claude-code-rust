@@ -410,7 +410,7 @@ mod tests {
         let original = FileSearchMatch {
             file: "src/lib.rs".into(),
             line: 12,
-            text: "pub mod ipc;".into(),
+            text: "pub mod protocol;".into(),
         };
 
         let encoded = serde_json::to_string(&original).unwrap();

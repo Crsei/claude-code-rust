@@ -4,7 +4,7 @@ use crate::ui::command_surface::CommandSurfaceOutcome;
 use crate::ui::mcp::index::{McpServer, McpServerKind, McpServerStatus, McpTool};
 use crate::ui::mcp::mcp_list_panel::McpListPanelState;
 pub(crate) fn build_mcp_servers(cwd: &Path) -> Vec<McpServer> {
-    crate::ipc::runtime_adapters::ensure_installed();
+    crate::app_runtime_adapters::ensure_installed();
     let entries = cc_ipc::subsystem_handlers::build_mcp_server_config_entries(cwd);
     let status = cc_ipc::subsystem_handlers::build_mcp_server_info_list();
     entries

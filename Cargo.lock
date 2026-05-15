@@ -731,6 +731,9 @@ name = "cc-ipc"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cc-api",
+ "cc-config",
+ "cc-ipc-client",
  "cc-ipc-protocol",
  "cc-types",
  "chrono",
@@ -738,8 +741,10 @@ dependencies = [
  "parking_lot",
  "regex",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -951,12 +956,14 @@ dependencies = [
  "cc-types",
  "chrono",
  "dirs",
+ "git2",
  "opentelemetry",
  "opentelemetry-langfuse",
  "opentelemetry_sdk",
  "parking_lot",
  "serde",
  "serde_json",
+ "serial_test",
  "tempfile",
  "thiserror 2.0.18",
  "tracing",

@@ -34,7 +34,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::builtin_agents::builtin_agent_entries;
+use crate::builtin_agents::builtin_agent_entries;
 use cc_ipc_protocol::subsystem_events::{AgentSettingsCommand, AgentSettingsEvent};
 use cc_ipc_protocol::subsystem_types::{
     AgentDefinitionEntry, AgentDefinitionSource, AgentMemoryScope, AgentPermissionMode,
@@ -107,7 +107,7 @@ pub fn handle(cmd: AgentSettingsCommand) -> Vec<BackendMessage> {
         } => {
             // Preseed with built-in names so the model can't pick an
             // identifier that would collide with an engine default.
-            for name in super::builtin_agents::builtin_agent_names() {
+            for name in crate::builtin_agents::builtin_agent_names() {
                 if !existing_names.contains(&name) {
                     existing_names.push(name);
                 }
@@ -119,7 +119,7 @@ pub fn handle(cmd: AgentSettingsCommand) -> Vec<BackendMessage> {
             let events = vec![BackendMessage::AgentSettingsEvent {
                 event: AgentSettingsEvent::GenerateStarted,
             }];
-            super::agent_settings_generate::spawn_generation(user_prompt, existing_names);
+            crate::agent_settings_generate::spawn_generation(user_prompt, existing_names);
             events
         }
     }
@@ -667,8 +667,7 @@ pub fn available_tools() -> Vec<AgentToolInfo> {
     // MCP tools — pull from the subsystem snapshot so the editor can restrict
     // agents to specific MCP servers. Names are pre-prefixed with
     // `mcp__{server}__{tool}` to match how they appear at tool-use time.
-    super::runtime_adapters::ensure_installed();
-    let mcp_servers = cc_ipc::subsystem_handlers::build_mcp_server_info_list();
+    let mcp_servers = crate::subsystem_handlers::build_mcp_server_info_list();
     for server in mcp_servers {
         out.push(AgentToolInfo {
             name: format!("mcp__{}__*", server.name),

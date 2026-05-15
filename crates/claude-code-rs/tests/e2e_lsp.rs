@@ -7,6 +7,15 @@
 //! Run with: cargo test --test e2e_lsp -- --nocapture
 
 use std::fs;
+use std::path::PathBuf;
+
+fn lsp_service_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace crates dir")
+        .join("cc-lsp-service")
+        .join("src")
+}
 
 // =========================================================================
 // Source-level verification — stubs are replaced
@@ -14,8 +23,8 @@ use std::fs;
 
 #[test]
 fn lsp_service_stubs_replaced() {
-    let source =
-        fs::read_to_string("src/lsp_service/mod.rs").expect("should read lsp_service/mod.rs");
+    let source = fs::read_to_string(lsp_service_root().join("mod.rs"))
+        .expect("should read cc-lsp-service/src/mod.rs");
 
     let stub_count = source
         .matches("LSP server connection not yet implemented")
@@ -29,8 +38,8 @@ fn lsp_service_stubs_replaced() {
 
 #[test]
 fn transport_module_exists() {
-    let source =
-        fs::read_to_string("src/lsp_service/transport.rs").expect("should read transport.rs");
+    let source = fs::read_to_string(lsp_service_root().join("transport.rs"))
+        .expect("should read transport.rs");
     assert!(source.contains("pub struct JsonRpcTransport"));
     assert!(source.contains("Content-Length"));
     assert!(source.contains("async fn send"));
@@ -39,7 +48,7 @@ fn transport_module_exists() {
 
 #[test]
 fn conversions_module_exists() {
-    let source = fs::read_to_string("src/lsp_service/conversions/mod.rs")
+    let source = fs::read_to_string(lsp_service_root().join("conversions").join("mod.rs"))
         .expect("should read conversions/mod.rs");
     assert!(source.contains("parse_location_response"));
     assert!(source.contains("parse_hover_response"));
@@ -52,7 +61,8 @@ fn conversions_module_exists() {
 
 #[test]
 fn client_module_exists() {
-    let source = fs::read_to_string("src/lsp_service/client.rs").expect("should read client.rs");
+    let source =
+        fs::read_to_string(lsp_service_root().join("client.rs")).expect("should read client.rs");
     assert!(source.contains("pub struct LspClient"));
     assert!(source.contains("async fn start"));
     assert!(
@@ -65,7 +75,7 @@ fn client_module_exists() {
 
 #[test]
 fn mod_rs_has_global_client_manager() {
-    let source = fs::read_to_string("src/lsp_service/mod.rs").expect("should read mod.rs");
+    let source = fs::read_to_string(lsp_service_root().join("mod.rs")).expect("should read mod.rs");
     assert!(
         source.contains("LSP_CLIENTS"),
         "mod.rs should have global LSP_CLIENTS"
@@ -82,7 +92,7 @@ fn mod_rs_has_global_client_manager() {
 
 #[test]
 fn all_nine_operations_use_client() {
-    let source = fs::read_to_string("src/lsp_service/mod.rs").expect("should read mod.rs");
+    let source = fs::read_to_string(lsp_service_root().join("mod.rs")).expect("should read mod.rs");
 
     let operations = [
         "go_to_definition",

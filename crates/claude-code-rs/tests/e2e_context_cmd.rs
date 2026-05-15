@@ -1,8 +1,8 @@
 //! E2E tests for the `/context` slash command (issue #38).
 //!
 //! `claude-code-rs` is a binary-only crate (no `lib.rs`), so these tests
-//! use the public API of the `cc-compact` crate and source-file checks
-//! to assert the wiring of the new `analyze_context_usage` service.
+//! use the public API of the `cc-compact` crate and source-file checks in
+//! `cc-commands` to assert the wiring of the `analyze_context_usage` service.
 
 use std::fs;
 use std::path::Path;
@@ -139,10 +139,12 @@ fn json_shape_is_stable_for_headless_callers() {
 
 fn command_file() -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace crates dir")
+        .join("cc-commands")
         .join("src")
-        .join("commands")
         .join("context.rs");
-    fs::read_to_string(&path).expect("read commands/context.rs")
+    fs::read_to_string(&path).expect("read cc-commands/src/context.rs")
 }
 
 #[test]
@@ -162,10 +164,12 @@ fn context_handler_offers_json_subcommand() {
 #[test]
 fn context_command_is_still_registered() {
     let mod_rs = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace crates dir")
+        .join("cc-commands")
         .join("src")
-        .join("commands")
-        .join("mod.rs");
-    let text = fs::read_to_string(&mod_rs).expect("read commands/mod.rs");
+        .join("lib.rs");
+    let text = fs::read_to_string(&mod_rs).expect("read cc-commands/src/lib.rs");
     assert!(text.contains("command(\n            \"context\","));
     assert!(text.contains("context::ContextHandler"));
 }

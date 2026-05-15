@@ -4,10 +4,10 @@ use cc_commands::CommandContext;
 use gateway::{AdapterProvider, AdapterStatus, RunEvent, RunId, RunMeta};
 
 pub(crate) fn install_command_runtime_providers() {
-    cc_commands::runtime::set_runtime_installer(crate::ipc::runtime_adapters::ensure_installed);
+    cc_commands::runtime::set_runtime_installer(crate::app_runtime_adapters::ensure_installed);
     cc_commands::runtime::set_lsp_runtime_providers(
-        crate::ipc::subsystem_handlers::build_lsp_server_info_list,
-        crate::ipc::subsystem_handlers::load_lsp_recommendation_settings,
+        cc_ipc::subsystem_handlers::build_lsp_server_info_list,
+        cc_ipc::subsystem_handlers::load_lsp_recommendation_settings,
     );
     cc_commands::runtime::set_agent_runtime_providers(
         builtin_agent_entries_for_commands,
@@ -94,7 +94,7 @@ pub(crate) fn install_command_runtime_providers() {
 }
 
 fn builtin_agent_entries_for_commands() -> Vec<cc_commands::runtime::BuiltinAgentEntry> {
-    crate::ipc::builtin_agents::builtin_agent_entries()
+    cc_engine::agent_runtime::builtin_agent_entries()
         .into_iter()
         .map(|entry| cc_commands::runtime::BuiltinAgentEntry {
             name: entry.name,
@@ -104,7 +104,7 @@ fn builtin_agent_entries_for_commands() -> Vec<cc_commands::runtime::BuiltinAgen
 }
 
 fn builtin_agent_prompt_for_commands(name: &str) -> Option<String> {
-    crate::ipc::builtin_agents::builtin_agent_prompt(name).map(ToOwned::to_owned)
+    cc_engine::agent_runtime::builtin_agent_prompt(name)
 }
 
 fn tool_tasks_for_commands() -> Vec<cc_tasks::TaskEntry> {

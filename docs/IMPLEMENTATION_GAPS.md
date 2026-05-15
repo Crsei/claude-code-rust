@@ -1,6 +1,6 @@
 # cc-rust 未完备项与全量构建 TODO
 
-> 更新日期: 2026-05-14 | 当前阶段: 全量构建 / Full Build
+> 更新日期: 2026-05-16 | 当前阶段: 全量构建 / Full Build
 
 本文只登记仍未补齐、仍需重评或明确 intentional crop 的内容。已确认实现或已关闭的历史记录已迁移到：
 
@@ -20,7 +20,7 @@
 | PlanMode auto-mode parity | 基础完成，classifier parity 未完 | 保守 classifier、计划持久化、approval lifecycle、实现任务关联、团队审批 mailbox、plan file 写入白名单已落地；仍需 full auto-mode LLM classifier parity 和 `allowedPrompts` 语义分类收口。 |
 | WebFetch browser-grade 能力 | 部分完成 | redirect budget / cross-host diagnostic、Content-Type 分发、环境代理/`NO_PROXY`、Cookie/credential 边界已完成；JS 渲染仍待实现或裁剪决策。 |
 | Daemon supervisor/worker ownership | 阶段主干完成，完整 ownership 未完 | 当前 HTTP/SSE 控制面已读 supervisor/worker 状态并写入 command/event 协议；真实 submit/abort 执行 ownership 仍有兼容路径。 |
-| Crate migration / thin binary | Build/test gates green; thin-binary guard 未关闭 | `cargo fmt --all --check`、`cargo check --workspace --all-targets`、`cargo test --workspace` 和 `cargo build --workspace --release` 已通过；Rust TUI 已回退为 `claude-code-rs/src/ui/**` intentional root-owned，`cc-ui` 仅保留为空边界 crate；当前 final guards 为 0 个 `cc-ui -> root UI` path shims、0 个 root -> `cc-ui` path shims、44 个 root-style import hits、473 个 allow-attribute hits、12 个 Codex compatibility path hits。 |
+| Crate migration / thin binary | Engine + IPC owner migration 已落地，thin-binary guard 未关闭 | `claude-code-rs/src/engine/**` 与 `claude-code-rs/src/ipc/**` 已删除；`cc-engine` 拥有 engine/agent，`cc-ipc`/`cc-ipc-client`/`cc-ipc-protocol` 拥有 IPC runtime、client helper 与 wire DTO。仍需收束剩余 root-style imports、allow-attribute hits、Codex compatibility path hits，并跑完整 workspace/release gates。 |
 | Remote-control gateway control plane | 未实现，Phase 0 边界已冻结 | 计划新增 `crates/gateway` 作为控制面，负责 `/remote-control/v1/**`、RemoteSource/session/run、auth、adapter registry、durable events、delivery 和 recovery；现有 daemon `/api/*` 不是公网 remote-control API。 |
 | Telegram/Lark gateway adapter connectivity | 未实现，范围限定 | 第一版只做连接、健康检查、provider-neutral 状态诊断和测试发送；不做 inbound conversation、完整远程会话控制或绕过 gateway runner 触发模型。 |
 | Local `/remote` and TUI remote surface | 部分完成 | `/remote` slash command and `RemoteSurface` now exist and read local gateway status/adapters/runs/events. Remaining work: a live remote status indicator and full end-to-end gateway verification. |
@@ -32,7 +32,6 @@
 
 - [computer-use-implementation-checklist.md](computer-use-implementation-checklist.md): Computer Use 落地清单，仍是待实施能力。
 - [session-export-implementation-guide.md](session-export-implementation-guide.md): Rust 侧仍缺完整导出基础设施。
-- [ipc-refactor-plan.md](ipc-refactor-plan.md): IPC 结构重构计划尚未完全收束。
 - [traceable-logging-plan.md](traceable-logging-plan.md): 可追溯日志体系仍是 Draft。
 - [daemon-usability-plan.md](daemon-usability-plan.md): daemon 可用化主干已分阶段落地，但仍有 worker/route ownership 余量。
 - [plan/crate-migration-phase-plan-2026-05-14.md](plan/crate-migration-phase-plan-2026-05-14.md): Phase 0-12 implementation slices 已落地且 workspace build/test gates green；thin-binary closeout 仍未关闭，当前 blockers 见 [reference/CRATE_MIGRATION_PHASE0_OWNER_GUARD_MATRIX.md](reference/CRATE_MIGRATION_PHASE0_OWNER_GUARD_MATRIX.md) 的 Phase 12 verification snapshot。

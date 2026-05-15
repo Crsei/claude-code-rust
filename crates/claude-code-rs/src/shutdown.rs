@@ -85,7 +85,7 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
     }
 
     // Step 2: Cancel supervised background agents and clean transient worktrees.
-    let cancelled = crate::engine::agent::supervisor::shutdown_all("graceful shutdown").await;
+    let cancelled = cc_engine::agent::supervisor::shutdown_all("graceful shutdown").await;
     if cancelled > 0 {
         debug!(cancelled, "graceful_shutdown: background agents cancelled");
     }
