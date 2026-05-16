@@ -84,9 +84,12 @@ pub async fn run_context_pipeline(
 
     // ── Step 1: Tool result budget (async — saves oversized results to disk) ──
     let mut replacement_state = tool_result_budget::ContentReplacementState::default();
-    let budgeted =
-        tool_result_budget::apply_tool_result_budget(current, &mut replacement_state, 100_000)
-            .await;
+    let budgeted = tool_result_budget::apply_tool_result_budget(
+        current,
+        &mut replacement_state,
+        tool_result_budget::DEFAULT_MAX_SIZE_CHARS,
+    )
+    .await;
     if !replacement_state.replacements.is_empty() {
         compacted = true;
         debug!(
@@ -216,9 +219,12 @@ pub async fn try_reactive_compact(
 
     // First: budget oversized tool results
     let mut replacement_state = tool_result_budget::ContentReplacementState::default();
-    let current =
-        tool_result_budget::apply_tool_result_budget(messages, &mut replacement_state, 100_000)
-            .await;
+    let current = tool_result_budget::apply_tool_result_budget(
+        messages,
+        &mut replacement_state,
+        tool_result_budget::DEFAULT_MAX_SIZE_CHARS,
+    )
+    .await;
 
     if !replacement_state.replacements.is_empty() {
         debug!(

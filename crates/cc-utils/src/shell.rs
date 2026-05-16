@@ -26,7 +26,6 @@ pub enum ShellKind {
 
 impl ShellKind {
     /// Display name for the shell.
-    #[allow(dead_code)]
     pub fn display_name(&self) -> &'static str {
         match self {
             ShellKind::Bash => "bash",

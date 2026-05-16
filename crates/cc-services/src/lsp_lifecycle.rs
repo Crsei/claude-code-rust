@@ -4,8 +4,6 @@
 //! This module manages the process lifecycle only. JSON-RPC protocol
 //! communication will be added in a future phase.
 
-#![allow(unused)]
-
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};

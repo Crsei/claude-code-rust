@@ -25,7 +25,6 @@ pub mod types;
 
 /// Check if Agent Teams is enabled via the upstream env-var switch or a
 /// session-local experimental override.
-#[allow(dead_code)]
 pub fn is_agent_teams_enabled() -> bool {
     cc_config::features::enabled(cc_config::features::Feature::AgentTeams)
 }

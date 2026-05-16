@@ -101,7 +101,7 @@ pub(crate) fn write_session_header_to_file(header: &SessionHeader, path: &Path) 
     let mut file = std::fs::OpenOptions::new()
         .create_new(true)
         .write(true)
-        .open(&path)
+        .open(path)
         .with_context(|| format!("Failed to create transcript {}", path.display()))?;
     writeln!(file, "{}", line)
         .with_context(|| format!("Failed to write header to transcript {}", path.display()))?;
@@ -161,12 +161,12 @@ pub(crate) fn copy_transcript_entries_between_files(
         return Ok(0);
     }
 
-    let content = std::fs::read_to_string(&source_path)
+    let content = std::fs::read_to_string(source_path)
         .with_context(|| format!("Failed to read source transcript {}", source_path.display()))?;
 
     let mut target_file = std::fs::OpenOptions::new()
         .append(true)
-        .open(&target_path)
+        .open(target_path)
         .with_context(|| {
             format!(
                 "Target transcript {} does not exist — call write_session_header first",
@@ -273,7 +273,7 @@ pub(crate) fn flush_transcript_file(path: &Path) -> Result<()> {
 
     let file = std::fs::OpenOptions::new()
         .write(true)
-        .open(&path)
+        .open(path)
         .with_context(|| format!("Failed to open transcript for flush {}", path.display()))?;
 
     file.sync_all()

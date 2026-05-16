@@ -329,7 +329,7 @@ pub(crate) fn save_session_to_file(
     let json =
         serde_json::to_string_pretty(&session_file).context("Failed to serialize session")?;
 
-    std::fs::write(&path, json)
+    std::fs::write(path, json)
         .with_context(|| format!("Failed to write session file {}", path.display()))?;
 
     debug!(
@@ -377,7 +377,7 @@ pub(crate) fn set_session_title_in_file(
     file.last_modified = Utc::now().timestamp();
 
     let json = serde_json::to_string_pretty(&file).context("Failed to serialize session")?;
-    std::fs::write(&path, json)
+    std::fs::write(path, json)
         .with_context(|| format!("Failed to write session file {}", path.display()))?;
 
     debug!(
@@ -468,7 +468,7 @@ fn load_session_file(session_id: &str) -> Result<SessionFile> {
 }
 
 fn load_session_file_from_path(path: &Path) -> Result<SessionFile> {
-    let contents = std::fs::read_to_string(&path)
+    let contents = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read session file {}", path.display()))?;
     let file: SessionFile = serde_json::from_str(&contents)
         .with_context(|| format!("Failed to parse session file {}", path.display()))?;

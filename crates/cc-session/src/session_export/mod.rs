@@ -27,9 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::storage::{self, SessionFile};
 use cc_types::message::Message;
 
-#[allow(unused_imports)] // Used by commands/session_export.rs
 pub use builders::build_context_snapshot;
-#[allow(unused_imports)] // Used by commands/session_export.rs
 pub use compression::{
     detect_content_replacement, extract_compression_events, reconstruct_tool_timeline,
 };

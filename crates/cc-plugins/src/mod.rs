@@ -70,7 +70,6 @@ pub fn cache_dir() -> PathBuf {
     plugins_dir().join("cache")
 }
 
-#[allow(dead_code)]
 pub fn marketplaces_dir() -> PathBuf {
     plugins_dir().join("marketplaces")
 }
@@ -79,7 +78,6 @@ pub fn installed_plugins_path() -> PathBuf {
     plugins_dir().join("installed_plugins.json")
 }
 
-#[allow(dead_code)]
 pub fn known_marketplaces_path() -> PathBuf {
     plugins_dir().join("known_marketplaces.json")
 }

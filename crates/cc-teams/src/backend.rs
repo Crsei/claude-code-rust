@@ -64,7 +64,6 @@ pub fn ensure_backend_supported(backend_type: BackendType) -> Result<()> {
 /// Implementations handle spawning, messaging, and lifecycle management
 /// of teammate agents.
 #[async_trait]
-#[allow(dead_code)]
 pub trait TeammateExecutor: Send + Sync {
     /// The backend type identifier.
     fn backend_type(&self) -> BackendType;
@@ -101,7 +100,6 @@ pub trait TeammateExecutor: Send + Sync {
 
 /// Result of creating a new terminal pane.
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct CreatePaneResult {
     pub pane_id: String,
     pub session_name: String,
@@ -109,7 +107,6 @@ pub struct CreatePaneResult {
 
 /// Extended trait for pane-based backends (tmux, iTerm2).
 #[async_trait]
-#[allow(dead_code)]
 pub trait PaneBackend: TeammateExecutor {
     /// Display name for the backend (e.g., "tmux", "iTerm2").
     fn display_name(&self) -> &str;

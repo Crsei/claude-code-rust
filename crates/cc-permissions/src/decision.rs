@@ -163,7 +163,6 @@ impl AutoClassifierDecision {
 
 /// How a permission decision was reached (for audit/debugging).
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum PermissionDecisionReason {
     /// Matched a rule from a specific source.
     Rule { source: String, pattern: String },
@@ -200,7 +199,6 @@ impl HookPermissionDecision {
     /// Used by callers (and tests) that want to short-circuit when a
     /// hook plug returns an empty result; intentionally part of the
     /// public surface of `HookPermissionDecision`.
-    #[allow(dead_code)]
     pub fn is_noop(&self) -> bool {
         !self.allow && self.deny.is_none() && self.ask.is_none() && self.updated_input.is_none()
     }
@@ -221,7 +219,6 @@ impl DenialTracker {
     /// Public for downstream callers (auto-mode classifier shim) and
     /// covered by tests; cargo's non-test build can't see test usage so
     /// silence the warning.
-    #[allow(dead_code)]
     pub fn record_denial(&mut self) -> bool {
         self.consecutive_denials += 1;
         self.total_denials += 1;

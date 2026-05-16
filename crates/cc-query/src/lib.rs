@@ -10,9 +10,6 @@ pub mod stop_hooks;
 pub mod token_budget;
 pub(crate) mod turn_context;
 
-#[allow(unused_imports)]
 pub use cc_engine::agent_runtime::{CompletedBackgroundAgent, PendingBackgroundResults};
-#[allow(unused_imports)]
 pub use deps::QueryDeps;
-#[allow(unused_imports)]
 pub use loop_impl::query;

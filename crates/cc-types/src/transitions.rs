@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// query loop 的终止原因
 ///
 /// 对应 TypeScript: query.ts 中 return { reason: '...' } 的所有终止路径

@@ -356,9 +356,8 @@ struct ExitWorktreeInput {
     action: String,
     /// If true, force removal even with uncommitted changes.
     /// Checked in `validate_input` via raw JSON; kept here for schema completeness.
-    #[serde(default)]
-    #[allow(dead_code)]
-    discard_changes: bool,
+    #[serde(default, rename = "discard_changes")]
+    _discard_changes: bool,
 }
 
 #[async_trait]
@@ -1149,7 +1148,7 @@ mod tests {
             json!([{ "hooks": [{ "type": "command", "command": "remove" }] }]),
         );
 
-        let ctx = make_ctx_with(hooks, Arc::new(Phase6HookRunner::default()));
+        let ctx = make_ctx_with(hooks, Arc::new(Phase6HookRunner));
         let parent = parent_message();
 
         let enter = EnterWorktreeTool

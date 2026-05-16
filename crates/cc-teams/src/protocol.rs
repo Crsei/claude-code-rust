@@ -6,8 +6,6 @@
 //! Messages are serialized as JSON in the mailbox `text` field.
 //! The `type` field discriminates between protocol messages and plain text.
 
-#![allow(unused)]
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use cc_types::message::{ContentBlock, Message, MessageContent, ToolResultContent};
 
 const CONTEXT_WINDOW_ENV: &str = "CLAUDE_CODE_MAX_CONTEXT_TOKENS";

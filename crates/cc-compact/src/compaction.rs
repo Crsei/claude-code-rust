@@ -18,15 +18,11 @@
 //!   7. Boundary generation — compact boundary system message
 //!   8. Cleanup — update tracking state
 
-#![allow(unused)]
-
-use anyhow::Result;
-use tracing::{debug, info, warn};
+use tracing::debug;
 use uuid::Uuid;
 
 use cc_types::message::{
-    CompactMetadata, ContentBlock, Message, MessageContent, PreservedSegment, SystemMessage,
-    SystemSubtype, UserMessage,
+    CompactMetadata, ContentBlock, Message, PreservedSegment, SystemMessage, SystemSubtype,
 };
 use cc_types::state::AutoCompactTracking;
 use cc_utils::tokens;
@@ -38,29 +34,11 @@ use super::messages as compact_messages;
 // Constants
 // ---------------------------------------------------------------------------
 
-/// Maximum output tokens for the compaction summary.
-const MAX_OUTPUT_TOKENS_FOR_SUMMARY: usize = 20_000;
-
-/// Buffer tokens for auto-compact threshold.
-const AUTOCOMPACT_BUFFER_TOKENS: u64 = 13_000;
-
 /// Maximum consecutive compaction failures before circuit breaker trips.
 const MAX_CONSECUTIVE_FAILURES: usize = 3;
 
 /// Maximum number of recent files to recover in post-compact messages.
 const MAX_RECOVERED_FILES: usize = 5;
-
-/// Maximum tokens per recovered file.
-const MAX_TOKENS_PER_FILE: u64 = 5_000;
-
-/// Total budget for skill re-injection.
-const SKILL_BUDGET_TOKENS: u64 = 25_000;
-
-/// Maximum skills to re-inject.
-const MAX_SKILLS: usize = 5;
-
-/// Maximum tokens per skill.
-const MAX_TOKENS_PER_SKILL: u64 = 5_000;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -148,7 +126,7 @@ pub fn should_auto_compact(
 pub fn build_post_compact_messages(
     summary: &str,
     pre_compact_messages: &[Message],
-    config: &CompactionConfig,
+    _config: &CompactionConfig,
 ) -> Vec<Message> {
     let mut result = Vec::new();
 
@@ -259,7 +237,7 @@ pub fn create_preserved_segment(
 
 /// Update tracking state after a successful compaction.
 pub fn tracking_on_success(
-    prev: Option<&AutoCompactTracking>,
+    _prev: Option<&AutoCompactTracking>,
     turn_id: &str,
 ) -> AutoCompactTracking {
     AutoCompactTracking {

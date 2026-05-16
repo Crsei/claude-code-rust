@@ -27,21 +27,14 @@
 //! - `language` still normalizes to the dictation code that a future
 //!   backend would use.
 
-#![allow(dead_code)]
-
 pub mod audio;
 pub mod controller;
 pub mod feasibility;
 pub mod language;
 pub mod stt;
 
-#[allow(unused_imports)]
 pub use audio::{AudioCaptureBackend, NullAudioBackend, RecordingHandle};
-#[allow(unused_imports)]
 pub use controller::{VoiceController, VoiceEvent, VoiceState};
-#[allow(unused_imports)]
 pub use feasibility::{Feasibility, FeasibilityReason};
-#[allow(unused_imports)]
 pub use language::{normalize_language_for_stt, NormalizedLanguage};
-#[allow(unused_imports)]
 pub use stt::{NullTranscriptionClient, TranscriptionClient, TranscriptionResult};

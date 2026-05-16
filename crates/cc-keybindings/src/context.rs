@@ -6,8 +6,6 @@
 //!
 //! Resolution order: specific context first, then fall back to `Global`.
 
-#![allow(dead_code)]
-
 use std::fmt;
 use std::str::FromStr;
 

@@ -24,7 +24,7 @@ use cc_engine::types::state::AutoCompactTracking;
 use cc_engine::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools};
 
 enum MockStreamStep {
-    Response(ModelResponse),
+    Response(Box<ModelResponse>),
     Error(String),
     Events(Vec<Result<StreamEvent, String>>),
     DelayedEvents(Vec<(Duration, Result<StreamEvent, String>)>),
@@ -59,7 +59,7 @@ impl MockDeps {
         Self::from_steps(
             responses
                 .into_iter()
-                .map(MockStreamStep::Response)
+                .map(|response| MockStreamStep::Response(Box::new(response)))
                 .collect(),
         )
     }
@@ -143,7 +143,7 @@ impl QueryDeps for MockDeps {
     async fn call_model(&self, params: ModelCallParams) -> Result<ModelResponse> {
         self.call_params.lock().push(params);
         match self.pop_stream_step()? {
-            MockStreamStep::Response(resp) => Ok(resp),
+            MockStreamStep::Response(resp) => Ok(*resp),
             MockStreamStep::Error(error) => anyhow::bail!("{}", error),
             MockStreamStep::Events(_) | MockStreamStep::DelayedEvents(_) => {
                 anyhow::bail!("raw stream events are not supported by call_model")
@@ -192,7 +192,7 @@ impl QueryDeps for MockDeps {
         };
 
         let stream_finished = self.stream_finished.clone();
-        let stream = futures::stream::iter(events.into_iter()).then(move |(delay, event)| {
+        let stream = futures::stream::iter(events).then(move |(delay, event)| {
             let stream_finished = stream_finished.clone();
             async move {
                 if !delay.is_zero() {
@@ -677,7 +677,7 @@ async fn test_prompt_too_long_reactive_compact_retries_model_call() {
     let initial_messages = vec![make_user_message_for_test("Summarize this long context")];
     let deps = Arc::new(MockDeps::from_steps(vec![
         MockStreamStep::Error("prompt_too_long: context window exceeded".to_string()),
-        MockStreamStep::Response(make_text_response("Recovered after compact.")),
+        MockStreamStep::Response(Box::new(make_text_response("Recovered after compact."))),
     ]));
     deps.set_reactive_compact_result(Some(CompactionResult {
         messages: initial_messages.clone(),
@@ -726,7 +726,9 @@ async fn test_prompt_too_long_collapse_drain_retries_before_reactive_compact() {
     let initial_messages = vec![make_user_message_for_test("Summarize this long context")];
     let deps = Arc::new(MockDeps::from_steps(vec![
         MockStreamStep::Error("prompt_too_long: context window exceeded".to_string()),
-        MockStreamStep::Response(make_text_response("Recovered after collapse drain.")),
+        MockStreamStep::Response(Box::new(make_text_response(
+            "Recovered after collapse drain.",
+        ))),
     ]));
     deps.set_collapse_drain_result(Some(CompactionResult {
         messages: initial_messages.clone(),
@@ -792,7 +794,7 @@ async fn test_prompt_too_long_terminals_after_collapse_and_reactive_fail() {
 async fn test_fallback_model_retries_stream_start_capacity_error() {
     let deps = Arc::new(MockDeps::from_steps(vec![
         MockStreamStep::Error("529 overloaded: high demand".to_string()),
-        MockStreamStep::Response(make_text_response("Recovered on fallback")),
+        MockStreamStep::Response(Box::new(make_text_response("Recovered on fallback"))),
     ]));
 
     let mut params = make_query_params(vec![make_user_message_for_test("Use the fallback")]);
@@ -837,7 +839,9 @@ async fn test_fallback_model_retries_stream_start_capacity_error() {
 async fn test_fallback_strips_signature_blocks_from_retry_messages() {
     let deps = Arc::new(MockDeps::from_steps(vec![
         MockStreamStep::Error("529 overloaded: high demand".to_string()),
-        MockStreamStep::Response(make_text_response("Recovered without signed thinking")),
+        MockStreamStep::Response(Box::new(make_text_response(
+            "Recovered without signed thinking",
+        ))),
     ]));
 
     let signed_assistant = Message::Assistant(AssistantMessage {
@@ -949,7 +953,7 @@ async fn test_fallback_tombstones_partial_assistant_after_stream_error() {
             }),
             Err("529 overloaded during stream".to_string()),
         ]),
-        MockStreamStep::Response(make_text_response("Recovered after tombstone")),
+        MockStreamStep::Response(Box::new(make_text_response("Recovered after tombstone"))),
     ]));
 
     let mut params = make_query_params(vec![make_user_message_for_test("Use fallback")]);
@@ -1555,7 +1559,7 @@ async fn streaming_tool_execution_gate_starts_safe_tools_before_message_stop() {
     let deps = Arc::new(
         MockDeps::from_steps(vec![
             MockStreamStep::DelayedEvents(events),
-            MockStreamStep::Response(make_text_response("streamed tools complete")),
+            MockStreamStep::Response(Box::new(make_text_response("streamed tools complete"))),
         ])
         .with_tools(tools)
         .with_tool_delay(Duration::from_millis(20)),
@@ -1635,7 +1639,7 @@ async fn streaming_tool_execution_aborts_started_tools_on_stream_fallback() {
     let deps = Arc::new(
         MockDeps::from_steps(vec![
             MockStreamStep::DelayedEvents(events),
-            MockStreamStep::Response(make_text_response("fallback recovered")),
+            MockStreamStep::Response(Box::new(make_text_response("fallback recovered"))),
         ])
         .with_tools(tools)
         .with_tool_delay(Duration::from_millis(50)),

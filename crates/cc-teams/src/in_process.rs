@@ -188,14 +188,12 @@ impl InProcessBackend {
     }
 
     /// Remove a task from the registry.
-    #[allow(dead_code)]
     pub fn remove_task(task_id: &str) {
         let mut registry = TASK_REGISTRY.lock();
         registry.remove(task_id);
     }
 
     /// Get all task IDs.
-    #[allow(dead_code)]
     pub fn all_task_ids() -> Vec<String> {
         let registry = TASK_REGISTRY.lock();
         registry.keys().cloned().collect()
@@ -233,6 +231,12 @@ impl InProcessBackend {
     pub fn clear_registry() {
         let mut registry = TASK_REGISTRY.lock();
         registry.clear();
+    }
+}
+
+impl Default for InProcessBackend {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

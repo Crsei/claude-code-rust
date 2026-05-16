@@ -23,7 +23,6 @@ use std::path::{Path, PathBuf};
 /// Retained as a stable internal API for tests and for callers that want
 /// the rule-engine result without the full hook + mode flow (which lives
 /// in [`crate::decision`]).
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum PermissionCheckResult {
     /// Tool execution is allowed.
@@ -31,7 +30,6 @@ pub enum PermissionCheckResult {
     /// Tool execution is denied.
     Deny { reason: String },
     /// User must be asked for confirmation.
-    #[allow(dead_code)]
     Ask { message: String },
 }
 
@@ -97,7 +95,6 @@ pub fn is_accept_edits_tool_call(
 ///
 /// Returns the rule-based decision only — caller is responsible for the
 /// hook overlay and mode fallback (see [`crate::decision`]).
-#[allow(dead_code)]
 pub fn check_tool_permission(
     tool_name: &str,
     input: &Value,
@@ -167,7 +164,6 @@ pub fn check_tool_permission(
 
 /// Iterate all sources in a rule set and return Some(matched_rule) if any
 /// rule matches (`tool_name`, `input`).
-#[allow(dead_code)]
 fn match_rules_any_source(
     tool_name: &str,
     input: &Value,

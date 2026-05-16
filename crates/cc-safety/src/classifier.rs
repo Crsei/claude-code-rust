@@ -1,7 +1,3 @@
-// Phase 2 builds the shared classifier foundation. Phase 3 wires these
-// surfaces into the central tool-permission path.
-#![allow(dead_code)]
-
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -557,7 +553,7 @@ fn pretty_json(value: &Value) -> String {
 }
 
 fn estimate_tokens(input: &str) -> usize {
-    (input.len() + 3) / 4
+    input.len().div_ceil(4)
 }
 
 fn shell_command_from_input(input: &Value) -> Option<String> {

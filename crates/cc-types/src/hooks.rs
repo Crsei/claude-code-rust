@@ -218,74 +218,6 @@ pub trait HookRunner: Send + Sync {
     ) -> anyhow::Result<PostToolHookResult>;
 }
 
-#[cfg(test)]
-mod tests {
-    use serde_json::{json, Value};
-
-    use super::*;
-
-    #[test]
-    fn matcher_supports_exact_wildcard_and_prefix() {
-        assert!(matches_tool(Some("Bash"), "Bash"));
-        assert!(!matches_tool(Some("Bash"), "Read"));
-        assert!(matches_tool(None, "Read"));
-        assert!(matches_tool(Some("*"), "anything_at_all"));
-        assert!(matches_tool(Some("mcp__"), "mcp__server__tool"));
-        assert!(!matches_tool(Some("mcp__"), "mcp_single_underscore"));
-    }
-
-    #[test]
-    fn load_hook_configs_preserves_critical_and_default_timeout() {
-        let hooks_value = HooksMap::from([(
-            "PreToolUse".to_string(),
-            json!([
-                {
-                    "matcher": "Bash",
-                    "hooks": [
-                        {
-                            "type": "command",
-                            "command": "echo ok",
-                            "timeout": 30
-                        }
-                    ]
-                },
-                {
-                    "matcher": "*",
-                    "critical": true,
-                    "hooks": [
-                        {
-                            "type": "command",
-                            "command": "echo audit"
-                        }
-                    ]
-                }
-            ]),
-        )]);
-
-        let configs = load_hook_configs(&hooks_value, "PreToolUse");
-        assert_eq!(configs.len(), 2);
-        assert_eq!(configs[0].matcher.as_deref(), Some("Bash"));
-        assert!(!configs[0].critical);
-        assert_eq!(configs[1].matcher.as_deref(), Some("*"));
-        assert!(configs[1].critical);
-
-        match &configs[1].hooks[0] {
-            HookEntry::Command { command, timeout } => {
-                assert_eq!(command, "echo audit");
-                assert_eq!(*timeout, 60);
-            }
-        }
-    }
-
-    #[test]
-    fn load_hook_configs_ignores_missing_or_invalid_event() {
-        let hooks_value = HooksMap::from([("PreToolUse".to_string(), Value::String("bad".into()))]);
-
-        assert!(load_hook_configs(&hooks_value, "PreToolUse").is_empty());
-        assert!(load_hook_configs(&hooks_value, "PostToolUse").is_empty());
-    }
-}
-
 // ---------------------------------------------------------------------------
 // NoopHookRunner — a safe default that never fires any hooks
 // ---------------------------------------------------------------------------
@@ -366,5 +298,73 @@ impl HookRunner for NoopHookRunner {
         _hook_configs: &[HookEventConfig],
     ) -> anyhow::Result<PostToolHookResult> {
         Ok(PostToolHookResult::Continue)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{json, Value};
+
+    use super::*;
+
+    #[test]
+    fn matcher_supports_exact_wildcard_and_prefix() {
+        assert!(matches_tool(Some("Bash"), "Bash"));
+        assert!(!matches_tool(Some("Bash"), "Read"));
+        assert!(matches_tool(None, "Read"));
+        assert!(matches_tool(Some("*"), "anything_at_all"));
+        assert!(matches_tool(Some("mcp__"), "mcp__server__tool"));
+        assert!(!matches_tool(Some("mcp__"), "mcp_single_underscore"));
+    }
+
+    #[test]
+    fn load_hook_configs_preserves_critical_and_default_timeout() {
+        let hooks_value = HooksMap::from([(
+            "PreToolUse".to_string(),
+            json!([
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "echo ok",
+                            "timeout": 30
+                        }
+                    ]
+                },
+                {
+                    "matcher": "*",
+                    "critical": true,
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "echo audit"
+                        }
+                    ]
+                }
+            ]),
+        )]);
+
+        let configs = load_hook_configs(&hooks_value, "PreToolUse");
+        assert_eq!(configs.len(), 2);
+        assert_eq!(configs[0].matcher.as_deref(), Some("Bash"));
+        assert!(!configs[0].critical);
+        assert_eq!(configs[1].matcher.as_deref(), Some("*"));
+        assert!(configs[1].critical);
+
+        match &configs[1].hooks[0] {
+            HookEntry::Command { command, timeout } => {
+                assert_eq!(command, "echo audit");
+                assert_eq!(*timeout, 60);
+            }
+        }
+    }
+
+    #[test]
+    fn load_hook_configs_ignores_missing_or_invalid_event() {
+        let hooks_value = HooksMap::from([("PreToolUse".to_string(), Value::String("bad".into()))]);
+
+        assert!(load_hook_configs(&hooks_value, "PreToolUse").is_empty());
+        assert!(load_hook_configs(&hooks_value, "PostToolUse").is_empty());
     }
 }

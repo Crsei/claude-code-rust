@@ -7,11 +7,6 @@
 //! vocabulary is the unification point. Each layer maps a resolved action
 //! string to its own handler without disagreeing about names.
 
-#![allow(dead_code)]
-// Action variants are only constructed once the UI layer (Rust TUI or
-// OpenTUI) binds a concrete key to it — adding the variant before the
-// consumer catches up is fine.
-
 use std::fmt;
 
 /// Canonical action name (e.g. `"app:interrupt"`, `"chat:submit"`).

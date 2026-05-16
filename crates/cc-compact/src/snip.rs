@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use chrono::Utc;
 use uuid::Uuid;
 
@@ -180,7 +178,7 @@ fn content_block_chars(block: &ContentBlock) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::messages::{create_tool_result_message, create_user_message};
+    use crate::messages::create_user_message;
     use cc_types::message::AssistantMessage;
 
     fn make_assistant_text(text: &str) -> Message {

@@ -12,8 +12,6 @@
 //!   `down`, `left`, `right`, `backspace`, `delete`, `home`, `end`,
 //!   `pageup`, `pagedown`, `f1`..`f24`.
 
-#![allow(dead_code)]
-
 use std::fmt;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};

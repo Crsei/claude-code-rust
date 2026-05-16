@@ -843,12 +843,13 @@ impl QueryEngine {
                         &prompt,
                     )
                 } else {
+                    let query_source_label = query_source.as_label();
                     crate::services::langfuse::create_trace(
                         session_id.as_str(),
                         &model_name,
                         &provider,
                         &prompt,
-                        Some(query_source.as_str()),
+                        Some(query_source_label.as_str()),
                     )
                 };
             }

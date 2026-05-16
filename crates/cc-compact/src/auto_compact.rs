@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 pub use cc_utils::tokens::get_context_window_size;
 
 const AUTO_COMPACT_THRESHOLD_RATIO: f64 = 0.8;

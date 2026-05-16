@@ -32,7 +32,7 @@ pub async fn run_stop_hooks(
     }
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn has_tool_use(assistant_message: &AssistantMessage) -> bool {
     assistant_message
         .content

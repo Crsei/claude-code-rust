@@ -6,8 +6,6 @@
 //! Each migration is a pure function: `fn(Value) -> Result<Value>` that
 //! transforms data from version N to version N+1.
 
-#![allow(unused)]
-
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
 

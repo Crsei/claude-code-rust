@@ -594,7 +594,6 @@ impl LspClient {
 
     /// Gracefully shut down the server: send `shutdown` request, then `exit`
     /// notification. If the server does not respond within 5 seconds, kill it.
-    #[allow(dead_code)] // Lifecycle method — will be called by shutdown hooks.
     pub async fn shutdown(mut self) -> Result<()> {
         debug!(language = %self.language_id, "shutting down LSP server");
 

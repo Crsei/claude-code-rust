@@ -65,8 +65,8 @@ impl LoadedPlugins {
 /// Result of scanning the plugin cache.
 #[derive(Debug, Clone, Default)]
 pub struct CachedPluginDiscovery {
-    #[allow(dead_code)]
-    // Cache discovery currently reports diagnostics; plugin registration stays installed-metadata driven.
+    /// Discovered manifest/path pairs reserved for compatibility and diagnostics;
+    /// plugin registration remains installed-metadata driven.
     pub plugins: Vec<(PluginManifest, PathBuf)>,
     pub diagnostics: Vec<PluginDiagnostic>,
 }

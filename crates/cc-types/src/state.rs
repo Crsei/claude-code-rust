@@ -100,7 +100,6 @@ impl Default for BudgetTracker {
 /// Token 预算决策
 #[derive(Debug, Clone)]
 pub enum TokenBudgetDecision {
-    #[allow(dead_code)]
     Continue {
         nudge_message: String,
         continuation_count: usize,
@@ -116,14 +115,9 @@ pub enum TokenBudgetDecision {
 #[derive(Debug, Clone)]
 pub struct BudgetCompletionEvent {
     pub continuation_count: usize,
-    #[allow(dead_code)]
     pub pct: usize,
-    #[allow(dead_code)]
     pub turn_tokens: u64,
-    #[allow(dead_code)]
     pub budget: u64,
-    #[allow(dead_code)]
     pub diminishing_returns: bool,
-    #[allow(dead_code)]
     pub duration_ms: u64,
 }

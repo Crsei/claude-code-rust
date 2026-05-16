@@ -4,8 +4,6 @@
 //! file size limits, timeout values, and other important constants
 //! referenced by the TypeScript source in `src/constants/`.
 
-#![allow(unused)]
-
 // =============================================================================
 // Model identifiers
 // =============================================================================

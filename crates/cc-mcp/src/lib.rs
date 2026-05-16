@@ -127,7 +127,6 @@ pub enum McpConnectionState {
     /// Disconnected (graceful or after error).
     Disconnected,
     /// Connection failed with an error.
-    #[allow(dead_code)]
     Error(String),
 }
 
@@ -366,7 +365,6 @@ pub struct ListResourcesResult {
 }
 
 /// Result of `resources/read`.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReadResourceResult {
     pub contents: Vec<McpResourceContent>,

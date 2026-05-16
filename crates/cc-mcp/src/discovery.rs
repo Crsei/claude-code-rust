@@ -24,7 +24,6 @@ pub enum DiscoveryScope {
     /// Contributed by a plugin (id preserved).
     Plugin(String),
     /// Contributed by an IDE bridge (id preserved).
-    #[allow(dead_code)]
     Ide(String),
 }
 

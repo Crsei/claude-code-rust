@@ -17,7 +17,7 @@
 mod deps;
 mod helpers;
 mod submit_message;
-#[allow(clippy::module_inception)]
+#[cfg(test)]
 mod tests;
 mod types;
 
@@ -119,11 +119,6 @@ pub struct QueryEngine {
     pub(crate) state: Arc<RwLock<QueryEngineState>>,
     /// Atomic abort flag (fast path for the query loop — no lock needed).
     pub(crate) aborted: Arc<AtomicBool>,
-    /// Whether we have handled the orphaned-permission edge case.
-    /// Missing implementation: this is reserved for upstream parity with the
-    /// orphaned permission recovery path tracked in the allow audit.
-    #[allow(dead_code)]
-    pub(crate) has_handled_orphaned_permission: Arc<AtomicBool>,
     /// Shared buffer of completed background agents.
     /// Event loop pushes; query loop drains.
     pub(crate) pending_bg_results: crate::agent_runtime::PendingBackgroundResults,
@@ -195,7 +190,6 @@ impl QueryEngine {
                 audit_ctx: AuditContext::noop("pending"),
             })),
             aborted: Arc::new(AtomicBool::new(false)),
-            has_handled_orphaned_permission: Arc::new(AtomicBool::new(false)),
             pending_bg_results: crate::agent_runtime::PendingBackgroundResults::new(),
             hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
             command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),

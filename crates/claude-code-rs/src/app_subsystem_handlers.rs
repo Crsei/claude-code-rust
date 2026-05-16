@@ -401,7 +401,6 @@ pub struct McpRuntimeReport {
 ///
 /// `QueryStatus` builds a runtime-state list; `QueryConfig`/`UpsertConfig`/
 /// `RemoveConfig` implement the scope-aware config editor (issue #44).
-#[allow(dead_code)]
 pub fn handle_mcp_command(
     cmd: cc_ipc_protocol::subsystem_events::McpCommand,
 ) -> Vec<BackendMessage> {

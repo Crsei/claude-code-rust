@@ -5,12 +5,10 @@
 //!
 //! Reference: TypeScript `src/utils/git.ts` and `src/utils/git/` directory.
 
-#![allow(unused)]
-
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use git2::{BranchType, Delta, Diff, DiffOptions, Repository, StatusOptions, StatusShow};
+use git2::{BranchType, Delta, Diff, Repository, StatusOptions};
 
 // =============================================================================
 // Repository detection
@@ -273,7 +271,6 @@ pub fn diff_between(path: &Path, from_ref: &str, to_ref: &str) -> Result<Vec<Dif
 
 /// Collect `DiffEntry` items from a `git2::Diff`.
 fn collect_diff_entries(diff: &Diff) -> Result<Vec<DiffEntry>> {
-    let stats = diff.stats().context("Failed to get diff stats")?;
     let mut entries = Vec::new();
 
     for (i, delta) in diff.deltas().enumerate() {

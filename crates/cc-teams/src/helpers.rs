@@ -5,13 +5,11 @@
 //! Handles reading/writing TeamFile config, directory creation/cleanup,
 //! worktree destruction, and color assignment.
 
-#![allow(unused)]
-
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use tracing::{debug, info, warn};
 
 use super::constants::*;

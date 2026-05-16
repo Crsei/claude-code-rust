@@ -102,11 +102,17 @@ impl QuerySource {
             QuerySource::ReplMainThread => "repl_main_thread",
             QuerySource::Compact => "compact",
             QuerySource::SessionMemory => "session_memory",
-            #[allow(unused_variables)]
-            QuerySource::Agent(id) => "agent:", // 简化
+            QuerySource::Agent(_) => "agent:",
             QuerySource::ProactiveTick => "proactive_tick",
             QuerySource::WebhookEvent => "webhook_event",
             QuerySource::ChannelNotification => "channel_notification",
+        }
+    }
+
+    pub fn as_label(&self) -> String {
+        match self {
+            QuerySource::Agent(id) => format!("agent:{}", id),
+            _ => self.as_str().to_string(),
         }
     }
 

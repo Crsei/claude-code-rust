@@ -4,8 +4,6 @@
 //! `ToolUseContext::bg_agent_tx` field in cc-types::tool can be typed without
 //! depending on the future cc-ipc crate.
 
-#![allow(dead_code)]
-
 use super::agent_events::{AgentEvent, TeamEvent};
 
 /// All events that flow through the agent channel.

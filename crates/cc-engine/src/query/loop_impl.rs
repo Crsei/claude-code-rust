@@ -226,7 +226,7 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                                     state.transition = Some(reason);
                                     continue 'query_loop;
                                 }
-                                PromptRecovery::Terminal(_term) => {
+                                PromptRecovery::Terminal => {
                                     yield QueryYield::Message(Message::Assistant(
                                         make_error_message(&deps, &error_str),
                                     ));

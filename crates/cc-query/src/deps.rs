@@ -13,8 +13,12 @@ use cc_engine::types::tool::{ToolProgress, ToolResult, Tools};
 #[derive(Debug, Clone)]
 pub struct ModelResponse {
     pub assistant_message: AssistantMessage,
+    // Missing implementation reserve: streaming events are returned by deps but
+    // the query loop has not yet wired them into downstream observability.
     #[allow(dead_code)]
     pub stream_events: Vec<StreamEvent>,
+    // Missing implementation reserve: usage is preserved for the model-call
+    // contract until token accounting consumes it from ModelResponse.
     #[allow(dead_code)]
     pub usage: Usage,
 }

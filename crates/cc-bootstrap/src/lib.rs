@@ -16,27 +16,16 @@
 
 // Phase 1-5 迁移已全部完成 (见 architecture/bootstrap.md)。
 // SessionId、ProcessState init、CWD 收编、计费/耗时统计均已集成。
-// model/signal 类型尚未被外部模块直接消费；diagnostics/timing/state 的
-// 部分读取方法尚未被调用 (写入路径已集成)。保留 dead_code 允许。
-#[allow(dead_code)]
 pub mod diagnostics;
-#[allow(dead_code)]
 pub mod ids;
-#[allow(dead_code)]
 pub mod model;
-#[allow(dead_code)]
 pub mod signal;
-#[allow(dead_code)]
 pub mod state;
-#[allow(dead_code)]
 pub mod timing;
 
 // 公开常用类型，方便其他模块 `use crate::bootstrap::*`
 pub use ids::SessionId;
-#[allow(unused_imports)]
 pub use model::{ModelSetting, ModelStrings, ModelTier};
-#[allow(unused_imports)]
 pub use signal::Signal;
 pub use state::{init as init_process_state, PROCESS_STATE};
-#[allow(unused_imports)]
 pub use timing::DurationTracker;

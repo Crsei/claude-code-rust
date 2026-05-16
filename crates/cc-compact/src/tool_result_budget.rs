@@ -1,7 +1,4 @@
-#![allow(unused)]
-
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use cc_types::message::{ContentBlock, Message, MessageContent, ToolResultContent};
 
@@ -24,7 +21,7 @@ pub struct ContentReplacementState {
 }
 
 /// Default maximum size for tool results before they get budgeted.
-const DEFAULT_MAX_SIZE_CHARS: usize = 100_000;
+pub const DEFAULT_MAX_SIZE_CHARS: usize = 100_000;
 
 /// Number of preview characters to keep at the head.
 const PREVIEW_HEAD_CHARS: usize = 500;

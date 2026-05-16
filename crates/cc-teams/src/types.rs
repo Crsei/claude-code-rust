@@ -3,8 +3,6 @@
 //! Corresponds to TypeScript: `utils/swarm/teamHelpers.ts` types,
 //! `utils/teammate.ts`, `state/AppState.ts` (TeamContext).
 
-#![allow(unused)]
-
 use serde::{Deserialize, Serialize};
 
 use cc_tools::tool::PermissionMode;
@@ -119,7 +117,6 @@ pub struct TeamMember {
 // `types/app_state.rs`. They moved to `cc-types::teams` so cc-types no longer
 // needs to reach back into the root crate's `teams::` module. See issue #75
 // ("Remaining before the source move" in the workspace-split design doc).
-#[allow(unused_imports)]
 pub use cc_types::teams::{TeamContext, TeammateInfo};
 
 // ---------------------------------------------------------------------------

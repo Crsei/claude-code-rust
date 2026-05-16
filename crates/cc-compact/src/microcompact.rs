@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use cc_types::message::{
     ContentBlock, Message, MessageContent, MicrocompactMetadata, SystemMessage, SystemSubtype,
     ToolResultContent,
@@ -249,7 +247,6 @@ fn make_tool_result_summary(content: &ToolResultContent, original_len: usize) ->
 mod tests {
     use super::*;
     use crate::messages::create_tool_result_message;
-    use crate::messages::create_user_message;
     use cc_types::message::AssistantMessage;
     use chrono::Utc;
     use uuid::Uuid;

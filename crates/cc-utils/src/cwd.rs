@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 

@@ -33,7 +33,6 @@ pub struct PreparedCommand {
     /// Kept on the public surface so `/sandbox`, observability, and future
     /// diagnostics can report the chosen back-end; not every call site
     /// inspects it today.
-    #[allow(dead_code)]
     pub mechanism: Option<Mechanism>,
     /// Human-readable summary (e.g. "bubblewrap read-only" or "unsandboxed").
     pub description: String,

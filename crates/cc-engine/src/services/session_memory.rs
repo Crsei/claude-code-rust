@@ -6,8 +6,6 @@
 //! CLAUDE.md-based memories; this service focuses on structured, searchable
 //! per-session insights.
 
-#![allow(unused)]
-
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};

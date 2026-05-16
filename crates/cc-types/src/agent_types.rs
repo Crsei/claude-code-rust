@@ -8,8 +8,6 @@
 //! freely across the JSONL/SSE boundary between the Rust backend and any
 //! frontend process.
 
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

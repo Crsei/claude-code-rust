@@ -46,25 +46,11 @@ pub enum LspOperation {
 
 impl LspOperation {
     /// Parse an operation name from string.
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "goToDefinition" => Some(Self::GoToDefinition),
-            "goToImplementation" => Some(Self::GoToImplementation),
-            "findReferences" => Some(Self::FindReferences),
-            "hover" => Some(Self::Hover),
-            "documentSymbol" => Some(Self::DocumentSymbol),
-            "workspaceSymbol" => Some(Self::WorkspaceSymbol),
-            "prepareCallHierarchy" => Some(Self::PrepareCallHierarchy),
-            "incomingCalls" => Some(Self::IncomingCalls),
-            "outgoingCalls" => Some(Self::OutgoingCalls),
-            "completion" => Some(Self::Completion),
-            "diagnostics" => Some(Self::Diagnostics),
-            _ => None,
-        }
+    pub fn parse(s: &str) -> Option<Self> {
+        s.parse().ok()
     }
 
     /// Get the LSP method name for this operation.
-    #[allow(dead_code)]
     pub fn method(&self) -> &'static str {
         match self {
             Self::GoToDefinition => "textDocument/definition",
@@ -111,6 +97,27 @@ impl LspOperation {
             "completion",
             "diagnostics",
         ]
+    }
+}
+
+impl std::str::FromStr for LspOperation {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "goToDefinition" => Ok(Self::GoToDefinition),
+            "goToImplementation" => Ok(Self::GoToImplementation),
+            "findReferences" => Ok(Self::FindReferences),
+            "hover" => Ok(Self::Hover),
+            "documentSymbol" => Ok(Self::DocumentSymbol),
+            "workspaceSymbol" => Ok(Self::WorkspaceSymbol),
+            "prepareCallHierarchy" => Ok(Self::PrepareCallHierarchy),
+            "incomingCalls" => Ok(Self::IncomingCalls),
+            "outgoingCalls" => Ok(Self::OutgoingCalls),
+            "completion" => Ok(Self::Completion),
+            "diagnostics" => Ok(Self::Diagnostics),
+            _ => Err(()),
+        }
     }
 }
 
@@ -283,7 +290,7 @@ impl Tool for LspTool {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        let Some(op) = LspOperation::from_str(op_str) else {
+        let Some(op) = LspOperation::parse(op_str) else {
             return ValidationResult::Error {
                 message: format!(
                     "Invalid operation '{}'. Must be one of: {}",
@@ -333,7 +340,7 @@ impl Tool for LspTool {
             .get("operation")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let op = LspOperation::from_str(op_str).context("Invalid LSP operation")?;
+        let op = LspOperation::parse(op_str).context("Invalid LSP operation")?;
 
         let file_path = input.get("filePath").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -623,15 +630,15 @@ mod tests {
     #[test]
     fn test_lsp_operation_from_str() {
         assert_eq!(
-            LspOperation::from_str("goToDefinition"),
+            LspOperation::parse("goToDefinition"),
             Some(LspOperation::GoToDefinition)
         );
-        assert_eq!(LspOperation::from_str("hover"), Some(LspOperation::Hover));
+        assert_eq!(LspOperation::parse("hover"), Some(LspOperation::Hover));
         assert_eq!(
-            LspOperation::from_str("findReferences"),
+            LspOperation::parse("findReferences"),
             Some(LspOperation::FindReferences)
         );
-        assert_eq!(LspOperation::from_str("invalid"), None);
+        assert_eq!(LspOperation::parse("invalid"), None);
     }
 
     #[test]

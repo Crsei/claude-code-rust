@@ -4,12 +4,6 @@
 //! failed" — callers (BashTool, WebFetchTool) surface the former as a
 //! policy error and the latter as an ordinary non-zero exit.
 
-#![allow(dead_code)]
-// Several SandboxError variants are part of the public policy surface but
-// are only constructed from the yet-to-land path-based enforcement pass in
-// BashTool/PowerShellTool (issue #8 follow-up work). Keeping them now lets
-// downstream code pattern-match exhaustively without churn later.
-
 use std::fmt;
 use std::path::PathBuf;
 

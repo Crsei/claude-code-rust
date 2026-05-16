@@ -348,7 +348,6 @@ fn resolve_plugin_relative_path(plugin_path: &Path, relative_path: &str) -> Opti
 }
 
 /// Get the language ID for a file extension.
-#[allow(dead_code)] // Public API — used in tests, will be used by future callers.
 pub fn language_for_extension(ext: &str) -> Option<String> {
     let ext = normalize_extension(ext);
     for config in configured_server_configs() {
@@ -373,7 +372,6 @@ pub fn config_for_file(path: &Path) -> Option<LspServerConfig> {
 
 /// Connection state for an LSP server.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)] // Tested + will be used for server lifecycle tracking.
 pub enum ServerState {
     NotStarted,
     Starting,
@@ -401,7 +399,6 @@ static EVENT_TX: LazyLock<parking_lot::Mutex<Option<tokio::sync::broadcast::Send
     LazyLock::new(|| parking_lot::Mutex::new(None));
 
 /// Inject the event sender from the headless event loop.
-#[allow(dead_code)] // Called by headless event loop wiring (Task 12).
 pub fn set_event_sender(tx: tokio::sync::broadcast::Sender<LspEvent>) {
     *EVENT_TX.lock() = Some(tx);
 }

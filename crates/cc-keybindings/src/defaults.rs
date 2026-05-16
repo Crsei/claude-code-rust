@@ -4,8 +4,6 @@
 //! via the JSON config — by the OpenTUI frontend. Mirrors the tables in
 //! `docs/claude-code-configuration/customize-keyboard-shortcuts.md`.
 
-#![allow(dead_code)]
-
 use super::action::Action;
 use super::context::Context;
 use super::keystroke::Chord;

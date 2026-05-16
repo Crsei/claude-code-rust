@@ -137,33 +137,6 @@ mod tests {
     use crate::audio::AudioCaptureBackend;
     use crate::audio::NullAudioBackend;
 
-    /// Canned client used by controller tests: echoes a fixed
-    /// transcription back regardless of input audio.
-    pub struct EchoClient {
-        pub text: String,
-    }
-
-    #[async_trait]
-    impl TranscriptionClient for EchoClient {
-        fn name(&self) -> &'static str {
-            "echo"
-        }
-        fn is_available(&self) -> Result<(), SttUnavailable> {
-            Ok(())
-        }
-        async fn transcribe(
-            &self,
-            mut handle: RecordingHandle,
-            language: &str,
-        ) -> Result<TranscriptionResult, SttError> {
-            while (handle.audio.recv().await).is_some() {}
-            Ok(TranscriptionResult {
-                text: self.text.clone(),
-                language: language.to_string(),
-            })
-        }
-    }
-
     #[test]
     fn null_client_reports_disabled_build() {
         let c = NullTranscriptionClient::new();

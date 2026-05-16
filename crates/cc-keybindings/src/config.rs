@@ -20,8 +20,6 @@
 //!
 //! A `null` value unbinds the default for that chord in the given context.
 
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::fmt;
 

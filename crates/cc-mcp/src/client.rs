@@ -648,7 +648,6 @@ impl McpClient {
     }
 
     /// Read a resource from the MCP server.
-    #[allow(dead_code)]
     pub async fn read_resource(&self, uri: &str) -> Result<ReadResourceResult> {
         if self.state != McpConnectionState::Connected {
             bail!("cannot read resource: not connected");

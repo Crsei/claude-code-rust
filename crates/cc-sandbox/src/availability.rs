@@ -9,12 +9,6 @@
 //! Called once per sandbox construction and cached in
 //! [`crate::sandbox::SandboxPolicy`].
 
-#![allow(dead_code)]
-// The `Available` variant, `is_available`, and `Mechanism::WindowsRestrictedToken`
-// are only constructed on some targets — Windows builds see them as dead even
-// though Linux/macOS builds use them. Allowing dead_code here keeps the enum
-// exhaustive for pattern matching on every platform.
-
 use std::sync::OnceLock;
 
 /// Outcome of the availability probe.
@@ -37,6 +31,10 @@ pub enum Mechanism {
     /// macOS Seatbelt (`sandbox-exec`).
     Seatbelt,
     /// Reserved label for the intentionally-unavailable Windows OS primitive.
+    #[cfg_attr(
+        not(target_os = "windows"),
+        allow(dead_code, reason = "reserved for Windows sandbox status reporting")
+    )]
     WindowsRestrictedToken,
 }
 

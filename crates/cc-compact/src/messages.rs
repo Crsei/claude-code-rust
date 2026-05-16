@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use chrono::Utc;
 use uuid::Uuid;
 

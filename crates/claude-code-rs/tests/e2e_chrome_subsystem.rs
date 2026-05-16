@@ -16,10 +16,6 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 
-#[path = "test_workspace.rs"]
-#[allow(dead_code)]
-mod test_workspace;
-
 fn cli() -> Command {
     Command::cargo_bin("claude-code-rs").expect("binary not found")
 }

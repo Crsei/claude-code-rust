@@ -9,13 +9,6 @@
 //! We also accept the legacy `//absolute/path` form for backward
 //! compatibility, matching the TS implementation.
 
-#![allow(dead_code)]
-// [`check_write`] / [`check_read`] are the Rust-level policy enforcement
-// surface. On Linux/macOS the OS primitive (bubblewrap / sandbox-exec) does
-// the real enforcement, so these methods only run in tests today. They stay
-// public because the Windows path uses Rust-level preflight checks and the
-// `/sandbox` command's path-preview feature calls them.
-
 use std::path::{Path, PathBuf};
 
 /// Decision produced by [`PathResolver::check_write`] /

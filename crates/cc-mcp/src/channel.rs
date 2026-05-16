@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Check if an MCP server supports channel notifications.
-#[allow(dead_code)]
 pub fn supports_channel(capabilities: &Value) -> bool {
     capabilities
         .get("experimental")
@@ -17,7 +16,6 @@ pub fn supports_channel(capabilities: &Value) -> bool {
 }
 
 /// Parsed channel notification from an MCP server.
-#[allow(dead_code)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct McpChannelNotification {
     pub content: String,
@@ -25,7 +23,6 @@ pub struct McpChannelNotification {
 }
 
 /// Parse a raw MCP notification into a channel notification.
-#[allow(dead_code)]
 pub fn parse_channel_notification(params: &Value) -> Option<McpChannelNotification> {
     let content = params.get("content").and_then(|v| v.as_str())?;
     let meta = params.get("meta").cloned().unwrap_or(Value::Null);

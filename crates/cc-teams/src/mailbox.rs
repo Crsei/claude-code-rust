@@ -8,8 +8,6 @@
 //! Messages are stored as a JSON array of `TeammateMessage`.
 //! Write operations use file locking to prevent data loss from concurrent access.
 
-#![allow(unused)]
-
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -44,7 +42,7 @@ fn mailbox_teams_dir() -> PathBuf {
 
 #[cfg(test)]
 thread_local! {
-    static TEST_TEAMS_DIR: std::cell::RefCell<Option<PathBuf>> = std::cell::RefCell::new(None);
+    static TEST_TEAMS_DIR: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Get the inbox file path for an agent.

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! Coordinator mode prompt and gate.
 //!
 //! This is the first parity slice for Bun's `coordinatorMode.ts`: it adds the

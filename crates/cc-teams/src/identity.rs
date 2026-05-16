@@ -6,13 +6,11 @@
 //! In TS these use AsyncLocalStorage for context propagation; in Rust we
 //! use `tokio::task_local!` (set up in `context.rs`).
 
-#![allow(unused)]
-
 use std::env;
 
 use super::constants::*;
 use super::context;
-use super::types::{TeamContext, TeammateIdentity};
+use super::types::TeamContext;
 
 // ---------------------------------------------------------------------------
 // Agent ID formatting / parsing

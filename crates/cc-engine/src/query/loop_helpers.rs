@@ -17,7 +17,7 @@ use crate::types::message::{
 };
 use crate::types::state::QueryLoopState;
 use crate::types::tool::{ToolProgress, Tools};
-use crate::types::transitions::{Continue, Terminal};
+use crate::types::transitions::Continue;
 use cc_api::api::streaming::CompletedToolUse;
 
 use super::deps::{QueryDeps, ToolExecRequest, ToolExecResult};
@@ -162,14 +162,12 @@ pub(crate) enum ModelCallFailureRecovery {
 }
 
 /// prompt_too_long recovery result.
-#[allow(unused)]
 pub(crate) enum PromptRecovery {
     Continue(Continue),
-    Terminal(Terminal),
+    Terminal,
 }
 
 /// max_output_tokens recovery result.
-#[allow(unused)]
 pub(crate) enum MaxTokensRecovery {
     Continue(Continue),
     Terminal,
@@ -331,7 +329,7 @@ pub(crate) async fn handle_prompt_too_long(
         }
     }
 
-    PromptRecovery::Terminal(Terminal::PromptTooLong)
+    PromptRecovery::Terminal
 }
 
 /// Handle max_output_tokens recovery.

@@ -7,8 +7,6 @@
 //! crate's `sdk_to_agent_event` helper can depend on these types without a
 //! reverse edge into the future cc-ipc crate.
 
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 
 use super::agent_types::*;

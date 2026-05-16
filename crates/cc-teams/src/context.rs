@@ -6,8 +6,6 @@
 //! making identity information available to all code within that scope without
 //! threading it through every function signature.
 
-#![allow(unused)]
-
 use super::types::TeammateIdentity;
 
 // ---------------------------------------------------------------------------
