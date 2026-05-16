@@ -342,7 +342,7 @@ fn ctrl_r_opens_history_search_and_escape_closes() {
     let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
     terminal.draw(|frame| app.render(frame)).expect("draw");
     let content = buffer_to_lines(terminal.backend().buffer(), 100, 24).join("\n");
-    assert!(content.contains("Search prompts"));
+    assert!(content.contains("History search"));
     assert!(content.contains("first prompt"));
 
     assert_eq!(send_key(&mut app, KeyCode::Esc), AppAction::None);

@@ -1,8 +1,10 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
+use crate::ui::better_view_panel::{plain_row, selected_row, BetterViewPanel};
 use crate::ui::command_surface::adapters::tasks::task_surface_items;
 use crate::ui::command_surface::{cycle_index, CommandSurfaceOutcome};
-use crate::ui::tasks::background_tasks_dialog::render_background_tasks_dialog;
+use crate::ui::tasks::task_status_utils::{format_elapsed, kind_label, state_label};
+use crate::ui::tasks::TaskState as UiTaskState;
 use crate::ui::tasks::TaskStatus as UiTaskStatus;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TasksSurface {
@@ -31,12 +33,71 @@ impl TasksSurface {
     }
 
     pub(crate) fn render(&self) -> String {
-        let tasks = self
+        let running = self
             .items
             .iter()
-            .map(|item| item.task.clone())
-            .collect::<Vec<_>>();
-        render_background_tasks_dialog(&tasks, self.selected_index)
+            .filter(|item| item.task.state == UiTaskState::Running)
+            .count();
+        let failed = self
+            .items
+            .iter()
+            .filter(|item| item.task.state == UiTaskState::Failed)
+            .count();
+        let mut detail_lines = if self.items.is_empty() {
+            vec!["No tasks".to_string()]
+        } else {
+            self.items
+                .iter()
+                .enumerate()
+                .map(|(idx, item)| {
+                    selected_row(
+                        &item.task.title,
+                        format!(
+                            "{}  {}  {}  {}",
+                            kind_label(item.task.kind),
+                            state_label(item.task.state),
+                            format_elapsed(item.task.elapsed_ms),
+                            item.task.summary
+                        ),
+                        idx == self.selected_index,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        if let Some(item) = self.selected_item() {
+            detail_lines.push(String::new());
+            detail_lines.push("Commands".to_string());
+            detail_lines.push(plain_row("Enter:", format!("/tasks show {}", item.task.id)));
+            match &item.source {
+                TaskSurfaceSource::Tool => {
+                    detail_lines.push(plain_row("s/k:", format!("/tasks stop {}", item.task.id)));
+                    detail_lines.push(plain_row(
+                        "d:",
+                        format!("/tasks delete {} direct-execute", item.task.id),
+                    ));
+                }
+                TaskSurfaceSource::Team { teammate_name } => {
+                    detail_lines.push(plain_row(
+                        "s/k:",
+                        format!("/team kill {teammate_name} direct-execute"),
+                    ));
+                    detail_lines.push(plain_row("d:", "not available for team-backed task"));
+                }
+            }
+        }
+        BetterViewPanel::new("Background tasks")
+            .summary(format!(
+                "tasks={} running={} failed={}",
+                self.items.len(),
+                running,
+                failed
+            ))
+            .sections_title("Tasks")
+            .sections(vec!["All tasks".to_string()], 0)
+            .detail_title("Task details")
+            .detail_lines(detail_lines)
+            .footer("Up/Down task | Enter details | s/k stop | d delete | r refresh | Esc close")
+            .render()
     }
 
     pub(crate) fn handle_key(&mut self, key: KeyEvent) -> CommandSurfaceOutcome {

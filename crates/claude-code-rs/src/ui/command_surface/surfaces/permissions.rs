@@ -1,5 +1,6 @@
 use crossterm::event::KeyEvent;
 
+use crate::ui::better_view_panel::{selected_row, BetterViewPanel};
 use crate::ui::command_surface::CommandSurfaceOutcome;
 use crate::ui::form_navigation::{FormOption, FormTab, TabbedFormEvent, TabbedFormState};
 use crate::ui::permissions::rules::permission_rule_list::render_permission_rule_list;
@@ -50,15 +51,54 @@ impl PermissionsSurface {
     }
 
     pub(crate) fn render(&self) -> String {
-        let mut lines = self.state.render_lines();
+        let sections = self
+            .state
+            .tabs
+            .iter()
+            .map(|tab| tab.label.clone())
+            .collect::<Vec<_>>();
+        let mut detail_lines = if let Some(tab) = self.state.active_tab() {
+            tab.options
+                .iter()
+                .enumerate()
+                .map(|(idx, option)| {
+                    selected_row(
+                        &option.label,
+                        &option.description,
+                        idx == self.state.selected_index,
+                    )
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         if self.active_tab_id() == Some("rules") {
-            lines.push(String::new());
-            lines.push(render_permission_rule_list(
-                &self.rules,
-                self.state.selected_index,
-            ));
+            detail_lines.push(String::new());
+            detail_lines.extend(
+                render_permission_rule_list(&self.rules, self.state.selected_index)
+                    .lines()
+                    .map(str::to_string),
+            );
         }
-        lines.join("\n")
+        BetterViewPanel::new("Permissions")
+            .summary(format!(
+                "mode={} rules={}",
+                self.state
+                    .active_tab()
+                    .map(|tab| tab.label.as_str())
+                    .unwrap_or("unknown"),
+                self.rules.len()
+            ))
+            .sections(sections, self.state.active_tab)
+            .detail_title(
+                self.state
+                    .active_tab()
+                    .map(|tab| tab.label.clone())
+                    .unwrap_or_else(|| "Detail".to_string()),
+            )
+            .detail_lines(detail_lines)
+            .footer("Left/Right section | Up/Down navigate | Enter select | Esc close")
+            .render()
     }
 
     pub(crate) fn handle_key(&mut self, key: KeyEvent) -> CommandSurfaceOutcome {

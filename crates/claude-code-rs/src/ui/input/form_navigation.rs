@@ -111,41 +111,41 @@ impl TabbedFormState {
     }
 
     pub fn render_lines(&self) -> Vec<String> {
-        let mut lines = vec![self.title.clone()];
-        if !self.tabs.is_empty() {
-            lines.push(
-                self.tabs
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, tab)| {
-                        if idx == self.active_tab {
-                            format!("[{}]", tab.label)
+        use crate::ui::better_view_panel::{selected_row, BetterViewPanel};
+
+        let sections = self
+            .tabs
+            .iter()
+            .map(|tab| tab.label.clone())
+            .collect::<Vec<_>>();
+        let (detail_title, detail_lines) = if let Some(tab) = self.active_tab() {
+            let detail_lines = tab
+                .options
+                .iter()
+                .enumerate()
+                .map(|(idx, option)| {
+                    let mut detail = option.description.clone();
+                    if !option.enabled {
+                        if detail.is_empty() {
+                            detail = "disabled".to_string();
                         } else {
-                            format!(" {} ", tab.label)
+                            detail.push_str(" disabled");
                         }
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" "),
-            );
-        }
+                    }
+                    selected_row(&option.label, detail, idx == self.selected_index)
+                })
+                .collect::<Vec<_>>();
+            (tab.label.clone(), detail_lines)
+        } else {
+            ("Detail".to_string(), Vec::new())
+        };
 
-        if let Some(tab) = self.active_tab() {
-            for (idx, option) in tab.options.iter().enumerate() {
-                let marker = if idx == self.selected_index { ">" } else { " " };
-                let disabled = if option.enabled { "" } else { " disabled" };
-                if option.description.is_empty() {
-                    lines.push(format!("{marker} {}{disabled}", option.label));
-                } else {
-                    lines.push(format!(
-                        "{marker} {} - {}{disabled}",
-                        option.label, option.description
-                    ));
-                }
-            }
-        }
-
-        lines.push("Left/Right switch tabs | Up/Down navigate | Enter select | Esc close".into());
-        lines
+        BetterViewPanel::new(&self.title)
+            .sections(sections, self.active_tab)
+            .detail_title(detail_title)
+            .detail_lines(detail_lines)
+            .footer("Left/Right section | Up/Down navigate | Enter select | Esc close")
+            .render_lines()
     }
 
     fn previous_tab(&mut self) -> TabbedFormEvent {

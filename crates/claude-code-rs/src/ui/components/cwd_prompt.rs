@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::ui::better_view_panel::{plain_row, selected_row, BetterViewPanel};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CwdPromptAction {
     Trust,
@@ -58,11 +60,30 @@ pub fn resolve_cwd_prompt_outcome(
 }
 
 pub fn cwd_prompt_lines(selection: &CwdSelection) -> Vec<String> {
-    vec![
-        "Workspace trust".to_string(),
-        format!("Directory: {}", selection.display_name()),
-        "Choose whether this directory can run project configuration and tools.".to_string(),
-    ]
+    BetterViewPanel::new("Workspace trust required")
+        .summary(format!(
+            "path={} status=untrusted",
+            selection.display_name()
+        ))
+        .sections_title("Decisions")
+        .sections(
+            vec![
+                "Trust this workspace".to_string(),
+                "Continue once".to_string(),
+                "Exit".to_string(),
+            ],
+            0,
+        )
+        .detail_title("Effect")
+        .detail_lines(vec![
+            selected_row("Trust this workspace", "trust", true),
+            selected_row("Continue once", "no persistence", false),
+            selected_row("Exit", "close session", false),
+            String::new(),
+            plain_row("Effect", "Trust allows project instructions and tools"),
+        ])
+        .footer("Up/Down decision | Enter confirm | Esc reject")
+        .render_lines()
 }
 
 #[cfg(test)]

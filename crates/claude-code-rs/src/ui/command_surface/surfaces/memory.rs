@@ -2,8 +2,9 @@ use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent};
 
+use crate::ui::better_view_panel::{plain_row, BetterViewPanel};
 use crate::ui::command_surface::adapters::memory::{memory_options, selected_memory_open_command};
-use crate::ui::command_surface::{cycle_index, render_tabs, CommandSurfaceOutcome};
+use crate::ui::command_surface::{cycle_index, CommandSurfaceOutcome};
 use crate::ui::memory::memory_file_selector::MemoryFileSelectorState;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemorySurface {
@@ -25,11 +26,39 @@ impl MemorySurface {
     }
 
     pub(crate) fn render(&self) -> String {
-        format!(
-            "{}\nMemory files\n{}\n\nLeft/Right switch action tabs | Up/Down navigate | Enter select | Esc close",
-            render_tabs(&["Edit", "Show", "Paths", "Open"], self.action_index),
-            self.state.render(&self.cwd, &self.home)
-        )
+        let sections = vec![
+            "Edit".to_string(),
+            "Show".to_string(),
+            "Paths".to_string(),
+            "Open".to_string(),
+        ];
+        let mut detail_lines = self
+            .state
+            .render(&self.cwd, &self.home)
+            .lines()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        detail_lines.push(String::new());
+        detail_lines.push("Commands".to_string());
+        detail_lines.push(match self.action_index {
+            0 => plain_row("Enter:", "/memory edit"),
+            1 => plain_row("Enter:", "/memory show"),
+            2 => plain_row("Enter:", "/memory path"),
+            3 => plain_row("Enter:", "/memory open <target>"),
+            _ => plain_row("Enter:", "select"),
+        });
+        BetterViewPanel::new("Memory")
+            .summary(format!(
+                "action={} targets={}",
+                sections.get(self.action_index).cloned().unwrap_or_default(),
+                self.state.options.len()
+            ))
+            .sections_title("Actions")
+            .sections(sections, self.action_index)
+            .detail_title("Memory files")
+            .detail_lines(detail_lines)
+            .footer("Left/Right action | Up/Down target | Enter select | Esc close")
+            .render()
     }
 
     pub(crate) fn handle_key(&mut self, key: KeyEvent) -> CommandSurfaceOutcome {

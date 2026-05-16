@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::Value;
 
+use crate::ui::better_view_panel::{plain_row, BetterViewPanel};
 use crate::ui::command_surface::adapters::hooks::{hook_event_order, hook_summary};
-use crate::ui::command_surface::{cycle_index, render_tabs, CommandSurfaceOutcome};
+use crate::ui::command_surface::{cycle_index, CommandSurfaceOutcome};
 use crate::ui::hooks::hooks_config_menu::{HookConfigSummary, HooksConfigMenuState};
 use crate::ui::hooks::select_event_mode::HOOK_EVENTS;
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,11 +29,42 @@ impl HooksSurface {
     }
 
     pub(crate) fn render(&self) -> String {
-        format!(
-            "{}\n{}\n\nLeft/Right switch settings scope | Up/Down navigate | Enter select | o open scope | Esc close",
-            render_tabs(&["User settings", "Project settings"], self.scope_index),
-            self.state.render()
-        )
+        let mut detail_lines = self
+            .state
+            .render()
+            .lines()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        detail_lines.push(String::new());
+        detail_lines.push("Actions".to_string());
+        detail_lines.push(plain_row(
+            "open selected scope:",
+            if self.scope_index == 0 {
+                "/hooks open user"
+            } else {
+                "/hooks open project"
+            },
+        ));
+        detail_lines.push(plain_row("event detail:", "/hooks list <event>"));
+        BetterViewPanel::new("Hooks")
+            .summary(format!(
+                "scope={} events={}",
+                if self.scope_index == 0 {
+                    "user"
+                } else {
+                    "project"
+                },
+                self.state.items.len()
+            ))
+            .sections_title("Settings")
+            .sections(
+                vec!["User settings".to_string(), "Project settings".to_string()],
+                self.scope_index,
+            )
+            .detail_title("Hook events")
+            .detail_lines(detail_lines)
+            .footer("Left/Right scope | Up/Down event | Enter list | o open scope | Esc close")
+            .render()
     }
 
     pub(crate) fn handle_key(&mut self, key: KeyEvent) -> CommandSurfaceOutcome {

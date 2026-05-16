@@ -37,6 +37,9 @@ pub mod tui;
 #[path = "components/approval_overlay.rs"]
 pub mod approval_overlay;
 #[allow(dead_code)]
+#[path = "components/better_view_panel.rs"]
+pub mod better_view_panel;
+#[allow(dead_code)]
 #[path = "components/bottom_pane.rs"]
 pub mod bottom_pane;
 #[allow(dead_code)]

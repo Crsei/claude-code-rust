@@ -1,8 +1,8 @@
 use crossterm::event::KeyEvent;
 
+use crate::ui::better_view_panel::BetterViewPanel;
 use crate::ui::command_surface::CommandSurfaceOutcome;
 use crate::ui::form_navigation::{FormOption, FormTab, TabbedFormEvent, TabbedFormState};
-use crate::ui::keyboard_shortcut::{render_shortcut_hints, ShortcutHint};
 use crate::ui::selection_surface::{SelectionItem, SelectionSurface, SelectionSurfaceEvent};
 use cc_engine::effort::effort_to_budget_tokens;
 use cc_engine::types::app_state::AppState;
@@ -283,17 +283,23 @@ impl ConfigSurface {
     }
 
     fn render_picker(&self, picker: &SelectionSurface, context_lines: &[String]) -> String {
-        let mut lines = vec![self.state.title.clone(), render_tab_line(&self.state)];
-        lines.extend(context_lines.iter().cloned());
+        let mut lines = context_lines.to_vec();
         lines.extend(picker.render_lines(10));
-        lines.push(render_shortcut_hints(&[
-            ShortcutHint::new("Left/Right", "switch tabs"),
-            ShortcutHint::new("Type", "filter"),
-            ShortcutHint::new("Up/Down", "navigate"),
-            ShortcutHint::new("Enter", "select"),
-            ShortcutHint::new("Esc", "close"),
-        ]));
-        lines.join("\n")
+        BetterViewPanel::new(&self.state.title)
+            .sections(
+                self.state
+                    .tabs
+                    .iter()
+                    .map(|tab| tab.label.clone())
+                    .collect::<Vec<_>>(),
+                self.state.active_tab,
+            )
+            .detail_title(picker.title.clone())
+            .detail_lines(lines)
+            .footer(
+                "Type filter | Up/Down navigate | Enter select | Left/Right section | Esc close",
+            )
+            .render()
     }
 }
 
@@ -320,17 +326,6 @@ fn is_tab_navigation_key(key: &KeyEvent) -> bool {
         key.code,
         KeyCode::Left | KeyCode::Right | KeyCode::Tab | KeyCode::BackTab
     ) || matches!(key.code, KeyCode::Char(ch) if ch.is_ascii_digit())
-}
-
-fn render_tab_line(state: &TabbedFormState) -> String {
-    crate::ui::tabs::render_tabs(
-        &state
-            .tabs
-            .iter()
-            .map(|tab| tab.label.as_str())
-            .collect::<Vec<_>>(),
-        state.active_tab,
-    )
 }
 
 fn build_model_picker(state: &AppState) -> SelectionSurface {

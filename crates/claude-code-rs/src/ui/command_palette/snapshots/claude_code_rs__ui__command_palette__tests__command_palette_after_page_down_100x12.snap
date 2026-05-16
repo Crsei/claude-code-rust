@@ -1,17 +1,16 @@
 ---
-source: crates/claude-code-rs/src/ui/components/command_palette/tests.rs
-assertion_line: 177
+source: crates/claude-code-rs/src/ui/command_palette/tests.rs
 expression: "render_palette_snapshot(\"/\", &cwd, 100, 12, &[KeyCode::PageDown])"
 ---
 "┌ Commands ────────────────────────────────────────────────────────────────────────────────────────┐"
-"│/add-dir             Add a new working directory                                                  │"
-"│/advisor             Show, set, or clear the advisor model                                        │"
-"│/agents              Browse agent definitions with source + override visibility                   │"
-"│/assistant          (kairos)  View assistant mode status                                          │"
-"│/audit-export       (audit)  Export session as verifiable audit record (.audit.json)              │"
-"│/branch             (br)  Fork the current conversation into a new branch                         │"
+"│query=/  matches=73  mode=insert                                                                  │"
+"│Commands                       Command details                                                    │"
+"│/assistant              (kairos)                                                                  │"
+"│/audit-export           (audit)                                                                   │"
+"│/branch                 (br)        Fork the current conversation into a new br...                │"
 "│                                                                                                  │"
-"│Usage: /branch [title]                                                                            │"
-"│Example: /branch                                                                                  │"
-"│Enter select | Esc close | type arguments after space                                             │"
+"│Behavior                                                                                          │"
+"│  Enter inserts: /branch                                                                          │"
+"│  usage: /branch [title]                                                                          │"
+"│  example: /branch                                                                                │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────┘"

@@ -1,13 +1,11 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use unicode_width::UnicodeWidthChar;
 
+use crate::ui::better_view_panel::BetterViewPanel;
 use crate::ui::fuzzy_match::fuzzy_match;
-use crate::ui::keyboard_shortcut::{render_shortcut_hints, ShortcutHint};
-use crate::ui::search_box::SearchBox;
 
 const AGE_WIDTH: usize = 8;
 const PREVIEW_ROWS: usize = 6;
-const RIGHT_PREVIEW_MIN_WIDTH: usize = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HistorySearchEntry {
@@ -135,72 +133,37 @@ impl HistorySearchDialog {
     pub fn render(&self, width: usize, height: usize) -> String {
         let width = width.max(20);
         let height = height.max(4);
-        let preview_on_right = width >= RIGHT_PREVIEW_MIN_WIDTH;
-
-        let search = SearchBox::new(&self.query)
-            .placeholder("Filter history...")
-            .prefix("filter")
-            .borderless(true)
-            .terminal_focused(true)
-            .width(width.saturating_sub(2))
-            .render();
-        let mut lines = vec![format!("Search prompts  {search}")];
 
         let visible = self.visible_indices();
         let empty_message = self.empty_message();
-        if let Some(message) = empty_message {
-            lines.push(message.to_string());
-            lines.push(history_search_hints());
-            return lines
-                .into_iter()
-                .take(height)
-                .collect::<Vec<_>>()
-                .join("\n");
-        }
-
-        if preview_on_right {
-            lines.extend(self.render_wide_rows(width, height, &visible));
+        let detail_lines = if let Some(message) = empty_message {
+            vec![message.to_string()]
         } else {
-            lines.extend(self.render_narrow_rows(width, height, &visible));
-        }
-        lines.push(history_search_hints());
-        lines
+            let mut rows = self.list_rows(&visible, width / 2, height.saturating_sub(7));
+            rows.push(String::new());
+            rows.push("Preview".to_string());
+            rows.extend(self.preview_rows(width.saturating_sub(28).max(20)));
+            rows.push(String::new());
+            if let Some(prompt) = self.selected_prompt() {
+                rows.push(format!(
+                    "Fill preview: prompt: {}",
+                    truncate_to_width(prompt, width.saturating_sub(28).max(20))
+                ));
+            }
+            rows
+        };
+        BetterViewPanel::new("History search")
+            .summary(format!("filter={} matches={}", self.query, visible.len()))
+            .sections_title("History")
+            .sections(vec!["Prompts".to_string(), "Preview".to_string()], 0)
+            .detail_title("Preview")
+            .detail_lines(detail_lines)
+            .footer("Type filter | Up/Down history | Enter fill prompt | Esc close")
+            .render_lines()
             .into_iter()
             .take(height)
             .collect::<Vec<_>>()
             .join("\n")
-    }
-
-    fn render_wide_rows(&self, width: usize, height: usize, visible: &[usize]) -> Vec<String> {
-        let list_width = ((width.saturating_sub(6)) / 2).max(32);
-        let preview_width = width.saturating_sub(list_width + 3).max(20);
-        let list_rows = self.list_rows(visible, list_width, height.saturating_sub(2));
-        let preview = self.preview_rows(preview_width);
-        let row_count = list_rows
-            .len()
-            .max(preview.len())
-            .min(height.saturating_sub(2));
-        (0..row_count)
-            .map(|idx| {
-                let left = list_rows.get(idx).map(String::as_str).unwrap_or("");
-                let right = preview.get(idx).map(String::as_str).unwrap_or("");
-                let left = pad_to_width(left, list_width);
-                if right.is_empty() {
-                    format!("{left} |")
-                } else {
-                    format!("{left} | {}", truncate_to_width(right, preview_width))
-                }
-            })
-            .collect()
-    }
-
-    fn render_narrow_rows(&self, width: usize, height: usize, visible: &[usize]) -> Vec<String> {
-        let preview_budget = PREVIEW_ROWS + 1;
-        let list_budget = height.saturating_sub(preview_budget + 3).max(1);
-        let mut lines = self.list_rows(visible, width, list_budget);
-        lines.push("Preview".to_string());
-        lines.extend(self.preview_rows(width.saturating_sub(2).max(20)));
-        lines
     }
 
     fn list_rows(&self, visible: &[usize], width: usize, limit: usize) -> Vec<String> {
@@ -398,14 +361,6 @@ fn display_width(text: &str) -> usize {
     text.chars()
         .map(|ch| UnicodeWidthChar::width(ch).unwrap_or(0))
         .sum()
-}
-
-fn history_search_hints() -> String {
-    render_shortcut_hints(&[
-        ShortcutHint::new("Enter", "use"),
-        ShortcutHint::new("Esc", "close"),
-        ShortcutHint::new("Ctrl+R", "next"),
-    ])
 }
 
 #[cfg(test)]

@@ -56,23 +56,37 @@ MCP servers may execute code or access system resources. All tool calls require 
 Enter continue | Esc cancel
 
 ## approval-dialog
-New MCP server found in .mcp.json: playwright / Filter...
-MCP servers may execute code or access system resources. All tool calls require approval. Learn more in the MCP documentation.
-  Use this and all future MCP servers in this project - enable current server and trust future project MCP entries -> /mcp approve playwright --all-project
-> Use this MCP server - enable only this project MCP server -> /mcp approve playwright
-  Continue without using this MCP server - record this project MCP server as disabled -> /mcp reject playwright
-Enter submit | Up/Down navigate | Esc reject
++ New MCP server ----------------------------------------------------------------------+
+| server=playwright source=.mcp.json risk=code                                         |
+|--------------------------------------------------------------------------------------|
+| Decisions              MCP servers may execute code or access system resources. A... |
+|   Use future projec...   Use this and all future MCP servers in this project enab... |
+| > Use this server      > Use this MCP server          enable only this project MC... |
+|   Continue without ...   Continue without using this MCP server record this proje... |
+|                                                                                      |
+|                        Commands                                                      |
+|                        approve all:                   /mcp approve playwright --a... |
+|                        approve one:                   /mcp approve playwright        |
+|                        reject:                        /mcp reject playwright         |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter submit | Esc reject                                         |
++--------------------------------------------------------------------------------------+
 
 ## multiselect-dialog
-3 new MCP servers found in .mcp.json
-Select any you wish to enable.
-MCP servers may execute code or access system resources. All tool calls require approval. Learn more in the MCP documentation.
-  [x] github
-> [ ] playwright
-  [x] sentry
-enable: /mcp approve github sentry
-disable: /mcp reject playwright
-Enter apply | Space toggle | Esc reject all
++ New MCP servers ---------------------------------------------------------------------+
+| count=3 source=.mcp.json risk=code                                                   |
+|--------------------------------------------------------------------------------------|
+| Servers                MCP servers may execute code or access system resources. A... |
+|   github                 [x] github                   enable                         |
+| > playwright           > [ ] playwright               disable                        |
+|   sentry                 [x] sentry                   enable                         |
+|                                                                                      |
+|                        Commands                                                      |
+|                        enable:                        /mcp approve github sentry     |
+|                        disable:                       /mcp reject playwright         |
+|--------------------------------------------------------------------------------------|
+| Up/Down server | Space toggle | Enter apply | Esc reject all                         |
++--------------------------------------------------------------------------------------+
 
 ## desktop-import-dialog
 Import MCP Servers from Claude Desktop

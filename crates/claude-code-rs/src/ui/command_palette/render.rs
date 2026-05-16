@@ -12,9 +12,7 @@ use crate::ui::theme::Theme;
 
 use super::edit_targets::{has_edit_target_picker, EditTarget};
 use super::filter::command_from_argument_input;
-use super::{
-    CommandItem, CommandPalette, DETAIL_ROWS, MAX_EDIT_ROWS, MAX_EDIT_TARGET_ROWS, MAX_ROWS,
-};
+use super::{CommandItem, CommandPalette, MAX_EDIT_ROWS, MAX_EDIT_TARGET_ROWS, MAX_ROWS};
 
 impl CommandPalette {
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
@@ -40,20 +38,27 @@ impl CommandPalette {
         }
 
         let selected_item = self.filtered.get(self.selected);
-        let detail_rows = selected_item
-            .map(|item| palette_detail_rows(item, inner.width as usize))
-            .unwrap_or(DETAIL_ROWS);
-        let picker_rows = self
+        let reserved_rows = 7 + self
             .edit_target_picker
             .as_ref()
-            .map(|picker| picker.render_lines(MAX_EDIT_TARGET_ROWS).len())
+            .map(|picker| picker.items.len().min(MAX_EDIT_TARGET_ROWS) + 3)
             .unwrap_or(0);
-        let detail_and_picker_rows =
-            detail_rows as usize + picker_rows + usize::from(picker_rows > 0);
         let visible_rows = (inner.height as usize)
-            .saturating_sub(detail_and_picker_rows)
+            .saturating_sub(reserved_rows)
+            .max(1)
             .min(MAX_ROWS);
         let mut lines = Vec::new();
+        lines.push(Line::from(vec![
+            Span::styled(format!("query=/{}", self.query), theme.info),
+            Span::styled(
+                format!("  matches={}  mode=insert", self.filtered.len()),
+                theme.dim,
+            ),
+        ]));
+        lines.push(Line::from(Span::styled(
+            "Commands                       Command details",
+            theme.dim,
+        )));
         let visible_start = visible_window_start(self.filtered.len(), self.selected, visible_rows);
         for (idx, item) in self
             .filtered
@@ -76,23 +81,33 @@ impl CommandPalette {
             } else {
                 format!(" ({})", item.aliases.join(", "))
             };
+            let detail = if selected {
+                truncate(&item.description, 46)
+            } else {
+                String::new()
+            };
             lines.push(Line::from(vec![
-                Span::styled(format!("/{:<18}", item.name), style),
+                Span::styled(format!("/{:<22}", item.name), style),
                 Span::styled(aliases, theme.dim),
-                Span::styled("  ", theme.dim),
-                Span::styled(item.description.clone(), style),
+                Span::styled(format!("{:<8}", ""), theme.dim),
+                Span::styled(detail, theme.unselected),
             ]));
         }
 
         if let Some(selected) = selected_item {
             lines.push(Line::default());
+            lines.push(Line::from(Span::styled("Behavior", theme.dim)));
             lines.push(Line::from(vec![
-                Span::styled("Usage: ", theme.dim),
+                Span::styled("  Enter inserts: ", theme.dim),
+                Span::styled(format!("/{} ", selected.name), theme.info),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  usage: ", theme.dim),
                 Span::styled(selected.usage.clone(), theme.info),
             ]));
             if let Some(example) = selected.examples.first() {
                 lines.push(Line::from(vec![
-                    Span::styled("Example: ", theme.dim),
+                    Span::styled("  example: ", theme.dim),
                     Span::styled(example.clone(), theme.unselected),
                 ]));
             }
@@ -102,7 +117,7 @@ impl CommandPalette {
                         .into_iter()
                         .enumerate()
                 {
-                    let label = if idx == 0 { "Edit: " } else { "      " };
+                    let label = if idx == 0 { "  edit: " } else { "        " };
                     lines.push(Line::from(vec![
                         Span::styled(label, theme.dim),
                         Span::styled(text, theme.info),
@@ -110,7 +125,7 @@ impl CommandPalette {
                 }
                 if has_edit_target_picker(selected) {
                     lines.push(Line::from(vec![
-                        Span::styled("Hint: ", theme.dim),
+                        Span::styled("  target: ", theme.dim),
                         Span::styled(command_target_hint(), theme.info),
                     ]));
                 }
@@ -122,7 +137,7 @@ impl CommandPalette {
         if let Some(picker) = &self.edit_target_picker {
             lines.push(Line::default());
             lines.push(Line::from(vec![
-                Span::styled("Target picker: ", theme.dim),
+                Span::styled("Targets               Target details", theme.dim),
                 Span::styled(command_target_picker_hint(), theme.dim),
             ]));
             lines.extend(render_picker_lines(picker, MAX_EDIT_TARGET_ROWS, theme));

@@ -3,36 +3,55 @@ source: crates/claude-code-rs/src/ui/components/history_search_dialog.rs
 expression: "format!(\"## wide\\n{wide}\\n\\n## narrow\\n{narrow}\\n\\n## loading\\n{loading}\\n\\n## no history\\n{no_history}\\n\\n## no matches\\n{no_matches}\")"
 ---
 ## wide
-Search prompts  filter |Filter history...
-> now      git status --short                             | git status --short
-  4m       cargo test -p claude-code-rs history_search    |
-  2h       open model context protocol docs               |
-  2d       write a multi-line prompt                      |
-Enter use | Esc close | Ctrl+R next
++ History search ----------------------------------------------------------------------+
+| filter= matches=4                                                                    |
+|--------------------------------------------------------------------------------------|
+| History                Preview                                                       |
+| > Prompts              > now      git status --short                                 |
+|   Preview                4m       cargo test -p claude-code-rs history_search        |
+|                          2h       open model context protocol docs                   |
+|                          2d       write a multi-line prompt                          |
+|                                                                                      |
+|                        Preview                                                       |
+|                        git status --short                                            |
+|                                                                                      |
 
 ## narrow
-Search prompts  filter write|
-> 2d       write a multi-line prompt
-Preview
-write a multi-line prompt
-with enough detail to preview
-and extra rows
-that should overflow
-line five
-+2 more lines
-Enter use | Esc close | Ctrl+R next
++ History search ----------------------------------------------------------------------+
+| filter=write matches=1                                                               |
+|--------------------------------------------------------------------------------------|
+| History                Preview                                                       |
+| > Prompts              > 2d       write a multi-line...                              |
+|   Preview                                                                            |
+|                        Preview                                                       |
+|                        write a multi-line prompt                                     |
+|                        with enough detail to preview                                 |
+|                        and extra rows                                                |
+|                        that should overflow                                          |
+|                        line five                                                     |
+|                        +2 more lines                                                 |
+|                                                                                      |
 
 ## loading
-Search prompts  filter |Filter history...
-Loading...
-Enter use | Esc close | Ctrl+R next
++ History search ----------------------------------------------------------------------+
+| filter= matches=0                                                                    |
+|--------------------------------------------------------------------------------------|
+| History                Preview                                                       |
+| > Prompts              Loading...                                                    |
+|   Preview                                                                            |
 
 ## no history
-Search prompts  filter |Filter history...
-No history yet
-Enter use | Esc close | Ctrl+R next
++ History search ----------------------------------------------------------------------+
+| filter= matches=0                                                                    |
+|--------------------------------------------------------------------------------------|
+| History                Preview                                                       |
+| > Prompts              No history yet                                                |
+|   Preview                                                                            |
 
 ## no matches
-Search prompts  filter zzz|
-No matching prompts
-Enter use | Esc close | Ctrl+R next
++ History search ----------------------------------------------------------------------+
+| filter=zzz matches=0                                                                 |
+|--------------------------------------------------------------------------------------|
+| History                Preview                                                       |
+| > Prompts              No matching prompts                                           |
+|   Preview                                                                            |

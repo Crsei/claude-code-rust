@@ -41,11 +41,11 @@ fn section(label: &str, body: String) -> String {
 #[test]
 fn agents_surface_switches_between_list_and_detail() {
     let mut surface = CommandSurface::Agents(AgentsSurface::new(Path::new(".")));
-    assert!(surface.render().contains("[Agents]"));
+    assert!(surface.render().contains("Agents"));
     assert!(!surface.render().contains("Create new agent"));
 
     surface.handle_key(key(KeyCode::Right));
-    assert!(surface.render().contains("[Built-in agents]"));
+    assert!(surface.render().contains("> Built-in agents"));
     assert!(surface.render().contains("general-purpose"));
 
     assert_eq!(
@@ -63,7 +63,7 @@ fn agents_surface_switches_between_list_and_detail() {
     }
 
     surface.handle_key(key(KeyCode::Backspace));
-    assert!(surface.render().contains("[Built-in agents]"));
+    assert!(surface.render().contains("> Built-in agents"));
 }
 
 #[test]
@@ -159,14 +159,14 @@ fn permissions_command_surface_routes_confirmed_safety_modes() {
 fn login_surface_routes_auth_actions() {
     let mut surface = CommandSurface::Login(LoginSurface { action_index: 0 });
 
-    assert!(surface.render().contains("Login methods"));
+    assert!(surface.render().contains("Login / OAuth"));
     assert_eq!(
         surface.handle_key(key(KeyCode::Enter)),
         CommandSurfaceOutcome::Submit("/login status".to_string())
     );
 
     surface.handle_key(key(KeyCode::Right));
-    assert!(surface.render().contains("[API key]"));
+    assert!(surface.render().contains("> API key"));
     assert_eq!(
         surface.handle_key(key(KeyCode::Enter)),
         CommandSurfaceOutcome::FillPrompt("/login ".to_string())
@@ -273,7 +273,7 @@ fn team_surface_routes_teammate_actions() {
         selected_index: 0,
     });
 
-    assert!(surface.render().contains("Team: ui-port"));
+    assert!(surface.render().contains("team=ui-port"));
     assert_eq!(
         surface.handle_key(key(KeyCode::Char('s'))),
         CommandSurfaceOutcome::FillPrompt("/team send builder ".to_string())
@@ -322,10 +322,10 @@ fn diff_surface_opens_selected_file_detail() {
 #[test]
 fn config_surface_uses_tab_navigation_and_selection() {
     let mut surface = CommandSurface::Config(ConfigSurface::new(&AppState::default()));
-    assert!(surface.render().contains("[Status]"));
+    assert!(surface.render().contains("> Status"));
 
     surface.handle_key(key(KeyCode::Char('9')));
-    assert!(surface.render().contains("[Config]"));
+    assert!(surface.render().contains("> Config"));
     surface.handle_key(key(KeyCode::Down));
 
     assert_eq!(
@@ -413,11 +413,11 @@ fn sandbox_surface_uses_tab_navigation_and_selection() {
     let mut surface = CommandSurface::Sandbox(SandboxSurface::new(&AppState::default()));
 
     let rendered = surface.render();
-    assert!(rendered.contains("[Config]"));
+    assert!(rendered.contains("> Config"));
     assert!(rendered.contains("Network policy"));
 
     surface.handle_key(key(KeyCode::Right));
-    assert!(surface.render().contains("[Dependencies]"));
+    assert!(surface.render().contains("> Dependencies"));
     assert!(surface.render().contains("OS-level sandbox"));
     assert!(surface.render().contains("Network proxy runtime"));
     surface.handle_key(key(KeyCode::Down));
@@ -434,7 +434,7 @@ fn sandbox_surface_uses_tab_navigation_and_selection() {
     );
 
     surface.handle_key(key(KeyCode::Char('6')));
-    assert!(surface.render().contains("[Network]"));
+    assert!(surface.render().contains("> Network"));
     surface.handle_key(key(KeyCode::Up));
     assert_eq!(
         surface.handle_key(key(KeyCode::Enter)),
@@ -452,7 +452,7 @@ fn mcp_surface_action_tabs_apply_to_selected_server() {
     });
 
     surface.handle_key(key(KeyCode::Right));
-    assert!(surface.render().contains("[Edit]"));
+    assert!(surface.render().contains("> Edit"));
     assert_eq!(
         surface.handle_key(key(KeyCode::Enter)),
         CommandSurfaceOutcome::FillPrompt("/mcp edit db ".to_string())
@@ -483,7 +483,7 @@ fn memory_surface_action_tabs_apply_to_selected_target() {
     surface.handle_key(key(KeyCode::Right));
     surface.handle_key(key(KeyCode::Right));
     surface.handle_key(key(KeyCode::Right));
-    assert!(surface.render().contains("[Open]"));
+    assert!(surface.render().contains("> Open"));
     surface.handle_key(key(KeyCode::Down));
 
     assert_eq!(

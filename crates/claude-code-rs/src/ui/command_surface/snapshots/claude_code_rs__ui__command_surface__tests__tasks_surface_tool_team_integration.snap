@@ -1,15 +1,35 @@
 ---
-source: crates/claude-code-rs/src/ui/components/command_surface/tests.rs
+source: crates/claude-code-rs/src/ui/command_surface/tests.rs
 expression: "rendered.join(\"\\n\\n\")"
 ---
 -- tool-selected --
-Background tasks (2)
-> cargo test         shell     running     3.2s [█████     ] running tests
-  builder (ui-port)  teammate  running      0ms [          ] implementing task panel
-Enter details | k/s stop | d delete tool | r refresh | Esc close
++ Background tasks --------------------------------------------------------------------+
+| tasks=2 running=2 failed=0                                                           |
+|--------------------------------------------------------------------------------------|
+| Tasks                  Task details                                                  |
+| > All tasks            > cargo test                   shell  running  3.2s  runni... |
+|                          builder (ui-port)            teammate  running  0ms  imp... |
+|                                                                                      |
+|                        Commands                                                      |
+|                        Enter:                         /tasks show task-1             |
+|                        s/k:                           /tasks stop task-1             |
+|                        d:                             /tasks delete task-1 direct... |
+|--------------------------------------------------------------------------------------|
+| Up/Down task | Enter details | s/k stop | d delete | r refresh | Esc close           |
++--------------------------------------------------------------------------------------+
 
 -- team-selected --
-Background tasks (2)
-  cargo test         shell     running     3.2s [█████     ] running tests
-> builder (ui-port)  teammate  running      0ms [          ] implementing task panel
-Enter details | k/s stop | d delete tool | r refresh | Esc close
++ Background tasks --------------------------------------------------------------------+
+| tasks=2 running=2 failed=0                                                           |
+|--------------------------------------------------------------------------------------|
+| Tasks                  Task details                                                  |
+| > All tasks              cargo test                   shell  running  3.2s  runni... |
+|                        > builder (ui-port)            teammate  running  0ms  imp... |
+|                                                                                      |
+|                        Commands                                                      |
+|                        Enter:                         /tasks show team-1             |
+|                        s/k:                           /team kill builder direct-e... |
+|                        d:                             not available for team-back... |
+|--------------------------------------------------------------------------------------|
+| Up/Down task | Enter details | s/k stop | d delete | r refresh | Esc close           |
++--------------------------------------------------------------------------------------+

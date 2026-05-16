@@ -1,8 +1,9 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
+use crate::ui::better_view_panel::{plain_row, selected_row, BetterViewPanel};
 use crate::ui::command_surface::adapters::team::team_summary_from_state;
 use crate::ui::command_surface::{cycle_index, CommandSurfaceOutcome};
-use crate::ui::teams::teams_dialog::{render_teams_dialog, TeamSummary, TeammateStatus};
+use crate::ui::teams::teams_dialog::{TeamSummary, TeammateStatus};
 use cc_engine::types::app_state::AppState;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TeamSurface {
@@ -22,26 +23,63 @@ impl TeamSurface {
     }
 
     pub(crate) fn render(&self) -> String {
-        let mut lines = render_teams_dialog(&self.summary, self.selected_index)
-            .lines()
-            .map(ToString::to_string)
+        let teammates = self
+            .summary
+            .teammates
+            .iter()
+            .filter(|teammate| teammate.name != "team-lead")
             .collect::<Vec<_>>();
-        let help = if self.active {
-            "Enter status | k kill | s send | p spawn | l list | c create | Esc close"
+        let mut detail_lines = if teammates.is_empty() {
+            vec!["No teammates".to_string()]
         } else {
-            "c create | l list | Esc close"
+            teammates
+                .iter()
+                .enumerate()
+                .map(|(idx, teammate)| {
+                    selected_row(
+                        &teammate.name,
+                        format!(
+                            "status={} mode={} tasks={} {}",
+                            teammate.state, teammate.mode, teammate.assigned_tasks, teammate.role
+                        ),
+                        idx == self.selected_index,
+                    )
+                })
+                .collect::<Vec<_>>()
         };
-        if lines
-            .last()
-            .is_some_and(|line| line.starts_with("k kill |"))
-        {
-            if let Some(last) = lines.last_mut() {
-                *last = help.to_string();
+        detail_lines.push(String::new());
+        detail_lines.push("Commands".to_string());
+        if self.active {
+            detail_lines.push(plain_row("Enter:", "/team status"));
+            if let Some(teammate) = self.selected_teammate() {
+                detail_lines.push(plain_row("s:", format!("/team send {} ", teammate.name)));
+                detail_lines.push(plain_row(
+                    "k:",
+                    format!("/team kill {} direct-execute", teammate.name),
+                ));
             }
+            detail_lines.push(plain_row("p:", "/team spawn "));
         } else {
-            lines.push(help.to_string());
+            detail_lines.push(plain_row("c:", "/team create "));
+            detail_lines.push(plain_row("l:", "/team list"));
         }
-        lines.join("\n")
+        BetterViewPanel::new("Team")
+            .summary(format!(
+                "team={} active={} members={}",
+                self.summary.name,
+                self.active,
+                teammates.len()
+            ))
+            .sections_title("Teammates")
+            .sections(vec!["Current team".to_string()], 0)
+            .detail_title("Teammate details")
+            .detail_lines(detail_lines)
+            .footer(if self.active {
+                "Up/Down member | Enter status | s send | k kill | p spawn | Esc"
+            } else {
+                "c create | l list | Esc close"
+            })
+            .render()
     }
 
     pub(crate) fn handle_key(&mut self, key: KeyEvent) -> CommandSurfaceOutcome {

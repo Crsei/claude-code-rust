@@ -1,5 +1,6 @@
 //! MCP `.mcp.json` server approval dialog rendering.
 
+use crate::ui::better_view_panel::{plain_row, selected_row, BetterViewPanel};
 use crate::ui::selection_surface::{SelectionItem, SelectionSurface};
 
 use super::mcp_server_dialog_copy::mcp_server_safety_copy;
@@ -55,13 +56,43 @@ pub fn build_mcp_server_approval_surface(server_name: &str) -> SelectionSurface 
 }
 
 pub fn render_mcp_server_approval_dialog(server_name: &str, selected_index: usize) -> String {
-    let mut surface = build_mcp_server_approval_surface(server_name);
-    if !surface.items.is_empty() {
-        surface.selected = selected_index.min(surface.items.len() - 1);
-    }
-
-    let mut lines = surface.render_lines(surface.items.len());
-    lines.insert(1, mcp_server_safety_copy().to_string());
-    lines.push("Enter submit | Up/Down navigate | Esc reject".to_string());
-    lines.join("\n")
+    let choices = mcp_server_approval_choices(server_name);
+    let selected = selected_index.min(choices.len().saturating_sub(1));
+    let mut lines = choices
+        .iter()
+        .enumerate()
+        .map(|(idx, choice)| {
+            selected_row(
+                &choice.label,
+                format!("{}  {}", choice.description, choice.command),
+                idx == selected,
+            )
+        })
+        .collect::<Vec<_>>();
+    lines.push(String::new());
+    lines.push("Commands".to_string());
+    lines.push(plain_row(
+        "approve all:",
+        format!("/mcp approve {server_name} --all-project"),
+    ));
+    lines.push(plain_row(
+        "approve one:",
+        format!("/mcp approve {server_name}"),
+    ));
+    lines.push(plain_row("reject:", format!("/mcp reject {server_name}")));
+    BetterViewPanel::new("New MCP server")
+        .summary(format!("server={server_name} source=.mcp.json risk=code"))
+        .sections_title("Decisions")
+        .sections(
+            vec![
+                "Use future project servers".to_string(),
+                "Use this server".to_string(),
+                "Continue without server".to_string(),
+            ],
+            selected,
+        )
+        .detail_title(mcp_server_safety_copy())
+        .detail_lines(lines)
+        .footer("Up/Down decision | Enter submit | Esc reject")
+        .render()
 }

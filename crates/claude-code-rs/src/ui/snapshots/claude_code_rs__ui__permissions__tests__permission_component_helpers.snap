@@ -3,22 +3,28 @@ source: crates/claude-code-rs/src/ui/permissions.rs
 expression: rendered
 ---
 ## utils-request
-Permission required
-tool: bash
-request: cargo test
-worker: executor
-risk: shell command
-details:
-  - cwd: F:/repo
-options:
-> Allow [allow] - run this tool once (this request)
-  Deny [deny] - block this tool call (this request)
-  Always allow [always allow] - save a reusable allow rule (project)
++ Permission required -----------------------------------------------------------------+
+| tool=bash risk=shell command                                                         |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        cargo test                     |
+|   Context              Context                        worker=executor                |
+|   Decisions                                                                          |
+|                        Context                                                       |
+|                                                       cwd: F:/repo                   |
+|                                                                                      |
+|                        Decisions                                                     |
+|                        > Allow                        allow  run this tool once  ... |
+|                          Deny                         deny  block this tool call ... |
+|                          Always allow                 always allow  save a reusab... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## utils-options
-  Allow [allow] - run this tool once (this request)
-> Deny [deny] - block this tool call (this request)
-  Always allow [always allow] - save a reusable allow rule (project)
+  Allow                        allow  run this tool once  scope=this request
+> Deny                         deny  block this tool call  scope=this request
+  Always allow                 always allow  save a reusable allow rule  scope=project
 
 ## utils-key-values
 Rows
@@ -46,19 +52,25 @@ destructive filesystem command
 edit src/main.rs
 
 ## permission-request
-Permission required
-tool: read
-request: src/lib.rs
-options:
-> Allow [allow] - run this tool once (this request)
-  Deny [deny] - block this tool call (this request)
-  Always allow [always allow] - save a reusable allow rule (project)
++ Permission required -----------------------------------------------------------------+
+| tool=read risk=tool request                                                          |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        src/lib.rs                     |
+|   Context                                                                            |
+|   Decisions            Decisions                                                     |
+|                        > Allow                        allow  run this tool once  ... |
+|                          Deny                         deny  block this tool call ... |
+|                          Always allow                 always allow  save a reusab... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## permission-prompt
 Allow this action?
-  Allow [allow] - run this tool once (this request)
-  Deny [deny] - block this tool call (this request)
-> Always allow [always allow] - save a reusable allow rule (project)
+  Allow                        allow  run this tool once  scope=this request
+  Deny                         deny  block this tool call  scope=this request
+> Always allow                 always allow  save a reusable allow rule  scope=project
 Enter confirms, Esc denies
 
 ## permission-title
@@ -80,43 +92,61 @@ Permission decision
   matched rule: allow Bash(cargo*)
 
 ## permission-dialog
-Permission required
-tool: bash
-request: cargo test
-worker: executor
-risk: shell command
-details:
-  - cwd: F:/repo
-options:
-> Allow [allow] - run this tool once (this request)
-  Deny [deny] - block this tool call (this request)
-  Always allow [always allow] - save a reusable allow rule (project)
++ Permission required -----------------------------------------------------------------+
+| tool=bash risk=shell command                                                         |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        cargo test                     |
+|   Context              Context                        worker=executor                |
+|   Decisions                                                                          |
+|                        Context                                                       |
+|                                                       cwd: F:/repo                   |
+|                                                                                      |
+|                        Decisions                                                     |
+|                        > Allow                        allow  run this tool once  ... |
+|                          Deny                         deny  block this tool call ... |
+|                          Always allow                 always allow  save a reusab... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 layout width: 80
 
 ## fallback
-Permission required
-tool: custom_tool
-request: run custom action
-risk: unknown tool behavior
-details:
-  - opaque input
-options:
-> Allow [allow] - run this tool once (this request)
-  Deny [deny] - block this tool call (this request)
-  Always allow [always allow] - save a reusable allow rule (project)
++ Permission required -----------------------------------------------------------------+
+| tool=custom_tool risk=unknown tool behavior                                          |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        run custom action              |
+|   Context                                                                            |
+|   Decisions            Context                                                       |
+|                                                       opaque input                   |
+|                                                                                      |
+|                        Decisions                                                     |
+|                        > Allow                        allow  run this tool once  ... |
+|                          Deny                         deny  block this tool call ... |
+|                          Always allow                 always allow  save a reusab... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## sandbox
-Sandbox permission required
-tool: sandbox
-request: write target
-risk: operation is outside current sandbox policy
-details:
-  - profile: read-only
-  - target denied
-options:
-> Allow [allow] - run this tool once (this request)
-  Deny [deny] - block this tool call (this request)
-  Always allow [always allow] - save a reusable allow rule (project)
++ Sandbox permission required ---------------------------------------------------------+
+| tool=sandbox risk=operation is outside current sandbox policy                        |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        write target                   |
+|   Context                                                                            |
+|   Decisions            Context                                                       |
+|                                                       profile: read-only             |
+|                                                       target denied                  |
+|                                                                                      |
+|                        Decisions                                                     |
+|                        > Allow                        allow  run this tool once  ... |
+|                          Deny                         deny  block this tool call ... |
+|                          Always allow                 always allow  save a reusab... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## hooks
 hook: PreToolUse
@@ -131,9 +161,9 @@ command: cargo test
 risk: shell command
 
 ## shell-options
-> Allow [allow] - run network command once (this request)
-  Deny [deny] - do not run command (this request)
-  Always allow exact command [always allow] - save exact command rule (project)
+> Allow                        allow  run network command once  scope=this request
+  Deny                         deny  do not run command  scope=this request
+  Always allow exact command   always allow  save exact command rule  scope=project
 
 ## shell-feedback
 accepted: cargo test
@@ -178,48 +208,70 @@ Ready to submit 2/3 answer(s)
 Enter submit | Esc cancel
 
 ## ask-request
-Ask user question
-Need input
-  [ ] Inspect logs
-> [x] Ask operator
-  [ ] Abort
-Question 2/3 | Back | Next | Submit
++ Need input --------------------------------------------------------------------------+
+| question=2/3 source=tool request                                                     |
+|--------------------------------------------------------------------------------------|
+| Choices                Answer                                                        |
+| > Answer               Need input                                                    |
+|   Navigation             [ ] Inspect logs                                            |
+|                        > [x] Ask operator                                            |
+|                          [ ] Abort                                                   |
+|                                                                                      |
+|                        Navigation                                                    |
+|                        Question 2/3 | Back | Next | Submit                           |
+|--------------------------------------------------------------------------------------|
+| Up/Down choice | Space toggle | Enter next | Esc cancel                              |
++--------------------------------------------------------------------------------------+
 
 ## bash-request
-Bash command permission
-tool: bash
-request: cargo test
-details:
-  - shell: bash
-command: cargo test
-risk: shell command
-options:
-> Allow [allow] - run shell command once (this request)
-  Deny [deny] - do not run command (this request)
-  Always allow exact command [always allow] - save exact command rule (project)
++ Bash command permission -------------------------------------------------------------+
+| tool=bash risk=tool request                                                          |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        cargo test                     |
+|   Context                                                                            |
+|   Decisions            Context                                                       |
+|                                                       shell: bash                    |
+|                                                       command: cargo test            |
+|                                                       risk: shell command            |
+|                                                                                      |
+|                        Decisions                                                     |
+|                        > Allow                        allow  run shell command on... |
+|                          Deny                         deny  do not run command  s... |
+|                          Always allow exact command   always allow  save exact co... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## bash-options
-  Allow [allow] - run shell command once (this request)
-  Deny [deny] - do not run command (this request)
-> Always allow exact command [always allow] - save exact command rule (project)
+  Allow                        allow  run shell command once  scope=this request
+  Deny                         deny  do not run command  scope=this request
+> Always allow exact command   always allow  save exact command rule  scope=project
 
 ## powershell-request
-PowerShell command permission
-tool: powershell
-request: Get-ChildItem
-details:
-  - shell: powershell
-command: Get-ChildItem
-risk: shell command
-options:
-  Allow [allow] - run shell command once (this request)
-> Deny [deny] - do not run command (this request)
-  Always allow exact command [always allow] - save exact command rule (project)
++ PowerShell command permission -------------------------------------------------------+
+| tool=powershell risk=tool request                                                    |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        Get-ChildItem                  |
+|   Context                                                                            |
+|   Decisions            Context                                                       |
+|                                                       shell: powershell              |
+|                                                       command: Get-ChildItem         |
+|                                                       risk: shell command            |
+|                                                                                      |
+|                        Decisions                                                     |
+|                          Allow                        allow  run shell command on... |
+|                        > Deny                         deny  do not run command  s... |
+|                          Always allow exact command   always allow  save exact co... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## powershell-options
-> Allow [allow] - run shell command once (this request)
-  Deny [deny] - do not run command (this request)
-  Always allow exact command [always allow] - save exact command rule (project)
+> Allow                        allow  run shell command once  scope=this request
+  Deny                         deny  do not run command  scope=this request
+  Always allow exact command   always allow  save exact command rule  scope=project
 
 ## ide-diff
 IDE diff: true
@@ -227,23 +279,30 @@ editor: code
 inline diff: true
 
 ## file-options
-  Allow edit [allow] - permit edit to src/lib.rs (this request)
-  Deny edit [deny] - leave file unchanged (this request)
-> Always allow path [always allow] - save rule for src/lib.rs (project)
+  Allow edit                   allow  permit edit to src/lib.rs  scope=this request
+  Deny edit                    deny  leave file unchanged  scope=this request
+> Always allow path            always allow  save rule for src/lib.rs  scope=project
 
 ## file-handler
 allow src/lib.rs (save rule: true)
 
 ## file-dialog
-File permission
-tool: file
-request: edit src/lib.rs
-details:
-  - diff: +3 -1
-options:
-  Allow edit [allow] - permit edit to src/lib.rs (this request)
-> Deny edit [deny] - leave file unchanged (this request)
-  Always allow path [always allow] - save rule for src/lib.rs (this request)
++ File permission ---------------------------------------------------------------------+
+| tool=file risk=tool request                                                          |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        edit src/lib.rs                |
+|   Context                                                                            |
+|   Decisions            Context                                                       |
+|                                                       diff: +3 -1                    |
+|                                                                                      |
+|                        Decisions                                                     |
+|                          Allow edit                   allow  permit edit to src/l... |
+|                        > Deny edit                    deny  leave file unchanged ... |
+|                          Always allow path            always allow  save rule for... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## file-write-diff
 write diff: src/lib.rs
@@ -251,66 +310,102 @@ new lines: 3
 replaced lines: 1
 
 ## file-write-request
-File write permission
-tool: write
-request: src/lib.rs
-details:
-  - write diff: src/lib.rs
-new lines: 3
-replaced lines: 1
-options:
-  Allow edit [allow] - permit edit to src/lib.rs (this request)
-> Deny edit [deny] - leave file unchanged (this request)
-  Always allow path [always allow] - save rule for src/lib.rs (this request)
++ File write permission ---------------------------------------------------------------+
+| tool=write risk=tool request                                                         |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        src/lib.rs                     |
+|   Context                                                                            |
+|   Decisions            Context                                                       |
+|                                                       write diff: src/lib.rs         |
+|                                                       new lines: 3                   |
+|                                                       replaced lines: 1              |
+|                                                                                      |
+|                        Decisions                                                     |
+|                          Allow edit                   allow  permit edit to src/l... |
+|                        > Deny edit                    deny  leave file unchanged ... |
+|                          Always allow path            always allow  save rule for... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## file-edit-request
-File edit permission
-tool: edit
-request: src/lib.rs
-details:
-  - operation: replace range
-options:
-> Allow edit [allow] - permit edit to src/lib.rs (this request)
-  Deny edit [deny] - leave file unchanged (this request)
-  Always allow path [always allow] - save rule for src/lib.rs (this request)
++ File edit permission ----------------------------------------------------------------+
+| tool=edit risk=tool request                                                          |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        src/lib.rs                     |
+|   Context                                                                            |
+|   Decisions            Context                                                       |
+|                                                       operation: replace range       |
+|                                                                                      |
+|                        Decisions                                                     |
+|                        > Allow edit                   allow  permit edit to src/l... |
+|                          Deny edit                    deny  leave file unchanged ... |
+|                          Always allow path            always allow  save rule for... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## file-edit-request-diff
-File edit permission
-tool: edit
-request: src/lib.rs
-details:
-  - operation: replace range
-file: src/lib.rs
-summary: Added 2...    new_call();
-        3 +     extra_call();
-   3    4   }
-options:
-> Allow edit [allow] - permit edit to src/lib.rs (this request)
-  Deny edit [deny] - leave file unchanged (this request)
-  Always allow path [always allow] - save rule for src/lib.rs (this request)
++ File edit permission ----------------------------------------------------------------+
+| tool=edit risk=tool request                                                          |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        src/lib.rs                     |
+|   Context                                                                            |
+|   Decisions            Context                                                       |
+|                                                       operation: replace range       |
+|                                                       file: src/lib.rs               |
+|                                                       summary: Added 2 lines, rem... |
+|                                                       @@ -1,3 +1,4 @@                |
+|                                                          1    1   fn main() {        |
+|                                                          2      -     old_call();    |
+|                                                               2 +     new_call();    |
+|                                                               3 +     extra_call();  |
+|                                                          3    4   }                  |
+|                                                                                      |
+|                        Decisions                                                     |
+|                        > Allow edit                   allow  permit edit to src/l... |
+|                          Deny edit                    deny  leave file unchanged ... |
+|                          Always allow path            always allow  save rule for... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## filesystem-request
-Filesystem permission
-tool: filesystem
-request: read src
-risk: filesystem access can modify or disclose local files
-options:
-  Allow [allow] - run this tool once (this request)
-  Deny [deny] - block this tool call (this request)
-> Always allow [always allow] - save a reusable allow rule (project)
++ Filesystem permission ---------------------------------------------------------------+
+| tool=filesystem risk=filesystem access can modify or disclose local files            |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        read src                       |
+|   Context                                                                            |
+|   Decisions            Decisions                                                     |
+|                          Allow                        allow  run this tool once  ... |
+|                          Deny                         deny  block this tool call ... |
+|                        > Always allow                 always allow  save a reusab... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## computer-use
-Computer use approval
-tool: computer
-request: click
-risk: interactive desktop action
-details:
-  - target: browser window
-  - screenshot: true
-options:
-> Allow [allow] - run this tool once (this request)
-  Deny [deny] - block this tool call (this request)
-  Always allow [always allow] - save a reusable allow rule (project)
++ Computer use approval ---------------------------------------------------------------+
+| tool=computer risk=interactive desktop action                                        |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        click                          |
+|   Context                                                                            |
+|   Decisions            Context                                                       |
+|                                                       target: browser window         |
+|                                                       screenshot: true               |
+|                                                                                      |
+|                        Decisions                                                     |
+|                        > Allow                        allow  run this tool once  ... |
+|                          Deny                         deny  block this tool call ... |
+|                          Always allow                 always allow  save a reusab... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## enter-plan
 Enter plan mode
@@ -324,39 +419,59 @@ verification:
   - cargo test
 
 ## monitor
-Monitor permission
-tool: monitor
-request: cargo test
-risk: background observation of process output
-details:
-  - duration: 60s
-options:
-  Allow [allow] - run this tool once (this request)
-> Deny [deny] - block this tool call (this request)
-  Always allow [always allow] - save a reusable allow rule (project)
++ Monitor permission ------------------------------------------------------------------+
+| tool=monitor risk=background observation of process output                           |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        cargo test                     |
+|   Context                                                                            |
+|   Decisions            Context                                                       |
+|                                                       duration: 60s                  |
+|                                                                                      |
+|                        Decisions                                                     |
+|                          Allow                        allow  run this tool once  ... |
+|                        > Deny                         deny  block this tool call ... |
+|                          Always allow                 always allow  save a reusab... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## review-artifact
-Review artifact permission
-tool: review
-request: docs/report.md
-details:
-  - reviewer: reviewer
-options:
-> Allow [allow] - run this tool once (this request)
-  Deny [deny] - block this tool call (this request)
-  Always allow [always allow] - save a reusable allow rule (project)
++ Review artifact permission ----------------------------------------------------------+
+| tool=review risk=tool request                                                        |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        docs/report.md                 |
+|   Context                                                                            |
+|   Decisions            Context                                                       |
+|                                                       reviewer: reviewer             |
+|                                                                                      |
+|                        Decisions                                                     |
+|                        > Allow                        allow  run this tool once  ... |
+|                          Deny                         deny  block this tool call ... |
+|                          Always allow                 always allow  save a reusab... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## sed-edit
-Sed edit permission
-tool: sed
-request: src/lib.rs
-details:
-  - pattern: foo
-  - replacement: bar
-options:
-  Allow edit [allow] - permit edit to src/lib.rs (this request)
-> Deny edit [deny] - leave file unchanged (this request)
-  Always allow path [always allow] - save rule for src/lib.rs (this request)
++ Sed edit permission -----------------------------------------------------------------+
+| tool=sed risk=tool request                                                           |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        src/lib.rs                     |
+|   Context                                                                            |
+|   Decisions            Context                                                       |
+|                                                       pattern: foo                   |
+|                                                       replacement: bar               |
+|                                                                                      |
+|                        Decisions                                                     |
+|                          Allow edit                   allow  permit edit to src/l... |
+|                        > Deny edit                    deny  leave file unchanged ... |
+|                          Always allow path            always allow  save rule for... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## notebook-diff
 notebook: analysis.ipynb
@@ -364,40 +479,60 @@ cell: 2
 language: python
 
 ## notebook-request
-Notebook edit permission
-tool: notebook_edit
-request: analysis.ipynb
-details:
-  - notebook: analysis.ipynb
-cell: 2
-language: python
-options:
-> Allow edit [allow] - permit edit to analysis.ipynb (this request)
-  Deny edit [deny] - leave file unchanged (this request)
-  Always allow path [always allow] - save rule for analysis.ipynb (this request)
++ Notebook edit permission ------------------------------------------------------------+
+| tool=notebook_edit risk=tool request                                                 |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        analysis.ipynb                 |
+|   Context                                                                            |
+|   Decisions            Context                                                       |
+|                                                       notebook: analysis.ipynb       |
+|                                                       cell: 2                        |
+|                                                       language: python               |
+|                                                                                      |
+|                        Decisions                                                     |
+|                        > Allow edit                   allow  permit edit to analy... |
+|                          Deny edit                    deny  leave file unchanged ... |
+|                          Always allow path            always allow  save rule for... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## skill-request
-Skill permission
-tool: skill
-request: lint-fix
-details:
-  - action: run skill
-options:
-  Allow [allow] - run this tool once (this request)
-> Deny [deny] - block this tool call (this request)
-  Always allow [always allow] - save a reusable allow rule (project)
++ Skill permission --------------------------------------------------------------------+
+| tool=skill risk=tool request                                                         |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        lint-fix                       |
+|   Context                                                                            |
+|   Decisions            Context                                                       |
+|                                                       action: run skill              |
+|                                                                                      |
+|                        Decisions                                                     |
+|                          Allow                        allow  run this tool once  ... |
+|                        > Deny                         deny  block this tool call ... |
+|                          Always allow                 always allow  save a reusab... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## web-fetch
-Web fetch permission
-tool: web_fetch
-request: https://example.com
-risk: network access
-details:
-  - method: GET
-options:
-  Allow [allow] - run this tool once (this request)
-  Deny [deny] - block this tool call (this request)
-> Always allow [always allow] - save a reusable allow rule (project)
++ Web fetch permission ----------------------------------------------------------------+
+| tool=web_fetch risk=network access                                                   |
+|--------------------------------------------------------------------------------------|
+| Request                Decision                                                      |
+| > Request              Request                        https://example.com            |
+|   Context                                                                            |
+|   Decisions            Context                                                       |
+|                                                       method: GET                    |
+|                                                                                      |
+|                        Decisions                                                     |
+|                          Allow                        allow  run this tool once  ... |
+|                          Deny                         deny  block this tool call ... |
+|                        > Always allow                 always allow  save a reusab... |
+|--------------------------------------------------------------------------------------|
+| Up/Down decision | Enter confirm | Esc deny                                          |
++--------------------------------------------------------------------------------------+
 
 ## rule-description
 allow Bash(ls*) (project, source: .cc-rust/settings.json)

@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::ui::command_surface::{cycle_index, render_tabs, CommandSurfaceOutcome};
+use crate::ui::better_view_panel::{plain_row, selected_row, BetterViewPanel};
+use crate::ui::command_surface::{cycle_index, CommandSurfaceOutcome};
 
 const LOGIN_ACTIONS: &[LoginAction] = &[
     LoginAction {
@@ -66,15 +67,41 @@ impl LoginSurface {
     }
 
     pub(crate) fn render(&self) -> String {
-        let labels = LOGIN_ACTIONS
+        let sections = LOGIN_ACTIONS
             .iter()
-            .map(|action| action.label)
+            .map(|action| action.label.to_string())
             .collect::<Vec<_>>();
-        format!(
-            "{}\nLogin methods\n{}\n\nLeft/Right switch action tabs | Up/Down navigate | Enter select | s status | 1-5 select | Esc close",
-            render_tabs(&labels, self.action_index),
-            self.render_action_list()
-        )
+        let mut detail_lines = LOGIN_ACTIONS
+            .iter()
+            .enumerate()
+            .map(|(idx, action)| {
+                selected_row(
+                    format!("{}. {}", action.shortcut, action.label),
+                    action.description,
+                    idx == self.action_index,
+                )
+            })
+            .collect::<Vec<_>>();
+        if let Some(action) = LOGIN_ACTIONS.get(self.action_index) {
+            detail_lines.push(String::new());
+            detail_lines.push("Next action".to_string());
+            detail_lines.push(plain_row("command:", action.command.preview()));
+            if matches!(action.shortcut, '2' | '3' | '4') {
+                detail_lines.push(plain_row(
+                    "external:",
+                    "OAuth URL is printed after the command starts",
+                ));
+                detail_lines.push(plain_row("completion:", "/login-code <code>"));
+            }
+        }
+        BetterViewPanel::new("Login / OAuth")
+            .summary("method=select step=1/3 status=ready")
+            .sections_title("Steps")
+            .sections(sections, self.action_index)
+            .detail_title("OAuth details")
+            .detail_lines(detail_lines)
+            .footer("Enter start | Up/Down method | 1-5 select | Esc close")
+            .render()
     }
 
     pub(crate) fn handle_key(&mut self, key: KeyEvent) -> CommandSurfaceOutcome {
@@ -110,21 +137,6 @@ impl LoginSurface {
         }
     }
 
-    fn render_action_list(&self) -> String {
-        LOGIN_ACTIONS
-            .iter()
-            .enumerate()
-            .map(|(idx, action)| {
-                let marker = if idx == self.action_index { ">" } else { " " };
-                format!(
-                    "{marker} {}. {:<10} - {}",
-                    action.shortcut, action.label, action.description
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
     fn shortcut_action(&mut self, shortcut: char) -> CommandSurfaceOutcome {
         let Some(index) = LOGIN_ACTIONS
             .iter()
@@ -135,5 +147,13 @@ impl LoginSurface {
 
         self.action_index = index;
         self.selected_login_action()
+    }
+}
+
+impl LoginCommand {
+    fn preview(self) -> &'static str {
+        match self {
+            LoginCommand::FillPrompt(command) | LoginCommand::Submit(command) => command,
+        }
     }
 }

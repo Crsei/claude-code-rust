@@ -6,8 +6,9 @@ use crate::ui::agents::agent_detail::render_agent_detail;
 use crate::ui::agents::agents_list::AgentsListState;
 use crate::ui::agents::types::{AgentDefinition, AgentSourceFilter};
 use crate::ui::agents::utils::get_agent_source_display_name;
+use crate::ui::better_view_panel::{plain_row, selected_row, BetterViewPanel};
 use crate::ui::command_surface::adapters::agents::{agent_entry_to_ui, agent_source_tabs};
-use crate::ui::command_surface::{cycle_index, render_tabs, CommandSurfaceOutcome};
+use crate::ui::command_surface::{cycle_index, CommandSurfaceOutcome};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentsSurface {
@@ -44,23 +45,64 @@ impl AgentsSurface {
     pub(crate) fn render(&self) -> String {
         match &self.mode {
             AgentsSurfaceMode::List => {
-                let labels = self
+                let sections = self
                     .source_tabs
                     .iter()
                     .map(|source| get_agent_source_display_name(*source))
                     .collect::<Vec<_>>();
-                format!(
-                    "{}\n{}\n\nLeft/Right switch source tabs | Up/Down navigate | Enter detail | Esc close",
-                    render_tabs(&labels, self.source_index),
-                    self.state.render()
-                )
+                let visible = self.state.visible_agents();
+                let mut detail_lines = if visible.is_empty() {
+                    vec!["No agents available for this source".to_string()]
+                } else {
+                    visible
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, agent)| {
+                            let detail =
+                                format!("{}  {}", agent.source.display_name(), agent.when_to_use);
+                            selected_row(
+                                &agent.agent_type,
+                                detail,
+                                !self.state.create_new_selected && idx == self.state.selected_index,
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                };
+                if let Some(agent) = self.state.selected_agent() {
+                    detail_lines.push(String::new());
+                    detail_lines.push("Details".to_string());
+                    detail_lines.push(plain_row(
+                        "command:",
+                        format!("/agents show {}", agent.agent_type),
+                    ));
+                }
+                BetterViewPanel::new("Agents")
+                    .summary(format!(
+                        "source={} agents={}",
+                        sections.get(self.source_index).cloned().unwrap_or_default(),
+                        visible.len()
+                    ))
+                    .sections_title("Sources")
+                    .sections(sections, self.source_index)
+                    .detail_title("Agents")
+                    .detail_lines(detail_lines)
+                    .footer("Left/Right source | Up/Down agent | Enter show | Esc close")
+                    .render()
             }
-            AgentsSurfaceMode::Detail(agent) => format!(
-                "Agent detail: {}\n{}\n\nBackspace/b return to list | Enter submit `/agents show {}` | Esc close",
-                agent.agent_type,
-                render_agent_detail(agent, 80),
-                agent.agent_type
-            ),
+            AgentsSurfaceMode::Detail(agent) => {
+                let mut detail_lines = vec![format!("Agent detail: {}", agent.agent_type)];
+                detail_lines.extend(render_agent_detail(agent, 80).lines().map(str::to_string));
+                detail_lines.push(String::new());
+                detail_lines.push(format!("Enter submit `/agents show {}`", agent.agent_type));
+                BetterViewPanel::new(format!("Agents / {}", agent.agent_type))
+                    .summary(format!("source={}", agent.source.display_name()))
+                    .sections_title("View")
+                    .sections(vec!["Agent detail".to_string(), "Commands".to_string()], 0)
+                    .detail_title("Details")
+                    .detail_lines(detail_lines)
+                    .footer("Backspace/b return to list | Enter show | Esc close")
+                    .render()
+            }
         }
     }
 

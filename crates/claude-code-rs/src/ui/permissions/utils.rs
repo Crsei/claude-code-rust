@@ -1,5 +1,7 @@
 //! Shared permission rendering models and formatting helpers.
 
+use crate::ui::better_view_panel::{plain_row, selected_row, BetterViewPanel};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionDecision {
     Allow,
@@ -165,31 +167,42 @@ pub fn default_permission_options() -> Vec<PermissionOption> {
 }
 
 pub fn render_permission_request(view: &PermissionRequestView) -> String {
-    let mut lines = vec![
-        view.title.clone(),
-        format!("tool: {}", view.tool_name),
-        format!("request: {}", truncate_middle(&view.summary, 100)),
-    ];
+    let mut lines = vec![plain_row("Request", truncate_middle(&view.summary, 100))];
     if let Some(worker) = &view.worker_name {
-        lines.push(format!("worker: {worker}"));
-    }
-    if let Some(risk) = &view.risk {
-        lines.push(format!("risk: {risk}"));
+        lines.push(plain_row("Context", format!("worker={worker}")));
     }
     if !view.details.is_empty() {
-        lines.push("details:".to_string());
-        lines.extend(
-            view.details
-                .iter()
-                .map(|detail| format!("  - {}", truncate_middle(detail, 120))),
-        );
+        lines.push(String::new());
+        lines.push("Context".to_string());
+        for detail in &view.details {
+            for line in normalize_multiline(detail) {
+                lines.push(plain_row("", truncate_middle(&line, 120)));
+            }
+        }
     }
-    lines.push("options:".to_string());
+    lines.push(String::new());
+    lines.push("Decisions".to_string());
     lines.extend(render_permission_options(
         &view.options,
         view.selected_index,
     ));
-    lines.join("\n")
+
+    let risk = view.risk.as_deref().unwrap_or("tool request");
+    BetterViewPanel::new(&view.title)
+        .summary(format!("tool={} risk={risk}", view.tool_name))
+        .sections_title("Request")
+        .sections(
+            vec![
+                "Request".to_string(),
+                "Context".to_string(),
+                "Decisions".to_string(),
+            ],
+            0,
+        )
+        .detail_title("Decision")
+        .detail_lines(lines)
+        .footer("Up/Down decision | Enter confirm | Esc deny")
+        .render()
 }
 
 pub fn render_permission_options(
@@ -210,12 +223,15 @@ pub fn render_permission_options(
             } else {
                 " "
             };
-            format!(
-                "{marker} {} [{}] - {} ({})",
-                option.label,
-                option.decision.label(),
-                option.description,
-                option.scope.label()
+            selected_row(
+                &option.label,
+                format!(
+                    "{}  {}  scope={}",
+                    option.decision.label(),
+                    option.description,
+                    option.scope.label()
+                ),
+                marker == ">",
             )
         })
         .collect()

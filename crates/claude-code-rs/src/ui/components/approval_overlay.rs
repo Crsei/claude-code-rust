@@ -1,5 +1,7 @@
 //! Typed approval and permission overlay primitives.
 
+use crate::ui::better_view_panel::{plain_row, selected_row, BetterViewPanel};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApprovalKind {
     Bash { command: String },
@@ -93,29 +95,35 @@ impl ApprovalOverlay {
     }
 
     pub fn render_lines(&self, width: usize) -> Vec<String> {
-        let choices = self
-            .choices
-            .iter()
-            .enumerate()
-            .map(|(idx, choice)| {
-                if idx == self.selected {
-                    format!("[{}]", choice.label())
-                } else {
-                    choice.label().to_string()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("  ");
+        let mut detail_lines = vec![
+            plain_row("Request", fit_line(&self.kind.subject(), width)),
+            plain_row("Default", if self.fail_closed { "deny" } else { "allow" }),
+            String::new(),
+            "Decisions".to_string(),
+        ];
+        detail_lines.extend(self.choices.iter().enumerate().map(|(idx, choice)| {
+            selected_row(choice.label(), choice.label(), idx == self.selected)
+        }));
 
-        vec![
-            fit_line(self.kind.title(), width),
-            fit_line(&self.kind.subject(), width),
-            fit_line(&choices, width),
-            format!(
-                "default: {}",
-                if self.fail_closed { "deny" } else { "allow" }
-            ),
-        ]
+        BetterViewPanel::new(self.kind.title())
+            .summary(format!("risk={}", approval_risk(&self.kind)))
+            .sections_title("Request")
+            .sections(vec!["Request".to_string(), "Decisions".to_string()], 0)
+            .detail_title("Approval")
+            .detail_lines(detail_lines)
+            .footer("Up/Down decision | Enter confirm | Esc deny")
+            .render_lines()
+    }
+}
+
+fn approval_risk(kind: &ApprovalKind) -> &'static str {
+    match kind {
+        ApprovalKind::Bash { .. } => "shell command",
+        ApprovalKind::FileEdit { .. } => "file edit",
+        ApprovalKind::WebFetch { .. } => "network",
+        ApprovalKind::Mcp { .. } => "mcp action",
+        ApprovalKind::UserInput { .. } => "tool request",
+        ApprovalKind::Fallback { .. } => "action",
     }
 }
 
