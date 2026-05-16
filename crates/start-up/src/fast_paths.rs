@@ -88,13 +88,18 @@ pub fn run_export_ui_snapshots(
 /// language/style) without running the full Phase B pipeline.
 pub fn run_dump_system_prompt(cli: &impl DumpSystemPromptCli, tools: &[Arc<dyn Tool>]) -> ExitCode {
     cc_plugins::init_plugins();
-    let provider_default =
-        cc_api::api::client::ApiClient::from_env().map(|c| c.config().default_model.clone());
+    let provider_default = cc_api::api::client::ApiClient::from_env().and_then(|client| {
+        matches!(
+            client.config().provider,
+            cc_api::api::client::ApiProvider::Anthropic { .. }
+        )
+        .then(|| client.config().default_model.clone())
+    });
     let model_owned = cli
         .model()
         .map(str::to_string)
         .or(provider_default)
-        .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+        .unwrap_or_else(cc_models::default_model_id);
     let model = model_owned.as_str();
     let cwd = resolve_cwd(cli);
 

@@ -1,11 +1,11 @@
 //! `/fast` command -- toggle fast mode.
 //!
-//! Fast mode uses the same model (Opus 4.6) with faster output via
+//! Fast mode uses a configured fast-capable model with faster output via
 //! `speed: "fast"` API parameter + `fast-mode-2026-02-01` beta header.
 //!
 //! Implementation:
 //! - Toggle `app_state.fast_mode`
-//! - Validate model compatibility (only Opus 4.6 supports fast mode)
+//! - Validate model compatibility
 //! - Auto-switch model if needed
 //! - Show current status
 
@@ -14,10 +14,8 @@ use async_trait::async_trait;
 
 use crate::{CommandContext, CommandHandler, CommandResult};
 
-/// The model required for fast mode.
-const FAST_MODE_MODEL: &str = "claude-opus-4-6-20250414";
 /// Alternative model ID patterns that support fast mode.
-const FAST_MODE_MODEL_PREFIXES: &[&str] = &["claude-opus-4-6", "claude-opus-4"];
+const FAST_MODE_MODEL_PREFIXES: &[&str] = &["gpt-5.5"];
 
 pub struct FastHandler;
 
@@ -72,10 +70,18 @@ fn enable_fast_mode(ctx: &mut CommandContext) -> Result<CommandResult> {
     let previous_model = ctx.app_state.main_loop_model.clone();
     let mut switched_model = false;
 
-    // Auto-switch to Opus 4.6 if current model doesn't support fast mode
+    let fast_model = ctx
+        .app_state
+        .settings
+        .fast_model
+        .as_deref()
+        .map(crate::model::resolve_model_alias)
+        .unwrap_or_else(cc_models::default_fast_model_id);
+
+    // Auto-switch if current model doesn't support fast mode.
     if !model_supports_fast(&ctx.app_state.main_loop_model) {
-        ctx.app_state.main_loop_model = FAST_MODE_MODEL.to_string();
-        ctx.app_state.settings.model = Some(FAST_MODE_MODEL.to_string());
+        ctx.app_state.main_loop_model = fast_model.clone();
+        ctx.app_state.settings.model = Some(fast_model.clone());
         switched_model = true;
     }
 
@@ -85,8 +91,8 @@ fn enable_fast_mode(ctx: &mut CommandContext) -> Result<CommandResult> {
         "Fast mode enabled. Output will be generated faster using the same model.".to_string();
     if switched_model {
         msg.push_str(&format!(
-            "\nModel switched from '{}' to '{}' (fast mode requires Opus 4.6).",
-            previous_model, FAST_MODE_MODEL
+            "\nModel switched from '{}' to '{}' for fast mode.",
+            previous_model, fast_model
         ));
     }
 
@@ -151,9 +157,7 @@ mod tests {
 
     #[test]
     fn test_model_supports_fast() {
-        assert!(model_supports_fast("claude-opus-4-6-20250414"));
-        assert!(model_supports_fast("claude-opus-4-6"));
-        assert!(model_supports_fast("claude-opus-4-something"));
+        assert!(model_supports_fast("gpt-5.5"));
         assert!(!model_supports_fast("claude-sonnet-4-20250514"));
         assert!(!model_supports_fast("claude-haiku-4-5"));
     }
@@ -190,16 +194,16 @@ mod tests {
     async fn test_enable_auto_switches_model() {
         let handler = FastHandler;
         let mut ctx = test_ctx();
-        // Default model is sonnet, not opus
+        ctx.app_state.main_loop_model = "legacy-non-fast-model".to_string();
         assert!(!model_supports_fast(&ctx.app_state.main_loop_model));
 
         let result = handler.execute("on", &mut ctx).await.unwrap();
         assert!(ctx.app_state.fast_mode);
-        assert_eq!(ctx.app_state.main_loop_model, FAST_MODE_MODEL);
+        assert_eq!(ctx.app_state.main_loop_model, cc_models::MOTA_MODEL_ID);
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("switched"));
-                assert!(text.contains("Opus 4.6"));
+                assert!(text.contains(cc_models::MOTA_MODEL_ID));
             }
             _ => panic!("Expected Output"),
         }

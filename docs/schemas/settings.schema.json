@@ -115,6 +115,9 @@
     },
     "terminalProgressBarEnabled": { "type": "boolean" },
     "availableModels": { "type": "array", "items": { "type": "string" } },
+    "defaultModel": { "type": "string" },
+    "fallbackModel": { "type": "string" },
+    "fastModel": { "type": "string" },
     "effortLevel": {
       "type": "string",
       "description": "Thinking budget label (low|medium|high) or a positive integer token count. low=4096, medium=10240, high=24576."

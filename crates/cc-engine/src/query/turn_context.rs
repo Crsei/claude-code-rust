@@ -29,7 +29,11 @@ impl QueryRunContext {
             task_budget_total: params.task_budget.as_ref().map(|budget| budget.total),
             query_source: params.query_source,
             skip_cache_write: params.skip_cache_write,
-            fallback_model: params.fallback_model,
+            fallback_model: Some(
+                params
+                    .fallback_model
+                    .unwrap_or_else(cc_models::default_fallback_model_id),
+            ),
             gates: params.gates,
         };
 

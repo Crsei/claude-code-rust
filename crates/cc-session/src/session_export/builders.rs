@@ -95,7 +95,7 @@ pub fn build_context_snapshot(messages: &[Message]) -> ContextSnapshot {
         .read()
         .effective_model()
         .map(|s| s.to_string())
-        .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+        .unwrap_or_else(cc_models::default_fallback_model_id);
     let context_window = get_context_window_size(&model);
 
     let utilization_pct = if context_window > 0 {

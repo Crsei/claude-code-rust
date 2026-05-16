@@ -171,6 +171,24 @@ pub(super) fn handle_show(parts: &[&str], ctx: &CommandContext) -> Result<Comman
         &mut lines,
     );
     row(
+        "defaultModel",
+        opt_str(state.settings.default_model.clone()),
+        "defaultModel",
+        &mut lines,
+    );
+    row(
+        "fallbackModel",
+        opt_str(state.settings.fallback_model.clone()),
+        "fallbackModel",
+        &mut lines,
+    );
+    row(
+        "fastModel",
+        opt_str(state.settings.fast_model.clone()),
+        "fastModel",
+        &mut lines,
+    );
+    row(
         "effortLevel",
         opt_str(state.settings.effort_level.clone()),
         "effortLevel",

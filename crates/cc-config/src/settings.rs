@@ -449,6 +449,12 @@ pub struct RawSettings {
     pub terminal_progress_bar_enabled: Option<bool>,
 
     // -- Model / effort -------------------------------------------------
+    /// Default model used when neither CLI nor `model` selects one.
+    pub default_model: Option<String>,
+    /// Model used for recoverable model-call fallback retries.
+    pub fallback_model: Option<String>,
+    /// Model selected by `/fast` when the current model is not fast-compatible.
+    pub fast_model: Option<String>,
     pub available_models: Option<Vec<String>>,
     pub effort_level: Option<String>,
     pub fast_mode: Option<bool>,
@@ -539,6 +545,9 @@ impl RawSettings {
         merge_opt!(view_mode, "viewMode");
         merge_opt!(spinner_tips, "spinnerTips");
         merge_opt!(terminal_progress_bar_enabled, "terminalProgressBarEnabled");
+        merge_opt!(default_model, "defaultModel");
+        merge_opt!(fallback_model, "fallbackModel");
+        merge_opt!(fast_model, "fastModel");
         merge_opt!(available_models, "availableModels");
         merge_opt!(effort_level, "effortLevel");
         merge_opt!(fast_mode, "fastMode");
@@ -745,6 +754,9 @@ pub struct EffectiveSettings {
     pub editor_mode: Option<String>,
     pub view_mode: Option<String>,
     pub terminal_progress_bar_enabled: Option<bool>,
+    pub default_model: Option<String>,
+    pub fallback_model: Option<String>,
+    pub fast_model: Option<String>,
     pub available_models: Vec<String>,
     pub effort_level: Option<String>,
     pub fast_mode: Option<bool>,
@@ -790,6 +802,9 @@ impl EffectiveSettings {
             editor_mode: raw.editor_mode,
             view_mode: raw.view_mode,
             terminal_progress_bar_enabled: raw.terminal_progress_bar_enabled,
+            default_model: raw.default_model,
+            fallback_model: raw.fallback_model,
+            fast_model: raw.fast_model,
             available_models: raw.available_models.unwrap_or_default(),
             effort_level: raw.effort_level,
             fast_mode: raw.fast_mode,
@@ -1341,6 +1356,9 @@ pub fn settings_schema() -> Value {
             "availableModels": {
                 "type": "array", "items": { "type": "string" }
             },
+            "defaultModel": { "type": "string" },
+            "fallbackModel": { "type": "string" },
+            "fastModel": { "type": "string" },
             "effortLevel": { "type": "string" },
             "fastMode": { "type": "boolean" },
             "fastModePerSessionOptIn": { "type": "boolean" },
@@ -1689,6 +1707,9 @@ mod tests {
             "outputStyle",
             "spinnerTips",
             "availableModels",
+            "defaultModel",
+            "fallbackModel",
+            "fastModel",
             "fastMode",
         ] {
             assert!(props.contains_key(key), "missing schema key: {}", key);

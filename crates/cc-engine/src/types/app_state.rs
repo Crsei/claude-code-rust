@@ -78,7 +78,7 @@ impl Default for AppState {
         Self {
             settings: SettingsJson::default(),
             verbose: false,
-            main_loop_model: "claude-sonnet-4-20250514".to_string(),
+            main_loop_model: cc_models::default_model_id(),
             main_loop_backend: "native".to_string(),
             advisor_model: None,
             tool_permission_context: ToolPermissionContext {

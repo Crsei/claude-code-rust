@@ -16,6 +16,7 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 cc-api = { workspace = true }
 cc-engine = { workspace = true }
+cc-models = { workspace = true }
 cc-observability = { workspace = true }
 cc-services = { workspace = true }
 cc-types = { workspace = true }

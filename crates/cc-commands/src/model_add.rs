@@ -109,6 +109,7 @@ where
     }
 }
 
+#[cfg(test)]
 fn remove_env_var<K>(key: K)
 where
     K: AsRef<std::ffi::OsStr>,

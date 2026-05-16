@@ -8,9 +8,13 @@ pub struct ModelAlias {
     pub description: &'static str,
 }
 
-pub const SOTA_MODEL_ID: &str = "claude-opus-4-20250514";
-pub const MOTA_MODEL_ID: &str = "claude-sonnet-4-20250514";
-pub const FOTA_MODEL_ID: &str = "claude-haiku-3-5-20241022";
+pub const DEFAULT_MODEL_ALIAS: &str = "MOTA";
+pub const DEFAULT_FALLBACK_MODEL_ALIAS: &str = "MOTA";
+pub const DEFAULT_FAST_MODEL_ALIAS: &str = "MOTA";
+
+pub const SOTA_MODEL_ID: &str = "gpt-5.5";
+pub const MOTA_MODEL_ID: &str = "gpt-5.5";
+pub const FOTA_MODEL_ID: &str = "gpt-5.5";
 
 pub const MODEL_ALIASES: &[ModelAlias] = &[
     ModelAlias {
@@ -43,6 +47,18 @@ pub fn resolve_model_alias(name: &str) -> String {
         .find(|entry| trimmed.eq_ignore_ascii_case(entry.alias))
         .map(|entry| entry.target.to_string())
         .unwrap_or_else(|| trimmed.to_string())
+}
+
+pub fn default_model_id() -> String {
+    resolve_model_alias(DEFAULT_MODEL_ALIAS)
+}
+
+pub fn default_fallback_model_id() -> String {
+    resolve_model_alias(DEFAULT_FALLBACK_MODEL_ALIAS)
+}
+
+pub fn default_fast_model_id() -> String {
+    resolve_model_alias(DEFAULT_FAST_MODEL_ALIAS)
 }
 
 pub fn alias_for_model(model: &str) -> Option<&'static str> {
@@ -82,6 +98,9 @@ mod tests {
         assert_eq!(resolve_model_alias("SOTA"), SOTA_MODEL_ID);
         assert_eq!(resolve_model_alias("mota"), MOTA_MODEL_ID);
         assert_eq!(resolve_model_alias("FOTA"), FOTA_MODEL_ID);
+        assert_eq!(default_model_id(), MOTA_MODEL_ID);
+        assert_eq!(default_fallback_model_id(), MOTA_MODEL_ID);
+        assert_eq!(default_fast_model_id(), MOTA_MODEL_ID);
     }
 
     #[test]

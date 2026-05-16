@@ -176,6 +176,28 @@ pub fn validate_settings(settings: &SettingsJson) -> Vec<ValidationWarning> {
         }
     }
 
+    for (field, model) in [
+        ("defaultModel", settings.default_model.as_ref()),
+        ("fallbackModel", settings.fallback_model.as_ref()),
+        ("fastModel", settings.fast_model.as_ref()),
+    ] {
+        if let Some(model) = model {
+            if model.trim().is_empty() {
+                warnings.push(ValidationWarning {
+                    field: field.to_string(),
+                    message: format!("{field} is set but empty."),
+                    severity: WarningSeverity::Warning,
+                });
+            } else if let Err(e) = validate_model_name(model) {
+                warnings.push(ValidationWarning {
+                    field: field.to_string(),
+                    message: format!("Invalid model: {}", e),
+                    severity: WarningSeverity::Error,
+                });
+            }
+        }
+    }
+
     if let Some(ref backend) = settings.backend {
         let normalized = backend.trim().to_ascii_lowercase();
         if !normalized.is_empty() && !VALID_BACKENDS.contains(&normalized.as_str()) {

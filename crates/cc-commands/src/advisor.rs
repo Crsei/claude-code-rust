@@ -241,16 +241,16 @@ mod tests {
         let mut ctx = test_ctx();
         let result = set_advisor_with_persist(&mut ctx, "SOTA", noop_persist).unwrap();
         match result {
-            CommandResult::Output(text) => assert!(text.contains("claude-opus-4-20250514")),
+            CommandResult::Output(text) => assert!(text.contains(cc_models::SOTA_MODEL_ID)),
             _ => panic!("expected Output"),
         }
         assert_eq!(
             ctx.app_state.advisor_model.as_deref(),
-            Some("claude-opus-4-20250514")
+            Some(cc_models::SOTA_MODEL_ID)
         );
         assert_eq!(
             ctx.app_state.settings.advisor_model.as_deref(),
-            Some("claude-opus-4-20250514")
+            Some(cc_models::SOTA_MODEL_ID)
         );
     }
 
@@ -331,11 +331,11 @@ mod tests {
         // Uses an explicit tempdir path — no env-var mutation, no race.
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("settings.json");
-        persist_advisor_to_path(&path, Some("claude-opus-4-20250514")).unwrap();
+        persist_advisor_to_path(&path, Some(cc_models::SOTA_MODEL_ID)).unwrap();
 
         let raw_json = std::fs::read_to_string(&path).unwrap();
         let raw: cc_config::settings::RawSettings = serde_json::from_str(&raw_json).unwrap();
-        assert_eq!(raw.advisor_model.as_deref(), Some("claude-opus-4-20250514"));
+        assert_eq!(raw.advisor_model.as_deref(), Some(cc_models::SOTA_MODEL_ID));
 
         // Clear via None.
         persist_advisor_to_path(&path, None).unwrap();

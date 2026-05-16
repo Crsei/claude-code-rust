@@ -45,6 +45,9 @@ pub struct SettingsJson {
     pub terminal_progress_bar_enabled: Option<bool>,
 
     // -- Models / effort -----------------------------------------------
+    pub default_model: Option<String>,
+    pub fallback_model: Option<String>,
+    pub fast_model: Option<String>,
     pub available_models: Vec<String>,
     pub effort_level: Option<String>,
     pub fast_mode: Option<bool>,

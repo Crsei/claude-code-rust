@@ -23,6 +23,7 @@ git2 = { workspace = true }
 
 cc-types = { workspace = true }
 cc-config = { workspace = true }
+cc-models = { workspace = true }
 cc-utils = { workspace = true }
 cc-bootstrap = { workspace = true }
 cc-compact = { workspace = true }

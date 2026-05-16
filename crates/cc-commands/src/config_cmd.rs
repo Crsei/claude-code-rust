@@ -107,7 +107,8 @@ fn handle_set(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
              Available keys: model, backend, theme, verbose, permissionMode,\n  \
                outputStyle, language, voiceEnabled, editorMode, viewMode,\n  \
                terminalProgressBarEnabled, effortLevel, fastMode,\n  \
-               fastModePerSessionOptIn, teammateMode, claudeInChromeDefaultEnabled,\n  \
+               defaultModel, fallbackModel, fastModel, fastModePerSessionOptIn,\n  \
+               teammateMode, claudeInChromeDefaultEnabled,\n  \
                autoMemoryEnabled\n\n{}",
             usage_text()
         )));
@@ -215,6 +216,21 @@ fn apply_set_in_memory(key: &str, value: &str, app_state: &mut AppState) -> Resu
             app_state.effort_value = Some(value.to_string());
             Ok(format!("Effort level set to: {}", value))
         }
+        "defaultModel" | "default_model" => {
+            let resolved = crate::model::resolve_model_alias(value);
+            s.default_model = Some(resolved.clone());
+            Ok(format!("Default model set to: {}", resolved))
+        }
+        "fallbackModel" | "fallback_model" => {
+            let resolved = crate::model::resolve_model_alias(value);
+            s.fallback_model = Some(resolved.clone());
+            Ok(format!("Fallback model set to: {}", resolved))
+        }
+        "fastModel" | "fast_model" => {
+            let resolved = crate::model::resolve_model_alias(value);
+            s.fast_model = Some(resolved.clone());
+            Ok(format!("Fast model set to: {}", resolved))
+        }
         "fastMode" | "fast_mode" => {
             let v = parse_config_bool(key, value)?;
             s.fast_mode = Some(v);
@@ -310,6 +326,9 @@ fn apply_set_to_raw(raw: &mut RawSettings, key: &str, value: &str) -> Result<()>
             raw.terminal_progress_bar_enabled = Some(parse_config_bool(key, value)?);
         }
         "effortLevel" | "effort_level" => raw.effort_level = Some(value.into()),
+        "defaultModel" | "default_model" => raw.default_model = Some(value.into()),
+        "fallbackModel" | "fallback_model" => raw.fallback_model = Some(value.into()),
+        "fastModel" | "fast_model" => raw.fast_model = Some(value.into()),
         "fastMode" | "fast_mode" => raw.fast_mode = Some(parse_config_bool(key, value)?),
         "fastModePerSessionOptIn" | "fast_mode_per_session_opt_in" => {
             raw.fast_mode_per_session_opt_in = Some(parse_config_bool(key, value)?);

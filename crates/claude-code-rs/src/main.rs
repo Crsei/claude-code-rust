@@ -640,9 +640,13 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     let is_codex_backend = cc_engine::codex_exec::is_codex_backend(&backend);
     let detected_client = cc_api::api::client::ApiClient::from_backend_result(Some(&backend))
         .context("invalid API provider configuration")?;
-    let provider_default_model = detected_client
-        .as_ref()
-        .map(|c| c.config().default_model.clone());
+    let provider_default_model = detected_client.as_ref().and_then(|client| {
+        matches!(
+            client.config().provider,
+            cc_api::api::client::ApiProvider::Anthropic { .. }
+        )
+        .then(|| client.config().default_model.clone())
+    });
 
     if detected_client.is_none() {
         if is_codex_backend {
@@ -652,7 +656,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                  Set:\n  \
                  - OPENAI_CODEX_AUTH_TOKEN (required)\n  \
                  - OPENAI_CODEX_BASE_URL (optional, default: https://chatgpt.com/backend-api)\n  \
-                 - OPENAI_CODEX_MODEL (optional, default: gpt-5.4)"
+                 - OPENAI_CODEX_MODEL (optional, default: gpt-5.5)"
             );
         } else {
             warn!("No API provider detected. Set an API key in .env, environment, or use /login.");
@@ -666,10 +670,12 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         }
     }
 
-    let hardcoded_default = if is_codex_backend {
+    let hardcoded_default = if let Some(default_model) = merged_config.default_model.as_deref() {
+        default_model.to_string()
+    } else if is_codex_backend {
         cc_engine::codex_exec::DEFAULT_CODEX_MODEL.to_string()
     } else {
-        "claude-sonnet-4-20250514".to_string()
+        cc_models::DEFAULT_MODEL_ALIAS.to_string()
     };
     let requested_model = cli.model.clone().or(merged_config.model.clone());
     let model = resolve_startup_model(
@@ -724,6 +730,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             editor_mode: merged_config.editor_mode.clone(),
             view_mode: merged_config.view_mode.clone(),
             terminal_progress_bar_enabled: merged_config.terminal_progress_bar_enabled,
+            default_model: merged_config.default_model.clone(),
+            fallback_model: merged_config.fallback_model.clone(),
+            fast_model: merged_config.fast_model.clone(),
             available_models: merged_config.available_models.clone(),
             effort_level: merged_config.effort_level.clone(),
             fast_mode: merged_config.fast_mode,
@@ -819,7 +828,12 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         custom_system_prompt: cli.system_prompt.clone(),
         append_system_prompt: cli.append_system_prompt.clone(),
         user_specified_model: cli.model.clone(),
-        fallback_model: None,
+        fallback_model: Some(cc_commands::model::resolve_model_alias(
+            merged_config
+                .fallback_model
+                .as_deref()
+                .unwrap_or(cc_models::DEFAULT_FALLBACK_MODEL_ALIAS),
+        )),
         max_turns: cli.max_turns,
         max_budget_usd: cli.max_budget,
         task_budget: None,

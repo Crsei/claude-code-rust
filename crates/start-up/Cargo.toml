@@ -26,6 +26,7 @@ cc-config = { workspace = true }
 cc-engine = { workspace = true }
 cc-lsp-service = { workspace = true }
 cc-mcp = { workspace = true }
+cc-models = { workspace = true }
 cc-permissions = { workspace = true }
 cc-plugins = { workspace = true }
 cc-services = { workspace = true }

@@ -159,11 +159,11 @@ mod tests {
         let result = handler.execute("SOTA", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(text) => {
-                assert!(text.contains("claude-opus-4-20250514"));
+                assert!(text.contains(cc_models::SOTA_MODEL_ID));
             }
             _ => panic!("Expected Output result"),
         }
-        assert_eq!(ctx.app_state.main_loop_model, "claude-opus-4-20250514");
+        assert_eq!(ctx.app_state.main_loop_model, cc_models::SOTA_MODEL_ID);
     }
 
     #[tokio::test]
@@ -182,8 +182,8 @@ mod tests {
 
     #[test]
     fn test_resolve_alias() {
-        assert_eq!(resolve_model_alias("SOTA"), "claude-opus-4-20250514");
-        assert_eq!(resolve_model_alias("mota"), "claude-sonnet-4-20250514");
+        assert_eq!(resolve_model_alias("SOTA"), cc_models::SOTA_MODEL_ID);
+        assert_eq!(resolve_model_alias("mota"), cc_models::MOTA_MODEL_ID);
         assert_eq!(resolve_model_alias("opus"), "opus");
         assert_eq!(resolve_model_alias("unknown"), "unknown");
     }
@@ -213,12 +213,12 @@ mod tests {
     #[test]
     fn test_check_available_accepts_alias_entries() {
         let allowed = vec!["SOTA".to_string(), "gpt-4o".to_string()];
-        assert!(check_available("claude-opus-4-20250514", &allowed).is_ok());
+        assert!(check_available(cc_models::SOTA_MODEL_ID, &allowed).is_ok());
     }
 
     #[test]
     fn test_check_available_accepts_full_id_entries_for_alias_input() {
-        let allowed = vec!["claude-opus-4-20250514".to_string()];
+        let allowed = vec![cc_models::SOTA_MODEL_ID.to_string()];
         assert!(check_available(&resolve_model_alias("SOTA"), &allowed).is_ok());
     }
 
@@ -246,6 +246,7 @@ mod tests {
     async fn test_model_switch_rejected_by_available_models() {
         let handler = ModelHandler;
         let mut ctx = test_ctx();
+        ctx.app_state.main_loop_model = "initial-model".to_string();
         ctx.app_state.settings.available_models = vec!["gpt-4o".to_string()];
         let result = handler.execute("SOTA", &mut ctx).await.unwrap();
         match result {
@@ -255,7 +256,7 @@ mod tests {
             }
             _ => panic!("Expected Output"),
         }
-        assert_ne!(ctx.app_state.main_loop_model, "claude-opus-4-20250514");
+        assert_eq!(ctx.app_state.main_loop_model, "initial-model");
     }
 
     #[tokio::test]
@@ -264,14 +265,14 @@ mod tests {
         let mut ctx = test_ctx();
         ctx.app_state.settings.available_models = vec!["SOTA".to_string()];
         let result = handler
-            .execute("claude-opus-4-20250514", &mut ctx)
+            .execute(cc_models::SOTA_MODEL_ID, &mut ctx)
             .await
             .unwrap();
         match result {
             CommandResult::Output(text) => assert!(text.contains("Model changed")),
             _ => panic!("Expected Output"),
         }
-        assert_eq!(ctx.app_state.main_loop_model, "claude-opus-4-20250514");
+        assert_eq!(ctx.app_state.main_loop_model, cc_models::SOTA_MODEL_ID);
     }
 
     #[tokio::test]

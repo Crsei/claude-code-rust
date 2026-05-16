@@ -393,7 +393,7 @@ mod tests {
             json_schema: None,
             replay_user_messages: false,
             persist_session: false,
-            resolved_model: Some("claude-sonnet-4-20250514".into()),
+            resolved_model: Some(cc_models::default_model_id()),
             auto_save_session: false,
             agent_context: None,
         }))

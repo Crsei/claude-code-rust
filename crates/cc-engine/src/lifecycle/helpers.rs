@@ -204,7 +204,7 @@ pub(crate) fn build_messages_request(
     let resolved_model = params
         .model
         .clone()
-        .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+        .unwrap_or_else(cc_models::default_fallback_model_id);
 
     cc_api::api::client::MessagesRequest {
         max_tokens: clamp_max_tokens_for_model(

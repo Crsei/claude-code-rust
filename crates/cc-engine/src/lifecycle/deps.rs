@@ -245,7 +245,7 @@ fn model_for_autocompact(
     let model = if let Some(model) = params.model.as_deref().filter(|model| !model.is_empty()) {
         model.to_string()
     } else if app_model.is_empty() {
-        "claude-sonnet-4-20250514".to_string()
+        cc_models::default_fallback_model_id()
     } else {
         app_model.to_string()
     };
@@ -610,7 +610,7 @@ impl QueryDeps for QueryEngineDeps {
                 self.api_client
                     .as_ref()
                     .map(|c| c.config().default_model.clone())
-                    .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string())
+                    .unwrap_or_else(cc_models::default_fallback_model_id)
             } else {
                 app.main_loop_model.clone()
             }
@@ -642,7 +642,7 @@ impl QueryDeps for QueryEngineDeps {
                 self.api_client
                     .as_ref()
                     .map(|c| c.config().default_model.clone())
-                    .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string())
+                    .unwrap_or_else(cc_models::default_fallback_model_id)
             } else {
                 app.main_loop_model.clone()
             }

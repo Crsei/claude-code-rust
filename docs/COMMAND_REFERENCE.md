@@ -99,9 +99,9 @@
   - `/model`
   - `/model <model-id|SOTA|MOTA|FOTA>`
 - Supported aliases:
-  - `SOTA` → `claude-opus-4-20250514`
-  - `MOTA` → `claude-sonnet-4-20250514`
-  - `FOTA` → `claude-haiku-3-5-20241022`
+  - `SOTA` → `gpt-5.5`
+  - `MOTA` → `gpt-5.5`
+  - `FOTA` → `gpt-5.5`
 - Notes:
   - 旧的 `opus` / `sonnet` / `haiku` 家族别名已移除；请使用 `SOTA` / `MOTA` / `FOTA` 或完整模型 ID
   - 空的 `availableModels` 表示不限制；非空时 `/model`、Web 设置和 `/config set model` 都会拒绝列表之外的模型
@@ -109,7 +109,7 @@
 - Examples:
   - `/model`
   - `/model MOTA`
-  - `/model gpt-5.4`
+  - `/model gpt-5.5`
 
 ### `/model-add`
 
@@ -190,7 +190,7 @@
   - `off` / `disable`
 - Behavior:
   - 无参数时切换 fast mode
-  - 启用时如果当前模型不兼容，会自动切到 `claude-opus-4-6-20250414`
+  - 启用时如果当前模型不兼容，会自动切到配置的 `fastModel`，默认 `MOTA` (`gpt-5.5`)
 - Examples:
   - `/fast`
   - `/fast on`
