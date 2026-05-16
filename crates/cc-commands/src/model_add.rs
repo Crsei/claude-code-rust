@@ -71,9 +71,9 @@ impl CommandHandler for ModelAddHandler {
         write_env_file(&env_path, &env_vars)?;
 
         // Also update process env so pricing takes effect immediately
-        std::env::set_var("CLAUDE_MODEL", model_name);
-        std::env::set_var("MODEL_INPUT_PRICE", format_price(input_price));
-        std::env::set_var("MODEL_OUTPUT_PRICE", format_price(output_price));
+        set_env_var("CLAUDE_MODEL", model_name);
+        set_env_var("MODEL_INPUT_PRICE", format_price(input_price));
+        set_env_var("MODEL_OUTPUT_PRICE", format_price(output_price));
 
         // Switch the active model
         ctx.app_state.main_loop_model = model_name.to_string();
@@ -96,6 +96,25 @@ fn format_price(price: f64) -> String {
         format!("{:.1}", price)
     } else {
         format!("{}", price)
+    }
+}
+
+fn set_env_var<K, V>(key: K, value: V)
+where
+    K: AsRef<std::ffi::OsStr>,
+    V: AsRef<std::ffi::OsStr>,
+{
+    unsafe {
+        std::env::set_var(key, value);
+    }
+}
+
+fn remove_env_var<K>(key: K)
+where
+    K: AsRef<std::ffi::OsStr>,
+{
+    unsafe {
+        std::env::remove_var(key);
     }
 }
 
@@ -185,8 +204,8 @@ mod tests {
         fn drop(&mut self) {
             for &(key, ref val) in &self.saved {
                 match val {
-                    Some(v) => std::env::set_var(key, v),
-                    None => std::env::remove_var(key),
+                    Some(v) => set_env_var(key, v),
+                    None => remove_env_var(key),
                 }
             }
         }
@@ -239,8 +258,8 @@ mod tests {
     async fn test_model_add_known_model_uses_builtin() {
         let _guard = EnvGuard::new(ENV_KEYS);
         // Remove pricing env override so built-in table is used
-        std::env::remove_var("MODEL_INPUT_PRICE");
-        std::env::remove_var("MODEL_OUTPUT_PRICE");
+        remove_env_var("MODEL_INPUT_PRICE");
+        remove_env_var("MODEL_OUTPUT_PRICE");
         let tmp = TempDir::new().unwrap();
         let handler = ModelAddHandler;
         let mut ctx = test_ctx(tmp.path().to_path_buf());
@@ -258,8 +277,8 @@ mod tests {
     #[tokio::test]
     async fn test_model_add_unknown_model_no_price_errors() {
         let _guard = EnvGuard::new(ENV_KEYS);
-        std::env::remove_var("MODEL_INPUT_PRICE");
-        std::env::remove_var("MODEL_OUTPUT_PRICE");
+        remove_env_var("MODEL_INPUT_PRICE");
+        remove_env_var("MODEL_OUTPUT_PRICE");
         let tmp = TempDir::new().unwrap();
         let handler = ModelAddHandler;
         let mut ctx = test_ctx(tmp.path().to_path_buf());
