@@ -12,7 +12,7 @@
 
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use async_trait::async_trait;
 
 use crate::{CommandContext, CommandHandler, CommandResult};
@@ -177,6 +177,10 @@ fn apply_set_in_memory(key: &str, value: &str, app_state: &mut AppState) -> Resu
         }
         "permissionMode" | "permission_mode" => {
             let mode = PermissionMode::parse_configured(Some(value))?;
+            if mode == PermissionMode::Auto && !app_state.tool_permission_context.allows_auto_mode()
+            {
+                bail!("Auto mode is disabled by configuration (permissions.enableAutoMode=false).");
+            }
             s.permission_mode = Some(value.to_string());
             s.permissions.default_mode = Some(value.to_string());
             cc_permissions::dangerous::set_permission_mode_with_auto_mode_safety(

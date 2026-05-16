@@ -113,6 +113,15 @@ pub struct ToolPermissionContext {
 }
 
 impl ToolPermissionContext {
+    /// Whether runtime policy currently permits entering Auto mode.
+    ///
+    /// `None` preserves the historical default for ad-hoc/test contexts that
+    /// predate the settings gate; real startup contexts populate this from
+    /// `permissions.enableAutoMode`.
+    pub fn allows_auto_mode(&self) -> bool {
+        self.is_auto_mode_available.unwrap_or(true)
+    }
+
     /// Add a session-level allow grant for a tool.
     pub fn grant_session_allow(&mut self, tool_name: &str) {
         self.session_allow_rules

@@ -128,3 +128,33 @@ pub fn build_tool_permission_context(
     cc_permissions::dangerous::set_permission_mode_with_auto_mode_safety(&mut ctx, mode);
     ctx
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_tool_permission_context_blocks_startup_auto_when_disabled() {
+        let mut loaded = settings::LoadedSettings::default();
+        loaded.effective.permissions.enable_auto_mode = Some(false);
+        loaded.effective.permissions.allow = vec!["Bash".to_string()];
+        loaded.user = Some(settings::RawSettings {
+            permissions: Some(settings::PermissionsSettings {
+                allow: vec!["Bash".to_string()],
+                enable_auto_mode: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+
+        let ctx = build_tool_permission_context(PermissionMode::Auto, &loaded);
+
+        assert_eq!(ctx.mode, PermissionMode::Default);
+        assert!(!ctx.allows_auto_mode());
+        assert_eq!(
+            ctx.always_allow_rules.get("user").unwrap(),
+            &vec!["Bash".to_string()]
+        );
+        assert!(ctx.auto_mode_stripped_always_allow_rules.is_empty());
+    }
+}

@@ -91,6 +91,31 @@ async fn test_config_set_permission_mode_updates_live_context() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
+async fn test_config_set_permission_mode_auto_respects_disabled_policy() {
+    let dir = tempfile::tempdir().unwrap();
+    let _g = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+    let handler = ConfigHandler;
+    let mut ctx = test_ctx();
+    ctx.app_state.tool_permission_context.is_auto_mode_available = Some(false);
+
+    let result = handler.execute("set permissionMode auto", &mut ctx).await;
+
+    match result {
+        Ok(_) => panic!("auto mode should be rejected when disabled"),
+        Err(err) => assert!(
+            err.to_string().contains("permissions.enableAutoMode=false"),
+            "unexpected error: {err:#}"
+        ),
+    }
+    assert_eq!(
+        ctx.app_state.tool_permission_context.mode,
+        PermissionMode::Default
+    );
+    assert!(!dir.path().join("settings.json").exists());
+}
+
+#[tokio::test]
 async fn test_config_set_invalid_bool_is_visible_and_does_not_mutate() {
     let handler = ConfigHandler;
     let mut ctx = test_ctx();

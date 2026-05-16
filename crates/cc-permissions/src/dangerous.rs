@@ -62,6 +62,7 @@ pub struct AutoModeRuntimeTransition {
     pub stripped_session_allow_count: usize,
     pub restored_always_allow_count: usize,
     pub restored_session_allow_count: usize,
+    pub auto_mode_blocked_by_policy: bool,
 }
 
 /// Remove allow rules that are too broad or too dangerous for Auto mode.
@@ -125,11 +126,22 @@ pub fn set_permission_mode_with_auto_mode_safety(
     requested: PermissionMode,
 ) -> AutoModeRuntimeTransition {
     let mut transition = AutoModeRuntimeTransition::default();
-    if requested != PermissionMode::Auto {
+    let requested_auto_blocked = requested == PermissionMode::Auto && !ctx.allows_auto_mode();
+    let effective = if requested_auto_blocked {
+        PermissionMode::Default
+    } else {
+        requested
+    };
+
+    if requested_auto_blocked {
+        transition.auto_mode_blocked_by_policy = true;
+    }
+
+    if effective != PermissionMode::Auto {
         merge_transition(&mut transition, restore_auto_mode_stripped_permissions(ctx));
     }
 
-    ctx.mode = requested;
+    ctx.mode = effective;
 
     if ctx.mode == PermissionMode::Auto {
         merge_transition(
@@ -203,6 +215,7 @@ fn merge_transition(target: &mut AutoModeRuntimeTransition, source: AutoModeRunt
     target.stripped_session_allow_count += source.stripped_session_allow_count;
     target.restored_always_allow_count += source.restored_always_allow_count;
     target.restored_session_allow_count += source.restored_session_allow_count;
+    target.auto_mode_blocked_by_policy |= source.auto_mode_blocked_by_policy;
 }
 
 fn dangerous_auto_mode_allow_reason(rule: &str) -> Option<&'static str> {
@@ -1620,6 +1633,45 @@ mod tests {
         assert_eq!(
             ctx.session_allow_rules.get("session").unwrap(),
             &vec!["Read".to_string(), "PowerShell(*)".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_auto_mode_runtime_transition_respects_availability_policy() {
+        let mut ctx = test_permission_context(PermissionMode::Default);
+        ctx.is_auto_mode_available = Some(false);
+        ctx.always_allow_rules
+            .insert("user".into(), vec!["Bash".into()]);
+
+        let transition = set_permission_mode_with_auto_mode_safety(&mut ctx, PermissionMode::Auto);
+
+        assert!(transition.auto_mode_blocked_by_policy);
+        assert_eq!(ctx.mode, PermissionMode::Default);
+        assert_eq!(
+            ctx.always_allow_rules.get("user").unwrap(),
+            &vec!["Bash".to_string()]
+        );
+        assert!(ctx.auto_mode_stripped_always_allow_rules.is_empty());
+    }
+
+    #[test]
+    fn test_auto_mode_policy_disable_restores_active_auto_mode_rules() {
+        let mut ctx = test_permission_context(PermissionMode::Default);
+        ctx.always_allow_rules
+            .insert("user".into(), vec!["Bash".into()]);
+        set_permission_mode_with_auto_mode_safety(&mut ctx, PermissionMode::Auto);
+        assert_eq!(ctx.mode, PermissionMode::Auto);
+        assert_eq!(ctx.auto_mode_stripped_always_allow_rules.len(), 1);
+
+        ctx.is_auto_mode_available = Some(false);
+        let transition = set_permission_mode_with_auto_mode_safety(&mut ctx, PermissionMode::Auto);
+
+        assert!(transition.auto_mode_blocked_by_policy);
+        assert_eq!(ctx.mode, PermissionMode::Default);
+        assert!(ctx.auto_mode_stripped_always_allow_rules.is_empty());
+        assert_eq!(
+            ctx.always_allow_rules.get("user").unwrap(),
+            &vec!["Bash".to_string()]
         );
     }
 

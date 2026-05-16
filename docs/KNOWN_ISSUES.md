@@ -1,6 +1,6 @@
 # cc-rust 当前问题汇总
 
-> 更新日期: 2026-05-14
+> 更新日期: 2026-05-17
 
 本文是当前开放问题、代码审查发现和文档状态问题的唯一活跃入口。已修复、已失效或只具历史价值的问题已迁移到：
 
@@ -18,7 +18,7 @@
 
 | ID | 严重度 | 状态 | 范围 | 摘要 | 详情 |
 | --- | --- | --- | --- | --- | --- |
-| SAFETY-001 | 高 | Open | Auto mode | `permissions.enableAutoMode=false` 只约束部分入口，启动配置、Web、插件上下文等仍可能进入 Auto。 | [2026-05-07 review](archive/issues/2026-05-07-code-review-findings.md) §四 |
+| SAFETY-001 | 高 | Fixed | Auto mode | `permissions.enableAutoMode=false` 现在由统一的 permission transition helper 强制执行，启动配置、Web、`/permissions`、`/config` 与子上下文不能绕过进入 Auto。 | [2026-05-07 review](archive/issues/2026-05-07-code-review-findings.md) §四 |
 | SAFETY-002 | 高 | Open | Plan `allowedPrompts` | Auto -> Plan -> ExitPlanMode 后可能追加未经 Auto-mode 危险规则剥离的 Bash allow 规则。 | 同上 |
 | SAFETY-003 | 高 | Open | Sandbox `allowedCommands` | sandbox 不可用时仍可能预批准 `allowedCommands`；前缀匹配还允许 shell 链式命令搭车。 | 同上 |
 | SAFETY-004 | 高 | Open | classifier redaction | JSON 字段形式的 `password` / `apiKey` / `token` 等 secret 没有被 redaction regex 覆盖。 | 同上 |

@@ -238,11 +238,14 @@ fn render_auto_mode_stripped_rules(perm: &ToolPermissionContext, lines: &mut Vec
 fn format_auto_mode_transition(transition: &AutoModeRuntimeTransition) -> String {
     let stripped = transition.stripped_always_allow_count + transition.stripped_session_allow_count;
     let restored = transition.restored_always_allow_count + transition.restored_session_allow_count;
-    if stripped == 0 && restored == 0 {
+    if stripped == 0 && restored == 0 && !transition.auto_mode_blocked_by_policy {
         return String::new();
     }
 
     let mut parts = Vec::new();
+    if transition.auto_mode_blocked_by_policy {
+        parts.push("blocked by configuration (permissions.enableAutoMode=false)".to_string());
+    }
     if stripped > 0 {
         parts.push(format!(
             "stripped {} broad allow rule(s) for Auto mode classifier review",
@@ -293,7 +296,7 @@ fn handle_mode(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult
     }
 
     if matches!(requested, PermissionMode::Auto)
-        && ctx.app_state.tool_permission_context.is_auto_mode_available == Some(false)
+        && !ctx.app_state.tool_permission_context.allows_auto_mode()
     {
         return Ok(CommandResult::Output(
             "Auto mode is disabled by configuration (permissions.enableAutoMode=false).".into(),
@@ -622,6 +625,27 @@ mod tests {
                 .get("user")
                 .unwrap(),
             &vec!["Bash(cargo test*)".to_string(), "Bash".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_permissions_mode_auto_respects_disabled_policy() {
+        let handler = PermissionsHandler;
+        let mut ctx = test_ctx();
+        ctx.app_state.tool_permission_context.is_auto_mode_available = Some(false);
+
+        let result = handler
+            .execute("mode auto --confirm", &mut ctx)
+            .await
+            .unwrap();
+        let CommandResult::Output(text) = result else {
+            panic!("expected output")
+        };
+
+        assert!(text.contains("permissions.enableAutoMode=false"));
+        assert_eq!(
+            ctx.app_state.tool_permission_context.mode,
+            PermissionMode::Default
         );
     }
 

@@ -288,17 +288,33 @@ pub async fn settings_handler(
                 "plan" => PermissionMode::Plan,
                 _ => PermissionMode::Default,
             };
+            let mut blocked_by_policy = false;
+            let mut effective_mode = mode.clone();
             state.engine().update_app_state(|s| {
-                cc_permissions::dangerous::set_permission_mode_with_auto_mode_safety(
-                    &mut s.tool_permission_context,
-                    mode.clone(),
-                );
+                let transition =
+                    cc_permissions::dangerous::set_permission_mode_with_auto_mode_safety(
+                        &mut s.tool_permission_context,
+                        mode.clone(),
+                    );
+                blocked_by_policy = transition.auto_mode_blocked_by_policy;
+                effective_mode = s.tool_permission_context.mode.clone();
             });
+            if blocked_by_policy {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(SettingsResponse {
+                        ok: false,
+                        message:
+                            "Auto mode is disabled by configuration (permissions.enableAutoMode=false)."
+                                .to_string(),
+                    }),
+                );
+            }
             (
                 StatusCode::OK,
                 Json(SettingsResponse {
                     ok: true,
-                    message: format!("Permission mode set to {}", mode_str),
+                    message: format!("Permission mode set to {}", effective_mode.as_str()),
                 }),
             )
         }
@@ -890,6 +906,36 @@ mod tests {
         assert_eq!(
             state.engine().app_state().settings.model.as_deref(),
             Some("claude-opus-4-20250514")
+        );
+    }
+
+    #[tokio::test]
+    async fn set_permission_mode_auto_respects_disabled_policy() {
+        let state = make_web_state();
+        state.engine().update_app_state(|s| {
+            s.tool_permission_context.is_auto_mode_available = Some(false);
+        });
+
+        let response = settings_handler(
+            State(state.clone()),
+            Json(SettingsRequest {
+                action: "set_permission_mode".to_string(),
+                value: json!("auto"),
+            }),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = response_json(response).await;
+        assert_eq!(body["ok"], json!(false));
+        assert!(body["message"]
+            .as_str()
+            .expect("message")
+            .contains("permissions.enableAutoMode=false"));
+        assert_eq!(
+            state.engine().app_state().tool_permission_context.mode,
+            PermissionMode::Default
         );
     }
 }
