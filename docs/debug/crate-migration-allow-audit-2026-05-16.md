@@ -11,6 +11,7 @@ This file is a debug inventory only. It does not decide which allowances are val
 ```bash
 rg --glob '*.rs' 'allow\([^)]*dead_code'
 rg --glob '*.rs' 'allow\([^)]*unused_imports'
+rg --glob '*.rs' 'allow\([^)]*unused'
 ```
 
 Cross-checks:
@@ -18,6 +19,7 @@ Cross-checks:
 ```bash
 rg -n '#!?\[allow\([^\]]*\bdead_code\b' -g '*.rs'
 rg -n '#!?\[allow\([^\]]*\bunused_imports\b' -g '*.rs'
+rg -n '#!?\[allow\([^\]]*\bunused\b' -g '*.rs'
 rg -n '#!?\[allow\([^\]]*\bdead_code\b[^\]]*,|#!?\[allow\([^\]]*,[^\]]*\bdead_code\b' -g '*.rs'
 rg -n '#!?\[allow\([^\]]*\bunused_imports\b[^\]]*,|#!?\[allow\([^\]]*,[^\]]*\bunused_imports\b' -g '*.rs'
 ```
@@ -25,10 +27,10 @@ rg -n '#!?\[allow\([^\]]*\bunused_imports\b[^\]]*,|#!?\[allow\([^\]]*,[^\]]*\bun
 Notes:
 
 - The wider `allow\([^)]*dead_code` scan includes `cfg_attr(..., allow(dead_code))`.
-- This inventory intentionally excludes broad `allow(unused)` entries; those are a separate cleanup class.
+- The third cleanup pass includes broad `allow(unused)` entries outside IPC and UI.
 - Two read-only explorer subagents independently checked `dead_code` and `unused_imports`; the local scan matched their results.
 
-## Summary
+## Initial Summary
 
 | Allowance | Total hits | Files | Direct standalone | Conditional standalone | Compound |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -41,6 +43,15 @@ Top concentration:
 - `crates/claude-code-rs/tests/**`: 2 `dead_code` hits.
 - `crates/claude-code-rs/src/app_subsystem_handlers.rs`: 1 `dead_code` hit.
 - `crates/cc-*`, `crates/voice`, and `crates/worktree`: 77 `dead_code` hits, including 8 conditional `cfg_attr`, and 15 `unused_imports` hits.
+
+Current post-third-batch scan:
+
+| Scan | Current result | Notes |
+| --- | ---: | --- |
+| Repo-wide `allow(dead_code)` | 274 matches / 40 files | Remaining concentration is IPC protocol reserves, Rust TUI/UI path shims, the 8 browser platform fields, 2 query response reserve fields, and 1 sandbox Windows reserve. |
+| Repo-wide `allow(unused_imports)` | 1 match / 1 file | Only `crates/claude-code-rs/src/ui/permissions/dialog_overlay.rs`, outside this pass. |
+| Repo-wide `allow(...unused...)` | 3 matches / 3 files | Two broad UI `allow(unused)` entries plus the UI `unused_imports` entry. |
+| Non-IPC/UI `allow(dead_code|unused_imports|unused|unused_variables)` | 11 matches / 4 files | Only documented reserves remain: `cc-browser`, `cc-sandbox`, and `cc-query`. |
 
 ## First Batch Classification: `cc-api` and `cc-engine`
 
@@ -67,7 +78,7 @@ Classification rules used for this batch:
 | `cc-engine` input overrides | `ProcessedInput.allowed_tools`, `ProcessedInput.model` | Missing implementation | Slash-command override fields are still always `None`; tests now assert the current behavior. They remain a public parsed-input contract until command override wiring is decided. | Removed field allows; no warning because this is public API. |
 | `cc-engine` config types | File-level `#![allow(dead_code)]` in `types/config.rs` | Public API / Missing implementation | `QueryParams`, `QuerySource`, `TaskBudget`, and `QueryEngineConfig` are used by lifecycle, query loop, daemon, agents, and root startup; unused fields represent public config parity rather than private dead code. | Removed broad file-level allow. |
 | `cc-engine` lifecycle accessors | Sleep, abort reason, permission denials, turn count, tool registry, discovered skills, nested memory paths | Stale allow / Public API | Existing lifecycle tests cover abort, permission denials, turn count, discovered skills, and nested memory paths; added sleep-control and `set_tools` tests. | Removed accessor allows. |
-| `cc-engine` orphaned permission flag | `has_handled_orphaned_permission` | Missing implementation | Field is not wired yet, but represents upstream parity for orphaned permission recovery. | Kept a single narrow `dead_code` allow with an inline comment. |
+| `cc-engine` orphaned permission flag | `has_handled_orphaned_permission` | Missing implementation / truly unused private field | Field was not wired, had no tests or callers, and the upstream parity path is still only a TODO. | Removed in the third batch; the future orphaned-permission recovery should add real state when implemented. |
 | `cc-engine` abort variants | `AbortReason::{MaxBudget, MaxTurns, ApiError}` | Public API / Missing implementation | `MaxBudget` is set by lifecycle budget enforcement; `MaxTurns` and `ApiError` are public abort taxonomy reserved for query-loop parity. | Removed variant allows. |
 | `cc-engine` query response fields | `ModelResponse.stream_events`, `ModelResponse.usage` | Public API | Lifecycle deps populates both fields; query tests and lifecycle usage paths consume model usage through assistant messages. | Removed field allows. |
 | `cc-engine` helpers | `has_tool_use`, `build_skills_listing`, `payload_from_value` | Stale allow | Stop-hook tests cover `has_tool_use`; skill prompt/test path calls `build_skills_listing`; added `payload_from_value` parse test. | Removed allows. |
@@ -77,7 +88,7 @@ Current first-batch status:
 | Crate | Remaining `allow(dead_code)` / `allow(unused_imports)` | Evidence |
 | --- | ---: | --- |
 | `cc-api` | 0 | `rg` over `crates/cc-api/src` finds no `dead_code` or `unused_imports` allowances. |
-| `cc-engine` | 1 `dead_code`, 0 `unused_imports` | Only `QueryEngine::has_handled_orphaned_permission` remains, documented as missing orphaned-permission recovery wiring. |
+| `cc-engine` | 0 | Third-batch cleanup removed the orphaned-permission private field and the stale `module_inception` allow. |
 
 Dependency-chain crates were not expanded in this batch. The remaining `cc-*`, `voice`, and `worktree` rows below stay as inventory for the next pass.
 
@@ -134,6 +145,48 @@ Known full-clippy blockers observed during this pass:
 | `gateway` | `config.rs`, `run.rs` / `clippy::derivable_impls` | Manual defaults can be derived. |
 | `cc-ipc-protocol` | `subsystem_events.rs` / `clippy::large_enum_variant` | `McpEvent::ConfigChanged` and `McpCommand::UpsertConfig` carry large config entries. |
 | `cc-session` | `storage.rs`, `transcript.rs` / `clippy::needless_borrows_for_generic_args` | Several filesystem calls pass needless `&PathBuf` borrows. |
+
+## Third Batch Classification: Non-IPC/UI Remaining Unused Cleanup
+
+Scope for this pass excluded `crates/cc-ipc*/**`, `crates/claude-code-rs/src/ui/**`, and `crates/cc-ui/**`. It included `allow(dead_code)`, `allow(unused_imports)`, broad `allow(unused)`, and related `allow(unused_variables)` suppressions.
+
+| Area | Original allow sites | Category | Evidence | Decision |
+| --- | --- | --- | --- | --- |
+| Split-crate facades | `cc-bootstrap`, `cc-query`, `cc-session/session_export`, `cc-observability`, `cc-voice` re-export/module suppressions | Public API / stale allow | Facade re-exports remain part of split-crate compatibility; root crates check clean without broad suppressions. | Removed stale module and re-export allows while keeping public `pub use` surfaces. |
+| Query response contract | `cc-query::ModelResponse::{stream_events, usage}` | Missing implementation reserve | The model boundary carries stream events and usage for future observability/accounting, but the query crate does not yet consume them. | Kept two narrow field-level `dead_code` allows with explicit reserve comments. |
+| Query stop hooks | `cc-query::stop_hooks::has_tool_use` | Test-only helper | Only stop-hook unit tests call the helper. | Moved behind `#[cfg(test)]`; no production allow remains. |
+| Runtime helper crates | MCP, LSP, permissions, plugins, safety, sandbox, shell utils, worktree | Stale allow / public API | Public helpers now have production callers or tests; `ExitWorktreeInput.discard_changes` is validated from raw JSON. | Removed stale suppressions; renamed the private serde field to `_discard_changes`; kept no worktree allow. |
+| Sandbox platform reserve | `cc-sandbox::availability::Mechanism::WindowsRestrictedToken` | Conditional platform API | The variant is only constructed on Windows, but non-Windows targets still expose the status enum. | Kept one `cfg_attr(not(target_os = "windows"), allow(dead_code, reason = "..."))` on the variant. |
+| Keybindings/types/teams | `cc-keybindings`, `cc-types`, `cc-teams` module and field suppressions | Public API / compatibility | Public action/config/type/team DTO surfaces check and test clean without suppressions. | Removed all target suppressions and unused imports; kept public compatibility types. |
+| Compact/session/services/utils | Broad `allow(unused)` across compact, session memory, migrations, memdir, and utility modules | Stale allow / public API / small missing integration | These modules are now wired or tested; `tool_result_budget` had a duplicated default constant and unused import. | Removed broad allows, exposed `DEFAULT_MAX_SIZE_CHARS`, used it from the compact pipeline, and narrowed unused compaction parameters with `_` names. |
+| Engine/root leftovers | `cc-engine` lifecycle/query/source suppressions, root app handler, two e2e test modules | Stale allow / truly unused private state | The app handler is used; e2e tests did not use `test_workspace`; the orphaned permission field had no implementation path. | Removed stale allows and test modules, deleted the orphaned private field, made `PromptRecovery::Terminal` a unit variant, and added `QuerySource::as_label()` so Langfuse keeps `agent:{id}`. |
+
+Current third-batch status:
+
+| Scope | Remaining allowances | Evidence |
+| --- | ---: | --- |
+| Non-IPC/UI `allow(unused_imports)` | 0 | `rg` excluding `cc-ipc*`, `claude-code-rs/src/ui`, and `cc-ui` finds no `unused_imports` suppressions. |
+| Non-IPC/UI broad `allow(unused)` | 0 | Same scan finds no broad `allow(unused)` suppressions. |
+| Non-IPC/UI `allow(dead_code)` | 11 | 8 browser off-platform fields, 2 query response reserve fields, and 1 sandbox Windows reserve variant. |
+| `cc-engine` | 0 | No `dead_code`, `unused_imports`, broad `unused`, or `unused_variables` suppressions remain in the crate. |
+
+Third-batch verification:
+
+| Check | Result | Notes |
+| --- | --- | --- |
+| Worker A check: `cc-bootstrap`, `cc-query`, `cc-session`, `cc-observability`, `cc-voice` | Pass | `cargo check --all-targets`, no warnings reported. |
+| Worker B check: MCP/LSP/permissions/sandbox/safety/plugins/utils/worktree | Pass | `cargo check --all-targets`, no warnings reported. |
+| Worker C check and tests: `cc-keybindings`, `cc-types`, `cc-teams` | Pass | `cargo check --all-targets`; tests passed: keybindings 51, teams 105, types 15. |
+| Worker D check and tests: compact/config/services/utils/session/engine service slice | Pass / partial | `cargo check --all-targets` passed; compact/services/utils/session lib tests passed; `cc-engine services::session_memory` passed. The full grouped `cc-engine --lib` test command hung and was stopped. |
+| Local check: `cargo check -p cc-engine -p cc-query -p claude-code-rs --all-targets` | Pass | Only known `npm` missing web-ui build warning from `claude-code-rs` build script. |
+| Local tests: `cc-engine lifecycle`, `cc-query stop_hooks`, browser/chrome e2e tests | Pass | 50 lifecycle tests, 4 stop-hook tests, 3 browser MCP e2e tests, 6 Chrome subsystem e2e tests. |
+| `cargo build --workspace --release` | Pass | Only known `npm` missing web-ui build warning from `claude-code-rs` build script. |
+| `cargo fmt --check` | Pass | No formatting drift after worker integration. |
+| `cargo clippy` for touched non-engine crates with `--all-targets --no-deps -- -D warnings` | Pass | Fixed local lints exposed in `cc-types`, `cc-mcp`, `cc-session`, `cc-lsp-service`, `cc-safety`, `cc-query`, `cc-teams`, and `cc-worktree`. |
+| `cargo clippy -p cc-engine --all-targets --no-deps -- -D warnings` | Blocked outside unused cleanup scope | Existing structural lints remain: `too_many_arguments` in agent runtime/lifecycle/system prompt helpers, `new_without_default`, `items_after_test_module`, `large_enum_variant` in mirrored query tests, and small agent/tool parser lints. |
+| Final non-IPC/UI allow scan | Pass | Only the 11 documented reserves remain. |
+
+The inventories below are the original debug inventory retained for traceability. Use the batch status tables above for the current post-cleanup state.
 
 ## `allow(unused_imports)` Inventory
 
