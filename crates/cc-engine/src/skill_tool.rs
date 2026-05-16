@@ -12,8 +12,7 @@
 //! - **Fork**: skill runs in a separate sub-agent context (not yet implemented;
 //!   falls back to inline).
 
-#[allow(unused_imports)]
-use anyhow::{bail, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -22,8 +21,7 @@ use uuid::Uuid;
 
 use crate::types::tool::*;
 use cc_skills::{SkillContext, SkillDefinition};
-#[allow(unused_imports)]
-use cc_types::message::{AssistantMessage, ContentBlock, Message, MessageContent, UserMessage};
+use cc_types::message::{AssistantMessage, Message, MessageContent, UserMessage};
 
 /// SkillTool — invoke skills (slash command wrappers) by name.
 pub struct SkillTool;
@@ -38,7 +36,6 @@ struct SkillInput {
 }
 
 /// Build the prompt listing available skills for the system prompt.
-#[allow(dead_code)]
 fn build_skills_listing() -> String {
     let skills = cc_skills::get_model_invocable_skills();
     if skills.is_empty() {

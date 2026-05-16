@@ -104,6 +104,37 @@ mod tests {
         }
     }
 
+    struct TestTool;
+
+    #[async_trait::async_trait]
+    impl crate::types::tool::Tool for TestTool {
+        fn name(&self) -> &str {
+            "TestTool"
+        }
+
+        async fn description(&self, _input: &serde_json::Value) -> String {
+            "test tool".to_string()
+        }
+
+        fn input_json_schema(&self) -> serde_json::Value {
+            serde_json::json!({"type": "object"})
+        }
+
+        async fn call(
+            &self,
+            _input: serde_json::Value,
+            _ctx: &crate::types::tool::ToolUseContext,
+            _parent_message: &AssistantMessage,
+            _on_progress: Option<Box<dyn Fn(crate::types::tool::ToolProgress) + Send + Sync>>,
+        ) -> anyhow::Result<crate::types::tool::ToolResult> {
+            Ok(crate::types::tool::ToolResult::default())
+        }
+
+        async fn prompt(&self) -> String {
+            String::new()
+        }
+    }
+
     fn make_config() -> QueryEngineConfig {
         QueryEngineConfig {
             cwd: "/tmp".to_string(),
@@ -262,6 +293,18 @@ mod tests {
     }
 
     #[test]
+    fn test_query_engine_sleep_control() {
+        let engine = QueryEngine::new(make_config());
+        assert!(!engine.is_sleeping());
+
+        engine.set_sleep_until(std::time::Instant::now() + std::time::Duration::from_secs(60));
+        assert!(engine.is_sleeping());
+
+        engine.wake_up();
+        assert!(!engine.is_sleeping());
+    }
+
+    #[test]
     fn test_query_engine_app_state() {
         let engine = QueryEngine::new(make_config());
         let state = engine.app_state();
@@ -373,6 +416,9 @@ mod tests {
     fn test_set_tools() {
         let engine = QueryEngine::new(make_config());
         assert_eq!(engine.state.read().tools.len(), 0);
+
+        engine.set_tools(vec![Arc::new(TestTool)]);
+        assert_eq!(engine.tool_names(), vec!["TestTool".to_string()]);
     }
 
     #[tokio::test]

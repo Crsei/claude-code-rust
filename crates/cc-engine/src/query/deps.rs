@@ -13,9 +13,7 @@ use crate::types::tool::{ToolProgress, ToolResult, Tools};
 #[derive(Debug, Clone)]
 pub struct ModelResponse {
     pub assistant_message: AssistantMessage,
-    #[allow(dead_code)]
     pub stream_events: Vec<StreamEvent>,
-    #[allow(dead_code)]
     pub usage: Usage,
 }
 

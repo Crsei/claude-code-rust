@@ -46,14 +46,12 @@ pub enum ApiProvider {
         base_url: Option<String>,
     },
     /// Azure Foundry (Anthropic-compatible)
-    #[allow(dead_code)]
     Azure { endpoint: String, api_key: String },
     /// OpenAI-compatible provider (OpenAI, DeepSeek, Groq, Qwen, etc.)
     OpenAiCompat {
         name: String,
         api_key: String,
         base_url: String,
-        #[allow(dead_code)]
         default_model: String,
     },
     /// Google Gemini (streamGenerateContent API)
@@ -187,7 +185,6 @@ pub fn provider_supports_advisor(provider: &ApiProvider) -> bool {
 pub struct ApiClientConfig {
     pub provider: ApiProvider,
     pub default_model: String,
-    #[allow(dead_code)]
     pub max_retries: usize,
     pub timeout_secs: u64,
 }
@@ -541,7 +538,6 @@ impl ApiClient {
     ///
     /// Only used for Anthropic-format providers (Anthropic, Azure).
     /// OpenAI-compat and Google providers build their URLs internally.
-    #[allow(dead_code)]
     pub fn build_url(&self) -> String {
         match &self.config.provider {
             ApiProvider::Anthropic { base_url, .. } => {
@@ -782,7 +778,6 @@ impl ApiClient {
     /// Optional:
     /// - `OPENAI_CODEX_BASE_URL` (default: https://chatgpt.com/backend-api)
     /// - `OPENAI_CODEX_MODEL` (default: gpt-5.4)
-    #[allow(dead_code)]
     pub fn from_codex_auth() -> Option<Self> {
         match Self::from_codex_auth_result() {
             Ok(client) => client,
@@ -891,7 +886,6 @@ impl ApiClient {
     }
 
     /// Build the required HTTP headers for Anthropic-format providers.
-    #[allow(dead_code)]
     pub fn build_headers(&self) -> reqwest::header::HeaderMap {
         use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 
@@ -927,7 +921,6 @@ impl ApiClient {
     }
 
     /// Header accessor as a simple map (works without network feature, for tests).
-    #[allow(dead_code)]
     pub fn build_headers_map(&self) -> std::collections::HashMap<String, String> {
         let mut map = std::collections::HashMap::new();
         map.insert("content-type".to_string(), "application/json".to_string());
@@ -1011,7 +1004,6 @@ impl ApiClient {
     ///
     /// Internally uses the streaming endpoint and collects all events via
     /// `StreamAccumulator`.
-    #[allow(dead_code)]
     pub async fn messages(&self, request: MessagesRequest) -> Result<AssistantMessage> {
         use futures::StreamExt;
 

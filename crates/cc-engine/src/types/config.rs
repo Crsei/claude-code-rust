@@ -1,8 +1,5 @@
-#![allow(dead_code)]
-#[allow(unused_imports)]
-use super::tool::{QueryChainTracking, ToolPermissionContext, ToolUseContext, Tools};
-#[allow(unused_imports)]
-use cc_types::message::{Message, SystemMessage, Usage};
+use super::tool::{QueryChainTracking, ToolPermissionContext, Tools};
+use cc_types::message::Message;
 
 /// Thinking/extended-thinking configuration.
 ///

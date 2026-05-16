@@ -86,7 +86,7 @@ where
 
 /// Parse SSE-formatted text (for testing without network). Returns all events
 /// found in the text.
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn parse_sse_text(text: &str) -> Result<Vec<StreamEvent>> {
     let mut events = Vec::new();
     let mut current_event_type = String::new();

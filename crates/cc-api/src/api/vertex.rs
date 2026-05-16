@@ -423,7 +423,6 @@ pub fn resolve_region_for_model_with_default(model: Option<&str>, default_region
 }
 
 /// Resolve the Vertex region for a model using process environment defaults.
-#[allow(dead_code)]
 pub fn resolve_region_for_model(model: Option<&str>) -> String {
     let default_region = resolve_region();
     resolve_region_for_model_with_default(model, &default_region)

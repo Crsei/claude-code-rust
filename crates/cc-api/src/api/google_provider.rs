@@ -41,8 +41,8 @@ struct GeminiCandidate {
 
 #[derive(Debug, Deserialize)]
 struct GeminiContent {
-    #[allow(dead_code)]
-    role: Option<String>,
+    #[serde(rename = "role")]
+    _role: Option<String>,
     parts: Option<Vec<GeminiPart>>,
 }
 

@@ -22,10 +22,8 @@ pub struct ProcessedInput {
     /// `false` for purely local slash commands (e.g. `/help`, `/clear`).
     pub should_query: bool,
     /// Tool allow-list overridden by a slash command (e.g. `/allowed-tools`).
-    #[allow(dead_code)]
     pub allowed_tools: Option<Vec<String>>,
     /// Model override from a slash command.
-    #[allow(dead_code)]
     pub model: Option<String>,
     /// Text result for local commands (displayed without querying the model).
     pub result_text: Option<String>,
@@ -144,6 +142,8 @@ mod tests {
         let result = process_user_input("Hello, Claude!", &[], "/tmp", &d);
         assert!(result.should_query);
         assert_eq!(result.messages.len(), 1);
+        assert!(result.allowed_tools.is_none());
+        assert!(result.model.is_none());
         assert!(result.result_text.is_none());
     }
 
@@ -153,6 +153,8 @@ mod tests {
         let result = process_user_input("/help", &[], "/tmp", &d);
         assert!(!result.should_query);
         assert!(result.messages.is_empty());
+        assert!(result.allowed_tools.is_none());
+        assert!(result.model.is_none());
         assert!(result.result_text.is_none());
         let parsed = result.parsed_command.expect("parsed command");
         assert_eq!(parsed.index, 0);

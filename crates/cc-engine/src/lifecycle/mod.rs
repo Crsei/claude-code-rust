@@ -120,6 +120,8 @@ pub struct QueryEngine {
     /// Atomic abort flag (fast path for the query loop — no lock needed).
     pub(crate) aborted: Arc<AtomicBool>,
     /// Whether we have handled the orphaned-permission edge case.
+    /// Missing implementation: this is reserved for upstream parity with the
+    /// orphaned permission recovery path tracked in the allow audit.
     #[allow(dead_code)]
     pub(crate) has_handled_orphaned_permission: Arc<AtomicBool>,
     /// Shared buffer of completed background agents.
@@ -281,7 +283,6 @@ impl QueryEngine {
 
     /// Put the engine to sleep until the given instant.
     /// The proactive tick loop will skip ticks while `is_sleeping()` returns true.
-    #[allow(dead_code)]
     pub fn set_sleep_until(&self, until: std::time::Instant) {
         let mut state = self.state.write();
         state.sleep_until = Some(until);
@@ -323,7 +324,6 @@ impl QueryEngine {
     }
 
     /// Get the abort reason (if any).
-    #[allow(dead_code)]
     pub fn abort_reason(&self) -> Option<AbortReason> {
         self.state.read().abort_reason.clone()
     }
@@ -388,19 +388,16 @@ impl QueryEngine {
     }
 
     /// Get a snapshot of permission denials.
-    #[allow(dead_code)]
     pub fn permission_denials(&self) -> Vec<PermissionDenial> {
         self.state.read().permission_denials.clone()
     }
 
     /// Record a permission denial.
-    #[allow(dead_code)]
     pub fn record_permission_denial(&self, denial: PermissionDenial) {
         self.state.write().permission_denials.push(denial);
     }
 
     /// Get the total turn count (across all submit_message calls).
-    #[allow(dead_code)]
     pub fn total_turn_count(&self) -> usize {
         self.state.read().total_turn_count
     }
@@ -432,7 +429,6 @@ impl QueryEngine {
     }
 
     /// Replace the tool registry.
-    #[allow(dead_code)]
     pub fn set_tools(&self, tools: Tools) {
         self.state.write().tools = tools;
     }
@@ -458,13 +454,11 @@ impl QueryEngine {
     }
 
     /// Get discovered skill names from the current turn.
-    #[allow(dead_code)]
     pub fn discovered_skill_names(&self) -> HashSet<String> {
         self.state.read().discovered_skill_names.clone()
     }
 
     /// Get loaded nested memory paths.
-    #[allow(dead_code)]
     pub fn loaded_nested_memory_paths(&self) -> HashSet<String> {
         self.state.read().loaded_nested_memory_paths.clone()
     }

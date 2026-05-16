@@ -302,7 +302,6 @@ fn fingerprint_str(s: &str) -> u64 {
 /// Build a payload from a plain `serde_json::Value` (for tests and
 /// `/statusline test`). Most production callers use
 /// [`crate::ui::status_line::payload::StatusLinePayload`] directly.
-#[allow(dead_code)]
 pub fn payload_from_value(v: Value) -> Result<StatusLinePayload, serde_json::Error> {
     serde_json::from_value(v)
 }
@@ -438,6 +437,26 @@ mod tests {
             updated_at: Some(Instant::now()),
         };
         assert!(!errored.is_usable());
+    }
+
+    #[test]
+    fn payload_from_value_parses_status_line_payload() {
+        let payload = payload_from_value(serde_json::json!({
+            "hookEventName": "StatusLine",
+            "version": 1,
+            "sessionId": "sess-1",
+            "model": {"id": "claude-sonnet-4-20250514"},
+            "streaming": false,
+            "messageCount": 3
+        }))
+        .expect("payload should parse");
+
+        assert_eq!(payload.session_id.as_deref(), Some("sess-1"));
+        assert_eq!(
+            payload.model.as_ref().unwrap().id,
+            "claude-sonnet-4-20250514"
+        );
+        assert_eq!(payload.message_count, 3);
     }
 
     #[test]

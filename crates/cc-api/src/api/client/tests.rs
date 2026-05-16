@@ -276,6 +276,29 @@ fn test_build_headers_has_required() {
 }
 
 #[test]
+fn test_build_headers_raw_header_map_has_required() {
+    let client = ApiClient::new(anthropic_config());
+    let headers = client.build_headers();
+
+    assert_eq!(
+        headers
+            .get(reqwest::header::CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "application/json"
+    );
+    assert_eq!(
+        headers.get("anthropic-version").unwrap().to_str().unwrap(),
+        "2023-06-01"
+    );
+    assert_eq!(
+        headers.get("x-api-key").unwrap().to_str().unwrap(),
+        "sk-test-key-123"
+    );
+}
+
+#[test]
 fn test_build_headers_azure_has_api_key() {
     let config = ApiClientConfig {
         provider: ApiProvider::Azure {
@@ -842,6 +865,23 @@ struct FlakyStreamProvider {
     error: &'static str,
 }
 
+struct StaticStreamProvider {
+    events: Vec<StreamEvent>,
+}
+
+#[async_trait::async_trait]
+impl crate::api::stream_provider::StreamProvider for StaticStreamProvider {
+    async fn stream(
+        &self,
+        _http: &reqwest::Client,
+        _request: &MessagesRequest,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+        Ok(Box::pin(futures::stream::iter(
+            self.events.clone().into_iter().map(Ok),
+        )))
+    }
+}
+
 #[async_trait::async_trait]
 impl crate::api::stream_provider::StreamProvider for FlakyStreamProvider {
     async fn stream(
@@ -945,6 +985,64 @@ async fn messages_stream_does_not_retry_nonretryable_stream_start_errors() {
     assert!(result.is_err());
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert!(observed_delays.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn messages_collects_stream_events_into_assistant_message() {
+    let client = ApiClient {
+        config: anthropic_config(),
+        http: reqwest::Client::new(),
+        stream_provider: Box::new(StaticStreamProvider {
+            events: vec![
+                StreamEvent::MessageStart {
+                    usage: cc_types::message::Usage {
+                        input_tokens: 11,
+                        output_tokens: 0,
+                        cache_read_input_tokens: 0,
+                        cache_creation_input_tokens: 0,
+                    },
+                },
+                StreamEvent::ContentBlockStart {
+                    index: 0,
+                    content_block: cc_types::message::ContentBlock::Text {
+                        text: String::new(),
+                    },
+                },
+                StreamEvent::ContentBlockDelta {
+                    index: 0,
+                    delta: serde_json::json!({"type": "text_delta", "text": "Hello"}),
+                },
+                StreamEvent::ContentBlockDelta {
+                    index: 0,
+                    delta: serde_json::json!({"type": "text_delta", "text": ", world"}),
+                },
+                StreamEvent::ContentBlockStop { index: 0 },
+                StreamEvent::MessageDelta {
+                    delta: cc_types::message::MessageDelta {
+                        stop_reason: Some("end_turn".to_string()),
+                    },
+                    usage: Some(cc_types::message::Usage {
+                        input_tokens: 0,
+                        output_tokens: 7,
+                        cache_read_input_tokens: 0,
+                        cache_creation_input_tokens: 0,
+                    }),
+                },
+                StreamEvent::MessageStop,
+            ],
+        }),
+    };
+
+    let message = client.messages(minimal_stream_request()).await.unwrap();
+
+    assert_eq!(message.role, "assistant");
+    assert_eq!(message.stop_reason.as_deref(), Some("end_turn"));
+    assert_eq!(message.usage.as_ref().unwrap().input_tokens, 11);
+    assert_eq!(message.usage.as_ref().unwrap().output_tokens, 7);
+    match &message.content[0] {
+        cc_types::message::ContentBlock::Text { text } => assert_eq!(text, "Hello, world"),
+        other => panic!("expected text content, got {:?}", other),
+    }
 }
 
 // -----------------------------------------------------------------------
