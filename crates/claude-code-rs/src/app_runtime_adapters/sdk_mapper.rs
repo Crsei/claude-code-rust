@@ -12,7 +12,7 @@ use parking_lot::Mutex;
 use tracing::debug;
 
 use cc_engine::lifecycle::QueryEngine;
-use cc_ipc_client::sdk_mapping::{extract_tool_result_output, stream_event_to_backend_message};
+use cc_ipc_adapters::{extract_tool_result_output, stream_event_to_backend_message};
 use cc_services::prompt_suggestion::PromptSuggestionService;
 use cc_types::message::{ContentBlock, Message, StreamEvent, ToolResultContent};
 use cc_types::sdk::SdkMessage;

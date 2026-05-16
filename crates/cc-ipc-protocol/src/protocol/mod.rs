@@ -51,6 +51,13 @@ pub enum FrontendMessage {
         tool_use_id: String,
         /// One of "allow", "deny", "always_allow".
         decision: String,
+        /// Optional envelope/session-aware correlation. Legacy JSONL clients
+        /// omit this and are resolved by `tool_use_id`.
+        #[serde(default)]
+        session_id: Option<String>,
+        /// Optional turn correlation for multi-run transports.
+        #[serde(default)]
+        turn_id: Option<String>,
     },
     /// User typed a slash command.
     SlashCommand { raw: String },
@@ -62,6 +69,13 @@ pub enum FrontendMessage {
         id: String,
         /// The user's answer text.
         text: String,
+        /// Optional envelope/session-aware correlation. Legacy JSONL clients
+        /// omit this and are resolved by `id`.
+        #[serde(default)]
+        session_id: Option<String>,
+        /// Optional turn correlation for multi-run transports.
+        #[serde(default)]
+        turn_id: Option<String>,
     },
     /// User wants to exit.
     Quit,

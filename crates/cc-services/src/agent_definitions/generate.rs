@@ -1,10 +1,10 @@
 //! AI-assisted agent generation — mirrors upstream `generateAgent()`.
 //!
 //! The frontend sends `AgentSettingsCommand::Generate { user_prompt,
-//! existing_names }`. The IPC handler in [`super::agent_settings`] fires a
+//! existing_names }`. The agent-definition handler fires a
 //! `GenerateStarted` marker synchronously, then spawns a task here that
 //! calls the model via [`cc_api::api::client::ApiClient::messages`] and posts
-//! a `Generated` or `Error` event onto the `cc_ipc::subsystem_events` bus.
+//! a `Generated` or `Error` event onto the subsystem event bus.
 //!
 //! The system prompt is kept verbatim from the upstream TypeScript
 //! implementation (`src/components/agents/generateAgent.ts`) so the JSON

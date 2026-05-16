@@ -10,15 +10,12 @@
 //! can share them without depending on the root binary crate.
 
 pub mod agent_handlers;
-pub mod agent_settings;
-pub mod agent_settings_generate;
-pub mod agent_tree;
-pub mod builtin_agents;
-pub mod file_search;
 pub mod headless;
+pub mod runtime;
 pub mod subsystem_events;
 pub mod subsystem_handlers;
-pub mod system_status_tool;
+
+pub use subsystem_events as event_bus;
 
 pub use cc_types::{
     agent_channel::{agent_channel, AgentIpcEvent, AgentReceiver, AgentSender},

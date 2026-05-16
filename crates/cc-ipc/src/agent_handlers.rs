@@ -4,13 +4,20 @@ use std::sync::{Arc, OnceLock};
 
 use cc_ipc_protocol::protocol::BackendMessage;
 use cc_types::agent_events::{AgentCommand, AgentEvent, TeamCommand, TeamEvent};
-use cc_types::agent_types::TeamMemberInfo;
-
-use crate::agent_tree::AGENT_TREE;
+use cc_types::agent_types::{AgentNode, TeamMemberInfo};
 
 pub trait AgentRuntimeHost: Send + Sync + 'static {
     fn cancel_agent(&self, agent_id: &str) -> Option<String>;
     fn agent_output(&self, agent_id: &str) -> Option<AgentTaskOutput>;
+    fn update_agent_state(
+        &self,
+        agent_id: &str,
+        state: &str,
+        result_preview: Option<String>,
+        duration_ms: Option<u64>,
+        had_error: bool,
+    );
+    fn agent_tree_snapshot(&self) -> Vec<AgentNode>;
     fn write_team_message(&self, team_name: &str, to: &str, text: &str) -> Result<(), String>;
     fn team_members(&self, team_name: &str) -> Result<Vec<TeamMemberInfo>, String>;
 }
@@ -31,9 +38,13 @@ pub fn handle_agent_command(cmd: AgentCommand) -> Vec<BackendMessage> {
     match cmd {
         AgentCommand::AbortAgent { agent_id } => {
             let task_id = HOST.get().and_then(|host| host.cancel_agent(&agent_id));
-            AGENT_TREE
-                .lock()
-                .update_state(&agent_id, "aborted", None, None, false);
+            if let Some(host) = HOST.get() {
+                host.update_agent_state(&agent_id, "aborted", None, None, false);
+            }
+            let roots = HOST
+                .get()
+                .map(|host| host.agent_tree_snapshot())
+                .unwrap_or_default();
 
             let mut messages = vec![
                 BackendMessage::AgentEvent {
@@ -42,9 +53,7 @@ pub fn handle_agent_command(cmd: AgentCommand) -> Vec<BackendMessage> {
                     },
                 },
                 BackendMessage::AgentEvent {
-                    event: AgentEvent::TreeSnapshot {
-                        roots: AGENT_TREE.lock().build_snapshot(),
-                    },
+                    event: AgentEvent::TreeSnapshot { roots },
                 },
             ];
             if let Some(task_id) = task_id {
@@ -61,7 +70,10 @@ pub fn handle_agent_command(cmd: AgentCommand) -> Vec<BackendMessage> {
         AgentCommand::QueryActiveAgents => {
             vec![BackendMessage::AgentEvent {
                 event: AgentEvent::TreeSnapshot {
-                    roots: AGENT_TREE.lock().build_snapshot(),
+                    roots: HOST
+                        .get()
+                        .map(|host| host.agent_tree_snapshot())
+                        .unwrap_or_default(),
                 },
             }]
         }

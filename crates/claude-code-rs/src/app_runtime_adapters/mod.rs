@@ -13,7 +13,7 @@ mod sdk_mapper;
 use cc_ipc::agent_handlers::{AgentRuntimeHost, AgentTaskOutput};
 use cc_ipc::headless::{
     BackgroundAgentCompletion, BoxHeadlessFuture, HeadlessRuntimeConfig, HeadlessRuntimeHost,
-    PendingPermissions, PendingQuestions,
+    PendingPermissions, PendingQuestions, SessionRuntime,
 };
 use cc_ipc::subsystem_handlers::{
     BoxRuntimeFuture, McpRuntimeOperation, McpRuntimeReport, SubsystemRuntimeHost,
@@ -33,8 +33,9 @@ pub fn ensure_installed() {
     INSTALL.call_once(|| {
         cc_ipc::agent_handlers::set_runtime_host(Arc::new(RootAgentHost));
         cc_ipc::subsystem_handlers::set_runtime_host(Arc::new(RootSubsystemHost));
+        cc_services::agent_definitions::set_runtime_host(Arc::new(RootAgentDefinitionsHost));
+        cc_tools::system_status::set_runtime_host(Arc::new(RootSystemStatusHost));
         let mut adapters = cc_engine::agent_runtime::agent_runtime_adapters();
-        adapters.agent_tree = Arc::new(RootAgentTreeRuntime);
         adapters.builtin_agents = Arc::new(RootAgentDefinitionRegistry);
         cc_engine::agent_runtime::set_agent_runtime_adapters(adapters);
     });
@@ -59,44 +60,19 @@ struct RootAgentDefinitionRegistry;
 impl cc_engine::agent_runtime::BuiltinAgentRegistry for RootAgentDefinitionRegistry {
     fn builtin_agent_entries(&self) -> Vec<AgentDefinitionEntry> {
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        cc_ipc::agent_settings::list_all_agents(&cwd)
+        cc_services::agent_definitions::list_all_agents(&cwd)
     }
 
     fn builtin_agent_prompt(&self, name: &str) -> Option<String> {
-        cc_ipc::builtin_agents::builtin_agent_prompt(name).map(ToOwned::to_owned)
+        cc_services::agent_definitions::builtin::builtin_agent_prompt(name).map(ToOwned::to_owned)
     }
 }
 
-struct RootAgentTreeRuntime;
+struct RootAgentDefinitionsHost;
 
-impl cc_engine::agent_runtime::AgentTreeRuntime for RootAgentTreeRuntime {
-    fn register(&self, node: cc_types::agent_types::AgentNode) {
-        cc_ipc::agent_tree::AGENT_TREE.lock().register(node);
-    }
-
-    fn update_state(
-        &self,
-        agent_id: &str,
-        state: &str,
-        result_preview: Option<String>,
-        duration_ms: Option<u64>,
-        had_error: bool,
-    ) {
-        cc_ipc::agent_tree::AGENT_TREE.lock().update_state(
-            agent_id,
-            state,
-            result_preview,
-            duration_ms,
-            had_error,
-        );
-    }
-
-    fn snapshot(&self) -> Vec<cc_types::agent_types::AgentNode> {
-        cc_ipc::agent_tree::AGENT_TREE.lock().build_snapshot()
-    }
-
-    fn active_count(&self) -> usize {
-        cc_ipc::agent_tree::AGENT_TREE.lock().active_agents().len()
+impl cc_services::agent_definitions::AgentDefinitionsRuntimeHost for RootAgentDefinitionsHost {
+    fn build_mcp_server_info_list(&self) -> Vec<McpServerStatusInfo> {
+        crate::app_subsystem_handlers::build_mcp_server_info_list()
     }
 }
 
@@ -112,6 +88,27 @@ impl AgentRuntimeHost for RootAgentHost {
             id: task.id,
             output: task.output,
         })
+    }
+
+    fn update_agent_state(
+        &self,
+        agent_id: &str,
+        state: &str,
+        result_preview: Option<String>,
+        duration_ms: Option<u64>,
+        had_error: bool,
+    ) {
+        cc_engine::agent_runtime::update_agent_state(
+            agent_id,
+            state,
+            result_preview,
+            duration_ms,
+            had_error,
+        );
+    }
+
+    fn agent_tree_snapshot(&self) -> Vec<cc_types::agent_types::AgentNode> {
+        cc_engine::agent_runtime::agent_tree_snapshot()
     }
 
     fn write_team_message(&self, team_name: &str, to: &str, text: &str) -> Result<(), String> {
@@ -249,6 +246,70 @@ impl SubsystemRuntimeHost for RootSubsystemHost {
     }
 }
 
+struct RootSystemStatusHost;
+
+impl cc_tools::system_status::SystemStatusRuntimeHost for RootSystemStatusHost {
+    fn build_lsp_server_info_list(&self) -> Vec<LspServerInfo> {
+        crate::app_subsystem_handlers::build_lsp_server_info_list()
+    }
+
+    fn build_mcp_server_info_list(&self) -> Vec<McpServerStatusInfo> {
+        crate::app_subsystem_handlers::build_mcp_server_info_list()
+    }
+
+    fn build_plugin_info_list(&self) -> Vec<PluginInfo> {
+        crate::app_subsystem_handlers::build_plugin_info_list()
+    }
+
+    fn build_skill_info_list(&self) -> Vec<SkillInfo> {
+        crate::app_subsystem_handlers::build_skill_info_list()
+    }
+
+    fn build_ide_info_list(&self) -> Vec<IdeInfo> {
+        crate::app_subsystem_handlers::build_ide_info_list()
+    }
+
+    fn active_agents(&self) -> Vec<cc_types::agent_types::AgentNode> {
+        fn collect(
+            node: &cc_types::agent_types::AgentNode,
+            out: &mut Vec<cc_types::agent_types::AgentNode>,
+        ) {
+            if node.state == "running" {
+                let mut cloned = node.clone();
+                cloned.children.clear();
+                out.push(cloned);
+            }
+            for child in &node.children {
+                collect(child, out);
+            }
+        }
+
+        let mut out = Vec::new();
+        for root in cc_engine::agent_runtime::agent_tree_snapshot() {
+            collect(&root, &mut out);
+        }
+        out
+    }
+}
+
+fn find_agent_node(agent_id: &str) -> Option<cc_types::agent_types::AgentNode> {
+    fn find_in(
+        node: &cc_types::agent_types::AgentNode,
+        agent_id: &str,
+    ) -> Option<cc_types::agent_types::AgentNode> {
+        if node.agent_id == agent_id {
+            return Some(node.clone());
+        }
+        node.children
+            .iter()
+            .find_map(|child| find_in(child, agent_id))
+    }
+
+    cc_engine::agent_runtime::agent_tree_snapshot()
+        .iter()
+        .find_map(|root| find_in(root, agent_id))
+}
+
 struct RootHeadlessHost {
     engine: Arc<cc_engine::lifecycle::QueryEngine>,
     suggestion_svc: Arc<Mutex<PromptSuggestionService>>,
@@ -294,20 +355,11 @@ impl HeadlessRuntimeHost for RootHeadlessHost {
     fn dispatch_frontend<'a>(
         &'a self,
         msg: FrontendMessage,
-        pending_permissions: &'a PendingPermissions,
-        pending_questions: &'a PendingQuestions,
+        runtime: &'a SessionRuntime,
         sink: &'a FrontendSink,
     ) -> BoxHeadlessFuture<'a, bool> {
         Box::pin(async move {
-            ingress::dispatch(
-                msg,
-                &self.engine,
-                pending_permissions,
-                pending_questions,
-                &self.suggestion_svc,
-                sink,
-            )
-            .await
+            ingress::dispatch(msg, &self.engine, runtime, &self.suggestion_svc, sink).await
         })
     }
 
@@ -318,12 +370,9 @@ impl HeadlessRuntimeHost for RootHeadlessHost {
         had_error: bool,
         duration_ms: u64,
     ) -> Option<BackgroundAgentCompletion> {
-        let tree = cc_ipc::agent_tree::AGENT_TREE.lock();
-        let (is_bg, desc) = tree
-            .get(agent_id)
-            .map(|n| (n.is_background, n.description.clone()))
+        let (is_bg, desc) = find_agent_node(agent_id)
+            .map(|node| (node.is_background, node.description))
             .unwrap_or((true, "unknown".to_string()));
-        drop(tree);
         if !is_bg {
             return None;
         }
@@ -368,7 +417,7 @@ fn install_root_subsystem_event_sinks(event_tx: tokio::sync::broadcast::Sender<S
     });
 
     cc_lsp_service::ide::set_event_sender(event_tx.clone());
-    cc_ipc::agent_settings_generate::set_event_sender(event_tx.clone());
+    cc_services::agent_definitions::generate::set_event_sender(event_tx.clone());
 
     let skills_tx = event_tx.clone();
     cc_skills::set_event_callback(move |e| {

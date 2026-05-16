@@ -10,7 +10,7 @@ contract = []
 full = [
     "dep:base64",
     "dep:cc-browser",
-    "dep:cc-ipc",
+    "dep:cc-ipc-protocol",
     "dep:cc-permissions",
     "dep:cc-sandbox",
     "dep:cc-skills",
@@ -39,7 +39,7 @@ cc-config = { workspace = true }
 cc-types = { workspace = true }
 base64 = { workspace = true, optional = true }
 cc-browser = { workspace = true, optional = true }
-cc-ipc = { workspace = true, optional = true }
+cc-ipc-protocol = { workspace = true, optional = true }
 cc-permissions = { workspace = true, optional = true }
 cc-sandbox = { workspace = true, optional = true }
 cc-skills = { workspace = true, optional = true }

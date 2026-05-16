@@ -4,19 +4,18 @@
 //! binary installs a [`HeadlessRuntimeHost`] for engine, command, plugin, and
 //! team behavior so `cc-ipc` does not depend on those owner crates.
 
-use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
 use cc_ipc_client::sink::FrontendSink;
 use cc_ipc_protocol::{BackendMessage, FrontendMessage};
-use parking_lot::Mutex;
-use tokio::io::AsyncBufReadExt;
+use cc_ipc_transport::{IpcReader, IpcTransport, JsonlStdioTransport, ParsedFrontendLine};
 use tracing::{debug, error, warn};
 
-pub type PendingPermissions = cc_ipc_client::PendingPermissions;
-pub type PendingQuestions = cc_ipc_client::PendingQuestions;
+pub use crate::runtime::{
+    PendingInteractions, PendingPermissions, PendingQuestions, SessionRuntime,
+};
 pub type BoxHeadlessFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 #[derive(Debug, Clone)]
@@ -45,8 +44,7 @@ pub trait HeadlessRuntimeHost: Send + Sync + 'static {
     fn dispatch_frontend<'a>(
         &'a self,
         msg: FrontendMessage,
-        pending_permissions: &'a PendingPermissions,
-        pending_questions: &'a PendingQuestions,
+        runtime: &'a SessionRuntime,
         sink: &'a FrontendSink,
     ) -> BoxHeadlessFuture<'a, bool>;
 
@@ -78,9 +76,11 @@ impl HeadlessRuntimeConfig {
 }
 
 pub async fn run_headless(config: HeadlessRuntimeConfig) -> anyhow::Result<()> {
-    let pending_permissions: PendingPermissions = Arc::new(Mutex::new(HashMap::new()));
-    let pending_questions: PendingQuestions = Arc::new(Mutex::new(HashMap::new()));
     let sink = config.sink.clone();
+    let ready_message = config.host.ready_message(config.model);
+    let runtime = SessionRuntime::from_ready_message(&ready_message);
+    let pending_permissions = runtime.pending_interactions().legacy_permissions();
+    let pending_questions = runtime.pending_interactions().legacy_questions();
 
     let (agent_tx, mut agent_rx) = cc_types::agent_channel::agent_channel();
     let event_bus = crate::subsystem_events::SubsystemEventBus::new();
@@ -94,16 +94,15 @@ pub async fn run_headless(config: HeadlessRuntimeConfig) -> anyhow::Result<()> {
         event_bus.sender(),
     );
 
-    sink.send(&config.host.ready_message(config.model))?;
+    sink.send(&ready_message)?;
 
-    let stdin = tokio::io::BufReader::new(tokio::io::stdin());
-    let mut lines = stdin.lines();
+    let (mut reader, _writer) = JsonlStdioTransport::new().split();
 
     loop {
         tokio::select! {
-            line = lines.next_line() => {
-                let line = match line {
-                    Ok(Some(line)) => line,
+            frame = reader.read_frame() => {
+                let line = match frame {
+                    Ok(Some(frame)) => frame.line,
                     Ok(None) => {
                         debug!("headless: stdin closed, exiting");
                         break;
@@ -114,24 +113,21 @@ pub async fn run_headless(config: HeadlessRuntimeConfig) -> anyhow::Result<()> {
                     }
                 };
 
-                let msg: FrontendMessage = match serde_json::from_str(&line) {
-                    Ok(m) => m,
-                    Err(e) => {
+                let msg = match cc_ipc_transport::parse_frontend_line(&line) {
+                    ParsedFrontendLine::Message(msg) => msg,
+                    ParsedFrontendLine::Diagnostic(diagnostic) => {
                         warn!(
-                            "headless: failed to parse FrontendMessage: {} - line: {}",
-                            e, line
+                            "headless: failed to parse FrontendMessage - line: {}",
+                            line
                         );
-                        let _ = sink.send(&BackendMessage::Error {
-                            message: format!("invalid FrontendMessage: {}", e),
-                            recoverable: true,
-                        });
+                        let _ = sink.send(&diagnostic);
                         continue;
                     }
                 };
 
                 if !config
                     .host
-                    .dispatch_frontend(msg, &pending_permissions, &pending_questions, &sink)
+                    .dispatch_frontend(msg, &runtime, &sink)
                     .await
                 {
                     break;

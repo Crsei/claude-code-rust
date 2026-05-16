@@ -7,6 +7,8 @@ description = "IPC client transport, sink, callback, and queue helpers for cc-ru
 [dependencies]
 anyhow = { workspace = true }
 cc-ipc-protocol = { workspace = true }
+cc-ipc-transport = { workspace = true }
+cc-ipc-adapters = { workspace = true }
 cc-types = { workspace = true }
 futures = { workspace = true }
 parking_lot = { workspace = true }

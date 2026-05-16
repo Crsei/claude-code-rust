@@ -15,6 +15,8 @@ telemetry = [
 
 [dependencies]
 anyhow = { workspace = true }
+ignore = { workspace = true }
+regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
@@ -27,9 +29,12 @@ dirs = { workspace = true }
 parking_lot = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
+tokio = { workspace = true }
 
+cc-api = { workspace = true }
 cc-config = { workspace = true }
 cc-engine = { workspace = true }
+cc-ipc-protocol = { workspace = true }
 cc-session = { workspace = true }
 cc-types = { workspace = true }
 

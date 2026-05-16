@@ -1,0 +1,444 @@
+//! Normalized IPC payloads shared by non-JSONL transports.
+
+use serde::{Deserialize, Serialize};
+
+use crate::protocol::{BackendMessage, ConversationMessage, ToolResultContentInfo};
+use crate::subsystem_types::SubsystemStatusSnapshot;
+
+/// Backward-compatible alias for the legacy backend wire enum.
+pub type LegacyBackendMessage = BackendMessage;
+/// Backward-compatible alias for the legacy frontend wire enum.
+pub type LegacyFrontendMessage = crate::protocol::FrontendMessage;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum LifecycleEvent {
+    Ready {
+        session_id: String,
+        model: String,
+        cwd: String,
+        permission_mode: String,
+    },
+    Shutdown {
+        reason: String,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ConversationEvent {
+    StreamStart {
+        message_id: String,
+    },
+    StreamDelta {
+        message_id: String,
+        text: String,
+    },
+    ThinkingDelta {
+        message_id: String,
+        thinking: String,
+    },
+    StreamEnd {
+        message_id: String,
+    },
+    Tombstone {
+        message_id: String,
+    },
+    AssistantMessage {
+        id: String,
+        content: serde_json::Value,
+        cost_usd: f64,
+    },
+    ConversationReplaced {
+        messages: Vec<ConversationMessage>,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ToolEvent {
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    ToolResult {
+        tool_use_id: String,
+        output: String,
+        is_error: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        content_blocks: Option<Vec<ToolResultContentInfo>>,
+    },
+    ToolProgress {
+        tool_use_id: String,
+        tool: String,
+        output: String,
+        elapsed_seconds: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        total_lines: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        total_bytes: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timeout_ms: Option<u64>,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PermissionEvent {
+    PermissionRequest {
+        tool_use_id: String,
+        tool: String,
+        command: String,
+        options: Vec<String>,
+    },
+    QuestionRequest {
+        id: String,
+        text: String,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ControlCommand {
+    SubmitPrompt { text: String, id: String },
+    AbortQuery,
+    Quit,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum FlowControlEvent {
+    SystemInfo {
+        text: String,
+        level: String,
+    },
+    UsageUpdate {
+        input_tokens: u64,
+        output_tokens: u64,
+        cost_usd: f64,
+    },
+    StatusLineUpdate {
+        payload: serde_json::Value,
+        #[serde(default)]
+        lines: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+    Suggestions {
+        items: Vec<String>,
+    },
+    SubsystemStatus {
+        status: SubsystemStatusSnapshot,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ProtocolError {
+    pub message: String,
+    pub recoverable: bool,
+}
+
+/// Normalized payload produced from legacy backend messages.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "category", content = "event", rename_all = "snake_case")]
+pub enum LegacyBackendPayload {
+    Lifecycle(LifecycleEvent),
+    Conversation(ConversationEvent),
+    Tool(ToolEvent),
+    Permission(PermissionEvent),
+    FlowControl(FlowControlEvent),
+    Error(ProtocolError),
+    Unsupported { legacy_type: &'static str },
+}
+
+/// Stable legacy protocol type name for adapter diagnostics.
+pub fn legacy_backend_type(message: &BackendMessage) -> &'static str {
+    match message {
+        BackendMessage::Ready { .. } => "ready",
+        BackendMessage::StreamStart { .. } => "stream_start",
+        BackendMessage::AssistantMessage { .. } => "assistant_message",
+        BackendMessage::StreamDelta { .. } => "stream_delta",
+        BackendMessage::ThinkingDelta { .. } => "thinking_delta",
+        BackendMessage::StreamEnd { .. } => "stream_end",
+        BackendMessage::ToolUse { .. } => "tool_use",
+        BackendMessage::ToolResult { .. } => "tool_result",
+        BackendMessage::Tombstone { .. } => "tombstone",
+        BackendMessage::PermissionRequest { .. } => "permission_request",
+        BackendMessage::QuestionRequest { .. } => "question_request",
+        BackendMessage::ToolProgress { .. } => "tool_progress",
+        BackendMessage::BackgroundAgentComplete { .. } => "background_agent_complete",
+        BackendMessage::SystemInfo { .. } => "system_info",
+        BackendMessage::Error { .. } => "error",
+        BackendMessage::FileSearchResult { .. } => "file_search_result",
+        BackendMessage::ConversationReplaced { .. } => "conversation_replaced",
+        BackendMessage::PlanWorkflowEvent { .. } => "plan_workflow_event",
+        BackendMessage::UsageUpdate { .. } => "usage_update",
+        BackendMessage::StatusLineUpdate { .. } => "status_line_update",
+        BackendMessage::Suggestions { .. } => "suggestions",
+        BackendMessage::BriefMessage { .. } => "brief_message",
+        BackendMessage::AutonomousStart { .. } => "autonomous_start",
+        BackendMessage::NotificationSent { .. } => "notification_sent",
+        BackendMessage::SubsystemStatus { .. } => "subsystem_status",
+        BackendMessage::LspEvent { .. } => "lsp_event",
+        BackendMessage::McpEvent { .. } => "mcp_event",
+        BackendMessage::PluginEvent { .. } => "plugin_event",
+        BackendMessage::SkillEvent { .. } => "skill_event",
+        BackendMessage::IdeEvent { .. } => "ide_event",
+        BackendMessage::AgentSettingsEvent { .. } => "agent_settings_event",
+        BackendMessage::AgentEvent { .. } => "agent_event",
+        BackendMessage::TeamEvent { .. } => "team_event",
+    }
+}
+
+/// Convert a legacy backend message into a normalized envelope payload.
+pub fn legacy_backend_to_payload(message: &BackendMessage) -> LegacyBackendPayload {
+    match message {
+        BackendMessage::Ready {
+            session_id,
+            model,
+            cwd,
+            permission_mode,
+            ..
+        } => LegacyBackendPayload::Lifecycle(LifecycleEvent::Ready {
+            session_id: session_id.clone(),
+            model: model.clone(),
+            cwd: cwd.clone(),
+            permission_mode: permission_mode.clone(),
+        }),
+        BackendMessage::StreamStart { message_id } => {
+            LegacyBackendPayload::Conversation(ConversationEvent::StreamStart {
+                message_id: message_id.clone(),
+            })
+        }
+        BackendMessage::StreamDelta { message_id, text } => {
+            LegacyBackendPayload::Conversation(ConversationEvent::StreamDelta {
+                message_id: message_id.clone(),
+                text: text.clone(),
+            })
+        }
+        BackendMessage::ThinkingDelta {
+            message_id,
+            thinking,
+        } => LegacyBackendPayload::Conversation(ConversationEvent::ThinkingDelta {
+            message_id: message_id.clone(),
+            thinking: thinking.clone(),
+        }),
+        BackendMessage::StreamEnd { message_id } => {
+            LegacyBackendPayload::Conversation(ConversationEvent::StreamEnd {
+                message_id: message_id.clone(),
+            })
+        }
+        BackendMessage::Tombstone { message_id } => {
+            LegacyBackendPayload::Conversation(ConversationEvent::Tombstone {
+                message_id: message_id.clone(),
+            })
+        }
+        BackendMessage::AssistantMessage {
+            id,
+            content,
+            cost_usd,
+        } => LegacyBackendPayload::Conversation(ConversationEvent::AssistantMessage {
+            id: id.clone(),
+            content: content.clone(),
+            cost_usd: *cost_usd,
+        }),
+        BackendMessage::ConversationReplaced { messages } => {
+            LegacyBackendPayload::Conversation(ConversationEvent::ConversationReplaced {
+                messages: messages.clone(),
+            })
+        }
+        BackendMessage::ToolUse { id, name, input } => {
+            LegacyBackendPayload::Tool(ToolEvent::ToolUse {
+                id: id.clone(),
+                name: name.clone(),
+                input: input.clone(),
+            })
+        }
+        BackendMessage::ToolResult {
+            tool_use_id,
+            output,
+            is_error,
+            content_blocks,
+        } => LegacyBackendPayload::Tool(ToolEvent::ToolResult {
+            tool_use_id: tool_use_id.clone(),
+            output: output.clone(),
+            is_error: *is_error,
+            content_blocks: content_blocks.clone(),
+        }),
+        BackendMessage::ToolProgress {
+            tool_use_id,
+            tool,
+            output,
+            elapsed_seconds,
+            total_lines,
+            total_bytes,
+            timeout_ms,
+        } => LegacyBackendPayload::Tool(ToolEvent::ToolProgress {
+            tool_use_id: tool_use_id.clone(),
+            tool: tool.clone(),
+            output: output.clone(),
+            elapsed_seconds: *elapsed_seconds,
+            total_lines: *total_lines,
+            total_bytes: *total_bytes,
+            timeout_ms: *timeout_ms,
+        }),
+        BackendMessage::PermissionRequest {
+            tool_use_id,
+            tool,
+            command,
+            options,
+        } => LegacyBackendPayload::Permission(PermissionEvent::PermissionRequest {
+            tool_use_id: tool_use_id.clone(),
+            tool: tool.clone(),
+            command: command.clone(),
+            options: options.clone(),
+        }),
+        BackendMessage::QuestionRequest { id, text } => {
+            LegacyBackendPayload::Permission(PermissionEvent::QuestionRequest {
+                id: id.clone(),
+                text: text.clone(),
+            })
+        }
+        BackendMessage::SystemInfo { text, level } => {
+            LegacyBackendPayload::FlowControl(FlowControlEvent::SystemInfo {
+                text: text.clone(),
+                level: level.clone(),
+            })
+        }
+        BackendMessage::UsageUpdate {
+            input_tokens,
+            output_tokens,
+            cost_usd,
+        } => LegacyBackendPayload::FlowControl(FlowControlEvent::UsageUpdate {
+            input_tokens: *input_tokens,
+            output_tokens: *output_tokens,
+            cost_usd: *cost_usd,
+        }),
+        BackendMessage::StatusLineUpdate {
+            payload,
+            lines,
+            error,
+        } => LegacyBackendPayload::FlowControl(FlowControlEvent::StatusLineUpdate {
+            payload: payload.clone(),
+            lines: lines.clone(),
+            error: error.clone(),
+        }),
+        BackendMessage::Suggestions { items } => {
+            LegacyBackendPayload::FlowControl(FlowControlEvent::Suggestions {
+                items: items.clone(),
+            })
+        }
+        BackendMessage::SubsystemStatus { status } => {
+            LegacyBackendPayload::FlowControl(FlowControlEvent::SubsystemStatus {
+                status: status.clone(),
+            })
+        }
+        BackendMessage::Error {
+            message,
+            recoverable,
+        } => LegacyBackendPayload::Error(ProtocolError {
+            message: message.clone(),
+            recoverable: *recoverable,
+        }),
+        other => LegacyBackendPayload::Unsupported {
+            legacy_type: legacy_backend_type(other),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::IpcEnvelope;
+
+    #[test]
+    fn legacy_tool_use_maps_to_normalized_payload() {
+        let msg = BackendMessage::ToolUse {
+            id: "tool-1".to_string(),
+            name: "Read".to_string(),
+            input: serde_json::json!({"file_path":"Cargo.toml"}),
+        };
+
+        let payload = legacy_backend_to_payload(&msg);
+
+        assert!(matches!(
+            payload,
+            LegacyBackendPayload::Tool(ToolEvent::ToolUse { id, name, input })
+                if id == "tool-1" && name == "Read" && input["file_path"] == "Cargo.toml"
+        ));
+    }
+
+    #[test]
+    fn legacy_tool_result_maps_to_normalized_payload() {
+        let msg = BackendMessage::ToolResult {
+            tool_use_id: "tool-1".to_string(),
+            output: "done".to_string(),
+            is_error: false,
+            content_blocks: None,
+        };
+
+        let payload = legacy_backend_to_payload(&msg);
+
+        assert!(matches!(
+            payload,
+            LegacyBackendPayload::Tool(ToolEvent::ToolResult {
+                tool_use_id,
+                output,
+                is_error: false,
+                ..
+            }) if tool_use_id == "tool-1" && output == "done"
+        ));
+    }
+
+    #[test]
+    fn legacy_permission_request_maps_to_normalized_payload() {
+        let msg = BackendMessage::PermissionRequest {
+            tool_use_id: "tool-1".to_string(),
+            tool: "Bash".to_string(),
+            command: "rm -rf target".to_string(),
+            options: vec!["allow".to_string(), "deny".to_string()],
+        };
+
+        let payload = legacy_backend_to_payload(&msg);
+
+        assert!(matches!(
+            payload,
+            LegacyBackendPayload::Permission(PermissionEvent::PermissionRequest {
+                tool_use_id,
+                tool,
+                ..
+            }) if tool_use_id == "tool-1" && tool == "Bash"
+        ));
+    }
+
+    #[test]
+    fn legacy_stream_and_error_can_be_wrapped_in_envelope() {
+        let payload = legacy_backend_to_payload(&BackendMessage::StreamDelta {
+            message_id: "message-1".to_string(),
+            text: "hello".to_string(),
+        });
+        let envelope = IpcEnvelope::new("event-1", 1, 10, payload);
+
+        assert!(matches!(
+            envelope.payload,
+            LegacyBackendPayload::Conversation(ConversationEvent::StreamDelta {
+                message_id,
+                text,
+            }) if message_id == "message-1" && text == "hello"
+        ));
+
+        let payload = legacy_backend_to_payload(&BackendMessage::Error {
+            message: "bad input".to_string(),
+            recoverable: true,
+        });
+
+        assert!(matches!(
+            payload,
+            LegacyBackendPayload::Error(ProtocolError {
+                message,
+                recoverable: true,
+            }) if message == "bad input"
+        ));
+    }
+}

@@ -13,8 +13,8 @@ use cc_engine::lifecycle::QueryEngine;
 use cc_services::prompt_suggestion::PromptSuggestionService;
 use cc_types::message::{ContentBlock, Message, MessageContent};
 
-use super::callbacks::{PendingPermissions, PendingQuestions};
 use super::query_runner::spawn_query_turn;
+use cc_ipc::runtime::SessionRuntime;
 use cc_ipc_client::sink::FrontendSink;
 use cc_ipc_protocol::{BackendMessage, ConversationMessage, FrontendMessage};
 
@@ -28,8 +28,7 @@ use cc_ipc_protocol::{BackendMessage, ConversationMessage, FrontendMessage};
 pub(crate) async fn dispatch(
     msg: FrontendMessage,
     engine: &Arc<QueryEngine>,
-    pending_permissions: &PendingPermissions,
-    pending_questions: &PendingQuestions,
+    runtime: &SessionRuntime,
     suggestion_svc: &Arc<Mutex<PromptSuggestionService>>,
     sink: &FrontendSink,
 ) -> bool {
@@ -39,8 +38,9 @@ pub(crate) async fn dispatch(
         FrontendMessage::SubmitPrompt { text, id } => {
             debug!("headless: submit_prompt id={}", id);
 
-            if let Some(question_id) =
-                cc_ipc_client::ingress::try_answer_pending_question(pending_questions, text.clone())
+            if let Some(question_id) = runtime
+                .pending_interactions()
+                .try_answer_any_question(text.clone())
             {
                 debug!(
                     "headless: routed submit_prompt to pending AskUserQuestion id={}",
@@ -87,6 +87,7 @@ pub(crate) async fn dispatch(
                 }
             }
 
+            runtime.begin_turn(id.clone());
             spawn_query_turn(
                 engine.clone(),
                 text,
@@ -104,13 +105,16 @@ pub(crate) async fn dispatch(
         FrontendMessage::PermissionResponse {
             tool_use_id,
             decision,
+            session_id,
+            turn_id,
         } => {
             debug!(
                 "headless: permission response tool_use_id={} decision={}",
                 tool_use_id, decision
             );
-            if !cc_ipc_client::ingress::complete_pending_permission(
-                pending_permissions,
+            if !runtime.pending_interactions().complete_permission(
+                session_id.as_deref(),
+                turn_id.as_deref(),
                 &tool_use_id,
                 decision,
             ) {
@@ -121,9 +125,19 @@ pub(crate) async fn dispatch(
             }
         }
 
-        FrontendMessage::QuestionResponse { id, text } => {
+        FrontendMessage::QuestionResponse {
+            id,
+            text,
+            session_id,
+            turn_id,
+        } => {
             debug!("headless: question response id={}", id);
-            if !cc_ipc_client::ingress::complete_pending_question(pending_questions, &id, text) {
+            if !runtime.pending_interactions().complete_question(
+                session_id.as_deref(),
+                turn_id.as_deref(),
+                &id,
+                text,
+            ) {
                 warn!("headless: no pending question for id={}", id);
             }
         }
@@ -174,7 +188,7 @@ pub(crate) async fn dispatch(
         }
         FrontendMessage::AgentSettingsCommand { command } => {
             debug!("headless: AgentSettings command: {:?}", command);
-            let msgs = cc_ipc::agent_settings::handle(command);
+            let msgs = cc_services::agent_definitions::handle(command);
             let _ = sink.send_many(msgs);
         }
         FrontendMessage::QuerySubsystemStatus => {
@@ -205,8 +219,8 @@ pub(crate) async fn dispatch(
                 request_id, pattern
             );
             let sink = sink.clone();
-            cc_ipc::file_search::dispatch_search(
-                cc_ipc::file_search::FileSearchRequest {
+            cc_services::file_search::dispatch_search(
+                cc_services::file_search::FileSearchRequest {
                     request_id,
                     pattern,
                     cwd,

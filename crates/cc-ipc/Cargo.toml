@@ -8,13 +8,10 @@ description = "IPC spine: JSONL/stdio (headless) + HTTP/SSE (daemon) protocols f
 anyhow = { workspace = true }
 cc-ipc-protocol = { workspace = true }
 cc-ipc-client = { workspace = true }
-cc-api = { workspace = true }
-cc-config = { workspace = true }
+cc-ipc-transport = { workspace = true }
 cc-types = { workspace = true }
 chrono = { workspace = true }
-ignore = { workspace = true }
 parking_lot = { workspace = true }
-regex = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

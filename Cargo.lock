@@ -731,15 +731,12 @@ name = "cc-ipc"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "cc-api",
- "cc-config",
  "cc-ipc-client",
  "cc-ipc-protocol",
+ "cc-ipc-transport",
  "cc-types",
  "chrono",
- "ignore",
  "parking_lot",
- "regex",
  "serde_json",
  "tempfile",
  "tokio",
@@ -748,11 +745,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-ipc-adapters"
+version = "0.1.0"
+dependencies = [
+ "cc-ipc-protocol",
+ "cc-types",
+ "serde_json",
+]
+
+[[package]]
 name = "cc-ipc-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cc-ipc-adapters",
  "cc-ipc-protocol",
+ "cc-ipc-transport",
  "cc-types",
  "futures",
  "parking_lot",
@@ -769,6 +777,18 @@ dependencies = [
  "cc-types",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "cc-ipc-transport"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "cc-ipc-protocol",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -950,22 +970,27 @@ name = "cc-services"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cc-api",
  "cc-config",
  "cc-engine",
+ "cc-ipc-protocol",
  "cc-session",
  "cc-types",
  "chrono",
  "dirs",
  "git2",
+ "ignore",
  "opentelemetry",
  "opentelemetry-langfuse",
  "opentelemetry_sdk",
  "parking_lot",
+ "regex",
  "serde",
  "serde_json",
  "serial_test",
  "tempfile",
  "thiserror 2.0.18",
+ "tokio",
  "tracing",
  "tracing-opentelemetry",
  "uuid",
@@ -1099,7 +1124,7 @@ dependencies = [
  "base64",
  "cc-browser",
  "cc-config",
- "cc-ipc",
+ "cc-ipc-protocol",
  "cc-permissions",
  "cc-sandbox",
  "cc-skills",
@@ -1304,6 +1329,7 @@ dependencies = [
  "cc-daemon",
  "cc-engine",
  "cc-ipc",
+ "cc-ipc-adapters",
  "cc-ipc-client",
  "cc-ipc-protocol",
  "cc-keybindings",

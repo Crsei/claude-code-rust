@@ -26,7 +26,7 @@ pub(crate) enum AgentsSurfaceMode {
 
 impl AgentsSurface {
     pub(crate) fn new(cwd: &Path) -> Self {
-        let agents: Vec<AgentDefinition> = cc_ipc::agent_settings::list_all_agents(cwd)
+        let agents: Vec<AgentDefinition> = cc_services::agent_definitions::list_all_agents(cwd)
             .into_iter()
             .map(agent_entry_to_ui)
             .collect();

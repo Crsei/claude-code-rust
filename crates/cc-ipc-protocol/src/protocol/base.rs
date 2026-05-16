@@ -34,7 +34,7 @@ pub enum ToolResultContentInfo {
 }
 
 /// A single conversation message as seen by the frontend.
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ConversationMessage {
     pub id: String,
     pub role: String,
@@ -139,7 +139,7 @@ mod tests {
         let json = r#"{"type":"question_response","id":"q-1","text":"yes"}"#;
         let msg: FrontendMessage = serde_json::from_str(json).unwrap();
         match msg {
-            FrontendMessage::QuestionResponse { id, text } => {
+            FrontendMessage::QuestionResponse { id, text, .. } => {
                 assert_eq!(id, "q-1");
                 assert_eq!(text, "yes");
             }

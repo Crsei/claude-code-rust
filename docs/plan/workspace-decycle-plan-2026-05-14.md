@@ -22,7 +22,7 @@
 - `cc-engine` 不再依赖 `cc-ipc` crate。
 - Agent tree 的 register/update/snapshot/active-count 通过 `cc_engine::agent_runtime::AgentTreeRuntime` 抽象。
 - `cc-engine` 默认使用 crate 内 in-memory agent tree，保证非 IPC 场景仍可工作。
-- root binary 在 `ipc::runtime_adapters::ensure_installed()` 中安装 `RootAgentTreeRuntime`，把 engine agent tree 操作接回现有 `cc_ipc::agent_tree::AGENT_TREE`。
+- root binary 在 `ipc::runtime_adapters::ensure_installed()` 中安装 agent tree runtime adapter；当前实现由 engine runtime 持有 agent tree，IPC 只通过 host trait 查询快照。
 - `main.rs` 在创建 `QueryEngine` 前安装 runtime adapters，避免 agent 先启动再接 adapter。
 - `cc-engine` 只显式依赖 `cc-ipc-protocol` 的 agent/subsystem DTO。
 

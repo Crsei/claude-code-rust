@@ -165,6 +165,7 @@ cc-commands = { workspace = true }
 cc-daemon = { workspace = true }
 cc-ipc = { workspace = true }
 cc-ipc-protocol = { workspace = true }
+cc-ipc-adapters = { workspace = true }
 cc-ipc-client = { workspace = true }
 cc-startup = { workspace = true }
 cc-voice = { workspace = true }
