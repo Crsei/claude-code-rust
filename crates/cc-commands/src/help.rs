@@ -47,13 +47,14 @@ impl CommandHandler for HelpHandler {
         }
 
         // Build the full help listing.
-        let mut lines: Vec<String> = Vec::new();
-        lines.push("Help V2".into());
-        lines.push("Quick surfaces: /resume recent, /session list, /session-export list, /export, /doctor summary, /keybindings status.".into());
-        lines.push("Keys: Ctrl+R history search, Ctrl+O transcript/global search, / opens command palette, Esc closes surfaces.".into());
-        lines.push(String::new());
-        lines.push("Available commands:".into());
-        lines.push(String::new());
+        let mut lines: Vec<String> = vec![
+            "Help V2".into(),
+            "Quick surfaces: /resume recent, /session list, /session-export list, /export, /doctor summary, /keybindings status.".into(),
+            "Keys: Ctrl+R history search, Ctrl+O transcript/global search, / opens command palette, Esc closes surfaces.".into(),
+            String::new(),
+            "Available commands:".into(),
+            String::new(),
+        ];
 
         // Find the longest command name for alignment.
         let max_len = commands.iter().map(|c| c.name.len()).max().unwrap_or(0);

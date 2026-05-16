@@ -32,10 +32,8 @@ pub enum ChromeConnectionState {
     /// session exists yet.
     Enabled,
     /// Attempting to connect to the extension via the native host. (#5)
-    #[allow(dead_code)] // Constructed by #5's native-host transport loop.
     Connecting,
     /// Native host ↔ extension handshake complete; browser tools are live. (#5)
-    #[allow(dead_code)] // Constructed by #5's native-host transport loop.
     Connected {
         /// Which browser provided the extension that connected.
         browser: ChromiumBrowser,

@@ -42,7 +42,6 @@ pub struct ExtensionDetection {
     pub is_installed: bool,
     pub browser: Option<ChromiumBrowser>,
     /// Profile directory where the extension was found (e.g. `"Default"`).
-    #[allow(dead_code)] // Consumed by the native-host transport in #5.
     pub profile: Option<String>,
 }
 
@@ -382,5 +381,6 @@ mod tests {
         // Either result is fine (depends on the machine); this test just
         // proves the function doesn't crash.
         let _ = result.is_installed;
+        let _ = result.profile;
     }
 }

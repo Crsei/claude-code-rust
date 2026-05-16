@@ -23,7 +23,6 @@ pub enum Feature {
     KairosBrief,
     KairosChannels,
     KairosPushNotification,
-    #[allow(dead_code)]
     KairosGithubWebhooks,
     Proactive,
     TeamMemory,
@@ -414,6 +413,27 @@ mod tests {
                 descriptor.label
             );
         }
+    }
+
+    #[test]
+    fn feature_descriptors_are_unique_and_complete() {
+        let descriptors = feature_descriptors();
+        assert_eq!(descriptors.len(), 10);
+
+        let mut labels: Vec<_> = descriptors
+            .iter()
+            .map(|descriptor| descriptor.label)
+            .collect();
+        labels.sort_unstable();
+        labels.dedup();
+        assert_eq!(labels.len(), descriptors.len());
+
+        let github = descriptors
+            .iter()
+            .find(|descriptor| descriptor.feature == Feature::KairosGithubWebhooks)
+            .expect("github webhook descriptor is exposed");
+        assert_eq!(github.env_var, "FEATURE_KAIROS_GITHUB_WEBHOOKS");
+        assert!(github.description.contains("webhook"));
     }
 
     #[test]

@@ -100,7 +100,8 @@ pub fn detect_browser_servers_from_tool_names<'a, 'b>(
 ) -> HashSet<String> {
     let mut servers: HashSet<String> = config_flags
         .into_iter()
-        .filter_map(|(name, browser_mcp)| browser_mcp.then(|| name.to_string()))
+        .filter(|(_, browser_mcp)| *browser_mcp)
+        .map(|(name, _)| name.to_string())
         .collect();
 
     for name in tool_names {

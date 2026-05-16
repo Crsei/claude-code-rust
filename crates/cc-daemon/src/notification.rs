@@ -1,7 +1,5 @@
 //! Push notification system — Windows Toast + webhook callback.
 
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -174,5 +172,53 @@ pub async fn notification_consumer(
                 send_webhook(&full, wc).await;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn notification_config_deserializes_webhook_contract() {
+        let config: NotificationConfig = serde_json::from_value(json!({
+            "windows_toast": {
+                "enabled": true
+            },
+            "webhook": {
+                "enabled": true,
+                "url": "https://example.invalid/hook",
+                "headers": { "x-test": "1" },
+                "events": ["task_complete"]
+            }
+        }))
+        .unwrap();
+
+        let toast = config.windows_toast.expect("toast config");
+        assert!(toast.enabled);
+        assert!(toast.only_when_detached);
+
+        let webhook = config.webhook.expect("webhook config");
+        assert!(webhook.enabled);
+        assert_eq!(webhook.url, "https://example.invalid/hook");
+        assert_eq!(webhook.headers.get("x-test").map(String::as_str), Some("1"));
+        assert_eq!(webhook.events, vec!["task_complete".to_string()]);
+    }
+
+    #[test]
+    fn full_notification_serializes_source_and_level() {
+        let notif = FullNotification {
+            title: "Done".into(),
+            body: "Task complete".into(),
+            level: NotificationLevel::Success,
+            source: NotificationSource::TaskComplete {
+                task_id: "task-1".into(),
+            },
+        };
+
+        let value = serde_json::to_value(notif).unwrap();
+        assert_eq!(value["level"], "success");
+        assert_eq!(value["source"]["type"], "TaskComplete");
+        assert_eq!(value["source"]["task_id"], "task-1");
     }
 }

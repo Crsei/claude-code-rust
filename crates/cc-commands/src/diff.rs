@@ -113,44 +113,6 @@ fn diff_to_string(diff: &git2::Diff) -> Result<String> {
     Ok(output)
 }
 
-/// Get a summary of repository file statuses for display.
-#[allow(dead_code)]
-fn get_status_summary(repo: &git2::Repository) -> Result<String> {
-    let statuses = repo
-        .statuses(None)
-        .context("Failed to get repository status")?;
-
-    if statuses.is_empty() {
-        return Ok("Working tree clean.".into());
-    }
-
-    let mut lines = Vec::new();
-    for entry in statuses.iter() {
-        let status = entry.status();
-        let path = entry.path().unwrap_or("(unknown)");
-
-        let marker = if status.contains(git2::Status::INDEX_NEW) {
-            "A "
-        } else if status.contains(git2::Status::INDEX_MODIFIED) {
-            "M "
-        } else if status.contains(git2::Status::INDEX_DELETED) {
-            "D "
-        } else if status.contains(git2::Status::WT_NEW) {
-            "??"
-        } else if status.contains(git2::Status::WT_MODIFIED) {
-            " M"
-        } else if status.contains(git2::Status::WT_DELETED) {
-            " D"
-        } else {
-            "  "
-        };
-
-        lines.push(format!("{} {}", marker, path));
-    }
-
-    Ok(lines.join("\n"))
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

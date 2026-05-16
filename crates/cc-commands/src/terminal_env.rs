@@ -63,12 +63,12 @@ impl TerminalEnvConfig {
     /// Read all three env vars and build a config, falling back to the
     /// documented defaults on any parse error.
     pub fn from_env() -> Self {
-        Self::from_iter(env::vars())
+        Self::from_pairs(env::vars())
     }
 
     /// Test-friendly constructor that takes an arbitrary key/value iterator.
     /// Skips keys that aren't recognized.
-    pub fn from_iter<I, K, V>(iter: I) -> Self
+    pub fn from_pairs<I, K, V>(iter: I) -> Self
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<str>,
@@ -201,20 +201,20 @@ mod tests {
 
     #[test]
     fn no_flicker_0_disables_sync_updates() {
-        let cfg = TerminalEnvConfig::from_iter(vec![("CLAUDE_CODE_NO_FLICKER", "0")]);
+        let cfg = TerminalEnvConfig::from_pairs(vec![("CLAUDE_CODE_NO_FLICKER", "0")]);
         assert!(!cfg.sync_updates);
     }
 
     #[test]
     fn no_flicker_1_keeps_sync_updates_on() {
-        let cfg = TerminalEnvConfig::from_iter(vec![("CLAUDE_CODE_NO_FLICKER", "1")]);
+        let cfg = TerminalEnvConfig::from_pairs(vec![("CLAUDE_CODE_NO_FLICKER", "1")]);
         assert!(cfg.sync_updates);
     }
 
     #[test]
     fn disable_mouse_accepts_common_truthy() {
         for value in ["1", "true", "YES", "on"] {
-            let cfg = TerminalEnvConfig::from_iter(vec![("CLAUDE_CODE_DISABLE_MOUSE", value)]);
+            let cfg = TerminalEnvConfig::from_pairs(vec![("CLAUDE_CODE_DISABLE_MOUSE", value)]);
             assert!(
                 cfg.disable_mouse,
                 "value {:?} should enable disable_mouse",
@@ -227,7 +227,7 @@ mod tests {
     fn enable_mouse_capture_opts_into_mouse_events() {
         for value in ["1", "true", "YES", "on"] {
             let cfg =
-                TerminalEnvConfig::from_iter(vec![("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", value)]);
+                TerminalEnvConfig::from_pairs(vec![("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", value)]);
             assert!(
                 !cfg.disable_mouse,
                 "value {:?} should enable mouse capture",
@@ -238,13 +238,13 @@ mod tests {
 
     #[test]
     fn legacy_disable_mouse_false_still_enables_mouse_capture() {
-        let cfg = TerminalEnvConfig::from_iter(vec![("CLAUDE_CODE_DISABLE_MOUSE", "0")]);
+        let cfg = TerminalEnvConfig::from_pairs(vec![("CLAUDE_CODE_DISABLE_MOUSE", "0")]);
         assert!(!cfg.disable_mouse);
     }
 
     #[test]
     fn explicit_disable_mouse_wins_over_enable_mouse_capture() {
-        let cfg = TerminalEnvConfig::from_iter(vec![
+        let cfg = TerminalEnvConfig::from_pairs(vec![
             ("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", "1"),
             ("CLAUDE_CODE_DISABLE_MOUSE", "1"),
         ]);
@@ -253,19 +253,19 @@ mod tests {
 
     #[test]
     fn scroll_speed_parses_and_clamps() {
-        let cfg = TerminalEnvConfig::from_iter(vec![("CLAUDE_CODE_SCROLL_SPEED", "12")]);
+        let cfg = TerminalEnvConfig::from_pairs(vec![("CLAUDE_CODE_SCROLL_SPEED", "12")]);
         assert_eq!(cfg.scroll_speed, 12);
 
-        let cfg_hi = TerminalEnvConfig::from_iter(vec![("CLAUDE_CODE_SCROLL_SPEED", "9999")]);
+        let cfg_hi = TerminalEnvConfig::from_pairs(vec![("CLAUDE_CODE_SCROLL_SPEED", "9999")]);
         assert_eq!(cfg_hi.scroll_speed, TerminalEnvConfig::MAX_SCROLL_SPEED);
 
-        let cfg_zero = TerminalEnvConfig::from_iter(vec![("CLAUDE_CODE_SCROLL_SPEED", "0")]);
+        let cfg_zero = TerminalEnvConfig::from_pairs(vec![("CLAUDE_CODE_SCROLL_SPEED", "0")]);
         assert_eq!(cfg_zero.scroll_speed, TerminalEnvConfig::MIN_SCROLL_SPEED);
     }
 
     #[test]
     fn garbage_values_fall_back_to_defaults() {
-        let cfg = TerminalEnvConfig::from_iter(vec![
+        let cfg = TerminalEnvConfig::from_pairs(vec![
             ("CLAUDE_CODE_NO_FLICKER", "maybe"),
             ("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", "later"),
             ("CLAUDE_CODE_DISABLE_MOUSE", ""),
@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn unknown_keys_are_ignored() {
-        let cfg = TerminalEnvConfig::from_iter(vec![("UNRELATED", "1")]);
+        let cfg = TerminalEnvConfig::from_pairs(vec![("UNRELATED", "1")]);
         assert_eq!(cfg, TerminalEnvConfig::default());
     }
 

@@ -4,8 +4,6 @@
 //! the daemon-side adapter that maps gateway-neutral commands onto existing
 //! worker command files without making `gateway` depend on `claude-code-rs`.
 
-#![allow(dead_code)]
-
 use std::path::Path;
 use std::sync::Arc;
 
@@ -80,7 +78,7 @@ fn daemon_kind(kind: GatewayCommandKind) -> DaemonCommandKind {
 }
 
 fn daemon_payload(command: &GatewayCommand) -> Value {
-    match command.kind.clone() {
+    match command.kind {
         GatewayCommandKind::Submit => {
             let text = command
                 .payload

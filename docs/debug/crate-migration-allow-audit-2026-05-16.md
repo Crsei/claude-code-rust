@@ -32,7 +32,7 @@ Notes:
 
 | Allowance | Total hits | Files | Direct standalone | Conditional standalone | Compound |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `allow(dead_code)` | 363 | 94 | 362 | 1 | 0 |
+| `allow(dead_code)` | 341 | 81 | 333 | 8 | 0 |
 | `allow(unused_imports)` | 16 | 7 | 16 | 0 | 0 |
 
 Top concentration:
@@ -40,7 +40,7 @@ Top concentration:
 - `crates/claude-code-rs/src/ui/**`: 261 `dead_code` hits and 1 `unused_imports` hit. These are mostly module re-export/path-shim allowances around the root-owned Rust TUI surface.
 - `crates/claude-code-rs/tests/**`: 2 `dead_code` hits.
 - `crates/claude-code-rs/src/app_subsystem_handlers.rs`: 1 `dead_code` hit.
-- `crates/cc-*`, `crates/voice`, and `crates/worktree`: 99 `dead_code` hits, including 1 conditional `cfg_attr`, and 15 `unused_imports` hits.
+- `crates/cc-*`, `crates/voice`, and `crates/worktree`: 77 `dead_code` hits, including 8 conditional `cfg_attr`, and 15 `unused_imports` hits.
 
 ## First Batch Classification: `cc-api` and `cc-engine`
 
@@ -81,6 +81,32 @@ Current first-batch status:
 
 Dependency-chain crates were not expanded in this batch. The remaining `cc-*`, `voice`, and `worktree` rows below stay as inventory for the next pass.
 
+## Second Batch Classification: `cc-browser`, `cc-commands`, `cc-config`, and `cc-daemon`
+
+This pass used the same rules as the first batch: remove stale allowances, preserve public compatibility surfaces without broad allows where Rust permits it, keep only narrow conditional platform allowances, and delete private code only when it has no callers, tests, or parity value.
+
+| Area | Original allow sites | Category | Evidence | Decision |
+| --- | --- | --- | --- | --- |
+| `cc-browser` transport helpers | `all_socket_paths`, `prepare_socket_dir`, `secure_socket_file` | Stale allow / Public API | `mcp_bridge` connects through `all_socket_paths`; `native_host` calls the Unix socket preparation and permission helpers; transport tests cover socket path and Unix directory creation. | Removed all transport `dead_code` allows. |
+| `cc-browser` Chrome state | `ChromeConnectionState::{Connecting, Connected}` | Stale allow | Existing state tests construct both variants and `/chrome` command formatting matches on both states. | Removed variant allows. |
+| `cc-browser` extension detection | `ExtensionDetection.profile` | Public API / Missing transport consumption | Session startup consumes the detection result; tests now read the `profile` field so the profile-carrying contract stays visible until native-host profile routing needs it. | Removed field allow. |
+| `cc-browser` browser config table | `BrowserConfig` whole-struct allow | Conditional platform API | Data/native-host path helpers read the active platform fields; registry-key tests cover the Windows registry contract; added Linux binary-name and macOS bundle helper coverage for platform-specific fields. | Replaced the broad struct allow with per-field `cfg_attr(not(target_os = ...), allow(dead_code))` on off-platform fields only. |
+| `cc-commands` command result | `CommandResult::None` | Stale allow / Public API | Daemon command routing and the root ingress adapter both consume `CommandResult::None`. | Removed variant allow. |
+| `cc-commands` diff helper | `diff::get_status_summary` | Truly unused | No production or test caller; `/diff` uses patch diff helpers directly. | Deleted the private helper. |
+| `cc-config` feature gate | `Feature::KairosGithubWebhooks` | Stale allow | Feature flag parsing, dependency enforcement, `all_enabled`, and descriptor tests cover the GitHub webhook gate. | Removed variant allow and added descriptor uniqueness/completeness coverage. |
+| `cc-config` settings APIs | `SettingsSource::rank`, legacy aliases/loaders, `merge_configs`, `LoadedSettings::source_of`, `EffectiveSettings` public fields | Public API / Stale allow | Existing merge tests cover legacy config merging; added source-rank, legacy loader, source lookup, system prompt, allowed tools, and `extra` passthrough coverage under isolated config paths. | Removed all settings `dead_code` allows while preserving the compatibility API. |
+| `cc-daemon` file-level allowances | `channels`, `gateway_bridge`, `notification`, `routes`, `state`, `webhook` | Stale allow / Public API | Routes are assembled by `server`; gateway bridge is used by supervisor and gateway/webhook routes; state, channel, webhook, route, and gateway tests cover the public contracts. Added notification serialization/config coverage. | Removed all six file-level allows. |
+| `cc-daemon` abort request body | `AbortRequest` | Truly unused | `/api/abort` does not accept a JSON body and no caller references the type. | Deleted the empty public request type. |
+
+Current second-batch status:
+
+| Crate | Remaining `allow(dead_code)` / `allow(unused_imports)` | Evidence |
+| --- | ---: | --- |
+| `cc-browser` | 8 conditional `dead_code`, 0 `unused_imports` | Only off-platform `BrowserConfig` fields retain `cfg_attr(not(target_os = ...), allow(dead_code))`; no standalone allows remain. |
+| `cc-commands` | 0 | `rg` over `crates/cc-commands/src` finds no `dead_code` or `unused_imports` allowances. |
+| `cc-config` | 0 | `rg` over `crates/cc-config/src` finds no `dead_code` or `unused_imports` allowances. |
+| `cc-daemon` | 0 | `rg` over `crates/cc-daemon/src` finds no `dead_code` or `unused_imports` allowances. |
+
 ## `allow(unused_imports)` Inventory
 
 | Type | File | Lines | Context |
@@ -98,20 +124,7 @@ Dependency-chain crates were not expanded in this batch. The remaining `cc-*`, `
 | File | Hits | Type | Lines | Context |
 | --- | ---: | --- | --- | --- |
 | `crates/cc-bootstrap/src/lib.rs` | 6 | standalone | 21, 23, 25, 27, 29, 31 | Module re-exports |
-| `crates/cc-browser/src/common.rs` | 1 | standalone | 125 | `BrowserConfig` |
-| `crates/cc-browser/src/setup.rs` | 1 | standalone | 45 | `profile` field |
-| `crates/cc-browser/src/state.rs` | 2 | standalone | 35, 38 | Browser connection states |
-| `crates/cc-browser/src/transport.rs` | 5 | 4 standalone, 1 conditional | 69, 94, 132, 148, 156 | Socket path / directory / security helpers; line 69 is `#[cfg_attr(not(unix), allow(dead_code))]` |
-| `crates/cc-commands/src/diff.rs` | 1 | standalone | 117 | `get_status_summary` |
-| `crates/cc-commands/src/lib.rs` | 1 | standalone | 494 | `None` enum variant |
-| `crates/cc-config/src/features.rs` | 1 | standalone | 26 | `KairosGithubWebhooks` |
-| `crates/cc-config/src/settings.rs` | 12 | standalone | 70, 700, 707, 733, 735, 740, 835, 968, 974, 983, 994, 1005 | Config ranking, types, fields, helpers |
-| `crates/cc-daemon/src/channels.rs` | 1 | standalone | 3 | File/module scope |
-| `crates/cc-daemon/src/gateway_bridge.rs` | 1 | standalone | 7 | File/module scope |
-| `crates/cc-daemon/src/notification.rs` | 1 | standalone | 3 | File/module scope |
-| `crates/cc-daemon/src/routes.rs` | 1 | standalone | 8 | File/module scope |
-| `crates/cc-daemon/src/state.rs` | 1 | standalone | 6 | File/module scope |
-| `crates/cc-daemon/src/webhook.rs` | 1 | standalone | 3 | File/module scope |
+| `crates/cc-browser/src/common.rs` | 8 | conditional | 126, 128, 130, 132, 134, 136, 138, 142 | `BrowserConfig` off-platform fields |
 | `crates/cc-engine/src/lifecycle/mod.rs` | 1 | standalone | 125 | `has_handled_orphaned_permission`; missing orphaned-permission recovery wiring |
 | `crates/cc-ipc-protocol/src/subsystem_events.rs` | 1 | standalone | 12 | File/module scope; pre-defined IPC extension types |
 | `crates/cc-ipc-protocol/src/subsystem_types.rs` | 1 | standalone | 13 | File/module scope; pre-defined IPC extension types |
@@ -201,5 +214,5 @@ These buckets are only triage aids:
 | Root UI re-export shims | `crates/claude-code-rs/src/ui/**` | Decide whether root-owned UI module re-export allowances are intentional residuals or can be removed after the `cc-ui` path-shim closeout. |
 | Split-crate compatibility re-exports | `cc-bootstrap`, `cc-query`, `cc-session`, `cc-teams`, `voice` | Replace with used public API, narrower `pub use`, or comments that explain compatibility boundaries. |
 | Predefined protocol/types | `cc-ipc-protocol`, `cc-types`, `cc-keybindings` | Keep only if the type is intentionally reserved for near-term protocol/API parity; otherwise remove or test. |
-| Runtime helper methods and fields | daemon, MCP, permissions, LSP, browser, sandbox | Prefer targeted tests or real call sites over `allow(dead_code)` before the release gate. |
-| Conditional platform API | `cc-browser/src/transport.rs:69` | Keep or replace with platform-specific module boundaries; it is the only conditional `dead_code` hit. |
+| Runtime helper methods and fields | MCP, permissions, LSP, sandbox | Prefer targeted tests or real call sites over `allow(dead_code)` before the release gate. |
+| Conditional platform API | `cc-browser/src/common.rs:126`, `:128`, `:130`, `:132`, `:134`, `:136`, `:138`, `:142` | Current second-batch decision is to keep narrow per-field `cfg_attr` for off-platform browser config fields. |

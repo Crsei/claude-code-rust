@@ -151,10 +151,7 @@ fn run_git(cwd: &std::path::Path, args: &[&str]) -> Result<String> {
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
-        anyhow::bail!(
-            "{}",
-            String::from_utf8_lossy(&output.stderr).trim().to_string()
-        )
+        anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim())
     }
 }
 

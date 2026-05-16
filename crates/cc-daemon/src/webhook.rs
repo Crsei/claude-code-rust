@@ -1,7 +1,5 @@
 //! Webhook signature verification, declarative route handling, and payload parsing.
 
-#![allow(dead_code)]
-
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;

@@ -120,19 +120,26 @@ pub const CLAUDE_IN_CHROME_MCP_SERVER_NAME: &str = "claude-in-chrome";
 ///
 /// Every field is used on *some* platform via the cfg-gated path helpers
 /// below, but the dead-code lint can only see one platform's usage at a
-/// time. Allowed explicitly so we don't have to carry per-field cfg attrs.
+/// time.
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 struct BrowserConfig {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     macos_app_bundle: &'static str,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     macos_data: &'static [&'static str],
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     macos_native_messaging: &'static [&'static str],
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     linux_binaries: &'static [&'static str],
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     linux_data: &'static [&'static str],
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     linux_native_messaging: &'static [&'static str],
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     windows_data: &'static [&'static str],
     windows_registry_key: &'static str,
     /// Opera uses `AppData/Roaming` instead of `AppData/Local`.
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     windows_use_roaming: bool,
 }
 
@@ -399,6 +406,18 @@ pub fn native_messaging_path_for(browser: ChromiumBrowser) -> Option<PathBuf> {
     }
 }
 
+/// macOS application bundle name for launching or diagnosing a browser.
+#[cfg(target_os = "macos")]
+pub fn macos_app_bundle_for(browser: ChromiumBrowser) -> &'static str {
+    config_for(browser).macos_app_bundle
+}
+
+/// Linux executable names used when probing for an installed browser.
+#[cfg(target_os = "linux")]
+pub fn linux_binary_names_for(browser: ChromiumBrowser) -> &'static [&'static str] {
+    config_for(browser).linux_binaries
+}
+
 /// Enumerate every supported browser's user-data path on the current platform.
 pub fn all_browser_data_paths() -> Vec<BrowserDataPath> {
     BROWSER_DETECTION_ORDER
@@ -486,6 +505,23 @@ mod tests {
             assert!(k.key.starts_with("Software\\"));
             assert!(k.key.contains("NativeMessagingHosts"));
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_binary_names_cover_linux_browsers() {
+        assert!(linux_binary_names_for(ChromiumBrowser::Chrome).contains(&"google-chrome"));
+        assert!(linux_binary_names_for(ChromiumBrowser::Arc).is_empty());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_app_bundle_names_cover_macos_browsers() {
+        assert_eq!(
+            macos_app_bundle_for(ChromiumBrowser::Chrome),
+            "Google Chrome"
+        );
+        assert_eq!(macos_app_bundle_for(ChromiumBrowser::Arc), "Arc");
     }
 
     #[test]

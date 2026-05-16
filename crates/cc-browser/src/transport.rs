@@ -66,7 +66,6 @@ pub fn secure_socket_path() -> PathBuf {
 ///
 /// On Unix we scan the socket directory for any `*.sock` files (one per
 /// running native host). On Windows there's only one named pipe path.
-#[cfg_attr(not(unix), allow(dead_code))]
 pub fn all_socket_paths() -> Vec<PathBuf> {
     if cfg!(windows) {
         return vec![secure_socket_path()];
@@ -91,7 +90,6 @@ pub fn all_socket_paths() -> Vec<PathBuf> {
 /// Create the socket directory with 0700 permissions (Unix only). Cleans up
 /// any stale `*.sock` file whose PID no longer exists. No-op on Windows.
 #[cfg(unix)]
-#[allow(dead_code)] // Called from native_host.rs on Unix platforms only.
 pub fn prepare_socket_dir() -> Result<()> {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
@@ -129,7 +127,6 @@ pub fn prepare_socket_dir() -> Result<()> {
 }
 
 #[cfg(not(unix))]
-#[allow(dead_code)] // Public API parity; native_host.rs gates the call site on #[cfg(unix)].
 pub fn prepare_socket_dir() -> Result<()> {
     Ok(())
 }
@@ -145,7 +142,6 @@ fn pid_is_alive(pid: u32) -> bool {
 /// Tighten socket permissions to 0600 (Unix only). Call after the socket
 /// file has been created. No-op on Windows.
 #[cfg(unix)]
-#[allow(dead_code)] // Called from native_host.rs on Unix platforms only.
 pub fn secure_socket_file(path: &std::path::Path) -> io::Result<()> {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
@@ -153,7 +149,6 @@ pub fn secure_socket_file(path: &std::path::Path) -> io::Result<()> {
 }
 
 #[cfg(not(unix))]
-#[allow(dead_code)] // Public API parity; native_host.rs gates the call site on #[cfg(unix)].
 pub fn secure_socket_file(_: &std::path::Path) -> io::Result<()> {
     Ok(())
 }

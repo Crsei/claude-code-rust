@@ -5,8 +5,6 @@
 //! - **Webhook routes** (`/webhook/*`) -- Phase-3 stubs for GitHub/Slack/generic
 //! - **Health** (`/health`) -- simple liveness probe
 
-#![allow(dead_code)]
-
 use std::sync::atomic::Ordering;
 
 use axum::extract::State;
@@ -48,7 +46,7 @@ fn plan_workflow_event_payload(
     serde_json::to_value(cc_types::plan_workflow::event_payload(
         record, event, summary,
     ))
-    .unwrap_or_else(|_| serde_json::Value::Null)
+    .unwrap_or(serde_json::Value::Null)
 }
 
 // ---------------------------------------------------------------------------
@@ -61,9 +59,6 @@ pub struct SubmitRequest {
     pub id: Option<String>,
     pub idempotency_key: Option<String>,
 }
-
-#[derive(Debug, Deserialize)]
-pub struct AbortRequest {}
 
 #[derive(Debug, Deserialize)]
 pub struct CommandRequest {

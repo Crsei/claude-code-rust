@@ -72,10 +72,10 @@ pub struct EnvProbe {
 
 impl EnvProbe {
     pub fn from_env() -> Self {
-        Self::from_iter(std::env::vars())
+        Self::from_pairs(std::env::vars())
     }
 
-    pub fn from_iter<I, K, V>(iter: I) -> Self
+    pub fn from_pairs<I, K, V>(iter: I) -> Self
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<str>,
@@ -218,7 +218,7 @@ fn render_all(p: &EnvProbe) -> String {
 }
 
 fn render_env(p: &EnvProbe) -> String {
-    let effective = TerminalEnvConfig::from_iter([
+    let effective = TerminalEnvConfig::from_pairs([
         (
             "CLAUDE_CODE_NO_FLICKER",
             p.claude_code_no_flicker.clone().unwrap_or_default(),
@@ -461,32 +461,32 @@ mod tests {
 
     #[test]
     fn terminal_label_detects_iterm2_even_lowercase() {
-        let p = EnvProbe::from_iter(vec![("TERM_PROGRAM", "iTerm.app")]);
+        let p = EnvProbe::from_pairs(vec![("TERM_PROGRAM", "iTerm.app")]);
         assert_eq!(p.terminal_label(), TerminalLabel::ITerm2);
     }
 
     #[test]
     fn terminal_label_prefers_windows_terminal_when_wt_session_set() {
-        let p = EnvProbe::from_iter(vec![("WT_SESSION", "abc"), ("TERM_PROGRAM", "unknown")]);
+        let p = EnvProbe::from_pairs(vec![("WT_SESSION", "abc"), ("TERM_PROGRAM", "unknown")]);
         assert_eq!(p.terminal_label(), TerminalLabel::WindowsTerminal);
     }
 
     #[test]
     fn terminal_label_falls_back_to_vte() {
-        let p = EnvProbe::from_iter(vec![("VTE_VERSION", "7206")]);
+        let p = EnvProbe::from_pairs(vec![("VTE_VERSION", "7206")]);
         assert_eq!(p.terminal_label(), TerminalLabel::GnomeLikeVte);
     }
 
     #[test]
     fn env_table_shows_effective_scroll_speed() {
-        let p = EnvProbe::from_iter(vec![("CLAUDE_CODE_SCROLL_SPEED", "7")]);
+        let p = EnvProbe::from_pairs(vec![("CLAUDE_CODE_SCROLL_SPEED", "7")]);
         let out = render_env(&p);
         assert!(out.contains("7 lines / step"), "{}", out);
     }
 
     #[test]
     fn gnome_tip_no_longer_mentions_export_transcript_command() {
-        let p = EnvProbe::from_iter(vec![("VTE_VERSION", "7206")]);
+        let p = EnvProbe::from_pairs(vec![("VTE_VERSION", "7206")]);
         let out = render_tips(&p);
         assert!(!out.contains("/export-transcript"));
         assert!(out.contains("transcript export (`e`)"));
@@ -494,7 +494,7 @@ mod tests {
 
     #[test]
     fn env_table_reports_editor_argument_limitations() {
-        let p = EnvProbe::from_iter(vec![("VISUAL", "code --wait")]);
+        let p = EnvProbe::from_pairs(vec![("VISUAL", "code --wait")]);
         let out = render_env(&p);
         assert!(out.contains("VISUAL includes arguments"));
         assert!(out.contains("bare executable path"));
@@ -502,21 +502,21 @@ mod tests {
 
     #[test]
     fn env_table_reports_default_native_selection() {
-        let p = EnvProbe::from_iter(Vec::<(&str, &str)>::new());
+        let p = EnvProbe::from_pairs(Vec::<(&str, &str)>::new());
         let out = render_env(&p);
         assert!(out.contains("disabled (native selection/copy)"));
     }
 
     #[test]
     fn env_table_reports_enable_mouse_capture_runtime_effect() {
-        let p = EnvProbe::from_iter(vec![("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", "1")]);
+        let p = EnvProbe::from_pairs(vec![("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", "1")]);
         let out = render_env(&p);
         assert!(out.contains("enabled for wheel events"));
     }
 
     #[test]
     fn env_table_reports_disable_mouse_runtime_effect() {
-        let p = EnvProbe::from_iter(vec![("CLAUDE_CODE_DISABLE_MOUSE", "1")]);
+        let p = EnvProbe::from_pairs(vec![("CLAUDE_CODE_DISABLE_MOUSE", "1")]);
         let out = render_env(&p);
         assert!(out.contains("disabled (native selection/copy)"));
     }

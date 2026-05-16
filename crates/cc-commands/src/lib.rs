@@ -491,7 +491,6 @@ pub enum CommandResult {
     /// Exit the REPL with a goodbye message.
     Exit(String),
     /// No visible output.
-    #[allow(dead_code)]
     None,
 }
 

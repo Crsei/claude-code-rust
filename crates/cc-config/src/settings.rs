@@ -67,7 +67,6 @@ impl SettingsSource {
     ///
     /// Exposed so callers (e.g. `/config sources`) can break ties or sort
     /// by priority order without re-implementing the table.
-    #[allow(dead_code)]
     pub fn rank(self) -> u8 {
         match self {
             SettingsSource::Default => 0,
@@ -697,14 +696,12 @@ fn merge_str_lists(base: Option<&[String]>, over: Option<&[String]>) -> Vec<Stri
 ///
 /// Prefer [`RawSettings`] in new code. Kept so that historic call sites
 /// (`use settings::GlobalConfig;`) continue to compile after the refactor.
-#[allow(dead_code)]
 pub type GlobalConfig = RawSettings;
 
 /// Legacy alias — project settings file shape.
 ///
 /// Prefer [`RawSettings`] in new code. Kept for the same reason as
 /// [`GlobalConfig`].
-#[allow(dead_code)]
 pub type ProjectConfig = RawSettings;
 
 /// Merged runtime configuration. See [`EffectiveSettings`] for the new,
@@ -730,14 +727,11 @@ pub struct EffectiveSettings {
     pub theme: Option<String>,
     pub verbose: bool,
     pub permission_mode: Option<String>,
-    #[allow(dead_code)]
     pub allowed_tools: Vec<String>,
-    #[allow(dead_code)]
     pub system_prompt: Option<String>,
     pub hooks: HashMap<String, Value>,
     pub claude_in_chrome_default_enabled: Option<bool>,
     pub api_key: Option<String>,
-    #[allow(dead_code)]
     pub extra: HashMap<String, Value>,
 
     // -- New typed fields ----------------------------------------------
@@ -832,7 +826,6 @@ impl LoadedSettings {
     /// Returns [`SettingsSource::Default`] if no layer provided the key.
     /// Used by `/config sources` and tests; reserved for downstream callers
     /// that want to inspect provenance without iterating the full map.
-    #[allow(dead_code)]
     pub fn source_of(&self, key: &str) -> SettingsSource {
         self.sources
             .get(key)
@@ -965,13 +958,11 @@ fn load_raw_from(path: &Path) -> Result<Option<RawSettings>> {
 ///
 /// Convenience wrapper kept for callers that only want one layer; the full
 /// stack is loaded via [`load_effective`].
-#[allow(dead_code)]
 pub fn load_global_config() -> Result<RawSettings> {
     Ok(load_raw_from(&user_settings_path())?.unwrap_or_default())
 }
 
 /// Load the project-level settings. Returns defaults if none is found.
-#[allow(dead_code)]
 pub fn load_project_config(cwd: &Path) -> Result<RawSettings> {
     match find_project_config(cwd) {
         Some(p) => Ok(load_raw_from(&p)?.unwrap_or_default()),
@@ -980,7 +971,6 @@ pub fn load_project_config(cwd: &Path) -> Result<RawSettings> {
 }
 
 /// Load project-local overrides (`.cc-rust/settings.local.json`).
-#[allow(dead_code)]
 pub fn load_local_config(cwd: &Path) -> Result<RawSettings> {
     match find_local_config(cwd) {
         Some(p) => Ok(load_raw_from(&p)?.unwrap_or_default()),
@@ -991,7 +981,6 @@ pub fn load_local_config(cwd: &Path) -> Result<RawSettings> {
 /// Load managed / policy settings, if a managed settings file exists on
 /// disk. Errors reading an existing file are surfaced; a missing file is
 /// treated as "no managed layer".
-#[allow(dead_code)]
 pub fn load_managed_config() -> Result<RawSettings> {
     Ok(load_raw_from(&managed_settings_path())?.unwrap_or_default())
 }
@@ -1002,7 +991,6 @@ pub fn load_managed_config() -> Result<RawSettings> {
 
 /// Merge exactly two layers (global then project). Preserved for
 /// backward compatibility with earlier call sites.
-#[allow(dead_code)]
 pub fn merge_configs(global: &GlobalConfig, project: &ProjectConfig) -> MergedConfig {
     let mut acc = RawSettings::default();
     let mut sources = SourceMap::new();
@@ -1373,6 +1361,36 @@ pub fn settings_schema() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set_path(key: &'static str, value: &Path) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+
+        fn unset(key: &'static str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::remove_var(key);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = &self.previous {
+                std::env::set_var(self.key, previous);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
 
     #[test]
     fn project_overrides_global() {
@@ -1528,6 +1546,120 @@ mod tests {
         acc.merge_from(project, SettingsSource::Project, &mut sources);
         assert_eq!(sources.get("model"), Some(&SettingsSource::Project));
         assert_eq!(sources.get("theme"), Some(&SettingsSource::Project));
+    }
+
+    #[test]
+    fn source_rank_matches_merge_precedence() {
+        assert!(SettingsSource::Managed.rank() > SettingsSource::Default.rank());
+        assert!(SettingsSource::Project.rank() > SettingsSource::User.rank());
+        assert!(SettingsSource::Local.rank() > SettingsSource::Project.rank());
+        assert!(SettingsSource::Env.rank() > SettingsSource::Local.rank());
+        assert!(SettingsSource::Cli.rank() > SettingsSource::Env.rank());
+    }
+
+    #[test]
+    #[serial]
+    fn legacy_loaders_sources_prompt_and_extra_remain_compatible() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let data_root = temp.path().join("home");
+        let managed_path = temp.path().join("managed-settings.json");
+        let project_root = temp.path().join("project");
+        let nested = project_root.join("nested");
+        let project_config_dir = project_root.join(".cc-rust");
+        std::fs::create_dir_all(&data_root).unwrap();
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::create_dir_all(&project_config_dir).unwrap();
+
+        let _cc_home = EnvGuard::set_path("CC_RUST_HOME", &data_root);
+        let _managed = EnvGuard::set_path("CC_RUST_MANAGED_SETTINGS", &managed_path);
+        let _claude_model = EnvGuard::unset("CLAUDE_MODEL");
+        let _cc_backend = EnvGuard::unset("CC_BACKEND");
+        let _claude_backend = EnvGuard::unset("CLAUDE_BACKEND");
+        let _api_key = EnvGuard::unset("ANTHROPIC_API_KEY");
+        let _verbose = EnvGuard::unset("CLAUDE_VERBOSE");
+        let _permission_mode = EnvGuard::unset("CLAUDE_PERMISSION_MODE");
+        let _language = EnvGuard::unset("CLAUDE_LANGUAGE");
+        let _output_style = EnvGuard::unset("CLAUDE_OUTPUT_STYLE");
+        let _theme = EnvGuard::unset("CLAUDE_THEME");
+
+        write_settings_file(
+            &managed_path,
+            &RawSettings {
+                backend: Some("native".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        write_settings_file(
+            &user_settings_path(),
+            &RawSettings {
+                model: Some("user-model".into()),
+                system_prompt: Some("user prompt".into()),
+                extra: HashMap::from([("unknownUser".to_string(), json!(true))]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        write_settings_file(
+            &project_config_dir.join("settings.json"),
+            &RawSettings {
+                model: Some("project-model".into()),
+                system_prompt: Some("project prompt".into()),
+                allowed_tools: Some(vec!["Bash".into()]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        write_settings_file(
+            &project_config_dir.join("settings.local.json"),
+            &RawSettings {
+                system_prompt: Some("local prompt".into()),
+                extra: HashMap::from([("unknownLocal".to_string(), json!({"owner": "test"}))]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let global = load_global_config().unwrap();
+        assert_eq!(global.model.as_deref(), Some("user-model"));
+        assert_eq!(global.system_prompt.as_deref(), Some("user prompt"));
+        assert_eq!(global.extra.get("unknownUser"), Some(&json!(true)));
+
+        let project = load_project_config(&nested).unwrap();
+        assert_eq!(project.model.as_deref(), Some("project-model"));
+        assert_eq!(project.allowed_tools, Some(vec!["Bash".to_string()]));
+
+        let local = load_local_config(&nested).unwrap();
+        assert_eq!(local.system_prompt.as_deref(), Some("local prompt"));
+
+        let managed = load_managed_config().unwrap();
+        assert_eq!(managed.backend.as_deref(), Some("native"));
+
+        let legacy_merged = merge_configs(&global, &project);
+        assert_eq!(legacy_merged.model.as_deref(), Some("project-model"));
+        assert_eq!(
+            legacy_merged.system_prompt.as_deref(),
+            Some("project prompt")
+        );
+        assert_eq!(legacy_merged.allowed_tools, vec!["Bash".to_string()]);
+
+        let loaded = load_effective(&nested).unwrap();
+        assert_eq!(loaded.source_of("backend"), SettingsSource::Managed);
+        assert_eq!(loaded.source_of("model"), SettingsSource::Project);
+        assert_eq!(loaded.source_of("systemPrompt"), SettingsSource::Local);
+        assert_eq!(loaded.source_of("unknownLocal"), SettingsSource::Local);
+        assert_eq!(loaded.source_of("missing"), SettingsSource::Default);
+        assert_eq!(loaded.effective.backend.as_deref(), Some("native"));
+        assert_eq!(loaded.effective.model.as_deref(), Some("project-model"));
+        assert_eq!(
+            loaded.effective.system_prompt.as_deref(),
+            Some("local prompt")
+        );
+        assert_eq!(
+            loaded.effective.extra.get("unknownLocal"),
+            Some(&json!({"owner": "test"}))
+        );
+        assert_eq!(loaded.loaded_paths.len(), 4);
     }
 
     #[test]
